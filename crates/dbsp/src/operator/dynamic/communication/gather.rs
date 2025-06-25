@@ -27,7 +27,7 @@ use std::{
 type NotifyCallback = dyn Fn() + Send + Sync + 'static;
 
 circuit_cache_key!(GatherId<C, D>((StreamId, usize) => Stream<C, D>));
-circuit_cache_key!(local GatherDataId<T>(usize => Arc<GatherData<T>>));
+circuit_cache_key!(local GatherDataId<T>(usize => Arc<GatherData<(T, bool)>>));
 
 impl<C, B> Stream<C, B>
 where
@@ -230,8 +230,9 @@ unsafe impl<T: Send> Send for GatherData<T> {}
 unsafe impl<T: Send> Sync for GatherData<T> {}
 
 struct GatherProducer<T> {
-    gather: Arc<GatherData<T>>,
+    gather: Arc<GatherData<(T, bool)>>,
     worker: usize,
+    flushed: bool,
 }
 
 impl<T> GatherProducer<T> {
@@ -240,8 +241,12 @@ impl<T> GatherProducer<T> {
     /// # Safety
     ///
     /// `worker` must be inbounds and unique within `gather`'s channels
-    const unsafe fn new(gather: Arc<GatherData<T>>, worker: usize) -> Self {
-        Self { gather, worker }
+    const unsafe fn new(gather: Arc<GatherData<(T, bool)>>, worker: usize) -> Self {
+        Self {
+            gather,
+            worker,
+            flushed: false,
+        }
     }
 }
 
@@ -260,6 +265,10 @@ where
     fn fixedpoint(&self, _scope: Scope) -> bool {
         true
     }
+
+    fn flush(&mut self) {
+        self.flushed = true;
+    }
 }
 
 impl<T> SinkOperator<T> for GatherProducer<T>
@@ -269,13 +278,15 @@ where
     #[trace]
     async fn eval(&mut self, input: &T) {
         // Safety: `worker` is guaranteed to be a valid & unique worker index
-        unsafe { self.gather.push(self.worker, input.clone()) }
+        unsafe { self.gather.push(self.worker, (input.clone(), self.flushed)) };
+        self.flushed = false;
     }
 
     #[trace]
     async fn eval_owned(&mut self, input: T) {
         // Safety: `worker` is guaranteed to be a valid & unique worker index
-        unsafe { self.gather.push(self.worker, input) }
+        unsafe { self.gather.push(self.worker, (input, self.flushed)) };
+        self.flushed = false;
     }
 
     fn input_preference(&self) -> OwnershipPreference {
@@ -285,14 +296,18 @@ where
 
 struct GatherConsumer<T: Batch> {
     factories: T::Factories,
-    gather: Arc<GatherData<T>>,
+    gather: Arc<GatherData<(T, bool)>>,
+    flush_count: usize,
+    flush_complete: bool,
 }
 
 impl<T: Batch> GatherConsumer<T> {
-    fn new(gather: Arc<GatherData<T>>, factories: &T::Factories) -> Self {
+    fn new(gather: Arc<GatherData<(T, bool)>>, factories: &T::Factories) -> Self {
         Self {
             gather,
             factories: factories.clone(),
+            flush_count: 0,
+            flush_complete: false,
         }
     }
 }
@@ -325,6 +340,14 @@ impl<T: Batch + 'static> Operator for GatherConsumer<T> {
     fn fixedpoint(&self, _scope: Scope) -> bool {
         true
     }
+
+    fn flush(&mut self) {
+        self.flush_complete = false;
+    }
+
+    fn is_flush_complete(&self) -> bool {
+        self.flush_complete
+    }
 }
 
 impl<T> SourceOperator<T> for GatherConsumer<T>
@@ -336,12 +359,25 @@ where
         // Safety: This is the gather thread
         debug_assert!(unsafe { self.gather.all_channels_ready() });
 
-        merge_batches(
+        let result = merge_batches(
             &self.factories,
-            (0..self.gather.workers()).map(|worker| unsafe { self.gather.pop(worker) }),
+            (0..self.gather.workers()).map(|worker| {
+                let (batch, flushed) = unsafe { self.gather.pop(worker) };
+                if flushed {
+                    self.flush_count += 1;
+                }
+                batch
+            }),
             &None,
             &None,
-        )
+        );
+
+        if self.flush_count == Runtime::runtime().unwrap().num_workers() {
+            self.flush_count = 0;
+            self.flush_complete = true;
+        }
+
+        result
     }
 }
 
@@ -366,7 +402,7 @@ impl<T: Batch> EmptyGatherConsumer<T> {
 
 impl<T: Batch + 'static> Operator for EmptyGatherConsumer<T> {
     fn name(&self) -> Cow<'static, str> {
-        Cow::Borrowed("GatherConsumer")
+        Cow::Borrowed("EmptyGatherConsumer")
     }
 
     fn location(&self) -> OperatorLocation {
