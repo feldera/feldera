@@ -7,8 +7,6 @@ data: {
     class: "DbspParserImpl",
 
     imports: [
-      "org.apache.calcite.sql.babel.SqlBabelCreateTable",
-      "org.apache.calcite.sql.babel.TableCollectionType",
       "org.apache.calcite.schema.ColumnStrategy"
       "org.apache.calcite.sql.SqlCreate"
       "org.apache.calcite.sql.SqlDrop"
@@ -391,17 +389,17 @@ data: {
       "TYPE"
 
       # not in core, added in babel
-      "DISCARD"
+      # "DISCARD"
       "IF"
-      "PLANS"
-      "SEED"
-      "SEMI"
-      "SEQUENCES"
-      "TEMP"
+      # "PLANS"
+      # "SEED"
+      # "SEMI"
+      # "SEQUENCES"
+      # "TEMP"
 
       # The following keywords are reserved in core Calcite,
       # are reserved in some version of SQL,
-      # but are not reserved in Babel.
+      # but are not reserved for us.
       #
       # Words that are commented out (e.g. "AND") are still reserved.
       # These are the most important reserved words, and SQL cannot be
