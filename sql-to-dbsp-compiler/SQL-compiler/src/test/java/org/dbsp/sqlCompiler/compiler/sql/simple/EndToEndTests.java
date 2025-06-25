@@ -92,17 +92,17 @@ public class EndToEndTests extends BaseSQLTests {
             new DBSPStringLiteral("Hi"),
             new DBSPI32Literal(1, true),
             new DBSPDecimalLiteral(D62, BigDecimal.ZERO),
-            new DBSPU32Literal(10L, true)
+            new DBSPU32Literal(5L, true)
     );
 
     /**
      * Returns the table T containing:
-     * -------------------------------------------
-     * | 10 | 12e0 | true  | Hi | NULL    | NULL |
-     * | 10 |  1e0 | false | Hi | Some[1] |  0.0 |
-     * -------------------------------------------
-     INSERT INTO T VALUES (10, 12e0, true, 'Hi', NULL, NULL);
-     INSERT INTO T VALUES (10, 1e0, false, 'Hi', 1, 0e0);
+     * --------------------------------------------------
+     * | 10 | 12e0 | true  | Hi | NULL    | NULL | NULL |
+     * | 10 |  1e0 | false | Hi | Some[1] |  0.0 |   5  |
+     * ---------------------------------------------------
+     INSERT INTO T VALUES (10, 12e0, true, 'Hi', NULL, NULL, NULL);
+     INSERT INTO T VALUES (10, 1e0, false, 'Hi', 1, 0e0, 5);
      */
     static final Change INPUT = new Change(new DBSPZSetExpression(E0, E1));
 
@@ -229,17 +229,37 @@ public class EndToEndTests extends BaseSQLTests {
     }
 
     @Test
+    public void overSum0Test() {
+        String query = "SELECT SUM(T.COL5) OVER (ORDER BY T.COL1 RANGE UNBOUNDED PRECEDING) FROM T";
+        DBSPExpression t = new DBSPTupleExpression(new DBSPI32Literal(1, true));
+        this.testQuery(query, new DBSPZSetExpression(t, t));
+    }
+
+    @Test
     public void overSumTest() {
-        String query = "SELECT T.COL1, SUM(T.COL2) OVER (ORDER BY T.COL1 RANGE UNBOUNDED PRECEDING) FROM T";
-        DBSPExpression t = new DBSPTupleExpression(new DBSPI32Literal(10), new DBSPDoubleLiteral(13.0));
+        String query = "SELECT T.COL1, SUM(T.COL2) OVER (ORDER BY T.COL1 RANGE UNBOUNDED PRECEDING), " +
+                "SUM(T.COL5) OVER (ORDER BY T.COL1 RANGE UNBOUNDED PRECEDING) FROM T";
+        DBSPExpression t = new DBSPTupleExpression(new DBSPI32Literal(10),
+                new DBSPDoubleLiteral(13.0),
+                new DBSPI32Literal(1, true));
+        this.testQuery(query, new DBSPZSetExpression(t, t));
+    }
+
+    @Test
+    public void overSumUnsignedTest() {
+        String query = "SELECT SUM(T.COL7) OVER (ORDER BY T.COL1 RANGE UNBOUNDED PRECEDING) FROM T";
+        DBSPExpression t = new DBSPTupleExpression(new DBSPU32Literal(5L, true));
         this.testQuery(query, new DBSPZSetExpression(t, t));
     }
 
     @Test
     public void overAvgTest() {
-        String query = "SELECT T.COL1, AVG(T.COL6) OVER (ORDER BY T.COL1 RANGE UNBOUNDED PRECEDING) FROM T";
+        String query = "SELECT T.COL1, AVG(T.COL6) OVER (ORDER BY T.COL1 RANGE UNBOUNDED PRECEDING)," +
+                "AVG(T.COL7) OVER (ORDER BY T.COL1 RANGE UNBOUNDED PRECEDING) FROM T";
         DBSPExpression t = new DBSPTupleExpression(
-                new DBSPI32Literal(10), new DBSPDecimalLiteral(0, true));
+                new DBSPI32Literal(10),
+                new DBSPDecimalLiteral(0, true),
+                new DBSPU32Literal(5L, true));
         this.testQuery(query, new DBSPZSetExpression(t, t));
     }
 
@@ -821,7 +841,7 @@ public class EndToEndTests extends BaseSQLTests {
                         new DBSPTupleExpression(
                                 new DBSPI32Literal(10, true),
                                 new DBSPDoubleLiteral(13.0, true),
-                                new DBSPU32Literal(10L, true))),
+                                new DBSPU32Literal(5L, true))),
                 new DBSPZSetExpression(
                         new DBSPTupleExpression(
                                 DBSPLiteral.none(DBSPTypeInteger.getType(CalciteObject.EMPTY, DBSPTypeCode.INT32, true)),

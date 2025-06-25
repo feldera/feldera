@@ -247,6 +247,7 @@ macro_rules! for_all_int_aggregate {
         some_aggregate!($base_name, $func_name, i16, i16);
         some_aggregate!($base_name, $func_name, i32, i32);
         some_aggregate!($base_name, $func_name, i64, i64);
+        some_aggregate!($base_name, $func_name, i128, i128);
     };
 }
 
@@ -256,6 +257,7 @@ macro_rules! for_all_int_aggregate_non_null {
         some_aggregate_non_null!($base_name, $func_name, i16, i16);
         some_aggregate_non_null!($base_name, $func_name, i32, i32);
         some_aggregate_non_null!($base_name, $func_name, i64, i64);
+        some_aggregate_non_null!($base_name, $func_name, i128, i128);
     };
 }
 

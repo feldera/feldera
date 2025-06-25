@@ -891,10 +891,12 @@ cast_to_fps!(i8, i8);
 cast_to_fps!(i16, i16);
 cast_to_fps!(i32, i32);
 cast_to_fps!(i64, i64);
+cast_to_fps!(i128, i128);
 cast_to_fps!(u8, u8);
 cast_to_fps!(u16, u16);
 cast_to_fps!(u32, u32);
 cast_to_fps!(u64, u64);
+cast_to_fps!(u128, u128);
 cast_to_fps!(u, usize);
 
 /////////// Cast to float
