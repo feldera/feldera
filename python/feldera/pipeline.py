@@ -3,6 +3,8 @@ import time
 from datetime import datetime
 
 import pandas
+import warnings
+import pyarrow
 
 from typing import List, Dict, Callable, Optional, Generator, Mapping, Any
 from collections import deque
@@ -204,7 +206,7 @@ class Pipeline:
 
         self.client.resume_connector(self.name, table_name, connector_name)
 
-    def listen(self, view_name: str) -> OutputHandler:
+    def listen(self, view_name: str, case_sensitive: bool = False) -> OutputHandler:
         """
         Follow the change stream (i.e., the output) of the provided view.
         Returns an output handler to read the changes.
@@ -215,6 +217,7 @@ class Pipeline:
         If this method is called once the pipeline has started, you will only get the output from that point onwards.
 
         :param view_name: The name of the view to listen to.
+        :param case_sensitive: True if the view name is case sensitive.
         """
 
         queue: Optional[Queue] = None
@@ -223,13 +226,18 @@ class Pipeline:
             queue = Queue(maxsize=1)
             self.views_tx.append({view_name: queue})
 
-        handler = OutputHandler(self.client, self.name, view_name, queue)
+        handler = OutputHandler(
+            self.client, self.name, view_name, queue, case_sensitive
+        )
         handler.start()
 
         return handler
 
     def foreach_chunk(
-        self, view_name: str, callback: Callable[[pandas.DataFrame, int], None]
+        self,
+        view_name: str,
+        callback: Callable[[pandas.DataFrame, int], None],
+        case_sensitive: bool = False,
     ):
         """
         Run the given callback on each chunk of the output of the specified view.
@@ -243,6 +251,8 @@ class Pipeline:
                 - **chunk**  -> The chunk as a pandas DataFrame
                 - **seq_no** -> The sequence number. The sequence number is a monotonically increasing integer that
                   starts from 0. Note that the sequence number is unique for each chunk, but not necessarily contiguous.
+
+        :param case_sensitive: True if the view name is case sensitive.
 
         Please note that the callback is run in a separate thread, so it should be thread-safe.
         Please note that the callback should not block for a long time, as by default, backpressure is enabled and
@@ -259,7 +269,9 @@ class Pipeline:
             queue = Queue(maxsize=1)
             self.views_tx.append({view_name: queue})
 
-        handler = CallbackRunner(self.client, self.name, view_name, callback, queue)
+        handler = CallbackRunner(
+            self.client, self.name, view_name, callback, queue, case_sensitive
+        )
         handler.start()
 
     def wait_for_completion(
@@ -692,8 +704,49 @@ resume a paused pipeline."""
         :raises FelderaAPIError: If querying a non materialized table or view.
         :raises FelderaAPIError: If the query is invalid.
         """
+        warnings.warn(
+            "function query is deprecated and will be removed in a future version",
+            category=DeprecationWarning,
+            stacklevel=2,
+        )
 
         return self.client.query_as_json(self.name, query)
+
+    def query_pyarrow(self, query: str) -> pyarrow.Table:
+        """
+        Executes an ad-hoc SQL query on this pipeline and returns a
+        :class:`.pyarrow.Table` containing all the results.
+
+        Note:
+            You can only ``SELECT`` from materialized tables and views.
+
+        :param query: The SQL query to be executed.
+        :param path: The path of the parquet file.
+
+        :raises FelderaAPIError: If the pipeline is not in a RUNNING or PAUSED state.
+        :raises FelderaAPIError: If querying a non materialized table or view.
+        :raises FelderaAPIError: If the query is invalid.
+        """
+
+        return self.client.query_as_pyarrow(self.name, query)
+
+    def query_pylist(self, query: str) -> List[Mapping[str, Any]]:
+        """
+        Executes an ad-hoc SQL query on this pipeline and returns a python
+        dictionary containing all the results.
+
+        Note:
+            You can only ``SELECT`` from materialized tables and views.
+
+        :param query: The SQL query to be executed.
+        :param path: The path of the parquet file.
+
+        :raises FelderaAPIError: If the pipeline is not in a RUNNING or PAUSED state.
+        :raises FelderaAPIError: If querying a non materialized table or view.
+        :raises FelderaAPIError: If the query is invalid.
+        """
+
+        return self.query_pyarrow(self.name, query).to_pylist()
 
     def query_parquet(self, query: str, path: str):
         """

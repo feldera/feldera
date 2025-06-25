@@ -1224,6 +1224,30 @@ CREATE MATERIALIZED VIEW v AS SELECT * FROM map_tbl;
 
         assert pipeline.errors()[0]["sql_compilation"]["exit_code"] != 0
 
+    def test_listen_case_sensitive(self):
+        sql = """
+        create table t0 (c0 int, c1 varchar);
+
+        create view v0 as select c0 from t0;
+        create view "V0" as select c1 from t0;
+        """
+
+        p = PipelineBuilder(TEST_CLIENT, "case-sensitive", sql).create_or_replace()
+
+        v0 = p.listen("v0")
+        v = p.listen("V0", case_sensitive=True)
+
+        p.start()
+
+        p.input_json("t0", {"c0": 1, "c1": "one"})
+
+        p.wait_for_completion(True)
+
+        assert [{"c0": 1, "insert_delete": 1}] == v0.to_dict()
+        assert [{"c1": "one", "insert_delete": 1}] == v.to_dict()
+
+        p.delete()
+
 
 if __name__ == "__main__":
     unittest.main()

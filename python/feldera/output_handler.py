@@ -13,6 +13,7 @@ class OutputHandler:
         pipeline_name: str,
         view_name: str,
         queue: Optional[Queue],
+        case_sensitive: bool,
     ):
         """
         Initializes the output handler, but doesn't start it.
@@ -32,7 +33,12 @@ class OutputHandler:
 
         # sets up the callback runner
         self.handler = CallbackRunner(
-            self.client, self.pipeline_name, self.view_name, callback, queue
+            self.client,
+            self.pipeline_name,
+            self.view_name,
+            callback,
+            queue,
+            case_sensitive,
         )
 
     def start(self):
