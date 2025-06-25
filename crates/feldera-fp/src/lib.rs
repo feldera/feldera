@@ -74,7 +74,7 @@ impl<const P: usize, const S: usize> Display for Fixed<P, S> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut buf = SmallVec::<[u8; 64]>::new();
         write!(&mut buf, "{:01$}", self.0.abs(), S + 1).unwrap();
-        debug_assert!(buf.len() >= S + 1);
+        debug_assert!(buf.len() > S);
         let decimals = if let Some(precision) = f.precision() {
             match precision.cmp(&S) {
                 Ordering::Less => {
@@ -452,9 +452,9 @@ impl<const P: usize, const S: usize> TryFrom<f64> for Fixed<P, S> {
     /// Convert `value` to `Fixed`, rounding toward zero, reporting an error if
     /// `value` is out of range.
     fn try_from(value: f64) -> Result<Self, Self::Error> {
-        Ok(cast(value * Self::scale() as f64)
+        cast(value * Self::scale() as f64)
             .and_then(Self::try_new)
-            .ok_or(OutOfRange)?)
+            .ok_or(OutOfRange)
     }
 }
 
