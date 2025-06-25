@@ -22,12 +22,12 @@
   const availableActions = [
     'start' as const,
     'pause' as const,
-    'suspend' as const,
-    'shutdown' as const,
+    'stop' as const,
+    'kill' as const,
     'delete' as const
   ]
   let isPremium = usePremiumFeatures()
-  let suspend = isPremium.value ? ['suspend' as const] : []
+  let stop = isPremium.value ? ['stop' as const] : []
   let statusActions = (status: PipelineStatus) =>
     match(status)
       .returnType<(typeof availableActions)[number][]>()
@@ -37,22 +37,20 @@
         { SqlCompiled: P.any },
         { CompilingRust: P.any },
         (cause) => [
-          ...(Object.values(cause)[0].cause === 'upgrade' ? ['shutdown' as const] : []),
+          ...(Object.values(cause)[0].cause === 'upgrade' ? ['kill' as const] : []),
           'delete'
         ]
       )
-      .with('Shutdown', () => ['start', 'delete'])
-      .with('Preparing', 'Provisioning', 'Initializing', () => ['shutdown', 'delete'])
-      .with('Running', () => [...suspend, 'shutdown', 'pause'])
-      .with('Pausing', () => [...suspend, 'shutdown', 'delete'])
-      .with('Paused', () => [...suspend, 'shutdown', 'start'])
-      .with('Suspending', () => ['shutdown', 'delete'])
-      .with('Suspended', () => ['shutdown', 'start'])
-      .with('Resuming', () => [...suspend, 'shutdown', 'delete'])
-      .with('ShuttingDown', () => ['shutdown'])
-      .with('Unavailable', () => [...suspend, 'shutdown', 'delete'])
+      .with('Stopped', () => ['start', 'delete'])
+      .with('Preparing', 'Provisioning', 'Initializing', () => ['kill', 'delete'])
+      .with('Running', () => [...stop, 'kill', 'pause'])
+      .with('Pausing', () => [...stop, 'kill', 'delete'])
+      .with('Paused', () => [...stop, 'kill', 'start'])
+      .with('Suspending', () => ['kill', 'delete'])
+      .with('Resuming', () => [...stop, 'kill', 'delete'])
+      .with('Stopping', () => ['kill'])
+      .with('Unavailable', () => [...stop, 'kill', 'delete'])
       .with('SqlError', 'RustError', 'SystemError', () => ['delete'])
-      .with({ PipelineError: P.any }, () => ['shutdown', 'delete'])
       .exhaustive()
   let selected = $derived(
     join(
@@ -82,8 +80,8 @@
         match(action)
           .with('start', () => btnStart)
           .with('pause', () => btnPause)
-          .with('suspend', () => btnSuspend)
-          .with('shutdown', () => btnShutdown)
+          .with('stop', () => btnStop)
+          .with('kill', () => btnKill)
           .with('delete', () => btnDelete)
           .exhaustive()
       )
@@ -99,7 +97,7 @@
     selected.forEach(async (pipeline) => {
       if (!isPipelineCodeEditable(pipeline.status)) {
         await api
-          .postPipelineAction(pipeline.name, 'shutdown')
+          .postPipelineAction(pipeline.name, isPremium.value ? 'stop' : 'kill')
           .then((waitFor) => waitFor().catch(toastError))
       }
       return api.deletePipeline(pipeline.name)
@@ -121,16 +119,16 @@
     Pause
   </button>
 {/snippet}
-{#snippet btnSuspend()}
-  <button class="btn preset-tonal-surface" onclick={() => (globalDialog.dialog = suspendDialog)}>
+{#snippet btnStop()}
+  <button class="btn preset-tonal-surface" onclick={() => (globalDialog.dialog = stopDialog)}>
     <span class="fd fd-circle-stop text-[20px]"></span>
-    Suspend
+    Stop
   </button>
 {/snippet}
-{#snippet btnShutdown()}
-  <button class="btn preset-tonal-surface" onclick={() => (globalDialog.dialog = shutdownDialog)}>
+{#snippet btnKill()}
+  <button class="btn preset-tonal-surface" onclick={() => (globalDialog.dialog = killDialog)}>
     <span class="fd fd-square-power text-[20px]"></span>
-    Shutdown
+    Force stop
   </button>
 {/snippet}
 {#snippet btnDelete()}
@@ -158,7 +156,7 @@
   ></DeleteDialog>
 {/snippet}
 
-{#snippet suspendDialog()}
+{#snippet stopDialog()}
   <DeleteDialog
     {...deleteDialogProps(
       'Suspend',
@@ -167,17 +165,17 @@
           ? '1 pipeline'
           : selectedPipelines.length.toFixed() + ' pipelines',
       () => {
-        return postPipelinesAction('suspend')
+        return postPipelinesAction('stop')
       },
       selectedPipelines.length === 1
-        ? "The pipeline's state will be preserved in persistent storage. Pipeline's compute resources will be released until it is resumed."
-        : "These pipelines' states will be preserved in persistent storage. Each pipeline's compute resources will be released until it is resumed."
+        ? "The pipeline will stop prosessing inputs and make a checkpoint of the state (Enterprise only)."
+        : "These pipelines will stop prosessing inputs and make checkpoints of their states (Enterprise only)."
     )()}
     onClose={() => (globalDialog.dialog = null)}
   ></DeleteDialog>
 {/snippet}
 
-{#snippet shutdownDialog()}
+{#snippet killDialog()}
   <DeleteDialog
     {...deleteDialogProps(
       'Shutdown',
@@ -186,11 +184,11 @@
           ? '1 pipeline'
           : selectedPipelines.length.toFixed() + ' pipelines',
       () => {
-        return postPipelinesAction('shutdown')
+        return postPipelinesAction('kill')
       },
       selectedPipelines.length === 1
-        ? 'The internal state of the pipeline will be reset.'
-        : 'The internal state of these pipelines will be reset.'
+        ? 'The pipeline will stop prosessing inputs without making a checkpoint, leaving only a previous one, if any.'
+        : 'These pipelines will stop prosessing inputs without making checkpoints, leaving only previous ones, if any.'
     )()}
     onClose={() => (globalDialog.dialog = null)}
   ></DeleteDialog>

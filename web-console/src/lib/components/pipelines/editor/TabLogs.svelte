@@ -82,12 +82,9 @@
         'SqlError',
         'RustError',
         'SystemError',
-        'Shutdown',
-        'ShuttingDown',
-        'Suspended',
-        () => false
-      )
-      .with(
+        'Stopped',
+        'Stopping',
+        // =============
         'Provisioning',
         'Initializing',
         'Running',
@@ -95,7 +92,6 @@
         'Paused',
         'Suspending',
         'Resuming',
-        'PipelineError',
         'Unavailable',
         () => true
       )

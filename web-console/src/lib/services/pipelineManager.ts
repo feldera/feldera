@@ -7,7 +7,10 @@ import {
   deletePipeline as _deletePipeline,
   type PipelineStatus as _PipelineStatus,
   type ProgramStatus as _ProgramStatus,
-  postPipelineAction as _postPipelineAction,
+  postPipelineStart,
+  postPipelinePause,
+  postPipelineStop,
+  postPipelineUnbind,
   type ErrorResponse,
   postPipeline as _postPipeline,
   type PipelineInfo,
@@ -24,7 +27,8 @@ import {
   type Field,
   type SqlCompilerMessage,
   type PostPutPipeline,
-  type ProgramError
+  type ProgramError,
+  type PipelineDesiredStatus
 } from '$lib/services/manager'
 export type {
   // PipelineDescr,
@@ -73,64 +77,63 @@ const toCompilerOutput = (programError: ProgramError | null | undefined) => {
   }
 }
 
+const _postPipelineAction = ({
+  path
+}: {
+  path: { pipeline_name: string; action: 'start' | 'pause' | 'stop' | 'kill' | 'unbind' }
+}) =>
+  match(path.action)
+    .with('start', () => postPipelineStart({ path }))
+    .with('pause', () => postPipelinePause({ path }))
+    .with('stop', 'kill', (action) =>
+      postPipelineStop({ path, query: { force: action === 'kill' } })
+    )
+    .with('unbind', () => postPipelineUnbind({ path }))
+    .exhaustive()
+
 export type PipelineStatus = ReturnType<typeof consolidatePipelineStatus>['status']
 
 const consolidatePipelineStatus = (
   programStatus: ProgramStatus,
   pipelineStatus: _PipelineStatus,
-  desiredStatus: _PipelineStatus,
+  desiredStatus: PipelineDesiredStatus,
   pipelineError: ErrorResponse | null | undefined
 ) => {
   const status = match([pipelineStatus, desiredStatus, programStatus])
-    .with(['Shutdown', P.any, 'Pending'], () => ({
-      Queued: { cause: desiredStatus === 'Shutdown' ? ('compile' as const) : ('upgrade' as const) }
+    .with(['Stopped', P.any, 'Pending'], () => ({
+      Queued: { cause: desiredStatus === 'Stopped' ? ('compile' as const) : ('upgrade' as const) }
     }))
-    .with(['Shutdown', P.any, 'CompilingSql'], () => ({
+    .with(['Stopped', P.any, 'CompilingSql'], () => ({
       CompilingSql: {
-        cause: desiredStatus === 'Shutdown' ? ('compile' as const) : ('upgrade' as const)
+        cause: desiredStatus === 'Stopped' ? ('compile' as const) : ('upgrade' as const)
       }
     }))
-    .with(['Shutdown', P.any, 'SqlCompiled'], () => ({
+    .with(['Stopped', P.any, 'SqlCompiled'], () => ({
       SqlCompiled: {
-        cause: desiredStatus === 'Shutdown' ? ('compile' as const) : ('upgrade' as const)
+        cause: desiredStatus === 'Stopped' ? ('compile' as const) : ('upgrade' as const)
       }
     }))
-    .with(['Shutdown', P.any, 'CompilingRust'], () => ({
+    .with(['Stopped', P.any, 'CompilingRust'], () => ({
       CompilingRust: {
-        cause: desiredStatus === 'Shutdown' ? ('compile' as const) : ('upgrade' as const)
+        cause: desiredStatus === 'Stopped' ? ('compile' as const) : ('upgrade' as const)
       }
     }))
-    .with(['Shutdown', P.any, 'SqlError'], () => 'SqlError' as const)
-    .with(['Shutdown', P.any, 'RustError'], () => 'RustError' as const)
-    .with(['Shutdown', P.any, 'SystemError'], () => 'SystemError' as const)
-    .with(['Shutdown', 'Running', P._], () => 'Preparing' as const)
-    .with(['Shutdown', 'Paused', P._], () => 'Preparing' as const)
-    .with(['Shutdown', 'Shutdown', 'Success'], () => 'Shutdown' as const)
+    .with(['Stopped', P.any, 'SqlError'], () => 'SqlError' as const)
+    .with(['Stopped', P.any, 'RustError'], () => 'RustError' as const)
+    .with(['Stopped', P.any, 'SystemError'], () => 'SystemError' as const)
+    .with(['Stopped', 'Running', P._], () => 'Preparing' as const)
+    .with(['Stopped', 'Paused', P._], () => 'Preparing' as const)
+    .with(['Stopped', 'Stopped', 'Success'], () => 'Stopped' as const)
     .with(['Provisioning', P.any, P._], () => 'Provisioning' as const)
     .with(['Initializing', P.any, P._], () => 'Initializing' as const)
-    .with(['ShuttingDown', P.any, P._], () => 'ShuttingDown' as const)
+    .with(['Stopping', P.any, P._], () => 'Stopping' as const)
     .with(['Paused', 'Running', P._], () => 'Resuming' as const)
-    .with(['Paused', 'Shutdown', P._], () => 'ShuttingDown' as const)
-    .with(['Paused', 'Suspended', P._], () => 'Suspending' as const)
+    .with(['Paused', 'Stopped', P._], () => 'Stopping' as const)
     .with(['Paused', P.any, P._], () => 'Paused' as const)
     .with(['Running', 'Paused', P._], () => 'Pausing' as const)
-    .with(['Running', 'Shutdown', P._], () => 'ShuttingDown' as const)
-    .with(['Running', 'Suspended', P._], () => 'Suspending' as const)
-    .with(['SuspendingCircuit', P._, P._], () => 'Suspending' as const)
-    .with(['SuspendingCompute', P._, P._], () => 'Suspending' as const)
+    .with(['Running', 'Stopped', P._], () => 'Stopping' as const)
+    .with(['Suspending', P._, P._], () => 'Suspending' as const)
     .with(['Running', P.any, P._], () => 'Running' as const)
-    .with(['Suspended', 'Shutdown', P._], () => 'ShuttingDown' as const)
-    .with(['Suspended', 'Paused', P._], () => 'Provisioning' as const)
-    .with(['Suspended', 'Running', P._], () => 'Provisioning' as const)
-    .with(['Suspended', P.any, P._], () => 'Suspended' as const)
-    .with(
-      ['Failed', P.any, P._],
-      P.when(() => nonNull(pipelineError)),
-      () => {
-        invariant(pipelineError)
-        return { PipelineError: pipelineError }
-      }
-    )
     .with(['Unavailable', P.any, P.any], () => 'Unavailable' as const)
     .otherwise(() => {
       throw new Error(
@@ -155,10 +158,8 @@ export const programStatusOf = (status: PipelineStatus) =>
       'Running',
       'Paused',
       'Suspending',
-      'Suspended',
-      'ShuttingDown',
-      { PipelineError: P.any },
-      'Shutdown',
+      'Stopping',
+      'Stopped',
       () => 'Success' as const
     )
     .with({ Queued: P.any }, () => 'Pending' as const)
@@ -222,6 +223,7 @@ const toExtendedPipeline = ({
   runtimeConfig: pipeline.runtime_config,
   version: pipeline.version,
   refreshVersion: pipeline.refresh_version,
+  storageStatus: pipeline.storage_status,
   ...consolidatePipelineStatus(
     program_status,
     deployment_status,
@@ -360,7 +362,7 @@ export const deletePipeline = async (pipeline_name: string) => {
   await mapResponse(_deletePipeline({ path: { pipeline_name } }), (v) => v)
 }
 
-export type PipelineAction = 'start' | 'pause' | 'shutdown' | 'start_paused' | 'suspend'
+export type PipelineAction = 'start' | 'pause' | 'stop' | 'kill' | 'start_paused' | 'unbind'
 
 export const postPipelineAction = async (
   pipeline_name: string,
@@ -377,9 +379,10 @@ export const postPipelineAction = async (
       {
         start: 'Running',
         pause: 'Paused',
-        shutdown: 'Shutdown',
         start_paused: 'Paused',
-        suspend: 'Suspended'
+        stop: 'Stopped',
+        kill: 'Stopped',
+        unbind: 'Stopped'
       } satisfies Record<PipelineAction, PipelineStatus>
     )[action]
     const ignoreStatuses: NamesInUnion<PipelineStatus>[] = [
@@ -389,6 +392,10 @@ export const postPipelineAction = async (
       'CompilingRust',
       'SqlCompiled',
       'CompilingSql',
+      'Stopping',
+      'Pausing',
+      'Suspending',
+      'Resuming',
       'Queued'
     ]
     while (true) {

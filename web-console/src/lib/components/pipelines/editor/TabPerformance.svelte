@@ -70,7 +70,7 @@
     </div>
     {@render pipelineId()}
   </div>
-{:else if !global && pipeline.current.status === 'Suspended'}
+<!-- {:else if !global && pipeline.current.status === 'Suspended'}
   <div class="flex justify-between">
     <div>
       Pipeline is suspended for {formatElapsedTime(
@@ -79,7 +79,7 @@
       performance metrics cannot be retrieved.
     </div>
     {@render pipelineId()}
-  </div>
+  </div> -->
 {:else if !global}
   <div class="flex justify-between">
     <div>Pipeline is running, but has not reported usage telemetry yet</div>
