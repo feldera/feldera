@@ -1117,7 +1117,7 @@ mod tests {
                 root.step().unwrap();
             }
 
-            assert_eq!(&*data.borrow(), &(0..100).collect::<Vec<usize>>());
+            assert_eq!(&*data.borrow(), &(1..101).collect::<Vec<usize>>());
         })
         .expect("failed to start runtime");
 
