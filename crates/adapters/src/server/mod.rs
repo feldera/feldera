@@ -192,7 +192,7 @@ impl CheckpointState {
 struct ServerState {
     phase: Arc<RwLock<PipelinePhase>>,
     metadata: RwLock<String>,
-    controller: Mutex<Option<Controller>>,
+    controller: RwLock<Option<Controller>>,
     prometheus: RwLock<Option<PrometheusMetrics>>,
     checkpoint_state: Arc<Mutex<CheckpointState>>,
     sync_checkpoint_state: Arc<Mutex<CheckpointSyncState>>,
@@ -207,7 +207,7 @@ impl ServerState {
         Self {
             phase: Arc::new(RwLock::new(PipelinePhase::Initializing)),
             metadata: RwLock::new(String::new()),
-            controller: Mutex::new(None),
+            controller: RwLock::new(None),
             checkpoint_state: Arc::new(Mutex::new(CheckpointState::default())),
             sync_checkpoint_state: Arc::new(Mutex::new(CheckpointSyncState::default())),
             prometheus: RwLock::new(None),
@@ -487,7 +487,7 @@ fn error_handler(state: &Weak<ServerState>, error: Arc<ControllerError>) {
     if is_fatal_controller_error(&error) {
         // Prepare to handle poisoned locks in the following code.
 
-        if let Ok(mut controller) = state.controller.lock() {
+        if let Ok(mut controller) = state.controller.write() {
             if let Some(controller) = controller.take() {
                 if let Ok(mut phase) = state.phase.write() {
                     *phase = PipelinePhase::Failed(error);
@@ -625,7 +625,7 @@ fn do_bootstrap(
     *state.prometheus.write().unwrap() = Some(
         PrometheusMetrics::new(&controller).map_err(|e| ControllerError::prometheus_error(&e))?,
     );
-    *state.controller.lock().unwrap() = Some(controller);
+    *state.controller.write().unwrap() = Some(controller);
 
     info!("Pipeline initialization complete");
     *state.phase.write().unwrap() = PipelinePhase::InitializationComplete;
@@ -673,7 +673,7 @@ where
 
 #[get("/start")]
 async fn start(state: WebData<ServerState>) -> impl Responder {
-    match &*state.controller.lock().unwrap() {
+    match &*state.controller.read().unwrap() {
         Some(controller) => {
             controller.start();
             Ok(HttpResponse::Ok().json("The pipeline is running"))
@@ -684,7 +684,7 @@ async fn start(state: WebData<ServerState>) -> impl Responder {
 
 #[get("/pause")]
 async fn pause(state: WebData<ServerState>) -> impl Responder {
-    match &*state.controller.lock().unwrap() {
+    match &*state.controller.read().unwrap() {
         Some(controller) => {
             controller.pause();
             Ok(HttpResponse::Ok().json("Pipeline paused"))
@@ -698,7 +698,7 @@ async fn pause(state: WebData<ServerState>) -> impl Responder {
 /// The status is either `Paused`, `Running` or `Terminated`.
 #[get("/status")]
 async fn status(state: WebData<ServerState>) -> impl Responder {
-    match &*state.controller.lock().unwrap() {
+    match &*state.controller.read().unwrap() {
         Some(controller) => {
             let status = controller.status().global_metrics.get_state();
             Ok(HttpResponse::Ok().json(status))
@@ -710,7 +710,7 @@ async fn status(state: WebData<ServerState>) -> impl Responder {
 /// Retrieve whether a pipeline is suspendable or not.
 #[get("/suspendable")]
 async fn suspendable(state: WebData<ServerState>) -> impl Responder {
-    match &*state.controller.lock().unwrap() {
+    match &*state.controller.read().unwrap() {
         Some(controller) => {
             let suspend_error = controller.status().suspend_error.lock().unwrap().clone();
 
@@ -748,7 +748,7 @@ async fn query(
     stream: web::Payload,
 ) -> impl Responder {
     let session_ctxt = {
-        let controller = state.controller.lock().unwrap();
+        let controller = state.controller.read().unwrap();
         controller.as_ref().map(|c| c.session_context())
     };
 
@@ -766,7 +766,7 @@ async fn query(
 
 #[get("/stats")]
 async fn stats(state: WebData<ServerState>) -> impl Responder {
-    match &*state.controller.lock().unwrap() {
+    match &*state.controller.read().unwrap() {
         Some(controller) => {
             let Ok(mut json_value) = serde_json::to_value(controller.status()) else {
                 return Err(ControllerError::UnexpectedJsonStructure {
@@ -911,7 +911,7 @@ async fn metrics(
     state: WebData<ServerState>,
     query_params: web::Query<MetricsParameters>,
 ) -> impl Responder {
-    match &*state.controller.lock().unwrap() {
+    match &*state.controller.read().unwrap() {
         Some(controller) => match &query_params.format {
             MetricsFormat::Prometheus => {
                 match state
@@ -986,7 +986,7 @@ async fn heap_profile() -> impl Responder {
 #[get("/dump_profile")]
 async fn dump_profile(state: WebData<ServerState>) -> impl Responder {
     let (sender, receiver) = oneshot::channel();
-    match &*state.controller.lock().unwrap() {
+    match &*state.controller.read().unwrap() {
         None => return Err(missing_controller_error(&state)),
         Some(controller) => {
             controller.start_graph_profile(Box::new(move |profile| {
@@ -1007,7 +1007,7 @@ async fn dump_profile(state: WebData<ServerState>) -> impl Responder {
 /// Dump the low-level IR of the circuit.
 #[get("/lir")]
 async fn lir(state: WebData<ServerState>) -> impl Responder {
-    let lir = match &*state.controller.lock().unwrap() {
+    let lir = match &*state.controller.read().unwrap() {
         None => return Err(missing_controller_error(&state)),
         Some(controller) => controller.lir().clone(),
     };
@@ -1020,7 +1020,7 @@ async fn lir(state: WebData<ServerState>) -> impl Responder {
 
 #[post("/checkpoint/sync")]
 async fn checkpoint_sync(state: WebData<ServerState>) -> Result<impl Responder, PipelineError> {
-    let last_checkpoint = match &*state.controller.lock().unwrap() {
+    let last_checkpoint = match &*state.controller.read().unwrap() {
         None => return Err(missing_controller_error(&state)),
         Some(controller) => {
             let Some(last_checkpoint) = ({
@@ -1050,7 +1050,7 @@ async fn checkpoint_sync(state: WebData<ServerState>) -> Result<impl Responder, 
 /// `/checkpoint_status` to determine when the checkpoint completes.
 #[post("/checkpoint")]
 async fn checkpoint(state: WebData<ServerState>) -> impl Responder {
-    let seq = match &*state.controller.lock().unwrap() {
+    let seq = match &*state.controller.read().unwrap() {
         None => return Err(missing_controller_error(&state)),
         Some(controller) => {
             let state = state.checkpoint_state.clone();
@@ -1088,7 +1088,7 @@ async fn suspend(state: WebData<ServerState>) -> Result<impl Responder, Pipeline
         Ok(HttpResponse::Ok().json("Pipeline suspended"))
     }
 
-    let receiver = match &*state.controller.lock().unwrap() {
+    let receiver = match &*state.controller.read().unwrap() {
         Some(controller) => {
             let (sender, receiver) = oneshot::channel();
             let phase = state.phase.clone();
@@ -1124,7 +1124,7 @@ async fn suspend(state: WebData<ServerState>) -> Result<impl Responder, Pipeline
         result?;
     }
 
-    let Some(controller) = state.controller.lock().unwrap().take() else {
+    let Some(controller) = state.controller.write().unwrap().take() else {
         match missing_controller_error(&state) {
             PipelineError::Suspended => {
                 // Ensure idempotence.
@@ -1144,7 +1144,7 @@ async fn shutdown(state: WebData<ServerState>) -> impl Responder {
 }
 
 async fn do_shutdown(state: WebData<ServerState>) -> Result<impl Responder, PipelineError> {
-    let retval = if let Some(controller) = state.controller.lock().unwrap().take() {
+    let retval = if let Some(controller) = state.controller.write().unwrap().take() {
         controller.stop()?;
         Ok(HttpResponse::Ok().json("Pipeline terminated"))
     } else if let PipelinePhase::Initializing = &*state.phase.read().unwrap() {
@@ -1201,7 +1201,7 @@ async fn create_http_input_endpoint(
     };
 
     // Connect endpoint.
-    let _endpoint_id = match &*state.controller.lock().unwrap() {
+    let _endpoint_id = match &*state.controller.read().unwrap() {
         Some(controller) => {
             if controller.register_api_connection().is_err() {
                 return Err(PipelineError::ApiConnectionLimit);
@@ -1289,7 +1289,7 @@ async fn input_endpoint(
         .instrument(info_span!("http_input"))
         .await?;
 
-    match &*state.controller.lock().unwrap() {
+    match &*state.controller.read().unwrap() {
         None => Err(missing_controller_error(&state)),
         Some(controller) => {
             let token = controller.completion_token(endpoint.name())?.encode();
@@ -1409,7 +1409,7 @@ async fn output_endpoint(
     };
 
     // Connect endpoint.
-    let response = match &*state.controller.lock().unwrap() {
+    let response = match &*state.controller.read().unwrap() {
         Some(controller) => {
             if controller.register_api_connection().is_err() {
                 return Err(PipelineError::ApiConnectionLimit);
@@ -1444,7 +1444,7 @@ async fn output_endpoint(
                     // This code will be invoked from `drop`, which means that
                     // it can run as part of a panic handler, so we need to
                     // handle a poisoned lock without causing a nested panic.
-                    if let Ok(guard) = state.controller.lock() {
+                    if let Ok(guard) = state.controller.read() {
                         if let Some(controller) = guard.as_ref() {
                             controller.disconnect_output(&endpoint_id);
                             controller.unregister_api_connection();
@@ -1468,7 +1468,7 @@ async fn pause_input_endpoint(
 ) -> impl Responder {
     let endpoint_name = path.into_inner();
 
-    match &*state.controller.lock().unwrap() {
+    match &*state.controller.read().unwrap() {
         Some(controller) => controller.pause_input_endpoint(&endpoint_name)?,
         None => {
             return Err(missing_controller_error(&state));
@@ -1485,7 +1485,7 @@ async fn input_endpoint_status(
 ) -> impl Responder {
     let endpoint_name = path.into_inner();
 
-    match &*state.controller.lock().unwrap() {
+    match &*state.controller.read().unwrap() {
         Some(controller) => {
             let ep_stats = controller.input_endpoint_status(&endpoint_name)?;
             Ok(HttpResponse::Ok().json(ep_stats))
@@ -1501,7 +1501,7 @@ async fn output_endpoint_status(
 ) -> impl Responder {
     let endpoint_name = path.into_inner();
 
-    match &*state.controller.lock().unwrap() {
+    match &*state.controller.read().unwrap() {
         Some(controller) => {
             let ep_stats = controller.output_endpoint_status(&endpoint_name)?;
             Ok(HttpResponse::Ok().json(ep_stats))
@@ -1519,7 +1519,7 @@ async fn start_input_endpoint(
 ) -> impl Responder {
     let endpoint_name = path.into_inner();
 
-    match &*state.controller.lock().unwrap() {
+    match &*state.controller.read().unwrap() {
         Some(controller) => controller.start_input_endpoint(&endpoint_name)?,
         None => {
             return Err(missing_controller_error(&state));
@@ -1534,7 +1534,7 @@ async fn start_input_endpoint(
 async fn completion_token(state: WebData<ServerState>, path: web::Path<String>) -> impl Responder {
     let endpoint_name = path.into_inner();
 
-    match &*state.controller.lock().unwrap() {
+    match &*state.controller.read().unwrap() {
         Some(controller) => {
             let token = controller.completion_token(&endpoint_name)?.encode();
             let response = CompletionTokenResponse::new(token);
@@ -1550,7 +1550,7 @@ async fn completion_status(
     state: WebData<ServerState>,
     args: Query<CompletionStatusArgs>,
 ) -> impl Responder {
-    match &*state.controller.lock().unwrap() {
+    match &*state.controller.read().unwrap() {
         Some(controller) => {
             let token = CompletionToken::decode(&args.into_inner().token).map_err(|e| {
                 PipelineError::InvalidParam {
