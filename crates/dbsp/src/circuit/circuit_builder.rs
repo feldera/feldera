@@ -40,6 +40,7 @@ use crate::{
             QuaternaryOperator, SinkOperator, SourceOperator, StrictUnaryOperator, TernaryOperator,
             UnaryOperator,
         },
+        runtime::Consensus,
         schedule::{
             DynamicScheduler, Error as SchedulerError, Executor, IterativeExecutor, OnceExecutor,
             Scheduler,
@@ -48,7 +49,6 @@ use crate::{
     },
     circuit_cache_key,
     ir::LABEL_MIR_NODE_ID,
-    operator::communication::Exchange,
     time::{Timestamp, UnitTimestamp},
     Error as DbspError, Runtime,
 };
@@ -65,17 +65,15 @@ use std::{
     fmt::{self, Debug, Display, Write},
     future::Future,
     io::ErrorKind,
-    iter::repeat,
     marker::PhantomData,
     mem::transmute,
     ops::Deref,
     panic::Location,
     pin::Pin,
     rc::Rc,
-    sync::Arc,
     thread::panicking,
 };
-use tokio::{runtime::Runtime as TokioRuntime, sync::Notify, task::LocalSet};
+use tokio::{runtime::Runtime as TokioRuntime, task::LocalSet};
 use tracing::debug;
 use typedmap::{TypedMap, TypedMapKey};
 
@@ -3842,70 +3840,21 @@ where
         F: FnOnce(&mut ChildCircuit<Self>) -> Result<T, SchedulerError>,
         S: Scheduler + 'static,
     {
-        match Runtime::runtime() {
-            // In a multithreaded environment the fixedpoint check cannot be performed locally.
-            // The circuit must iterate until all peers have reached a fixed point.
-            Some(runtime) if runtime.num_workers() > 1 => {
-                self.subcircuit(true, |child| {
-                    let res = constructor(child)?;
-                    let child_clone = child.clone();
+        self.subcircuit(true, |child| {
+            let res = constructor(child)?;
+            let child_clone = child.clone();
 
-                    // Create an `Exchange` object that will be used to exchange the fixed point
-                    // status with peers.
-                    let worker_index = Runtime::worker_index();
-                    let exchange_id = runtime.sequence_next();
-                    let exchange = Exchange::with_runtime(&runtime, exchange_id);
+            let consensus = Consensus::new();
 
-                    let notify_sender = Arc::new(Notify::new());
-                    let notify_sender_clone = notify_sender.clone();
-                    let notify_receiver = Arc::new(Notify::new());
-                    let notify_receiver_clone = notify_receiver.clone();
-
-                    exchange.register_sender_callback(worker_index, move || {
-                        notify_sender_clone.notify_one()
-                    });
-
-                    exchange.register_receiver_callback(worker_index, move || {
-                        notify_receiver_clone.notify_one()
-                    });
-
-                    let termination_check = async move || {
-                        // Send local fixed point status to all peers.
-                        let local_fixedpoint = child_clone.inner().fixedpoint(0);
-                        while !exchange.try_send_all(worker_index, &mut repeat(local_fixedpoint)) {
-                            if Runtime::kill_in_progress() {
-                                return Err(SchedulerError::Killed);
-                            }
-                            notify_sender.notified().await;
-                        }
-                        // Receive the fixed point status of each peer, compute global fixedpoint
-                        // state as a logical and of all peer states.
-                        let mut global_fixedpoint = true;
-                        while !exchange.try_receive_all(worker_index, |fp| global_fixedpoint &= fp)
-                        {
-                            if Runtime::kill_in_progress() {
-                                return Err(SchedulerError::Killed);
-                            }
-                            // Sleep if other threads are still working.
-                            notify_receiver.notified().await;
-                        }
-                        Ok(global_fixedpoint)
-                    };
-                    let mut executor = <IterativeExecutor<_, S>>::new(termination_check);
-                    executor.prepare(child, None)?;
-                    Ok((res, executor))
-                })
-            }
-            _ => self.subcircuit(true, |child| {
-                let res = constructor(child)?;
-                let child_clone = child.clone();
-
-                let termination_check = async move || Ok(child_clone.inner().fixedpoint(0));
-                let mut executor = <IterativeExecutor<_, S>>::new(termination_check);
-                executor.prepare(child, None)?;
-                Ok((res, executor))
-            }),
-        }
+            let termination_check = async move || {
+                // Send local fixed point status to all peers.
+                let local_fixedpoint = child_clone.inner().fixedpoint(0);
+                consensus.check(local_fixedpoint).await
+            };
+            let mut executor = <IterativeExecutor<_, S>>::new(termination_check);
+            executor.prepare(child, None)?;
+            Ok((res, executor))
+        })
     }
 
     fn import_stream<I, O, Op>(&self, operator: Op, parent_stream: &Stream<P, I>) -> Stream<Self, O>
