@@ -127,8 +127,9 @@ class FelderaClient:
                     if sql_errors:
                         err_msg = f"Pipeline {name} failed to compile:\n"
                         for sql_error in sql_errors:
-                            err_msg += f"{sql_error['error_type']}\n{
-                                sql_error['message']}\n"
+                            err_msg += (
+                                f"{sql_error['error_type']}\n{sql_error['message']}\n"
+                            )
                             err_msg += f"Code snippet:\n{sql_error['snippet']}"
                         raise RuntimeError(err_msg)
 
@@ -241,8 +242,7 @@ class FelderaClient:
                 elapsed = time.monotonic() - start_time
                 if elapsed > timeout_s:
                     raise TimeoutError(
-                        f"Timed out waiting for pipeline {
-                            pipeline_name} to start"
+                        f"Timed out waiting for pipeline {pipeline_name} to start"
                     )
 
             resp = self.get_pipeline(pipeline_name)
@@ -293,8 +293,7 @@ Reason: The pipeline is in a FAILED state due to the following error:
                 elapsed = time.monotonic() - start_time
                 if elapsed > timeout_s:
                     raise TimeoutError(
-                        f"Timed out waiting for pipeline {
-                            pipeline_name} to pause"
+                        f"Timed out waiting for pipeline {pipeline_name} to pause"
                     )
 
             resp = self.get_pipeline(pipeline_name)
@@ -344,8 +343,9 @@ Reason: The pipeline is in a FAILED state due to the following error:
             time.sleep(0.1)
 
         raise FelderaTimeoutError(
-            f"timeout error: pipeline '{
-                pipeline_name}' did not shutdown in {timeout_s} seconds"
+            f"timeout error: pipeline '{pipeline_name}' did not shutdown in {
+                timeout_s
+            } seconds"
         )
 
     def suspend_pipeline(self, pipeline_name: str, timeout_s: Optional[float] = 300):
@@ -384,8 +384,9 @@ Reason: The pipeline is in a FAILED state due to the following error:
             time.sleep(0.1)
 
         raise FelderaTimeoutError(
-            f"timeout error: pipeline '{
-                pipeline_name}' did not suspend in {timeout_s} seconds"
+            f"timeout error: pipeline '{pipeline_name}' did not suspend in {
+                timeout_s
+            } seconds"
         )
 
     def checkpoint_pipeline(self, pipeline_name: str) -> int:
@@ -726,8 +727,9 @@ Reason: The pipeline is in a FAILED state due to the following error:
         """
 
         self.http.post(
-            path=f"/pipelines/{pipeline_name}/tables/{
-                table_name}/connectors/{connector_name}/pause",
+            path=f"/pipelines/{pipeline_name}/tables/{table_name}/connectors/{
+                connector_name
+            }/pause",
         )
 
     def resume_connector(
@@ -751,8 +753,9 @@ Reason: The pipeline is in a FAILED state due to the following error:
         """
 
         self.http.post(
-            path=f"/pipelines/{pipeline_name}/tables/{
-                table_name}/connectors/{connector_name}/start",
+            path=f"/pipelines/{pipeline_name}/tables/{table_name}/connectors/{
+                connector_name
+            }/start",
         )
 
     def get_config(self) -> FelderaConfig:

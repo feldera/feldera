@@ -52,8 +52,7 @@ class CallbackRunner(Thread):
 
         if self.schema is None:
             raise ValueError(
-                f"Table or View {
-                    self.view_name} not found in the pipeline schema."
+                f"Table or View {self.view_name} not found in the pipeline schema."
             )
 
         # by default, we assume that the pipeline has been started
