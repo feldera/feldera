@@ -32,7 +32,7 @@
     </div>
     {#if disabled}
       <Tooltip class="bg-white text-surface-950-50 dark:bg-black" placement="top">
-        Stop the pipeline to edit configuration
+        Stop the pipeline and unbind storage to edit configuration
       </Tooltip>
     {/if}
   </div>

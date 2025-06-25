@@ -66,15 +66,24 @@ import type {
   GetPipelineMetricsData,
   GetPipelineMetricsError,
   GetPipelineMetricsResponse,
+  PostPipelinePauseData,
+  PostPipelinePauseError,
+  PostPipelinePauseResponse,
   GetProgramInfoData,
   GetProgramInfoError,
   GetProgramInfoResponse,
   PipelineAdhocSqlData,
   PipelineAdhocSqlError,
   PipelineAdhocSqlResponse,
+  PostPipelineStartData,
+  PostPipelineStartError,
+  PostPipelineStartResponse,
   GetPipelineStatsData,
   GetPipelineStatsError,
   GetPipelineStatsResponse,
+  PostPipelineStopData,
+  PostPipelineStopError,
+  PostPipelineStopResponse,
   CompletionTokenData,
   CompletionTokenError,
   CompletionTokenResponse2,
@@ -84,12 +93,12 @@ import type {
   PostPipelineInputConnectorActionData,
   PostPipelineInputConnectorActionError,
   PostPipelineInputConnectorActionResponse,
+  PostPipelineUnbindData,
+  PostPipelineUnbindError,
+  PostPipelineUnbindResponse,
   GetPipelineOutputConnectorStatusData,
   GetPipelineOutputConnectorStatusError,
-  GetPipelineOutputConnectorStatusResponse,
-  PostPipelineActionData,
-  PostPipelineActionError,
-  PostPipelineActionResponse
+  GetPipelineOutputConnectorStatusResponse
 } from './types.gen'
 
 /**
@@ -337,16 +346,18 @@ export const httpInput = (options: Options<HttpInputData>) => {
 }
 
 /**
- * Retrieve logs of a (non-shutdown) pipeline as a stream.
+ * Retrieve logs of a pipeline as a stream.
  * The logs stream catches up to the extent of the internally configured per-pipeline
  * circular logs buffer (limited to a certain byte size and number of lines, whichever
  * is reached first). After the catch-up, new lines are pushed whenever they become
  * available.
  *
- * The logs stream will end when the pipeline is shut down. It is also possible for the
- * logs stream to end prematurely due to the runner back-end (temporarily) losing
- * connectivity to the pipeline instance (e.g., process). In this case, it is needed
- * to issue again a new request to this endpoint.
+ * It is possible for the logs stream to end prematurely due to the API server temporarily losing
+ * connection to the runner. In this case, it is needed to issue again a new request to this
+ * endpoint.
+ *
+ * The logs stream will end when the pipeline is deleted, or if the runner restarts. Note that in
+ * both cases the logs will be cleared.
  */
 export const getPipelineLogs = (options: Options<GetPipelineLogsData>) => {
   return (options?.client ?? client).get<GetPipelineLogsResponse, GetPipelineLogsError>({
@@ -362,6 +373,24 @@ export const getPipelineMetrics = (options: Options<GetPipelineMetricsData>) => 
   return (options?.client ?? client).get<GetPipelineMetricsResponse, GetPipelineMetricsError>({
     ...options,
     url: '/v0/pipelines/{pipeline_name}/metrics'
+  })
+}
+
+/**
+ * Pause the pipeline asynchronously by updating the desired state.
+ * The endpoint returns immediately after setting the desired state to `Paused`.
+ * The procedure to get to the desired state is performed asynchronously.
+ * Progress should be monitored by polling the pipeline `GET` endpoints.
+ *
+ * Note the following:
+ * - A stopped pipeline can be started through calling either `/start` or `/pause`
+ * - Both starting as paused and pausing a pipeline is done by calling `/pause`
+ * - A pipeline which is in the process of suspending or stopping cannot be paused
+ */
+export const postPipelinePause = (options: Options<PostPipelinePauseData>) => {
+  return (options?.client ?? client).post<PostPipelinePauseResponse, PostPipelinePauseError>({
+    ...options,
+    url: '/v0/pipelines/{pipeline_name}/pause'
   })
 }
 
@@ -387,12 +416,62 @@ export const pipelineAdhocSql = (options: Options<PipelineAdhocSqlData>) => {
 }
 
 /**
+ * Start the pipeline asynchronously by updating the desired state.
+ * The endpoint returns immediately after setting the desired state to `Running`.
+ * The procedure to get to the desired state is performed asynchronously.
+ * Progress should be monitored by polling the pipeline `GET` endpoints.
+ *
+ * Note the following:
+ * - A stopped pipeline can be started through calling either `/start` or `/pause`
+ * - Both starting as running and resuming a pipeline is done by calling `/start`
+ * - A pipeline which is in the process of suspending or stopping cannot be started
+ */
+export const postPipelineStart = (options: Options<PostPipelineStartData>) => {
+  return (options?.client ?? client).post<PostPipelineStartResponse, PostPipelineStartError>({
+    ...options,
+    url: '/v0/pipelines/{pipeline_name}/start'
+  })
+}
+
+/**
  * Retrieve statistics (e.g., performance counters) of a running or paused pipeline.
  */
 export const getPipelineStats = (options: Options<GetPipelineStatsData>) => {
   return (options?.client ?? client).get<GetPipelineStatsResponse, GetPipelineStatsError>({
     ...options,
     url: '/v0/pipelines/{pipeline_name}/stats'
+  })
+}
+
+/**
+ * Stop the pipeline asynchronously by updating the desired state.
+ * There are two variants:
+ * - `/stop?force=false` (default): the pipeline will first atomically checkpoint before
+ * deprovisioning the compute resources. When resuming, the pipeline will start from this
+ * - `/stop?force=true`: the compute resources will be immediately deprovisioned. When resuming,
+ * it will pick up the latest checkpoint made by the periodic checkpointer or by a prior
+ * `/checkpoint` call.
+ *
+ * The endpoint returns immediately after setting the desired state to `Suspended` for
+ * `?force=false` or `Stopped` for `?force=true`. In the former case, once the pipeline has
+ * successfully passes the `Suspending` state, the desired state will become `Stopped` as well.
+ * The procedure to get to the desired state is performed asynchronously. Progress should be
+ * monitored by polling the pipeline `GET` endpoints.
+ *
+ * Note the following:
+ * - The suspending that is done with `/stop?force=false` is not guaranteed to succeed:
+ * - If an error is returned during the suspension, the pipeline will be forcefully stopped with
+ * that error set
+ * - Otherwise, it will keep trying to suspend, in which case it is possible to cancel suspending
+ * by calling `/stop?force=true`
+ * - `/stop?force=true` cannot be cancelled: the pipeline must first reach `Stopped` before another
+ * action can be done
+ * - A pipeline which is in the process of suspending or stopping can only be forcefully stopped
+ */
+export const postPipelineStop = (options: Options<PostPipelineStopData>) => {
+  return (options?.client ?? client).post<PostPipelineStopResponse, PostPipelineStopError>({
+    ...options,
+    url: '/v0/pipelines/{pipeline_name}/stop'
   })
 }
 
@@ -465,6 +544,22 @@ export const postPipelineInputConnectorAction = (
 }
 
 /**
+ * Unbind the pipeline storage asynchronously.
+ * IMPORTANT: Unbinding means disassociating the storage from the pipeline.
+ * Depending on the storage type this can include its deletion.
+ *
+ * It sets the storage state to `Unbinding`, after which the unbinding process is
+ * performed asynchronously. Progress should be monitored by polling the pipeline
+ * using the `GET` endpoints. An `/unbind` cannot be cancelled.
+ */
+export const postPipelineUnbind = (options: Options<PostPipelineUnbindData>) => {
+  return (options?.client ?? client).post<PostPipelineUnbindResponse, PostPipelineUnbindError>({
+    ...options,
+    url: '/v0/pipelines/{pipeline_name}/unbind'
+  })
+}
+
+/**
  * Retrieve the status of an output connector.
  */
 export const getPipelineOutputConnectorStatus = (
@@ -476,33 +571,5 @@ export const getPipelineOutputConnectorStatus = (
   >({
     ...options,
     url: '/v0/pipelines/{pipeline_name}/views/{view_name}/connectors/{connector_name}/stats'
-  })
-}
-
-/**
- * Sets the desired deployment state of a pipeline.
- * The desired state is set based on the `action` path parameter:
- * - `/start` sets desired state to `Running`
- * - `/pause` sets desired state to `Paused`
- * - `/suspend` sets desired state to `Suspended`
- * - `/shutdown` sets desired state to `Shutdown`
- *
- * The endpoint returns immediately after setting the desired state.
- * The relevant procedure to get to the desired state is performed asynchronously,
- * and, as such, progress should be monitored by polling the pipeline using the
- * `GET` endpoints.
- *
- * Note the following:
- * - A shutdown pipeline can be started through calling either `/start` or `/pause`
- * - Both starting as running and resuming a pipeline is done by calling `/start`
- * - Both starting as paused and pausing a pipeline is done by calling `/pause`
- * - `/shutdown` cannot be cancelled: the pipeline must reach `Shutdown` before another action
- * - `/suspend` can only be cancelled using `/shutdown`: otherwise, the pipeline must reach
- * `Suspended` first
- */
-export const postPipelineAction = (options: Options<PostPipelineActionData>) => {
-  return (options?.client ?? client).post<PostPipelineActionResponse, PostPipelineActionError>({
-    ...options,
-    url: '/v0/pipelines/{pipeline_name}/{action}'
   })
 }

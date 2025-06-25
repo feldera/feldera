@@ -31,7 +31,7 @@
   })
 
   const statusFilter = table.createFilter('status')
-  const filterStatuses: (PipelineStatusType | '')[] = ['', 'Running', 'Paused', 'Shutdown']
+  const filterStatuses: (PipelineStatusType | '')[] = ['', 'Running', 'Paused', 'Stopped']
 </script>
 
 <div
