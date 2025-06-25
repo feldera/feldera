@@ -105,7 +105,7 @@ pub use feldera_types::config::{
     ConnectorConfig, FormatConfig, InputEndpointConfig, OutputEndpointConfig, PipelineConfig,
     RuntimeConfig, TransportConfig,
 };
-use feldera_types::config::{FtConfig, FtModel, OutputBufferConfig};
+use feldera_types::config::{FileBackendConfig, FtConfig, FtModel, OutputBufferConfig};
 use feldera_types::constants::{STATE_FILE, STEPS_FILE};
 use feldera_types::format::json::{JsonFlavor, JsonParserConfig, JsonUpdateFormat};
 use feldera_types::program_schema::{canonical_identifier, SqlIdentifier};
@@ -1369,16 +1369,25 @@ impl CircuitThread {
             .map_err(|e| Arc::new(ControllerError::dbsp_error(e)))
     }
 
-    fn sync_checkpoint_inner(&mut self) -> Result<(), Arc<ControllerError>> {
-        use feldera_types::config::FileBackendConfig;
+    fn sync_checkpoint(&mut self) {
+        let Some(cb) = self.sync_checkpoint_request.take() else {
+            return;
+        };
 
-        let checkpoints = self.list_checkpoints()?;
+        let cpms = match self.list_checkpoints() {
+            Ok(x) => x,
+            Err(e) => {
+                cb(Err(e));
+                return;
+            }
+        };
 
         let Some((_, options)) = self.controller.status.pipeline_config.storage() else {
-            return Err(Arc::new(ControllerError::storage_error(
+            cb(Err(Arc::new(ControllerError::storage_error(
                 "cannot sync checkpoints when storage is disabled".to_owned(),
                 dbsp::storage::backend::StorageError::StorageDisabled,
-            )));
+            ))));
+            return;
         };
 
         let feldera_types::config::StorageBackendConfig::File(FileBackendConfig {
@@ -1386,60 +1395,52 @@ impl CircuitThread {
             ..
         }) = options.backend
         else {
-            return Err(Arc::new(ControllerError::storage_error(
+            cb(Err(Arc::new(ControllerError::storage_error(
                 "syncing checkpoint is only supported with file backend".to_owned(),
                 dbsp::storage::backend::StorageError::BackendNotSupported(Box::new(
                     options.backend.clone(),
                 )),
-            )));
+            ))));
+            return;
         };
 
         let Some(synchronizer) = inventory::iter::<&dyn CheckpointSynchronizer>
             .into_iter()
             .next()
         else {
-            return Err(Arc::new(ControllerError::checkpoint_push_error(
+            cb(Err(Arc::new(ControllerError::checkpoint_push_error(
                 "no checkpoint synchronizer found; are enterprise features enabled?".to_owned(),
-            )));
+            ))));
+            return;
         };
 
         let Some(ref storage) = self.storage else {
             tracing::error!("storage is set to None");
-            return Err(Arc::new(ControllerError::checkpoint_push_error(
+            cb(Err(Arc::new(ControllerError::checkpoint_push_error(
                 "cannot push checkpoints to object store: storage is set to None".to_owned(),
-            )));
-        };
-
-        let res: Vec<_> = checkpoints
-            .into_iter()
-            .map(|checkpoint| {
-                let config = sync.to_owned();
-                let storage = storage.clone();
-                std::thread::spawn(move || synchronizer.push(&checkpoint, storage, config))
-            })
-            .flat_map(|j| {
-                j.join()
-                    .expect("couldn't join checkpoint synchronizer thread")
-                    .err()
-            })
-            .map(|err| err.to_string())
-            .collect();
-
-        if !res.is_empty() {
-            return Err(Arc::new(ControllerError::checkpoint_push_error(
-                res.join("\n"),
-            )));
-        }
-
-        Ok(())
-    }
-
-    fn sync_checkpoint(&mut self) {
-        let Some(callback) = self.sync_checkpoint_request.take() else {
+            ))));
             return;
         };
 
-        callback(self.sync_checkpoint_inner());
+        let storage = storage.to_owned();
+        let config = sync.to_owned();
+
+        std::thread::spawn(move || {
+            let mut errs = vec![];
+            for cpm in cpms {
+                if let Err(err) = synchronizer.push(&cpm, storage.clone(), config.clone()) {
+                    errs.push(err.to_string());
+                }
+            }
+
+            if !errs.is_empty() {
+                cb(Err(Arc::new(ControllerError::checkpoint_push_error(
+                    errs.join("\n"),
+                ))));
+            } else {
+                cb(Ok(()))
+            }
+        });
     }
 }
 
