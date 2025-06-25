@@ -47,7 +47,7 @@ use std::{
 };
 
 use crate::circuit::{
-    runtime::Runtime,
+    runtime::{Consensus, Runtime},
     schedule::{
         util::{circuit_graph, ownership_constraints},
         Error, Scheduler,
@@ -152,6 +152,8 @@ struct Inner {
 
     // Reset on each macrostep
     unflushed_operators: usize,
+
+    global_flush_consensus: Consensus,
 }
 
 impl Inner {
@@ -314,6 +316,7 @@ impl Inner {
             waiting: false,
             flush: false,
             unflushed_operators: nodes.len(),
+            global_flush_consensus: Consensus::new(),
         };
 
         // Setup scheduler callbacks.
@@ -400,7 +403,12 @@ impl Inner {
         C: Circuit,
     {
         self.flush = true;
-        while self.unflushed_operators > 0 {
+        // All workers must agree on whether they are ready to finish the step.
+        while !self
+            .global_flush_consensus
+            .check(self.unflushed_operators == 0)
+            .await?
+        {
             self.microstep(circuit).await?;
         }
 
