@@ -339,15 +339,15 @@ public class FieldUseMap {
 
         @Override
         public FieldInfo project(int depth) {
+            if (depth == 0) {
+                if (this.size() > 1 && this.anyUsed())
+                    return FieldInfo.create(this.type, true);
+                return this;
+            }
             List<FieldInfo> fields = new ArrayList<>(this.size());
             for (int i = 0; i < this.size(); i++) {
                 FieldInfo info = this.fields.get(i);
-                if (depth > 0)
-                    info = info.project(depth-1);
-                else {
-                    if (info.anyUsed())
-                        info = FieldInfo.create(info.type, true);
-                }
+                info = info.project(depth-1);
                 fields.add(info);
             }
             return new BitList(this.getTupleType(), fields);
@@ -377,7 +377,8 @@ public class FieldUseMap {
 
     @SuppressWarnings("BooleanMethodIsAlwaysInverted")
     public boolean hasUnusedFields(int depth) {
-        return this.fieldInfo.project(depth).anyUnused();
+        FieldInfo project = this.fieldInfo.project(depth);
+        return project.anyUnused();
     }
 
     public boolean hasUnusedFields() {
@@ -459,6 +460,8 @@ public class FieldUseMap {
     public FieldUseMap reduce(FieldUseMap with) {
         return new FieldUseMap(this.fieldInfo.reduce(with.fieldInfo));
     }
+
+    public FieldUseMap project(int depth) { return new FieldUseMap(this.fieldInfo.project(depth)); }
 
     public static FieldUseMap reduce(List<FieldUseMap> maps) {
         Utilities.enforce(!maps.isEmpty());

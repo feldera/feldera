@@ -16,9 +16,8 @@ import java.util.List;
 import java.util.Objects;
 
 public class TemporalFilterTests extends SqlIoTest {
-    @Override
-    public CompilerOptions testOptions(boolean incremental, boolean optimize) {
-        CompilerOptions options = super.testOptions(incremental, optimize);
+    public CompilerOptions testOptions() {
+        CompilerOptions options = super.testOptions();
         // Avoid all circuit transformations
         options.ioOptions.inputCircuit = true;
         options.ioOptions.raw = true;

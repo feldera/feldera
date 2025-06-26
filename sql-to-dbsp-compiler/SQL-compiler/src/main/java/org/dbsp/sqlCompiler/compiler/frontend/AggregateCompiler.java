@@ -339,7 +339,7 @@ public class AggregateCompiler implements ICompilerComponent {
             arguments = new DBSPExpression[5];
         }
         arguments[0] = accumulator.borrow(true);
-        arguments[1] = aggregatedValue.applyCloneIfNeeded();
+        arguments[1] = ExpressionCompiler.expandTupleCast(this.node, aggregatedValue, aggregatedValue.getType());
         arguments[2] = this.compiler.weightVar;
         arguments[3] = new DBSPBoolLiteral(distinct);
         arguments[4] = this.filterArgument >= 0 ? this.filterArgument() : new DBSPBoolLiteral(true);
@@ -384,15 +384,15 @@ public class AggregateCompiler implements ICompilerComponent {
         DBSPVariablePath accumulator = zeroType.var();
         DBSPExpression ge = new DBSPBinaryExpression(
                 node, DBSPTypeBool.create(false), compareOpcode,
-                tuple.fields[1].cast(this.node, currentType, false).applyCloneIfNeeded(),
+                ExpressionCompiler.expandTupleCast(this.node, tuple.fields[1], currentType),
                 accumulator.field(1).applyCloneIfNeeded());
         if (this.filterArgument >= 0) {
             ge = ExpressionCompiler.makeBinaryExpression(
                     node, ge.getType(), DBSPOpcode.AND, ge, Objects.requireNonNull(this.filterArgument()));
         }
         DBSPTupleExpression aggArgCast = new DBSPTupleExpression(
-                tuple.fields[0].cast(this.node, this.resultType, false).applyCloneIfNeeded(),
-                tuple.fields[1].cast(this.node, currentType, false).applyCloneIfNeeded());
+                ExpressionCompiler.expandTupleCast(this.node, tuple.fields[0], this.resultType),
+                ExpressionCompiler.expandTupleCast(this.node, tuple.fields[1], currentType));
         DBSPExpression increment = new DBSPIfExpression(node, ge, aggArgCast, accumulator.applyCloneIfNeeded());
         DBSPTypeUser semigroup = new DBSPTypeUser(this.node, SEMIGROUP, "UnimplementedSemigroup",
                 false, aggArgCast.getType());
@@ -457,7 +457,7 @@ public class AggregateCompiler implements ICompilerComponent {
             }
             default -> throw new UnimplementedException("Aggregate function not yet implemented", node);
         };
-        DBSPExpression aggregatedValue = this.getAggregatedValue();
+        DBSPExpression aggregatedValue = ExpressionCompiler.expandTuple(node, this.getAggregatedValue());
         DBSPVariablePath accumulator = this.nullableResultType.var();
         DBSPExpression increment = this.aggregateOperation(
                 node, call, this.nullableResultType, accumulator, aggregatedValue, this.filterArgument());

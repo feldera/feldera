@@ -11,9 +11,11 @@ import org.junit.Test;
 /** Tests with recursive queries and incremental compilation */
 public class IncrementalRecursiveTests extends BaseSQLTests {
     @Override
-    public DBSPCompiler testCompiler() {
-        CompilerOptions options = this.testOptions(true, true);
-        return new DBSPCompiler(options);
+    public CompilerOptions testOptions() {
+        CompilerOptions options = super.testOptions();
+        options.languageOptions.incrementalize = true;
+        options.languageOptions.optimizationLevel = 2;
+        return options;
     }
 
     @Test

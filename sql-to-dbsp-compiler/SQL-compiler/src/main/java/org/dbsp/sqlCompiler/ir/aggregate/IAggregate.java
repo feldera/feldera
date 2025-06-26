@@ -1,9 +1,12 @@
 package org.dbsp.sqlCompiler.ir.aggregate;
 
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+
+import java.util.List;
 
 /** Base class for aggregates */
 public abstract class IAggregate extends DBSPExpression implements IDBSPInnerNode {
@@ -21,6 +24,9 @@ public abstract class IAggregate extends DBSPExpression implements IDBSPInnerNod
     }
 
     public abstract boolean isLinear();
+
+    /** Return references to all paramters inside the aggregate that refer to the row */
+    public abstract List<DBSPParameter> getRowVariableReferences();
 
     /** True if these two aggregates are "compatible", i.e. they
      * can be implemented in a single operator.  For example, all linear

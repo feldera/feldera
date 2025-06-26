@@ -249,6 +249,7 @@ public class Utilities {
         return readFile(Paths.get(filename));
     }
 
+    @SuppressWarnings("unused")
     public static String readFileFromUrl(String url) throws IOException {
         URL path = new URL(url);
         return IOUtils.toString(path, StandardCharsets.UTF_8);
@@ -300,7 +301,7 @@ public class Utilities {
      * @param map  Map to look for.
      * @param key  Key the value is indexed with.
      */
-    @SuppressWarnings("unused")
+    @SuppressWarnings({"unused", "UnusedReturnValue"})
     public static <K, V> V removeExists(Map<K, V> map, K key) {
         V result = map.remove(key);
         if (result == null)
@@ -531,14 +532,6 @@ public class Utilities {
     }
 
     public static long getLongProperty(JsonNode node, String property) {
-        JsonNode prop = Utilities.getProperty(node, property);
-        return prop.asLong();
-    }
-
-    @Nullable
-    public static Long getOptionalLongProperty(JsonNode node, String property) {
-        if (!node.has(property))
-            return null;
         JsonNode prop = Utilities.getProperty(node, property);
         return prop.asLong();
     }

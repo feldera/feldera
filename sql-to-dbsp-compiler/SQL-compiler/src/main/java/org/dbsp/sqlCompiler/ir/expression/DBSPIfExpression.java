@@ -54,8 +54,9 @@ public final class DBSPIfExpression extends DBSPExpression {
         if (this.condition.getType().mayBeNull)
             throw new InternalCompilerError("Nullable condition in if expression", condition);
         if (this.negative != null && !this.positive.getType().sameType(this.negative.getType()))
-            throw new InternalCompilerError("Mismatched types in conditional expression " + this.positive +
-                    "/" + this.positive.getType() + " vs " + this.negative + "/" + this.negative.getType(), this);
+            throw new InternalCompilerError("Mismatched types in conditional expression\n" +
+                    this.positive.getType() + "/" + this.positive +
+                    "  vs\n" + this.negative.getType() + "/" + this.negative, this);
     }
 
     @Override

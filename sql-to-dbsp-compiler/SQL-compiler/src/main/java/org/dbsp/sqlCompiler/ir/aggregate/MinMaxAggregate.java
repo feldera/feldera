@@ -5,10 +5,15 @@ import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeUser;
+import org.dbsp.util.IIndentStream;
+import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
+
+import java.util.List;
 
 /** High-level representation of an aggregate that is a call to a Min or Max function.
  * This is lowered later into a more concrete implementation. */
@@ -52,6 +57,37 @@ public class MinMaxAggregate extends NonLinearAggregate {
     @Override
     public boolean compatible(IAggregate other, boolean appendOnlySources) {
         return appendOnlySources && other.is(MinMaxAggregate.class);
+    }
+
+    @Override
+    public IIndentStream toString(IIndentStream builder) {
+        builder.append("[").increase();
+        builder.append("zero=")
+                .append(this.zero)
+                .newline()
+                .append("increment=")
+                .append(this.increment);
+        if (this.postProcess != null) {
+            builder.newline()
+                    .append("postProcess=")
+                    .append(this.postProcess);
+        }
+        builder.newline()
+                .append("emptySetResult=")
+                .append(this.emptySetResult)
+                .newline()
+                .append("semigroup=")
+                .append(this.semigroup)
+                .newline()
+                .append("aggregatedValue=")
+                .append(this.aggregatedValue);
+        builder.newline().decrease().append("]");
+        return builder;
+    }
+
+    @Override
+    public List<DBSPParameter> getRowVariableReferences() {
+        return Linq.list(this.increment.parameters[1], this.aggregatedValue.parameters[0]);
     }
 
     @SuppressWarnings("unused")

@@ -10,6 +10,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.ICollectionType;
 import org.dbsp.util.Utilities;
 
+import javax.annotation.Nullable;
 import java.util.List;
 
 import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.ARRAY;
@@ -38,6 +39,12 @@ public class DBSPTypeArray extends DBSPTypeUser implements ICollectionType {
         if (this.mayBeNull)
             return this.none();
         return new DBSPArrayExpression(this, false);
+    }
+
+    @Nullable
+    @Override
+    public String asSqlString() {
+        return this.getElementType().asSqlString() + " " + "ARRAY";
     }
 
     @Override

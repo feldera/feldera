@@ -108,6 +108,8 @@ public final class DBSPRawTupleExpression extends DBSPBaseTupleExpression {
     public IIndentStream toString(IIndentStream builder) {
         if (this.fields == null)
             return builder.append("None");
+        if (this.getType().mayBeNull)
+            builder.append("Some");
         return builder.append("(")
                 .intercalateI(", ", this.fields)
                 .append(")");

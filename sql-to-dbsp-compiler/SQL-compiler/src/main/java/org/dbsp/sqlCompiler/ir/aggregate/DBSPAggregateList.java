@@ -8,6 +8,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.DBSPNode;
+import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.IDBSPDeclaration;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
@@ -41,8 +42,14 @@ public final class DBSPAggregateList extends DBSPNode
         this.aggregates = aggregates;
         this.isLinear = Linq.all(aggregates, IAggregate::isLinear);
         this.emptySetResult = new DBSPTupleExpression(node, Linq.map(aggregates, IAggregate::getEmptySetResult));
-        for (IAggregate b: this.aggregates)
+        for (IAggregate b: this.aggregates) {
             Utilities.enforce(b.isLinear() == this.isLinear);
+            List<DBSPParameter> params = b.getRowVariableReferences();
+            for (DBSPParameter p: params) {
+                Utilities.enforce(this.rowVar.getType().sameType(p.getType()));
+                Utilities.enforce(this.rowVar.variable.equals(p.name));
+            }
+        }
     }
 
     public boolean isLinear() {
@@ -86,7 +93,7 @@ public final class DBSPAggregateList extends DBSPNode
         NonLinearAggregate combined = NonLinearAggregate.combine(
                 this.getNode(), compiler, this.rowVar,
                 Linq.map(this.aggregates, a -> a.to(NonLinearAggregate.class)));
-        return combined.asFold(this.getType());
+        return combined.asFold();
     }
 
     public LinearAggregate asLinear(DBSPCompiler compiler) {

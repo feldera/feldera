@@ -21,11 +21,13 @@ public class TpcDsTest extends BaseSQLTests {
     @Test
     public void compileTpcds() throws IOException {
         String tpcds = TestUtil.readStringFromResourceFile("tpcds.sql");
-        CompilerOptions options = this.testOptions(true, true);
-        DBSPCompiler compiler = new DBSPCompiler(options);
+        CompilerOptions options = this.testOptions();
+        options.languageOptions.incrementalize = true;
+        options.languageOptions.optimizationLevel = 2;
         options.languageOptions.ignoreOrderBy = true;
         options.languageOptions.lenient = true;
         options.ioOptions.quiet = true;  // lots of warnings
+        DBSPCompiler compiler = new DBSPCompiler(options);
         compiler.submitStatementsForCompilation(tpcds);
         CompilerCircuit ccs = new CompilerCircuit(compiler);
         ccs.showErrors();

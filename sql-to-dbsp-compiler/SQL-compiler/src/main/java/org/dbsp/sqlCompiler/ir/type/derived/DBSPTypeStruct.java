@@ -164,6 +164,23 @@ public class DBSPTypeStruct extends DBSPType {
                 this.sanitizedName.equals(type.sanitizedName);
     }
 
+    @Nullable @Override
+    public String asSqlString() {
+        StringBuilder builder = new StringBuilder();
+        builder.append("ROW(");
+        boolean first = true;
+        for (var field: this.fields.values()) {
+            if (!first)
+                builder.append(", ");
+            first = false;
+            builder.append(field.getName())
+                    .append(" ")
+                    .append(field.getType().asSqlString());
+        }
+        builder.append(")");
+        return builder.toString();
+    }
+
     public DBSPTypeStruct rename(ProgramIdentifier newName) {
         return new DBSPTypeStruct(this.getNode(), newName, this.sanitizedName, this.fields.values(), this.mayBeNull);
     }

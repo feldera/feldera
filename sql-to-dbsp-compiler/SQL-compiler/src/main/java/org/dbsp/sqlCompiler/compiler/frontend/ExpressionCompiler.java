@@ -64,6 +64,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPFieldExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPIfExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPPathExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPStaticExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnaryExpression;
@@ -95,6 +96,7 @@ import org.dbsp.sqlCompiler.ir.path.DBSPPath;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.IsIntervalType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeFunction;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRef;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
@@ -184,6 +186,48 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
             throw new InternalCompilerError("Expected a reference type for row", inputRow.getNode());
     }
 
+    /** Expand casts to tuple types into component-wise casts */
+    public static DBSPExpression expandTupleCast(CalciteObject node, DBSPExpression source, DBSPType destinationType) {
+        if (destinationType.is(DBSPTypeBaseType.class)) {
+            return source.cast(node, destinationType, false).applyCloneIfNeeded();
+        } else switch (destinationType.code) {
+            case ARRAY, MAP: return source.cast(node, destinationType, false).applyCloneIfNeeded();
+            case TUPLE, RAW_TUPLE: {
+                Utilities.enforce(source.getType().code == destinationType.code);
+                DBSPTypeTupleBase tuple = destinationType.to(DBSPTypeTupleBase.class);
+                DBSPExpression[] fields = new DBSPExpression[tuple.size()];
+                DBSPExpression safeSource = source.unwrapIfNullable();
+                for (int i = 0; i < tuple.size(); i++) {
+                    fields[i] = expandTupleCast(node, safeSource.field(i).simplify(), tuple.getFieldType(i));
+                }
+                DBSPExpression convertedTuple;
+                if (destinationType.code == RAW_TUPLE) {
+                    convertedTuple = new DBSPRawTupleExpression(node, destinationType.to(DBSPTypeRawTuple.class), fields);
+                } else {
+                    convertedTuple = new DBSPTupleExpression(node, destinationType.to(DBSPTypeTuple.class), fields);
+                }
+                if (destinationType.mayBeNull) {
+                    if (!source.getType().mayBeNull) {
+                        return convertedTuple;
+                    } else {
+                        DBSPExpression condition = source.is_null();
+                        DBSPExpression positive = destinationType.none();
+                        return new DBSPIfExpression(node, condition, positive, convertedTuple);
+                    }
+                } else {
+                    // This will panic at runtime if the source tuple is null
+                    return convertedTuple;
+                }
+            }
+            default:
+                throw new InternalCompilerError("Unexpected type in cast " + destinationType);
+        }
+    }
+
+    public static DBSPExpression expandTuple(CalciteObject node, DBSPExpression source) {
+        return expandTupleCast(node, source, source.getType());
+    }
+
     public DBSPExpression inputIndex(CalciteObject node, int index) {
         if (this.inputRow == null)
             throw new InternalCompilerError("Row referenced without a row context", node);
@@ -205,6 +249,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
     public DBSPExpression visitInputRef(RexInputRef inputRef) {
         CalciteObject node = CalciteObject.create(this.context, inputRef);
         DBSPExpression result = this.inputIndex(node, inputRef.getIndex());
+        // It is strange that the following does not hold
         // DBSPType type = this.typeCompiler.convertType(inputRef.getType(), false);
         // Utilities.enforce(type.sameType(result.getType()));
         return result;

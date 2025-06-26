@@ -128,9 +128,19 @@ public abstract class DBSPExpression
 
     /** Unwrap an expression if the type is nullable */
     public DBSPExpression unwrapIfNullable() {
-        if (this.type.mayBeNull)
-            return this.unwrap();
-        return this;
+        if (!this.type.mayBeNull)
+            return this;
+        DBSPBaseTupleExpression tuple = this.as(DBSPBaseTupleExpression.class);
+        if (tuple != null && tuple.fields != null) {
+            // Convert to non-nullable tuple constructor
+            switch (tuple.getType().code) {
+                case RAW_TUPLE: return new DBSPRawTupleExpression(tuple.fields);
+                case TUPLE: return new DBSPTupleExpression(tuple.fields);
+                // Otherwise this compiles into an None.unwrap().
+                default: break;
+            }
+        }
+        return this.unwrap();
     }
 
     public DBSPExpressionStatement toStatement() {
@@ -175,7 +185,7 @@ public abstract class DBSPExpression
     public DBSPExpression is_null() {
         if (!this.getType().mayBeNull)
             return new DBSPBoolLiteral(false);
-        return new DBSPIsNullExpression(this.getNode(), this);
+        return new DBSPIsNullExpression(this.getNode(), this).simplify();
     }
 
     /** The exact same expression, using reference equality */
@@ -226,7 +236,8 @@ public abstract class DBSPExpression
     /** Insert a cast which may only change nullability */
     public DBSPExpression nullabilityCast(DBSPType to, boolean safe) {
         DBSPType sourceType = this.getType();
-        Utilities.enforce(sourceType.sameTypeIgnoringNullability(to));
+        Utilities.enforce(sourceType.sameTypeIgnoringNullability(to),
+                "Cast from " + sourceType + " to " + to + " is not a nullability cast.");
         return this.cast(this.getNode(), to, safe);
     }
 

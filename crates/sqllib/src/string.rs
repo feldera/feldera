@@ -7,7 +7,7 @@
 #![allow(non_snake_case)]
 use crate::{
     array::Array, some_function1, some_function2, some_function3, some_function4,
-    some_polymorphic_function1, some_polymorphic_function2, Variant,
+    some_polymorphic_function1, some_polymorphic_function2, string_interner::*, Variant,
 };
 
 use core::fmt::Error;
@@ -30,6 +30,7 @@ use std::{
 use arcstr::ArcStr;
 
 type StringRef = ArcStr;
+pub type InternedString = InternedStringId;
 
 /// An immutable reference counted string.
 #[derive(Clone, Default, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
@@ -755,3 +756,14 @@ pub fn md5_s(source: SqlString) -> SqlString {
 }
 
 some_polymorphic_function1!(md5, s, SqlString, SqlString);
+
+pub fn intern(s: Option<SqlString>) -> Option<InternedString> {
+    s.map(|s| intern_string(&s))
+}
+
+pub fn unintern(id: Option<InternedString>) -> Option<SqlString> {
+    match id {
+        None => None,
+        Some(id) => unintern_string(&id),
+    }
+}

@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.visitors;
 
+import org.apache.calcite.util.Pair;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitRewriter;
@@ -7,13 +8,15 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /** Collect running time for various visitors.
- * Note that running times are not cummulative - some visitors can invoke other visitors. */
+ * Note that running times are not cumulative - some visitors can invoke other visitors. */
 public class VisitorProfiles {
     record Profile(long time, int invocations) {
         Profile add(long time) {
@@ -22,11 +25,11 @@ public class VisitorProfiles {
     }
 
     final Map<String, Profile> profiles;
-    final Map<String, Long> running;
+    final List<Pair<String, Long>> running;
 
     public VisitorProfiles() {
         this.profiles = new HashMap<>();
-        this.running = new HashMap<>();
+        this.running = new ArrayList<>();
     }
 
     public void clear() {
@@ -48,13 +51,14 @@ public class VisitorProfiles {
 
     void start(String visitor) {
         Long now = System.currentTimeMillis();
-        this.running.put(visitor, now);
+        this.running.add(Pair.of(visitor, now));
     }
 
     void stop(String visitor) {
         long end = System.currentTimeMillis();
-        Long started = Utilities.getExists(this.running, visitor);
-        Utilities.removeExists(this.running, visitor);
+        var pair = Utilities.removeLast(this.running);
+        Utilities.enforce(pair.left.equals(visitor));
+        Long started = pair.right;
         Profile previous = this.profiles.getOrDefault(visitor, new Profile(0, 0));
         this.profiles.put(visitor, previous.add(end - started));
     }

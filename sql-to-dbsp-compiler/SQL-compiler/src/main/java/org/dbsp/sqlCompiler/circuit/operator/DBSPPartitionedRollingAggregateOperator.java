@@ -37,7 +37,7 @@ public final class DBSPPartitionedRollingAggregateOperator extends DBSPAggregate
             CalciteRelNode node,
             DBSPClosureExpression partitioningFunction,
             // Initially 'function' is null, and the 'aggregate' is not.
-            // After lowering 'aggregate' is not null, and 'function' has its expected shape
+            // After lowering, 'aggregate' is not null, and 'function' has its expected shape
             @Nullable DBSPAggregator function,
             @Nullable DBSPAggregateList aggregate,
             DBSPWindowBoundExpression lower,
@@ -60,7 +60,7 @@ public final class DBSPPartitionedRollingAggregateOperator extends DBSPAggregate
         if (this.mustReplace(force, function, newInputs, outputType)) {
             return new DBSPPartitionedRollingAggregateOperator(
                     this.getRelNode(), this.partitioningFunction,
-                    function != null ? function.to(DBSPAggregator.class) : null, this.aggregate,
+                    function != null ? function.to(DBSPAggregator.class) : null, this.aggregateList,
                     this.lower, this.upper, outputType.to(DBSPTypeIndexedZSet.class),
                     newInputs.get(0)).copyAnnotations(this);
             }
@@ -75,7 +75,7 @@ public final class DBSPPartitionedRollingAggregateOperator extends DBSPAggregate
         if (otherOperator == null)
             return false;
         return this.partitioningFunction.equivalent(otherOperator.partitioningFunction) &&
-                EquivalenceContext.equiv(this.aggregate, otherOperator.aggregate) &&
+                EquivalenceContext.equiv(this.aggregateList, otherOperator.aggregateList) &&
                 EquivalenceContext.equiv(this.function, otherOperator.function) &&
                 this.lower.equivalent(otherOperator.lower) &&
                 this.upper.equivalent(otherOperator.upper);
@@ -95,9 +95,9 @@ public final class DBSPPartitionedRollingAggregateOperator extends DBSPAggregate
         super.accept(visitor);
         visitor.property("partitioningFunction");
         this.partitioningFunction.accept(visitor);
-        if (this.aggregate != null) {
+        if (this.aggregateList != null) {
             visitor.property("aggregate");
-            this.aggregate.accept(visitor);
+            this.aggregateList.accept(visitor);
         }
         visitor.property("lower");
         this.lower.accept(visitor);
@@ -129,8 +129,8 @@ public final class DBSPPartitionedRollingAggregateOperator extends DBSPAggregate
         DBSPTypeRawTuple pfOut = this.partitioningFunction.getResultType().to(DBSPTypeRawTuple.class);
         args[0] = pfOut.tupFields[0];
         args[1] = this.lower.type;
-        if (this.aggregate != null) {
-            args[2] = this.aggregate.getType();
+        if (this.aggregateList != null) {
+            args[2] = this.aggregateList.getType();
         } else {
             DBSPExpression expr = this.getFunction();
             args[2] = expr.getType().to(DBSPTypeFunction.class).resultType;

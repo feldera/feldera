@@ -46,9 +46,10 @@ public final class DBSPMapOperator extends DBSPUnaryOperator {
         // type may be a ZSet or an IndexedZSet.
         super(node, "map", function, outputType, true, input);
         DBSPType elementType = this.getOutputZSetElementType();
-        if (function.is(DBSPClosureExpression.class))
+        if (function.is(DBSPClosureExpression.class)) {
             // Could also be a SortExpression
-            this.checkParameterCount(function,  1);
+            this.checkParameterCount(function, 1);
+        }
         this.checkResultType(function, elementType);
         checkArgumentFunctionType(function, input);
     }

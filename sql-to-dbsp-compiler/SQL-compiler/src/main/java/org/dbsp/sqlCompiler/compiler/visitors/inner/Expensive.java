@@ -2,6 +2,7 @@ package org.dbsp.sqlCompiler.compiler.visitors.inner;
 
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.intern.InternInner;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyMethodExpression;
@@ -29,8 +30,12 @@ public class Expensive extends InnerVisitor {
     @Override
     public VisitDecision preorder(DBSPApplyExpression expression) {
         String functionName = expression.getFunctionName();
-        if (functionName != null && functionName.startsWith("tumble_"))
+        if (functionName != null &&
+                (functionName.startsWith("tumble_") ||
+                functionName.equals(InternInner.internFunction) ||
+                functionName.equals(InternInner.uninternFunction))) {
             return VisitDecision.STOP;
+        }
         this.expensive = true;
         return VisitDecision.STOP;
     }

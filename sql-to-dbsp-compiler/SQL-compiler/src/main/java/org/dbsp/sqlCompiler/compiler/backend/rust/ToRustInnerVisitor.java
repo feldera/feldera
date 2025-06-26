@@ -364,7 +364,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
         }
          */
         this.push(expression);
-        this.builder.append("move |(k, array): (&(), &Array<");
+        this.builder.append("move |(k, array): (&Tup0<>, &Array<");
         expression.elementType.accept(this);
         this.builder.append(">)| -> Array<");
         expression.elementType.accept(this);

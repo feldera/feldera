@@ -131,8 +131,8 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
                     // FROM `schema`.`t` AS `t`
                     let s3 = s2;
                     // CREATE VIEW `error_view` AS
-                    // SELECT `error_table`.`table_or_view_name`, `error_table`.`message`, `error_table`.`metadata`
-                    // FROM `schema`.`error_table` AS `error_table`
+                    // SELECT `feldera_error_table`.`table_or_view_name`, `feldera_error_table`.`message`, `feldera_error_table`.`metadata`
+                    // FROM `schema`.`feldera_error_table` AS `feldera_error_table`
                     let s4 = s0;
                 }
                 """;

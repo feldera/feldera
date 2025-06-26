@@ -50,7 +50,7 @@ public final class DBSPLagOperator extends DBSPUnaryOperator {
             Utilities.enforce(comparator.to(DBSPComparatorExpression.class)
                     .comparedValueType()
                     .sameType(source.getOutputIndexedZSetType().elementType),
-                    "Comparator type " + comparator + " does not match element type for LAG " +
+                    "Comparator type " + comparator + "\ndoes not match element type for LAG\n" +
                     source.getOutputIndexedZSetType().elementType);
         }
         this.comparator = comparator;

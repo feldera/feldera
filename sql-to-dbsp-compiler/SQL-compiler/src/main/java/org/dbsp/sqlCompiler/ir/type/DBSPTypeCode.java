@@ -3,6 +3,7 @@ package org.dbsp.sqlCompiler.ir.type;
 import javax.annotation.Nullable;
 
 public enum DBSPTypeCode {
+    // Base types
     ANY("ANY", "_", "_"),
     BOOL("BOOL", "b", "bool"),
     BYTES("BINARY", "bytes", "ByteArray"),
@@ -24,6 +25,7 @@ public enum DBSPTypeCode {
     NULL("NULL", "null", "()"),
     STR(null, "str", "str"),
     STRING("VARCHAR", "s", "SqlString"),
+    INTERNED_STRING("VARCHAR INTERNED", "InternedString", "InternedString"),
     TIME("TIME", "Time", "Time"),
     TIMESTAMP("TIMESTAMP", "Timestamp", "Timestamp"),
     TIMESTAMP_TZ("TIMESTAMP WITH TIME ZONE", "", ""),
@@ -39,10 +41,10 @@ public enum DBSPTypeCode {
     // Derived types
     FUNCTION("FUNCTION", "", ""),
     INDEXED_ZSET(null, "", ""),
-    RAW_TUPLE("STRUCT", "", ""),
+    RAW_TUPLE("ROW", "", ""),
     REF(null, "", ""),
-    STRUCT("STRUCT", "", ""),
-    TUPLE("STRUCT", "", "Tup"),
+    STRUCT("ROW", "", ""),
+    TUPLE("ROW", "", "Tup"),
     // User-defined types
     COMPARATOR(null, "", ""),
     RESULT(null, "", "Result"),

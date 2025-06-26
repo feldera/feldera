@@ -33,6 +33,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeFunction;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeArray;
 import org.dbsp.util.IIndentStream;
 
@@ -61,7 +62,7 @@ public final class DBSPSortExpression extends DBSPExpression {
                 new DBSPTypeArray(elementType, false),
                 // Argument type
                 new DBSPTypeRawTuple(
-                        new DBSPTypeRawTuple().ref(),
+                        new DBSPTypeTuple().ref(),
                         new DBSPTypeArray(elementType, false).ref())));
         this.comparator = comparator;
         this.elementType = elementType;

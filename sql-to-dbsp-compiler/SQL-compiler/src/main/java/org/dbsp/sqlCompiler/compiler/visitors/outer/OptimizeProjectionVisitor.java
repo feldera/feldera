@@ -58,12 +58,9 @@ public class OptimizeProjectionVisitor extends CircuitCloneWithGraphsVisitor {
                 DBSPFlatmap sourceFunction = source.simpleNode().getFunction().as(DBSPFlatmap.class);
                 if (sourceFunction != null && projection.isShuffle()) {
                     DBSPTypeFunction previousFunctionType = sourceFunction.getType().to(DBSPTypeFunction.class);
-                    DBSPTypeFunction newFunctionType = new DBSPTypeFunction(
-                            operator.getOutputZSetElementType(), previousFunctionType.parameterTypes);
-
                     Shuffle shuffle = projection.getShuffle().after(sourceFunction.shuffle);
                     DBSPExpression newFunction = new DBSPFlatmap(
-                            operator.getRelNode(), newFunctionType, sourceFunction.inputElementType,
+                            operator.getRelNode(), sourceFunction.inputRowType,
                             sourceFunction.collectionExpression, sourceFunction.leftInputIndexes,
                             sourceFunction.rightProjections, sourceFunction.ordinalityIndexType, shuffle);
                     DBSPSimpleOperator result = source.simpleNode().withFunction(newFunction, operator.outputType);

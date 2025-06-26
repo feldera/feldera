@@ -269,13 +269,17 @@ public class Monotonicity extends CircuitVisitor {
         }
 
         if (node.hasLateness()) {
+            Utilities.enforce(node.metadata.columns.size() == tuple.size());
             // Trust the annotations, and forget what we know about the input.
             // This code parallels DBSPSourceMultisetOperator
             List<IMaybeMonotoneType> fields = new ArrayList<>();
+            int index = 0;
             for (ViewColumnMetadata metadata: node.metadata.columns) {
-                IMaybeMonotoneType columnType = NonMonotoneType.nonMonotone(metadata.getType());
+                DBSPType viewColType = tuple.getFieldType(index);
+                index++;
+                IMaybeMonotoneType columnType = NonMonotoneType.nonMonotone(viewColType);
                 if (metadata.lateness != null)
-                    columnType = new MonotoneType(metadata.getType());
+                    columnType = new MonotoneType(viewColType);
                 fields.add(columnType);
             }
             IMaybeMonotoneType projection = new PartiallyMonotoneTuple(fields, false, false);

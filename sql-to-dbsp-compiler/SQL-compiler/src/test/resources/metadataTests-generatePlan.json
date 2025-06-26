@@ -6,7 +6,7 @@
         "relOp": "LogicalTableScan",
         "table": [
           "schema",
-          "error_table"
+          "feldera_error_table"
         ],
         "inputs": []
       }

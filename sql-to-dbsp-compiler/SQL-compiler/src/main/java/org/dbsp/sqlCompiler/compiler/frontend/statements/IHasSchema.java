@@ -125,8 +125,9 @@ public interface IHasSchema extends IHasCalciteObject, ICastable {
             RelDataType type = RelJsonReader.readType(typeFactory, json);
             RelDataTypeField field = new RelDataTypeFieldImpl(name, index, type);
             // Do we need lateness, watermark, etc?
+            boolean interned = node.has("interned");
             return new RelColumnMetadata(CalciteObject.EMPTY, field, isPrimaryKey, caseSensitive,
-                    null, null, null, SourcePositionRange.INVALID);
+                    null, null, null, SourcePositionRange.INVALID, interned);
         } catch (IOException ex) {
             throw new RuntimeException(ex);
         }
@@ -172,6 +173,9 @@ public interface IHasSchema extends IHasCalciteObject, ICastable {
             }
             if (col.watermark != null) {
                 column.put("watermark", CalciteRelNode.toSqlString(col.watermark));
+            }
+            if (col.interned) {
+                column.put("interned", true);
             }
             column.put("unused", col.unused);
         }

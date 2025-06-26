@@ -205,6 +205,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMillisInterval;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMonthsInterval;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTime;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeUSize;
@@ -534,11 +535,14 @@ public class CalciteToDBSPCompiler extends RelVisitor
             shuffleSize += collectionElementType.to(DBSPTypeTupleBase.class).size();
         else
             shuffleSize += 1;
-        DBSPTypeFunction functionType = new DBSPTypeFunction(type, leftElementType.ref());
         DBSPFlatmap flatmap = new DBSPFlatmap(node,
-                functionType, leftElementType, arrayExpression,
+                leftElementType, arrayExpression,
                 Linq.range(0, leftElementType.size()),
                 rightProjections, indexType, new IdShuffle(shuffleSize));
+
+        DBSPTypeFunction functionType = new DBSPTypeFunction(type, leftElementType.ref());
+        Utilities.enforce(flatmap.getType().sameType(functionType),
+                "Expected type to be\n" + functionType + "\nbut it is\n" + flatmap.getType());
         DBSPFlatMapOperator flatMap = new DBSPFlatMapOperator(
                 new LastRel(correlate),
                 flatmap, TypeCompiler.makeZSet(type), left.outputPort());
@@ -710,7 +714,6 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPType arrayType = data.deref().field(0).getType();
         DBSPType collectionElementType = arrayType.to(ICollectionType.class).getElementType();
         DBSPClosureExpression getField0 = data.deref().field(0).closure(data);
-        DBSPTypeFunction functionType = new DBSPTypeFunction(type, inputRowType.ref());
 
         int shuffleSize = 0;
         if (indexType != null) {
@@ -725,8 +728,10 @@ public class CalciteToDBSPCompiler extends RelVisitor
             shuffleSize += 1;
         }
 
-        DBSPFlatmap function = new DBSPFlatmap(node, functionType, inputRowType, getField0,
+        DBSPFlatmap function = new DBSPFlatmap(node, inputRowType, getField0,
                 Linq.list(), null, indexType, new IdShuffle(shuffleSize));
+        DBSPTypeFunction functionType = new DBSPTypeFunction(type, inputRowType.ref());
+        Utilities.enforce(function.getType().sameType(functionType));
         DBSPFlatMapOperator flatMap = new DBSPFlatMapOperator(node.getFinal(), function,
                 TypeCompiler.makeZSet(type), opInput.outputPort());
         this.assignOperator(uncollect, flatMap);
@@ -972,7 +977,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
             DBSPExpression[] fields = new DBSPExpression[aggregate.getGroupCount()];
             int index = 0;
             for (int i: aggregate.getGroupSet()) {
-                fields[index++] = var.deref().field(i).applyCloneIfNeeded();
+                // This is not a noop when the field is a tuple.
+                fields[index++] = ExpressionCompiler.expandTuple(node, var.deref().field(i));
             }
             DBSPTupleExpression tup = new DBSPTupleExpression(fields);
             DBSPMapOperator map = new DBSPMapOperator(node.intermediate(), tup.closure(var), opInput.outputPort());
@@ -1075,11 +1081,13 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 throw new UnsupportedException("Optimizer should have removed OVER expressions",
                         CalciteObject.create(project, column));
             } else {
-                DBSPExpression exp = expressionCompiler.compile(column).applyCloneIfNeeded();
+                DBSPExpression exp = expressionCompiler.compile(column);
                 DBSPType expectedType = tuple.getFieldType(index);
                 if (!exp.getType().sameType(expectedType)) {
                     // Calcite's optimizations do not preserve types!
-                    exp = exp.cast(exp.getNode(), expectedType, false);
+                    exp = ExpressionCompiler.expandTupleCast(exp.getNode(), exp, expectedType);
+                } else {
+                    exp = exp.applyCloneIfNeeded();
                 }
                 resultColumns[index] = exp;
                 index++;
@@ -2169,7 +2177,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 DBSPExpression increment = new DBSPApplyExpression(
                         node, functionName, DBSPTypeVoid.INSTANCE,
                         accumulator.borrow(true),
-                        flatten ? row.deref().field(0) : row.deref().applyCloneIfNeeded(),
+                        ExpressionCompiler.expandTuple(
+                                node, flatten ? row.deref().field(0) : row.deref().applyCloneIfNeeded()),
                         this.compiler.weightVar,
                         new DBSPBoolLiteral(false),
                         new DBSPBoolLiteral(true));
@@ -2203,7 +2212,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 functionName = "map_agg" + mapType.nullableSuffix();
                 DBSPExpression increment = new DBSPApplyExpression(node, functionName, DBSPTypeVoid.INSTANCE,
                         accumulator.borrow(true),
-                        row.deref().applyCloneIfNeeded(),
+                        ExpressionCompiler.expandTuple(node, row.deref()),
                         this.compiler.weightVar);
                 DBSPTypeUser semigroup = new DBSPTypeUser(
                         node, SEMIGROUP, "ConcatSemigroup", false, accumulatorType);
@@ -3390,11 +3399,11 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPVariablePath t = inputRowType.ref().var();
         DBSPClosureExpression emptyGroupKeys =
                 new DBSPRawTupleExpression(
-                        new DBSPRawTupleExpression(),
+                        new DBSPTupleExpression(),
                         DBSPTupleExpression.flatten(t.deref())).closure(t);
         DBSPSimpleOperator index = new DBSPMapIndexOperator(
                 node, emptyGroupKeys,
-                makeIndexedZSet(new DBSPTypeRawTuple(), inputRowType),
+                makeIndexedZSet(new DBSPTypeTuple(), inputRowType),
                 opInput.outputPort());
         this.addOperator(index);
 
@@ -3456,15 +3465,17 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPVariablePath row = inputRowType.ref().var();
         // An element with weight 'w' is pushed 'w' times into the vector
         DBSPExpression wPush = new DBSPApplyExpression(node,
-                "weighted_push", DBSPTypeVoid.INSTANCE, accum, row, this.compiler.weightVar);
+                "weighted_push", DBSPTypeVoid.INSTANCE, accum,
+                new DBSPTupleExpression(DBSPTypeTuple.flatten(row.deref()), false).borrow(),
+                this.compiler.weightVar);
         DBSPClosureExpression push = wPush.closure(accum, row, this.compiler.weightVar);
         DBSPTypeUser semigroup = new DBSPTypeUser(node, USER, "UnimplementedSemigroup",
                 false, DBSPTypeAny.getDefault());
         DBSPVariablePath var = vecType.var();
         DBSPClosureExpression post = new DBSPApplyMethodExpression("into", arrayType, var).closure(var);
-        DBSPFold folder = new DBSPFold(node, arrayType, semigroup, zero, push, post);
+        DBSPFold folder = new DBSPFold(node, semigroup, zero, push, post);
         DBSPStreamAggregateOperator agg = new DBSPStreamAggregateOperator(node,
-                makeIndexedZSet(new DBSPTypeRawTuple(), arrayType),
+                makeIndexedZSet(new DBSPTypeTuple(), arrayType),
                 folder, null, index.outputPort());
         this.addOperator(agg);
 
@@ -3551,8 +3562,15 @@ public class CalciteToDBSPCompiler extends RelVisitor
                                 metadata.getName().singleQuote());
             defaultValue = defaultValue.cast(defaultValue.getNode(), type, false);
         }
+        if (metadata.interned) {
+            if (!type.is(DBSPTypeString.class))
+                this.compiler.reportWarning(metadata.node.getPositionRange(), "Illegal type interned",
+                        "INTERNED is only applicable to CHAR/VARCHAR types " +
+                                metadata.getName().singleQuote() +
+                        ", hint will be ignored");
+        }
         return new InputColumnMetadata(metadata.getNode(), metadata.getName(), type,
-                metadata.isPrimaryKey, lateness, watermark, defaultValue, metadata.defaultValuePosition);
+                metadata.isPrimaryKey, lateness, watermark, defaultValue, metadata.defaultValuePosition, metadata.interned);
     }
 
     // We track whether any of the inputs of the current view are append-only tables.
@@ -3590,8 +3608,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
             DBSPType outputElementType = all.getType();
             if (isVector) {
                 outputElementType = new DBSPTypeArray(outputElementType, false);
-                DBSPVariablePath v = elemType.var();
-                closure = new DBSPApplyExpression("map", outputElementType, v, closure)
+                DBSPVariablePath v = elemType.ref().var();
+                closure = new DBSPApplyExpression("map", outputElementType, v.deref().applyClone(), closure)
                         .closure(v);
             }
             op = new DBSPMapOperator(node, closure, this.makeZSet(outputElementType), op.outputPort());
