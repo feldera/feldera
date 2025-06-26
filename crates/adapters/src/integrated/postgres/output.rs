@@ -42,6 +42,7 @@ impl BackoffError {
     fn inner(self) -> anyhow::Error {
         match self {
             BackoffError::Permanent(error) | BackoffError::Temporary(error) => {
+                // include the context info
                 anyhow!(error.to_string())
             }
         }
@@ -289,26 +290,27 @@ impl PostgresOutputEndpoint {
     }
 
     fn exec_statement(&mut self, stmt: Statement, value: &mut Vec<u8>, name: &str) {
-        if let Err(e) = self.exec_statement_inner(stmt.clone(), value, name) {
-            let retry = e.should_retry();
-            let Some(controller) = self.controller.upgrade() else {
-                tracing::warn!("failed to upgrade the controller");
-                return;
-            };
-
-            controller.output_transport_error(
-                self.endpoint_id,
-                &self.endpoint_name,
-                true,
-                e.inner(),
-            );
-
-            if !retry {
-                return;
+        loop {
+            match self.exec_statement_inner(stmt.clone(), value, name) {
+                Ok(_) => return,
+                Err(e) => {
+                    let retry = e.should_retry();
+                    let Some(controller) = self.controller.upgrade() else {
+                        tracing::warn!("controller is shutting down: aborting");
+                        return;
+                    };
+                    controller.output_transport_error(
+                        self.endpoint_id,
+                        &self.endpoint_name,
+                        true,
+                        e.inner(),
+                    );
+                    if !retry {
+                        return;
+                    }
+                    self.retry_connecting_with_backoff();
+                }
             }
-
-            self.retry_connecting_with_backoff();
-            self.exec_statement(stmt, value, name)
         }
     }
 
@@ -377,7 +379,7 @@ impl PostgresOutputEndpoint {
     fn retry_connecting(&mut self) -> Result<(), BackoffError> {
         let valid = self.client.is_valid(PG_CONNECTION_VALIDITY_TIMEOUT);
         let Some(controller) = self.controller.upgrade() else {
-            tracing::warn!("failed to upgrade the controller");
+            tracing::warn!("controller is shutting down: aborting");
             return Ok(());
         };
 
@@ -408,7 +410,7 @@ These statements were successfully prepared before reconnecting. Does the table 
         let mut n_retries = 1;
 
         let Some(controller) = self.controller.upgrade() else {
-            tracing::warn!("failed to upgrade the controller");
+            tracing::warn!("controller is shutting down: aborting");
             return;
         };
 
@@ -439,7 +441,7 @@ These statements were successfully prepared before reconnecting. Does the table 
 
     fn batch_start_inner(&mut self) -> Result<(), BackoffError> {
         let Some(controller) = self.controller.upgrade() else {
-            tracing::warn!("failed to upgrade the controller");
+            tracing::warn!("controller is shutting down: aborting");
             return Ok(());
         };
 
@@ -493,27 +495,27 @@ impl OutputConsumer for PostgresOutputEndpoint {
     }
 
     fn batch_start(&mut self, _step: Step) {
-        if let Err(err) = self.batch_start_inner() {
-            let Some(controller) = self.controller.upgrade() else {
-                tracing::warn!("failed to upgrade the controller");
-                return;
-            };
-
-            let retry = err.should_retry();
-
-            controller.output_transport_error(
-                self.endpoint_id,
-                &self.endpoint_name,
-                true,
-                anyhow!("postgres: failed to start transaction: {}", err.inner()),
-            );
-
-            if !retry {
-                return;
+        loop {
+            match self.batch_start_inner() {
+                Ok(_) => return,
+                Err(err) => {
+                    let Some(controller) = self.controller.upgrade() else {
+                        tracing::warn!("controller is shutting down: aborting");
+                        return;
+                    };
+                    let retry = err.should_retry();
+                    controller.output_transport_error(
+                        self.endpoint_id,
+                        &self.endpoint_name,
+                        true,
+                        anyhow!("postgres: failed to start transaction: {}", err.inner()),
+                    );
+                    if !retry {
+                        return;
+                    }
+                    self.retry_connecting_with_backoff();
+                }
             }
-
-            self.retry_connecting_with_backoff();
-            OutputConsumer::batch_start(self, _step)
         }
     }
 
@@ -532,27 +534,27 @@ impl OutputConsumer for PostgresOutputEndpoint {
     }
 
     fn batch_end(&mut self) {
-        if let Err(err) = self.batch_end_inner() {
-            let Some(controller) = self.controller.upgrade() else {
-                tracing::warn!("failed to upgrade the controller");
-                return;
-            };
-
-            let retry = err.should_retry();
-
-            controller.output_transport_error(
-                self.endpoint_id,
-                &self.endpoint_name,
-                true,
-                err.inner(),
-            );
-
-            if !retry {
-                return;
+        loop {
+            match self.batch_end_inner() {
+                Ok(_) => return,
+                Err(err) => {
+                    let Some(controller) = self.controller.upgrade() else {
+                        tracing::warn!("controller is shutting down: aborting");
+                        return;
+                    };
+                    let retry = err.should_retry();
+                    controller.output_transport_error(
+                        self.endpoint_id,
+                        &self.endpoint_name,
+                        true,
+                        err.inner(),
+                    );
+                    if !retry {
+                        return;
+                    }
+                    self.retry_connecting_with_backoff();
+                }
             }
-
-            self.retry_connecting_with_backoff();
-            OutputConsumer::batch_end(self)
         }
     }
 }
