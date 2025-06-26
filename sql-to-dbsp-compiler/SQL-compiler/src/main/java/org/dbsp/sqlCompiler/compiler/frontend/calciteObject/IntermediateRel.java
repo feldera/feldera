@@ -24,7 +24,7 @@ public class IntermediateRel extends CalciteRelNode {
 
     @Override
     public String toString() {
-        return "PartOf(" + this.relNode.getDigest() + ")";
+        return this.getId() + " PartOf(" + this.relNode.getDigest() + ")";
     }
 
     @Override
@@ -91,5 +91,10 @@ public class IntermediateRel extends CalciteRelNode {
     @Override
     public int hashCode() {
         return this.relNode.hashCode();
+    }
+
+    @Override
+    public long getId() {
+        return this.relNode.getId();
     }
 }

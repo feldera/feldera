@@ -664,7 +664,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
 
         DBSPPartitionedRollingAggregateWithWaterlineOperator replacement =
                 new DBSPPartitionedRollingAggregateWithWaterlineOperator(operator.getRelNode(),
-                        operator.partitioningFunction, operator.function, operator.aggregate,
+                        operator.partitioningFunction, operator.function, operator.aggregateList,
                         operator.lower, operator.upper, operator.getOutputIndexedZSetType(),
                         this.mapped(operator.input()), dropApply.outputPort());
         this.map(operator, replacement);
@@ -1646,7 +1646,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
             // error streams generated so far.
             // Since in a prior pass we have reordered the operators
             // such that this view comes after all other operators,
-            // we know that all possible error streams have at this point
+            // we know that all possible error streams at this point have
             // been already computed.
             OutputPort collected;
             if (this.errorStreams.isEmpty()) {

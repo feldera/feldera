@@ -30,6 +30,7 @@ import org.dbsp.sqlCompiler.compiler.AnalyzedSet;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.MerkleOuter;
+import org.dbsp.sqlCompiler.compiler.backend.dot.ToDot;
 import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.BetaReduction;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.CanonicalForm;
@@ -39,6 +40,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.ExpandWriteLog;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.LazyStatics;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Simplify;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.SimplifyWaterline;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.intern.Intern;
 import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.UnusedFields;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity.MonotoneAnalyzer;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
@@ -75,6 +77,7 @@ public class CircuitOptimizer extends Passes {
         this.add(new DeadCode(compiler, options.languageOptions.generateInputForEveryTable, true));
         if (options.languageOptions.outputsAreSets)
             this.add(new EnsureDistinctOutputs(compiler));
+        this.add(new Intern(compiler));
         this.add(new PropagateEmptySources(compiler));
         this.add(new MergeSums(compiler));
         this.add(new OptimizeWithGraph(compiler, g -> new RemoveNoops(compiler, g)));

@@ -26,6 +26,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
+import org.dbsp.util.IndentStreamBuilder;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
 
@@ -206,6 +207,16 @@ public class DBSPChainOperator extends DBSPUnaryOperator {
             StringBuilder builder = new StringBuilder();
             for (var op: this.computations)
                 builder.append(op.summary());
+            return builder.toString();
+        }
+
+        @Override
+        public String toString() {
+            IndentStreamBuilder builder = new IndentStreamBuilder();
+            builder.append("Chain:[").increase();
+            for (var op: this.computations)
+                builder.append(op.toString()).newline();
+            builder.decrease().newline();
             return builder.toString();
         }
     }

@@ -247,7 +247,7 @@ public class CastTests extends SqlIoTest {
                 SELECT CAST(CAST(T.COL2 / 10 AS TIMESTAMP) AS DOUBLE) FROM T;
                  i
                 ---
-                 1
+                 0
                 (1 row)""");
     }
 

@@ -36,11 +36,14 @@ public class InputColumnMetadata
     public final DBSPExpression defaultValue;
     @Nullable
     public final SourcePositionRange defaultValuePosition;
+    @Nullable
+    public final boolean interned;
 
     public InputColumnMetadata(CalciteObject node, ProgramIdentifier name, DBSPType type, boolean isPrimaryKey,
                                @Nullable DBSPExpression lateness, @Nullable DBSPExpression watermark,
                                @Nullable DBSPExpression defaultValue,
-                               @Nullable SourcePositionRange defaultValuePosition) {
+                               @Nullable SourcePositionRange defaultValuePosition,
+                               boolean interned) {
         this.node = node;
         this.name = name;
         this.type = type;
@@ -49,6 +52,7 @@ public class InputColumnMetadata
         this.watermark = watermark;
         this.defaultValue = defaultValue;
         this.defaultValuePosition = defaultValuePosition;
+        this.interned = interned;
     }
 
     public ProgramIdentifier getName() {
@@ -100,6 +104,8 @@ public class InputColumnMetadata
             visitor.stream.label("defaultValue");
             this.defaultValue.accept(visitor);
         }
+        visitor.stream.label("interned")
+                        .append(this.interned);
         visitor.stream.endObject();
     }
 
@@ -116,7 +122,8 @@ public class InputColumnMetadata
         DBSPExpression defaultValue = null;
         if (node.has("defaultValue"))
             defaultValue = DBSPNode.fromJsonInner(node, "defaultValue", decoder, DBSPExpression.class);
+        boolean interned = Utilities.getBooleanProperty(node, "interned");
         return new InputColumnMetadata(CalciteObject.EMPTY, name, type, isPrimaryKey,
-                lateness, watermark, defaultValue, SourcePositionRange.INVALID);
+                lateness, watermark, defaultValue, SourcePositionRange.INVALID, interned);
     }
 }

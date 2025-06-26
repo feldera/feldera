@@ -563,14 +563,15 @@ SELECT
     }
 
     @Override
-    public DBSPCompiler testCompiler(boolean optimize) {
+    public CompilerOptions testOptions() {
         CompilerOptions options = new CompilerOptions();
         options.languageOptions.streaming = true;
         options.languageOptions.throwOnError = true;
         options.languageOptions.incrementalize = true;
-        options.languageOptions.generateInputForEveryTable = false;
+        options.languageOptions.generateInputForEveryTable = true;
         options.ioOptions.emitHandles = true;
-        return new DBSPCompiler(options);
+        options.ioOptions.quiet = true;
+        return options;
     }
 
     CompilerCircuitStream createTest(int query, String... scriptsAndTables) {

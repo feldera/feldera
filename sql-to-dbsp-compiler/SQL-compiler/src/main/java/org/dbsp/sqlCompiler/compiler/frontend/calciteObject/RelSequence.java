@@ -100,6 +100,11 @@ public class RelSequence extends CalciteRelNode {
 
     @Override
     public String toString() {
-        return "Sequence(" + String.join(",", Linq.map(this.nodes, CalciteObject::toString)) + ")";
+        return this.getId() + " Sequence(" + String.join(",", Linq.map(this.nodes, CalciteObject::toString)) + ")";
+    }
+
+    @Override
+    public long getId() {
+        return this.nodes.isEmpty() ? 0 : Utilities.last(this.nodes).getId();
     }
 }

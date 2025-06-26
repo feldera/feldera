@@ -9,7 +9,7 @@ import org.dbsp.util.Logger;
 public class RemoveTable extends CircuitCloneVisitor {
     final ProgramIdentifier tableName;
 
-    RemoveTable(DBSPCompiler compiler, ProgramIdentifier tableName) {
+    public RemoveTable(DBSPCompiler compiler, ProgramIdentifier tableName) {
         super(compiler, false);
         this.tableName = tableName;
     }

@@ -33,12 +33,13 @@ public class SqlExtendedColumnDeclaration extends SqlCall {
     public @Nullable SqlNode lateness;
     public @Nullable SqlNode watermark;
     public @Nullable SqlNode defaultValue;
+    public boolean interned;
 
     public SqlExtendedColumnDeclaration(
             SqlParserPos pos, SqlIdentifier name, SqlDataTypeSpec dataType,
             @Nullable SqlNode expression, ColumnStrategy strategy,
             @Nullable SqlIdentifier foreignKeyTable, @Nullable SqlIdentifier foreignKeyColumn,
-            boolean primaryKey, @Nullable SqlNode lateness, @Nullable SqlNode watermark) {
+            boolean primaryKey, @Nullable SqlNode lateness, @Nullable SqlNode watermark, boolean interned) {
         super(pos);
         this.name = name;
         this.dataType = dataType;
@@ -47,6 +48,7 @@ public class SqlExtendedColumnDeclaration extends SqlCall {
         this.defaultValue = null;
         this.foreignKeyTables = new ArrayList<>();
         this.foreignKeyColumns = new ArrayList<>();
+        this.interned = interned;
         if (foreignKeyTable != null)
             this.foreignKeyTables.add(foreignKeyTable);
         if (foreignKeyColumn != null)
@@ -86,6 +88,15 @@ public class SqlExtendedColumnDeclaration extends SqlCall {
                     " already has lateness", CalciteObject.create(lateness));
         }
         this.lateness = lateness;
+        return this;
+    }
+
+    public SqlExtendedColumnDeclaration setInterned() {
+        if (this.interned) {
+            throw new CompilationError("Column " + Utilities.singleQuote(this.name.getSimple()) +
+                    " already marked as interned");
+        }
+        this.interned = true;
         return this;
     }
 

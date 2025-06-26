@@ -7,8 +7,8 @@ import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
 // From https://github.com/apache/calcite/blob/main/ubenchmark/src/jmh/java/org/apache/calcite/benchmarks/StatementTest.java
 public class HrBaseTests extends SqlIoTest {
     @Override
-    public CompilerOptions getOptions(boolean optimize) {
-        CompilerOptions options = super.getOptions(optimize);
+    public CompilerOptions testOptions() {
+        CompilerOptions options = super.testOptions();
         options.languageOptions.ignoreOrderBy = true;
         options.languageOptions.lenient = true;
         return options;

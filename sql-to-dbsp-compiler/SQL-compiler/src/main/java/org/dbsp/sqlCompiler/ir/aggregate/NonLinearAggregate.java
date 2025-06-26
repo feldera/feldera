@@ -9,6 +9,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.BetaReduction;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPAssignmentExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
@@ -24,6 +25,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVoid;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeSemigroup;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeUser;
 import org.dbsp.util.IIndentStream;
+import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
@@ -33,10 +35,14 @@ import java.util.Objects;
 
 /**
  * A non-linear aggregate is compiled as functional fold operation,
- * described by a zero (initial value), an increment
- * function, and a postprocessing step that makes any necessary conversions.
- * For example, (a non-linear version of) AVG has a zero of (0,0), an increment of (1, value),
- * and a postprocessing step of |a| a.1/a.0.
+ * described by
+ * - a zero (initial value),
+ * - an increment function, and
+ * - a postprocessing step that makes any necessary conversions.
+ * For example, (a non-linear version of) AVG has
+ * - a zero of (0,0),
+ * - an increment of (1, value), and
+ * - a postprocessing step of |a| a.1/a.0.
  * Notice that the DBSP `Fold` structure has a slightly different signature
  * for the increment. */
 public class NonLinearAggregate extends IAggregate {
@@ -97,6 +103,11 @@ public class NonLinearAggregate extends IAggregate {
     public boolean compatible(IAggregate other, boolean appendOnlySources) {
         return other.is(NonLinearAggregate.class) &&
                 !other.is(MinMaxAggregate.class);
+    }
+
+    @Override
+    public List<DBSPParameter> getRowVariableReferences() {
+        return Linq.list(this.increment.parameters[1]);
     }
 
     @Override

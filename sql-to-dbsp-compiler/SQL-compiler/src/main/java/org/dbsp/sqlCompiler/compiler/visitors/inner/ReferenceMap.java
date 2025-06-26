@@ -43,6 +43,18 @@ public class ReferenceMap {
 
     @Override
     public String toString() {
-        return this.declarations.toString();
+        StringBuilder builder = new StringBuilder();
+        for (var kv: this.declarations.entrySet()) {
+            builder.append(kv.getKey().toString())
+                    .append("(")
+                    .append(kv.getKey().id)
+                    .append(")=>")
+                    .append(kv.getValue().getClass().getSimpleName())
+                    .append("(")
+                    .append(kv.getValue().getId())
+                    .append(")")
+                    .append(System.lineSeparator());
+        }
+        return builder.toString();
     }
 }

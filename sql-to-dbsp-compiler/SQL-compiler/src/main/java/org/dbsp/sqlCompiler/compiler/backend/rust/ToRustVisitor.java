@@ -38,6 +38,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPConcreteAsofJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPBinaryOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPChainAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPControlledKeyFilterOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPInternOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
 import org.dbsp.sqlCompiler.circuit.DBSPDeclaration;
@@ -736,6 +737,21 @@ public class ToRustVisitor extends CircuitVisitor {
                 .append(", ");
         operator.getFunction().accept(this.innerVisitor);
         this.builder.append(");");
+        return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPInternOperator operator) {
+        this.writeComments(operator)
+                .append("let ")
+                .append(operator.getNodeName(this.preferHash))
+                .append(" = ")
+                .append(this.getInputName(operator, 0))
+                .append(";")
+                .newline()
+                .append("build_string_interner(")
+                .append(operator.getNodeName(this.preferHash))
+                .append(".clone(), None);");
         return VisitDecision.STOP;
     }
 

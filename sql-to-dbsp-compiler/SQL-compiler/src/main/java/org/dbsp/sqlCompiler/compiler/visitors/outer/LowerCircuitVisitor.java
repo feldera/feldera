@@ -81,7 +81,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
         //            Tuple3::new(x0.clone(), x1.clone(), e)
         //        }
         //     })
-        DBSPVariablePath rowVar = new DBSPVariablePath(flatmap.inputElementType.ref());
+        DBSPVariablePath rowVar = new DBSPVariablePath(flatmap.inputRowType.ref());
         DBSPType eType = flatmap.getCollectionElementType();
         DBSPType collectionElementType = eType;
         List<DBSPStatement> statements = new ArrayList<>();
@@ -277,7 +277,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
             return;
         }
 
-        DBSPFold function = node.getAggregate().asFold(this.compiler());
+        DBSPFold function = node.getAggregateList().asFold(this.compiler());
         DBSPSimpleOperator result = new DBSPStreamAggregateOperator(
                 node.getRelNode(), node.getOutputIndexedZSetType(),
                 function, null, this.mapped(node.input()));
@@ -291,7 +291,7 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
             super.postorder(node);
             return;
         }
-        DBSPFold function = node.getAggregate().asFold(this.compiler());
+        DBSPFold function = node.getAggregateList().asFold(this.compiler());
         DBSPSimpleOperator result = new DBSPAggregateOperator(
                 node.getRelNode(), node.getOutputIndexedZSetType(),
                 function, null, this.mapped(node.input()));
@@ -376,11 +376,11 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
 
     @Override
     public void postorder(DBSPPartitionedRollingAggregateOperator node) {
-        if (node.aggregate == null) {
+        if (node.aggregateList == null) {
             super.postorder(node);
             return;
         }
-        DBSPFold function = node.getAggregate().asFold(this.compiler());
+        DBSPFold function = node.getAggregateList().asFold(this.compiler());
         DBSPSimpleOperator result = new DBSPPartitionedRollingAggregateOperator(node.getRelNode(),
                 node.partitioningFunction, function, null, node.lower, node.upper,
                 node.getOutputIndexedZSetType(), this.mapped(node.input()));

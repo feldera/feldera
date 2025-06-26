@@ -18,21 +18,21 @@ public abstract class DBSPAggregateOperatorBase extends DBSPUnaryOperator {
     // Initially 'aggregate' is not null, and 'function' is null.
     // After lowering these two are swapped.
     @Nullable
-    public final DBSPAggregateList aggregate;
+    public final DBSPAggregateList aggregateList;
 
     protected DBSPAggregateOperatorBase(CalciteRelNode node, String operation,
                                         DBSPTypeIndexedZSet outputType,
                                         @Nullable DBSPAggregator function,
-                                        @Nullable DBSPAggregateList aggregate,
+                                        @Nullable DBSPAggregateList aggregateList,
                                         boolean multiset,
                                         OutputPort source,
                                         boolean containsIntegrate) {
         super(node, operation, function, outputType, multiset, source, containsIntegrate);
-        this.aggregate = aggregate;
+        this.aggregateList = aggregateList;
         // There are really two different representations of an aggregate operator,
         // which reuse the same classes: a high-level one, which contains an Aggregate,
         // and a low-level one, which contains a function.
-        if (aggregate == null) {
+        if (aggregateList == null) {
             if (function == null)
                 throw new InternalCompilerError("'function' and 'aggregate' are both null", node);
         } else {
@@ -43,15 +43,15 @@ public abstract class DBSPAggregateOperatorBase extends DBSPUnaryOperator {
 
     @Override
     public void accept(InnerVisitor visitor) {
-        if (this.aggregate != null) {
+        if (this.aggregateList != null) {
             visitor.property("aggregate");
-            this.aggregate.accept(visitor);
+            this.aggregateList.accept(visitor);
         }
         super.accept(visitor);
     }
 
-    public DBSPAggregateList getAggregate() {
-        return Objects.requireNonNull(this.aggregate);
+    public DBSPAggregateList getAggregateList() {
+        return Objects.requireNonNull(this.aggregateList);
     }
 
     @Nullable
@@ -68,7 +68,7 @@ public abstract class DBSPAggregateOperatorBase extends DBSPUnaryOperator {
         DBSPPartitionedRollingAggregateOperator otherOperator = other.as(DBSPPartitionedRollingAggregateOperator.class);
         if (otherOperator == null)
             return false;
-        return EquivalenceContext.equiv(this.aggregate, otherOperator.aggregate);
+        return EquivalenceContext.equiv(this.aggregateList, otherOperator.aggregateList);
     }
 
     @Override
@@ -83,8 +83,8 @@ public abstract class DBSPAggregateOperatorBase extends DBSPUnaryOperator {
                 .append("(");
         if (this.function != null)
             builder.append(this.function);
-        else if (this.aggregate != null)
-            builder.append(this.aggregate);
+        else if (this.aggregateList != null)
+            builder.append(this.aggregateList);
         return builder.append(");");
     }
 }

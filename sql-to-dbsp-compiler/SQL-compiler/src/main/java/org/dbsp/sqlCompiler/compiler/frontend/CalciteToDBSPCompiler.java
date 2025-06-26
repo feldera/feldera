@@ -205,6 +205,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMillisInterval;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMonthsInterval;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTime;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeUSize;
@@ -534,11 +535,14 @@ public class CalciteToDBSPCompiler extends RelVisitor
             shuffleSize += collectionElementType.to(DBSPTypeTupleBase.class).size();
         else
             shuffleSize += 1;
-        DBSPTypeFunction functionType = new DBSPTypeFunction(type, leftElementType.ref());
         DBSPFlatmap flatmap = new DBSPFlatmap(node,
-                functionType, leftElementType, arrayExpression,
+                leftElementType, arrayExpression,
                 Linq.range(0, leftElementType.size()),
                 rightProjections, indexType, new IdShuffle(shuffleSize));
+
+        DBSPTypeFunction functionType = new DBSPTypeFunction(type, leftElementType.ref());
+        Utilities.enforce(flatmap.getType().sameType(functionType),
+                "Expected type to be\n" + functionType + "\nbut it is\n" + flatmap.getType());
         DBSPFlatMapOperator flatMap = new DBSPFlatMapOperator(
                 new LastRel(correlate),
                 flatmap, TypeCompiler.makeZSet(type), left.outputPort());
@@ -710,7 +714,6 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPType arrayType = data.deref().field(0).getType();
         DBSPType collectionElementType = arrayType.to(ICollectionType.class).getElementType();
         DBSPClosureExpression getField0 = data.deref().field(0).closure(data);
-        DBSPTypeFunction functionType = new DBSPTypeFunction(type, inputRowType.ref());
 
         int shuffleSize = 0;
         if (indexType != null) {
@@ -725,8 +728,10 @@ public class CalciteToDBSPCompiler extends RelVisitor
             shuffleSize += 1;
         }
 
-        DBSPFlatmap function = new DBSPFlatmap(node, functionType, inputRowType, getField0,
+        DBSPFlatmap function = new DBSPFlatmap(node, inputRowType, getField0,
                 Linq.list(), null, indexType, new IdShuffle(shuffleSize));
+        DBSPTypeFunction functionType = new DBSPTypeFunction(type, inputRowType.ref());
+        Utilities.enforce(function.getType().sameType(functionType));
         DBSPFlatMapOperator flatMap = new DBSPFlatMapOperator(node.getFinal(), function,
                 TypeCompiler.makeZSet(type), opInput.outputPort());
         this.assignOperator(uncollect, flatMap);
@@ -3551,8 +3556,15 @@ public class CalciteToDBSPCompiler extends RelVisitor
                                 metadata.getName().singleQuote());
             defaultValue = defaultValue.cast(defaultValue.getNode(), type, false);
         }
+        if (metadata.interned) {
+            if (!type.is(DBSPTypeString.class))
+                this.compiler.reportWarning(metadata.node.getPositionRange(), "Illegal type interned",
+                        "INTERNED is only applicable to CHAR/VARCHAR types " +
+                                metadata.getName().singleQuote() +
+                        ", hint will be ignored");
+        }
         return new InputColumnMetadata(metadata.getNode(), metadata.getName(), type,
-                metadata.isPrimaryKey, lateness, watermark, defaultValue, metadata.defaultValuePosition);
+                metadata.isPrimaryKey, lateness, watermark, defaultValue, metadata.defaultValuePosition, metadata.interned);
     }
 
     // We track whether any of the inputs of the current view are append-only tables.
