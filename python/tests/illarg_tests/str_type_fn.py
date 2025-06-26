@@ -36,11 +36,11 @@ class illarg_concat_wrong_type(TstView):
                       FROM illegal_tbl"""
 
 
-# Negative Test(ignore)
-class ignore_concat_illegal(TstView):
+# Negative Test
+class illarg_concat_illegal(TstView):
     def __init__(self):
         # checked manually
-        self.data = []  # produces Runtime Error: Not yet implemented
         self.sql = """CREATE MATERIALIZED VIEW concat_illegal AS SELECT
                       CONCAT(bin, bin) AS bin
                       FROM illegal_tbl"""
+        self.expected_error = "Not yet implemented"

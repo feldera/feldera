@@ -3,6 +3,7 @@
 from tests.aggregate_tests.aggtst_base import *  # noqa: F403
 from tests.aggregate_tests.atest_run import run  # noqa: F403
 from tests.illarg_tests.str_type_fn import *  # noqa: F403
+from tests.illarg_tests.check_negative_tests import *  # noqa: F403
 from tests.illarg_tests.illegal_tbl import *  # noqa: F403
 
 
