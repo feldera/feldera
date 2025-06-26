@@ -327,27 +327,22 @@ public class BaseSQLTests {
         testsToRun.add(test);
     }
 
-    /**
-     * Create CompilerOptions according to the specified properties.
-     * @param incremental  Generate an incremental program if true.
-     * @param optimize     Optimize program if true.
-     */
-    public CompilerOptions testOptions(boolean incremental, boolean optimize) {
+    public CompilerOptions testOptions() {
         CompilerOptions options = new CompilerOptions();
         options.languageOptions.throwOnError = true;
         options.languageOptions.generateInputForEveryTable = true;
         options.ioOptions.quiet = true;
         options.ioOptions.emitHandles = true;
         options.ioOptions.verbosity = 2;
-        options.languageOptions.incrementalize = incremental;
+        options.languageOptions.incrementalize = false;
         options.languageOptions.unrestrictedIOTypes = true;
-        options.languageOptions.optimizationLevel = optimize ? 2 : 1;
+        options.languageOptions.optimizationLevel = 2;
         return options;
     }
 
     /** Return the default compiler used for testing. */
-    public DBSPCompiler testCompiler() {
-        CompilerOptions options = this.testOptions(false, true);
+    public final DBSPCompiler testCompiler() {
+        CompilerOptions options = this.testOptions();
         return new DBSPCompiler(options);
     }
 

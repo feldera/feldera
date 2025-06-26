@@ -1074,16 +1074,21 @@ public class EndToEndTests extends BaseSQLTests {
     public void limitTest() {
         String query = "SELECT * FROM T ORDER BY T.COL2 LIMIT 1";
         this.testQuery(query, new DBSPZSetExpression(
-                new DBSPArrayExpression(E1)
-        ));
+                new DBSPArrayExpression(E1)));
     }
 
     @Test
     public void limitTest2() {
         String query = "SELECT * FROM T ORDER BY T.COL2 LIMIT 3";
         this.testQuery(query, new DBSPZSetExpression(
-                new DBSPArrayExpression(E1, E0)
-        ));
+                new DBSPArrayExpression(E1, E0)));
+    }
+
+    @Test
+    public void limitTestColumn() {
+        String query = "SELECT T.COL1 FROM T ORDER BY T.COL2 LIMIT 1";
+        this.testQuery(query, new DBSPZSetExpression(
+                new DBSPArrayExpression(new DBSPTupleExpression(new DBSPI32Literal(10)))));
     }
 
     @Test

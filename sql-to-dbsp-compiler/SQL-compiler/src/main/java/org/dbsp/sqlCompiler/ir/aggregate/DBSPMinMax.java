@@ -15,7 +15,7 @@ import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 
-/** Represents the built-in SQL Aggregator from DBSP. */
+/** Represents the built-in SQL Aggregator with the same name from DBSP. */
 public class DBSPMinMax extends DBSPAggregator {
     public enum Aggregation {
         Min,

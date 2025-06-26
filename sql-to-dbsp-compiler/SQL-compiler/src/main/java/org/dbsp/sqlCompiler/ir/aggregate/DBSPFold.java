@@ -9,10 +9,11 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
-import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeFunction;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeSemigroup;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeUser;
 import org.dbsp.util.IIndentStream;
+import org.dbsp.util.Utilities;
 
 /** Represents an expression corresponding to a DBSP Fold construct */
 public class DBSPFold extends DBSPAggregator {
@@ -22,19 +23,25 @@ public class DBSPFold extends DBSPAggregator {
     public final DBSPTypeUser semigroup;
 
     public DBSPFold(
-            CalciteObject node, DBSPType type, DBSPTypeUser semigroup,
+            CalciteObject node, DBSPTypeUser semigroup,
             DBSPExpression zero, DBSPClosureExpression increment,
             DBSPClosureExpression postProcess) {
-        super(node, type);
+        super(node, computeFoldType(increment, postProcess));
         this.zero = zero;
         this.increment = increment;
         this.postProcess = postProcess;
         this.semigroup = semigroup;
+        Utilities.enforce(increment.parameters.length == 3);
+        Utilities.enforce(zero.getType().sameType(increment.parameters[0].getType().deref()));
+    }
+
+    static DBSPTypeFunction computeFoldType(DBSPClosureExpression increment, DBSPClosureExpression postProcess) {
+        return new DBSPTypeFunction(postProcess.getResultType(), increment.parameters[1].getType());
     }
 
     @Override
     public DBSPExpression deepCopy() {
-        return new DBSPFold(this.node, this.type, this.semigroup,
+        return new DBSPFold(this.node, this.semigroup,
                 this.zero.deepCopy(), this.increment.deepCopy().to(DBSPClosureExpression.class),
                 this.postProcess.deepCopy().to(DBSPClosureExpression.class));
     }
@@ -55,8 +62,6 @@ public class DBSPFold extends DBSPAggregator {
         VisitDecision decision = visitor.preorder(this);
         if (decision.stop()) return;
         visitor.push(this);
-        visitor.property("type");
-        this.type.accept(visitor);
         visitor.property("semigroup");
         this.semigroup.accept(visitor);
         visitor.property("zero");
@@ -91,12 +96,11 @@ public class DBSPFold extends DBSPAggregator {
 
     @SuppressWarnings("unused")
     public static DBSPFold fromJson(JsonNode node, JsonDecoder decoder) {
-        DBSPType type = fromJsonInner(node, "type", decoder, DBSPType.class);
         DBSPTypeSemigroup semigroup = DBSPTypeSemigroup.fromJson(node, decoder);
         DBSPExpression zero = fromJsonInner(node, "zero", decoder, DBSPExpression.class);
         DBSPClosureExpression increment = fromJsonInner(node, "increment", decoder, DBSPClosureExpression.class);
         DBSPClosureExpression postProcessing = fromJsonInner(
                 node, "postProcessing", decoder, DBSPClosureExpression.class);
-        return new DBSPFold(CalciteObject.EMPTY, type, semigroup, zero, increment, postProcessing);
+        return new DBSPFold(CalciteObject.EMPTY, semigroup, zero, increment, postProcessing);
     }
 }

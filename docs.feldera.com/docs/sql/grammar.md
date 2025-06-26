@@ -29,7 +29,7 @@ statement
   |   latenessStatement
 
 columnDecl
-  :   column generalType
+  :   column generalType [ INTERNED ]
 ```
 
 ## Creating user-defined types
@@ -68,6 +68,7 @@ columnConstraint
   |   LATENESS expression
   |   WATERMARK expression
   |   DEFAULT expression
+  |   INTERNED
 
 tableConstraint
   :   [ CONSTRAINT name ]
@@ -133,6 +134,19 @@ outputs.  By specifying the property `'materialized' = 'true'` a user
 instructs Feldera to also maintain the complete contents of the table.
 Such materialized tables can be browsed and queried at runtime.
 See [Materialized Tables and Views](materialized.md) for more details.
+
+#### Interned strings
+
+The `INTERNED` annotation can be added to a column with type `VARCHAR`
+or `CHAR` (and other equivalent type aliases, such as `STRING` and
+`TEXT`), and is a hint to the compiler to use an interned
+implementation for these strings (currently this annotation is ignored
+on other column types).  Interned strings keep a single copy of each
+string and replace such strings with a cryptographic hash function of
+the string value.  This works well if strings are only used for
+equality comparisons; when interned strings participate in other
+computations, or before being emitted to the output, they are
+converted back to their original values.
 
 #### Append-only tables
 

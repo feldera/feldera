@@ -39,8 +39,8 @@ import org.junit.Test;
 /** Tests that exercise streaming features. */
 public class StreamingTests extends StreamingTestBase {
     @Override
-    public CompilerOptions testOptions(boolean incremental, boolean optimize) {
-        CompilerOptions options = super.testOptions(incremental, optimize);
+    public CompilerOptions testOptions() {
+        CompilerOptions options = super.testOptions();
         // Used by some tests for NOW
         options.ioOptions.nowStream = true;
         return options;

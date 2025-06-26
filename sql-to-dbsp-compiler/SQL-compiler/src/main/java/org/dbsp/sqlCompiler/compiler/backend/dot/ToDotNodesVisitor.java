@@ -4,6 +4,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperatorBase;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIndexedTopKOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPInternOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinFilterMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
@@ -102,6 +103,21 @@ public class ToDotNodesVisitor extends CircuitVisitor {
         return VisitDecision.STOP;
     }
 
+    @Override
+    public VisitDecision preorder(DBSPInternOperator node) {
+        this.stream.append(node.getNodeName(false))
+                .append(" [ shape=box,label=\"")
+                .append(node.getIdString())
+                .append(" ")
+                .append(node.operation)
+                .append(" ")
+                .append("\"")
+                .append(" style=filled fillcolor=lightgrey")
+                .append("]")
+                .newline();
+        return VisitDecision.STOP;
+    }
+
     static String escapeString(String input) {
         StringBuilder escapedString = new StringBuilder();
         for (char c : input.toCharArray()) {
@@ -134,8 +150,8 @@ public class ToDotNodesVisitor extends CircuitVisitor {
         DBSPExpression expression = node.function;
         if (node.is(DBSPAggregateOperatorBase.class)) {
             DBSPAggregateOperatorBase aggregate = node.to(DBSPAggregateOperatorBase.class);
-            if (aggregate.aggregate != null) {
-                expression = aggregate.aggregate.compact(this.compiler());
+            if (aggregate.aggregateList != null) {
+                expression = aggregate.aggregateList.compact(this.compiler());
             }
         } else if (node.is(DBSPPartitionedRollingAggregateWithWaterlineOperator.class)) {
             DBSPPartitionedRollingAggregateWithWaterlineOperator aggregate =

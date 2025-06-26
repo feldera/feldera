@@ -10,6 +10,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 import org.dbsp.util.Utilities;
 
@@ -35,6 +36,12 @@ public final class DBSPHopOperator extends DBSPUnaryOperator {
         this.interval = interval;
         this.start = start;
         this.size = size;
+        DBSPTypeTuple inputType = input.getOutputZSetElementType().to(DBSPTypeTuple.class);
+        DBSPTypeTuple outputTuple = outputType.getElementType().to(DBSPTypeTuple.class);
+        Utilities.enforce(inputType.size() + 2 == outputTuple.size());
+        DBSPType timestampType = inputType.getFieldType(this.timestampIndex);
+        Utilities.enforce(timestampType.sameTypeIgnoringNullability(outputTuple.getFieldType(inputType.size())));
+        Utilities.enforce(timestampType.sameTypeIgnoringNullability(outputTuple.getFieldType(inputType.size() + 1)));
     }
 
     @Override

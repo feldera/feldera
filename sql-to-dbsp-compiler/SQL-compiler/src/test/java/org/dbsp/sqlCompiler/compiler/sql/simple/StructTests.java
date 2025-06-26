@@ -21,11 +21,6 @@ import org.dbsp.util.Linq;
 import org.junit.Test;
 
 public class StructTests extends SqlIoTest {
-    @Override
-    public CompilerOptions testOptions(boolean incremental, boolean optimize) {
-        return super.testOptions(incremental, optimize);
-    }
-
     @Test
     public void issue3262() {
         // Duplicates a test from CatalogTests, since programs with handles cannot be used to generate Rust tests.

@@ -14,6 +14,8 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
+import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
@@ -132,5 +134,72 @@ public class UnusedFieldsTest {
                         Tup3::new(((*p0).0), ((*p0).2), ((((*p0).3).0).clone()), ))""",
                 compose.toString());
         Assert.assertTrue(compose.equivalent(closure));
+    }
+
+    @Test
+    public void fieldUseMapTests() {
+        DBSPType i = DBSPTypeInteger.getType(CalciteObject.EMPTY, DBSPTypeCode.INT32, true);
+        DBSPType simple = new DBSPTypeTuple(i, i, i);
+        FieldUseMap fum = new FieldUseMap(simple, true);
+        Assert.assertEquals("[X, X, X]", fum.toString());
+        Assert.assertFalse(fum.hasUnusedFields());
+        Assert.assertFalse(fum.hasUnusedFields(1));
+        fum = new FieldUseMap(simple, false);
+        Assert.assertEquals("[_, _, _]", fum.toString());
+        Assert.assertTrue(fum.hasUnusedFields());
+        Assert.assertTrue(fum.hasUnusedFields(1));
+        Assert.assertTrue(fum.hasUnusedFields(2));
+        fum.setUsed(1);
+        Assert.assertEquals("[_, X, _]", fum.toString());
+        Assert.assertTrue(fum.hasUnusedFields());
+        Assert.assertTrue(fum.hasUnusedFields(1));
+        fum = fum.project(1);
+        Assert.assertEquals("[_, X, _]", fum.toString());
+
+        DBSPType nested = new DBSPTypeTuple(i, simple);
+        fum = new FieldUseMap(nested, true);
+        Assert.assertEquals("[X, [X, X, X]]", fum.toString());
+        Assert.assertFalse(fum.hasUnusedFields());
+        Assert.assertFalse(fum.hasUnusedFields(1));
+        fum = new FieldUseMap(nested, false);
+        Assert.assertEquals("[_, [_, _, _]]", fum.toString());
+        Assert.assertTrue(fum.hasUnusedFields());
+        Assert.assertTrue(fum.hasUnusedFields(1));
+        fum.setUsed(0);
+        Assert.assertEquals("[X, [_, _, _]]", fum.toString());
+        Assert.assertTrue(fum.hasUnusedFields());
+        Assert.assertTrue(fum.hasUnusedFields(1));
+        fum.field(1).setUsed(1);
+        Assert.assertEquals("[X, [_, X, _]]", fum.toString());
+        Assert.assertTrue(fum.hasUnusedFields());
+        Assert.assertEquals("[X, [X, X, X]]", fum.project(1).toString());
+        Assert.assertFalse(fum.hasUnusedFields(1));
+
+        DBSPType deeper = new DBSPTypeTuple(i, nested);
+        fum = new FieldUseMap(deeper, true);
+        Assert.assertEquals("[X, [X, [X, X, X]]]", fum.toString());
+        Assert.assertFalse(fum.hasUnusedFields());
+        Assert.assertFalse(fum.hasUnusedFields(1));
+        fum = new FieldUseMap(deeper, false);
+        Assert.assertEquals("[_, [_, [_, _, _]]]", fum.toString());
+        Assert.assertTrue(fum.hasUnusedFields());
+        Assert.assertTrue(fum.hasUnusedFields(1));
+        Assert.assertTrue(fum.hasUnusedFields(2));
+        fum.setUsed(0);
+        Assert.assertEquals("[X, [_, [_, _, _]]]", fum.toString());
+        Assert.assertTrue(fum.hasUnusedFields());
+        Assert.assertTrue(fum.hasUnusedFields(1));
+        Assert.assertTrue(fum.hasUnusedFields(2));
+        fum.field(1).field(1).setUsed(0);
+        Assert.assertEquals("[X, [_, [X, _, _]]]", fum.toString());
+        Assert.assertTrue(fum.hasUnusedFields());
+        Assert.assertFalse(fum.hasUnusedFields(1));
+        Assert.assertEquals("[X, [_, [X, X, X]]]", fum.project(2).toString());
+        Assert.assertTrue(fum.hasUnusedFields(2));
+        fum.field(1).setUsed(0);
+        Assert.assertEquals("[X, [X, [X, _, _]]]", fum.toString());
+        Assert.assertTrue(fum.hasUnusedFields());
+        Assert.assertFalse(fum.hasUnusedFields(1));
+        Assert.assertFalse(fum.hasUnusedFields(2));
     }
 }

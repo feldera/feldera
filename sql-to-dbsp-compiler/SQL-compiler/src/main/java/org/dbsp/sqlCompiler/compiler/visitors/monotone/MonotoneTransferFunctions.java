@@ -27,7 +27,6 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPFieldExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFlatmap;
 import org.dbsp.sqlCompiler.ir.expression.DBSPLetExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
-import org.dbsp.sqlCompiler.ir.expression.DBSPPathExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPSomeExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
@@ -161,7 +160,7 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
         // and analyze that expression.
 
         // This logic parallels the one from LowerCircuitVisitor
-        DBSPVariablePath param = expression.inputElementType.ref().var();
+        DBSPVariablePath param = expression.inputRowType.ref().var();
         List<DBSPExpression> outputFields = new ArrayList<>();
         for (int index : expression.leftInputIndexes) {
             DBSPExpression field = param.deepCopy().deref().field(index);
@@ -736,9 +735,8 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
         if (allArgsMonotone || allArgsConstant) {
             DBSPExpression[] reducedArgs = Linq.map(
                     arguments, MonotoneExpression::getReducedExpression, DBSPExpression.class);
-            if (expression.function.is(DBSPPathExpression.class)) {
-                DBSPPathExpression path = expression.function.to(DBSPPathExpression.class);
-                String name = path.toString();
+            String name = expression.getFunctionName();
+            if (name != null) {
                 isDeterministic = !name.equals("now");
                 if (name.startsWith("log10_") ||
                         name.startsWith("ln_") ||

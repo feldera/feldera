@@ -118,12 +118,12 @@ public class MinMaxOptimize extends Passes {
 
         @Override
         public void postorder(DBSPStreamAggregateOperator operator) {
-            if (operator.aggregate == null) {
+            if (operator.aggregateList == null) {
                 super.postorder(operator);
                 return;
             }
             OutputPort i = this.mapped(operator.input());
-            DBSPAggregateList aggregateList = operator.getAggregate();
+            DBSPAggregateList aggregateList = operator.getAggregateList();
             if (!Linq.all(aggregateList.aggregates, a -> a.is(MinMaxAggregate.class))) {
                 super.postorder(operator);
                 return;

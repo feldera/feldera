@@ -24,10 +24,10 @@ import org.dbsp.sqlCompiler.ir.statement.DBSPStatement;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStaticItem;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStructItem;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
-import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeFunction;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.util.Linq;
+import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.HashMap;
@@ -59,7 +59,7 @@ public class ExpressionTranslator extends TranslateVisitor<IDBSPInnerNode> {
         return Linq.map(expressions, this::getE, DBSPExpression.class);
     }
 
-    void map(DBSPExpression expression, DBSPExpression result) {
+    protected void map(DBSPExpression expression, DBSPExpression result) {
         if (expression.sameFields(result)) {
             this.set(expression, expression);
         } else {
@@ -67,11 +67,15 @@ public class ExpressionTranslator extends TranslateVisitor<IDBSPInnerNode> {
         }
     }
 
-    void map(DBSPStatement statement, DBSPStatement result) {
+    protected void map(DBSPStatement statement, DBSPStatement result) {
         if (statement.sameFields(result))
             this.set(statement, statement);
         else
             this.set(statement, result);
+    }
+
+    protected void clear() {
+        this.translationMap.clear();
     }
 
     @Override
@@ -171,9 +175,7 @@ public class ExpressionTranslator extends TranslateVisitor<IDBSPInnerNode> {
         DBSPExpression zero = this.getE(fold.zero);
         DBSPClosureExpression increment = this.getE(fold.increment).to(DBSPClosureExpression.class);
         DBSPClosureExpression postProcessing = this.getE(fold.postProcess).to(DBSPClosureExpression.class);
-        DBSPFold result = new DBSPFold(
-                fold.getNode(), fold.getType(), fold.semigroup,
-                zero, increment, postProcessing);
+        DBSPFold result = new DBSPFold(fold.getNode(), fold.semigroup, zero, increment, postProcessing);
         this.map(fold, result);
     }
 
@@ -252,8 +254,12 @@ public class ExpressionTranslator extends TranslateVisitor<IDBSPInnerNode> {
         if (node.rightProjections != null)
             rightProjections = Linq.map(node.rightProjections,
                     e -> this.getE(e).to(DBSPClosureExpression.class));
-        this.map(node, new DBSPFlatmap(node.getNode(), node.getType().to(DBSPTypeFunction.class),
-                node.inputElementType, collectionExpression.to(DBSPClosureExpression.class), node.leftInputIndexes,
+        DBSPClosureExpression closure = collectionExpression.to(DBSPClosureExpression.class);
+        Utilities.enforce(closure.parameters.length == 1);
+        this.map(node, new DBSPFlatmap(
+                node.getNode(),
+                closure.parameters[0].type.deref().to(DBSPTypeTuple.class),
+                closure, node.leftInputIndexes,
                 rightProjections, node.ordinalityIndexType, node.shuffle));
     }
 

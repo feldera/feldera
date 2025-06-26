@@ -4,7 +4,6 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperato
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
-import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.sql.tools.CompilerCircuitStream;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
@@ -23,13 +22,15 @@ import java.io.IOException;
 /** Regression tests that failed in incremental mode using the Catalog API */
 public class IncrementalRegressionTests extends SqlIoTest {
     @Override
-    public DBSPCompiler testCompiler() {
-        CompilerOptions options = this.testOptions(true, true);
+    public CompilerOptions testOptions() {
+        CompilerOptions options = super.testOptions();
+        options.languageOptions.incrementalize = true;
+        options.languageOptions.optimizationLevel = 2;
         // This causes the use of SourceSet operators
         // options.ioOptions.emitHandles = false;
         // Without the following ORDER BY causes failures
         options.languageOptions.ignoreOrderBy = true;
-        return new DBSPCompiler(options);
+        return options;
     }
 
     @Test
@@ -734,7 +735,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
         this.getCCS(sql);
     }
 
-    // Tests that are not in the repository
+    // Tests that are not in the repository; run manually
     @Test @Ignore
     public void extraTests() throws IOException {
         String dir = "../extra";
@@ -746,7 +747,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
             for (File c: toCompile) {
                 if (!c.getName().contains("grouped_orders.sql")) continue;
                 if (c.getName().contains("sql")) {
-                    System.out.println("Compiling " + c);
+                    // System.out.println("Compiling " + c);
                     String sql = Utilities.readFile(c.getPath());
                     this.compileRustTestCase(sql);
                 }

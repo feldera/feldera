@@ -34,8 +34,11 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 import org.dbsp.util.Linq;
 
+import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -49,6 +52,21 @@ public abstract class DBSPTypeTupleBase extends DBSPType {
         for (DBSPType type: this.tupFields)
             if (type == null)
                 throw new NullPointerException();
+    }
+
+    @Nullable @Override
+    public String asSqlString() {
+        StringBuilder builder = new StringBuilder();
+        builder.append("ROW(");
+        boolean first = true;
+        for (DBSPType field: this.tupFields) {
+            if (!first)
+                builder.append(", ");
+            first = false;
+            builder.append(field.asSqlString());
+        }
+        builder.append(")");
+        return builder.toString();
     }
 
     /** True if this is a Raw tuple (Rust ()),
@@ -83,6 +101,15 @@ public abstract class DBSPTypeTupleBase extends DBSPType {
         if (index >= this.tupFields.length)
             throw new InternalCompilerError("Index " + index + " out of tuple bounds " + this.tupFields.length);
         return this.tupFields[index];
+    }
+
+    /** The type of an expression of the form t.i, where t has type this.
+     * This is not the same as getFieldType. */
+    public DBSPType getFieldExpressionType(int index) {
+        DBSPType fieldType = this.getFieldType(index);
+        if (this.mayBeNull)
+            return fieldType.withMayBeNull(true);
+        return fieldType;
     }
 
     public boolean hasCopy() {
@@ -131,5 +158,14 @@ public abstract class DBSPTypeTupleBase extends DBSPType {
 
     public DBSPTypeTupleBase slice(int start, int endExclusive) {
         return this.makeRelatedTupleType(Linq.list(this.tupFields).subList(start, endExclusive));
+    }
+
+    /** Creates a ZSet or IndexedZSet, depending on whether this is a Tuple or a RawTuple */
+    public DBSPType intoCollectionType() {
+        if (this.code == DBSPTypeCode.TUPLE) {
+            return new DBSPTypeZSet(this);
+        } else {
+            return new DBSPTypeIndexedZSet(this.to(DBSPTypeRawTuple.class));
+        }
     }
 }

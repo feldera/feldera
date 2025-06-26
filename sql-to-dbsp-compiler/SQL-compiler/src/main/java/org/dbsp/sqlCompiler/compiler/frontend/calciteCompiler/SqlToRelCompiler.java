@@ -145,6 +145,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlFragmentCharacterString;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlFragmentIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlLateness;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlRemove;
+import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlViewColumnDeclaration;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateFunctionStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateIndexStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateTableStatement;
@@ -721,14 +722,15 @@ public class SqlToRelCompiler implements IWritesLogs {
         return this.parseStatements(statements, true);
     }
 
-    RelNode optimize(RelNode rel) {
+    RelNode optimize(RelNode rel, boolean visible) {
         int level = 2;
         if (rel instanceof LogicalValues)
             // Less verbose for LogicalValues
             level = 4;
 
         final RelNode finalRel = rel;
-        Logger.INSTANCE.belowLevel(this, level)
+        if (visible)
+            Logger.INSTANCE.belowLevel(this, level)
                 .append("Before optimizer")
                 .increase()
                 .appendSupplier(() -> getPlan(finalRel))
@@ -741,7 +743,8 @@ public class SqlToRelCompiler implements IWritesLogs {
                 this.options.languageOptions.optimizationLevel, relBuilder);
         rel = optimizer.apply(rel, this.options);
         RelNode finalRel1 = rel;
-        Logger.INSTANCE.belowLevel(this, level)
+        if (visible)
+            Logger.INSTANCE.belowLevel(this, level)
                 .append("After optimizer ")
                 .increase()
                 .appendSupplier(() -> getPlan(finalRel1))
@@ -1143,6 +1146,7 @@ public class SqlToRelCompiler implements IWritesLogs {
             RexNode watermark = null;
             RexNode defaultValue = null;
             SourcePositionRange defaultValueRange = null;
+            boolean interned = false;
             if (col instanceof SqlColumnDeclaration cd) {
                 name = cd.name;
                 typeSpec = cd.dataType;
@@ -1171,6 +1175,7 @@ public class SqlToRelCompiler implements IWritesLogs {
                     defaultValueRange = new SourcePositionRange(cd.defaultValue.getParserPosition());
                     defaultValue = this.validateConstantExpression(cd, cd.defaultValue, sources);
                 }
+                interned = cd.interned;
             } else if (col instanceof SqlKeyConstraint ||
                        col instanceof SqlForeignKey) {
                 continue;
@@ -1223,7 +1228,7 @@ public class SqlToRelCompiler implements IWritesLogs {
                     name.getSimple(), index++, type);
             RelColumnMetadata meta = new RelColumnMetadata(
                     CalciteObject.create(col), field, isPrimaryKey, Utilities.identifierIsQuoted(name),
-                    lateness, watermark, defaultValue, defaultValueRange);
+                    lateness, watermark, defaultValue, defaultValueRange, interned);
             result.add(meta);
         }
 
@@ -1340,7 +1345,7 @@ public class SqlToRelCompiler implements IWritesLogs {
             }
             colByName.put(actualColumnName, field);
             RelColumnMetadata meta = new RelColumnMetadata(node,
-                    field, false, nameIsQuoted, lateness, null, null, null);
+                    field, false, nameIsQuoted, lateness, null, null, null, false);
             if (kind != SqlCreateView.ViewKind.LOCAL && !this.options.languageOptions.unrestrictedIOTypes)
                 this.validateColumnType(true, position, field.getType(), field.getName(), viewName);
             columns.add(meta);
@@ -1851,7 +1856,8 @@ public class SqlToRelCompiler implements IWritesLogs {
         SqlNode query = cv.query;
         if (cv.getReplace())
             throw new UnsupportedException("OR REPLACE not supported", object);
-        Logger.INSTANCE.belowLevel(this, 2)
+        if (node.visible())
+            Logger.INSTANCE.belowLevel(this, 2)
                 .appendSupplier(node.statement()::toString)
                 .newline();
         query = this.replaceRecursiveViews(query);
@@ -1915,7 +1921,7 @@ public class SqlToRelCompiler implements IWritesLogs {
         RelNode checked = checkedConverter.visit(relRoot.rel);
         relRoot = relRoot.withRel(checked);
 
-        RelNode optimized = this.optimize(relRoot.rel);
+        RelNode optimized = this.optimize(relRoot.rel, node.visible());
         relRoot = relRoot.withRel(optimized);
         CreateViewStatement view = new CreateViewStatement(node,
                 viewName, columns, cv, relRoot, emitFinal, props);
@@ -1958,7 +1964,8 @@ public class SqlToRelCompiler implements IWritesLogs {
      * @param sources      Contents of the source files, for error reporting. */
     @Nullable
     public RelStatement compile(ParsedStatement node, SourceFileContents sources) {
-        Logger.INSTANCE.belowLevel(this, 3)
+        if (node.visible())
+            Logger.INSTANCE.belowLevel(this, 3)
                 .append("Compiling ")
                 .appendSupplier(node::toString)
                 .newline();
@@ -2000,12 +2007,12 @@ public class SqlToRelCompiler implements IWritesLogs {
         List<RelColumnMetadata> columns = new ArrayList<>();
         int index = 0;
         for (SqlNode n: cv.columns) {
-            SqlColumnDeclaration cd = (SqlColumnDeclaration) n;
+            SqlViewColumnDeclaration cd = (SqlViewColumnDeclaration) n;
             String name = cd.name.getSimple();
             RelDataType type = this.specToRel(cd.dataType, false);
             RelDataTypeField field = new RelDataTypeFieldImpl(name, index++, type);
             var meta = new RelColumnMetadata(CalciteObject.create(n), field, false,
-                    Utilities.identifierIsQuoted(cd.name), null, null, null, null);
+                    Utilities.identifierIsQuoted(cd.name), null, null, null, null, cd.interned);
             columns.add(meta);
         }
         var result = new DeclareViewStatement(node, Utilities.toIdentifier(cv.name), columns);
@@ -2024,7 +2031,7 @@ public class SqlToRelCompiler implements IWritesLogs {
         TableModifyStatement stat = new TableModifyStatement(
                 node, false, Utilities.toIdentifier(id), remove.getSource());
         RelRoot values = this.sqlToRel(stat.data);
-        values = values.withRel(this.optimize(values.rel));
+        values = values.withRel(this.optimize(values.rel, true));
         stat.setTranslation(values.rel);
         return stat;
     }
@@ -2036,7 +2043,7 @@ public class SqlToRelCompiler implements IWritesLogs {
             throw new UnimplementedException("INSERT NOT SUPPORTED FOR " + table, CalciteObject.create(table));
         TableModifyStatement stat = new TableModifyStatement(node, true, Utilities.toIdentifier(id), insert.getSource());
         RelRoot values = this.sqlToRel(stat.data);
-        values = values.withRel(this.optimize(values.rel));
+        values = values.withRel(this.optimize(values.rel, true));
         stat.setTranslation(values.rel);
         return stat;
     }

@@ -12,6 +12,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
+import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.List;
@@ -28,6 +29,7 @@ public final class DBSPAggregateLinearPostprocessOperator extends DBSPUnaryOpera
             DBSPClosureExpression postProcess, OutputPort input) {
         super(node, "aggregate_linear_postprocess", function, outputType, false, input, true);
         this.postProcess = postProcess;
+        Utilities.enforce(outputType.elementType.sameType(postProcess.getResultType()));
     }
 
     @Override

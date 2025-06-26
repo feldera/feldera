@@ -28,13 +28,14 @@ public class RelColumnMetadata {
     @Nullable
     public final SourcePositionRange defaultValuePosition;
     public final boolean nameIsQuoted;
+    public final boolean interned;
     // Set during compilation
     public boolean unused;
 
     public RelColumnMetadata(
             CalciteObject node, RelDataTypeField field, boolean isPrimaryKey, boolean nameIsQuoted,
             @Nullable RexNode lateness, @Nullable RexNode watermark, @Nullable RexNode defaultValue,
-            @Nullable SourcePositionRange defaultValuePosition) {
+            @Nullable SourcePositionRange defaultValuePosition, boolean interned) {
         this.node = node;
         this.isPrimaryKey = isPrimaryKey;
         this.nameIsQuoted = nameIsQuoted;
@@ -44,6 +45,7 @@ public class RelColumnMetadata {
         this.defaultValue = defaultValue;
         this.defaultValuePosition = defaultValuePosition;
         this.unused = false;
+        this.interned = interned;
     }
 
     public void setUnused() {

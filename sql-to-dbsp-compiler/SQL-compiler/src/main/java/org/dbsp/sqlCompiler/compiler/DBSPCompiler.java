@@ -227,7 +227,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
 
         // Compute the names based on the compiler flags.
         NOW_TABLE_NAME = this.canonicalName("now", false);
-        ERROR_TABLE_NAME = this.canonicalName("ERROR_TABLE", false);
+        ERROR_TABLE_NAME = this.canonicalName("FELDERA_ERROR_TABLE", false);
         ERROR_VIEW_NAME = this.canonicalName("ERROR_VIEW", false);
         if (this.options.ioOptions.raw)
             return;
@@ -236,8 +236,9 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         this.compileInternal(
                 """
                 CREATE TABLE NOW(now TIMESTAMP NOT NULL LATENESS INTERVAL 0 SECONDS);
-                CREATE TABLE ERROR_TABLE(table_or_view_name VARCHAR NOT NULL, message VARCHAR NOT NULL, metadata VARCHAR NOT NULL);
-                CREATE VIEW ERROR_VIEW AS SELECT * FROM ERROR_TABLE;
+                -- next table will be deleted after view is hooked to proper inputs
+                CREATE TABLE FELDERA_ERROR_TABLE(table_or_view_name VARCHAR NOT NULL, message VARCHAR NOT NULL, metadata VARCHAR NOT NULL);
+                CREATE VIEW ERROR_VIEW AS SELECT * FROM FELDERA_ERROR_TABLE;
                 """,
                 true, false);
     }
@@ -519,7 +520,8 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
 
             // Compile first the statements that define functions, types, and lateness
             for (ParsedStatement node: parsed) {
-                Logger.INSTANCE.belowLevel(this, 4)
+                if (node.visible())
+                    Logger.INSTANCE.belowLevel(this, 4)
                         .append("Parsing result: ")
                         .appendSupplier(node::toString)
                         .newline();

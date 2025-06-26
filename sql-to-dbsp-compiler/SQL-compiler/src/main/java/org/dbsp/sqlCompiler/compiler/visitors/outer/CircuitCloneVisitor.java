@@ -228,6 +228,9 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs, 
     public void postorder(DBSPNoopOperator operator) { this.replace(operator); }
 
     @Override
+    public void postorder(DBSPInternOperator operator) { this.replace(operator); }
+
+    @Override
     public void postorder(DBSPWeighOperator operator) { this.replace(operator); }
 
     @Override
@@ -493,6 +496,24 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs, 
         return VisitDecision.CONTINUE;
     }
 
+    /** Check that the input edges to view declarations have the same type as the
+     * output types from these operators.  The operator received as argument
+     * is the *new* operator, produced by the rewrite. */
+    public void typecheckBackEdges(DBSPNestedOperator operator) {
+        for (DBSPOperator node: operator.getAllOperators()) {
+            // Check that back-edges still type-check
+            if (node.is(DBSPViewDeclarationOperator.class)) {
+                var decl = node.to(DBSPViewDeclarationOperator.class);
+                DBSPSimpleOperator source = decl.getCorrespondingView(operator);
+                if (source == null) {
+                    int index = operator.outputViews.indexOf(decl.originalViewName());
+                    source = operator.internalOutputs.get(index).simpleNode();
+                }
+                Utilities.enforce(node.getOutput(0).outputType().sameType(source.outputType));
+            }
+        }
+    }
+
     @Override
     public void postorder(DBSPNestedOperator operator) {
         DBSPNestedOperator result = Utilities.removeLast(this.underConstruction).to(DBSPNestedOperator.class);
@@ -508,6 +529,7 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs, 
                 result.addOutput(operator.outputViews.get(i), newPort);
             this.map(new OutputPort(operator, i), new OutputPort(result, i), false);
         }
+        this.typecheckBackEdges(result);
         Utilities.enforce(operator.outputCount() == result.outputCount());
         this.map(operator, result);
     }

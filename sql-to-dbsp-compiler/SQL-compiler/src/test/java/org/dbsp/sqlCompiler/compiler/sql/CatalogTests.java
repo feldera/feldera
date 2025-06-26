@@ -6,10 +6,13 @@ import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.backend.MerkleInner;
+import org.dbsp.sqlCompiler.compiler.backend.MerkleOuter;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.Passes;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
@@ -18,6 +21,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeArray;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 import org.dbsp.util.Linq;
+import org.dbsp.util.Logger;
 import org.junit.Assert;
 import org.junit.Test;
 
@@ -26,8 +30,8 @@ import java.util.List;
 /** Tests that emit Rust code using the catalog. */
 public class CatalogTests extends BaseSQLTests {
     @Override
-    public CompilerOptions testOptions(boolean incremental, boolean optimize) {
-        CompilerOptions result = super.testOptions(incremental, optimize);
+    public CompilerOptions testOptions() {
+        CompilerOptions result = super.testOptions();
         // result.ioOptions.sqlNames = true;
         result.ioOptions.emitHandles = false;
         result.languageOptions.unrestrictedIOTypes = false;
@@ -374,7 +378,7 @@ public class CatalogTests extends BaseSQLTests {
                 CREATE VIEW V AS SELECT * FROM T;
                 CREATE INDEX IX ON V(z);""";
         this.statementsFailingInCompilation(sql,
-                "Cannot index on column 'z' because it has type ARRAY");
+                "Cannot index on column 'z' because it has type INT ARRAY");
         sql = """
                 CREATE TABLE T(id int, v VARCHAR, z INT ARRAY);
                 CREATE INDEX IX ON T(id);""";

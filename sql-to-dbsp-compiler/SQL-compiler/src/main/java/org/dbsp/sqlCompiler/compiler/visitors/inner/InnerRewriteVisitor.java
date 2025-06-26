@@ -11,6 +11,7 @@ import org.dbsp.sqlCompiler.ir.DBSPFunction;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.aggregate.LinearAggregate;
+import org.dbsp.sqlCompiler.ir.aggregate.MinMaxAggregate;
 import org.dbsp.sqlCompiler.ir.aggregate.NonLinearAggregate;
 import org.dbsp.sqlCompiler.ir.expression.*;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBinaryLiteral;
@@ -120,6 +121,7 @@ public abstract class InnerRewriteVisitor
      * Replace the 'old' IR node with the 'newOp' IR node if
      * any of its fields differs. */
     protected void map(IDBSPInnerNode old, IDBSPInnerNode newOp) {
+        // noinspection ConstantValue
         Utilities.enforce(newOp != null);
         if ((old == newOp) || (!this.force && old.sameFields(newOp))) {
             // Ignore new op.
@@ -788,8 +790,7 @@ public abstract class InnerRewriteVisitor
     @Override
     public VisitDecision preorder(DBSPFlatmap expression) {
         this.push(expression);
-        DBSPTypeTuple inputElementType = this.transform(expression.inputElementType).to(DBSPTypeTuple.class);
-        DBSPType type = this.transform(expression.type);
+        DBSPTypeTuple inputElementType = this.transform(expression.inputRowType).to(DBSPTypeTuple.class);
         DBSPType indexType = null;
         if (expression.ordinalityIndexType != null)
             indexType = this.transform(expression.ordinalityIndexType);
@@ -800,7 +801,7 @@ public abstract class InnerRewriteVisitor
             rightProjections = Linq.map(expression.rightProjections,
                     e -> this.transform(e).to(DBSPClosureExpression.class));
         this.pop(expression);
-        DBSPExpression result = new DBSPFlatmap(expression.getNode(), type.to(DBSPTypeFunction.class),
+        DBSPExpression result = new DBSPFlatmap(expression.getNode(),
                 inputElementType, collectionExpression,
                 expression.leftInputIndexes, rightProjections, indexType, expression.shuffle);
         this.map(expression, result);
@@ -1391,6 +1392,26 @@ public abstract class InnerRewriteVisitor
     }
 
     @Override
+    public VisitDecision preorder(MinMaxAggregate implementation) {
+        this.push(implementation);
+        DBSPExpression zero = this.transform(implementation.zero);
+        DBSPExpression increment = this.transform(implementation.increment);
+        DBSPExpression emptySetResult = this.transform(implementation.emptySetResult);
+        DBSPExpression aggregatedValue = this.transform(implementation.aggregatedValue);
+        DBSPTypeUser semiGroup = this.transform(implementation.semigroup).to(DBSPTypeUser.class);
+        this.pop(implementation);
+
+        NonLinearAggregate result = new MinMaxAggregate(
+                implementation.getNode(), zero,
+                increment.to(DBSPClosureExpression.class),
+                emptySetResult, semiGroup, aggregatedValue.to(DBSPClosureExpression.class),
+                implementation.isMin);
+        result.validate();
+        this.map(implementation, result);
+        return VisitDecision.STOP;
+    }
+
+    @Override
     public VisitDecision preorder(LinearAggregate implementation) {
         this.push(implementation);
         DBSPExpression map = this.transform(implementation.map);
@@ -1431,9 +1452,7 @@ public abstract class InnerRewriteVisitor
         DBSPClosureExpression postProcessing = this.transform(fold.postProcess).to(DBSPClosureExpression.class);
         DBSPTypeUser semiGroup = this.transform(fold.semigroup).to(DBSPTypeUser.class);
         this.pop(fold);
-        DBSPFold result = new DBSPFold(
-                fold.getNode(), fold.getType(), semiGroup,
-                zero, increment, postProcessing);
+        DBSPFold result = new DBSPFold(fold.getNode(), semiGroup, zero, increment, postProcessing);
         this.map(fold, result);
         return VisitDecision.STOP;
     }

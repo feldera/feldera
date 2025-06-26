@@ -22,12 +22,12 @@ import javax.annotation.Nullable;
 import java.util.List;
 
 /** Operator used in the creation of recursive circuits.
- * Represents a recursive view declaration that is used in the defnition of a set of other views.
+ * Represents a recursive view declaration that is used in the definition of a set of other views.
  * In fact, this behaves exactly like a delay operator that closes a cycle. */
 @NonCoreIR
 public final class DBSPViewDeclarationOperator
         extends DBSPSourceTableOperator {
-    final CalciteObject viewDeclaration;
+    public final CalciteObject viewDeclaration;
 
     public DBSPViewDeclarationOperator(
             CalciteObject node, CalciteObject sourceName,

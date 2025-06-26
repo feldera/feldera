@@ -41,4 +41,9 @@ public class CalciteEmptyRel extends CalciteRelNode {
     public CalciteRelNode intermediate() {
         return this;
     }
+
+    @Override
+    public long getId() {
+        return 0;
+    }
 }

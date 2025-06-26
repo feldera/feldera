@@ -255,6 +255,22 @@ public class ParserTests {
     }
 
     @Test
+    public void internedTest() throws SqlParseException {
+        SqlToRelCompiler calcite = this.getCompiler();
+        String ddl = """
+                CREATE TABLE st(
+                   ts       TIMESTAMP,
+                   name     VARCHAR INTERNED)""";
+        SqlNode node = calcite.parse(ddl);
+        Assert.assertNotNull(node);
+        Assert.assertTrue(node instanceof SqlCreateTable);
+        SqlCreateTable create = (SqlCreateTable) node;
+        Assert.assertNotNull(create.columnsOrForeignKeys);
+        SqlExtendedColumnDeclaration decl = (SqlExtendedColumnDeclaration) create.columnsOrForeignKeys.get(1);
+        Assert.assertTrue(decl.interned);
+    }
+
+    @Test
     public void sourceNameTest() throws SqlParseException {
         // Tests that a table can be named 'source'.
         SqlToRelCompiler calcite = this.getCompiler();

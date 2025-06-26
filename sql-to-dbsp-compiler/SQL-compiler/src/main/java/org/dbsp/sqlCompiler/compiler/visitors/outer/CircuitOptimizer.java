@@ -39,6 +39,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.ExpandWriteLog;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.LazyStatics;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Simplify;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.SimplifyWaterline;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.intern.Intern;
 import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.UnusedFields;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity.MonotoneAnalyzer;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
@@ -82,6 +83,7 @@ public class CircuitOptimizer extends Passes {
         this.add(new OptimizeWithGraph(compiler,
                 g -> new OptimizeMaps(compiler, true, g, operatorsAnalyzed), 1));
         this.add(new UnusedFields(compiler));
+        this.add(new Intern(compiler));
         this.add(new CSE(compiler));
         this.add(new MinMaxOptimize(compiler, compiler.weightVar));
         this.add(new ExpandAggregateZero(compiler));
@@ -97,6 +99,7 @@ public class CircuitOptimizer extends Passes {
         this.add(new RemoveIAfterD(compiler));
         this.add(new DeadCode(compiler, true, false));
         this.add(new Simplify(compiler).circuitRewriter(true));
+        this.add(new RemoveFilters(compiler));
         this.add(new OptimizeWithGraph(compiler, g -> new OptimizeProjectionVisitor(compiler, g)));
         this.add(new OptimizeWithGraph(compiler,
                 g -> new OptimizeMaps(compiler, true, g, operatorsAnalyzed)));
@@ -128,8 +131,8 @@ public class CircuitOptimizer extends Passes {
         this.add(new SimplifyWaterline(compiler)
                 .circuitRewriter(node -> node.hasAnnotation(a -> a.is(Waterline.class))));
         this.add(new EliminateDump(compiler).circuitRewriter(false));
-        this.add(new ExpandWriteLog(compiler).circuitRewriter(false));
         this.add(new Simplify(compiler).circuitRewriter(true));
+        this.add(new ExpandWriteLog(compiler).circuitRewriter(false));
         this.add(new CSE(compiler));
         this.add(new RecursiveComponents.ValidateRecursiveOperators(compiler));
         this.add(new LowerCircuitVisitor(compiler));

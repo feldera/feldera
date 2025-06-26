@@ -7,7 +7,7 @@
           "relOp": "LogicalTableScan",
           "table": [
             "schema",
-            "error_table"
+            "feldera_error_table"
           ],
           "inputs": []
         }
@@ -289,7 +289,7 @@
           "final": 2
         },
         "positions": [],
-        "persistent_id": "1e2457b8fe4b330049c5987e07bca2651eff848afac67f6f115c21ab079c7b3f"
+        "persistent_id": "1cad9022fb9400950c4b4a4d9aaf96ca4433f989b896a5147b0e3335d900fe21"
       },
       "s4": {
         "operation": "flat_map_index",
@@ -308,7 +308,7 @@
           {"start_line_number":1,"start_column":1,"end_line_number":1,"end_column":50},
           {"start_line_number":20,"start_column":27,"end_line_number":20,"end_column":37}
         ],
-        "persistent_id": "e792295a71de546b843e15787e0f6ffa8c368c20ee4cc6a090e14822c5fa642b"
+        "persistent_id": "22ae2d2dc36ff77445d36efbe51db9bf67289a01039d3c01319783983e31634a"
       },
       "s5": {
         "operation": "flat_map_index",
@@ -330,7 +330,7 @@
           {"start_line_number":19,"start_column":17,"end_line_number":19,"end_column":26},
           {"start_line_number":20,"start_column":11,"end_line_number":20,"end_column":21}
         ],
-        "persistent_id": "1763ad26d5bfc9ec3fcb9e6441bfcaa8abeaa719e0e84864d5a0139a9905df5d"
+        "persistent_id": "367a1b0f8fa55ef8277af3bbc38dde52e3efd4c7925e86fe96b066f73e1e4771"
       },
       "s6": {
         "operation": "delta0",
@@ -369,7 +369,7 @@
           {"start_line_number":16,"start_column":9,"end_line_number":16,"end_column":33},
           {"start_line_number":15,"start_column":9,"end_line_number":15,"end_column":18}
         ],
-        "persistent_id": "101eaea4beb94e1643bb0442df1c72cf5418ac33dfa65d055f6a86a28fc652ed"
+        "persistent_id": "de9ef9705dbd23ecebb057d78c4b03b40f821a9da8d20ddfdaaf494b95d67ce3"
       },
       "s9": {
         "operation": "sum",
@@ -381,7 +381,7 @@
           "final": 8
         },
         "positions": [],
-        "persistent_id": "852714b86adb94788b54ff1ff19142fc974a771ab4e103006b9332c78d8f987f"
+        "persistent_id": "471e8a9432d0cc1c7450b1706c034682324ac317a3ffe72ac24b0a55d27b6059"
       }
     }, "s10": {
       "operation": "inspect",
@@ -392,7 +392,7 @@
         "final": 8
       },
       "positions": [],
-      "persistent_id": "52cfeb75247c4ca459ccb2e1e33496ec57d9854b0a45e45f5462877a12477080"
+      "persistent_id": "cfc631b61f390ed48b7486c9fb8ad669434679a314c614330d226181583a1f1e"
     }, "s11": {
       "operation": "inspect",
       "inputs": [

@@ -22,7 +22,7 @@ public class LastRel extends CalciteRelNode {
 
     @Override
     public String toString() {
-        return "Last(" + this.relNode.getDigest() + ")";
+        return this.getId() + " Last(" + this.relNode.getDigest() + ")";
     }
 
     @Override
@@ -95,5 +95,10 @@ public class LastRel extends CalciteRelNode {
     @Override
     public int hashCode() {
         return this.relNode.hashCode();
+    }
+
+    @Override
+    public long getId() {
+        return this.relNode.getId();
     }
 }

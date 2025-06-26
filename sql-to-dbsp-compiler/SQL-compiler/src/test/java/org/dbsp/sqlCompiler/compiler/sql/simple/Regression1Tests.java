@@ -1,8 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.sql.simple;
 
-import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAggregateOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.sql.tools.CompilerCircuitStream;
@@ -464,5 +462,41 @@ public class Regression1Tests extends SqlIoTest {
                 --------
                  d
                 (1 row)""");
+    }
+
+    @Test
+    public void castBinaryToString() {
+        var ccs = this.getCCS("""
+                CREATE TABLE T(x BINARY(2));
+                CREATE VIEW V AS SELECT CAST(x AS VARCHAR), CAST(x'AB01' AS VARCHAR) FROM T;""");
+        ccs.step("INSERT INTO T VALUES(x'AB01')", """
+                    x | y    | weight
+                ----------------------
+                 ab01 | ab01 | 1""");
+    }
+
+    @Test
+    public void castDecimalToTimestamp() {
+        var ccs = this.getCCS("""
+                CREATE TABLE T(x DECIMAL(10, 2), y INT);
+                CREATE VIEW V AS SELECT CAST(x AS TIMESTAMP), CAST(10.20 AS TIMESTAMP),
+                CAST(10 AS TIMESTAMP), cast(y AS TIMESTAMP) FROM T;""");
+        ccs.step("INSERT INTO T VALUES(10.20, 10)", """
+                 x                   | decimal             | int                 | y                  | weight
+                -----------------------------------------------------------------------------------------------
+                 1970-01-01 00:00:00 | 1970-01-01 00:00:00 | 1970-01-01 00:00:00 | 1970-01-01 00:00:00 |1""");
+    }
+
+    @Test
+    public void testMapArgMax() {
+        this.getCCS("""
+                CREATE TABLE map_tbl(
+                id INT,
+                c1 MAP<VARCHAR, INT> NOT NULL,
+                c2 MAP<VARCHAR, INT>);
+                
+                CREATE VIEW map_arg_max_distinct_gby AS SELECT
+                id, ARG_MAX(DISTINCT c1, c2) AS c1
+                FROM map_tbl GROUP BY id;""");
     }
 }

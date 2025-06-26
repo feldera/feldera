@@ -38,19 +38,19 @@ import java.util.Map;
 public class UnusedFields extends Passes {
     static class RepeatRemove extends Repeat {
         public RepeatRemove(DBSPCompiler compiler,
-                            AnalyzedSet<DBSPExpression> unusedFunctions,
+                            AnalyzedSet<DBSPExpression> functionsAnalyzed,
                             AnalyzedSet<DBSPOperator> mapOperators,
                             AnalyzedSet<DBSPExpression> filterFunctions) {
-            super(compiler, new OnePass(compiler, unusedFunctions, mapOperators, filterFunctions));
+            super(compiler, new OnePass(compiler, functionsAnalyzed, mapOperators, filterFunctions));
         }
 
         static class OnePass extends Passes {
             OnePass(DBSPCompiler compiler,
-                    AnalyzedSet<DBSPExpression> unusedFunctions,
+                    AnalyzedSet<DBSPExpression> functionsAnalyzed,
                     AnalyzedSet<DBSPOperator> mapOperators,
                     AnalyzedSet<DBSPExpression> filterFunctions) {
                 super("UnusedFieldsOnePass", compiler);
-                this.add(new RemoveUnusedFields(compiler, unusedFunctions));
+                this.add(new RemoveUnusedFields(compiler, functionsAnalyzed));
                 // Very important, because OptimizeMaps works backward
                 this.add(new DeadCode(compiler, true, false));
 

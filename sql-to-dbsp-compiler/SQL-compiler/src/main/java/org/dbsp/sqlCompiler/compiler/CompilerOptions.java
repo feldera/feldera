@@ -81,15 +81,15 @@ public class CompilerOptions implements IDiff<CompilerOptions>, IValidate {
         @Override
         public String toString() {
             return "Language{" +
-                    "incrementalize=" + this.incrementalize +
-                    ", ignoreOrderBy=" + this.ignoreOrderBy +
-                    ", outputsAreSets=" + this.outputsAreSets +
-                    ", optimizationLevel=" + this.optimizationLevel +
-                    ", throwOnError=" + this.throwOnError +
-                    ", generateInputForEveryTable=" + this.generateInputForEveryTable +
-                    ", unrestrictedIOTypes=" + this.unrestrictedIOTypes +
-                    ", unaryPlusNoop=" + this.unaryPlusNoop +
-                    ", lenient=" + this.lenient +
+                    "\n\tincrementalize=" + this.incrementalize +
+                    ",\n\tignoreOrderBy=" + this.ignoreOrderBy +
+                    ",\n\toutputsAreSets=" + this.outputsAreSets +
+                    ",\n\toptimizationLevel=" + this.optimizationLevel +
+                    ",\n\tthrowOnError=" + this.throwOnError +
+                    ",\n\tgenerateInputForEveryTable=" + this.generateInputForEveryTable +
+                    ",\n\tunrestrictedIOTypes=" + this.unrestrictedIOTypes +
+                    ",\n\tunaryPlusNoop=" + this.unaryPlusNoop +
+                    ",\n\tlenient=" + this.lenient +
                     '}';
         }
 
@@ -242,19 +242,19 @@ public class CompilerOptions implements IDiff<CompilerOptions>, IValidate {
         @Override
         public String toString() {
             return "IO{" +
-                    "outputFile=" + Utilities.singleQuote(this.outputFile) +
-                    ", metadataSource=" + this.metadataSource +
-                    ", errorFile=" + Utilities.singleQuote(this.errorFile) +
-                    ", emitHandles=" + this.emitHandles +
-                    ", emitJpeg=" + this.emitJpeg +
-                    ", emitPng=" + this.emitPng +
-                    ", emitPlan=" + this.emitPlan +
-                    ", emitJsonErrors=" + this.emitJsonErrors +
-                    ", emitJsonSchema=" + Utilities.singleQuote(this.emitJsonSchema) +
-                    ", inputFile=" + Utilities.singleQuote(this.inputFile) +
-                    ", trimInputs=" + this.trimInputs +
-                    ", verbosity=" + this.verbosity +
-                    ", noRust=" + this.noRust +
+                    "\n\toutputFile=" + Utilities.singleQuote(this.outputFile) +
+                    ",\n\tmetadataSource=" + this.metadataSource +
+                    ",\n\terrorFile=" + Utilities.singleQuote(this.errorFile) +
+                    ",\n\temitHandles=" + this.emitHandles +
+                    ",\n\temitJpeg=" + this.emitJpeg +
+                    ",\n\temitPng=" + this.emitPng +
+                    ",\n\temitPlan=" + this.emitPlan +
+                    ",\n\temitJsonErrors=" + this.emitJsonErrors +
+                    ",\n\temitJsonSchema=" + Utilities.singleQuote(this.emitJsonSchema) +
+                    ",\n\tinputFile=" + Utilities.singleQuote(this.inputFile) +
+                    ",\n\ttrimInputs=" + this.trimInputs +
+                    ",\n\tverbosity=" + this.verbosity +
+                    ",\n\tnoRust=" + this.noRust +
                     '}';
         }
 
@@ -294,10 +294,10 @@ public class CompilerOptions implements IDiff<CompilerOptions>, IValidate {
     @Override
     public String toString() {
         return "CompilerOptions{" +
-                "help=" + this.help +
-                ", ioOptions=" + this.ioOptions +
-                ", optimizerOptions=" + this.languageOptions +
-                '}';
+                "\nhelp=" + this.help +
+                ",\nioOptions=" + this.ioOptions +
+                ",\noptimizerOptions=" + this.languageOptions +
+                "\n}";
     }
 
     public CompilerOptions() {}

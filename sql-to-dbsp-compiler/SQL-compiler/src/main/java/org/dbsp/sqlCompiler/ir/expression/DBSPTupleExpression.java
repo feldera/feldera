@@ -185,11 +185,16 @@ public final class DBSPTupleExpression extends DBSPBaseTupleExpression {
     public IIndentStream toString(IIndentStream builder) {
         if (this.fields == null)
             return builder.append("None");
-        return builder.append(DBSPTypeCode.TUPLE.rustName)
+        if (this.getType().mayBeNull)
+            builder.append("Some(");
+        builder.append(DBSPTypeCode.TUPLE.rustName)
                 .append(this.fields.length)
                 .append("::new(")
                 .intercalateI(", ", this.fields)
                 .append(")");
+        if (this.getType().mayBeNull)
+            builder.append(")");
+        return builder;
     }
 
     // In general, we don't want to compare expressions for equality.

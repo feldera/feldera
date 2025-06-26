@@ -13,6 +13,7 @@ import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
 
+import javax.annotation.Nullable;
 import java.util.List;
 
 import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.MAP;
@@ -25,6 +26,13 @@ public class DBSPTypeMap extends DBSPTypeUser implements ICollectionType {
     public DBSPTypeMap(DBSPType mapKeyType, DBSPType mapValueType, boolean mayBeNull) {
         super(mapKeyType.getNode(), MAP, "Map", mayBeNull, mapKeyType, mapValueType);
         this.collectionElementType = new DBSPTypeRawTuple(this.getKeyType(), this.getValueType());
+    }
+
+    @Nullable
+    @Override
+    public String asSqlString() {
+        return "MAP<" + this.getKeyType().asSqlString() + ", " +
+                this.getValueType().asSqlString() + ">";
     }
 
     public DBSPType getKeyType() {

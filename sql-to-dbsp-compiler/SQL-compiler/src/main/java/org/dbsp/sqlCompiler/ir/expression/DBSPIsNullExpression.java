@@ -31,6 +31,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.util.IIndentStream;
 
@@ -55,6 +56,17 @@ public final class DBSPIsNullExpression extends DBSPExpression {
         this.expression.accept(visitor);
         visitor.pop(this);
         visitor.postorder(this);
+    }
+
+    public DBSPExpression simplify() {
+        if (this.expression.is(DBSPSomeExpression.class))
+            return new DBSPBoolLiteral(false);
+        if (this.expression.is(DBSPCloneExpression.class))
+            return this.expression.to(DBSPCloneExpression.class).expression.is_null();
+        if (this.expression.is(DBSPBaseTupleExpression.class) &&
+            this.expression.to(DBSPBaseTupleExpression.class).fields != null)
+            return new DBSPBoolLiteral(false);
+        return this;
     }
 
     @Override

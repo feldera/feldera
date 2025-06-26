@@ -15,6 +15,7 @@ import org.dbsp.util.Utilities;
  * and related operators. */
 public class DBSPWindowBoundExpression extends DBSPExpression {
     public final boolean isPreceding;
+    // Currently a compile-time constant value
     public final DBSPExpression representation;
 
     public DBSPWindowBoundExpression(

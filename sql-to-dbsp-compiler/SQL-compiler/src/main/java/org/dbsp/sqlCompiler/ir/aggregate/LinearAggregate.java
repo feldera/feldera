@@ -107,6 +107,11 @@ public class LinearAggregate extends IAggregate {
     }
 
     @Override
+    public List<DBSPParameter> getRowVariableReferences() {
+        return Linq.list(this.map.parameters[0]);
+    }
+
+    @Override
     public boolean compatible(IAggregate other, boolean appendOnlySources) {
         return other.is(LinearAggregate.class);
     }
