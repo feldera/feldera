@@ -10,6 +10,7 @@ import {
   getPipelines,
   getPipelineStats,
   getPipelineStatus,
+  getSuspendDiff,
   patchPipeline,
   pipelineLogsStream,
   postApiKey,
@@ -131,6 +132,10 @@ export const usePipelineManager = () => {
       relationIngress,
       (_, tableName) => `Failed to push data to the ${tableName} table`
     ),
-    getDemos: reportError(getDemos, () => `Failed to fetch available demos`)
+    getDemos: reportError(getDemos, () => `Failed to fetch available demos`),
+    getSuspendDiff: reportError(
+      getSuspendDiff,
+      () => `Failed to retrieve the changes required to re-start the pipeline`
+    )
   }
 }
