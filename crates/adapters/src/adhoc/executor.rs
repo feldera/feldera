@@ -9,6 +9,7 @@ use bytestring::ByteString;
 use datafusion::common::{DataFusionError, Result as DFResult};
 use datafusion::dataframe::DataFrame;
 use datafusion::execution::SendableRecordBatchStream;
+use feldera_storage::tokio::TOKIO;
 use feldera_types::query::MAX_WS_FRAME_SIZE;
 use futures::stream::Stream;
 use futures_util::future::{BoxFuture, FutureExt};
@@ -18,8 +19,10 @@ use parquet::arrow::AsyncArrowWriter;
 use parquet::basic::Compression;
 use parquet::file::properties::WriterProperties;
 use std::convert::Infallible;
+use tokio::sync::mpsc::error::SendError;
 use tokio::sync::oneshot::Receiver;
 use tokio::sync::{mpsc, oneshot};
+use tokio::task::JoinHandle;
 
 use super::format;
 use crate::PipelineError;
@@ -117,11 +120,15 @@ pub(crate) fn stream_json_query(
 
 struct ChannelWriter {
     tx: mpsc::Sender<Bytes>,
+    handles: Vec<JoinHandle<Result<(), SendError<Bytes>>>>,
 }
 
 impl ChannelWriter {
     fn new(tx: mpsc::Sender<Bytes>) -> Self {
-        Self { tx }
+        Self {
+            tx,
+            handles: vec![],
+        }
     }
 }
 
@@ -147,11 +154,17 @@ impl std::io::Write for ChannelWriter {
         // Clone the buffer and send it
         let bytes = Bytes::copy_from_slice(buf);
         let len = bytes.len();
-        futures::executor::block_on(self.tx.send(bytes)).unwrap();
+        let tx = self.tx.clone();
+        let handle = TOKIO.spawn(async move { tx.send(bytes).await });
+        self.handles.push(handle);
         Ok(len)
     }
 
     fn flush(&mut self) -> std::io::Result<()> {
+        // It's ok for this to be a no-op, we don't require a flush anywhere.
+        //
+        // The proper way to implement this is to block until everything in `handles`
+        // completed but we can't do that in a sync interface.
         Ok(())
     }
 }
