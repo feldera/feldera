@@ -1101,15 +1101,18 @@ mod test {
                     let counter = Rc::new(RefCell::new(0));
                     let counter_clone = counter.clone();
 
-                    let input = child.add_source(GeneratorNested::new(Box::new(move || {
-                        *counter_clone.borrow_mut() = 0;
-                        if Runtime::worker_index() == 0 {
-                            let mut deltas = inputs.next().unwrap_or_default().into_iter();
-                            Box::new(move || deltas.next().unwrap_or_else(|| zset! {}))
-                        } else {
-                            Box::new(|| zset! {})
-                        }
-                    })));
+                    let input = child.add_source(GeneratorNested::new(
+                        Box::new(move || {
+                            *counter_clone.borrow_mut() = 0;
+                            if Runtime::worker_index() == 0 {
+                                let mut deltas = inputs.next().unwrap_or_default().into_iter();
+                                Box::new(move || deltas.next().unwrap_or_else(|| zset! {}))
+                            } else {
+                                Box::new(|| zset! {})
+                            }
+                        }),
+                        zset! {},
+                    ));
 
                     let distinct_inc = input.distinct().gather(0);
                     let hash_distinct_inc = input.hash_distinct().gather(0);
@@ -1341,15 +1344,18 @@ mod test {
                 let counter = Rc::new(RefCell::new(0));
                 let counter_clone = counter.clone();
 
-                let input = child.add_source(GeneratorNested::new(Box::new(move || {
-                    *counter_clone.borrow_mut() = 0;
-                    if Runtime::worker_index() == 0 {
-                        let mut deltas = inputs.next().unwrap_or_default().into_iter();
-                        Box::new(move || deltas.next().unwrap_or_else(|| indexed_zset! {}))
-                    } else {
-                        Box::new(|| indexed_zset! {})
-                    }
-                })));
+                let input = child.add_source(GeneratorNested::new(
+                    Box::new(move || {
+                        *counter_clone.borrow_mut() = 0;
+                        if Runtime::worker_index() == 0 {
+                            let mut deltas = inputs.next().unwrap_or_default().into_iter();
+                            Box::new(move || deltas.next().unwrap_or_else(|| indexed_zset! {}))
+                        } else {
+                            Box::new(|| indexed_zset! {})
+                        }
+                    }),
+                    indexed_zset! {},
+                ));
 
                 let distinct_inc = input.distinct().gather(0);
                 let hash_distinct_inc = input.hash_distinct().gather(0);
