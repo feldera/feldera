@@ -1,6 +1,6 @@
 [workspace.package]
 authors = ["Feldera Team <dev@feldera.com>"]
-version = "0.93.0"
+version = "0.94.0"
 license = "MIT OR Apache-2.0"
 homepage = "https://github.com/feldera/feldera"
 repository = "https://github.com/feldera/feldera"
@@ -86,7 +86,7 @@ crossbeam-utils = "0.8.6"
 csv = "1.2.2"
 csv-core = "0.1.10"
 datafusion = "47"
-dbsp = { path = "crates/dbsp", version = "0.93.0" }
+dbsp = { path = "crates/dbsp", version = "0.94.0" }
 dbsp_nexmark = { path = "crates/nexmark" }
 deadpool-postgres = "0.10.5"
 dec = { version = "0.4.9", features = ["serde"] }
@@ -105,10 +105,10 @@ feldera-adapterlib = { path = "crates/adapterlib" }
 feldera-datagen = { path = "crates/datagen" }
 feldera-iceberg = { path = "crates/iceberg" }
 feldera-sqllib = { path = "crates/sqllib" }
-feldera-storage = { version = "0.93.0", path = "crates/storage" }
-feldera-types = { version = "0.93.0", path = "crates/feldera-types" }
-feldera-rest-api = { version = "0.93.0", path = "crates/rest-api" }
-feldera-ir = { version = "0.93.0", path = "crates/ir" }
+feldera-storage = { version = "0.94.0", path = "crates/storage" }
+feldera-types = { version = "0.94.0", path = "crates/feldera-types" }
+feldera-rest-api = { version = "0.94.0", path = "crates/rest-api" }
+feldera-ir = { version = "0.94.0", path = "crates/ir" }
 flate2 = "1.1.0"
 form_urlencoded = "1.2.0"
 futures = "0.3.30"
