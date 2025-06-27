@@ -54,8 +54,8 @@
         pipelinesRelations[pipelineName][relationName].cancelStream = undefined
         return undefined
       }
-      const { cancel } = parseCancellable(
-        result,
+      const batchProcessor = new BatchProcessor(
+        { cancel: () => result.cancel() },
         {
           pushChanges: (rows: XgressEntry[]) => {
             const initialLen = changeStream[pipelineName].rows.length
@@ -94,25 +94,36 @@
               .map((i) => i - offset)
               .filter((i) => i >= 0)
           },
-          onBytesSkipped: (skippedBytes) => {
-            pushAsCircularBuffer(
-              () => changeStream[pipelineName].rows,
-              bufferSize,
-              (v) => v
-            )([{ relationName, skippedBytes }])
-            changeStream[pipelineName].totalSkippedBytes += skippedBytes
-          },
           onParseEnded: () =>
             (pipelinesRelations[pipelineName][relationName].cancelStream = undefined)
-        },
-        new CustomJSONParserTransformStream<XgressEntry>({
-          paths: ['$.json_data.*'],
-          separator: ''
-        }),
-        {
-          bufferSize: 8 * 1024 * 1024
         }
       )
+      const cancel = () => {
+        batchProcessor.cancel()
+      }
+      result.stream
+        .pipeThrough(
+          splitStreamByMaxChunk({
+            maxChunkBytes: 100000,
+            maxChunkBufferSize: 8 * 1024 * 1024,
+            onBytesSkipped: (skippedBytes) => {
+              pushAsCircularBuffer(
+                () => changeStream[pipelineName].rows,
+                bufferSize,
+                (v) => v
+              )([{ relationName, skippedBytes }])
+              changeStream[pipelineName].totalSkippedBytes += skippedBytes
+            }
+          })
+        )
+        .pipeThrough(
+          new CustomJSONParserTransformStream<XgressEntry>({
+            paths: ['$.json_data.*'],
+            separator: ''
+          })
+        )
+        .pipeThrough(createBatchingTransform())
+        .pipeTo(batchProcessor)
       return () => {
         cancel()
       }
@@ -173,9 +184,11 @@
   import { Pane, PaneGroup, PaneResizer } from 'paneforge'
   import type { Field, Relation } from '$lib/services/manager'
   import {
+    BatchProcessor,
+    createBatchingTransform,
     CustomJSONParserTransformStream,
-    parseCancellable,
-    pushAsCircularBuffer
+    pushAsCircularBuffer,
+    splitStreamByMaxChunk
   } from '$lib/functions/pipelines/changeStream'
   import JSONbig from 'true-json-bigint'
   import { groupBy } from '$lib/functions/common/array'
