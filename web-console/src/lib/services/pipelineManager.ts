@@ -505,7 +505,7 @@ export const pipelineLogsStream = async (pipelineName: string) => {
 export const adHocQuery = async (pipelineName: string, query: string) => {
   return streamingFetch(
     getAuthenticatedFetch(),
-    `${felderaEndpoint}/v0/pipelines/${pipelineName}/query?sql=${encodeURIComponent(query)}&format=json`,
+    `${felderaEndpoint}/v0/pipelines/${pipelineName}/query?sql=${encodeURIComponent(query)}&format=arrow_ipc`,
     {},
     (msg) => new Error(`Failed to invoke an ad-hoc query: \n${msg}`),
     (e) => new Error(e.details?.error ?? e.message, { cause: e })
