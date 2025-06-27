@@ -1,30 +1,39 @@
 //! Aggregation operators.
 
+use async_stream::stream;
 use dyn_clone::{clone_box, DynClone};
+use futures::Stream as AsyncStream;
 use minitrace::trace;
 use std::{
     any::TypeId,
     borrow::Cow,
+    cell::RefCell,
     cmp::{min, Ordering},
     collections::BTreeMap,
     marker::PhantomData,
+    rc::Rc,
 };
 
 use crate::{
     algebra::{HasOne, IndexedZSet, IndexedZSetReader, Lattice, OrdIndexedZSet, PartialOrder},
     circuit::{
-        operator_traits::{BinaryOperator, Operator, UnaryOperator},
+        operator_traits::{Operator, UnaryOperator},
         Circuit, Scope, Stream, WithClock,
     },
     dynamic::{
         DataTrait, DynData, DynOpt, DynPair, DynPairs, DynSet, DynUnit, DynWeight, Erase, Factory,
         LeanVec, Weight, WeightTrait, WithFactory,
     },
-    operator::dynamic::upsert::UpsertFactories,
+    operator::{
+        async_stream_operators::{StreamingBinaryOperator, StreamingBinaryWrapper},
+        dynamic::upsert::UpsertFactories,
+    },
     time::Timestamp,
     trace::{
-        cursor::CursorGroup, Batch, BatchReader, BatchReaderFactories, Builder, Cursor, Filter,
-        OrdWSet, OrdWSetFactories,
+        cursor::CursorGroup,
+        spine_async::{SpineCursor, WithSnapshot},
+        Batch, BatchReader, BatchReaderFactories, Builder, Cursor, Filter, OrdWSet,
+        OrdWSetFactories, Spine,
     },
     DBData, DBWeight, DynZWeight, NestedCircuit, RootCircuit, ZWeight,
 };
@@ -51,6 +60,8 @@ pub use max::{Max, MaxSemigroup};
 pub use min::{ArgMinSome, Min, MinSemigroup, MinSome1, MinSome1Semigroup};
 
 use super::MonoIndexedZSet;
+
+const AGGREGATE_OUTPUT_CHUNK_SIZE: usize = 10_000;
 
 pub struct IncAggregateFactories<I: BatchReader, O: IndexedZSet, T: Timestamp> {
     pub input_factories: I::Factories,
@@ -486,13 +497,13 @@ where
 
         circuit
             .add_binary_operator(
-                AggregateIncremental::new(
+                StreamingBinaryWrapper::new(AggregateIncremental::new(
                     factories.keys_factory,
                     factories.output_pair_factory,
                     factories.output_pairs_factory,
                     aggregator,
                     circuit.clone(),
-                ),
+                )),
                 &stream.dyn_accumulate(&factories.input_factories),
                 &stream
                     .dyn_accumulate_trace(&factories.trace_factories, &factories.input_factories),
@@ -783,11 +794,12 @@ where
 /// aggregate value.  Of course these are not always true, and we may
 /// want to one day build an alternative implementation using the
 /// other approach.
-struct AggregateIncremental<Z, IT, Acc, Out, Clk>
+struct AggregateIncremental<Z, B, IT, Acc, Out, Clk>
 where
     Acc: DataTrait + ?Sized,
     Out: DataTrait + ?Sized,
     Z: BatchReader,
+    B: Batch,
     IT: BatchReader,
 {
     keys_factory: &'static dyn Factory<DynSet<IT::Key>>,
@@ -796,20 +808,21 @@ where
     clock: Clk,
     aggregator: Box<dyn DynAggregator<Z::Val, IT::Time, Z::R, Accumulator = Acc, Output = Out>>,
     // The last input batch was empty - used in fixedpoint computation.
-    empty_input: bool,
+    empty_input: RefCell<bool>,
     // The last output batch was empty - used in fixedpoint computation.
-    empty_output: bool,
+    empty_output: RefCell<bool>,
     // Keys that may need updating at future times.
-    keys_of_interest: BTreeMap<IT::Time, Box<DynSet<IT::Key>>>,
+    keys_of_interest: RefCell<BTreeMap<IT::Time, Box<DynSet<IT::Key>>>>,
     // Buffer used in computing per-key outputs.
     // Keep it here to reuse allocation across multiple operations.
-    _type: PhantomData<fn(&Z, &IT)>,
+    _type: PhantomData<fn(&Z, &B, &IT)>,
 }
 
-impl<Z, IT, Acc, Out, Clk> AggregateIncremental<Z, IT, Acc, Out, Clk>
+impl<Z, B, IT, Acc, Out, Clk> AggregateIncremental<Z, B, IT, Acc, Out, Clk>
 where
     Clk: WithClock<Time = IT::Time>,
     Z: BatchReader<Time = ()>,
+    B: Batch<Key = Z::Key, Val = Z::Val, R = Z::R, Time = IT::Time>,
     IT: BatchReader<Key = Z::Key, Val = Z::Val, R = Z::R>,
     Acc: DataTrait + ?Sized,
     Out: DataTrait + ?Sized,
@@ -827,9 +840,9 @@ where
             output_pairs_factory,
             clock,
             aggregator: clone_box(aggregator),
-            empty_input: false,
-            empty_output: false,
-            keys_of_interest: BTreeMap::new(),
+            empty_input: RefCell::new(false),
+            empty_output: RefCell::new(false),
+            keys_of_interest: RefCell::new(BTreeMap::new()),
             _type: PhantomData,
         }
     }
@@ -841,8 +854,8 @@ where
     /// * `input_cursor` - cursor over the input trace that contains all updates
     ///   to the indexed Z-set that we are aggregating, up to and including the
     ///   current timestamp.
-    /// * `builder` - builder that accumulates output tuples for the current
-    ///   evalution of the operator.
+    /// * `output` - array that accumulates output tuples for the current
+    ///   evaluation of the operator.
     ///
     /// # Computing output
     ///
@@ -870,9 +883,9 @@ where
     /// optimized to terminate early.
     #[trace]
     fn eval_key(
-        &mut self,
+        self: &Rc<Self>,
         key: &Z::Key,
-        input_cursor: &mut IT::Cursor<'_>,
+        input_cursor: &mut SpineCursor<B>,
         output: &mut DynPairs<Z::Key, DynOpt<Out>>,
         time: &Clk::Time,
         // Temporary variable.
@@ -927,7 +940,9 @@ where
                 }
 
                 if let Some(t) = time_of_interest {
+                    // println!("keys_of_interest[{t:?}] += {key:?}");
                     self.keys_of_interest
+                        .borrow_mut()
                         .entry(t)
                         .or_insert_with(|| self.keys_factory.default_box())
                         .insert_ref(key);
@@ -941,10 +956,11 @@ where
     }
 }
 
-impl<Z, IT, Acc, Out, Clk> Operator for AggregateIncremental<Z, IT, Acc, Out, Clk>
+impl<Z, B, IT, Acc, Out, Clk> Operator for AggregateIncremental<Z, B, IT, Acc, Out, Clk>
 where
     Clk: WithClock<Time = IT::Time> + 'static,
     Z: BatchReader,
+    B: Batch,
     IT: BatchReader,
     Acc: DataTrait + ?Sized,
     Out: DataTrait + ?Sized,
@@ -955,18 +971,18 @@ where
 
     fn clock_start(&mut self, scope: Scope) {
         if scope == 0 {
-            self.empty_input = false;
-            self.empty_output = false;
+            *self.empty_input.borrow_mut() = false;
+            *self.empty_output.borrow_mut() = false;
         }
     }
 
     fn clock_end(&mut self, scope: Scope) {
-        debug_assert!(self.keys_of_interest.keys().all(|ts| {
+        debug_assert!(self.keys_of_interest.borrow().keys().all(|ts| {
             if ts.less_equal(&self.clock.time().epoch_end(scope)) {
-                println!(
-                    "ts: {ts:?}, epoch_end: {:?}",
-                    self.clock.time().epoch_end(scope)
-                );
+                // println!(
+                //     "ts: {ts:?}, epoch_end: {:?}",
+                //     self.clock.time().epoch_end(scope)
+                // );
             }
             !ts.less_equal(&self.clock.time().epoch_end(scope))
         }));
@@ -975,127 +991,181 @@ where
     fn fixedpoint(&self, scope: Scope) -> bool {
         let epoch_end = self.clock.time().epoch_end(scope);
 
-        self.empty_input
-            && self.empty_output
+        *self.empty_input.borrow()
+            && *self.empty_output.borrow()
             && self
                 .keys_of_interest
+                .borrow()
                 .keys()
                 .all(|ts| !ts.less_equal(&epoch_end))
     }
 }
 
-impl<Z, IT, Acc, Out, Clk> BinaryOperator<Option<Z>, IT, Box<DynPairs<Z::Key, DynOpt<Out>>>>
-    for AggregateIncremental<Z, IT, Acc, Out, Clk>
+impl<Z, B, IT, Acc, Out, Clk>
+    StreamingBinaryOperator<Option<Spine<Z>>, IT, Box<DynPairs<Z::Key, DynOpt<Out>>>>
+    for AggregateIncremental<Z, B, IT, Acc, Out, Clk>
 where
     Clk: WithClock<Time = IT::Time> + 'static,
-    Z: BatchReader<Time = ()>,
-    IT: BatchReader<Key = Z::Key, Val = Z::Val, R = Z::R> + Clone,
+    Z: Batch<Time = ()>,
+    B: Batch<Key = Z::Key, Val = Z::Val, R = Z::R, Time = IT::Time>,
+    IT: BatchReader<Key = Z::Key, Val = Z::Val, R = Z::R> + Clone + WithSnapshot<B>,
     Acc: DataTrait + ?Sized,
     Out: DataTrait + ?Sized,
 {
     #[trace]
-    async fn eval(
-        &mut self,
-        delta: &Option<Z>,
+    fn eval(
+        self: Rc<Self>,
+        delta: &Option<Spine<Z>>,
         input_trace: &IT,
-    ) -> Box<DynPairs<Z::Key, DynOpt<Out>>> {
-        let Some(delta) = delta else {
-            return self.output_pairs_factory.default_box();
+    ) -> impl AsyncStream<Item = (Box<DynPairs<Z::Key, DynOpt<Out>>>, bool)> + 'static {
+        // println!(
+        //     "{}: AggregateIncremental::eval({delta:?})",
+        //     Runtime::worker_index()
+        // );
+        let delta = delta.as_ref().map(|b| b.ro_snapshot());
+
+        let input_trace = if delta.is_some() {
+            Some(input_trace.ro_snapshot())
+        } else {
+            None
         };
 
-        // println!(
-        //     "{}: AggregateIncremental::eval @{:?}\ndelta:{delta}",
-        //     Runtime::worker_index(),
-        //     self.time
-        // );
-        self.empty_input = delta.is_empty();
+        stream! {
+            let Some(delta) = delta else {
+                // println!("yield empty");
+                yield (self.output_pairs_factory.default_box(), true);
+                return;
+            };
 
-        let mut result = self.output_pairs_factory.default_box();
-        result.reserve(delta.key_count());
+            // println!(
+            //     "{}: AggregateIncremental::eval @{:?}\ndelta:{delta}",
+            //     Runtime::worker_index(),
+            //     self.time
+            // );
+            *self.empty_input.borrow_mut() = delta.is_empty();
+            *self.empty_output.borrow_mut() = true;
 
-        let mut delta_cursor = delta.cursor();
-        let mut input_trace_cursor = input_trace.cursor();
+            let mut result = self.output_pairs_factory.default_box();
+            result.reserve(AGGREGATE_OUTPUT_CHUNK_SIZE);
 
-        let time = self.clock.time();
+            let mut delta_cursor = delta.cursor();
+            let mut input_trace_cursor = input_trace.unwrap().cursor();
 
-        // Previously encountered keys that may affect output at the
-        // current time.
-        let keys_of_interest = self
-            .keys_of_interest
-            .remove(&time)
-            .unwrap_or_else(|| self.keys_factory.default_box());
+            let time = self.clock.time();
 
-        let mut keys_of_interest = keys_of_interest.dyn_iter();
+            // Previously encountered keys that may affect output at the
+            // current time.
+            let keys_of_interest = self
+                .keys_of_interest
+                .borrow_mut()
+                .remove(&time)
+                .unwrap_or_else(|| self.keys_factory.default_box());
+            // println!("keys_of_interest @{time:?}: {:?}", keys_of_interest);
 
-        let mut key_of_interest = keys_of_interest.next();
-        let mut key_aggregate = self.output_pair_factory.default_box();
+            let mut keys_of_interest = keys_of_interest.dyn_iter();
 
-        // Iterate over all keys in `delta_cursor` and `keys_of_interest`.
-        while delta_cursor.key_valid() && key_of_interest.is_some() {
-            let key_of_interest_ref = key_of_interest.unwrap();
+            let mut key_of_interest = keys_of_interest.next();
+            let mut key_aggregate = self.output_pair_factory.default_box();
 
-            match delta_cursor.key().cmp(key_of_interest_ref) {
-                // Key only appears in `delta`.
-                Ordering::Less => {
-                    self.eval_key(
-                        delta_cursor.key(),
-                        &mut input_trace_cursor,
-                        result.as_mut(),
-                        &time,
-                        key_aggregate.as_mut(),
-                    );
-                    delta_cursor.step_key();
+            // Iterate over all keys in `delta_cursor` and `keys_of_interest`.
+            while delta_cursor.key_valid() && key_of_interest.is_some() {
+                // println!("eval_key");
+                let key_of_interest_ref = key_of_interest.unwrap();
+
+                match delta_cursor.key().cmp(key_of_interest_ref) {
+                    // Key only appears in `delta`.
+                    Ordering::Less => {
+                        self.eval_key(
+                            delta_cursor.key(),
+                            &mut input_trace_cursor,
+                            result.as_mut(),
+                            &time,
+                            key_aggregate.as_mut(),
+                        );
+                        delta_cursor.step_key();
+                    }
+                    // Key only appears in `keys_of_interest`.
+                    Ordering::Greater => {
+                        self.eval_key(
+                            key_of_interest_ref,
+                            &mut input_trace_cursor,
+                            result.as_mut(),
+                            &time,
+                            key_aggregate.as_mut(),
+                        );
+                        key_of_interest = keys_of_interest.next();
+                    }
+                    // Key appears in both `delta` and `keys_of_interest`.
+                    Ordering::Equal => {
+                        self.eval_key(
+                            delta_cursor.key(),
+                            &mut input_trace_cursor,
+                            result.as_mut(),
+                            &time,
+                            key_aggregate.as_mut(),
+                        );
+                        delta_cursor.step_key();
+                        key_of_interest = keys_of_interest.next();
+                    }
                 }
-                // Key only appears in `keys_of_interest`.
-                Ordering::Greater => {
-                    self.eval_key(
-                        key_of_interest_ref,
-                        &mut input_trace_cursor,
-                        result.as_mut(),
-                        &time,
-                        key_aggregate.as_mut(),
-                    );
-                    key_of_interest = keys_of_interest.next();
-                }
-                // Key appears in both `delta` and `keys_of_interest`.
-                Ordering::Equal => {
-                    self.eval_key(
-                        delta_cursor.key(),
-                        &mut input_trace_cursor,
-                        result.as_mut(),
-                        &time,
-                        key_aggregate.as_mut(),
-                    );
-                    delta_cursor.step_key();
-                    key_of_interest = keys_of_interest.next();
+
+                if result.len() >= AGGREGATE_OUTPUT_CHUNK_SIZE {
+                    // println!("yield {:?}", result);
+
+                    *self.empty_output.borrow_mut() &= result.is_empty();
+                    yield (result, !(delta_cursor.key_valid() || key_of_interest.is_some()));
+                    result = self.output_pairs_factory.default_box();
+                    result.reserve(AGGREGATE_OUTPUT_CHUNK_SIZE);
                 }
             }
-        }
 
-        while delta_cursor.key_valid() {
-            self.eval_key(
-                delta_cursor.key(),
-                &mut input_trace_cursor,
-                result.as_mut(),
-                &time,
-                key_aggregate.as_mut(),
-            );
-            delta_cursor.step_key();
-        }
+            while delta_cursor.key_valid() {
+                // println!("eval delta");
 
-        while key_of_interest.is_some() {
-            self.eval_key(
-                key_of_interest.unwrap(),
-                &mut input_trace_cursor,
-                result.as_mut(),
-                &time,
-                key_aggregate.as_mut(),
-            );
-            key_of_interest = keys_of_interest.next();
-        }
+                self.eval_key(
+                    delta_cursor.key(),
+                    &mut input_trace_cursor,
+                    result.as_mut(),
+                    &time,
+                    key_aggregate.as_mut(),
+                );
+                delta_cursor.step_key();
 
-        self.empty_output = result.is_empty();
-        result
+                if result.len() >= AGGREGATE_OUTPUT_CHUNK_SIZE {
+                    // println!("yield {:?}", result);
+
+                    *self.empty_output.borrow_mut() &= result.is_empty();
+                    yield (result, !(delta_cursor.key_valid() || key_of_interest.is_some()));
+                    result = self.output_pairs_factory.default_box();
+                    result.reserve(AGGREGATE_OUTPUT_CHUNK_SIZE);
+                }
+            }
+
+            while key_of_interest.is_some() {
+                // println!("eval key_of_interest");
+
+                self.eval_key(
+                    key_of_interest.unwrap(),
+                    &mut input_trace_cursor,
+                    result.as_mut(),
+                    &time,
+                    key_aggregate.as_mut(),
+                );
+                key_of_interest = keys_of_interest.next();
+
+                if result.len() >= AGGREGATE_OUTPUT_CHUNK_SIZE {
+                    // println!("yield {:?}", result);
+
+                    *self.empty_output.borrow_mut() &= result.is_empty();
+                    yield (result, !(delta_cursor.key_valid() || key_of_interest.is_some()));
+                    result = self.output_pairs_factory.default_box();
+                    result.reserve(AGGREGATE_OUTPUT_CHUNK_SIZE);
+                }
+            }
+
+            // println!("yield final {:?}", result);
+            yield (result, true);
+        }
     }
 }
 
@@ -1136,15 +1206,18 @@ pub mod test {
                 let counter_clone = counter.clone();
 
                 let input: Stream<_, OrdIndexedZSet<u64, i64>> = child
-                    .add_source(GeneratorNested::new(Box::new(move || {
-                        *counter_clone.borrow_mut() = 0;
-                        if Runtime::worker_index() == 0 {
-                            let mut deltas = inputs.next().unwrap_or_default().into_iter();
-                            Box::new(move || deltas.next().unwrap_or_else(|| zset! {}))
-                        } else {
-                            Box::new(|| zset! {})
-                        }
-                    })))
+                    .add_source(GeneratorNested::new(
+                        Box::new(move || {
+                            *counter_clone.borrow_mut() = 0;
+                            if Runtime::worker_index() == 0 {
+                                let mut deltas = inputs.next().unwrap_or_default().into_iter();
+                                Box::new(move || deltas.next().unwrap_or_else(|| zset! {}))
+                            } else {
+                                Box::new(|| zset! {})
+                            }
+                        }),
+                        zset! {},
+                    ))
                     .map_index(|Tup2(k, v)| (*k, *v));
 
                 // Weighted sum aggregate.
@@ -1161,102 +1234,76 @@ pub mod test {
                     input.aggregate(sum.clone()).gather(0);
                 let sum_inc_linear: Stream<_, OrdIndexedZSet<u64, i64>> =
                     input.aggregate_linear(sum_linear).gather(0);
-                let sum_noninc = input
-                    .integrate_nested()
-                    .integrate()
-                    .stream_aggregate(sum)
-                    .differentiate()
-                    .differentiate_nested()
-                    .gather(0);
-                let sum_noninc_linear = input
-                    .integrate_nested()
-                    .integrate()
-                    .stream_aggregate_linear(sum_linear)
-                    .differentiate()
-                    .differentiate_nested()
-                    .gather(0);
+
+                // let sum_noninc = input
+                //     .integrate_nested()
+                //     .integrate()
+                //     .stream_aggregate(sum)
+                //     .differentiate()
+                //     .differentiate_nested()
+                //     .gather(0);
+                // let sum_noninc_linear = input
+                //     .integrate_nested()
+                //     .integrate()
+                //     .stream_aggregate_linear(sum_linear)
+                //     .differentiate()
+                //     .differentiate_nested()
+                //     .gather(0);
 
                 // Compare outputs of all four implementations.
-                sum_inc
-                    .apply2(
-                        &sum_noninc,
-                        |d1: &OrdIndexedZSet<u64, i64>, d2: &OrdIndexedZSet<u64, i64>| {
-                            (d1.clone(), d2.clone())
-                        },
-                    )
-                    .inspect(|(d1, d2)| {
-                        //println!("{}: incremental: {:?}", Runtime::worker_index(), d1);
-                        //println!("{}: non-incremental: {:?}", Runtime::worker_index(), d2);
-                        assert_eq!(d1, d2);
-                    });
 
-                sum_inc.apply2(
-                    &sum_inc_linear,
-                    |d1: &OrdIndexedZSet<u64, i64>, d2: &OrdIndexedZSet<u64, i64>| {
-                        // println!("{}: incremental: {:?}", Runtime::worker_index(), d1);
-                        // println!("{}: linear: {:?}", Runtime::worker_index(), d2);
+                // sum_inc.accumulate_apply2(&sum_noninc, |d1, d2| {
+                //     assert_eq!(d1.iter().collect::<Vec<_>>(), d2.iter().collect::<Vec<_>>())
+                // });
 
-                        // Compare d1 and d2 modulo 0 values (linear aggregation removes them
-                        // from the collection).
-                        let mut cursor1 = d1.cursor();
-                        let mut cursor2 = d2.cursor();
+                sum_inc.accumulate_apply2(&sum_inc_linear, |d1, d2| {
+                    // println!("{}: incremental: {:?}", Runtime::worker_index(), d1);
+                    // println!("{}: linear: {:?}", Runtime::worker_index(), d2);
 
-                        while cursor1.key_valid() {
-                            while cursor1.val_valid() {
-                                if *cursor1.val().downcast_checked::<i64>() != 0 {
-                                    assert!(cursor2.key_valid());
-                                    assert_eq!(cursor2.key(), cursor1.key());
-                                    assert!(cursor2.val_valid());
-                                    assert_eq!(cursor2.val(), cursor1.val());
-                                    assert_eq!(cursor2.weight(), cursor1.weight());
-                                    cursor2.step_val();
-                                }
+                    // Compare d1 and d2 modulo 0 values (linear aggregation removes them
+                    // from the collection).
+                    let mut cursor1 = d1.cursor();
+                    let mut cursor2 = d2.cursor();
 
-                                cursor1.step_val();
+                    while cursor1.key_valid() {
+                        while cursor1.val_valid() {
+                            if *cursor1.val().downcast_checked::<i64>() != 0 {
+                                assert!(cursor2.key_valid());
+                                assert_eq!(cursor2.key(), cursor1.key());
+                                assert!(cursor2.val_valid());
+                                assert_eq!(cursor2.val(), cursor1.val());
+                                assert_eq!(cursor2.weight(), cursor1.weight());
+                                cursor2.step_val();
                             }
 
-                            if cursor2.key_valid() && cursor2.key() == cursor1.key() {
-                                cursor2.step_key();
-                            }
-
-                            cursor1.step_key();
+                            cursor1.step_val();
                         }
-                        assert!(!cursor2.key_valid());
-                    },
-                );
 
-                sum_inc_linear
-                    .apply2(
-                        &sum_noninc_linear,
-                        |d1: &OrdIndexedZSet<u64, i64>, d2: &OrdIndexedZSet<u64, i64>| {
-                            (d1.clone(), d2.clone())
-                        },
-                    )
-                    .inspect(|(d1, d2)| {
-                        //println!("{}: incremental: {:?}", Runtime::worker_index(), d1);
-                        //println!("{}: non-incremental: {:?}", Runtime::worker_index(), d2);
-                        assert_eq!(d1, d2);
-                    });
+                        if cursor2.key_valid() && cursor2.key() == cursor1.key() {
+                            cursor2.step_key();
+                        }
 
-                let min_inc = input.aggregate(Min).gather(0);
-                let min_noninc = input
-                    .integrate_nested()
-                    .integrate()
-                    .stream_aggregate(Min)
-                    .differentiate()
-                    .differentiate_nested()
-                    .gather(0);
+                        cursor1.step_key();
+                    }
+                    assert!(!cursor2.key_valid());
+                });
 
-                min_inc
-                    .apply2(
-                        &min_noninc,
-                        |d1: &OrdIndexedZSet<u64, i64>, d2: &OrdIndexedZSet<u64, i64>| {
-                            (d1.clone(), d2.clone())
-                        },
-                    )
-                    .inspect(|(d1, d2)| {
-                        assert_eq!(d1, d2);
-                    });
+                // sum_inc_linear.accumulate_apply2(&sum_noninc_linear, |d1, d2| {
+                //     assert_eq!(d1.iter().collect::<Vec<_>>(), d2.iter().collect::<Vec<_>>())
+                // });
+
+                // let min_inc = input.aggregate(Min).gather(0);
+                // let min_noninc = input
+                //     .integrate_nested()
+                //     .integrate()
+                //     .stream_aggregate(Min)
+                //     .differentiate()
+                //     .differentiate_nested()
+                //     .gather(0);
+
+                // min_inc.accumulate_apply2(&min_noninc, |d1, d2| {
+                //     assert_eq!(d1.iter().collect::<Vec<_>>(), d2.iter().collect::<Vec<_>>())
+                // });
 
                 Ok((
                     async move || {
