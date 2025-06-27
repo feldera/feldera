@@ -11,6 +11,7 @@ pub(crate) mod apply;
 pub mod apply2;
 pub mod apply3;
 pub mod apply_n;
+mod async_stream_operators;
 pub mod communication;
 pub(crate) mod inspect;
 
