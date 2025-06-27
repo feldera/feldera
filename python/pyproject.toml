@@ -29,6 +29,7 @@ dependencies = [
     "numpy>=2.2.4",
     "pretty-errors",
     "ruff>=0.6.9",
+    "pyarrow>=20.0.0",
 ]
 [project.urls]
 Homepage = "https://www.feldera.com"

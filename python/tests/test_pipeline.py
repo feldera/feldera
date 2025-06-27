@@ -3,7 +3,9 @@ import pathlib
 import unittest
 import uuid
 import threading
+import pyarrow as pa
 
+from decimal import Decimal
 from tests import TEST_CLIENT
 
 from feldera.rest.pipeline import Pipeline
@@ -232,6 +234,65 @@ class TestPipeline(unittest.TestCase):
         got = list(resp)
 
         self.assertCountEqual(got, expected)
+
+        TEST_CLIENT.shutdown_pipeline(name)
+        TEST_CLIENT.delete_pipeline(name)
+
+    def test_adhoc_query_pyarrow(self):
+        data = "1\n2\n"
+        name = str(uuid.uuid4())
+
+        sql = """
+        CREATE TABLE tbl(id INT) with ('materialized' = 'true');
+        CREATE MATERIALIZED VIEW v0 AS SELECT id, '3.14'::DECIMAL(5, 2) as d, '3.14159'::DOUBLE as dbl, MAP[1, 10] as m FROM tbl;
+        """
+
+        pipeline = Pipeline(name, sql, "", "", {}, {})
+        pipeline = TEST_CLIENT.create_pipeline(pipeline)
+
+        TEST_CLIENT.start_pipeline(name)
+
+        TEST_CLIENT.push_to_pipeline(name, "tbl", "csv", data)
+        resp = TEST_CLIENT.query_as_pyarrow(pipeline.name, "select * from v0")
+        expected = [
+            {"id": 2, "d": Decimal("3.14"), "dbl": 3.14159, "m": [(1, 10)]},
+            {"id": 1, "d": Decimal("3.14"), "dbl": 3.14159, "m": [(1, 10)]},
+        ]
+        got = resp.to_pylist()
+
+        self.assertCountEqual(got, expected)
+
+        TEST_CLIENT.shutdown_pipeline(name)
+        TEST_CLIENT.delete_pipeline(name)
+
+    def test_adhoc_query_pyarrow_same_alias_name(self):
+        dataT = "1,2\n4,3\n"
+        dataS = "5,2\n6,3\n"
+        name = str(uuid.uuid4())
+
+        sql = """
+        CREATE TABLE T(x INT, y INT) with ('materialized' = 'true');
+        CREATE TABLE S(x INT, y INT) with ('materialized' = 'true');
+        """
+
+        pipeline = Pipeline(name, sql, "", "", {}, {})
+        pipeline = TEST_CLIENT.create_pipeline(pipeline)
+
+        TEST_CLIENT.start_pipeline(name)
+
+        TEST_CLIENT.push_to_pipeline(name, "T", "csv", dataT)
+        TEST_CLIENT.push_to_pipeline(name, "S", "csv", dataS)
+        resp = TEST_CLIENT.query_as_pyarrow(
+            pipeline.name, "SELECT T.x, S.x FROM T, S WHERE T.y = S.y"
+        )
+
+        col1 = pa.chunked_array([[1], [4]], type=pa.int32())
+        col2 = pa.chunked_array([[5], [6]], type=pa.int32())
+
+        expected = pa.table({"x1": col1, "x2": col2})
+        expected = expected.rename_columns(["x", "x"])
+
+        assert resp == expected
 
         TEST_CLIENT.shutdown_pipeline(name)
         TEST_CLIENT.delete_pipeline(name)
