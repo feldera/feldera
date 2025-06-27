@@ -46,7 +46,9 @@ where
 
 impl<B: Batch + Send + Sync> Debug for SpineSnapshot<B> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("SpineSnapshot").finish()
+        f.debug_struct("SpineSnapshot")
+            .field("batches", &self.batches)
+            .finish()
     }
 }
 
