@@ -273,7 +273,6 @@ pub(crate) async fn stream_adhoc_result(
     session: SessionContext,
 ) -> Result<HttpResponse, PipelineError> {
     let df = session.sql(&args.sql).await?;
-
     // Note that once we are in the stream!{} macros any error that occurs will lead to the connection
     // in the manager being terminated and a 500 error being returned to the client.
     // We can't return an error in a stream that is already Response::Ok.
