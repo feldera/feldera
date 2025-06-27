@@ -36,155 +36,126 @@ class BuildMode(Enum):
 
 class PipelineStatus(Enum):
     """
-    Represents the state that this pipeline is currently in.
+     Represents the state that this pipeline is currently in.
 
-    .. code-block:: text
+     .. code-block:: text
 
-        Shutdown     ◄────┐
-        │         │
-        /deploy   │       │
-        │   ⌛ShuttingDown
-        ▼         ▲
-        ⌛Provisioning    │
-        │         │
-        Provisioned        │
-        ▼         │/shutdown
-        ⌛Initializing     │
-        │        │
-        ┌────────┴─────────┴─┐
-        │        ▼           │
-        │      Paused        │
-        │      │    ▲        │
-        │/start│    │/pause  │
-        │      ▼    │        │
-        │     Running        │
-        └──────────┬─────────┘
-                   │
-                   ▼
-                Failed
+                  Stopped ◄─────────── Stopping ◄───── All states can transition
+                     │                    ▲            to Stopping by either:
+    /start or /pause │                    │            (1) user calling /stop, or;
+                     ▼                    │            (2) pipeline encountering a fatal
+              ⌛Provisioning          Suspending            resource or runtime error,
+                     │                    ▲                having the system call /stop
+                     ▼                    │ /suspend       effectively
+              ⌛Initializing ─────────────┤
+                     │                    │
+           ┌─────────┼────────────────────┴─────┐
+           │         ▼                          │
+           │       Paused  ◄──────► Unavailable │
+           │        │   ▲                ▲      │
+           │ /start │   │  /pause        │      │
+           │        ▼   │                │      │
+           │       Running ◄─────────────┘      │
+           └────────────────────────────────────┘
     """
 
-    NOT_FOUND = 1
+    NOT_FOUND = 0
     """
     The pipeline has not been created yet.
     """
 
-    SHUTDOWN = 2
+    STOPPED = 1
     """
-    Pipeline has not been started or has been shut down.
+    The pipeline has not (yet) been started or has been stopped either
+    manually by the user or automatically by the system due to a
+    resource or runtime error.
 
-    The pipeline remains in this state until the user triggers
-    a deployment by invoking the `/deploy` endpoint.
-    """
+    The pipeline remains in this state until:
 
-    PROVISIONING = 3
-    """
-    The runner triggered a deployment of the pipeline and is
-    waiting for the pipeline HTTP server to come up.
-
-    In this state, the runner provisions a runtime for the pipeline,
-    starts the pipeline within this runtime and waits for it to start accepting HTTP requests.
-
-    The user is unable to communicate with the pipeline during this
-    time.  The pipeline remains in this state until:
-
-        1. Its HTTP server is up and running; the pipeline transitions to the
-           `PipelineStatus.INITIALIZING` state.
-        2. A pre-defined timeout has passed.  The runner performs forced
-           shutdown of the pipeline; returns to the `PipelineStatus.SHUTDOWN` state.
-        3. The user cancels the pipeline by invoking the `/shutdown` endpoint.
-           The manager performs forced shutdown of the pipeline, returns to the
-           `PipelineStatus.SHUTDOWN` state.
-
+        1. The user starts it via `/start` or `/pause`, transitioning to `PROVISIONING`.
+        2. Early start fails (e.g., compilation failure), transitioning to `STOPPING`.
     """
 
-    INITIALIZING = 4
+    PROVISIONING = 2
+    """
+    Compute (and optionally storage) resources needed for running the pipeline
+    are being provisioned.
+
+    The pipeline remains in this state until:
+
+        1. Resources are provisioned successfully, transitioning to `INITIALIZING`.
+        2. Provisioning fails or times out, transitioning to `STOPPING`.
+        3. The user cancels the pipeline via `/stop`, transitioning to `STOPPING`.
+    """
+
+    INITIALIZING = 3
     """
     The pipeline is initializing its internal state and connectors.
 
-    This state is part of the pipeline's deployment process.  In this state,
-    the pipeline's HTTP server is up and running, but its query engine
-    and input and output connectors are still initializing.
+    The pipeline remains in this state until:
+
+        1. Initialization succeeds, transitioning to `PAUSED`.
+        2. Initialization fails or times out, transitioning to `STOPPING`.
+        3. The user suspends the pipeline via `/suspend`, transitioning to `SUSPENDING`.
+        4. The user stops the pipeline via `/stop`, transitioning to `STOPPING`.
+    """
+
+    PAUSED = 4
+    """
+    The pipeline is initialized but data processing is paused.
 
     The pipeline remains in this state until:
 
-        1.  Initialization completes successfully; the pipeline transitions to the
-            `PipelineStatus.PAUSED` state.
-        2.  Initialization fails; transitions to the `PipelineStatus.FAILED` state.
-        3.  A pre-defined timeout has passed.  The runner performs forced
-            shutdown of the pipeline; returns to the `PipelineStatus.SHUTDOWN` state.
-        4.  The user cancels the pipeline by invoking the `/shutdown` endpoint.
-            The manager performs forced shutdown of the pipeline; returns to the
-            `PipelineStatus.SHUTDOWN` state.
-
+        1. The user starts it via `/start`, transitioning to `RUNNING`.
+        2. A runtime error occurs, transitioning to `STOPPING`.
+        3. The user suspends it via `/suspend`, transitioning to `SUSPENDING`.
+        4. The user stops it via `/stop`, transitioning to `STOPPING`.
     """
 
-    PAUSED = 5
-    """
-    The pipeline is fully initialized, but data processing has been paused.
-
-    The pipeline remains in this state until:
-
-        1.  The user starts the pipeline by invoking the `/start` endpoint. The
-            manager passes the request to the pipeline; transitions to the
-            `PipelineStatus.RUNNING` state.
-        2.  The user cancels the pipeline by invoking the `/shutdown` endpoint.
-            The manager passes the shutdown request to the pipeline to perform a
-            graceful shutdown; transitions to the `PipelineStatus.SHUTTING_DOWN` state.
-        3.  An unexpected runtime error renders the pipeline `PipelineStatus.FAILED`.
-
-    """
-
-    RUNNING = 6
+    RUNNING = 5
     """
     The pipeline is processing data.
 
     The pipeline remains in this state until:
 
-        1. The user pauses the pipeline by invoking the `/pause` endpoint. The
-           manager passes the request to the pipeline; transitions to the
-           `PipelineStatus.PAUSED` state.
-        2. The user cancels the pipeline by invoking the `/shutdown` endpoint.
-           The runner passes the shutdown request to the pipeline to perform a
-           graceful shutdown; transitions to the
-           `PipelineStatus.SHUTTING_DOWN` state.
-        3. An unexpected runtime error renders the pipeline
-           `PipelineStatus.FAILED`.
-
+        1. The user pauses it via `/pause`, transitioning to `PAUSED`.
+        2. A runtime error occurs, transitioning to `STOPPING`.
+        3. The user suspends it via `/suspend`, transitioning to `SUSPENDING`.
+        4. The user stops it via `/stop`, transitioning to `STOPPING`.
     """
 
-    SHUTTING_DOWN = 7
+    UNAVAILABLE = 6
     """
-    Graceful shutdown in progress.
-
-    In this state, the pipeline finishes any ongoing data processing,
-    produces final outputs, shuts down input/output connectors and
-    terminates.
+    The pipeline was initialized at least once but is currently unreachable
+    or not ready.
 
     The pipeline remains in this state until:
 
-        1. Shutdown completes successfully; transitions to the `PipelineStatus.SHUTDOWN` state.
-        2. A pre-defined timeout has passed. The manager performs forced shutdown of the pipeline; returns to the
-           `PipelineStatus.SHUTDOWN` state.
+        1. A successful status check transitions it back to `PAUSED` or `RUNNING`.
+        2. A runtime error occurs, transitioning to `STOPPING`.
+        3. The user suspends it via `/suspend`, transitioning to `SUSPENDING`.
+        4. The user stops it via `/stop`, transitioning to `STOPPING`.
 
-    """
-
-    FAILED = 8
-    """
-    The pipeline remains in this state until the users acknowledge the failure
-    by issuing a call to shutdown the pipeline; transitions to the
-    `PipelineStatus.SHUTDOWN` state.
+    Note: While in this state, `/start` or `/pause` express desired state but
+    are only applied once the pipeline becomes reachable.
     """
 
-    UNAVAILABLE = 9
+    SUSPENDING = 7
     """
-    The pipeline was at least once initialized, but in the most recent status check either
-    could not be reached or returned it is not yet ready.
+    The pipeline is being suspended to storage.
+
+    The pipeline remains in this state until:
+
+        1. Suspension succeeds, transitioning to `STOPPING`.
+        2. A runtime error occurs, transitioning to `STOPPING`.
     """
 
-    SUSPENDED = 10
+    STOPPING = 8
     """
-    The pipeline was successfully suspended to storage.
+    The pipeline's compute resources are being scaled down to zero.
+
+    The pipeline remains in this state until deallocation completes,
+    transitioning to `STOPPED`.
     """
 
     @staticmethod
@@ -258,3 +229,50 @@ class CheckpointStatus(Enum):
         """
 
         return self.error
+
+
+class StorageStatus(Enum):
+    """
+    Represents the current storage binding status of the pipeline.
+    """
+
+    UNBOUND = 0
+    """
+    The pipeline has not been started before, or the user has unbound storage.
+
+    In this state, the pipeline has no storage resources bound to it.
+    """
+
+    BOUND = 1
+    """
+    The pipeline was (attempted to be) started before, transitioning from `STOPPED`
+    to `PROVISIONING`, which caused the storage status to become `BOUND`.
+
+    Being in the `BOUND` state restricts certain edits while the pipeline is `STOPPED`.
+
+    The pipeline remains in this state until the user invokes `/unbind`, transitioning
+    it to `UNBINDING`.
+    """
+
+    UNBINDING = 2
+    """
+    The pipeline is in the process of becoming unbound from its storage resources.
+
+    If storage resources are configured to be deleted upon unbinding, their deletion
+    occurs before transitioning to `UNBOUND`. Otherwise, no actual work is required,
+    and the transition happens immediately.
+
+    If storage is not deleted during unbinding, the responsibility to manage or delete
+    those resources lies with the user.
+    """
+
+    @staticmethod
+    def from_str(value):
+        for member in StorageStatus:
+            if member.name.lower() == value.lower():
+                return member
+        raise ValueError(f"Unknown value '{value}' for enum {
+                         StorageStatus.__name__}")
+
+    def __eq__(self, other):
+        return self.value == other.value

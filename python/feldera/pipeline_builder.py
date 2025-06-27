@@ -83,7 +83,7 @@ class PipelineBuilder:
 
         try:
             # shutdown the pipeline if it exists and is running
-            self.client.shutdown_pipeline(self.name)
+            self.client.stop_pipeline(self.name)
         except FelderaAPIError:
             # pipeline doesn't exist, no worries
             pass

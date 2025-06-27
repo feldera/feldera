@@ -36,8 +36,8 @@ class FelderaClient:
     """
     A client for the Feldera HTTP API
 
-    A client instance is needed for every Feldera API method to know the location of
-    Feldera and its permissions.
+    A client instance is needed for every Feldera API method to know the
+    location of Feldera and its permissions.
     """
 
     def __init__(
@@ -50,7 +50,8 @@ class FelderaClient:
         """
         :param url: The url to Feldera API (ex: https://try.feldera.com)
         :param api_key: The optional API key for Feldera
-        :param timeout: (optional) The amount of time in seconds that the client will wait for a response before timing
+        :param timeout: (optional) The amount of time in seconds that the client
+            will wait for a response before timing
             out.
         :param requests_verify: The `verify` parameter passed to the requests
             library. `True` by default.
@@ -124,9 +125,8 @@ class FelderaClient:
                     if sql_errors:
                         err_msg = f"Pipeline {name} failed to compile:\n"
                         for sql_error in sql_errors:
-                            err_msg += (
-                                f"{sql_error['error_type']}\n{sql_error['message']}\n"
-                            )
+                            err_msg += f"{sql_error['error_type']}\n{
+                                sql_error['message']}\n"
                             err_msg += f"Code snippet:\n{sql_error['snippet']}"
                         raise RuntimeError(err_msg)
 
@@ -162,7 +162,8 @@ class FelderaClient:
 
     def create_or_update_pipeline(self, pipeline: Pipeline) -> Pipeline:
         """
-        Create a pipeline if it doesn't exist or update a pipeline and wait for it to compile
+        Create a pipeline if it doesn't exist or update a pipeline and wait for
+        it to compile
         """
 
         body = {
@@ -187,7 +188,8 @@ class FelderaClient:
         Incrementally update the pipeline SQL
 
         :param name: The name of the pipeline
-        :param sql: The SQL snippet. Replaces the existing SQL code with this one.
+        :param sql: The SQL snippet. Replaces the existing SQL code with this
+            one.
         """
 
         self.http.patch(
@@ -222,7 +224,8 @@ class FelderaClient:
         """
 
         :param pipeline_name: The name of the pipeline to start
-        :param timeout_s: The amount of time in seconds to wait for the pipeline to start. 300 seconds by default.
+        :param timeout_s: The amount of time in seconds to wait for the pipeline
+            to start. 300 seconds by default.
         """
 
         if timeout_s is None:
@@ -239,7 +242,8 @@ class FelderaClient:
                 elapsed = time.monotonic() - start_time
                 if elapsed > timeout_s:
                     raise TimeoutError(
-                        f"Timed out waiting for pipeline {pipeline_name} to start"
+                        f"Timed out waiting for pipeline {
+                            pipeline_name} to start"
                     )
 
             resp = self.get_pipeline(pipeline_name)
@@ -250,7 +254,7 @@ class FelderaClient:
             elif status == "Failed":
                 raise RuntimeError(
                     f"""Unable to START the pipeline.
-Reason: The pipeline is in a FAILED state due to the following error:
+Reason: The pipeline is in a STOPPED state due to the following error:
 {resp.deployment_error.get("message", "")}"""
                 )
 
@@ -269,8 +273,10 @@ Reason: The pipeline is in a FAILED state due to the following error:
         Stop a pipeline
 
         :param pipeline_name: The name of the pipeline to stop
-        :param error_message: The error message to show if the pipeline is in FAILED state
-        :param timeout_s: The amount of time in seconds to wait for the pipeline to pause. 300 seconds by default.
+        :param error_message: The error message to show if the pipeline is in
+             STOPPED state due to a failure.
+        :param timeout_s: The amount of time in seconds to wait for the pipeline
+            to pause. 300 seconds by default.
         """
 
         if timeout_s is None:
@@ -290,7 +296,8 @@ Reason: The pipeline is in a FAILED state due to the following error:
                 elapsed = time.monotonic() - start_time
                 if elapsed > timeout_s:
                     raise TimeoutError(
-                        f"Timed out waiting for pipeline {pipeline_name} to pause"
+                        f"Timed out waiting for pipeline {
+                            pipeline_name} to pause"
                     )
 
             resp = self.get_pipeline(pipeline_name)
@@ -298,10 +305,14 @@ Reason: The pipeline is in a FAILED state due to the following error:
 
             if status == "Paused":
                 break
-            elif status == "Failed":
+            elif (
+                status == "Stopped"
+                and len(resp.deployment_error or {}) > 0
+                and resp.deployment_desired_status == "Stopped"
+            ):
                 raise RuntimeError(
                     error_message
-                    + f"""Reason: The pipeline is in a FAILED state due to the following error:
+                    + f"""Reason: The pipeline is in a STOPPED state due to the following error:
 {resp.deployment_error.get("message", "")}"""
                 )
 
@@ -310,19 +321,33 @@ Reason: The pipeline is in a FAILED state due to the following error:
             )
             time.sleep(0.1)
 
-    def shutdown_pipeline(self, pipeline_name: str, timeout_s: Optional[float] = 300):
+    def stop_pipeline(
+        self, pipeline_name: str, timeout_s: Optional[float] = 300, force: bool = False
+    ):
         """
-        Shutdown a pipeline
+        Stop a pipeline
 
-        :param pipeline_name: The name of the pipeline to shut down
-        :param timeout_s: The amount of time in seconds to wait for the pipeline to shut down. Default is 300 seconds.
+        :param pipeline_name: The name of the pipeline to stop
+        :param timeout_s: The amount of time in seconds to wait for the pipeline
+            to stop. Default is 300 seconds.
+        :param force: Set True to immediately scale compute resources to zero.
+            Set False to automatically checkpoint before stopping.
+            False by default for Enterprise version and always True for OSS version.
         """
 
         if timeout_s is None:
             timeout_s = 300
 
+        e = self.get_config().edition.is_enterprise()
+
+        if not e:
+            force = True
+
+        params = {"force": str(force).lower()}
+
         self.http.post(
-            path=f"/pipelines/{pipeline_name}/shutdown",
+            path=f"/pipelines/{pipeline_name}/stop",
+            params=params,
         )
 
         start = time.monotonic()
@@ -330,56 +355,55 @@ Reason: The pipeline is in a FAILED state due to the following error:
         while time.monotonic() - start < timeout_s:
             status = self.get_pipeline(pipeline_name).deployment_status
 
-            if status == "Shutdown":
+            expected_status = "Stopped" if force else "Suspended"
+
+            if status == expected_status:
                 return
 
             logging.debug(
-                "still shutting down %s, waiting for 100 more milliseconds",
+                "still stopping %s, waiting for 100 more milliseconds",
                 pipeline_name,
             )
             time.sleep(0.1)
 
         raise FelderaTimeoutError(
-            f"timeout error: pipeline '{pipeline_name}' did not shutdown in {timeout_s} seconds"
+            f"timeout error: pipeline '{
+                pipeline_name}' did not stop in {timeout_s} seconds"
         )
 
-    def suspend_pipeline(self, pipeline_name: str, timeout_s: Optional[float] = 300):
+    def unbind_storage(self, pipeline_name: str, timeout_s: Optional[float] = 300):
         """
-        Suspend a pipeline
+        Unbinds or disassociates the storage from the pipeline.
+        This operation cannot be canceled.
 
-        :param pipeline_name: The name of the pipeline to suspend
-        :param timeout_s: The amount of time in seconds to wait for the pipeline to suspend. Default is 300 seconds.
+        :param pipeline_name: The name of the pipeline
+        :param timeout_s: The amount of time in seconds to wait for the storage
+            to unbind. Default is 300 seconds.
         """
-
         if timeout_s is None:
             timeout_s = 300
 
         self.http.post(
-            path=f"/pipelines/{pipeline_name}/suspend",
+            path=f"/pipelines/{pipeline_name}/unbind",
         )
 
         start = time.monotonic()
 
         while time.monotonic() - start < timeout_s:
-            resp = self.get_pipeline(pipeline_name)
-            status = resp.deployment_status
+            status = self.get_pipeline(pipeline_name).storage_status
 
-            if status == "Suspended":
+            if status == "Unbound":
                 return
-            elif status == "Failed":
-                raise RuntimeError(
-                    f"""Unable to Suspend pipeline '{pipeline_name}'.\nReason: The pipeline is in a FAILED state due to the following error:
-{resp.deployment_error.get("message", "")}"""
-                )
 
             logging.debug(
-                "still suspending %s, waiting for 100 more milliseconds",
+                "still unbinding %s, waiting for 100 more milliseconds",
                 pipeline_name,
             )
             time.sleep(0.1)
 
         raise FelderaTimeoutError(
-            f"timeout error: pipeline '{pipeline_name}' did not suspend in {timeout_s} seconds"
+            f"timeout error: pipeline '{
+                pipeline_name}' did not unbind storage in {timeout_s} seconds"
         )
 
     def checkpoint_pipeline(self, pipeline_name: str) -> int:
@@ -685,7 +709,8 @@ Reason: The pipeline is in a FAILED state due to the following error:
         """
 
         self.http.post(
-            path=f"/pipelines/{pipeline_name}/tables/{table_name}/connectors/{connector_name}/pause",
+            path=f"/pipelines/{pipeline_name}/tables/{
+                table_name}/connectors/{connector_name}/pause",
         )
 
     def resume_connector(
@@ -709,7 +734,8 @@ Reason: The pipeline is in a FAILED state due to the following error:
         """
 
         self.http.post(
-            path=f"/pipelines/{pipeline_name}/tables/{table_name}/connectors/{connector_name}/start",
+            path=f"/pipelines/{pipeline_name}/tables/{
+                table_name}/connectors/{connector_name}/start",
         )
 
     def get_config(self) -> FelderaConfig:

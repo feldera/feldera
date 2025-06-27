@@ -304,8 +304,8 @@ pub fn nstruct2nstruct(i: Tup2<Option<i32>, Option<SqlString>>) -> Result<Tup2<O
             }
         ]
 
-        pipeline.shutdown()
-        pipeline.delete()
+        pipeline.stop()
+        pipeline.delete(True)
 
 
 if __name__ == "__main__":

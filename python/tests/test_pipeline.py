@@ -15,7 +15,9 @@ class TestPipeline(unittest.TestCase):
     def test_delete_all_pipelines(self):
         pipelines = TEST_CLIENT.pipelines()
         for pipeline in pipelines:
-            TEST_CLIENT.shutdown_pipeline(pipeline.name)
+            TEST_CLIENT.stop_pipeline(pipeline.name)
+            if pipeline.storage_status != "Unbound":
+                TEST_CLIENT.unbind_storage(pipeline.name)
             TEST_CLIENT.delete_pipeline(pipeline.name)
 
     def test_create_pipeline(
@@ -29,12 +31,21 @@ class TestPipeline(unittest.TestCase):
         pipeline = Pipeline(name, sql, "", "", {}, runtime_config)
         pipeline = TEST_CLIENT.create_pipeline(pipeline)
 
+        if pipeline.storage_status != "Unbound":
+            TEST_CLIENT.unbind_storage(pipeline.name)
+
         if delete:
+            if pipeline.storage_status != "Unbound":
+                TEST_CLIENT.unbind_storage(pipeline.name)
             TEST_CLIENT.delete_pipeline(pipeline.name)
 
     def test_delete_pipeline(self):
         name = str(uuid.uuid4())
         self.test_create_pipeline(name, False)
+
+        p = TEST_CLIENT.get_pipeline(name)
+        if p.storage_status != "Unbound":
+            TEST_CLIENT.unbind_storage(p.name)
 
         TEST_CLIENT.delete_pipeline(name)
 
@@ -53,8 +64,9 @@ class TestPipeline(unittest.TestCase):
         )
 
         TEST_CLIENT.pause_pipeline(name)
-        TEST_CLIENT.shutdown_pipeline(name)
+        TEST_CLIENT.stop_pipeline(name)
 
+        TEST_CLIENT.unbind_storage(name)
         TEST_CLIENT.delete_pipeline(name)
 
     def test_push_to_pipeline_json(self):
@@ -76,7 +88,10 @@ class TestPipeline(unittest.TestCase):
         assert len(pipelines) > 0
         assert name in [p.name for p in pipelines]
 
-        TEST_CLIENT.delete_pipeline(name)
+        for p in pipelines:
+            if p.storage_status != "Unbound":
+                TEST_CLIENT.unbind_storage(name)
+            TEST_CLIENT.delete_pipeline(name)
 
     def test_get_pipeline(self):
         name = str(uuid.uuid4())
@@ -84,6 +99,8 @@ class TestPipeline(unittest.TestCase):
         p = TEST_CLIENT.get_pipeline(name)
         assert name == p.name
 
+        if p.storage_status != "Unbound":
+            TEST_CLIENT.unbind_storage(name)
         TEST_CLIENT.delete_pipeline(name)
 
     def test_get_pipeline_config(self):
@@ -111,7 +128,8 @@ class TestPipeline(unittest.TestCase):
         assert stats.get("outputs") is not None
 
         TEST_CLIENT.pause_pipeline(name)
-        TEST_CLIENT.shutdown_pipeline(name)
+        TEST_CLIENT.stop_pipeline(name)
+        TEST_CLIENT.unbind_storage(name)
         TEST_CLIENT.delete_pipeline(name)
 
     def __listener(self, name: str):
@@ -149,7 +167,8 @@ class TestPipeline(unittest.TestCase):
 
         assert self.result
 
-        TEST_CLIENT.shutdown_pipeline(name)
+        TEST_CLIENT.stop_pipeline(name)
+        TEST_CLIENT.unbind_storage(name)
         TEST_CLIENT.delete_pipeline(name)
 
     def test_adhoc_query_text(self):
@@ -185,7 +204,8 @@ class TestPipeline(unittest.TestCase):
         got = "\n".join(resp)
         assert got in expected
 
-        TEST_CLIENT.shutdown_pipeline(name)
+        TEST_CLIENT.stop_pipeline(name)
+        TEST_CLIENT.unbind_storage(name)
         TEST_CLIENT.delete_pipeline(name)
 
     def test_adhoc_query_parquet(self):
@@ -205,7 +225,8 @@ class TestPipeline(unittest.TestCase):
 
         file = name.split("-")[0]
         TEST_CLIENT.query_as_parquet(pipeline.name, "SELECT * FROM tbl", file)
-        TEST_CLIENT.shutdown_pipeline(name)
+        TEST_CLIENT.stop_pipeline(name)
+        TEST_CLIENT.unbind_storage(name)
         TEST_CLIENT.delete_pipeline(name)
 
         path = pathlib.Path(file + ".parquet")
@@ -233,7 +254,8 @@ class TestPipeline(unittest.TestCase):
 
         self.assertCountEqual(got, expected)
 
-        TEST_CLIENT.shutdown_pipeline(name)
+        TEST_CLIENT.stop_pipeline(name)
+        TEST_CLIENT.unbind_storage(name)
         TEST_CLIENT.delete_pipeline(name)
 
 
