@@ -17,9 +17,9 @@ pub use crate::{
         FileIndexedWSet as DynFileIndexedWSet, FileKeyBatch as DynFileKeyBatch,
         FileValBatch as DynFileValBatch, FileWSet as DynFileWSet,
         OrdIndexedWSet as DynOrdIndexedWSet, OrdKeyBatch as DynOrdKeyBatch,
-        OrdValBatch as DynOrdValBatch, OrdWSet as DynOrdWSet, Spine as DynSpine, Trace as DynTrace,
-        VecIndexedWSet as DynVecIndexedWSet, VecKeyBatch as DynVecKeyBatch,
-        VecValBatch as DynVecValBatch, VecWSet as DynVecWSet,
+        OrdValBatch as DynOrdValBatch, OrdWSet as DynOrdWSet, Spine as DynSpine,
+        SpineSnapshot as DynSpineSnapshot, Trace as DynTrace, VecIndexedWSet as DynVecIndexedWSet,
+        VecKeyBatch as DynVecKeyBatch, VecValBatch as DynVecValBatch, VecWSet as DynVecWSet,
     },
     DBData, DBWeight, DynZWeight, Stream, Timestamp, ZWeight,
 };
@@ -499,6 +499,22 @@ pub type Spine<B> = TypedBatch<
     <B as BatchReader>::R,
     DynSpine<<B as BatchReader>::Inner>,
 >;
+
+impl<K, V, R, B> TypedBatch<K, V, R, B>
+where
+    B: DynTrace,
+    K: DBData + Erase<B::Key>,
+    V: DBData + Erase<B::Val>,
+    R: DBWeight + Erase<B::R>,
+{
+    pub fn consolidate(self) -> TypedBatch<K, V, R, B::Batch> {
+        TypedBatch::new(
+            self.inner
+                .consolidate()
+                .unwrap_or_else(|| B::Batch::dyn_empty(&BatchReaderFactories::new::<K, V, R>())),
+        )
+    }
+}
 
 impl<C: Clone, B: BatchReader> Stream<C, B> {
     pub fn inner(&self) -> Stream<C, B::Inner> {
