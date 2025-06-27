@@ -62,9 +62,10 @@ impl Hasher for IdentityHasher {
     }
 
     #[inline]
-    fn write_u64(&mut self, i: u64) {
-        self.hash = i;
-    }
+    fn write_u64(&mut self, _i: u64) {}
+
+    #[inline]
+    fn write_usize(&mut self, _i: usize) {}
 
     #[inline]
     fn finish(&self) -> u64 {
