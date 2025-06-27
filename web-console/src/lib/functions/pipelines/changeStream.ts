@@ -8,89 +8,125 @@ class BigNumberTokenizer extends Tokenizer {
   parseNumber = BigNumber as any
 }
 
-/**
- *
- * @param stream
- * @param pushChanges
- * @param options.bufferSize Threshold size of the buffer that holds unprocessed JSON chunks.
- * If the buffer size exceeds this value - when the new JSON batch arrives previous JSON batches are dropped
- * until the buffer size is under the threshold, or only one batch remains.
- * @returns
- */
-export const parseCancellable = <T, Transformer extends TransformStream<Uint8Array, T>>(
-  source: {
-    stream: ReadableStream<Uint8Array<ArrayBufferLike>>
-    cancel: () => void
-  },
-  cbs: {
-    pushChanges: (changes: T[]) => void
-    onBytesSkipped?: (bytes: number) => void
-    onParseEnded?: (reason: 'ended' | 'cancelled') => void
-    onNetworkError?: (e: TypeError, injectValue: (value: T) => void) => void
-  },
-  transformer: Transformer,
-  options?: { bufferSize?: number }
-) => {
-  invariant(
-    source.stream instanceof ReadableStream,
-    `parseCancellable(): stream is ${JSON.stringify(source.stream)}`
-  )
-  const maxChunkSize = 100000
-  const reader = source.stream
-    .pipeThrough(
-      splitStreamByMaxChunk(maxChunkSize, options?.bufferSize ?? 1000000, cbs.onBytesSkipped)
-    )
-    .pipeThrough(transformer)
-    .getReader()
-  let resultBuffer = [] as T[]
-  setTimeout(async () => {
-    while (true) {
-      try {
-        const { done, value } = await reader.read()
-        if (done || value === undefined) {
-          break
+interface BatchingCallbacks<T> {
+  pushChanges: (changes: T[]) => void
+  onParseEnded?: (reason: 'ended' | 'cancelled') => void
+  onNetworkError?: (e: TypeError, injectValue: (value: T) => void) => void
+}
+
+interface BatchingOptions {
+  batchSize?: number
+  batchTimeoutMs?: number
+}
+
+export class BatchingWritableStream<T> extends WritableStream<T> {
+  private batch: T[] = []
+  private batchTimer: number | null = null
+  private bytesProcessed = 0
+  // private bytesSkipped = 0
+  // private retryCount = 0
+  private isEnded = false
+
+  constructor(
+    private cbs: BatchingCallbacks<T>,
+    private options: BatchingOptions = {}
+  ) {
+    const { batchSize = 5000, batchTimeoutMs = 100 } = options
+
+    super(
+      {
+        write: async (chunk: T, controller: WritableStreamDefaultController) => {
+          // Add chunk to current batch
+          this.batch.push(chunk)
+          this.bytesProcessed++
+
+          // Check if we should flush the batch
+          if (this.batch.length >= batchSize) {
+            await this.flushBatch()
+            await new Promise((resolve) => setTimeout(resolve))
+          } else {
+            // Set/reset batch timeout
+            this.resetBatchTimer(batchTimeoutMs)
+          }
+        },
+
+        close: async () => {
+          try {
+            // Flush any remaining items in batch
+            if (this.batch.length > 0) {
+              await this.flushBatch()
+            }
+
+            this.clearBatchTimer()
+            this.isEnded = true
+            this.cbs.onParseEnded?.('ended')
+          } catch (error) {
+            // If flush fails on close, we still need to clean up
+            this.clearBatchTimer()
+            this.isEnded = true
+            this.cbs.onParseEnded?.('ended')
+            throw error
+          }
         }
-        resultBuffer.push(value)
-      } catch (e) {
-        cbs.onNetworkError?.(e as TypeError, (value: T) => resultBuffer.push(value))
-        cbs.onParseEnded?.('ended')
-        break
-      }
+      },
+      { highWaterMark: batchSize, size: () => 1 }
+    )
+  }
+
+  async abort(reason?: any) {
+    this.clearBatchTimer()
+    this.isEnded = true
+    this.cbs.onParseEnded?.('cancelled')
+  }
+
+  private async flushBatch(): Promise<void> {
+    if (this.batch.length === 0) {
+      return
     }
-  })
-  const flush = () => {
-    if (resultBuffer.length) {
-      cbs.pushChanges?.(resultBuffer)
-      resultBuffer.length = 0
+
+    this.clearBatchTimer()
+
+    if (this.isEnded) {
+      return
+    }
+
+    const currentBatch = this.batch
+    this.batch = []
+
+    try {
+      await Promise.resolve(this.cbs.pushChanges(currentBatch))
+    } catch (e) {
+      // Failed to push stream items
     }
   }
-  let closedReason: null | 'ended' | 'cancelled' = null
-  setTimeout(async () => {
-    reader.closed.then(
-      () => {
-        closedReason ??= 'ended'
-      },
-      (e) => {
-        closedReason = 'ended'
-        cbs.onNetworkError?.(e, (value: T) => resultBuffer.push(value))
+
+  private resetBatchTimer(timeoutMs: number): void {
+    this.clearBatchTimer()
+
+    this.batchTimer = window.setTimeout(async () => {
+      try {
+        await this.flushBatch()
+      } catch (error) {
+        // Timer-triggered flush errors need to be handled carefully
+        // since there's no controller context
       }
-    )
-    while (true) {
-      flush()
-      if (closedReason) {
-        break
-      }
-      await new Promise((resolve) => setTimeout(resolve, 100))
+    }, timeoutMs)
+  }
+
+  private clearBatchTimer(): void {
+    if (this.batchTimer !== null) {
+      clearTimeout(this.batchTimer)
+      this.batchTimer = null
     }
-    cbs.onParseEnded?.(closedReason)
-  })
-  return {
-    cancel: () => {
-      flush()
-      closedReason = 'cancelled'
-      reader.cancel().then(() => {
-        source.cancel()
-      })
+  }
+
+  // Utility method to get current statistics
+  getStats() {
+    return {
+      bytesProcessed: this.bytesProcessed,
+      // bytesSkipped: this.bytesSkipped,
+      currentBatchSize: this.batch.length,
+      isEnded: this.isEnded
     }
   }
 }
@@ -102,32 +138,19 @@ export const parseCancellable = <T, Transformer extends TransformStream<Uint8Arr
  * @param maxChunkBufferSize When output buffer size grows close to this value backpressure occurs
  * @returns
  */
-function splitStreamByMaxChunk(
-  maxChunkBytes: number,
-  maxChunkBufferSize: number,
-  onBytesSkipped?: (bytes: number) => void
+export function splitStreamByMaxChunk(
+  maxChunkBytes: number
 ): TransformStream<Uint8Array, Uint8Array> {
-  return new TransformStream<Uint8Array, Uint8Array>(
-    {
-      async transform(chunk, controller) {
-        let start = 0
-        while (start < chunk.length) {
-          const end = Math.min(chunk.length, start + maxChunkBytes)
-          if (hasBackpressure(controller, maxChunkBytes)) {
-            break
-          }
-          controller.enqueue(chunk.subarray(start, end))
-
-          start = end
-        }
-        if (start < chunk.length) {
-          onBytesSkipped?.(chunk.length - start)
-        }
+  return new TransformStream<Uint8Array, Uint8Array>({
+    async transform(chunk, controller) {
+      let start = 0
+      while (start < chunk.length) {
+        const end = Math.min(chunk.length, start + maxChunkBytes)
+        controller.enqueue(chunk.subarray(start, end))
+        start = end
       }
-    },
-    {},
-    { highWaterMark: maxChunkBufferSize, size: (c) => c?.length ?? 0 }
-  )
+    }
+  })
 }
 
 const hasBackpressure = <T>(controller: TransformStreamDefaultController<T>, offset: number) => {
@@ -157,14 +180,23 @@ const mkTransformerParser = <T>(
   return parser
 }
 
+type ExtraOpts = {
+  onBytesSkipped?: ((bytes: number) => void) | undefined
+  skipThresholdMs?: number
+}
+
+const recordsNumberWatermark = 5000
+
 class JSONParserTransformer<T> implements Transformer<Uint8Array | string, T> {
   // @ts-ignore Controller always defined during start
   private controller: TransformStreamDefaultController<T>
   // @ts-ignore Controller always defined during start
   private parser: JSONParser
-  private opts?: JSONParserOptions
+  private lastSkipTimestamp = 0
+  private opts?: JSONParserOptions & ExtraOpts
+  private totalSkippedBytes = 0
 
-  constructor(opts?: JSONParserOptions) {
+  constructor(opts?: JSONParserOptions & ExtraOpts) {
     this.opts = opts
   }
 
@@ -173,13 +205,51 @@ class JSONParserTransformer<T> implements Transformer<Uint8Array | string, T> {
     this.parser = mkTransformerParser(this.controller, this.opts)
   }
 
-  async transform(chunk: Uint8Array | string) {
+  async transform(chunk: Uint8Array | string, controller: TransformStreamDefaultController<T>) {
+    const now = Date.now()
+    const skipThresholdMs = this.opts?.skipThresholdMs ?? 100
+
+    // Check if we're currently in a skip period
+    const isCurrentlySkipping = now < this.lastSkipTimestamp + skipThresholdMs
+
+    // Check for new backpressure
+    const hasCurrentBackpressure = hasBackpressure(controller, recordsNumberWatermark)
+
+    if (isCurrentlySkipping) {
+      this.lastSkipTimestamp = now
+      this.totalSkippedBytes += chunk.length
+      return
+    }
+
+    if (hasCurrentBackpressure) {
+      // Backpressure detected - clearing the upstream chunks
+      if (!isCurrentlySkipping) {
+        try {
+          this.parser.end()
+        } catch {}
+      }
+      this.lastSkipTimestamp = now
+      this.totalSkippedBytes += chunk.length
+      return
+    }
+
+    // Just exited skip period
+    if (this.lastSkipTimestamp > 0) {
+      this.opts?.onBytesSkipped?.(this.totalSkippedBytes)
+      this.lastSkipTimestamp = 0
+      this.totalSkippedBytes = 0
+
+      this.parser = mkTransformerParser(this.controller, this.opts)
+    }
+
+    // Process chunk normally
     try {
       this.parser.write(chunk)
     } catch (e) {
+      this.opts?.onBytesSkipped?.(this.totalSkippedBytes)
       this.parser = mkTransformerParser(this.controller, this.opts)
+      // We can ignore the parse error and skipt to the next chunk
     }
-    await new Promise((resolve) => setTimeout(resolve))
   }
 
   flush() {}
@@ -187,12 +257,18 @@ class JSONParserTransformer<T> implements Transformer<Uint8Array | string, T> {
 
 export class CustomJSONParserTransformStream<T> extends TransformStream<Uint8Array | string, T> {
   constructor(
-    opts?: JSONParserOptions,
+    opts?: JSONParserOptions & ExtraOpts,
     writableStrategy?: QueuingStrategy<Uint8Array | string>,
     readableStrategy?: QueuingStrategy<T>
   ) {
     const transformer = new JSONParserTransformer(opts)
-    super(transformer, writableStrategy, readableStrategy)
+    super(
+      transformer,
+      writableStrategy,
+      // readableStrategy
+      // { highWaterMark: maxChunkBufferSize, size: (c) => c?.length ?? 0 },
+      { highWaterMark: recordsNumberWatermark, size: () => 1 }
+    )
   }
 }
 
@@ -259,9 +335,19 @@ export const pushAsCircularBuffer =
   (values: T[]) => {
     if (!getLength) {
       const offset = arr().length + values.length - bufferSize
-      arr().splice(0, offset)
-      arr().push(...values.slice(-bufferSize).map(mapValue))
-      return Math.max(offset, 0)
+      let f = function (replacementItems: R[] = []) {
+        arr().splice(0, offset, ...replacementItems)
+        arr().push(...values.slice(-bufferSize).map(mapValue))
+      }
+      return Object.assign(
+        function (items?: R[]) {
+          f?.(items)
+          f = undefined!
+        },
+        {
+          offset: Math.max(offset, 0)
+        }
+      )
     }
     const vs = values.map(mapValue)
     let numNewItems = findIndex(
@@ -281,7 +367,15 @@ export const pushAsCircularBuffer =
       },
       bufferSize - numNewItems
     )
-    arr().splice(0, numItemsToDrop)
-    arr().push(...vs.slice(0, numNewItems))
-    return numItemsToDrop
+    let f = function (replacementItems: R[] = []) {
+      arr().splice(0, numItemsToDrop, ...replacementItems)
+      arr().push(...vs.slice(0, numNewItems))
+    }
+    return Object.assign(
+      function (items?: R[]) {
+        f?.(items)
+        f = undefined!
+      },
+      { offset: numItemsToDrop }
+    )
   }
