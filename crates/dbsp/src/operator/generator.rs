@@ -57,6 +57,8 @@ where
 pub struct GeneratorNested<T> {
     reset: Box<dyn FnMut() -> Box<dyn FnMut() -> T>>,
     generator: Option<Box<dyn FnMut() -> T>>,
+    flush: bool,
+    empty: T,
 }
 
 impl<T> GeneratorNested<T>
@@ -64,10 +66,12 @@ where
     T: Clone,
 {
     /// Creates a nested generator with specified `reset` closure.
-    pub fn new(reset: Box<dyn FnMut() -> Box<dyn FnMut() -> T>>) -> Self {
+    pub fn new(reset: Box<dyn FnMut() -> Box<dyn FnMut() -> T>>, empty: T) -> Self {
         Self {
             reset,
             generator: None,
+            flush: false,
+            empty,
         }
     }
 }
@@ -94,6 +98,10 @@ where
         // can inform the circuit that it's reached a fixedpoint?
         false
     }
+
+    fn flush(&mut self) {
+        self.flush = true;
+    }
 }
 
 impl<T> SourceOperator<T> for GeneratorNested<T>
@@ -101,6 +109,11 @@ where
     T: Data,
 {
     async fn eval(&mut self) -> T {
-        (self.generator.as_mut().unwrap())()
+        if self.flush {
+            self.flush = false;
+            (self.generator.as_mut().unwrap())()
+        } else {
+            self.empty.clone()
+        }
     }
 }
