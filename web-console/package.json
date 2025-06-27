@@ -54,6 +54,7 @@
     "@vincjo/datatables": "^2.5.0",
     "@vusion/webfonts-generator": "^0.8.0",
     "add": "^2.0.6",
+    "apache-arrow": "^20.0.0",
     "args": "^5.0.3",
     "array-join": "^3.2.1",
     "autoprefixer": "^10.4.20",
