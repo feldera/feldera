@@ -677,6 +677,25 @@ where
         )
     }
 
+    fn serialize_val_to_arrow(&mut self, dst: &mut ArrayBuilder) -> AnyResult<()> {
+        self.serializer.serialize_arrow(
+            &SerializeWithContextWrapper::new(self.val.as_ref().unwrap(), &self.serde_config),
+            dst,
+        )
+    }
+
+    fn serialize_val_to_arrow_with_metadata(
+        &mut self,
+        metadata: &dyn erased_serde::Serialize,
+        dst: &mut ArrayBuilder,
+    ) -> AnyResult<()> {
+        self.serializer.serialize_arrow_with_metadata(
+            &SerializeWithContextWrapper::new(self.val.as_ref().unwrap(), &self.serde_config),
+            metadata,
+            dst,
+        )
+    }
+
     #[cfg(feature = "with-avro")]
     fn key_to_avro(&mut self, schema: &AvroSchema, refs: &NamesRef<'_>) -> AnyResult<AvroValue> {
         Ok(self.serializer.serialize_avro(
