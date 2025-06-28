@@ -5,6 +5,7 @@ use crate::format::relation_to_parquet_schema;
 use crate::format::MAX_DUPLICATES;
 use crate::integrated::delta_table::register_storage_handlers;
 use crate::transport::Step;
+use crate::util::{indexed_operation_type, IndexedOperationType};
 use crate::{
     AsyncErrorCallback, ControllerError, Encoder, OutputConsumer, OutputEndpoint, RecordFormat,
     SerCursor,
@@ -20,6 +21,7 @@ use deltalake::operations::create::CreateBuilder;
 use deltalake::operations::write::writer::{DeltaWriter, WriterConfig};
 use deltalake::protocol::{DeltaOperation, SaveMode};
 use deltalake::DeltaTable;
+use feldera_types::program_schema::SqlIdentifier;
 use feldera_types::serde_with_context::serde_config::{
     BinaryFormat, DecimalFormat, UuidFormat, VariantFormat,
 };
@@ -54,6 +56,8 @@ struct DeltaTableWriterInner {
     serde_arrow_schema: SerdeArrowSchema,
     arrow_schema: Arc<ArrowSchema>,
     struct_fields: Vec<StructField>,
+    key_schema: Option<Relation>,
+    value_schema: Relation,
     controller: Weak<ControllerInner>,
 }
 
@@ -80,19 +84,13 @@ impl DeltaTableWriter {
         endpoint_name: &str,
         config: &DeltaTableWriterConfig,
         key_schema: &Option<Relation>,
-        schema: &Relation,
+        value_schema: &Relation,
         controller: Weak<ControllerInner>,
     ) -> Result<Self, ControllerError> {
-        if key_schema.is_some() {
-            return Err(ControllerError::not_supported(
-                "delta table output doesn't support indexes yet",
-            ));
-        }
-
         register_storage_handlers();
 
         // Create arrow schema
-        let mut arrow_fields = relation_to_arrow_fields(&schema.fields, true);
+        let mut arrow_fields = relation_to_arrow_fields(&value_schema.fields, true);
         arrow_fields.push(ArrowField::new("__feldera_op", ArrowDataType::Utf8, true));
         arrow_fields.push(ArrowField::new("__feldera_ts", ArrowDataType::Int64, true));
 
@@ -126,6 +124,8 @@ impl DeltaTableWriter {
             serde_arrow_schema,
             arrow_schema,
             struct_fields,
+            key_schema: key_schema.clone(),
+            value_schema: value_schema.clone(),
             controller,
         });
         let inner_clone = inner.clone();
@@ -158,6 +158,10 @@ impl DeltaTableWriter {
         };
 
         Ok(writer)
+    }
+
+    fn view_name(&self) -> &SqlIdentifier {
+        &self.inner.value_schema.name
     }
 
     fn command(&mut self, command: Command) -> Result<(), (AnyError, bool)> {
@@ -451,7 +455,7 @@ impl OutputConsumer for DeltaTableWriter {
 /// Metadata added to each record, representing the type and order of operations.
 #[derive(Serialize)]
 struct Meta<'a> {
-    /// `i` for insert, `d` for delete.
+    /// `i` for insert, `d` for delete, `u` for update.
     __feldera_op: &'a str,
 
     /// Timestamp in microseconds since UNIX epoch when the batch of updates
@@ -479,43 +483,97 @@ impl Encoder for DeltaTableWriter {
 
         let mut num_insert_records = 0;
 
-        let mut cursor = CursorWithPolarity::new(
-            batch.cursor(RecordFormat::Parquet(delta_arrow_serde_config().clone()))?,
-        );
-        while cursor.key_valid() {
-            if !cursor.val_valid() {
-                cursor.step_key();
-                continue;
-            }
-            let mut w = cursor.weight();
-            if !(-MAX_DUPLICATES..=MAX_DUPLICATES).contains(&w) {
-                bail!("Unable to output record with very large weight {w}. Consider adjusting your SQL queries to avoid duplicate output records, e.g., using 'SELECT DISTINCT'.");
-            }
+        let index_name = &self.inner.key_schema.as_ref().map(|s| s.name.to_owned());
 
-            while w != 0 {
-                if w > 0 {
-                    cursor.serialize_key_to_arrow_with_metadata(
-                        &Meta::new("i", micros),
-                        &mut insert_builder,
-                    )?;
-                    w -= 1;
-                } else {
-                    cursor.serialize_key_to_arrow_with_metadata(
-                        &Meta::new("d", micros),
-                        &mut insert_builder,
-                    )?;
-                    w += 1;
-                }
-                num_insert_records += 1;
-                // Split batch into chunks.  This does not affect the number or size of generated
-                // parquet files, since that is controlled by the `DeltaWriter`, but it limits
-                // the amount of memory used by `builder`.
-                if num_insert_records >= CHUNK_SIZE {
-                    self.insert_record_batch(&mut insert_builder)?;
-                    num_insert_records = 0;
-                }
+        if let Some(index_name) = &index_name {
+            let mut cursor =
+                batch.cursor(RecordFormat::Parquet(delta_arrow_serde_config().clone()))?;
+
+            while cursor.key_valid() {
+                if let Some(op) =
+                    indexed_operation_type(self.view_name(), index_name, cursor.as_mut())?
+                {
+                    cursor.rewind_vals();
+
+                    match op {
+                        IndexedOperationType::Insert => cursor
+                            .serialize_val_to_arrow_with_metadata(
+                                &Meta::new("i", micros),
+                                &mut insert_builder,
+                            )?,
+                        IndexedOperationType::Delete => cursor
+                            .serialize_val_to_arrow_with_metadata(
+                                &Meta::new("d", micros),
+                                &mut insert_builder,
+                            )?,
+                        IndexedOperationType::Upsert => {
+                            assert!(cursor.val_valid());
+
+                            if cursor.weight() < 0 {
+                                cursor.step_val();
+                            }
+                            assert!(cursor.val_valid());
+
+                            cursor.serialize_val_to_arrow_with_metadata(
+                                &Meta::new("u", micros),
+                                &mut insert_builder,
+                            )?;
+                        }
+                    };
+
+                    num_insert_records += 1;
+
+                    // Split batch into chunks.  This does not affect the number or size of generated
+                    // parquet files, since that is controlled by the `DeltaWriter`, but it limits
+                    // the amount of memory used by `builder`.
+                    if num_insert_records >= CHUNK_SIZE {
+                        self.insert_record_batch(&mut insert_builder)?;
+                        num_insert_records = 0;
+                    }
+                };
+
+                cursor.step_key();
             }
-            cursor.step_key();
+        } else {
+            let mut cursor = CursorWithPolarity::new(
+                batch.cursor(RecordFormat::Parquet(delta_arrow_serde_config().clone()))?,
+            );
+            while cursor.key_valid() {
+                if !cursor.val_valid() {
+                    cursor.step_key();
+                    continue;
+                }
+
+                let mut w = cursor.weight();
+                if !(-MAX_DUPLICATES..=MAX_DUPLICATES).contains(&w) {
+                    bail!("Unable to output record with very large weight {w}. Consider adjusting your SQL queries to avoid duplicate output records, e.g., using 'SELECT DISTINCT'.");
+                }
+
+                while w != 0 {
+                    if w > 0 {
+                        cursor.serialize_key_to_arrow_with_metadata(
+                            &Meta::new("i", micros),
+                            &mut insert_builder,
+                        )?;
+                        w -= 1;
+                    } else {
+                        cursor.serialize_key_to_arrow_with_metadata(
+                            &Meta::new("d", micros),
+                            &mut insert_builder,
+                        )?;
+                        w += 1;
+                    }
+                    num_insert_records += 1;
+                    // Split batch into chunks.  This does not affect the number or size of generated
+                    // parquet files, since that is controlled by the `DeltaWriter`, but it limits
+                    // the amount of memory used by `builder`.
+                    if num_insert_records >= CHUNK_SIZE {
+                        self.insert_record_batch(&mut insert_builder)?;
+                        num_insert_records = 0;
+                    }
+                }
+                cursor.step_key();
+            }
         }
 
         if num_insert_records > 0 {

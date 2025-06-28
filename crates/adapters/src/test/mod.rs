@@ -62,7 +62,7 @@ pub use data::{
 use dbsp::circuit::{CircuitConfig, NodeId};
 use dbsp::utils::Tup2;
 use feldera_types::format::json::{JsonFlavor, JsonLines, JsonParserConfig, JsonUpdateFormat};
-use feldera_types::program_schema::{Field, Relation};
+use feldera_types::program_schema::{Field, Relation, SqlIdentifier};
 pub use mock_dezset::{wait_for_output_ordered, wait_for_output_unordered, MockDeZSet, MockUpdate};
 pub use mock_input_consumer::{MockInputConsumer, MockInputParser};
 pub use mock_output_consumer::MockOutputConsumer;
@@ -271,6 +271,98 @@ where
                 input,
                 &output_schema,
             );
+        }
+        Ok(catalog)
+    })
+    .unwrap();
+    (circuit, Box::new(catalog))
+}
+
+/// Similar to `test_circuit`, but the input stream has a primary key, and the output
+/// stream has an index associated with it.
+pub fn test_circuit_with_index<T, K, KF>(
+    config: CircuitConfig,
+    schema: &[Field],
+    key_fields: &[SqlIdentifier],
+    key_func: KF,
+    persistent_output_ids: &[Option<&str>],
+) -> (DBSPHandle, Box<dyn CircuitCatalog>)
+where
+    KF: Fn(&T) -> K + Clone + Send + Sync + 'static,
+    T: DBData
+        + SerializeWithContext<SqlSerdeConfig>
+        + for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+        + Sync,
+    K: DBData
+        + SerializeWithContext<SqlSerdeConfig>
+        + for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+        + Sync,
+{
+    let schema = schema.to_vec();
+
+    let persistent_output_ids = persistent_output_ids
+        .iter()
+        .map(|id| id.map(|s| s.to_string()))
+        .collect::<Vec<_>>();
+
+    let key_fields = key_fields.to_vec();
+
+    let (circuit, catalog) = Runtime::init_circuit(config, move |circuit| {
+        let mut catalog = Catalog::new();
+        let n = persistent_output_ids.len();
+
+        for (persistent_output_id, i) in persistent_output_ids.iter().zip(1..) {
+            let (input, hinput) = circuit
+                .add_input_map_persistent::<K, T, T, _>(Some(&format!("input{i}")), |val, upd| {
+                    *val = upd.clone()
+                });
+            if n > 1 {
+                input.set_persistent_mir_id(&format!("input{i}"));
+            } else {
+                input.set_persistent_mir_id("input");
+            }
+
+            let input_schema = serde_json::to_string(&Relation::new(
+                format!("test_input{i}").into(),
+                schema.clone(),
+                false,
+                BTreeMap::new(),
+            ))
+            .unwrap();
+
+            let output_schema = serde_json::to_string(&Relation::new(
+                format!("test_output{i}").into(),
+                schema.clone(),
+                false,
+                BTreeMap::new(),
+            ))
+            .unwrap();
+
+            catalog.register_materialized_input_map(
+                input.clone(),
+                hinput,
+                key_func.clone(),
+                key_func.clone(),
+                &input_schema,
+            );
+
+            catalog.register_materialized_output_map_persistent(
+                persistent_output_id.as_ref().map(|s| s.as_str()),
+                input.clone(),
+                &output_schema,
+            );
+
+            let persistent_index_id = persistent_output_id.as_ref().map(|id| format!("{id}.idx"));
+
+            catalog
+                .register_index_persistent::<K, K, T, T>(
+                    persistent_index_id.as_deref(),
+                    input.clone(),
+                    &SqlIdentifier::from(&format!("idx{i}")),
+                    &SqlIdentifier::from(&format!("test_output{i}")),
+                    &key_fields.iter().collect::<Vec<_>>(),
+                )
+                .expect("failed to register index");
         }
         Ok(catalog)
     })

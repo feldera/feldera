@@ -4,9 +4,10 @@ use crate::format::parquet::relation_to_arrow_fields;
 use crate::format::parquet::test::load_parquet_file;
 use crate::format::relation_to_parquet_schema;
 use crate::integrated::delta_table::{delta_input_serde_config, register_storage_handlers};
+use crate::test::data::DeltaTestKey;
 use crate::test::{
-    file_to_zset, list_files_recursive, test_circuit, wait, DatabricksPeople, DeltaTestStruct,
-    MockDeZSet, MockUpdate,
+    file_to_zset, list_files_recursive, test_circuit, test_circuit_with_index, wait,
+    DatabricksPeople, DeltaTestStruct, MockDeZSet, MockUpdate,
 };
 use crate::{Controller, ControllerError, InputFormat};
 use anyhow::anyhow;
@@ -27,7 +28,7 @@ use deltalake::operations::create::CreateBuilder;
 use deltalake::protocol::SaveMode;
 use deltalake::{DeltaOps, DeltaTable, DeltaTableBuilder};
 use feldera_adapterlib::catalog::{OutputCollectionHandles, RecordFormat};
-use feldera_adapterlib::utils::datafusion::execute_singleton_query;
+use feldera_adapterlib::utils::datafusion::{execute_query_collect, execute_singleton_query};
 use feldera_types::config::PipelineConfig;
 use feldera_types::format::json::JsonFlavor;
 use feldera_types::program_schema::{ColumnType, Field, Relation, SqlIdentifier};
@@ -170,27 +171,49 @@ async fn wait_for_output_records<T>(
 }
 
 /// Wait until materialized table contains exactly `expected_count` records.
-async fn wait_for_count_records_materialized(
+async fn wait_for_records_materialized<T>(
     pipeline: &Controller,
     table: &SqlIdentifier,
-    expected_count: usize,
-) {
+    expected_output: &[T],
+) where
+    T: for<'a> DeserializeWithContext<'a, SqlSerdeConfig> + DBData,
+{
     let start = Instant::now();
     loop {
-        let count = execute_singleton_query(
+        let data = execute_query_collect(
             &pipeline.session_context().unwrap(),
-            &format!("select cast(count(*) as varchar) from {table}"),
+            &format!("select * from {table}"),
         )
         .await
         .unwrap();
 
-        info!("expected output table size: {expected_count}, current size: {count}");
+        let mut result = Vec::new();
 
-        if count == format!("{expected_count}") {
-            break;
+        for batch in data.iter() {
+            let deserializer = serde_arrow::Deserializer::from_record_batch(batch).unwrap();
+            let mut records =
+                Vec::<T>::deserialize_with_context(deserializer, &delta_input_serde_config())
+                    .unwrap();
+
+            result.append(&mut records);
         }
 
-        if start.elapsed() > Duration::from_millis(30_000) {
+        info!(
+            "expected output table size: {}, current size: {}",
+            expected_output.len(),
+            result.len()
+        );
+
+        if result.len() == expected_output.len() {
+            result.sort();
+            let mut expected_output = expected_output.to_vec();
+            expected_output.sort();
+            if result == expected_output {
+                break;
+            }
+        }
+
+        if start.elapsed() > Duration::from_millis(20_000) {
             panic!("timeout");
         }
 
@@ -378,9 +401,11 @@ outputs:
 }
 
 /// Build a pipeline that reads from a delta table.
-fn delta_read_pipeline<T>(
+fn delta_read_pipeline<T, K, KF>(
     input_table_uri: &str,
     input_config: &HashMap<String, String>,
+    key_fields: &[SqlIdentifier],
+    key_func: KF,
     storage_dir: &Path,
 ) -> Controller
 where
@@ -388,6 +413,11 @@ where
         + SerializeWithContext<SqlSerdeConfig>
         + for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
         + Sync,
+    K: DBData
+        + SerializeWithContext<SqlSerdeConfig>
+        + for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+        + Sync,
+    KF: Fn(&T) -> K + Clone + Send + Sync + 'static,
 {
     info!("creating a pipeline to read delta table '{input_table_uri}'");
 
@@ -416,11 +446,15 @@ inputs:
 
     let config: PipelineConfig = serde_yaml::from_str(&config_str).unwrap();
 
+    let key_fields = key_fields.to_vec();
+
     Controller::with_config(
-        |workers| {
-            Ok(test_circuit::<T>(
+        move |workers| {
+            Ok(test_circuit_with_index::<T, K, _>(
                 workers,
                 &DeltaTestStruct::schema(),
+                &key_fields,
+                key_func,
                 &[Some("output")],
             ))
         },
@@ -432,9 +466,12 @@ inputs:
 
 /// Build a pipeline that continuously follows a JSON file and writes changes
 /// (both inserts and deletes) to a delta table.
-fn delta_write_pipeline<T>(
+fn delta_write_pipeline<T, K, KF>(
     input_file_path: &str,
     table_uri: &str,
+    key_fields: &[SqlIdentifier],
+    key_func: KF,
+    index: bool,
     config: &HashMap<String, String>,
 ) -> Controller
 where
@@ -442,6 +479,11 @@ where
         + SerializeWithContext<SqlSerdeConfig>
         + for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
         + Sync,
+    K: DBData
+        + SerializeWithContext<SqlSerdeConfig>
+        + for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+        + Sync,
+    KF: Fn(&T) -> K + Clone + Send + Sync + 'static,
 {
     info!("creating a pipeline to write delta table '{table_uri}'");
 
@@ -449,6 +491,8 @@ where
     for (key, val) in config.iter() {
         storage_options += &format!("                {key}: {val}\n");
     }
+
+    let index = if index { "        index: \"idx1\"" } else { "" };
 
     // Create controller.
     let config_str = format!(
@@ -476,19 +520,23 @@ outputs:
             name: "delta_table_output"
             config:
                 uri: "{table_uri}"
-{}"#,
+{}
+{index}"#,
         storage_options,
     );
 
     println!("config:\n{config_str}");
     let config: PipelineConfig = serde_yaml::from_str(&config_str).unwrap();
+    let key_fields = key_fields.to_vec();
 
     Controller::with_config(
-        |workers| {
-            Ok(test_circuit::<T>(
+        move |workers| {
+            Ok(test_circuit_with_index::<T, K, _>(
                 workers,
                 &DeltaTestStruct::schema(),
-                &[None],
+                &key_fields,
+                key_func,
+                &[Some("output")],
             ))
         },
         &config,
@@ -933,6 +981,7 @@ async fn test_cdc(
     storage_options: &HashMap<String, String>,
     data: Vec<DeltaTestStruct>,
     suspend: bool,
+    index: bool,
 ) {
     init_logging();
 
@@ -953,7 +1002,14 @@ async fn test_cdc(
     output_config.insert("mode".to_string(), "\"truncate\"".to_string());
 
     let write_pipeline = tokio::task::spawn_blocking(move || {
-        delta_write_pipeline::<DeltaTestStruct>(&input_file_path, &table_uri_clone, &output_config)
+        delta_write_pipeline::<DeltaTestStruct, DeltaTestKey, _>(
+            &input_file_path,
+            &table_uri_clone,
+            &[SqlIdentifier::from("bigint")],
+            |x: &DeltaTestStruct| DeltaTestKey { bigint: x.bigint },
+            index,
+            &output_config,
+        )
     })
     .await
     .unwrap();
@@ -977,9 +1033,11 @@ async fn test_cdc(
     let storage_dir_path = storage_dir.path().to_path_buf();
     let input_config_clone: HashMap<String, String> = input_config.clone();
     let mut read_pipeline = tokio::task::spawn_blocking(move || {
-        delta_read_pipeline::<DeltaTestStruct>(
+        delta_read_pipeline::<DeltaTestStruct, DeltaTestKey, _>(
             &table_uri_clone,
             &input_config_clone,
+            &[SqlIdentifier::from("bigint")],
+            |x: &DeltaTestStruct| DeltaTestKey { bigint: x.bigint },
             &storage_dir_path,
         )
     })
@@ -1016,9 +1074,11 @@ async fn test_cdc(
             let storage_dir_path = storage_dir.path().to_path_buf();
 
             read_pipeline = tokio::task::spawn_blocking(move || {
-                delta_read_pipeline::<DeltaTestStruct>(
+                delta_read_pipeline::<DeltaTestStruct, DeltaTestKey, _>(
                     &table_uri_clone,
                     &input_config_clone,
+                    &[SqlIdentifier::from("bigint")],
+                    |x: &DeltaTestStruct| DeltaTestKey { bigint: x.bigint },
                     &storage_dir_path,
                 )
             })
@@ -1028,12 +1088,62 @@ async fn test_cdc(
             read_pipeline.start();
         }
 
-        wait_for_count_records_materialized(
+        wait_for_records_materialized(
             &read_pipeline,
             &SqlIdentifier::from("test_output1"),
-            total_count.div_ceil(2),
+            &data[0..total_count]
+                .iter()
+                .filter_map(|x| {
+                    if x.bigint % 2 == 0 {
+                        Some(x.clone())
+                    } else {
+                        None
+                    }
+                })
+                .collect::<Vec<_>>(),
         )
         .await;
+    }
+
+    // Modify all records by negating the `boolean` field.
+    println!("Applying updates");
+    let mut updated_count = 0;
+    if index {
+        for chunk in data.chunks(std::cmp::max(data.len() / 10, 1)) {
+            let chunk = chunk
+                .iter()
+                .map(|x| {
+                    let mut x = x.clone();
+                    x.boolean = !x.boolean;
+                    x
+                })
+                .collect::<Vec<_>>();
+            write_updates_as_json(input_file.as_file_mut(), &chunk, true);
+            updated_count += chunk.len();
+
+            let expected = data[0..total_count]
+                .iter()
+                .enumerate()
+                .flat_map(|(i, x)| {
+                    let mut x = x.clone();
+                    if x.bigint % 2 == 0 {
+                        if i < updated_count {
+                            x.boolean = !x.boolean;
+                        }
+                        Some(x)
+                    } else {
+                        None
+                    }
+                })
+                .collect::<Vec<_>>();
+
+            wait_for_records_materialized(
+                &read_pipeline,
+                &SqlIdentifier::from("test_output1"),
+                &expected,
+            )
+            .await;
+        }
     }
 
     let mut deleted_count = 0;
@@ -1043,10 +1153,23 @@ async fn test_cdc(
 
         deleted_count += chunk.len();
 
-        wait_for_count_records_materialized(
+        wait_for_records_materialized(
             &read_pipeline,
             &SqlIdentifier::from("test_output1"),
-            total_count.div_ceil(2) - deleted_count.div_ceil(2),
+            &data[deleted_count..total_count]
+                .iter()
+                .filter_map(|x| {
+                    if x.bigint % 2 == 0 {
+                        let mut x = x.clone();
+                        if index {
+                            x.boolean = !x.boolean;
+                        }
+                        Some(x.clone())
+                    } else {
+                        None
+                    }
+                })
+                .collect::<Vec<_>>(),
         )
         .await;
     }
@@ -1119,6 +1242,33 @@ async fn delta_table_cdc_file_test() {
         &HashMap::new(),
         data,
         false,
+        false,
+    )
+    .await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn delta_table_cdc_file_indexed_test() {
+    // We cannot use proptest macros in `async` context, so generate
+    // some random data manually.
+    let mut runner = TestRunner::default();
+    let data = delta_data(20_000).new_tree(&mut runner).unwrap().current();
+
+    let relation_schema = DeltaTestStruct::schema();
+
+    let input_table_dir = TempDir::new().unwrap();
+    let input_table_uri = input_table_dir.path().display().to_string();
+
+    let output_table_dir: TempDir = TempDir::new().unwrap();
+    let output_table_uri = output_table_dir.path().display().to_string();
+
+    test_cdc(
+        &relation_schema,
+        &input_table_uri,
+        &HashMap::new(),
+        data,
+        false,
+        true,
     )
     .await;
 }
@@ -1145,6 +1295,7 @@ async fn delta_table_cdc_file_suspend_test() {
         &HashMap::new(),
         data,
         true,
+        false,
     )
     .await;
 }
