@@ -7,6 +7,7 @@ use crate::{
     },
     storage::file::to_bytes,
     trace::BatchReaderFactories,
+    typed_batch::{Spine, SpineSnapshot},
     Batch, Circuit, Error, Runtime, Stream,
 };
 use feldera_storage::StoragePath;
@@ -67,6 +68,36 @@ where
         let (output, output_handle) = OutputGuarded::new();
         self.circuit().add_binary_sink(output, self, guard);
         output_handle
+    }
+}
+
+impl<B> Stream<RootCircuit, B>
+where
+    B: Batch + Send,
+{
+    #[track_caller]
+    pub fn accumulate_output(&self) -> OutputHandle<SpineSnapshot<B>> {
+        self.accumulate_output_persistent(None)
+    }
+
+    #[track_caller]
+    pub fn accumulate_output_persistent(
+        &self,
+        persistent_id: Option<&str>,
+    ) -> OutputHandle<SpineSnapshot<B>> {
+        self.accumulate_output_persistent_with_gid(persistent_id).0
+    }
+
+    #[track_caller]
+    pub fn accumulate_output_persistent_with_gid(
+        &self,
+        persistent_id: Option<&str>,
+    ) -> (OutputHandle<SpineSnapshot<B>>, GlobalNodeId) {
+        let (output, output_handle) = AccumulateOutput::<B>::new();
+        let gid = self.circuit().add_sink(output, &self.accumulate());
+        self.circuit().set_persistent_node_id(&gid, persistent_id);
+
+        (output_handle, gid)
     }
 }
 
@@ -163,7 +194,7 @@ impl<T: Clone> OutputHandleInternal<T> {
 /// using [`take_from_all`](`OutputHandle::take_from_all`).
 /// If the stream carries relational data, the
 /// [`consolidate`](`OutputHandle::consolidate`) method can be used
-/// to combine output batches produced by all workes into a single
+/// to combine output batches produced by all workers into a single
 /// batch.
 ///
 /// Reading from a mailbox using any of these methods removes the value
@@ -309,7 +340,6 @@ where
         (output, handle)
     }
 
-    /// Return the absolute path of the file for a checkpointed Window.
     fn checkpoint_file(base: &StoragePath, persistent_id: &str) -> StoragePath {
         base.child(format!("output-{}.dat", persistent_id))
     }
@@ -362,6 +392,93 @@ where
 
     async fn eval_owned(&mut self, val: T) {
         self.mailbox.set(Some(val));
+    }
+
+    fn input_preference(&self) -> OwnershipPreference {
+        OwnershipPreference::PREFER_OWNED
+    }
+}
+
+struct AccumulateOutput<B>
+where
+    B: Batch,
+{
+    global_id: GlobalNodeId,
+    mailbox: Mailbox<Option<SpineSnapshot<B>>>,
+}
+
+impl<B> AccumulateOutput<B>
+where
+    B: Batch + Send,
+{
+    fn new() -> (Self, OutputHandle<SpineSnapshot<B>>) {
+        let handle = OutputHandle::new();
+        let mailbox = handle.mailbox(Runtime::worker_index()).clone();
+
+        let output = Self {
+            global_id: GlobalNodeId::root(),
+            mailbox,
+        };
+
+        (output, handle)
+    }
+
+    fn checkpoint_file(base: &StoragePath, persistent_id: &str) -> StoragePath {
+        base.child(format!("accumulate-output-{}.dat", persistent_id))
+    }
+}
+
+impl<B> Operator for AccumulateOutput<B>
+where
+    B: Batch + Send,
+{
+    fn name(&self) -> Cow<'static, str> {
+        Cow::from("AccumulateOutput")
+    }
+
+    fn init(&mut self, global_id: &GlobalNodeId) {
+        self.global_id = global_id.clone();
+    }
+
+    fn commit(&mut self, base: &StoragePath, pid: Option<&str>) -> Result<(), Error> {
+        let pid = require_persistent_id(pid, &self.global_id)?;
+        let as_bytes = to_bytes(&()).expect("Serializing () should work.");
+
+        Runtime::storage_backend()
+            .unwrap()
+            .write(&Self::checkpoint_file(base, pid), as_bytes)?;
+
+        Ok(())
+    }
+
+    fn restore(&mut self, base: &StoragePath, pid: Option<&str>) -> Result<(), Error> {
+        let pid = require_persistent_id(pid, &self.global_id)?;
+
+        let path = Self::checkpoint_file(base, pid);
+        let _content = Runtime::storage_backend().unwrap().read(&path)?;
+
+        Ok(())
+    }
+
+    fn fixedpoint(&self, _scope: Scope) -> bool {
+        true
+    }
+}
+
+impl<B> SinkOperator<Option<Spine<B>>> for AccumulateOutput<B>
+where
+    B: Batch + Send,
+{
+    async fn eval(&mut self, val: &Option<Spine<B>>) {
+        if let Some(val) = val {
+            self.mailbox.set(Some(val.ro_snapshot()));
+        }
+    }
+
+    async fn eval_owned(&mut self, val: Option<Spine<B>>) {
+        if let Some(val) = val {
+            self.mailbox.set(Some(val.ro_snapshot()));
+        }
     }
 
     fn input_preference(&self) -> OwnershipPreference {
