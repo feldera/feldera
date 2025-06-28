@@ -208,8 +208,8 @@ mod test {
     use std::cmp::min;
 
     use crate::{
-        circuit::CircuitConfig, operator::Min, utils::Tup2, OrdIndexedZSet, OutputHandle,
-        RootCircuit, Runtime, ZSetHandle, ZWeight,
+        circuit::CircuitConfig, operator::Min, typed_batch::SpineSnapshot, utils::Tup2,
+        OrdIndexedZSet, OutputHandle, RootCircuit, Runtime, ZSetHandle, ZWeight,
     };
     use proptest::{collection, prelude::*};
 
@@ -217,8 +217,8 @@ mod test {
         circuit: &mut RootCircuit,
     ) -> (
         ZSetHandle<Tup2<u64, i32>>,
-        OutputHandle<OrdIndexedZSet<u64, String>>,
-        OutputHandle<OrdIndexedZSet<u64, String>>,
+        OutputHandle<SpineSnapshot<OrdIndexedZSet<u64, String>>>,
+        OutputHandle<SpineSnapshot<OrdIndexedZSet<u64, String>>>,
     ) {
         let (input, input_handle) = circuit.add_input_zset::<Tup2<u64, i32>>();
 
@@ -226,11 +226,11 @@ mod test {
         let aggregate = input_indexed
             .aggregate(Min)
             .map_index(|(x, y)| (*x, y.to_string()))
-            .output();
+            .accumulate_output();
         let delta_aggregate = input_indexed
             .chain_aggregate(|v, _w| *v, |acc, i, _w| min(acc, *i))
             .map_index(|(x, y)| (*x, y.to_string()))
-            .output();
+            .accumulate_output();
 
         (input_handle, aggregate, delta_aggregate)
     }
@@ -266,7 +266,7 @@ mod test {
             for mut batch in inputs.into_iter() {
                 input.append(&mut batch);
                 dbsp.step().unwrap();
-                assert_eq!(aggregate.consolidate(), delta_aggregate.consolidate());
+                assert_eq!(SpineSnapshot::<OrdIndexedZSet<u64, String>>::concat(&aggregate.take_from_all()).iter().collect::<Vec<_>>(), SpineSnapshot::<OrdIndexedZSet<u64, String>>::concat(&delta_aggregate.take_from_all()).iter().collect::<Vec<_>>());
             }
         }
     }
