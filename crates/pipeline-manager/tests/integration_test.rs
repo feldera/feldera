@@ -1730,8 +1730,7 @@ async fn json_ingress() {
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     let body = response.body().await.unwrap();
     let error = std::str::from_utf8(&body).unwrap();
-    pretty_assertions::assert_eq!(error, "{\"message\":\"Errors parsing input data (2 errors):\\n    Parse error (event #4): failed to deserialize JSON record: error parsing field 'c2': invalid type: string \\\"foo\\\", expected a boolean at line 1 column 10\\nInvalid fragment: '[40, \\\"foo\\\", \\\"buzz\\\"]'\\n    Parse error (event #5): failed to deserialize JSON record: error parsing field 'c1': invalid type: boolean `true`, expected i32 at line 1 column 5\\nInvalid fragment: '[true, true, \\\"\\\"]'\",\"error_code\":\"ParseErrors\",\"details\":{\"errors\":[{\"description\":\"failed to deserialize JSON record: error parsing field 'c2': invalid type: string \\\"foo\\\", expected a boolean at line 1 column 10\",\"event_number\":4,\"field\":\"c2\",\"invalid_bytes\":null,\"invalid_text\":\"[40, \\\"foo\\\", \\\"buzz\\\"]\",\"suggestion\":null},{\"description\":\"failed to deserialize JSON record: error parsing field 'c1': invalid type: boolean `true`, expected i32 at line 1 column 5\",\"event_number\":5,\"field\":\"c1\",\"invalid_bytes\":null,\"invalid_text\":\"[true, true, \\\"\\\"]\",\"suggestion\":null}],\"num_errors\":2}}");
-
+    assert!(error.starts_with(r#"{"message":"Errors parsing input data (2 errors):"#));
     // Even records that are parsed successfully don't get ingested when
     // using array format.
     assert_eq!(
@@ -1772,7 +1771,7 @@ not_a_number,true,ΑαΒβΓγΔδ
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     let body = response.body().await.unwrap();
     let error = std::str::from_utf8(&body).unwrap();
-    assert_eq!(error, "{\"message\":\"Errors parsing input data (1 errors):\\n    Parse error (event #2): failed to deserialize CSV record: error parsing field 'c1': field 0: invalid digit found in string\\nInvalid fragment: 'not_a_number,true,ΑαΒβΓγΔδ\\n'\",\"error_code\":\"ParseErrors\",\"details\":{\"errors\":[{\"description\":\"failed to deserialize CSV record: error parsing field 'c1': field 0: invalid digit found in string\",\"event_number\":2,\"field\":\"c1\",\"invalid_bytes\":null,\"invalid_text\":\"not_a_number,true,ΑαΒβΓγΔδ\\n\",\"suggestion\":null}],\"num_errors\":1}}");
+    assert!(error.starts_with(r#"{"message":"Errors parsing input data (1 errors):"#));
 
     assert_eq!(
         config

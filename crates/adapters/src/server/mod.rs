@@ -48,9 +48,10 @@ use futures_util::FutureExt;
 use minitrace::collector::Config;
 use serde::Deserialize;
 use serde_json::json;
+use std::cell::RefCell;
 use std::collections::HashMap;
+use std::hash::{BuildHasherDefault, DefaultHasher};
 use std::path::{Path, PathBuf};
-use std::sync::LazyLock;
 use std::{
     borrow::Cow,
     net::TcpListener,
@@ -1243,8 +1244,11 @@ async fn input_endpoint(
     args: Query<IngressArgs>,
     payload: Payload,
 ) -> impl Responder {
-    static TABLE_ENDPOINTS: LazyLock<RwLock<HashMap<(String, FormatConfig), HttpInputEndpoint>>> =
-        LazyLock::new(|| RwLock::new(HashMap::new()));
+    thread_local! {
+        static TABLE_ENDPOINTS: RefCell<HashMap<(String, FormatConfig), HttpInputEndpoint, BuildHasherDefault<DefaultHasher>>> = const {
+            RefCell::new(HashMap::with_hasher(BuildHasherDefault::new()))
+        };
+    }
     debug!("{req:?}");
 
     let table_name = match req.match_info().get("table_name") {
@@ -1260,11 +1264,12 @@ async fn input_endpoint(
     let endpoint_name = format!("api-ingress-{table_name}-{}", Uuid::new_v4());
     let format = parser_config_from_http_request(&endpoint_name, &args.format, &req)?;
 
-    let cached_endpoint = TABLE_ENDPOINTS
-        .read()
-        .unwrap()
-        .get(&(table_name.clone(), format.clone()))
-        .cloned();
+    let cached_endpoint = TABLE_ENDPOINTS.with(|endpoints| {
+        endpoints
+            .borrow()
+            .get(&(table_name.clone(), format.clone()))
+            .cloned()
+    });
     let endpoint = match cached_endpoint {
         Some(endpoint) => endpoint,
         None => {
@@ -1275,10 +1280,9 @@ async fn input_endpoint(
                 endpoint_name.clone(),
             )
             .await?;
-            TABLE_ENDPOINTS
-                .write()
-                .unwrap()
-                .insert((table_name, format), endpoint.clone());
+            TABLE_ENDPOINTS.with_borrow_mut(|endpoints| {
+                endpoints.insert((table_name, format), endpoint.clone())
+            });
             endpoint
         }
     };
