@@ -25,7 +25,7 @@ Delta table:
 
 | Column         | Type      | Description                                                                   |
 |----------------|-----------|-------------------------------------------------------------------------------|
-| `__feldera_op` | `VARCHAR` | Operation that this record represents: `i` for "insert" or `d` for "delete".  |
+| `__feldera_op` | `VARCHAR` | Operation that this record represents: `i` for "insert", `d` for "delete", or `u` for "update".  |
 | `__feldera_ts` | `BIGINT`  | Timestamp of the update, used to establish the order of updates. Updates with smaller timestamps are applied before those with larger timestamps. |
 
 Effectively, we treat the table as a change log, where every record corresponds to
@@ -52,6 +52,17 @@ backend-specific documentation for details:
 * [Amazon S3 options](https://docs.rs/object_store/latest/object_store/aws/enum.AmazonS3ConfigKey.html)
 * [Azure Blob Storage options](https://docs.rs/object_store/latest/object_store/azure/enum.AzureConfigKey.html)
 * [Google Cloud Storage options](https://docs.rs/object_store/latest/object_store/gcp/enum.GoogleConfigKey.html)
+
+### Views with unique keys
+
+If the SQL view contains a **unique key**—a set of columns that uniquely identify each record—the Delta Lake connector can optimize updates by combining a delete and insert with the same key into a single **atomic update**. In such cases, the connector emits a record with the `__feldera_op` field set to `'u'` (for **update**).
+
+To enable this optimization:
+
+* Use the `CREATE INDEX` statement to define the unique key on the view.
+* Set the connector's `index` property to reference this index.
+
+For more information, see the [documentation on views with unique keys](/connectors/unique_keys#views-with-unique-keys).
 
 ## Data type mapping
 
