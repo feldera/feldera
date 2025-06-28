@@ -67,6 +67,19 @@ where
         self.batches.extend(other.batches.iter().cloned())
     }
 
+    pub fn concat<'a, I>(factories: B::Factories, snapshots: I) -> Self
+    where
+        I: IntoIterator<Item = &'a Self>,
+    {
+        Self {
+            batches: snapshots
+                .into_iter()
+                .flat_map(|snapshot| snapshot.batches.iter().cloned())
+                .collect::<Vec<_>>(),
+            factories,
+        }
+    }
+
     pub fn batches(&self) -> &[Arc<B>] {
         &self.batches
     }
