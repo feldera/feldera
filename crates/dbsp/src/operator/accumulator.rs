@@ -5,7 +5,7 @@ use crate::{
         metadata::OperatorLocation,
         operator_traits::{BinaryOperator, Operator},
     },
-    trace::{spine_async::WithSnapshot, BatchReaderFactories, SpineSnapshot},
+    trace::{BatchReaderFactories, SpineSnapshot},
     typed_batch::{Spine, TypedBatch},
     Batch, Circuit, Scope, Stream,
 };
@@ -127,11 +127,11 @@ where
 {
     async fn eval(&mut self, i1: &Option<Spine<B1>>, i2: &Option<Spine<B2>>) -> Option<T> {
         if let Some(i1) = i1 {
-            self.input1 = Some(TypedBatch::new(i1.ro_snapshot()));
+            self.input1 = Some(i1.ro_snapshot());
         }
 
         if let Some(i2) = i2 {
-            self.input2 = Some(TypedBatch::new(i2.ro_snapshot()));
+            self.input2 = Some(i2.ro_snapshot());
         }
 
         if self.flush {

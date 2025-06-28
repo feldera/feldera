@@ -13,7 +13,7 @@ use size_of::SizeOf;
 use super::SpineCursor;
 use crate::dynamic::{DynVec, Factory};
 use crate::trace::cursor::{CursorFactory, CursorList};
-use crate::trace::{Batch, BatchReader, BatchReaderFactories, Cursor, Spine};
+use crate::trace::{merge_batches, Batch, BatchReader, BatchReaderFactories, Cursor, Spine};
 use crate::NumEntries;
 
 pub trait WithSnapshot<B>
@@ -67,8 +67,30 @@ where
         self.batches.extend(other.batches.iter().cloned())
     }
 
+    pub fn concat<'a, I>(factories: B::Factories, snapshots: I) -> Self
+    where
+        I: IntoIterator<Item = &'a Self>,
+    {
+        Self {
+            batches: snapshots
+                .into_iter()
+                .flat_map(|snapshot| snapshot.batches.iter().cloned())
+                .collect::<Vec<_>>(),
+            factories,
+        }
+    }
+
     pub fn batches(&self) -> &[Arc<B>] {
         &self.batches
+    }
+
+    pub fn consolidate(&self) -> B {
+        merge_batches(
+            &self.factories,
+            self.batches().iter().map(|b| b.as_ref().clone()),
+            &None,
+            &None,
+        )
     }
 }
 

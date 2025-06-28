@@ -26,7 +26,7 @@ pub use crate::{
 use crate::{
     circuit::checkpointer::Checkpoint,
     dynamic::{DataTrait, DynData, DynUnit, Erase, LeanVec, WeightTrait},
-    trace::{BatchReaderFactories, Deserializer, Serializer},
+    trace::{spine_async::WithSnapshot, BatchReaderFactories, Deserializer, Serializer},
     Circuit, Error,
 };
 use dyn_clone::clone_box;
@@ -500,6 +500,13 @@ pub type Spine<B> = TypedBatch<
     DynSpine<<B as BatchReader>::Inner>,
 >;
 
+pub type SpineSnapshot<B> = TypedBatch<
+    <B as BatchReader>::Key,
+    <B as BatchReader>::Val,
+    <B as BatchReader>::R,
+    DynSpineSnapshot<<B as BatchReader>::Inner>,
+>;
+
 impl<K, V, R, B> TypedBatch<K, V, R, B>
 where
     B: DynTrace,
@@ -513,6 +520,40 @@ where
                 .consolidate()
                 .unwrap_or_else(|| B::Batch::dyn_empty(&BatchReaderFactories::new::<K, V, R>())),
         )
+    }
+}
+
+impl<K, V, R, B> TypedBatch<K, V, R, DynSpine<B>>
+where
+    B: DynBatch,
+    K: DBData + Erase<B::Key>,
+    V: DBData + Erase<B::Val>,
+    R: DBWeight + Erase<B::R>,
+{
+    pub fn ro_snapshot(&self) -> TypedBatch<K, V, R, DynSpineSnapshot<B>> {
+        TypedBatch::new(self.inner.ro_snapshot())
+    }
+}
+
+impl<K, V, R, B> TypedBatch<K, V, R, DynSpineSnapshot<B>>
+where
+    B: DynBatch,
+    K: DBData + Erase<B::Key>,
+    V: DBData + Erase<B::Val>,
+    R: DBWeight + Erase<B::R>,
+{
+    pub fn concat<'a, I>(snapshots: I) -> TypedBatch<K, V, R, DynSpineSnapshot<B>>
+    where
+        I: IntoIterator<Item = &'a Self>,
+    {
+        TypedBatch::new(DynSpineSnapshot::concat(
+            BatchReaderFactories::new::<K, V, R>(),
+            snapshots.into_iter().map(|snapshot | &snapshot.inner),
+        ))
+    }
+
+    pub fn consolidate(&self) -> TypedBatch<K, V, R, B> {
+        TypedBatch::new(self.inner.consolidate())
     }
 }
 
