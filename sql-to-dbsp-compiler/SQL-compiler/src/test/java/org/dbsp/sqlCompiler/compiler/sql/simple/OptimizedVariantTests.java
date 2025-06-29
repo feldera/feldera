@@ -6,8 +6,10 @@ import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 // Runs the VariantTests with optimizations
 public class OptimizedVariantTests extends VariantTests {
     @Override
-    public DBSPCompiler testCompiler() {
-        CompilerOptions options = this.testOptions(false, true);
-        return new DBSPCompiler(options);
+    public CompilerOptions testOptions() {
+        CompilerOptions options = super.testOptions();
+        options.languageOptions.optimizationLevel = 2;
+        options.languageOptions.incrementalize = false;
+        return options;
     }
 }

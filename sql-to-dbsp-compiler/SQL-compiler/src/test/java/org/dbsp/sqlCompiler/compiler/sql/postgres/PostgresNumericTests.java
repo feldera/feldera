@@ -512,7 +512,8 @@ public class PostgresNumericTests extends SqlIoTest {
     /** @param intermediate  A SQL query that defines an intermediate view, which is not output by the circuit.
      * @param last          A SQL query that defines the final view, which is output from the circuit. */
     public void testTwoViews(String intermediate, String last) {
-        DBSPCompiler compiler = new DBSPCompiler(this.getOptions(true));
+        this.setOptimize(true);
+        DBSPCompiler compiler = this.testCompiler();
         this.prepareInputs(compiler);
         compiler.submitStatementForCompilation(intermediate);
         compiler.submitStatementForCompilation(last);

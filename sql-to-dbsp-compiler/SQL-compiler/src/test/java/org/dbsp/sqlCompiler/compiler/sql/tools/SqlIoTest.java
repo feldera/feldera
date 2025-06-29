@@ -42,12 +42,18 @@ public abstract class SqlIoTest extends BaseSQLTests {
         Both
     }
 
-    public CompilerOptions getOptions(boolean optimize) {
+    protected boolean optimize = true;
+    
+    public void setOptimize(boolean optimize) {
+        this.optimize = optimize;
+    }
+
+    public CompilerOptions testOptions() {
         CompilerOptions options = new CompilerOptions();
         options.ioOptions.quiet = true;
         options.ioOptions.emitHandles = true;
         options.languageOptions.throwOnError = true;
-        options.languageOptions.optimizationLevel = optimize ? 2 : 0;
+        options.languageOptions.optimizationLevel = this.optimize ? 2 : 1;
         options.languageOptions.generateInputForEveryTable = true;
         options.languageOptions.incrementalize = false;
         options.languageOptions.unrestrictedIOTypes = true;
@@ -55,13 +61,9 @@ public abstract class SqlIoTest extends BaseSQLTests {
         return options;
     }
 
-    public DBSPCompiler testCompiler(boolean optimize) {
-        CompilerOptions options = this.getOptions(optimize);
-        return new DBSPCompiler(options);
-    }
-
     public DBSPCompiler compileQuery(String query, boolean optimize) {
-        DBSPCompiler compiler = this.testCompiler(optimize);
+        this.setOptimize(optimize);
+        DBSPCompiler compiler = this.testCompiler();
         this.prepareInputs(compiler);
         compiler.submitStatementForCompilation(query);
         if (!compiler.options.languageOptions.throwOnError) {
@@ -150,7 +152,8 @@ public abstract class SqlIoTest extends BaseSQLTests {
     }
 
     public void compare(String query, DBSPZSetExpression expected, boolean optimize) {
-        DBSPCompiler compiler = this.testCompiler(optimize);
+        this.setOptimize(optimize);
+        DBSPCompiler compiler = this.testCompiler();
         this.prepareInputs(compiler);
         compiler.submitStatementForCompilation("CREATE VIEW VV AS " + query);
         CompilerCircuitStream ccs = this.getCCS(compiler);
@@ -165,7 +168,8 @@ public abstract class SqlIoTest extends BaseSQLTests {
     }
 
     public void compare(String query, String expected, boolean optimize, int rowCount) {
-        DBSPCompiler compiler = this.testCompiler(optimize);
+        this.setOptimize(optimize);
+        DBSPCompiler compiler = this.testCompiler();
         this.prepareInputs(compiler);
         compiler.submitStatementForCompilation("CREATE VIEW VV AS " + query);
         CompilerCircuitStream ccs = this.getCCS(compiler);
@@ -280,7 +284,8 @@ public abstract class SqlIoTest extends BaseSQLTests {
      * @param optimize      Boolean that indicates if the query should be compiled with optimizations.
      */
     public void qf(String query, String panicMessage, boolean optimize) {
-        DBSPCompiler compiler = this.testCompiler(optimize);
+        this.setOptimize(optimize);
+        DBSPCompiler compiler = this.testCompiler();
         this.prepareInputs(compiler);
         compiler.submitStatementForCompilation("CREATE VIEW VV AS " + query);
         if (!compiler.options.languageOptions.throwOnError)

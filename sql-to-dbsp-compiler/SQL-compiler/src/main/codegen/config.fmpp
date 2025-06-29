@@ -29,6 +29,7 @@ data: {
       "INDEX"
       "DISCARD"
       "IF"
+      "INTERNED"
       "LATENESS"
       "MATERIALIZED"
       "WATERMARK"

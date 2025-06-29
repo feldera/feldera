@@ -8,8 +8,8 @@ import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
 // https://github.com/julianhyde/scott-data-hsqldb/blob/main/src/main/resources/scott.script
 public class ScottBaseTests extends SqlIoTest {
     @Override
-    public CompilerOptions getOptions(boolean optimize) {
-        CompilerOptions options = super.getOptions(optimize);
+    public CompilerOptions testOptions() {
+        CompilerOptions options = super.testOptions();
         options.languageOptions.ignoreOrderBy = true;
         return options;
     }

@@ -16,8 +16,8 @@ import java.sql.SQLException;
 /** Parser tests that are expected to fail. */
 public class NegativeParserTests extends BaseSQLTests {
     @Override
-    public CompilerOptions testOptions(boolean incremental, boolean optimize) {
-        CompilerOptions options = super.testOptions(incremental, optimize);
+    public CompilerOptions testOptions() {
+        CompilerOptions options = super.testOptions();
         options.languageOptions.throwOnError = false;
         return options;
     }

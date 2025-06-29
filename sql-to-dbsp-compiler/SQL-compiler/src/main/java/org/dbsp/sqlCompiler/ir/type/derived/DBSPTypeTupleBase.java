@@ -34,6 +34,8 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 import org.dbsp.util.Linq;
 
 import java.util.ArrayList;
@@ -85,6 +87,15 @@ public abstract class DBSPTypeTupleBase extends DBSPType {
         return this.tupFields[index];
     }
 
+    /** The type of an expression of the form t.i, where t has type this.
+     * This is not the same as getFieldType. */
+    public DBSPType getFieldExpressionType(int index) {
+        DBSPType fieldType = this.getFieldType(index);
+        if (this.mayBeNull)
+            return fieldType.withMayBeNull(true);
+        return fieldType;
+    }
+
     public boolean hasCopy() {
         return false;
     }
@@ -131,5 +142,14 @@ public abstract class DBSPTypeTupleBase extends DBSPType {
 
     public DBSPTypeTupleBase slice(int start, int endExclusive) {
         return this.makeRelatedTupleType(Linq.list(this.tupFields).subList(start, endExclusive));
+    }
+
+    /** Creates a ZSet or IndexedZSet, depending on whether this is a Tuple or a RawTuple */
+    public DBSPType intoCollectionType() {
+        if (this.code == DBSPTypeCode.TUPLE) {
+            return new DBSPTypeZSet(this);
+        } else {
+            return new DBSPTypeIndexedZSet(this.to(DBSPTypeRawTuple.class));
+        }
     }
 }

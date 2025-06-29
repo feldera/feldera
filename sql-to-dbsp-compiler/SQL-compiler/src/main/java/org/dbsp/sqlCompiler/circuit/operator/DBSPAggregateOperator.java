@@ -35,6 +35,7 @@ import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregator;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
+import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.List;
@@ -47,6 +48,7 @@ public final class DBSPAggregateOperator extends DBSPAggregateOperatorBase {
             @Nullable DBSPAggregateList aggregate, OutputPort input) {
         super(node, "aggregate", outputType,
                 function, aggregate, false, input, true);
+        Utilities.enforce(input.getOutputIndexedZSetType().keyType.sameType(outputType.keyType));
     }
 
     @Override
@@ -66,7 +68,7 @@ public final class DBSPAggregateOperator extends DBSPAggregateOperatorBase {
             DBSPTypeIndexedZSet ix = outputType.to(DBSPTypeIndexedZSet.class);
             return new DBSPAggregateOperator(
                     this.getRelNode(), ix,
-                    (DBSPAggregator) function, this.aggregate, newInputs.get(0))
+                    (DBSPAggregator) function, this.aggregateList, newInputs.get(0))
                     .copyAnnotations(this);
         }
         return this;

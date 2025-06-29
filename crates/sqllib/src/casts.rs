@@ -4,7 +4,7 @@
 
 use crate::{
     array::Array,
-    binary::ByteArray,
+    binary::{to_hex_, ByteArray},
     dec::{is_error, DecimalContext, LargeDecimal, SqlDecimal},
     error::{r2o, SqlResult, SqlRuntimeError},
     geopoint::*,
@@ -1600,6 +1600,12 @@ pub fn cast_to_s_Uuid(value: Uuid, size: i32, fixed: bool) -> SqlResult<SqlStrin
     limit_or_size_string(&result, size, fixed)
 }
 
+#[doc(hidden)]
+pub fn cast_to_s_bytes(value: ByteArray, size: i32, fixed: bool) -> SqlResult<SqlString> {
+    let result = to_hex_(value);
+    limit_or_size_string(result.str(), size, fixed)
+}
+
 cast_to_string!(b, bool);
 cast_to_string!(SqlDecimal, SqlDecimal);
 cast_to_string!(f, F32);
@@ -1618,6 +1624,7 @@ cast_to_string!(u64, u64);
 cast_to_string!(Timestamp, Timestamp);
 cast_to_string!(Time, Time);
 cast_to_string!(Date, Date);
+cast_to_string!(bytes, ByteArray);
 cast_to_string!(LongInterval_MONTHS, LongInterval);
 cast_to_string!(LongInterval_YEARS, LongInterval);
 cast_to_string!(LongInterval_YEARS_TO_MONTHS, LongInterval);
@@ -3164,10 +3171,26 @@ cast_function!(Timestamp, Timestamp, Timestamp, Timestamp);
 #[doc(hidden)]
 #[inline]
 pub fn cast_to_Timestamp_i64(value: i64) -> SqlResult<Timestamp> {
-    Ok(Timestamp::new(value))
+    // Calcite ignores sub-second units
+    Ok(Timestamp::new((value / 1000) * 1000))
 }
 
 cast_function!(Timestamp, Timestamp, i64, i64);
+
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_Timestamp_SqlDecimal(value: SqlDecimal) -> SqlResult<Timestamp> {
+    match TryInto::<i64>::try_into(value) {
+        // Calcite ignores sub-second units
+        Ok(value) => Ok(Timestamp::new((value / 1000) * 1000)),
+        Err(e) => Err(SqlRuntimeError::from_string(format!(
+            "Error converting {value} to TIMESTAMP: {}",
+            e
+        ))),
+    }
+}
+
+cast_function!(Timestamp, Timestamp, SqlDecimal, SqlDecimal);
 
 #[doc(hidden)]
 #[inline]

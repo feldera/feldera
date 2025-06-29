@@ -215,7 +215,7 @@ public class MetadataTests extends BaseSQLTests {
         JsonNode outputs = meta.get("outputs");
         Assert.assertNotNull(inputs);
         Assert.assertTrue(outputs.isArray());
-        // error_view and declared view
+        // error_view, feldera_interned_strings, and declared view
         Assert.assertEquals(2, outputs.size());
         c = outputs.get(1).get("properties");
         Assert.assertNotNull(c);

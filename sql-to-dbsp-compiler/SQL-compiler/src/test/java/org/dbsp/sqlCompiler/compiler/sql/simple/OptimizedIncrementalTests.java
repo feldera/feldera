@@ -28,8 +28,9 @@ import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 
 public class OptimizedIncrementalTests extends NaiveIncrementalTests {
     @Override
-    public DBSPCompiler testCompiler() {
-        CompilerOptions options = this.testOptions(true, true);
-        return new DBSPCompiler(options);
+    public CompilerOptions testOptions() {
+        CompilerOptions options = super.testOptions();
+        options.languageOptions.optimizationLevel = 2;
+        return options;
     }
 }

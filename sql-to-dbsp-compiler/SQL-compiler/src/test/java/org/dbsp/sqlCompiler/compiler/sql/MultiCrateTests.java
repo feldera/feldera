@@ -62,6 +62,15 @@ public class MultiCrateTests extends BaseSQLTests {
     }
 
     @Test
+    public void testInterned() throws IOException, SQLException, InterruptedException {
+        String sql = """
+                 CREATE TABLE T (C0 VARCHAR INTERNED, C1 INT);
+                 CREATE VIEW V0 AS SELECT ARG_MAX(C0, C1) FROM T;""";
+        File file = createInputScript(sql);
+        this.compileToMultiCrate(file.getAbsolutePath(), true);
+    }
+
+    @Test
     public void collisionTest() throws IOException, SQLException, InterruptedException {
         String sql = """
                 CREATE TABLE int0_tbl(

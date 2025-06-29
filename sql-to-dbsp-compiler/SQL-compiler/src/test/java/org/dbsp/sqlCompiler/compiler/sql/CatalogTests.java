@@ -10,6 +10,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.Passes;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
@@ -18,6 +19,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeArray;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 import org.dbsp.util.Linq;
+import org.dbsp.util.Logger;
 import org.junit.Assert;
 import org.junit.Test;
 
@@ -26,8 +28,8 @@ import java.util.List;
 /** Tests that emit Rust code using the catalog. */
 public class CatalogTests extends BaseSQLTests {
     @Override
-    public CompilerOptions testOptions(boolean incremental, boolean optimize) {
-        CompilerOptions result = super.testOptions(incremental, optimize);
+    public CompilerOptions testOptions() {
+        CompilerOptions result = super.testOptions();
         // result.ioOptions.sqlNames = true;
         result.ioOptions.emitHandles = false;
         result.languageOptions.unrestrictedIOTypes = false;

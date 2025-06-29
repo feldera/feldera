@@ -47,10 +47,12 @@ import java.math.BigDecimal;
 public class VariantTests extends BaseSQLTests {
     /** Return the default compiler used for testing. */
     @Override
-    public DBSPCompiler testCompiler() {
+    public CompilerOptions testOptions() {
         // Do not optimize, esp in Calcite
-        CompilerOptions options = this.testOptions(false, false);
-        return new DBSPCompiler(options);
+        CompilerOptions options = super.testOptions();
+        options.languageOptions.incrementalize = false;
+        options.languageOptions.optimizationLevel = 0;
+        return options;
     }
 
     @Override

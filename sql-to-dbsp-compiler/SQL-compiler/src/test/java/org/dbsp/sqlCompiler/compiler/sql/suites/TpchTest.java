@@ -29,7 +29,9 @@ public class TpchTest extends BaseSQLTests {
     @Test
     public void compileTpch() throws IOException {
         String tpch = TestUtil.readStringFromResourceFile("tpch.sql");
-        CompilerOptions options = this.testOptions(true, true);
+        CompilerOptions options = this.testOptions();
+        options.languageOptions.incrementalize = true;
+        options.languageOptions.optimizationLevel = 2;
         DBSPCompiler compiler = new DBSPCompiler(options);
         options.languageOptions.ignoreOrderBy = true;
         compiler.submitStatementsForCompilation(tpch);
@@ -39,7 +41,9 @@ public class TpchTest extends BaseSQLTests {
 
     CompilerCircuit compileQuery(int query) throws IOException {
         String tpch = this.getQuery(query);
-        CompilerOptions options = this.testOptions(true, true);
+        CompilerOptions options = this.testOptions();
+        options.languageOptions.incrementalize = true;
+        options.languageOptions.optimizationLevel = 2;
         DBSPCompiler compiler = new DBSPCompiler(options);
         options.languageOptions.ignoreOrderBy = true;
         compiler.submitStatementsForCompilation(tpch);

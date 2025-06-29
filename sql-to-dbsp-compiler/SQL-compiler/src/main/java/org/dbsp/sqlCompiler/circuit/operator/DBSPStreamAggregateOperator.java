@@ -44,11 +44,14 @@ public final class DBSPStreamAggregateOperator extends DBSPAggregateOperatorBase
     public DBSPStreamAggregateOperator(CalciteRelNode node,
                                        DBSPTypeIndexedZSet outputType,
                                        @Nullable DBSPAggregator function,
-                                       @Nullable DBSPAggregateList aggregate,
+                                       @Nullable DBSPAggregateList aggregateList,
                                        OutputPort input) {
         super(node, "stream_aggregate",
-                outputType, function, aggregate, false, input, false);
-        Utilities.enforce(aggregate == null || !aggregate.isLinear());
+                outputType, function, aggregateList, false, input, false);
+        Utilities.enforce(aggregateList == null || !aggregateList.isLinear());
+        Utilities.enforce(aggregateList == null ||
+                aggregateList.rowVar.getType().sameType(input.getOutputIndexedZSetType().elementType.ref()));
+        Utilities.enforce(input.getOutputIndexedZSetType().keyType.sameType(outputType.keyType));
     }
 
     @Override
@@ -67,7 +70,7 @@ public final class DBSPStreamAggregateOperator extends DBSPAggregateOperatorBase
         if (this.mustReplace(force, function, newInputs, outputType)) {
             DBSPTypeIndexedZSet ixOutputType = outputType.to(DBSPTypeIndexedZSet.class);
             return new DBSPStreamAggregateOperator(this.getRelNode(),
-                    ixOutputType, (DBSPAggregator) function, this.aggregate, newInputs.get(0))
+                    ixOutputType, (DBSPAggregator) function, this.aggregateList, newInputs.get(0))
                     .copyAnnotations(this);
         }
         return this;

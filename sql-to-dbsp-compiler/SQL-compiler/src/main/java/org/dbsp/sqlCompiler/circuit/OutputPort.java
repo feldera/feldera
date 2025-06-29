@@ -98,6 +98,14 @@ public class OutputPort {
         return this.outputType();
     }
 
+    public DBSPType getOutputRowRefType() {
+        if (this.outputType().is(DBSPTypeZSet.class))
+            return this.getOutputZSetElementType().ref();
+        if (this.outputType().is(DBSPTypeIndexedZSet.class))
+            return this.getOutputIndexedZSetType().getKVRefType();
+        return this.outputType();
+    }
+
     public boolean isMultiset() {
         return this.node().isMultiset(this.outputNumber);
     }

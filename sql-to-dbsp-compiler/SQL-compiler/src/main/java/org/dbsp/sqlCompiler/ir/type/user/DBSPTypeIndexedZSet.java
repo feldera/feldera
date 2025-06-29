@@ -43,8 +43,10 @@ public class DBSPTypeIndexedZSet extends DBSPTypeUser {
         super(node, DBSPTypeCode.INDEXED_ZSET, "IndexedWSet", false, keyType, elementType);
         this.keyType = keyType;
         this.elementType = elementType;
-        Utilities.enforce(!elementType.is(DBSPTypeZSet.class));
-        Utilities.enforce(!elementType.is(DBSPTypeIndexedZSet.class));
+        var code = elementType.code;
+        Utilities.enforce(code != DBSPTypeCode.ZSET &&
+                code != DBSPTypeCode.INDEXED_ZSET &&
+                code != DBSPTypeCode.FUNCTION);
     }
 
     @Override

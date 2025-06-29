@@ -34,9 +34,11 @@ import org.junit.Test;
 // using an incremental non-optimized circuit.
 public class NaiveIncrementalTests extends EndToEndTests {
     @Override
-    public DBSPCompiler testCompiler() {
-        CompilerOptions options = this.testOptions(true, false);
-        return new DBSPCompiler(options);
+    public CompilerOptions testOptions() {
+        CompilerOptions options = super.testOptions();
+        options.languageOptions.incrementalize = true;
+        options.languageOptions.optimizationLevel = 0;
+        return options;
     }
 
     @Override

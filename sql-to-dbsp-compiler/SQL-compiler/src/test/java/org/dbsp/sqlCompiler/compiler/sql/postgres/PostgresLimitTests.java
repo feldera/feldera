@@ -9,8 +9,8 @@ import org.junit.Test;
 // Adapted from https://github.com/postgres/postgres/src/test/regress/expected/limit.out
 public class PostgresLimitTests extends SqlIoTest {
     @Override
-    public CompilerOptions getOptions(boolean optimize) {
-        CompilerOptions options = super.getOptions(optimize);
+    public CompilerOptions testOptions() {
+        CompilerOptions options = super.testOptions();
         options.languageOptions.ignoreOrderBy = true;
         return options;
     }

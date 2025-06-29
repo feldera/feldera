@@ -46,7 +46,7 @@ void ExtendedTableElement(List<SqlNode> list) :
         {
             strategy = nullable ? ColumnStrategy.NULLABLE : ColumnStrategy.NOT_NULLABLE;
             column = new SqlExtendedColumnDeclaration(s.add(id).end(this), id,
-                            type.withNullable(nullable), null, strategy, null, null, false, null, null);
+                            type.withNullable(nullable), null, strategy, null, null, false, null, null, false);
         }
         ( column = ColumnAttribute(column) )*
         {
@@ -96,6 +96,10 @@ SqlExtendedColumnDeclaration ColumnAttribute(SqlExtendedColumnDeclaration column
         |
             <WATERMARK> watermark = Expression(ExprContext.ACCEPT_NON_QUERY) {
                return column.setWatermark(watermark);
+            }
+        |
+            <INTERNED> {
+               return column.setInterned();
             }
         |
             <DEFAULT_> e = Expression(ExprContext.ACCEPT_SUB_QUERY) {

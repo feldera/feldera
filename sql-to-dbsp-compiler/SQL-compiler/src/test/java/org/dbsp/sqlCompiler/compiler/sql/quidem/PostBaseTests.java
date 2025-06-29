@@ -8,8 +8,8 @@ import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
 // https://github.com/apache/calcite/blob/main/testkit/src/main/java/org/apache/calcite/test/CalciteAssert.java
 public class PostBaseTests extends SqlIoTest {
     @Override
-    public CompilerOptions getOptions(boolean optimize) {
-        CompilerOptions options = super.getOptions(optimize);
+    public CompilerOptions testOptions() {
+        CompilerOptions options = super.testOptions();
         options.languageOptions.ignoreOrderBy = true;
         options.languageOptions.lenient = true;
         return options;

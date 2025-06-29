@@ -40,6 +40,9 @@ public class RelAnd extends CalciteRelNode {
     }
 
     public void add(LastRel rel) {
+        for (LastRel inside: this.nodes)
+            if (inside.equals(rel))
+                return;
         this.nodes.add(rel);
         Utilities.enforce(rel.relNode instanceof TableScan);
     }
@@ -66,6 +69,11 @@ public class RelAnd extends CalciteRelNode {
 
     @Override
     public String toString() {
-        return "And(" + String.join(",", Linq.map(this.nodes, CalciteObject::toString)) + ")";
+        return this.getId() + " And(" + String.join(",", Linq.map(this.nodes, CalciteObject::toString)) + ")";
+    }
+
+    @Override
+    public long getId() {
+        return this.nodes.isEmpty() ? 0 : this.nodes.iterator().next().getId();
     }
 }
