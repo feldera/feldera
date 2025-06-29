@@ -528,7 +528,7 @@ public class AggregateCompiler implements ICompilerComponent {
             DBSPVariablePath postVar = this.partialResultType.var();
             DBSPClosureExpression postProcess = postVar.cast(this.node, this.nullableResultType, false).closure(postVar);
             this.setResult(new NonLinearAggregate(
-                    node, this.partialResultType.to(IsNumericType.class).getZero(), this.makeRowClosure(increment, accumulator), postProcess, zero, semigroup));
+                    node, DBSPLiteral.none(this.partialResultType), this.makeRowClosure(increment, accumulator), postProcess, zero, semigroup));
         }
     }
 

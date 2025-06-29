@@ -990,7 +990,16 @@ public class EndToEndTests extends BaseSQLTests {
         String query = "SELECT SUM(T.COL1) FROM T WHERE FALSE";
         this.testConstantOutput(query, new DBSPZSetExpression(
                  new DBSPTupleExpression(
-                        DBSPLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,true)))));
+                        DBSPLiteral.none(DBSPTypeInteger.getType(CalciteObject.EMPTY, DBSPTypeCode.INT32, true)))));
+    }
+
+    @Test
+    public void sumNullTest() {
+        String query = "SELECT SUM(CAST(NULL AS INTEGER)), SUM(CAST(NULL AS DOUBLE)) FROM T";
+        this.testConstantOutput(query, new DBSPZSetExpression(
+                new DBSPTupleExpression(
+                        DBSPLiteral.none(DBSPTypeInteger.getType(CalciteObject.EMPTY, DBSPTypeCode.INT32, true)),
+                        DBSPLiteral.none(new DBSPTypeDouble(CalciteObject.EMPTY, true)))));
     }
 
     @Test
