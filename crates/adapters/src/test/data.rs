@@ -1236,3 +1236,31 @@ deserialize_table_record!(DeltaTestStruct["DeltaTestStruct", 20] {
     (variant, "variant", false, Variant, None),
     (uuid, "uuid", false, Uuid, None)
 });
+
+/// Struct will all types supported by the DeltaLake connector.
+#[derive(
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Clone,
+    Hash,
+    SizeOf,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
+#[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
+pub struct DeltaTestKey {
+    pub bigint: i64,
+}
+
+serialize_table_record!(DeltaTestKey[1]{
+    bigint["bigint"]: i64
+});
+
+deserialize_table_record!(DeltaTestKey["DeltaTestKey", 1] {
+    (bigint, "bigint", false, i64, None)
+});
