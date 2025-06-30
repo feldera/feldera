@@ -182,6 +182,8 @@ const toPipelineThumb = (
     pipeline.deployment_error
   ),
   deploymentStatusSince: pipeline.deployment_status_since,
+  deploymentError: pipeline.deployment_error,
+  programStatusSince: pipeline.program_status_since,
   refreshVersion: pipeline.refresh_version
 })
 
@@ -211,6 +213,7 @@ const toExtendedPipeline = ({
   deploymentError: deployment_error,
   deploymentStatus: deployment_status,
   deploymentStatusSince: pipeline.deployment_status_since,
+  programStatusSince: pipeline.program_status_since,
   description: pipeline.description,
   id: pipeline.id,
   name: pipeline.name,
@@ -219,7 +222,6 @@ const toExtendedPipeline = ({
   programUdfToml: pipeline.udf_toml ?? '',
   programConfig: pipeline.program_config,
   programInfo: pipeline.program_info,
-  programStatusSince: pipeline.program_status_since,
   programVersion: pipeline.program_version,
   runtimeConfig: pipeline.runtime_config,
   version: pipeline.version,

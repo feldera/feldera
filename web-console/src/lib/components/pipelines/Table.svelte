@@ -13,6 +13,8 @@
   import { type Snippet } from 'svelte'
   import ThSort from '$lib/components/pipelines/table/ThSort.svelte'
   import { getPipelineStatusLabel } from '$lib/functions/pipelines/status'
+  import { useElapsedTime } from '$lib/functions/format'
+  import { dateMax } from '$lib/functions/common/date'
   let {
     pipelines,
     preHeaderEnd,
@@ -32,6 +34,7 @@
 
   const statusFilter = table.createFilter('status')
   const filterStatuses: (PipelineStatusType | '')[] = ['', 'Running', 'Paused', 'Stopped']
+  const { formatElapsedTime } = useElapsedTime()
 </script>
 
 <div
@@ -53,7 +56,7 @@
   </div>
 </div>
 <Datatable headless {table}>
-  <table class="p-1">
+  <table class="max-w-[1500px] p-1">
     <thead>
       <tr>
         <th class="w-10 px-2 text-left"
@@ -70,6 +73,12 @@
         <ThSort {table} class="py-1" field="status"
           ><span class="text-base font-normal text-surface-950-50">Status</span></ThSort
         >
+        <th class="py-1 text-left"
+          ><span class="text-base font-normal text-surface-950-50">Message</span></th
+        >
+        <ThSort {table} class="py-1" field="deploymentStatusSince"
+          ><span class="text-base font-normal text-surface-950-50">Last update</span></ThSort
+        >
       </tr>
     </thead>
     <tbody>
@@ -83,15 +92,36 @@
               onclick={() => table.select(pipeline.name)}
             />
           </td>
-          <td class="relative border-surface-100-900 group-hover:bg-surface-50-950"
+          <td class="relative w-3/12 border-surface-100-900 group-hover:bg-surface-50-950"
             ><a
               class=" absolute top-2 w-full overflow-hidden overflow-ellipsis whitespace-nowrap"
               href="/pipelines/{pipeline.name}/">{pipeline.name}</a
             ></td
           >
-          <td class="border-surface-100-900 group-hover:bg-surface-50-950"
+          <td class="w-36 border-surface-100-900 group-hover:bg-surface-50-950"
             ><PipelineStatus status={pipeline.status}></PipelineStatus></td
           >
+          <td
+            class="relative whitespace-pre-wrap border-surface-100-900 group-hover:bg-surface-50-950"
+          >
+            <span class="absolute top-2 w-full overflow-hidden overflow-ellipsis whitespace-nowrap">
+              {pipeline.deploymentError?.message.slice(
+                0,
+                pipeline.deploymentError.message.indexOf('\n')
+              )}
+            </span>
+          </td>
+          <td class="relative w-28 border-surface-100-900 group-hover:bg-surface-50-950">
+            <div class="w-28 text-nowrap text-right">
+              {formatElapsedTime(
+                dateMax(
+                  new Date(pipeline.deploymentStatusSince),
+                  new Date(pipeline.programStatusSince)
+                ),
+                'dhm'
+              )}
+            </div>
+          </td>
         </tr>
       {:else}
         <tr>
