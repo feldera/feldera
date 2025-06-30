@@ -27,7 +27,8 @@ RUN apt-get update --fix-missing && \
    libsasl2-dev \
    ca-certificates \
    gnupg \
-   protobuf-compiler
+   protobuf-compiler \
+   git
 
 ## Setup Java and Python
 

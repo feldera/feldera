@@ -414,7 +414,8 @@
                     "udf_toml": "",
                     "program_config": {
                       "profile": "optimized",
-                      "cache": true
+                      "cache": true,
+                      "runtime_version": null
                     },
                     "program_version": 2,
                     "program_status": "Pending",
@@ -480,7 +481,8 @@
                     "udf_toml": "",
                     "program_config": {
                       "profile": "unoptimized",
-                      "cache": true
+                      "cache": true,
+                      "runtime_version": null
                     },
                     "program_version": 1,
                     "program_status": "Pending",
@@ -575,7 +577,8 @@
                 "udf_toml": null,
                 "program_config": {
                   "profile": "optimized",
-                  "cache": true
+                  "cache": true,
+                  "runtime_version": null
                 }
               }
             }
@@ -638,7 +641,8 @@
                   "udf_toml": "",
                   "program_config": {
                     "profile": "optimized",
-                    "cache": true
+                    "cache": true,
+                    "runtime_version": null
                   },
                   "program_version": 2,
                   "program_status": "Pending",
@@ -797,7 +801,8 @@
                   "udf_toml": "",
                   "program_config": {
                     "profile": "optimized",
-                    "cache": true
+                    "cache": true,
+                    "runtime_version": null
                   },
                   "program_version": 2,
                   "program_status": "Pending",
@@ -919,7 +924,8 @@
                 "udf_toml": null,
                 "program_config": {
                   "profile": "optimized",
-                  "cache": true
+                  "cache": true,
+                  "runtime_version": null
                 }
               }
             }
@@ -982,7 +988,8 @@
                   "udf_toml": "",
                   "program_config": {
                     "profile": "optimized",
-                    "cache": true
+                    "cache": true,
+                    "runtime_version": null
                   },
                   "program_version": 2,
                   "program_status": "Pending",
@@ -1058,7 +1065,8 @@
                   "udf_toml": "",
                   "program_config": {
                     "profile": "optimized",
-                    "cache": true
+                    "cache": true,
+                    "runtime_version": null
                   },
                   "program_version": 2,
                   "program_status": "Pending",
@@ -1301,7 +1309,8 @@
                   "udf_toml": "",
                   "program_config": {
                     "profile": "optimized",
-                    "cache": true
+                    "cache": true,
+                    "runtime_version": null
                   },
                   "program_version": 2,
                   "program_status": "Pending",
@@ -2813,7 +2822,8 @@
                   "udf_toml": "",
                   "program_config": {
                     "profile": "optimized",
-                    "cache": true
+                    "cache": true,
+                    "runtime_version": null
                   },
                   "program_version": 2,
                   "program_status": "Pending",
@@ -3973,6 +3983,59 @@
           }
         ]
       },
+      "BuildInformation": {
+        "type": "object",
+        "description": "Information about the build of the platform.",
+        "required": [
+          "build_timestamp",
+          "build_cpu",
+          "build_os",
+          "cargo_dependencies",
+          "cargo_features",
+          "cargo_debug",
+          "cargo_opt_level",
+          "cargo_target_triple",
+          "rustc_version"
+        ],
+        "properties": {
+          "build_cpu": {
+            "type": "string",
+            "description": "CPU of build machine."
+          },
+          "build_os": {
+            "type": "string",
+            "description": "OS of build machine."
+          },
+          "build_timestamp": {
+            "type": "string",
+            "description": "Timestamp of the build."
+          },
+          "cargo_debug": {
+            "type": "string",
+            "description": "Whether the build is optimized for performance."
+          },
+          "cargo_dependencies": {
+            "type": "string",
+            "description": "Dependencies used during the build."
+          },
+          "cargo_features": {
+            "type": "string",
+            "description": "Features enabled during the build."
+          },
+          "cargo_opt_level": {
+            "type": "string",
+            "description": "Optimization level of the build."
+          },
+          "cargo_target_triple": {
+            "type": "string",
+            "description": "Target triple of the build."
+          },
+          "rustc_version": {
+            "type": "string",
+            "description": "Rust version of the build used."
+          }
+        }
+      },
       "CheckpointFailure": {
         "type": "object",
         "description": "Information about a failed checkpoint.",
@@ -4193,9 +4256,14 @@
           "edition",
           "version",
           "revision",
-          "changelog_url"
+          "runtime_revision",
+          "changelog_url",
+          "build_info"
         ],
         "properties": {
+          "build_info": {
+            "$ref": "#/components/schemas/BuildInformation"
+          },
           "changelog_url": {
             "type": "string",
             "description": "URL that navigates to the changelog of the current version"
@@ -4214,7 +4282,11 @@
           },
           "revision": {
             "type": "string",
-            "description": "Specific revision corresponding to the edition `version` (e.g., git commit hash).\nThis is an empty string if it is unspecified."
+            "description": "Specific revision corresponding to the edition `version` (e.g., git commit hash)."
+          },
+          "runtime_revision": {
+            "type": "string",
+            "description": "Specific revision corresponding to the default runtime version of the platform (e.g., git commit hash)."
           },
           "telemetry": {
             "type": "string",
@@ -6101,6 +6173,12 @@
                 "$ref": "#/components/schemas/CompilationProfile"
               }
             ],
+            "default": null,
+            "nullable": true
+          },
+          "runtime_version": {
+            "type": "string",
+            "description": "Override runtime version of the pipeline being executed.\n\nWarning: This option is experimental and may change in the future.\nShould only be used for CI/testing purposes, and requires network access.\n\nA runtime version can be specified in the form of a version\nor SHA taken from the `feldera/feldera` repository main branch.\n\nExamples: `v0.96.0` or `f4dcac0989ca0fda7d2eb93602a49d007cb3b0ae`\n\nA platform of version `0.x.y` may be capable of running future and past\nruntimes with versions `>=0.x.y` and `<=0.x.y` until breaking API changes happen,\nthe exact bounds for each platform version are unspecified until we reach a\nstable version. Compatibility is only guaranteed if platform and runtime version\nare exact matches.\n\nNote that any enterprise features are currently considered to be part of\nthe platform.\n\nIf not set (null), the runtime version will be the same as the platform version.",
             "default": null,
             "nullable": true
           }

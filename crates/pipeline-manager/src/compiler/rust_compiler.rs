@@ -10,7 +10,7 @@ use crate::db::error::DBError;
 use crate::db::storage::Storage;
 use crate::db::storage_postgres::StoragePostgres;
 use crate::db::types::pipeline::PipelineId;
-use crate::db::types::program::{CompilationProfile, RustCompilationInfo};
+use crate::db::types::program::{CompilationProfile, RuntimeSelector, RustCompilationInfo};
 use crate::db::types::tenant::TenantId;
 use crate::db::types::utils::{validate_program_config, validate_program_info};
 use crate::db::types::version::Version;
@@ -170,10 +170,6 @@ async fn attempt_end_to_end_rust_compilation(
         trace!("No pipeline found which needs Rust compilation");
         return Ok(false);
     };
-    info!(
-        "Rust compilation started: pipeline {} (program version: {})",
-        pipeline.id, pipeline.program_version
-    );
 
     // (3) Update database that Rust compilation is ongoing
     db.lock()
@@ -285,6 +281,7 @@ async fn attempt_end_to_end_rust_compilation(
 #[allow(clippy::too_many_arguments)]
 fn calculate_source_checksum(
     platform_version: &str,
+    runtime_version: &RuntimeSelector,
     profile: &CompilationProfile,
     main_rust: &str,
     udf_stubs: &str,
@@ -292,14 +289,18 @@ fn calculate_source_checksum(
     udf_toml: &str,
 ) -> String {
     let mut hasher = sha::Sha256::new();
-    for (name, data) in [
+    let profile = profile.to_string();
+    let to_hash = vec![
         ("platform_version", platform_version.as_bytes()),
-        ("profile", profile.to_string().as_bytes()),
+        ("runtime_version", runtime_version.as_bytes()),
+        ("profile", profile.as_bytes()),
         ("program_info.main_rust", main_rust.as_bytes()),
         ("program_info.udf_stubs", udf_stubs.as_bytes()),
         ("udf_rust", udf_rust.as_bytes()),
         ("udf_toml", udf_toml.as_bytes()),
-    ] {
+    ];
+
+    for (name, data) in to_hash {
         let checksum = sha256(data);
         hasher.update(&checksum);
         trace!(
@@ -386,6 +387,17 @@ pub async fn perform_rust_compilation(
                 Update the 'program_config' field of the pipeline to resolve this.
             "})
     })?;
+    let runtime_selector = program_config.runtime_version.unwrap_or_default();
+    info!(
+        "Rust compilation started: pipeline {} (program version: {}{})",
+        pipeline_id,
+        program_version,
+        if !runtime_selector.is_platform() {
+            format!(", runtime version: {runtime_selector}")
+        } else {
+            "".to_string()
+        }
+    );
 
     // Program info
     let program_info = match program_info {
@@ -420,6 +432,7 @@ pub async fn perform_rust_compilation(
     // Calculate source checksum across fields
     let source_checksum = calculate_source_checksum(
         platform_version,
+        &runtime_selector,
         &profile,
         &main_rust,
         &udf_stubs,
@@ -429,7 +442,15 @@ pub async fn perform_rust_compilation(
     trace!("Rust compilation: calculated source checksum: {source_checksum}");
 
     // Prepare the workspace for the compilation of this specific pipeline
-    prepare_workspace(config, pipeline_id, &main_rust, udf_rust, udf_toml).await?;
+    prepare_workspace(
+        config,
+        &runtime_selector,
+        pipeline_id,
+        &main_rust,
+        udf_rust,
+        udf_toml,
+    )
+    .await?;
 
     // Perform the compilation in the workspace
     let (compilation_info, integrity_checksum) = call_compiler(
@@ -485,11 +506,111 @@ fn main() {
 }
 "#;
 
+/// Checkout the requested runtime version.
+async fn checkout_runtime_version(
+    dbsp_override_path: &str,
+    requested_runtime_version: &RuntimeSelector,
+) -> Result<(), RustCompilationError> {
+    async fn checkout(
+        dbsp_override_path: &str,
+        requested_runtime_version: &RuntimeSelector,
+    ) -> Result<std::process::Output, std::io::Error> {
+        Command::new("git")
+            .current_dir(dbsp_override_path)
+            .args([
+                "checkout",
+                "--progress",
+                "--force",
+                requested_runtime_version.as_commitish(),
+            ])
+            .output()
+            .await
+    }
+
+    async fn is_dirty(dbsp_override_path: &str) -> Result<bool, std::io::Error> {
+        let status = Command::new("git")
+            .current_dir(dbsp_override_path)
+            .args(["status", "--porcelain", "--untracked-files=no"])
+            .output()
+            .await?;
+        Ok(!status.stdout.is_empty())
+    }
+
+    async fn fetch(
+        dbsp_override_path: &str,
+        requested_runtime_version: &RuntimeSelector,
+    ) -> Result<std::process::Output, std::io::Error> {
+        Command::new("git")
+            .current_dir(dbsp_override_path)
+            .args([
+                "-c",
+                "protocol.version=2",
+                "fetch",
+                "--prune",
+                "https://github.com/feldera/feldera.git",
+                requested_runtime_version.as_commitish(),
+            ])
+            .output()
+            .await
+    }
+
+    if is_dirty(dbsp_override_path).await.map_err(|e| {
+        RustCompilationError::SystemError(format!(
+            "Unable to check if runtime source directory is dirty, can not switch to requested runtime version '{requested_runtime_version}': {e}",
+        ))
+    })? {
+            warn!(
+                r#"Dirty runtime directory detected, do not proceed switching rust sources to {requested_runtime_version} for compilation.
+This can happen when running the manager from source (using a source directory which contains uncommitted changes).
+You can either commit outstanding changes before running the manager or clone a fresh repository and pass it to the manager as a CLI argument (`--dbsp-override-path`) to avoid this issue."#
+            );
+            // This is most likely what we want to do here.
+            return Ok(());
+    }
+
+    // Try to checkout the requested runtime version, if it fails, try to sync with git repository and checkout again.
+    match checkout(dbsp_override_path, requested_runtime_version).await {
+        Ok(output) => {
+            if output.status.success() {
+                Ok(())
+            } else {
+                debug!("Failed to checkout requested runtime, trying to sync with latest git repository.");
+                let fetch_result = fetch(dbsp_override_path, requested_runtime_version).await.map_err(|e| {
+                    RustCompilationError::SystemError(format!("Unable to switch runtime version to '{requested_runtime_version}' for compilation, `git fetch` failed: {e}"))})?;
+                if !fetch_result.status.success() {
+                    return Err(RustCompilationError::SystemError(format!("Unable to fetch latest runtime version for '{requested_runtime_version}' for compilation.\nGit command failed with exit code: {}\nstderr:\n{}\nstdout:\n{}",
+                        fetch_result.status.code().unwrap_or(-1),
+                        String::from_utf8_lossy(&fetch_result.stderr),
+                        String::from_utf8_lossy(&fetch_result.stdout))));
+                }
+
+                let output = checkout(dbsp_override_path, requested_runtime_version)
+                        .await
+                        .map_err(|e| {
+                            RustCompilationError::SystemError(format!("Unable to switch runtime version to '{requested_runtime_version}' for compilation, `git checkout` failed after fetch: {e}"))})?;
+                if !output.status.success() {
+                    return Err(RustCompilationError::SystemError(format!(
+                        "Failed to checkout requested runtime version (check that the given SHA or version tag exists in the feldera/feldera repository): '{requested_runtime_version}'.\nGit command failed with exit code: {}\nstderr:\n{}\nstdout:\n{}",
+                        output.status.code().unwrap_or(-1),
+                        String::from_utf8_lossy(&output.stderr),
+                        String::from_utf8_lossy(&output.stdout)
+                    )));
+                }
+                Ok(())
+            }
+        }
+        Err(e) => Err(RustCompilationError::SystemError(format!(
+            "Unable to switch runtime version to '{requested_runtime_version}' for compilation, `git checkout` failed: {e}",
+        ))),
+    }
+}
+
 /// Prepare the workspace for compilation of the specific pipeline.
 /// This involves extracting the results of the prior SQL compilation and
 /// configuring the workspace itself (e.g., its Cargo.toml and Cargo.lock).
 async fn prepare_workspace(
     config: &CompilerConfig,
+    requested_runtime_version: &RuntimeSelector,
     pipeline_id: PipelineId,
     main_rust: &str,
     udf_rust: &str,
@@ -758,6 +879,11 @@ extern crate sync_checkpoint;"#,
     };
     let cargo_toml_file_path = workspace_dir.join("Cargo.toml");
     recreate_file_with_content(&cargo_toml_file_path, &cargo_toml).await?;
+
+    // Sources: config.dbsp_override_path
+    // ---------------------
+    // Make sure the runtime version is checked out.
+    checkout_runtime_version(&config.dbsp_override_path, requested_runtime_version).await?;
 
     // Workspace: Cargo.lock
     // ---------------------
@@ -1063,20 +1189,23 @@ async fn cleanup_rust_compilation(
         cleanup_specific_files(
             "Rust compilation pipeline binaries",
             &pipeline_binaries_dir,
-            Arc::new(move |filename: &str| {
-                if filename.starts_with("pipeline_") {
-                    if valid_pipeline_binary_filenames.contains(&filename.to_string()) {
-                        CleanupDecision::Keep {
-                            motivation: filename.to_string(),
+            Arc::new(
+                move |filename: &str, _metadata: Option<std::fs::Metadata>| {
+                    if filename.starts_with("pipeline_") {
+                        if valid_pipeline_binary_filenames.contains(&filename.to_string()) {
+                            CleanupDecision::Keep {
+                                motivation: filename.to_string(),
+                            }
+                        } else {
+                            CleanupDecision::Remove
                         }
                     } else {
-                        CleanupDecision::Remove
+                        CleanupDecision::Ignore
                     }
-                } else {
-                    CleanupDecision::Ignore
-                }
-            }),
+                },
+            ),
             true,
+            false,
         )
         .await?;
     }
@@ -1230,9 +1359,10 @@ async fn cleanup_rust_compilation(
                 &mut cleanup_specific_files(
                     &format!("Rust compilation target/{target_profile_folder}/"),
                     &target_subdir,
-                    Arc::new(move |name: &str| {
+                    Arc::new(move |name: &str, _metadata: Option<std::fs::Metadata>| {
                         decide_cleanup(name, Some((false, '.')), &deletion_clone)
                     }),
+                    false,
                     false,
                 )
                 .await?,
@@ -1246,9 +1376,10 @@ async fn cleanup_rust_compilation(
                     &mut cleanup_specific_files(
                         &format!("Rust compilation target/{target_profile_folder}/deps"),
                         &deps_dir,
-                        Arc::new(move |name: &str| {
+                        Arc::new(move |name: &str, _metadata: Option<std::fs::Metadata>| {
                             decide_cleanup(name, Some((true, '-')), &deletion_clone)
                         }),
+                        false,
                         false,
                     )
                     .await?,
@@ -1346,7 +1477,7 @@ mod test {
     use crate::compiler::util::{
         crate_name_pipeline_globals, crate_name_pipeline_main, read_file_content, CleanupDecision,
     };
-    use crate::db::types::program::{CompilationProfile, ProgramStatus};
+    use crate::db::types::program::{CompilationProfile, ProgramStatus, RuntimeSelector};
     use crate::db::types::utils::validate_program_info;
     use std::collections::HashSet;
 
@@ -1372,6 +1503,7 @@ mod test {
         ) {
             let source_checksum = calculate_source_checksum(
                 platform_version,
+                &RuntimeSelector::default(),
                 &profile,
                 main_rust,
                 udf_stubs,
@@ -1388,6 +1520,7 @@ mod test {
         // Same input, same source checksum
         let checksum1 = calculate_source_checksum(
             "v0",
+            &RuntimeSelector::default(),
             &CompilationProfile::Optimized,
             "main_rust",
             "udf_stubs",
@@ -1396,6 +1529,7 @@ mod test {
         );
         let checksum2 = calculate_source_checksum(
             "v0",
+            &RuntimeSelector::default(),
             &CompilationProfile::Optimized,
             "main_rust",
             "udf_stubs",
@@ -1432,6 +1566,7 @@ mod test {
         // Prepare the workspace directory using it
         prepare_workspace(
             &test.compiler_config,
+            &RuntimeSelector::default(),
             pipeline_id,
             &program_info.main_rust,
             &pipeline_descr.udf_rust,
