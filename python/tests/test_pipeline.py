@@ -15,7 +15,7 @@ class TestPipeline(unittest.TestCase):
     def test_delete_all_pipelines(self):
         pipelines = TEST_CLIENT.pipelines()
         for pipeline in pipelines:
-            TEST_CLIENT.stop_pipeline(pipeline.name)
+            TEST_CLIENT.stop_pipeline(pipeline.name, force=True)
             if pipeline.storage_status != "Unbound":
                 TEST_CLIENT.unbind_storage(pipeline.name)
             TEST_CLIENT.delete_pipeline(pipeline.name)
@@ -64,7 +64,7 @@ class TestPipeline(unittest.TestCase):
         )
 
         TEST_CLIENT.pause_pipeline(name)
-        TEST_CLIENT.stop_pipeline(name)
+        TEST_CLIENT.stop_pipeline(name, force=True)
 
         TEST_CLIENT.unbind_storage(name)
         TEST_CLIENT.delete_pipeline(name)
@@ -128,7 +128,7 @@ class TestPipeline(unittest.TestCase):
         assert stats.get("outputs") is not None
 
         TEST_CLIENT.pause_pipeline(name)
-        TEST_CLIENT.stop_pipeline(name)
+        TEST_CLIENT.stop_pipeline(name, force=True)
         TEST_CLIENT.unbind_storage(name)
         TEST_CLIENT.delete_pipeline(name)
 
@@ -167,7 +167,7 @@ class TestPipeline(unittest.TestCase):
 
         assert self.result
 
-        TEST_CLIENT.stop_pipeline(name)
+        TEST_CLIENT.stop_pipeline(name, force=True)
         TEST_CLIENT.unbind_storage(name)
         TEST_CLIENT.delete_pipeline(name)
 
@@ -204,7 +204,7 @@ class TestPipeline(unittest.TestCase):
         got = "\n".join(resp)
         assert got in expected
 
-        TEST_CLIENT.stop_pipeline(name)
+        TEST_CLIENT.stop_pipeline(name, force=True)
         TEST_CLIENT.unbind_storage(name)
         TEST_CLIENT.delete_pipeline(name)
 
@@ -225,7 +225,7 @@ class TestPipeline(unittest.TestCase):
 
         file = name.split("-")[0]
         TEST_CLIENT.query_as_parquet(pipeline.name, "SELECT * FROM tbl", file)
-        TEST_CLIENT.stop_pipeline(name)
+        TEST_CLIENT.stop_pipeline(name, force=True)
         TEST_CLIENT.unbind_storage(name)
         TEST_CLIENT.delete_pipeline(name)
 
@@ -254,7 +254,7 @@ class TestPipeline(unittest.TestCase):
 
         self.assertCountEqual(got, expected)
 
-        TEST_CLIENT.stop_pipeline(name)
+        TEST_CLIENT.stop_pipeline(name, force=True)
         TEST_CLIENT.unbind_storage(name)
         TEST_CLIENT.delete_pipeline(name)
 

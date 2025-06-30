@@ -91,7 +91,7 @@ Key Concepts
    - Blocks this pipeline until completion, i.e., until the end-of-file (EOI)
      has been reached for all input sources.
 
-   - Takes a parameter ``stop``, when set stops the pipeline down after completion.
+   - Takes a parameter ``force_stop``, when set stops the pipeline down after completion.
 
    - Example:
 
@@ -121,7 +121,7 @@ Key Concepts
          pipeline.input_pandas(tbl_name, df)
 
          # wait for the pipeline to complete
-         pipeline.wait_for_completion(stop=True)
+         pipeline.wait_for_completion(force_stop=True)
 
       - Write the SQL query that creates a table and a view.
         You can also create other views on top of existing views.

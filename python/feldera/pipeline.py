@@ -93,10 +93,12 @@ class Pipeline:
             PipelineStatus.RUNNING,
             PipelineStatus.PAUSED,
         ]:
-            raise RuntimeError("Pipeline must be running or paused to push data")
+            raise RuntimeError(
+                "Pipeline must be running or paused to push data")
 
         if not force and status == PipelineStatus.PAUSED:
-            raise RuntimeError("Pipeline is paused, set force=True to push data")
+            raise RuntimeError(
+                "Pipeline is paused, set force=True to push data")
 
         ensure_dataframe_has_columns(df)
 
@@ -151,10 +153,12 @@ class Pipeline:
 
         status = self.status()
         if not force and status == PipelineStatus.PAUSED:
-            raise RuntimeError("Pipeline is paused, set force=True to push data")
+            raise RuntimeError(
+                "Pipeline is paused, set force=True to push data")
 
         if update_format not in ["raw", "insert_delete"]:
-            raise ValueError("update_format must be one of raw or insert_delete")
+            raise ValueError(
+                "update_format must be one of raw or insert_delete")
 
         array = True if isinstance(data, list) else False
         self.client.push_to_pipeline(
@@ -260,28 +264,31 @@ class Pipeline:
             queue = Queue(maxsize=1)
             self.views_tx.append({view_name: queue})
 
-        handler = CallbackRunner(self.client, self.name, view_name, callback, queue)
+        handler = CallbackRunner(
+            self.client, self.name, view_name, callback, queue)
         handler.start()
 
     def wait_for_completion(
-        self, stop: bool = False, timeout_s: Optional[float] = None
+        self, force_stop: bool = False, timeout_s: Optional[float] = None
     ):
         """
         Block until the pipeline has completed processing all input records.
 
-        This method blocks until (1) all input connectors attached to the pipeline
-        have finished reading their input data sources and issued end-of-input
-        notifications to the pipeline, and (2) all inputs received from these
-        connectors have been fully processed and corresponding outputs have been
-        sent out through the output connectors.
+        This method blocks until (1) all input connectors attached to the
+        pipeline have finished reading their input data sources and issued
+        end-of-input notifications to the pipeline, and (2) all inputs received
+        from these connectors have been fully processed and corresponding
+        outputs have been sent out through the output connectors.
 
         This method will block indefinitely if at least one of the input
         connectors attached to the pipeline is a streaming connector, such as
         Kafka, that does not issue the end-of-input notification.
 
-        :param stop: If True, the pipeline will be stopped after completion. False by default.
-        :param timeout_s: Optional. The maximum time (in seconds) to wait for the pipeline to complete.
-            The default is None, which means wait indefinitely.
+        :param force_stop: If True, the pipeline will be forcibly stopped after
+            completion. False by default. No checkpoints will be made.
+        :param timeout_s: Optional. The maximum time (in seconds) to wait for
+            the pipeline to complete. The default is None, which means wait
+            indefinitely.
 
         :raises RuntimeError: If the pipeline returns unknown metrics.
         """
@@ -291,7 +298,8 @@ class Pipeline:
             PipelineStatus.INITIALIZING,
             PipelineStatus.PROVISIONING,
         ]:
-            raise RuntimeError("Pipeline must be running to wait for completion")
+            raise RuntimeError(
+                "Pipeline must be running to wait for completion")
 
         start_time = time.monotonic()
 
@@ -325,8 +333,8 @@ class Pipeline:
 
             time.sleep(1)
 
-        if stop:
-            self.stop()
+        if force_stop:
+            self.stop(force=True)
 
     def start(self, timeout_s: Optional[float] = None):
         """
@@ -363,14 +371,15 @@ method or use `Pipeline.resume()` to resume a paused pipeline."""
         """
         Restarts the pipeline.
 
-        This method **STOPS** the pipeline regardless of its current state and
-        then starts it again.
+        This method forcibly **STOPS** the pipeline regardless of its current
+        state and then starts it again. No checkpoints are made when stopping
+        the pipeline.
 
         :param timeout_s: The maximum time (in seconds) to wait for the
             pipeline to restart.
         """
 
-        self.stop(timeout_s)
+        self.stop(force=True, timeout_s=timeout_s)
         self.start(timeout_s)
 
     def wait_for_idle(
@@ -424,8 +433,10 @@ method or use `Pipeline.resume()` to resume a paused pipeline."""
             metrics: dict = self.client.get_pipeline_stats(self.name).get(
                 "global_metrics"
             )
-            total_input_records: int | None = metrics.get("total_input_records")
-            total_processed_records: int | None = metrics.get("total_processed_records")
+            total_input_records: int | None = metrics.get(
+                "total_input_records")
+            total_processed_records: int | None = metrics.get(
+                "total_processed_records")
             if total_input_records is None:
                 raise RuntimeError(
                     "total_input_records is missing from the pipeline metrics"
@@ -452,7 +463,8 @@ metrics"""
 
             # Timeout
             if now_s - start_time_s >= timeout_s:
-                raise RuntimeError(f"waiting for idle reached timeout ({timeout_s}s)")
+                raise RuntimeError(
+                    f"waiting for idle reached timeout ({timeout_s}s)")
             time.sleep(poll_interval_s)
 
     def pause(self, timeout_s: Optional[float] = None):
@@ -469,12 +481,14 @@ metrics"""
 
         self.client.pause_pipeline(self.name, timeout_s=timeout_s)
 
-    def stop(self, timeout_s: Optional[float] = None):
+    def stop(self, force: bool, timeout_s: Optional[float] = None):
         """
         Stops the pipeline.
 
         Stops the pipeline regardless of its current state.
 
+        :param force: Set True to immediately scale compute resources to zero.
+            Set False to automatically checkpoint before stopping.
         :param timeout_s: The maximum time (in seconds) to wait for the
             pipeline to stop.
         """
@@ -486,7 +500,7 @@ metrics"""
                 # block until the callback runner has been stopped
                 queue.join()
 
-        self.client.stop_pipeline(self.name, timeout_s=timeout_s)
+        self.client.stop_pipeline(self.name, force=force, timeout_s=timeout_s)
 
     def resume(self, timeout_s: Optional[float] = None):
         """
@@ -531,7 +545,8 @@ metrics"""
             return Pipeline._from_inner(inner, client)
         except FelderaAPIError as err:
             if err.status_code == 404:
-                raise RuntimeError(f"Pipeline with name {name} not found")
+                err.message = f"Pipeline with name {name} not found"
+                raise err
 
     def checkpoint(self, wait: bool = False, timeout_s=300) -> int:
         """

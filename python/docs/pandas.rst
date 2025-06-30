@@ -90,4 +90,5 @@ To ensure all data is received start listening before calling
     # see the result
     print(df)
 
-    pipeline.delete()
+    # unbind the storage and delete the pipeline
+    pipeline.delete(True)

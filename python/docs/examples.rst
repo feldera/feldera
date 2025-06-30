@@ -138,8 +138,8 @@ Using Pandas DataFrames
     # get the output of the view as a pandas dataframe
     df = out.to_pandas()
 
-    # delete the pipeline
-    pipeline.delete()
+    # unbind the storage and delete the pipeline
+    pipeline.delete(True)
 
 Executing ad-hoc SQL Queries
 ============================
@@ -191,7 +191,9 @@ It takes a callback, and calls the callback on each chunk of received data.
 
     # wait for the pipeline to finish and stop
     pipeline.wait_for_completion(True)
-    pipeline.delete()
+
+    # unbind the storage and delete the pipeline
+    pipeline.delete(True)
 
 Waiting for Completion
 ======================
@@ -202,11 +204,11 @@ To wait (block) till the pipeline has been completed, use :meth:`.Pipeline.wait_
 
     pipeline.wait_for_completion()
 
-Optionally, to stop the pipeline after completion:
+Optionally, to forcibly stop (without checkpointing) the pipeline after completion:
 
 .. code-block:: python
 
-    pipeline.wait_for_completion(stop=True)
+    pipeline.wait_for_completion(force_stop=True)
 
 .. warning::
   If the data source is streaming, this will block forever.
@@ -278,11 +280,12 @@ This example shows creating and running a pipeline with Feldera's internal data 
 
     # important: `wait_for_completion` will block forever here
     pipeline.wait_for_idle()
-    pipeline.stop()
+    pipeline.stop(force=True)
     df = out.to_pandas()
     assert df.shape[0] != 0
 
-    pipeline.delete()
+    # unbind the storage and delete the pipeline
+    pipeline.delete(True)
 
 Specifying Data Sources / Sinks
 ===============================

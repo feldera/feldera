@@ -62,7 +62,7 @@ class TestIntegrationTests(unittest.TestCase):
         p.checkpoint(wait=True)
         p.sync_checkpoint(wait=True)
 
-        p.stop()
+        p.stop(force=True)
         p.unbind_storage()
 
         # Restart from checkpoint
@@ -79,7 +79,7 @@ class TestIntegrationTests(unittest.TestCase):
 
         self.assertCountEqual(got_before, got_after)
 
-        p.stop()
+        p.stop(force=True)
         p.unbind_storage()
 
     def test_checkpoint_sync_err(self):
@@ -88,5 +88,5 @@ class TestIntegrationTests(unittest.TestCase):
             self.test_checkpoint_sync(name=name, auth_err=True)
 
         p = Pipeline.get(name, TEST_CLIENT)
-        p.stop()
+        p.stop(force=True)
         p.delete(True)

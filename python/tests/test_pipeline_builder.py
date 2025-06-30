@@ -104,7 +104,7 @@ class TestPipelineBuilder(unittest.TestCase):
 
         assert df.shape[0] == 100
         pipeline.pause()
-        pipeline.stop()
+        pipeline.stop(force=True)
         pipeline.delete(True)
 
     def test_local_listen_after_start(self):
@@ -264,7 +264,7 @@ class TestPipelineBuilder(unittest.TestCase):
         with self.assertRaises(ValueError):
             pipeline.input_pandas(TBL_NAME, df)
 
-        pipeline.stop()
+        pipeline.stop(force=True)
         pipeline.delete(True)
 
     def test_sql_error(self):
@@ -402,7 +402,7 @@ Code snippet:
         out = pipeline.listen(VIEW_NAME)
         pipeline.start()
         pipeline.wait_for_idle()
-        pipeline.stop()
+        pipeline.stop(force=True)
         df = out.to_pandas()
         assert df.shape[0] != 0
 
@@ -594,7 +594,8 @@ Code snippet:
 
         assert df.shape[0] == 3
 
-        assert TEST_CLIENT.get_pipeline(name).runtime_config["resources"] == config
+        assert TEST_CLIENT.get_pipeline(
+            name).runtime_config["resources"] == config
 
         pipeline.delete(True)
 
@@ -734,14 +735,14 @@ Code snippet:
         pipeline.input_json(TBL_NAME, data, update_format="insert_delete")
         pipeline.wait_for_completion(False)
 
-        pipeline.suspend()
+        pipeline.stop(force=False)
 
         out_data = out.to_dict()
 
         data["insert"].update({"insert_delete": 1})
         assert out_data == [data["insert"]]
 
-        pipeline.stop()
+        pipeline.stop(force=True)
         pipeline.delete(True)
 
     def test_issue2142(self):
@@ -877,7 +878,8 @@ Code snippet:
         CREATE VIEW v0 AS SELECT c1, c2, c3 FROM t0;
         """
 
-        data = [{"c1": "2022-01-01", "c2": "12:00:00", "c3": "2022-01-01 12:00:00"}]
+        data = [{"c1": "2022-01-01", "c2": "12:00:00",
+                 "c3": "2022-01-01 12:00:00"}]
         expected = [
             {
                 "c1": Timestamp("2022-01-01 00:00:00"),
@@ -950,7 +952,7 @@ Code snippet:
         pipeline.start()
         pipeline.input_json("t0", data)
         pipeline.wait_for_completion(True)
-        pipeline.stop()
+        pipeline.stop(force=True)
 
         got = out.to_dict()
         assert expected == got
@@ -959,7 +961,7 @@ Code snippet:
         out = pipeline.listen("v0")
         pipeline.input_json("t0", {"c1": {"a": 1, "b": 2}})
         pipeline.wait_for_completion(True)
-        pipeline.stop()
+        pipeline.stop(force=True)
 
         got = out.to_dict()
         assert expected == got
@@ -985,7 +987,7 @@ Code snippet:
                 break
             time.sleep(1)
 
-        pipeline.stop()
+        pipeline.stop(force=True)
         pipeline.delete(True)
 
     def test_adhoc_execute(self):
@@ -1004,7 +1006,7 @@ Code snippet:
         got = list(resp)
         expected = [{"c1": 1}, {"c1": 2}]
 
-        pipeline.stop()
+        pipeline.stop(force=True)
 
         self.assertCountEqual(got, expected)
 
@@ -1034,7 +1036,7 @@ Code snippet:
         with self.assertRaises(RuntimeError) as err:
             pipeline.start()
 
-        pipeline.stop()
+        pipeline.stop(force=True)
         pipeline.delete(True)
 
         got_err: str = err.exception.args[0].strip()
@@ -1060,7 +1062,8 @@ Code snippet:
 
         name = "test_connector_orchestration"
 
-        pipeline = PipelineBuilder(TEST_CLIENT, name, sql=sql).create_or_replace()
+        pipeline = PipelineBuilder(
+            TEST_CLIENT, name, sql=sql).create_or_replace()
         pipeline.start()
 
         pipeline.resume_connector("numbers", "c1")
@@ -1081,7 +1084,7 @@ Code snippet:
         )
         assert c2_status
 
-        pipeline.stop()
+        pipeline.stop(force=True)
         pipeline.delete(True)
 
     def test_uuid(self):
@@ -1091,7 +1094,8 @@ Code snippet:
         CREATE MATERIALIZED VIEW v0 AS SELECT c0 FROM t0;
         """
 
-        pipeline = PipelineBuilder(TEST_CLIENT, name, sql=sql).create_or_replace()
+        pipeline = PipelineBuilder(
+            TEST_CLIENT, name, sql=sql).create_or_replace()
         out = pipeline.listen("v0")
         pipeline.start()
 
@@ -1104,7 +1108,7 @@ Code snippet:
         pipeline.wait_for_completion(True)
 
         got = out.to_dict()
-        pipeline.stop()
+        pipeline.stop(force=True)
 
         assert got == data
 
@@ -1115,24 +1119,29 @@ CREATE TABLE map_tbl(m_var MAP<VARCHAR, VARCHAR>);
 CREATE MATERIALIZED VIEW v AS SELECT * FROM map_tbl;
         """
 
-        pipeline = PipelineBuilder(TEST_CLIENT, name, sql=sql).create_or_replace()
+        pipeline = PipelineBuilder(
+            TEST_CLIENT, name, sql=sql).create_or_replace()
         pipeline.start()
 
         with self.assertRaises(ValueError):
             data = [{"insert": {"m_var": {None: 1}}}]
-            TEST_CLIENT.push_to_pipeline(name, "map_tbl", "insert_delete", data)
+            TEST_CLIENT.push_to_pipeline(
+                name, "map_tbl", "insert_delete", data)
 
         with self.assertRaises(ValueError):
             data = [{"delete": {"m_var": {None: 1}}}]
-            TEST_CLIENT.push_to_pipeline(name, "map_tbl", "insert_delete", data)
+            TEST_CLIENT.push_to_pipeline(
+                name, "map_tbl", "insert_delete", data)
 
         with self.assertRaises(ValueError):
             data = {"insert": {"m_var": {None: 1}}}
-            TEST_CLIENT.push_to_pipeline(name, "map_tbl", "insert_delete", data)
+            TEST_CLIENT.push_to_pipeline(
+                name, "map_tbl", "insert_delete", data)
 
         with self.assertRaises(ValueError):
             data = {"delete": {"m_var": {None: 1}}}
-            TEST_CLIENT.push_to_pipeline(name, "map_tbl", "insert_delete", data)
+            TEST_CLIENT.push_to_pipeline(
+                name, "map_tbl", "insert_delete", data)
 
         with self.assertRaises(ValueError):
             data = [{"m_var": {None: 1}}]
@@ -1146,7 +1155,7 @@ CREATE MATERIALIZED VIEW v AS SELECT * FROM map_tbl;
             data = {"m_var": {None: 1}}
             pipeline.input_json("map_tbl", data)
 
-        pipeline.stop()
+        pipeline.stop(force=True)
         pipeline.delete(True)
 
     def test_program_error0(self):
@@ -1163,7 +1172,7 @@ CREATE MATERIALIZED VIEW v AS SELECT * FROM map_tbl;
 
         assert err["sql_compilation"] != 0
 
-        pipeline.stop()
+        pipeline.stop(force=True)
         pipeline.delete(True)
 
     def test_program_error1(self):
@@ -1178,7 +1187,7 @@ CREATE MATERIALIZED VIEW v AS SELECT * FROM map_tbl;
         assert err["sql_compilation"]["exit_code"] == 0
         assert err["rust_compilation"]["exit_code"] == 0
 
-        pipeline.stop()
+        pipeline.stop(force=True)
         pipeline.delete(True)
 
     def test_errors0(self):

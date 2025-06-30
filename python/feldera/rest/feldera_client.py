@@ -322,26 +322,20 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             time.sleep(0.1)
 
     def stop_pipeline(
-        self, pipeline_name: str, timeout_s: Optional[float] = 300, force: bool = False
+        self, pipeline_name: str, force: bool, timeout_s: Optional[float] = 300
     ):
         """
         Stop a pipeline
 
         :param pipeline_name: The name of the pipeline to stop
-        :param timeout_s: The amount of time in seconds to wait for the pipeline
-            to stop. Default is 300 seconds.
         :param force: Set True to immediately scale compute resources to zero.
             Set False to automatically checkpoint before stopping.
-            False by default for Enterprise version and always True for OSS version.
+        :param timeout_s: The amount of time in seconds to wait for the pipeline
+            to stop. Default is 300 seconds.
         """
 
         if timeout_s is None:
             timeout_s = 300
-
-        e = self.get_config().edition.is_enterprise()
-
-        if not e:
-            force = True
 
         params = {"force": str(force).lower()}
 
@@ -355,9 +349,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         while time.monotonic() - start < timeout_s:
             status = self.get_pipeline(pipeline_name).deployment_status
 
-            expected_status = "Stopped" if force else "Suspended"
-
-            if status == expected_status:
+            if status == "Stopped":
                 return
 
             logging.debug(
