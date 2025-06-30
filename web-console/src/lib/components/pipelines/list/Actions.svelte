@@ -79,24 +79,67 @@
   const active = $derived.by(() => {
     return match(pipeline.current.status)
       .returnType<(keyof typeof actions)[]>()
-      .with('Stopped', () => ['_start_paused', '_configurations', '_unbind_storage', '_delete'])
+      .with('Stopped', () => [
+        '_start_paused',
+        '_saveFile',
+        '_configurations',
+        '_unbind_storage',
+        '_delete'
+      ])
       .with('Preparing', 'Provisioning', 'Initializing', () => [
         '_multiStop',
         '_spinner',
+        '_saveFile',
         '_configurations',
-        '_unbind_storage', '_delete'
+        '_unbind_storage',
+        '_delete'
       ])
       .with('Pausing', 'Resuming', () => [
         '_multiStop',
         '_spinner',
+        '_saveFile',
         '_configurations',
-        '_unbind_storage', '_delete'
+        '_unbind_storage',
+        '_delete'
       ])
-      .with('Unavailable', () => ['_multiStop', '_spacer_long', '_configurations', '_unbind_storage', '_delete'])
-      .with('Running', () => ['_multiStop', '_pause', '_configurations', '_unbind_storage', '_delete'])
-      .with('Paused', () => ['_multiStop', '_start', '_configurations', '_unbind_storage', '_delete'])
-      .with('Suspending', () => ['_spinner', '_configurations', '_unbind_storage', '_delete'])
-      .with('Stopping', () => ['_spinner', '_configurations', '_unbind_storage', '_delete'])
+      .with('Unavailable', () => [
+        '_multiStop',
+        '_spacer_long',
+        '_saveFile',
+        '_configurations',
+        '_unbind_storage',
+        '_delete'
+      ])
+      .with('Running', () => [
+        '_multiStop',
+        '_pause',
+        '_saveFile',
+        '_configurations',
+        '_unbind_storage',
+        '_delete'
+      ])
+      .with('Paused', () => [
+        '_multiStop',
+        '_start',
+        '_saveFile',
+        '_configurations',
+        '_unbind_storage',
+        '_delete'
+      ])
+      .with('Suspending', () => [
+        '_spinner',
+        '_saveFile',
+        '_configurations',
+        '_unbind_storage',
+        '_delete'
+      ])
+      .with('Stopping', () => [
+        '_spinner',
+        '_saveFile',
+        '_configurations',
+        '_unbind_storage',
+        '_delete'
+      ])
       .with(
         { Queued: P.any },
         { CompilingSql: P.any },
@@ -107,15 +150,19 @@
             ? ('_unschedule' as const)
             : ('_spacer_long' as const),
           '_start_pending',
+          '_saveFile',
           '_configurations',
-          '_unbind_storage', '_delete'
+          '_unbind_storage',
+          '_delete'
         ]
       )
       .with('SqlError', 'RustError', 'SystemError', () => [
         '_spacer_long',
         '_start_error',
+        '_saveFile',
         '_configurations',
-        '_unbind_storage', '_delete'
+        '_unbind_storage',
+        '_delete'
       ])
       .exhaustive()
   })
@@ -199,7 +246,7 @@
           pipeline.optimisticUpdate({ status: 'Suspending' })
         })
       },
-      "The pipeline will stop prosessing inputs and make a checkpoint of the state (Enterprise only)."
+      'The pipeline will stop prosessing inputs and make a checkpoint of the state (Enterprise only).'
     )(pipeline.current.name)}
     onClose={() => (globalDialog.dialog = null)}
   ></DeleteDialog>
@@ -314,11 +361,7 @@
   {/if}
 {/snippet}
 {#snippet _start_paused()}
-  {@render start(
-    'Start',
-    (alt) => (alt ? 'start_paused' : 'start_paused_start'),
-    'Preparing'
-  )}
+  {@render start('Start', (alt) => (alt ? 'start_paused' : 'start_paused_start'), 'Preparing')}
   {#if unsavedChanges}
     <Tooltip class="bg-white-dark z-20 rounded text-surface-950-50" placement="top">
       Save the program before running
@@ -410,7 +453,9 @@
     >
     </button>
   </div>
-  <Tooltip class="bg-white-dark z-20 rounded text-surface-950-50" placement="top">Force stop</Tooltip>
+  <Tooltip class="bg-white-dark z-20 rounded text-surface-950-50" placement="top"
+    >Force stop</Tooltip
+  >
 {/snippet}
 {#snippet _kill()}
   <button
@@ -455,7 +500,6 @@
     The pipeline is scheduled to start automatically after compilation
   </Tooltip>
 {/snippet}
-
 
 {#snippet pipelineResourcesDialog(dialogTitle: string, field: keyof typeof pipeline.current)}
   <JSONDialog
@@ -523,17 +567,17 @@
   <div class={longClass}></div>
 {/snippet}
 {#snippet _spinner()}
-    <div class="flex sm:hidden">
-      {@render _spinner_short()}
-    </div>
-    <div class="sm:flex hidden">
-      {@render _status_spinner()}
-    </div>
+  <div class="flex sm:hidden">
+    {@render _spinner_short()}
+  </div>
+  <div class="hidden sm:flex">
+    {@render _status_spinner()}
+  </div>
 {/snippet}
 {#snippet _spinner_short()}
-<div class="pointer-events-none {buttonClass} {shortClass} {basicBtnColor}">
-  <IconLoader class="h-5 flex-none  animate-spin fill-surface-950-50"></IconLoader>
-</div>
+  <div class="pointer-events-none {buttonClass} {shortClass} {basicBtnColor}">
+    <IconLoader class="h-5 flex-none  animate-spin fill-surface-950-50"></IconLoader>
+  </div>
 {/snippet}
 {#snippet _status_spinner()}
   <button class="{buttonClass} {longClass} pointer-events-none {basicBtnColor}">
@@ -543,24 +587,33 @@
   </button>
 {/snippet}
 {#snippet _unbind_storage()}
-  {@const icon = match(pipeline.current.storageStatus)
-    .with('Bound', () => 'fd-server')
-    .with('Unbound', () => 'fd-server-off')
-    .with('Unbinding', () => 'fd-server-cog disabled')
-    .exhaustive()}
-    {@const isShutdown = isPipelineShutdown(pipeline.current.status)}
-  <div>
-    <button
-    onclick={() => (globalDialog.dialog = unbindDialog)}
-    class="{buttonClass} {shortClass} {shortColor} fd {icon} preset-tonal-surface {iconClass} {isShutdown ? '' : 'disabled'}"
-  >
-  </button>
-  </div>
+  {@const storageStatus = pipeline.current.storageStatus}
+  {@const isShutdown = isPipelineShutdown(pipeline.current.status)}
+  {#if storageStatus === 'Unbinding'}
+    <div class="pointer-events-none {buttonClass} {shortClass} {basicBtnColor}">
+      <IconLoader class="h-5 flex-none  animate-spin fill-surface-950-50"></IconLoader>
+    </div>
     <Tooltip class="z-20 bg-white text-surface-950-50 dark:bg-black" placement="top">
-      {#if isShutdown}
-      Pipeline storage is in use. Click to delete it.
-      {:else}
-      Storage is used by the running pipeline. Stop the pipeline to delete it.
-  {/if}
+      The pipeline storage is being deleted, and provisioned resources deallocated.
     </Tooltip>
+  {:else}
+    <div>
+      <button
+        onclick={() => (globalDialog.dialog = unbindDialog)}
+        class="{buttonClass} {shortClass} {shortColor} fd {storageStatus === 'Bound' ? 'fd-server' : 'fd-server-off'} preset-tonal-surface {iconClass} {isShutdown && storageStatus === 'Bound'
+          ? ''
+          : 'disabled'}"
+      >
+      </button>
+    </div>
+    <Tooltip class="z-20 bg-white text-surface-950-50 dark:bg-black" placement="top">
+      {#if storageStatus === 'Unbound'}
+        The storage is not allocated for this pipeline, so there are no checkpoints available.
+      {:else if isShutdown}
+        Pipeline storage is in use. Click to delete it.
+      {:else}
+        Storage is used by the running pipeline. Stop the pipeline to delete it.
+      {/if}
+    </Tooltip>
+  {/if}
 {/snippet}
