@@ -473,6 +473,13 @@ where
             },
         }
     }
+
+    fn num_tuples(&self) -> usize {
+        match &self.inner {
+            BuilderInner::Vec(vec) => vec.num_tuples(),
+            BuilderInner::File(file) => file.num_tuples(),
+        }
+    }
 }
 
 impl<K, T, R> Archive for FallbackKeyBatch<K, T, R>

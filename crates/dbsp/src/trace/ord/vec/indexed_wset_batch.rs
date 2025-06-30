@@ -838,6 +838,10 @@ where
     fn done(self) -> VecIndexedWSet<K, V, R, O> {
         VecIndexedWSet::from_parts(self.factories, self.keys, self.offs, self.vals, self.diffs)
     }
+
+    fn num_tuples(&self) -> usize {
+        self.diffs.len()
+    }
 }
 
 /// A cursor for consuming a [VecIndexedWSet].

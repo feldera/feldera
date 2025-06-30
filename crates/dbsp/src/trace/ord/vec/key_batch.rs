@@ -624,6 +624,10 @@ where
             factories: self.factories,
         }
     }
+
+    fn num_tuples(&self) -> usize {
+        self.diffs.len()
+    }
 }
 
 /*pub struct VecKeyConsumer<K, T, R, O>

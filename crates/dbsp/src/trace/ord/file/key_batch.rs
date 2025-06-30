@@ -594,6 +594,7 @@ where
     #[size_of(skip)]
     writer: Writer2<K, DynUnit, DynDataTyped<T>, R>,
     key: Box<DynOpt<K>>,
+    num_tuples: usize,
 }
 
 impl<K, T, R> Builder<FileKeyBatch<K, T, R>> for FileKeyBuilder<K, T, R>
@@ -617,6 +618,7 @@ where
             )
             .unwrap_storage(),
             key: factories.opt_key_factory.default_box(),
+            num_tuples: 0,
         }
     }
 
@@ -629,6 +631,7 @@ where
     fn push_time_diff(&mut self, time: &T, weight: &R) {
         debug_assert!(!weight.is_zero());
         self.writer.write1((time, weight)).unwrap_storage();
+        self.num_tuples += 1;
     }
 
     fn done(self) -> FileKeyBatch<K, T, R> {
@@ -636,6 +639,10 @@ where
             factories: self.factories,
             file: Arc::new(self.writer.into_reader().unwrap_storage()),
         }
+    }
+
+    fn num_tuples(&self) -> usize {
+        self.num_tuples
     }
 }
 

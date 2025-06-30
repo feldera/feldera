@@ -490,6 +490,13 @@ where
             },
         }
     }
+
+    fn num_tuples(&self) -> usize {
+        match &self.inner {
+            BuilderInner::Vec(vec) => vec.num_tuples(),
+            BuilderInner::File(file) => file.num_tuples(),
+        }
+    }
 }
 
 impl<K, V, T, R> Archive for FallbackValBatch<K, V, T, R>

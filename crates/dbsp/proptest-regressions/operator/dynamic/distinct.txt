@@ -5,3 +5,4 @@
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
 cc 2e579ea05d4ad3f33410958087a73727b52f13a58a65a73c79a9e5a01f0b3fce # shrinks to inputs = []
+cc 9c2b569ff26481a9cb0ae34da26ef2bd321c8ebb0eba45db5255b16cd3cb26a0 # shrinks to inputs = [TypedBatch { inner: VecWSet { layer: {0: 1, 8: 1} }, phantom: PhantomData<fn(&u64, &(), &i64)> }], workers = 5

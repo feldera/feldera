@@ -675,6 +675,10 @@ where
             factories: self.factories,
         }
     }
+
+    fn num_tuples(&self) -> usize {
+        self.diffs.len()
+    }
 }
 
 /// A cursor for consuming a [VecWSet].
