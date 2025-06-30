@@ -424,7 +424,7 @@
         globalDialog.dialog = stopDialog
       }}
     >
-      <span class="fd fd-circle-stop {iconClass}"></span>
+      <span class="fd fd-square {iconClass}"></span>
       Stop
       <span></span>
     </button>
@@ -462,7 +462,7 @@
     class="{buttonClass} {longClass} {basicBtnColor}"
     onclick={() => (globalDialog.dialog = killDialog)}
   >
-    <span class="fd fd-square {iconClass}"></span>
+    <span class="fd fd-square-power {iconClass}"></span>
     Force stop
     <span></span>
   </button>

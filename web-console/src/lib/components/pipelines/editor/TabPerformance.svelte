@@ -7,12 +7,12 @@
   import { format } from 'd3-format'
   import Dayjs from 'dayjs'
   import { getDeploymentStatusLabel, isMetricsAvailable } from '$lib/functions/pipelines/status'
-  import { useInterval } from '$lib/compositions/common/useInterval.svelte'
   import ClipboardCopyButton from '$lib/components/other/ClipboardCopyButton.svelte'
   import { Segment } from '@skeletonlabs/skeleton-svelte'
   import { useIsScreenXl } from '$lib/compositions/layout/useIsMobile.svelte'
   import PipelineStorageGraph from '$lib/components/layout/pipelines/PipelineStorageGraph.svelte'
   import Tooltip from '$lib/components/common/Tooltip.svelte'
+  import { useElapsedTime } from '$lib/functions/format'
 
   const formatQty = (v: number) => format(',.0f')(v)
 
@@ -22,16 +22,8 @@
   }: { pipeline: { current: ExtendedPipeline }; metrics: { current: PipelineMetrics } } = $props()
 
   const global = $derived(metrics.current.global.at(-1))
-  const now = useInterval(() => new Date(), 1000, 1000 - (Date.now() % 1000))
+  const { formatElapsedTime } = useElapsedTime()
 
-  const formatElapsedTime = (timestamp: Date) =>
-    ((d) =>
-      ((d) => (d ? ` ${d}d` : ''))(Math.floor(d.asDays())) +
-      ((d) => (d ? ` ${d}h` : ''))(d.hours()) +
-      ((d) => (d ? ` ${d}m` : ''))(d.minutes()) +
-      ((d) => (d ? ` ${d}s` : ''))(d.seconds()))(
-      Dayjs.duration(now.current.valueOf() - timestamp.valueOf())
-    )
   let statusTab: 'age' | 'updated' = $state('age')
   let isXl = useIsScreenXl()
 </script>

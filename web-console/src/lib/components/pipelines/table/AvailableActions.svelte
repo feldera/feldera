@@ -121,7 +121,7 @@
 {/snippet}
 {#snippet btnStop()}
   <button class="btn preset-tonal-surface" onclick={() => (globalDialog.dialog = stopDialog)}>
-    <span class="fd fd-circle-stop text-[20px]"></span>
+    <span class="fd fd-square text-[20px]"></span>
     Stop
   </button>
 {/snippet}
@@ -159,7 +159,7 @@
 {#snippet stopDialog()}
   <DeleteDialog
     {...deleteDialogProps(
-      'Suspend',
+      'Stop',
       () =>
         selectedPipelines.length === 1
           ? '1 pipeline'
@@ -178,7 +178,7 @@
 {#snippet killDialog()}
   <DeleteDialog
     {...deleteDialogProps(
-      'Shutdown',
+      'Force stop',
       () =>
         selectedPipelines.length === 1
           ? '1 pipeline'
