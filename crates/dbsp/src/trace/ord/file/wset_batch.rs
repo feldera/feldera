@@ -752,6 +752,7 @@ where
     #[size_of(skip)]
     writer: Writer1<K, R>,
     weight: Box<R>,
+    num_tuples: usize,
 }
 
 impl<K, R> Builder<FileWSet<K, R>> for FileWSetBuilder<K, R>
@@ -775,6 +776,7 @@ where
             )
             .unwrap(),
             weight: factories.weight_factory().default_box(),
+            num_tuples: 0,
         }
     }
 
@@ -794,5 +796,10 @@ where
     fn push_time_diff(&mut self, _time: &(), weight: &R) {
         debug_assert!(!weight.is_zero());
         weight.clone_to(&mut self.weight);
+        self.num_tuples += 1;
+    }
+
+    fn num_tuples(&self) -> usize {
+        self.num_tuples
     }
 }
