@@ -932,6 +932,8 @@ where
         let _ = additional;
     }
 
+    fn num_tuples(&self) -> usize;
+
     /// Completes building and returns the batch.
     fn done(self) -> Output;
 }

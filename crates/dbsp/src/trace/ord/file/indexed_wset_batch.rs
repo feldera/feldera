@@ -819,6 +819,7 @@ where
     #[size_of(skip)]
     writer: Writer2<K, DynUnit, V, R>,
     weight: Box<R>,
+    num_tuples: usize,
 }
 
 impl<K, V, R> Builder<FileIndexedWSet<K, V, R>> for FileIndexedWSetBuilder<K, V, R>
@@ -842,6 +843,7 @@ where
             )
             .unwrap(),
             weight: factories.weight_factory().default_box(),
+            num_tuples: 0,
         }
     }
 
@@ -858,6 +860,7 @@ where
 
     fn push_val(&mut self, val: &V) {
         self.writer.write1((val, &*self.weight)).unwrap();
+        self.num_tuples += 1;
     }
 
     fn push_time_diff(&mut self, _time: &(), weight: &R) {
@@ -868,6 +871,11 @@ where
     fn push_val_diff(&mut self, val: &V, weight: &R) {
         debug_assert!(!weight.is_zero());
         self.writer.write1((val, weight)).unwrap();
+        self.num_tuples += 1;
+    }
+
+    fn num_tuples(&self) -> usize {
+        self.num_tuples
     }
 }
 
