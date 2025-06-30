@@ -347,7 +347,7 @@ example = "1.0"`
         <CodeEditor
           path={pipelineName}
           {files}
-          editDisabled={editCodeDisabled}
+          editDisabled={editCodeDisabled || pipeline.current.storageStatus !== 'Unbound'}
           bind:currentFileName={currentPipelineFile[pipelineName]}
           bind:downstreamChanged
           bind:saveFile
