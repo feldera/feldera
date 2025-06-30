@@ -61,3 +61,19 @@ export function humanSize(bytes: number): string {
 
   return bytes.toFixed(1) + ' ' + units[u]
 }
+
+export function nthIndexOf(
+  str: string,
+  substring: string,
+  n: number,
+  position: number = 0
+): number {
+  if (n <= 0) return -1
+
+  const index = str.indexOf(substring, position)
+
+  if (index === -1) return -1
+  if (n === 1) return index
+
+  return nthIndexOf(str, substring, n - 1, index + 1)
+}
