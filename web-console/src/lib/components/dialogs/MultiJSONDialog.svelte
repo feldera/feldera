@@ -27,7 +27,7 @@
   }
 </script>
 
-<GenericDialog onApply={submitResults} {onClose} {title}>
+<GenericDialog onApply={submitResults} {onClose} {title} {disabled}>
   {#each Object.keys(states) as key}
     <span class="font-normal">{metadata?.[key].title ?? ''}</span>
     <div class={metadata?.[key].editorClass}>

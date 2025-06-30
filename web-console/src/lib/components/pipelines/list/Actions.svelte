@@ -559,6 +559,15 @@
 {#snippet _configurations()}
   <PipelineConfigurationsPopup {pipeline} pipelineBusy={editConfigDisabled}
   ></PipelineConfigurationsPopup>
+  {#if editConfigDisabled}
+    <Tooltip class="z-20 bg-white text-surface-950-50 dark:bg-black" placement="top">
+      Stop the pipeline to edit configuration
+    </Tooltip>
+  {:else}
+    <Tooltip class="z-20 bg-white text-surface-950-50 dark:bg-black" placement="top">
+      Compilation and runtime configuration
+    </Tooltip>
+  {/if}
 {/snippet}
 {#snippet _spacer_short()}
   <div class={shortClass}></div>

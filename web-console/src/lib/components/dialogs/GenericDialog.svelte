@@ -31,7 +31,7 @@
       <button {disabled} onclick={onApply} class="btn preset-filled-primary-500"> APPLY </button>
     </div>
     {#if disabled}
-      <Tooltip class="bg-white text-surface-950-50 dark:bg-black" placement="top">
+      <Tooltip class="bg-white-dark z-20 w-64 rounded text-surface-950-50" placement="top">
         Stop the pipeline and unbind storage to edit configuration
       </Tooltip>
     {/if}
