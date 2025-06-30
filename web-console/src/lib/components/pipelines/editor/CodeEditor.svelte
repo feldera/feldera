@@ -347,7 +347,7 @@
           options={{
             readOnlyMessage: {
               value: editDisabled
-                ? 'Cannot edit code while pipeline is running'
+                ? 'Cannot edit code while pipeline is running or storage is in use'
                 : 'Cannot edit a compiler-generated file'
             },
             fontFamily: theme.config.monospaceFontFamily,
