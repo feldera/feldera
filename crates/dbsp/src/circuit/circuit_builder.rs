@@ -1499,6 +1499,8 @@ pub trait CircuitBase: 'static {
     /// Returns vector of local node ids in the circuit.
     fn node_ids(&self) -> Vec<NodeId>;
 
+    fn clear(&mut self);
+
     /// Allocate a new globally unique stream id.  This method can be invoked on any circuit in the pipeline,
     /// since all of them maintain a shared global counter.
     fn allocate_stream_id(&self) -> StreamId;
@@ -1517,6 +1519,12 @@ pub trait CircuitBase: 'static {
 
     /// Circuit's global node id.
     fn global_node_id(&self) -> GlobalNodeId;
+
+    /// Apply `f` to the node with the specified `path` relative to `self`.
+    fn map_node_relative(&self, path: &[NodeId], f: &mut dyn FnMut(&dyn Node));
+
+    /// Apply `f` to the node with the specified `path` relative to `self`.
+    fn map_node_mut_relative(&self, path: &[NodeId], f: &mut dyn FnMut(&mut dyn Node));
 
     /// Recursively apply `f` to all nodes in `self` and its children.
     ///
@@ -1595,6 +1603,8 @@ pub trait CircuitBase: 'static {
     fn get_persistent_node_id(&self, id: &GlobalNodeId) -> Option<String> {
         self.get_node_label(id, LABEL_PERSISTENT_OPERATOR_ID)
     }
+
+    fn check_fixedpoint(&self, scope: Scope) -> bool;
 }
 
 /// The circuit interface.  All DBSP computation takes place within a circuit.
@@ -2131,11 +2141,7 @@ pub trait Circuit: CircuitBase + Clone + WithClock {
     ///
     /// Most users should invoke higher-level APIs like [`Circuit::iterate`]
     /// instead of using this method directly.
-    fn subcircuit<F, T, E>(
-        &self,
-        iterative: bool,
-        child_constructor: F,
-    ) -> Result<T, SchedulerError>
+    fn iterative_subcircuit<F, T, E>(&self, child_constructor: F) -> Result<T, SchedulerError>
     where
         F: FnOnce(&mut ChildCircuit<Self>) -> Result<(T, E), SchedulerError>,
         E: Executor<ChildCircuit<Self>>;
@@ -2536,7 +2542,7 @@ where
         }
     }
 
-    fn fixedpoint(&self, scope: Scope) -> bool {
+    fn check_fixedpoint(&self, scope: Scope) -> bool {
         self.nodes.borrow().iter().all(|node| {
             node.borrow().fixedpoint(scope)
             /*if !res {
@@ -2875,10 +2881,6 @@ where
         Ok(res)
     }
 
-    fn clear(&mut self) {
-        self.inner().clear();
-    }
-
     /// Send the specified `CircuitEvent` to all handlers attached to the
     /// circuit.
     fn log_circuit_event(&self, event: &CircuitEvent) {
@@ -2889,28 +2891,6 @@ where
     /// circuit.
     pub(super) fn log_scheduler_event(&self, event: &SchedulerEvent<'_>) {
         self.inner().log_scheduler_event(event);
-    }
-
-    /// Apply `f` to the node with the specified `path` relative to `self`.
-    pub(crate) fn map_node_inner(&self, path: &[NodeId], f: &mut dyn FnMut(&dyn Node)) {
-        let nodes = self.inner().nodes.borrow();
-        let node = nodes[path[0].0].borrow();
-        if path.len() == 1 {
-            f(node.as_ref())
-        } else {
-            node.map_child(&path[1..], &mut |node| f(node));
-        }
-    }
-
-    /// Apply `f` to the node with the specified `path` relative to `self`.
-    pub(crate) fn map_node_mut_inner(&self, path: &[NodeId], f: &mut dyn FnMut(&mut dyn Node)) {
-        let nodes = self.inner().nodes.borrow();
-        let mut node = nodes[path[0].0].borrow_mut();
-        if path.len() == 1 {
-            f(node.as_mut())
-        } else {
-            node.map_child_mut(&path[1..], &mut |node| f(node));
-        }
     }
 }
 
@@ -2928,6 +2908,32 @@ where
 
     fn num_nodes(&self) -> usize {
         self.inner().nodes.borrow().len()
+    }
+
+    fn clear(&mut self) {
+        self.inner().clear();
+    }
+
+    /// Apply `f` to the node with the specified `path` relative to `self`.
+    fn map_node_relative(&self, path: &[NodeId], f: &mut dyn FnMut(&dyn Node)) {
+        let nodes = self.inner().nodes.borrow();
+        let node = nodes[path[0].0].borrow();
+        if path.len() == 1 {
+            f(node.as_ref())
+        } else {
+            node.map_child(&path[1..], &mut |node| f(node));
+        }
+    }
+
+    /// Apply `f` to the node with the specified `path` relative to `self`.
+    fn map_node_mut_relative(&self, path: &[NodeId], f: &mut dyn FnMut(&mut dyn Node)) {
+        let nodes = self.inner().nodes.borrow();
+        let mut node = nodes[path[0].0].borrow_mut();
+        if path.len() == 1 {
+            f(node.as_mut())
+        } else {
+            node.map_child_mut(&path[1..], &mut |node| f(node));
+        }
     }
 
     fn map_nodes_recursive(
@@ -2975,7 +2981,7 @@ where
     }
 
     fn apply_local_node_mut(&self, id: NodeId, f: &mut dyn FnMut(&mut dyn Node)) {
-        self.map_node_mut_inner(&[id], &mut |node| f(node));
+        self.map_node_mut_relative(&[id], &mut |node| f(node));
     }
 
     fn map_subcircuits(
@@ -3035,6 +3041,10 @@ where
     fn global_node_id(&self) -> GlobalNodeId {
         self.inner().global_node_id.clone()
     }
+
+    fn check_fixedpoint(&self, scope: Scope) -> bool {
+        self.inner().check_fixedpoint(scope)
+    }
 }
 
 impl<P> Circuit for ChildCircuit<P>
@@ -3061,7 +3071,7 @@ where
 
         assert!(path.starts_with(self.global_id().path()));
 
-        self.map_node_inner(
+        self.map_node_relative(
             path.strip_prefix(self.global_id().path()).unwrap(),
             &mut |node| result = Some(f(node)),
         );
@@ -3074,7 +3084,7 @@ where
 
         assert!(path.starts_with(self.global_id().path()));
 
-        self.map_node_mut_inner(
+        self.map_node_mut_relative(
             path.strip_prefix(self.global_id().path()).unwrap(),
             &mut |node| result = Some(f(node)),
         );
@@ -3084,7 +3094,7 @@ where
     fn map_local_node_mut<T>(&self, id: NodeId, f: &mut dyn FnMut(&mut dyn Node) -> T) -> T {
         let mut result: Option<T> = None;
 
-        self.map_node_mut_inner(&[id], &mut |node| result = Some(f(node)));
+        self.map_node_mut_relative(&[id], &mut |node| result = Some(f(node)));
         result.unwrap()
     }
 
@@ -3782,21 +3792,17 @@ where
         })
     }
 
-    fn subcircuit<F, T, E>(
-        &self,
-        iterative: bool,
-        child_constructor: F,
-    ) -> Result<T, SchedulerError>
+    fn iterative_subcircuit<F, T, E>(&self, child_constructor: F) -> Result<T, SchedulerError>
     where
         F: FnOnce(&mut ChildCircuit<Self>) -> Result<(T, E), SchedulerError>,
         E: Executor<ChildCircuit<Self>>,
     {
         self.try_add_node(|id| {
             let global_id = GlobalNodeId::child_of(self, id);
-            self.log_circuit_event(&CircuitEvent::subcircuit(global_id.clone(), iterative));
+            self.log_circuit_event(&CircuitEvent::subcircuit(global_id.clone(), true));
             let mut child_circuit = ChildCircuit::with_parent(self.clone(), id);
             let (res, executor) = child_constructor(&mut child_circuit)?;
-            let child = <ChildNode<Self>>::new::<E>(child_circuit, executor);
+            let child = <ChildNode<ChildCircuit<Self>>>::new::<E>(child_circuit, 1, executor);
             self.log_circuit_event(&CircuitEvent::subcircuit_complete(global_id));
             Ok((child, res))
         })
@@ -3820,7 +3826,7 @@ where
         C: AsyncFn() -> Result<bool, SchedulerError> + 'static,
         S: Scheduler + 'static,
     {
-        self.subcircuit(true, |child| {
+        self.iterative_subcircuit(|child| {
             let (termination_check, res) = constructor(child)?;
             let mut executor = <IterativeExecutor<_, S>>::new(termination_check);
             executor.prepare(child, None)?;
@@ -3840,7 +3846,7 @@ where
         F: FnOnce(&mut ChildCircuit<Self>) -> Result<T, SchedulerError>,
         S: Scheduler + 'static,
     {
-        self.subcircuit(true, |child| {
+        self.iterative_subcircuit(|child| {
             let res = constructor(child)?;
             let child_clone = child.clone();
 
@@ -3848,7 +3854,7 @@ where
 
             let termination_check = async move || {
                 // Send local fixed point status to all peers.
-                let local_fixedpoint = child_clone.inner().fixedpoint(0);
+                let local_fixedpoint = child_clone.inner().check_fixedpoint(0);
                 consensus.check(local_fixedpoint).await
             };
             let mut executor = <IterativeExecutor<_, S>>::new(termination_check);
@@ -5899,19 +5905,20 @@ where
 }
 
 // A nested circuit instantiated as a node in a parent circuit.
-struct ChildNode<P>
+struct ChildNode<C>
 where
-    P: Circuit,
+    C: Circuit,
 {
     id: GlobalNodeId,
-    circuit: ChildCircuit<P>,
-    executor: Box<dyn Executor<ChildCircuit<P>>>,
+    circuit: C,
+    executor: Box<dyn Executor<C>>,
     labels: BTreeMap<String, String>,
+    nesting_depth: Scope,
 }
 
-impl<P> Drop for ChildNode<P>
+impl<C> Drop for ChildNode<C>
 where
-    P: Circuit,
+    C: Circuit,
 {
     fn drop(&mut self) {
         // Explicitly deallocate all nodes in the circuit to break
@@ -5920,26 +5927,27 @@ where
     }
 }
 
-impl<P> ChildNode<P>
+impl<C> ChildNode<C>
 where
-    P: Circuit,
+    C: Circuit,
 {
-    fn new<E>(circuit: ChildCircuit<P>, executor: E) -> Self
+    fn new<E>(circuit: C, nesting_depth: Scope, executor: E) -> Self
     where
-        E: Executor<ChildCircuit<P>>,
+        E: Executor<C>,
     {
         Self {
             id: circuit.global_node_id(),
             circuit,
-            executor: Box::new(executor) as Box<dyn Executor<ChildCircuit<P>>>,
+            executor: Box::new(executor) as Box<dyn Executor<C>>,
             labels: BTreeMap::new(),
+            nesting_depth,
         }
     }
 }
 
-impl<P> Node for ChildNode<P>
+impl<C> Node for ChildNode<C>
 where
-    P: Circuit,
+    C: Circuit,
 {
     fn name(&self) -> Cow<'static, str> {
         Cow::Borrowed("Subcircuit")
@@ -5980,17 +5988,17 @@ where
     }
 
     fn clock_start(&mut self, scope: Scope) {
-        self.circuit.clock_start(scope + 1);
+        self.circuit.clock_start(scope + self.nesting_depth);
     }
 
     fn clock_end(&mut self, scope: Scope) {
-        self.circuit.clock_end(scope + 1);
+        self.circuit.clock_end(scope + self.nesting_depth);
     }
 
     fn metadata(&self, _meta: &mut OperatorMeta) {}
 
     fn fixedpoint(&self, scope: Scope) -> bool {
-        self.circuit.inner().fixedpoint(scope + 1)
+        self.circuit.check_fixedpoint(scope + self.nesting_depth)
     }
 
     fn map_nodes_recursive(
@@ -6038,11 +6046,11 @@ where
     }
 
     fn map_child(&self, path: &[NodeId], f: &mut dyn FnMut(&dyn Node)) {
-        self.circuit.map_node_inner(path, f);
+        self.circuit.map_node_relative(path, f);
     }
 
     fn map_child_mut(&self, path: &[NodeId], f: &mut dyn FnMut(&mut dyn Node)) {
-        self.circuit.map_node_mut_inner(path, f);
+        self.circuit.map_node_mut_relative(path, f);
     }
 
     fn as_any(&self) -> &dyn Any {

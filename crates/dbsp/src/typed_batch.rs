@@ -548,7 +548,7 @@ where
     {
         TypedBatch::new(DynSpineSnapshot::concat(
             BatchReaderFactories::new::<K, V, R>(),
-            snapshots.into_iter().map(|snapshot | &snapshot.inner),
+            snapshots.into_iter().map(|snapshot| &snapshot.inner),
         ))
     }
 
