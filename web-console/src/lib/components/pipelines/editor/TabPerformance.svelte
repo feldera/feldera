@@ -70,7 +70,7 @@
     </div>
     {@render pipelineId()}
   </div>
-<!-- {:else if !global && pipeline.current.status === 'Suspended'}
+  <!-- {:else if !global && pipeline.current.status === 'Suspended'}
   <div class="flex justify-between">
     <div>
       Pipeline is suspended for {formatElapsedTime(

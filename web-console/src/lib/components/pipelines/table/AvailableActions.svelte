@@ -168,8 +168,8 @@
         return postPipelinesAction('stop')
       },
       selectedPipelines.length === 1
-        ? "The pipeline will stop prosessing inputs and make a checkpoint of the state (Enterprise only)."
-        : "These pipelines will stop prosessing inputs and make checkpoints of their states (Enterprise only)."
+        ? 'The pipeline will stop prosessing inputs and make a checkpoint of the state (Enterprise only).'
+        : 'These pipelines will stop prosessing inputs and make checkpoints of their states (Enterprise only).'
     )()}
     onClose={() => (globalDialog.dialog = null)}
   ></DeleteDialog>

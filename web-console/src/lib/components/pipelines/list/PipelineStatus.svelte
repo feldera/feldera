@@ -22,12 +22,7 @@
         () => 'preset-filled-warning-200-800'
       )
       .with('Unavailable', () => 'bg-orange-200 dark:bg-orange-800')
-      .with(
-        'SqlError',
-        'RustError',
-        'SystemError',
-        () => 'preset-filled-error-50-950'
-      )
+      .with('SqlError', 'RustError', 'SystemError', () => 'preset-filled-error-50-950')
       .exhaustive()
   )
 </script>

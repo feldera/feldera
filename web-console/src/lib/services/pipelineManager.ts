@@ -174,6 +174,7 @@ const toPipelineThumb = (
 ) => ({
   name: pipeline.name,
   description: pipeline.description,
+  storageStatus: pipeline.storage_status,
   ...consolidatePipelineStatus(
     pipeline.program_status,
     pipeline.deployment_status,
