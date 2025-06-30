@@ -139,6 +139,7 @@ pub async fn compiler_precompile(
     let program_config = ProgramConfig {
         profile: None, // The pre-compilation will use the compiler configuration default profile
         cache: false,
+        runtime_version: None,
     };
     let program_config = serde_json::to_value(&program_config).map_err(|e| {
         CommonError::json_serialization_error(
@@ -316,7 +317,8 @@ mod test {
         create_working_directory_if_not_exists(&CompilerConfig {
             compiler_working_directory: existing_path.to_string_lossy().to_string(),
             compilation_profile: CompilationProfile::Optimized,
-            sql_compiler_home: "".to_string(),
+            sql_compiler_path: "".to_string(),
+            sql_compiler_cache_url: "".to_string(),
             compilation_cargo_lock_path: "".to_string(),
             dbsp_override_path: "".to_string(),
             precompile: false,
@@ -333,7 +335,8 @@ mod test {
         create_working_directory_if_not_exists(&CompilerConfig {
             compiler_working_directory: non_existing_path.to_string_lossy().to_string(),
             compilation_profile: CompilationProfile::Optimized,
-            sql_compiler_home: "".to_string(),
+            sql_compiler_path: "".to_string(),
+            sql_compiler_cache_url: "".to_string(),
             compilation_cargo_lock_path: "".to_string(),
             dbsp_override_path: "".to_string(),
             precompile: false,

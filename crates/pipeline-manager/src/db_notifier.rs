@@ -243,6 +243,7 @@ mod test {
                         program_config: serde_json::to_value(ProgramConfig {
                             profile: Some(CompilationProfile::Unoptimized),
                             cache: true,
+                            runtime_version: None,
                         })
                         .unwrap(),
                     },
@@ -324,6 +325,7 @@ mod test {
                     program_config: serde_json::to_value(ProgramConfig {
                         profile: Some(CompilationProfile::Unoptimized),
                         cache: true,
+                        runtime_version: None,
                     })
                     .unwrap(),
                 },

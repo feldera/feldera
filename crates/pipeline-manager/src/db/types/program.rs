@@ -10,6 +10,7 @@ use feldera_types::program_schema::{ProgramSchema, PropertyValue, SourcePosition
 use log::error;
 use rand::distributions::Uniform;
 use rand::{thread_rng, Rng};
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 use std::collections::BTreeMap;
@@ -286,6 +287,101 @@ pub fn validate_program_status_transition(
     }
 }
 
+/// A selector for the runtime to use.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
+#[serde(try_from = "String", into = "Option<String>")]
+pub enum RuntimeSelector {
+    /// A SHA of the runtime.
+    ///
+    /// The string is guaranteed to be a valid git SHA hash.
+    Sha(String),
+    /// A tagged version of the runtime.
+    ///
+    /// The string is guaranteed to be in the form of a git version tag `vX.Y.Z`.
+    Version(String),
+    /// The platform's default runtime version.
+    ///
+    /// The string corresponds to the git SHA of feldera/feldera at the time of the build.
+    Platform(String),
+}
+
+impl From<RuntimeSelector> for Option<String> {
+    fn from(value: RuntimeSelector) -> Self {
+        match value {
+            RuntimeSelector::Sha(sha) => Some(sha),
+            RuntimeSelector::Version(version) => Some(version),
+            RuntimeSelector::Platform(_platform_sha) => None,
+        }
+    }
+}
+
+impl RuntimeSelector {
+    /// Is this the platform's default runtime version?
+    pub fn is_platform(&self) -> bool {
+        matches!(self, RuntimeSelector::Platform(_))
+    }
+
+    /// Bytes representation of the runtime selector (for hashing).
+    pub fn as_bytes(&self) -> &[u8] {
+        match self {
+            RuntimeSelector::Sha(sha) => sha.as_bytes(),
+            RuntimeSelector::Version(version) => version.as_bytes(),
+            RuntimeSelector::Platform(platform_sha) => platform_sha.as_bytes(),
+        }
+    }
+
+    /// Commitish representation of the runtime selector (for git operations).
+    pub fn as_commitish(&self) -> &str {
+        match self {
+            RuntimeSelector::Sha(sha) => sha,
+            RuntimeSelector::Version(version) => version,
+            RuntimeSelector::Platform(platform_sha) => platform_sha,
+        }
+    }
+}
+
+impl Display for RuntimeSelector {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RuntimeSelector::Sha(sha) => write!(f, "{sha}"),
+            RuntimeSelector::Version(version) => write!(f, "{version}"),
+            RuntimeSelector::Platform(platform_sha) => write!(f, "{platform_sha}"),
+        }
+    }
+}
+
+impl Default for RuntimeSelector {
+    fn default() -> Self {
+        RuntimeSelector::Platform(env!("VERGEN_GIT_SHA").to_string())
+    }
+}
+
+impl TryFrom<String> for RuntimeSelector {
+    type Error = String;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        fn is_valid_git_sha(s: &str) -> bool {
+            let sha_regex = Regex::new(r"^[0-9a-f]{40}$").unwrap();
+            sha_regex.is_match(s)
+        }
+
+        fn is_version_tag(s: &str) -> bool {
+            let version_regex = Regex::new(r"^v\d+\.\d+\.\d+$").unwrap();
+            version_regex.is_match(s)
+        }
+
+        if is_valid_git_sha(&value) {
+            Ok(RuntimeSelector::Sha(value))
+        } else if is_version_tag(&value) {
+            Ok(RuntimeSelector::Version(value))
+        } else {
+            Err(format!(
+                "The requested runtime version '{value}' is neither a valid version (vX.Y.Z) nor a valid git hash.",
+            ))
+        }
+    }
+}
+
 /// Program configuration.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
 #[serde(default)]
@@ -299,6 +395,29 @@ pub struct ProgramConfig {
     /// Set `false` to always trigger a new compilation, which might take longer
     /// and as well can result in overriding an existing binary.
     pub cache: bool,
+
+    /// Override runtime version of the pipeline being executed.
+    ///
+    /// Warning: This option is experimental and may change in the future.
+    /// Should only be used for CI/testing purposes, and requires network access.
+    ///
+    /// A runtime version can be specified in the form of a version
+    /// or SHA taken from the `feldera/feldera` repository main branch.
+    ///
+    /// Examples: `v0.96.0` or `f4dcac0989ca0fda7d2eb93602a49d007cb3b0ae`
+    ///
+    /// A platform of version `0.x.y` may be capable of running future and past
+    /// runtimes with versions `>=0.x.y` and `<=0.x.y` until breaking API changes happen,
+    /// the exact bounds for each platform version are unspecified until we reach a
+    /// stable version. Compatibility is only guaranteed if platform and runtime version
+    /// are exact matches.
+    ///
+    /// Note that any enterprise features are currently considered to be part of
+    /// the platform.
+    ///
+    /// If not set (null), the runtime version will be the same as the platform version.
+    #[schema(value_type = Option<String>)]
+    pub runtime_version: Option<RuntimeSelector>,
 }
 
 impl Default for ProgramConfig {
@@ -306,6 +425,7 @@ impl Default for ProgramConfig {
         Self {
             profile: None,
             cache: true,
+            runtime_version: None,
         }
     }
 }
@@ -646,5 +766,34 @@ pub fn generate_pipeline_config(
         storage_config: None, // Set by the runner based on global field
         inputs: inputs.clone(),
         outputs: outputs.clone(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::RuntimeSelector;
+
+    #[test]
+    fn test_runtime_version_validation() {
+        assert!(RuntimeSelector::try_from("invalid".to_string()).is_err());
+        assert!(RuntimeSelector::try_from("/bin/bash".to_string()).is_err());
+        assert!(RuntimeSelector::try_from("v2".to_string()).is_err());
+        assert!(RuntimeSelector::try_from("v0.3".to_string()).is_err());
+        assert!(RuntimeSelector::try_from("v4.3".to_string()).is_err());
+        assert!(RuntimeSelector::try_from("v0.0".to_string()).is_err());
+        assert!(RuntimeSelector::try_from("0.0.0".to_string()).is_err());
+        assert!(RuntimeSelector::try_from("v1.2.34".to_string()).is_ok());
+        assert!(
+            RuntimeSelector::try_from("d0b45d8f87056c9d2c89c6f63b2531b0c5905f9b".to_string())
+                .is_ok()
+        );
+        assert!(
+            RuntimeSelector::try_from("d0b45d8f87056c9d2c89c6f63b2531b0c5905f9".to_string())
+                .is_err()
+        );
+        assert!(
+            RuntimeSelector::try_from("d0b45d8f87056c9d2c-9c6f63b2531b0c5905f9b".to_string())
+                .is_err()
+        );
     }
 }

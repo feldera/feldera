@@ -118,6 +118,7 @@ fda set-config p1 fault_tolerance none
 $enterprise_only fda set-config p1 fault_tolerance at_least_once
 $enterprise_only fda set-config p1 fault_tolerance exactly_once
 fail_on_success fda set-config p1 fault_tolerance exactly_one
+fail_on_success fda program set-config p1 -p optimized --runtime-version invalid-version
 
 fda delete p1
 fda delete p2

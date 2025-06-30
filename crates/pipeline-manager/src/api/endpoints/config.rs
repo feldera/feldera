@@ -20,6 +20,45 @@ pub(crate) struct UpdateInformation {
     pub remind_schedule: DisplaySchedule,
 }
 
+/// Information about the build of the platform.
+#[derive(Serialize, ToSchema)]
+pub(crate) struct BuildInformation {
+    /// Timestamp of the build.
+    build_timestamp: &'static str,
+    /// CPU of build machine.
+    build_cpu: &'static str,
+    /// OS of build machine.
+    build_os: &'static str,
+    /// Dependencies used during the build.
+    cargo_dependencies: &'static str,
+    /// Features enabled during the build.
+    cargo_features: &'static str,
+    /// Whether the build is optimized for performance.
+    cargo_debug: &'static str,
+    /// Optimization level of the build.
+    cargo_opt_level: &'static str,
+    /// Target triple of the build.
+    cargo_target_triple: &'static str,
+    /// Rust version of the build used.
+    rustc_version: &'static str,
+}
+
+impl BuildInformation {
+    fn from_env() -> Self {
+        Self {
+            build_timestamp: env!("VERGEN_BUILD_TIMESTAMP"),
+            build_cpu: env!("VERGEN_SYSINFO_CPU_BRAND"),
+            build_os: env!("VERGEN_SYSINFO_OS_VERSION"),
+            cargo_dependencies: env!("VERGEN_CARGO_DEPENDENCIES"),
+            cargo_features: env!("VERGEN_CARGO_FEATURES"),
+            cargo_debug: env!("VERGEN_CARGO_DEBUG"),
+            cargo_opt_level: env!("VERGEN_CARGO_OPT_LEVEL"),
+            cargo_target_triple: env!("VERGEN_CARGO_TARGET_TRIPLE"),
+            rustc_version: env!("VERGEN_RUSTC_SEMVER"),
+        }
+    }
+}
+
 #[derive(Serialize, ToSchema)]
 pub(crate) struct Configuration {
     /// Telemetry key.
@@ -30,14 +69,17 @@ pub(crate) struct Configuration {
     /// Format is `x.y.z`.
     pub version: String,
     /// Specific revision corresponding to the edition `version` (e.g., git commit hash).
-    /// This is an empty string if it is unspecified.
     pub revision: String,
+    /// Specific revision corresponding to the default runtime version of the platform (e.g., git commit hash).
+    pub runtime_revision: String,
     /// URL that navigates to the changelog of the current version
     pub changelog_url: String,
     /// Information about the checked Enterprise license
     pub license_validity: Option<LicenseValidity>,
     /// Information about whether a new version is available for the corresponding edition
     pub update_info: Option<UpdateInformation>,
+    /// Information about the build environment
+    pub build_info: BuildInformation,
 }
 
 /// Retrieve general configuration.
@@ -60,12 +102,7 @@ pub(crate) async fn get_config(
     state: WebData<ServerState>,
     _req: HttpRequest,
 ) -> Result<HttpResponse, ManagerError> {
-    let version = if cfg!(feature = "feldera-enterprise") {
-        env!("FELDERA_ENTERPRISE_VERSION")
-    } else {
-        env!("CARGO_PKG_VERSION")
-    }
-    .to_string();
+    let version = env!("CARGO_PKG_VERSION").to_string();
     // Acquire and read the license information check. The timeout prevents it from becoming
     // unresponsive if it cannot acquire the lock, which generally should not happen.
     let mut license_check = match tokio::time::timeout(
@@ -87,6 +124,15 @@ pub(crate) async fn get_config(
             license_info.current += license_check.checked_at.elapsed();
         }
     }
+
+    let mut revision = env!("FELDERA_PLATFORM_VERSION_SUFFIX");
+    if revision.is_empty() {
+        // For local builds that don't set FELDERA_PLATFORM_VERSION_SUFFIX,
+        // we use the git SHA as the revision.
+        revision = env!("VERGEN_GIT_SHA");
+    }
+    let runtime_revision = env!("VERGEN_GIT_SHA");
+
     Ok(HttpResponse::Ok().json(Configuration {
         telemetry: state._config.telemetry.clone(),
         edition: if cfg!(feature = "feldera-enterprise") {
@@ -96,14 +142,16 @@ pub(crate) async fn get_config(
         }
         .to_string(),
         version: version.clone(),
-        revision: env!("FELDERA_PLATFORM_VERSION_SUFFIX").to_string(),
+        revision: revision.to_string(),
+        runtime_revision: runtime_revision.to_string(),
         changelog_url: if cfg!(feature = "feldera-enterprise") {
-            "".to_string()
+            "https://docs.feldera.com/changelog/".to_string()
         } else {
             format!("https://github.com/feldera/feldera/releases/tag/v{version}")
         },
         license_validity: license_check.map(|v| v.check_outcome),
         update_info: None,
+        build_info: BuildInformation::from_env(),
     }))
 }
 

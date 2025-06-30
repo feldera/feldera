@@ -1,10 +1,19 @@
 # Ignore target and other large directories.
-target
+**/_build
 **/target
-**/deploy
-**/Dockerfile
 **/pipeline_data
 **/ldbc-graphalytics-data
-**/fraud_data
-**/.vscode
 **/__pycache__
+**/.venv
+web-console/pipeline-manager-*/
+web-console/node_modules/
+web-console/.svelte-kit/
+web-console/tmp/
+vite.config.js.timestamp-*
+vite.config.ts.timestamp-*
+.output
+.vercel
+.idea
+.ruff_cache
+playwright-artifacts
+feldera.egg-info
