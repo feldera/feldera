@@ -642,6 +642,14 @@ where
             },
         }
     }
+
+    fn num_tuples(&self) -> usize {
+        match &self.inner {
+            BuilderInner::Vec(vec) => vec.num_tuples(),
+            BuilderInner::File(file) => file.num_tuples(),
+            BuilderInner::Threshold { vec, .. } => vec.num_tuples(),
+        }
+    }
 }
 
 impl<K, V, R> Archive for FallbackIndexedWSet<K, V, R>
