@@ -1,24 +1,32 @@
 use crate::common_error::CommonError;
 use crate::compiler::util::{
-    cleanup_specific_directories, crate_name_pipeline_base, crate_name_pipeline_globals,
-    create_new_file, create_new_file_with_content, encode_dir_as_string, read_file_content,
-    recreate_dir, CleanupDecision, ProcessGroupTerminator, UtilError,
+    cleanup_specific_directories, cleanup_specific_files, crate_name_pipeline_base,
+    crate_name_pipeline_globals, create_new_file, create_new_file_with_content,
+    encode_dir_as_string, read_file_content, recreate_dir, CleanupDecision, ProcessGroupTerminator,
+    UtilError,
 };
 use crate::config::{CommonConfig, CompilerConfig};
 use crate::db::error::DBError;
 use crate::db::storage::Storage;
 use crate::db::storage_postgres::StoragePostgres;
 use crate::db::types::pipeline::PipelineId;
-use crate::db::types::program::{generate_program_info, SqlCompilationInfo, SqlCompilerMessage};
+use crate::db::types::program::{
+    generate_program_info, RuntimeSelector, SqlCompilationInfo, SqlCompilerMessage,
+};
 use crate::db::types::tenant::TenantId;
 use crate::db::types::utils::validate_program_config;
 use crate::db::types::version::Version;
 use feldera_types::program_schema::ProgramSchema;
+use futures_util::StreamExt;
 use indoc::formatdoc;
+use log::warn;
 use log::{debug, error, info, trace};
-use std::path::Path;
+use std::fs::Metadata;
+use std::path::PathBuf;
 use std::time::Instant;
 use std::{process::Stdio, sync::Arc};
+use tempfile::NamedTempFile;
+use tokio::io::AsyncWriteExt;
 use tokio::{
     fs,
     process::Command,
@@ -161,10 +169,6 @@ pub(crate) async fn attempt_end_to_end_sql_compilation(
         trace!("No pipeline found which needs SQL compilation");
         return Ok(false);
     };
-    info!(
-        "SQL compilation started: pipeline {} (program version: {})",
-        pipeline.id, pipeline.program_version
-    );
 
     // (3) Update database that SQL compilation is ongoing
     db.lock()
@@ -293,6 +297,119 @@ impl From<UtilError> for SqlCompilationError {
     }
 }
 
+/// Determines the path to the SQL compiler executable based on the runtime selector.
+fn determine_sql_compiler_path(
+    config: &CompilerConfig,
+    runtime_selector: &RuntimeSelector,
+) -> PathBuf {
+    match runtime_selector {
+        RuntimeSelector::Platform(_) => PathBuf::from(&config.sql_compiler_path),
+        RuntimeSelector::Sha(sha) => config
+            .working_dir()
+            .join("sql-compilation")
+            .join("jar-cache")
+            .join(format!("sql2dbsp-jar-with-dependencies-{sha}.jar")),
+        RuntimeSelector::Version(version) => config
+            .working_dir()
+            .join("sql-compilation")
+            .join("jar-cache")
+            .join(format!("sql2dbsp-jar-with-dependencies-{version}.jar")),
+    }
+}
+
+async fn fetch_sql_compiler(
+    config: &CompilerConfig,
+    runtime_selector: &RuntimeSelector,
+) -> Result<(), SqlCompilationError> {
+    let jar_cache_dir = config
+        .working_dir()
+        .join("sql-compilation")
+        .join("jar-cache");
+    fs::create_dir_all(&jar_cache_dir).await.map_err(|e| SqlCompilationError::SystemError(format!(
+        "Unable initialize JAR cache directory '{}': {}. If possible, fall-back to platform version by removing `runtime_version` in the program config.",
+        jar_cache_dir.display(),
+        e
+    )))?;
+
+    // Where the file will end up
+    let jar_dest_final = determine_sql_compiler_path(config, runtime_selector);
+    assert!(
+        !jar_dest_final.exists(),
+        "SQL compiler JAR file does not exist"
+    );
+
+    // e.g., sql2dbsp-jar-with-dependencies-$SHA.jar
+    let jar_file_name = jar_dest_final.file_name().unwrap().to_str().unwrap();
+    // The URL where we can download the JAR file from.
+    let jar_cache_url = format!(
+        "{base_url}{jar_file_name}",
+        base_url = config.sql_compiler_cache_url
+    );
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(10))
+        .build()
+        .map_err(|e| {
+            SqlCompilationError::SystemError(format!(
+                "Unable to initiate download of SQL-to-DBSP compiler: {} for selected runtime version '{}'. If possible, fall-back to platform version or change `runtime_version` in the program config.",
+                e,
+                runtime_selector
+            ))
+        })?;
+
+    let response = client.get(&jar_cache_url).send().await.map_err(|e| {
+        SqlCompilationError::SystemError(format!(
+            "Unable to fetch SQL-to-DBSP compiler at '{}': {}. If possible, fall-back to platform version or change `runtime_version` in the program config.",
+            &jar_cache_url,
+            e
+        ))
+    })?;
+
+    // Make a temp file turn it into async file
+    let tmp_jar_file = NamedTempFile::new_in(&jar_cache_dir).map_err(|e| {
+        SqlCompilationError::SystemError(format!(
+            "Unable to create temporary file in '{}' when downloading SQL-to-DBSP compiler: {}. If possible, fall-back to platform version or change `runtime_version` in the program config.",
+            jar_cache_dir.display(),
+            e
+        ))
+    })?;
+    let (f, path) = tmp_jar_file.into_parts();
+    let mut async_tmp_jar_file = fs::File::from_std(f);
+
+    let response = response.error_for_status().map_err(|e| {
+        SqlCompilationError::SystemError(format!(
+            "Unable to download SQL-to-DBSP compiler from: {}. If possible, fall-back to platform version or change `runtime_version` in the program config.",
+            e
+        ))
+    })?;
+
+    let mut response_stream = response.bytes_stream();
+    while let Some(chunk) = response_stream.next().await {
+        let bytes = chunk.map_err(|e| SqlCompilationError::SystemError(format!(
+            "Unable to read JAR from HTTP stream '{}': {}. If possible, fall-back to platform version or change `runtime_version` in the program config.",
+            &jar_cache_url,
+            e
+        )))?;
+        async_tmp_jar_file.write_all(&bytes).await.map_err(|e| {
+            SqlCompilationError::SystemError(format!(
+                "Unable to persist SQL-to-DBSP compiler at '{}': {}. If possible, fall-back to platform version or change `runtime_version` in the program config.",
+                path.display(),
+                e
+            ))
+        })?;
+    }
+    let tmp_jar_file = NamedTempFile::from_parts(async_tmp_jar_file.into_std(), path);
+
+    // Rename to the JAR file that we'll use for compilation
+    tmp_jar_file.persist(&jar_dest_final).map_err(|_e| {
+        SqlCompilationError::SystemError(format!(
+            "Unable to persist SQL-to-DBSP compiler at '{}'. If possible, fall-back to platform version or change `runtime_version` in the program config.",
+            jar_dest_final.display(),
+        ))
+    })?.await;
+
+    Ok(())
+}
+
 /// Performs the SQL compilation:
 /// - Prepares a working directory for input and output
 /// - Call the SQL-to-DBSP compiler executable via a process
@@ -322,7 +439,7 @@ pub(crate) async fn perform_sql_compilation(
 
     // Program configuration
     // Might be used in the future to pass SQL compiler flags
-    let _program_config = validate_program_config(program_config, true).map_err(|error| {
+    let program_config = validate_program_config(program_config, true).map_err(|error| {
         SqlCompilationError::SystemError(formatdoc! {"
                 The program configuration:
                 {program_config:#}
@@ -333,6 +450,18 @@ pub(crate) async fn perform_sql_compilation(
                 Update the 'program_config' field of the pipeline to resolve this.
             "})
     })?;
+
+    let runtime_selector = program_config.runtime_version.unwrap_or_default();
+    info!(
+        "SQL compilation started: pipeline {} (program version: {}{})",
+        pipeline_id,
+        program_version,
+        if !runtime_selector.is_platform() {
+            format!(", runtime version: {runtime_selector}")
+        } else {
+            "".to_string()
+        }
+    );
 
     // Recreate working directory for the input/output of the SQL compiler
     let working_dir = config
@@ -369,16 +498,21 @@ pub(crate) async fn perform_sql_compilation(
         .join("stubs.rs");
 
     // SQL compiler executable
-    let sql_compiler_executable_file_path = Path::new(&config.sql_compiler_home)
-        .join("SQL-compiler")
-        .join("sql-to-dbsp");
+    let sql_compiler_executable_file_path = determine_sql_compiler_path(config, &runtime_selector);
+    if !sql_compiler_executable_file_path.exists() {
+        fetch_sql_compiler(config, &runtime_selector).await?;
+    }
+    // Either executable exists now or we error'd out
+    assert!(sql_compiler_executable_file_path.exists());
 
     // Call executable with arguments
     //
     // In the future, it might be that flags can be passed to the SQL compiler through
     // the program_config field of the pipeline.
-    let mut command = Command::new(sql_compiler_executable_file_path.clone());
+    let mut command = Command::new("java");
     command
+        .arg("-jar")
+        .arg(&sql_compiler_executable_file_path)
         .arg(input_sql_file_path.as_os_str())
         .arg("-js")
         .arg(output_json_schema_file_path.as_os_str())
@@ -408,7 +542,7 @@ pub(crate) async fn perform_sql_compilation(
         SqlCompilationError::SystemError(
             CommonError::io_error(
                 format!(
-                    "running SQL compiler executable '{}'",
+                    "running SQL compiler executable 'java -jar {}'",
                     sql_compiler_executable_file_path.display()
                 ),
                 e,
@@ -636,10 +770,58 @@ pub(crate) async fn cleanup_sql_compilation(
                         // Also remove if it starts with "pipeline-" but is not followed by a valid UUID,
                         CleanupDecision::Remove
                     }
+                } else if dirname == "jar-cache" {
+                    CleanupDecision::Keep {
+                        motivation: "JAR cache".to_string(),
+                    }
                 } else {
                     CleanupDecision::Ignore
                 }
             }),
+            true,
+        )
+        .await?;
+    }
+
+    // (3) Clean up JAR cache to make sure it does not grow unboundedly
+    let jar_cache_dir = config
+        .working_dir()
+        .join("sql-compilation")
+        .join("jar-cache");
+    if jar_cache_dir.is_dir() {
+        cleanup_specific_files(
+            "SQL JAR cache",
+            &jar_cache_dir,
+            Arc::new(move |_jar_name: &str, metadata: Option<Metadata>| {
+                // Get rid of JAR files that have not been accessed within the last week
+                const MAX_AGE: Duration = Duration::from_secs(7*24*60*60);
+                if let Some(metadata) = metadata {
+                    match metadata.accessed() {
+                        Ok(atime) => {
+                            if let Ok(elapsed) = atime.elapsed() {
+                                if elapsed < MAX_AGE {
+                                    trace!("Keeping {_jar_name} because it was accessed within the last 7 days ({elapsed:?} ago)");
+                                    return CleanupDecision::Keep {
+                                        motivation: "Accessed within the last week".to_string(),
+                                    };
+                                }
+                            } else {
+                                warn!("Unable to determine access time for JAR file, your system clock may be set incorrectly.");
+                            }
+                            CleanupDecision::Ignore
+
+                        }
+                        Err(_e) => {
+                            debug!("Failed to get access time for JAR file");
+                            CleanupDecision::Ignore
+                        }
+                    }
+                } else {
+                    debug!("Failed to get metadata for JAR file");
+                    CleanupDecision::Ignore
+                }
+            }),
+            true,
             true,
         )
         .await?;

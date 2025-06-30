@@ -6,6 +6,7 @@ use nix::libc::pid_t;
 use nix::sys::signal::{killpg, Signal};
 use nix::unistd::Pid;
 use openssl::sha::sha256;
+use std::fs::Metadata;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use thiserror::Error as ThisError;
@@ -423,20 +424,29 @@ pub enum CleanupDecision {
     Ignore,
 }
 
+/// Decides whether to keep a file around or not.
+pub type DecisionFn = Arc<dyn Fn(&str, Option<Metadata>) -> CleanupDecision + Send + Sync>;
+
 /// Cleans up specific files in a directory as determined by the `decide` function.
 /// If there is an expectation that there are no other (i.e., ignored) files or directories
 /// in the directory, set `warn_ignore` to `true` such that they are warned in the log.
 pub async fn cleanup_specific_files(
     cleanup_name: &str,
     dir: &Path,
-    decide: Arc<dyn Fn(&str) -> CleanupDecision + Send + Sync>,
+    decide: DecisionFn,
     warn_ignore: bool,
+    add_metadata: bool,
 ) -> Result<Vec<String>, UtilError> {
     let content = DirectoryContent::new(dir).await?.content;
     let mut keep_motivations = vec![];
     for (path, name, is_file) in content {
         if is_file {
-            match decide(&name) {
+            let metrics = if add_metadata {
+                fs::metadata(&path).await.ok()
+            } else {
+                None
+            };
+            match decide(&name, metrics) {
                 CleanupDecision::Keep { motivation } => {
                     // If it should be kept, nothing needs to happen to the file
                     keep_motivations.push(motivation);
@@ -572,6 +582,7 @@ mod test {
     };
     use crate::db::types::pipeline::PipelineId;
     use openssl::sha::sha256;
+    use std::fs::Metadata;
     use std::sync::Arc;
     use std::time::Duration;
     use tokio::fs;
@@ -937,7 +948,8 @@ mod test {
         cleanup_specific_files(
             "",
             &dir_path,
-            Arc::new(|name: &str| {
+            Arc::new(|name: &str, metadata: Option<Metadata>| {
+                assert!(metadata.is_some());
                 if name.starts_with("file-") {
                     CleanupDecision::Remove
                 } else {
@@ -946,6 +958,7 @@ mod test {
                     }
                 }
             }),
+            true,
             true,
         )
         .await

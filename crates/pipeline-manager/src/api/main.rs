@@ -121,6 +121,7 @@ only the program-related core fields, and is used by the compiler to discern whe
         crate::license::LicenseValidity,
         crate::api::endpoints::config::UpdateInformation,
         crate::api::endpoints::config::Configuration,
+        crate::api::endpoints::config::BuildInformation,
 
         // Pipeline
         crate::db::types::pipeline::PipelineId,
@@ -514,11 +515,7 @@ Version: {} v{}{}
             } else {
                 "Open source"
             },
-            if cfg!(feature = "feldera-enterprise") {
-                env!("FELDERA_ENTERPRISE_VERSION")
-            } else {
-                env!("CARGO_PKG_VERSION")
-            },
+            env!("CARGO_PKG_VERSION"),
             if env!("FELDERA_PLATFORM_VERSION_SUFFIX").is_empty() {
                 "".to_string()
             } else {

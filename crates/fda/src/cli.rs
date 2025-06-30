@@ -224,6 +224,7 @@ impl Into<ProgramConfig> for Profile {
         ProgramConfig {
             profile: Some(self.into()),
             cache: true,
+            runtime_version: None,
         }
     }
 }
@@ -688,7 +689,28 @@ pub enum ProgramAction {
         ///
         /// The profile accepts the following values:
         /// `dev`, `unoptimized`, `optimized`
-        profile: Profile,
+        ///
+        /// If not specified, the optimized profile will be used.
+        #[arg(short = 'p', long)]
+        profile: Option<Profile>,
+        /// Override the runtime version of the pipeline.
+        ///
+        /// EXPERIMENTAL:
+        ///
+        /// This feature is still in development and may change in future releases.
+        /// Use for testing purposes only. Note that currently no compatibility
+        /// guarantees are provided in case the runtime version does not match
+        /// the deployed platform version.
+        ///
+        /// EXAMPLES:
+        ///
+        ///  - --runtime-version v0.100.0
+        ///  - --runtime-version 2880dd6fe206d10c966cc23868ee41a3c9e4e543
+        ///    (valid git commit hash of feldera/feldera main branch)
+        ///
+        /// If not specified, the default version will be used.
+        #[arg(verbatim_doc_comment, short = 'r', long)]
+        runtime_version: Option<String>,
     },
     /// Retrieve the compilation status of the program.
     Status {

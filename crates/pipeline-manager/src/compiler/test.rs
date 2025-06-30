@@ -37,9 +37,12 @@ impl CompilerTest {
             platform_version: platform_version.to_string(),
         };
         let compiler_config = CompilerConfig {
-            sql_compiler_home: "../../sql-to-dbsp-compiler".to_owned(),
+            sql_compiler_path:
+                "../../sql-to-dbsp-compiler/SQL-compiler/target/sql2dbsp-jar-with-dependencies.jar"
+                    .to_owned(),
+            sql_compiler_cache_url: "https://example.com".to_owned(),
             compilation_cargo_lock_path: "../../Cargo.lock".to_owned(),
-            dbsp_override_path: "not-used".to_owned(),
+            dbsp_override_path: "../../".to_owned(),
             compilation_profile: CompilationProfile::Optimized,
             precompile: false,
             compiler_working_directory: workdir.to_owned(),

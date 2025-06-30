@@ -17,28 +17,23 @@ use std::{
 
 /// The default `platform_version` is formed using three compilation environment variables:
 /// - `CARGO_PKG_VERSION` set by Cargo
-/// - `FELDERA_ENTERPRISE_VERSION` set by the custom `build.rs` script,
-///   which is determined using the similarly named environment variable
 /// - `FELDERA_PLATFORM_VERSION_SUFFIX` set by the custom `build.rs` script,
 ///   which is determined using the similarly named environment variable
 ///
 /// ... and whether the `feldera-enterprise` feature is enabled.
 fn default_platform_version() -> String {
     let suffix = env!("FELDERA_PLATFORM_VERSION_SUFFIX").to_string();
+    let version = env!("CARGO_PKG_VERSION").to_string();
     if cfg!(feature = "feldera-enterprise") {
-        let enterprise_version = env!("FELDERA_ENTERPRISE_VERSION").to_string();
         if suffix.is_empty() {
-            format!("{enterprise_version}+enterprise")
+            format!("{version}+enterprise")
         } else {
-            format!("{enterprise_version}+enterprise.{suffix}")
+            format!("{version}+enterprise.{suffix}")
         }
+    } else if suffix.is_empty() {
+        version
     } else {
-        let package_version = env!("CARGO_PKG_VERSION").to_string();
-        if suffix.is_empty() {
-            package_version
-        } else {
-            format!("{package_version}+{suffix}")
-        }
+        format!("{version}+{suffix}")
     }
 }
 
@@ -120,13 +115,17 @@ fn default_dbsp_override_path() -> String {
 
 /// Location of the SQL compiler which the compiler needs to know to
 /// perform SQL compilation.
-fn default_sql_compiler_home() -> String {
-    "sql-to-dbsp-compiler".to_string()
+fn default_sql_compiler_path() -> String {
+    "sql-to-dbsp-compiler/SQL-compiler/target/sql2dbsp-jar-with-dependencies.jar".to_string()
 }
 
 /// Default location of the Rust compilation `Cargo.lock`.
 fn default_compilation_cargo_lock_path() -> String {
     "Cargo.lock".to_string()
+}
+
+fn default_sql_compiler_cache_url() -> String {
+    "https://feldera-sql2dbsp.s3.us-west-1.amazonaws.com/".to_string()
 }
 
 /// The default Rust compilation profile.
@@ -444,10 +443,18 @@ pub struct CompilerConfig {
     #[arg(long, default_value_t = default_compilation_profile())]
     pub compilation_profile: CompilationProfile,
 
-    /// Location of the SQL-to-DBSP compiler.
-    #[serde(default = "default_sql_compiler_home")]
-    #[arg(long, default_value_t = default_sql_compiler_home())]
-    pub sql_compiler_home: String,
+    /// Location of the SQL-to-DBSP compiler JAR file.
+    #[serde(default = "default_sql_compiler_path")]
+    #[arg(long, default_value_t = default_sql_compiler_path())]
+    pub sql_compiler_path: String,
+
+    /// Base URL of the SQL compiler JAR cache.
+    ///
+    /// In case a different runtime version is specified, system will try to download
+    /// the corresponding compiler from this location.
+    #[serde(default = "default_sql_compiler_cache_url")]
+    #[arg(long, default_value_t = default_sql_compiler_cache_url())]
+    pub sql_compiler_cache_url: String,
 
     /// Location of the `Cargo.lock` file which will be copied overriding
     /// at each pipeline Rust compilation.
@@ -497,7 +504,7 @@ impl CompilerConfig {
     pub fn canonicalize(mut self) -> AnyResult<Self> {
         help_create_dir(&self.compiler_working_directory)?;
         self.compiler_working_directory = help_canonicalize_dir(&self.compiler_working_directory)?;
-        self.sql_compiler_home = help_canonicalize_dir(&self.sql_compiler_home)?;
+        self.sql_compiler_path = help_canonicalize_dir(&self.sql_compiler_path)?;
         self.compilation_cargo_lock_path =
             help_canonicalize_dir(&self.compilation_cargo_lock_path)?;
         self.dbsp_override_path = help_canonicalize_dir(&self.dbsp_override_path)?;
