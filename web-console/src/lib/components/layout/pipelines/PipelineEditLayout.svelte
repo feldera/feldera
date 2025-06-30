@@ -44,6 +44,7 @@
   import Tooltip from '$lib/components/common/Tooltip.svelte'
   import { useLayoutSettings } from '$lib/compositions/layout/useLayoutSettings.svelte'
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
+  import PipelineCrashBanner from '$lib/components/pipelines/editor/PipelineCrashBanner.svelte'
 
   let {
     preloaded,
@@ -297,6 +298,11 @@ example = "1.0"`
       {/if}
     {/snippet}
   </AppHeader>
+  {#if pipeline.current.deploymentError}
+    <div class="px-2 pb-4 md:pl-8 md:pr-8 xl:pl-8">
+      <PipelineCrashBanner error={pipeline.current.deploymentError}></PipelineCrashBanner>
+    </div>
+  {/if}
   <PaneGroup direction="horizontal" class="!overflow-visible px-2 pb-4 md:pl-8 md:pr-8 xl:pl-4">
     <Pane
       defaultSize={15}

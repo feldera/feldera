@@ -600,7 +600,10 @@
     <div>
       <button
         onclick={() => (globalDialog.dialog = unbindDialog)}
-        class="{buttonClass} {shortClass} {shortColor} fd {storageStatus === 'Bound' ? 'fd-server' : 'fd-server-off'} preset-tonal-surface {iconClass} {isShutdown && storageStatus === 'Bound'
+        class="{buttonClass} {shortClass} {shortColor} fd {storageStatus === 'Bound'
+          ? 'fd-server'
+          : 'fd-server-off'} preset-tonal-surface {iconClass} {isShutdown &&
+        storageStatus === 'Bound'
           ? ''
           : 'disabled'}"
       >
@@ -612,7 +615,7 @@
       {:else if isShutdown}
         Pipeline storage is in use. Click to delete it.
       {:else}
-        Storage is used by the running pipeline. Stop the pipeline to delete it.
+        The storage is used by the running pipeline. Stop the pipeline to delete it.
       {/if}
     </Tooltip>
   {/if}

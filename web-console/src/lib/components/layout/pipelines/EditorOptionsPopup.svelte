@@ -24,10 +24,6 @@
     >
       <div class="bg-white-dark flex flex-col justify-center gap-2 rounded-container p-2 shadow-md">
         <label class="flex cursor-pointer justify-between rounded p-2 hover:preset-tonal-surface">
-          Unbind automatically
-          <Switch name="autoSave"></Switch>
-        </label>
-        <label class="flex cursor-pointer justify-between rounded p-2 hover:preset-tonal-surface">
           Autosave
           <Switch name="autoSave" bind:checked={autoSavePipeline.value}></Switch>
         </label>
