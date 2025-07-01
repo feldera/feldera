@@ -85,3 +85,159 @@ impl<'de, C, const P: usize, const S: usize> DeserializeWithContext<'de, C> for 
         serde::Deserialize::deserialize(deserializer)
     }
 }
+
+#[cfg(test)]
+mod test {
+    use std::sync::{Arc, Mutex};
+
+    use dbsp::{
+        algebra::DefaultSemigroup, indexed_zset, operator::Fold, typed_batch::OrdIndexedZSet,
+        utils::Tup2, Runtime, ZWeight,
+    };
+
+    use crate::Fixed;
+
+    // This is copied from `crates/dbsp/src/operator/dynamic/aggregate/mod.rs`
+    // with the value type changed from `i64` to `Fixed<10,0>`.
+    fn count_test(workers: usize) {
+        type D = Fixed<10, 0>;
+        const fn d(x: i32) -> D {
+            D::for_i32(x)
+        }
+
+        let count_weighted_output: Arc<Mutex<OrdIndexedZSet<u64, ZWeight>>> =
+            Arc::new(Mutex::new(indexed_zset! {}));
+        let sum_weighted_output: Arc<Mutex<OrdIndexedZSet<u64, D>>> =
+            Arc::new(Mutex::new(indexed_zset! {}));
+        let count_distinct_output: Arc<Mutex<OrdIndexedZSet<u64, D>>> =
+            Arc::new(Mutex::new(indexed_zset! {}));
+        let sum_distinct_output: Arc<Mutex<OrdIndexedZSet<u64, D>>> =
+            Arc::new(Mutex::new(indexed_zset! {}));
+
+        let count_weighted_output_clone = count_weighted_output.clone();
+        let count_distinct_output_clone = count_distinct_output.clone();
+        let sum_weighted_output_clone = sum_weighted_output.clone();
+        let sum_distinct_output_clone = sum_distinct_output.clone();
+
+        let (mut dbsp, input_handle) = Runtime::init_circuit(workers, move |circuit| {
+            let (input_stream, input_handle) = circuit.add_input_indexed_zset::<u64, D>();
+            input_stream
+                .weighted_count()
+                .gather(0)
+                .inspect(move |batch| {
+                    if Runtime::worker_index() == 0 {
+                        *count_weighted_output.lock().unwrap() = batch.clone();
+                    }
+                });
+
+            input_stream
+                .aggregate_linear(|value: &D| *value)
+                .gather(0)
+                .inspect(move |batch| {
+                    if Runtime::worker_index() == 0 {
+                        *sum_weighted_output.lock().unwrap() = batch.clone();
+                    }
+                });
+
+            input_stream
+                .aggregate(<Fold<_, _, DefaultSemigroup<_>, _, _>>::new(
+                    d(0),
+                    |sum: &mut D, _v: &D, _w| *sum += d(1),
+                ))
+                .gather(0)
+                .inspect(move |batch| {
+                    if Runtime::worker_index() == 0 {
+                        *count_distinct_output.lock().unwrap() = batch.clone();
+                    }
+                });
+
+            input_stream
+                .aggregate(<Fold<_, _, DefaultSemigroup<_>, _, _>>::new(
+                    d(0),
+                    |sum: &mut D, v: &D, _w| *sum += v,
+                ))
+                .gather(0)
+                .inspect(move |batch| {
+                    if Runtime::worker_index() == 0 {
+                        *sum_distinct_output.lock().unwrap() = batch.clone();
+                    }
+                });
+
+            Ok(input_handle)
+        })
+        .unwrap();
+
+        input_handle.append(&mut vec![Tup2(1u64, Tup2(d(1), 1)), Tup2(1, Tup2(d(2), 2))]);
+        dbsp.step().unwrap();
+        assert_eq!(
+            &*count_distinct_output_clone.lock().unwrap(),
+            &indexed_zset! {1 => {d(2) => 1}}
+        );
+        assert_eq!(
+            &*sum_distinct_output_clone.lock().unwrap(),
+            &indexed_zset! {1 => {d(3) => 1}}
+        );
+        assert_eq!(
+            &*count_weighted_output_clone.lock().unwrap(),
+            &indexed_zset! {1 => {3 => 1}}
+        );
+        assert_eq!(
+            &*sum_weighted_output_clone.lock().unwrap(),
+            &indexed_zset! {1 => {d(5) => 1}}
+        );
+
+        input_handle.append(&mut vec![
+            Tup2(2, Tup2(d(2), 1)),
+            Tup2(2, Tup2(d(4), 1)),
+            Tup2(1, Tup2(d(2), -1)),
+        ]);
+        dbsp.step().unwrap();
+        assert_eq!(
+            &*count_distinct_output_clone.lock().unwrap(),
+            &indexed_zset! {2 => {d(2) => 1}}
+        );
+        assert_eq!(
+            &*sum_distinct_output_clone.lock().unwrap(),
+            &indexed_zset! {2 => {d(6) => 1}}
+        );
+        assert_eq!(
+            &*count_weighted_output_clone.lock().unwrap(),
+            &indexed_zset! {1 => {3 => -1, 2 => 1}, 2 => {2 => 1}}
+        );
+        assert_eq!(
+            &*sum_weighted_output_clone.lock().unwrap(),
+            &indexed_zset! {2 => {d(6) => 1}, 1 => {d(5) => -1, d(3) => 1}}
+        );
+
+        input_handle.append(&mut vec![Tup2(1, Tup2(d(3), 1)), Tup2(1, Tup2(d(2), -1))]);
+        dbsp.step().unwrap();
+        assert_eq!(
+            &*count_distinct_output_clone.lock().unwrap(),
+            &indexed_zset! {}
+        );
+        assert_eq!(
+            &*sum_distinct_output_clone.lock().unwrap(),
+            &indexed_zset! {1 => {d(3) => -1, d(4) => 1}}
+        );
+        assert_eq!(
+            &*count_weighted_output_clone.lock().unwrap(),
+            &indexed_zset! {}
+        );
+        assert_eq!(
+            &*sum_weighted_output_clone.lock().unwrap(),
+            &indexed_zset! {1 => {d(3) => -1, d(4) => 1}}
+        );
+
+        dbsp.kill().unwrap();
+    }
+
+    #[test]
+    fn count_test1() {
+        count_test(1);
+    }
+
+    #[test]
+    fn count_test4() {
+        count_test(4);
+    }
+}

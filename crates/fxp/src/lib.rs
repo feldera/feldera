@@ -18,6 +18,9 @@ mod dbsp_impl;
 mod serde_impl;
 mod u256;
 
+#[cfg(feature = "rkyv")]
+mod rkyv_impl;
+
 /// Fixed-point decimal with fixed precision and scale.
 ///
 /// `Fixed<P, S>`, where `P` in `1..=38` is the "precision" and `S` in `0..=P`
@@ -43,14 +46,8 @@ mod u256;
 /// `x` as `x * 10**P`.  This limits `S` to 38 because `10**38 ≤ 2**127 - 1 <
 /// 10**39`.  A single `i64` would be sufficient for `S ≤ 18`, and a single
 /// `i32` for `S ≤ 9`, but the implementation does not optimize for those cases.
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Copy, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[cfg_attr(feature = "size_of", derive(size_of::SizeOf))]
-#[cfg_attr(
-    feature = "rkyv",
-    derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)
-)]
-#[cfg_attr(feature = "validation", derive(rkyv::CheckBytes))]
-#[cfg_attr(feature = "rkyv", archive_attr(doc(hidden)))]
 pub struct Fixed<const P: usize, const S: usize>(i128);
 
 /// A maximum-precision `Fixed` with no decimal places.
