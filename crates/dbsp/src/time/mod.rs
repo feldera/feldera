@@ -66,6 +66,11 @@ pub use product::Product;
 // TODO: Conversion to/from the most general time representation (`[usize]`).
 // TODO: Model overflow by having `advance` return Option<Self>.
 pub trait Timestamp: DBData + PartialOrder + Lattice {
+    /// Nesting depth of the circuit running this clock.
+    ///
+    /// 0 - for the top-level clock, 1 - first-level nested circuit, etc.
+    const NESTING_DEPTH: usize;
+
     type Nested: Timestamp;
 
     /// A default `Batch` type for batches using this timestamp.
@@ -187,6 +192,8 @@ impl Lattice for UnitTimestamp {
 }
 
 impl Timestamp for UnitTimestamp {
+    const NESTING_DEPTH: usize = 0;
+
     type Nested = ();
 
     type ValBatch<K: DataTrait + ?Sized, V: DataTrait + ?Sized, R: WeightTrait + ?Sized> =
@@ -213,6 +220,8 @@ impl Timestamp for UnitTimestamp {
 }
 
 impl Timestamp for () {
+    const NESTING_DEPTH: usize = 0;
+
     type Nested = Product<u32, u32>;
 
     type ValBatch<K: DataTrait + ?Sized, V: DataTrait + ?Sized, R: WeightTrait + ?Sized> =
@@ -230,6 +239,8 @@ impl Timestamp for () {
 }
 
 impl Timestamp for u32 {
+    const NESTING_DEPTH: usize = 0;
+
     type Nested = Product<u32, u32>;
 
     type ValBatch<K: DataTrait + ?Sized, V: DataTrait + ?Sized, R: WeightTrait + ?Sized> =

@@ -1,6 +1,7 @@
 use crate::circuit::checkpointer::Checkpoint;
+use crate::circuit::circuit_builder::IterativeCircuit;
+use crate::Timestamp;
 use crate::{
-    circuit::WithClock,
     dynamic::Erase,
     operator::dynamic::{
         distinct::DistinctFactories, recursive::RecursiveStreams as DynRecursiveStreams,
@@ -90,9 +91,10 @@ impl<C> RecursiveStreams<C> for Tuple {
     }
 }
 
-impl<P> ChildCircuit<P>
+impl<P, T> ChildCircuit<P, T>
 where
-    P: WithClock,
+    P: 'static,
+    T: Timestamp,
     Self: Circuit,
 {
     /// Create a nested circuit that computes one or more mutually recursive
@@ -226,8 +228,8 @@ where
     #[track_caller]
     pub fn recursive<F, S>(&self, f: F) -> Result<S::Output, SchedulerError>
     where
-        S: RecursiveStreams<ChildCircuit<Self>>,
-        F: FnOnce(&ChildCircuit<Self>, S) -> Result<S, SchedulerError>,
+        S: RecursiveStreams<IterativeCircuit<Self>>,
+        F: FnOnce(&IterativeCircuit<Self>, S) -> Result<S, SchedulerError>,
     {
         self.dyn_recursive(&S::factories(), |circuit, streams: S::Inner| {
             f(circuit, unsafe { S::typed(&streams) }).map(|streams| streams.inner())
