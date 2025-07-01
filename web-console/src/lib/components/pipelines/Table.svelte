@@ -104,22 +104,27 @@
           <td
             class="relative whitespace-pre-wrap border-surface-100-900 group-hover:bg-surface-50-950"
           >
-            <span class="absolute top-2 w-full overflow-hidden overflow-ellipsis whitespace-nowrap">
-              {pipeline.deploymentError?.message.slice(
-                0,
-                pipeline.deploymentError.message.indexOf('\n')
-              )}
+            <span
+              class="absolute top-1.5 w-full overflow-hidden overflow-ellipsis whitespace-nowrap align-middle"
+            >
+              {#if pipeline.deploymentError}
+                <span class="fd fd-circle-alert pr-2 text-[20px] text-error-500"></span>
+                {pipeline.deploymentError?.message.slice(
+                  0,
+                  pipeline.deploymentError.message.indexOf('\n')
+                )}
+              {/if}
             </span>
           </td>
           <td class="relative w-28 border-surface-100-900 group-hover:bg-surface-50-950">
-            <div class="w-28 text-nowrap text-right">
+            <div class="w-32 text-nowrap text-right">
               {formatElapsedTime(
                 dateMax(
                   new Date(pipeline.deploymentStatusSince),
                   new Date(pipeline.programStatusSince)
                 ),
                 'dhm'
-              )}
+              )} ago
             </div>
           </td>
         </tr>

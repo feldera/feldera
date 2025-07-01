@@ -30,28 +30,6 @@
     }
   })
 
-  MonacoImports.editor.defineTheme('feldera-light-disabled', {
-    base: 'vs',
-    inherit: true,
-    rules: [{ token: 'string.sql', foreground: '#7a3d00' }],
-    colors: {
-      'editor.background': rgbToHex(
-        getComputedStyle(document.body).getPropertyValue('--color-surface-50').trim()
-      )
-    }
-  })
-
-  MonacoImports.editor.defineTheme('feldera-dark-disabled', {
-    base: 'vs-dark',
-    inherit: true,
-    rules: [{ token: 'string.sql', foreground: '#d9731a' }],
-    colors: {
-      'editor.background': rgbToHex(
-        getComputedStyle(document.body).getPropertyValue('--color-surface-950').trim()
-      )
-    }
-  })
-
   const pipelineActionCallbacks = usePipelineActionCallbacks()
   const dropOpenedFile = async (pipelineName: string) => {
     const files = ['program.sql', 'stubs.rs', 'udf.rs', 'udf.toml'].map(
@@ -344,20 +322,16 @@
           }}
           bind:editor={editorRef}
           model={currentModel}
+          extras={{ isDarkMode: darkMode.current === 'dark' }}
           options={{
             readOnlyMessage: {
               value: editDisabled
-                ? 'Cannot edit code while pipeline is running or storage is in use'
+                ? 'Cannot edit code while the pipeline is running or its storage is in use'
                 : 'Cannot edit a compiler-generated file'
             },
             fontFamily: theme.config.monospaceFontFamily,
             fontSize: editorFontSize.value,
-            theme: [
-              'feldera-dark-disabled',
-              'feldera-dark',
-              'feldera-light-disabled',
-              'feldera-light'
-            ][+(darkMode.current === 'light') * 2 + +!isReadOnly],
+            theme: ['feldera-dark', 'feldera-light'][+(darkMode.current === 'light')],
             automaticLayout: true,
             lineNumbersMinChars: 3,
             ...isMonacoEditorDisabled(isReadOnly),

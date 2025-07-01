@@ -196,8 +196,9 @@
     {...deleteDialogProps(
       'Delete',
       (name) => `${name} pipeline storage`,
-      (name: string) => {
-        api.postPipelineAction(name, 'unbind')
+      async (name: string) => {
+        await api.postPipelineAction(name, 'unbind')
+        pipeline.optimisticUpdate({ storageStatus: 'Unbinding' })
       },
       'Deleting pipeline storage will delete all checkpoints and release provisioned storage resources.'
     )(pipeline.current.name)}
@@ -599,7 +600,7 @@
   {@const storageStatus = pipeline.current.storageStatus}
   {@const isShutdown = isPipelineShutdown(pipeline.current.status)}
   {#if storageStatus === 'Unbinding'}
-    <div class="pointer-events-none {buttonClass} {shortClass} {basicBtnColor}">
+    <div class="pointer-events-none {buttonClass} {shortClass} {shortColor}">
       <IconLoader class="h-5 flex-none  animate-spin fill-surface-950-50"></IconLoader>
     </div>
     <Tooltip class="z-20 bg-white text-surface-950-50 dark:bg-black" placement="top">
