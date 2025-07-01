@@ -47,27 +47,44 @@ import java.nio.charset.StandardCharsets;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
-import java.text.ParseException;
-import java.text.SimpleDateFormat;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeFormatterBuilder;
+import java.time.format.DateTimeParseException;
+import java.time.temporal.ChronoField;
 import java.util.ArrayList;
-import java.util.Date;
 import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /** Helper class for tests which is used to parse the expected output from queries */
 public class TableParser {
-    // Many of these are postgres specific
-    static final SimpleDateFormat[] TIMESTAMP_INPUT_FORMAT = {
-            new SimpleDateFormat("EEE MMM d HH:mm:ss.SSS yyyy"),
-            new SimpleDateFormat("EEE MMM d HH:mm:ss yyyy G"),
-            new SimpleDateFormat("EEE MMM d HH:mm:ss yyyy"),
-            new SimpleDateFormat("yyyy-MM-dd HH:mm:ss")
+    // Append second fractions
+    static DateTimeFormatterBuilder sf(String pattern) {
+        return new DateTimeFormatterBuilder()
+                .appendPattern(pattern)
+                .appendLiteral('.')
+                .appendFraction(ChronoField.MILLI_OF_SECOND, 1, 3, false);
+    }
+
+    // The first few of these are postgres specific
+    static final DateTimeFormatter[] TIMESTAMP_INPUT_FORMAT = {
+            sf("EEE MMM d HH:mm:ss")
+                    .appendPattern(" yyyy")
+                    .toFormatter(Locale.ENGLISH),
+            DateTimeFormatter.ofPattern("EEE MMM d HH:mm:ss yyyy G", Locale.ENGLISH),
+            DateTimeFormatter.ofPattern("EEE MMM d HH:mm:ss yyyy", Locale.ENGLISH),
+            sf("yyyy-MM-dd HH:mm:ss")
+                    .toFormatter(Locale.ENGLISH),
+            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss", Locale.ENGLISH)
     };
-    static final SimpleDateFormat TIMESTAMP_OUTPUT_FORMAT = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.S");
-    static final SimpleDateFormat DATE_INPUT_FORMAT = new SimpleDateFormat("MM-dd-yyyy");
-    static final SimpleDateFormat DATE_OUTPUT_FORMAT = new SimpleDateFormat("yyyy-MM-dd");
+
+    static final DateTimeFormatter TIMESTAMP_OUTPUT_FORMAT = sf("yyyy-MM-dd HH:mm:ss").toFormatter(Locale.ENGLISH);
+    static final DateTimeFormatter DATE_INPUT_FORMAT = DateTimeFormatter.ofPattern("MM-dd-yyyy", Locale.ENGLISH);
+    static final DateTimeFormatter DATE_OUTPUT_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd", Locale.ENGLISH);
     static final Pattern YEAR = Pattern.compile("^(\\d+) years?(.*)");
     static final Pattern MONTHS = Pattern.compile("^\\s*(\\d+) months?(.*)");
     static final Pattern MINUS = Pattern.compile("^-\\s*(.*)");
@@ -78,7 +95,7 @@ public class TableParser {
     static final Pattern HMS = Pattern.compile("\\s*([0-9][0-9]:[0-9][0-9]:[0-9][0-9])(\\.[0-9]*)?(.*)");
     static final Pattern AGO = Pattern.compile("\\s*ago(.*)");
     @Nullable
-    static Date ZERO = null;
+    static LocalDateTime ZERO = null;
 
     /** Convert a timestamp from a format like Sat Feb 16 17:32:01 1996 to
      * a format like 1996-02-16 17:32:01 */
@@ -87,19 +104,19 @@ public class TableParser {
             return DBSPLiteral.none(type);
         try {
             if (ZERO == null)
-                ZERO = new SimpleDateFormat("yyyy-MM-dd").parse("0000-01-01");
-        } catch (ParseException e) {
+                ZERO = LocalDateTime.parse("0001-01-01 00:00:00", DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
+        } catch (DateTimeParseException e) {
             throw new RuntimeException(e);
         }
-        for (SimpleDateFormat input: TIMESTAMP_INPUT_FORMAT) {
+        for (DateTimeFormatter input: TIMESTAMP_INPUT_FORMAT) {
             String out;
             try {
                 // Calcite problems: does not support negative years, or fractional seconds ending in 0
-                Date converted = input.parse(timestamp);
+                LocalDateTime converted = LocalDateTime.parse(timestamp, input);
                 out = TIMESTAMP_OUTPUT_FORMAT.format(converted);
-                if (converted.before(ZERO))
+                if (converted.isBefore(ZERO))
                     out = "-" + out;
-            } catch (ParseException ignored) {
+            } catch (DateTimeParseException ignored) {
                 continue;
             }
             return new DBSPTimestampLiteral(out, type.mayBeNull);
@@ -115,17 +132,17 @@ public class TableParser {
         try {
             if (date.length() != 10)
                 throw new RuntimeException("Unexpected date " + date);
-            SimpleDateFormat inputFormat;
+            DateTimeFormatter inputFormat;
             if (date.charAt(2) == '-' && date.charAt(5) == '-')
                 inputFormat = DATE_INPUT_FORMAT;
             else if (date.charAt(4) == '-' && date.charAt(7) == '-')
                 inputFormat = DATE_OUTPUT_FORMAT;
             else
                 throw new RuntimeException("Unexpected date " + date);
-            Date converted = inputFormat.parse(date);
+            LocalDate converted = LocalDate.parse(date, inputFormat);
             String out = DATE_OUTPUT_FORMAT.format(converted);
             return new DBSPDateLiteral(out, type.mayBeNull);
-        } catch (ParseException ex) {
+        } catch (DateTimeParseException ex) {
             throw new RuntimeException("Could not parse " + date);
         }
     }

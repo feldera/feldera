@@ -419,6 +419,29 @@ public class RegressionTests extends SqlIoTest {
     }
 
     @Test
+    public void castBinaryToString() {
+        var ccs = this.getCCS("""
+                CREATE TABLE T(x BINARY(2));
+                CREATE VIEW V AS SELECT CAST(x AS VARCHAR), CAST(x'AB01' AS VARCHAR) FROM T;""");
+        ccs.step("INSERT INTO T VALUES(x'AB01')", """
+                    x | y    | weight
+                ----------------------
+                 ab01 | ab01 | 1""");
+    }
+
+    @Test
+    public void castDecimalToTimestamp() {
+        var ccs = this.getCCS("""
+                CREATE TABLE T(x DECIMAL(10, 2), y INT);
+                CREATE VIEW V AS SELECT CAST(x AS TIMESTAMP), CAST(10.20 AS TIMESTAMP),
+                CAST(10 AS TIMESTAMP), cast(y AS TIMESTAMP) FROM T;""");
+        ccs.step("INSERT INTO T VALUES(10.20, 10)", """
+                 x                   | decimal             | int                 | y                  | weight
+                -----------------------------------------------------------------------------------------------
+                 1970-01-01 00:00:00 | 1970-01-01 00:00:00 | 1970-01-01 00:00:00 | 1970-01-01 00:00:00 |1""");
+    }
+
+    @Test
     public void issue3073() {
         this.compileRustTestCase("""
                 CREATE MATERIALIZED VIEW v10_optimized AS
