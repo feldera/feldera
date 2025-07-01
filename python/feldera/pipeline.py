@@ -17,6 +17,7 @@ from feldera.output_handler import OutputHandler
 from feldera._helpers import ensure_dataframe_has_columns, chunk_dataframe
 from feldera.rest.sql_table import SQLTable
 from feldera.rest.sql_view import SQLView
+from feldera.stats import PipelineStatistics
 
 
 class Pipeline:
@@ -68,6 +69,11 @@ class Pipeline:
                 return PipelineStatus.NOT_FOUND
             else:
                 raise err
+
+    def stats(self) -> PipelineStatistics:
+        """Gets the pipeline metrics and performance counters."""
+
+        return PipelineStatistics.from_dict(self.client.get_pipeline_stats(self.name))
 
     def input_pandas(self, table_name: str, df: pandas.DataFrame, force: bool = False):
         """
@@ -309,17 +315,12 @@ class Pipeline:
                     }s, timeout: {timeout_s}s"
                 )
 
-            metrics: dict = self.client.get_pipeline_stats(self.name).get(
-                "global_metrics"
-            )
-            pipeline_complete: bool = metrics.get("pipeline_complete")
-
+            pipeline_complete: bool = self.stats().global_metrics.pipeline_complete
             if pipeline_complete is None:
                 raise RuntimeError(
                     "received unknown metrics from the pipeline, pipeline_complete is None"
                 )
-
-            if pipeline_complete:
+            elif pipeline_complete:
                 break
 
             time.sleep(1)
@@ -436,16 +437,14 @@ resume a paused pipeline."""
             now_s = time.monotonic()
 
             # Metrics retrieval
-            metrics: dict = self.client.get_pipeline_stats(self.name).get(
-                "global_metrics"
-            )
-            total_input_records: int | None = metrics.get("total_input_records")
-            total_processed_records: int | None = metrics.get("total_processed_records")
-            if total_input_records is None:
+            metrics = self.stats().global_metrics
+            total_input_records = metrics.total_input_records
+            total_processed_records = metrics.total_processed_records
+            if metrics.total_input_records is None:
                 raise RuntimeError(
                     "total_input_records is missing from the pipeline metrics"
                 )
-            if total_processed_records is None:
+            if metrics.total_processed_records is None:
                 raise RuntimeError(
                     "total_processed_records is missing from the pipeline metrics"
                 )
