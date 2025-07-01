@@ -275,26 +275,59 @@
   <Popup>
     {#snippet trigger(toggle)}
       <div class="flex flex-nowrap p-0">
-        <!-- <button class="btn flex justify-center gap-2">
-      <span class="fd fd-circle-stop {iconClass}"></span>
-      <span>Suspend</span>
-    </button> -->
         <div class="w-[120px] sm:w-[140px]">{@render (isPremium.value ? _stop : _kill)()}</div>
-        <div class="z-10 -ml-6 h-9 border-l-[4px] border-surface-50-950"></div>
+        <div class="z-10 -ml-6 h-9 border-l-[2px] border-surface-50-950"></div>
         <button
           onclick={toggle}
-          class="fd fd-chevron-down btn btn-icon z-10 w-7 !rounded-l-none text-[20px] preset-filled-surface-100-900"
+          class="fd fd-chevron-down btn btn-icon z-10 w-8 !rounded-l-none text-[24px] preset-filled-surface-100-900"
           aria-label="See stop options"
         >
         </button>
       </div>
     {/snippet}
     {#snippet content(close)}
-      <div
+      <!-- <div
         transition:slide={{ duration: 100 }}
         class="absolute z-30 mt-2 flex max-h-[400px] flex-col justify-stretch rounded shadow-md bg-surface-50-950 scrollbar"
       >
         {@render (isPremium.value ? _kill : _stop)()}
+      </div> -->
+      {@const buttons = [
+        {
+          label: 'Stop',
+          description: 'Make a checkpoint and stop the pipeline',
+          onclick: () => (close(), (globalDialog.dialog = stopDialog)),
+          disabled: !isPremium.value
+        },
+        {
+          label: 'Force stop',
+          description: 'Stop the pipeline immediately without a checkpoint',
+          onclick: () => (close(), (globalDialog.dialog = killDialog))
+        }
+      ]}
+      <div
+        transition:slide={{ duration: 100 }}
+        class="bg-white-dark absolute z-30 mt-2 flex max-h-[400px] flex-col justify-stretch rounded shadow-md scrollbar"
+      >
+        {#each isPremium.value ? buttons : buttons.reverse() as button}
+          <button
+            class="flex flex-col gap-1 text-nowrap px-4 py-3 text-left hover:bg-surface-50-950 {button.disabled
+              ? 'pointer-events-none opacity-80'
+              : ''}"
+            onclick={button.onclick}
+          >
+            <div class="flex justify-between text-lg">
+              <span class="">{button.label}</span>
+
+              {#if button.disabled}
+                <span>Enterprise Only</span>
+              {/if}
+            </div>
+            <div class="text-base text-surface-700-300">
+              {button.description}
+            </div>
+          </button>
+        {/each}
       </div>
     {/snippet}
   </Popup>
