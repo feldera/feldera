@@ -142,7 +142,7 @@ addition to the normal way of `''`.
   <tr>
     <td><a id="concat_ws"></a><code>CONCAT_WS(</code>sep, string1, ..., stringN<code>)</code></td>
     <td>String concatenation with separator <code>sep</code>.  Can have any number of arguments.  <code>sep</code> is intercalated between all strings.  If <code>sep</code> is <code>NULL</code> result is <code>NULL</code>.  Other <code>NULL</code> arguments are ignored.</td>
-    <td><code>CONCAT_WS(',', 'Post', 'greSQL', NULL, '1')</code> => <code>Post,greSQL,,1</code></td>
+    <td><code>CONCAT_WS(',', 'Post', 'greSQL', NULL, '1')</code> => <code>Post,greSQL,1</code></td>
   </tr>
   <tr>
     <td><a id="initcap"></a><code>INITCAP ( string )</code></td>
