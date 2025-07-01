@@ -382,7 +382,7 @@ impl<const P: usize, const S: usize> Fixed<P, S> {
 
     /// Returns `Self(value)`, if `value` is in the correct range for this type.
     fn try_new(value: i128) -> Option<Self> {
-        Self::check_constraints();
+        const { Self::check_constraints() };
         (Self::MIN.0..=Self::MAX.0)
             .contains(&value)
             .then_some(Self(value))
