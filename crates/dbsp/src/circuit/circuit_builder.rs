@@ -992,6 +992,8 @@ pub trait Node: Any {
     /// operators, which don't have an output stream).
     fn eval<'a>(&'a mut self) -> Pin<Box<dyn Future<Output = Result<(), SchedulerError>> + 'a>>;
 
+    fn import(&mut self) {}
+
     fn flush(&mut self);
 
     fn is_flush_complete(&self) -> bool;
@@ -1485,7 +1487,15 @@ pub trait CircuitBase: 'static {
     /// Returns vector of local node ids in the circuit.
     fn node_ids(&self) -> Vec<NodeId>;
 
+    fn import_nodes(&self) -> Vec<NodeId>;
+
     fn clear(&mut self);
+
+    /// Register a dependency between `from` and `to` nodes.  A dependency tells
+    /// the scheduler that `from` must be evaluated before `to` in each
+    /// clock cycle even though there may not be an edge or a path
+    /// connecting them.
+    fn add_dependency(&self, from: NodeId, to: NodeId);
 
     /// Allocate a new globally unique stream id.  This method can be invoked on any circuit in the pipeline,
     /// since all of them maintain a shared global counter.
@@ -1719,6 +1729,8 @@ pub trait Circuit: CircuitBase + Clone + WithClock {
     ///
     /// This method should only be used by schedulers.
     fn eval_node(&self, id: NodeId) -> impl Future<Output = Result<(), SchedulerError>>;
+
+    fn eval_import_node(&self, id: NodeId);
 
     fn flush_node(&self, id: NodeId);
 
@@ -2132,6 +2144,11 @@ pub trait Circuit: CircuitBase + Clone + WithClock {
         F: FnOnce(&mut IterativeCircuit<Self>) -> Result<(T, E), SchedulerError>,
         E: Executor<IterativeCircuit<Self>>;
 
+    fn non_iterative_subcircuit<F, T, E>(&self, child_constructor: F) -> Result<T, SchedulerError>
+    where
+        F: FnOnce(&mut NonIterativeCircuit<Self>) -> Result<(T, E), SchedulerError>,
+        E: Executor<NonIterativeCircuit<Self>>;
+
     /// Add an iteratively scheduled child circuit.
     ///
     /// Add a child circuit with a nested clock.  The child will execute
@@ -2426,6 +2443,7 @@ where
     global_node_id: GlobalNodeId,
     nodes: RefCell<Vec<RefCell<Box<dyn Node>>>>,
     edges: RefCell<Edges>,
+    import_nodes: RefCell<Vec<NodeId>>,
     circuit_event_handlers: CircuitEventHandlers,
     scheduler_event_handlers: SchedulerEventHandlers,
     store: RefCell<CircuitCache>,
@@ -2455,6 +2473,7 @@ where
             global_node_id,
             nodes: RefCell::new(Vec::new()),
             edges: RefCell::new(Edges::new()),
+            import_nodes: RefCell::new(Vec::new()),
             circuit_event_handlers,
             scheduler_event_handlers,
             store: RefCell::new(TypedMap::new()),
@@ -2474,6 +2493,14 @@ where
         self.nodes
             .borrow_mut()
             .push(RefCell::new(Box::new(node) as Box<dyn Node>));
+    }
+
+    fn add_import_node(&self, node_id: NodeId) {
+        self.import_nodes.borrow_mut().push(node_id);
+    }
+
+    fn import_nodes(&self) -> Vec<NodeId> {
+        self.import_nodes.borrow().clone()
     }
 
     fn clear(&self) {
@@ -2571,6 +2598,8 @@ pub type RootCircuit = ChildCircuit<(), ()>;
 pub type NestedCircuit = ChildCircuit<RootCircuit, <() as Timestamp>::Nested>;
 
 pub type IterativeCircuit<P> = ChildCircuit<P, <<P as WithClock>::Time as Timestamp>::Nested>;
+
+pub type NonIterativeCircuit<P> = ChildCircuit<P, <P as WithClock>::Time>;
 
 impl<P, T> Clone for ChildCircuit<P, T>
 where
@@ -2820,26 +2849,6 @@ where
         self.inner().node_id
     }
 
-    /// Register a dependency between `from` and `to` nodes.  A dependency tells
-    /// the scheduler that `from` must be evaluated before `to` in each
-    /// clock cycle even though there may not be an edge or a path
-    /// connecting them.
-    fn add_dependency(&self, from: NodeId, to: NodeId) {
-        self.log_circuit_event(&CircuitEvent::dependency(
-            self.global_node_id().child(from),
-            self.global_node_id().child(to),
-        ));
-
-        let origin = self.global_node_id().child(from);
-        self.inner().add_edge(Edge {
-            from,
-            to,
-            origin,
-            stream: None,
-            ownership_preference: None,
-        });
-    }
-
     /// Add a node to the circuit.
     ///
     /// Allocates a new node id and invokes a user callback to create a new node
@@ -2857,6 +2866,10 @@ where
         let (node, res) = f(NodeId(id));
         self.inner().add_node(node);
         res
+    }
+
+    fn add_import_node(&self, node_id: NodeId) {
+        self.inner().add_import_node(node_id);
     }
 
     /// Like `add_node`, but the node is not created if the closure fails.
@@ -2906,6 +2919,22 @@ where
 
     fn clear(&mut self) {
         self.inner().clear();
+    }
+
+    fn add_dependency(&self, from: NodeId, to: NodeId) {
+        self.log_circuit_event(&CircuitEvent::dependency(
+            self.global_node_id().child(from),
+            self.global_node_id().child(to),
+        ));
+
+        let origin = self.global_node_id().child(from);
+        self.inner().add_edge(Edge {
+            from,
+            to,
+            origin,
+            stream: None,
+            ownership_preference: None,
+        });
     }
 
     /// Apply `f` to the node with the specified `path` relative to `self`.
@@ -3011,6 +3040,10 @@ where
             .iter()
             .map(|node| node.borrow().local_id())
             .collect()
+    }
+
+    fn import_nodes(&self) -> Vec<NodeId> {
+        self.inner().import_nodes()
     }
 
     fn allocate_stream_id(&self) -> StreamId {
@@ -3234,6 +3267,15 @@ where
         ));
 
         Ok(())
+    }
+
+    // Justification: the scheduler must not call `eval()` on a node twice.
+    fn eval_import_node(&self, id: NodeId) {
+        let circuit = self.inner();
+        debug_assert!(id.0 < circuit.nodes.borrow().len());
+        debug_assert!(circuit.import_nodes().contains(&id));
+
+        circuit.nodes.borrow()[id.0].borrow_mut().import();
     }
 
     fn flush_node(&self, id: NodeId) {
@@ -3803,6 +3845,23 @@ where
         })
     }
 
+    fn non_iterative_subcircuit<F, V, E>(&self, child_constructor: F) -> Result<V, SchedulerError>
+    where
+        F: FnOnce(&mut NonIterativeCircuit<Self>) -> Result<(V, E), SchedulerError>,
+        E: Executor<NonIterativeCircuit<Self>>,
+    {
+        self.try_add_node(|id| {
+            let global_id = GlobalNodeId::child_of(self, id);
+            self.log_circuit_event(&CircuitEvent::subcircuit(global_id.clone(), false));
+            let mut child_circuit = ChildCircuit::with_parent(self.clone(), id);
+            let (res, executor) = child_constructor(&mut child_circuit)?;
+            let child =
+                <ChildNode<NonIterativeCircuit<Self>>>::new::<E>(child_circuit, 0, executor);
+            self.log_circuit_event(&CircuitEvent::subcircuit_complete(global_id));
+            Ok((child, res))
+        })
+    }
+
     fn iterate<F, C, V>(&self, constructor: F) -> Result<V, SchedulerError>
     where
         F: FnOnce(&mut IterativeCircuit<Self>) -> Result<(C, V), SchedulerError>,
@@ -3883,7 +3942,7 @@ where
     {
         assert!(self.is_child_of(parent_stream.circuit()));
 
-        self.add_node(|id| {
+        let output_stream = self.add_node(|id| {
             self.log_circuit_event(&CircuitEvent::operator(
                 self.global_node_id().child(id),
                 operator.name(),
@@ -3894,7 +3953,11 @@ where
                 .connect_stream(parent_stream, self.node_id(), input_preference);
             let output_stream = node.output_stream();
             (node, output_stream)
-        })
+        });
+
+        self.add_import_node(output_stream.local_node_id());
+
+        output_stream
     }
 
     fn add_replay_edges(&self, stream_id: StreamId, replay_stream: &dyn StreamMetadata) {
@@ -3924,7 +3987,6 @@ where
         edges.extend(new_edges);
     }
 }
-
 struct ImportNode<C, I, O, Op>
 where
     C: Circuit,
@@ -3940,6 +4002,9 @@ impl<C, I, O, Op> ImportNode<C, I, O, Op>
 where
     C: Circuit,
     C::Parent: Circuit,
+    I: Clone + 'static,
+    O: Clone + 'static,
+    Op: ImportOperator<I, O>,
 {
     fn new(operator: Op, circuit: C, parent_stream: Stream<C::Parent, I>, id: NodeId) -> Self {
         assert!(Circuit::ptr_eq(&circuit.parent(), parent_stream.circuit()));
@@ -4001,6 +4066,17 @@ where
         })
     }
 
+    fn import(&mut self) {
+        match StreamValue::take(self.parent_stream.val()) {
+            None => self
+                .operator
+                .import(StreamValue::peek(&self.parent_stream.get())),
+            Some(val) => self.operator.import_owned(val),
+        }
+
+        StreamValue::consume_token(self.parent_stream.val());
+    }
+
     fn flush(&mut self) {
         self.operator.flush();
     }
@@ -4011,16 +4087,6 @@ where
 
     fn clock_start(&mut self, scope: Scope) {
         self.operator.clock_start(scope);
-        if scope == 0 {
-            match StreamValue::take(self.parent_stream.val()) {
-                None => self
-                    .operator
-                    .import(StreamValue::peek(&self.parent_stream.get())),
-                Some(val) => self.operator.import_owned(val),
-            }
-
-            StreamValue::consume_token(self.parent_stream.val());
-        }
     }
 
     fn clock_end(&mut self, scope: Scope) {
@@ -5921,13 +5987,20 @@ where
     }
 
     fn eval<'a>(&'a mut self) -> Pin<Box<dyn Future<Output = Result<(), SchedulerError>> + 'a>> {
+        // We may want to make the executor responsible for evaluating import nodes
+        // if there is a need for customizing this behavior.
+        for node_id in self.circuit.import_nodes() {
+            self.circuit.eval_import_node(node_id)
+        }
         Box::pin(async { self.executor.step(&self.circuit).await })
     }
 
-    fn flush(&mut self) {}
+    fn flush(&mut self) {
+        self.executor.flush();
+    }
 
     fn is_flush_complete(&self) -> bool {
-        true
+        self.executor.is_flush_complete()
     }
 
     fn clock_start(&mut self, scope: Scope) {
