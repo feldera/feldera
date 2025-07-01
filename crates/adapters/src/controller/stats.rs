@@ -341,6 +341,7 @@ where
 #[derive(Serialize)]
 pub struct ControllerStatus {
     /// Global controller configuration.
+    #[serde(skip_serializing)]
     pub pipeline_config: PipelineConfig,
 
     /// Global controller metrics.
@@ -1373,6 +1374,7 @@ pub struct InputEndpointStatus {
     pub endpoint_name: String,
 
     /// Endpoint configuration (doesn't change).
+    #[serde(serialize_with = "serialize_input_endpoint_config")]
     pub config: InputEndpointConfig,
 
     /// Performance metrics.
@@ -1414,6 +1416,25 @@ pub struct InputEndpointStatus {
     /// Completion tokens associated with the endpoint.
     #[serde(skip)]
     completion_tokens: TokenList,
+}
+
+#[derive(Serialize)]
+struct StreamOnly<'a> {
+    stream: &'a str,
+}
+
+/// Serialize only `config.stream`, omitting other fields.
+fn serialize_input_endpoint_config<S>(
+    config: &InputEndpointConfig,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    StreamOnly {
+        stream: &config.stream,
+    }
+    .serialize(serializer)
 }
 
 impl InputEndpointStatus {
@@ -1618,6 +1639,7 @@ pub struct OutputEndpointStatus {
     pub endpoint_name: String,
 
     /// Endpoint configuration (doesn't change).
+    #[serde(serialize_with = "serialize_output_endpoint_config")]
     pub config: OutputEndpointConfig,
 
     /// Performance metrics.
@@ -1625,6 +1647,20 @@ pub struct OutputEndpointStatus {
 
     /// The first fatal error that occurred at the endpoint.
     pub fatal_error: Mutex<Option<String>>,
+}
+
+/// Serialize only `config.stream`, omitting other fields.
+fn serialize_output_endpoint_config<S>(
+    config: &OutputEndpointConfig,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    StreamOnly {
+        stream: &config.stream,
+    }
+    .serialize(serializer)
 }
 
 /// Public read API.
