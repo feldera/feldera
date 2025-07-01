@@ -126,6 +126,91 @@ pub(crate) type EndpointId = u64;
 /// The controller instantiates the input and output pipelines according to a
 /// user-provided [configuration](`PipelineConfig`) and exposes an API to
 /// reconfigure and monitor the pipelines at runtime.
+///
+/// # Lifecycle
+///
+/// A pipeline process has a [PipelineState], which is the state requested by
+/// the client, one of [Running], [Paused], or [Terminated]. This state is
+/// initially [Paused].  Calls to [start], [pause], [initiate_stop], and [stop]
+/// change the client-requested state.  Once the state is set to [Terminated],
+/// it can never be changed back to [Running] or [Paused].  Since the pipeline
+/// process always starts up paused, it is the pipeline manager's job to ensure
+/// continuity when the process restarts.
+///
+/// The following diagram illustrates internal pipeline process states and their
+/// possible transitions:
+///
+/// ```text
+///      ┌──Initializing──┐
+///      │        │       │
+///      │        │       │
+///      ▼        │       ▼
+///    Replaying  │  Bootstrapping
+///      │        │       │
+///      │        │       │
+///      │        │       │
+///      ▼        ▼       ▼
+/// ┌───────────────────────────┐
+/// │ (default)                 │
+/// │  Paused◄────────►Running  │
+/// │     │                │    │
+/// │     │                │    │
+/// │     └──►Terminated◄──┘    │
+/// └───────────────────────────┘
+///     client-requested state
+/// ```
+///
+/// The following list describes states and transitions in more details:
+///
+/// * Initializing: Before the circuit thread starts its main loop, the pipeline
+///   can be considered to be initializing. This transitions to one of
+///   replaying, bootstrapping, or the client-requested state.
+///
+/// * Replaying (aka restoring): If fault tolerance is enabled (whether
+///   [FtModel::AtLeastOnce] or [FtModel::ExactlyOnce]), the pipeline reads and
+///   replay the steps in the journal. When replay is done, the pipeline
+///   transitions to the client-requested state.
+///
+///   Adding and removing input and output connectors, and ad-hoc queries, will
+///   fail while a pipeline is replaying.
+///
+///   [is_replaying] reports whether the pipeline is currently replaying.
+///
+/// * Bootstrapping: If the pipeline is resuming from a checkpoint, and the
+///   circuit was modified since the checkpoint, then the pipeline process
+///   "bootstrap" the circuit to adjust the results to match the new
+///   circuit. When bootstrapping is done, the pipeline transitions to the
+///   client-requested state.  Bootstrapping and replaying are currently
+///   mutually exclusive--if both would be required, the pipeline process gives
+///   up and fails the circuit.
+///
+///   Adding and removing input connectors will fail with an error while the
+///   pipeline is bootstrapping.
+///
+/// * Paused: In this state, the pipeline tells input connectors to stop reading
+///   new records into their input buffers. However, if accumulated records
+///   already exist in their buffers, the circuit will continue to execute steps
+///   until all of them are drained (for pipeline setups with deep buffers or a
+///   slow circuit, this can take minutes or longer). This state transitions to
+///   running or terminated in response to client request.
+///
+/// * Running: In this process, the pipeline tells input connectors to read new
+///   records into their input buffers (up to a per-connector, configurable
+///   buffer limit). When enough records accumulate or a timer expires, or when
+///   the clock ticks (all of these are configurable), the circuit steps. This
+///   state transitions to paused or terminated in response to client request.
+///
+/// * Terminated: the circuit is dead and won't come back without creating a new
+///   pipeline process. This state never transitions.
+///
+/// [Running]: PipelineState::Running
+/// [Paused]: PipelineState::Paused
+/// [Terminated]: PipelineState::Terminated
+/// [start]: Controller::start
+/// [stop]: Controller::stop
+/// [pause]: Controller::pause
+/// [initiate_stop]: Controller::initiate_stop
+/// [is_replaying]: Controller::is_replaying
 pub struct Controller {
     inner: Arc<ControllerInner>,
 
