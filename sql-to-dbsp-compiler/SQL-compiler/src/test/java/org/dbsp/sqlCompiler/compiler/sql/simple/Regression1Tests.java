@@ -418,4 +418,11 @@ public class Regression1Tests extends SqlIoTest {
             }
         });
     }
+
+    @Test
+    public void issue4255() {
+        this.getCCS("""
+                CREATE TABLE illegal_tbl(bin BINARY);
+                CREATE VIEW v AS SELECT CONCAT_WS('@', bin, 55) AS bin FROM illegal_tbl;""");
+    }
 }

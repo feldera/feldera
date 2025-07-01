@@ -570,7 +570,7 @@ public class PostgresTimestampTests extends SqlIoTest {
                 SELECT FLOOR(timestamp '2004-02-29 15:44:17.71393' TO WEEK) AS week_trunc;
                         week_trunc
                 --------------------------
-                 Mon Feb 29 00:00:00 2004""");
+                 Sun Feb 29 00:00:00 2004""");
     }
 
     // DATE_BIN not supported by Calcite.
