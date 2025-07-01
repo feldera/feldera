@@ -637,7 +637,7 @@ where
         aux_factories: &OrdIndexedZSetFactories<Z::Key, Z::Val>,
         clock: Clk,
     ) -> Self {
-        let depth = clock.nesting_depth();
+        let depth = T::Time::NESTING_DEPTH;
 
         Self {
             location,
