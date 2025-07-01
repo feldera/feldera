@@ -210,12 +210,12 @@ REAL '1.23'  -- string style
   <tr>
     <td><a id="round"></a><code>ROUND(value)</code></td>
     <td><code>REAL</code>, <code>DOUBLE</code></td>
-    <td>Rounds to the nearest integer and returns it. Rounding follows "Bankers Rounding" (rounds 0.5 to the nearest even number) strategy.</td>
+    <td>Rounds to the nearest integer; the result has the same type as the input. Rounding follows "Bankers Rounding" (rounds 0.5 to the nearest even number) strategy.</td>
   </tr>
   <tr>
     <td><a id="round2"></a><code>ROUND(value, digits)</code></td>
     <td><code>REAL</code>, <code>DOUBLE</code></td>
-    <td>where <code>digits</code> is an integer value. Round the value to the specified number of <em>decimal</em> digits after the decimal point.</td>
+    <td>where <code>digits</code> is an integer value. Round the value to the specified number of <em>decimal</em> digits after the decimal point; the result has the same type as the input.</td>
   </tr>
   <tr>
     <td><a id="sec"></a><code>SEC(value)</code></td>
