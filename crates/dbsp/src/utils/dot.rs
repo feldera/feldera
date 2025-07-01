@@ -3,11 +3,8 @@
 use std::fmt::Display;
 
 use crate::{
-    circuit::{
-        circuit_builder::{CircuitBase, Edge, Node, StreamId},
-        WithClock,
-    },
-    ChildCircuit,
+    circuit::circuit_builder::{CircuitBase, Edge, Node, StreamId},
+    ChildCircuit, Timestamp,
 };
 
 pub struct DotNodeAttributes {
@@ -102,9 +99,10 @@ impl DotEdgeAttributes {
     }
 }
 
-impl<P> ChildCircuit<P>
+impl<P, T> ChildCircuit<P, T>
 where
-    P: WithClock + Clone + 'static,
+    P: Clone + 'static,
+    T: Timestamp,
 {
     /// Returns a dot representation of the circuit.
     pub fn to_dot<NF, EF>(&self, node_function: NF, edge_function: EF) -> String

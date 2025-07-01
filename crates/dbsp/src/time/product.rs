@@ -86,6 +86,8 @@ where
     TOuter: Timestamp,
     TInner: Timestamp,
 {
+    const NESTING_DEPTH: usize = TOuter::NESTING_DEPTH + 1;
+
     type Nested = Product<Self, u32>;
 
     type ValBatch<K: DataTrait + ?Sized, V: DataTrait + ?Sized, R: WeightTrait + ?Sized> =

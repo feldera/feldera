@@ -1441,18 +1441,6 @@ pub trait WithClock {
     /// ticks.
     type Time: Timestamp;
 
-    /// Nesting depth of the circuit running this clock.
-    ///
-    /// 0 - for the top-level clock, 1 - first-level nested circuit, etc.
-    const NESTING_DEPTH: usize;
-
-    /// Returns `NESTING_DEPTH`.
-    ///
-    /// Helpful when using the trait via dynamic dispatch.
-    fn nesting_depth(&self) -> usize {
-        Self::NESTING_DEPTH
-    }
-
     /// Current time.
     fn time(&self) -> Self::Time;
 }
@@ -1462,20 +1450,18 @@ pub trait WithClock {
 /// It is never actually used at runtime.
 impl WithClock for () {
     type Time = UnitTimestamp;
-    const NESTING_DEPTH: usize = usize::MAX;
 
     fn time(&self) -> Self::Time {
         UnitTimestamp
     }
 }
 
-impl<P> WithClock for ChildCircuit<P>
+impl<P, T> WithClock for ChildCircuit<P, T>
 where
-    P: WithClock,
+    P: 'static,
+    T: Timestamp,
 {
-    type Time = <<P as WithClock>::Time as Timestamp>::Nested;
-
-    const NESTING_DEPTH: usize = P::NESTING_DEPTH.wrapping_add(1);
+    type Time = T;
 
     fn time(&self) -> Self::Time {
         self.time.borrow().clone()
@@ -2101,7 +2087,7 @@ pub trait Circuit: CircuitBase + Clone + WithClock {
         O: Data,
         Op: StrictUnaryOperator<I, O>;
 
-    /// Like `add_feedback_with_export`, but also assigns persistent id to the output hald of the strict operator.
+    /// Like `add_feedback_with_export`, but also assigns persistent id to the output half of the strict operator.
     fn add_feedback_with_export_persistent<I, O, Op>(
         &self,
         persistent_id: Option<&str>,
@@ -2143,8 +2129,8 @@ pub trait Circuit: CircuitBase + Clone + WithClock {
     /// instead of using this method directly.
     fn iterative_subcircuit<F, T, E>(&self, child_constructor: F) -> Result<T, SchedulerError>
     where
-        F: FnOnce(&mut ChildCircuit<Self>) -> Result<(T, E), SchedulerError>,
-        E: Executor<ChildCircuit<Self>>;
+        F: FnOnce(&mut IterativeCircuit<Self>) -> Result<(T, E), SchedulerError>,
+        E: Executor<IterativeCircuit<Self>>;
 
     /// Add an iteratively scheduled child circuit.
     ///
@@ -2218,7 +2204,7 @@ pub trait Circuit: CircuitBase + Clone + WithClock {
     /// ```
     fn iterate<F, C, T>(&self, constructor: F) -> Result<T, SchedulerError>
     where
-        F: FnOnce(&mut ChildCircuit<Self>) -> Result<(C, T), SchedulerError>,
+        F: FnOnce(&mut IterativeCircuit<Self>) -> Result<(C, T), SchedulerError>,
         C: AsyncFn() -> Result<bool, SchedulerError> + 'static;
 
     /// Add an iteratively scheduled child circuit.
@@ -2227,7 +2213,7 @@ pub trait Circuit: CircuitBase + Clone + WithClock {
     /// [`Scheduler`] implementation.
     fn iterate_with_scheduler<F, C, T, S>(&self, constructor: F) -> Result<T, SchedulerError>
     where
-        F: FnOnce(&mut ChildCircuit<Self>) -> Result<(C, T), SchedulerError>,
+        F: FnOnce(&mut IterativeCircuit<Self>) -> Result<(C, T), SchedulerError>,
         C: AsyncFn() -> Result<bool, SchedulerError> + 'static,
         S: Scheduler + 'static;
 
@@ -2268,7 +2254,7 @@ pub trait Circuit: CircuitBase + Clone + WithClock {
     /// constructing non-compliant circuits.
     fn fixedpoint<F, T>(&self, constructor: F) -> Result<T, SchedulerError>
     where
-        F: FnOnce(&mut ChildCircuit<Self>) -> Result<T, SchedulerError>;
+        F: FnOnce(&mut IterativeCircuit<Self>) -> Result<T, SchedulerError>;
 
     /// Add a child circuit that will iterate to a fixed point.
     ///
@@ -2276,7 +2262,7 @@ pub trait Circuit: CircuitBase + Clone + WithClock {
     /// [`Scheduler`] implementation.
     fn fixedpoint_with_scheduler<F, T, S>(&self, constructor: F) -> Result<T, SchedulerError>
     where
-        F: FnOnce(&mut ChildCircuit<Self>) -> Result<T, SchedulerError>,
+        F: FnOnce(&mut IterativeCircuit<Self>) -> Result<T, SchedulerError>,
         S: Scheduler + 'static;
 
     /// Make the contents of `parent_stream` available in the nested circuit
@@ -2426,7 +2412,7 @@ impl Edges {
 /// is connected to an input of node2.
 struct CircuitInner<P>
 where
-    P: WithClock,
+    P: 'static,
 {
     parent: P,
 
@@ -2448,7 +2434,7 @@ where
 
 impl<P> CircuitInner<P>
 where
-    P: WithClock,
+    P: 'static,
 {
     #[allow(clippy::too_many_arguments)]
     fn new(
@@ -2557,12 +2543,13 @@ where
 /// A single implementation that can operate as the top-level
 /// circuit when instantiated with `P = ()` or a nested circuit,
 /// with `P = ChildCircuit<..>` designating the parent circuit type.
-pub struct ChildCircuit<P>
+pub struct ChildCircuit<P, T>
 where
-    P: WithClock,
+    P: 'static,
+    T: Timestamp,
 {
     inner: Rc<CircuitInner<P>>,
-    time: Rc<RefCell<<P::Time as Timestamp>::Nested>>,
+    time: Rc<RefCell<T>>,
 }
 
 /// Top-level circuit.
@@ -2579,13 +2566,16 @@ where
 /// used as input for further operators, which are primarily instantiated via
 /// methods on [`Stream`].  Stream output may be made available outside the
 /// bounds of a circuit using [`Stream::output`].
-pub type RootCircuit = ChildCircuit<()>;
+pub type RootCircuit = ChildCircuit<(), ()>;
 
-pub type NestedCircuit = ChildCircuit<RootCircuit>;
+pub type NestedCircuit = ChildCircuit<RootCircuit, <() as Timestamp>::Nested>;
 
-impl<P> Clone for ChildCircuit<P>
+pub type IterativeCircuit<P> = ChildCircuit<P, <<P as WithClock>::Time as Timestamp>::Nested>;
+
+impl<P, T> Clone for ChildCircuit<P, T>
 where
-    P: WithClock,
+    P: 'static,
+    T: Timestamp,
 {
     fn clone(&self) -> Self {
         Self {
@@ -2595,9 +2585,10 @@ where
     }
 }
 
-impl<P> ChildCircuit<P>
+impl<P, T> ChildCircuit<P, T>
 where
-    P: WithClock,
+    P: 'static,
+    T: Timestamp,
 {
     /// Immutably borrow the inner circuit.
     fn inner(&self) -> &CircuitInner<P> {
@@ -2781,9 +2772,10 @@ impl RootCircuit {
     }
 }
 
-impl<P> ChildCircuit<P>
+impl<P, T> ChildCircuit<P, T>
 where
     P: Circuit,
+    T: Timestamp,
 {
     /// Create an empty nested circuit of `parent`.
     fn with_parent(parent: P, id: NodeId) -> Self {
@@ -2817,9 +2809,10 @@ where
 }
 
 // Internal API.
-impl<P> ChildCircuit<P>
+impl<P, T> ChildCircuit<P, T>
 where
-    P: WithClock,
+    P: 'static,
+    T: Timestamp,
     Self: Circuit,
 {
     /// Circuit's node id within the parent circuit.
@@ -2852,9 +2845,9 @@ where
     /// Allocates a new node id and invokes a user callback to create a new node
     /// instance. The callback may use the node id, e.g., to add an edge to
     /// this node.
-    fn add_node<F, N, T>(&self, f: F) -> T
+    fn add_node<F, N, V>(&self, f: F) -> V
     where
-        F: FnOnce(NodeId) -> (N, T),
+        F: FnOnce(NodeId) -> (N, V),
         N: Node + 'static,
     {
         let id = self.inner().nodes.borrow().len();
@@ -2867,9 +2860,9 @@ where
     }
 
     /// Like `add_node`, but the node is not created if the closure fails.
-    fn try_add_node<F, N, T, E>(&self, f: F) -> Result<T, E>
+    fn try_add_node<F, N, V, E>(&self, f: F) -> Result<V, E>
     where
-        F: FnOnce(NodeId) -> Result<(N, T), E>,
+        F: FnOnce(NodeId) -> Result<(N, V), E>,
         N: Node + 'static,
     {
         let id = self.inner().nodes.borrow().len();
@@ -2894,9 +2887,10 @@ where
     }
 }
 
-impl<P> CircuitBase for ChildCircuit<P>
+impl<P, T> CircuitBase for ChildCircuit<P, T>
 where
-    P: WithClock + Clone + 'static,
+    P: Clone + 'static,
+    T: Timestamp,
 {
     fn edges(&self) -> Ref<'_, Edges> {
         self.inner().edges.borrow()
@@ -3047,9 +3041,10 @@ where
     }
 }
 
-impl<P> Circuit for ChildCircuit<P>
+impl<P, T> Circuit for ChildCircuit<P, T>
 where
-    P: WithClock + Clone + 'static,
+    P: Clone + 'static,
+    T: Timestamp,
 {
     type Parent = P;
 
@@ -3065,9 +3060,9 @@ where
         }
     }
 
-    fn map_node<T>(&self, id: &GlobalNodeId, f: &mut dyn FnMut(&dyn Node) -> T) -> T {
+    fn map_node<V>(&self, id: &GlobalNodeId, f: &mut dyn FnMut(&dyn Node) -> V) -> V {
         let path = id.path();
-        let mut result: Option<T> = None;
+        let mut result: Option<V> = None;
 
         assert!(path.starts_with(self.global_id().path()));
 
@@ -3078,9 +3073,9 @@ where
         result.unwrap()
     }
 
-    fn map_node_mut<T>(&self, id: &GlobalNodeId, f: &mut dyn FnMut(&mut dyn Node) -> T) -> T {
+    fn map_node_mut<V>(&self, id: &GlobalNodeId, f: &mut dyn FnMut(&mut dyn Node) -> V) -> V {
         let path = id.path();
-        let mut result: Option<T> = None;
+        let mut result: Option<V> = None;
 
         assert!(path.starts_with(self.global_id().path()));
 
@@ -3091,8 +3086,8 @@ where
         result.unwrap()
     }
 
-    fn map_local_node_mut<T>(&self, id: NodeId, f: &mut dyn FnMut(&mut dyn Node) -> T) -> T {
-        let mut result: Option<T> = None;
+    fn map_local_node_mut<V>(&self, id: NodeId, f: &mut dyn FnMut(&mut dyn Node) -> V) -> V {
+        let mut result: Option<V> = None;
 
         self.map_node_mut_relative(&[id], &mut |node| result = Some(f(node)));
         result.unwrap()
@@ -3140,9 +3135,9 @@ where
         })
     }
 
-    fn connect_stream<T: 'static>(
+    fn connect_stream<V: 'static>(
         &self,
-        stream: &Stream<Self, T>,
+        stream: &Stream<Self, V>,
         to: NodeId,
         ownership_preference: OwnershipPreference,
     ) {
@@ -3256,9 +3251,9 @@ where
     }
 
     #[track_caller]
-    fn region<F, T>(&self, name: &str, f: F) -> T
+    fn region<F, V>(&self, name: &str, f: F) -> V
     where
-        F: FnOnce() -> T,
+        F: FnOnce() -> V,
     {
         self.log_circuit_event(&CircuitEvent::push_region(name, Some(Location::caller())));
         let res = f();
@@ -3792,37 +3787,37 @@ where
         })
     }
 
-    fn iterative_subcircuit<F, T, E>(&self, child_constructor: F) -> Result<T, SchedulerError>
+    fn iterative_subcircuit<F, V, E>(&self, child_constructor: F) -> Result<V, SchedulerError>
     where
-        F: FnOnce(&mut ChildCircuit<Self>) -> Result<(T, E), SchedulerError>,
-        E: Executor<ChildCircuit<Self>>,
+        F: FnOnce(&mut IterativeCircuit<Self>) -> Result<(V, E), SchedulerError>,
+        E: Executor<IterativeCircuit<Self>>,
     {
         self.try_add_node(|id| {
             let global_id = GlobalNodeId::child_of(self, id);
             self.log_circuit_event(&CircuitEvent::subcircuit(global_id.clone(), true));
             let mut child_circuit = ChildCircuit::with_parent(self.clone(), id);
             let (res, executor) = child_constructor(&mut child_circuit)?;
-            let child = <ChildNode<ChildCircuit<Self>>>::new::<E>(child_circuit, 1, executor);
+            let child = <ChildNode<IterativeCircuit<Self>>>::new::<E>(child_circuit, 1, executor);
             self.log_circuit_event(&CircuitEvent::subcircuit_complete(global_id));
             Ok((child, res))
         })
     }
 
-    fn iterate<F, C, T>(&self, constructor: F) -> Result<T, SchedulerError>
+    fn iterate<F, C, V>(&self, constructor: F) -> Result<V, SchedulerError>
     where
-        F: FnOnce(&mut ChildCircuit<Self>) -> Result<(C, T), SchedulerError>,
+        F: FnOnce(&mut IterativeCircuit<Self>) -> Result<(C, V), SchedulerError>,
         C: AsyncFn() -> Result<bool, SchedulerError> + 'static,
     {
-        self.iterate_with_scheduler::<F, C, T, DynamicScheduler>(constructor)
+        self.iterate_with_scheduler::<F, C, V, DynamicScheduler>(constructor)
     }
 
     /// Add an iteratively scheduled child circuit.
     ///
     /// Similar to [`iterate`](`Self::iterate`), but with a user-specified
     /// [`Scheduler`] implementation.
-    fn iterate_with_scheduler<F, C, T, S>(&self, constructor: F) -> Result<T, SchedulerError>
+    fn iterate_with_scheduler<F, C, V, S>(&self, constructor: F) -> Result<V, SchedulerError>
     where
-        F: FnOnce(&mut ChildCircuit<Self>) -> Result<(C, T), SchedulerError>,
+        F: FnOnce(&mut IterativeCircuit<Self>) -> Result<(C, V), SchedulerError>,
         C: AsyncFn() -> Result<bool, SchedulerError> + 'static,
         S: Scheduler + 'static,
     {
@@ -3834,16 +3829,16 @@ where
         })
     }
 
-    fn fixedpoint<F, T>(&self, constructor: F) -> Result<T, SchedulerError>
+    fn fixedpoint<F, V>(&self, constructor: F) -> Result<V, SchedulerError>
     where
-        F: FnOnce(&mut ChildCircuit<Self>) -> Result<T, SchedulerError>,
+        F: FnOnce(&mut IterativeCircuit<Self>) -> Result<V, SchedulerError>,
     {
-        self.fixedpoint_with_scheduler::<F, T, DynamicScheduler>(constructor)
+        self.fixedpoint_with_scheduler::<F, V, DynamicScheduler>(constructor)
     }
 
-    fn fixedpoint_with_scheduler<F, T, S>(&self, constructor: F) -> Result<T, SchedulerError>
+    fn fixedpoint_with_scheduler<F, V, S>(&self, constructor: F) -> Result<V, SchedulerError>
     where
-        F: FnOnce(&mut ChildCircuit<Self>) -> Result<T, SchedulerError>,
+        F: FnOnce(&mut IterativeCircuit<Self>) -> Result<V, SchedulerError>,
         S: Scheduler + 'static,
     {
         self.iterative_subcircuit(|child| {
@@ -3930,9 +3925,10 @@ where
     }
 }
 
-impl<P> ChildCircuit<P>
+impl<P, T> ChildCircuit<P, T>
 where
     P: Circuit,
+    T: Timestamp,
 {
     /// Make the contents of `parent_stream` available in the nested circuit
     /// via an [`ImportOperator`].
