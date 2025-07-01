@@ -156,6 +156,10 @@ where
 pub trait Executor<C>: 'static {
     fn prepare(&mut self, circuit: &C, nodes: Option<&BTreeSet<NodeId>>) -> Result<(), Error>;
 
+    fn flush(&self);
+
+    fn is_flush_complete(&self) -> bool;
+
     fn start_step<'a>(
         &'a self,
         circuit: &'a C,
@@ -263,6 +267,12 @@ where
     fn prepare(&mut self, circuit: &C, nodes: Option<&BTreeSet<NodeId>>) -> Result<(), Error> {
         self.scheduler.prepare(circuit, nodes)
     }
+
+    fn flush(&self) {}
+
+    fn is_flush_complete(&self) -> bool {
+        true
+    }
 }
 
 /// An executor that evaluates the circuit exactly once every time it is
@@ -315,6 +325,12 @@ where
 
     fn prepare(&mut self, circuit: &C, nodes: Option<&BTreeSet<NodeId>>) -> Result<(), Error> {
         self.scheduler.prepare(circuit, nodes)
+    }
+
+    fn flush(&self) {}
+
+    fn is_flush_complete(&self) -> bool {
+        true
     }
 }
 

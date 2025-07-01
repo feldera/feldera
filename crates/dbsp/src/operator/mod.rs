@@ -45,6 +45,7 @@ pub mod input;
 pub mod join;
 mod join_range;
 pub mod neighborhood;
+mod non_incremental;
 mod recursive;
 pub mod sample;
 mod semijoin;
