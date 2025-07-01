@@ -594,8 +594,7 @@ Code snippet:
 
         assert df.shape[0] == 3
 
-        assert TEST_CLIENT.get_pipeline(
-            name).runtime_config["resources"] == config
+        assert TEST_CLIENT.get_pipeline(name).runtime_config["resources"] == config
 
         pipeline.delete(True)
 
@@ -878,8 +877,7 @@ Code snippet:
         CREATE VIEW v0 AS SELECT c1, c2, c3 FROM t0;
         """
 
-        data = [{"c1": "2022-01-01", "c2": "12:00:00",
-                 "c3": "2022-01-01 12:00:00"}]
+        data = [{"c1": "2022-01-01", "c2": "12:00:00", "c3": "2022-01-01 12:00:00"}]
         expected = [
             {
                 "c1": Timestamp("2022-01-01 00:00:00"),
@@ -1062,8 +1060,7 @@ Code snippet:
 
         name = "test_connector_orchestration"
 
-        pipeline = PipelineBuilder(
-            TEST_CLIENT, name, sql=sql).create_or_replace()
+        pipeline = PipelineBuilder(TEST_CLIENT, name, sql=sql).create_or_replace()
         pipeline.start()
 
         pipeline.resume_connector("numbers", "c1")
@@ -1094,8 +1091,7 @@ Code snippet:
         CREATE MATERIALIZED VIEW v0 AS SELECT c0 FROM t0;
         """
 
-        pipeline = PipelineBuilder(
-            TEST_CLIENT, name, sql=sql).create_or_replace()
+        pipeline = PipelineBuilder(TEST_CLIENT, name, sql=sql).create_or_replace()
         out = pipeline.listen("v0")
         pipeline.start()
 
@@ -1119,29 +1115,24 @@ CREATE TABLE map_tbl(m_var MAP<VARCHAR, VARCHAR>);
 CREATE MATERIALIZED VIEW v AS SELECT * FROM map_tbl;
         """
 
-        pipeline = PipelineBuilder(
-            TEST_CLIENT, name, sql=sql).create_or_replace()
+        pipeline = PipelineBuilder(TEST_CLIENT, name, sql=sql).create_or_replace()
         pipeline.start()
 
         with self.assertRaises(ValueError):
             data = [{"insert": {"m_var": {None: 1}}}]
-            TEST_CLIENT.push_to_pipeline(
-                name, "map_tbl", "insert_delete", data)
+            TEST_CLIENT.push_to_pipeline(name, "map_tbl", "insert_delete", data)
 
         with self.assertRaises(ValueError):
             data = [{"delete": {"m_var": {None: 1}}}]
-            TEST_CLIENT.push_to_pipeline(
-                name, "map_tbl", "insert_delete", data)
+            TEST_CLIENT.push_to_pipeline(name, "map_tbl", "insert_delete", data)
 
         with self.assertRaises(ValueError):
             data = {"insert": {"m_var": {None: 1}}}
-            TEST_CLIENT.push_to_pipeline(
-                name, "map_tbl", "insert_delete", data)
+            TEST_CLIENT.push_to_pipeline(name, "map_tbl", "insert_delete", data)
 
         with self.assertRaises(ValueError):
             data = {"delete": {"m_var": {None: 1}}}
-            TEST_CLIENT.push_to_pipeline(
-                name, "map_tbl", "insert_delete", data)
+            TEST_CLIENT.push_to_pipeline(name, "map_tbl", "insert_delete", data)
 
         with self.assertRaises(ValueError):
             data = [{"m_var": {None: 1}}]

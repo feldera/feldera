@@ -271,8 +271,7 @@ class StorageStatus(Enum):
         for member in StorageStatus:
             if member.name.lower() == value.lower():
                 return member
-        raise ValueError(f"Unknown value '{value}' for enum {
-                         StorageStatus.__name__}")
+        raise ValueError(f"Unknown value '{value}' for enum {StorageStatus.__name__}")
 
     def __eq__(self, other):
         return self.value == other.value

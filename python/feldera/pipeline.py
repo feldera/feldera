@@ -93,12 +93,10 @@ class Pipeline:
             PipelineStatus.RUNNING,
             PipelineStatus.PAUSED,
         ]:
-            raise RuntimeError(
-                "Pipeline must be running or paused to push data")
+            raise RuntimeError("Pipeline must be running or paused to push data")
 
         if not force and status == PipelineStatus.PAUSED:
-            raise RuntimeError(
-                "Pipeline is paused, set force=True to push data")
+            raise RuntimeError("Pipeline is paused, set force=True to push data")
 
         ensure_dataframe_has_columns(df)
 
@@ -153,12 +151,10 @@ class Pipeline:
 
         status = self.status()
         if not force and status == PipelineStatus.PAUSED:
-            raise RuntimeError(
-                "Pipeline is paused, set force=True to push data")
+            raise RuntimeError("Pipeline is paused, set force=True to push data")
 
         if update_format not in ["raw", "insert_delete"]:
-            raise ValueError(
-                "update_format must be one of raw or insert_delete")
+            raise ValueError("update_format must be one of raw or insert_delete")
 
         array = True if isinstance(data, list) else False
         self.client.push_to_pipeline(
@@ -264,8 +260,7 @@ class Pipeline:
             queue = Queue(maxsize=1)
             self.views_tx.append({view_name: queue})
 
-        handler = CallbackRunner(
-            self.client, self.name, view_name, callback, queue)
+        handler = CallbackRunner(self.client, self.name, view_name, callback, queue)
         handler.start()
 
     def wait_for_completion(
@@ -298,8 +293,7 @@ class Pipeline:
             PipelineStatus.INITIALIZING,
             PipelineStatus.PROVISIONING,
         ]:
-            raise RuntimeError(
-                "Pipeline must be running to wait for completion")
+            raise RuntimeError("Pipeline must be running to wait for completion")
 
         start_time = time.monotonic()
 
@@ -433,10 +427,8 @@ method or use `Pipeline.resume()` to resume a paused pipeline."""
             metrics: dict = self.client.get_pipeline_stats(self.name).get(
                 "global_metrics"
             )
-            total_input_records: int | None = metrics.get(
-                "total_input_records")
-            total_processed_records: int | None = metrics.get(
-                "total_processed_records")
+            total_input_records: int | None = metrics.get("total_input_records")
+            total_processed_records: int | None = metrics.get("total_processed_records")
             if total_input_records is None:
                 raise RuntimeError(
                     "total_input_records is missing from the pipeline metrics"
@@ -463,8 +455,7 @@ metrics"""
 
             # Timeout
             if now_s - start_time_s >= timeout_s:
-                raise RuntimeError(
-                    f"waiting for idle reached timeout ({timeout_s}s)")
+                raise RuntimeError(f"waiting for idle reached timeout ({timeout_s}s)")
             time.sleep(poll_interval_s)
 
     def pause(self, timeout_s: Optional[float] = None):

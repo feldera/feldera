@@ -9,8 +9,7 @@ from feldera.runtime_config import RuntimeConfig
 from typing import TypeAlias, Dict
 import re
 
-JSON: TypeAlias = dict[str,
-                       "JSON"] | list["JSON"] | str | int | float | bool | None
+JSON: TypeAlias = dict[str, "JSON"] | list["JSON"] | str | int | float | bool | None
 
 # pylint: disable=too-many-function-args,missing-function-docstring,no-self-argument,no-self-use,invalid-name,line-too-long,too-few-public-methods,missing-class-docstring,super-init-not-called
 
@@ -184,8 +183,7 @@ class TstAccumulator:
 
         for table in self.tables:
             data = table.get_data()
-            pipeline.input_json(
-                table.name, data, update_format="insert_delete")
+            pipeline.input_json(table.name, data, update_format="insert_delete")
 
         pipeline.wait_for_completion(force_stop=False, timeout_s=3600)
         for view in self.views:

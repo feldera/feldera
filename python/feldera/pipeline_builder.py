@@ -1,7 +1,7 @@
 from feldera.rest.feldera_client import FelderaClient
 from feldera.rest.pipeline import Pipeline as InnerPipeline
 from feldera.pipeline import Pipeline
-from feldera.enums import CompilationProfile, StorageStatus
+from feldera.enums import CompilationProfile
 from feldera.runtime_config import RuntimeConfig, Resources
 from feldera.rest.errors import FelderaAPIError
 
@@ -51,8 +51,7 @@ class PipelineBuilder:
             raise ValueError("Name and SQL are required to create a pipeline")
 
         if self.client.get_pipeline(self.name) is not None:
-            raise RuntimeError(f"Pipeline with name {
-                               self.name} already exists")
+            raise RuntimeError(f"Pipeline with name {self.name} already exists")
 
         inner = InnerPipeline(
             self.name,
