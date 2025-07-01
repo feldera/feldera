@@ -96,55 +96,39 @@ But invalid casts such as: ``CAST('1234.1234' AS DECIMAL(6, 3))`` will throw a r
   <tr>
     <td><a id="bround"></a><code>BROUND(decimal, digits)</code></td>
     <td>Performs banker's rounding to the specified number of decimal digits after the decimal point.
-        Negative values for "digits" are supported.</td>
+        Negative values for "digits" are supported (result is a <code>DECIMAL</code> value).</td>
   </tr>
   <tr>
     <td><a id="ceil"></a><code>CEIL(value)</code></td>
-    <td>Ceiling function: nearest integer value greater than or equal to argument (result is a decimal value)</td>
+    <td>Ceiling function: nearest integer value greater than or equal to argument (result is a <code>DECIMAL</code> value).</td>
   </tr>
   <tr>
     <td><a id="floor"></a><code>FLOOR(value)</code></td>
-    <td>Floor function: nearest integer value less than or equal to argument (result is a decimal value)</td>
-  </tr>
-  <tr>
-    <td><a id="ln"></a><code>LN(value)</code></td>
-    <td>The natural logarithm of value. Produces a runtime error for values less than or equal to zero.</td>
-  </tr>
-  <tr>
-    <td><a id="log10"></a><code>LOG10(value)</code></td>
-    <td>The logarithm base 10 of value. Produces a runtime error for values less than or equal to zero.</td>
-  </tr>
-  <tr>
-    <td><a id="power"></a><code>POWER(base, exponent)</code></td>
-    <td>The power function, raising base to the power exponent.</td>
+    <td>Floor function: nearest integer value less than or equal to argument (result is a <code>DECIMAL</code> value).</td>
   </tr>
   <tr>
     <td><a id="round"></a><code>ROUND(value)</code></td>
-    <td>same as <code>ROUND(value, 0)</code></td>
+    <td>same as <code>ROUND(value, 0)</code>.</td>
   </tr>
   <tr>
     <td><a id="round2"></a><code>ROUND(value, digits)</code></td>
-    <td>where <code>digits</code> is an integer value, which may be negative. Round the value to the specified number of <em>decimal</em> digits after the decimal point.</td>
+    <td>where <code>digits</code> is an integer value, which may be negative. Round the value to the specified number of <em>decimal</em> digits after the decimal point (result is a <code>DECIMAL</code> value).</td>
   </tr>
   <tr>
     <td><a id="sign"></a><code>SIGN(value)</code></td>
-    <td>The "sign" function: -1, 0, or 1 showing if value is &lt;0, =0, or &gt;0.</td>
-  </tr>
-  <tr>
-    <td><a id="sqrt"></a><code>SQRT(value)</code></td>
-    <td>Result has type DOUBLE. Square root of value. Produces NaN for negative <code>value</code></td>
+    <td>The "sign" function: -1, 0, or 1 showing if value is &lt;0, =0, or &gt;0 (result is a <code>DECIMAL</code> value).</td>
   </tr>
   <tr>
     <td><a id="trunc"></a><code>TRUNCATE(value)</code></td>
-    <td>same as <code>TRUNCATE(value, 0)</code></td>
+    <td>same as <code>TRUNCATE(value, 0)</code> (result is a <code>DECIMAL</code> value).</td>
   </tr>
   <tr>
     <td><a id="trunc2"></a><code>TRUNC(value [, digits] )</code></td>
-    <td>same as <code>TRUNCATE(value [, digits])</code></td>
+    <td>same as <code>TRUNCATE(value [, digits])</code> (result is a <code>DECIMAL</code> value).</td>
   </tr>
   <tr>
     <td><a id="truncate"></a><code>TRUNCATE(value, digits)</code></td>
-    <td>where <code>digits</code> is an integer value, which may be negative. Truncates the value to the specified number of <em>decimal</em> digits after the decimal point.</td>
+    <td>where <code>digits</code> is an integer value, which may be negative. Truncates the value to the specified number of <em>decimal</em> digits after the decimal point (result is a <code>DECIMAL</code> value).</td>
   </tr>
 </table>
 
