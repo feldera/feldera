@@ -1847,7 +1847,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                             Linq.map(leftElementType.tupFields,
                                     et -> DBSPLiteral.none(et.withMayBeNull(true)), DBSPExpression.class));
                     List<DBSPExpression> fields = new ArrayList<>();
-                    lkf.unshuffleKeyAndDataFields(var.field(0), var.field(1), fields);
+                    rkf.unshuffleKeyAndDataFields(var.field(0), var.field(1), fields);
                     DBSPClosureExpression rightRow =
                             DBSPTupleExpression.flatten(
                                     lNulls, new DBSPTupleExpression(fields, false))
