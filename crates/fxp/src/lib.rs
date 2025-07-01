@@ -2013,4 +2013,28 @@ mod test {
             assert_eq!(af.sqrt(), Fixed((a * 100).isqrt()));
         }
     }
+
+    #[test]
+    fn nullable() {
+        /// Adds `a` and `b` and returns the sum.  Return `None` if `a` or `b`
+        /// is `None` or if their sum is out of range.
+        fn nullable_checked_add_generic<
+            const PA: usize,
+            const SA: usize,
+            const PB: usize,
+            const SB: usize,
+            const PC: usize,
+            const SC: usize,
+        >(
+            a: Option<Fixed<PA, SA>>,
+            b: Option<Fixed<PB, SB>>,
+        ) -> Option<Fixed<PC, SC>> {
+            a.zip(b).and_then(|(a, b)| a.checked_add_generic(b))
+        }
+
+        let a: Option<Fixed<10, 2>> = Some("1.23".parse().unwrap());
+        let b: Option<Fixed<5, 4>> = Some("4.5678".parse().unwrap());
+        let c: Option<Fixed<10, 4>> = nullable_checked_add_generic(a, b);
+        assert_eq!(c, Some("5.7978".parse().unwrap()));
+    }
 }
