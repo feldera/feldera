@@ -45,7 +45,8 @@ jobs:
         run: |
           mv feldera-binaries-aarch64-unknown-linux-gnu.zip feldera-binaries-v${{ env.CURRENT_VERSION }}-aarch64-unknown-linux-gnu.zip
           mv feldera-binaries-x86_64-unknown-linux-gnu.zip feldera-binaries-v${{ env.CURRENT_VERSION }}-x86_64-unknown-linux-gnu.zip
-          mv feldera-sql-compiler.zip feldera-sql-compiler-v${{ env.CURRENT_VERSION }}.zip
+          unzip -jo feldera-sql-compiler.zip 'sql2dbsp-jar-with-dependencies.jar' -d .
+          mv sql2dbsp-jar-with-dependencies.jar sql2dbsp-jar-with-dependencies-v${{ env.CURRENT_VERSION }}.jar
           mv feldera-docs.zip feldera-docs-v${{ env.CURRENT_VERSION }}.zip
 
       - name: Release on GitHub
@@ -59,10 +60,23 @@ jobs:
           files: |
             feldera-binaries-v${{ env.CURRENT_VERSION }}-aarch64-unknown-linux-gnu.zip
             feldera-binaries-v${{ env.CURRENT_VERSION }}-x86_64-unknown-linux-gnu.zip
-            feldera-sql-compiler-v${{ env.CURRENT_VERSION }}.zip
+            sql2dbsp-jar-with-dependencies-v${{ env.CURRENT_VERSION }}.jar
           # A custom token is necessary so the ci-post-release.yml workflow is triggered
           # see also https://github.com/softprops/action-gh-release/issues/59
           token: ${{ secrets.CI_RELEASE }}
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.SQL2DBSP_S3_ACCESS_KEY }}
+          aws-secret-access-key: ${{ secrets.SQL2DBSP_S3_SECRET_KEY }}
+          aws-region: ${{ vars.SQL2DBSP_S3_REGION }}
+
+      - name: Upload JAR to S3 with SHA in filename
+        run: |
+          JAR_FILE=sql2dbsp-jar-with-dependencies-v${{ env.CURRENT_VERSION }}.jar
+          aws s3 cp "$JAR_FILE" "s3://${{ vars.SQL2DBSP_S3_BUCKET }}/$JAR_FILE" \
+            --content-type application/java-archive
 
       # Update docs.feldera.com
       - name: Update docs.feldera.com
