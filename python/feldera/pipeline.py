@@ -3,6 +3,7 @@ import time
 from datetime import datetime
 
 import pandas
+from uuid import UUID
 
 from typing import List, Dict, Callable, Optional, Generator, Mapping, Any
 from collections import deque
@@ -636,6 +637,8 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
         resp = self.client.sync_checkpoint_status(self.name)
         success = resp.get("success")
 
+        fail = resp.get("failure") or {}
+
         if uuid == success:
             return CheckpointStatus.Success
 
@@ -644,6 +647,9 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
             failure = CheckpointStatus.Failure
             failure.error = fail.get("error", "")
             return failure
+
+        if (success is None) or UUID(uuid) > UUID(success):
+            return CheckpointStatus.InProgress
 
         return CheckpointStatus.Unknown
 

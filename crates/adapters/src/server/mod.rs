@@ -931,9 +931,12 @@ async fn checkpoint_sync(state: WebData<ServerState>) -> Result<impl Responder, 
             };
 
             let state = state.sync_checkpoint_state.clone();
-            controller.start_sync_checkpoint(Box::new(move |result| {
-                state.lock().unwrap().completed(last_checkpoint, result);
-            }));
+            controller.start_sync_checkpoint(
+                last_checkpoint,
+                Box::new(move |result| {
+                    state.lock().unwrap().completed(last_checkpoint, result);
+                }),
+            );
             last_checkpoint
         }
     };

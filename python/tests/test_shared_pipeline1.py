@@ -12,7 +12,7 @@ SECRET_KEY = "miniopasswd"
 
 def storage_cfg(
     endpoint: Optional[str] = None,
-    start_from_checkpoint: bool = False,
+    start_from_checkpoint: Optional[str] = None,
     auth_err: bool = False,
 ) -> dict:
     return {
@@ -56,7 +56,7 @@ class TestCheckpointSync(SharedTestPipeline):
         self.pipeline.clear_storage()
 
         # Restart pipeline from checkpoint
-        storage_config = storage_cfg(start_from_checkpoint=True, auth_err=auth_err)
+        storage_config = storage_cfg(start_from_checkpoint="latest", auth_err=auth_err)
         self.set_runtime_config(RuntimeConfig(storage=Storage(config=storage_config)))
         self.pipeline.start()
         got_after = list(self.pipeline.query("SELECT * FROM v0"))
