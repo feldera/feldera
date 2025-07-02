@@ -57,6 +57,8 @@ To run unit tests:
 (cd python && python3 -m unittest)
 ```
 
+> ⚠️ Running the unit tests will **delete all existing pipelines**.
+
 The following command runs end-to-end tests.  You'll need a pipeline
 manager running at `http://localhost:8080`.  For the pipeline builder
 tests, you'll also need a broker available at `localhost:9092` and
