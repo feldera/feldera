@@ -238,11 +238,10 @@ addition to the normal way of `''`.
         <code>SUBSTR('Thomas', 3)</code> => <code>omas</code><br></br></td>
   </tr>
   <tr>
-    <td><a id="substring"></a><code>SUBSTRING (</code> string <code>[ FROM</code> start <code>] [ FOR</code> count<code> ] )</code></td>
+    <td><a id="substring"></a><code>SUBSTRING (</code> string <code>FROM</code> position <code> [ FOR</code> count<code> ] )</code></td>
     <td>Extracts the substring of string starting at the "start"'th character if that is specified, and stopping after "count" characters if the value is specified. At least one of "start" or "count" must be provided.  If "start" is negative, it is replaced with 1.  If "count" is negative the empty string is returned.  The index of the first character is 1.</td>
     <td><code>SUBSTRING('Thomas' from 2 for 3)</code> => <code>hom</code><br></br>
-        <code>SUBSTRING('Thomas' from 3)</code> => <code>omas</code><br></br>
-        <code>SUBSTRING('Thomas' for 2)</code> => <code>Th</code></td>
+        <code>SUBSTRING('Thomas' from 3)</code> => <code>omas</code><br></br></td>
   </tr>
   <tr>
     <td><a id="trim"></a><code>TRIM ( [ LEADING | TRAILING | BOTH ]</code> characters <code>FROM</code> string <code>)</code></td>
