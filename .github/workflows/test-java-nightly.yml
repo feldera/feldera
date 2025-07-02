@@ -19,7 +19,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
 
     container:
-      image: ghcr.io/feldera/feldera-dev:sha-80e0a01ee5dc094fd8693d29338d2836852dff1d
+      image: ghcr.io/feldera/feldera-dev:sha-cfae3f2af7e7676dde51af39ed76332f67d91b6a
       options: --user=ubuntu
     steps:
       - name: Checkout repository
@@ -28,19 +28,26 @@ jobs:
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
 
-      - name: Cache Maven dependencies
-        uses: actions/cache@v4
+      - uses: actions/cache@v4
         with:
-          path: ~/.m2/repository
-          key: maven-${{ runner.os }}-${{ hashFiles('**/pom.xml') }}
+          path: |
+            /home/ubuntu/.gradle
+            ./sql-to-dbsp-compiler/calcite
+          key: sql2dbsp-java-cache2-${{ runner.os }}-${{ hashFiles('sql-to-dbsp-compiler/calcite_version.env') }}
           restore-keys: |
-            maven-${{ runner.os }}-
+            sql2dbsp-java-cache2-${{ runner.os }}-
 
       # TODO: Avoid doing this twice and ideally download & reuse the JAR from build-java.yml workflow
       - name: Run build.sh
         if: ${{ vars.CI_DRY_RUN != 'true' }}
         run: ./build.sh
         working-directory: ./sql-to-dbsp-compiler
+        env:
+          CALCITE_BUILD_DIR: ./calcite
+          GRADLE_HOME: /home/ubuntu/.gradle
+
+      - name: Stop gradle daemon
+        run: gradle --stop
 
       - name: Run SLT tests
         if: ${{ vars.CI_DRY_RUN != 'true' }}

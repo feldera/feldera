@@ -8,31 +8,40 @@ jobs:
     name: Build Compiler
     runs-on: [self-hosted, skylake40]
     container:
-      image: ghcr.io/feldera/feldera-dev:sha-80e0a01ee5dc094fd8693d29338d2836852dff1d
+      image: ghcr.io/feldera/feldera-dev:sha-cfae3f2af7e7676dde51af39ed76332f67d91b6a
       options: --user=ubuntu
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Cache Maven dependencies
-        uses: actions/cache@v4
+      - uses: actions/cache@v4
         with:
-          path: ~/.m2/repository
-          key: maven-${{ runner.os }}-${{ hashFiles('**/pom.xml') }}
+          path: |
+            /home/ubuntu/.gradle
+            ./sql-to-dbsp-compiler/calcite
+          key: sql2dbsp-java-cache-${{ runner.os }}-${{ hashFiles('sql-to-dbsp-compiler/calcite_version.env') }}
           restore-keys: |
-            maven-${{ runner.os }}-
+            sql2dbsp-java-cache-${{ runner.os }}-
 
-      - name: Build JAR
-        run: bash build.sh
+      - name: gradle version
+        run: |
+          gradle --version
+
+      - name: Build sql2dbsp JARs
+        run: bash build.sh -pl SQL-compiler
         working-directory: ./sql-to-dbsp-compiler
+        env:
+          CALCITE_BUILD_DIR: ./calcite
+          GRADLE_HOME: /home/ubuntu/.gradle
+
+      - name: Stop gradle daemon
+        run: gradle --stop
 
       - name: Copy JAR to artifacts directory
         run: |
           mkdir -p build-artifacts
           cp ./sql-to-dbsp-compiler/SQL-compiler/target/sql2dbsp.jar build-artifacts/
           cp ./sql-to-dbsp-compiler/SQL-compiler/target/sql2dbsp-jar-with-dependencies.jar build-artifacts/
-          cp ./sql-to-dbsp-compiler/slt/target/slt-jar-with-dependencies.jar build-artifacts/
-          cp ./sql-to-dbsp-compiler/slt/target/slt.jar build-artifacts/
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
@@ -40,3 +49,17 @@ jobs:
           name: feldera-sql-compiler
           path: build-artifacts
           retention-days: 7
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.SQL2DBSP_S3_ACCESS_KEY }}
+          aws-secret-access-key: ${{ secrets.SQL2DBSP_S3_SECRET_KEY }}
+          aws-region: ${{ vars.SQL2DBSP_S3_REGION }}
+
+      - name: Upload JAR to S3 with SHA in filename
+        run: |
+          JAR_FILE=build-artifacts/sql2dbsp-jar-with-dependencies.jar
+          DEST_NAME=sql2dbsp-jar-with-dependencies-${{ github.sha }}.jar
+          aws s3 cp "$JAR_FILE" "s3://${{ vars.SQL2DBSP_S3_BUCKET }}/$DEST_NAME" \
+            --content-type application/java-archive
