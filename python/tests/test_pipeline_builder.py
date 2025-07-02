@@ -37,8 +37,8 @@ class TestPipelineBuilder(unittest.TestCase):
             TEST_CLIENT, name="notebook", sql=sql
         ).create_or_replace()
 
-        df_students = pd.read_csv("students.csv")
-        df_grades = pd.read_csv("grades.csv")
+        df_students = pd.read_csv("tests/students.csv")
+        df_grades = pd.read_csv("tests/grades.csv")
 
         out = pipeline.listen("average_scores")
 
@@ -76,8 +76,8 @@ class TestPipelineBuilder(unittest.TestCase):
             TEST_CLIENT, name="notebook", sql=sql
         ).create_or_replace()
 
-        df_students = pd.read_csv("students.csv")
-        df_grades = pd.read_csv("grades.csv")
+        df_students = pd.read_csv("tests/students.csv")
+        df_grades = pd.read_csv("tests/grades.csv")
 
         out = pipeline.listen("average_scores")
 
@@ -131,8 +131,8 @@ class TestPipelineBuilder(unittest.TestCase):
             TEST_CLIENT, name="notebook", sql=sql
         ).create_or_replace()
 
-        df_students = pd.read_csv("students.csv")
-        df_grades = pd.read_csv("grades.csv")
+        df_students = pd.read_csv("tests/students.csv")
+        df_grades = pd.read_csv("tests/grades.csv")
 
         pipeline.start()
         out = pipeline.listen(view_name)
@@ -179,8 +179,8 @@ class TestPipelineBuilder(unittest.TestCase):
             TEST_CLIENT, name="p2", sql=sql2
         ).create_or_replace()
 
-        df_students = pd.read_csv("students.csv")
-        df_grades = pd.read_csv("grades.csv")
+        df_students = pd.read_csv("tests/students.csv")
+        df_grades = pd.read_csv("tests/grades.csv")
 
         out1 = pipeline1.listen(VIEW_NAMES[0])
         out2 = pipeline2.listen(VIEW_NAMES[1])
@@ -229,8 +229,8 @@ class TestPipelineBuilder(unittest.TestCase):
             TEST_CLIENT, name="foreach_chunk", sql=sql
         ).create_or_replace()
 
-        df_students = pd.read_csv("students.csv")
-        df_grades = pd.read_csv("grades.csv")
+        df_students = pd.read_csv("tests/students.csv")
+        df_grades = pd.read_csv("tests/grades.csv")
 
         pipeline.foreach_chunk(view_name, callback)
         pipeline.start()
