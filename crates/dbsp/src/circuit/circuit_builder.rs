@@ -3925,59 +3925,6 @@ where
     }
 }
 
-impl<P, T> ChildCircuit<P, T>
-where
-    P: Circuit,
-    T: Timestamp,
-{
-    /// Make the contents of `parent_stream` available in the nested circuit
-    /// via an [`ImportOperator`].
-    ///
-    /// Typically invoked via a convenience wrapper, e.g., [`Stream::delta0`].
-    pub fn import_stream<I, O, Op>(
-        &self,
-        operator: Op,
-        parent_stream: &Stream<P, I>,
-    ) -> Stream<Self, O>
-    where
-        I: Data,
-        O: Data,
-        Op: ImportOperator<I, O>,
-    {
-        let preference = operator.input_preference();
-        self.import_stream_with_preference(operator, parent_stream, preference)
-    }
-
-    /// Like [`Self::import_stream`] but overrides the ownership
-    /// preference on the input stream with `input_preference.
-    pub fn import_stream_with_preference<I, O, Op>(
-        &self,
-        operator: Op,
-        parent_stream: &Stream<P, I>,
-        input_preference: OwnershipPreference,
-    ) -> Stream<Self, O>
-    where
-        I: Data,
-        O: Data,
-        Op: ImportOperator<I, O>,
-    {
-        assert!(self.is_child_of(parent_stream.circuit()));
-
-        self.add_node(|id| {
-            self.log_circuit_event(&CircuitEvent::operator(
-                self.global_node_id().child(id),
-                operator.name(),
-                operator.location(),
-            ));
-            let node = ImportNode::new(operator, self.clone(), parent_stream.clone(), id);
-            self.parent()
-                .connect_stream(parent_stream, self.node_id(), input_preference);
-            let output_stream = node.output_stream();
-            (node, output_stream)
-        })
-    }
-}
-
 struct ImportNode<C, I, O, Op>
 where
     C: Circuit,
