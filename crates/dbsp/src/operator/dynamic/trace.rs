@@ -938,6 +938,7 @@ pub struct Z1Trace<C: Circuit, B: Batch, T: Trace> {
     time: T::Time,
     trace: Option<T>,
     replay_state: Option<ReplayState<T>>,
+    replay_mode: bool,
     trace_factories: T::Factories,
     // `dirty[scope]` is `true` iff at least one non-empty update was added to the trace
     // since the previous clock cycle at level `scope`.
@@ -973,6 +974,7 @@ where
             time: <T::Time as Timestamp>::clock_start(),
             trace: None,
             replay_state: None,
+            replay_mode: false,
             trace_factories: trace_factories.clone(),
             batch_factories: batch_factories.clone(),
             dirty: vec![false; root_scope as usize + 1],
@@ -1146,6 +1148,7 @@ where
         //     &self.global_id,
         //     self.delta_stream.is_some()
         // );
+        self.replay_mode = true;
         if self.delta_stream.is_some() && self.replay_state.is_none() {
             let trace = self.trace.take().expect("Z1Trace::start_replay: no trace");
             self.trace = Some(T::new(&self.trace_factories));
@@ -1164,7 +1167,7 @@ where
 
     fn end_replay(&mut self) -> Result<(), Error> {
         //println!("Z1Trace-{}::end_replay", &self.global_id);
-
+        self.replay_mode = false;
         self.replay_state = None;
 
         Ok(())
@@ -1181,41 +1184,52 @@ where
         //println!("Z1-{}::get_output", &self.global_id);
         let replay_step_size = Runtime::replay_step_size();
 
-        if let Some(replay) = &mut self.replay_state {
-            //println!("Z1-{}::get_output: replaying", &self.global_id);
-            let mut builder =
-                <B::Builder as Builder<B>>::with_capacity(&self.batch_factories, replay_step_size);
+        if self.replay_mode {
+            if let Some(replay) = &mut self.replay_state {
+                //println!("Z1-{}::get_output: replaying", &self.global_id);
+                let mut builder = <B::Builder as Builder<B>>::with_capacity(
+                    &self.batch_factories,
+                    replay_step_size,
+                );
 
-            let mut num_values = 0;
-            let mut weight = self.batch_factories.weight_factory().default_box();
+                let mut num_values = 0;
+                let mut weight = self.batch_factories.weight_factory().default_box();
 
-            while replay.borrow_cursor().key_valid() && num_values < replay_step_size {
-                let mut values_added = false;
-                while replay.borrow_cursor().val_valid() && num_values < replay_step_size {
-                    weight.set_zero();
-                    replay.with_cursor_mut(|cursor| {
-                        cursor.map_times(&mut |_t, w| weight.add_assign(w))
-                    });
+                while replay.borrow_cursor().key_valid() && num_values < replay_step_size {
+                    let mut values_added = false;
+                    while replay.borrow_cursor().val_valid() && num_values < replay_step_size {
+                        weight.set_zero();
+                        replay.with_cursor_mut(|cursor| {
+                            cursor.map_times(&mut |_t, w| weight.add_assign(w))
+                        });
 
-                    if !weight.is_zero() {
-                        builder.push_val_diff(replay.borrow_cursor().val(), weight.as_ref());
-                        values_added = true;
-                        num_values += 1;
+                        if !weight.is_zero() {
+                            builder.push_val_diff(replay.borrow_cursor().val(), weight.as_ref());
+                            values_added = true;
+                            num_values += 1;
+                        }
+                        replay.with_cursor_mut(|cursor| cursor.step_val());
                     }
-                    replay.with_cursor_mut(|cursor| cursor.step_val());
+                    if values_added {
+                        builder.push_key(replay.borrow_cursor().key());
+                    }
+                    if !replay.borrow_cursor().val_valid() {
+                        replay.with_cursor_mut(|cursor| cursor.step_key());
+                    }
                 }
-                if values_added {
-                    builder.push_key(replay.borrow_cursor().key());
-                }
-                if !replay.borrow_cursor().val_valid() {
-                    replay.with_cursor_mut(|cursor| cursor.step_key());
-                }
-            }
 
-            let batch = builder.done();
-            self.delta_stream.as_ref().unwrap().value().put(batch);
-            if !replay.borrow_cursor().key_valid() {
-                self.replay_state = None;
+                let batch = builder.done();
+                self.delta_stream.as_ref().unwrap().value().put(batch);
+                if !replay.borrow_cursor().key_valid() {
+                    self.replay_state = None;
+                }
+            } else {
+                // Continue producing empty outputs as long as the circuit is in the replay mode.
+                self.delta_stream
+                    .as_ref()
+                    .unwrap()
+                    .value()
+                    .put(B::dyn_empty(&self.batch_factories));
             }
         }
 
