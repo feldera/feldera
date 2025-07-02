@@ -185,14 +185,14 @@ impl dyn StorageBackend {
         }
     }
 
-    pub fn gather_batches_for_checkpoint(
+    pub fn gather_batches_for_checkpoint_uuid(
         &self,
-        cpm: &CheckpointMetadata,
+        cpm: uuid::Uuid,
     ) -> Result<HashSet<StoragePath>, StorageError> {
-        assert!(!cpm.uuid.is_nil());
+        assert!(!cpm.is_nil());
 
         let mut spines = Vec::new();
-        self.list(&cpm.uuid.to_string().into(), &mut |path, _file_type| {
+        self.list(&cpm.to_string().into(), &mut |path, _file_type| {
             if path
                 .filename()
                 .is_some_and(|filename| filename.starts_with("pspine-batches"))
@@ -210,6 +210,13 @@ impl dyn StorageBackend {
         }
 
         Ok(batch_files_in_commit)
+    }
+
+    pub fn gather_batches_for_checkpoint(
+        &self,
+        cpm: &CheckpointMetadata,
+    ) -> Result<HashSet<StoragePath>, StorageError> {
+        self.gather_batches_for_checkpoint_uuid(cpm.uuid)
     }
 
     /// Writes `content` to `name` as JSON, automatically creating any parent

@@ -238,7 +238,7 @@ enum Command {
     GraphProfile(GraphProfileCallbackFn),
     Checkpoint(CheckpointCallbackFn),
     Suspend(SuspendCallbackFn),
-    SyncCheckpoint(SyncCheckpointCallbackFn),
+    SyncCheckpoint((uuid::Uuid, SyncCheckpointCallbackFn)),
 }
 
 impl Command {
@@ -249,7 +249,7 @@ impl Command {
                 callback(Err(Arc::new(ControllerError::ControllerExit)))
             }
             Command::Suspend(callback) => callback(Err(Arc::new(ControllerError::ControllerExit))),
-            Command::SyncCheckpoint(callback) => {
+            Command::SyncCheckpoint((_, callback)) => {
                 callback(Err(Arc::new(ControllerError::ControllerExit)))
             }
         }
@@ -589,8 +589,9 @@ impl Controller {
     ///
     /// The callback-based nature of this function makes it useful in
     /// asynchronous contexts.
-    pub fn start_sync_checkpoint(&self, cb: SyncCheckpointCallbackFn) {
-        self.inner.send_command(Command::SyncCheckpoint(cb));
+    pub fn start_sync_checkpoint(&self, checkpoint: uuid::Uuid, cb: SyncCheckpointCallbackFn) {
+        self.inner
+            .send_command(Command::SyncCheckpoint((checkpoint, cb)));
     }
 
     /// Checkpoints the pipeline.
@@ -711,7 +712,7 @@ struct CircuitThread {
     checkpoint_requests: Vec<CheckpointRequest>,
 
     /// Currently only allows one request at a time.
-    sync_checkpoint_request: Option<SyncCheckpointCallbackFn>,
+    sync_checkpoint_request: Option<(uuid::Uuid, SyncCheckpointCallbackFn)>,
 
     /// Storage backend for writing checkpoints.
     storage: Option<Arc<dyn StorageBackend>>,
@@ -1053,6 +1054,7 @@ impl CircuitThread {
                 .commit()
                 .map_err(|e| Arc::new(ControllerError::from(e)))
                 .and_then(|circuit| {
+                    let uuid = circuit.uuid.to_string();
                     let checkpoint = Checkpoint {
                         circuit: Some(circuit),
                         step: this.step,
@@ -1068,6 +1070,12 @@ impl CircuitThread {
                         .write(
                             &**this.storage.as_ref().unwrap(),
                             &StoragePath::from(STATE_FILE),
+                        )
+                        .map_err(Arc::new)?;
+                    checkpoint
+                        .write(
+                            &**this.storage.as_ref().unwrap(),
+                            &StoragePath::from(uuid).child(STATE_FILE),
                         )
                         .map(|()| checkpoint)
                         .map_err(Arc::new)
@@ -1161,8 +1169,8 @@ impl CircuitThread {
                     self.checkpoint_requests
                         .push(CheckpointRequest::SuspendCommand(reply_callback));
                 }
-                Command::SyncCheckpoint(reply_callback) => {
-                    self.sync_checkpoint_request = Some(reply_callback);
+                Command::SyncCheckpoint((uuid, reply_callback)) => {
+                    self.sync_checkpoint_request = Some((uuid, reply_callback));
                 }
             }
         }
@@ -1455,16 +1463,8 @@ impl CircuitThread {
     }
 
     fn sync_checkpoint(&mut self) {
-        let Some(cb) = self.sync_checkpoint_request.take() else {
+        let Some((uuid, cb)) = self.sync_checkpoint_request.take() else {
             return;
-        };
-
-        let cpms = match self.list_checkpoints() {
-            Ok(x) => x,
-            Err(e) => {
-                cb(Err(e));
-                return;
-            }
         };
 
         let Some((_, options)) = self.controller.status.pipeline_config.storage() else {
@@ -1511,16 +1511,9 @@ impl CircuitThread {
         let config = sync.to_owned();
 
         std::thread::spawn(move || {
-            let mut errs = vec![];
-            for cpm in cpms {
-                if let Err(err) = synchronizer.push(&cpm, storage.clone(), config.clone()) {
-                    errs.push(err.to_string());
-                }
-            }
-
-            if !errs.is_empty() {
+            if let Err(err) = synchronizer.push(uuid, storage.clone(), config.clone()) {
                 cb(Err(Arc::new(ControllerError::checkpoint_push_error(
-                    errs.join("\n"),
+                    err.to_string(),
                 ))));
             } else {
                 cb(Ok(()))
@@ -2026,7 +2019,7 @@ impl ControllerInit {
                 ..
             }) = storage.options.backend
             {
-                if sync.start_from_checkpoint {
+                if sync.start_from_checkpoint.is_some() {
                     let Some(synchronizer) = inventory::iter::<&dyn CheckpointSynchronizer>
                         .into_iter()
                         .next()
