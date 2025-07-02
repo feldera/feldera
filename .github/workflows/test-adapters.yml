@@ -86,6 +86,7 @@ jobs:
 
       # Pubsub tests are only supported on x86_64, see below
       - name: Run adapters tests
+        if: ${{ vars.CI_DRY_RUN != 'true' }}
         run: |
           source .venv/bin/activate
           ../../build/dbsp_adapters-* --skip pubsub
@@ -134,6 +135,7 @@ jobs:
         run: chmod +x ./build/*
 
       - name: Run adapters pubsub tests
+        if: ${{ vars.CI_DRY_RUN != 'true' }}
         run: ../../build/dbsp_adapters-* pubsub
         working-directory: crates/adapters
         env:

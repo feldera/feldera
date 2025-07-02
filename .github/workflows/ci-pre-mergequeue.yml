@@ -32,6 +32,7 @@ jobs:
           key: pre-commit-3|${{ hashFiles('.pre-commit-config.yaml') }}
       - run: pre-commit run --show-diff-on-failure --color=always --all-files
         shell: bash
+        if: ${{ vars.CI_DRY_RUN != 'true' }}
       - name: Print sccache stats
         run: sccache --show-stats
       - uses: stefanzweifel/git-auto-commit-action@b863ae1933cb653a53c021fe36dbb774e1fb9403

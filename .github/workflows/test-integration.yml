@@ -85,6 +85,7 @@ jobs:
         run: chmod +x ./build/*
 
       - name: Validate and run packaged demos
+        if: ${{ vars.CI_DRY_RUN != 'true' }}
         run: |
           (cd demo/packaged && uv run validate-preamble.py sql/*.sql)
           uv run demo/all-packaged/run.py --api-url http://pipeline-manager:8080
@@ -92,12 +93,14 @@ jobs:
           PYTHONPATH: ${{ github.workspace }}/python
 
       - name: Run manager tests
+        if: ${{ vars.CI_DRY_RUN != 'true' }}
         run: ./build/integration_test-*
         env:
           TEST_FELDERA_URL: http://pipeline-manager:8080
           RUST_BACKTRACE: 1
 
       - name: Run python tests
+        if: ${{ vars.CI_DRY_RUN != 'true' }}
         run: uv run --locked pytest . --timeout=600
         working-directory: python
         env:
@@ -105,6 +108,7 @@ jobs:
           IN_CI: 1 # We use this flag to skip some kafka tests in the python code base
 
       - name: Run python aggregate tests
+        if: ${{ vars.CI_DRY_RUN != 'true' }}
         run: uv run --locked ./tests/aggregate_tests/main.py
         working-directory: python
         env:
