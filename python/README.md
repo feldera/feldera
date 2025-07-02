@@ -81,3 +81,20 @@ To run the aggregate tests use:
 cd python
 PYTHONPATH=`pwd` python3 ./tests/aggregate_tests/main.py
 ```
+
+## Linting and formatting
+
+Use [Ruff] to run the lint checks that will be executed by the
+precommit hook when a PR is submitted:
+
+```bash
+ruff check python/
+```
+
+To reformat the code in the same way as the precommit hook:
+
+```bash
+ruff format
+```
+
+[Ruff]: https://github.com/astral-sh/ruff
