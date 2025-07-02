@@ -19,3 +19,4 @@ jobs:
           footer: "Linked Repo <${{github.server_url}}/${{github.repository}}|${{github.repository}}> | <${{github.server_url}}/${{github.repository}}/actions/runs/${{github.event.workflow_run.id}}|View Failure>"
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.CI_FAILURE_TO_SLACK_WEBHOOK }}
+        if: ${{ vars.CI_DRY_RUN != 'true' }}

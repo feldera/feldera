@@ -37,34 +37,42 @@ jobs:
 
       # Remove if https://github.com/actions/upload-artifact/issues/38 ever gets fixed
       - name: Make binaries executable
+        if: ${{ vars.CI_DRY_RUN != 'true' }}
         run: chmod +x ./build/*
 
       - name: feldera-types
+        if: ${{ vars.CI_DRY_RUN != 'true' }}
         run: ./build/feldera_types-*
 
       - name: dbsp
+        if: ${{ vars.CI_DRY_RUN != 'true' }}
         run: ./build/dbsp-*
 
       - name: feldera-fxp
         run: ./build/feldera_fxp-*
 
       - name: feldera-sqllib
+        if: ${{ vars.CI_DRY_RUN != 'true' }}
         run: ./build/feldera_sqllib-*
 
       - name: feldera-ir
+        if: ${{ vars.CI_DRY_RUN != 'true' }}
         run: ./build/feldera_ir-*
 
       - name: readers
+        if: ${{ vars.CI_DRY_RUN != 'true' }}
         run: ../../../build/readers-*
         # `readers` needs some find files relative to its source directory
         working-directory: sql-to-dbsp-compiler/lib/readers
 
       - name: dbsp_nexmark
+        if: ${{ vars.CI_DRY_RUN != 'true' }}
         run: ../../build/dbsp_nexmark-*
         # `dbsp_nexmark` needs some find files relative to its source directory
         working-directory: crates/nexmark
 
       - name: nexmark
+        if: ${{ vars.CI_DRY_RUN != 'true' }}
         run: |
           ../../build/nexmark-* ${{ env.NEXMARK_ARGS }}
           ../../build/nexmark-* ${{ env.NEXMARK_ARGS }} --storage 10000
