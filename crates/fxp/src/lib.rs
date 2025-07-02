@@ -684,7 +684,7 @@ impl<const P: usize, const S: usize> Fixed<P, S> {
             loop {
                 if (exp & 1) == 1 {
                     acc = if let Some((acc, acc_scale)) = acc {
-                        let (acc, shift) = dbg!(I256::from_product(acc, base).reduce_to_i128());
+                        let (acc, shift) = I256::from_product(acc, base).reduce_to_i128();
                         Some((acc, (acc_scale + base_scale) - shift as i32))
                     } else {
                         Some((base, base_scale))
@@ -696,7 +696,7 @@ impl<const P: usize, const S: usize> Fixed<P, S> {
                     return Self::try_new_with_exponent(acc, S as i32 - acc_scale);
                 }
 
-                let (next_base, shift) = dbg!(I256::from_product(base, base).reduce_to_i128());
+                let (next_base, shift) = I256::from_product(base, base).reduce_to_i128();
                 base = next_base;
                 base_scale = base_scale * 2 - shift as i32;
             }
