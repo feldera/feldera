@@ -1,5 +1,9 @@
 # Synchronizing checkpoints to object store
 
+:::caution Experimental feature
+Synchronizing checkpoints to object store is a highly experimental feature.
+:::
+
 Feldera allows synchronizing pipeline checkpoints to an object store and
 restoring them at startup.
 
@@ -21,7 +25,7 @@ Here is a sample configuration:
         "provider": "AWS",
         "access_key": "ACCESS_KEY",
         "secret_key": "SECRET_KEY",
-        "start_from_checkpoint": true
+        "start_from_checkpoint": false
       }
     }
   }
@@ -32,12 +36,12 @@ Here is a sample configuration:
 
 | Field                     | Type      | Description                                                                                                                        |
 | ------------------------- | --------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `endpoint`                | `string`  | The S3-compatible object store endpoint (e.g., for MinIO, AWS).                                                                    |
-| `bucket`\*                | `string`  | The bucket name and optional prefix to store checkpoints (e.g., `mybucket/checkpoints`).                                           |
-| `provider`\*              | `string`  | The S3 provider identifier. Must match [rclone's list](https://rclone.org/s3/#providers). Case-sensitive. Use `"Other"` if unsure. |
-| `access_key`              | `string`  | Your S3 access key. Not required if using environment-based authentication (e.g., IRSA).                                           |
-| `secret_key`              | `string`  | Your S3 secret key. Same rules as `access_key`.                                                                                    |
-| `start_from_checkpoint`\* | `boolean` | If `true`, Feldera will restore the latest checkpoint from the object store on startup.                                            |
+| `endpoint`                | `string`  | The S3-compatible object store endpoint (e.g., for MinIO, AWS).                                                                               |
+| `bucket`\*                | `string`  | The bucket name and optional prefix to store checkpoints (e.g., `mybucket/checkpoints`).                                                      |
+| `provider`\*              | `string`  | The S3 provider identifier. Must match [rclone's list](https://rclone.org/s3/#providers). Case-sensitive. Use `"Other"` if unsure.            |
+| `access_key`              | `string`  | Your S3 access key. Not required if using environment-based authentication (e.g., IRSA).                                                      |
+| `secret_key`              | `string`  | Your S3 secret key. Same rules as `access_key`.                                                                                               |
+| `start_from_checkpoint`   | `string`  | Provide a checkpoint UUID to resume from it, or use `latest` to restore from the latest one. The provided UUID must exist in object store.    |
 
 ## S3 permissions
 

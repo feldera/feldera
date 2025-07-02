@@ -257,6 +257,56 @@ pub enum StorageCompression {
     Snappy,
 }
 
+#[derive(Debug, Clone, Eq, PartialEq, ToSchema)]
+pub enum StartFromCheckpoint {
+    Latest,
+    Uuid(uuid::Uuid),
+}
+
+impl<'de> Deserialize<'de> for StartFromCheckpoint {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct StartFromCheckpointVisitor;
+
+        impl<'de> Visitor<'de> for StartFromCheckpointVisitor {
+            type Value = StartFromCheckpoint;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("a UUID string or the string \"latest\"")
+            }
+
+            fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                if value == "latest" {
+                    Ok(StartFromCheckpoint::Latest)
+                } else {
+                    uuid::Uuid::parse_str(value)
+                        .map(StartFromCheckpoint::Uuid)
+                        .map_err(|_| E::invalid_value(serde::de::Unexpected::Str(value), &self))
+                }
+            }
+        }
+
+        deserializer.deserialize_str(StartFromCheckpointVisitor)
+    }
+}
+
+impl Serialize for StartFromCheckpoint {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self {
+            StartFromCheckpoint::Latest => serializer.serialize_str("latest"),
+            StartFromCheckpoint::Uuid(uuid) => serializer.serialize_str(&uuid.to_string()),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct SyncConfig {
     /// The endpoint URL for the storage service.
@@ -299,9 +349,12 @@ pub struct SyncConfig {
     /// this can be left empty to allow automatic authentication via the pod's service account.
     pub secret_key: Option<String>,
 
-    /// If `true`, will try to pull the latest checkpoint from the configured
-    /// object store and resume from that point.
-    pub start_from_checkpoint: bool,
+    /// When set, the pipeline will fetch either the specified checkpoint
+    /// from the object store.
+    ///
+    /// If the checkpoint doesn't exist in object store, the pipeline will
+    /// fail to initialize.
+    pub start_from_checkpoint: Option<StartFromCheckpoint>,
 }
 
 #[derive(Debug, Clone, Default, Eq, PartialEq, Serialize, Deserialize, ToSchema)]

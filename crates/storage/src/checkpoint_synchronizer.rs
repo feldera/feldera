@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::{error::Error, fmt::Display};
 
-use feldera_types::{checkpoint::CheckpointMetadata, config::SyncConfig};
+use feldera_types::config::SyncConfig;
 
 use crate::error::StorageError;
 use crate::StorageBackend;
@@ -9,7 +9,7 @@ use crate::StorageBackend;
 pub trait CheckpointSynchronizer: Sync {
     fn push(
         &self,
-        checkpoint: &CheckpointMetadata,
+        checkpoint: uuid::Uuid,
         storage: Arc<dyn StorageBackend>,
         remote_config: SyncConfig,
     ) -> Result<(), SyncError>;
@@ -35,10 +35,7 @@ impl Display for SyncError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             SyncError::Io(error) => write!(f, "synchronizer IO err: {error}",),
-            SyncError::Serde(error) => write!(
-                f,
-                "synchronizer: error parsing checkpoint metadata: {error}",
-            ),
+            SyncError::Serde(error) => write!(f, "synchronizer: serde error: {error}",),
             SyncError::RcloneExitCode(error) => write!(f, "synchronizer: rclone: '{error}'"),
             SyncError::Storage(error) => write!(f, "synchronizer: storage error: '{error}'"),
         }
