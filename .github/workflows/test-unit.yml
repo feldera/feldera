@@ -22,7 +22,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
 
     container:
-      image: ghcr.io/feldera/feldera-dev:sha-80e0a01ee5dc094fd8693d29338d2836852dff1d
+      image: ghcr.io/feldera/feldera-dev:sha-cfae3f2af7e7676dde51af39ed76332f67d91b6a
       options: --user=ubuntu
 
     steps:

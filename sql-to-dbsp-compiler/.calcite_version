@@ -1,0 +1,7 @@
+CALCITE_BUILD_NEXT="y"
+CALCITE_REPO="https://github.com/apache/calcite.git"
+#CALCITE_REPO="https://github.com/mihaibudiu/calcite"
+CALCITE_BRANCH="main"
+CALCITE_CURRENT="1.40.0"
+CALCITE_NEXT_COMMIT="cf91ec8f36e1f7cf9656e2f794d8f78a2b43d88c"
+CALCITE_NEXT="1.41.0"
