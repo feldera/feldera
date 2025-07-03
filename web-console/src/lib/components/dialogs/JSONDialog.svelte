@@ -9,6 +9,7 @@
     onApply,
     onClose,
     title,
+    readOnlyMessage,
     disabled
   }: {
     json: string
@@ -16,6 +17,7 @@
     onApply: (json: string) => Promise<void>
     onClose: () => void
     title: Snippet
+    readOnlyMessage?: { value: string }
     disabled?: boolean
   } = $props()
   let value = $state(json)
@@ -27,6 +29,6 @@
 
 <GenericDialog onApply={onsubmit} {onClose} {title}>
   <div class="h-96">
-    <JsonForm {json} {filePath} onSubmit={onApply} {disabled}></JsonForm>
+    <JsonForm {json} {filePath} onSubmit={onApply} {disabled} {readOnlyMessage}></JsonForm>
   </div>
 </GenericDialog>

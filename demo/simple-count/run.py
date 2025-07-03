@@ -80,13 +80,13 @@ def main():
     print("Shutting down the pipeline...")
     if requests.get(f"{api_url}/v0/pipelines/{pipeline_name}").ok:
         requests.post(
-            f"{api_url}/v0/pipelines/{pipeline_name}/shutdown"
+            f"{api_url}/v0/pipelines/{pipeline_name}/stop?force=true"
         ).raise_for_status()
         while (
             requests.get(f"{api_url}/v0/pipelines/{pipeline_name}").json()[
                 "deployment_status"
             ]
-            != "Shutdown"
+            != "Stopped"
         ):
             time.sleep(1)
 
@@ -138,10 +138,12 @@ def main():
     print("Starting pipeline...")
     requests.post(f"{api_url}/v0/pipelines/{pipeline_name}/start").raise_for_status()
     response = requests.get(f"{api_url}/v0/pipelines/{pipeline_name}")
-    deployment_status = response.json()["deployment_status"]
+    resp = response.json()
+    deployment_status = resp["deployment_status"]
+    deployment_desired_status = resp["deployment_desired_status"]
     while deployment_status != "Running":
         print("Deployment status: %s" % deployment_status)
-        if deployment_status == "Failed":
+        if deployment_status == "Stopped" and deployment_desired_status == "Stopped":
             print("FAILED: deployment status is Failed")
             print(json.dumps(json.loads(response.content.decode("utf-8")), indent=4))
             exit(1)

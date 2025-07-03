@@ -71,7 +71,11 @@ only the program-related core fields, and is used by the compiler to discern whe
         endpoints::pipeline_management::put_pipeline,
         endpoints::pipeline_management::patch_pipeline,
         endpoints::pipeline_management::delete_pipeline,
-        endpoints::pipeline_management::post_pipeline_action,
+        endpoints::pipeline_management::post_pipeline_start,
+        endpoints::pipeline_management::post_pipeline_pause,
+        endpoints::pipeline_management::post_pipeline_stop,
+        endpoints::pipeline_management::post_pipeline_clear,
+        endpoints::pipeline_management::get_pipeline_logs,
         endpoints::pipeline_management::get_program_info,
 
         // Pipeline interaction endpoints
@@ -80,7 +84,6 @@ only the program-related core fields, and is used by the compiler to discern whe
         endpoints::pipeline_interaction::post_pipeline_input_connector_action,
         endpoints::pipeline_interaction::get_pipeline_input_connector_status,
         endpoints::pipeline_interaction::get_pipeline_output_connector_status,
-        endpoints::pipeline_interaction::get_pipeline_logs,
         endpoints::pipeline_interaction::get_pipeline_stats,
         endpoints::pipeline_interaction::get_pipeline_metrics,
         endpoints::pipeline_interaction::get_pipeline_circuit_profile,
@@ -129,6 +132,10 @@ only the program-related core fields, and is used by the compiler to discern whe
         crate::api::endpoints::pipeline_management::GetPipelineParameters,
         crate::api::endpoints::pipeline_management::PostPutPipeline,
         crate::api::endpoints::pipeline_management::PatchPipeline,
+        crate::api::endpoints::pipeline_management::PostStopPipelineParameters,
+
+        // Storage
+        crate::db::types::storage::StorageStatus,
 
         // Demo
         crate::demo::Demo,
@@ -269,6 +276,11 @@ fn api_scope() -> Scope {
         .service(endpoints::pipeline_management::put_pipeline)
         .service(endpoints::pipeline_management::patch_pipeline)
         .service(endpoints::pipeline_management::delete_pipeline)
+        .service(endpoints::pipeline_management::post_pipeline_start)
+        .service(endpoints::pipeline_management::post_pipeline_pause)
+        .service(endpoints::pipeline_management::post_pipeline_stop)
+        .service(endpoints::pipeline_management::post_pipeline_clear)
+        .service(endpoints::pipeline_management::get_pipeline_logs)
         .service(endpoints::pipeline_management::get_program_info)
         // Pipeline interaction endpoints
         .service(endpoints::pipeline_interaction::http_input)
@@ -280,7 +292,6 @@ fn api_scope() -> Scope {
         .service(endpoints::pipeline_interaction::post_pipeline_input_connector_action)
         .service(endpoints::pipeline_interaction::get_pipeline_input_connector_status)
         .service(endpoints::pipeline_interaction::get_pipeline_output_connector_status)
-        .service(endpoints::pipeline_interaction::get_pipeline_logs)
         .service(endpoints::pipeline_interaction::get_pipeline_stats)
         .service(endpoints::pipeline_interaction::get_pipeline_metrics)
         .service(endpoints::pipeline_interaction::get_pipeline_circuit_profile)
@@ -288,8 +299,6 @@ fn api_scope() -> Scope {
         .service(endpoints::pipeline_interaction::pipeline_adhoc_sql)
         .service(endpoints::pipeline_interaction::completion_token)
         .service(endpoints::pipeline_interaction::completion_status)
-        // Pipeline management endpoint (placed here to prevent {action} from matching e.g., "checkpoint")
-        .service(endpoints::pipeline_management::post_pipeline_action)
         // API keys endpoints
         .service(endpoints::api_key::list_api_keys)
         .service(endpoints::api_key::get_api_key)

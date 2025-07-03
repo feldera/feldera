@@ -126,7 +126,7 @@ pub(crate) async fn http_input(
 /// parameter. Updates are split into `Chunk`s.
 ///
 /// The pipeline continues sending updates until the client closes the
-/// connection or the pipeline is shut down.
+/// connection or the pipeline is stopped.
 #[utoipa::path(
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
@@ -458,57 +458,6 @@ pub(crate) async fn get_pipeline_output_connector_status(
     Ok(response)
 }
 
-/// Retrieve logs of a (non-shutdown) pipeline as a stream.
-///
-/// The logs stream catches up to the extent of the internally configured per-pipeline
-/// circular logs buffer (limited to a certain byte size and number of lines, whichever
-/// is reached first). After the catch-up, new lines are pushed whenever they become
-/// available.
-///
-/// The logs stream will end when the pipeline is shut down. It is also possible for the
-/// logs stream to end prematurely due to the runner back-end (temporarily) losing
-/// connectivity to the pipeline instance (e.g., process). In this case, it is needed
-/// to issue again a new request to this endpoint.
-#[utoipa::path(
-    context_path = "/v0",
-    security(("JSON web token (JWT) or API key" = [])),
-    params(
-        ("pipeline_name" = String, Path, description = "Unique pipeline name"),
-    ),
-    responses(
-        (status = OK
-            , description = "Pipeline logs retrieved successfully"
-            , content_type = "text/plain"
-            , body = Vec<u8>),
-        (status = NOT_FOUND
-            , description = "Pipeline with that name does not exist"
-            , body = ErrorResponse
-            , example = json!(examples::error_unknown_pipeline_name())),
-        (status = SERVICE_UNAVAILABLE
-            , body = ErrorResponse
-            , examples(
-                ("Pipeline is shutdown" = (value = json!(examples::error_runner_interaction_shutdown()))),
-                ("Runner response timeout" = (value = json!(examples::error_runner_interaction_timeout())))
-            )
-        ),
-        (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
-    ),
-    tag = "Pipeline interaction"
-)]
-#[get("/pipelines/{pipeline_name}/logs")]
-pub(crate) async fn get_pipeline_logs(
-    client: WebData<awc::Client>,
-    state: WebData<ServerState>,
-    tenant_id: ReqData<TenantId>,
-    path: web::Path<String>,
-) -> Result<HttpResponse, ManagerError> {
-    let pipeline_name = path.into_inner();
-    state
-        .runner
-        .http_streaming_logs_from_pipeline_by_name(&client, *tenant_id, &pipeline_name)
-        .await
-}
-
 /// Retrieve statistics (e.g., performance counters) of a running or paused pipeline.
 #[utoipa::path(
     context_path = "/v0",
@@ -706,7 +655,10 @@ pub(crate) async fn sync_checkpoint(
     #[cfg(not(feature = "feldera-enterprise"))]
     {
         let _ = (state, tenant_id, path.into_inner(), request);
-        Err(CommonError::EnterpriseFeature("checkpoint").into())
+        Err(CommonError::EnterpriseFeature {
+            feature: "checkpoint".to_string(),
+        }
+        .into())
     }
 
     #[cfg(feature = "feldera-enterprise")]
@@ -769,7 +721,10 @@ pub(crate) async fn checkpoint_pipeline(
     #[cfg(not(feature = "feldera-enterprise"))]
     {
         let _ = (state, tenant_id, path.into_inner(), request);
-        Err(CommonError::EnterpriseFeature("checkpoint").into())
+        Err(CommonError::EnterpriseFeature {
+            feature: "checkpoint".to_string(),
+        }
+        .into())
     }
 
     #[cfg(feature = "feldera-enterprise")]

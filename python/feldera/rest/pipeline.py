@@ -56,6 +56,7 @@ class Pipeline:
         self.program_status: Optional[str] = None
         self.program_status_since: Optional[str] = None
         self.program_error: Optional[dict] = None
+        self.storage_status: Optional[str] = None
 
     @classmethod
     def from_dict(cls, d: Mapping[str, Any]):

@@ -254,8 +254,8 @@ pub struct ProgramError {
 
 /// Validates the program status transition from current status to a new one.
 pub fn validate_program_status_transition(
-    current_status: &ProgramStatus,
-    new_status: &ProgramStatus,
+    current_status: ProgramStatus,
+    new_status: ProgramStatus,
 ) -> Result<(), DBError> {
     if matches!(
         (current_status, new_status),
@@ -280,8 +280,8 @@ pub fn validate_program_status_transition(
         Ok(())
     } else {
         Err(DBError::InvalidProgramStatusTransition {
-            current: *current_status,
-            transition_to: *new_status,
+            current_status,
+            new_status,
         })
     }
 }

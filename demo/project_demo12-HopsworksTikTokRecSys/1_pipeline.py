@@ -50,4 +50,4 @@ elapsed = end_time - start_time
 
 print(f"Pipeline finished in {elapsed}, shutting down...")
 
-pipeline.shutdown()
+pipeline.stop(force=True)

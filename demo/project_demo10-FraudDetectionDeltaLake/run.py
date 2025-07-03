@@ -85,7 +85,9 @@ specifying an AWS access key and region.
     args = parser.parse_args()
 
     print(
-        f"\nRunning the training pipeline. Point your browser to {args.api_url}/pipelines/fraud_detection_training/ to monitor the status of the pipeline."
+        f"\nRunning the training pipeline. Point your browser to {
+            args.api_url
+        }/pipelines/fraud_detection_training/ to monitor the status of the pipeline."
     )
 
     client = FelderaClient(args.api_url, api_key=args.api_key)
@@ -164,7 +166,7 @@ specifying an AWS access key and region.
     # Process full snapshot of the input tables and compute a dataset
     # with feature vectors for use in model training and testing.
     pipeline.start()
-    pipeline.wait_for_completion(shutdown=True)
+    pipeline.wait_for_completion(force_stop=True)
 
     features_pd = hfeature.to_pandas()
     print(f"Computed {len(features_pd)} feature vectors")
@@ -259,7 +261,7 @@ specifying an AWS access key and region.
     print(
         f"Shutting down the inference pipeline after {INFERENCE_TIME_SECONDS} seconds"
     )
-    pipeline.shutdown()
+    pipeline.stop(force=True)
 
 
 def build_program(

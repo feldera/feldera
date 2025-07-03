@@ -49,7 +49,7 @@ This example sets the timeout for each HTTP request to 10 seconds.
 
 .. note::
     This is for an individual HTTP request, and does not affect things like waiting for a pipeline to start,
-    pause, resume and shutdown.
+    pause, resume and stop.
     To set a timeout for these state transitions, set the parameter `timeout_s` in respective functions.
 
 Creating a Pipeline (OVERWRITING existing pipelines)
@@ -73,7 +73,7 @@ Creating a Pipeline (OVERWRITING existing pipelines)
     CREATE VIEW average_scores AS SELECT name, ((science + maths + art) / 3) as average FROM {TBL_NAMES[0]} JOIN {TBL_NAMES[1]} on id = student_id ORDER BY average DESC;
     """
 
-    # This will shutdown and overwrite any existing pipeline with the same name.
+    # This will stop and overwrite any existing pipeline with the same name.
     pipeline = PipelineBuilder(client, name="notebook", sql=sql).create_or_replace()
 
 Starting a Pipeline
@@ -132,14 +132,14 @@ Using Pandas DataFrames
     pipeline.input_pandas("students", df_students)
     pipeline.input_pandas("grades", df_grades)
 
-    # wait for the pipeline to complete and shutdown
+    # wait for the pipeline to complete and stop
     pipeline.wait_for_completion(True)
 
     # get the output of the view as a pandas dataframe
     df = out.to_pandas()
 
-    # delete the pipeline
-    pipeline.delete()
+    # clear the storage and delete the pipeline
+    pipeline.delete(True)
 
 Executing ad-hoc SQL Queries
 ============================
@@ -189,9 +189,11 @@ It takes a callback, and calls the callback on each chunk of received data.
     pipeline.start()
     pipeline.input_pandas("table_name", df)
 
-    # wait for the pipeline to finish and shutdown
+    # wait for the pipeline to finish and stop
     pipeline.wait_for_completion(True)
-    pipeline.delete()
+
+    # clear the storage and delete the pipeline
+    pipeline.delete(True)
 
 Waiting for Completion
 ======================
@@ -202,11 +204,11 @@ To wait (block) till the pipeline has been completed, use :meth:`.Pipeline.wait_
 
     pipeline.wait_for_completion()
 
-Optionally, to shutdown the pipeline after completion:
+Optionally, to forcibly stop (without checkpointing) the pipeline after completion:
 
 .. code-block:: python
 
-    pipeline.wait_for_completion(shutdown=True)
+    pipeline.wait_for_completion(force_stop=True)
 
 .. warning::
   If the data source is streaming, this will block forever.
@@ -278,11 +280,12 @@ This example shows creating and running a pipeline with Feldera's internal data 
 
     # important: `wait_for_completion` will block forever here
     pipeline.wait_for_idle()
-    pipeline.shutdown()
+    pipeline.stop(force=True)
     df = out.to_pandas()
     assert df.shape[0] != 0
 
-    pipeline.delete()
+    # clear the storage and delete the pipeline
+    pipeline.delete(True)
 
 Specifying Data Sources / Sinks
 ===============================

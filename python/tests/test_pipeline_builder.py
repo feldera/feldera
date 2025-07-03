@@ -50,7 +50,7 @@ class TestPipelineBuilder(unittest.TestCase):
 
         assert df.shape[0] == 100
 
-        pipeline.delete()
+        pipeline.delete(True)
 
     def test_pipeline_get(self):
         TBL_NAMES = ["students", "grades"]
@@ -104,8 +104,8 @@ class TestPipelineBuilder(unittest.TestCase):
 
         assert df.shape[0] == 100
         pipeline.pause()
-        pipeline.shutdown()
-        pipeline.delete()
+        pipeline.stop(force=True)
+        pipeline.delete(True)
 
     def test_local_listen_after_start(self):
         TBL_NAMES = ["students", "grades"]
@@ -143,7 +143,7 @@ class TestPipelineBuilder(unittest.TestCase):
         pipeline.wait_for_completion(True)
         df = out.to_pandas()
 
-        pipeline.delete()
+        pipeline.delete(True)
         assert df.shape[0] == 100
 
     def test_two_pipelines(self):
@@ -199,8 +199,8 @@ class TestPipelineBuilder(unittest.TestCase):
 
         assert df1.columns.tolist() not in df2.columns.tolist()
 
-        pipeline1.delete()
-        pipeline2.delete()
+        pipeline1.delete(True)
+        pipeline2.delete(True)
 
     def test_foreach_chunk(self):
         def callback(df: pd.DataFrame, seq_no: int):
@@ -239,7 +239,7 @@ class TestPipelineBuilder(unittest.TestCase):
         pipeline.input_pandas(TBL_NAMES[1], df_grades)
 
         pipeline.wait_for_completion(True)
-        pipeline.delete()
+        pipeline.delete(True)
 
     def test_df_without_columns(self):
         TBL_NAME = "student"
@@ -264,8 +264,8 @@ class TestPipelineBuilder(unittest.TestCase):
         with self.assertRaises(ValueError):
             pipeline.input_pandas(TBL_NAME, df)
 
-        pipeline.shutdown()
-        pipeline.delete()
+        pipeline.stop(force=True)
+        pipeline.delete(True)
 
     def test_sql_error(self):
         pipeline_name = "sql_error"
@@ -297,7 +297,7 @@ Code snippet:
         assert expected == got_err
 
         pipeline = Pipeline.get("sql_error", TEST_CLIENT)
-        pipeline.delete()
+        pipeline.delete(True)
 
     def test_kafka(self):
         import json
@@ -402,11 +402,11 @@ Code snippet:
         out = pipeline.listen(VIEW_NAME)
         pipeline.start()
         pipeline.wait_for_idle()
-        pipeline.shutdown()
+        pipeline.stop(force=True)
         df = out.to_pandas()
         assert df.shape[0] != 0
 
-        pipeline.delete()
+        pipeline.delete(True)
 
     def test_http_get(self):
         sql = """
@@ -450,7 +450,7 @@ Code snippet:
 
         assert df.shape[0] == 3
 
-        pipeline.delete()
+        pipeline.delete(True)
 
     def test_avro_format(self):
         import json
@@ -531,7 +531,7 @@ Code snippet:
         msg = next(consumer)
         assert msg.value is not None
 
-        pipeline.delete()
+        pipeline.delete(True)
 
     def test_pipeline_resource_config(self):
         from feldera.runtime_config import Resources, RuntimeConfig
@@ -596,7 +596,7 @@ Code snippet:
 
         assert TEST_CLIENT.get_pipeline(name).runtime_config["resources"] == config
 
-        pipeline.delete()
+        pipeline.delete(True)
 
     def test_timestamp_pandas(self):
         TBL_NAME = "items"
@@ -638,7 +638,7 @@ Code snippet:
 
         assert df.shape[0] == 3
 
-        pipeline.delete()
+        pipeline.delete(True)
 
     def test_input_json0(self):
         TBL_NAME = "items"
@@ -670,7 +670,7 @@ Code snippet:
         data["insert"].update({"insert_delete": 1})
         assert out_data == [data["insert"]]
 
-        pipeline.delete()
+        pipeline.delete(True)
 
     def test_input_json1(self):
         TBL_NAME = "items"
@@ -704,7 +704,7 @@ Code snippet:
 
         assert out_data == data
 
-        pipeline.delete()
+        pipeline.delete(True)
 
     def test_suspend(self):
         if not TEST_CLIENT.get_config().edition.is_enterprise():
@@ -734,15 +734,15 @@ Code snippet:
         pipeline.input_json(TBL_NAME, data, update_format="insert_delete")
         pipeline.wait_for_completion(False)
 
-        pipeline.suspend()
+        pipeline.stop(force=False)
 
         out_data = out.to_dict()
 
         data["insert"].update({"insert_delete": 1})
         assert out_data == [data["insert"]]
 
-        pipeline.shutdown()
-        pipeline.delete()
+        pipeline.stop(force=True)
+        pipeline.delete(True)
 
     def test_issue2142(self):
         sql = """
@@ -769,7 +769,7 @@ Code snippet:
 
         assert out_data == data
 
-        pipeline.delete()
+        pipeline.delete(True)
 
     def test_pandas_binary(self):
         sql = """
@@ -792,7 +792,7 @@ Code snippet:
         got = out.to_dict()
 
         assert expected_data == got
-        pipeline.delete()
+        pipeline.delete(True)
 
     def test_pandas_decimal(self):
         from decimal import Decimal
@@ -817,7 +817,7 @@ Code snippet:
         got = out.to_dict()
 
         assert expected == got
-        pipeline.delete()
+        pipeline.delete(True)
 
     def test_pandas_array(self):
         sql = """
@@ -841,7 +841,7 @@ Code snippet:
             datum.update({"insert_delete": 1})
 
         assert got == data
-        pipeline.delete()
+        pipeline.delete(True)
 
     def test_pandas_struct(self):
         sql = """
@@ -867,7 +867,7 @@ Code snippet:
             datum.update({"insert_delete": 1})
 
         assert data == got
-        pipeline.delete()
+        pipeline.delete(True)
 
     def test_pandas_date_time_timestamp(self):
         from pandas import Timestamp, Timedelta
@@ -897,7 +897,7 @@ Code snippet:
         got = out.to_dict()
 
         assert expected == got
-        pipeline.delete()
+        pipeline.delete(True)
 
     def test_pandas_simple(self):
         sql = """
@@ -932,7 +932,7 @@ Code snippet:
             datum.update({"insert_delete": 1})
 
         assert data == got
-        pipeline.delete()
+        pipeline.delete(True)
 
     def test_pandas_map(self):
         sql = """
@@ -950,7 +950,7 @@ Code snippet:
         pipeline.start()
         pipeline.input_json("t0", data)
         pipeline.wait_for_completion(True)
-        pipeline.shutdown()
+        pipeline.stop(force=True)
 
         got = out.to_dict()
         assert expected == got
@@ -959,20 +959,20 @@ Code snippet:
         out = pipeline.listen("v0")
         pipeline.input_json("t0", {"c1": {"a": 1, "b": 2}})
         pipeline.wait_for_completion(True)
-        pipeline.shutdown()
+        pipeline.stop(force=True)
 
         got = out.to_dict()
         assert expected == got
 
-        pipeline.delete()
+        pipeline.delete(True)
 
-    def test_failed_pipeline_shutdown(self):
+    def test_failed_pipeline_stop(self):
         sql = """
             CREATE TABLE t0 (c1 TINYINT);
             CREATE VIEW v0 AS SELECT c1 + 127::TINYINT FROM t0;"""
 
         pipeline = PipelineBuilder(
-            TEST_CLIENT, name="test_failed_pipeline_shutdown", sql=sql
+            TEST_CLIENT, name="test_failed_pipeline_stop", sql=sql
         ).create_or_replace()
         pipeline.start()
         data = [{"c1": 127}]
@@ -980,13 +980,13 @@ Code snippet:
 
         while True:
             status = pipeline.status()
-            expected = PipelineStatus.FAILED
-            if status == expected:
+            expected = PipelineStatus.STOPPED
+            if status == expected and len(pipeline.deployment_error()) > 0:
                 break
             time.sleep(1)
 
-        pipeline.shutdown()
-        pipeline.delete()
+        pipeline.stop(force=True)
+        pipeline.delete(True)
 
     def test_adhoc_execute(self):
         sql = """
@@ -1004,39 +1004,9 @@ Code snippet:
         got = list(resp)
         expected = [{"c1": 1}, {"c1": 2}]
 
-        pipeline.shutdown()
+        pipeline.stop(force=True)
 
         self.assertCountEqual(got, expected)
-
-    def test_issue2971(self):
-        sql = """
-        CREATE TABLE t0(c0 TINYINT) with ('materialized' = 'true');
-        CREATE MATERIALIZED VIEW v0 AS SELECT (c0 + 127::TINYINT) as out FROM t0;
-        """
-
-        pipeline = PipelineBuilder(
-            TEST_CLIENT, name="test_issue2971", sql=sql
-        ).create_or_replace()
-        pipeline.restart()
-        pipeline.input_json("t0", {"c0": 10})
-
-        while pipeline.status() != PipelineStatus.FAILED:
-            time.sleep(0.1)
-
-        with self.assertRaises(RuntimeError) as err:
-            pipeline.pause()
-
-        got_err: str = err.exception.args[0].strip()
-        assert "causes overflow" in got_err
-
-        with self.assertRaises(RuntimeError) as err:
-            pipeline.start()
-
-        got_err: str = err.exception.args[0].strip()
-        assert "causes overflow" in got_err
-
-        pipeline.shutdown()
-        pipeline.delete()
 
     def test_initialization_error(self):
         sql = """
@@ -1064,8 +1034,8 @@ Code snippet:
         with self.assertRaises(RuntimeError) as err:
             pipeline.start()
 
-        pipeline.shutdown()
-        pipeline.delete()
+        pipeline.stop(force=True)
+        pipeline.delete(True)
 
         got_err: str = err.exception.args[0].strip()
         assert "Unable to START the pipeline" in got_err
@@ -1111,8 +1081,8 @@ Code snippet:
         )
         assert c2_status
 
-        pipeline.shutdown()
-        pipeline.delete()
+        pipeline.stop(force=True)
+        pipeline.delete(True)
 
     def test_uuid(self):
         name = "test_uuid"
@@ -1134,7 +1104,7 @@ Code snippet:
         pipeline.wait_for_completion(True)
 
         got = out.to_dict()
-        pipeline.shutdown()
+        pipeline.stop(force=True)
 
         assert got == data
 
@@ -1176,8 +1146,8 @@ CREATE MATERIALIZED VIEW v AS SELECT * FROM map_tbl;
             data = {"m_var": {None: 1}}
             pipeline.input_json("map_tbl", data)
 
-        pipeline.shutdown()
-        pipeline.delete()
+        pipeline.stop(force=True)
+        pipeline.delete(True)
 
     def test_program_error0(self):
         sql = "create taabl;"
@@ -1193,8 +1163,8 @@ CREATE MATERIALIZED VIEW v AS SELECT * FROM map_tbl;
 
         assert err["sql_compilation"] != 0
 
-        pipeline.shutdown()
-        pipeline.delete()
+        pipeline.stop(force=True)
+        pipeline.delete(True)
 
     def test_program_error1(self):
         sql = ""
@@ -1208,8 +1178,8 @@ CREATE MATERIALIZED VIEW v AS SELECT * FROM map_tbl;
         assert err["sql_compilation"]["exit_code"] == 0
         assert err["rust_compilation"]["exit_code"] == 0
 
-        pipeline.shutdown()
-        pipeline.delete()
+        pipeline.stop(force=True)
+        pipeline.delete(True)
 
     def test_errors0(self):
         sql = "SELECT invalid"

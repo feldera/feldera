@@ -7,16 +7,14 @@
 
   const chipClass = $derived(
     match(status)
-      .with('Shutdown', () => '')
+      .with('Stopped', () => '')
       .with('Preparing', 'Provisioning', 'Initializing', () => 'preset-filled-tertiary-200-800')
-      .with('Paused', () => 'preset-tonal-warning')
-      .with('Suspending', () => 'bg-blue-200 dark:bg-blue-800')
-      .with('Suspended', () => 'bg-blue-200 dark:bg-blue-800')
+      .with('Paused', () => 'bg-blue-200 dark:bg-blue-800')
+      .with('Suspending', () => 'preset-filled-secondary-200-800')
       .with('Running', () => 'preset-tonal-success')
       .with('Pausing', () => 'preset-filled-secondary-200-800')
       .with('Resuming', () => 'preset-filled-tertiary-200-800')
-      .with('ShuttingDown', () => 'preset-filled-secondary-200-800')
-      .with({ PipelineError: P.any }, () => '')
+      .with('Stopping', () => 'preset-filled-secondary-200-800')
       .with(
         { Queued: P.any },
         { CompilingSql: P.any },

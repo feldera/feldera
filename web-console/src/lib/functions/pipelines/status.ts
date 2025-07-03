@@ -3,18 +3,16 @@ import { P, match } from 'ts-pattern'
 
 export const getPipelineStatusLabel = (status: PipelineStatus) => {
   return match(status)
-    .with('Shutdown', () => 'Ready To Start')
+    .with('Stopped', () => 'Ready To Start')
     .with('Preparing', () => 'Preparing')
     .with('Provisioning', () => 'Provisioning')
     .with('Initializing', () => 'Initializing')
     .with('Paused', () => 'Paused')
-    .with('Suspended', () => 'Suspended')
     .with('Suspending', () => 'Suspending')
     .with('Running', () => 'Running')
     .with('Pausing', () => 'Pausing')
     .with('Resuming', () => 'Resuming')
-    .with('ShuttingDown', () => 'Shutting Down')
-    .with({ PipelineError: P._ }, () => 'Pipeline Error')
+    .with('Stopping', () => 'Stopping')
     .with({ Queued: P.any }, () => 'Queued')
     .with({ CompilingSql: P.any }, () => 'Compiling SQL')
     .with({ SqlCompiled: P.any }, () => 'SQL compiled')
@@ -28,18 +26,16 @@ export const getPipelineStatusLabel = (status: PipelineStatus) => {
 
 export const getDeploymentStatusLabel = (status: PipelineStatus) => {
   return match(status)
-    .with('Shutdown', () => '')
+    .with('Stopped', () => '')
     .with('Preparing', () => 'Preparing')
     .with('Provisioning', () => 'Provisioning')
     .with('Initializing', () => 'Initializing')
     .with('Paused', () => 'Paused')
-    .with('Suspended', () => 'Suspended')
     .with('Suspending', () => 'Suspending')
     .with('Running', () => 'Running')
     .with('Pausing', () => 'Pausing')
     .with('Resuming', () => 'Resuming')
-    .with('ShuttingDown', () => 'Stopping')
-    .with({ PipelineError: P._ }, () => 'Pipeline Error')
+    .with('Stopping', () => 'Stopping')
     .with(
       { Queued: P.any },
       { CompilingSql: P.any },
@@ -59,18 +55,16 @@ export const getDeploymentStatusLabel = (status: PipelineStatus) => {
  */
 export const isPipelineInteractive = (status: PipelineStatus) => {
   return match(status)
-    .with('Shutdown', () => false)
+    .with('Stopped', () => false)
     .with('Preparing', () => false)
     .with('Provisioning', () => false)
     .with('Initializing', () => false)
     .with('Paused', () => true)
-    .with('Suspended', () => false)
     .with('Suspending', () => false)
     .with('Running', () => true)
     .with('Pausing', () => true)
     .with('Resuming', () => true)
-    .with('ShuttingDown', () => false)
-    .with({ PipelineError: P._ }, () => false)
+    .with('Stopping', () => false)
     .with(
       { Queued: P.any },
       { CompilingSql: P.any },
@@ -87,18 +81,16 @@ export const isPipelineInteractive = (status: PipelineStatus) => {
 
 export const isPipelineCodeEditable = (status: PipelineStatus) => {
   return match(status)
-    .with('Shutdown', () => true)
+    .with('Stopped', () => true)
     .with('Preparing', () => false)
     .with('Provisioning', () => false)
     .with('Initializing', () => false)
     .with('Paused', () => false)
-    .with('Suspended', () => false)
     .with('Suspending', () => false)
     .with('Running', () => false)
     .with('Pausing', () => false)
     .with('Resuming', () => false)
-    .with('ShuttingDown', () => false)
-    .with({ PipelineError: P._ }, () => false)
+    .with('Stopping', () => false)
     .with(
       { Queued: P.any },
       { CompilingSql: P.any },
@@ -113,23 +105,46 @@ export const isPipelineCodeEditable = (status: PipelineStatus) => {
     .exhaustive()
 }
 
-export const isPipelineConfigEditable = (status: PipelineStatus) =>
-  status === 'Suspended' || isPipelineCodeEditable(status)
+export const isPipelineShutdown = (status: PipelineStatus) => {
+  return match(status)
+    .with('Stopped', () => true)
+    .with('Preparing', () => false)
+    .with('Provisioning', () => false)
+    .with('Initializing', () => false)
+    .with('Paused', () => false)
+    .with('Suspending', () => false)
+    .with('Running', () => false)
+    .with('Pausing', () => false)
+    .with('Resuming', () => false)
+    .with('Stopping', () => false)
+    .with(
+      { Queued: P.any },
+      { CompilingSql: P.any },
+      { SqlCompiled: P.any },
+      { CompilingRust: P.any },
+      () => true
+    )
+    .with('Unavailable', () => false)
+    .with('SqlError', () => true)
+    .with('RustError', () => true)
+    .with('SystemError', () => true)
+    .exhaustive()
+}
+
+export const isPipelineConfigEditable = (status: PipelineStatus) => isPipelineCodeEditable(status)
 
 export const isMetricsAvailable = (status: PipelineStatus) => {
   return match(status)
-    .with('Shutdown', () => 'no' as const)
+    .with('Stopped', () => 'no' as const)
     .with('Preparing', () => 'soon' as const)
     .with('Provisioning', () => 'soon' as const)
     .with('Initializing', () => 'soon' as const)
     .with('Paused', () => 'yes' as const)
-    .with('Suspended', () => 'soon' as const)
     .with('Suspending', () => 'yes' as const)
     .with('Running', () => 'yes' as const)
     .with('Pausing', () => 'yes' as const)
     .with('Resuming', () => 'yes' as const)
-    .with('ShuttingDown', () => 'no' as const)
-    .with({ PipelineError: P._ }, () => 'no' as const)
+    .with('Stopping', () => 'no' as const)
     .with(
       { Queued: P.any },
       { CompilingSql: P.any },

@@ -4,6 +4,7 @@
 pub mod api_key;
 pub mod pipeline;
 pub mod program;
+pub mod storage;
 pub mod tenant;
 pub mod utils;
 pub mod version;

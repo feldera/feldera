@@ -1,6 +1,6 @@
 import unittest
 from typing import Optional
-from feldera import PipelineBuilder
+from feldera import PipelineBuilder, Pipeline
 from feldera.runtime_config import RuntimeConfig, Storage
 from tests import TEST_CLIENT
 
@@ -33,9 +33,7 @@ def storage_cfg(
 
 
 class TestIntegrationTests(unittest.TestCase):
-    def test_checkpoint_sync(
-        self, auth_err: bool = False, name: Optional[str] = None, suspend: bool = False
-    ):
+    def test_checkpoint_sync(self, auth_err: bool = False, name: Optional[str] = None):
         c = TEST_CLIENT
         storage_config = storage_cfg()
 
@@ -64,10 +62,8 @@ class TestIntegrationTests(unittest.TestCase):
         p.checkpoint(wait=True)
         p.sync_checkpoint(wait=True)
 
-        if suspend:
-            p.suspend()
-        else:
-            p.shutdown()
+        p.stop(force=True)
+        p.clear_storage()
 
         # Restart from checkpoint
         storage_config = storage_cfg(start_from_checkpoint=True, auth_err=auth_err)
@@ -83,20 +79,14 @@ class TestIntegrationTests(unittest.TestCase):
 
         self.assertCountEqual(got_before, got_after)
 
-        if suspend:
-            p.suspend()
-        else:
-            p.shutdown()
-
-    def test_checkpoint_sync_suspend(self):
-        name = "test_checkpoint_sync0"
-        self.test_checkpoint_sync(name=name, suspend=True)
-        TEST_CLIENT.shutdown_pipeline(name)
+        p.stop(force=True)
+        p.clear_storage()
 
     def test_checkpoint_sync_err(self):
         name = "test_checkpoint_sync0"
         with self.assertRaisesRegex(RuntimeError, "SignatureDoesNotMatch"):
             self.test_checkpoint_sync(name=name, auth_err=True)
 
-        TEST_CLIENT.shutdown_pipeline(name)
-        TEST_CLIENT.delete_pipeline(name)
+        p = Pipeline.get(name, TEST_CLIENT)
+        p.stop(force=True)
+        p.delete(True)

@@ -10,6 +10,7 @@ from queue import Queue
 
 from feldera.rest.errors import FelderaAPIError
 from feldera.enums import PipelineStatus, ProgramStatus, CheckpointStatus
+from feldera.enums import StorageStatus
 from feldera.rest.pipeline import Pipeline as InnerPipeline
 from feldera.rest.feldera_client import FelderaClient
 from feldera._callback_runner import _CallbackRunnerInstruction, CallbackRunner
@@ -215,7 +216,7 @@ class Pipeline:
         Follow the change stream (i.e., the output) of the provided view.
         Returns an output handler to read the changes.
 
-        When the pipeline is shutdown, these listeners are dropped.
+        When the pipeline is stopped, these listeners are dropped.
 
         You must call this method before starting the pipeline to get the entire output of the view.
         If this method is called once the pipeline has started, you will only get the output from that point onwards.
@@ -269,24 +270,26 @@ class Pipeline:
         handler.start()
 
     def wait_for_completion(
-        self, shutdown: bool = False, timeout_s: Optional[float] = None
+        self, force_stop: bool = False, timeout_s: Optional[float] = None
     ):
         """
         Block until the pipeline has completed processing all input records.
 
-        This method blocks until (1) all input connectors attached to the pipeline
-        have finished reading their input data sources and issued end-of-input
-        notifications to the pipeline, and (2) all inputs received from these
-        connectors have been fully processed and corresponding outputs have been
-        sent out through the output connectors.
+        This method blocks until (1) all input connectors attached to the
+        pipeline have finished reading their input data sources and issued
+        end-of-input notifications to the pipeline, and (2) all inputs received
+        from these connectors have been fully processed and corresponding
+        outputs have been sent out through the output connectors.
 
         This method will block indefinitely if at least one of the input
         connectors attached to the pipeline is a streaming connector, such as
         Kafka, that does not issue the end-of-input notification.
 
-        :param shutdown: If True, the pipeline will be shutdown after completion. False by default.
-        :param timeout_s: Optional. The maximum time (in seconds) to wait for the pipeline to complete.
-            The default is None, which means wait indefinitely.
+        :param force_stop: If True, the pipeline will be forcibly stopped after
+            completion. False by default. No checkpoints will be made.
+        :param timeout_s: Optional. The maximum time (in seconds) to wait for
+            the pipeline to complete. The default is None, which means wait
+            indefinitely.
 
         :raises RuntimeError: If the pipeline returns unknown metrics.
         """
@@ -325,25 +328,8 @@ class Pipeline:
 
             time.sleep(1)
 
-        if shutdown:
-            self.shutdown()
-
-    def __failed_check(self, next):
-        """
-        Checks if the pipeline is in FAILED state and raises an error if it is.
-        :meta private:
-        """
-        status = self.status()
-        if status == PipelineStatus.FAILED:
-            deployment_error = self.client.get_pipeline(self.name).deployment_error
-            error_msg = deployment_error.get("message", "")
-            raise RuntimeError(
-                f"""Cannot {next} pipeline '{self.name}' in FAILED state.
-The pipeline must be in SHUTDOWN state before it can be started, but it is currently in FAILED state.
-Use `Pipeline.shutdown()` method to shut down the pipeline.
-Error Message:
-{error_msg}"""
-            )
+        if force_stop:
+            self.stop(force=True)
 
     def start(self, timeout_s: Optional[float] = None):
         """
@@ -351,28 +337,27 @@ Error Message:
 
         Starts this pipeline.
 
-        The pipeline must be in SHUTDOWN state to start.
-        If the pipeline is in any other state, an error will be raised.
-        If the pipeline is in PAUSED state, use `.meth:resume` instead.
-        If the pipeline is in FAILED state, it must be shutdown before starting it again.
+        - The pipeline must be in STOPPED state to start.
+        - If the pipeline is in any other state, an error will be raised.
+        - If the pipeline is in PAUSED state, use `.meth:resume` instead.
 
-        :param timeout_s: The maximum time (in seconds) to wait for the pipeline to start.
+        :param timeout_s: The maximum time (in seconds) to wait for the
+            pipeline to start.
 
-        :raises RuntimeError: If the pipeline is not in SHUTDOWN state.
+        :raises RuntimeError: If the pipeline is not in STOPPED state.
         """
 
-        self.__failed_check("start")
         status = self.status()
-        if status != PipelineStatus.SHUTDOWN:
+        if status != PipelineStatus.STOPPED:
             raise RuntimeError(
-                f"""Cannot start pipeline '{self.name}' in state '{str(status.name)}'.
-The pipeline must be in SHUTDOWN state before it can be started.
-You can either shut down the pipeline using the `Pipeline.shutdown()` method or use `Pipeline.resume()` to \
-resume a paused pipeline."""
+                f"""Cannot start pipeline '{self.name}' in state \
+'{str(status.name)}'. The pipeline must be in STOPPED state before it can be \
+started. You can either stop the pipeline using the `Pipeline.stop()` \
+method or use `Pipeline.resume()` to resume a paused pipeline."""
             )
 
         self.client.pause_pipeline(
-            self.name, "Unable to START the pipeline.", timeout_s
+            self.name, "Unable to START the pipeline.\n", timeout_s
         )
         self.__setup_output_listeners()
         self.resume(timeout_s)
@@ -381,12 +366,15 @@ resume a paused pipeline."""
         """
         Restarts the pipeline.
 
-        This method **SHUTS DOWN** the pipeline regardless of its current state and then starts it again.
+        This method forcibly **STOPS** the pipeline regardless of its current
+        state and then starts it again. No checkpoints are made when stopping
+        the pipeline.
 
-        :param timeout_s: The maximum time (in seconds) to wait for the pipeline to restart.
+        :param timeout_s: The maximum time (in seconds) to wait for the
+            pipeline to restart.
         """
 
-        self.shutdown(timeout_s)
+        self.stop(force=True, timeout_s=timeout_s)
         self.start(timeout_s)
 
     def wait_for_idle(
@@ -446,7 +434,8 @@ resume a paused pipeline."""
                 )
             if metrics.total_processed_records is None:
                 raise RuntimeError(
-                    "total_processed_records is missing from the pipeline metrics"
+                    """total_processed_records is missing from the pipeline \
+metrics"""
                 )
 
             # Idle check
@@ -472,40 +461,26 @@ resume a paused pipeline."""
         """
         Pause the pipeline.
 
-        The pipeline can only transition to the PAUSED state from the RUNNING state.
-        If the pipeline is already paused, it will remain in the PAUSED state.
+        The pipeline can only transition to the PAUSED state from the RUNNING
+        state. If the pipeline is already paused, it will remain in the PAUSED
+        state.
 
-        :param timeout_s: The maximum time (in seconds) to wait for the pipeline to pause.
-
-        :raises FelderaAPIError: If the pipeline is in FAILED state.
+        :param timeout_s: The maximum time (in seconds) to wait for the
+            pipeline to pause.
         """
 
-        self.__failed_check("pause")
         self.client.pause_pipeline(self.name, timeout_s=timeout_s)
 
-    def shutdown(self, timeout_s: Optional[float] = None):
+    def stop(self, force: bool, timeout_s: Optional[float] = None):
         """
-        Shut down the pipeline.
+        Stops the pipeline.
 
-        Shuts down the pipeline regardless of its current state.
+        Stops the pipeline regardless of its current state.
 
-        :param timeout_s: The maximum time (in seconds) to wait for the pipeline to shut down.
-        """
-
-        if len(self.views_tx) > 0:
-            for _, queue in self.views_tx.pop().items():
-                # sends a message to the callback runner to stop listening
-                queue.put(_CallbackRunnerInstruction.RanToCompletion)
-                # block until the callback runner has been stopped
-                queue.join()
-
-        self.client.shutdown_pipeline(self.name, timeout_s=timeout_s)
-
-    def suspend(self, timeout_s: Optional[float] = None):
-        """
-        Suspends the pipeline to storage.
-
-        :param timeout_s: The maximum time (in seconds) to wait for the pipeline to suspend.
+        :param force: Set True to immediately scale compute resources to zero.
+            Set False to automatically checkpoint before stopping.
+        :param timeout_s: The maximum time (in seconds) to wait for the
+            pipeline to stop.
         """
 
         if len(self.views_tx) > 0:
@@ -515,29 +490,35 @@ resume a paused pipeline."""
                 # block until the callback runner has been stopped
                 queue.join()
 
-        self.client.suspend_pipeline(self.name, timeout_s=timeout_s)
+        self.client.stop_pipeline(self.name, force=force, timeout_s=timeout_s)
 
     def resume(self, timeout_s: Optional[float] = None):
         """
-        Resumes the pipeline from the PAUSED state. If the pipeline is already running, it will remain in the RUNNING state.
+        Resumes the pipeline from the PAUSED state. If the pipeline is already
+        running, it will remain in the RUNNING state.
 
-        :param timeout_s: The maximum time (in seconds) to wait for the pipeline to shut down.
-
-        :raises FelderaAPIError: If the pipeline is in FAILED state.
+        :param timeout_s: The maximum time (in seconds) to wait for the
+            pipeline to resume.
         """
 
-        self.__failed_check("resume")
         self.client.start_pipeline(self.name, timeout_s=timeout_s)
 
-    def delete(self):
+    def delete(self, clear_storage: bool = False):
         """
         Deletes the pipeline.
 
-        The pipeline must be shutdown before it can be deleted.
+        The pipeline must be stopped, and the storage cleared before it can be
+        deleted.
 
-        :raises FelderaAPIError: If the pipeline is not in SHUTDOWN state.
+        :param clear_storage: True if the storage should be cleared before
+            deletion. False by default
+
+        :raises FelderaAPIError: If the pipeline is not in STOPPED state or the
+            storage is still bound.
         """
 
+        if clear_storage:
+            self.clear_storage()
         self.client.delete_pipeline(self.name)
 
     @staticmethod
@@ -554,15 +535,18 @@ resume a paused pipeline."""
             return Pipeline._from_inner(inner, client)
         except FelderaAPIError as err:
             if err.status_code == 404:
-                raise RuntimeError(f"Pipeline with name {name} not found")
+                err.message = f"Pipeline with name {name} not found"
+                raise err
 
     def checkpoint(self, wait: bool = False, timeout_s=300) -> int:
         """
         Checkpoints this pipeline, if fault-tolerance is enabled.
-        Fault Tolerance in Feldera: <https://docs.feldera.com/pipelines/fault-tolerance/>
+        Fault Tolerance in Feldera:
+        <https://docs.feldera.com/pipelines/fault-tolerance/>
 
         :param wait: If true, will block until the checkpoint completes.
-        :param timeout_s: The maximum time (in seconds) to wait for the checkpoint to complete.
+        :param timeout_s: The maximum time (in seconds) to wait for the
+            checkpoint to complete.
 
         :raises FelderaAPIError: If checkpointing is not enabled.
         """
@@ -578,9 +562,8 @@ resume a paused pipeline."""
             elapsed = time.monotonic() - start
             if elapsed > timeout_s:
                 raise TimeoutError(
-                    f"timeout ({timeout_s}s) reached while waiting for pipeline '{
-                        self.name
-                    }' to make checkpoint '{seq}'"
+                    f"""timeout ({timeout_s}s) reached while waiting for \
+pipeline '{self.name}' to make checkpoint '{seq}'"""
                 )
             status = self.checkpoint_status(seq)
             if status == CheckpointStatus.InProgress:
@@ -619,8 +602,10 @@ resume a paused pipeline."""
         """
         Syncs this checkpoint to object store.
 
-        :param wait: If true, will block until the checkpoint sync opeartion completes.
-        :param timeout_s: The maximum time (in seconds) to wait for the checkpoint to complete syncing.
+        :param wait: If true, will block until the checkpoint sync opeartion
+            completes.
+        :param timeout_s: The maximum time (in seconds) to wait for the
+            checkpoint to complete syncing.
 
         :raises FelderaAPIError: If no checkpoints have been made.
         """
@@ -636,9 +621,8 @@ resume a paused pipeline."""
             elapsed = time.monotonic() - start
             if elapsed > timeout_s:
                 raise TimeoutError(
-                    f"timeout ({timeout_s}s) reached while waiting for pipeline '{
-                        self.name
-                    }' to sync checkpoint '{uuid}'"
+                    f"""timeout ({timeout_s}s) reached while waiting for \
+pipeline '{self.name}' to sync checkpoint '{uuid}'"""
                 )
             status = self.sync_checkpoint_status(uuid)
             if status in [CheckpointStatus.InProgress, CheckpointStatus.Unknown]:
@@ -674,20 +658,25 @@ resume a paused pipeline."""
 
     def query(self, query: str) -> Generator[Mapping[str, Any], None, None]:
         """
-        Executes an ad-hoc SQL query on this pipeline and returns a generator that yields the rows of the result as Python dictionaries.
-        For ``INSERT`` and ``DELETE`` queries, consider using :meth:`.execute` instead.
-        All floating-point numbers are deserialized as Decimal objects to avoid precision loss.
+        Executes an ad-hoc SQL query on this pipeline and returns a generator
+        that yields the rows of the result as Python dictionaries. For
+        ``INSERT`` and ``DELETE`` queries, consider using :meth:`.execute`
+        instead. All floating-point numbers are deserialized as Decimal objects
+        to avoid precision loss.
 
         Note:
             You can only ``SELECT`` from materialized tables and views.
 
         Important:
-            This method is lazy. It returns a generator and is not evaluated until you consume the result.
+            This method is lazy. It returns a generator and is not evaluated
+            until you consume the result.
 
         :param query: The SQL query to be executed.
-        :return: A generator that yields the rows of the result as Python dictionaries.
+        :return: A generator that yields the rows of the result as Python
+            dictionaries.
 
-        :raises FelderaAPIError: If the pipeline is not in a RUNNING or PAUSED state.
+        :raises FelderaAPIError: If the pipeline is not in a RUNNING or PAUSED
+            state.
         :raises FelderaAPIError: If querying a non materialized table or view.
         :raises FelderaAPIError: If the query is invalid.
         """
@@ -696,8 +685,9 @@ resume a paused pipeline."""
 
     def query_parquet(self, query: str, path: str):
         """
-        Executes an ad-hoc SQL query on this pipeline and saves the result to the specified path as a parquet file.
-        If the extension isn't `parquet`, it will be automatically appended to `path`.
+        Executes an ad-hoc SQL query on this pipeline and saves the result to
+        the specified path as a parquet file. If the extension isn't `parquet`,
+        it will be automatically appended to `path`.
 
         Note:
             You can only ``SELECT`` from materialized tables and views.
@@ -705,7 +695,8 @@ resume a paused pipeline."""
         :param query: The SQL query to be executed.
         :param path: The path of the parquet file.
 
-        :raises FelderaAPIError: If the pipeline is not in a RUNNING or PAUSED state.
+        :raises FelderaAPIError: If the pipeline is not in a RUNNING or PAUSED
+            state.
         :raises FelderaAPIError: If querying a non materialized table or view.
         :raises FelderaAPIError: If the query is invalid.
         """
@@ -714,18 +705,22 @@ resume a paused pipeline."""
 
     def query_tabular(self, query: str) -> Generator[str, None, None]:
         """
-        Executes a SQL query on this pipeline and returns the result as a formatted string.
+        Executes a SQL query on this pipeline and returns the result as a
+        formatted string.
 
         Note:
             You can only ``SELECT`` from materialized tables and views.
 
         Important:
-            This method is lazy. It returns a generator and is not evaluated until you consume the result.
+            This method is lazy. It returns a generator and is not evaluated
+            until you consume the result.
 
         :param query: The SQL query to be executed.
-        :return: A generator that yields a string representing the query result in a human-readable, tabular format.
+        :return: A generator that yields a string representing the query result
+            in a human-readable, tabular format.
 
-        :raises FelderaAPIError: If the pipeline is not in a RUNNING or PAUSED state.
+        :raises FelderaAPIError: If the pipeline is not in a RUNNING or PAUSED
+            state.
         :raises FelderaAPIError: If querying a non materialized table or view.
         :raises FelderaAPIError: If the query is invalid.
         """
@@ -734,17 +729,19 @@ resume a paused pipeline."""
 
     def execute(self, query: str):
         """
-        Executes an ad-hoc SQL query on the current pipeline, discarding its result.
-        Unlike the :meth:`.query` method which returns a generator for retrieving query results lazily,
-        this method processes the query eagerly and fully before returning.
+        Executes an ad-hoc SQL query on the current pipeline, discarding its
+        result. Unlike the :meth:`.query` method which returns a generator for
+        retrieving query results lazily, this method processes the query
+        eagerly and fully before returning.
 
-        This method is suitable for SQL operations like ``INSERT`` and ``DELETE``, where the user needs
-        confirmation of successful query execution, but does not require the query result.
-        If the query fails, an exception will be raised.
+        This method is suitable for SQL operations like ``INSERT`` and
+        ``DELETE``, where the user needs confirmation of successful query
+        execution, but does not require the query result. If the query fails,
+        an exception will be raised.
 
         Important:
-            If you try to ``INSERT`` or ``DELETE`` data from a table while the pipeline is paused,
-            it will block until the pipeline is resumed.
+            If you try to ``INSERT`` or ``DELETE`` data from a table while the
+            pipeline is paused, it will block until the pipeline is resumed.
 
         :param query: The SQL query to be executed.
 
@@ -754,6 +751,16 @@ resume a paused pipeline."""
 
         gen = self.query_tabular(query)
         deque(gen, maxlen=0)
+
+    def clear_storage(self):
+        """
+        Clears the storage of the pipeline if it is currently in use.
+        This action cannot be canceled, and will delete all the pipeline
+        storage.
+        """
+
+        if self.storage_status() == StorageStatus.IN_USE:
+            self.client.clear_storage(self.name)
 
     @property
     def name(self) -> str:
@@ -771,12 +778,21 @@ resume a paused pipeline."""
         self.refresh()
         return self._inner.program_code
 
+    def storage_status(self) -> StorageStatus:
+        """
+        Return the storage status of the pipeline.
+        """
+
+        self.refresh()
+        return StorageStatus.from_str(self._inner.storage_status)
+
     def program_status(self) -> ProgramStatus:
         """
         Return the program status of the pipeline.
 
         Program status is the status of compilation of this SQL program.
-        We first compile the SQL program to Rust code, and then compile the Rust code to a binary.
+        We first compile the SQL program to Rust code, and then compile the
+        Rust code to a binary.
         """
 
         self.refresh()
@@ -880,7 +896,8 @@ resume a paused pipeline."""
 
     def deployment_status_since(self) -> datetime:
         """
-        Return the timestamp when the current deployment status of the pipeline was set.
+        Return the timestamp when the current deployment status of the pipeline
+        was set.
         """
 
         self.refresh()
@@ -915,7 +932,8 @@ resume a paused pipeline."""
     def deployment_location(self) -> str:
         """
         Return the deployment location of the pipeline.
-        Deployment location is the location where the pipeline can be reached at runtime (a TCP port number or a URI).
+        Deployment location is the location where the pipeline can be reached
+        at runtime (a TCP port number or a URI).
         """
 
         self.refresh()
@@ -924,7 +942,8 @@ resume a paused pipeline."""
     def program_binary_url(self) -> str:
         """
         Return the program binary URL of the pipeline.
-        This is the URL where the compiled program binary can be downloaded from.
+        This is the URL where the compiled program binary can be downloaded
+        from.
         """
 
         self.refresh()
@@ -933,7 +952,9 @@ resume a paused pipeline."""
     def program_info(self) -> Mapping[str, Any]:
         """
         Return the program info of the pipeline.
-        This is the output returned by the SQL compiler, including: the list of input and output connectors, the generated Rust code for the pipeline, and the SQL program schema.
+        This is the output returned by the SQL compiler, including: the list of
+        input and output connectors, the generated Rust code for the pipeline,
+        and the SQL program schema.
         """
 
         self.refresh()
@@ -942,7 +963,8 @@ resume a paused pipeline."""
     def program_error(self) -> Mapping[str, Any]:
         """
         Return the program error of the pipeline.
-        If there are no errors, the `exit_code` field inside both `sql_compilation` and `rust_compilation` will be 0.
+        If there are no errors, the `exit_code` field inside both
+        `sql_compilation` and `rust_compilation` will be 0.
         """
 
         self.refresh()

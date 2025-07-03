@@ -44,6 +44,7 @@
   import Tooltip from '$lib/components/common/Tooltip.svelte'
   import { useLayoutSettings } from '$lib/compositions/layout/useLayoutSettings.svelte'
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
+  import PipelineCrashBanner from '$lib/components/pipelines/editor/PipelineCrashBanner.svelte'
 
   let {
     preloaded,
@@ -212,7 +213,7 @@ example = "1.0"`
     }
   })
   $effect(() => {
-    if (isScreenLg.current) {
+    if (!isScreenLg.current) {
       separateAdHocTab.value = false
     }
   })
@@ -338,10 +339,15 @@ example = "1.0"`
 
     <Pane class="!overflow-visible">
       <PaneGroup direction="vertical" class="!overflow-visible">
+        {#if pipeline.current.deploymentError}
+          <div class="pb-2 md:pb-4">
+            <PipelineCrashBanner error={pipeline.current.deploymentError}></PipelineCrashBanner>
+          </div>
+        {/if}
         <CodeEditor
           path={pipelineName}
           {files}
-          editDisabled={editCodeDisabled}
+          editDisabled={editCodeDisabled || pipeline.current.storageStatus !== 'Cleared'}
           bind:currentFileName={currentPipelineFile[pipelineName]}
           bind:downstreamChanged
           bind:saveFile
@@ -395,7 +401,7 @@ example = "1.0"`
           {/snippet}
           {#snippet statusBarEnd()}
             <div class="ml-auto flex flex-nowrap items-center gap-1">
-              {#each [{ icon: 'fd fd-panel-left', text: 'Pipelines', value: showPipelinesPanel }, { icon: 'fd fd-panel-bottom', text: 'Monitoring', value: showMonitoringPanel }, { icon: 'fd fd-panel-right', text: 'Ad-Hoc Queries', value: separateAdHocTab, show: !isScreenLg.current }] as { icon, text, value, show }}
+              {#each [{ icon: 'fd fd-panel-left', text: 'Pipelines', value: showPipelinesPanel }, { icon: 'fd fd-panel-bottom', text: 'Monitoring', value: showMonitoringPanel }, { icon: 'fd fd-panel-right', text: 'Ad-Hoc Queries', value: separateAdHocTab, show: isScreenLg.current }] as { icon, text, value, show }}
                 {#if show !== false}
                   <button
                     class="btn gap-2 p-2 !brightness-100 text-surface-700-300 hover:preset-tonal-surface"

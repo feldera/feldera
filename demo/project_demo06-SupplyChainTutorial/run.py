@@ -60,7 +60,7 @@ create table PRICE (
         "config": {{
             "topics": ["price"],
             "bootstrap.servers": "{pipeline_to_redpanda_server}",
-            "auto.offset.reset": "earliest"
+            "start_from": "earliest"
         }}
     }}
 }}]');
@@ -178,13 +178,13 @@ def main():
     if start_pipeline:
         print("(Re)starting pipeline...")
         requests.post(
-            f"{api_url}/v0/pipelines/{pipeline_name}/shutdown"
+            f"{api_url}/v0/pipelines/{pipeline_name}/stop?force=true"
         ).raise_for_status()
         while (
             requests.get(f"{api_url}/v0/pipelines/{pipeline_name}").json()[
                 "deployment_status"
             ]
-            != "Shutdown"
+            != "Stopped"
         ):
             time.sleep(1)
         requests.post(

@@ -1,3 +1,4 @@
+#[cfg(feature = "feldera-enterprise")]
 use crate::api::error::ApiError;
 use crate::api::examples;
 use crate::api::main::ServerState;
@@ -10,6 +11,7 @@ use crate::db::types::pipeline::{
     PipelineId, PipelineStatus,
 };
 use crate::db::types::program::{ProgramConfig, ProgramError, ProgramStatus};
+use crate::db::types::storage::StorageStatus;
 use crate::db::types::tenant::TenantId;
 use crate::db::types::version::Version;
 use crate::error::ManagerError;
@@ -88,6 +90,7 @@ pub struct PipelineInfo {
     pub deployment_desired_status: PipelineDesiredStatus,
     pub deployment_error: Option<ErrorResponse>,
     pub refresh_version: Version,
+    pub storage_status: StorageStatus,
 }
 
 /// Pipeline information (internal).
@@ -122,6 +125,7 @@ pub struct PipelineInfoInternal {
     pub deployment_desired_status: PipelineDesiredStatus,
     pub deployment_error: Option<ErrorResponse>,
     pub refresh_version: Version,
+    pub storage_status: StorageStatus,
 }
 
 impl PipelineInfoInternal {
@@ -148,6 +152,7 @@ impl PipelineInfoInternal {
             deployment_desired_status: extended_pipeline.deployment_desired_status,
             deployment_error: extended_pipeline.deployment_error,
             refresh_version: extended_pipeline.refresh_version,
+            storage_status: extended_pipeline.storage_status,
         }
     }
 }
@@ -185,6 +190,7 @@ pub struct PipelineSelectedInfo {
     pub deployment_desired_status: PipelineDesiredStatus,
     pub deployment_error: Option<ErrorResponse>,
     pub refresh_version: Version,
+    pub storage_status: StorageStatus,
 }
 
 /// Pipeline information which has a selected subset of optional fields (internal).
@@ -224,6 +230,7 @@ pub struct PipelineSelectedInfoInternal {
     pub deployment_desired_status: PipelineDesiredStatus,
     pub deployment_error: Option<ErrorResponse>,
     pub refresh_version: Version,
+    pub storage_status: StorageStatus,
 }
 
 impl PipelineSelectedInfoInternal {
@@ -252,6 +259,7 @@ impl PipelineSelectedInfoInternal {
             deployment_desired_status: extended_pipeline.deployment_desired_status,
             deployment_error: extended_pipeline.deployment_error,
             refresh_version: extended_pipeline.refresh_version,
+            storage_status: extended_pipeline.storage_status,
         }
     }
 
@@ -278,6 +286,7 @@ impl PipelineSelectedInfoInternal {
             deployment_desired_status: extended_pipeline.deployment_desired_status,
             deployment_error: extended_pipeline.deployment_error,
             refresh_version: extended_pipeline.refresh_version,
+            storage_status: extended_pipeline.storage_status,
         }
     }
 }
@@ -425,6 +434,21 @@ pub struct PatchPipelineInternal {
     pub udf_rust: Option<String>,
     pub udf_toml: Option<String>,
     pub program_config: Option<serde_json::Value>,
+}
+
+/// Default for the `force` query parameter when POST a pipeline stop.
+fn default_pipeline_stop_force() -> bool {
+    false
+}
+
+/// Query parameters to POST a pipeline stop.
+#[derive(Debug, Deserialize, IntoParams, ToSchema)]
+pub struct PostStopPipelineParameters {
+    /// The `force` parameter determines whether to immediately deprovision the pipeline compute
+    /// resources (`force=true`) or first attempt to atomically checkpoint before doing so
+    /// (`force=false`, which is the default).
+    #[serde(default = "default_pipeline_stop_force")]
+    force: bool,
 }
 
 /// Retrieve the list of pipelines.
@@ -650,7 +674,7 @@ pub(crate) async fn post_pipeline(
             , body = ErrorResponse
             , examples(
                 ("Name does not match pattern" = (value = json!(examples::error_name_does_not_match_pattern()))),
-                ("Cannot update non-shutdown pipeline" = (value = json!(examples::error_cannot_update_non_shutdown_pipeline())))
+                ("Cannot update non-stopped pipeline" = (value = json!(examples::error_update_restricted_to_stopped())))
             )
         ),
         (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
@@ -726,7 +750,7 @@ pub(crate) async fn put_pipeline(
             , body = ErrorResponse
             , examples(
                 ("Name does not match pattern" = (value = json!(examples::error_name_does_not_match_pattern()))),
-                ("Cannot update non-shutdown pipeline" = (value = json!(examples::error_cannot_update_non_shutdown_pipeline())))
+                ("Cannot update non-stopped pipeline" = (value = json!(examples::error_update_restricted_to_stopped())))
             )
         ),
         (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
@@ -784,9 +808,9 @@ pub(crate) async fn patch_pipeline(
             , body = ErrorResponse
             , example = json!(examples::error_unknown_pipeline_name())),
         (status = BAD_REQUEST
-            , description = "Pipeline needs to be shutdown to be deleted"
+            , description = "Pipeline must be fully stopped and cleared to be deleted"
             , body = ErrorResponse
-            , example = json!(examples::error_cannot_delete_non_shutdown_pipeline())),
+            , example = json!(examples::error_delete_restricted_to_fully_stopped())),
         (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
     ),
     tag = "Pipeline management"
@@ -809,32 +833,21 @@ pub(crate) async fn delete_pipeline(
     Ok(HttpResponse::Ok().finish())
 }
 
-/// Sets the desired deployment state of a pipeline.
+/// Start the pipeline asynchronously by updating the desired state.
 ///
-/// The desired state is set based on the `action` path parameter:
-/// - `/start` sets desired state to `Running`
-/// - `/pause` sets desired state to `Paused`
-/// - `/suspend` sets desired state to `Suspended`
-/// - `/shutdown` sets desired state to `Shutdown`
-///
-/// The endpoint returns immediately after setting the desired state.
-/// The relevant procedure to get to the desired state is performed asynchronously,
-/// and, as such, progress should be monitored by polling the pipeline using the
-/// `GET` endpoints.
+/// The endpoint returns immediately after setting the desired state to `Running`.
+/// The procedure to get to the desired state is performed asynchronously.
+/// Progress should be monitored by polling the pipeline `GET` endpoints.
 ///
 /// Note the following:
-/// - A shutdown pipeline can be started through calling either `/start` or `/pause`
+/// - A stopped pipeline can be started through calling either `/start` or `/pause`
 /// - Both starting as running and resuming a pipeline is done by calling `/start`
-/// - Both starting as paused and pausing a pipeline is done by calling `/pause`
-/// - `/shutdown` cannot be cancelled: the pipeline must reach `Shutdown` before another action
-/// - `/suspend` can only be cancelled using `/shutdown`: otherwise, the pipeline must reach
-///   `Suspended` first
+/// - A pipeline which is in the process of suspending or stopping cannot be started
 #[utoipa::path(
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
     params(
-        ("pipeline_name" = String, Path, description = "Unique pipeline name"),
-        ("action" = String, Path, description = "Pipeline action (one of: start, pause, suspend, shutdown)")
+        ("pipeline_name" = String, Path, description = "Unique pipeline name")
     ),
     responses(
         (status = ACCEPTED
@@ -846,11 +859,125 @@ pub(crate) async fn delete_pipeline(
         (status = BAD_REQUEST
             , description = "Action could not be performed"
             , body = ErrorResponse
-            , examples(
-                ("Invalid action" = (value = json!(examples::error_invalid_pipeline_action()))),
-                ("Illegal action" = (value = json!(examples::error_illegal_pipeline_action()))),
-            )
-        ),
+            , example = json!(examples::error_illegal_pipeline_action())),
+        (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
+    ),
+    tag = "Pipeline management"
+)]
+#[post("/pipelines/{pipeline_name}/start")]
+pub(crate) async fn post_pipeline_start(
+    state: WebData<ServerState>,
+    tenant_id: ReqData<TenantId>,
+    path: web::Path<String>,
+) -> Result<HttpResponse, ManagerError> {
+    let pipeline_name = path.into_inner();
+    let pipeline_id = state
+        .db
+        .lock()
+        .await
+        .set_deployment_desired_status_running(*tenant_id, &pipeline_name)
+        .await?;
+    info!(
+        "Accepted action: going to start pipeline {pipeline_id} (tenant: {})",
+        *tenant_id
+    );
+    Ok(HttpResponse::Accepted().finish())
+}
+
+/// Pause the pipeline asynchronously by updating the desired state.
+///
+/// The endpoint returns immediately after setting the desired state to `Paused`.
+/// The procedure to get to the desired state is performed asynchronously.
+/// Progress should be monitored by polling the pipeline `GET` endpoints.
+///
+/// Note the following:
+/// - A stopped pipeline can be started through calling either `/start` or `/pause`
+/// - Both starting as paused and pausing a pipeline is done by calling `/pause`
+/// - A pipeline which is in the process of suspending or stopping cannot be paused
+#[utoipa::path(
+    context_path = "/v0",
+    security(("JSON web token (JWT) or API key" = [])),
+    params(
+        ("pipeline_name" = String, Path, description = "Unique pipeline name")
+    ),
+    responses(
+        (status = ACCEPTED
+            , description = "Action is accepted and is being performed"),
+        (status = NOT_FOUND
+            , description = "Pipeline with that name does not exist"
+            , body = ErrorResponse
+            , example = json!(examples::error_unknown_pipeline_name())),
+        (status = BAD_REQUEST
+            , description = "Action could not be performed"
+            , body = ErrorResponse
+            , example = json!(examples::error_illegal_pipeline_action())),
+        (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
+    ),
+    tag = "Pipeline management"
+)]
+#[post("/pipelines/{pipeline_name}/pause")]
+pub(crate) async fn post_pipeline_pause(
+    state: WebData<ServerState>,
+    tenant_id: ReqData<TenantId>,
+    path: web::Path<String>,
+) -> Result<HttpResponse, ManagerError> {
+    let pipeline_name = path.into_inner();
+    let pipeline_id = state
+        .db
+        .lock()
+        .await
+        .set_deployment_desired_status_paused(*tenant_id, &pipeline_name)
+        .await?;
+    info!(
+        "Accepted action: going to pause pipeline {pipeline_id} (tenant: {})",
+        *tenant_id
+    );
+    Ok(HttpResponse::Accepted().finish())
+}
+
+/// Stop the pipeline asynchronously by updating the desired state.
+///
+/// There are two variants:
+/// - `/stop?force=false` (default): the pipeline will first atomically checkpoint before
+///   deprovisioning the compute resources. When resuming, the pipeline will start from this
+//    checkpoint.
+/// - `/stop?force=true`: the compute resources will be immediately deprovisioned. When resuming,
+///   it will pick up the latest checkpoint made by the periodic checkpointer or by a prior
+///   `/checkpoint` call.
+///
+/// The endpoint returns immediately after setting the desired state to `Suspended` for
+/// `?force=false` or `Stopped` for `?force=true`. In the former case, once the pipeline has
+/// successfully passes the `Suspending` state, the desired state will become `Stopped` as well.
+/// The procedure to get to the desired state is performed asynchronously. Progress should be
+/// monitored by polling the pipeline `GET` endpoints.
+///
+/// Note the following:
+/// - The suspending that is done with `/stop?force=false` is not guaranteed to succeed:
+///   - If an error is returned during the suspension, the pipeline will be forcefully stopped with
+///     that error set
+///   - Otherwise, it will keep trying to suspend, in which case it is possible to cancel suspending
+///     by calling `/stop?force=true`
+/// - `/stop?force=true` cannot be cancelled: the pipeline must first reach `Stopped` before another
+///    action can be done
+/// - A pipeline which is in the process of suspending or stopping can only be forcefully stopped
+#[utoipa::path(
+    context_path = "/v0",
+    security(("JSON web token (JWT) or API key" = [])),
+    params(
+        ("pipeline_name" = String, Path, description = "Unique pipeline name"),
+        PostStopPipelineParameters,
+    ),
+    responses(
+        (status = ACCEPTED
+            , description = "Action is accepted and is being performed"),
+        (status = NOT_FOUND
+            , description = "Pipeline with that name does not exist"
+            , body = ErrorResponse
+            , example = json!(examples::error_unknown_pipeline_name())),
+        (status = BAD_REQUEST
+            , description = "Action could not be performed"
+            , body = ErrorResponse
+            , example = json!(examples::error_illegal_pipeline_action())),
         (status = SERVICE_UNAVAILABLE
             , description = "Action can not be performed (maybe because the pipeline is already suspended)"
             , body = ErrorResponse
@@ -870,42 +997,50 @@ pub(crate) async fn delete_pipeline(
     ),
     tag = "Pipeline management"
 )]
-#[post("/pipelines/{pipeline_name}/{action}")]
-pub(crate) async fn post_pipeline_action(
+#[post("/pipelines/{pipeline_name}/stop")]
+pub(crate) async fn post_pipeline_stop(
     state: WebData<ServerState>,
     _client: WebData<awc::Client>,
     tenant_id: ReqData<TenantId>,
-    path: web::Path<(String, String)>,
+    path: web::Path<String>,
+    query: web::Query<PostStopPipelineParameters>,
 ) -> Result<HttpResponse, ManagerError> {
-    let (pipeline_name, action) = path.into_inner();
-    let pipeline_id = match action.as_str() {
-        "start" => {
-            state
+    let pipeline_name = path.into_inner();
+    let pipeline_id = if query.force {
+        state
+            .db
+            .lock()
+            .await
+            .set_deployment_desired_status_suspended_or_stopped(*tenant_id, &pipeline_name, true)
+            .await?
+    } else {
+        #[cfg(not(feature = "feldera-enterprise"))]
+        {
+            Err(ManagerError::from(CommonError::EnterpriseFeature {
+                feature: "stop?force=false".to_string(),
+            }))?
+        }
+        #[cfg(feature = "feldera-enterprise")]
+        {
+            use crate::runner::error::RunnerError;
+            // A request to check whether it can be suspended is done only when it is at least
+            // viable to send such a request (i.e., it is either Initializing, Paused, Running,
+            // or Unavailable). If it is in none of those states, then it is either already
+            // Suspending and thus Suspended will remain the target state, or it is Stopping
+            // or Stopped, in which case the target state will become Stopped.
+            let pipeline = state
                 .db
                 .lock()
                 .await
-                .set_deployment_desired_status_running(*tenant_id, &pipeline_name)
-                .await?
-        }
-        "pause" => {
-            state
-                .db
-                .lock()
-                .await
-                .set_deployment_desired_status_paused(*tenant_id, &pipeline_name)
-                .await?
-        }
-        "suspend" => {
-            #[cfg(not(feature = "feldera-enterprise"))]
-            {
-                Err(ManagerError::from(CommonError::EnterpriseFeature(
-                    "suspend",
-                )))?
-            }
-            #[cfg(feature = "feldera-enterprise")]
-            {
-                use crate::runner::error::RunnerError;
-                // Check whether the pipeline can be suspended
+                .get_pipeline_for_monitoring(*tenant_id, &pipeline_name)
+                .await?;
+            if matches!(
+                pipeline.deployment_status,
+                PipelineStatus::Initializing
+                    | PipelineStatus::Paused
+                    | PipelineStatus::Running
+                    | PipelineStatus::Unavailable
+            ) {
                 let response = state
                     .runner
                     .forward_http_request_to_pipeline_by_name(
@@ -928,9 +1063,7 @@ pub(crate) async fn post_pipeline_action(
                         }
                     } else {
                         Err(RunnerError::PipelineInteractionInvalidResponse {
-                            error: format!(
-                                "Error processing pipelines's response to a /suspendable request: failed to extract response body"
-                            ),
+                            error: "Error processing pipelines's response to a /suspendable request: failed to extract response body".to_string()
                         })?
                     }
                 } else {
@@ -941,40 +1074,150 @@ pub(crate) async fn post_pipeline_action(
                         .db
                         .lock()
                         .await
-                        .set_deployment_desired_status_suspended(*tenant_id, &pipeline_name)
+                        .set_deployment_desired_status_suspended_or_stopped(
+                            *tenant_id,
+                            &pipeline_name,
+                            false,
+                        )
                         .await?
                 } else {
                     let reasons = suspendable_response
                         .reasons
                         .iter()
-                        .map(|reason| format!("   - {}", reason.to_string()))
+                        .map(|reason| format!("   - {reason}"))
                         .collect::<Vec<_>>()
                         .join("\n");
                     Err(ManagerError::from(ApiError::UnsupportedPipelineAction {
-                        action: action.clone(),
+                        action: "stop?force=false".to_string(),
                         reason: format!(
-                            "this pipeline does not support the suspend operation for the following reason(s):\n{reasons}"
+                            "this pipeline does not support the stop without force (\"suspend\") operation for the following reason(s):\n{reasons}"
                         ),
                     }))?
                 }
+            } else {
+                state
+                    .db
+                    .lock()
+                    .await
+                    .set_deployment_desired_status_suspended_or_stopped(
+                        *tenant_id,
+                        &pipeline_name,
+                        false,
+                    )
+                    .await?
             }
         }
-        "shutdown" => {
-            state
-                .db
-                .lock()
-                .await
-                .set_deployment_desired_status_shutdown(*tenant_id, &pipeline_name)
-                .await?
-        }
-        _ => Err(ManagerError::from(ApiError::InvalidPipelineAction {
-            action: action.clone(),
-        }))?,
     };
 
     info!(
-        "Accepted action: going to {action} pipeline {pipeline_id} (tenant: {})",
+        "Accepted action: going to {}stop pipeline {pipeline_id} (tenant: {})",
+        if query.force { "forcefully " } else { "" },
         *tenant_id
     );
     Ok(HttpResponse::Accepted().finish())
+}
+
+/// Clears the pipeline storage asynchronously.
+///
+/// IMPORTANT: Clearing means disassociating the storage from the pipeline.
+///            Depending on the storage type this can include its deletion.
+///
+/// It sets the storage state to `Clearing`, after which the clearing process is
+/// performed asynchronously. Progress should be monitored by polling the pipeline
+/// using the `GET` endpoints. An `/clear` cannot be cancelled.
+#[utoipa::path(
+    context_path = "/v0",
+    security(("JSON web token (JWT) or API key" = [])),
+    params(
+        ("pipeline_name" = String, Path, description = "Unique pipeline name")
+    ),
+    responses(
+        (status = ACCEPTED
+            , description = "Action is accepted and is being performed"),
+        (status = NOT_FOUND
+            , description = "Pipeline with that name does not exist"
+            , body = ErrorResponse
+            , example = json!(examples::error_unknown_pipeline_name())),
+        (status = BAD_REQUEST
+            , description = "Action could not be performed"
+            , body = ErrorResponse
+            , examples(
+                ("Illegal action" = (value = json!(examples::error_illegal_pipeline_storage_action()))),
+            )
+        ),
+        (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
+    ),
+    tag = "Pipeline management"
+)]
+#[post("/pipelines/{pipeline_name}/clear")]
+pub(crate) async fn post_pipeline_clear(
+    state: WebData<ServerState>,
+    tenant_id: ReqData<TenantId>,
+    path: web::Path<String>,
+) -> Result<HttpResponse, ManagerError> {
+    let pipeline_name = path.into_inner();
+    let pipeline_id = state
+        .db
+        .lock()
+        .await
+        .transit_storage_status_to_clearing(*tenant_id, &pipeline_name)
+        .await?;
+
+    info!(
+        "Accepted storage action: going to clear storage of pipeline {pipeline_id} (tenant: {})",
+        *tenant_id
+    );
+    Ok(HttpResponse::Accepted().finish())
+}
+
+/// Retrieve logs of a pipeline as a stream.
+///
+/// The logs stream catches up to the extent of the internally configured per-pipeline
+/// circular logs buffer (limited to a certain byte size and number of lines, whichever
+/// is reached first). After the catch-up, new lines are pushed whenever they become
+/// available.
+///
+/// It is possible for the logs stream to end prematurely due to the API server temporarily losing
+/// connection to the runner. In this case, it is needed to issue again a new request to this
+/// endpoint.
+///
+/// The logs stream will end when the pipeline is deleted, or if the runner restarts. Note that in
+/// both cases the logs will be cleared.
+#[utoipa::path(
+    context_path = "/v0",
+    security(("JSON web token (JWT) or API key" = [])),
+    params(
+        ("pipeline_name" = String, Path, description = "Unique pipeline name"),
+    ),
+    responses(
+        (status = OK
+            , description = "Pipeline logs retrieved successfully"
+            , content_type = "text/plain"
+            , body = Vec<u8>),
+        (status = NOT_FOUND
+            , description = "Pipeline with that name does not exist"
+            , body = ErrorResponse
+            , example = json!(examples::error_unknown_pipeline_name())),
+        (status = SERVICE_UNAVAILABLE
+            , body = ErrorResponse
+            , examples(
+                ("Runner response timeout" = (value = json!(examples::error_runner_interaction_timeout())))
+            )
+        ),
+        (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
+    ),
+    tag = "Pipeline interaction"
+)]
+#[get("/pipelines/{pipeline_name}/logs")]
+pub(crate) async fn get_pipeline_logs(
+    client: WebData<awc::Client>,
+    state: WebData<ServerState>,
+    tenant_id: ReqData<TenantId>,
+    path: web::Path<String>,
+) -> Result<HttpResponse, ManagerError> {
+    let pipeline_name = path.into_inner();
+    state
+        .runner
+        .http_streaming_logs_from_pipeline_by_name(&client, *tenant_id, &pipeline_name)
+        .await
 }

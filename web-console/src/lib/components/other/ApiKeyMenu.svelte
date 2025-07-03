@@ -17,7 +17,7 @@
     <div class="flex flex-nowrap justify-between">
       <div class="h5 font-medium">Manage API keys</div>
       <button
-        class="fd fd-x btn btn-icon text-[20px]"
+        class="fd fd-x btn btn-icon -m-4 text-[20px]"
         aria-label="Close"
         onclick={() => (globalDialog.dialog = null)}
       ></button>

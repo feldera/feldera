@@ -56,7 +56,8 @@
     model,
     options,
     markers,
-    onready
+    onready,
+    extras
   }: {
     editor?: Monaco.editor.IStandaloneCodeEditor
     model: Monaco.editor.ITextModel
@@ -66,6 +67,9 @@
     >
     markers?: Record<string, Monaco.editor.IMarkerData[]> | undefined
     onready: (event: Monaco.editor.IStandaloneCodeEditor) => void
+    extras?: {
+      isDarkMode?: boolean
+    }
   } = $props()
 
   $effect(() => {
@@ -109,7 +113,10 @@
       })
     }
     monaco = await loader.init()
-    editor = monaco.editor.create(container, { ...options, model: null })
+    editor = monaco.editor.create(container, {
+      ...options,
+      model: null
+    })
 
     onready(editor)
   })
@@ -117,9 +124,27 @@
   onDestroy(() => editor?.dispose())
 </script>
 
-<div class="monaco-container" bind:this={container}></div>
+<div
+  class="monaco-container {options?.readOnly
+    ? extras?.isDarkMode
+      ? 'monaco-readonly-dark'
+      : 'monaco-readonly'
+    : ''}"
+  bind:this={container}
+></div>
 
 <style>
+  .monaco-readonly {
+    :global(.sticky-line-content, .sticky-widget-line-numbers, .margin, .monaco-editor-background) {
+      @apply bg-surface-50;
+    }
+  }
+  .monaco-readonly-dark {
+    :global(.sticky-line-content, .sticky-widget-line-numbers, .margin, .monaco-editor-background) {
+      @apply bg-surface-950;
+    }
+  }
+
   div.monaco-container {
     width: 100%;
     height: 100%;

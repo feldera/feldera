@@ -13,17 +13,19 @@
     filePath,
     onSubmit,
     getData = $bindable(),
+    readOnlyMessage,
     disabled
   }: {
     json: string
     filePath: string
     onSubmit: (json: string) => Promise<void>
     getData?: () => string
+    readOnlyMessage?: { value: string }
     disabled?: boolean
   } = $props()
   const theme = useSkeletonTheme()
   const darkMode = useDarkMode()
-  const { editorFontSize, showMinimap, showStickyScroll } = useCodeEditorSettings()
+  const { editorFontSize } = useCodeEditorSettings()
   getData = () => currentModel?.getValue() ?? ''
 
   let currentModel: editor.ITextModel = $state(undefined!)
@@ -59,11 +61,13 @@
       vertical: 'visible'
     },
     minimap: {
-      enabled: showMinimap.value
+      enabled: false
     },
     stickyScroll: {
-      enabled: showStickyScroll.value
+      enabled: false
     },
+    scrollBeyondLastLine: false,
+    readOnlyMessage,
     ...isMonacoEditorDisabled(disabled)
   }}
 />

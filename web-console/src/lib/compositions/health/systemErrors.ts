@@ -29,10 +29,10 @@ const limitMessage = (text: string | null | undefined, max: number, prefix: stri
   ((t) => (t.length > max ? prefix : '') + t.slice(Math.max(0, t.length - max)))(text || '')
 
 export const extractPipelineErrors = (pipeline: ExtendedPipeline): SystemError[] => {
-  if (!(typeof pipeline.status === 'object' && 'PipelineError' in pipeline.status)) {
+  if (!pipeline.deploymentError) {
     return []
   }
-  const error = pipeline.status.PipelineError
+  const error = pipeline.deploymentError
   return [
     (() => ({
       name: `Error running pipeline ${pipeline.name}`,
@@ -64,13 +64,13 @@ export const extractPipelineErrors = (pipeline: ExtendedPipeline): SystemError[]
   ]
 }
 export const extractPipelineStderr = (pipeline: ExtendedPipeline): string[] => {
-  if (!(typeof pipeline.status === 'object' && 'PipelineError' in pipeline.status)) {
+  if (!pipeline.deploymentError) {
     return []
   }
   return [
-    `Pipeline process returned an error code ${pipeline.status.PipelineError.error_code}:\n
-${pipeline.status.PipelineError.message}
-${Object.entries(pipeline.status.PipelineError.details).map((k, v) => `${k}: ${v}\n`)}`
+    `Pipeline process returned an error code ${pipeline.deploymentError.error_code}:\n
+${pipeline.deploymentError.message}
+${Object.entries(pipeline.deploymentError.details).map((k, v) => `${k}: ${v}\n`)}`
   ]
 }
 

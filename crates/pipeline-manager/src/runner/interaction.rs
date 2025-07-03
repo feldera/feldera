@@ -35,7 +35,7 @@ impl CachedPipelineDescr {
     /// status to be interacted with (i.e., running or paused).
     fn deployment_location_based_on_status(&self) -> Result<String, ManagerError> {
         match self.pipeline.deployment_status {
-            PipelineStatus::Running | PipelineStatus::Paused | PipelineStatus::SuspendingCircuit => {}
+            PipelineStatus::Running | PipelineStatus::Paused | PipelineStatus::Suspending => {}
             PipelineStatus::Unavailable => Err(RunnerError::PipelineInteractionUnreachable {
                 error: "deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again".to_string()
             })?,
@@ -105,7 +105,7 @@ pub fn format_runner_timeout_error_message<T: Display>(timeout: Duration, error:
 /// is confusing.
 pub fn format_disconnected_error_message<T: Display>(_error: T) -> String {
     "the pipeline disconnected while it was processing this HTTP request. This could be because \
-    the pipeline either (a) encountered a fatal error or panic, (b) was shutdown, or (c) \
+    the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) \
     experienced network issues -- retrying might help in the last case. Alternatively, \
     check the pipeline logs."
         .to_string()
@@ -489,11 +489,6 @@ impl RunnerInteraction {
             .await
             .get_pipeline_for_monitoring(tenant_id, pipeline_name)
             .await?;
-
-        // Only in Shutdown status do we not attempt to reach out to the pipeline runner
-        if pipeline.deployment_status == PipelineStatus::Shutdown {
-            return Err(ManagerError::from(RunnerError::RunnerInteractionShutdown));
-        }
 
         // Build request to the runner
         let url = format!(

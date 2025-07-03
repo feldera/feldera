@@ -6,15 +6,14 @@
   const { status, class: _class = '' }: { status: PipelineStatus; class?: string } = $props()
   const chipClass = $derived(
     match(status)
-      .with('Shutdown', () => 'bg-surface-100-900')
+      .with('Stopped', () => 'bg-surface-100-900')
       .with('Preparing', 'Provisioning', 'Initializing', () => 'preset-filled-tertiary-200-800')
-      .with('Paused', () => 'preset-filled-warning-200-800')
-      .with('Suspended', () => 'bg-blue-200 dark:bg-blue-800')
+      .with('Paused', () => 'bg-blue-200 dark:bg-blue-800')
       .with('Suspending', () => 'bg-blue-200 dark:bg-blue-800')
       .with('Running', () => 'preset-filled-success-200-800')
       .with('Pausing', () => 'preset-filled-secondary-200-800')
       .with('Resuming', () => 'preset-filled-tertiary-200-800')
-      .with('ShuttingDown', () => 'preset-filled-secondary-200-800')
+      .with('Stopping', () => 'preset-filled-secondary-200-800')
       .with(
         { Queued: P.any },
         { CompilingSql: P.any },
@@ -23,13 +22,7 @@
         () => 'preset-filled-warning-200-800'
       )
       .with('Unavailable', () => 'bg-orange-200 dark:bg-orange-800')
-      .with(
-        { PipelineError: P.any },
-        'SqlError',
-        'RustError',
-        'SystemError',
-        () => 'preset-filled-error-50-950'
-      )
+      .with('SqlError', 'RustError', 'SystemError', () => 'preset-filled-error-50-950')
       .exhaustive()
   )
 </script>

@@ -19,7 +19,6 @@ pub enum ApiError {
     InvalidNameParam { value: String, error: String },
     InvalidChecksumParam { value: String, error: String },
     InvalidVersionParam { value: String, error: String },
-    InvalidPipelineAction { action: String },
     UnsupportedPipelineAction { action: String, reason: String },
     InvalidConnectorAction { action: String },
     UnableToConnect { reason: String },
@@ -34,7 +33,6 @@ impl DetailedError for ApiError {
             Self::InvalidNameParam { .. } => Cow::from("InvalidNameParam"),
             Self::InvalidChecksumParam { .. } => Cow::from("InvalidChecksumParam"),
             Self::InvalidVersionParam { .. } => Cow::from("InvalidVersionParam"),
-            Self::InvalidPipelineAction { .. } => Cow::from("InvalidPipelineAction"),
             Self::UnsupportedPipelineAction { .. } => Cow::from("UnsupportedPipelineAction"),
             Self::InvalidConnectorAction { .. } => Cow::from("InvalidConnectorAction"),
             Self::UnableToConnect { .. } => Cow::from("UnableToConnect"),
@@ -60,9 +58,6 @@ impl Display for ApiError {
             }
             Self::InvalidVersionParam { value, error } => {
                 write!(f, "Invalid version string '{value}': {error}")
-            }
-            Self::InvalidPipelineAction { action } => {
-                write!(f, "Invalid pipeline action '{action}'; valid actions are: 'start', 'pause', or 'shutdown'")
             }
             Self::UnsupportedPipelineAction { action, reason } => {
                 write!(f, "Unsupported pipeline action '{action}': {reason}")
@@ -103,7 +98,6 @@ impl ResponseError for ApiError {
             Self::InvalidNameParam { .. } => StatusCode::BAD_REQUEST,
             Self::InvalidChecksumParam { .. } => StatusCode::BAD_REQUEST,
             Self::InvalidVersionParam { .. } => StatusCode::BAD_REQUEST,
-            Self::InvalidPipelineAction { .. } => StatusCode::BAD_REQUEST,
             Self::UnsupportedPipelineAction { .. } => StatusCode::METHOD_NOT_ALLOWED,
             Self::InvalidConnectorAction { .. } => StatusCode::BAD_REQUEST,
             Self::UnableToConnect { .. } => StatusCode::BAD_REQUEST,

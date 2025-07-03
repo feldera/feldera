@@ -1,843 +1,40 @@
-//! Pipeline manager integration tests that test the end-to-end
-//! compiler->run->feed inputs->receive outputs workflow.
-//!
-//! There are two ways to run these tests:
-//!
-//! 1. Using an external pipeline manager instance.
-//!
-//! Start the pipeline manager by running `scripts/start_manager.sh` or using
-//! the following command line:
-//!
-//! ```text
-//! cargo run --bin=pipeline-manager
-//! ```
-//!
-//! or as a container
-//!
-//! ```text
-//! docker compose -f deploy/docker-compose.yml -f deploy/docker-compose-dev.yml --profile demo up --build --renew-anon-volumes --force-recreate
-//! ```
-//!
-//! Run the tests in a different terminal:
-//!
-//! ```text
-//! TEST_DBSP_URL=http://localhost:8080 cargo test --test integration_test --package=pipeline-manager  -- --nocapture
-//! ```
-use std::future::Future;
-use std::time::{Duration, Instant, SystemTime};
+pub mod test_client;
 
-use actix_http::{encoding::Decoder, Payload, StatusCode};
-use awc::error::SendRequestError;
-use awc::{http, ClientRequest, ClientResponse};
-use aws_sdk_cognitoidentityprovider::config::Region;
-use chrono::Utc;
+#[cfg(feature = "feldera-enterprise")]
+use crate::test_client::wait_for_condition;
+use crate::test_client::TestClient;
+use actix_http::StatusCode;
 #[cfg(feature = "feldera-enterprise")]
 use feldera_types::checkpoint::{CheckpointResponse, CheckpointStatus};
 use feldera_types::completion_token::{
     CompletionStatus, CompletionStatusResponse, CompletionTokenResponse,
 };
-use feldera_types::transport::http::Chunk;
-use futures_util::StreamExt;
-use serde_json::{json, Value};
-use serial_test::serial;
-use tempfile::NamedTempFile;
-use tokio::time::{sleep, timeout};
-
-use anyhow::{bail, Result as AnyResult};
 use feldera_types::config::{ResourceConfig, RuntimeConfig, StorageOptions};
-
 use pipeline_manager::db::types::pipeline::PipelineStatus;
 use pipeline_manager::db::types::program::CompilationProfile;
 use pipeline_manager::db::types::program::ProgramConfig;
-use pipeline_manager::db::types::program::ProgramStatus;
-use pipeline_manager::runner::pipeline_executor::LOGS_END_MESSAGE;
-
-const TEST_DBSP_URL_VAR: &str = "TEST_DBSP_URL";
-const MANAGER_INITIALIZATION_TIMEOUT: Duration = Duration::from_secs(100);
-
-/// Wait for a condition to be true by periodically checking it.
-pub async fn wait_for_condition<F, Fut>(description: &str, mut check: F, timeout: Duration)
-where
-    F: FnMut() -> Fut,
-    Fut: Future<Output = bool>,
-{
-    let start = Instant::now();
-
-    while start.elapsed() < timeout {
-        if check().await {
-            return;
-        }
-        sleep(Duration::from_millis(100)).await;
-    }
-
-    panic!("Timeout waiting for {description}");
-}
-
-struct TestConfig {
-    dbsp_url: String,
-    client: awc::Client,
-    bearer_token: Option<String>,
-    compilation_timeout: Duration,
-    start_timeout: Duration,
-    pause_timeout: Duration,
-    resume_timeout: Duration,
-    shutdown_timeout: Duration,
-    failed_timeout: Duration,
-    #[cfg(feature = "feldera-enterprise")]
-    suspend_timeout: Duration,
-}
-
-impl TestConfig {
-    fn endpoint_url<S: AsRef<str>>(&self, endpoint: S) -> String {
-        format!("{}{}", self.dbsp_url, endpoint.as_ref())
-    }
-
-    async fn get<S: AsRef<str>>(&self, endpoint: S) -> ClientResponse<Decoder<Payload>> {
-        self.try_get(endpoint).await.unwrap()
-    }
-
-    async fn try_get<S: AsRef<str>>(
-        &self,
-        endpoint: S,
-    ) -> Result<ClientResponse<Decoder<Payload>>, SendRequestError> {
-        self.maybe_attach_bearer_token(self.client.get(self.endpoint_url(endpoint)))
-            .send()
-            .await
-    }
-
-    /// Wait for the pipeline to reach the point where all input is processed.
-    ///
-    /// This is necessary before we e.g., send ad-hoc queries to ensure the
-    /// query will compute on the latest state.
-    async fn wait_for_processing(&self, pipeline_name: &str) -> bool {
-        let start = Instant::now();
-        loop {
-            let stats = self.stats_json(pipeline_name).await;
-            let num_processed = stats["global_metrics"]["total_processed_records"]
-                .as_u64()
-                .unwrap();
-            let num_ingested = stats["global_metrics"]["total_input_records"]
-                .as_u64()
-                .unwrap();
-
-            if num_processed == num_ingested {
-                return true;
-            } else {
-                sleep(Duration::from_millis(20)).await;
-                if start.elapsed() > Duration::from_secs(60) {
-                    panic!("Pipeline did not process test records within 60 seconds");
-                }
-            }
-        }
-    }
-
-    async fn adhoc_query<S: AsRef<str>>(
-        &self,
-        pipeline_name: S,
-        query: S,
-        format: S,
-    ) -> ClientResponse<Decoder<Payload>> {
-        self.wait_for_processing(pipeline_name.as_ref()).await;
-        let endpoint = format!("/v0/pipelines/{}/query", pipeline_name.as_ref());
-
-        let r = self
-            .maybe_attach_bearer_token(self.client.get(self.endpoint_url(endpoint)))
-            .query(&[("sql", query.as_ref()), ("format", format.as_ref())])
-            .expect("query parameters are valid");
-        r.send().await.expect("request is successful")
-    }
-
-    /// Return the result of an ad hoc query as a JSON array.
-    ///
-    /// Doesn't sort the array; use `order by` to ensure deterministic results.
-    async fn adhoc_query_json(&self, pipeline_name: &str, query: &str) -> Value {
-        let mut r = self.adhoc_query(pipeline_name, query, "json").await;
-        assert_eq!(r.status(), StatusCode::OK);
-
-        let body = r.body().await.unwrap();
-        let ret = std::str::from_utf8(body.as_ref()).unwrap();
-        let lines: Vec<String> = ret.split('\n').map(|s| s.to_string()).collect();
-
-        Value::Array(
-            lines
-                .iter()
-                .filter(|s| !s.is_empty())
-                .map(|s| {
-                    serde_json::from_str::<Value>(s)
-                        .map_err(|e| {
-                            format!(
-                            "ad hoc query returned an invalid JSON string: '{s}' (parse error: {e})"
-                        )
-                        })
-                        .unwrap()
-                })
-                .collect(),
-        )
-    }
-
-    // TODO: currently unused
-    // /// Performs GET request, asserts the status code is OK, and returns result.
-    // async fn get_ok<S: AsRef<str>>(&self, endpoint: S) -> ClientResponse<Decoder<Payload>> {
-    //     let result = self.get(endpoint).await;
-    //     assert_eq!(result.status(), StatusCode::OK);
-    //     result
-    // }
-
-    fn maybe_attach_bearer_token(&self, req: ClientRequest) -> ClientRequest {
-        match &self.bearer_token {
-            Some(token) => {
-                req.insert_header((http::header::AUTHORIZATION, format!("Bearer {}", token)))
-            }
-            None => req,
-        }
-    }
-
-    async fn post_no_body<S: AsRef<str>>(&self, endpoint: S) -> ClientResponse<Decoder<Payload>> {
-        self.maybe_attach_bearer_token(self.client.post(self.endpoint_url(endpoint)))
-            .send()
-            .await
-            .unwrap()
-    }
-
-    async fn put<S: AsRef<str>>(
-        &self,
-        endpoint: S,
-        json: &Value,
-    ) -> ClientResponse<Decoder<Payload>> {
-        self.maybe_attach_bearer_token(self.client.put(self.endpoint_url(endpoint)))
-            .send_json(&json)
-            .await
-            .unwrap()
-    }
-
-    async fn post<S: AsRef<str>>(
-        &self,
-        endpoint: S,
-        json: &Value,
-    ) -> ClientResponse<Decoder<Payload>> {
-        self.maybe_attach_bearer_token(self.client.post(self.endpoint_url(endpoint)))
-            .send_json(&json)
-            .await
-            .unwrap()
-    }
-
-    async fn post_csv<S: AsRef<str>>(
-        &self,
-        endpoint: S,
-        csv: String,
-    ) -> ClientResponse<Decoder<Payload>> {
-        self.maybe_attach_bearer_token(self.client.post(self.endpoint_url(endpoint)))
-            .send_body(csv)
-            .await
-            .unwrap()
-    }
-
-    async fn post_json<S: AsRef<str>>(
-        &self,
-        endpoint: S,
-        json: String,
-    ) -> ClientResponse<Decoder<Payload>> {
-        self.maybe_attach_bearer_token(self.client.post(self.endpoint_url(endpoint)))
-            .send_body(json)
-            .await
-            .unwrap()
-    }
-
-    async fn patch<S: AsRef<str>>(
-        &self,
-        endpoint: S,
-        json: &Value,
-    ) -> ClientResponse<Decoder<Payload>> {
-        self.maybe_attach_bearer_token(self.client.patch(self.endpoint_url(endpoint)))
-            .send_json(&json)
-            .await
-            .unwrap()
-    }
-
-    /// Decodes the response body as JSON.
-    async fn decode_json(mut response: ClientResponse<Decoder<Payload>>) -> Value {
-        let bytes = response
-            .body()
-            .await
-            .expect("Body should be retrievable as bytes");
-        let utf8_str = std::str::from_utf8(&bytes).expect("Bytes should be valid UTF-8 string");
-        serde_json::from_str::<Value>(utf8_str)
-            .expect("UTF-8 string should be convertible to JSON value")
-    }
-
-    /// Checks status and decodes the response body as JSON.
-    pub async fn check_status_and_decode_json(
-        response: ClientResponse<Decoder<Payload>>,
-        expected_status: StatusCode,
-    ) -> Value {
-        assert_eq!(response.status(), expected_status);
-        Self::decode_json(response).await
-    }
-
-    /// Retrieve the stats of a pipeline as JSON value.
-    async fn stats_json(&self, name: &str) -> Value {
-        let endpoint = format!("/v0/pipelines/{name}/stats");
-        let response = self.get(endpoint).await;
-        assert_eq!(response.status(), StatusCode::OK);
-        Self::decode_json(response).await
-    }
-
-    /// Retrieve the stats of an input connector as a JSON value.
-    async fn input_connector_stats_json(
-        &self,
-        pipeline_name: &str,
-        table_name: &str,
-        connector_name: &str,
-    ) -> Value {
-        let encoded_table_name = urlencoding::encode(table_name).to_string();
-
-        let endpoint = format!(
-            "/v0/pipelines/{pipeline_name}/tables/{encoded_table_name}/connectors/{connector_name}/stats"
-        );
-        let response = self.get(endpoint).await;
-        assert_eq!(response.status(), StatusCode::OK);
-        Self::decode_json(response).await
-    }
-
-    async fn delta_stream_request_json(
-        &self,
-        name: &str,
-        table: &str,
-    ) -> ClientResponse<Decoder<Payload>> {
-        let resp = self
-            .post_no_body(format!("/v0/pipelines/{name}/egress/{table}?format=json"))
-            .await;
-        assert!(resp.status().is_success());
-        resp
-    }
-
-    /// Pause or unpause a connector.
-    async fn connector_action(
-        &self,
-        pipeline_name: &str,
-        table_name: &str,
-        connector_name: &str,
-        action: &str,
-    ) {
-        let encoded_table_name = urlencoding::encode(table_name).to_string();
-
-        // Pause the connector
-        assert_eq!(
-                    self
-                        .post_no_body(format!(
-                            "/v0/pipelines/{pipeline_name}/tables/{encoded_table_name}/connectors/{connector_name}/{action}"
-                        ))
-                        .await
-                        .status(),
-                    StatusCode::OK
-                );
-    }
-
-    async fn read_response_json(
-        &self,
-        response: &mut ClientResponse<Decoder<Payload>>,
-        max_timeout: Duration,
-    ) -> AnyResult<Option<Value>> {
-        let start = Instant::now();
-
-        loop {
-            match timeout(Duration::from_millis(1_000), response.next()).await {
-                Err(_) => (),
-                Ok(Some(Ok(bytes))) => {
-                    let chunk = serde_json::from_reader::<_, Chunk>(&bytes[..])?;
-                    if let Some(json) = chunk.json_data {
-                        return Ok(Some(json));
-                    }
-                }
-                Ok(Some(Err(e))) => bail!(e.to_string()),
-                Ok(None) => return Ok(None),
-            }
-            if start.elapsed() >= max_timeout {
-                return Ok(None);
-            }
-        }
-    }
-
-    /// Wait for the exact output, potentially split across multiple chunks.
-    async fn read_expected_response_json(
-        &self,
-        response: &mut ClientResponse<Decoder<Payload>>,
-        max_timeout: Duration,
-        expected_response: &[Value],
-    ) {
-        let start = Instant::now();
-        let mut received = Vec::new();
-
-        while received.len() < expected_response.len() {
-            let mut new_received = self
-                .read_response_json(response, Duration::from_millis(1_000))
-                .await
-                .unwrap()
-                .unwrap_or_else(|| json!([]))
-                .as_array()
-                .unwrap()
-                .clone();
-            received.append(&mut new_received);
-
-            assert!(start.elapsed() <= max_timeout);
-        }
-
-        assert_eq!(expected_response, received);
-    }
-
-    async fn delete<S: AsRef<str>>(&self, endpoint: S) -> ClientResponse<Decoder<Payload>> {
-        self.maybe_attach_bearer_token(self.client.delete(self.endpoint_url(endpoint)))
-            .send()
-            .await
-            .unwrap()
-    }
-
-    /// Waits for pipeline program status to indicate it is fully compiled.
-    /// Panics after `timeout`.
-    async fn wait_for_compilation(&self, pipeline_name: &str, version: i64, timeout: Duration) {
-        println!("Waiting for program of pipeline {pipeline_name} to finish compilation...");
-        let start = Instant::now();
-        let mut last_update = Instant::now();
-        loop {
-            // Retrieve pipeline
-            let mut response = self.get(format!("/v0/pipelines/{pipeline_name}")).await;
-            let pipeline = response.json::<Value>().await.unwrap();
-
-            // Program version must match
-            let found_program_version = pipeline["program_version"].as_i64().unwrap();
-            if found_program_version != version {
-                panic!(
-                    "Program version {} does not match expected {}",
-                    found_program_version, version
-                );
-            }
-
-            // Check program status
-            if pipeline["program_status"] == json!(ProgramStatus::Pending)
-                || pipeline["program_status"] == json!(ProgramStatus::CompilingSql)
-                || pipeline["program_status"] == json!(ProgramStatus::SqlCompiled)
-                || pipeline["program_status"] == json!(ProgramStatus::CompilingRust)
-            {
-                // Continue waiting
-            } else if pipeline["program_status"] == json!(ProgramStatus::Success) {
-                return;
-            } else {
-                println!("Pipeline:\n{pipeline:#?}");
-                panic!(
-                    "Compilation failed in status: {:?}",
-                    pipeline["program_status"]
-                );
-            }
-
-            // Print an update every 60 seconds approximately
-            if last_update.elapsed().as_secs() >= 60 {
-                // println!("Pipeline:\n{pipeline:#?}");
-                println!(
-                    "Waiting for compilation since {} seconds, current program status: {:?}",
-                    start.elapsed().as_secs(),
-                    pipeline["program_status"]
-                );
-                last_update = Instant::now();
-            }
-
-            // Timeout
-            if start.elapsed() > timeout {
-                println!("Pipeline:\n{pipeline:#?}");
-                panic!("Compilation timeout ({timeout:?})");
-            }
-
-            tokio::time::sleep(Duration::from_secs(1)).await;
-        }
-    }
-
-    /// Waits for the pipeline deployment to reach the specified status.
-    /// Panics after `timeout`.
-    async fn wait_for_deployment_status(
-        &self,
-        pipeline_name: &str,
-        status: PipelineStatus,
-        timeout: Duration,
-    ) -> Value {
-        println!("Waiting for pipeline {pipeline_name} to reach deployment status {status:?}...");
-        let start = Instant::now();
-        let mut last_update = Instant::now();
-        loop {
-            // Retrieve pipeline
-            let mut response = self.get(format!("/v0/pipelines/{pipeline_name}")).await;
-            let pipeline = response.json::<Value>().await.unwrap();
-
-            // Reached the status
-            if pipeline["deployment_status"] == json!(status) {
-                return pipeline;
-            }
-
-            // Print an update every 60 seconds approximately
-            if last_update.elapsed().as_secs() >= 60 {
-                println!(
-                    "Pipeline status: {}",
-                    pipeline.as_object().unwrap()["deployment_status"]
-                );
-                println!(
-                    "Waiting for pipeline status {status:?} since {} seconds",
-                    start.elapsed().as_secs()
-                );
-                last_update = Instant::now();
-            }
-
-            // Timeout
-            if start.elapsed() >= timeout {
-                println!("Pipeline:\n{pipeline:#?}");
-                panic!("Timeout ({timeout:?}) waiting for pipeline status {status:?}");
-            }
-
-            sleep(Duration::from_millis(300)).await;
-        }
-    }
-
-    /// Shut down and delete pipelines if it exists.
-    async fn delete_pipeline_if_exists(&self, pipeline_name: &str) {
-        println!("Deleting pipeline {pipeline_name}");
-
-        let config = self;
-
-        // Retrieve list of pipelines
-        let start = Instant::now();
-        let response = loop {
-            match config
-                .try_get(&format!("/v0/pipelines/{pipeline_name}"))
-                .await
-            {
-                Ok(response) => {
-                    break response;
-                }
-                Err(e) => {
-                    if start.elapsed() > MANAGER_INITIALIZATION_TIMEOUT {
-                        panic!("Timeout waiting for the pipeline manager");
-                    }
-                    println!("Could not reach API due to error: {e}");
-                    println!("Retrying...");
-                    sleep(Duration::from_millis(1000)).await;
-                }
-            }
-        };
-        if response.status() == StatusCode::NOT_FOUND {
-            println!("Pipeline doesn't exist -- nothing to do");
-            return;
-        }
-        assert!(
-            response.status().is_success(),
-            "Unexpected response to GET /pipeline/{pipeline_name}: {:?}",
-            response
-        );
-
-        println!("Shutting down pipeline {pipeline_name}");
-        config.shutdown_pipeline(pipeline_name).await;
-
-        // Delete pipeline once it is confirmed it is shutdown
-        let response = config
-            .delete(format!("/v0/pipelines/{pipeline_name}"))
-            .await;
-        assert_eq!(
-            StatusCode::OK,
-            response.status(),
-            "Unexpected response to pipeline deletion: {:?}",
-            response
-        );
-    }
-
-    /// Cleanup by shutting down and removing all pipelines.
-    async fn cleanup(&self) {
-        let config = self;
-
-        // Retrieve list of pipelines
-        let start = Instant::now();
-        let mut response = loop {
-            match config.try_get("/v0/pipelines").await {
-                Ok(response) => {
-                    break response;
-                }
-                Err(e) => {
-                    if start.elapsed() > MANAGER_INITIALIZATION_TIMEOUT {
-                        panic!("Timeout waiting for the pipeline manager");
-                    }
-                    println!("Could not reach API due to error: {e}");
-                    println!("Retrying...");
-                    sleep(Duration::from_millis(1000)).await;
-                }
-            }
-        };
-        let pipelines = response
-            .json::<Value>()
-            .await
-            .unwrap()
-            .as_array()
-            .unwrap()
-            .clone();
-        println!("Found {} pipeline(s) to clean up", pipelines.len());
-
-        // Shutdown the pipelines
-        for pipeline in &pipelines {
-            let pipeline_name = pipeline["name"].as_str().unwrap();
-            println!("Shutting down pipeline: {pipeline_name}");
-            let response = config
-                .post_no_body(format!("/v0/pipelines/{pipeline_name}/shutdown"))
-                .await;
-            assert_eq!(
-                StatusCode::ACCEPTED,
-                response.status(),
-                "Unexpected response to pipeline shutdown: {:?}",
-                response
-            )
-        }
-
-        // Delete each pipeline once it is confirmed it is shutdown
-        for pipeline in &pipelines {
-            let pipeline_name = pipeline["name"].as_str().unwrap();
-            self.wait_for_deployment_status(
-                pipeline_name,
-                PipelineStatus::Shutdown,
-                config.shutdown_timeout,
-            )
-            .await;
-            let response = config
-                .delete(format!("/v0/pipelines/{pipeline_name}"))
-                .await;
-            assert_eq!(
-                StatusCode::OK,
-                response.status(),
-                "Unexpected response to pipeline deletion: {:?}",
-                response
-            )
-        }
-    }
-
-    async fn shutdown_pipeline(&self, pipeline_name: &str) {
-        let response = self
-            .post_no_body(&format!("/v0/pipelines/{pipeline_name}/shutdown"))
-            .await;
-        assert_eq!(response.status(), StatusCode::ACCEPTED);
-        self.wait_for_deployment_status(
-            pipeline_name,
-            PipelineStatus::Shutdown,
-            self.shutdown_timeout,
-        )
-        .await;
-    }
-
-    #[cfg(feature = "feldera-enterprise")]
-    async fn suspend_and_resume(&self, pipeline_name: &str) {
-        // TODO: remove this delay once we've fixed suspend in k8s.
-        tokio::time::sleep(Duration::from_millis(10_000)).await;
-
-        let response = self
-            .post_no_body(format!("/v0/pipelines/{pipeline_name}/suspend"))
-            .await;
-        assert_eq!(
-            StatusCode::ACCEPTED,
-            response.status(),
-            "Unexpected response to pipeline suspend: {:?}",
-            response
-        );
-
-        self.wait_for_deployment_status(
-            pipeline_name,
-            PipelineStatus::Suspended,
-            self.suspend_timeout,
-        )
-        .await;
-
-        println!("Suspended pipeline {pipeline_name}");
-
-        let response = self
-            .post_no_body(format!("/v0/pipelines/{pipeline_name}/start"))
-            .await;
-        assert_eq!(
-            StatusCode::ACCEPTED,
-            response.status(),
-            "Unexpected response to pipeline resume: {:?}",
-            response
-        );
-
-        self.wait_for_deployment_status(pipeline_name, PipelineStatus::Running, self.start_timeout)
-            .await;
-
-        println!("Resumed pipeline {pipeline_name}");
-    }
-}
-
-async fn bearer_token() -> Option<String> {
-    let client_id = std::env::var("TEST_CLIENT_ID");
-    match client_id {
-        Ok(client_id) => {
-            let test_user = std::env::var("TEST_USER")
-                .expect("If TEST_CLIENT_ID is set, TEST_USER should be as well");
-            let test_password = std::env::var("TEST_PASSWORD")
-                .expect("If TEST_CLIENT_ID is set, TEST_PASSWORD should be as well");
-            let test_region = std::env::var("TEST_REGION")
-                .expect("If TEST_CLIENT_ID is set, TEST_REGION should be as well");
-            let config = aws_config::defaults(aws_config::BehaviorVersion::latest())
-                .region(Region::new(test_region))
-                .load()
-                .await;
-            let cognito_idp = aws_sdk_cognitoidentityprovider::Client::new(&config);
-            let res = cognito_idp
-                .initiate_auth()
-                .set_client_id(Some(client_id))
-                .set_auth_flow(Some(
-                    aws_sdk_cognitoidentityprovider::types::AuthFlowType::UserPasswordAuth,
-                ))
-                .auth_parameters("USERNAME", test_user)
-                .auth_parameters("PASSWORD", test_password)
-                .send()
-                .await
-                .unwrap();
-            Some(res.authentication_result()?.access_token()?.to_string())
-        }
-        Err(e) => {
-            println!(
-                "TEST_CLIENT_ID is unset (reason: {}). Test will not use authentication",
-                e
-            );
-            None
-        }
-    }
-}
-
-async fn setup() -> TestConfig {
-    setup_for_pipeline(None).await
-}
-
-async fn setup_for_pipeline(pipeline_name: Option<&str>) -> TestConfig {
-    let _ = rustls::crypto::CryptoProvider::install_default(
-        rustls::crypto::aws_lc_rs::default_provider(),
-    );
-    let dbsp_url = match std::env::var(TEST_DBSP_URL_VAR) {
-        Ok(val) => {
-            println!("Running integration test against TEST_DBSP_URL: {}", val);
-            val
-        }
-        Err(e) => {
-            panic!("Set TEST_DBSP_URL to run this test (reason: {})", e);
-        }
-    };
-    let client = awc::ClientBuilder::new()
-        .timeout(Duration::from_secs(10))
-        .finish();
-    let bearer_token = bearer_token().await;
-    let compilation_timeout = Duration::from_secs(
-        std::env::var("TEST_COMPILATION_TIMEOUT")
-            .unwrap_or("480".to_string())
-            .parse::<u64>()
-            .unwrap(),
-    );
-    let start_timeout = Duration::from_secs(
-        std::env::var("TEST_START_TIMEOUT")
-            .unwrap_or("60".to_string())
-            .parse::<u64>()
-            .unwrap(),
-    );
-    let pause_timeout = Duration::from_secs(
-        std::env::var("TEST_PAUSE_TIMEOUT")
-            .unwrap_or("10".to_string())
-            .parse::<u64>()
-            .unwrap(),
-    );
-    let resume_timeout = Duration::from_secs(
-        std::env::var("TEST_RESUME_TIMEOUT")
-            .unwrap_or("10".to_string())
-            .parse::<u64>()
-            .unwrap(),
-    );
-    let shutdown_timeout = Duration::from_secs(
-        std::env::var("TEST_SHUTDOWN_TIMEOUT")
-            .unwrap_or("120".to_string())
-            .parse::<u64>()
-            .unwrap(),
-    );
-    let failed_timeout = Duration::from_secs(
-        std::env::var("TEST_FAILED_TIMEOUT")
-            .unwrap_or("120".to_string())
-            .parse::<u64>()
-            .unwrap(),
-    );
-    #[cfg(feature = "feldera-enterprise")]
-    let suspend_timeout = Duration::from_secs(
-        std::env::var("TEST_SUSPEND_TIMEOUT")
-            .unwrap_or("120".to_string())
-            .parse::<u64>()
-            .unwrap(),
-    );
-
-    let config = TestConfig {
-        dbsp_url,
-        client,
-        bearer_token,
-        compilation_timeout,
-        start_timeout,
-        pause_timeout,
-        resume_timeout,
-        shutdown_timeout,
-        failed_timeout,
-        #[cfg(feature = "feldera-enterprise")]
-        suspend_timeout,
-    };
-    if let Some(pipeline_name) = pipeline_name {
-        config.delete_pipeline_if_exists(pipeline_name).await;
-    } else {
-        config.cleanup().await;
-    }
-    config
-}
-
-/// Creates and deploys a basic pipeline named `test` with the provided SQL in paused state.
-async fn create_and_deploy_test_pipeline(config: &TestConfig, sql: &str) {
-    prepare_pipeline(config, "test", sql).await
-}
-
-/// Creates, compiles and deploys a pipeline.
-async fn prepare_pipeline(config: &TestConfig, name: &str, sql: &str) {
-    // Create
-    let request_body = json!({
-        "name": name,
-        "description": "Description of the test pipeline",
-        "runtime_config": {},
-        "program_code": sql,
-        "program_config": {}
-    });
-    let response = config.post("/v0/pipelines", &request_body).await;
-    assert_eq!(response.status(), StatusCode::CREATED);
-
-    // Wait for compilation
-    config
-        .wait_for_compilation(name, 1, config.compilation_timeout)
-        .await;
-
-    // Start the pipeline in Paused state
-    let response = config
-        .post_no_body(format!("/v0/pipelines/{name}/pause"))
-        .await;
-    assert_eq!(response.status(), StatusCode::ACCEPTED);
-    config
-        .wait_for_deployment_status(name, PipelineStatus::Paused, config.start_timeout)
-        .await;
-}
+use serde_json::{json, Value};
+use serial_test::serial;
+use std::time::{Duration, Instant};
+use tempfile::NamedTempFile;
+use tokio::time::sleep;
 
 /// Tests the creation of pipelines using its POST endpoint.
 #[actix_web::test]
 #[serial]
 async fn pipeline_post() {
-    let config = setup().await;
+    let config = TestClient::setup_and_full_cleanup().await;
 
     // Empty body
     assert_eq!(
-        config.post("/v0/pipelines", &json!({})).await.status(),
+        config.post_json("/v0/pipelines", &json!({})).await.status(),
         StatusCode::BAD_REQUEST
     );
 
     // Name is missing
     assert_eq!(
         config
-            .post("/v0/pipelines", &json!({ "program-code": "" }))
+            .post_json("/v0/pipelines", &json!({ "program-code": "" }))
             .await
             .status(),
         StatusCode::BAD_REQUEST
@@ -846,26 +43,19 @@ async fn pipeline_post() {
     // Program SQL code is missing
     assert_eq!(
         config
-            .post("/v0/pipelines", &json!({ "name": "test-1" }))
+            .post_json("/v0/pipelines", &json!({ "name": "test-1" }))
             .await
             .status(),
         StatusCode::BAD_REQUEST
     );
 
     // Minimum body
-    let pipeline = TestConfig::check_status_and_decode_json(
-        config
-            .post(
-                "/v0/pipelines",
-                &json!({
-                    "name": "test-1",
-                    "program_code": "",
-                }),
-            )
-            .await,
-        StatusCode::CREATED,
-    )
-    .await;
+    let pipeline = config
+        .post_pipeline(&json!({
+            "name": "test-1",
+            "program_code": "",
+        }))
+        .await;
     assert_eq!(pipeline["name"], json!("test-1"));
     assert_eq!(pipeline["description"], json!(""));
     assert_eq!(
@@ -881,19 +71,12 @@ async fn pipeline_post() {
     );
 
     // Body with SQL
-    let pipeline = TestConfig::check_status_and_decode_json(
-        config
-            .post(
-                "/v0/pipelines",
-                &json!({
-                    "name": "test-2",
-                    "program_code": "sql-2",
-                }),
-            )
-            .await,
-        StatusCode::CREATED,
-    )
-    .await;
+    let pipeline = config
+        .post_pipeline(&json!({
+            "name": "test-2",
+            "program_code": "sql-2",
+        }))
+        .await;
     assert_eq!(pipeline["name"], json!("test-2"));
     assert_eq!(pipeline["description"], json!(""));
     assert_eq!(
@@ -909,28 +92,21 @@ async fn pipeline_post() {
     );
 
     // All fields
-    let pipeline = TestConfig::check_status_and_decode_json(
-        config
-            .post(
-                "/v0/pipelines",
-                &json!({
-                    "name": "test-3",
-                    "description": "description-3",
-                    "runtime_config": {
-                        "workers": 123
-                    },
-                    "program_code": "sql-3",
-                    "udf_rust": "rust-3",
-                    "udf_toml": "toml-3",
-                    "program_config": {
-                        "profile": "dev"
-                    }
-                }),
-            )
-            .await,
-        StatusCode::CREATED,
-    )
-    .await;
+    let pipeline = config
+        .post_pipeline(&json!({
+            "name": "test-3",
+            "description": "description-3",
+            "runtime_config": {
+                "workers": 123
+            },
+            "program_code": "sql-3",
+            "udf_rust": "rust-3",
+            "udf_toml": "toml-3",
+            "program_config": {
+                "profile": "dev"
+            }
+        }))
+        .await;
     assert_eq!(pipeline["name"], json!("test-3"));
     assert_eq!(pipeline["description"], json!("description-3"));
     assert_eq!(
@@ -959,7 +135,7 @@ async fn pipeline_post() {
 #[actix_web::test]
 #[serial]
 async fn pipeline_get() {
-    let config = setup().await;
+    let config = TestClient::setup_and_full_cleanup().await;
 
     // Not found
     let response = config.get("/v0/pipelines/test-1").await;
@@ -973,7 +149,7 @@ async fn pipeline_get() {
 
     // Create first pipeline
     let sql1 = "CREATE TABLE t1(c1 INT);";
-    prepare_pipeline(&config, "test-1", sql1).await;
+    config.prepare_pipeline("test-1", sql1).await;
 
     // Retrieve list of one
     let mut response = config.get("/v0/pipelines").await;
@@ -989,7 +165,7 @@ async fn pipeline_get() {
 
     // Create second pipeline
     let sql2 = "CREATE TABLE t2(c2 INT);";
-    prepare_pipeline(&config, "test-2", sql2).await;
+    config.prepare_pipeline("test-2", sql2).await;
 
     // Retrieve list of two
     let mut response = config.get("/v0/pipelines").await;
@@ -1022,7 +198,7 @@ async fn pipeline_get() {
 }
 
 /// Fields included in the `all` selector.
-const PIPELINE_FIELD_SELECTOR_ALL_FIELDS: [&str; 21] = [
+const PIPELINE_FIELD_SELECTOR_ALL_FIELDS: [&str; 22] = [
     "id",
     "name",
     "description",
@@ -1044,10 +220,11 @@ const PIPELINE_FIELD_SELECTOR_ALL_FIELDS: [&str; 21] = [
     "deployment_desired_status",
     "deployment_error",
     "refresh_version",
+    "storage_status",
 ];
 
 /// Fields included in the `status` selector.
-const PIPELINE_FIELD_SELECTOR_STATUS_FIELDS: [&str; 14] = [
+const PIPELINE_FIELD_SELECTOR_STATUS_FIELDS: [&str; 15] = [
     "id",
     "name",
     "description",
@@ -1062,14 +239,17 @@ const PIPELINE_FIELD_SELECTOR_STATUS_FIELDS: [&str; 14] = [
     "deployment_desired_status",
     "deployment_error",
     "refresh_version",
+    "storage_status",
 ];
 
 /// Tests the retrieval of a pipeline and list of pipelines with a field selector.
 #[actix_web::test]
 #[serial]
 async fn pipeline_get_selector() {
-    let config = setup().await;
-    prepare_pipeline(&config, "test-1", "CREATE TABLE t1(c1 INT);").await;
+    let config = TestClient::setup_and_full_cleanup().await;
+    config
+        .prepare_pipeline("test-1", "CREATE TABLE t1(c1 INT);")
+        .await;
     for base_endpoint in ["/v0/pipelines", "/v0/pipelines/test-1"] {
         for (selector_value, expected_fields) in [
             ("", PIPELINE_FIELD_SELECTOR_ALL_FIELDS.to_vec()),
@@ -1105,36 +285,31 @@ async fn pipeline_get_selector() {
     }
 }
 
-/// Tests creating a pipeline, waiting for it to compile and delete afterward.
+/// Tests creating a pipeline, waiting for it to compile and deleting it afterward.
 #[actix_web::test]
 #[serial]
 async fn pipeline_create_compile_delete() {
-    let config = setup().await;
-    let request_body = json!({
-        "name":  "test",
-        "description": "desc",
-        "runtime_config": {},
-        "program_code": "CREATE TABLE t1(c1 INTEGER);",
-        "program_config": {}
-    });
-    let mut response = config.post("/v0/pipelines", &request_body).await;
-    assert_eq!(StatusCode::CREATED, response.status());
-    let resp: Value = response.json().await.unwrap();
-    let version = resp["program_version"].as_i64().unwrap();
-    config
-        .wait_for_compilation("test", version, config.compilation_timeout)
+    let client = TestClient::setup_and_full_cleanup().await;
+    client
+        .post_pipeline(&json!({
+            "name":  "test",
+            "description": "desc",
+            "runtime_config": {},
+            "program_code": "CREATE TABLE t1(c1 INTEGER);",
+            "program_config": {}
+        }))
         .await;
-    let response = config.delete("/v0/pipelines/test").await;
-    assert_eq!(StatusCode::OK, response.status());
-    let response = config.get("/v0/programs/test").await;
-    assert_eq!(StatusCode::NOT_FOUND, response.status());
+    let _ = client.get_pipeline("test").await;
+    client.wait_for_compiled_program("test", 1).await;
+    client.delete_pipeline("test").await;
+    assert!(!client.pipeline_exists("test").await);
 }
 
 /// Tests that an error is thrown if a pipeline with the same name already exists.
 #[actix_web::test]
 #[serial]
 async fn pipeline_name_conflict() {
-    let config = setup().await;
+    let config = TestClient::setup_and_full_cleanup().await;
     let request_body = json!({
         "name":  "test",
         "description": "desc",
@@ -1142,7 +317,7 @@ async fn pipeline_name_conflict() {
         "program_code": "CREATE TABLE t1(c1 INTEGER);",
         "program_config": {}
     });
-    let response = config.post("/v0/pipelines", &request_body).await;
+    let response = config.post_json("/v0/pipelines", &request_body).await;
     assert_eq!(StatusCode::CREATED, response.status());
 
     // Same name, different description and program code.
@@ -1153,7 +328,7 @@ async fn pipeline_name_conflict() {
         "program_code": "CREATE TABLE t2(c2 VARCHAR);",
         "program_config": {}
     });
-    let response = config.post("/v0/pipelines", &request_body).await;
+    let response = config.post_json("/v0/pipelines", &request_body).await;
     assert_eq!(StatusCode::CONFLICT, response.status());
 }
 
@@ -1161,43 +336,29 @@ async fn pipeline_name_conflict() {
 #[actix_web::test]
 #[serial]
 async fn deploy_pipeline() {
-    let config = setup().await;
+    let config = TestClient::setup_and_full_cleanup().await;
 
-    // Basic test pipeline with a SQL program which is known to panic
-    create_and_deploy_test_pipeline(
-        &config,
+    // Basic test pipeline
+    config.prepare_pipeline(
+        "test",
         "CREATE TABLE t1(c1 INTEGER) with ('materialized' = 'true'); CREATE VIEW v1 AS SELECT * FROM t1;",
     ).await;
-
-    // Again pause the pipeline before it is started
-    let response = config.post_no_body("/v0/pipelines/test/pause").await;
-    assert_eq!(response.status(), StatusCode::ACCEPTED);
-
-    // Start the pipeline
-    let response = config.post_no_body("/v0/pipelines/test/start").await;
-    assert_eq!(response.status(), StatusCode::ACCEPTED);
-    config
-        .wait_for_deployment_status("test", PipelineStatus::Running, config.resume_timeout)
-        .await;
+    config.start_pipeline("test", true).await;
 
     // Push some data
     let response = config
-        .post_csv("/v0/pipelines/test/ingress/t1", "1\n2\n3\n".to_string())
+        .post("/v0/pipelines/test/ingress/t1", "1\n2\n3\n".to_string())
         .await;
     assert!(response.status().is_success());
 
     // Push more data with Windows-style newlines
     let response = config
-        .post_csv("/v0/pipelines/test/ingress/t1", "4\r\n5\r\n6".to_string())
+        .post("/v0/pipelines/test/ingress/t1", "4\r\n5\r\n6".to_string())
         .await;
     assert!(response.status().is_success());
 
     // Pause a pipeline after it is started
-    let response = config.post_no_body("/v0/pipelines/test/pause").await;
-    assert_eq!(response.status(), StatusCode::ACCEPTED);
-    config
-        .wait_for_deployment_status("test", PipelineStatus::Paused, config.pause_timeout)
-        .await;
+    config.pause_pipeline("test", true).await;
 
     // Querying should work in Paused state
     assert_eq!(
@@ -1208,11 +369,7 @@ async fn deploy_pipeline() {
     );
 
     // Start the pipeline again
-    let response = config.post_no_body("/v0/pipelines/test/start").await;
-    assert_eq!(response.status(), StatusCode::ACCEPTED);
-    config
-        .wait_for_deployment_status("test", PipelineStatus::Running, config.resume_timeout)
-        .await;
+    config.start_pipeline("test", true).await;
 
     // Querying should work in Running state
     assert_eq!(
@@ -1222,8 +379,8 @@ async fn deploy_pipeline() {
         json!([{"c1": 1}, {"c1": 2}, {"c1": 3}, {"c1": 4}, {"c1": 5}, {"c1": 6}])
     );
 
-    // Shutdown the pipeline
-    config.shutdown_pipeline("test").await;
+    // Stop force and clear the pipeline
+    config.stop_force_and_clear_pipeline("test").await;
 }
 
 /// Tests that pipeline panics are correctly reported by providing a SQL program
@@ -1231,81 +388,47 @@ async fn deploy_pipeline() {
 #[actix_web::test]
 #[serial]
 async fn pipeline_panic() {
-    let config = setup().await;
+    let config = TestClient::setup_and_full_cleanup().await;
 
     // Basic test pipeline with a SQL program which is known to panic
-    create_and_deploy_test_pipeline(
-        &config,
-        "CREATE TABLE t1(c1 INTEGER); CREATE VIEW v1 AS SELECT ELEMENT(ARRAY [2, 3]) FROM t1;",
-    )
-    .await;
-
-    // Start the pipeline
-    let resp = config.post_no_body("/v0/pipelines/test/start").await;
-    assert_eq!(resp.status(), StatusCode::ACCEPTED);
-
-    // Wait until it is running
     config
-        .wait_for_deployment_status(
+        .prepare_pipeline(
             "test",
-            PipelineStatus::Running,
-            Duration::from_millis(1_000),
+            "CREATE TABLE t1(c1 INTEGER); CREATE VIEW v1 AS SELECT ELEMENT(ARRAY [2, 3]) FROM t1;",
         )
         .await;
 
+    // Start the pipeline
+    config.start_pipeline("test", true).await;
+
     // Push some data, which should cause a panic
     let _ = config
-        .post_csv("/v0/pipelines/test/ingress/t1", "1\n2\n3\n".to_string())
+        .post("/v0/pipelines/test/ingress/t1", "1\n2\n3\n".to_string())
         .await;
-
-    // Ignore failures
-    // assert_eq!(response.status(), StatusCode::OK, "Val: {:?}", response);
 
     // Should discover the error next time it polls the pipeline.
-    let pipeline = config
-        .wait_for_deployment_status("test", PipelineStatus::Failed, config.failed_timeout)
-        .await;
-    assert_eq!(
-        pipeline["deployment_error"]["error_code"],
-        "RuntimeError.WorkerPanic"
-    );
+    let error = config.wait_for_stopped_with_error("test").await;
+    assert_eq!(error["error_code"], "RuntimeError.WorkerPanic");
 
-    // Shutdown the pipeline
-    config.shutdown_pipeline("test").await;
+    // Stop force and clear the pipeline
+    config.stop_force_and_clear_pipeline("test").await;
 }
 
-/// Tests starting a pipeline, shutting it down, starting it again, and then shutting it down again.
+/// Tests starting, stopping, starting and stopping again.
 #[actix_web::test]
 #[serial]
 async fn pipeline_restart() {
-    let config = setup().await;
-
-    // Basic test pipeline
-    create_and_deploy_test_pipeline(
-        &config,
-        "CREATE TABLE t1(c1 INTEGER); CREATE VIEW v1 AS SELECT * FROM t1;",
-    )
-    .await;
-
-    // Start the pipeline
-    let response = config.post_no_body("/v0/pipelines/test/start").await;
-    assert_eq!(response.status(), StatusCode::ACCEPTED);
+    let config = TestClient::setup_and_full_cleanup().await;
     config
-        .wait_for_deployment_status("test", PipelineStatus::Running, config.start_timeout)
+        .prepare_pipeline(
+            "test",
+            "CREATE TABLE t1(c1 INTEGER); CREATE VIEW v1 AS SELECT * FROM t1;",
+        )
         .await;
-
-    // Shutdown the pipeline
-    config.shutdown_pipeline("test").await;
-
-    // Start the pipeline
-    let response = config.post_no_body("/v0/pipelines/test/start").await;
-    assert_eq!(response.status(), StatusCode::ACCEPTED);
-    config
-        .wait_for_deployment_status("test", PipelineStatus::Running, config.start_timeout)
-        .await;
-
-    // Shutdown the pipeline
-    config.shutdown_pipeline("test").await;
+    config.start_pipeline("test", true).await;
+    config.stop_force_pipeline("test", true).await;
+    config.start_pipeline("test", true).await;
+    config.stop_force_and_clear_pipeline("test").await;
 }
 
 /// Tests that the pipeline runtime configuration is validated and stored correctly,
@@ -1313,7 +436,7 @@ async fn pipeline_restart() {
 #[actix_web::test]
 #[serial]
 async fn pipeline_runtime_config() {
-    let config = setup().await;
+    let config = TestClient::setup_and_full_cleanup().await;
 
     // Valid JSON for runtime_config
     for (runtime_config, expected) in [
@@ -1366,7 +489,7 @@ async fn pipeline_runtime_config() {
         if let Some(json) = runtime_config {
             body["runtime_config"] = json;
         }
-        let mut response = config.put("/v0/pipelines/test-1", &body).await;
+        let mut response = config.put_json("/v0/pipelines/test-1", &body).await;
         assert!(response.status() == StatusCode::CREATED || response.status() == StatusCode::OK);
         let value: Value = response.json().await.unwrap();
         assert_eq!(value["runtime_config"], expected);
@@ -1382,7 +505,7 @@ async fn pipeline_runtime_config() {
             "program_code": "sql-1",
             "runtime_config": runtime_config
         });
-        let mut response = config.put("/v0/pipelines/test-1", &body).await;
+        let mut response = config.put_json("/v0/pipelines/test-1", &body).await;
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
         let value: Value = response.json().await.unwrap();
         assert_eq!(value["error_code"], json!("InvalidRuntimeConfig"));
@@ -1402,11 +525,11 @@ async fn pipeline_runtime_config() {
             }
         }
     });
-    let response = config.post("/v0/pipelines", &body).await;
+    let response = config.post_json("/v0/pipelines", &body).await;
     assert_eq!(response.status(), StatusCode::CREATED);
 
     // Patching: apply patch which does not affect runtime_config
-    let mut response = config.patch("/v0/pipelines/test-2", &json!({})).await;
+    let mut response = config.patch_json("/v0/pipelines/test-2", &json!({})).await;
     assert_eq!(response.status(), StatusCode::OK);
     let value: Value = response.json().await.unwrap();
     assert_eq!(
@@ -1434,7 +557,7 @@ async fn pipeline_runtime_config() {
             }
         }
     });
-    let mut response = config.patch("/v0/pipelines/test-2", &body).await;
+    let mut response = config.patch_json("/v0/pipelines/test-2", &body).await;
     assert_eq!(response.status(), StatusCode::OK);
     let value: Value = response.json().await.unwrap();
     assert_eq!(
@@ -1456,7 +579,7 @@ async fn pipeline_runtime_config() {
 #[actix_web::test]
 #[serial]
 async fn pipeline_program_config() {
-    let config = setup().await;
+    let config = TestClient::setup_and_full_cleanup().await;
 
     // Valid JSON for program_config
     for (program_config, expected) in [
@@ -1504,7 +627,7 @@ async fn pipeline_program_config() {
         if let Some(json) = program_config {
             body["program_config"] = json;
         }
-        let mut response = config.put("/v0/pipelines/test-1", &body).await;
+        let mut response = config.put_json("/v0/pipelines/test-1", &body).await;
         assert!(response.status() == StatusCode::CREATED || response.status() == StatusCode::OK);
         let value: Value = response.json().await.unwrap();
         assert_eq!(value["program_config"], expected);
@@ -1522,7 +645,7 @@ async fn pipeline_program_config() {
             "program_code": "sql-1",
             "program_config": program_config
         });
-        let mut response = config.put("/v0/pipelines/test-1", &body).await;
+        let mut response = config.put_json("/v0/pipelines/test-1", &body).await;
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
         let value: Value = response.json().await.unwrap();
         assert_eq!(value["error_code"], json!("InvalidProgramConfig"));
@@ -1537,11 +660,11 @@ async fn pipeline_program_config() {
             "cache": false
         }
     });
-    let response = config.post("/v0/pipelines", &body).await;
+    let response = config.post_json("/v0/pipelines", &body).await;
     assert_eq!(response.status(), StatusCode::CREATED);
 
     // Patching: apply patch which does not affect program_config
-    let mut response = config.patch("/v0/pipelines/test-2", &json!({})).await;
+    let mut response = config.patch_json("/v0/pipelines/test-2", &json!({})).await;
     assert_eq!(response.status(), StatusCode::OK);
     let value: Value = response.json().await.unwrap();
     assert_eq!(
@@ -1559,7 +682,7 @@ async fn pipeline_program_config() {
             "cache": true
         }
     });
-    let mut response = config.patch("/v0/pipelines/test-2", &body).await;
+    let mut response = config.patch_json("/v0/pipelines/test-2", &body).await;
     assert_eq!(response.status(), StatusCode::OK);
     let value: Value = response.json().await.unwrap();
     assert_eq!(
@@ -1577,7 +700,7 @@ async fn pipeline_program_config() {
 #[actix_web::test]
 #[serial]
 async fn pipeline_start_without_compiling() {
-    let config = setup().await;
+    let config = TestClient::setup_and_full_cleanup().await;
     let body = json!({
         "name":  "test",
         "description": "desc",
@@ -1585,16 +708,16 @@ async fn pipeline_start_without_compiling() {
         "program_code": "CREATE TABLE foo (bar INTEGER);",
         "program_config": {}
     });
-    let response = config.post("/v0/pipelines", &body).await;
+    let response = config.post_json("/v0/pipelines", &body).await;
     assert_eq!(response.status(), StatusCode::CREATED);
 
     // Try starting the program when it is in the CompilingRust state.
     // There is a possibility that rust compilation is so fast that we don't poll
     // at that moment but that's unlikely.
     let now = Instant::now();
-    println!("Waiting till program compilation state is in past the CompilingSql state...");
+    // println!("Waiting till program compilation state is in past the CompilingSql state...");
     loop {
-        std::thread::sleep(Duration::from_millis(50));
+        sleep(Duration::from_millis(50)).await;
         if now.elapsed().as_secs() > 30 {
             panic!("Took longer than 30 seconds to be past CompilingSql");
         }
@@ -1607,41 +730,27 @@ async fn pipeline_start_without_compiling() {
     }
 
     // Attempt to start the pipeline
-    let resp = config.post_no_body("/v0/pipelines/test/start").await;
-    assert_eq!(resp.status(), StatusCode::ACCEPTED);
-
-    // Wait for it to actually start
-    config
-        .wait_for_deployment_status("test", PipelineStatus::Running, config.compilation_timeout)
-        .await;
+    config.start_pipeline("test", true).await;
 }
 
 #[actix_web::test]
 #[serial]
 async fn json_ingress() {
-    let config = setup().await;
+    let config = TestClient::setup_and_full_cleanup().await;
 
     // Basic test pipeline
-    create_and_deploy_test_pipeline(
-        &config,
+    config.prepare_pipeline(
+        "test",
         "create table t1(c1 integer, c2 bool, c3 varchar) with ('materialized' = 'true'); create materialized view v1 as select * from t1;",
     )
         .await;
 
     // Start the pipeline
-    let response = config.post_no_body("/v0/pipelines/test/start").await;
-    assert_eq!(response.status(), StatusCode::ACCEPTED);
-    config
-        .wait_for_deployment_status(
-            "test",
-            PipelineStatus::Running,
-            Duration::from_millis(1_000),
-        )
-        .await;
+    config.start_pipeline("test", true).await;
 
     // Push some data using default json config.
     let response = config
-        .post_json(
+        .post(
             "/v0/pipelines/test/ingress/T1?format=json&update_format=raw",
             r#"{"c1": 10, "c2": true}
             {"c1": 20, "c3": "foo"}"#
@@ -1659,7 +768,7 @@ async fn json_ingress() {
 
     // Push more data using insert/delete format.
     let response = config
-        .post_json(
+        .post(
             "/v0/pipelines/test/ingress/t1?format=json&update_format=insert_delete",
             r#"{"delete": {"c1": 10, "c2": true}}
             {"insert": {"c1": 30, "c3": "bar"}}"#
@@ -1677,7 +786,7 @@ async fn json_ingress() {
 
     // Format data as json array.
     let response = config
-        .post_json(
+        .post(
             "/v0/pipelines/test/ingress/T1?format=json&update_format=insert_delete",
             r#"{"insert": [40, true, "buzz"]}"#.to_string(),
         )
@@ -1686,7 +795,7 @@ async fn json_ingress() {
 
     // Use array of updates instead of newline-delimited JSON
     let response = config
-        .post_json(
+        .post(
             "/v0/pipelines/test/ingress/t1?format=json&update_format=insert_delete&array=true",
             r#"[{"delete": [40, true, "buzz"]}, {"insert": [50, true, ""]}]"#.to_string(),
         )
@@ -1702,7 +811,7 @@ async fn json_ingress() {
 
     // Trigger parse errors.
     let mut response = config
-        .post_json(
+        .post(
             "/v0/pipelines/test/ingress/T1?format=json&update_format=insert_delete&array=true",
             r#"[{"insert": [35, true, ""]}, {"delete": [40, "foo", "buzz"]}, {"insert": [true, true, ""]}]"#.to_string(),
         )
@@ -1722,7 +831,7 @@ async fn json_ingress() {
     );
 
     let mut response = config
-        .post_json(
+        .post(
             "/v0/pipelines/test/ingress/t1?format=json&update_format=insert_delete",
             r#"{"insert": [25, true, ""]}{"delete": [40, "foo", "buzz"]}{"insert": [true, true, ""]}"#.to_string(),
         )
@@ -1742,7 +851,7 @@ async fn json_ingress() {
 
     // Debezium CDC format
     let response = config
-        .post_json(
+        .post(
             "/v0/pipelines/test/ingress/T1?format=json&update_format=debezium",
             r#"{"payload": {"op": "u", "before": [50, true, ""], "after": [60, true, "hello"]}}"#
                 .to_string(),
@@ -1760,7 +869,7 @@ async fn json_ingress() {
     // Push some CSV data (the second record is invalid, but the other two should
     // get ingested).
     let mut response = config
-        .post_csv(
+        .post(
             "/v0/pipelines/test/ingress/t1?format=csv",
             r#"15,true,foo
 not_a_number,true,ΑαΒβΓγΔδ
@@ -1780,36 +889,27 @@ not_a_number,true,ΑαΒβΓγΔδ
         json!([{"c1": 15, "c2": true, "c3": "foo"}, {"c1": 16, "c2": false, "c3": "unicode🚲"}, {"c1": 20, "c2": null, "c3": "foo"}, {"c1": 25, "c2": true, "c3": ""}, {"c1": 30, "c2": null, "c3": "bar"}, {"c1": 60, "c2": true, "c3": "hello"}])
     );
 
-    // Shutdown the pipeline
-    config.shutdown_pipeline("test").await;
+    // Stop force and clear the pipeline
+    config.stop_force_and_clear_pipeline("test").await;
 }
 
 /// Test completion tokens with a pipeline that has no output connectors.
 #[actix_web::test]
 #[serial]
 async fn completion_tokens() {
-    let config = setup_for_pipeline(Some("test")).await;
+    let config = TestClient::setup_and_cleanup_pipeline("test").await;
 
-    create_and_deploy_test_pipeline(
-        &config,
+    config.prepare_test_pipeline(
         "create table t1(c1 integer, c2 bool, c3 varchar) with ('materialized' = 'true'); create materialized view v1 as select * from t1;",
     )
         .await;
 
     // Start the pipeline
-    let response = config.post_no_body("/v0/pipelines/test/start").await;
-    assert_eq!(response.status(), StatusCode::ACCEPTED);
-    config
-        .wait_for_deployment_status(
-            "test",
-            PipelineStatus::Running,
-            Duration::from_millis(1_000),
-        )
-        .await;
+    config.start_pipeline("test", true).await;
 
     for i in 0..1000 {
         let token: CompletionTokenResponse = config
-            .post_json(
+            .post(
                 "/v0/pipelines/test/ingress/T1?format=json&update_format=raw",
                 format!(r#"{{"c1": {i}, "c2": true}}"#),
             )
@@ -1817,7 +917,7 @@ async fn completion_tokens() {
             .json()
             .await
             .unwrap();
-        println!("Iteration {i}, token: {}", token.token);
+        // println!("Iteration {i}, token: {}", token.token);
         loop {
             let mut response = config
                 .get(&format!(
@@ -1828,14 +928,14 @@ async fn completion_tokens() {
 
             assert!(
                 response.status().is_success(),
-                "Unexpected reponse to /completion_status: {response:?}"
+                "Unexpected response to /completion_status: {response:?}"
             );
 
             let status: CompletionStatusResponse = response.json().await.unwrap();
             if status.status == CompletionStatus::Complete {
                 break;
             }
-            println!("status: {:?}", status.status);
+            // println!("status: {:?}", status.status);
             tokio::time::sleep(Duration::from_millis(10)).await
         }
 
@@ -1846,16 +946,13 @@ async fn completion_tokens() {
             json!([{"count(*)": 1}])
         );
     }
-
-    // Shutdown the pipeline
-    config.shutdown_pipeline("test").await;
 }
 
 /// Test completion tokens with a pipeline with output connectors.
 #[actix_web::test]
 #[serial]
 async fn completion_tokens_with_outputs() {
-    let config = setup_for_pipeline(Some("test")).await;
+    let config = TestClient::setup_and_cleanup_pipeline("test").await;
 
     let temp_output_path = NamedTempFile::new().unwrap().into_temp_path();
     let output_path1 = temp_output_path.to_str().unwrap().to_string();
@@ -1870,9 +967,8 @@ async fn completion_tokens_with_outputs() {
     let output_path4 = temp_output_path.to_str().unwrap().to_string();
     temp_output_path.close().unwrap();
 
-    create_and_deploy_test_pipeline(
-        &config,
-        &format!(
+    config
+        .prepare_test_pipeline(&format!(
             r#"create table t1(c1 integer, c2 bool, c3 varchar)
 with (
     'materialized' = 'true',
@@ -1938,26 +1034,17 @@ with (
 )
 as select * from t1;
 "#
-        ),
-    )
-    .await;
+        ))
+        .await;
 
     // Start the pipeline
-    let response = config.post_no_body("/v0/pipelines/test/start").await;
-    assert_eq!(response.status(), StatusCode::ACCEPTED);
-    config
-        .wait_for_deployment_status(
-            "test",
-            PipelineStatus::Running,
-            Duration::from_millis(1_000),
-        )
-        .await;
+    config.start_pipeline("test", true).await;
 
     let mut expected_output = String::new();
 
     for i in 0..100 {
         let token: CompletionTokenResponse = config
-            .post_json(
+            .post(
                 "/v0/pipelines/test/ingress/T1?format=json&update_format=raw",
                 format!(r#"{{"c1": {i}, "c2": true}}"#),
             )
@@ -1965,7 +1052,7 @@ as select * from t1;
             .json()
             .await
             .unwrap();
-        println!("Iteration {i}, token: {}", token.token);
+        // println!("Iteration {i}, token: {}", token.token);
         loop {
             let mut response = config
                 .get(&format!(
@@ -1983,13 +1070,13 @@ as select * from t1;
             if status.status == CompletionStatus::Complete {
                 break;
             }
-            println!("status: {:?}", status.status);
+            // println!("status: {:?}", status.status);
             tokio::time::sleep(Duration::from_millis(10)).await
         }
-        println!(
-            "{}: DONE",
-            chrono::DateTime::<Utc>::from(SystemTime::now()).to_rfc3339()
-        );
+        // println!(
+        //     "{}: DONE",
+        //     chrono::DateTime::<Utc>::from(SystemTime::now()).to_rfc3339()
+        // );
 
         expected_output += &format!(
             r#"{{"insert":{{"c1":{i},"c2":true,"c3":null}}}}
@@ -2043,7 +1130,7 @@ as select * from t1;
 
     let token: CompletionTokenResponse = response.json().await.unwrap();
 
-    println!("Datagen connector token: {}", token.token);
+    // println!("Datagen connector token: {}", token.token);
     loop {
         let mut response = config
             .get(&format!(
@@ -2061,7 +1148,7 @@ as select * from t1;
         if status.status == CompletionStatus::Complete {
             break;
         }
-        println!("status: {:?}", status.status);
+        // println!("status: {:?}", status.status);
         tokio::time::sleep(Duration::from_millis(10)).await
     }
 
@@ -2084,38 +1171,27 @@ as select * from t1;
     // assert_eq!(&output2, &expected_output);
     // assert_eq!(&output3, &expected_output);
     // assert_eq!(&output4, &expected_output);
-
-    // Shutdown the pipeline
-    config.shutdown_pipeline("test").await;
 }
 
 /// Table with column of type MAP.
 #[actix_web::test]
 #[serial]
 async fn map_column() {
-    let config = setup().await;
+    let config = TestClient::setup_and_full_cleanup().await;
 
     // Basic test pipeline
-    create_and_deploy_test_pipeline(
-        &config,
+    config.prepare_pipeline(
+        "test",
         "create table t1(c1 integer, c2 bool, c3 MAP<varchar, varchar>) with ('materialized' = 'true'); create view v1 as select * from t1;",
     )
         .await;
 
     // Start the pipeline
-    let response = config.post_no_body("/v0/pipelines/test/start").await;
-    assert_eq!(response.status(), StatusCode::ACCEPTED);
-    config
-        .wait_for_deployment_status(
-            "test",
-            PipelineStatus::Running,
-            Duration::from_millis(1_000),
-        )
-        .await;
+    config.start_pipeline("test", true).await;
 
     // Push some data using default json config.
     let response = config
-        .post_json(
+        .post(
             "/v0/pipelines/test/ingress/T1?format=json&update_format=raw",
             r#"{"c1": 10, "c2": true, "c3": {"foo": "1", "bar": "2"}}
             {"c1": 20}"#
@@ -2130,38 +1206,28 @@ async fn map_column() {
             .await,
         json!([{"c1": 10, "c2": true, "c3": {"bar": "2", "foo": "1"}}, {"c1": 20, "c2": null, "c3": null}])
     );
-
-    // Shutdown the pipeline
-    config.shutdown_pipeline("test").await;
 }
 
 #[actix_web::test]
 #[serial]
 async fn parse_datetime() {
-    let config = setup().await;
+    let config = TestClient::setup_and_full_cleanup().await;
 
     // Basic test pipeline
-    create_and_deploy_test_pipeline(
-        &config,
-        "create table t1(t TIME, ts TIMESTAMP, d DATE) with ('materialized' = 'true');",
-    )
-    .await;
-
-    // Start the pipeline
-    let response = config.post_no_body("/v0/pipelines/test/start").await;
-    assert_eq!(response.status(), StatusCode::ACCEPTED);
     config
-        .wait_for_deployment_status(
+        .prepare_pipeline(
             "test",
-            PipelineStatus::Running,
-            Duration::from_millis(1_000),
+            "create table t1(t TIME, ts TIMESTAMP, d DATE) with ('materialized' = 'true');",
         )
         .await;
+
+    // Start the pipeline
+    config.start_pipeline("test", true).await;
 
     // The parser should trim leading and trailing white space when parsing
     // dates/times.
     let response = config
-        .post_json(
+        .post(
             "/v0/pipelines/test/ingress/t1?format=json&update_format=raw",
             r#"{"t":"13:22:00","ts": "2021-05-20 12:12:33","d": "2021-05-20"}
             {"t":" 11:12:33.483221092 ","ts": " 2024-02-25 12:12:33 ","d": " 2024-02-25 "}"#
@@ -2176,37 +1242,26 @@ async fn parse_datetime() {
             .await,
         json!([{"d": "2024-02-25", "t": "11:12:33.483221092", "ts": "2024-02-25T12:12:33"}, {"d": "2021-05-20", "t": "13:22:00", "ts": "2021-05-20T12:12:33"}])
     );
-
-    // Shutdown the pipeline
-    config.shutdown_pipeline("test").await;
 }
 
 #[actix_web::test]
 #[serial]
 async fn quoted_columns() {
-    let config = setup().await;
+    let config = TestClient::setup_and_full_cleanup().await;
 
     // Basic test pipeline
-    create_and_deploy_test_pipeline(
-        &config,
+    config.prepare_pipeline(
+        "test",
         r#"create table t1("c1" integer not null, "C2" bool not null, "😁❤" varchar not null, "αβγ" boolean not null, ΔΘ boolean not null) with ('materialized' = 'true')"#,
     )
         .await;
 
     // Start the pipeline
-    let response = config.post_no_body("/v0/pipelines/test/start").await;
-    assert_eq!(response.status(), StatusCode::ACCEPTED);
-    config
-        .wait_for_deployment_status(
-            "test",
-            PipelineStatus::Running,
-            Duration::from_millis(1_000),
-        )
-        .await;
+    config.start_pipeline("test", true).await;
 
     // Push some data using default json config.
     let response = config
-        .post_json(
+        .post(
             "/v0/pipelines/test/ingress/T1?format=json&update_format=raw",
             r#"{"c1": 10, "C2": true, "😁❤": "foo", "αβγ": true, "δθ": false}"#.to_string(),
         )
@@ -2219,37 +1274,25 @@ async fn quoted_columns() {
             .await,
         json!([{"C2": true, "c1": 10, "αβγ": true, "δθ": false, "😁❤": "foo"}])
     );
-
-    // Shutdown the pipeline
-    config.shutdown_pipeline("test").await;
 }
 
 #[actix_web::test]
 #[serial]
 async fn primary_keys() {
-    let config = setup().await;
+    let config = TestClient::setup_and_full_cleanup().await;
 
     // Basic test pipeline
-    create_and_deploy_test_pipeline(
-        &config,
+    config.prepare_test_pipeline(
         r#"create table t1(id bigint not null, s varchar not null, primary key (id)) with ('materialized' = 'true')"#,
     )
         .await;
 
     // Start the pipeline
-    let response = config.post_no_body("/v0/pipelines/test/start").await;
-    assert_eq!(response.status(), StatusCode::ACCEPTED);
-    config
-        .wait_for_deployment_status(
-            "test",
-            PipelineStatus::Running,
-            Duration::from_millis(1_000),
-        )
-        .await;
+    config.start_pipeline("test", true).await;
 
     // Push some data using default json config.
     let response = config
-        .post_json(
+        .post(
             "/v0/pipelines/test/ingress/T1?format=json&update_format=insert_delete",
             r#"{"insert":{"id":1, "s": "1"}}
 {"insert":{"id":2, "s": "2"}}"#
@@ -2267,7 +1310,7 @@ async fn primary_keys() {
 
     // Make some changes.
     let req = config
-        .post_json(
+        .post(
             "/v0/pipelines/test/ingress/T1?format=json&update_format=insert_delete",
             r#"{"insert":{"id":1, "s": "1-modified"}}
 {"update":{"id":2, "s": "2-modified"}}"#
@@ -2285,7 +1328,7 @@ async fn primary_keys() {
 
     // Delete a key
     let response = config
-        .post_json(
+        .post(
             "/v0/pipelines/test/ingress/T1?format=json&update_format=insert_delete",
             r#"{"delete":{"id":2}}"#.to_string(),
         )
@@ -2298,47 +1341,36 @@ async fn primary_keys() {
             .await,
         json!([ {"id": 1, "s": "1-modified"}])
     );
-
-    // Shutdown the pipeline
-    config.shutdown_pipeline("test").await;
 }
 
 /// Test case-sensitive table ingress/egress behavior.
 #[actix_web::test]
 #[serial]
 async fn case_sensitive_tables() {
-    let config = setup().await;
+    let config = TestClient::setup_and_full_cleanup().await;
 
     // Table "TaBle1" and view "V1" are case-sensitive and can only be accessed
     // by quoting their name.
     // Table "v1" is also case-sensitive, but since its name is lowercase, it
     // can be accessed as both "v1" and "\"v1\""
-    create_and_deploy_test_pipeline(
-        &config,
-        r#"create table "TaBle1"(id bigint not null);
+    config
+        .prepare_test_pipeline(
+            r#"create table "TaBle1"(id bigint not null);
 create table table1(id bigint);
 create materialized view "V1" as select * from "TaBle1";
 create materialized view "v1" as select * from table1;"#,
-    )
-    .await;
-
-    // Start the pipeline
-    let response = config.post_no_body("/v0/pipelines/test/start").await;
-    assert_eq!(response.status(), StatusCode::ACCEPTED);
-    config
-        .wait_for_deployment_status(
-            "test",
-            PipelineStatus::Running,
-            Duration::from_millis(1_000),
         )
         .await;
+
+    // Start the pipeline
+    config.start_pipeline("test", true).await;
 
     let mut response1 = config.delta_stream_request_json("test", "\"V1\"").await;
     let mut response2 = config.delta_stream_request_json("test", "\"v1\"").await;
 
     // Push some data using default json config.
     let response = config
-        .post_json(
+        .post(
             "/v0/pipelines/test/ingress/\"TaBle1\"?format=json&update_format=insert_delete",
             r#"{"insert":{"id":1}}"#.to_string(),
         )
@@ -2346,7 +1378,7 @@ create materialized view "v1" as select * from table1;"#,
     assert!(response.status().is_success());
 
     let response = config
-        .post_json(
+        .post(
             "/v0/pipelines/test/ingress/table1?format=json&update_format=insert_delete",
             r#"{"insert":{"id":2}}"#.to_string(),
         )
@@ -2380,39 +1412,27 @@ create materialized view "v1" as select * from table1;"#,
         config.adhoc_query_json("test", "select * from v1;").await,
         json!([{ "id": 2 }])
     );
-
-    // Shutdown the pipeline
-    config.shutdown_pipeline("test").await;
 }
 
 #[actix_web::test]
 #[serial]
 async fn duplicate_outputs() {
-    let config = setup().await;
+    let config = TestClient::setup_and_full_cleanup().await;
 
     // Basic test pipeline
-    create_and_deploy_test_pipeline(
-        &config,
+    config.prepare_test_pipeline(
         r#"create table t1(id bigint not null, s varchar not null); create view v1 as select s from t1;"#,
     )
         .await;
 
     // Start the pipeline
-    let response = config.post_no_body("/v0/pipelines/test/start").await;
-    assert_eq!(response.status(), StatusCode::ACCEPTED);
-    config
-        .wait_for_deployment_status(
-            "test",
-            PipelineStatus::Running,
-            Duration::from_millis(1_000),
-        )
-        .await;
+    config.start_pipeline("test", true).await;
 
     let mut response = config.delta_stream_request_json("test", "V1").await;
 
     // Push some data using default json config.
     let response2 = config
-        .post_json(
+        .post(
             "/v0/pipelines/test/ingress/T1?format=json&update_format=insert_delete",
             r#"{"insert":{"id":1, "s": "1"}}
 {"insert":{"id":2, "s": "2"}}"#
@@ -2431,7 +1451,7 @@ async fn duplicate_outputs() {
 
     // Push some more data
     let response2 = config
-        .post_json(
+        .post(
             "/v0/pipelines/test/ingress/T1?format=json&update_format=insert_delete",
             r#"{"insert":{"id":3, "s": "3"}}
 {"insert":{"id":4, "s": "4"}}"#
@@ -2450,7 +1470,7 @@ async fn duplicate_outputs() {
 
     // Push more records that will create duplicate outputs.
     let response2 = config
-        .post_json(
+        .post(
             "/v0/pipelines/test/ingress/T1?format=json&update_format=insert_delete",
             r#"{"insert":{"id":5, "s": "1"}}
 {"insert":{"id":6, "s": "2"}}"#
@@ -2466,20 +1486,17 @@ async fn duplicate_outputs() {
             &[json!({"insert": {"s":"1"}}), json!({"insert":{"s":"2"}})],
         )
         .await;
-
-    // Shutdown the pipeline
-    config.shutdown_pipeline("test").await;
 }
 
 #[actix_web::test]
 #[serial]
 async fn upsert() {
-    let config = setup().await;
+    let config = TestClient::setup_and_full_cleanup().await;
 
     // Basic test pipeline
-    create_and_deploy_test_pipeline(
-        &config,
-        r#"create table t1(
+    config
+        .prepare_test_pipeline(
+            r#"create table t1(
             id1 bigint not null,
             id2 bigint not null,
             str1 varchar not null,
@@ -2487,19 +1504,11 @@ async fn upsert() {
             int1 bigint not null,
             int2 bigint,
             primary key(id1, id2));"#,
-    )
-    .await;
-
-    // Start the pipeline
-    let response = config.post_no_body("/v0/pipelines/test/start").await;
-    assert_eq!(response.status(), StatusCode::ACCEPTED);
-    config
-        .wait_for_deployment_status(
-            "test",
-            PipelineStatus::Running,
-            Duration::from_millis(1_000),
         )
         .await;
+
+    // Start the pipeline
+    config.start_pipeline("test", true).await;
 
     let mut response = config.delta_stream_request_json("test", "T1").await;
 
@@ -2511,7 +1520,7 @@ async fn upsert() {
     // `ZSetHandle::append` method not being atomic.  This is highly improbable, but if it
     // happens, increasing buffering delay in DBSP should solve that.
     let response2 = config
-        .post_json(
+        .post(
             "/v0/pipelines/test/ingress/T1?format=json&update_format=insert_delete&array=true",
             // Add several identical records with different id's
             r#"[{"insert":{"id1":1, "id2":1, "str1": "1", "int1": 1}},{"insert":{"id1":2, "id2":1, "str1": "1", "int1": 1}},{"insert":{"id1":3, "id2":1, "str1": "1", "int1": 1}}]"#
@@ -2533,7 +1542,7 @@ async fn upsert() {
         .await;
 
     let response2 = config
-        .post_json(
+        .post(
             "/v0/pipelines/test/ingress/T1?format=json&update_format=insert_delete&array=true",
             // 1: Update 'str1'.
             // 2: Update 'str2'.
@@ -2560,7 +1569,7 @@ async fn upsert() {
         .await;
 
     let response2 = config
-        .post_json(
+        .post(
             "/v0/pipelines/test/ingress/T1?format=json&update_format=insert_delete&array=true",
             // 1: Update command that doesn't modify any fields - noop.
             // 2: Clear 'str2' to null.
@@ -2584,21 +1593,18 @@ async fn upsert() {
             ],
         )
         .await;
-
-    // Shutdown the pipeline
-    config.shutdown_pipeline("test").await;
 }
 
 #[actix_web::test]
 #[serial]
 async fn pipeline_name_invalid() {
-    let config = setup().await;
+    let config = TestClient::setup_and_full_cleanup().await;
     // Empty
     let request_body = json!({
         "name": "",
         "description": "", "runtime_config": {}, "program_code": "", "program_config": {}
     });
-    let response = config.post("/v0/pipelines", &request_body).await;
+    let response = config.post_json("/v0/pipelines", &request_body).await;
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 
     // Too long
@@ -2606,7 +1612,7 @@ async fn pipeline_name_invalid() {
         "name": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "description": "", "runtime_config": {}, "program_code": "", "program_config": {}
     });
-    let response = config.post("/v0/pipelines", &request_body).await;
+    let response = config.post_json("/v0/pipelines", &request_body).await;
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 
     // Invalid characters
@@ -2614,7 +1620,7 @@ async fn pipeline_name_invalid() {
         "name": "%abc",
         "description": "", "runtime_config": {}, "program_code": "", "program_config": {}
     });
-    let response = config.post("/v0/pipelines", &request_body).await;
+    let response = config.post_json("/v0/pipelines", &request_body).await;
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 }
 
@@ -2666,18 +1672,11 @@ CREATE MATERIALIZED VIEW view_of_not_materialized AS ( SELECT * FROM not_materia
     const ADHOC_SQL_B: &str =
         "SELECT t1.dt AS c1, t2.st AS c2, t1.uid as c3 FROM t1, t2 WHERE t1.id = t2.id";
 
-    let config = setup().await;
-    create_and_deploy_test_pipeline(&config, PROGRAM).await;
-    let resp = config.post_no_body("/v0/pipelines/test/start").await;
-    assert_eq!(resp.status(), StatusCode::ACCEPTED);
+    let config = TestClient::setup_and_full_cleanup().await;
+    config.prepare_test_pipeline(PROGRAM).await;
 
-    config
-        .wait_for_deployment_status(
-            "test",
-            PipelineStatus::Running,
-            Duration::from_millis(1_000),
-        )
-        .await;
+    // Start the pipeline
+    config.start_pipeline("test", true).await;
 
     for format in &["text", "json"] {
         let mut r0 = config
@@ -2822,10 +1821,9 @@ async fn pipeline_adhoc_query_empty() {
     const PROGRAM: &str = r#"
 CREATE TABLE "TaBle1"(id bigint not null) with ('materialized' = 'true');
 "#;
-    let config = setup().await;
-    create_and_deploy_test_pipeline(&config, PROGRAM).await;
-    let resp = config.post_no_body("/v0/pipelines/test/start").await;
-    assert_eq!(resp.status(), StatusCode::ACCEPTED);
+    let config = TestClient::setup_and_full_cleanup().await;
+    config.prepare_test_pipeline(PROGRAM).await;
+    config.start_pipeline("test", true).await;
 
     const ADHOC_SQL_EMPTY: &str = "SELECT COUNT(*) from \"TaBle1\"";
     let mut r = config.adhoc_query("test", ADHOC_SQL_EMPTY, "json").await;
@@ -2836,15 +1834,17 @@ CREATE TABLE "TaBle1"(id bigint not null) with ('materialized' = 'true');
     assert_eq!(cnt_ret_json, json!({"count(*)": 0}));
 }
 
-/// The pipeline should transition to Shutdown status when being shutdown after starting.
+/// The pipeline should transition to Stopped status when being stopped after starting.
 /// This test will take at least 20 seconds due to various waiting times after starting.
 #[actix_web::test]
 #[serial]
-async fn pipeline_shutdown_after_start() {
-    let config = setup().await;
-    create_and_deploy_test_pipeline(&config, "CREATE TABLE t1(c1 INTEGER);").await;
+async fn pipeline_stop_force_after_start() {
+    let config = TestClient::setup_and_full_cleanup().await;
+    config
+        .prepare_test_pipeline("CREATE TABLE t1(c1 INTEGER);")
+        .await;
 
-    // Test a variety of waiting before shutdown to capture the various states
+    // Test a variety of waiting before stopping to capture the various states
     for duration_ms in [
         0, 50, 100, 250, 500, 750, 1000, 1250, 1500, 1750, 2000, 5000, 10000,
     ] {
@@ -2855,41 +1855,29 @@ async fn pipeline_shutdown_after_start() {
         // Shortly wait for the pipeline to transition to next state(s)
         sleep(Duration::from_millis(duration_ms)).await;
 
-        // Shut it down
-        let response = config.post_no_body("/v0/pipelines/test/shutdown").await;
-        assert_eq!(response.status(), StatusCode::ACCEPTED);
-
-        // Check that the pipeline becomes Shutdown
-        config
-            .wait_for_deployment_status("test", PipelineStatus::Shutdown, Duration::from_secs(10))
-            .await;
+        // Stop force and clear the pipeline
+        config.stop_force_and_clear_pipeline("test").await;
     }
 }
 
 #[actix_web::test]
 #[serial]
 async fn test_get_metrics() {
-    let config = setup().await;
+    let config = TestClient::setup_and_full_cleanup().await;
     // Basic test pipeline with a SQL program which is known to panic
-    create_and_deploy_test_pipeline(
-        &config,
+    config.prepare_test_pipeline(
         "CREATE TABLE t1(c1 INTEGER) with ('materialized' = 'true'); CREATE VIEW v1 AS SELECT * FROM t1;",
     ).await;
 
     // Again pause the pipeline before it is started
-    let response = config.post_no_body("/v0/pipelines/test/pause").await;
-    assert_eq!(response.status(), StatusCode::ACCEPTED);
+    config.pause_pipeline("test", true).await;
 
     // Start the pipeline
-    let response = config.post_no_body("/v0/pipelines/test/start").await;
-    assert_eq!(response.status(), StatusCode::ACCEPTED);
-    config
-        .wait_for_deployment_status("test", PipelineStatus::Running, config.resume_timeout)
-        .await;
+    config.start_pipeline("test", true).await;
 
     // Push some data
     let response = config
-        .post_csv("/v0/pipelines/test/ingress/t1", "1\n2\n3\n".to_string())
+        .post("/v0/pipelines/test/ingress/t1", "1\n2\n3\n".to_string())
         .await;
     assert!(response.status().is_success());
 
@@ -2899,97 +1887,54 @@ async fn test_get_metrics() {
     let s = String::from_utf8(resp.to_vec()).unwrap_or_default();
 
     assert!(s.contains("# TYPE"));
-
-    // Shutdown the pipeline
-    let response = config.post_no_body("/v0/pipelines/test/shutdown").await;
-    assert_eq!(response.status(), StatusCode::ACCEPTED);
-    config
-        .wait_for_deployment_status("test", PipelineStatus::Shutdown, config.shutdown_timeout)
-        .await;
-
-    // Delete the pipeline
-    let response = config.delete("/v0/pipelines/test").await;
-    assert_eq!(StatusCode::OK, response.status());
 }
 
-/// Tests that logs can be retrieved from the pipeline.
-/// TODO: test in the other deployment statuses whether logs can be retrieved
+/// Tests that logs can be retrieved from the pipeline in any status.
 #[actix_web::test]
 #[serial]
 async fn pipeline_logs() {
-    let config = setup().await;
+    let config = TestClient::setup_and_full_cleanup().await;
 
-    // Retrieve logs of non-existent pipeline
-    let response = config.get("/v0/pipelines/test/logs").await;
-    assert_eq!(response.status(), StatusCode::NOT_FOUND);
-
-    // Create pipeline
-    let request_body = json!({
-        "name": "test",
-        "description": "Description of the test pipeline",
-        "runtime_config": {},
-        "program_code": "CREATE TABLE t1(c1 INTEGER) with ('materialized' = 'true');",
-        "program_config": {}
-    });
-    let response = config.post("/v0/pipelines", &request_body).await;
-    assert_eq!(response.status(), StatusCode::CREATED);
-
-    // Retrieve logs (shutdown)
-    let response_logs = config.get("/v0/pipelines/test/logs").await;
-    assert_eq!(response_logs.status(), StatusCode::SERVICE_UNAVAILABLE);
-
-    // Wait for its program compilation completion
-    config
-        .wait_for_compilation("test", 1, config.compilation_timeout)
-        .await;
-
-    // Start the pipeline in Paused state
-    let response = config.post_no_body("/v0/pipelines/test/pause").await;
-    assert_eq!(response.status(), StatusCode::ACCEPTED);
-
-    // Await it reaching paused status
-    config
-        .wait_for_deployment_status("test", PipelineStatus::Paused, config.start_timeout)
-        .await;
-
-    // Retrieve logs (paused)
-    let mut response_logs_paused = config.get("/v0/pipelines/test/logs").await;
-
-    // Start the pipeline
-    let response = config.post_no_body("/v0/pipelines/test/start").await;
-    assert_eq!(response.status(), StatusCode::ACCEPTED);
-    config
-        .wait_for_deployment_status("test", PipelineStatus::Running, config.resume_timeout)
-        .await;
-
-    // Retrieve logs (running)
-    let mut response_logs_running = config.get("/v0/pipelines/test/logs").await;
-
-    // Shut the pipeline down
-    let response = config.post_no_body("/v0/pipelines/test/shutdown").await;
-    assert_eq!(response.status(), StatusCode::ACCEPTED);
-    config
-        .wait_for_deployment_status("test", PipelineStatus::Shutdown, config.shutdown_timeout)
-        .await;
-
-    // Check the logs
-    assert_eq!(response_logs_paused.status(), StatusCode::OK);
-    assert_eq!(response_logs_running.status(), StatusCode::OK);
-    let logs1 = String::from_utf8(response_logs_paused.body().await.unwrap().to_vec()).unwrap();
-    let logs2 = String::from_utf8(response_logs_running.body().await.unwrap().to_vec()).unwrap();
-    let normal_ending = format!("{}\n", LOGS_END_MESSAGE);
-    assert!(
-        logs1.ends_with(&normal_ending),
-        "Unexpected logs ending: {logs1}"
+    assert_eq!(
+        config.get("/v0/pipelines/test/logs").await.status(),
+        StatusCode::NOT_FOUND
     );
-    assert!(
-        logs2.ends_with(&normal_ending),
-        "Unexpected logs ending: {logs2}"
+    config
+        .post_pipeline(&json!({
+            "name": "test",
+            "program_code": "CREATE TABLE t1(c1 INTEGER) with ('materialized' = 'true');"
+        }))
+        .await;
+    assert_eq!(
+        config.get("/v0/pipelines/test/logs").await.status(),
+        StatusCode::OK
     );
-
-    // Retrieve logs (shutdown)
-    let response_logs = config.get("/v0/pipelines/test/logs").await;
-    assert_eq!(response_logs.status(), StatusCode::SERVICE_UNAVAILABLE);
+    config.wait_for_compiled_program("test", 1).await;
+    config.pause_pipeline("test", true).await;
+    assert_eq!(
+        config.get("/v0/pipelines/test/logs").await.status(),
+        StatusCode::OK
+    );
+    config.start_pipeline("test", true).await;
+    assert_eq!(
+        config.get("/v0/pipelines/test/logs").await.status(),
+        StatusCode::OK
+    );
+    config.stop_force_pipeline("test", true).await;
+    assert_eq!(
+        config.get("/v0/pipelines/test/logs").await.status(),
+        StatusCode::OK
+    );
+    config.clear_pipeline("test", true).await;
+    assert_eq!(
+        config.get("/v0/pipelines/test/logs").await.status(),
+        StatusCode::OK
+    );
+    config.delete_pipeline("test").await;
+    assert_eq!(
+        config.get("/v0/pipelines/test/logs").await.status(),
+        StatusCode::NOT_FOUND
+    );
 }
 
 /// The compiler needs to handle and continue to function when the pipeline is deleted
@@ -2997,7 +1942,7 @@ async fn pipeline_logs() {
 #[actix_web::test]
 #[serial]
 async fn pipeline_deleted_during_program_compilation() {
-    let config = setup().await;
+    let config = TestClient::setup_and_full_cleanup().await;
 
     // Test a variety of waiting before deletion
     for duration_ms in [0, 500, 1000, 1500, 2000, 2500, 3000, 3500, 4000, 4500, 5000] {
@@ -3009,7 +1954,7 @@ async fn pipeline_deleted_during_program_compilation() {
             "program_code": "",
             "program_config": {}
         });
-        let response = config.post("/v0/pipelines", &request_body).await;
+        let response = config.post_json("/v0/pipelines", &request_body).await;
         assert_eq!(response.status(), StatusCode::CREATED);
 
         // Wait for compilation to progress
@@ -3021,13 +1966,13 @@ async fn pipeline_deleted_during_program_compilation() {
     }
 
     // Validate the compiler still works correctly by fully compiling a program
-    create_and_deploy_test_pipeline(&config, "").await;
+    config.prepare_test_pipeline("").await;
 }
 
 /// Retrieves whether pipeline is paused, connector is paused, and number of processed
 /// records, which is used by the basic orchestration test.
 async fn basic_orchestration_info(
-    config: &TestConfig,
+    config: &TestClient,
     pipeline_name: &str,
     table_name: &str,
     connector_name: &str,
@@ -3045,7 +1990,7 @@ async fn basic_orchestration_info(
 
 /// Check if a connector is in the PAUSED state.
 async fn connector_paused(
-    config: &TestConfig,
+    config: &TestClient,
     pipeline_name: &str,
     table_name: &str,
     connector_name: &str,
@@ -3074,7 +2019,7 @@ async fn pipeline_orchestration_basic() {
         ("\"numbers +C0_-,.!%()&/\"", "aA0_-"),
     ] {
         // One table with one connector
-        let config = setup().await;
+        let config = TestClient::setup_and_full_cleanup().await;
         let sql = format!("
             CREATE TABLE {table_name} (
                 num DOUBLE
@@ -3088,7 +2033,7 @@ async fn pipeline_orchestration_basic() {
                 }}]'
             );
         ");
-        create_and_deploy_test_pipeline(&config, &sql).await;
+        config.prepare_test_pipeline(&sql).await;
 
         // Pipeline is paused, connector is running
         sleep(Duration::from_millis(500)).await;
@@ -3115,7 +2060,7 @@ async fn pipeline_orchestration_basic() {
         let response = config.post_no_body("/v0/pipelines/test/start").await;
         assert_eq!(response.status(), StatusCode::ACCEPTED);
         config
-            .wait_for_deployment_status(
+            .wait_for_pipeline_status(
                 "test",
                 PipelineStatus::Running,
                 Duration::from_millis(1_000),
@@ -3149,7 +2094,7 @@ async fn pipeline_orchestration_basic() {
 #[actix_web::test]
 #[serial]
 async fn pipeline_orchestration_errors() {
-    let config = setup().await;
+    let config = TestClient::setup_and_full_cleanup().await;
     let sql = r#"
         CREATE TABLE numbers1 (
             num DOUBLE
@@ -3163,7 +2108,7 @@ async fn pipeline_orchestration_errors() {
             }]'
         );
     "#;
-    create_and_deploy_test_pipeline(&config, sql).await;
+    config.prepare_test_pipeline(sql).await;
 
     // ACCEPTED
     for endpoint in ["/v0/pipelines/test/start", "/v0/pipelines/test/pause"] {
@@ -3191,8 +2136,6 @@ async fn pipeline_orchestration_errors() {
 
     // BAD REQUEST
     for endpoint in [
-        "/v0/pipelines/test/action2", // Invalid pipeline action
-        "/v0/pipelines/test/Start",   // Invalid pipeline action (case-sensitive)
         "/v0/pipelines/test/tables/numbers1/connectors/c1/action2", // Invalid connector action
         "/v0/pipelines/test/tables/numbers1/connectors/c1/START", // Invalid connector action (case-sensitive)
     ] {
@@ -3205,7 +2148,9 @@ async fn pipeline_orchestration_errors() {
 
     // NOT FOUND
     for endpoint in [
-        "/v0/pipelines/test2/start", // Pipeline not found
+        "/v0/pipelines/test/action2", // Invalid pipeline action
+        "/v0/pipelines/test/Start",   // Invalid pipeline action (case-sensitive)
+        "/v0/pipelines/test2/start",  // Pipeline not found
         "/v0/pipelines/test2/tables/numbers1/connectors/c1/start", // Pipeline not found
         "/v0/pipelines/test/tables/numbers1/connectors/c2/start", // Connector not found
         "/v0/pipelines/test/tables/numbers1/connectors/C1/start", // Connector not found (case-sensitive)
@@ -3234,7 +2179,7 @@ enum OrchestrationTestStep {
 #[actix_web::test]
 #[serial]
 async fn pipeline_orchestration_scenarios() {
-    let config = setup().await;
+    let config = TestClient::setup_and_full_cleanup().await;
 
     // Pipeline with SQL of a table with two connectors
     let sql = r#"
@@ -3259,19 +2204,10 @@ async fn pipeline_orchestration_scenarios() {
             ]'
         );
     "#;
-    create_and_deploy_test_pipeline(&config, sql).await;
+    config.prepare_test_pipeline(sql).await;
 
-    // Shutdown for the first scenario
-    assert_eq!(
-        config
-            .post_no_body("/v0/pipelines/test/shutdown")
-            .await
-            .status(),
-        StatusCode::ACCEPTED
-    );
-    config
-        .wait_for_deployment_status("test", PipelineStatus::Shutdown, config.shutdown_timeout)
-        .await;
+    // Stop for the first scenario
+    config.stop_force_pipeline("test", true).await;
 
     // Various scenarios (steps) and the expected outcome (what is paused)
     for (steps, expected_pipeline_paused, expected_c1_paused, expected_c2_paused) in [
@@ -3371,34 +2307,10 @@ async fn pipeline_orchestration_scenarios() {
         for (i, step) in steps.iter().enumerate() {
             match step {
                 OrchestrationTestStep::StartPipeline => {
-                    let response = config.post_no_body("/v0/pipelines/test/start").await;
-                    assert_eq!(
-                        response.status(),
-                        StatusCode::ACCEPTED,
-                        "during step {i} of steps {steps:?}"
-                    );
-                    config
-                        .wait_for_deployment_status(
-                            "test",
-                            PipelineStatus::Running,
-                            config.start_timeout,
-                        )
-                        .await;
+                    config.start_pipeline("test", true).await;
                 }
                 OrchestrationTestStep::PausePipeline => {
-                    let response = config.post_no_body("/v0/pipelines/test/pause").await;
-                    assert_eq!(
-                        response.status(),
-                        StatusCode::ACCEPTED,
-                        "during step {i} of steps {steps:?}"
-                    );
-                    config
-                        .wait_for_deployment_status(
-                            "test",
-                            PipelineStatus::Paused,
-                            config.start_timeout,
-                        )
-                        .await;
+                    config.pause_pipeline("test", true).await;
                 }
                 OrchestrationTestStep::StartConnector(connector) => {
                     assert_eq!(
@@ -3456,8 +2368,8 @@ async fn pipeline_orchestration_scenarios() {
             "Got {actual:?} but expected {expected:?} for steps {steps:?}"
         );
 
-        // Shutdown for the next scenario
-        config.shutdown_pipeline("test").await;
+        // Stop force and clear for the next scenario
+        config.stop_force_and_clear_pipeline("test").await;
     }
 }
 
@@ -3465,12 +2377,10 @@ async fn pipeline_orchestration_scenarios() {
 #[actix_web::test]
 #[serial]
 async fn checkpoint() {
-    let config = setup().await;
-    create_and_deploy_test_pipeline(
-        &config,
-        "create table t(x int) with ('materialized' = 'true');",
-    )
-    .await;
+    let config = TestClient::setup_and_full_cleanup().await;
+    config
+        .prepare_test_pipeline("create table t(x int) with ('materialized' = 'true');")
+        .await;
 
     #[cfg(not(feature = "feldera-enterprise"))]
     {
@@ -3495,13 +2405,11 @@ async fn checkpoint() {
 
             let start = Instant::now();
             loop {
-                let mut response = config
-                    .get(format!("/v0/pipelines/test/checkpoint_status"))
-                    .await;
+                let mut response = config.get("/v0/pipelines/test/checkpoint_status").await;
                 assert!(response.status().is_success());
                 let checkpoint_status = response.json::<CheckpointStatus>().await.unwrap();
                 if checkpoint_status.success == Some(sequence_number) {
-                    println!("Checkpoint completed successfully.");
+                    // println!("Checkpoint completed successfully.");
                     break;
                 }
 
@@ -3511,7 +2419,7 @@ async fn checkpoint() {
                 sleep(Duration::from_millis(100)).await;
             }
         }
-        config.shutdown_pipeline("test").await;
+        config.stop_force_and_clear_pipeline("test").await;
     }
 }
 
@@ -3519,61 +2427,40 @@ async fn checkpoint() {
 #[actix_web::test]
 #[serial]
 async fn refresh_version() {
-    let config = setup().await;
+    let client = TestClient::setup_and_full_cleanup().await;
 
     // Initial refresh version should be 1
-    let request_body = json!({
-        "name": "test",
-        "program_code": "",
-    });
-    let mut response = config.post("/v0/pipelines", &request_body).await;
-    assert_eq!(response.status(), StatusCode::CREATED);
-    let value: Value = response.json().await.unwrap();
+    let value = client
+        .post_pipeline(&json!({
+            "name": "test",
+            "program_code": "",
+        }))
+        .await;
     assert_eq!(value["refresh_version"], json!(1));
 
     // After compilation, refresh version should be 3
-    config
-        .wait_for_compilation("test", 1, config.compilation_timeout)
-        .await;
-    let mut response = config.get("/v0/pipelines/test").await;
-    assert_eq!(response.status(), StatusCode::OK);
-    let value: Value = response.json().await.unwrap();
+    client.wait_for_compiled_program("test", 1).await;
+    let value = client.get_pipeline("test").await;
     assert_eq!(value["refresh_version"], json!(3));
 
     // Starting and shutting down should have no effect on the refresh version
-    let response = config.post_no_body("/v0/pipelines/test/pause").await;
-    assert_eq!(response.status(), StatusCode::ACCEPTED);
-    config
-        .wait_for_deployment_status("test", PipelineStatus::Paused, config.start_timeout)
-        .await;
-    let response = config.post_no_body("/v0/pipelines/test/shutdown").await;
-    assert_eq!(response.status(), StatusCode::ACCEPTED);
-    config
-        .wait_for_deployment_status("test", PipelineStatus::Shutdown, config.start_timeout)
-        .await;
-    let mut response = config.get("/v0/pipelines/test").await;
-    assert_eq!(response.status(), StatusCode::OK);
-    let value: Value = response.json().await.unwrap();
+    client.pause_pipeline("test", true).await;
+    client.stop_force_and_clear_pipeline("test").await;
+    let value = client.get_pipeline("test").await;
     assert_eq!(value["refresh_version"], json!(3));
 
     // Edits should have an impact, incrementing refresh version to 4
-    let mut response = config
-        .patch(
-            "/v0/pipelines/test",
+    let value = client
+        .patch_pipeline(
+            "test",
             &json!({ "program_code": "CREATE TABLE t1 ( v1 INT );" }),
         )
         .await;
-    assert_eq!(response.status(), StatusCode::OK);
-    let value: Value = response.json().await.unwrap();
     assert_eq!(value["refresh_version"], json!(4));
 
     // After compilation, refresh version should be 6
-    config
-        .wait_for_compilation("test", 2, config.compilation_timeout)
-        .await;
-    let mut response = config.get("/v0/pipelines/test").await;
-    assert_eq!(response.status(), StatusCode::OK);
-    let value: Value = response.json().await.unwrap();
+    client.wait_for_compiled_program("test", 2).await;
+    let value = client.get_pipeline("test").await;
     assert_eq!(value["refresh_version"], json!(6));
 }
 
@@ -3581,17 +2468,17 @@ async fn refresh_version() {
 #[actix_web::test]
 #[serial]
 async fn pipeline_metrics() {
-    let config = setup().await;
-    create_and_deploy_test_pipeline(&config, "").await;
+    let client = TestClient::setup_and_full_cleanup().await;
+    client.prepare_test_pipeline("").await;
 
     // Retrieve metrics in default format
-    let mut response = config.get("/v0/pipelines/test/metrics").await;
+    let mut response = client.get("/v0/pipelines/test/metrics").await;
     assert_eq!(response.status(), StatusCode::OK);
     let body = response.body().await.unwrap();
     let metrics_default = std::str::from_utf8(&body).unwrap();
 
     // Retrieve metrics in Prometheus format
-    let mut response = config
+    let mut response = client
         .get("/v0/pipelines/test/metrics?format=prometheus")
         .await;
     assert_eq!(response.status(), StatusCode::OK);
@@ -3599,14 +2486,14 @@ async fn pipeline_metrics() {
     let metrics_prometheus = std::str::from_utf8(&body).unwrap();
 
     // Retrieve metrics in JSON format
-    let mut response = config.get("/v0/pipelines/test/metrics?format=json").await;
+    let mut response = client.get("/v0/pipelines/test/metrics?format=json").await;
     assert_eq!(response.status(), StatusCode::OK);
     let body = response.body().await.unwrap();
     let metrics_json = std::str::from_utf8(&body).unwrap();
     let _metrics_json_value: Value = serde_json::from_str(metrics_json).unwrap();
 
     // Unknown format
-    let response = config
+    let response = client
         .get("/v0/pipelines/test/metrics?format=does-not-exist")
         .await;
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
@@ -3621,12 +2508,12 @@ async fn pipeline_metrics() {
 #[actix_web::test]
 #[serial]
 async fn pipeline_stats() {
-    let config = setup().await;
+    let client = TestClient::setup_and_full_cleanup().await;
 
     // Basic test pipeline
-    create_and_deploy_test_pipeline(
-        &config,
-        r#"
+    client
+        .prepare_test_pipeline(
+            r#"
         CREATE TABLE t1(c1 INT) WITH (
             'materialized' = 'true',
             'connectors' = '[{
@@ -3643,25 +2530,21 @@ async fn pipeline_stats() {
         );
         CREATE MATERIALIZED VIEW v1 AS SELECT * FROM t1;
         "#,
-    )
-    .await;
-
-    // Start the pipeline
-    let response = config.post_no_body("/v0/pipelines/test/start").await;
-    assert_eq!(response.status(), StatusCode::ACCEPTED);
-    config
-        .wait_for_deployment_status("test", PipelineStatus::Running, config.start_timeout)
+        )
         .await;
 
+    // Start the pipeline
+    client.start_pipeline("test", true).await;
+
     // Create output connector
-    let response = config.post_no_body("/v0/pipelines/test/egress/v1").await;
+    let response = client.post_no_body("/v0/pipelines/test/egress/v1").await;
     assert_eq!(response.status(), StatusCode::OK);
 
     // Give it some seconds to process
     sleep(Duration::from_secs(4)).await;
 
     // Check the output of `/stats`
-    let mut response = config.get("/v0/pipelines/test/stats").await;
+    let mut response = client.get("/v0/pipelines/test/stats").await;
     assert_eq!(response.status(), StatusCode::OK);
     let value: Value = response.json().await.unwrap();
 
@@ -3732,14 +2615,14 @@ async fn pipeline_stats() {
 async fn suspend() {
     #[cfg(not(feature = "feldera-enterprise"))]
     {
-        let config = setup().await;
-        create_and_deploy_test_pipeline(
-            &config,
-            "create table t(x int) with ('materialized' = 'true');",
-        )
-        .await;
+        let config = TestClient::setup_and_full_cleanup().await;
+        config
+            .prepare_test_pipeline("create table t(x int) with ('materialized' = 'true');")
+            .await;
 
-        let mut response = config.post_no_body("/v0/pipelines/test/suspend").await;
+        let mut response = config
+            .post_no_body("/v0/pipelines/test/stop?force=false")
+            .await;
         let value: Value = response.json().await.unwrap();
 
         assert_eq!(response.status(), StatusCode::NOT_IMPLEMENTED);
@@ -3761,12 +2644,12 @@ async fn suspend() {
 /// Check for expected outputs after each step.
 #[cfg(feature = "feldera-enterprise")]
 async fn enterprise_suspend() {
-    let config = setup().await;
+    let config = TestClient::setup_and_full_cleanup().await;
     let pipeline_name = "test";
 
-    create_and_deploy_test_pipeline(
-        &config,
-        r#"create table t1 (
+    config
+        .prepare_test_pipeline(
+            r#"create table t1 (
     x int
 ) with (
     'materialized' = 'true',
@@ -3818,12 +2701,13 @@ async fn enterprise_suspend() {
         }
     }]'
 );"#,
-    )
-    .await;
+        )
+        .await;
 
     // Suspend and resume:
     // Expected connector state: paused, paused, paused.
-    config.suspend_and_resume(pipeline_name).await;
+    config.stop_pipeline(pipeline_name, true).await;
+    config.start_pipeline(pipeline_name, true).await;
 
     assert!(connector_paused(&config, pipeline_name, "t1", "c1").await);
     assert!(connector_paused(&config, pipeline_name, "t1", "c2").await);
@@ -3849,7 +2733,8 @@ async fn enterprise_suspend() {
 
     // Suspend and resume:
     // Expected connector state: running (eoi), paused, paused.
-    config.suspend_and_resume(pipeline_name).await;
+    config.stop_pipeline(pipeline_name, true).await;
+    config.start_pipeline(pipeline_name, true).await;
 
     assert!(!connector_paused(&config, pipeline_name, "t1", "c1").await);
     assert!(connector_paused(&config, pipeline_name, "t1", "c2").await);
@@ -3875,7 +2760,8 @@ async fn enterprise_suspend() {
     .await;
 
     // Suspend and resume:
-    config.suspend_and_resume(pipeline_name).await;
+    config.stop_pipeline(pipeline_name, true).await;
+    config.start_pipeline(pipeline_name, true).await;
 
     // Expected connector state: running (eoi), running (eoi), running (eoi).
     assert!(!connector_paused(&config, pipeline_name, "t1", "c1").await);
@@ -3892,7 +2778,131 @@ async fn enterprise_suspend() {
             .await,
         json!([{"count(*)": 9}])
     );
+}
 
-    // Cleanup
-    //config.shutdown_pipeline(pipeline_name).await;
+/// Tests that stopping pipelines with force.
+#[actix_web::test]
+#[serial]
+async fn pipeline_stop_with_force() {
+    let config = TestClient::setup_and_full_cleanup().await;
+
+    // New pipeline
+    config
+        .post_pipeline(&json!({ "name": "test", "program_code": ""}))
+        .await;
+
+    // Already stopped
+    config.stop_force_pipeline("test", true).await;
+
+    // Start without waiting and immediately stop forcefully
+    config.start_pipeline("test", false).await;
+    config.stop_force_pipeline("test", true).await;
+
+    // Start with waiting and stop forcefully once Running
+    config.start_pipeline("test", true).await;
+    config.stop_force_pipeline("test", true).await;
+
+    // Start paused with waiting and stop forcefully once Paused
+    config.pause_pipeline("test", true).await;
+    config.stop_force_pipeline("test", true).await;
+
+    // Start with waiting and stop forcefully twice in a row
+    config.start_pipeline("test", true).await;
+    config.stop_force_pipeline("test", false).await;
+    config.stop_force_pipeline("test", true).await;
+}
+
+/// Tests stopping pipelines without force.
+#[actix_web::test]
+#[serial]
+#[cfg(feature = "feldera-enterprise")]
+async fn pipeline_stop_without_force() {
+    let config = TestClient::setup_and_full_cleanup().await;
+
+    // New pipeline
+    config
+        .post_pipeline(&json!({ "name": "test", "program_code": ""}))
+        .await;
+
+    // Already stopped
+    config.stop_pipeline("test", true).await;
+
+    // Start without waiting and immediately stop
+    config.start_pipeline("test", false).await;
+    config.stop_pipeline("test", true).await;
+
+    // Start with waiting and stop once Running
+    config.start_pipeline("test", true).await;
+    config.stop_pipeline("test", true).await;
+
+    // Start paused with waiting and stop once Paused
+    config.pause_pipeline("test", true).await;
+    config.stop_pipeline("test", true).await;
+
+    // Start with waiting and stop twice in a row
+    config.start_pipeline("test", true).await;
+    config.stop_pipeline("test", false).await;
+    config.stop_pipeline("test", true).await;
+}
+
+/// Tests clearing storage of pipelines.
+#[actix_web::test]
+#[serial]
+async fn pipeline_clear() {
+    let config = TestClient::setup_and_full_cleanup().await;
+
+    // Initially created: cleared
+    config
+        .post_pipeline(&json!({ "name": "test", "program_code": ""}))
+        .await;
+    assert_eq!(
+        config.get_pipeline("test").await["storage_status"],
+        "Cleared"
+    );
+
+    // Calling /clear does not have an effect
+    config.clear_pipeline("test", true).await;
+
+    // Start: now it is in use
+    config.start_pipeline("test", true).await;
+    assert_eq!(config.get_pipeline("test").await["storage_status"], "InUse");
+
+    // While running, clear is not possible
+    assert_eq!(
+        config
+            .post_no_body("/v0/pipelines/test/clear")
+            .await
+            .status(),
+        StatusCode::BAD_REQUEST
+    );
+
+    // After forceful stop, it should still be InUse
+    config.stop_force_pipeline("test", true).await;
+    assert_eq!(config.get_pipeline("test").await["storage_status"], "InUse");
+
+    // Start again (now paused): it remains InUse
+    config.pause_pipeline("test", true).await;
+    assert_eq!(config.get_pipeline("test").await["storage_status"], "InUse");
+
+    // While paused, clear is not possible
+    assert_eq!(
+        config
+            .post_no_body("/v0/pipelines/test/clear")
+            .await
+            .status(),
+        StatusCode::BAD_REQUEST
+    );
+
+    // After again forceful stop, it should still be InUse
+    config.stop_force_pipeline("test", true).await;
+    assert_eq!(config.get_pipeline("test").await["storage_status"], "InUse");
+
+    // Calling /clear will make it Cleared.
+    // Perform it twice such that we might also test calling it during the Clearing state.
+    config.clear_pipeline("test", false).await;
+    config.clear_pipeline("test", true).await;
+    assert_eq!(
+        config.get_pipeline("test").await["storage_status"],
+        "Cleared"
+    );
 }

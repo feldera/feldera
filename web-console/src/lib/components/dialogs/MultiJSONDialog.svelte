@@ -12,7 +12,10 @@
     disabled
   }: {
     values: Record<string, string>
-    metadata?: Record<string, { title?: string; editorClass?: string; filePath?: string }>
+    metadata?: Record<
+      string,
+      { title?: string; editorClass?: string; filePath?: string; readOnlyMessage?: string }
+    >
     onApply: (values: Record<string, string>) => Promise<void>
     onClose: () => void
     title: Snippet
@@ -27,7 +30,7 @@
   }
 </script>
 
-<GenericDialog onApply={submitResults} {onClose} {title}>
+<GenericDialog onApply={submitResults} {onClose} {title} {disabled}>
   {#each Object.keys(states) as key}
     <span class="font-normal">{metadata?.[key].title ?? ''}</span>
     <div class={metadata?.[key].editorClass}>
@@ -36,6 +39,9 @@
         json={states[key]}
         onSubmit={submitResults}
         bind:getData={refs[key]}
+        readOnlyMessage={metadata?.[key]?.readOnlyMessage
+          ? { value: metadata[key].readOnlyMessage }
+          : undefined}
         {disabled}
       ></JsonForm>
     </div>
