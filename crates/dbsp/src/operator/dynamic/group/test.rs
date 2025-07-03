@@ -8,9 +8,11 @@ use crate::{
     operator::{CmpFunc, IndexedZSetHandle, OutputHandle},
     trace::{
         test::test_batch::{assert_batch_eq, assert_typed_batch_eq, TestBatch, TestBatchFactories},
-        Cursor, Trace,
+        Cursor, SpineSnapshot as DynSpineSnapshot, Trace,
     },
-    typed_batch::{BatchReader, DynBatchReader, DynOrdIndexedZSet, OrdIndexedZSet, TypedBatch},
+    typed_batch::{
+        BatchReader, DynBatchReader, DynOrdIndexedZSet, OrdIndexedZSet, SpineSnapshot, TypedBatch,
+    },
     utils::{Tup2, Tup3, Tup4},
     DBData, DynZWeight, RootCircuit, Runtime, ZWeight,
 };
@@ -282,16 +284,21 @@ fn lag_test_circuit(
             i32,
             Tup2<i32, Option<i32>>,
             ZWeight,
-            DynOrdIndexedZSet<
-                DynData, /* <i32> */
-                DynPair<DynData /* <i32> */, DynData /* <Option<i32>> */>,
+            DynSpineSnapshot<
+                DynOrdIndexedZSet<
+                    DynData, /* <i32> */
+                    DynPair<DynData /* <i32> */, DynData /* <Option<i32>> */>,
+                >,
             >,
         >,
     >,
 )> {
     let (input_stream, input_handle) = circuit.add_input_indexed_zset::<i32, i32>();
 
-    let lag_handle = input_stream.lag(3, |v| v.cloned()).integrate().output();
+    let lag_handle = input_stream
+        .lag(3, |v| v.cloned())
+        .accumulate_integrate()
+        .accumulate_output();
 
     Ok((input_handle, lag_handle))
 }
@@ -400,7 +407,9 @@ fn lag_test(trace: Vec<Vec<(i32, i32, ZWeight)>>) {
         }
         dbsp.step().unwrap();
 
-        let lag_result = lag_handle.consolidate();
+        let lag_result = SpineSnapshot::<TypedBatch<i32, Tup2<i32, Option<i32>>, _, _>>::concat(
+            &lag_handle.take_from_all(),
+        );
         let ref_lag = ref_trace.lag::<i32, i32>(3);
 
         assert_batch_eq(lag_result.inner(), &ref_lag);
