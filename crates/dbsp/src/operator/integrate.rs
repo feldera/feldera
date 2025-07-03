@@ -2,8 +2,10 @@
 
 use crate::circuit::checkpointer::Checkpoint;
 use crate::circuit::circuit_builder::StreamId;
+use crate::dynamic::Erase;
+use crate::typed_batch::TypedBatch;
 use crate::{
-    algebra::{AddAssignByRef, AddByRef, HasZero},
+    algebra::{AddAssignByRef, AddByRef, HasZero, IndexedZSet as DynIndexedZSet},
     circuit::{Circuit, OwnershipPreference, Stream},
     circuit_cache_key,
     operator::{
@@ -13,7 +15,7 @@ use crate::{
     },
     NumEntries,
 };
-use crate::{ChildCircuit, DBData, OrdIndexedZSet, Timestamp};
+use crate::{ChildCircuit, DBData, DBWeight, Timestamp};
 use size_of::SizeOf;
 
 circuit_cache_key!(IntegralId<C, D>(StreamId => Stream<C, D>));
@@ -174,14 +176,16 @@ where
     }
 }
 
-impl<C, T, K, V> Stream<ChildCircuit<C, T>, OrdIndexedZSet<K, V>>
+impl<C, T, K, V, R, B> Stream<ChildCircuit<C, T>, TypedBatch<K, V, R, B>>
 where
     C: Clone + 'static,
     T: Timestamp,
-    K: DBData,
-    V: DBData,
+    K: DBData + Erase<B::Key>,
+    V: DBData + Erase<B::Val>,
+    R: DBWeight + Erase<B::R>,
+    B: DynIndexedZSet + Checkpoint,
 {
-    pub fn accumulate_integrate(&self) -> Stream<ChildCircuit<C, T>, OrdIndexedZSet<K, V>> {
+    pub fn accumulate_integrate(&self) -> Stream<ChildCircuit<C, T>, TypedBatch<K, V, R, B>> {
         self.circuit()
             .non_incremental(self, |_child_circuit, stream| Ok(stream.integrate()))
             .unwrap()
