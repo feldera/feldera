@@ -6157,7 +6157,7 @@ impl CircuitHandle {
                 let start = Instant::now();
                 node.commit(base)?;
                 let elapsed = start.elapsed();
-                if elapsed >= Duration::from_millis(100) {
+                if elapsed >= Duration::from_secs(3) {
                     info!(
                         "{:?}: committing {} node took {:.2} s",
                         node.global_id(),
