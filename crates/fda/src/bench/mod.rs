@@ -469,7 +469,7 @@ pub(crate) async fn bench(client: Client, format: OutputFormat, args: BenchmarkA
         PipelineAction::Stop {
             name: pipeline_name.clone(),
             no_wait: false,
-            no_checkpoint: true,
+            checkpoint: false,
         },
         client.clone(),
     ))
@@ -499,7 +499,7 @@ pub(crate) async fn bench(client: Client, format: OutputFormat, args: BenchmarkA
         PipelineAction::Stop {
             name: pipeline_name.clone(),
             no_wait: true,
-            no_checkpoint: true,
+            checkpoint: false,
         },
         client.clone(),
     ))

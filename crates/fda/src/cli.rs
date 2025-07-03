@@ -312,9 +312,9 @@ pub enum PipelineAction {
         /// This is useful for dev purposes in case the Feldera source-code has changed.
         #[arg(long, short = 'r', default_value_t = false)]
         recompile: bool,
-        /// Don't checkpoint the pipeline before restarting it.
-        #[arg(long, short = 'n', default_value_t = false)]
-        no_checkpoint: bool,
+        /// Checkpoint the pipeline before restarting it.
+        #[arg(long, short = 'c', default_value_t = false)]
+        checkpoint: bool,
         /// Don't wait for pipeline to reach the status before returning.
         #[arg(long, short = 'n', default_value_t = false)]
         no_wait: bool,
@@ -325,9 +325,9 @@ pub enum PipelineAction {
         /// The name of the pipeline.
         #[arg(value_hint = ValueHint::Other, add = ArgValueCompleter::new(pipeline_names))]
         name: String,
-        /// Don't checkpoint the pipeline before restarting it.
-        #[arg(long, short = 'n', default_value_t = false)]
-        no_checkpoint: bool,
+        /// Checkpoint the pipeline before stopping it.
+        #[arg(long, short = 'c', default_value_t = false)]
+        checkpoint: bool,
         /// Don't wait for pipeline to reach the status before returning.
         #[arg(long, short = 'n', default_value_t = false)]
         no_wait: bool,
@@ -398,6 +398,17 @@ pub enum PipelineAction {
         /// The name of the pipeline.
         #[arg(value_hint = ValueHint::Other, add = ArgValueCompleter::new(pipeline_names))]
         name: String,
+        /// Clears any associated storage first to force deletion of the pipeline.
+        ///
+        /// EXAMPLES:
+        ///
+        /// - fda delete --force my-pipeline
+        ///
+        /// Is equivalent to:
+        ///
+        /// - fda clear my-pipeline && fda delete my-pipeline
+        #[arg(long, short = 'f')]
+        force: bool,
     },
     /// Control an input connector belonging to a table of a pipeline.
     Connector {
@@ -503,6 +514,17 @@ pub enum PipelineAction {
         /// A token can be optained by running `fda completion-token`.
         /// Or when ingesting data over HTTP.
         token: String,
+    },
+    /// Clear the storage resources of a pipeline.
+    ///
+    /// Note that the pipeline must be stopped before clearing its storage resources.
+    Clear {
+        /// The name of the pipeline.
+        #[arg(value_hint = ValueHint::Other, add = ArgValueCompleter::new(pipeline_names))]
+        name: String,
+        /// Don't wait for pipeline storage to clear before returning.
+        #[arg(long, short = 'n', default_value_t = false)]
+        no_wait: bool,
     },
     /// Benchmark the performance of a pipeline.
     ///

@@ -53,11 +53,11 @@ fda pipelines
 
 # Cleanup, these commands might fail if the resources do not exist yet
 fda shutdown p1 || true
-fda delete p1 || true
-fda delete p2 || true
-fda delete pudf || true
+fda delete --force p1 || true
+fda delete --force p2 || true
+fda clear pudf && fda delete pudf || true
 fda delete unknown || true
-fda delete punknown || true
+fda delete --force punknown || true
 fda apikey delete a || true
 
 # Tests
@@ -111,6 +111,7 @@ if $enterprise; then
 else
     enterprise_only=fail_on_success
 fi
+$enterprise_only fda clear p1
 $enterprise_only fda set-config p1 fault_tolerance true
 fda set-config p1 fault_tolerance false
 fda set-config p1 fault_tolerance none

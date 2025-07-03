@@ -522,26 +522,22 @@ async fn wait_for_status(
             print_every_30_seconds = tokio::time::Instant::now();
         }
 
-        if wait_for != PipelineStatus::Stopped && pc.deployment_status == PipelineStatus::Stopped {
-            if let Some(deployment_error) = &pc.deployment_error {
-                if deployment_error.error_code == "StartFailedDueToFailedCompilation" {
-                    eprintln!("Pipeline failed to start due to the following compilation error:");
-                    eprintln!();
-                    eprintln!(
-                        "{}",
-                        deployment_error
-                            .details
-                            .as_object()
-                            .unwrap_or(&serde_json::Map::new())
-                            .get("compiler_error")
-                            .and_then(|e| e.as_str())
-                            .unwrap_or_default()
-                    );
-                } else {
-                    eprintln!("{}", deployment_error.message);
-                }
+        if let Some(deployment_error) = &pc.deployment_error {
+            if deployment_error.error_code == "StartFailedDueToFailedCompilation" {
+                eprintln!("Pipeline failed to start due to the following compilation error:");
+                eprintln!();
+                eprintln!(
+                    "{}",
+                    deployment_error
+                        .details
+                        .as_object()
+                        .unwrap_or(&serde_json::Map::new())
+                        .get("compiler_error")
+                        .and_then(|e| e.as_str())
+                        .unwrap_or_default()
+                );
             } else {
-                eprintln!("Pipeline failed to reach status {:?}", wait_for);
+                eprintln!("{}", deployment_error.message);
             }
             std::process::exit(1);
         }
@@ -818,7 +814,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
         PipelineAction::Restart {
             name,
             recompile,
-            no_checkpoint,
+            checkpoint,
             no_wait,
         } => {
             let current_status = client
@@ -836,7 +832,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
             let _r = client
                 .post_pipeline_stop()
                 .pipeline_name(name.clone())
-                .force(no_checkpoint)
+                .force(!checkpoint)
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
@@ -871,12 +867,12 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
         PipelineAction::Stop {
             name,
             no_wait,
-            no_checkpoint,
+            checkpoint,
         } => {
             let response = client
                 .post_pipeline_stop()
                 .pipeline_name(name.clone())
-                .force(no_checkpoint)
+                .force(!checkpoint)
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
@@ -898,6 +894,32 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
             }
 
             trace!("{:#?}", response);
+        }
+        PipelineAction::Clear { name, no_wait } => {
+            let response = client
+                .post_pipeline_clear()
+                .pipeline_name(name.clone())
+                .send()
+                .await
+                .map_err(handle_errors_fatal(
+                    client.baseurl().clone(),
+                    "Failed to clear pipeline",
+                    1,
+                ))
+                .unwrap();
+
+            trace!("{:#?}", response);
+
+            if !no_wait {
+                wait_for_status(
+                    &client,
+                    name.clone(),
+                    PipelineStatus::Stopped,
+                    "Clearing pipeline...",
+                )
+                .await;
+                println!("Pipeline cleared successfully.");
+            }
         }
         PipelineAction::Stats { name } => {
             let response = client
@@ -977,7 +999,19 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                 }
             }
         }
-        PipelineAction::Delete { name } => {
+        PipelineAction::Delete { name, force } => {
+            if force {
+                let _ = Box::pin(pipeline(
+                    format,
+                    PipelineAction::Clear {
+                        name: name.clone(),
+                        no_wait: false,
+                    },
+                    client.clone(),
+                ))
+                .await;
+            }
+
             let response = client
                 .delete_pipeline()
                 .pipeline_name(name)
