@@ -3,11 +3,20 @@ package org.dbsp.sqlCompiler.ir.type.user;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 
 /** Represents the DBSP ZWeight type as TypeUser. */
 public final class DBSPTypeWeight extends DBSPTypeUser {
     public static final DBSPTypeWeight INSTANCE = new DBSPTypeWeight();
+
+    public DBSPExpression zero() {
+        return INSTANCE.constructor("zero");
+    }
+
+    public DBSPExpression one() {
+        return INSTANCE.constructor("one");
+    }
 
     private DBSPTypeWeight() {
         super(CalciteObject.EMPTY, DBSPTypeCode.USER, "Weight", false);

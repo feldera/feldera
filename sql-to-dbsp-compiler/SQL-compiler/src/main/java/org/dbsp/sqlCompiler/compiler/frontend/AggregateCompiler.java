@@ -78,6 +78,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVoid;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeUser;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeArray;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeVec;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeWeight;
 import org.dbsp.util.ICastable;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
@@ -586,21 +587,37 @@ public class AggregateCompiler implements ICompilerComponent {
     }
 
     void processSingle(SqlSingleValueAggFunction function) {
-        DBSPExpression zero = DBSPLiteral.none(this.nullableResultType);
+        DBSPExpression postZero = DBSPLiteral.none(this.nullableResultType);
+        // (false, null)
+        DBSPExpression zero = new DBSPTupleExpression(new DBSPBoolLiteral(false), postZero);
         DBSPExpression aggregatedValue = this.getAggregatedValue();
         if (this.filterArgument >= 0) {
             throw new UnimplementedException("SINGLE aggregation function with FILTER not yet implemented", node);
         }
-        DBSPVariablePath accumulator = this.nullableResultType.var();
+        DBSPTypeBool bool = DBSPTypeBool.create(false);
+        DBSPVariablePath accumulator = new DBSPTypeTuple(bool, this.nullableResultType).var();
         // Single is supposed to be applied to a single value, and should return a runtime
-        // error otherwise.  We approximate this behavior by returning the last value seen.
-        DBSPExpression increment = aggregatedValue;
+        // error otherwise.
+        DBSPExpression increment = aggregatedValue.applyCloneIfNeeded();
         if (!increment.getType().mayBeNull)
-            increment = increment.applyCloneIfNeeded().some();
-        DBSPTypeUser semigroup = new DBSPTypeUser(CalciteObject.EMPTY, SEMIGROUP, "UnimplementedSemigroup",
+            increment = increment.some();
+        DBSPExpression panic = DBSPApplyExpression.panic(this.node, bool,"More than one value in subquery");
+        // accumulator = Tup2::new(if (accumulator.0 || weight > 1) { panic } else { true }, aggregatedValue)
+        DBSPExpression compareWeight = new DBSPBinaryExpression(
+                this.node, bool, DBSPOpcode.GT, this.compiler.weightVar, DBSPTypeWeight.INSTANCE.one());
+        DBSPExpression condition = new DBSPBinaryExpression(this.node, bool,
+                DBSPOpcode.OR, compareWeight, accumulator.field(0));
+        DBSPExpression ifExpr = new DBSPIfExpression(this.node, condition,
+                panic, new DBSPBoolLiteral(true));
+        increment = new DBSPTupleExpression(ifExpr, increment);
+        DBSPVariablePath postVar = increment.type.var();
+        DBSPClosureExpression post = postVar.field(1).applyCloneIfNeeded().closure(postVar);
+
+        DBSPTypeUser semigroup = new DBSPTypeUser(CalciteObject.EMPTY, SEMIGROUP, "SingleSemigroup",
                 false, accumulator.getType());
-        this.setResult(new NonLinearAggregate(
-                node, zero, this.makeRowClosure(increment, accumulator), zero, semigroup));
+        var nonLinear = new NonLinearAggregate(
+                node, zero, this.makeRowClosure(increment, accumulator), post, postZero, semigroup);
+        this.setResult(nonLinear);
     }
 
     IAggregate doAverage(SqlAvgAggFunction function) {

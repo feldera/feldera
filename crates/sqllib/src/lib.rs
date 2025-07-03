@@ -134,10 +134,6 @@ pub type WSet<D> = OrdZSet<D>;
 #[doc(hidden)]
 pub type IndexedWSet<K, D> = OrdIndexedZSet<K, D>;
 
-#[derive(Clone)]
-#[doc(hidden)]
-pub struct DefaultOptSemigroup<T>(PhantomData<T>);
-
 // Macro to create variants of a function with 1 argument
 // If there exists a function is f_(x: T) -> S, this creates a function
 // fN(x: Option<T>) -> Option<S>, defined as
@@ -720,65 +716,6 @@ macro_rules! for_all_int_operator {
 pub(crate) use for_all_int_operator;
 
 #[doc(hidden)]
-impl<T> Semigroup<Option<T>> for DefaultOptSemigroup<T>
-where
-    T: SemigroupValue,
-{
-    #[doc(hidden)]
-    fn combine(left: &Option<T>, right: &Option<T>) -> Option<T> {
-        match (left, right) {
-            (None, _) => None,
-            (_, None) => None,
-            (Some(x), Some(y)) => Some(x.add_by_ref(y)),
-        }
-    }
-}
-
-#[derive(Clone)]
-#[doc(hidden)]
-pub struct PairSemigroup<T, R, TS, RS>(PhantomData<(T, R, TS, RS)>);
-
-#[doc(hidden)]
-impl<T, R, TS, RS> Semigroup<Tup2<T, R>> for PairSemigroup<T, R, TS, RS>
-where
-    TS: Semigroup<T>,
-    RS: Semigroup<R>,
-{
-    #[doc(hidden)]
-    fn combine(left: &Tup2<T, R>, right: &Tup2<T, R>) -> Tup2<T, R> {
-        Tup2::new(
-            TS::combine(&left.0, &right.0),
-            RS::combine(&left.1, &right.1),
-        )
-    }
-}
-
-#[derive(Clone)]
-#[doc(hidden)]
-pub struct TripleSemigroup<T, R, V, TS, RS, VS>(PhantomData<(T, R, V, TS, RS, VS)>);
-
-#[doc(hidden)]
-impl<T, R, V, TS, RS, VS> Semigroup<Tup3<T, R, V>> for TripleSemigroup<T, R, V, TS, RS, VS>
-where
-    TS: Semigroup<T>,
-    RS: Semigroup<R>,
-    VS: Semigroup<V>,
-{
-    #[doc(hidden)]
-    fn combine(left: &Tup3<T, R, V>, right: &Tup3<T, R, V>) -> Tup3<T, R, V> {
-        Tup3::new(
-            TS::combine(&left.0, &right.0),
-            RS::combine(&left.1, &right.1),
-            VS::combine(&left.2, &right.2),
-        )
-    }
-}
-
-#[doc(hidden)]
-#[derive(Clone)]
-pub struct ConcatSemigroup<V>(PhantomData<V>);
-
-#[doc(hidden)]
 #[inline(always)]
 pub fn wrap_bool(b: Option<bool>) -> bool {
     b.unwrap_or_default()
@@ -970,14 +907,14 @@ some_polymorphic_function1!(abs, SqlDecimal, SqlDecimal, SqlDecimal);
 
 #[doc(hidden)]
 #[inline(always)]
-pub fn is_true_b_(left: bool) -> bool {
+pub const fn is_true_b_(left: bool) -> bool {
     left
 }
 
 #[doc(hidden)]
 #[inline(always)]
-pub fn is_true_bN_(left: Option<bool>) -> bool {
-    left == Some(true)
+pub const fn is_true_bN_(left: Option<bool>) -> bool {
+    matches!(left, Some(true))
 }
 
 #[doc(hidden)]
@@ -988,19 +925,19 @@ pub fn is_false_b_(left: bool) -> bool {
 
 #[doc(hidden)]
 #[inline(always)]
-pub fn is_false_bN_(left: Option<bool>) -> bool {
-    left == Some(false)
+pub const fn is_false_bN_(left: Option<bool>) -> bool {
+    matches!(left, Some(false))
 }
 
 #[doc(hidden)]
 #[inline(always)]
-pub fn is_not_true_b_(left: bool) -> bool {
+pub const fn is_not_true_b_(left: bool) -> bool {
     !left
 }
 
 #[doc(hidden)]
 #[inline(always)]
-pub fn is_not_true_bN_(left: Option<bool>) -> bool {
+pub const fn is_not_true_bN_(left: Option<bool>) -> bool {
     match left {
         Some(true) => false,
         Some(false) => true,
@@ -1010,13 +947,13 @@ pub fn is_not_true_bN_(left: Option<bool>) -> bool {
 
 #[doc(hidden)]
 #[inline(always)]
-pub fn is_not_false_b_(left: bool) -> bool {
+pub const fn is_not_false_b_(left: bool) -> bool {
     left
 }
 
 #[doc(hidden)]
 #[inline(always)]
-pub fn is_not_false_bN_(left: Option<bool>) -> bool {
+pub const fn is_not_false_bN_(left: Option<bool>) -> bool {
     match left {
         Some(true) => true,
         Some(false) => false,
@@ -1274,4 +1211,95 @@ where
         cursor.step_key();
     }
     false
+}
+
+//////////////////////// Semigroup implementations
+
+#[derive(Clone)]
+#[doc(hidden)]
+pub struct DefaultOptSemigroup<T>(PhantomData<T>);
+
+#[doc(hidden)]
+impl<T> Semigroup<Option<T>> for DefaultOptSemigroup<T>
+where
+    T: SemigroupValue,
+{
+    #[doc(hidden)]
+    fn combine(left: &Option<T>, right: &Option<T>) -> Option<T> {
+        match (left, right) {
+            (None, _) => None,
+            (_, None) => None,
+            (Some(x), Some(y)) => Some(x.add_by_ref(y)),
+        }
+    }
+}
+
+#[derive(Clone)]
+#[doc(hidden)]
+pub struct PairSemigroup<T, R, TS, RS>(PhantomData<(T, R, TS, RS)>);
+
+#[doc(hidden)]
+impl<T, R, TS, RS> Semigroup<Tup2<T, R>> for PairSemigroup<T, R, TS, RS>
+where
+    TS: Semigroup<T>,
+    RS: Semigroup<R>,
+{
+    #[doc(hidden)]
+    fn combine(left: &Tup2<T, R>, right: &Tup2<T, R>) -> Tup2<T, R> {
+        Tup2::new(
+            TS::combine(&left.0, &right.0),
+            RS::combine(&left.1, &right.1),
+        )
+    }
+}
+
+#[derive(Clone)]
+#[doc(hidden)]
+pub struct TripleSemigroup<T, R, V, TS, RS, VS>(PhantomData<(T, R, V, TS, RS, VS)>);
+
+#[doc(hidden)]
+impl<T, R, V, TS, RS, VS> Semigroup<Tup3<T, R, V>> for TripleSemigroup<T, R, V, TS, RS, VS>
+where
+    TS: Semigroup<T>,
+    RS: Semigroup<R>,
+    VS: Semigroup<V>,
+{
+    #[doc(hidden)]
+    fn combine(left: &Tup3<T, R, V>, right: &Tup3<T, R, V>) -> Tup3<T, R, V> {
+        Tup3::new(
+            TS::combine(&left.0, &right.0),
+            RS::combine(&left.1, &right.1),
+            VS::combine(&left.2, &right.2),
+        )
+    }
+}
+
+#[doc(hidden)]
+#[derive(Clone)]
+pub struct ConcatSemigroup<V>(PhantomData<V>);
+
+// Semigroup for the SINGLE_VALUE aggregate
+#[derive(Clone)]
+#[doc(hidden)]
+pub struct SingleSemigroup<T>(PhantomData<T>);
+
+#[doc(hidden)]
+impl<T> Semigroup<Tup2<bool, T>> for SingleSemigroup<Tup2<bool, T>>
+where
+    T: Clone,
+{
+    #[doc(hidden)]
+    fn combine(left: &Tup2<bool, T>, right: &Tup2<bool, T>) -> Tup2<bool, T> {
+        if left.0 && right.0 {
+            panic!("More than one value in subquery");
+        }
+        Tup2::new(
+            left.0 || right.0,
+            if left.0 {
+                left.1.clone()
+            } else {
+                right.1.clone()
+            },
+        )
+    }
 }
