@@ -1177,7 +1177,7 @@ mod test {
     use crate::{
         indexed_zset,
         operator::{Generator, GeneratorNested, OutputHandle},
-        typed_batch::{OrdIndexedZSet, OrdZSet},
+        typed_batch::{OrdIndexedZSet, OrdZSet, SpineSnapshot},
         utils::Tup2,
         zset, Circuit, RootCircuit, Runtime,
     };
@@ -1404,9 +1404,9 @@ mod test {
         circuit: &mut RootCircuit,
         inputs: Vec<TestZSet>,
     ) -> AnyResult<(
-        OutputHandle<TestZSet>,
-        OutputHandle<TestZSet>,
-        OutputHandle<TestZSet>,
+        OutputHandle<SpineSnapshot<TestZSet>>,
+        OutputHandle<SpineSnapshot<TestZSet>>,
+        OutputHandle<SpineSnapshot<TestZSet>>,
     )> {
         let mut inputs = inputs.into_iter();
 
@@ -1418,10 +1418,15 @@ mod test {
             }
         })));
 
-        let distinct_inc = input.distinct().output();
-        let hash_distinct_inc = input.hash_distinct().output();
+        let distinct_inc = input.distinct().accumulate_output();
+        let hash_distinct_inc = input.hash_distinct().accumulate_output();
 
-        let distinct_noninc = input.integrate().stream_distinct().differentiate().output();
+        let distinct_noninc = circuit
+            .non_incremental(&input, |_child_circuit, input| {
+                Ok(input.integrate().stream_distinct().differentiate())
+            })
+            .unwrap()
+            .accumulate_output();
 
         Ok((distinct_inc, hash_distinct_inc, distinct_noninc))
     }
@@ -1430,9 +1435,9 @@ mod test {
         circuit: &mut RootCircuit,
         inputs: Vec<TestIndexedZSet>,
     ) -> AnyResult<(
-        OutputHandle<TestIndexedZSet>,
-        OutputHandle<TestIndexedZSet>,
-        OutputHandle<TestIndexedZSet>,
+        OutputHandle<SpineSnapshot<TestIndexedZSet>>,
+        OutputHandle<SpineSnapshot<TestIndexedZSet>>,
+        OutputHandle<SpineSnapshot<TestIndexedZSet>>,
     )> {
         let mut inputs = inputs.into_iter();
 
@@ -1444,9 +1449,15 @@ mod test {
             }
         })));
 
-        let distinct_inc = input.distinct().output();
-        let hash_distinct_inc = input.hash_distinct().output();
-        let distinct_noninc = input.integrate().stream_distinct().differentiate().output();
+        let distinct_inc = input.distinct().accumulate_output();
+        let hash_distinct_inc = input.hash_distinct().accumulate_output();
+
+        let distinct_noninc = circuit
+            .non_incremental(&input, |_child_circuit, input| {
+                Ok(input.integrate().stream_distinct().differentiate())
+            })
+            .unwrap()
+            .accumulate_output();
 
         Ok((distinct_inc, hash_distinct_inc, distinct_noninc))
     }
@@ -1478,21 +1489,23 @@ mod test {
                 let distinct_inc = input.distinct().gather(0);
                 let hash_distinct_inc = input.hash_distinct().gather(0);
 
-                // let distinct_noninc = input
-                //     .integrate_nested()
-                //     .integrate()
-                //     .stream_distinct()
-                //     .differentiate()
-                //     .differentiate_nested()
-                //     .gather(0);
-
-                // TODO.
-                // distinct_inc.apply3(&distinct_noninc, &hash_distinct_inc, |d1, d2, d3| {
-                //     assert_eq!(d1, d2);
-                //     assert_eq!(d1, d3);
-                // });
+                let distinct_noninc = child
+                    .non_incremental(&input, |_child_circuit, input| {
+                        Ok(input
+                            .integrate_nested()
+                            .integrate()
+                            .stream_distinct()
+                            .differentiate()
+                            .differentiate_nested()
+                            .gather(0))
+                    })
+                    .unwrap();
 
                 // Compare outputs of all three implementations.
+                distinct_inc.accumulate_apply2(&distinct_noninc, |d1, d2| {
+                    assert_eq!(d1.iter().collect::<Vec<_>>(), d2.iter().collect::<Vec<_>>());
+                });
+
                 distinct_inc.accumulate_apply2(&hash_distinct_inc, |d1, d2| {
                     assert_eq!(d1.iter().collect::<Vec<_>>(), d2.iter().collect::<Vec<_>>());
                 });
@@ -1513,32 +1526,58 @@ mod test {
         #[test]
         fn proptest_distinct_test_st(inputs in test_input()) {
             let iterations = inputs.len();
-            let (circuit, (inc_output, hash_inc_output, _noninc_output)) = RootCircuit::build(|circuit| distinct_test_circuit(circuit, inputs)).unwrap();
+            let (circuit, (inc_output, hash_inc_output, noninc_output)) = RootCircuit::build(|circuit| distinct_test_circuit(circuit, inputs)).unwrap();
 
             for _ in 0..iterations {
                 circuit.step().unwrap();
-                // TODO
-                // let noninc = noninc_output.consolidate();
-                // assert_eq!(&inc_output.consolidate(), &noninc);
-                // assert_eq!(&hash_inc_output.consolidate(), &noninc);
 
-                assert_eq!(&hash_inc_output.consolidate(), &inc_output.consolidate());
+                let noninc_output = noninc_output.take_from_all();
+                let inc_output = inc_output.take_from_all();
+                let hash_inc_output = hash_inc_output.take_from_all();
+
+                assert_eq!(
+                    SpineSnapshot::<TestZSet>::concat(&noninc_output).iter().collect::<Vec<_>>(),
+                    SpineSnapshot::<TestZSet>::concat(&hash_inc_output).iter().collect::<Vec<_>>()
+                );
+
+                assert_eq!(
+                    SpineSnapshot::<TestZSet>::concat(&noninc_output).iter().collect::<Vec<_>>(),
+                    SpineSnapshot::<TestZSet>::concat(&inc_output).iter().collect::<Vec<_>>()
+                );
+
+                assert_eq!(
+                    SpineSnapshot::<TestZSet>::concat(&hash_inc_output).iter().collect::<Vec<_>>(),
+                    SpineSnapshot::<TestZSet>::concat(&inc_output).iter().collect::<Vec<_>>()
+                );
             }
         }
 
         #[test]
         fn proptest_distinct_test_mt(inputs in test_input(), workers in (2..=16usize)) {
             let iterations = inputs.len();
-            let (mut circuit, (inc_output, hash_inc_output, _noninc_output)) = Runtime::init_circuit(workers, |circuit| distinct_test_circuit(circuit, inputs)).unwrap();
+            let (mut circuit, (inc_output, hash_inc_output, noninc_output)) = Runtime::init_circuit(workers, |circuit| distinct_test_circuit(circuit, inputs)).unwrap();
 
             for _ in 0..iterations {
                 circuit.step().unwrap();
-                //let noninc = noninc_output.consolidate();
 
-                // assert_eq!(&inc_output.consolidate(), &noninc);
-                // assert_eq!(&hash_inc_output.consolidate(), &noninc);
-                assert_eq!(&inc_output.consolidate(), &hash_inc_output.consolidate());
+                let noninc_output = noninc_output.take_from_all();
+                let inc_output = inc_output.take_from_all();
+                let hash_inc_output = hash_inc_output.take_from_all();
 
+                assert_eq!(
+                    SpineSnapshot::<TestZSet>::concat(&noninc_output).iter().collect::<Vec<_>>(),
+                    SpineSnapshot::<TestZSet>::concat(&hash_inc_output).iter().collect::<Vec<_>>()
+                );
+
+                assert_eq!(
+                    SpineSnapshot::<TestZSet>::concat(&noninc_output).iter().collect::<Vec<_>>(),
+                    SpineSnapshot::<TestZSet>::concat(&inc_output).iter().collect::<Vec<_>>()
+                );
+
+                assert_eq!(
+                    SpineSnapshot::<TestZSet>::concat(&hash_inc_output).iter().collect::<Vec<_>>(),
+                    SpineSnapshot::<TestZSet>::concat(&inc_output).iter().collect::<Vec<_>>()
+                );
             }
 
             circuit.kill().unwrap();
@@ -1551,9 +1590,25 @@ mod test {
 
             for _ in 0..iterations {
                 circuit.step().unwrap();
-                let noninc = noninc_output.consolidate();
-                assert_eq!(&inc_output.consolidate(), &noninc);
-                assert_eq!(&hash_inc_output.consolidate(), &noninc);
+
+                let noninc_output = noninc_output.take_from_all();
+                let inc_output = inc_output.take_from_all();
+                let hash_inc_output = hash_inc_output.take_from_all();
+
+                assert_eq!(
+                    SpineSnapshot::<TestIndexedZSet>::concat(&noninc_output).iter().collect::<Vec<_>>(),
+                    SpineSnapshot::<TestIndexedZSet>::concat(&hash_inc_output).iter().collect::<Vec<_>>()
+                );
+
+                assert_eq!(
+                    SpineSnapshot::<TestIndexedZSet>::concat(&noninc_output).iter().collect::<Vec<_>>(),
+                    SpineSnapshot::<TestIndexedZSet>::concat(&inc_output).iter().collect::<Vec<_>>()
+                );
+
+                assert_eq!(
+                    SpineSnapshot::<TestIndexedZSet>::concat(&hash_inc_output).iter().collect::<Vec<_>>(),
+                    SpineSnapshot::<TestIndexedZSet>::concat(&inc_output).iter().collect::<Vec<_>>()
+                );
             }
 
             circuit.kill().unwrap();
