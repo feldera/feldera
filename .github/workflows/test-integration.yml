@@ -99,7 +99,7 @@ jobs:
 
       - name: Run python tests
         run: uv run --locked pytest . --timeout=600
-        working-directory: python/tests
+        working-directory: python
         env:
           FELDERA_BASE_URL: http://pipeline-manager:8080
           IN_CI: 1 # We use this flag to skip some kafka tests in the python code base
