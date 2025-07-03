@@ -198,7 +198,7 @@ mod test {
         operator::Generator,
         typed_batch::{OrdIndexedZSet, SpineSnapshot},
         utils::Tup2,
-        zset, Circuit, RootCircuit,
+        zset, Circuit, RootCircuit, Runtime,
     };
     use core::ops::Range;
     use rand::{rngs::StdRng, seq::SliceRandom, Rng, SeedableRng};
@@ -272,8 +272,8 @@ mod test {
         const V: Range<u64> = 0..10; // Range of values in Z-set.
         const W: Range<i64> = -10..10; // Range of weights in Z-set.
         let mut rng = StdRng::seed_from_u64(0); // Make the test reproducible.
-        let mut input: Vec<OrdIndexedZSet<u64, i64>> = Vec::new();
-        let mut expected: Vec<OrdIndexedZSet<u64, i64>> = Vec::new();
+        let mut input: Vec<Vec<Tup2<u64, Tup2<i64, i64>>>> = Vec::new();
+        let mut expected: Vec<Vec<(u64, i64, i64)>> = Vec::new();
         for _ in 0..N {
             let mut input_tuples = Vec::new();
             let mut expected_tuples = Vec::new();
@@ -285,34 +285,39 @@ mod test {
                 let mut distinct_count = 0;
                 for &v in &v[0..n as usize] {
                     let w = rng.gen_range(W);
-                    input_tuples.push(Tup2(Tup2(k, v as i64), w));
+                    input_tuples.push(Tup2(k, Tup2(v as i64, w)));
                     if w > 0 {
                         distinct_count += 1;
                     }
                 }
                 if distinct_count > 0 {
-                    expected_tuples.push(Tup2(Tup2(k, distinct_count), 1i64));
+                    expected_tuples.push((k, distinct_count, 1i64));
                 }
             }
-            input.push(OrdIndexedZSet::from_tuples((), input_tuples));
-            expected.push(OrdIndexedZSet::from_tuples((), expected_tuples));
+            input.push(input_tuples);
+            expected.push(expected_tuples);
         }
         let input_copy = input.clone();
 
-        let (circuit, (counts, _stream_counts)) = RootCircuit::build(move |circuit| {
-            let mut iter = input.into_iter();
-            let source =
-                circuit.add_source(Generator::new(move || iter.next().unwrap_or_default()));
-            let counts = source.differentiate().distinct_count().integrate();
-            let stream_counts = source.stream_distinct_count();
-            Ok((
-                counts.accumulate_output(),
-                stream_counts.accumulate_output(),
-            ))
-        })
-        .unwrap();
+        let (mut circuit, (source_handle, counts, _stream_counts)) =
+            Runtime::init_circuit(1, move |circuit| {
+                let (source, source_handle) = circuit.add_input_indexed_zset::<u64, i64>();
+                let counts = source
+                    .accumulate_differentiate()
+                    .distinct_count()
+                    .accumulate_integrate();
+                let stream_counts = source.stream_distinct_count();
+                Ok((
+                    source_handle,
+                    counts.accumulate_output(),
+                    stream_counts.accumulate_output(),
+                ))
+            })
+            .unwrap();
 
-        for (_input, expected_counts) in input_copy.into_iter().zip(expected.into_iter()) {
+        for (mut input, expected_counts) in input_copy.into_iter().zip(expected.into_iter()) {
+            println!("step");
+            source_handle.append(&mut input);
             circuit.step().unwrap();
 
             let counts = SpineSnapshot::<OrdIndexedZSet<u64, i64>>::concat(&counts.take_from_all())
@@ -324,7 +329,8 @@ mod test {
             // println!("counts={}", counts);
             // println!("stream_counts={}", stream_counts);
             // println!("expected={}", expected_counts);
-            assert_eq!(counts, expected_counts.iter().collect::<Vec<_>>());
+
+            assert_eq!(counts, expected_counts.to_vec());
 
             // TODO
             //assert_eq!(stream_counts, expected_counts);
