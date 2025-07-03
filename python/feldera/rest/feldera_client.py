@@ -1,10 +1,13 @@
 import pathlib
 from typing import Any, Dict, Optional
 import logging
+import warnings
 import time
 import json
 from decimal import Decimal
 from typing import Generator
+
+import pyarrow
 
 from feldera.rest.config import Config
 from feldera.rest.feldera_config import FelderaConfig
@@ -340,7 +343,9 @@ Reason: The pipeline is in a FAILED state due to the following error:
             time.sleep(0.1)
 
         raise FelderaTimeoutError(
-            f"timeout error: pipeline '{pipeline_name}' did not shutdown in {timeout_s} seconds"
+            f"timeout error: pipeline '{pipeline_name}' did not shutdown in {
+                timeout_s
+            } seconds"
         )
 
     def suspend_pipeline(self, pipeline_name: str, timeout_s: Optional[float] = 300):
@@ -379,7 +384,9 @@ Reason: The pipeline is in a FAILED state due to the following error:
             time.sleep(0.1)
 
         raise FelderaTimeoutError(
-            f"timeout error: pipeline '{pipeline_name}' did not suspend in {timeout_s} seconds"
+            f"timeout error: pipeline '{pipeline_name}' did not suspend in {
+                timeout_s
+            } seconds"
         )
 
     def checkpoint_pipeline(self, pipeline_name: str) -> int:
@@ -531,6 +538,7 @@ Reason: The pipeline is in a FAILED state due to the following error:
         pipeline_name: str,
         table_name: str,
         format: str,
+        case_sensitive: bool = False,
         backpressure: bool = True,
         array: bool = False,
         timeout: Optional[float] = None,
@@ -558,6 +566,9 @@ Reason: The pipeline is in a FAILED state due to the following error:
 
         if format == "json":
             params["array"] = _prepare_boolean_input(array)
+
+        if case_sensitive:
+            table_name = f'"{table_name}"'
 
         resp = self.http.post(
             path=f"/pipelines/{pipeline_name}/egress/{table_name}",
@@ -650,6 +661,13 @@ Reason: The pipeline is in a FAILED state due to the following error:
         :param query: The SQL query to be executed.
         :return: A generator that yields each row of the result as a Python dictionary, deserialized from JSON.
         """
+
+        warnings.warn(
+            "function query_as_json is deprecated and will be removed in a future version",
+            category=DeprecationWarning,
+            stacklevel=2,
+        )
+
         params = {
             "pipeline_name": pipeline_name,
             "sql": query,
@@ -665,6 +683,30 @@ Reason: The pipeline is in a FAILED state due to the following error:
         for chunk in resp.iter_lines(chunk_size=50000000):
             if chunk:
                 yield json.loads(chunk, parse_float=Decimal)
+
+    def query_as_pyarrow(self, pipeline_name: str, query: str) -> pyarrow.Table:
+        """
+        Executes an ad-hoc query on the specified pipeline and returns a pyarrow
+        Table consisting of all the data.
+
+        :param pipeline_name: The name of the pipeline to query.
+        :param query: The SQL query to be executed.
+        :return: A pyarrow.Table consisting of all the records.
+        """
+        params = {
+            "pipeline_name": pipeline_name,
+            "sql": query,
+            "format": "arrow_ipc",
+        }
+
+        resp = self.http.get(
+            path=f"/pipelines/{pipeline_name}/query",
+            params=params,
+            stream=True,
+        )
+
+        with pyarrow.ipc.RecordBatchStreamReader(resp.raw) as reader:
+            return reader.read_all()
 
     def pause_connector(self, pipeline_name, table_name, connector_name):
         """
@@ -685,7 +727,9 @@ Reason: The pipeline is in a FAILED state due to the following error:
         """
 
         self.http.post(
-            path=f"/pipelines/{pipeline_name}/tables/{table_name}/connectors/{connector_name}/pause",
+            path=f"/pipelines/{pipeline_name}/tables/{table_name}/connectors/{
+                connector_name
+            }/pause",
         )
 
     def resume_connector(
@@ -709,7 +753,9 @@ Reason: The pipeline is in a FAILED state due to the following error:
         """
 
         self.http.post(
-            path=f"/pipelines/{pipeline_name}/tables/{table_name}/connectors/{connector_name}/start",
+            path=f"/pipelines/{pipeline_name}/tables/{table_name}/connectors/{
+                connector_name
+            }/start",
         )
 
     def get_config(self) -> FelderaConfig:

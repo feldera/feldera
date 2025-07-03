@@ -4,6 +4,7 @@ import unittest
 import uuid
 import threading
 
+from decimal import Decimal
 from tests import TEST_CLIENT
 
 from feldera.rest.pipeline import Pipeline
@@ -230,6 +231,33 @@ class TestPipeline(unittest.TestCase):
         resp = TEST_CLIENT.query_as_json(pipeline.name, "SELECT * FROM tbl")
         expected = [{"id": 2}, {"id": 1}]
         got = list(resp)
+
+        self.assertCountEqual(got, expected)
+
+        TEST_CLIENT.shutdown_pipeline(name)
+        TEST_CLIENT.delete_pipeline(name)
+
+    def test_adhoc_query_pyarrow(self):
+        data = "1\n2\n"
+        name = str(uuid.uuid4())
+
+        sql = """
+        CREATE TABLE tbl(id INT) with ('materialized' = 'true');
+        CREATE MATERIALIZED VIEW v0 AS SELECT id, '3.14'::DECIMAL(5, 2) as d, '3.14159'::DOUBLE as dbl, MAP[1, 10] as m FROM tbl;
+        """
+
+        pipeline = Pipeline(name, sql, "", "", {}, {})
+        pipeline = TEST_CLIENT.create_pipeline(pipeline)
+
+        TEST_CLIENT.start_pipeline(name)
+
+        TEST_CLIENT.push_to_pipeline(name, "tbl", "csv", data)
+        resp = TEST_CLIENT.query_as_pyarrow(pipeline.name, "select * from v0")
+        expected = [
+            {"id": 2, "d": Decimal("3.14"), "dbl": 3.14159, "m": [(1, 10)]},
+            {"id": 1, "d": Decimal("3.14"), "dbl": 3.14159, "m": [(1, 10)]},
+        ]
+        got = resp.to_pylist()
 
         self.assertCountEqual(got, expected)
 

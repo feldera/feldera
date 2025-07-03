@@ -21,6 +21,7 @@ class CallbackRunner(Thread):
         view_name: str,
         callback: Callable[[pd.DataFrame, int], None],
         queue: Optional[Queue],
+        case_sensitive: bool,
     ):
         super().__init__()
         self.daemon = True
@@ -30,6 +31,7 @@ class CallbackRunner(Thread):
         self.callback: Callable[[pd.DataFrame, int], None] = callback
         self.queue: Optional[Queue] = queue
         self.schema: Optional[dict] = None
+        self.case_sensitive: bool = case_sensitive
 
     def run(self):
         """
@@ -66,7 +68,10 @@ class CallbackRunner(Thread):
             case _CallbackRunnerInstruction.PipelineStarted:
                 # listen to the pipeline
                 gen_obj = self.client.listen_to_pipeline(
-                    self.pipeline_name, self.view_name, format="json"
+                    self.pipeline_name,
+                    self.view_name,
+                    format="json",
+                    case_sensitive=self.case_sensitive,
                 )
 
                 # if there is a queue set up, inform the main thread that the listener has been started, and it can
