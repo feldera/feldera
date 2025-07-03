@@ -13,6 +13,7 @@ use crate::{
     },
     NumEntries,
 };
+use crate::{ChildCircuit, DBData, OrdIndexedZSet, Timestamp};
 use size_of::SizeOf;
 
 circuit_cache_key!(IntegralId<C, D>(StreamId => Stream<C, D>));
@@ -170,6 +171,20 @@ where
                 })
             })
             .clone()
+    }
+}
+
+impl<C, T, K, V> Stream<ChildCircuit<C, T>, OrdIndexedZSet<K, V>>
+where
+    C: Clone + 'static,
+    T: Timestamp,
+    K: DBData,
+    V: DBData,
+{
+    pub fn accumulate_integrate(&self) -> Stream<ChildCircuit<C, T>, OrdIndexedZSet<K, V>> {
+        self.circuit()
+            .non_incremental(self, |_child_circuit, stream| Ok(stream.integrate()))
+            .unwrap()
     }
 }
 
