@@ -92,7 +92,7 @@ public abstract class BaseRustCodeGenerator implements ICodeGenerator {
     public static final String STANDARD_PREAMBLE = """
             use dbsp::{
                 algebra::{ZSet, MulByRef, F32, F64, Semigroup, SemigroupValue, ZRingValue,
-                     UnimplementedSemigroup, DefaultSemigroup, HasZero, AddByRef, NegByRef,
+                     UnimplementedSemigroup, DefaultSemigroup, HasOne, HasZero, AddByRef, NegByRef,
                      AddAssignByRef,
                 },
                 circuit::{checkpointer::Checkpoint, ChildCircuit, Circuit, CircuitConfig, RootCircuit, Stream},

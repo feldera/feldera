@@ -6,6 +6,15 @@ import org.junit.Test;
 // https://github.com/apache/calcite/blob/main/core/src/test/resources/sql/agg.iq
 public class AggTests extends PostBaseTests {
     @Test
+    public void issue4278() {
+        this.qf("""
+                select ename
+                from emp as r
+                left join dept as s on (select true from emp)""",
+                "More than one value in subquery", false);
+    }
+
+    @Test
     public void calciteIssue6520() {
         this.qs("""
                 SELECT ENAME, ENAME in ('Adam', 'Alice', 'Eve') FROM EMP;

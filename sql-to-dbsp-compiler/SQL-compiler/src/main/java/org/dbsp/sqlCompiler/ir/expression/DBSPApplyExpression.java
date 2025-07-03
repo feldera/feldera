@@ -30,6 +30,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStrLiteral;
 import org.dbsp.sqlCompiler.ir.path.DBSPPath;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.IIndentStream;
@@ -56,6 +57,12 @@ public final class DBSPApplyExpression extends DBSPApplyBaseExpression {
     public DBSPApplyExpression(DBSPExpression function, DBSPType returnType, DBSPExpression... arguments) {
         super(CalciteObject.EMPTY, function, returnType, arguments);
         this.checkArgs(false);
+    }
+
+    /** Generate a call to the panic! Rust function with the specified message.
+     * Pretend that the returned type is the one specified. */
+    public static DBSPApplyExpression panic(CalciteObject node, DBSPType type, String message) {
+        return new DBSPApplyExpression(node, "panic!", type, new DBSPStrLiteral(message));
     }
 
     @Override
