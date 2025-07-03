@@ -6,7 +6,7 @@ import pandas
 import warnings
 import pyarrow
 
-from typing import List, Dict, Callable, Optional, Generator, Mapping, Any
+from typing import List, Dict, Callable, Optional, Generator, Mapping, Any, Tuple
 from collections import deque
 from queue import Queue
 
@@ -721,35 +721,38 @@ resume a paused pipeline."""
             You can only ``SELECT`` from materialized tables and views.
 
         :param query: The SQL query to be executed.
-        :param path: The path of the parquet file.
 
-        :raises FelderaAPIError: If the pipeline is not in a RUNNING or PAUSED state.
+        :raises FelderaAPIError: If the pipeline is not in a RUNNING or PAUSED
+            state.
         :raises FelderaAPIError: If querying a non materialized table or view.
         :raises FelderaAPIError: If the query is invalid.
         """
 
         return self.client.query_as_pyarrow(self.name, query)
 
-    def query_pylist(self, query: str) -> List[Mapping[str, Any]]:
+    def query_pylist(self, query: str) -> List[List[Tuple[str, Any]]]:
         """
-        Executes an ad-hoc SQL query on this pipeline and returns a python
-        dictionary containing all the results.
-
-        Prefer using :meth:`.Pipeline.query_pyarrow` if you have column aliases
-        with the same name.
+        Executes an ad-hoc SQL query on this pipeline and returns the results
+        as a list of rows. Each row is represented as a list of
+        (column_name, value) tuples.
 
         Note:
             You can only ``SELECT`` from materialized tables and views.
 
         :param query: The SQL query to be executed.
-        :param path: The path of the parquet file.
 
-        :raises FelderaAPIError: If the pipeline is not in a RUNNING or PAUSED state.
+        :return: A list of rows, where each row is a list of
+            (column_name, value) tuples.
+
+        :raises FelderaAPIError: If the pipeline is not in a RUNNING or PAUSED
+            state.
         :raises FelderaAPIError: If querying a non materialized table or view.
         :raises FelderaAPIError: If the query is invalid.
         """
 
-        return self.query_pyarrow(self.name, query).to_pylist()
+        table = self.query_pyarrow(query)
+        columns = [col.to_pylist() for col in table.itercolumns()]
+        return [list(zip(table.schema.names, row)) for row in zip(*columns)]
 
     def query_parquet(self, query: str, path: str):
         """

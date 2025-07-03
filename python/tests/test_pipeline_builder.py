@@ -1248,6 +1248,30 @@ CREATE MATERIALIZED VIEW v AS SELECT * FROM map_tbl;
 
         p.delete()
 
+    def test_adhoc_query_pylist_same_alias_name(self):
+        dataT = [{"x": 1, "y": 2}, {"x": 4, "y": 3}]
+        dataS = [{"x": 5, "y": 2}, {"x": 6, "y": 3}]
+        name = "test_adhoc_query_pyarrow_same_alias_name"
+
+        sql = """
+        CREATE TABLE T(x INT, y INT) with ('materialized' = 'true');
+        CREATE TABLE S(x INT, y INT) with ('materialized' = 'true');
+        """
+
+        pipeline = PipelineBuilder(TEST_CLIENT, name, sql).create_or_replace()
+
+        pipeline.start()
+
+        pipeline.input_json("T", dataT)
+        pipeline.input_json("S", dataS)
+
+        resp = pipeline.query_pylist("SELECT T.x, S.x FROM T, S WHERE T.y = S.y")
+
+        expected = [[("x", 1), ("x", 5)], [("x", 4), ("x", 6)]]
+        self.assertCountEqual(resp, expected)
+
+        pipeline.shutdown()
+
 
 if __name__ == "__main__":
     unittest.main()
