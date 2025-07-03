@@ -14,14 +14,20 @@ import TabItem from '@theme/TabItem';
 
         ## Unreleased
 
-        This release modifies the state-machine of a pipeline. The biggest user-facing change is that stopping a pipeline
-        will now act like suspend (e.g., take a checkpoint before stopping). Hence the suspend state is redundant now and was removed
-        from APIs and SDKs.
+        This release modifies the state machine of a pipeline. The biggest user-facing change is that stopping a pipeline
+        now acts similar to "Suspend" previously - a state checkpoint is taken before stopping the pipeline,
+        hence the "Suspend" state became redundant and was removed from APIs and SDKs.
 
-        TODO: Add more details.
+        "Stop" action takes a state checkpoint before shutting down the pipeline, whereas "Force Stop" stops the pipeline without taking one,
+        losing processing progress (but keeping any previous checkpoints).
+
+        Pipeline state now persists between the runs; clearing it requires an explicit action.
 
         ### Changes to Web Console
-        - TODO
+        - Pipeline actions "Suspend" and "Shutdown" are now replaced with "Stop" and "Force Stop" respectively.
+        - The new storage indicator shows whether storage is "In Use" or "Cleared", allowing to clear the storage.
+        - Pipeline code and some configuration options cannot be edited while pipeline's storage is in use.
+        - The reason for the latest pipeline crash is now displayed as a banner above the code editor.
 
         ### Changes to REST API
         - Pipeline statuses `SuspendingCompute`, `Suspended`, `Failed`, `ShuttingDown`,
