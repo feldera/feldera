@@ -1397,16 +1397,16 @@ pub struct Edge {
 #[allow(dead_code)]
 impl Edge {
     /// `true` if `self` is a dependency edge.
-    pub(super) fn is_dependency(&self) -> bool {
+    pub(crate) fn is_dependency(&self) -> bool {
         self.ownership_preference.is_none()
     }
 
     /// `true` if `self` is a stream edge.
-    pub(super) fn is_stream(&self) -> bool {
+    pub(crate) fn is_stream(&self) -> bool {
         self.stream.is_some()
     }
 
-    pub(super) fn stream_id(&self) -> Option<StreamId> {
+    pub(crate) fn stream_id(&self) -> Option<StreamId> {
         self.stream.as_ref().map(|meta| meta.stream_id())
     }
 }
