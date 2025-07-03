@@ -15,7 +15,8 @@ class illarg_tbl(TstTable):
                       str VARCHAR,
                       bin BINARY,
                       tmestmp TIMESTAMP,
-                      uuidd UUID
+                      uuidd UUID,
+                      arr VARCHAR ARRAY
                       )"""
         self.data = [
             {
@@ -29,5 +30,6 @@ class illarg_tbl(TstTable):
                 "bin": [11, 22, 32],
                 "tmestmp": "2020-06-21 14:23:44",
                 "uuidd": "42b8fec7-c7a3-4531-9611-4bde80f9cb4c",
+                "arr": ["bye", "friends", "See you!"],
             }
         ]
