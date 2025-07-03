@@ -136,3 +136,14 @@ export interface ConnectorStatus {
 }
 
 export type XgressRecord = Record<string, string | number | boolean | BigNumber>
+
+type Relations = {
+  tables: string[]
+  views: string[]
+}
+
+export type PipelineChangesDiff = {
+  deleted: Relations
+  modified: Relations
+  new: Relations
+}
