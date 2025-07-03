@@ -312,25 +312,22 @@ pub enum PipelineAction {
         /// This is useful for dev purposes in case the Feldera source-code has changed.
         #[arg(long, short = 'r', default_value_t = false)]
         recompile: bool,
+        /// Don't checkpoint the pipeline before restarting it.
+        #[arg(long, short = 'n', default_value_t = false)]
+        no_checkpoint: bool,
         /// Don't wait for pipeline to reach the status before returning.
         #[arg(long, short = 'n', default_value_t = false)]
         no_wait: bool,
     },
-    /// Shutdown a pipeline.
-    #[clap(aliases = &["stop"])]
-    Shutdown {
+    /// Stop a pipeline.
+    #[clap(aliases = &["shutdown"])]
+    Stop {
         /// The name of the pipeline.
         #[arg(value_hint = ValueHint::Other, add = ArgValueCompleter::new(pipeline_names))]
         name: String,
-        /// Don't wait for pipeline to reach the status before returning.
+        /// Don't checkpoint the pipeline before restarting it.
         #[arg(long, short = 'n', default_value_t = false)]
-        no_wait: bool,
-    },
-    /// Suspend a pipeline.
-    Suspend {
-        /// The name of the pipeline.
-        #[arg(value_hint = ValueHint::Other, add = ArgValueCompleter::new(pipeline_names))]
-        name: String,
+        no_checkpoint: bool,
         /// Don't wait for pipeline to reach the status before returning.
         #[arg(long, short = 'n', default_value_t = false)]
         no_wait: bool,

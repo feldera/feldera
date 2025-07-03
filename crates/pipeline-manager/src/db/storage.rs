@@ -39,6 +39,7 @@ impl ExtendedPipelineDescrRunner {
                 deployment_error: pipeline.deployment_error.clone(),
                 deployment_location: pipeline.deployment_location.clone(),
                 refresh_version: pipeline.refresh_version,
+                storage_status: pipeline.storage_status,
             },
         }
     }
@@ -270,19 +271,12 @@ pub(crate) trait Storage {
         pipeline_name: &str,
     ) -> Result<PipelineId, DBError>;
 
-    /// Sets deployment desired status to `Suspended`.
-    #[allow(dead_code)] // This will only be called in the Enterprise edition
-    async fn set_deployment_desired_status_suspended(
+    /// Sets deployment desired status to `Suspended` or `Stopped` depending on state.
+    async fn set_deployment_desired_status_suspended_or_stopped(
         &self,
         tenant_id: TenantId,
         pipeline_name: &str,
-    ) -> Result<PipelineId, DBError>;
-
-    /// Sets deployment desired status to `Shutdown`.
-    async fn set_deployment_desired_status_shutdown(
-        &self,
-        tenant_id: TenantId,
-        pipeline_name: &str,
+        force: bool,
     ) -> Result<PipelineId, DBError>;
 
     /// Transitions deployment status to `Provisioning`.
@@ -327,54 +321,44 @@ pub(crate) trait Storage {
         version_guard: Version,
     ) -> Result<(), DBError>;
 
-    /// Transitions deployment status to `SuspendingCircuit`.
-    async fn transit_deployment_status_to_suspending_circuit(
+    /// Transitions deployment status to `Suspending`.
+    async fn transit_deployment_status_to_suspending(
         &self,
         tenant_id: TenantId,
         pipeline_id: PipelineId,
         version_guard: Version,
     ) -> Result<(), DBError>;
 
-    /// Transitions deployment status to `SuspendingCompute`.
-    async fn transit_deployment_status_to_suspending_compute(
+    /// Transitions deployment status to `Stopping`.
+    async fn transit_deployment_status_to_stopping(
         &self,
         tenant_id: TenantId,
         pipeline_id: PipelineId,
         version_guard: Version,
-        suspend_info: serde_json::Value,
+        deployment_error: Option<ErrorResponse>,
+        suspend_info: Option<serde_json::Value>,
     ) -> Result<(), DBError>;
 
-    /// Transitions deployment status to `Suspended`.
-    async fn transit_deployment_status_to_suspended(
-        &self,
-        tenant_id: TenantId,
-        pipeline_id: PipelineId,
-        version_guard: Version,
-    ) -> Result<(), DBError>;
-
-    /// Transitions deployment status to `ShuttingDown`.
-    async fn transit_deployment_status_to_shutting_down(
+    /// Transitions deployment status to `Stopped`.
+    async fn transit_deployment_status_to_stopped(
         &self,
         tenant_id: TenantId,
         pipeline_id: PipelineId,
         version_guard: Version,
     ) -> Result<(), DBError>;
 
-    /// Transitions deployment status to `Shutdown`.
-    async fn transit_deployment_status_to_shutdown(
+    /// Transitions storage status to `Clearing`.
+    async fn transit_storage_status_to_clearing(
         &self,
         tenant_id: TenantId,
-        pipeline_id: PipelineId,
-        version_guard: Version,
-    ) -> Result<(), DBError>;
+        pipeline_name: &str,
+    ) -> Result<PipelineId, DBError>;
 
-    /// Transitions deployment status to `Failed`.
-    async fn transit_deployment_status_to_failed(
+    /// Transitions storage status to `Cleared`.
+    async fn transit_storage_status_to_cleared(
         &self,
         tenant_id: TenantId,
         pipeline_id: PipelineId,
-        version_guard: Version,
-        deployment_error: &ErrorResponse,
     ) -> Result<(), DBError>;
 
     /// Retrieves a list of all pipeline ids across all tenants.
@@ -398,7 +382,7 @@ pub(crate) trait Storage {
     /// compiler can pick it up again.
     async fn clear_ongoing_sql_compilation(&self, platform_version: &str) -> Result<(), DBError>;
 
-    /// Retrieves the pipeline which is shutdown, whose program status has been Pending
+    /// Retrieves the pipeline which is stopped, whose program status has been Pending
     /// for the longest, and is of the current platform version. Returns `None` if none is found.
     async fn get_next_sql_compilation(
         &self,
@@ -415,7 +399,7 @@ pub(crate) trait Storage {
     /// up again.
     async fn clear_ongoing_rust_compilation(&self, platform_version: &str) -> Result<(), DBError>;
 
-    /// Retrieves the pipeline which is shutdown, whose program status has been SqlCompiled
+    /// Retrieves the pipeline which is stopped, whose program status has been SqlCompiled
     /// for the longest, and is of the current platform version. Returns `None` if none is found.
     async fn get_next_rust_compilation(
         &self,

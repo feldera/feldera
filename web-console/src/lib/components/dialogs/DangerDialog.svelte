@@ -9,7 +9,7 @@
     <div class="flex flex-nowrap justify-between">
       <div class="h5">{content.title}</div>
       <button
-        class="fd fd-x btn btn-icon text-[20px]"
+        class="fd fd-x btn btn-icon -m-4 text-[20px]"
         onclick={onClose}
         aria-label="Confirm dangerous action"
       ></button>

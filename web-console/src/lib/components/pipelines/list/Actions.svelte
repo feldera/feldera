@@ -16,9 +16,12 @@
   import PipelineConfigurationsPopup from '$lib/components/layout/pipelines/PipelineConfigurationsPopup.svelte'
   import IconLoader from '$assets/icons/generic/loader-alt.svg?component'
   import { useToast } from '$lib/compositions/useToastNotification'
-  import { getDeploymentStatusLabel } from '$lib/functions/pipelines/status'
+  import { getDeploymentStatusLabel, isPipelineShutdown } from '$lib/functions/pipelines/status'
   import { usePremiumFeatures } from '$lib/compositions/usePremiumFeatures.svelte'
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
+  import Popup from '$lib/components/common/Popup.svelte'
+  import { slide } from 'svelte/transition'
+  import { useIsMobile } from '$lib/compositions/layout/useIsMobile.svelte'
 
   let {
     pipeline,
@@ -57,8 +60,10 @@
     _start_error,
     _start_pending,
     _pause,
-    _shutdown,
-    _suspend,
+    _kill_short,
+    _kill,
+    _stop,
+    _multiStop,
     _delete,
     _spacer_short,
     _spacer_long,
@@ -68,63 +73,74 @@
     _configureProgram,
     _configureResources,
     _saveFile,
-    _unschedule
+    _unschedule,
+    _storage_indicator
   }
 
   const active = $derived.by(() => {
     return match(pipeline.current.status)
       .returnType<(keyof typeof actions)[]>()
-      .with('Shutdown', () => [
-        '_spacer_long',
+      .with('Stopped', () => [
         '_start_paused',
         '_saveFile',
         '_configurations',
+        '_storage_indicator',
         '_delete'
       ])
       .with('Preparing', 'Provisioning', 'Initializing', () => [
-        '_status_spinner',
+        '_multiStop',
+        '_spinner',
         '_saveFile',
         '_configurations',
-        '_shutdown'
+        '_storage_indicator',
+        '_delete'
       ])
       .with('Pausing', 'Resuming', () => [
-        '_suspend',
-        '_status_spinner',
+        '_multiStop',
+        '_spinner',
         '_saveFile',
         '_configurations',
-        '_shutdown'
+        '_storage_indicator',
+        '_delete'
       ])
       .with('Unavailable', () => [
-        '_suspend',
+        '_multiStop',
         '_spacer_long',
         '_saveFile',
         '_configurations',
-        '_shutdown'
+        '_storage_indicator',
+        '_delete'
       ])
-      .with('Running', () => ['_suspend', '_pause', '_saveFile', '_configurations', '_shutdown'])
-      .with('Paused', () => ['_suspend', '_start', '_saveFile', '_configurations', '_shutdown'])
+      .with('Running', () => [
+        '_multiStop',
+        '_pause',
+        '_saveFile',
+        '_configurations',
+        '_storage_indicator',
+        '_delete'
+      ])
+      .with('Paused', () => [
+        '_multiStop',
+        '_start',
+        '_saveFile',
+        '_configurations',
+        '_storage_indicator',
+        '_delete'
+      ])
       .with('Suspending', () => [
-        '_spacer_long',
-        '_status_spinner',
+        '_spinner',
         '_saveFile',
         '_configurations',
-        '_shutdown'
+        '_storage_indicator',
+        '_delete'
       ])
-      .with('Suspended', () => [
-        '_spacer_long',
-        '_start_paused',
+      .with('Stopping', () => [
+        '_spinner',
         '_saveFile',
         '_configurations',
-        '_shutdown'
+        '_storage_indicator',
+        '_delete'
       ])
-      .with('ShuttingDown', () => [
-        '_spacer_long',
-        '_status_spinner',
-        '_saveFile',
-        '_configurations',
-        '_spacer_short'
-      ])
-      .with({ PipelineError: P.any }, () => ['_saveFile', '_configurations', '_shutdown'])
       .with(
         { Queued: P.any },
         { CompilingSql: P.any },
@@ -137,23 +153,26 @@
           '_start_pending',
           '_saveFile',
           '_configurations',
+          '_storage_indicator',
           '_delete'
         ]
       )
       .with('SqlError', 'RustError', 'SystemError', () => [
-        '_spacer_long',
         '_start_error',
         '_saveFile',
         '_configurations',
+        '_storage_indicator',
         '_delete'
       ])
       .exhaustive()
   })
 
-  const buttonClass = 'btn gap-0'
+  const isMobile = useIsMobile()
+
+  const buttonClass = 'btn'
   const iconClass = 'text-[20px]'
   const shortClass = 'w-9'
-  const longClass = 'w-28 sm:w-32 justify-between pl-2 gap-2 text-sm sm:text-base'
+  const longClass = 'w-[104px] sm:w-[124px] justify-between pl-2 gap-2 text-sm sm:text-base'
   const shortColor = 'preset-tonal-surface'
   const basicBtnColor = 'preset-filled-surface-100-900'
   const importantBtnColor = 'preset-filled-primary-500'
@@ -161,18 +180,33 @@
   const performStartAction = async (
     action: PipelineAction | 'start_paused_start',
     pipelineName: string,
-    targetStatus: PipelineStatus
+    nextStatus: PipelineStatus
   ) => {
-    const waitFor = await api.postPipelineAction(
+    const { waitFor } = await api.postPipelineAction(
       pipeline.current.name,
       action === 'start_paused_start' ? 'start_paused' : action
     )
-    pipeline.optimisticUpdate({ status: targetStatus })
+    pipeline.optimisticUpdate({ status: nextStatus })
     waitFor().then(() => onActionSuccess?.(pipelineName, action), toastError)
   }
 
   let isPremium = usePremiumFeatures()
 </script>
+
+{#snippet clearDialog()}
+  <DeleteDialog
+    {...deleteDialogProps(
+      'Clear',
+      (name) => `${name} pipeline storage`,
+      async (name: string) => {
+        await api.postPipelineAction(name, 'clear')
+        pipeline.optimisticUpdate({ storageStatus: 'Clearing' })
+      },
+      'This will delete all checkpoints.'
+    )(pipeline.current.name)}
+    onClose={() => (globalDialog.dialog = null)}
+  ></DeleteDialog>
+{/snippet}
 
 {#snippet deleteDialog()}
   <DeleteDialog
@@ -187,41 +221,50 @@
   ></DeleteDialog>
 {/snippet}
 
-{#snippet shutdownDialog()}
+{#snippet killDialog()}
   <DeleteDialog
     {...deleteDialogProps(
-      'Shutdown',
+      'Force stop',
       (name) => `${name} pipeline`,
       (pipelineName: string) => {
-        return api.postPipelineAction(pipelineName, 'shutdown').then(() => {
-          onActionSuccess?.(pipelineName, 'shutdown')
-          pipeline.optimisticUpdate({ status: 'ShuttingDown' })
+        return api.postPipelineAction(pipelineName, 'kill').then(() => {
+          onActionSuccess?.(pipelineName, 'kill')
+          pipeline.optimisticUpdate({ status: 'Stopping' })
         })
       },
-      'The internal state of the pipeline will be reset.'
+      'The pipeline will stop processing inputs without making a checkpoint, leaving only a previous one, if any.'
     )(pipeline.current.name)}
     onClose={() => (globalDialog.dialog = null)}
   ></DeleteDialog>
 {/snippet}
 
-{#snippet suspendDialog()}
+{#snippet stopDialog()}
   <DeleteDialog
     {...deleteDialogProps(
-      'Suspend',
+      'Stop',
       (name) => `${name} pipeline`,
       (pipelineName: string) => {
-        return api.postPipelineAction(pipelineName, 'suspend').then(() => {
-          onActionSuccess?.(pipelineName, 'suspend')
+        return api.postPipelineAction(pipelineName, 'stop').then(() => {
+          onActionSuccess?.(pipelineName, 'stop')
           pipeline.optimisticUpdate({ status: 'Suspending' })
         })
       },
-      "The pipeline's state will be preserved in persistent storage. Pipeline's compute resources will be released until it is resumed."
+      'The pipeline will stop processing inputs and make a checkpoint of its state.'
     )(pipeline.current.name)}
     onClose={() => (globalDialog.dialog = null)}
   ></DeleteDialog>
 {/snippet}
 
 <div class={'flex flex-nowrap gap-2 sm:gap-4 ' + _class}>
+  <!-- <div class="btn p-0 preset-filled-surface-100-900">
+    <button class="btn flex justify-center gap-2">
+      <span class="fd fd-circle-stop {iconClass}"></span>
+      <span>Suspend</span>
+    </button>
+    <div class="-mx-2 h-full border-l-[2px] border-surface-50-950"></div>
+    <button class="fd fd-chevron-down btn btn-icon text-[20px]"> </button>
+  </div> -->
+
   {#each active as name}
     {@render actions[name]()}
   {/each}
@@ -229,6 +272,68 @@
   {@render _configurations()}
   {@render _delete()} -->
 </div>
+
+{#snippet _multiStop()}
+  <Popup>
+    {#snippet trigger(toggle)}
+      <div class="flex flex-nowrap p-0">
+        <div class="w-[58px] sm:w-[140px]">{@render (isPremium.value ? _stop : _kill)()}</div>
+        <div class="z-10 -ml-6 h-9 border-l-[2px] border-surface-50-950"></div>
+        <button
+          onclick={toggle}
+          class="fd fd-chevron-down btn btn-icon z-10 w-8 !rounded-l-none text-[24px] preset-filled-surface-100-900"
+          aria-label="See stop options"
+        >
+        </button>
+      </div>
+    {/snippet}
+    {#snippet content(close)}
+      <!-- <div
+        transition:slide={{ duration: 100 }}
+        class="absolute z-30 mt-2 flex max-h-[400px] flex-col justify-stretch rounded shadow-md bg-surface-50-950 scrollbar"
+      >
+        {@render (isPremium.value ? _kill : _stop)()}
+      </div> -->
+      {@const buttons = [
+        {
+          label: 'Stop',
+          description: 'Stop the pipeline after taking a checkpoint',
+          onclick: () => (close(), (globalDialog.dialog = stopDialog)),
+          disabled: !isPremium.value
+        },
+        {
+          label: 'Force Stop',
+          description: 'Stop the pipeline immediately',
+          onclick: () => (close(), (globalDialog.dialog = killDialog))
+        }
+      ]}
+      <div
+        transition:slide={{ duration: 100 }}
+        class="bg-white-dark absolute z-30 mt-2 flex max-h-[400px] w-[calc(100vw-36px)] max-w-[340px] -translate-x-4 flex-col justify-stretch rounded shadow-md scrollbar sm:max-w-[380px] sm:translate-x-0"
+      >
+        {#each isPremium.value ? buttons : buttons.reverse() as button}
+          <button
+            class="flex flex-col gap-1 px-4 py-3 text-left hover:bg-surface-50-950 {button.disabled
+              ? 'pointer-events-none opacity-80'
+              : ''}"
+            onclick={button.onclick}
+          >
+            <div class="flex justify-between text-lg">
+              <span class="">{button.label}</span>
+
+              {#if button.disabled}
+                <span class="text-sm">Enterprise Only</span>
+              {/if}
+            </div>
+            <div class="text-base text-surface-700-300">
+              {button.description}
+            </div>
+          </button>
+        {/each}
+      </div>
+    {/snippet}
+  </Popup>
+{/snippet}
 
 {#snippet _delete()}
   <div>
@@ -244,34 +349,52 @@
       class="bg-white-dark z-20 whitespace-nowrap rounded text-surface-950-50"
       placement="top"
     >
-      Shutdown the pipeline to delete it
+      Stop the pipeline to delete it
     </Tooltip>
   {/if}
 {/snippet}
-{#snippet start(
-  text: string,
-  getAction: (alt: boolean) => PipelineAction | 'start_paused_start',
-  status: PipelineStatus
-)}
+{#snippet start({
+  text,
+  getAction,
+  nextStatus,
+  disabled
+}: {
+  text: string
+  getAction?: (alt: boolean) => PipelineAction | 'start_paused_start'
+  nextStatus?: PipelineStatus
+  disabled?: boolean
+})}
   <div>
     <button
-      aria-label={getAction(false)}
-      class:disabled={unsavedChanges}
-      class="{buttonClass} {longClass} {importantBtnColor}"
+      aria-label={getAction?.(false)}
+      class:disabled
+      class={isMobile.current
+        ? `${buttonClass} ${shortClass} ${importantBtnColor} {iconClass}`
+        : `${buttonClass} ${longClass} ${importantBtnColor}`}
       onclick={async (e) => {
+        if (!getAction || !nextStatus) {
+          return
+        }
         const action = getAction(e.ctrlKey || e.shiftKey || e.metaKey)
         const pipelineName = pipeline.current.name
-        performStartAction(action, pipelineName, status)
+        performStartAction(action, pipelineName, nextStatus)
       }}
     >
       <span class="fd fd-play {iconClass}"></span>
-      {text}
-      <span></span>
+      <span class="hidden sm:inline">
+        {text}
+      </span>
+      <span class="hidden sm:inline"></span>
     </button>
   </div>
 {/snippet}
 {#snippet _start()}
-  {@render start('Resume', () => 'start', 'Resuming')}
+  {@render start({
+    text: 'Resume',
+    getAction: () => 'start',
+    nextStatus: 'Resuming',
+    disabled: unsavedChanges
+  })}
   {#if unsavedChanges}
     <Tooltip class="bg-white-dark z-20 rounded text-surface-950-50" placement="top">
       Save the program before running
@@ -279,11 +402,12 @@
   {/if}
 {/snippet}
 {#snippet _start_paused()}
-  {@render start(
-    pipeline.current.status === 'Suspended' ? 'Resume' : 'Start',
-    (alt) => (alt ? 'start_paused' : 'start_paused_start'),
-    'Preparing'
-  )}
+  {@render start({
+    text: 'Start',
+    getAction: (alt) => (alt ? 'start_paused' : 'start_paused_start'),
+    nextStatus: 'Preparing',
+    disabled: unsavedChanges
+  })}
   {#if unsavedChanges}
     <Tooltip class="bg-white-dark z-20 rounded text-surface-950-50" placement="top">
       Save the program before running
@@ -291,13 +415,7 @@
   {/if}
 {/snippet}
 {#snippet _start_disabled()}
-  <div class="h-9">
-    <button class="{buttonClass} {longClass} disabled {importantBtnColor}">
-      <span class="fd fd-play {iconClass}"></span>
-      Start
-      <span></span>
-    </button>
-  </div>
+  {@render start({ text: 'Start', disabled: true })}
 {/snippet}
 {#snippet _start_error()}
   {@render _start_disabled()}
@@ -313,7 +431,7 @@
 {/snippet}
 {#snippet _pause()}
   <button
-    class="{buttonClass} {longClass} {basicBtnColor}"
+    class="hidden sm:flex {buttonClass} {longClass} {basicBtnColor}"
     onclick={async () => {
       const pipelineName = pipeline.current.name
       await api.postPipelineAction(pipelineName, 'pause')
@@ -325,28 +443,44 @@
     Pause
     <span></span>
   </button>
+  <button
+    class="flex sm:hidden {buttonClass} {shortClass} {basicBtnColor} {iconClass}"
+    onclick={async () => {
+      const pipelineName = pipeline.current.name
+      await api.postPipelineAction(pipelineName, 'pause')
+      onActionSuccess?.(pipelineName, 'pause')
+      pipeline.optimisticUpdate({ status: 'Pausing' })
+    }}
+  >
+    <span class="fd fd-pause {iconClass}"></span>
+  </button>
 {/snippet}
-{#snippet _suspend()}
+{#snippet _stop()}
   <div>
     <button
       disabled={!isPremium.value}
-      class="{buttonClass} {longClass} {basicBtnColor}"
+      class="hidden sm:flex {buttonClass} {longClass} {basicBtnColor}"
       onclick={() => {
-        globalDialog.dialog = suspendDialog
+        globalDialog.dialog = stopDialog
       }}
     >
-      <span class="fd fd-circle-stop {iconClass}"></span>
-      Suspend
+      <span class="fd fd-square {iconClass}"></span>
+      Stop
       <span></span>
+    </button>
+    <button
+      class="sm:hidden {buttonClass} {shortClass} {basicBtnColor} fd fd-square {iconClass}"
+      onclick={() => (globalDialog.dialog = stopDialog)}
+    >
     </button>
   </div>
   {#if !isPremium.value}
     <Tooltip
       activeContent
-      class="bg-white-dark z-20 rounded text-base text-surface-950-50"
+      class="bg-white-dark z-20 w-max max-w-[90vw] rounded text-base text-surface-950-50"
       placement="bottom"
     >
-      Suspending pipelines is only available in the Enterprise edition.<br />
+      Stopping pipelines gracefully is only available in the Enterprise edition.<br />
       <a
         class="block pt-2 underline"
         href="https://calendly.com/d/cqnj-p63-mbq/feldera-demo"
@@ -356,18 +490,36 @@
     </Tooltip>
   {/if}
 {/snippet}
-{#snippet _shutdown()}
+{#snippet _kill_short()}
   <div>
     <button
       class="{buttonClass} {shortClass} {shortColor} fd fd-square-power {iconClass}"
-      onclick={() => (globalDialog.dialog = shutdownDialog)}
+      onclick={() => (globalDialog.dialog = killDialog)}
     >
     </button>
   </div>
-  <Tooltip class="bg-white-dark z-20 rounded text-surface-950-50" placement="top">Shutdown</Tooltip>
+  <Tooltip class="bg-white-dark z-20 rounded text-surface-950-50" placement="top"
+    >Force Stop</Tooltip
+  >
+{/snippet}
+{#snippet _kill()}
+  <button
+    class="hidden sm:flex {buttonClass} {longClass} {basicBtnColor}"
+    onclick={() => (globalDialog.dialog = killDialog)}
+  >
+    <span class="fd fd-square-power {iconClass}"></span>
+    Force Stop
+    <span></span>
+  </button>
+  <button
+    class="sm:hidden {buttonClass} {shortClass} {basicBtnColor} fd fd-square-power {iconClass}"
+    onclick={() => (globalDialog.dialog = killDialog)}
+  >
+  </button>
 {/snippet}
 {#snippet _saveFile()}
-  <div role="button">
+  <div class="-mr-2 block sm:hidden"></div>
+  <div class="hidden sm:block">
     <button
       class="{buttonClass} {shortClass} {shortColor} fd fd-save {iconClass}"
       class:disabled={!unsavedChanges}
@@ -384,10 +536,11 @@
   </Tooltip>
 {/snippet}
 {#snippet _unschedule()}
+  <!-- TODO: add support for a short size when in mobile -->
   <button
     class="{buttonClass} {longClass} {basicBtnColor}"
     onclick={() => {
-      globalDialog.dialog = shutdownDialog
+      globalDialog.dialog = killDialog
     }}
   >
     <div></div>
@@ -439,7 +592,7 @@
   </button>
   {#if editConfigDisabled}
     <Tooltip class="z-20 bg-white text-surface-950-50 dark:bg-black" placement="top">
-      Stop the pipeline to edit configuration
+      Stop the pipeline to edit settings
     </Tooltip>
   {/if}
 {/snippet}
@@ -451,7 +604,7 @@
   </button>
   {#if editConfigDisabled}
     <Tooltip class="z-20 bg-white text-surface-950-50 dark:bg-black" placement="top">
-      Stop the pipeline to edit configuration
+      Stop the pipeline to edit settings
     </Tooltip>
   {/if}
 {/snippet}
@@ -460,7 +613,7 @@
   ></PipelineConfigurationsPopup>
   {#if editConfigDisabled}
     <Tooltip class="z-20 bg-white text-surface-950-50 dark:bg-black" placement="top">
-      Stop the pipeline to edit configuration
+      Stop the pipeline to edit settings
     </Tooltip>
   {:else}
     <Tooltip class="z-20 bg-white text-surface-950-50 dark:bg-black" placement="top">
@@ -475,7 +628,17 @@
   <div class={longClass}></div>
 {/snippet}
 {#snippet _spinner()}
-  <IconLoader class="pointer-events-none h-5 animate-spin fill-surface-950-50"></IconLoader>
+  <div class="flex sm:hidden">
+    {@render _spinner_short()}
+  </div>
+  <div class="hidden sm:flex">
+    {@render _status_spinner()}
+  </div>
+{/snippet}
+{#snippet _spinner_short()}
+  <div class="pointer-events-none {buttonClass} {shortClass} {basicBtnColor}">
+    <IconLoader class="h-5 flex-none  animate-spin fill-surface-950-50"></IconLoader>
+  </div>
 {/snippet}
 {#snippet _status_spinner()}
   <button class="{buttonClass} {longClass} pointer-events-none {basicBtnColor}">
@@ -483,4 +646,96 @@
     <span>{getDeploymentStatusLabel(pipeline.current.status)}</span>
     <span></span>
   </button>
+{/snippet}
+{#snippet _storage_indicator()}
+  {@const storageStatus = pipeline.current.storageStatus}
+  {@const isShutdown = isPipelineShutdown(pipeline.current.status)}
+  {#if storageStatus === 'Clearing'}
+    <div
+      class="flex h-9 w-[120px] items-center gap-2 rounded pl-2 !ring-2 preset-outlined-primary-500"
+    >
+      <div class="fd fd-database text-[20px]"></div>
+      <div class="w-10"></div>
+      <div class="rounded bg-primary-500 p-2">
+        <IconLoader class="h-5 flex-none animate-spin fill-surface-50-950"></IconLoader>
+      </div>
+    </div>
+    <Tooltip class="z-20 bg-white text-surface-950-50 dark:bg-black" placement="top">
+      Clearing pipeline storage, including any checkpoints.
+    </Tooltip>
+  {:else}
+    <div
+      class="rounded !ring-2 {isShutdown && storageStatus === 'InUse'
+        ? 'preset-outlined-primary-500'
+        : 'preset-outlined-surface-200-800'} flex h-9 w-[120px] items-center gap-2 pl-2"
+    >
+      <div
+        class="fd {storageStatus === 'InUse' ? 'fd-database' : 'fd-database-off'}  text-[20px]"
+      ></div>
+      <div class="w-10">
+        {#if storageStatus === 'InUse'}
+          In use
+        {:else}
+          Cleared
+        {/if}
+      </div>
+      {#if storageStatus === 'InUse'}
+        <button
+          class="fd fd-eraser btn rounded p-2 text-[20px] {isShutdown && storageStatus === 'InUse'
+            ? ' preset-filled-primary-500'
+            : ' disabled preset-filled-surface-200-800'}"
+          onclick={() => (globalDialog.dialog = clearDialog)}
+        >
+        </button>
+      {:else}
+        <div class="w-5"></div>
+      {/if}
+    </div>
+    <Tooltip
+      class="z-20 max-w-[calc(100vw-60px)] bg-white text-surface-950-50 dark:bg-black"
+      placement="top-start"
+    >
+      {#if storageStatus === 'Cleared'}
+        There are no checkpoints available.
+      {:else if isShutdown}
+        Pipeline storage is in use. Click to clear it.
+      {:else}
+        The storage is used by the running pipeline. Stop the pipeline to clear it.
+      {/if}
+    </Tooltip>
+  {/if}
+{/snippet}
+{#snippet _clear_storage()}
+  {@const storageStatus = pipeline.current.storageStatus}
+  {@const isShutdown = isPipelineShutdown(pipeline.current.status)}
+  {#if storageStatus === 'Clearing'}
+    <div class="pointer-events-none {buttonClass} {shortClass} {shortColor}">
+      <IconLoader class="h-5 flex-none  animate-spin fill-surface-950-50"></IconLoader>
+    </div>
+    <Tooltip class="z-20 bg-white text-surface-950-50 dark:bg-black" placement="top">
+      The pipeline storage is being deleted, and provisioned resources deallocated.
+    </Tooltip>
+  {:else}
+    <div>
+      <button
+        onclick={() => (globalDialog.dialog = clearDialog)}
+        class="{buttonClass} {shortClass} {shortColor} fd {storageStatus === 'InUse'
+          ? 'fd-server'
+          : 'fd-server-off'} preset-tonal-surface {iconClass} {isShutdown &&
+        storageStatus === 'InUse'
+          ? ''
+          : 'disabled'}"
+      >
+      </button>
+    </div>
+    <Tooltip class="z-20 bg-white text-surface-950-50 dark:bg-black" placement="top">
+      {#if storageStatus === 'Cleared'}
+        Pipeline is not using any storage.
+      {:else if isShutdown}
+        Pipeline storage is in use. Click to clear it.
+      {:else}
+        Pipeline is using storage. Stop the pipeline to clear it.
+      {/if}
+    </Tooltip>
+  {/if}
 {/snippet}

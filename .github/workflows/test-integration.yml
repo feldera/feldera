@@ -94,7 +94,7 @@ jobs:
       - name: Run manager tests
         run: ./build/integration_test-*
         env:
-          TEST_DBSP_URL: http://pipeline-manager:8080
+          TEST_FELDERA_URL: http://pipeline-manager:8080
           RUST_BACKTRACE: 1
 
       - name: Run python tests
