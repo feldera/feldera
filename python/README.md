@@ -66,13 +66,13 @@ tests, you'll also need a broker available at `localhost:9092` and
 set the environment variables listed in `python/tests/__init__.py`.)
 
 ```bash
-(cd python/tests && python3 -m pytest .)
+(cd python && python3 -m pytest tests)
 ```
 
 To run tests from a specific file:
 
 ```bash
-(cd python/tests && python3 -m unittest ./tests/path-to-file.py)
+(cd python && python3 -m unittest ./tests/path-to-file.py)
 ```
 
 To run the aggregate tests use:
