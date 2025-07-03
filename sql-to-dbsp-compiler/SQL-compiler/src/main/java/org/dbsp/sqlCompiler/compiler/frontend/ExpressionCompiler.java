@@ -1155,9 +1155,16 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                         return compileFunction(call, node, type, ops, 3);
                     }
                     case "overlay": {
+                        validateArgCount(node, opName, ops.size(), 3, 4);
                         String module_prefix = "";
                         if (ops.get(0).type.is(DBSPTypeBinary.class)) {
                             module_prefix = "binary_";
+                        }
+                        if (ops.get(0).getType().code != ops.get(1).getType().code) {
+                            throw new CompilationError(
+                                    "First and second arguments to 'OVERLAY' must have the same type; the types are\n" +
+                                    ops.get(0).getType().asSqlString() + " and " + ops.get(1).getType().asSqlString(),
+                                    node);
                         }
                         this.ensureInteger(node, ops, 2);
                         if (ops.size() == 4)
@@ -1201,6 +1208,10 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                     case "writelog":
                         return new DBSPApplyExpression(node, opName, type, ops.get(0), ops.get(1));
                     case "repeat": {
+                        validateArgCount(node, opName, ops.size(), 2);
+                        if (ops.get(0).getType().code == BYTES) {
+                            throw new UnimplementedException("'REPEAT' with a VAR/BINARY argument not yet supported", node);
+                        }
                         this.ensureInteger(node, ops, 1);
                         return compileFunction(call, node, type, ops, 2);
                     }

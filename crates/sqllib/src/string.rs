@@ -160,27 +160,21 @@ some_function2!(substring2, SqlString, i32, SqlString);
 
 #[doc(hidden)]
 pub fn trim_both_s_s(remove: SqlString, value: SqlString) -> SqlString {
-    // 'remove' always has exactly 1 character
-    let chr = remove.str().chars().next().unwrap();
-    SqlString::from(value.str().trim_matches(chr))
+    SqlString::from(value.str().trim_matches(|c| remove.str().contains(c)))
 }
 
 some_polymorphic_function2!(trim_both, s, SqlString, s, SqlString, SqlString);
 
 #[doc(hidden)]
 pub fn trim_leading_s_s(remove: SqlString, value: SqlString) -> SqlString {
-    // 'remove' always has exactly 1 character
-    let chr = remove.str().chars().next().unwrap();
-    SqlString::from(value.str().trim_start_matches(chr))
+    SqlString::from(value.str().trim_start_matches(|c| remove.str().contains(c)))
 }
 
 some_polymorphic_function2!(trim_leading, s, SqlString, s, SqlString, SqlString);
 
 #[doc(hidden)]
 pub fn trim_trailing_s_s(remove: SqlString, value: SqlString) -> SqlString {
-    // 'remove' always has exactly 1 character
-    let chr = remove.str().chars().next().unwrap();
-    SqlString::from(value.str().trim_end_matches(chr))
+    SqlString::from(value.str().trim_end_matches(|c| remove.str().contains(c)))
 }
 
 some_polymorphic_function2!(trim_trailing, s, SqlString, s, SqlString, SqlString);
