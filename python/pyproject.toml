@@ -8,7 +8,7 @@ readme = "README.md"
 description = "The feldera python client"
 version = "0.96.0"
 license = { text = "MIT" }
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 authors = [
     { "name" = "Feldera Team", "email" = "dev@feldera.com" },
 ]
@@ -18,8 +18,7 @@ keywords = [
 ]
 classifiers = [
     "License :: OSI Approved :: MIT License",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
     "Operating System :: OS Independent",
 ]
 dependencies = [
