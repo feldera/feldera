@@ -425,4 +425,44 @@ public class Regression1Tests extends SqlIoTest {
                 CREATE TABLE illegal_tbl(bin BINARY);
                 CREATE VIEW v AS SELECT CONCAT_WS('@', bin, 55) AS bin FROM illegal_tbl;""");
     }
+
+    @Test
+    public void issue4265() {
+        this.statementsFailingInCompilation("""
+                CREATE TABLE tbl(bin BINARY);
+                CREATE VIEW v AS SELECT
+                OVERLAY(bin placing 'i' from 2 for 4) AS bin FROM tbl;""",
+                "First and second arguments to 'OVERLAY' must have the same type");
+    }
+
+    @Test
+    public void issue4263() {
+        this.statementsFailingInCompilation("""
+                CREATE TABLE tbl(bin BINARY);
+                CREATE VIEW v AS SELECT
+                REPEAT(bin, 2) AS bin FROM tbl;
+                """, "Not yet implemented: 'REPEAT' with a VAR/BINARY argument not yet supported");
+    }
+
+    @Test
+    public void issue4264() {
+        this.qs("""
+                SELECT TRIM(trailing '' FROM 'x');
+                 result
+                --------
+                 x
+                (1 row)
+                
+                SELECT TRIM(leading 'abc' FROM 'abacabadaba');
+                 result
+                --------
+                 daba
+                (1 row)
+                
+                SELECT TRIM(both 'abc' FROM 'abacabadaba');
+                 result
+                --------
+                 d
+                (1 row)""");
+    }
 }
