@@ -73,7 +73,7 @@
         </div>
         {#if pipelineBusy}
           <Tooltip class="z-10 bg-white text-surface-950-50 dark:bg-black" placement="top">
-            Stop the pipeline to <br /> change compilation profile
+            Stop the pipeline and clear storage to <br /> change compilation profile
           </Tooltip>
         {/if}
         <div>
@@ -87,7 +87,7 @@
         </div>
         {#if pipelineBusy}
           <Tooltip class="z-10 bg-white text-surface-950-50 dark:bg-black" placement="top">
-            Stop the pipeline to <br /> allocate runtime resources
+            Stop the pipeline and clear storage to <br /> allocate runtime resources
           </Tooltip>
         {/if}
         <input

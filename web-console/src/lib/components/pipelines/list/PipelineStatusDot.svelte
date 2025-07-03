@@ -7,16 +7,14 @@
   const { status, class: _class = '' }: { status: PipelineStatus; class?: string } = $props()
   const chipClass = $derived(
     match(status)
-      .with('Shutdown', () => 'preset-filled-surface-400-600')
+      .with('Stopped', () => 'preset-filled-surface-400-600')
       .with('Preparing', 'Provisioning', 'Initializing', () => 'preset-filled-tertiary-200-800')
-      .with('Paused', () => 'preset-filled-warning-400-600')
-      .with('Suspending', () => 'bg-blue-400 dark:bg-blue-600')
-      .with('Suspended', () => 'bg-blue-400 dark:bg-blue-600')
+      .with('Paused', () => 'bg-blue-400 dark:bg-blue-600')
+      .with('Suspending', () => 'preset-filled-secondary-200-800')
       .with('Running', () => 'preset-filled-success-400-600')
       .with('Pausing', () => 'preset-filled-secondary-200-800')
       .with('Resuming', () => 'preset-filled-tertiary-200-800')
-      .with('ShuttingDown', () => 'preset-filled-secondary-200-800')
-      .with({ PipelineError: P.any }, () => 'preset-filled-error-400-600')
+      .with('Stopping', () => 'preset-filled-secondary-200-800')
       .with(
         { Queued: P.any },
         { CompilingSql: P.any },

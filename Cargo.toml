@@ -23,8 +23,10 @@ members = [
   "sql-to-dbsp-compiler/lib/readers",
   "crates/datagen",
   "crates/iceberg",
-  "crates/storage"
-, "crates/rest-api", "crates/ir"]
+  "crates/storage",
+  "crates/rest-api",
+  "crates/ir"
+]
 exclude = [
   "sql-to-dbsp-compiler/temp",
   "sql-to-dbsp-compiler/experiments",

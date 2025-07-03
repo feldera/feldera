@@ -103,7 +103,8 @@ class View(SqlObject):
 
     def __init__(self, sql: str, data: JSON):
         super().__init__(SqlObject.extract_name(sql, False), sql, data)
-        self.local = View.sqlObject_is_local(sql)  # 'local' flag set based on SQL check
+        # 'local' flag set based on SQL check
+        self.local = View.sqlObject_is_local(sql)
 
     def assert_result(self, data, expected, msg):
         """Compare the data received and expected data and raise an error if they don't match"""
@@ -185,12 +186,12 @@ class TstAccumulator:
                 table.name, table.get_data(), update_format="insert_delete"
             )
 
-        pipeline.wait_for_completion(shutdown=False, timeout_s=3600)
+        pipeline.wait_for_completion(force_stop=False, timeout_s=3600)
 
         for view in views:
             view.validate(pipeline)
 
-        pipeline.shutdown()
+        pipeline.stop(force=True)
 
     def assert_expected_error(self, view: View, actual_exception: Exception):
         """Validate the error produced by the failing pipeline with the expected error type"""

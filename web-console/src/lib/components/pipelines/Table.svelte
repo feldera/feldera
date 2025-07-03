@@ -13,6 +13,10 @@
   import { type Snippet } from 'svelte'
   import ThSort from '$lib/components/pipelines/table/ThSort.svelte'
   import { getPipelineStatusLabel } from '$lib/functions/pipelines/status'
+  import { useElapsedTime } from '$lib/functions/format'
+  import { dateMax } from '$lib/functions/common/date'
+  import { match } from 'ts-pattern'
+  import { Tooltip } from '$lib/components/common/Tooltip.svelte'
   let {
     pipelines,
     preHeaderEnd,
@@ -31,7 +35,8 @@
   })
 
   const statusFilter = table.createFilter('status')
-  const filterStatuses: (PipelineStatusType | '')[] = ['', 'Running', 'Paused', 'Shutdown']
+  const filterStatuses: (PipelineStatusType | '')[] = ['', 'Running', 'Paused', 'Stopped']
+  const { formatElapsedTime } = useElapsedTime()
 </script>
 
 <div
@@ -53,7 +58,7 @@
   </div>
 </div>
 <Datatable headless {table}>
-  <table class="p-1">
+  <table class="max-w-[1500px] p-1">
     <thead>
       <tr>
         <th class="w-10 px-2 text-left"
@@ -64,11 +69,20 @@
             onclick={() => table.selectAll()}
           /></th
         >
-        <ThSort class="py-1" {table} field="name"
+        <ThSort class="px-1 py-1" {table} field="name"
           ><span class="text-base font-normal text-surface-950-50">Pipeline name</span></ThSort
         >
-        <ThSort {table} class="py-1" field="status"
-          ><span class="text-base font-normal text-surface-950-50">Status</span></ThSort
+        <th class="px-1 py-1 text-left"
+          ><span class="text-base font-normal text-surface-950-50">Storage</span></th
+        >
+        <ThSort {table} class="px-1 py-1" field="status"
+          ><span class="ml-8 text-base font-normal text-surface-950-50">Status</span></ThSort
+        >
+        <th class="px-1 py-1 text-left"
+          ><span class="text-base font-normal text-surface-950-50">Message</span></th
+        >
+        <ThSort {table} class="px-1 py-1 " field="deploymentStatusSince"
+          ><span class="text-base font-normal text-surface-950-50">Last update</span></ThSort
         >
       </tr>
     </thead>
@@ -83,15 +97,57 @@
               onclick={() => table.select(pipeline.name)}
             />
           </td>
-          <td class="relative border-surface-100-900 group-hover:bg-surface-50-950"
+          <td class="relative w-3/12 border-surface-100-900 group-hover:bg-surface-50-950"
             ><a
               class=" absolute top-2 w-full overflow-hidden overflow-ellipsis whitespace-nowrap"
               href="/pipelines/{pipeline.name}/">{pipeline.name}</a
             ></td
           >
-          <td class="border-surface-100-900 group-hover:bg-surface-50-950"
+          <td class="relative w-12 border-surface-100-900 group-hover:bg-surface-50-950">
+            <div
+              class="fd {pipeline.storageStatus === 'Cleared'
+                ? 'fd-database-off'
+                : 'fd-database'} text-center text-[20px]"
+            ></div>
+            <Tooltip class="bg-white-dark z-10 rounded text-surface-950-50"
+              >{match(pipeline.storageStatus)
+                .with('InUse', () => 'Storage in use')
+                .with('Clearing', () => 'Clearing storage')
+                .with('Cleared', () => 'Storage cleared')
+                .exhaustive()}</Tooltip
+            >
+          </td>
+          <td class="w-36 border-surface-100-900 group-hover:bg-surface-50-950"
             ><PipelineStatus status={pipeline.status}></PipelineStatus></td
           >
+          <td
+            class="relative whitespace-pre-wrap border-surface-100-900 group-hover:bg-surface-50-950"
+          >
+            <span
+              class="absolute top-1.5 w-full overflow-hidden overflow-ellipsis whitespace-nowrap align-middle"
+            >
+              {#if pipeline.deploymentError}
+                <span class="fd fd-circle-alert pr-2 text-[20px] text-error-500"></span>
+                {pipeline.deploymentError?.message.slice(
+                  0,
+                  ((idx) => (idx > 0 ? idx : undefined))(
+                    pipeline.deploymentError.message.indexOf('\n')
+                  )
+                )}
+              {/if}
+            </span>
+          </td>
+          <td class="relative w-28 border-surface-100-900 group-hover:bg-surface-50-950">
+            <div class="w-32 text-nowrap text-right">
+              {formatElapsedTime(
+                dateMax(
+                  new Date(pipeline.deploymentStatusSince),
+                  new Date(pipeline.programStatusSince)
+                ),
+                'dhm'
+              )} ago
+            </div>
+          </td>
         </tr>
       {:else}
         <tr>

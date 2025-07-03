@@ -95,7 +95,7 @@ FROM variant_table;
 
         pipeline.wait_for_completion(True)
 
-        pipeline.delete()
+        pipeline.delete(True)
 
 
 if __name__ == "__main__":

@@ -30,28 +30,6 @@
     }
   })
 
-  MonacoImports.editor.defineTheme('feldera-light-disabled', {
-    base: 'vs',
-    inherit: true,
-    rules: [{ token: 'string.sql', foreground: '#7a3d00' }],
-    colors: {
-      'editor.background': rgbToHex(
-        getComputedStyle(document.body).getPropertyValue('--color-surface-50').trim()
-      )
-    }
-  })
-
-  MonacoImports.editor.defineTheme('feldera-dark-disabled', {
-    base: 'vs-dark',
-    inherit: true,
-    rules: [{ token: 'string.sql', foreground: '#d9731a' }],
-    colors: {
-      'editor.background': rgbToHex(
-        getComputedStyle(document.body).getPropertyValue('--color-surface-950').trim()
-      )
-    }
-  })
-
   const pipelineActionCallbacks = usePipelineActionCallbacks()
   const dropOpenedFile = async (pipelineName: string) => {
     const files = ['program.sql', 'stubs.rs', 'udf.rs', 'udf.toml'].map(
@@ -134,7 +112,8 @@
   function isReadonlyProperty<T>(obj: T, prop: keyof T) {
     return !Object.getOwnPropertyDescriptor(obj, prop)?.['set']
   }
-  let isReadOnly = $derived(editDisabled || isReadonlyProperty(file.access, 'current'))
+  const isReadOnlyFile = $derived(isReadonlyProperty(file.access, 'current'))
+  let isReadOnly = $derived(editDisabled || isReadOnlyFile)
 
   const getFilePath = (file: { name: string }) => path + '/' + file.name
   let filePath = $derived(getFilePath(file))
@@ -344,20 +323,16 @@
           }}
           bind:editor={editorRef}
           model={currentModel}
+          extras={{ isDarkMode: darkMode.current === 'dark' }}
           options={{
             readOnlyMessage: {
-              value: editDisabled
-                ? 'Cannot edit code while pipeline is running'
-                : 'Cannot edit a compiler-generated file'
+              value: isReadOnlyFile
+                ? 'Cannot edit a compiler-generated file'
+                : 'Cannot edit code while the pipeline is running or its storage is in use'
             },
             fontFamily: theme.config.monospaceFontFamily,
             fontSize: editorFontSize.value,
-            theme: [
-              'feldera-dark-disabled',
-              'feldera-dark',
-              'feldera-light-disabled',
-              'feldera-light'
-            ][+(darkMode.current === 'light') * 2 + +!isReadOnly],
+            theme: ['feldera-dark', 'feldera-light'][+(darkMode.current === 'light')],
             automaticLayout: true,
             lineNumbersMinChars: 3,
             ...isMonacoEditorDisabled(isReadOnly),

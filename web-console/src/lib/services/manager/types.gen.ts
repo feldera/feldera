@@ -475,7 +475,7 @@ export type DeltaTableReaderConfig = {
   /**
    * A predicate that determines whether the record represents a deletion.
    *
-   * This setting is only valid in the 'cdc' mode. It specifies a predicate applied to
+   * This setting is only valid in the `cdc` mode. It specifies a predicate applied to
    * each row in the Delta table to determine whether the row represents a deletion event.
    * Its value must be a valid Boolean SQL expression that can be used in a query of the
    * form `SELECT * from <table> WHERE <cdc_delete_filter>`.
@@ -484,7 +484,7 @@ export type DeltaTableReaderConfig = {
   /**
    * An expression that determines the ordering of updates in the Delta table.
    *
-   * This setting is only valid in the 'cdc' mode. It specifies a predicate applied to
+   * This setting is only valid in the `cdc` mode. It specifies a predicate applied to
    * each row in the Delta table to determine the order in which updates in the table should
    * be applied. Its value must be a valid SQL expression that can be used in a query of the
    * form `SELECT * from <table> ORDER BY <cdc_order_by>`.
@@ -497,14 +497,23 @@ export type DeltaTableReaderConfig = {
    * When this option is set, the connector finds and opens the version of the table as of the
    * specified point in time (based on the server time recorded in the transaction log, not the
    * event time encoded in the data).  In `snapshot` and `snapshot_and_follow` modes, it
-   * retrieves the snapshot of this version of the table.  In `follow` and `snapshot_and_follow`
-   * modes, it follows transaction log records **after** this version.
+   * retrieves the snapshot of this version of the table.  In `follow`, `snapshot_and_follow`, and
+   * `cdc` modes, it follows transaction log records **after** this version.
    *
    * Note: at most one of `version` and `datetime` options can be specified.
    * When neither of the two options is specified, the latest committed version of the table
    * is used.
    */
   datetime?: string | null
+  /**
+   * Optional final table version.
+   *
+   * Valid only when the connector is configured in `follow`, `snapshot_and_follow`, or `cdc` mode.
+   *
+   * When set, the connector will stop scanning the table’s transaction log after reaching this version or any greater version.
+   * This bound is inclusive: if the specified version appears in the log, it will be processed before signaling end-of-input.
+   */
+  end_version?: number | null
   /**
    * Optional row filter.
    *
@@ -608,7 +617,7 @@ export type DeltaTableReaderConfig = {
    *
    * When this option is set, the connector finds and opens the specified version of the table.
    * In `snapshot` and `snapshot_and_follow` modes, it retrieves the snapshot of this version of
-   * the table.  In `follow` and `snapshot_and_follow` modes, it follows transaction log records
+   * the table.  In `follow`, `snapshot_and_follow`, and `cdc` modes, it follows transaction log records
    * **after** this version.
    *
    * Note: at most one of `version` and `datetime` options can be specified.
@@ -747,6 +756,7 @@ export type FileBackendConfig = {
    * production.
    */
   ioop_delay?: number | null
+  sync?: SyncConfig | null
 }
 
 /**
@@ -1644,12 +1654,7 @@ export type PatchPipeline = {
  */
 export type PipelineConfig = {
   /**
-   * * If `true`, the suspend operation will first atomically checkpoint the pipeline before
-   * deprovisioning the compute resources. When resuming, the pipeline will start from this
-   * checkpoint.
-   * * If `false`, then the pipeline will be suspended without creating an additional checkpoint.
-   * When resuming, it will pick up the latest checkpoint made by the periodic checkpointer or
-   * by invoking the `/checkpoint` API.
+   * Deprecated: setting this true or false does not have an effect anymore.
    */
   checkpoint_during_suspend?: boolean
   /**
@@ -1772,7 +1777,7 @@ export type PipelineConfig = {
   storage_config?: StorageConfig | null
 }
 
-export type PipelineDesiredStatus = 'Shutdown' | 'Paused' | 'Running' | 'Suspended'
+export type PipelineDesiredStatus = 'Stopped' | 'Paused' | 'Running' | 'Suspended'
 
 export type PipelineFieldSelector = 'all' | 'status'
 
@@ -1804,6 +1809,7 @@ export type PipelineInfo = {
   program_version: Version
   refresh_version: Version
   runtime_config: RuntimeConfig
+  storage_status: StorageStatus
   udf_rust: string
   udf_toml: string
   version: Version
@@ -1833,6 +1839,7 @@ export type PipelineSelectedInfo = {
   program_version: Version
   refresh_version: Version
   runtime_config?: RuntimeConfig | null
+  storage_status: StorageStatus
   udf_rust?: string | null
   udf_toml?: string | null
   version: Version
@@ -1855,30 +1862,28 @@ export type PipelineSelectedInfo = {
  * period expires.
  *
  * * State transitions labeled with API endpoint names (`/start`, `/pause`,
- * `/suspend`, `/shutdown`) are triggered by invoking corresponding endpoint,
+ * `/stop`) are triggered by invoking corresponding endpoint,
  * e.g., `POST /v0/pipelines/{name}/start`. Note that these only express
  * desired state, and are applied asynchronously by the automata.
  *
  * ```text
- * Shutdown◄────────────────────┐
- * │                        │
- * /start or /pause │                   ShuttingDown ◄─────── Failed
- * │                        ▲                  ▲
- * ▼              /shutdown │                  │
- * ⌛Provisioning ──────────────────┤     All states except ShuttingDown
- * │                        │        can transition to Failed
- * │                        │
- * ▼                        │
- * ⌛Initializing ──────────────────┤
- * │                        │────────────────────────────────────────────────────────────────┐
- * ┌─────────┼────────────────────────┴─┐                  │                         │                 │
- * │         ▼                          │                  │                         │                 │
- * │       Paused  ◄──────► Unavailable │                  │                         │                 │
- * │       │    ▲                ▲      │                  │                         │                 │
- * │ /start│    │/pause          │      │──────────> SuspendingCircuit ───> SuspendingCompute ───> Suspended
- * │       ▼    │                │      │ /suspend                            ▲                        │ /start or /pause
- * │      Running ◄──────────────┘      │─────────────────────────────────────┘                        ▼
- * └────────────────────────────────────┘ (if runtime_config.checkpoint_during_suspend=false)    ⌛Provisioning
+ * Stopped ◄─────────── Stopping ◄───── All states can transition
+ * │                    ▲            to Stopping by either:
+ * /start or /pause │                    │            (1) user calling /stop?force=true, or;
+ * ▼                    │            (2) pipeline encountering a fatal
+ * ⌛Provisioning          Suspending            resource or runtime error,
+ * │                    ▲                having the system call /stop?force=true
+ * ▼                    │ /stop          effectively
+ * ⌛Initializing ──────────────┤  ?force=false
+ * │                    │
+ * ┌─────────┼────────────────────┴─────┐
+ * │         ▼                          │
+ * │       Paused  ◄──────► Unavailable │
+ * │        │   ▲                ▲      │
+ * │ /start │   │  /pause        │      │
+ * │        ▼   │                │      │
+ * │       Running ◄─────────────┘      │
+ * └────────────────────────────────────┘
  * ```
  *
  * ### Desired and actual status
@@ -1893,9 +1898,8 @@ export type PipelineSelectedInfo = {
  *
  * Only four of the states in the pipeline automaton above can be
  * used as desired statuses: `Paused`, `Running`, `Suspended` and
- * `Shutdown`. These statuses are selected by invoking REST endpoints
- * shown in the diagram (respectively, `/pause`, `/start`, `/suspend`
- * and `/shutdown`).
+ * `Stopped`. These statuses are selected by invoking REST endpoints
+ * shown in the diagram (respectively, `/pause`, `/start`, and `/stop`).
  *
  * The user can monitor the current state of the pipeline via the
  * `GET /v0/pipelines/{name}` endpoint. In a typical scenario,
@@ -1904,20 +1908,17 @@ export type PipelineSelectedInfo = {
  * endpoint to monitor the actual status of the pipeline until its
  * `deployment_status` attribute changes to `Running` indicating
  * that the pipeline has been successfully initialized and is
- * processing data, or `Failed`, indicating an error.
+ * processing data, or `Stopped` with `deployment_error` being set.
  */
 export type PipelineStatus =
-  | 'Shutdown'
+  | 'Stopped'
   | 'Provisioning'
   | 'Initializing'
   | 'Paused'
   | 'Running'
   | 'Unavailable'
-  | 'SuspendingCircuit'
-  | 'SuspendingCompute'
-  | 'Suspended'
-  | 'Failed'
-  | 'ShuttingDown'
+  | 'Suspending'
+  | 'Stopping'
 
 /**
  * Create a new pipeline (POST), or fully update an existing pipeline (PUT).
@@ -1932,6 +1933,18 @@ export type PostPutPipeline = {
   runtime_config?: RuntimeConfig | null
   udf_rust?: string | null
   udf_toml?: string | null
+}
+
+/**
+ * Query parameters to POST a pipeline stop.
+ */
+export type PostStopPipelineParameters = {
+  /**
+   * The `force` parameter determines whether to immediately deprovision the pipeline compute
+   * resources (`force=true`) or first attempt to atomically checkpoint before doing so
+   * (`force=false`, which is the default).
+   */
+  force?: boolean
 }
 
 /**
@@ -2339,12 +2352,7 @@ export type RngFieldSettings = {
  */
 export type RuntimeConfig = {
   /**
-   * * If `true`, the suspend operation will first atomically checkpoint the pipeline before
-   * deprovisioning the compute resources. When resuming, the pipeline will start from this
-   * checkpoint.
-   * * If `false`, then the pipeline will be suspended without creating an additional checkpoint.
-   * When resuming, it will pick up the latest checkpoint made by the periodic checkpointer or
-   * by invoking the `/checkpoint` API.
+   * Deprecated: setting this true or false does not have an effect anymore.
    */
   checkpoint_during_suspend?: boolean
   /**
@@ -2694,6 +2702,78 @@ export type StorageOptions = {
 }
 
 /**
+ * Storage status.
+ *
+ * The storage status can only transition when the pipeline status is `Stopped`.
+ *
+ * ```text
+ * Cleared ───┐
+ * ▲       │
+ * /clear │       │
+ * │       │
+ * Clearing   │
+ * ▲       │
+ * │       │
+ * InUse ◄───┘
+ * ```
+ */
+export type StorageStatus = 'Cleared' | 'InUse' | 'Clearing'
+
+export type SyncConfig = {
+  /**
+   * The access key used to authenticate with the storage provider.
+   *
+   * If not provided, rclone will fall back to environment-based credentials, such as
+   * `RCLONE_S3_ACCESS_KEY_ID`. In Kubernetes environments using IRSA (IAM Roles for Service Accounts),
+   * this can be left empty to allow automatic authentication via the pod's service account.
+   */
+  access_key?: string | null
+  /**
+   * The name of the storage bucket.
+   *
+   * This may include a path to a folder inside the bucket (e.g., `my-bucket/data`).
+   */
+  bucket: string
+  /**
+   * The endpoint URL for the storage service.
+   *
+   * This is typically required for custom or local S3-compatible storage providers like MinIO.
+   * Example: `http://localhost:9000`
+   *
+   * Relevant rclone config key: [`endpoint`](https://rclone.org/s3/#s3-endpoint)
+   */
+  endpoint?: string | null
+  /**
+   * The name of the cloud storage provider (e.g., `"AWS"`, `"Minio"`).
+   *
+   * Used for provider-specific behavior in rclone.
+   * If omitted, defaults to `"Other"`.
+   *
+   * See [rclone S3 provider documentation](https://rclone.org/s3/#s3-provider)
+   */
+  provider?: string | null
+  /**
+   * The region that this bucket is in.
+   *
+   * Leave empty for Minio or the default region (`us-east-1` for AWS).
+   */
+  region?: string | null
+  /**
+   * The secret key used together with the access key for authentication.
+   *
+   * If not provided, rclone will fall back to environment-based credentials, such as
+   * `RCLONE_S3_SECRET_ACCESS_KEY`. In Kubernetes environments using IRSA (IAM Roles for Service Accounts),
+   * this can be left empty to allow automatic authentication via the pod's service account.
+   */
+  secret_key?: string | null
+  /**
+   * If `true`, will try to pull the latest checkpoint from the configured
+   * object store and resume from that point.
+   */
+  start_from_checkpoint: boolean
+}
+
+/**
  * Transport-specific endpoint configuration passed to
  * `crate::OutputTransport::new_endpoint`
  * and `crate::InputTransport::new_endpoint`.
@@ -3001,6 +3081,19 @@ export type GetPipelineCircuitProfileResponse = {
 
 export type GetPipelineCircuitProfileError = ErrorResponse
 
+export type PostPipelineClearData = {
+  path: {
+    /**
+     * Unique pipeline name
+     */
+    pipeline_name: string
+  }
+}
+
+export type PostPipelineClearResponse = unknown
+
+export type PostPipelineClearError = ErrorResponse
+
 export type CompletionStatusData = {
   path: {
     /**
@@ -3136,6 +3229,19 @@ export type GetPipelineMetricsResponse = {
 
 export type GetPipelineMetricsError = ErrorResponse
 
+export type PostPipelinePauseData = {
+  path: {
+    /**
+     * Unique pipeline name
+     */
+    pipeline_name: string
+  }
+}
+
+export type PostPipelinePauseResponse = unknown
+
+export type PostPipelinePauseError = ErrorResponse
+
 export type GetProgramInfoData = {
   path: {
     /**
@@ -3172,6 +3278,19 @@ export type PipelineAdhocSqlResponse = Blob | File
 
 export type PipelineAdhocSqlError = ErrorResponse
 
+export type PostPipelineStartData = {
+  path: {
+    /**
+     * Unique pipeline name
+     */
+    pipeline_name: string
+  }
+}
+
+export type PostPipelineStartResponse = unknown
+
+export type PostPipelineStartError = ErrorResponse
+
 export type GetPipelineStatsData = {
   path: {
     /**
@@ -3186,6 +3305,27 @@ export type GetPipelineStatsResponse = {
 }
 
 export type GetPipelineStatsError = ErrorResponse
+
+export type PostPipelineStopData = {
+  path: {
+    /**
+     * Unique pipeline name
+     */
+    pipeline_name: string
+  }
+  query?: {
+    /**
+     * The `force` parameter determines whether to immediately deprovision the pipeline compute
+     * resources (`force=true`) or first attempt to atomically checkpoint before doing so
+     * (`force=false`, which is the default).
+     */
+    force?: boolean
+  }
+}
+
+export type PostPipelineStopResponse = unknown
+
+export type PostPipelineStopError = ErrorResponse
 
 export type CompletionTokenData = {
   path: {
@@ -3278,23 +3418,6 @@ export type GetPipelineOutputConnectorStatusResponse = {
 }
 
 export type GetPipelineOutputConnectorStatusError = ErrorResponse
-
-export type PostPipelineActionData = {
-  path: {
-    /**
-     * Pipeline action (one of: start, pause, suspend, shutdown)
-     */
-    action: string
-    /**
-     * Unique pipeline name
-     */
-    pipeline_name: string
-  }
-}
-
-export type PostPipelineActionResponse = unknown
-
-export type PostPipelineActionError = ErrorResponse
 
 export type $OpenApiTs = {
   '/config/authentication': {
@@ -3466,7 +3589,7 @@ export type $OpenApiTs = {
          */
         '200': unknown
         /**
-         * Pipeline needs to be shutdown to be deleted
+         * Pipeline must be fully stopped and cleared to be deleted
          */
         '400': ErrorResponse
         /**
@@ -3546,6 +3669,26 @@ export type $OpenApiTs = {
         '404': ErrorResponse
         '500': ErrorResponse
         '503': ErrorResponse
+      }
+    }
+  }
+  '/v0/pipelines/{pipeline_name}/clear': {
+    post: {
+      req: PostPipelineClearData
+      res: {
+        /**
+         * Action is accepted and is being performed
+         */
+        '202': unknown
+        /**
+         * Action could not be performed
+         */
+        '400': ErrorResponse
+        /**
+         * Pipeline with that name does not exist
+         */
+        '404': ErrorResponse
+        '500': ErrorResponse
       }
     }
   }
@@ -3667,6 +3810,26 @@ export type $OpenApiTs = {
       }
     }
   }
+  '/v0/pipelines/{pipeline_name}/pause': {
+    post: {
+      req: PostPipelinePauseData
+      res: {
+        /**
+         * Action is accepted and is being performed
+         */
+        '202': unknown
+        /**
+         * Action could not be performed
+         */
+        '400': ErrorResponse
+        /**
+         * Pipeline with that name does not exist
+         */
+        '404': ErrorResponse
+        '500': ErrorResponse
+      }
+    }
+  }
   '/v0/pipelines/{pipeline_name}/program_info': {
     get: {
       req: GetProgramInfoData
@@ -3704,6 +3867,26 @@ export type $OpenApiTs = {
       }
     }
   }
+  '/v0/pipelines/{pipeline_name}/start': {
+    post: {
+      req: PostPipelineStartData
+      res: {
+        /**
+         * Action is accepted and is being performed
+         */
+        '202': unknown
+        /**
+         * Action could not be performed
+         */
+        '400': ErrorResponse
+        /**
+         * Pipeline with that name does not exist
+         */
+        '404': ErrorResponse
+        '500': ErrorResponse
+      }
+    }
+  }
   '/v0/pipelines/{pipeline_name}/stats': {
     get: {
       req: GetPipelineStatsData
@@ -3719,6 +3902,38 @@ export type $OpenApiTs = {
          */
         '404': ErrorResponse
         '500': ErrorResponse
+        '503': ErrorResponse
+      }
+    }
+  }
+  '/v0/pipelines/{pipeline_name}/stop': {
+    post: {
+      req: PostPipelineStopData
+      res: {
+        /**
+         * Action is accepted and is being performed
+         */
+        '202': unknown
+        /**
+         * Action could not be performed
+         */
+        '400': ErrorResponse
+        /**
+         * Pipeline with that name does not exist
+         */
+        '404': ErrorResponse
+        /**
+         * Action is not supported
+         */
+        '405': ErrorResponse
+        '500': ErrorResponse
+        /**
+         * Action is not implemented because it is only available in the Enterprise edition
+         */
+        '501': ErrorResponse
+        /**
+         * Action can not be performed (maybe because the pipeline is already suspended)
+         */
         '503': ErrorResponse
       }
     }
@@ -3791,38 +4006,6 @@ export type $OpenApiTs = {
          */
         '404': ErrorResponse
         '500': ErrorResponse
-        '503': ErrorResponse
-      }
-    }
-  }
-  '/v0/pipelines/{pipeline_name}/{action}': {
-    post: {
-      req: PostPipelineActionData
-      res: {
-        /**
-         * Action is accepted and is being performed
-         */
-        '202': unknown
-        /**
-         * Action could not be performed
-         */
-        '400': ErrorResponse
-        /**
-         * Pipeline with that name does not exist
-         */
-        '404': ErrorResponse
-        /**
-         * Action is not supported
-         */
-        '405': ErrorResponse
-        '500': ErrorResponse
-        /**
-         * Action is not implemented because it is only available in the Enterprise edition
-         */
-        '501': ErrorResponse
-        /**
-         * Action can not be performed (maybe because the pipeline is already suspended)
-         */
         '503': ErrorResponse
       }
     }

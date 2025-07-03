@@ -1,5 +1,6 @@
 use crate::db::types::pipeline::{PipelineDesiredStatus, PipelineId, PipelineStatus};
 use crate::db::types::program::ProgramStatus;
+use crate::db::types::storage::StorageStatus;
 use crate::db::types::tenant::TenantId;
 use crate::db::types::utils::ValidationError;
 use crate::db::types::version::Version;
@@ -54,6 +55,11 @@ pub enum DBError {
         status: String,
         backtrace: Backtrace,
     },
+    #[serde(serialize_with = "serialize_invalid_storage_status")]
+    InvalidStorageStatus {
+        status: String,
+        backtrace: Backtrace,
+    },
     InvalidJsonData {
         data: String,
         error: String,
@@ -78,7 +84,7 @@ pub enum DBError {
         value: serde_json::Value,
         error: String,
     },
-    EditNotAllowedWhileSuspendedError {
+    EditRestrictedToClearedStorage {
         not_allowed: Vec<String>,
     },
     InvalidErrorResponse {
@@ -137,9 +143,10 @@ pub enum DBError {
     UnknownPipelineName {
         pipeline_name: String,
     },
-    CannotUpdateNonShutdownPipeline,
-    CannotUpdateProgramStatusOfNonShutdownPipeline,
-    CannotDeleteNonShutdownPipeline,
+    UpdateRestrictedToStopped,
+    ProgramStatusUpdateRestrictedToStopped,
+    DeleteRestrictedToFullyStopped,
+    DeleteRestrictedToClearedStorage,
     CannotRenameNonExistingPipeline,
     OutdatedProgramVersion {
         outdated_version: Version,
@@ -157,18 +164,28 @@ pub enum DBError {
         transition_to: PipelineStatus,
     },
     InvalidProgramStatusTransition {
-        current: ProgramStatus,
-        transition_to: ProgramStatus,
+        current_status: ProgramStatus,
+        new_status: ProgramStatus,
     },
     InvalidDeploymentStatusTransition {
-        current: PipelineStatus,
-        transition_to: PipelineStatus,
+        storage_status: StorageStatus,
+        current_status: PipelineStatus,
+        new_status: PipelineStatus,
+    },
+    InvalidStorageStatusTransition {
+        current_status: StorageStatus,
+        new_status: StorageStatus,
+    },
+    StorageStatusImmutableUnlessStopped {
+        pipeline_status: PipelineStatus,
+        current_status: StorageStatus,
+        new_status: StorageStatus,
     },
     IllegalPipelineAction {
+        pipeline_status: PipelineStatus,
+        current_desired_status: PipelineDesiredStatus,
+        new_desired_status: PipelineDesiredStatus,
         hint: String,
-        status: PipelineStatus,
-        desired_status: PipelineDesiredStatus,
-        requested_desired_status: PipelineDesiredStatus,
     },
     TlsConnection {
         hint: String,
@@ -192,6 +209,12 @@ impl DBError {
     }
     pub fn invalid_desired_pipeline_status(status: String) -> Self {
         Self::InvalidDesiredPipelineStatus {
+            status,
+            backtrace: Backtrace::capture(),
+        }
+    }
+    pub fn invalid_storage_status(status: String) -> Self {
+        Self::InvalidStorageStatus {
             status,
             backtrace: Backtrace::capture(),
         }
@@ -308,6 +331,20 @@ where
     ser.end()
 }
 
+fn serialize_invalid_storage_status<S>(
+    status: &String,
+    backtrace: &Backtrace,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    let mut ser = serializer.serialize_struct("InvalidStorageStatus", 2)?;
+    ser.serialize_field("status", &status.to_string())?;
+    ser.serialize_field("backtrace", &backtrace.to_string())?;
+    ser.end()
+}
+
 fn serialize_unique_key_violation<S>(
     constraint: &&str,
     backtrace: &Backtrace,
@@ -396,6 +433,9 @@ impl Display for DBError {
                     "String '{status}' is not a valid desired deployment status"
                 )
             }
+            DBError::InvalidStorageStatus { status, .. } => {
+                write!(f, "String '{status}' is not a valid storage status")
+            }
             DBError::InvalidJsonData { data, error, .. } => {
                 write!(
                     f,
@@ -429,10 +469,10 @@ impl Display for DBError {
             DBError::InvalidProgramError { value, error } => {
                 write!(f, "JSON for 'program_error' field:\n{value:#}\n\n... is not valid due to: {error}")
             }
-            DBError::EditNotAllowedWhileSuspendedError { not_allowed } => {
+            DBError::EditRestrictedToClearedStorage { not_allowed } => {
                 write!(
                     f,
-                    "The following edits are not allowed while suspended: {}",
+                    "The following pipeline edits are not allowed while storage is not cleared: {}",
                     not_allowed.join(", ")
                 )
             }
@@ -497,17 +537,14 @@ impl Display for DBError {
             DBError::UnknownPipelineName { pipeline_name } => {
                 write!(f, "Unknown pipeline name '{pipeline_name}'")
             }
-            DBError::CannotUpdateNonShutdownPipeline => {
-                write!(f, "Cannot update a pipeline which is not fully shutdown. Shutdown the pipeline first by invoking the '/shutdown' endpoint.")
+            DBError::UpdateRestrictedToStopped => {
+                write!(f, "Pipeline can only be updated while stopped. Stop it first by invoking '/stop'.")
             }
-            DBError::CannotUpdateProgramStatusOfNonShutdownPipeline => {
-                write!(
-                    f,
-                    "Cannot update the program status of a pipeline which is not shutdown."
-                )
+            DBError::ProgramStatusUpdateRestrictedToStopped => {
+                write!(f, "Program status can only be updated while stopped.")
             }
-            DBError::CannotDeleteNonShutdownPipeline => {
-                write!(f, "Cannot delete a pipeline which is not fully shutdown. Shutdown the pipeline first by invoking the '/shutdown' endpoint.")
+            DBError::DeleteRestrictedToFullyStopped => {
+                write!(f, "Cannot delete a pipeline which is not fully stopped. Stop the pipeline first fully by invoking the '/stop' endpoint.")
             }
             DBError::CannotRenameNonExistingPipeline => {
                 write!(f, "The pipeline name in the request body does not match the one provided in the URL path. This is not allowed when no pipeline with the name provided in the URL path exists.")
@@ -546,36 +583,63 @@ impl Display for DBError {
                 )
             }
             DBError::InvalidProgramStatusTransition {
-                current,
-                transition_to,
+                current_status,
+                new_status,
             } => {
                 write!(
                     f,
-                    "Cannot transition from program status '{current:?}' to '{transition_to:?}'"
+                    "Cannot transition from program status '{current_status}' to '{new_status}'"
                 )
             }
             DBError::InvalidDeploymentStatusTransition {
-                current,
-                transition_to,
+                storage_status: current_storage_status,
+                current_status,
+                new_status,
             } => {
                 write!(
                     f,
-                    "Cannot transition from deployment status '{current:?}' to '{transition_to:?}'"
+                    "Cannot transition from deployment status '{current_status}' (storage status: '{current_storage_status}') to '{new_status}'"
+                )
+            }
+            DBError::InvalidStorageStatusTransition {
+                current_status,
+                new_status,
+            } => {
+                write!(
+                    f,
+                    "Cannot transition from storage status '{current_status}' to '{new_status}'"
+                )
+            }
+            DBError::StorageStatusImmutableUnlessStopped {
+                pipeline_status,
+                current_status,
+                new_status,
+            } => {
+                write!(
+                    f,
+                    "Cannot transition storage status from '{current_status}' to '{new_status}' with pipeline status '{pipeline_status}'. \
+                    Storage status cannot be changed unless the pipeline is stopped."
                 )
             }
             DBError::IllegalPipelineAction {
+                pipeline_status,
+                current_desired_status,
+                new_desired_status,
                 hint,
-                status,
-                desired_status,
-                requested_desired_status,
             } => {
                 write!(
                     f,
-                    "Deployment status (current: '{status:?}', desired: '{desired_status:?}') cannot have desired changed to '{requested_desired_status:?}'. {hint}"
+                    "Deployment status (current: '{pipeline_status:?}', desired: '{current_desired_status:?}') cannot have desired changed to '{new_desired_status:?}'. {hint}"
                 )
             }
             DBError::TlsConnection { hint, .. } => {
                 write!(f, "Unable to setup TLS connection to the database: {hint}")
+            }
+            DBError::DeleteRestrictedToClearedStorage => {
+                write!(
+                    f,
+                    "Cannot delete pipeline unless its storage is cleared. Clear storage first using `/clear`."
+                )
             }
         }
     }
@@ -592,14 +656,15 @@ impl DetailedError for DBError {
             Self::InvalidProgramStatus { .. } => Cow::from("InvalidProgramStatus"),
             Self::InvalidPipelineStatus { .. } => Cow::from("InvalidPipelineStatus"),
             Self::InvalidDesiredPipelineStatus { .. } => Cow::from("InvalidDesiredPipelineStatus"),
+            Self::InvalidStorageStatus { .. } => Cow::from("InvalidStorageStatus"),
             Self::InvalidJsonData { .. } => Cow::from("InvalidJsonData"),
             Self::InvalidRuntimeConfig { .. } => Cow::from("InvalidRuntimeConfig"),
             Self::InvalidProgramConfig { .. } => Cow::from("InvalidProgramConfig"),
             Self::InvalidProgramInfo { .. } => Cow::from("InvalidProgramInfo"),
             Self::InvalidDeploymentConfig { .. } => Cow::from("InvalidDeploymentConfig"),
             Self::InvalidProgramError { .. } => Cow::from("InvalidProgramError"),
-            Self::EditNotAllowedWhileSuspendedError { .. } => {
-                Cow::from("EditNotAllowedWhileSuspendedError")
+            Self::EditRestrictedToClearedStorage { .. } => {
+                Cow::from("EditRestrictedToClearedStorage")
             }
             Self::InvalidErrorResponse { .. } => Cow::from("InvalidErrorResponse"),
             Self::FailedToSerializeRuntimeConfig { .. } => {
@@ -626,14 +691,12 @@ impl DetailedError for DBError {
             Self::InvalidApiKey => Cow::from("InvalidApiKey"),
             Self::UnknownPipeline { .. } => Cow::from("UnknownPipeline"),
             Self::UnknownPipelineName { .. } => Cow::from("UnknownPipelineName"),
-            Self::CannotUpdateNonShutdownPipeline { .. } => {
-                Cow::from("CannotUpdateNonShutdownPipeline")
+            Self::UpdateRestrictedToStopped { .. } => Cow::from("UpdateRestrictedToStopped"),
+            Self::ProgramStatusUpdateRestrictedToStopped { .. } => {
+                Cow::from("ProgramStatusUpdateRestrictedToStopped")
             }
-            Self::CannotUpdateProgramStatusOfNonShutdownPipeline { .. } => {
-                Cow::from("CannotUpdateProgramStatusOfNonShutdownPipeline")
-            }
-            Self::CannotDeleteNonShutdownPipeline { .. } => {
-                Cow::from("CannotDeleteNonShutdownPipeline")
+            Self::DeleteRestrictedToFullyStopped { .. } => {
+                Cow::from("DeleteRestrictedToFullyStopped")
             }
             Self::CannotRenameNonExistingPipeline { .. } => {
                 Cow::from("CannotRenameNonExistingPipeline")
@@ -652,8 +715,15 @@ impl DetailedError for DBError {
             Self::InvalidDeploymentStatusTransition { .. } => {
                 Cow::from("InvalidDeploymentStatusTransition")
             }
+            Self::InvalidStorageStatusTransition { .. } => {
+                Cow::from("InvalidStorageStatusTransition")
+            }
+            Self::StorageStatusImmutableUnlessStopped { .. } => {
+                Cow::from("StorageStatusImmutableUnlessStopped")
+            }
             Self::IllegalPipelineAction { .. } => Cow::from("IllegalPipelineAction"),
             Self::TlsConnection { .. } => Cow::from("TlsConnection"),
+            Self::DeleteRestrictedToClearedStorage => Cow::from("DeleteRestrictedToClearedStorage"),
         }
     }
 }
@@ -671,13 +741,14 @@ impl ResponseError for DBError {
             Self::InvalidProgramStatus { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::InvalidPipelineStatus { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::InvalidDesiredPipelineStatus { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::InvalidStorageStatus { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::InvalidJsonData { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::InvalidRuntimeConfig { .. } => StatusCode::BAD_REQUEST,
             Self::InvalidProgramConfig { .. } => StatusCode::BAD_REQUEST,
             Self::InvalidProgramInfo { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::InvalidDeploymentConfig { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::InvalidProgramError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
-            Self::EditNotAllowedWhileSuspendedError { .. } => StatusCode::BAD_REQUEST,
+            Self::EditRestrictedToClearedStorage { .. } => StatusCode::BAD_REQUEST,
             Self::InvalidErrorResponse { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::FailedToSerializeRuntimeConfig { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::FailedToSerializeProgramConfig { .. } => StatusCode::INTERNAL_SERVER_ERROR,
@@ -695,9 +766,9 @@ impl ResponseError for DBError {
             Self::InvalidApiKey => StatusCode::UNAUTHORIZED,
             Self::UnknownPipeline { .. } => StatusCode::NOT_FOUND,
             Self::UnknownPipelineName { .. } => StatusCode::NOT_FOUND,
-            Self::CannotUpdateNonShutdownPipeline { .. } => StatusCode::BAD_REQUEST,
-            Self::CannotUpdateProgramStatusOfNonShutdownPipeline { .. } => StatusCode::BAD_REQUEST,
-            Self::CannotDeleteNonShutdownPipeline { .. } => StatusCode::BAD_REQUEST,
+            Self::UpdateRestrictedToStopped { .. } => StatusCode::BAD_REQUEST,
+            Self::ProgramStatusUpdateRestrictedToStopped { .. } => StatusCode::BAD_REQUEST,
+            Self::DeleteRestrictedToFullyStopped { .. } => StatusCode::BAD_REQUEST,
             Self::CannotRenameNonExistingPipeline { .. } => StatusCode::BAD_REQUEST,
             Self::OutdatedProgramVersion { .. } => StatusCode::CONFLICT,
             Self::OutdatedPipelineVersion { .. } => StatusCode::CONFLICT,
@@ -705,8 +776,11 @@ impl ResponseError for DBError {
             Self::TransitionRequiresCompiledProgram { .. } => StatusCode::INTERNAL_SERVER_ERROR, // Runner error
             Self::InvalidProgramStatusTransition { .. } => StatusCode::INTERNAL_SERVER_ERROR, // Compiler error
             Self::InvalidDeploymentStatusTransition { .. } => StatusCode::INTERNAL_SERVER_ERROR, // Runner error
+            Self::StorageStatusImmutableUnlessStopped { .. } => StatusCode::BAD_REQUEST,
             Self::IllegalPipelineAction { .. } => StatusCode::BAD_REQUEST, // User trying to set a deployment desired status which cannot be performed currently
             Self::TlsConnection { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            DBError::DeleteRestrictedToClearedStorage => StatusCode::BAD_REQUEST,
+            DBError::InvalidStorageStatusTransition { .. } => StatusCode::BAD_REQUEST,
         }
     }
 

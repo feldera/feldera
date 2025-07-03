@@ -54,21 +54,20 @@ pub enum RunnerError {
     },
 
     // The pipeline runner implementation encounters an error
-    RunnerDeploymentProvisionError {
+    RunnerProvisionError {
         error: String,
     },
-    RunnerDeploymentCheckError {
+    RunnerCheckError {
         error: String,
     },
-    RunnerSuspendComputeError {
+    RunnerStopError {
         error: String,
     },
-    RunnerDeploymentShutdownError {
+    RunnerClearError {
         error: String,
     },
 
     // Interaction with the pipeline runner
-    RunnerInteractionShutdown,
     RunnerInteractionUnreachable {
         error: String,
     },
@@ -131,17 +130,10 @@ impl DetailedError for RunnerError {
             RunnerError::AutomatonImpossibleDesiredStatus { .. } => {
                 Cow::from("AutomatonImpossibleDesiredStatus")
             }
-            RunnerError::RunnerDeploymentProvisionError { .. } => {
-                Cow::from("RunnerDeploymentProvisionError")
-            }
-            RunnerError::RunnerDeploymentCheckError { .. } => {
-                Cow::from("RunnerDeploymentCheckError")
-            }
-            RunnerError::RunnerSuspendComputeError { .. } => Cow::from("RunnerSuspendComputeError"),
-            RunnerError::RunnerDeploymentShutdownError { .. } => {
-                Cow::from("RunnerDeploymentShutdownError")
-            }
-            RunnerError::RunnerInteractionShutdown => Cow::from("RunnerInteractionShutdown"),
+            RunnerError::RunnerProvisionError { .. } => Cow::from("RunnerProvisionError"),
+            RunnerError::RunnerCheckError { .. } => Cow::from("RunnerCheckError"),
+            RunnerError::RunnerStopError { .. } => Cow::from("RunnerStopError"),
+            RunnerError::RunnerClearError { .. } => Cow::from("RunnerClearError"),
             RunnerError::RunnerInteractionUnreachable { .. } => {
                 Cow::from("RunnerInteractionUnreachable")
             }
@@ -196,7 +188,7 @@ impl Display for RunnerError {
                     f,
                     "The runtime configuration:\n{value:#}\n\n... is not valid due to: {error}.\n\n\
                     This indicates a backward-incompatible platform upgrade occurred. \
-                    Shut down and update the 'runtime_config' field of the pipeline to resolve this."
+                    Stop and update the 'runtime_config' field of the pipeline to resolve this."
                 )
             }
             Self::AutomatonInvalidProgramInfo { value, error } => {
@@ -204,7 +196,7 @@ impl Display for RunnerError {
                     f,
                     "The program information:\n{value:#}\n\n... is not valid due to: {error}.\n\n\
                     This indicates a backward-incompatible platform upgrade occurred. \
-                    Shut down and recompile the pipeline to resolve this."
+                    Stop and recompile the pipeline to resolve this."
                 )
             }
             Self::AutomatonInvalidDeploymentConfig { value, error } => {
@@ -212,7 +204,7 @@ impl Display for RunnerError {
                     f,
                     "The deployment configuration:\n{value:#}\n\n... is not valid due to: {error}.\n\n\
                     This indicates a backward-incompatible platform upgrade occurred. \
-                    Shut down and restart the pipeline to resolve this."
+                    Stop and restart the pipeline to resolve this."
                 )
             }
             Self::AutomatonFailedToSerializeDeploymentConfig { error } => {
@@ -228,7 +220,7 @@ impl Display for RunnerError {
                 write!(
                     f,
                     "Unable to provision pipeline because the pipeline platform version ({pipeline_platform_version}) \
-                    differs from the runner platform version ({runner_platform_version}) -- shut down and restart the pipeline to resolve this"
+                    differs from the runner platform version ({runner_platform_version}) -- stop and restart the pipeline to resolve this"
                 )
             }
             Self::AutomatonProvisioningTimeout { timeout } => {
@@ -287,29 +279,22 @@ impl Display for RunnerError {
                     "
                 }
             }
-            Self::RunnerDeploymentProvisionError { error } => {
-                write!(f, "Deployment provision operation failed: {error}")
+            Self::RunnerProvisionError { error } => {
+                write!(f, "Pipeline provision failed: {error}")
             }
-            Self::RunnerDeploymentCheckError { error } => {
-                write!(f, "Deployment check failed: one or more deployment resources encountered a fatal error.\n\n{error}")
+            Self::RunnerCheckError { error } => {
+                write!(f, "Pipeline check failed: compute and/or storage resources encountered a fatal error.\n\n{error}")
             }
-            Self::RunnerSuspendComputeError { error } => {
-                write!(f, "Compute suspend operation failed: {error}")
+            Self::RunnerStopError { error } => {
+                write!(f, "Pipeline stop failed (will retry): {error}")
             }
-            Self::RunnerDeploymentShutdownError { error } => {
-                write!(f, "Deployment shutdown failed (will retry): {error}")
+            Self::RunnerClearError { error } => {
+                write!(f, "Pipeline storage clear failed (will retry): {error}")
             }
             Self::RunnerInteractionUnreachable { error } => {
                 write!(
                     f,
                     "Unable to reach pipeline runner to interact due to: {error}"
-                )
-            }
-            Self::RunnerInteractionShutdown => {
-                write!(
-                    f,
-                    "Unable to interact with pipeline runner because the deployment status is 'shutdown' \
-                    -- start the pipeline or wait if it has already been started"
                 )
             }
             Self::RunnerInteractionLogFollowRequestChannelFull => {
@@ -323,21 +308,17 @@ impl Display for RunnerError {
                 desired_status,
             } => {
                 let resolution = match (status, desired_status) {
-                    (PipelineStatus::Shutdown, PipelineDesiredStatus::Shutdown) => {
+                    (PipelineStatus::Stopped, PipelineDesiredStatus::Stopped) => {
                         "start the pipeline"
                     }
-                    (PipelineStatus::Failed, PipelineDesiredStatus::Running | PipelineDesiredStatus::Paused | PipelineDesiredStatus::Suspended) => {
-                        "investigate the reason why the pipeline failed by looking at the error and logs, \
-                        shut down the pipeline to clear the 'failed' state, fix any issues, and start again afterwards"
-                    }
                     (_, PipelineDesiredStatus::Suspended) => {
-                        "wait for the pipeline to become suspended and then start again"
+                        "wait for the pipeline to suspend and stop, and then start again"
                     }
                     (_, PipelineDesiredStatus::Running | PipelineDesiredStatus::Paused) => {
                         "wait for the pipeline to become running or paused"
                     }
-                    (_, PipelineDesiredStatus::Shutdown) => {
-                        "wait for the pipeline to become shutdown and start again afterwards"
+                    (_, PipelineDesiredStatus::Stopped) => {
+                        "wait for the pipeline to stop and start again afterwards"
                     }
                 };
                 write!(
@@ -389,11 +370,10 @@ impl ResponseError for RunnerError {
             Self::AutomatonSuspendingComputeTimeout { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::AutomatonAfterInitializationBecameRunning => StatusCode::INTERNAL_SERVER_ERROR,
             Self::AutomatonImpossibleDesiredStatus { .. } => StatusCode::INTERNAL_SERVER_ERROR,
-            Self::RunnerDeploymentProvisionError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
-            Self::RunnerDeploymentCheckError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
-            Self::RunnerSuspendComputeError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
-            Self::RunnerDeploymentShutdownError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
-            Self::RunnerInteractionShutdown { .. } => StatusCode::SERVICE_UNAVAILABLE,
+            Self::RunnerProvisionError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::RunnerCheckError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::RunnerStopError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::RunnerClearError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::RunnerInteractionUnreachable { .. } => StatusCode::SERVICE_UNAVAILABLE,
             Self::RunnerInteractionLogFollowRequestChannelFull { .. } => {
                 StatusCode::SERVICE_UNAVAILABLE

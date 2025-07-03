@@ -466,9 +466,10 @@ pub(crate) async fn bench(client: Client, format: OutputFormat, args: BenchmarkA
     // Stop pipeline if running and restart with recompile
     let _ = Box::pin(crate::pipeline(
         OutputFormat::Text,
-        PipelineAction::Shutdown {
+        PipelineAction::Stop {
             name: pipeline_name.clone(),
             no_wait: false,
+            no_checkpoint: true,
         },
         client.clone(),
     ))
@@ -495,9 +496,10 @@ pub(crate) async fn bench(client: Client, format: OutputFormat, args: BenchmarkA
     // Shutdown the pipeline after collecting metrics
     let _ = Box::pin(crate::pipeline(
         OutputFormat::Text,
-        PipelineAction::Shutdown {
+        PipelineAction::Stop {
             name: pipeline_name.clone(),
             no_wait: true,
+            no_checkpoint: true,
         },
         client.clone(),
     ))

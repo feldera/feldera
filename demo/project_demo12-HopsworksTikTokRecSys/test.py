@@ -8,7 +8,7 @@ from typing import Dict, Any, List
 
 def process_input(p: Pipeline, data: List[Dict[str, Any]]):
     p.input_pandas("interactions", pd.DataFrame(data))
-    p.wait_for_completion(shutdown=False)
+    p.wait_for_completion(force_stop=False)
 
 
 code = generate_program(None, None)
@@ -143,4 +143,4 @@ print("user_agg")
 print(huser_agg.to_pandas())
 
 print("Success")
-pipeline.shutdown()
+pipeline.stop(force=True)
