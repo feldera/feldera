@@ -246,9 +246,9 @@ class StorageStatus(Enum):
     INUSE = 1
     """
     The pipeline was (attempted to be) started before, transitioning from `STOPPED`
-    to `PROVISIONING`, which caused the storage status to become `IN_USE`.
+    to `PROVISIONING`, which caused the storage status to become `INUSE`.
 
-    Being in the `IN_USE` state restricts certain edits while the pipeline is `STOPPED`.
+    Being in the `INUSE` state restricts certain edits while the pipeline is `STOPPED`.
 
     The pipeline remains in this state until the user invokes `/clear`, transitioning
     it to `CLEARING`.

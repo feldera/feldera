@@ -759,7 +759,7 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
         storage.
         """
 
-        if self.storage_status() == StorageStatus.IN_USE:
+        if self.storage_status() == StorageStatus.INUSE:
             self.client.clear_storage(self.name)
 
     @property
