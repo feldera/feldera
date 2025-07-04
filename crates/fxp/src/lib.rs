@@ -46,9 +46,78 @@ mod rkyv_impl;
 /// `x` as `x * 10**P`.  This limits `S` to 38 because `10**38 ≤ 2**127 - 1 <
 /// 10**39`.  A single `i64` would be sufficient for `S ≤ 18`, and a single
 /// `i32` for `S ≤ 9`, but the implementation does not optimize for those cases.
-#[derive(Copy, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Copy, Clone, Default, Eq, Ord, Hash)]
 #[cfg_attr(feature = "size_of", derive(size_of::SizeOf))]
 pub struct Fixed<const P: usize, const S: usize>(i128);
+
+impl<const P0: usize, const S0: usize, const P1: usize, const S1: usize> PartialEq<Fixed<P1, S1>>
+    for Fixed<P0, S0>
+{
+    fn eq(&self, other: &Fixed<P1, S1>) -> bool {
+        match S0.cmp(&S1) {
+            Ordering::Less => I256::from_product(self.0, pow10(S1 - S0)) == I256::from(other.0),
+            Ordering::Equal => self.0 == other.0,
+            Ordering::Greater => I256::from(self.0) == I256::from_product(other.0, pow10(S0 - S1)),
+        }
+    }
+}
+
+macro_rules! partial_eq_int {
+    ($type_name:ty) => {
+        impl<const P0: usize, const S0: usize> PartialEq<$type_name> for Fixed<P0, S0> {
+            fn eq(&self, other: &$type_name) -> bool {
+                self.0 % Self::scale() == 0 && self.0 / Self::scale() == *other as i128
+            }
+        }
+    };
+}
+partial_eq_int!(i8);
+partial_eq_int!(i16);
+partial_eq_int!(i32);
+partial_eq_int!(i64);
+partial_eq_int!(i128);
+partial_eq_int!(isize);
+partial_eq_int!(u8);
+partial_eq_int!(u16);
+partial_eq_int!(u32);
+partial_eq_int!(u64);
+
+impl<const P0: usize, const S0: usize> PartialEq<u128> for Fixed<P0, S0> {
+    fn eq(&self, other: &u128) -> bool {
+        self.0 >= 0
+            && self.0 % Self::scale() == 0
+            && (self.0 / Self::scale()).cast_unsigned() == *other
+    }
+}
+
+impl<const P0: usize, const S0: usize> PartialEq<usize> for Fixed<P0, S0> {
+    fn eq(&self, other: &usize) -> bool {
+        self.0 >= 0
+            && self.0 % Self::scale() == 0
+            && (self.0 / Self::scale()).cast_unsigned() == *other as u128
+    }
+}
+
+#[inline(never)]
+pub fn eq_i32(f: Fixed<38, 0>, x: i32) -> bool {
+    f == x
+}
+
+impl<const P0: usize, const S0: usize, const P1: usize, const S1: usize> PartialOrd<Fixed<P1, S1>>
+    for Fixed<P0, S0>
+{
+    fn partial_cmp(&self, other: &Fixed<P1, S1>) -> Option<Ordering> {
+        match S0.cmp(&S1) {
+            Ordering::Less => {
+                I256::from_product(self.0, pow10(S1 - S0)).partial_cmp(&I256::from(other.0))
+            }
+            Ordering::Equal => self.0.partial_cmp(&other.0),
+            Ordering::Greater => {
+                I256::from(self.0).partial_cmp(&I256::from_product(other.0, pow10(S0 - S1)))
+            }
+        }
+    }
+}
 
 /// A maximum-precision `Fixed` with no decimal places.
 pub type FixedInteger = Fixed<38, 0>;
@@ -905,7 +974,7 @@ impl<const P0: usize, const S0: usize> Fixed<P0, S0> {
         self,
         other: Fixed<P1, S1>,
     ) -> Option<Fixed<P2, S2>> {
-        if other == Fixed::ZERO {
+        if other == 0 {
             None
         } else {
             let shift_left = (S1 + S2).saturating_sub(S0);
@@ -1601,7 +1670,7 @@ mod test {
             let af: Fixed<10, 2> = Fixed(a);
             for b in -999..=999 {
                 let bf: Fixed<10, 2> = Fixed(b);
-                assert_eq!(af * bf, Fixed(a * b / 100));
+                assert_eq!(af * bf, Fixed::<10, 2>(a * b / 100));
             }
         }
 
@@ -1624,11 +1693,11 @@ mod test {
             for b in -999..=999 {
                 let bf: Fixed<10, 3> = Fixed(b);
                 let cf: Fixed<10, 5> = af.checked_mul_generic(bf).unwrap();
-                assert_eq!(cf, Fixed(a * b));
+                assert_eq!(cf, Fixed::<10, 5>(a * b));
                 let df: Fixed<10, 6> = af.checked_mul_generic(bf).unwrap();
-                assert_eq!(df, Fixed(a * b * 10));
+                assert_eq!(df, Fixed::<10, 6>(a * b * 10));
                 let ef: Fixed<10, 0> = af.checked_mul_generic(bf).unwrap();
-                assert_eq!(ef, Fixed(a * b / 100_000));
+                assert_eq!(ef, Fixed::<10, 0>(a * b / 100_000));
             }
         }
     }
@@ -1641,7 +1710,9 @@ mod test {
         assert_eq!(f(1.23) / f(-2.34), f(-0.52));
         assert_eq!(f(-1.23) / f(-2.34), f(0.52));
         assert_eq!(
-            f38_0(1.0).checked_div_generic(f38_0(7.0)).unwrap(),
+            f38_0(1.0)
+                .checked_div_generic::<38, 0, 38, 38>(f38_0(7.0))
+                .unwrap(),
             f38_38("0.14285714285714285714285714285714285714")
         );
 
@@ -1683,11 +1754,11 @@ mod test {
                 if b != 0 {
                     let bf: Fixed<10, 3> = Fixed(b);
                     let cf: Fixed<10, 5> = af.checked_div_generic(bf).unwrap();
-                    assert_eq!(cf, Fixed(a * 1_000_000 / b));
+                    assert_eq!(cf, Fixed::<10, 5>(a * 1_000_000 / b));
                     let df: Fixed<10, 6> = af.checked_div_generic(bf).unwrap();
-                    assert_eq!(df, Fixed(a * 10_000_000 / b));
+                    assert_eq!(df, Fixed::<10, 6>(a * 10_000_000 / b));
                     let ef: Fixed<10, 0> = af.checked_div_generic(bf).unwrap();
-                    assert_eq!(ef, Fixed(a * 10 / b));
+                    assert_eq!(ef, Fixed::<10, 0>(a * 10 / b));
                 }
             }
         }
@@ -1706,7 +1777,7 @@ mod test {
             let af: Fixed<10, 2> = Fixed(a);
             for b in -999..=999 {
                 let bf: Fixed<10, 2> = Fixed(b);
-                assert_eq!(af + bf, Fixed(a + b));
+                assert_eq!(af + bf, Fixed::<10, 2>(a + b));
             }
         }
 
@@ -1727,13 +1798,29 @@ mod test {
             for b in -999..=999 {
                 let bf: Fixed<10, 3> = Fixed(b);
                 let cf: Fixed<10, 5> = af.checked_add_generic(bf).unwrap();
-                assert_eq!(cf, Fixed(a * 1000 + b * 100), "{af} + {bf} ?= {cf}");
+                assert_eq!(
+                    cf,
+                    Fixed::<10, 5>(a * 1000 + b * 100),
+                    "{af} + {bf} ?= {cf}"
+                );
                 let cf: Fixed<10, 5> = bf.checked_add_generic(af).unwrap();
-                assert_eq!(cf, Fixed(a * 1000 + b * 100), "{bf} + {af} ?= {cf}");
+                assert_eq!(
+                    cf,
+                    Fixed::<10, 5>(a * 1000 + b * 100),
+                    "{bf} + {af} ?= {cf}"
+                );
                 let df: Fixed<10, 6> = af.checked_add_generic(bf).unwrap();
-                assert_eq!(df, Fixed(a * 10_000 + b * 1000), "{af} + {bf} ?= {df}");
+                assert_eq!(
+                    df,
+                    Fixed::<10, 6>(a * 10_000 + b * 1000),
+                    "{af} + {bf} ?= {df}"
+                );
                 let ef: Fixed<10, 0> = af.checked_add_generic(bf).unwrap();
-                assert_eq!(ef, Fixed((a * 10 + b) / 1000), "{af} + {bf} ?= {ef}");
+                assert_eq!(
+                    ef,
+                    Fixed::<10, 0>((a * 10 + b) / 1000),
+                    "{af} + {bf} ?= {ef}"
+                );
             }
         }
     }
@@ -1751,7 +1838,7 @@ mod test {
             let af: Fixed<10, 2> = Fixed(a);
             for b in -999..=999 {
                 let bf: Fixed<10, 2> = Fixed(b);
-                assert_eq!(af - bf, Fixed(a - b));
+                assert_eq!(af - bf, Fixed::<10, 2>(a - b));
             }
         }
 
@@ -1772,11 +1859,19 @@ mod test {
             for b in -999..=999 {
                 let bf: Fixed<10, 3> = Fixed(b);
                 let cf: Fixed<10, 5> = af.checked_sub_generic(bf).unwrap();
-                assert_eq!(cf, Fixed(a * 1000 - b * 100), "{af} - {bf} ?= {cf}");
+                assert_eq!(
+                    cf,
+                    Fixed::<10, 5>(a * 1000 - b * 100),
+                    "{af} - {bf} ?= {cf}"
+                );
                 let cf: Fixed<10, 5> = bf.checked_sub_generic(af).unwrap();
-                assert_eq!(cf, Fixed(b * 100 - a * 1000), "{bf} - {af} ?= {cf}");
+                assert_eq!(
+                    cf,
+                    Fixed::<10, 5>(b * 100 - a * 1000),
+                    "{bf} - {af} ?= {cf}"
+                );
                 let df: Fixed<10, 6> = af.checked_sub_generic(bf).unwrap();
-                assert_eq!(df, Fixed(a * 10_000 - b * 1000));
+                assert_eq!(df, Fixed::<10, 6>(a * 10_000 - b * 1000));
             }
         }
     }
@@ -1898,34 +1993,34 @@ mod test {
 
     #[test]
     fn constants() {
-        assert_eq!(Fixed::<5, 0>::MAX, Fixed(99999));
-        assert_eq!(Fixed::<5, 0>::MIN, Fixed(-99999));
-        assert_eq!(Fixed::<5, 0>::ZERO, Fixed(0));
-        assert_eq!(Fixed::<5, 0>::ONE, Fixed(1));
+        assert_eq!(Fixed::<5, 0>::MAX, Fixed::<5, 0>(99999));
+        assert_eq!(Fixed::<5, 0>::MIN, Fixed::<5, 0>(-99999));
+        assert_eq!(Fixed::<5, 0>::ZERO, Fixed::<5, 0>(0));
+        assert_eq!(Fixed::<5, 0>::ONE, Fixed::<5, 0>(1));
 
-        assert_eq!(Fixed::<5, 1>::MAX, Fixed(99999));
-        assert_eq!(Fixed::<5, 1>::MIN, Fixed(-99999));
-        assert_eq!(Fixed::<5, 1>::ZERO, Fixed(0));
-        assert_eq!(Fixed::<5, 1>::ONE, Fixed(10));
+        assert_eq!(Fixed::<5, 1>::MAX, Fixed::<5, 1>(99999));
+        assert_eq!(Fixed::<5, 1>::MIN, Fixed::<5, 1>(-99999));
+        assert_eq!(Fixed::<5, 1>::ZERO, Fixed::<5, 1>(0));
+        assert_eq!(Fixed::<5, 1>::ONE, Fixed::<5, 1>(10));
 
-        assert_eq!(Fixed::<5, 2>::MAX, Fixed(99999));
-        assert_eq!(Fixed::<5, 2>::MIN, Fixed(-99999));
-        assert_eq!(Fixed::<5, 2>::ZERO, Fixed(0));
-        assert_eq!(Fixed::<5, 2>::ONE, Fixed(100));
+        assert_eq!(Fixed::<5, 2>::MAX, Fixed::<5, 2>(99999));
+        assert_eq!(Fixed::<5, 2>::MIN, Fixed::<5, 2>(-99999));
+        assert_eq!(Fixed::<5, 2>::ZERO, Fixed::<5, 2>(0));
+        assert_eq!(Fixed::<5, 2>::ONE, Fixed::<5, 2>(100));
 
-        assert_eq!(Fixed::<5, 3>::MAX, Fixed(99999));
-        assert_eq!(Fixed::<5, 3>::MIN, Fixed(-99999));
-        assert_eq!(Fixed::<5, 3>::ZERO, Fixed(0));
-        assert_eq!(Fixed::<5, 3>::ONE, Fixed(1000));
+        assert_eq!(Fixed::<5, 3>::MAX, Fixed::<5, 3>(99999));
+        assert_eq!(Fixed::<5, 3>::MIN, Fixed::<5, 3>(-99999));
+        assert_eq!(Fixed::<5, 3>::ZERO, Fixed::<5, 3>(0));
+        assert_eq!(Fixed::<5, 3>::ONE, Fixed::<5, 3>(1000));
 
-        assert_eq!(Fixed::<5, 4>::MAX, Fixed(99999));
-        assert_eq!(Fixed::<5, 4>::MIN, Fixed(-99999));
-        assert_eq!(Fixed::<5, 4>::ZERO, Fixed(0));
-        assert_eq!(Fixed::<5, 4>::ONE, Fixed(10000));
+        assert_eq!(Fixed::<5, 4>::MAX, Fixed::<5, 4>(99999));
+        assert_eq!(Fixed::<5, 4>::MIN, Fixed::<5, 4>(-99999));
+        assert_eq!(Fixed::<5, 4>::ZERO, Fixed::<5, 4>(0));
+        assert_eq!(Fixed::<5, 4>::ONE, Fixed::<5, 4>(10000));
 
-        assert_eq!(Fixed::<5, 5>::MAX, Fixed(99999));
-        assert_eq!(Fixed::<5, 5>::MIN, Fixed(-99999));
-        assert_eq!(Fixed::<5, 5>::ZERO, Fixed(0));
+        assert_eq!(Fixed::<5, 5>::MAX, Fixed::<5, 5>(99999));
+        assert_eq!(Fixed::<5, 5>::MIN, Fixed::<5, 5>(-99999));
+        assert_eq!(Fixed::<5, 5>::ZERO, Fixed::<5, 5>(0));
         // This would panic at compile time.  See [super::_invalid_constant_test].
         //let _ = Fixed::<5, 5>::ONE;
     }
@@ -2008,9 +2103,9 @@ mod test {
 
     #[test]
     fn sign() {
-        assert_eq!(f(-0.1).sign(), Fixed::try_from(-1).unwrap());
-        assert_eq!(f(0.0).sign(), Fixed::try_from(0).unwrap());
-        assert_eq!(f(0.5).sign(), Fixed::try_from(1).unwrap());
+        assert_eq!(f(-0.1).sign(), Fixed::<1, 0>::try_from(-1).unwrap());
+        assert_eq!(f(0.0).sign(), Fixed::<1, 0>::try_from(0).unwrap());
+        assert_eq!(f(0.5).sign(), Fixed::<1, 0>::try_from(1).unwrap());
     }
 
     #[test]
@@ -2026,7 +2121,7 @@ mod test {
         // General case.
         for a in 0..=999 {
             let af: Fixed<10, 2> = Fixed(a);
-            assert_eq!(af.sqrt(), Fixed((a * 100).isqrt()));
+            assert_eq!(af.sqrt(), Fixed::<10, 2>((a * 100).isqrt()));
         }
     }
 

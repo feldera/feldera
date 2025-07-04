@@ -1,6 +1,7 @@
 //! Routines for 256-bit integer arithmetic.
 
 use std::{
+    cmp::Ordering,
     fmt::Debug,
     ops::{Add, Shr, Sub},
 };
@@ -239,7 +240,7 @@ impl I256 {
         }
     }
 
-    /// Shifts this value just enough gitis right that it fits in an `i128`.
+    /// Shifts this value just enough digits right that it fits in an `i128`.
     /// Returns the shifted value and the number of digits that were shifted.
     pub fn reduce_to_i128(self) -> (i128, usize) {
         // First reduce to the range of `u128`.
@@ -290,6 +291,31 @@ impl From<i128> for I256 {
             value: U256::from(value.unsigned_abs()),
             negative: value < 0,
         }
+    }
+}
+
+impl Eq for I256 {}
+
+impl PartialEq for I256 {
+    fn eq(&self, other: &Self) -> bool {
+        self.value == other.value && self.is_negative() == other.is_negative()
+    }
+}
+
+impl Ord for I256 {
+    fn cmp(&self, other: &Self) -> Ordering {
+        match (self.is_negative(), other.is_negative()) {
+            (false, false) => self.value.cmp(&other.value),
+            (true, true) => other.value.cmp(&self.value),
+            (true, false) => Ordering::Less,
+            (false, true) => Ordering::Greater,
+        }
+    }
+}
+
+impl PartialOrd for I256 {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
     }
 }
 
