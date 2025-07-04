@@ -138,7 +138,6 @@ public class DBSPChainOperator extends DBSPUnaryOperator {
         }
 
         public DBSPClosureExpression collapse(DBSPCompiler compiler) {
-            Utilities.enforce(this.computations.size() > 1);
             DBSPVariablePath inputVar;
             DBSPExpression currentArg;
             if (this.inputType.is(DBSPTypeZSet.class)) {
@@ -213,7 +212,9 @@ public class DBSPChainOperator extends DBSPUnaryOperator {
         @Override
         public String toString() {
             IndentStreamBuilder builder = new IndentStreamBuilder();
-            builder.append("Chain:[").increase();
+            builder.append("Chain[")
+                    .append(this.size())
+                    .append("]: [").increase();
             for (var op: this.computations)
                 builder.append(op.toString()).newline();
             builder.decrease().newline();
