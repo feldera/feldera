@@ -754,6 +754,22 @@ impl<const P: usize, const S: usize> Fixed<P, S> {
             None
         }
     }
+
+    /// Encodes this value in a form that can be later deserialized into a new
+    /// `Fixed` with possibly a different precision and scale.
+    pub fn encode(&self) -> (i128, u8) {
+        (self.0, S as u8)
+    }
+
+    /// Returns a new value from the serialized form returned by [encode].  If
+    /// successful, returns the original value from before serialization.  If `S
+    /// < scale`, then some trailing decimals are lost, by rounding toward zero.
+    /// Returns `None` if the value is out of range for this type.
+    ///
+    /// [encode]: Self::encode
+    pub fn decode(value: i128, scale: u8) -> Option<Self> {
+        Self::try_new_with_exponent(value, S as i32 - scale as i32)
+    }
 }
 
 impl<const P0: usize, const S0: usize> Fixed<P0, S0> {
