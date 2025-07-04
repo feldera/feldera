@@ -747,7 +747,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
             for (File c: toCompile) {
                 if (!c.getName().contains("grouped_orders.sql")) continue;
                 if (c.getName().contains("sql")) {
-                    // System.out.println("Compiling " + c);
+                    System.out.println("Compiling " + c);
                     String sql = Utilities.readFile(c.getPath());
                     this.compileRustTestCase(sql);
                 }
