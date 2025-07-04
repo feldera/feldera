@@ -243,7 +243,7 @@ class StorageStatus(Enum):
     In this state, the pipeline has no storage resources bound to it.
     """
 
-    IN_USE = 1
+    INUSE = 1
     """
     The pipeline was (attempted to be) started before, transitioning from `STOPPED`
     to `PROVISIONING`, which caused the storage status to become `IN_USE`.
