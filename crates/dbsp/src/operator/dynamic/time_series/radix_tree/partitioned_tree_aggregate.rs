@@ -50,6 +50,7 @@ impl<TS: DBData + PrimInt, A: DataTrait + ?Sized, B> PartitionedRadixTreeBatch<T
 {
 }
 
+#[allow(dead_code)]
 pub trait PartitionedRadixTreeReader<TS: DBData + PrimInt, A: DataTrait + ?Sized>:
     PartitionedBatchReader<DynPrefix<TS>, DynTreeNode<TS, A>, R = DynZWeight>
 {
