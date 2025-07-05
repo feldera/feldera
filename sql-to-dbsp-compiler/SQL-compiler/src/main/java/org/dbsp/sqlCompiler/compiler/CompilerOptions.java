@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.compiler;
 
+import com.beust.jcommander.DynamicParameter;
 import com.beust.jcommander.Parameter;
 import com.beust.jcommander.ParametersDelegate;
 import org.apache.calcite.avatica.util.Casing;
@@ -34,6 +35,8 @@ import org.dbsp.util.IValidate;
 import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
+import java.util.HashMap;
+import java.util.Map;
 
 /** Command-line options for the SQL compiler */
 @SuppressWarnings("CanBeFinal")
@@ -154,11 +157,9 @@ public class CompilerOptions implements IDiff<CompilerOptions>, IValidate {
     /** Options related to input and output. */
     @SuppressWarnings("CanBeFinal")
     public static class IO implements IDiff<IO>, IValidate {
-        /*
         @DynamicParameter(names = "-T",
                 description = "Specify logging level for a class (can be repeated)")
         public Map<String, String> loggingLevel = new HashMap<>();
-         */
         @Parameter(names = "--noRust", description = "Do not generate Rust output files")
         public boolean noRust = false;
         @Parameter(names = "--enterprise", description = "Generate code supporting enterprise features")

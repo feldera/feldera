@@ -44,6 +44,7 @@ import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.IndentStream;
+import org.dbsp.util.Logger;
 import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
@@ -60,6 +61,7 @@ import java.nio.file.Paths;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
+import java.util.Map;
 
 /** Main entry point of the SQL compiler. */
 public class CompilerMain {
@@ -99,7 +101,6 @@ public class CompilerMain {
             return 1;
         }
 
-        /*
         for (Map.Entry<String, String> entry: options.ioOptions.loggingLevel.entrySet()) {
             try {
                 int level = Integer.parseInt(entry.getValue());
@@ -109,7 +110,6 @@ public class CompilerMain {
                 return 1;
             }
         }
-         */
 
         return 0;
     }

@@ -169,7 +169,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
     }
 
     // Test the -T command-line parameter
-    @Test @Ignore("-T parameter disabled")
+    @Test
     public void loggingParameter() throws IOException, InterruptedException, SQLException {
         StringBuilder builder = new StringBuilder();
         Appendable save = Logger.INSTANCE.setDebugStream(builder);

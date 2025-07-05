@@ -110,6 +110,10 @@ Usage: sql-to-dbsp [options] Input file to compile
     -O
       Optimization level (0, 1, or 2)
       Default: 2
+    -T
+      Specify logging level for a class (can be repeated)
+      Syntax: -Tkey=value
+      Default: {}
     -i
       Generate an incremental circuit
       Default: false
