@@ -23,6 +23,8 @@
 
 package org.dbsp.util;
 
+import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
+
 import java.util.HashMap;
 import java.util.Map;
 
@@ -70,6 +72,47 @@ public class Logger {
         int previous = this.loggingLevel.getOrDefault(clazz, 0);
         this.loggingLevel.put(clazz, level);
         return previous;
+    }
+
+    static final String root = "org.dbsp.sqlCompiler.compiler";
+
+    /* Packages containing classes that can be instrumented with logging,
+    * relative to root. */
+    static final String[] packages = new String[] {
+            "",
+            "visitors.inner",
+            "visitors.outer",
+            "visitors.multi",
+            "backend",
+            "backend.rust",
+            "backend.rust.multi",
+            "visitors.outer.monotonicity",
+            "visitors.unusedFields",
+            "frontend",
+            "frontend.calciteCompiler"
+    };
+
+    Class<?> locateClass(String className) {
+        for (String pack: packages) {
+            String path = pack.isEmpty() ? root : root + "." + pack;
+            try {
+                path += "." + className;
+                return Class.forName(path);
+            } catch (ClassNotFoundException e) {
+                // continue
+            }
+        }
+        throw new CompilationError("Class " + className + " not found for setting up logging");
+    }
+
+    /** Debug level is controlled per module and can be changed dynamically.
+     * @param className   Class; must be a visitor.
+     * @param level   Debugging level.
+     * @return Previous logging level for this module. */
+    @SuppressWarnings("UnusedReturnValue")
+    public int setLoggingLevel(String className, int level) {
+        Class<?> clazz = this.locateClass(className);
+        return this.setLoggingLevel(clazz, level);
     }
 
     public <T> int getLoggingLevel(Class<T> clazz) {

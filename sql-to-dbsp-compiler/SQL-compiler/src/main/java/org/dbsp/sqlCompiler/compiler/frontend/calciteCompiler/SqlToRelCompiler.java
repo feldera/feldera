@@ -192,7 +192,7 @@ import java.util.stream.Collectors;
  * The front-end offers several APIs, invoked in this order:
  * - parse SQL (using {@link SqlToRelCompiler#parse})
  * - compile SqlNode to RelNode (using {@link SqlToRelCompiler#compile})
- * - optimize RelNode (using {@link SqlToRelCompiler#optimize(RelNode)})
+ * - optimize RelNode (using {@link SqlToRelCompiler#optimize(RelNode, boolean)})
  *   Optimize is called automatically from compile().
  */
 public class SqlToRelCompiler implements IWritesLogs {
