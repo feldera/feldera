@@ -11,7 +11,7 @@ import TabItem from '@theme/TabItem';
 
 <Tabs>
     <TabItem className="changelogItem" value="enterprise" label="Enterprise">
-        ## Unreleased
+        ## 0.97.0
 
         This release modifies the state machine of a pipeline. The biggest user-facing change is that stopping a pipeline
         now acts similar to `Suspend` where a checkpoint is taken before stopping the pipeline. With this change, the
