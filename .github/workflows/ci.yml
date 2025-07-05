@@ -12,6 +12,7 @@ jobs:
   invoke-build-java:
     name: Build Java
     uses: ./.github/workflows/build-java.yml
+    secrets: inherit
 
   invoke-build-docs:
     name: Build Docs

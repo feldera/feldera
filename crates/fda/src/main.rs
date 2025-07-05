@@ -1600,7 +1600,11 @@ async fn program(format: OutputFormat, action: ProgramAction, client: Client) {
                 }
             }
         }
-        ProgramAction::SetConfig { name, profile } => {
+        ProgramAction::SetConfig {
+            name,
+            profile,
+            runtime_version,
+        } => {
             let pp = PatchPipeline {
                 description: None,
                 name: None,
@@ -1608,8 +1612,9 @@ async fn program(format: OutputFormat, action: ProgramAction, client: Client) {
                 udf_rust: None,
                 udf_toml: None,
                 program_config: Some(ProgramConfig {
-                    profile: Some(profile.into()),
+                    profile: profile.map(|p| p.into()),
                     cache: true,
+                    runtime_version,
                 }),
                 runtime_config: None,
             };

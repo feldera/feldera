@@ -23,7 +23,7 @@ RUN apt-get update --fix-missing && apt-get install -y \
     libsasl2-dev build-essential \
     # bindgen needs this (at least the dec crate uses bindgen)
     libclang-dev \
-    # To install rust
+    # To download tools
     curl  \
     # For running the SQL compiler
     openjdk-21-jre-headless -y \
@@ -39,7 +39,7 @@ RUN apt-get update --fix-missing && apt-get install -y \
     git \
     # Required for parsing json in some scripts
     jq \
-    # Required for bun installation
+    # Required for bun/aws cli installation
     unzip \
     # For debugging things
     strace \
@@ -62,6 +62,12 @@ RUN arch=`dpkg --print-architecture`; \
     && rpk version \
     && rm rpk-linux-$arch.zip
 
+# Install aws cli
+RUN cd /home/ubuntu && curl -sSL "https://awscli.amazonaws.com/awscli-exe-linux-$(uname -m).zip" -o "awscliv2.zip" \
+    && unzip awscliv2.zip \
+    && ./aws/install \
+    && rm -rf aws awscliv2.zip
+
 # Set UTF-8 locale. Needed for the Rust compiler to handle Unicode column names.
 RUN sed -i -e 's/# en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen && \
     locale-gen
@@ -74,7 +80,7 @@ ENV CC=gcc-13
 # We use the ubuntu user here since it has the same UID and GID (1000) as the ci user on the machines
 # which helps with permissions when mounting volumes
 USER ubuntu
-ENV PATH="/home/ubuntu/.local/bin:/home/ubuntu/.bun/bin:/home/ubuntu/.cargo/bin:/home/ubuntu/mold/bin:$PATH"
+ENV PATH="/home/ubuntu/.local/bin:/home/ubuntu/.bun/bin:/home/ubuntu/.cargo/bin:/home/ubuntu/mold/bin:/home/ubuntu/gradle-8.7/bin:$PATH"
 
 # Install rust
 ENV RUSTUP_HOME=/home/ubuntu/.rustup
@@ -89,6 +95,12 @@ RUN uv tool install pre-commit --with pre-commit-uv --force-reinstall
 
 # Install Bun.js
 RUN curl -fsSL https://bun.sh/install | bash -s "bun-v1.2.2"
+
+# Install gradle, the version needs to match the version that calcite uses which avoid reinstalling this every time we run build.sh
+RUN cd /home/ubuntu \
+    && curl -LO https://services.gradle.org/distributions/gradle-8.7-bin.zip \
+    && unzip gradle-8.7-bin.zip \
+    && rm gradle-8.7-bin.zip
 
 # The download URL for mold uses x86_64/aarch64 whereas dpkg --print-architecture says amd64/arm64
 RUN arch=`dpkg --print-architecture | sed "s/arm64/aarch64/g" | sed "s/amd64/x86_64/g"`; \

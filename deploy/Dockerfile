@@ -26,7 +26,9 @@ RUN apt update --fix-missing && apt install \
   # Required by the `metrics-exporter-tcp` crate
   protobuf-compiler \
   # Otherwise, postgresql_embedded complains when it tries to set timezeone to UTC
-  tzdata
+  tzdata \
+  # Used by pipeline manager to switch runtime versions
+  git
 
 # Set UTF-8 locale. Needed for the Rust compiler to handle Unicode column names.
 RUN sed -i -e 's/# en_US.UTF-8 UTF-8/en_US.UTF-8 UTF-8/' /etc/locale.gen && \
@@ -44,19 +46,9 @@ ENV LANGUAGE=en_US:en
 # This user has the same UID and GID (1000) as the ci user on the machines so it helps with
 # permissions when mounting volumes
 
-# Copy over `Cargo.lock` into home directory (copied overriding at each pipeline Rust compilation)
-COPY --chown=ubuntu Cargo.lock Cargo.lock
-COPY --chown=ubuntu Cargo.toml lib/Cargo.toml
-
-RUN mkdir -p lib
-# The crates needed for building pipelines
-COPY --chown=ubuntu crates/ lib/crates/
-COPY --chown=ubuntu README.md lib/README.md
-RUN mkdir -p lib/sql-to-dbsp-compiler/lib
-# Copy over the rust code and sql-to-dbsp script
-COPY --chown=ubuntu sql-to-dbsp-compiler/lib lib/sql-to-dbsp-compiler/lib
-COPY --chown=ubuntu sql-to-dbsp-compiler/temp lib/sql-to-dbsp-compiler/temp
-COPY --chown=ubuntu sql-to-dbsp-compiler/SQL-compiler/sql-to-dbsp lib/sql-to-dbsp-compiler/SQL-compiler/sql-to-dbsp
+RUN mkdir -p feldera
+COPY --chown=ubuntu . feldera
+RUN cd feldera
 
 # Install cargo and rust for this non-root user
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain 1.87.0
@@ -74,15 +66,7 @@ ENV RUSTFLAGS="-C link-arg=-fuse-ld=mold"
 #
 FROM base AS release
 
-# Copy over demos
-RUN mkdir -p demos
-COPY --chown=ubuntu demo/packaged/sql demos
-
-COPY --chown=ubuntu build/pipeline-manager pipeline-manager
-RUN mkdir -p lib/sql-to-dbsp-compiler/SQL-compiler/target
-COPY --chown=ubuntu build/sql2dbsp-jar-with-dependencies.jar lib/sql-to-dbsp-compiler/SQL-compiler/target/sql2dbsp-jar-with-dependencies.jar
-
 # Run the precompile phase to speed up Rust compilations during deployment
-RUN ./pipeline-manager --bind-address=0.0.0.0 --sql-compiler-home=$HOME/lib/sql-to-dbsp-compiler --compilation-cargo-lock-path=$HOME/Cargo.lock --dbsp-override-path=$HOME/lib --precompile
+RUN ./feldera/build/pipeline-manager --bind-address=0.0.0.0 --sql-compiler-path=$HOME/feldera/build/sql2dbsp-jar-with-dependencies.jar --compilation-cargo-lock-path=$HOME/feldera/Cargo.lock --dbsp-override-path=$HOME/feldera --precompile
 ENV BANNER_ADDR=localhost
-ENTRYPOINT ["./pipeline-manager", "--bind-address=0.0.0.0", "--sql-compiler-home=/home/ubuntu/lib/sql-to-dbsp-compiler", "--compilation-cargo-lock-path=/home/ubuntu/Cargo.lock", "--dbsp-override-path=/home/ubuntu/lib", "--demos-dir", "/home/ubuntu/demos"]
+ENTRYPOINT ["./feldera/build/pipeline-manager", "--bind-address=0.0.0.0", "--sql-compiler-path=/home/ubuntu/feldera/build/sql2dbsp-jar-with-dependencies.jar", "--compilation-cargo-lock-path=/home/ubuntu/feldera/Cargo.lock", "--dbsp-override-path=/home/ubuntu/feldera", "--demos-dir", "/home/ubuntu/feldera/demo/packaged/sql"]

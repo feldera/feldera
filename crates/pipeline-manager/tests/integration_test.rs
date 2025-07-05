@@ -616,6 +616,7 @@ async fn pipeline_program_config() {
             serde_json::to_value(ProgramConfig {
                 profile: Some(CompilationProfile::Dev),
                 cache: false,
+                ..Default::default()
             })
             .unwrap(),
         ),
@@ -672,6 +673,7 @@ async fn pipeline_program_config() {
         serde_json::to_value(ProgramConfig {
             profile: Some(CompilationProfile::Unoptimized),
             cache: false,
+            ..Default::default()
         })
         .unwrap()
     );

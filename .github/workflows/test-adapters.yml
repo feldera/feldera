@@ -21,7 +21,7 @@ jobs:
     # because while it finds redis on the docker network it doesn't find
     # redpanda or pubsub (wtf?)
     #container:
-    #  image: ghcr.io/feldera/feldera-dev:sha-80e0a01ee5dc094fd8693d29338d2836852dff1d
+    #  image: ghcr.io/feldera/feldera-dev:sha-cfae3f2af7e7676dde51af39ed76332f67d91b6a
     #  options: --user=ubuntu
     services:
       postgres:
@@ -86,6 +86,7 @@ jobs:
 
       # Pubsub tests are only supported on x86_64, see below
       - name: Run adapters tests
+        if: ${{ vars.CI_DRY_RUN != 'true' }}
         run: |
           source .venv/bin/activate
           ../../build/dbsp_adapters-* --skip pubsub
@@ -134,6 +135,7 @@ jobs:
         run: chmod +x ./build/*
 
       - name: Run adapters pubsub tests
+        if: ${{ vars.CI_DRY_RUN != 'true' }}
         run: ../../build/dbsp_adapters-* pubsub
         working-directory: crates/adapters
         env:

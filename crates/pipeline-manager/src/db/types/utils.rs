@@ -213,6 +213,7 @@ mod tests {
         let program_config = ProgramConfig {
             profile: Some(CompilationProfile::Unoptimized),
             cache: false,
+            runtime_version: None,
         };
         let value = serde_json::to_value(program_config.clone()).unwrap();
         assert_eq!(

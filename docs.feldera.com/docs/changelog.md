@@ -11,7 +11,6 @@ import TabItem from '@theme/TabItem';
 
 <Tabs>
     <TabItem className="changelogItem" value="enterprise" label="Enterprise">
-
         ## Unreleased
 
         This release modifies the state machine of a pipeline. The biggest user-facing change is that stopping a pipeline
@@ -81,6 +80,11 @@ import TabItem from '@theme/TabItem';
               .send()
               .await?;
           ```
+
+        ### Pipeline Manager
+
+        - Changed the pipeline manager CLI argument `sql-compiler-home` to `sql-compiler-path`: Now a path to the sql-to-dbsp JAR file has to be provided rather than a path to the sql-to-dbsp directory.
+              If the provided docker images are used (and the entrypoint is not modified), no change/migration is necessary.
 
         ## 0.90.0 (2025-06-20)
             - **Aligned Open Source and Enterprise version:** The enterprise edition of Feldera is now aligned with the Open Source edition. Versions will share the same codebase for a given release but the enterprise edition will include additional features and support.

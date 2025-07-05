@@ -48,6 +48,7 @@ fn extended_pipeline_1() -> ExtendedPipelineDescr {
         program_config: serde_json::to_value(ProgramConfig {
             profile: Some(CompilationProfile::Optimized),
             cache: true,
+            runtime_version: None,
         })
         .unwrap(),
         program_version: Version(2),
@@ -115,6 +116,7 @@ fn extended_pipeline_2() -> ExtendedPipelineDescr {
         program_config: serde_json::to_value(ProgramConfig {
             profile: Some(CompilationProfile::Unoptimized),
             cache: true,
+            runtime_version: None,
         })
         .unwrap(),
         program_version: Version(1),
@@ -269,6 +271,7 @@ pub(crate) fn pipeline_post_put() -> PostPutPipeline {
         program_config: Some(ProgramConfig {
             profile: Some(CompilationProfile::Optimized),
             cache: true,
+            runtime_version: None,
         }),
     }
 }

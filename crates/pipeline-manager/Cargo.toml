@@ -95,6 +95,7 @@ metrics-exporter-prometheus = { workspace = true }
 dirs = { workspace = true }  # For: discovering home directory
 fdlimit = { workspace = true }  # For: raising file descriptor limit
 nix = { workspace = true, features = ["signal"] }  # For: terminating process group
+tempfile = { workspace = true }
 
 # Not used
 # These dependencies are not used by this crate, but by the generated pipeline crates.
@@ -111,6 +112,7 @@ feldera-enterprise = []
 [build-dependencies]
 change-detection = { workspace = true }
 static-files = { workspace = true }
+vergen-gitcl = { version = "1.0.0", features = ["build", "cargo", "rustc", "si"] }
 
 [dev-dependencies]
 proptest = { workspace = true }
@@ -125,7 +127,6 @@ aws-config = { workspace = true }
 wiremock = { workspace = true }
 feldera-types = { workspace = true, features = ["testing"] }
 itertools = { workspace = true }
-tempfile = { workspace = true }
 tokio = { workspace = true, features = ["sync"] }
 
 [package.metadata.cargo-machete]

@@ -305,6 +305,7 @@ fn map_val_to_limited_program_config(val: ProgramConfigPropVal) -> serde_json::V
                 Some(CompilationProfile::Optimized)
             },
             cache: val.3,
+            runtime_version: None,
         })
         .unwrap()
     }
@@ -677,6 +678,7 @@ async fn pipeline_retrieval() {
                 program_config: serde_json::to_value(ProgramConfig {
                     profile: Some(CompilationProfile::Unoptimized),
                     cache: true,
+                    runtime_version: None,
                 })
                 .unwrap(),
             },
@@ -719,6 +721,7 @@ async fn pipeline_retrieval() {
                 program_config: serde_json::to_value(ProgramConfig {
                     profile: Some(CompilationProfile::Unoptimized),
                     cache: false,
+                    runtime_version: None,
                 })
                 .unwrap(),
             },
@@ -971,6 +974,7 @@ async fn pipeline_versioning() {
     let new_program_config = serde_json::to_value(ProgramConfig {
         profile: Some(CompilationProfile::Dev),
         cache: false,
+        runtime_version: None,
     })
     .unwrap();
     handle
