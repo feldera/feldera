@@ -12,7 +12,7 @@ SECRET_KEY = "miniopasswd"
 
 def storage_cfg(
     endpoint: Optional[str] = None,
-    start_from_checkpoint: bool = False,
+    start_from_checkpoint: Optional[str] = None,
     auth_err: bool = False,
 ) -> dict:
     return {
@@ -66,7 +66,7 @@ class TestIntegrationTests(unittest.TestCase):
         p.clear_storage()
 
         # Restart from checkpoint
-        storage_config = storage_cfg(start_from_checkpoint=True, auth_err=auth_err)
+        storage_config = storage_cfg(start_from_checkpoint="latest", auth_err=auth_err)
 
         p = PipelineBuilder(
             c,
