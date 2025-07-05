@@ -1,26 +1,24 @@
 use crate::{
-    algebra::{HasZero, IndexedZSet, IndexedZSetReader, UnsignedPrimInt, ZRingValue},
-    circuit::{
-        operator_traits::{Operator, QuaternaryOperator},
-        Scope,
-    },
+    algebra::{HasZero, IndexedZSet, UnsignedPrimInt, ZRingValue},
+    circuit::{operator_traits::Operator, Scope},
     dynamic::{
         ClonableTrait, DataTrait, DowncastTrait, DynDataTyped, DynOpt, DynPair, DynUnit, Erase,
         Factory, WeightTrait, WithFactory,
     },
     operator::{
+        async_stream_operators::{StreamingQuaternaryOperator, StreamingQuaternaryWrapper},
         dynamic::{
             accumulate_trace::AccumulateTraceFeedback,
             aggregate::{AggCombineFunc, AggOutputFunc, DynAggregator, DynAverage},
             filter_map::DynFilterMap,
             time_series::{
                 radix_tree::{
-                    OrdPartitionedTreeAggregateFactories, PartitionedRadixTreeReader,
+                    OrdPartitionedTreeAggregateFactories, PartitionedRadixTreeBatch,
                     RadixTreeCursor, TreeNode,
                 },
                 range::{Range, RangeCursor, Ranges, RelRange},
                 OrdPartitionedIndexedZSet, PartitionCursor, PartitionedBatch,
-                PartitionedBatchReader, PartitionedIndexedZSet, RelOffset,
+                PartitionedIndexedZSet, RelOffset,
             },
             trace::{TraceBound, TraceBounds},
         },
@@ -33,16 +31,22 @@ use crate::{
     utils::Tup2,
     Circuit, DBData, DBWeight, DynZWeight, RootCircuit, Stream, ZWeight,
 };
+use async_stream::stream;
 use dyn_clone::{clone_box, DynClone};
+use futures::Stream as AsyncStream;
 use minitrace::trace;
 use num::Bounded;
 use std::{
     borrow::Cow,
+    cell::RefCell,
     marker::PhantomData,
     ops::{Deref, Div, Neg},
+    rc::Rc,
 };
 
 use super::radix_tree::{FilePartitionedRadixTreeFactories, Prefix};
+
+const ROLLING_AGGREGATE_CHUNK_SIZE: usize = 2;
 
 pub trait WeighFunc<V: ?Sized, R: ?Sized, A: ?Sized>: Fn(&V, &R, &mut A) + DynClone {}
 
@@ -689,10 +693,12 @@ impl<B> Stream<RootCircuit, B> {
 
         let output = circuit
             .add_quaternary_operator(
-                <PartitionedRollingAggregate<TS, B, V, Acc, Out, _>>::new(
-                    &factories.output_factories,
-                    range,
-                    aggregator,
+                StreamingQuaternaryWrapper::new(
+                    <PartitionedRollingAggregate<TS, B, V, Acc, Out, _>>::new(
+                        &factories.output_factories,
+                        range,
+                        aggregator,
+                    ),
                 ),
                 &stream.dyn_accumulate(&factories.input_factories),
                 &input_trace,
@@ -729,8 +735,8 @@ struct PartitionedRollingAggregate<
     output_factories: O::Factories,
     range: RelRange<TS>,
     aggregator: Box<dyn DynAggregator<V, (), DynZWeight, Accumulator = Acc, Output = Out>>,
-    flush: bool,
-    input_delta: Option<SpineSnapshot<B>>,
+    flush: RefCell<bool>,
+    input_delta: RefCell<Option<SpineSnapshot<B>>>,
     phantom: PhantomData<fn(&V, &O)>,
 }
 
@@ -752,8 +758,8 @@ where
             output_factories: output_factories.clone(),
             range,
             aggregator: clone_box(aggregator),
-            flush: false,
-            input_delta: None,
+            flush: RefCell::new(false),
+            input_delta: RefCell::new(None),
             phantom: PhantomData,
         }
     }
@@ -800,11 +806,12 @@ where
     }
 
     fn flush(&mut self) {
-        self.flush = true;
+        *self.flush.borrow_mut() = true;
     }
 }
 
-impl<TS, V, Acc, Out, B, T, RT, OT, O> QuaternaryOperator<Option<Spine<B>>, T, RT, OT, O>
+impl<TS, V, Acc, Out, B, T, RT, OT, O>
+    StreamingQuaternaryOperator<Option<Spine<B>>, Spine<T>, Spine<RT>, Spine<OT>, O>
     for PartitionedRollingAggregate<TS, B, V, Acc, Out, O>
 where
     TS: DBData + UnsignedPrimInt,
@@ -812,148 +819,184 @@ where
     Acc: DataTrait + ?Sized,
     Out: DataTrait + ?Sized,
     B: PartitionedBatch<DynDataTyped<TS>, V, R = DynZWeight>,
-    T: PartitionedBatchReader<DynDataTyped<TS>, V, Key = B::Key, R = B::R> + Clone,
-    RT: PartitionedRadixTreeReader<TS, Acc, Key = B::Key> + Clone,
-    OT: PartitionedBatchReader<DynDataTyped<TS>, DynOpt<Out>, Key = B::Key, R = B::R> + Clone,
+    T: PartitionedBatch<DynDataTyped<TS>, V, Key = B::Key, R = B::R> + Clone,
+    RT: PartitionedRadixTreeBatch<TS, Acc, Key = B::Key> + Clone,
+    OT: PartitionedBatch<DynDataTyped<TS>, DynOpt<Out>, Key = B::Key, R = B::R> + Clone,
     O: IndexedZSet<Key = B::Key, Val = DynPair<DynDataTyped<TS>, DynOpt<Out>>>,
 {
     #[trace]
-    async fn eval(
-        &mut self,
+    fn eval(
+        self: Rc<Self>,
         input_delta: Cow<'_, Option<Spine<B>>>,
-        input_trace: Cow<'_, T>,
-        radix_tree: Cow<'_, RT>,
-        output_trace: Cow<'_, OT>,
-    ) -> O {
+        input_trace: Cow<'_, Spine<T>>,
+        radix_tree: Cow<'_, Spine<RT>>,
+        output_trace: Cow<'_, Spine<OT>>,
+    ) -> impl AsyncStream<Item = (O, bool)> + 'static {
         if let Some(input_delta) = input_delta.as_ref().as_ref() {
-            assert!(self.input_delta.is_none());
-            self.input_delta = Some(input_delta.ro_snapshot());
+            assert!(self.input_delta.borrow().is_none());
+            *self.input_delta.borrow_mut() = Some(input_delta.ro_snapshot());
         };
 
-        if !self.flush {
-            return O::dyn_empty(&self.output_factories);
-        }
+        let input_trace = if *self.flush.borrow() {
+            Some(input_trace.as_ref().ro_snapshot())
+        } else {
+            None
+        };
 
-        let input_delta = self.input_delta.take().unwrap();
+        let radix_tree = if *self.flush.borrow() {
+            Some(radix_tree.as_ref().ro_snapshot())
+        } else {
+            None
+        };
 
-        let mut delta_cursor = input_delta.cursor();
-        let mut output_trace_cursor = output_trace.cursor();
-        let mut input_trace_cursor = input_trace.cursor();
-        let mut tree_cursor = radix_tree.cursor();
+        let output_trace = if *self.flush.borrow() {
+            Some(output_trace.as_ref().ro_snapshot())
+        } else {
+            None
+        };
 
-        let mut retraction_builder = O::Builder::new_builder(&self.output_factories);
-        let mut insertion_builder =
-            O::Builder::with_capacity(&self.output_factories, input_delta.len());
+        stream! {
+            if !*self.flush.borrow() {
+                yield (O::dyn_empty(&self.output_factories), true);
+                return;
+            }
 
-        // println!("delta: {input_delta:#x?}");
-        // println!("radix tree: {radix_tree:#x?}");
-        // println!("aggregate_range({range:x?})");
-        // let mut treestr = String::new();
-        // radix_tree.cursor().format_tree(&mut treestr).unwrap();
-        // println!("tree: {treestr}");
-        // tree_partition_cursor.rewind_keys();
+            let input_delta = self.input_delta.borrow_mut().take().unwrap();
 
-        let mut val = self.output_factories.val_factory().default_box();
-        let mut acc = self.aggregator.opt_accumulator_factory().default_box();
-        let mut agg = self.aggregator.output_factory().default_box();
+            let mut delta_cursor = input_delta.cursor();
+            let mut output_trace_cursor = output_trace.unwrap().cursor();
+            let mut input_trace_cursor = input_trace.unwrap().cursor();
+            let mut tree_cursor = radix_tree.unwrap().cursor();
 
-        // Iterate over affected partitions.
-        while delta_cursor.key_valid() {
-            // Compute affected intervals using `input_delta`.
-            let ranges = self.affected_ranges(&mut PartitionCursor::new(&mut delta_cursor));
-            // println!("affected_ranges: {ranges:?}");
+            let mut retraction_builder =
+                O::Builder::with_capacity(&self.output_factories, ROLLING_AGGREGATE_CHUNK_SIZE);
+            let mut insertion_builder =
+                O::Builder::with_capacity(&self.output_factories, ROLLING_AGGREGATE_CHUNK_SIZE);
 
-            // Clear old outputs.
-            if output_trace_cursor.seek_key_exact(delta_cursor.key()) {
-                let mut range_cursor = RangeCursor::new(
-                    PartitionCursor::new(&mut output_trace_cursor),
-                    ranges.clone(),
-                );
-                let mut any_values = false;
-                while range_cursor.key_valid() {
-                    while range_cursor.val_valid() {
-                        let weight = **range_cursor.weight();
-                        debug_assert!(weight != 0);
-                        val.from_refs(range_cursor.key(), range_cursor.val());
-                        retraction_builder.push_val_diff_mut(&mut *val, &mut weight.neg());
-                        any_values = true;
-                        range_cursor.step_val();
+            // println!("delta: {input_delta:#x?}");
+            // println!("radix tree: {radix_tree:#x?}");
+            // println!("aggregate_range({range:x?})");
+            // let mut treestr = String::new();
+            // radix_tree.cursor().format_tree(&mut treestr).unwrap();
+            // println!("tree: {treestr}");
+            // tree_partition_cursor.rewind_keys();
+
+            let mut val = self.output_factories.val_factory().default_box();
+            let mut acc = self.aggregator.opt_accumulator_factory().default_box();
+            let mut agg = self.aggregator.output_factory().default_box();
+
+            // Iterate over affected partitions.
+            while delta_cursor.key_valid() {
+                // Compute affected intervals using `input_delta`.
+                let ranges = self.affected_ranges(&mut PartitionCursor::new(&mut delta_cursor));
+                // println!("affected_ranges: {ranges:?}");
+
+                // Clear old outputs.
+                if output_trace_cursor.seek_key_exact(delta_cursor.key()) {
+                    let mut range_cursor = RangeCursor::new(
+                        PartitionCursor::new(&mut output_trace_cursor),
+                        ranges.clone(),
+                    );
+                    let mut any_values = false;
+                    while range_cursor.key_valid() {
+                        while range_cursor.val_valid() {
+                            let weight = **range_cursor.weight();
+                            debug_assert!(weight != 0);
+                            val.from_refs(range_cursor.key(), range_cursor.val());
+                            retraction_builder.push_val_diff_mut(&mut *val, &mut weight.neg());
+                            any_values = true;
+
+                            if retraction_builder.num_tuples() >= ROLLING_AGGREGATE_CHUNK_SIZE {
+                                retraction_builder.push_key(delta_cursor.key());
+                                yield (retraction_builder.done(), false);
+                                any_values = false;
+                                retraction_builder = O::Builder::with_capacity(&self.output_factories, ROLLING_AGGREGATE_CHUNK_SIZE);
+                            }
+                            range_cursor.step_val();
+                        }
+                        range_cursor.step_key();
                     }
-                    range_cursor.step_key();
-                }
-                if any_values {
-                    retraction_builder.push_key(delta_cursor.key());
-                }
-            };
+                    if any_values {
+                        retraction_builder.push_key(delta_cursor.key());
+                    }
+                };
 
-            // Compute new outputs.
-            if input_trace_cursor.seek_key_exact(delta_cursor.key())
-                // It's possible that the key is in the input trace with weight 0, but it's no longer in the tree, which
-                // caused `test_empty_tree()` to fail without this check.
-                && tree_cursor.seek_key_exact(delta_cursor.key())
-            {
-                let mut tree_partition_cursor = PartitionCursor::new(&mut tree_cursor);
-                let mut input_range_cursor =
-                    RangeCursor::new(PartitionCursor::new(&mut input_trace_cursor), ranges);
+                // Compute new outputs.
+                if input_trace_cursor.seek_key_exact(delta_cursor.key())
+                    // It's possible that the key is in the input trace with weight 0, but it's no longer in the tree, which
+                    // caused `test_empty_tree()` to fail without this check.
+                    && tree_cursor.seek_key_exact(delta_cursor.key())
+                {
+                    let mut tree_partition_cursor = PartitionCursor::new(&mut tree_cursor);
+                    let mut input_range_cursor =
+                        RangeCursor::new(PartitionCursor::new(&mut input_trace_cursor), ranges);
 
-                // For all affected times, seek them in `input_trace`, compute aggregates using
-                // using radix_tree.
-                let mut any_values = false;
-                while input_range_cursor.key_valid() {
-                    let range = self.range.range_of(input_range_cursor.key());
-                    tree_partition_cursor.rewind_keys();
+                    // For all affected times, seek them in `input_trace`, compute aggregates using
+                    // using radix_tree.
+                    let mut any_values = false;
+                    while input_range_cursor.key_valid() {
+                        let range = self.range.range_of(input_range_cursor.key());
+                        tree_partition_cursor.rewind_keys();
 
-                    // println!("aggregate_range({range:x?})");
-                    // let mut treestr = String::new();
-                    // tree_partition_cursor.format_tree(&mut treestr).unwrap();
-                    // println!("tree: {treestr}");
-                    // tree_partition_cursor.rewind_keys();
+                        // println!("aggregate_range({range:x?})");
+                        // let mut treestr = String::new();
+                        // tree_partition_cursor.format_tree(&mut treestr).unwrap();
+                        // println!("tree: {treestr}");
+                        // tree_partition_cursor.rewind_keys();
 
-                    while input_range_cursor.val_valid() {
-                        // Generate output update.
-                        if !input_range_cursor.weight().le0() {
-                            **val.fst_mut() = **input_range_cursor.key();
-                            if let Some(range) = range {
-                                tree_partition_cursor.aggregate_range(
-                                    &range,
-                                    self.aggregator.combine(),
-                                    acc.as_mut(),
-                                );
-                                if let Some(acc) = acc.get_mut() {
-                                    self.aggregator.finalize(acc, agg.as_mut());
-                                    val.snd_mut().from_val(agg.as_mut());
+                        while input_range_cursor.val_valid() {
+                            // Generate output update.
+                            if !input_range_cursor.weight().le0() {
+                                **val.fst_mut() = **input_range_cursor.key();
+                                if let Some(range) = range {
+                                    tree_partition_cursor.aggregate_range(
+                                        &range,
+                                        self.aggregator.combine(),
+                                        acc.as_mut(),
+                                    );
+                                    if let Some(acc) = acc.get_mut() {
+                                        self.aggregator.finalize(acc, agg.as_mut());
+                                        val.snd_mut().from_val(agg.as_mut());
+                                    } else {
+                                        val.snd_mut().set_none();
+                                    }
                                 } else {
                                     val.snd_mut().set_none();
                                 }
-                            } else {
-                                val.snd_mut().set_none();
+
+                                // println!("insert({item:?})");
+
+                                insertion_builder.push_val_diff_mut(&mut *val, 1.erase_mut());
+                                any_values = true;
+
+                                if insertion_builder.num_tuples() >= ROLLING_AGGREGATE_CHUNK_SIZE {
+                                    insertion_builder.push_key(delta_cursor.key());
+                                    any_values = false;
+                                    yield (insertion_builder.done(), false);
+                                    insertion_builder =
+                                        O::Builder::with_capacity(&self.output_factories, ROLLING_AGGREGATE_CHUNK_SIZE);
+                                }
+
+                                break;
                             }
 
-                            // println!("insert({item:?})");
-
-                            insertion_builder.push_val_diff_mut(&mut *val, 1.erase_mut());
-                            any_values = true;
-                            break;
+                            input_range_cursor.step_val();
                         }
 
-                        input_range_cursor.step_val();
+                        input_range_cursor.step_key();
                     }
+                    if any_values {
+                        insertion_builder.push_key(delta_cursor.key());
+                    }
+                }
 
-                    input_range_cursor.step_key();
-                }
-                if any_values {
-                    insertion_builder.push_key(delta_cursor.key());
-                }
+                delta_cursor.step_key();
             }
 
-            delta_cursor.step_key();
+            *self.flush.borrow_mut() = false;
+            yield (retraction_builder.done(), false);
+            yield (insertion_builder.done(), true);
         }
-
-        let retractions = retraction_builder.done();
-        let insertions = insertion_builder.done();
-
-        self.flush = false;
-        retractions.add_by_ref(&insertions)
     }
 }
 
@@ -977,7 +1020,7 @@ mod test {
             Fold,
         },
         trace::{BatchReaderFactories, Cursor},
-        typed_batch::{BatchReader, DynBatchReader, DynOrdIndexedZSet, SpineSnapshot, TypedBatch},
+        typed_batch::{DynBatchReader, DynOrdIndexedZSet, SpineSnapshot, TypedBatch},
         utils::Tup2,
         DBData, DBSPHandle, IndexedZSetHandle, OrdIndexedZSet, RootCircuit, Runtime, Stream,
         TypedBox, ZWeight,
@@ -989,7 +1032,6 @@ mod test {
         DynData, /* <u64> */
         DynPair<DynDataTyped<u64>, DynData /* <i64> */>,
     >;
-    type DataStream = Stream<RootCircuit, DataBatch>;
     type OutputBatch = TypedBatch<
         u64,
         Tup2<u64, Option<i64>>,
@@ -999,7 +1041,6 @@ mod test {
             DynPair<DynDataTyped<u64>, DynOpt<DynData /* <i64> */>>,
         >,
     >;
-    type OutputStream = Stream<RootCircuit, OutputBatch>;
 
     impl<PK, TS, V> Stream<RootCircuit, OrdIndexedZSet<PK, Tup2<TS, V>>>
     where
