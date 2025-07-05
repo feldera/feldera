@@ -1,5 +1,5 @@
 use crate::{
-    algebra::{HasZero, IndexedZSet, UnsignedPrimInt, ZRingValue},
+    algebra::{HasZero, IndexedZSet, IndexedZSetReader, UnsignedPrimInt, ZRingValue},
     circuit::{
         operator_traits::{Operator, QuaternaryOperator},
         Scope,
@@ -19,14 +19,17 @@ use crate::{
                     RadixTreeCursor, TreeNode,
                 },
                 range::{Range, RangeCursor, Ranges, RelRange},
-                OrdPartitionedIndexedZSet, PartitionCursor, PartitionedBatchReader,
-                PartitionedIndexedZSet, RelOffset,
+                OrdPartitionedIndexedZSet, PartitionCursor, PartitionedBatch,
+                PartitionedBatchReader, PartitionedIndexedZSet, RelOffset,
             },
             trace::{TraceBound, TraceBounds},
         },
         Avg,
     },
-    trace::{Batch, BatchReader, BatchReaderFactories, Builder, Cursor, Spine},
+    trace::{
+        spine_async::WithSnapshot, Batch, BatchReader, BatchReaderFactories, Builder, Cursor,
+        Spine, SpineSnapshot,
+    },
     utils::Tup2,
     Circuit, DBData, DBWeight, DynZWeight, RootCircuit, Stream, ZWeight,
 };
@@ -670,6 +673,7 @@ impl<B> Stream<RootCircuit, B> {
             )
             .set_persistent_id(partitioned_tree_aggregate_name.as_deref())
             .dyn_accumulate_integrate_trace(&factories.radix_tree_factories);
+
         let input_trace = stream_window.dyn_accumulate_integrate_trace(&factories.input_factories);
 
         // Truncate timestamps `< bound` in the output trace.
@@ -685,7 +689,7 @@ impl<B> Stream<RootCircuit, B> {
 
         let output = circuit
             .add_quaternary_operator(
-                <PartitionedRollingAggregate<TS, V, Acc, Out, _>>::new(
+                <PartitionedRollingAggregate<TS, B, V, Acc, Out, _>>::new(
                     &factories.output_factories,
                     range,
                     aggregator,
@@ -715,7 +719,8 @@ impl<B> Stream<RootCircuit, B> {
 /// * Input stream 4: trace of previously produced outputs.  Used to compute
 ///   retractions.
 struct PartitionedRollingAggregate<
-    TS,
+    TS: DBData,
+    B: PartitionedBatch<DynDataTyped<TS>, V, R = DynZWeight>,
     V: DataTrait + ?Sized,
     Acc: DataTrait + ?Sized,
     Out: DataTrait + ?Sized,
@@ -724,11 +729,15 @@ struct PartitionedRollingAggregate<
     output_factories: O::Factories,
     range: RelRange<TS>,
     aggregator: Box<dyn DynAggregator<V, (), DynZWeight, Accumulator = Acc, Output = Out>>,
+    flush: bool,
+    input_delta: Option<SpineSnapshot<B>>,
     phantom: PhantomData<fn(&V, &O)>,
 }
 
-impl<TS, V, Acc, Out, O> PartitionedRollingAggregate<TS, V, Acc, Out, O>
+impl<TS, B, V, Acc, Out, O> PartitionedRollingAggregate<TS, B, V, Acc, Out, O>
 where
+    TS: DBData,
+    B: PartitionedBatch<DynDataTyped<TS>, V, R = DynZWeight>,
     V: DataTrait + ?Sized,
     Acc: DataTrait + ?Sized,
     Out: DataTrait + ?Sized,
@@ -743,6 +752,8 @@ where
             output_factories: output_factories.clone(),
             range,
             aggregator: clone_box(aggregator),
+            flush: false,
+            input_delta: None,
             phantom: PhantomData,
         }
     }
@@ -771,9 +782,10 @@ where
     }
 }
 
-impl<TS, V, Acc, Out, O> Operator for PartitionedRollingAggregate<TS, V, Acc, Out, O>
+impl<TS, B, V, Acc, Out, O> Operator for PartitionedRollingAggregate<TS, B, V, Acc, Out, O>
 where
-    TS: 'static,
+    TS: DBData,
+    B: PartitionedBatch<DynDataTyped<TS>, V, R = DynZWeight>,
     V: DataTrait + ?Sized,
     Acc: DataTrait + ?Sized,
     Out: DataTrait + ?Sized,
@@ -786,16 +798,20 @@ where
     fn fixedpoint(&self, _scope: Scope) -> bool {
         true
     }
+
+    fn flush(&mut self) {
+        self.flush = true;
+    }
 }
 
-impl<TS, V, Acc, Out, B, T, RT, OT, O> QuaternaryOperator<Option<B>, T, RT, OT, O>
-    for PartitionedRollingAggregate<TS, V, Acc, Out, O>
+impl<TS, V, Acc, Out, B, T, RT, OT, O> QuaternaryOperator<Option<Spine<B>>, T, RT, OT, O>
+    for PartitionedRollingAggregate<TS, B, V, Acc, Out, O>
 where
     TS: DBData + UnsignedPrimInt,
     V: DataTrait + ?Sized,
     Acc: DataTrait + ?Sized,
     Out: DataTrait + ?Sized,
-    B: PartitionedBatchReader<DynDataTyped<TS>, V, R = DynZWeight> + Clone,
+    B: PartitionedBatch<DynDataTyped<TS>, V, R = DynZWeight>,
     T: PartitionedBatchReader<DynDataTyped<TS>, V, Key = B::Key, R = B::R> + Clone,
     RT: PartitionedRadixTreeReader<TS, Acc, Key = B::Key> + Clone,
     OT: PartitionedBatchReader<DynDataTyped<TS>, DynOpt<Out>, Key = B::Key, R = B::R> + Clone,
@@ -804,14 +820,21 @@ where
     #[trace]
     async fn eval(
         &mut self,
-        input_delta: Cow<'_, Option<B>>,
+        input_delta: Cow<'_, Option<Spine<B>>>,
         input_trace: Cow<'_, T>,
         radix_tree: Cow<'_, RT>,
         output_trace: Cow<'_, OT>,
     ) -> O {
-        let Some(input_delta) = input_delta.as_ref() else {
-            return O::dyn_empty(&self.output_factories);
+        if let Some(input_delta) = input_delta.as_ref().as_ref() {
+            assert!(self.input_delta.is_none());
+            self.input_delta = Some(input_delta.ro_snapshot());
         };
+
+        if !self.flush {
+            return O::dyn_empty(&self.output_factories);
+        }
+
+        let input_delta = self.input_delta.take().unwrap();
 
         let mut delta_cursor = input_delta.cursor();
         let mut output_trace_cursor = output_trace.cursor();
@@ -928,6 +951,8 @@ where
 
         let retractions = retraction_builder.done();
         let insertions = insertion_builder.done();
+
+        self.flush = false;
         retractions.add_by_ref(&insertions)
     }
 }
@@ -936,6 +961,7 @@ where
 mod test {
     use crate::{
         algebra::{DefaultSemigroup, UnsignedPrimInt},
+        circuit::circuit_builder::NonIterativeCircuit,
         dynamic::{DowncastTrait, DynData, DynDataTyped, DynOpt, DynPair, Erase},
         lean_vec,
         operator::{
@@ -951,7 +977,7 @@ mod test {
             Fold,
         },
         trace::{BatchReaderFactories, Cursor},
-        typed_batch::{BatchReader, DynBatchReader, DynOrdIndexedZSet, TypedBatch},
+        typed_batch::{BatchReader, DynBatchReader, DynOrdIndexedZSet, SpineSnapshot, TypedBatch},
         utils::Tup2,
         DBData, DBSPHandle, IndexedZSetHandle, OrdIndexedZSet, RootCircuit, Runtime, Stream,
         TypedBox, ZWeight,
@@ -1030,11 +1056,11 @@ mod test {
 
     // Reference implementation of `partitioned_rolling_aggregate` for testing.
     fn partitioned_rolling_aggregate_slow(
-        stream: &DataStream,
+        stream: &Stream<NonIterativeCircuit<RootCircuit>, DataBatch>,
         range_spec: RelRange<u64>,
-    ) -> OutputStream {
+    ) -> Stream<NonIterativeCircuit<RootCircuit>, OutputBatch> {
+        let stream = stream.typed::<TypedBatch<u64, Tup2<u64, i64>, ZWeight, _>>();
         stream
-            .typed::<TypedBatch<u64, Tup2<u64, i64>, ZWeight, _>>()
             .gather(0)
             .integrate()
             .apply(move |batch: &TypedBatch<_, _, _, DataBatch>| {
@@ -1065,7 +1091,7 @@ mod test {
         lateness: u64,
         size_bound: Option<usize>,
     ) -> (DBSPHandle, IndexedZSetHandle<u64, Tup2<u64, i64>>) {
-        Runtime::init_circuit(4, move |circuit| {
+        Runtime::init_circuit(1, move |circuit| {
             let (input_stream, input_handle) =
                 circuit.add_input_indexed_zset::<u64, Tup2<u64, i64>>();
 
@@ -1083,19 +1109,24 @@ mod test {
             );
 
             let range_spec = RelRange::new(RelOffset::Before(1000), RelOffset::Before(0));
-            let expected_1000_0 =
-                partitioned_rolling_aggregate_slow(&input_stream.inner(), range_spec);
-            let output_1000_0 = input_by_time
-                .partitioned_rolling_aggregate(
-                    |Tup2(partition, val)| (*partition, *val),
-                    aggregator.clone(),
-                    range_spec,
+            let output_1000_0 = input_by_time.partitioned_rolling_aggregate(
+                |Tup2(partition, val)| (*partition, *val),
+                aggregator.clone(),
+                range_spec,
+            );
+
+            circuit
+                .non_incremental(
+                    &(input_stream.clone(), output_1000_0),
+                    |_child, (input_stream, output_1000_0)| {
+                        let actual = output_1000_0.gather(0).integrate();
+                        let expected =
+                            partitioned_rolling_aggregate_slow(&input_stream.inner(), range_spec);
+                        Ok(expected
+                            .apply2(&actual, |expected, actual| assert_eq!(expected, actual)))
+                    },
                 )
-                .gather(0)
-                .integrate();
-            expected_1000_0.apply2(&output_1000_0, |expected, actual| {
-                assert_eq!(expected, actual)
-            });
+                .unwrap();
 
             let output_1000_0_waterline = Stream::partitioned_rolling_aggregate_with_waterline(
                 &input_by_time,
@@ -1103,39 +1134,60 @@ mod test {
                 |Tup2(partition, val)| (*partition, *val),
                 aggregator.clone(),
                 range_spec,
-            )
-            .gather(0)
-            .integrate();
+            );
 
-            expected_1000_0.apply2(&output_1000_0_waterline, |expected, actual| {
-                assert_eq!(expected, actual)
-            });
-
-            let output_1000_0_linear = input_by_time
-                .partitioned_rolling_aggregate_linear(
-                    |Tup2(partition, val)| (*partition, *val),
-                    |v| *v,
-                    |v| v,
-                    range_spec,
+            circuit
+                .non_incremental(
+                    &(input_stream.clone(), output_1000_0_waterline),
+                    |_child, (input_stream, output_1000_0_waterline)| {
+                        let actual = output_1000_0_waterline.gather(0).integrate();
+                        let expected =
+                            partitioned_rolling_aggregate_slow(&input_stream.inner(), range_spec);
+                        Ok(expected
+                            .apply2(&actual, |expected, actual| assert_eq!(expected, actual)))
+                    },
                 )
-                .gather(0)
-                .integrate();
-            expected_1000_0.apply2(&output_1000_0_linear, |expected, actual| {
-                assert_eq!(expected, actual)
-            });
+                .unwrap();
+
+            let output_1000_0_linear = input_by_time.partitioned_rolling_aggregate_linear(
+                |Tup2(partition, val)| (*partition, *val),
+                |v| *v,
+                |v| v,
+                range_spec,
+            );
+
+            circuit
+                .non_incremental(
+                    &(input_stream.clone(), output_1000_0_linear),
+                    |_child, (input_stream, output_1000_0_linear)| {
+                        let actual = output_1000_0_linear.gather(0).integrate();
+                        let expected =
+                            partitioned_rolling_aggregate_slow(&input_stream.inner(), range_spec);
+                        Ok(expected
+                            .apply2(&actual, |expected, actual| assert_eq!(expected, actual)))
+                    },
+                )
+                .unwrap();
 
             let range_spec = RelRange::new(RelOffset::Before(500), RelOffset::After(500));
-            let expected_500_500 =
-                partitioned_rolling_aggregate_slow(&input_stream.inner(), range_spec);
             let aggregate_500_500 = input_by_time.partitioned_rolling_aggregate(
                 |Tup2(partition, val)| (*partition, *val),
                 aggregator.clone(),
                 range_spec,
             );
-            let output_500_500 = aggregate_500_500.gather(0).integrate();
-            expected_500_500.apply2(&output_500_500, |expected, actual| {
-                assert_eq!(expected, actual)
-            });
+
+            circuit
+                .non_incremental(
+                    &(input_stream.clone(), aggregate_500_500),
+                    |_child, (input_stream, aggregate_500_500)| {
+                        let actual = aggregate_500_500.gather(0).integrate();
+                        let expected =
+                            partitioned_rolling_aggregate_slow(&input_stream.inner(), range_spec);
+                        Ok(expected
+                            .apply2(&actual, |expected, actual| assert_eq!(expected, actual)))
+                    },
+                )
+                .unwrap();
 
             let aggregate_500_500_waterline = input_by_time
                 .partitioned_rolling_aggregate_with_waterline(
@@ -1144,7 +1196,8 @@ mod test {
                     aggregator.clone(),
                     range_spec,
                 );
-            let output_500_500_waterline = aggregate_500_500_waterline.gather(0).integrate();
+
+            // let output_500_500_waterline = aggregate_500_500_waterline.gather(0).integrate();
 
             let bound: TraceBound<DynPair<DynDataTyped<u64>, DynOpt<DynData>>> = TraceBound::new();
             let b: Tup2<u64, Option<i64>> = Tup2(u64::MAX, None::<i64>);
@@ -1159,37 +1212,58 @@ mod test {
                     }
                 });
 
-            expected_500_500.apply2(&output_500_500_waterline, |expected, actual| {
-                assert_eq!(expected, actual)
-            });
-
-            let output_500_500_linear = input_by_time
-                .partitioned_rolling_aggregate_linear(
-                    |Tup2(partition, val)| (*partition, *val),
-                    |v| *v,
-                    |v| v,
-                    range_spec,
+            circuit
+                .non_incremental(
+                    &(input_stream.clone(), aggregate_500_500_waterline),
+                    |_child, (input_stream, aggregate_500_500_waterline)| {
+                        let actual = aggregate_500_500_waterline.gather(0).integrate();
+                        let expected =
+                            partitioned_rolling_aggregate_slow(&input_stream.inner(), range_spec);
+                        Ok(expected
+                            .apply2(&actual, |expected, actual| assert_eq!(expected, actual)))
+                    },
                 )
-                .gather(0)
-                .integrate();
-            expected_500_500.apply2(&output_500_500_linear, |expected, actual| {
-                assert_eq!(expected, actual)
-            });
+                .unwrap();
+
+            let output_500_500_linear = input_by_time.partitioned_rolling_aggregate_linear(
+                |Tup2(partition, val)| (*partition, *val),
+                |v| *v,
+                |v| v,
+                range_spec,
+            );
+
+            circuit
+                .non_incremental(
+                    &(input_stream.clone(), output_500_500_linear),
+                    |_child, (input_stream, output_500_500_linear)| {
+                        let actual = output_500_500_linear.gather(0).integrate();
+                        let expected =
+                            partitioned_rolling_aggregate_slow(&input_stream.inner(), range_spec);
+                        Ok(expected
+                            .apply2(&actual, |expected, actual| assert_eq!(expected, actual)))
+                    },
+                )
+                .unwrap();
 
             let range_spec = RelRange::new(RelOffset::Before(500), RelOffset::Before(100));
-            let expected_500_100 =
-                partitioned_rolling_aggregate_slow(&input_stream.inner(), range_spec);
-            let output_500_100 = input_by_time
-                .partitioned_rolling_aggregate(
-                    |Tup2(partition, val)| (*partition, *val),
-                    aggregator,
-                    range_spec,
+            let output_500_100 = input_by_time.partitioned_rolling_aggregate(
+                |Tup2(partition, val)| (*partition, *val),
+                aggregator,
+                range_spec,
+            );
+
+            circuit
+                .non_incremental(
+                    &(input_stream.clone(), output_500_100),
+                    |_child, (input_stream, output_500_100)| {
+                        let actual = output_500_100.gather(0).integrate();
+                        let expected =
+                            partitioned_rolling_aggregate_slow(&input_stream.inner(), range_spec);
+                        Ok(expected
+                            .apply2(&actual, |expected, actual| assert_eq!(expected, actual)))
+                    },
                 )
-                .gather(0)
-                .integrate();
-            expected_500_100.apply2(&output_500_100, |expected, actual| {
-                assert_eq!(expected, actual)
-            });
+                .unwrap();
 
             Ok(input_handle)
         })
@@ -1275,6 +1349,8 @@ mod test {
             let (expected, expected_handle) =
                 circuit.dyn_add_input_indexed_zset::<DynData/*<u64>*/, DynPair<DynDataTyped<u64>, DynOpt<DynData/*<i64>*/>>>(&AddInputIndexedZSetFactories::new::<u64, Tup2<u64, Option<i64>>>());
 
+            let expected = expected.typed::<OrdPartitionedIndexedZSet<u64, u64, _, Option<i64>, _>>();
+
             let input_by_time =
                 input_stream.map_index(|(partition, Tup2(ts, val))| (*ts, Tup2(*partition, *val)));
 
@@ -1293,7 +1369,7 @@ mod test {
                     println!("output {p} {ts} {:6} {w:+}", sum.unwrap_or_default());
                 }
             });
-            expected.apply2(&sum, |expected, actual| assert_eq!(expected, actual.inner()));
+            expected.accumulate_apply2(&sum, |expected, actual| assert_eq!(expected.iter().collect::<Vec<_>>(), actual.iter().collect::<Vec<_>>()));
             Ok((input_handle, expected_handle))
         })
         .unwrap();
@@ -1331,6 +1407,8 @@ mod test {
             let (expected_stream, expected_handle) =
                 circuit.dyn_add_input_indexed_zset::<DynData/*<u64>*/, DynPair<DynDataTyped<u64>, DynOpt<DynData/*<i64>*/>>>(&AddInputIndexedZSetFactories::new::<u64, Tup2<u64, Option<i64>>>());
 
+            let expected_stream = expected_stream.typed::<OrdPartitionedIndexedZSet<u64, u64, _, Option<i64>, _>>();
+
             let input_by_time =
                 input_stream.map_index(|(partition, Tup2(ts, val))| (*ts, Tup2(*partition, *val)));
 
@@ -1339,7 +1417,7 @@ mod test {
                 .partitioned_rolling_average(
                     |Tup2(partition, val)| (*partition, *val),
                     range_spec)
-                .apply2(&expected_stream, |avg: &OrdPartitionedIndexedZSet<u64, u64, _, Option<i64>, _>, expected| assert_eq!(avg.inner(), expected));
+                .accumulate_apply2(&expected_stream, |avg: &SpineSnapshot<OrdPartitionedIndexedZSet<u64, u64, _, Option<i64>, _>>, expected| assert_eq!(avg.iter().collect::<Vec<_>>(), expected.iter().collect::<Vec<_>>()));
             Ok((input_handle, expected_handle))
         })
         .unwrap();
