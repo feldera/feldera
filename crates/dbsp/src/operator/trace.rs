@@ -136,7 +136,7 @@ where
     ///   value represents the lowest upper bound of all partially ordered
     ///   timestamps in `self` or some other stream, computed with the help of
     ///   the [`waterline`](`Stream::waterline`) operator and adjusted by some
-    ///   contstant offsets, dictated, e.g., by window sizes used in the queries
+    ///   constant offsets, dictated, e.g., by window sizes used in the queries
     ///   and the maximal out-of-ordedness of data in the input streams.
     ///
     /// * `retain_key_func` - given the value received from the `bounds_stream`
