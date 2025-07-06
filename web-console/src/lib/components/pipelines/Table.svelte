@@ -82,7 +82,7 @@
           ><span class="text-base font-normal text-surface-950-50">Message</span></th
         >
         <ThSort {table} class="px-1 py-1 " field="deploymentStatusSince"
-          ><span class="text-base font-normal text-surface-950-50">Last update</span></ThSort
+          ><span class="text-base font-normal text-surface-950-50">Status changed</span></ThSort
         >
       </tr>
     </thead>
