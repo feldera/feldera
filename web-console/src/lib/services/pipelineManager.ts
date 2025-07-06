@@ -411,6 +411,7 @@ export const postPipelineAction = async (pipeline_name: string, action: Pipeline
           const { status } = await getPipelineStatus(pipeline_name)
           if (status === desiredStatus) {
             resolve()
+            return
           }
           if (!ignoreStatuses.includes(unionName(status))) {
             reject(
@@ -418,6 +419,7 @@ export const postPipelineAction = async (pipeline_name: string, action: Pipeline
                 `Unexpected status ${JSON.stringify(status)} while waiting for pipeline ${pipeline_name} to complete action ${action}`
               )
             )
+            return
           }
           timer[0] = setTimeout(checkStatus, 1000)
         }

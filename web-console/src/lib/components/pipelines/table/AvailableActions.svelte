@@ -176,7 +176,7 @@
         selectedPipelines.length === 1
           ? "1 pipeline's storage"
           : selectedPipelines.length.toFixed() + " pipelines' storage",
-      deletePipelines,
+      () => postPipelinesAction('clear'),
       selectedPipelines.length === 1
         ? 'This will delete any checkpoints of this pipeline.'
         : 'This will delete any checkpoints of these pipelines.'
@@ -193,9 +193,7 @@
         selectedPipelines.length === 1
           ? '1 pipeline'
           : selectedPipelines.length.toFixed() + ' pipelines',
-      () => {
-        return postPipelinesAction('stop')
-      },
+      () => postPipelinesAction('stop'),
       selectedPipelines.length === 1
         ? 'The pipeline will stop processing inputs and make a checkpoint of its state.'
         : 'These pipelines will stop processing inputs and make checkpoints of their states.'
@@ -212,9 +210,7 @@
         selectedPipelines.length === 1
           ? '1 pipeline'
           : selectedPipelines.length.toFixed() + ' pipelines',
-      () => {
-        return postPipelinesAction('kill')
-      },
+      () => postPipelinesAction('kill'),
       selectedPipelines.length === 1
         ? 'The pipeline will stop processing inputs without making a checkpoint, leaving only a previous one, if any.'
         : 'These pipelines will stop processing inputs without making checkpoints, leaving only previous ones, if any.'
