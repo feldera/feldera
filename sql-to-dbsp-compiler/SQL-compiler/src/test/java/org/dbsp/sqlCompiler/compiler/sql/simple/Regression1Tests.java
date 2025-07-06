@@ -499,4 +499,12 @@ public class Regression1Tests extends SqlIoTest {
                 id, ARG_MAX(DISTINCT c1, c2) AS c1
                 FROM map_tbl GROUP BY id;""");
     }
+
+    @Test
+    public void testAntiJoinIntern() {
+        this.getCCS("""
+                CREATE TABLE T(x VARCHAR INTERNED, y INT);
+                CREATE TABLE S(x VARCHAR);
+                CREATE VIEW V AS SELECT T.x, y FROM T LEFT JOIN S ON T.x = S.x;""");
+    }
 }
