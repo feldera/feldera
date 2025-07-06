@@ -2,38 +2,7 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer.intern;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperatorBase;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPAsofJoinOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPDeindexOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPDifferentiateOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPFilterOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPHopOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPIndexedTopKOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPInternOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinBaseOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinIndexOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPLagOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateWithWaterlineOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceTableOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAggregateOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinIndexOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPSumOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPUnaryOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPViewDeclarationOperator;
+import org.dbsp.sqlCompiler.circuit.operator.*;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.ExpressionCompiler;
@@ -591,6 +560,28 @@ public class RewriteInternedFields extends CircuitCloneVisitor {
         DBSPSimpleOperator replacement = operator.with(function,
                 function.getResultType().to(DBSPTypeTupleBase.class).intoCollectionType(),
                 Linq.list(left, right), false);
+        this.map(operator, replacement);
+    }
+
+    @Override
+    public void postorder(DBSPStreamAntiJoinOperator operator) {
+        // If key types to not match, they have to be reconciled.
+        OutputPort left = this.mapped(operator.left());
+        OutputPort right = this.mapped(operator.right());
+        if (left.equals(operator.left()) && right.equals(operator.right())) {
+            this.map(operator, operator);
+            return;
+        }
+        DBSPTypeIndexedZSet leftType = left.getOutputIndexedZSetType();
+        DBSPTypeIndexedZSet rightType = right.getOutputIndexedZSetType();
+
+        DBSPTypeTuple leftKey = leftType.keyType.to(DBSPTypeTuple.class);
+        DBSPTypeTuple rightKey = rightType.keyType.to(DBSPTypeTuple.class);
+        DBSPTypeTuple commonKeyType = lessInternedType(leftKey, rightKey).to(DBSPTypeTuple.class);
+        left = this.uninternKey(left, leftType, commonKeyType);
+        right = this.uninternKey(right, rightType, commonKeyType);
+        DBSPSimpleOperator replacement = new DBSPStreamAntiJoinOperator(operator.getRelNode(), left, right)
+                .copyAnnotations(operator);
         this.map(operator, replacement);
     }
 
