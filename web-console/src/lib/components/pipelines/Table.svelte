@@ -2,8 +2,6 @@
   import {
     Datatable,
     TableHandler,
-    type TableHandlerInterface,
-    type Field
   } from '@vincjo/datatables'
   import PipelineStatus from '$lib/components/pipelines/list/PipelineStatus.svelte'
   import {
@@ -22,10 +20,23 @@
     preHeaderEnd,
     selectedPipelines = $bindable()
   }: { pipelines: PipelineThumb[]; preHeaderEnd?: Snippet; selectedPipelines: string[] } = $props()
+  let pipelinesWithLastChange = $derived(
+    pipelines.map((pipeline) => ({
+      ...pipeline,
+      lastStatusSince: dateMax(
+        new Date(pipeline.deploymentStatusSince),
+        new Date(pipeline.programStatusSince)
+      )
+    }))
+  )
 
-  const table = new TableHandler(pipelines, { rowsPerPage: undefined, selectBy: 'name' })
+  // svelte-ignore state_referenced_locally
+  const table = new TableHandler(pipelinesWithLastChange, {
+    rowsPerPage: undefined,
+    selectBy: 'name'
+  })
   $effect(() => {
-    table.setRows(pipelines)
+    table.setRows(pipelinesWithLastChange)
   })
   $effect(() => {
     selectedPipelines = table.selected as string[]
@@ -81,7 +92,7 @@
         <th class="px-1 py-1 text-left"
           ><span class="text-base font-normal text-surface-950-50">Message</span></th
         >
-        <ThSort {table} class="px-1 py-1 " field="deploymentStatusSince"
+        <ThSort {table} class="px-1 py-1 " field="lastStatusSince"
           ><span class="text-base font-normal text-surface-950-50">Status changed</span></ThSort
         >
       </tr>
@@ -140,10 +151,7 @@
           <td class="relative w-28 border-surface-100-900 group-hover:bg-surface-50-950">
             <div class="w-32 text-nowrap text-right">
               {formatElapsedTime(
-                dateMax(
-                  new Date(pipeline.deploymentStatusSince),
-                  new Date(pipeline.programStatusSince)
-                ),
+                pipeline.lastStatusSince,
                 'dhm'
               )} ago
             </div>
