@@ -1,4 +1,5 @@
 use crate::circuit::checkpointer::Checkpointer;
+use crate::circuit::runtime::ThreadType;
 use crate::monitor::visual_graph::Graph;
 use crate::storage::backend::StorageError;
 use crate::trace::MergerType;
@@ -729,7 +730,7 @@ impl DBSPHandle {
         self.runtime.take().unwrap().kill_async()
     }
 
-    fn collect_panic_info(&self) -> Option<Vec<(usize, WorkerPanicInfo)>> {
+    fn collect_panic_info(&self) -> Option<Vec<(usize, ThreadType, WorkerPanicInfo)>> {
         self.runtime
             .as_ref()
             .map(|runtime| runtime.collect_panic_info())
