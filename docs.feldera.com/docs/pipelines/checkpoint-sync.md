@@ -39,6 +39,52 @@ Here is a sample configuration:
 | `secret_key`              | `string`  | Your S3 secret key. Same rules as `access_key`.                                                                                    |
 | `start_from_checkpoint`\* | `boolean` | If `true`, Feldera will restore the latest checkpoint from the object store on startup.                                            |
 
+## S3 permissions
+
+The following minimum permissions are required to be available on the bucket
+being written to:
+
+- `ListBucket`
+- `DeleteBucket`
+- `GetObject`
+- `PutObject`
+- `PutObjectACL`
+- `CreateBucket`
+
+Example policy:
+
+```json
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Principal": {
+                "AWS": "arn:aws:iam::USER_SID:user/USER_NAME"
+            },
+            "Action": [
+                "s3:ListBucket",
+                "s3:DeleteObject",
+                "s3:GetObject",
+                "s3:PutObject",
+                "s3:PutObjectAcl"
+            ],
+            "Resource": [
+              "arn:aws:s3:::BUCKET_NAME/*",
+              "arn:aws:s3:::BUCKET_NAME"
+            ]
+        },
+        {
+            "Effect": "Allow",
+            "Action": "s3:ListAllMyBuckets",
+            "Resource": "arn:aws:s3:::*"
+        }
+    ]
+}
+```
+
+For more details, refer to [rclone S3 permissions](https://rclone.org/s3/#s3-permissions).
+
 ## IRSA
 
 To use **IRSA** (IAM Roles for Service Accounts) **omit** fields `access_key`
