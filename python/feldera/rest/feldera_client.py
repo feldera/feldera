@@ -358,9 +358,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             time.sleep(0.1)
 
         raise FelderaTimeoutError(
-            f"timeout error: pipeline '{pipeline_name}' did not stop in {
-                timeout_s
-            } seconds"
+            f"timeout error: pipeline '{pipeline_name}' did not stop in {timeout_s} seconds"
         )
 
     def clear_storage(self, pipeline_name: str, timeout_s: Optional[float] = 300):
@@ -394,9 +392,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             time.sleep(0.1)
 
         raise FelderaTimeoutError(
-            f"timeout error: pipeline '{pipeline_name}' did not clear storage in {
-                timeout_s
-            } seconds"
+            f"timeout error: pipeline '{pipeline_name}' did not clear storage in {timeout_s} seconds"
         )
 
     def checkpoint_pipeline(self, pipeline_name: str) -> int:
@@ -702,9 +698,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         """
 
         self.http.post(
-            path=f"/pipelines/{pipeline_name}/tables/{table_name}/connectors/{
-                connector_name
-            }/pause",
+            path=f"/pipelines/{pipeline_name}/tables/{table_name}/connectors/{connector_name}/pause",
         )
 
     def resume_connector(
@@ -728,9 +722,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         """
 
         self.http.post(
-            path=f"/pipelines/{pipeline_name}/tables/{table_name}/connectors/{
-                connector_name
-            }/start",
+            path=f"/pipelines/{pipeline_name}/tables/{table_name}/connectors/{connector_name}/start",
         )
 
     def get_config(self) -> FelderaConfig:

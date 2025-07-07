@@ -111,9 +111,7 @@ class Pipeline:
             tbl.name.lower() for tbl in pipeline.tables
         ]:
             raise ValueError(
-                f"Cannot push to table '{
-                    table_name
-                }': table with this name does not exist in the '{self.name}' pipeline"
+                f"Cannot push to table '{table_name}': table with this name does not exist in the '{self.name}' pipeline"
             )
         else:
             # consider validating the schema here
@@ -308,14 +306,10 @@ class Pipeline:
                 elapsed = time.monotonic() - start_time
                 if elapsed > timeout_s:
                     raise TimeoutError(
-                        f"timeout ({timeout_s}s) reached while waiting for pipeline '{
-                            self.name
-                        }' to complete"
+                        f"timeout ({timeout_s}s) reached while waiting for pipeline '{self.name}' to complete"
                     )
                 logging.debug(
-                    f"waiting for pipeline {self.name} to complete: elapsed time {
-                        elapsed
-                    }s, timeout: {timeout_s}s"
+                    f"waiting for pipeline {self.name} to complete: elapsed time {elapsed}s, timeout: {timeout_s}s"
                 )
 
             pipeline_complete: bool = self.stats().global_metrics.pipeline_complete
@@ -402,15 +396,11 @@ method or use `Pipeline.resume()` to resume a paused pipeline."""
         """
         if idle_interval_s > timeout_s:
             raise ValueError(
-                f"idle interval ({idle_interval_s}s) cannot be larger than timeout ({
-                    timeout_s
-                }s)"
+                f"idle interval ({idle_interval_s}s) cannot be larger than timeout ({timeout_s}s)"
             )
         if poll_interval_s > timeout_s:
             raise ValueError(
-                f"poll interval ({poll_interval_s}s) cannot be larger than timeout ({
-                    timeout_s
-                }s)"
+                f"poll interval ({poll_interval_s}s) cannot be larger than timeout ({timeout_s}s)"
             )
         if poll_interval_s > idle_interval_s:
             raise ValueError(
