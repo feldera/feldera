@@ -735,6 +735,12 @@ impl DBSPHandle {
             .map(|runtime| runtime.collect_panic_info())
     }
 
+    fn panicked(&self) -> bool {
+        self.runtime
+            .as_ref()
+            .map_or(false, |runtime| runtime.panicked())
+    }
+
     fn broadcast_command<F>(&mut self, command: Command, mut handler: F) -> Result<(), DbspError>
     where
         F: FnMut(usize, Response),
@@ -766,24 +772,28 @@ impl DBSPHandle {
         }
 
         // Receive responses.
+        fn handle_panic(this: &mut DBSPHandle) -> Result<(), DbspError> {
+            // Retrieve panic info before killing the circuit.
+            let panic_info = this.collect_panic_info().unwrap_or_default();
+            this.kill_async();
+
+            return Err(DbspError::Runtime(RuntimeError::WorkerPanic { panic_info }));
+        }
         for _ in 0..self.status_receivers.len() {
             let ready = select.select();
             let worker = ready.index();
 
             match ready.recv(&self.status_receivers[worker]) {
-                Err(_) => {
-                    // Retrieve panic info before killing the circuit.
-                    let panic_info = self.collect_panic_info().unwrap_or_default();
-                    self.kill_async();
-
-                    return Err(DbspError::Runtime(RuntimeError::WorkerPanic { panic_info }));
-                }
+                Err(_) => return handle_panic(self),
                 Ok(Err(e)) => {
                     let _ = self.kill_inner();
                     return Err(e);
                 }
                 Ok(Ok(resp)) => handler(worker, resp),
             }
+        }
+        if self.panicked() {
+            return handle_panic(self);
         }
 
         Ok(())
