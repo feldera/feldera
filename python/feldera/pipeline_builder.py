@@ -50,8 +50,12 @@ class PipelineBuilder:
         if self.name is None or self.sql is None:
             raise ValueError("Name and SQL are required to create a pipeline")
 
-        if self.client.get_pipeline(self.name) is not None:
-            raise RuntimeError(f"Pipeline with name {self.name} already exists")
+        try:
+            if self.client.get_pipeline(self.name) is not None:
+                raise RuntimeError(f"Pipeline with name {self.name} already exists")
+        except FelderaAPIError as err:
+            if err.error_code != "UnknownPipelineName":
+                raise err
 
         inner = InnerPipeline(
             self.name,
@@ -62,7 +66,9 @@ class PipelineBuilder:
             program_config={
                 "profile": self.compilation_profile.value,
             },
-            runtime_config=self.runtime_config.__dict__,
+            runtime_config=dict(
+                (k, v) for k, v in self.runtime_config.__dict__.items() if v is not None
+            ),
         )
 
         inner = self.client.create_pipeline(inner)
