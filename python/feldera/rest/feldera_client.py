@@ -11,6 +11,7 @@ from feldera.rest.feldera_config import FelderaConfig
 from feldera.rest.errors import FelderaTimeoutError
 from feldera.rest.pipeline import Pipeline
 from feldera.rest._httprequests import HttpRequests
+from feldera.rest._helpers import client_version
 
 
 def _validate_no_none_keys_in_map(data):
@@ -63,7 +64,13 @@ class FelderaClient:
         self.http = HttpRequests(self.config)
 
         try:
-            self.pipelines()
+            config = self.get_config()
+            version = client_version()
+            if config.version != version:
+                logging.warn(
+                    f"Client is on version {version} while server is at "
+                    f"{config.version}. There could be incompatibilities."
+                )
         except Exception as e:
             logging.error(f"Failed to connect to Feldera API: {e}")
             raise e

@@ -36,27 +36,28 @@ class BuildMode(Enum):
 
 class PipelineStatus(Enum):
     """
-      Represents the state that this pipeline is currently in.
+    Represents the state that this pipeline is currently in.
 
-      .. code-block:: text
+    .. code-block:: text
 
-                  Stopped ◄─────────── Stopping ◄───── All states can transition
-                     │                    ▲            to Stopping by either:
-    /start or /pause │                    │            (1) user calling /stop?force=true, or;
-                     ▼                    │            (2) pipeline encountering a fatal
-              ⌛Provisioning          Suspending            resource or runtime error,
-                     │                    ▲                having the system call /stop?force=true
-                     ▼                    │ /stop          effectively
-              ⌛Initializing ─────────────┤  ?force=false
-                     │                    │
-           ┌─────────┼────────────────────┴─────┐
-           │         ▼                          │
-           │       Paused  ◄──────► Unavailable │
-           │        │   ▲                ▲      │
-           │ /start │   │  /pause        │      │
-           │        ▼   │                │      │
-           │       Running ◄─────────────┘      │
-           └────────────────────────────────────┘
+                    Stopped ◄─────────── Stopping ◄───── All states can transition
+                       │                    ▲            to Stopping by either:
+      /start or /pause │                    │            (1) user calling /stop?force=true, or;
+                       ▼                    │            (2) pipeline encountering a fatal
+                ⌛Provisioning          Suspending            resource or runtime error,
+                       │                    ▲                having the system call /stop?force=true
+                       ▼                    │ /stop          effectively
+                ⌛Initializing ─────────────┤  ?force=false
+                       │                    │
+             ┌─────────┼────────────────────┴─────┐
+             │         ▼                          │
+             │       Paused  ◄──────► Unavailable │
+             │        │   ▲                ▲      │
+             │ /start │   │  /pause        │      │
+             │        ▼   │                │      │
+             │       Running ◄─────────────┘      │
+             └────────────────────────────────────┘
+
     """
 
     NOT_FOUND = 0
