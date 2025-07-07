@@ -494,7 +494,7 @@ use `with ('materialized' = 'true')` for tables, or `create materialized view` f
                     // Skip deleted records.
                     if w < 0 {
                         cursor.step_key();
-                        continue;
+                        panic!("Unexpected key with negative weight encountered while processing ad-hoc query");
                     }
 
                     while w != 0 {

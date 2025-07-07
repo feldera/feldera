@@ -441,6 +441,9 @@ pub fn cast_to_SqlDecimal_SqlDecimal(
     cx.set_rounding(Rounding::Down);
     cx.set_precision(precision as usize).unwrap();
     let mut result = value.get_dec();
+    if result.is_negative() && result.is_zero() {
+        cx.abs(&mut result);
+    }
     cx.rescale(&mut result, &LargeDecimal::from(-(scale as i32)));
     if is_error(&cx) {
         Err(SqlRuntimeError::from_string(

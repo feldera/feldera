@@ -404,8 +404,7 @@ impl Encoder for ParquetEncoder {
                 bail!("Unable to output record with very large weight {w}. Consider adjusting your SQL queries to avoid duplicate output records, e.g., using 'SELECT DISTINCT'.");
             }
             if w < 0 {
-                // TODO: we don't support deletes in the parquet format yet.
-                continue;
+                panic!("Deletes for the parquet format are not yet supported.");
             }
 
             while w != 0 {
