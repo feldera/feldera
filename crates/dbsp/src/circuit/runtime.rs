@@ -52,7 +52,7 @@ pub enum Error {
     WorkerPanic {
         // Detailed panic information from all threads that
         // reported panics.
-        panic_info: Vec<(usize, WorkerPanicInfo)>,
+        panic_info: Vec<(usize, ThreadType, WorkerPanicInfo)>,
     },
     /// The storage directory supplied does not match the runtime circuit.
     IncompatibleStorage,
@@ -75,8 +75,8 @@ impl Display for Error {
             Self::WorkerPanic { panic_info } => {
                 writeln!(f, "One or more worker threads terminated unexpectedly")?;
 
-                for (worker, worker_panic_info) in panic_info.iter() {
-                    writeln!(f, "worker thread {worker} panicked")?;
+                for (worker, thread_type, worker_panic_info) in panic_info.iter() {
+                    writeln!(f, "{thread_type} worker thread {worker} panicked")?;
                     writeln!(f, "{worker_panic_info}")?;
                 }
                 Ok(())
@@ -109,13 +109,15 @@ mod thread_type {
     #[cfg(doc)]
     use super::Runtime;
     use enum_map::Enum;
+    use serde::Serialize;
 
     thread_local! {
         static CURRENT: Cell<ThreadType> = const { Cell::new(ThreadType::Foreground) };
     }
 
     /// Type of a thread running in a [Runtime].
-    #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Enum)]
+    #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Enum, Serialize)]
+    #[serde(rename_all = "snake_case")]
     pub enum ThreadType {
         /// Circuit thread.
         Foreground,
@@ -258,7 +260,7 @@ struct RuntimeInner {
     pin_cpus: Vec<EnumMap<ThreadType, CoreId>>,
     worker_sequence_numbers: Vec<AtomicUsize>,
     // Panic info collected from failed worker threads.
-    panic_info: Vec<RwLock<Option<WorkerPanicInfo>>>,
+    panic_info: Vec<EnumMap<ThreadType, RwLock<Option<WorkerPanicInfo>>>>,
     panicked: AtomicBool,
     replay_step_size: AtomicUsize,
 }
@@ -377,7 +379,9 @@ impl RuntimeInner {
                 .collect(),
             pin_cpus: map_pin_cpus(nworkers, &config.pin_cpus),
             worker_sequence_numbers: (0..nworkers).map(|_| AtomicUsize::new(0)).collect(),
-            panic_info: (0..nworkers).map(|_| RwLock::new(None)).collect(),
+            panic_info: (0..nworkers)
+                .map(|_| EnumMap::from_fn(|_| RwLock::new(None)))
+                .collect(),
             panicked: AtomicBool::new(false),
             replay_step_size: AtomicUsize::new(DEFAULT_REPLAY_STEP_SIZE),
         })
@@ -786,8 +790,12 @@ impl Runtime {
         })
     }
 
-    pub fn worker_panic_info(&self, worker: usize) -> Option<WorkerPanicInfo> {
-        if let Ok(guard) = self.inner().panic_info[worker].read() {
+    pub fn worker_panic_info(
+        &self,
+        worker: usize,
+        thread_type: ThreadType,
+    ) -> Option<WorkerPanicInfo> {
+        if let Ok(guard) = self.inner().panic_info[worker][thread_type].read() {
             guard.clone()
         } else {
             None
@@ -797,8 +805,9 @@ impl Runtime {
     // Record information about a worker thread panic in `panic_info`
     fn panic(&self, panic_info: &PanicHookInfo) {
         let worker_index = Self::worker_index();
+        let thread_type = ThreadType::current();
         let panic_info = WorkerPanicInfo::new(panic_info);
-        let _ = self.inner().panic_info[worker_index]
+        let _ = self.inner().panic_info[worker_index][thread_type]
             .write()
             .map(|mut guard| *guard = Some(panic_info));
         self.inner().panicked.store(true, Ordering::Release);
@@ -920,17 +929,23 @@ impl RuntimeHandle {
     }
 
     /// Retrieve panic info for a specific worker.
-    pub fn worker_panic_info(&self, worker: usize) -> Option<WorkerPanicInfo> {
-        self.runtime.worker_panic_info(worker)
+    pub fn worker_panic_info(
+        &self,
+        worker: usize,
+        thread_type: ThreadType,
+    ) -> Option<WorkerPanicInfo> {
+        self.runtime.worker_panic_info(worker, thread_type)
     }
 
     /// Retrieve panic info for all workers.
-    pub fn collect_panic_info(&self) -> Vec<(usize, WorkerPanicInfo)> {
+    pub fn collect_panic_info(&self) -> Vec<(usize, ThreadType, WorkerPanicInfo)> {
         let mut result = Vec::new();
 
         for worker in 0..self.workers.len() {
-            if let Some(panic_info) = self.worker_panic_info(worker) {
-                result.push((worker, panic_info))
+            for thread_type in [ThreadType::Foreground, ThreadType::Background] {
+                if let Some(panic_info) = self.worker_panic_info(worker, thread_type) {
+                    result.push((worker, thread_type, panic_info))
+                }
             }
         }
         result
