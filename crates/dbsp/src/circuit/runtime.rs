@@ -259,6 +259,7 @@ struct RuntimeInner {
     worker_sequence_numbers: Vec<AtomicUsize>,
     // Panic info collected from failed worker threads.
     panic_info: Vec<RwLock<Option<WorkerPanicInfo>>>,
+    panicked: AtomicBool,
     replay_step_size: AtomicUsize,
 }
 
@@ -377,6 +378,7 @@ impl RuntimeInner {
             pin_cpus: map_pin_cpus(nworkers, &config.pin_cpus),
             worker_sequence_numbers: (0..nworkers).map(|_| AtomicUsize::new(0)).collect(),
             panic_info: (0..nworkers).map(|_| RwLock::new(None)).collect(),
+            panicked: AtomicBool::new(false),
             replay_step_size: AtomicUsize::new(DEFAULT_REPLAY_STEP_SIZE),
         })
     }
@@ -799,6 +801,7 @@ impl Runtime {
         let _ = self.inner().panic_info[worker_index]
             .write()
             .map(|mut guard| *guard = Some(panic_info));
+        self.inner().panicked.store(true, Ordering::Release);
     }
 
     /// Spawn a new thread using `builder` and `f`. If the current thread is
@@ -931,6 +934,11 @@ impl RuntimeHandle {
             }
         }
         result
+    }
+
+    /// Returns true if any worker has panicked.
+    pub fn panicked(&self) -> bool {
+        self.runtime.inner().panicked.load(Ordering::Acquire)
     }
 }
 
