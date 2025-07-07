@@ -193,7 +193,9 @@ impl SqlDecimal {
 
 impl Hash for SqlDecimal {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.value.to_raw_parts().hash::<H>(state);
+        let data = self.value.clone().to_packed_bcd().unwrap();
+        data.0.hash::<H>(state);
+        data.1.hash::<H>(state);
     }
 }
 
