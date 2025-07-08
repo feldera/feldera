@@ -1,28 +1,29 @@
 use colored::ColoredString;
 use env_logger::Env;
+use log::warn;
 use std::io::Write;
 
+/// Initializes the logger by setting its filter and template.
+/// By default, the logging level is set to `INFO`.
+/// This can be overridden by setting the `RUST_LOG` environment variable.
 pub fn init_logging(name: ColoredString) {
-    // By default, logging is set to INFO level for the Feldera crates:
-    // - "pipeline_manager" for the pipeline-manager crate
-    // - "feldera_types" for the feldera-types crate
-    // For all others, the WARN level is used.
-    // Note that this can be overridden by setting the RUST_LOG environment variable.
-    let _ = env_logger::Builder::from_env(
-        Env::default().default_filter_or("warn,pipeline_manager=info,feldera_types=info"),
-    )
-    .format(move |buf, record| {
-        let t = chrono::Utc::now();
-        let t = format!("{}", t.format("%Y-%m-%d %H:%M:%S"));
-        let level_style = buf.default_level_style(record.level());
-        writeln!(
-            buf,
-            "{} {level_style}{}{level_style:#} {} {}",
-            t,
-            record.level(),
-            name,
-            record.args()
-        )
-    })
-    .try_init();
+    if env_logger::Builder::from_env(Env::default().default_filter_or("info"))
+        .format(move |buf, record| {
+            let t = chrono::Utc::now();
+            let t = format!("{}", t.format("%Y-%m-%d %H:%M:%S"));
+            let level_style = buf.default_level_style(record.level());
+            writeln!(
+                buf,
+                "{} {level_style}{}{level_style:#} {} {}",
+                t,
+                record.level(),
+                name,
+                record.args()
+            )
+        })
+        .try_init()
+        .is_err()
+    {
+        warn!("Unable to initialize logging -- has it already been initialized?")
+    }
 }
