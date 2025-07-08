@@ -205,13 +205,10 @@ fn parse_notification(channel: &str, payload: &str) -> Result<DbNotification, No
 #[cfg(test)]
 mod test {
     use super::listen;
+    use super::{DbNotification, Operation};
     use crate::db::types::pipeline::{PipelineDescr, PipelineId};
     use crate::db::types::program::{CompilationProfile, ProgramConfig};
-    use crate::{
-        auth::TenantRecord,
-        db::storage::Storage,
-        db_notifier::{DbNotification, Operation},
-    };
+    use crate::{auth::TenantRecord, db::storage::Storage};
     use serde_json::json;
     use std::sync::Arc;
     use uuid::Uuid;

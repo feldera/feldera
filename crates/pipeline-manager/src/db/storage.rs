@@ -368,6 +368,7 @@ pub(crate) trait Storage {
 
     /// Retrieves a list of all pipelines across all tenants.
     /// The descriptors only have the fields relevant to monitoring.
+    #[allow(dead_code)]
     async fn list_pipelines_across_all_tenants_for_monitoring(
         &self,
     ) -> Result<Vec<(TenantId, ExtendedPipelineDescrMonitoring)>, DBError>;

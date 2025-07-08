@@ -88,8 +88,6 @@ awc = { workspace = true, features = ["openssl"] }  # For: auth workflows
 reqwest = { workspace = true, features = ["json"]}
 cached = { workspace = true }
 crossbeam = { workspace = true }
-metrics = { workspace = true }
-metrics-exporter-prometheus = { workspace = true }
 
 # System interaction
 dirs = { workspace = true }  # For: discovering home directory
@@ -117,13 +115,10 @@ vergen-gitcl = { version = "1.0.0", features = ["build", "cargo", "rustc", "si"]
 [dev-dependencies]
 proptest = { workspace = true }
 proptest-derive = { workspace = true }
-pretty_assertions = { workspace = true }
 pg-client-config = { workspace = true }
 base64 = { workspace = true }
 actix-http = { workspace = true }
 serial_test = { workspace = true }
-aws-sdk-cognitoidentityprovider = { workspace = true }
-aws-config = { workspace = true }
 wiremock = { workspace = true }
 feldera-types = { workspace = true, features = ["testing"] }
 itertools = { workspace = true }

@@ -8,14 +8,9 @@ pub mod common_error;
 pub mod compiler;
 pub mod config;
 pub mod db;
-pub mod db_notifier;
-pub mod demo;
 pub mod error;
 pub mod license;
 pub mod logging;
-pub mod metrics;
-pub mod probe;
-pub mod retries;
 pub mod runner;
 
 /// Some dependencies of this crate use the `rustls` library. This library has two features

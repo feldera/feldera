@@ -18,11 +18,11 @@ is then used to visualize these metrics.
     ```yaml
     - job_name: 'feldera'
       scrape_interval: 1s
+      metrics_path: '/v0/metrics'
       static_configs:
-        - targets: ['127.0.0.1:8081']
+        - targets: ['127.0.0.1:8080']
     ```
-    - Replace `127.0.0.1:8081` with the address of your Feldera instance. Note that `8081` is the default port for
-      metrics.
+    - Replace `127.0.0.1:8080` with the address of your Feldera instance.
     - Restart Prometheus.
 3. **Grafana:** You must have [Grafana installed](https://grafana.com).
 4. **Add Prometheus To Grafana:**

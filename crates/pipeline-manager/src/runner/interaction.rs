@@ -1,10 +1,10 @@
 use crate::api::error::ApiError;
 use crate::config::ApiServerConfig;
+use crate::db::notifier::DbNotification;
 use crate::db::storage::Storage;
 use crate::db::storage_postgres::StoragePostgres;
 use crate::db::types::pipeline::{ExtendedPipelineDescrMonitoring, PipelineStatus};
 use crate::db::types::tenant::TenantId;
-use crate::db_notifier::DbNotification;
 use crate::error::ManagerError;
 use crate::runner::error::RunnerError;
 use actix_web::{http::Method, web::Payload, HttpRequest, HttpResponse, HttpResponseBuilder};
@@ -131,7 +131,7 @@ impl RunnerInteraction {
         let endpoint_cache = Arc::new(ShardedLock::new(HashMap::new()));
         {
             let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-            tokio::spawn(crate::db_notifier::listen(db.clone(), tx));
+            tokio::spawn(crate::db::notifier::listen(db.clone(), tx));
             let endpoint_cache = endpoint_cache.clone();
             tokio::spawn(async move {
                 while let Some(DbNotification::Pipeline(_op, _tenant, _pipeline_id)) =

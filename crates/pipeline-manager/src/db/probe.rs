@@ -8,13 +8,13 @@ use std::{sync::Arc, time::Duration};
 use tokio::sync::Mutex;
 
 #[derive(Debug)]
-pub struct Probe {
+pub struct DbProbe {
     pub last_checked: DateTime<Local>,
     pub last_error: Option<ManagerError>,
 }
 
 async fn check_if_db_reachable(
-    probe: Arc<Mutex<Probe>>,
+    probe: Arc<Mutex<DbProbe>>,
     db: Arc<Mutex<StoragePostgres>>,
     interval: Duration,
 ) {
@@ -32,9 +32,9 @@ async fn check_if_db_reachable(
     }
 }
 
-impl Probe {
-    pub async fn new(db: Arc<Mutex<StoragePostgres>>) -> Arc<Mutex<Probe>> {
-        let probe = Probe {
+impl DbProbe {
+    pub async fn new(db: Arc<Mutex<StoragePostgres>>) -> Arc<Mutex<DbProbe>> {
+        let probe = DbProbe {
             last_checked: Local::now(),
             last_error: None,
         };

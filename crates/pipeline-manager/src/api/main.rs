@@ -1,11 +1,11 @@
+use crate::api::demo::{read_demos_from_directories, Demo};
 use crate::api::endpoints;
 use crate::auth::JwkCache;
 use crate::config::{ApiServerConfig, CommonConfig};
+use crate::db::probe::DbProbe;
 use crate::db::storage_postgres::StoragePostgres;
-use crate::demo::{read_demos_from_directories, Demo};
 use crate::error::ManagerError;
 use crate::license::LicenseCheck;
-use crate::probe::Probe;
 use crate::runner::interaction::RunnerInteraction;
 use actix_http::body::BoxBody;
 use actix_http::StatusCode;
@@ -139,7 +139,7 @@ only the program-related core fields, and is used by the compiler to discern whe
         crate::db::types::storage::StorageStatus,
 
         // Demo
-        crate::demo::Demo,
+        crate::api::demo::Demo,
 
         // Program
         crate::db::types::program::CompilationProfile,
@@ -345,7 +345,7 @@ pub(crate) struct ServerState {
     pub common_config: CommonConfig,
     pub _config: ApiServerConfig,
     pub jwk_cache: Arc<Mutex<JwkCache>>,
-    probe: Arc<Mutex<Probe>>,
+    probe: Arc<Mutex<DbProbe>>,
     pub demos: Vec<Demo>,
     pub license_check: Arc<RwLock<Option<LicenseCheck>>>,
 }
@@ -366,7 +366,7 @@ impl ServerState {
             common_config,
             _config: config,
             jwk_cache: Arc::new(Mutex::new(JwkCache::new())),
-            probe: Probe::new(db_copy).await,
+            probe: DbProbe::new(db_copy).await,
             demos,
             license_check,
         })
