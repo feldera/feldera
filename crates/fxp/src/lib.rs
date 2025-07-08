@@ -1226,6 +1226,52 @@ impl<const P: usize, const S: usize> From<Fixed<P, S>> for i128 {
     }
 }
 
+macro_rules! try_to_signed_int {
+    ($type_name:ty) => {
+        impl<const P: usize, const S: usize> TryFrom<Fixed<P, S>> for $type_name {
+            type Error = OutOfRange;
+
+            /// Convert from `Fixed` to integer, rounding toward zero (the same
+            /// semantics as Rust casts from float to integer).
+            fn try_from(value: Fixed<P, S>) -> Result<Self, Self::Error> {
+                i128::from(value).try_into().map_err(|_| OutOfRange)
+            }
+        }
+    };
+}
+
+try_to_signed_int!(i64);
+try_to_signed_int!(i32);
+try_to_signed_int!(i16);
+try_to_signed_int!(i8);
+try_to_signed_int!(isize);
+
+/// This is the same as [try_to_signed_int] except for the documentation
+/// comment.
+macro_rules! try_to_unsigned_int {
+    ($type_name:ty) => {
+        impl<const P: usize, const S: usize> TryFrom<Fixed<P, S>> for $type_name {
+            type Error = OutOfRange;
+
+            /// Convert from `Fixed` to integer, rounding toward zero (the same
+            /// semantics as Rust casts from float to integer).
+            ///
+            /// Because this rounds toward zero, negative values greater than -1
+            /// will convert to 0 instead of an out-of-range error.
+            fn try_from(value: Fixed<P, S>) -> Result<Self, Self::Error> {
+                i128::from(value).try_into().map_err(|_| OutOfRange)
+            }
+        }
+    };
+}
+
+try_to_unsigned_int!(u128);
+try_to_unsigned_int!(u64);
+try_to_unsigned_int!(u32);
+try_to_unsigned_int!(u16);
+try_to_unsigned_int!(u8);
+try_to_unsigned_int!(usize);
+
 impl<const P: usize, const S: usize> Add for Fixed<P, S> {
     type Output = Self;
 
@@ -2147,5 +2193,31 @@ mod test {
         let b: Option<Fixed<5, 4>> = Some("4.5678".parse().unwrap());
         let c: Option<Fixed<10, 4>> = nullable_checked_add_generic(a, b);
         assert_eq!(c, Some("5.7978".parse().unwrap()));
+    }
+
+    #[test]
+    fn to_integer() {
+        for x in -9999..=9999 {
+            let f = Fixed::<4, 1>(x);
+            assert_eq!(i128::from(f), x / 10);
+            assert_eq!(i64::try_from(f).unwrap(), (x / 10) as i64);
+            assert_eq!(i32::try_from(f).unwrap(), (x / 10) as i32);
+            assert_eq!(i16::try_from(f).unwrap(), (x / 10) as i16);
+            assert_eq!(
+                i8::try_from(f).ok(),
+                (-1289..=1279).contains(&x).then_some((x / 10) as i8)
+            );
+            assert_eq!(
+                u128::try_from(f).ok(),
+                (x > -10).then_some((x / 10) as u128)
+            );
+            assert_eq!(u64::try_from(f).ok(), (x > -10).then_some((x / 10) as u64));
+            assert_eq!(u32::try_from(f).ok(), (x > -10).then_some((x / 10) as u32));
+            assert_eq!(u16::try_from(f).ok(), (x > -10).then_some((x / 10) as u16));
+            assert_eq!(
+                u8::try_from(f).ok(),
+                (-9..=2559).contains(&x).then_some((x / 10) as u8)
+            );
+        }
     }
 }
