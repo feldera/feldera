@@ -357,7 +357,7 @@ impl ServerState {
         db: Arc<Mutex<StoragePostgres>>,
         license_check: Arc<RwLock<Option<LicenseCheck>>>,
     ) -> AnyResult<Self> {
-        let runner = RunnerInteraction::new(config.clone(), db.clone());
+        let runner = RunnerInteraction::new(common_config.clone(), db.clone());
         let db_copy = db.clone();
         let demos = read_demos_from_directories(&config.demos_dir);
         Ok(Self {
@@ -373,14 +373,14 @@ impl ServerState {
     }
 }
 
-fn create_listener(api_config: &ApiServerConfig) -> AnyResult<TcpListener> {
+fn create_listener(common_config: &CommonConfig) -> AnyResult<TcpListener> {
     // Check that the port is available before turning into a daemon, so we can fail
     // early if the port is taken.
-    let listener =
-        TcpListener::bind((api_config.bind_address.clone(), api_config.port)).map_err(|e| {
+    let listener = TcpListener::bind((common_config.bind_address.clone(), common_config.api_port))
+        .map_err(|e| {
             AnyError::msg(format!(
                 "failed to bind port '{}:{}': {e}",
-                &api_config.bind_address, api_config.port
+                common_config.bind_address, common_config.api_port
             ))
         })?;
     Ok(listener)
@@ -431,12 +431,10 @@ pub async fn run(
     api_config: ApiServerConfig,
     license_check: Arc<RwLock<Option<LicenseCheck>>>,
 ) -> AnyResult<()> {
-    let listener = create_listener(&api_config)?;
+    let listener = create_listener(&common_config)?;
     let state = WebData::new(
         ServerState::new(common_config.clone(), api_config.clone(), db, license_check).await?,
     );
-    let bind_address = api_config.bind_address.clone();
-    let port = api_config.port;
     let auth_configuration = match api_config.auth_provider {
         crate::config::AuthProviderType::None => None,
         crate::config::AuthProviderType::AwsCognito => Some(crate::auth::aws_auth_config()),
@@ -490,8 +488,8 @@ pub async fn run(
     } else {
         include_str!("../../dark-banner.ascii")
     };
-    let addr = env::var("BANNER_ADDR").unwrap_or(bind_address);
-    let url = format!("http://{}:{}", addr, port);
+    let addr = env::var("BANNER_ADDR").unwrap_or(common_config.bind_address);
+    let url = format!("http://{}:{}", addr, common_config.api_port);
 
     // Lock both out streams so that the banner is printed in one go
     // and not interrupted by log messages from other threads.

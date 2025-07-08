@@ -1,3 +1,4 @@
+use crate::config::CommonConfig;
 use crate::db::types::pipeline::PipelineId;
 use crate::db::types::version::Version;
 use crate::error::ManagerError;
@@ -20,6 +21,7 @@ pub trait PipelineExecutor: Sync + Send {
     /// Constructs a new runner for the provided pipeline and starts rejection logging.
     fn new(
         pipeline_id: PipelineId,
+        common_config: CommonConfig,
         config: Self::Config,
         client: reqwest::Client,
         logs_sender: mpsc::Sender<LogMessage>,

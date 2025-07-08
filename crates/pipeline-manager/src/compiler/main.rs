@@ -249,7 +249,7 @@ pub async fn compiler_main(
     ));
 
     // Spawn HTTP server thread
-    let port = config.binary_ref_port;
+    let port = common_config.compiler_port;
     let config = web::Data::new(config.clone());
     let probe = web::Data::new(DbProbe::new(db.clone()).await);
     let http_server = spawn(
@@ -260,7 +260,7 @@ pub async fn compiler_main(
                 .service(get_binary)
                 .service(healthz)
         })
-        .bind(("0.0.0.0", port))
+        .bind((common_config.bind_address, port))
         .unwrap_or_else(|_| panic!("Unable to bind compiler HTTP server on port {port}"))
         .run(),
     );
@@ -322,8 +322,6 @@ mod test {
             compilation_cargo_lock_path: "".to_string(),
             dbsp_override_path: "".to_string(),
             precompile: false,
-            binary_ref_host: "".to_string(),
-            binary_ref_port: 0,
         })
         .await
         .unwrap();
@@ -340,8 +338,6 @@ mod test {
             compilation_cargo_lock_path: "".to_string(),
             dbsp_override_path: "".to_string(),
             precompile: false,
-            binary_ref_host: "".to_string(),
-            binary_ref_port: 0,
         })
         .await
         .unwrap();

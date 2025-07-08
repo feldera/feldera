@@ -2,7 +2,7 @@
 //! and instantiates them locally as processes.
 
 use crate::common_error::CommonError;
-use crate::config::LocalRunnerConfig;
+use crate::config::{CommonConfig, LocalRunnerConfig};
 use crate::db::types::pipeline::PipelineId;
 use crate::db::types::version::Version;
 use crate::error::ManagerError;
@@ -103,6 +103,7 @@ pub async fn fetch_binary_ref(
 #[allow(clippy::type_complexity)]
 pub struct LocalRunner {
     pipeline_id: PipelineId,
+    common_config: CommonConfig,
     config: LocalRunnerConfig,
     client: reqwest::Client,
     process: Option<Child>,
@@ -286,12 +287,14 @@ impl PipelineExecutor for LocalRunner {
 
     fn new(
         pipeline_id: PipelineId,
+        common_config: CommonConfig,
         config: Self::Config,
         client: reqwest::Client,
         logs_sender: mpsc::Sender<LogMessage>,
     ) -> Self {
         Self {
             pipeline_id,
+            common_config,
             config,
             client,
             process: None,
@@ -385,6 +388,8 @@ impl PipelineExecutor for LocalRunner {
             .current_dir(pipeline_dir)
             .arg("--config-file")
             .arg(&config_file_path)
+            .arg("--bind-address")
+            .arg(&self.common_config.bind_address)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -429,7 +434,8 @@ impl PipelineExecutor for LocalRunner {
                 let parse = port.trim().parse::<u16>();
                 match parse {
                     Ok(port) => {
-                        let host = &self.config.pipeline_host;
+                        // Pipelines run on the same host as the runner
+                        let host = &self.common_config.runner_host;
                         Ok(Some(format!("{host}:{port}")))
                     }
                     Err(e) => Err(ManagerError::from(RunnerError::RunnerProvisionError {

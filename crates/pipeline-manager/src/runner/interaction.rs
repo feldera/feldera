@@ -1,5 +1,5 @@
 use crate::api::error::ApiError;
-use crate::config::ApiServerConfig;
+use crate::config::CommonConfig;
 use crate::db::notifier::DbNotification;
 use crate::db::storage::Storage;
 use crate::db::storage_postgres::StoragePostgres;
@@ -113,7 +113,7 @@ pub fn format_disconnected_error_message<T: Display>(_error: T) -> String {
 
 /// Helper for the API server endpoints to interact through HTTP with a pipeline or a pipeline runner.
 pub struct RunnerInteraction {
-    config: ApiServerConfig,
+    common_config: CommonConfig,
     db: Arc<Mutex<StoragePostgres>>,
     endpoint_cache: Arc<ShardedLock<HashMap<(TenantId, String), CachedPipelineDescr>>>,
 }
@@ -127,7 +127,7 @@ impl RunnerInteraction {
 
     /// Creates the interaction interface.
     /// The database is used to retrieve pipelines.
-    pub fn new(config: ApiServerConfig, db: Arc<Mutex<StoragePostgres>>) -> Self {
+    pub fn new(common_config: CommonConfig, db: Arc<Mutex<StoragePostgres>>) -> Self {
         let endpoint_cache = Arc::new(ShardedLock::new(HashMap::new()));
         {
             let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
@@ -144,7 +144,7 @@ impl RunnerInteraction {
         }
 
         Self {
-            config,
+            common_config,
             db,
             endpoint_cache,
         }
@@ -492,8 +492,8 @@ impl RunnerInteraction {
 
         // Build request to the runner
         let url = format!(
-            "http://{}/logs/{}",
-            self.config.runner_hostname_port, pipeline.id
+            "http://{}:{}/logs/{}",
+            self.common_config.runner_host, self.common_config.runner_port, pipeline.id
         );
 
         // Perform request to the runner

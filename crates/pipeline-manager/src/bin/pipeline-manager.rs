@@ -94,14 +94,9 @@ async fn main() -> anyhow::Result<()> {
     let db_clone = db.clone();
     let common_config_clone = common_config.clone();
     let _local_runner = tokio::spawn(async move {
-        runner_main::<LocalRunner>(
-            db_clone,
-            common_config_clone,
-            local_runner_config.clone(),
-            local_runner_config.runner_main_port,
-        )
-        .await
-        .expect("Local runner main failed");
+        runner_main::<LocalRunner>(db_clone, common_config_clone, local_runner_config.clone())
+            .await
+            .expect("Local runner main failed");
     });
     // The api-server blocks forever
     pipeline_manager::api::main::run(db, common_config, api_config, Arc::new(RwLock::new(None)))
