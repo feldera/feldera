@@ -285,7 +285,18 @@ impl RootCircuit {
             },
             Arc::new(|| pairs_factory.default_box()),
         );
-        let stream = self.add_source(input);
+
+        // This stream doesn't strictly need to be sharded. We shard it to make sure that when it is materialized,
+        // the resulting integral can be used to bootstrap any streams derived from it, avoiding the following
+        // situation where the integral cannot be used to backfill the bottom circuit:
+        //
+        // input--->[shard]--->[integral]
+        //       |--->[some other operator]
+        //
+        // This adds small overhead to tables that don't get materialized and hence don't need to get sharded.
+        // If this proves to be a problem in practice, we can add a variant of this function that doesn't shard
+        // its output stream for use with non-materializes tables.
+        let stream = self.add_source(input).dyn_shard(&factories.zset_factories);
 
         let zset_handle = <CollectionHandle<DynPair<K, DynUnit>, DynZWeight>>::new(
             factories.pair_factory,
@@ -356,7 +367,16 @@ impl RootCircuit {
             },
             Arc::new(|| factories.pairs_factory.default_box()),
         );
-        let stream = self.add_source(input);
+
+        // This stream doesn't strictly need to be sharded. We shard it to make sure that when it is materialized,
+        // the resulting integral can be used to bootstrap any streams derived from it, avoiding the following
+        // situation where the integral cannot be used to backfill the bottom circuit:
+        //
+        // input--->[shard]--->[integral]
+        //       |--->[some other operator]
+        let stream = self
+            .add_source(input)
+            .dyn_shard(&factories.indexed_zset_factories);
 
         let zset_handle = <CollectionHandle<K, DynPair<V, DynZWeight>>>::new(
             factories.pair_factory,
