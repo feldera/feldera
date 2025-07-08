@@ -4,9 +4,9 @@ use feldera_types::serde_with_context::{
 };
 use serde::{Deserializer, Serialize, Serializer};
 use smallstr::SmallString;
-use std::fmt::Write;
+use std::fmt::{Display, Write};
 
-use crate::{Fixed, FixedInteger};
+use crate::{DynamicDecimal, Fixed, FixedInteger};
 
 impl<const P: usize, const S: usize> OptionWeightType for Fixed<P, S> {}
 impl<const P: usize, const S: usize> OptionWeightType for &Fixed<P, S> {}
@@ -56,6 +56,25 @@ impl<const P: usize, const S: usize> MulByRef<i32> for Fixed<P, S> {
     }
 }
 
+fn serialize_with_context_helper<S, T>(
+    value: T,
+    serializer: S,
+    context: &SqlSerdeConfig,
+) -> Result<S::Ok, S::Error>
+where
+    T: Serialize + Display,
+    S: Serializer,
+{
+    match context.decimal_format {
+        DecimalFormat::Numeric => value.serialize(serializer),
+        DecimalFormat::String => {
+            let mut string = SmallString::<[u8; 64]>::new();
+            write!(&mut string, "{value}").unwrap();
+            serializer.serialize_str(&string)
+        }
+    }
+}
+
 impl<const P: usize, const S: usize> SerializeWithContext<SqlSerdeConfig> for Fixed<P, S> {
     fn serialize_with_context<Ser>(
         &self,
@@ -65,18 +84,34 @@ impl<const P: usize, const S: usize> SerializeWithContext<SqlSerdeConfig> for Fi
     where
         Ser: Serializer,
     {
-        match context.decimal_format {
-            DecimalFormat::Numeric => self.serialize(serializer),
-            DecimalFormat::String => {
-                let mut string = SmallString::<[u8; 64]>::new();
-                write!(&mut string, "{}", self).unwrap();
-                serializer.serialize_str(&string)
-            }
-        }
+        serialize_with_context_helper(self, serializer, context)
+    }
+}
+
+impl SerializeWithContext<SqlSerdeConfig> for DynamicDecimal {
+    fn serialize_with_context<Ser>(
+        &self,
+        serializer: Ser,
+        context: &SqlSerdeConfig,
+    ) -> Result<Ser::Ok, Ser::Error>
+    where
+        Ser: Serializer,
+    {
+        serialize_with_context_helper(self, serializer, context)
     }
 }
 
 impl<'de, C, const P: usize, const S: usize> DeserializeWithContext<'de, C> for Fixed<P, S> {
+    #[inline(never)]
+    fn deserialize_with_context<D>(deserializer: D, _context: &'de C) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        serde::Deserialize::deserialize(deserializer)
+    }
+}
+
+impl<'de, C> DeserializeWithContext<'de, C> for DynamicDecimal {
     #[inline(never)]
     fn deserialize_with_context<D>(deserializer: D, _context: &'de C) -> Result<Self, D::Error>
     where
