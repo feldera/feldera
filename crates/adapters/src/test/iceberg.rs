@@ -169,7 +169,7 @@ fn data(n_records: usize) -> Vec<IcebergTestStruct> {
             l: i as i64,
             r: F32::from(i as f32),
             d: F64::from(i as f64),
-            dec: feldera_sqllib::SqlDecimal::from_i128_with_scale(i as i128, 2),
+            dec: feldera_sqllib::SqlDecimal::<10, 3>::new(i as i128, 2).unwrap(),
             dt: feldera_sqllib::Date::from_date(time.date()),
             tm: feldera_sqllib::Time::from_time(time.time()),
             ts: feldera_sqllib::Timestamp::from_naiveDateTime(time),

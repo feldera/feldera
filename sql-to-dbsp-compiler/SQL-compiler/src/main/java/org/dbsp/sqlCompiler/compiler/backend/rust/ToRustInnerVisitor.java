@@ -149,7 +149,6 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeISize;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMillisInterval;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMonthsInterval;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeNull;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeRuntimeDecimal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVariant;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVoid;
@@ -165,6 +164,7 @@ import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
+import java.math.BigDecimal;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
@@ -1230,27 +1230,43 @@ public class ToRustInnerVisitor extends InnerVisitor {
     }
 
     @Override
+    public VisitDecision preorder(DBSPTypeDecimal type) {
+        this.push(type);
+        this.optionPrefix(type);
+        this.builder.append("SqlDecimal<")
+                .append(type.precision)
+                .append(", ")
+                .append(type.scale)
+                .append(">");
+        this.optionSuffix(type);
+        this.pop(type);
+        return VisitDecision.STOP;
+    }
+
+    @Override
     public VisitDecision preorder(DBSPDecimalLiteral literal) {
         if (literal.isNull())
             return this.doNull(literal);
         this.push(literal);
         if (literal.getType().mayBeNull)
             this.builder.append("Some(");
-        String value = Objects.requireNonNull(literal.value).toPlainString();
-        if (literal.getType().is(DBSPTypeDecimal.class)) {
-            DBSPTypeDecimal type = literal.getType().to(DBSPTypeDecimal.class);
-            this.builder.append("new_decimal(\"")
-                    .append(value)
-                    .append("\", ")
-                    .append(type.precision)
-                    .append(", ")
-                    .append(type.scale)
-                    .append(").unwrap()");
-        } else if (literal.getType().is(DBSPTypeRuntimeDecimal.class)) {
-            this.builder.append("SqlDecimal::from(\"")
-                    .append(value)
-                    .append("\")");
-        }
+        BigDecimal value = Objects.requireNonNull(literal.value).stripTrailingZeros();
+        DBSPTypeDecimal type = literal.getType().to(DBSPTypeDecimal.class);
+        this.builder.append("SqlDecimal::<")
+                .append(type.precision)
+                .append(", ")
+                .append(type.scale)
+                .append(">::new(")
+                .append(value.unscaledValue().toString())
+                .append("i128, ")
+                .append(value.scale())
+                .append(").expect(\"Could not convert ")
+                .append(value.toString())
+                .append(" to DECIMAL(")
+                .append(type.precision)
+                .append(", ")
+                .append(type.scale)
+                .append(")\")");
         if (literal.getType().mayBeNull)
             this.builder.append(")");
         this.pop(literal);
@@ -1272,6 +1288,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
          * the function called will be cast_to_b_i16N. */
         this.push(expression);
         DBSPType destType = expression.getType();
+        DBSPTypeCode code = destType.code;
         DBSPType sourceType = expression.source.getType();
         DBSPTypeArray sourceVecType = sourceType.as(DBSPTypeArray.class);
         DBSPTypeArray destVecType = destType.as(DBSPTypeArray.class);
@@ -1307,7 +1324,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
         }
 
         if (sourceVecType != null) {
-            if (destType.is(DBSPTypeVariant.class)) {
+            if (code == DBSPTypeCode.VARIANT) {
                 // cast vec to variant
                 functionName = "cast_to_" + destType.baseTypeWithSuffix() + "_vec" + sourceType.nullableSuffix();
                 this.builder.append(functionName)
@@ -1349,7 +1366,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
             }
         }
         if (sourceMap != null) {
-            if (destType.is(DBSPTypeVariant.class)) {
+            if (code == DBSPTypeCode.VARIANT) {
                 functionName = "cast_to_" + destType.baseTypeWithSuffix() + "_map" + sourceType.nullableSuffix();
                 this.builder.append(functionName).append("(").increase();
                 expression.source.accept(this);
@@ -1378,7 +1395,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
             this.pop(expression);
             return VisitDecision.STOP;
         }
-        if (destType.is(DBSPTypeTuple.class)) {
+        if (code == DBSPTypeCode.TUPLE) {
             // should have been eliminated
             if (!this.compact)
                 this.unimplementedCast(expression);
@@ -1395,24 +1412,22 @@ public class ToRustInnerVisitor extends InnerVisitor {
         functionName = "cast_to_" + destType.baseTypeWithSuffix() +
                 "_" + sourceType.baseTypeWithSuffix();
 
-        if ((sourceType.is(DBSPTypeMonthsInterval.class) && destType.is(DBSPTypeMonthsInterval.class)) ||
-            (sourceType.is(DBSPTypeMillisInterval.class) && destType.is(DBSPTypeMillisInterval.class))) {
+        if ((sourceType.is(DBSPTypeMonthsInterval.class) && code == DBSPTypeCode.INTERVAL_LONG) ||
+            (sourceType.is(DBSPTypeMillisInterval.class) && code == DBSPTypeCode.INTERVAL_SHORT)) {
             DBSPTypeBaseType t = destType.to(DBSPTypeBaseType.class);
             functionName = "cast_to_" + t.shortName() + destType.nullableSuffix() +
                     "_" + t.shortName() + sourceType.nullableSuffix();
-        } else if (destType.is(DBSPTypeRuntimeDecimal.class)) {
-            functionName = "cast_to_SqlDecimal" + destType.nullableSuffix() + "_" + sourceType.baseTypeWithSuffix();
         }
-        this.builder.append(functionName).append("(");
+        int argCount = sourceType.genericArgumentCount() + destType.genericArgumentCount();
+        this.builder.append(functionName);
+        if (argCount > 0) {
+            this.builder.append("::<");
+            boolean first = destType.emitGenericArguments(this.builder, true);
+            sourceType.emitGenericArguments(this.builder, first);
+            this.builder.append(">");
+        }
+        this.builder.append("(");
         expression.source.accept(this);
-        DBSPTypeDecimal dec = destType.as(DBSPTypeDecimal.class);
-        if (dec != null) {
-            // pass precision and scale as arguments to cast method too
-            this.builder.append(",")
-                    .append(dec.precision)
-                    .append(", ")
-                    .append(dec.scale);
-        }
         DBSPTypeString str = destType.as(DBSPTypeString.class);
         if (str != null) {
             // pass precision and fixedness as arguments to cast method too
@@ -1622,7 +1637,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
                 this.builder.append(")");
                 break;
             }
-            case ARRAY_CONVERT, MAP_CONVERT, DIV_NULL, SHIFT_LEFT: {
+            case ARRAY_CONVERT, MAP_CONVERT, DIV_NULL: {
                 this.builder.append(expression.opcode.toString())
                         .append(expression.left.getType().nullableUnderlineSuffix())
                         .append(expression.right.getType().nullableUnderlineSuffix())
@@ -1660,7 +1675,25 @@ public class ToRustInnerVisitor extends InnerVisitor {
                         expression.getType(),
                         expression.left.getType(),
                         expression.right.getType());
-                this.builder.append(function).append("(");
+                this.builder.append(function);
+                int genericArgCount =
+                        expression.left.getType().genericArgumentCount() +
+                        expression.right.getType().genericArgumentCount() +
+                        expression.getType().genericArgumentCount();
+                boolean needsGenericArguments =
+                        expression.opcode == DBSPOpcode.ADD ||
+                        expression.opcode == DBSPOpcode.SUB ||
+                        expression.opcode == DBSPOpcode.MUL ||
+                        expression.opcode == DBSPOpcode.DIV ||
+                        expression.opcode == DBSPOpcode.MOD;
+                if (genericArgCount > 0 && needsGenericArguments) {
+                    this.builder.append("::<");
+                    boolean first = expression.left.getType().emitGenericArguments(builder, true);
+                    first = expression.right.getType().emitGenericArguments(builder, first);
+                    expression.getType().emitGenericArguments(builder, first);
+                    this.builder.append(">");
+                }
+                this.builder.append("(");
                 this.visitingChild = 0;
                 expression.left.accept(this);
                 this.builder.append(", ");
@@ -1751,6 +1784,18 @@ public class ToRustInnerVisitor extends InnerVisitor {
             return VisitDecision.STOP;
         } else if (expression.opcode == DBSPOpcode.TYPEDBOX) {
             this.builder.append("TypedBox::new(");
+            expression.source.accept(this);
+            this.builder.append(")");
+            this.pop(expression);
+            return VisitDecision.STOP;
+        } else if (expression.opcode == DBSPOpcode.DECIMAL_TO_INTEGER ||
+                expression.opcode == DBSPOpcode.INTEGER_TO_DECIMAL) {
+            this.builder.append(expression.opcode.toString())
+                    .append(expression.source.getType().nullableUnderlineSuffix())
+                    .append("::<");
+            boolean first = expression.source.getType().emitGenericArguments(this.builder, true);
+            expression.getType().emitGenericArguments(this.builder, first);
+            this.builder.append(">(");
             expression.source.accept(this);
             this.builder.append(")");
             this.pop(expression);

@@ -1,6 +1,4 @@
-use crate::{
-    some_function1, some_polymorphic_function1, some_polymorphic_function2, SqlDecimal, SqlString,
-};
+use crate::{some_function1, some_polymorphic_function1, some_polymorphic_function2, SqlString};
 use dbsp::algebra::{F32, F64};
 use lexical_core::format::STANDARD;
 use lexical_core::{ToLexicalWithOptions, WriteFloatOptions};
@@ -164,13 +162,6 @@ pub fn power_d_d(left: F64, right: F64) -> F64 {
 }
 
 some_polymorphic_function2!(power, d, F64, d, F64, F64);
-
-#[doc(hidden)]
-pub fn power_d_SqlDecimal(left: F64, right: SqlDecimal) -> F64 {
-    F64::new(left.into_inner().powf(right.try_into().unwrap()))
-}
-
-some_polymorphic_function2!(power, d, F64, SqlDecimal, SqlDecimal, F64);
 
 #[doc(hidden)]
 pub fn sqrt_d(left: F64) -> F64 {

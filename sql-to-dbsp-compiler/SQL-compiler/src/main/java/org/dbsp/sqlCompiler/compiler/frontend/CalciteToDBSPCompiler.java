@@ -173,6 +173,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPSortExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPUnaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnsignedUnwrapExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPUnsignedWrapExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
@@ -3023,12 +3024,10 @@ public class CalciteToDBSPCompiler extends RelVisitor
                     DBSPTypeCode code = DBSPTypeInteger.smallestInteger(dec.precision);
                     if (code != null) {
                         intType = DBSPTypeInteger.getType(this.node, code, dec.mayBeNull);
-                        DBSPTypeDecimal mulType = new DBSPTypeDecimal(
-                                this.node, dec.precision, 0, dec.mayBeNull);
+                        DBSPType i128 = DBSPTypeInteger.getType(this.node, INT128, dec.mayBeNull);
                         // directly build the expression, no casts are needed
-                        originalOrderField = new DBSPBinaryExpression(
-                                this.node, mulType, DBSPOpcode.SHIFT_LEFT, originalOrderField,
-                                new DBSPI32Literal(dec.scale));
+                        originalOrderField = new DBSPUnaryExpression(
+                                this.node, i128, DBSPOpcode.DECIMAL_TO_INTEGER, originalOrderField);
                         originalOrderField = originalOrderField.cast(CalciteObject.EMPTY, intType, false);
                         sortType = intType;
                     }
@@ -3131,11 +3130,10 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 if (originalSortType.is(DBSPTypeDecimal.class)) {
                     DBSPTypeDecimal dec = originalSortType.to(DBSPTypeDecimal.class);
                     // convert back to decimal and rescale
-                    var intermediateType = new DBSPTypeDecimal(
-                            this.node, dec.precision + dec.scale, 0, originalSortType.mayBeNull);
-                    unwrap = unwrap.cast(this.node, intermediateType, false);
-                    unwrap = new DBSPBinaryExpression(this.node, originalSortType,
-                            DBSPOpcode.SHIFT_LEFT, unwrap, new DBSPI32Literal(-dec.scale));
+                    DBSPType i128 = DBSPTypeInteger.getType(this.node, INT128, originalSortType.mayBeNull);
+                    unwrap = unwrap.cast(this.node, i128, false);
+                    unwrap = new DBSPUnaryExpression(this.node, originalSortType,
+                            DBSPOpcode.INTEGER_TO_DECIMAL, unwrap);
                 }
                 DBSPExpression body = new DBSPRawTupleExpression(
                         new DBSPTupleExpression(ixKey, unwrap),

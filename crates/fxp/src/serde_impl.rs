@@ -269,15 +269,15 @@ mod test {
         );
         assert_eq!(
             serde_json::from_str::<DynamicDecimal>("123").unwrap(),
-            DynamicDecimal::try_from(123).unwrap()
+            DynamicDecimal::from(123)
         );
         assert_eq!(
             serde_json::from_str::<DynamicDecimal>("-123").unwrap(),
-            DynamicDecimal::try_from(-123).unwrap()
+            DynamicDecimal::from(-123)
         );
         assert_eq!(
             serde_json::from_str::<DynamicDecimal>("99999999").unwrap(),
-            DynamicDecimal::try_from(99999999).unwrap()
+            DynamicDecimal::from(99999999)
         );
         assert_eq!(
             serde_json::from_str::<DynamicDecimal>("1e38").unwrap(),

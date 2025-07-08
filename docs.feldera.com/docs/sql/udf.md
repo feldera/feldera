@@ -270,7 +270,7 @@ crate, which is part of the Feldera SQL runtime.
 | `SMALLINT UNSIGNED`      | `u16`                                   |
 | `INT UNSIGNED`           | `u32`                                   |
 | `BIGINT UNSIGNED`        | `u64`                                   |
-| `DECIMAL(p, s)`          | `feldera_sqllib::SqlDecimal`            |
+| `DECIMAL(p, s)`          | `feldera_sqllib::SqlDecimal<P, S>`      |
 | `REAL`                   | `feldera_sqllib::F32`                   |
 | `DOUBLE`                 | `feldera_sqllib::F64`                   |
 | `CHAR`, `CHAR(n)`        | `feldera_sqllib::SqlString`             |

@@ -367,7 +367,7 @@ public class Regression1Tests extends SqlIoTest {
 
     @Test
     public void testRuntimePanic() {
-        this.runtimeConstantFail("SELECT 1.0 / 0", "Attempt to divide by zero: 1.0 / 0.0");
+        this.runtimeConstantFail("SELECT 1.0 / 0", "Attempt to divide by zero: 1/0");
     }
 
     @Test

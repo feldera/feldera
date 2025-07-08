@@ -4,7 +4,7 @@ use feldera_types::serde_with_context::{
 };
 use serde::{Deserializer, Serialize, Serializer};
 use smallstr::SmallString;
-use std::fmt::{Display, Write};
+use std::fmt::Write;
 
 use crate::{DynamicDecimal, Fixed, FixedInteger};
 
@@ -56,25 +56,6 @@ impl<const P: usize, const S: usize> MulByRef<i32> for Fixed<P, S> {
     }
 }
 
-fn serialize_with_context_helper<S, T>(
-    value: T,
-    serializer: S,
-    context: &SqlSerdeConfig,
-) -> Result<S::Ok, S::Error>
-where
-    T: Serialize + Display,
-    S: Serializer,
-{
-    match context.decimal_format {
-        DecimalFormat::Numeric => value.serialize(serializer),
-        DecimalFormat::String => {
-            let mut string = SmallString::<[u8; 64]>::new();
-            write!(&mut string, "{value}").unwrap();
-            serializer.serialize_str(&string)
-        }
-    }
-}
-
 impl<const P: usize, const S: usize> SerializeWithContext<SqlSerdeConfig> for Fixed<P, S> {
     fn serialize_with_context<Ser>(
         &self,
@@ -84,7 +65,15 @@ impl<const P: usize, const S: usize> SerializeWithContext<SqlSerdeConfig> for Fi
     where
         Ser: Serializer,
     {
-        serialize_with_context_helper(self, serializer, context)
+        match context.decimal_format {
+            DecimalFormat::Numeric => self.serialize(serializer),
+            DecimalFormat::String => {
+                let mut string = SmallString::<[u8; 64]>::new();
+                write!(&mut string, "{self}").unwrap();
+                serializer.serialize_str(&string)
+            }
+            DecimalFormat::I128 => serializer.serialize_i128(self.0),
+        }
     }
 }
 
@@ -97,7 +86,15 @@ impl SerializeWithContext<SqlSerdeConfig> for DynamicDecimal {
     where
         Ser: Serializer,
     {
-        serialize_with_context_helper(self, serializer, context)
+        match context.decimal_format {
+            DecimalFormat::Numeric => self.serialize(serializer),
+            DecimalFormat::String => {
+                let mut string = SmallString::<[u8; 64]>::new();
+                write!(&mut string, "{self}").unwrap();
+                serializer.serialize_str(&string)
+            }
+            DecimalFormat::I128 => serializer.serialize_i128(self.significand()),
+        }
     }
 }
 

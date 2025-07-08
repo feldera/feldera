@@ -68,7 +68,19 @@ public abstract class DBSPType extends DBSPNode implements IDBSPInnerNode {
         builder.append(type);
     }
 
-    /** This is like 'equals', but it always takes a DBSPType. */
+    /** Number of generic arguments for this type's Rust implementation */
+    public int genericArgumentCount() {
+        return 0;
+    }
+
+    /** Write the generic arguments to the specified stream
+     * @param first If true, no comma is necessary prior to the first argument
+     * @return  True if the next argument is the first. */
+    public boolean emitGenericArguments(IIndentStream builder, boolean first) {
+        return first;
+    }
+
+    /** True if this type and the other type represent the same underlying type. */
     public abstract boolean sameType(DBSPType other);
 
     @SuppressWarnings("BooleanMethodIsAlwaysInverted")

@@ -41,7 +41,7 @@ use crate::{
 #[cfg_attr(feature = "size_of", derive(size_of::SizeOf))]
 #[cfg_attr(
     feature = "rkyv",
-    derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, rkyv::CheckBytes)
+    derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize)
 )]
 pub struct DynamicDecimal {
     /// Significand.
@@ -108,7 +108,7 @@ impl DynamicDecimal {
     }
 
     /// Returns the canonical [scale](Self#representation).
-    pub const fn scale(&self) -> u8 {
+    pub const fn exponent(&self) -> u8 {
         self.exponent
     }
 }
@@ -263,6 +263,18 @@ try_to_unsigned_int!(u32);
 try_to_unsigned_int!(u16);
 try_to_unsigned_int!(u8);
 try_to_unsigned_int!(usize);
+
+impl From<DynamicDecimal> for f64 {
+    fn from(value: DynamicDecimal) -> Self {
+        value.significand() as f64 / pow10(value.exponent() as usize) as f64
+    }
+}
+
+impl From<DynamicDecimal> for f32 {
+    fn from(value: DynamicDecimal) -> Self {
+        value.significand() as f32 / pow10(value.exponent() as usize) as f32
+    }
+}
 
 impl TryFrom<f64> for DynamicDecimal {
     type Error = OutOfRange;

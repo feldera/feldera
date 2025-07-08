@@ -7,7 +7,7 @@
 #![allow(non_snake_case)]
 
 use dbsp::algebra::{F32, F64};
-use feldera_sqllib::{SqlDecimal, SqlString};
+use feldera_sqllib::{DynamicDecimal, SqlDecimal, SqlString};
 
 #[derive(Debug)]
 pub enum SltSqlValue {
@@ -17,7 +17,7 @@ pub enum SltSqlValue {
     Flt(f32),
     Dbl(f64),
     Bool(bool),
-    Decimal(SqlDecimal),
+    Decimal(DynamicDecimal),
 
     OptInt(Option<i32>),
     OptLong(Option<i64>),
@@ -25,7 +25,7 @@ pub enum SltSqlValue {
     OptFlt(Option<f32>),
     OptDbl(Option<f64>),
     OptBool(Option<bool>),
-    OptDecimal(Option<SqlDecimal>),
+    OptDecimal(Option<DynamicDecimal>),
 }
 
 impl From<i32> for SltSqlValue {
@@ -76,9 +76,10 @@ impl From<SqlString> for SltSqlValue {
     }
 }
 
-impl From<SqlDecimal> for SltSqlValue {
-    fn from(value: SqlDecimal) -> Self {
-        SltSqlValue::Decimal(value)
+impl<const P: usize, const S: usize> From<SqlDecimal<P, S>> for SltSqlValue {
+    fn from(value: SqlDecimal<P, S>) -> Self {
+        let dd = DynamicDecimal::from(value);
+        SltSqlValue::Decimal(dd)
     }
 }
 
@@ -136,9 +137,9 @@ impl From<Option<SqlString>> for SltSqlValue {
     }
 }
 
-impl From<Option<SqlDecimal>> for SltSqlValue {
-    fn from(value: Option<SqlDecimal>) -> Self {
-        SltSqlValue::OptDecimal(value)
+impl<const P: usize, const S: usize> From<Option<SqlDecimal<P, S>>> for SltSqlValue {
+    fn from(value: Option<SqlDecimal<P, S>>) -> Self {
+        SltSqlValue::OptDecimal(value.map(DynamicDecimal::from))
     }
 }
 

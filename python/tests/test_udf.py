@@ -211,10 +211,10 @@ pub fn var2var(i: Option<Variant>) -> Result<Option<Variant>, Box<dyn std::error
 pub fn nvar2nvar(i: Variant) -> Result<Variant, Box<dyn std::error::Error>> {
     Ok(i)
 }
-pub fn dec2dec(i: Option<SqlDecimal>) -> Result<Option<SqlDecimal>, Box<dyn std::error::Error>> {
+pub fn dec2dec(i: Option<SqlDecimal<7, 2>>) -> Result<Option<SqlDecimal<7, 2>>, Box<dyn std::error::Error>> {
     Ok(i)
 }
-pub fn ndec2ndec(i: SqlDecimal) -> Result<SqlDecimal, Box<dyn std::error::Error>> {
+pub fn ndec2ndec(i: SqlDecimal<7, 2>) -> Result<SqlDecimal<7, 2>, Box<dyn std::error::Error>> {
     Ok(i)
 }
 pub fn str2str(i: Option<SqlString>) -> Result<Option<SqlString>, Box<dyn std::error::Error>> {

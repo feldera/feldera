@@ -296,11 +296,10 @@ public class ToRustVisitor extends CircuitVisitor {
             this.builder.append("let mut catalog = Catalog::new();").newline();
 
         for (DBSPDeclaration decl: circuit.declarations) {
-            if (this.declareInside(decl)) {
+            if (this.declareInside(decl))
                 decl.accept(this);
-                this.builder.newline().newline();
-            }
         }
+        this.builder.newline().newline();
 
         // Process sources first
         for (DBSPOperator node : circuit.getAllOperators())

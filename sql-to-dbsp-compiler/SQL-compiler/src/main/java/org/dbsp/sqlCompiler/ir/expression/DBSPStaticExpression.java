@@ -15,9 +15,12 @@ import org.dbsp.util.IIndentStream;
  * The name of the cell is not represented explicitly. */
 public class DBSPStaticExpression extends DBSPExpression {
     public final DBSPExpression initializer;
+    final String name;
 
     public DBSPStaticExpression(CalciteObject node, DBSPExpression initializer) {
         super(node, initializer.getType());
+        String str = this.type + ":" + initializer;
+        this.name = MerkleInner.hash(str).makeIdentifier("STATIC");
         this.initializer = initializer;
     }
 
@@ -56,7 +59,7 @@ public class DBSPStaticExpression extends DBSPExpression {
     }
 
     public String getName() {
-        return MerkleInner.hash(this.type + ":" + this.initializer).makeIdentifier("STATIC");
+        return this.name;
     }
 
     @SuppressWarnings("unused")

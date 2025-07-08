@@ -245,6 +245,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
     /** Convert an expression that refers to a field in the input row.
      * @param inputRef   index in the input row.
      * @return           the corresponding DBSP expression. */
+    @SuppressWarnings("UnnecessaryLocalVariable")
     @Override
     public DBSPExpression visitInputRef(RexInputRef inputRef) {
         CalciteObject node = CalciteObject.create(this.context, inputRef);
@@ -521,7 +522,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
             else if (leftType.is(DBSPTypeBinary.class) && rightType.is(DBSPTypeBinary.class))
                 expressionResultType = typeWithNull;
             else if (leftType.is(DBSPTypeDecimal.class) && rightType.is(DBSPTypeDecimal.class))
-                expressionResultType = DBSPTypeDecimal.getDefault().withMayBeNull(anyNull);
+                expressionResultType = typeWithNull;
             else
                 throw new UnsupportedException("Operation " + opcode + " on " + leftType + " and " + rightType, node);
             if (opcode.isComparison()) {
@@ -981,11 +982,13 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 // just use compilePolymorphicFunction.
                 if (ops.size() != 2)
                     throw operandCountError(node, operationName, ops.size());
+                for (int i = 0; i < 2; i++)
+                    this.ensureDouble(node, ops, i);
                 DBSPExpression left = ops.get(0);
                 DBSPExpression right = ops.get(1);
                 String functionName = "make_geopoint" +
-                        "_" + left.getType().baseTypeWithSuffix() +
-                        "_" + right.getType().baseTypeWithSuffix();
+                        left.getType().nullableUnderlineSuffix() +
+                        right.getType().nullableUnderlineSuffix();
                 boolean resultIsNull = left.getType().mayBeNull || right.getType().mayBeNull;
                 DBSPExpression expr = this.strictnessCheck(ops, type.withMayBeNull(resultIsNull));
                 if (expr != null)
@@ -1124,14 +1127,15 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                                 if (ops.get(0).getType().is(DBSPTypeNull.class)) {
                                     ops.set(0, ops.get(0).cast(node, type, false));
                                 }
+                                this.ensureDouble(node, ops, 0);
                                 return compilePolymorphicFunction(
                                         true, "sqrt", node, type, ops, 1);
                             }
                         }
 
-                        // Cast real to double
+                        // Cast real or decimal to double
                         for (int i = 0; i < ops.size(); i++) {
-                            if (ops.get(i).type.is(DBSPTypeReal.class)) {
+                            if (ops.get(i).type.code == REAL || ops.get(i).type.code == DECIMAL) {
                                 this.ensureDouble(node, ops, i);
                             }
                         }
@@ -1275,7 +1279,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                             op0 = op0.cast(node, type, false);
                             ops.set(0, op0);
                         }
-                        return compileStrictFunction(call, node, type, ops, 2);
+                        return compilePolymorphicFunction(false, call, node, type, ops, 2);
                     }
                     case "replace":
                         validateArgCount(node, opName, ops.size(), 3);

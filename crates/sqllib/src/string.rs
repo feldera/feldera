@@ -544,7 +544,8 @@ pub fn writelog<T: std::fmt::Display>(format: SqlString, argument: T) -> T {
 
 #[doc(hidden)]
 pub fn parse_json_s(value: SqlString) -> Variant {
-    match serde_json::from_str::<Variant>(value.str()) {
+    let var = serde_json::from_str::<Variant>(value.str());
+    match var {
         Ok(v) => v,
         Err(_) => Variant::SqlNull,
     }

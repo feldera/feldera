@@ -1,8 +1,8 @@
 // I cannot use the standard geopoint object because it doesn't implement Ord
 
-use crate::{casts::cast_to_d_SqlDecimal, some_polymorphic_function2, SqlDecimal};
+use crate::{some_function2, some_polymorphic_function2};
 use ::serde::{Deserialize, Serialize};
-use dbsp::algebra::{F32, F64};
+use dbsp::algebra::F64;
 use dbsp::num_entries_scalar;
 use feldera_types::serde_with_context::SerializeWithContext;
 use geo::EuclideanDistance;
@@ -71,63 +71,11 @@ impl GeoPoint {
 }
 
 #[doc(hidden)]
-pub fn make_geopoint_d_d(left: F64, right: F64) -> GeoPoint {
+pub fn make_geopoint__(left: F64, right: F64) -> GeoPoint {
     GeoPoint::new(left, right)
 }
 
-some_polymorphic_function2!(make_geopoint, d, F64, d, F64, GeoPoint);
-
-#[doc(hidden)]
-pub fn make_geopoint_SqlDecimal_SqlDecimal(left: SqlDecimal, right: SqlDecimal) -> GeoPoint {
-    GeoPoint::new(
-        cast_to_d_SqlDecimal(left).unwrap(),
-        cast_to_d_SqlDecimal(right).unwrap(),
-    )
-}
-
-some_polymorphic_function2!(
-    make_geopoint,
-    SqlDecimal,
-    SqlDecimal,
-    SqlDecimal,
-    SqlDecimal,
-    GeoPoint
-);
-
-#[doc(hidden)]
-pub fn make_geopoint_f_f(left: F32, right: F32) -> GeoPoint {
-    GeoPoint::new(left, right)
-}
-
-some_polymorphic_function2!(make_geopoint, f, F32, f, F32, GeoPoint);
-
-#[doc(hidden)]
-pub fn make_geopoint_i64_i64(left: i64, right: i64) -> GeoPoint {
-    GeoPoint::new(F64::from(left as f64), F64::from(right as f64))
-}
-
-some_polymorphic_function2!(make_geopoint, i64, i64, i64, i64, GeoPoint);
-
-#[doc(hidden)]
-pub fn make_geopoint_i32_i32(left: i32, right: i32) -> GeoPoint {
-    GeoPoint::new(F64::from(left), F64::from(right))
-}
-
-some_polymorphic_function2!(make_geopoint, i32, i32, i32, i32, GeoPoint);
-
-#[doc(hidden)]
-pub fn make_geopoint_i16_i16(left: i16, right: i16) -> GeoPoint {
-    GeoPoint::new(F64::from(left), F64::from(right))
-}
-
-some_polymorphic_function2!(make_geopoint, i16, i16, i16, i16, GeoPoint);
-
-#[doc(hidden)]
-pub fn make_geopoint_i8_i8(left: i8, right: i8) -> GeoPoint {
-    GeoPoint::new(F64::from(left), F64::from(right))
-}
-
-some_polymorphic_function2!(make_geopoint, i8, i8, i8, i8, GeoPoint);
+some_function2!(make_geopoint, F64, F64, GeoPoint);
 
 #[doc(hidden)]
 pub fn st_distance_geopoint_geopoint(left: GeoPoint, right: GeoPoint) -> F64 {

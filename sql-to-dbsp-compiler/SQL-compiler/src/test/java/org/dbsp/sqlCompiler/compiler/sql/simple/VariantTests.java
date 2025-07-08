@@ -25,6 +25,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimeLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPTimestampLiteral;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariantExpression;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU64Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVariantNullLiteral;
 import org.dbsp.sqlCompiler.ir.expression.DBSPArrayExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
@@ -43,6 +44,7 @@ import org.dbsp.util.Linq;
 import org.junit.Test;
 
 import java.math.BigDecimal;
+import java.math.BigInteger;
 
 public class VariantTests extends BaseSQLTests {
     /** Return the default compiler used for testing. */
@@ -224,12 +226,12 @@ public class VariantTests extends BaseSQLTests {
     public void parseJsonTests() {
         this.testQuery("SELECT PARSE_JSON(1)",
                 new DBSPVariantExpression(
-                        new DBSPDecimalLiteral(1)));
+                        new DBSPU64Literal(BigInteger.ONE, false)));
         this.testQuery("SELECT PARSE_JSON('1')",
                 new DBSPVariantExpression(
-                        new DBSPDecimalLiteral(1)));
+                        new DBSPU64Literal(BigInteger.ONE, false)));
         this.testQuery("SELECT TYPEOF(PARSE_JSON('1'))",
-                new DBSPStringLiteral("DECIMAL"));
+                new DBSPStringLiteral("BIGINT UNSIGNED"));
         this.testQuery("SELECT PARSE_JSON('\"a\"')",
                 new DBSPVariantExpression(
                         new DBSPStringLiteral("a")));
@@ -245,9 +247,9 @@ public class VariantTests extends BaseSQLTests {
         this.testQuery("SELECT PARSE_JSON('[1,2,3]')",
                 new DBSPVariantExpression(
                         new DBSPArrayExpression(
-                                new DBSPVariantExpression(new DBSPDecimalLiteral(1)),
-                                new DBSPVariantExpression(new DBSPDecimalLiteral(2)),
-                                new DBSPVariantExpression(new DBSPDecimalLiteral(3)))));
+                                new DBSPVariantExpression(new DBSPU64Literal(BigInteger.valueOf(1), false)),
+                                new DBSPVariantExpression(new DBSPU64Literal(BigInteger.valueOf(2), false)),
+                                new DBSPVariantExpression(new DBSPU64Literal(BigInteger.valueOf(3), false)))));
         this.testQuery("SELECT PARSE_JSON('{\"a\": 1, \"b\": 2}')",
                 new DBSPVariantExpression(
                         new DBSPMapExpression(
@@ -256,15 +258,15 @@ public class VariantTests extends BaseSQLTests {
                                         DBSPTypeVariant.INSTANCE, false),
                                 Linq.list(
                                         new DBSPVariantExpression(new DBSPStringLiteral("a")),
-                                        new DBSPVariantExpression(new DBSPDecimalLiteral(1)),
+                                        new DBSPVariantExpression(new DBSPU64Literal(BigInteger.valueOf(1), false)),
                                         new DBSPVariantExpression(new DBSPStringLiteral("b")),
-                                        new DBSPVariantExpression(new DBSPDecimalLiteral(2))))));
+                                        new DBSPVariantExpression(new DBSPU64Literal(BigInteger.valueOf(2), false))))));
         this.testQuery("""
-                SELECT PARSE_JSON('{"a": 1, "b": [2, 3.3, null]}') = CAST(
+                SELECT PARSE_JSON('{"a": 1.0, "b": [2.2, 3.3, null]}') = CAST(
                    MAP[
                       CAST('a' AS VARIANT), CAST(1.0 AS VARIANT),
                       CAST('b' AS VARIANT), CAST(ARRAY[
-                          CAST(2.0 AS VARIANT),
+                          CAST(2.2 AS VARIANT),
                           CAST(3.3 AS VARIANT),
                           VARIANTNULL()
                                                       ] AS VARIANT)
@@ -287,7 +289,7 @@ public class VariantTests extends BaseSQLTests {
                         new DBSPTypeArray(DBSPTypeString.varchar(true), true),
                         true));
         this.testQuery("""
-                SELECT CAST(PARSE_JSON('["a", 1]') AS VARIANT ARRAY)""",
+                SELECT CAST(PARSE_JSON('["a", 1.0]') AS VARIANT ARRAY)""",
                 new DBSPArrayExpression(true,
                         new DBSPVariantExpression(new DBSPStringLiteral("a", true), true),
                         new DBSPVariantExpression(new DBSPDecimalLiteral(CalciteObject.EMPTY,
@@ -311,9 +313,9 @@ public class VariantTests extends BaseSQLTests {
                                 true),
                                 Linq.list(
                                         new DBSPVariantExpression(new DBSPStringLiteral("a")),
-                                        new DBSPVariantExpression(new DBSPDecimalLiteral(1), true))));
+                                        new DBSPVariantExpression(new DBSPU64Literal(BigInteger.ONE, false), true))));
         this.testQuery("""
-                SELECT CAST(PARSE_JSON('{"a": 1}') AS MAP<STRING, VARIANT>)""",
+                SELECT CAST(PARSE_JSON('{"a": 1.0}') AS MAP<STRING, VARIANT>)""",
                 new DBSPMapExpression(
                         new DBSPTypeMap(
                                 DBSPTypeString.varchar(false),

@@ -77,6 +77,7 @@ impl Default for TimestampFormat {
 pub enum DecimalFormat {
     Numeric,
     String,
+    I128,
 }
 
 impl Default for DecimalFormat {
