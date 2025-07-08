@@ -258,7 +258,7 @@ public class EndToEndTests extends BaseSQLTests {
                 "AVG(T.COL7) OVER (ORDER BY T.COL1 RANGE UNBOUNDED PRECEDING) FROM T";
         DBSPExpression t = new DBSPTupleExpression(
                 new DBSPI32Literal(10),
-                new DBSPDecimalLiteral(0, true),
+                new DBSPDecimalLiteral(D62, BigDecimal.ZERO),
                 new DBSPU32Literal(5L, true));
         this.testQuery(query, new DBSPZSetExpression(t, t));
     }
@@ -730,12 +730,6 @@ public class EndToEndTests extends BaseSQLTests {
                 new DBSPTupleExpression(DBSPLiteral.none(
                         new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,true))),
                 new DBSPTupleExpression(new DBSPI32Literal(10, true))));
-    }
-
-    @Test
-    public void testIllegalDecimal() {
-        String query = "SELECT CAST(12.34 AS DECIMAL(1, 2))";
-        this.queryFailingInCompilation(query, "DECIMAL type must have scale <= precision");
     }
 
     @Test

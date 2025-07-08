@@ -262,9 +262,25 @@ pub enum ParseDecimalError {
     OutOfRange,
 }
 
+impl std::fmt::Display for ParseDecimalError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
+        let message = match self {
+            ParseDecimalError::OutOfRange => "Value out of range",
+            ParseDecimalError::SyntaxError => "Syntax error in numeric value",
+        };
+        f.write_str(message)
+    }
+}
+
 /// Error returned for operations that would produce an out-of-range result.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub struct OutOfRange;
+
+impl std::fmt::Display for OutOfRange {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
+        std::fmt::Display::fmt(&"Value out of range", f)
+    }
+}
 
 /// Returns `10**exponent`, or `None` if `exponent > 38` (because the result
 /// would be greater than `i128::MAX`).
@@ -278,7 +294,7 @@ const fn checked_pow10(exponent: u32) -> Option<i128> {
 ///
 /// Panics if `exponent > 38` (because the result would be greater than
 /// `i128::MAX`).
-const fn pow10(exponent: usize) -> i128 {
+pub const fn pow10(exponent: usize) -> i128 {
     10i128.checked_pow(exponent as u32).unwrap()
 }
 
@@ -296,7 +312,9 @@ fn round_inner(value: i128, scale: i32, n: i32, halfway: Halfway) -> Option<i128
     let position = scale.saturating_sub(n);
     if position <= 0 {
         Some(value)
-    } else if position < scale {
+    } else if value.abs() < 5 * pow10(position as usize - 1) {
+        Some(0)
+    } else {
         let divisor = pow10(position as usize);
         let quotient = value / divisor;
         let remainder = value % divisor;
@@ -309,15 +327,12 @@ fn round_inner(value: i128, scale: i32, n: i32, halfway: Halfway) -> Option<i128
             Ordering::Greater => true,
         };
         let rounded_quotient = if round_away_from_zero {
-            quotient + quotient.signum()
+            quotient + value.signum()
         } else {
             quotient
         };
-        Some(divisor * rounded_quotient)
-    } else if position > scale || value.abs() >= 5 * pow10(scale as usize - 1) {
-        Some(0)
-    } else {
-        None
+        // println!("quotient={quotient}, divisor={divisor}, remainder={remainder}, raz={round_away_from_zero}, rounded_quotient={rounded_quotient}");
+        divisor.checked_mul(rounded_quotient)
     }
 }
 

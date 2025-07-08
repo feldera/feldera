@@ -325,7 +325,7 @@ pub struct TestStruct2 {
     pub field_5: Option<EmbeddedStruct>,
     #[serde(rename = "m")]
     pub field_6: Option<BTreeMap<String, i64>>,
-    pub field_7: SqlDecimal,
+    pub field_7: SqlDecimal<10, 3>,
 }
 
 impl Arbitrary for TestStruct2 {
@@ -363,7 +363,7 @@ impl Arbitrary for TestStruct2 {
                     // field_4: Time::new(f4 * 1000),
                     field_5: Some(f5),
                     field_6: Some(f6),
-                    field_7: SqlDecimal::from_i128_with_scale(f7_num, f7_scale as i32),
+                    field_7: SqlDecimal::<10, 3>::new(f7_num, f7_scale as i32).unwrap(),
                 },
             )
             .boxed()
@@ -385,7 +385,7 @@ impl TestStruct2 {
                     ("foo".to_string(), 100),
                     ("bar".to_string(), 200),
                 ])),
-                field_7: SqlDecimal::from_i128_with_scale(10000, 3),
+                field_7: SqlDecimal::new(10000, 3).unwrap(),
             },
             TestStruct2 {
                 field: 2,
@@ -396,7 +396,7 @@ impl TestStruct2 {
                 // field_4: Time::new(1_000_000_000),
                 field_5: Some(EmbeddedStruct { field: true }),
                 field_6: Some(BTreeMap::new()),
-                field_7: SqlDecimal::from_i128_with_scale(1, 3),
+                field_7: SqlDecimal::new(1, 3).unwrap(),
             },
         ]
     }
@@ -544,7 +544,7 @@ impl TestStruct2 {
             .map(|r| r.field_5.as_ref().map(|emb_struct| emb_struct.field))
             .collect();
         let row6_booleans = Arc::new(BooleanArray::from(row6));
-        let row7: Vec<i128> = data.iter().map(|r| r.field_7.mantissa().unwrap()).collect();
+        let row7: Vec<i128> = data.iter().map(|r| r.field_7.mantissa()).collect();
 
         // Create an Arrow Decimal128Array
         let decimal_array = Decimal128Array::from(row7).with_data_type(DataType::Decimal128(10, 3));
@@ -617,7 +617,7 @@ deserialize_table_record!(TestStruct2["TestStruct", 8] {
     // (r#field_4, "t", false, Time, None),
     (r#field_5, "es", false, Option<EmbeddedStruct>, Some(None)),
     (r#field_6, "m", false, Option<BTreeMap<String, i64>>, Some(None)),
-    (r#field_7, "dec", false, SqlDecimal, None)
+    (r#field_7, "dec", false, SqlDecimal<10, 3>, None)
 });
 
 /// Record in the databricks people dataset.
@@ -709,7 +709,7 @@ pub struct IcebergTestStruct {
     pub l: i64,
     pub r: F32,
     pub d: F64,
-    pub dec: SqlDecimal,
+    pub dec: SqlDecimal<10, 3>,
     pub dt: Date,
     pub tm: Time,
     pub ts: Timestamp,
@@ -767,7 +767,7 @@ impl Arbitrary for IcebergTestStruct {
                         l,
                         r: F32::new(r),
                         d: F64::new(d),
-                        dec: SqlDecimal::from_i128_with_scale(dec_num, dec_scale as i32),
+                        dec: SqlDecimal::<10, 3>::new(dec_num, dec_scale as i32).unwrap(),
                         dt: Date::new(dt),
                         tm: Time::new(tm),
                         ts: Timestamp::new(ts),
@@ -876,7 +876,7 @@ deserialize_table_record!(IcebergTestStruct["IcebergTestStruct", 12] {
     (l, "l", false, i64, None),
     (r, "r", false, F32, None),
     (d, "d", false, F64, None),
-    (dec, "dec", false, SqlDecimal, None),
+    (dec, "dec", false, SqlDecimal<10, 3>, None),
     (dt, "dt", false, Date, None),
     (tm, "tm", false, Time, None),
     (ts, "ts", false, Timestamp, None),
@@ -907,7 +907,7 @@ pub struct DeltaTestStruct {
     pub binary: ByteArray,
     pub boolean: bool,
     pub date: Date,
-    pub decimal_10_3: SqlDecimal,
+    pub decimal_10_3: SqlDecimal<10, 3>,
     pub double: F64,
     pub float: F32,
     pub int: i32,
@@ -989,7 +989,7 @@ impl Arbitrary for DeltaTestStruct {
                         binary: ByteArray::from_vec(binary),
                         boolean,
                         date: Date::new(date),
-                        decimal_10_3: SqlDecimal::from_i128_with_scale(decimal_digits, 3),
+                        decimal_10_3: SqlDecimal::<10, 3>::new(decimal_digits, 3).unwrap(),
                         double: F64::new(double.trunc()), // truncate to avoid rounding errors when serializing floats to/from JSON
                         float: F32::new(float.trunc()),
                         int,
@@ -1219,7 +1219,7 @@ deserialize_table_record!(DeltaTestStruct["DeltaTestStruct", 20] {
     (binary, "binary", false, ByteArray, None),
     (boolean, "boolean", false, bool, None),
     (date, "date", false, Date, None),
-    (decimal_10_3, "decimal_10_3", false, SqlDecimal, None),
+    (decimal_10_3, "decimal_10_3", false, SqlDecimal<10, 3>, None),
     (double, "double", false, F64, None),
     (float, "float", false, F32, None),
     (int, "int", false, i32, None),

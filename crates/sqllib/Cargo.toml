@@ -16,39 +16,38 @@ readme = { workspace = true }
 
 # Add all dependencies in ../../Cargo.toml and use here { workspace = true }
 [dependencies]
-thiserror = { workspace = true }
-dbsp = { workspace = true }
-dec = { workspace = true }
-feldera-types = { workspace = true }
-itertools = { workspace = true }
-# `serde-with-arbitrary-precision` is needed because we enable `arbitrary_precision` in `serde_json`.
-geo = { workspace = true }
-size-of = { workspace = true }
-serde = { workspace = true, features = ["derive"] }
-serde_json = { workspace = true, features = ["arbitrary_precision"] }
-num = { workspace = true }
-# Go back to a version once commit containing 849932 is released:
+arcstr = { workspace = true, features = ["serde"] }
+base58 = { workspace = true }
+base64 = { workspace = true }
+blake3 = { workspace = true }
 chrono = { workspace = true }
+dbsp = { workspace = true }
+feldera-types = { workspace = true }
+flate2 = { workspace = true }
+feldera-fxp = { workspace = true }
+geo = { workspace = true }
+hex = { workspace = true }
+itertools = { workspace = true }
+lexical-core = { workspace = true }
 like = { workspace = true }
+md-5 = { workspace = true }
+metrics = { workspace = true }
+num = { workspace = true }
+num-traits = { workspace = true, features = ["std"] }
 paste = { workspace = true }
+quick_cache = { workspace = true, features = ["stats"] }
 regex = { workspace = true }
 rkyv = { workspace = true, features = ["std", "size_64", "validation", "smallvec"] }
-hex = { workspace = true }
-num-traits = { workspace = true, features = ["std"] }
-flate2 = { workspace = true }
-metrics = { workspace = true }
-base64 = { workspace = true }
-base58 = { workspace = true }
-uuid = { workspace = true, features = ["v4", "std"] }
-arcstr = { workspace = true, features = ["serde"] }
 ryu = { workspace = true }
-md-5 = { workspace = true }
-lexical-core = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+# `serde-with-arbitrary-precision` is needed because we enable `arbitrary_precision` in `serde_json`.
+serde_json = { workspace = true, features = ["arbitrary_precision"] }
+size-of = { workspace = true }
 smallvec = { workspace = true }
-quick_cache = { workspace = true, features = ["stats"] }
-blake3 = { workspace = true }
+thiserror = { workspace = true }
 tracing = { workspace = true }
 typedmap = { workspace = true }
+uuid = { workspace = true, features = ["v4", "std"] }
 
 [dev-dependencies]
 serde_json = { workspace = true }

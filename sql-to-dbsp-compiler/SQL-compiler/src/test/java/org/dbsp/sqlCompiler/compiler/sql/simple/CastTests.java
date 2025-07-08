@@ -86,7 +86,7 @@ public class CastTests extends SqlIoTest {
     @Test
     public void castFail() {
         this.runtimeConstantFail("SELECT CAST('blah' AS DECIMAL)",
-                "invalid decimal");
+                "While converting 'blah' to DECIMAL: parse error");
     }
 
     @Test
@@ -132,7 +132,7 @@ public class CastTests extends SqlIoTest {
     @Test
     public void decimalOutOfRange() {
         this.runtimeFail("SELECT CAST(100103123 AS DECIMAL(10, 4))",
-                "Cannot represent 100103123 as DECIMAL(10, 4)",
+                "Could not convert 100103123 to DECIMAL(10, 4)",
                 this.streamWithEmptyChanges());
     }
 

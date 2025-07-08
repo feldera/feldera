@@ -153,12 +153,17 @@ impl Mul<F64> for ShortInterval {
 }
 
 /// Multiply a `ShortInterval` by a numeric value, producing a `ShortInterval`.
-impl Mul<SqlDecimal> for ShortInterval {
+impl<const P: usize, const S: usize> Mul<SqlDecimal<P, S>> for ShortInterval {
     type Output = Self;
 
-    fn mul(self, rhs: SqlDecimal) -> Self {
+    fn mul(self, rhs: SqlDecimal<P, S>) -> Self {
+        let ms = SqlDecimal::<38, 0>::try_from(self.milliseconds)
+            .expect("overflow in short interval multiplication");
+        let mul = ms
+            .checked_mul_generic::<P, S, 38, 0>(rhs)
+            .expect("overflow in short interval multiplication");
         Self {
-            milliseconds: (SqlDecimal::from(self.milliseconds) * rhs)
+            milliseconds: mul
                 .try_into()
                 .expect("overflow in short interval multiplication"),
         }
@@ -179,7 +184,6 @@ impl Div<i64> for ShortInterval {
 /// Divide a `ShortInterval` by a numeric value, producing a `ShortInterval`.
 impl Div<F64> for ShortInterval {
     type Output = Self;
-
     fn div(self, rhs: F64) -> Self {
         Self {
             milliseconds: (F64::from(self.milliseconds as f64) / rhs).into_inner() as i64,
@@ -188,14 +192,17 @@ impl Div<F64> for ShortInterval {
 }
 
 /// Divide a `ShortInterval` by a numeric value, producing a `ShortInterval`.
-impl Div<SqlDecimal> for ShortInterval {
+impl<const P: usize, const S: usize> Div<SqlDecimal<P, S>> for ShortInterval {
     type Output = Self;
 
-    fn div(self, rhs: SqlDecimal) -> Self {
+    fn div(self, rhs: SqlDecimal<P, S>) -> Self {
+        let ms = SqlDecimal::<38, 0>::try_from(self.milliseconds)
+            .expect("overflow in short interval division");
+        let div = ms
+            .checked_div_generic::<P, S, 38, 0>(rhs)
+            .expect("overflow in short interval division");
         Self {
-            milliseconds: (SqlDecimal::from(self.milliseconds) / rhs)
-                .try_into()
-                .expect("overflow in short interval division"),
+            milliseconds: div.try_into().expect("overflow in short interval division"),
         }
     }
 }
@@ -297,16 +304,19 @@ some_operator!(gte, ShortInterval, ShortInterval, bool);
 some_operator!(lte, ShortInterval, ShortInterval, bool);
 
 #[doc(hidden)]
-pub fn div_ShortInterval_SqlDecimal(left: ShortInterval, right: SqlDecimal) -> ShortInterval {
+pub fn div_ShortInterval_SqlDecimal<const P: usize, const S: usize>(
+    left: ShortInterval,
+    right: SqlDecimal<P, S>,
+) -> ShortInterval {
     left / right
 }
 
 some_polymorphic_function2!(
-    div,
+    div <const P: usize, const S: usize>,
     ShortInterval,
     ShortInterval,
     SqlDecimal,
-    SqlDecimal,
+    SqlDecimal<P, S>,
     ShortInterval
 );
 
@@ -325,16 +335,19 @@ pub fn times_ShortInterval_d(left: ShortInterval, right: F64) -> ShortInterval {
 some_polymorphic_function2!(times, ShortInterval, ShortInterval, d, F64, ShortInterval);
 
 #[doc(hidden)]
-pub fn times_ShortInterval_SqlDecimal(left: ShortInterval, right: SqlDecimal) -> ShortInterval {
+pub fn times_ShortInterval_SqlDecimal<const P: usize, const S: usize>(
+    left: ShortInterval,
+    right: SqlDecimal<P, S>,
+) -> ShortInterval {
     left * right
 }
 
 some_polymorphic_function2!(
-    times,
+    times <const P: usize, const S: usize>,
     ShortInterval,
     ShortInterval,
     SqlDecimal,
-    SqlDecimal,
+    SqlDecimal<P, S>,
     ShortInterval
 );
 
@@ -472,12 +485,17 @@ impl Mul<F64> for LongInterval {
 }
 
 /// Multiply a `LongInterval` by a numeric value producing a `LongInterval`
-impl Mul<SqlDecimal> for LongInterval {
+impl<const P: usize, const S: usize> Mul<SqlDecimal<P, S>> for LongInterval {
     type Output = Self;
 
-    fn mul(self, rhs: SqlDecimal) -> Self {
+    fn mul(self, rhs: SqlDecimal<P, S>) -> Self {
+        let months = SqlDecimal::<10, 0>::try_from(self.months)
+            .expect("overflow in long interval multiplication");
+        let mul = months
+            .checked_mul_generic::<P, S, 10, 0>(rhs)
+            .expect("overflow in long interval multiplication");
         Self {
-            months: (SqlDecimal::from(self.months) * rhs)
+            months: mul
                 .try_into()
                 .expect("overflow in long interval multiplication"),
         }
@@ -507,14 +525,17 @@ impl Div<F64> for LongInterval {
 }
 
 /// Divide a `LongInterval` by a numeric value producing a `LongInterval`
-impl Div<SqlDecimal> for LongInterval {
+impl<const P: usize, const S: usize> Div<SqlDecimal<P, S>> for LongInterval {
     type Output = Self;
 
-    fn div(self, rhs: SqlDecimal) -> Self {
+    fn div(self, rhs: SqlDecimal<P, S>) -> Self {
+        let months =
+            SqlDecimal::<10, 0>::try_from(self.months).expect("overflow in long interval division");
+        let div = months
+            .checked_div_generic::<P, S, 10, 0>(rhs)
+            .expect("overflow in long interval division");
         Self {
-            months: (SqlDecimal::from(self.months) / rhs)
-                .try_into()
-                .expect("overflow in long interval division"),
+            months: div.try_into().expect("overflow in long interval division"),
         }
     }
 }
@@ -639,16 +660,19 @@ pub fn times_LongInterval_d(left: LongInterval, right: F64) -> LongInterval {
 some_polymorphic_function2!(times, LongInterval, LongInterval, d, F64, LongInterval);
 
 #[doc(hidden)]
-pub fn times_LongInterval_SqlDecimal(left: LongInterval, right: SqlDecimal) -> LongInterval {
+pub fn times_LongInterval_SqlDecimal<const P: usize, const S: usize>(
+    left: LongInterval,
+    right: SqlDecimal<P, S>,
+) -> LongInterval {
     left * right
 }
 
 some_polymorphic_function2!(
-    times,
+    times <const P: usize, const S: usize>,
     LongInterval,
     LongInterval,
     SqlDecimal,
-    SqlDecimal,
+    SqlDecimal<P, S>,
     LongInterval
 );
 
@@ -667,16 +691,19 @@ pub fn div_LongInterval_d(left: LongInterval, right: F64) -> LongInterval {
 some_polymorphic_function2!(div, LongInterval, LongInterval, d, F64, LongInterval);
 
 #[doc(hidden)]
-pub fn div_LongInterval_SqlDecimal(left: LongInterval, right: SqlDecimal) -> LongInterval {
+pub fn div_LongInterval_SqlDecimal<const P: usize, const S: usize>(
+    left: LongInterval,
+    right: SqlDecimal<P, S>,
+) -> LongInterval {
     left / right
 }
 
 some_polymorphic_function2!(
-    div,
+    div <const P: usize, const S: usize>,
     LongInterval,
     LongInterval,
     SqlDecimal,
-    SqlDecimal,
+    SqlDecimal<P, S>,
     LongInterval
 );
 

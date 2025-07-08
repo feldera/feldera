@@ -29,3 +29,15 @@ pub(crate) fn r2o<T>(result: SqlResult<T>) -> SqlResult<Option<T>> {
         Ok(value) => Ok(Some(value)),
     }
 }
+
+#[doc(hidden)]
+// Convert a Result<R, E> into a SqlResult<T>
+pub(crate) fn convert_error<T, E>(x: Result<T, E>) -> SqlResult<T>
+where
+    E: std::fmt::Display,
+{
+    match x {
+        Ok(value) => Ok(value),
+        Err(e) => Err(SqlRuntimeError::from_string(e.to_string())),
+    }
+}

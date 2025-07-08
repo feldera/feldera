@@ -34,7 +34,6 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.IsNumericLiteral;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeRuntimeDecimal;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Utilities;
 
@@ -48,7 +47,7 @@ public final class DBSPDecimalLiteral extends DBSPLiteral implements IsNumericLi
 
     public DBSPDecimalLiteral(CalciteObject node, DBSPType type, @Nullable BigDecimal value) {
         super(node, type, value == null);
-        if (!type.is(DBSPTypeDecimal.class) && !type.is(DBSPTypeRuntimeDecimal.class))
+        if (!type.is(DBSPTypeDecimal.class))
             throw new InternalCompilerError("Decimal literal cannot have type " + type, this);
         this.value = value;
     }

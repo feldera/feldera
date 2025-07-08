@@ -12,8 +12,8 @@ pub use binary::*;
 pub mod casts;
 pub use casts::*;
 #[doc(hidden)]
-pub mod dec;
-pub use dec::*;
+pub mod decimal;
+pub use decimal::*;
 #[doc(hidden)]
 pub mod error;
 pub use error::*;
@@ -157,12 +157,12 @@ pub(crate) use some_function1;
 // f_typeN(x: Option<T>) -> Option<S>
 // { let x = x?; Some(f_type(x)) }.
 macro_rules! some_polymorphic_function1 {
-    ($func_name:ident, $type_name: ident, $arg_type:ty, $ret_type:ty) => {
+    ($func_name:ident $(< $( const $var : ident : $ty: ty),* >)?, $type_name: ident, $arg_type:ty, $ret_type:ty) => {
         ::paste::paste! {
             #[doc(hidden)]
-            pub fn [<$func_name _ $type_name N>]( arg: Option<$arg_type> ) -> Option<$ret_type> {
+            pub fn [<$func_name _ $type_name N>] $(< $( const $var : $ty ),* >)? ( arg: Option<$arg_type> ) -> Option<$ret_type> {
                 let arg = arg?;
-                Some([<$func_name _ $type_name >](arg))
+                Some([<$func_name _ $type_name >] $(:: < $($var),* >)? (arg))
             }
         }
     };
@@ -316,25 +316,25 @@ pub(crate) use polymorphic_return_function2;
 // - f_type1N_type2N(x: Option<T>, y: Option<S>) -> Option<U>
 // The resulting functions return Some only if all arguments are 'Some'.
 macro_rules! some_polymorphic_function2 {
-    ($func_name:ident, $type_name0: ident, $arg_type0:ty, $type_name1: ident, $arg_type1:ty, $ret_type:ty) => {
+    ($func_name:ident  $(< $( const $var:ident : $ty: ty),* >)?, $type_name0: ident, $arg_type0:ty, $type_name1: ident, $arg_type1:ty, $ret_type:ty) => {
         ::paste::paste! {
             #[doc(hidden)]
-            pub fn [<$func_name _$type_name0 _ $type_name1 N>]( arg0: $arg_type0, arg1: Option<$arg_type1> ) -> Option<$ret_type> {
+            pub fn [<$func_name _$type_name0 _ $type_name1 N>] $(< $( const $var : $ty),* >)? ( arg0: $arg_type0, arg1: Option<$arg_type1> ) -> Option<$ret_type> {
                 let arg1 = arg1?;
-                Some([<$func_name _ $type_name0 _ $type_name1>](arg0, arg1))
+                Some([<$func_name _ $type_name0 _ $type_name1>] $(:: < $($var),* >)? (arg0, arg1))
             }
 
             #[doc(hidden)]
-            pub fn [<$func_name _ $type_name0 N _ $type_name1>]( arg0: Option<$arg_type0>, arg1: $arg_type1 ) -> Option<$ret_type> {
+            pub fn [<$func_name _ $type_name0 N _ $type_name1>] $(< $( const $var : $ty),* >)? ( arg0: Option<$arg_type0>, arg1: $arg_type1 ) -> Option<$ret_type> {
                 let arg0 = arg0?;
-                Some([<$func_name _ $type_name0 _ $type_name1>](arg0, arg1))
+                Some([<$func_name _ $type_name0 _ $type_name1>] $(:: < $($var),* >)? (arg0, arg1))
             }
 
             #[doc(hidden)]
-            pub fn [<$func_name _ $type_name0 N _ $type_name1 N>]( arg0: Option<$arg_type0>, arg1: Option<$arg_type1> ) -> Option<$ret_type> {
+            pub fn [<$func_name _ $type_name0 N _ $type_name1 N>] $(< $( const $var : $ty),* >)? ( arg0: Option<$arg_type0>, arg1: Option<$arg_type1> ) -> Option<$ret_type> {
                 let arg0 = arg0?;
                 let arg1 = arg1?;
-                Some([<$func_name _ $type_name0 _ $type_name1>](arg0, arg1))
+                Some([<$func_name _ $type_name0 _ $type_name1>] $(:: < $($var),* >)? (arg0, arg1))
             }
         }
     }
@@ -628,28 +628,28 @@ pub(crate) use some_function4;
 // - f_tN_tN(x: Option<T>, y: Option<T>) -> Option<U>
 // The resulting functions return Some only if all arguments are 'Some'.
 macro_rules! some_existing_operator {
-    ($func_name: ident, $short_name: ident, $arg_type: ty, $ret_type: ty) => {
+    ($func_name: ident $(< $( const $var:ident : $ty: ty),* >)?, $short_name: ident, $arg_type: ty, $ret_type: ty) => {
         ::paste::paste! {
             #[inline(always)]
             #[doc(hidden)]
-            pub fn [<$func_name _ $short_name N _ $short_name N>]( arg0: Option<$arg_type>, arg1: Option<$arg_type> ) -> Option<$ret_type> {
+            pub fn [<$func_name _ $short_name N _ $short_name N>] $(< $( const $var : $ty ),* >)? ( arg0: Option<$arg_type>, arg1: Option<$arg_type> ) -> Option<$ret_type> {
                 let arg0 = arg0?;
                 let arg1 = arg1?;
-                Some([<$func_name _ $short_name _ $short_name>](arg0, arg1))
+                Some([<$func_name _ $short_name _ $short_name>] $(:: < $($var),* >)? (arg0, arg1))
             }
 
             #[inline(always)]
             #[doc(hidden)]
-            pub fn [<$func_name _ $short_name _ $short_name N>]( arg0: $arg_type, arg1: Option<$arg_type> ) -> Option<$ret_type> {
+            pub fn [<$func_name _ $short_name _ $short_name N>] $(< $( const $var : $ty ),* >)? ( arg0: $arg_type, arg1: Option<$arg_type> ) -> Option<$ret_type> {
                 let arg1 = arg1?;
-                Some([<$func_name _ $short_name _ $short_name>](arg0, arg1))
+                Some([<$func_name _ $short_name _ $short_name>] $(:: < $($var),* >)? (arg0, arg1))
             }
 
             #[inline(always)]
             #[doc(hidden)]
-            pub fn [<$func_name _ $short_name N _ $short_name>]( arg0: Option<$arg_type>, arg1: $arg_type ) -> Option<$ret_type> {
+            pub fn [<$func_name _ $short_name N _ $short_name>] $(< $( const $var : $ty ),* >)? ( arg0: Option<$arg_type>, arg1: $arg_type ) -> Option<$ret_type> {
                 let arg0 = arg0?;
-                Some([<$func_name _ $short_name _ $short_name>](arg0, arg1))
+                Some([<$func_name _ $short_name _ $short_name>] $(:: < $($var),* >)? (arg0, arg1))
             }
         }
     }
@@ -673,27 +673,27 @@ pub(crate) use some_existing_operator;
 // - Takes the name of the existing function, and the prefix for the generated
 // functions
 macro_rules! some_operator {
-    ($func_name: ident, $short_name: ident, $arg_type: ty, $ret_type: ty) => {
+    ($func_name: ident $(< $( const $var:ident : $ty: ty),* >)?, $short_name: ident, $arg_type: ty, $ret_type: ty) => {
         ::paste::paste! {
             #[doc(hidden)]
             #[inline(always)]
-            pub fn [<$func_name _ $short_name _ $short_name >]( arg0: $arg_type, arg1: $arg_type ) -> $ret_type {
-                $func_name(arg0, arg1)
+            pub fn [<$func_name _ $short_name _ $short_name >] $(< $(const $var : $ty),* >)?  ( arg0: $arg_type, arg1: $arg_type ) -> $ret_type {
+                $func_name $(:: < $($var),* >)? (arg0, arg1)
             }
 
-            some_existing_operator!($func_name, $short_name, $arg_type, $ret_type);
+            some_existing_operator!($func_name $(< $( const $var : $ty),* >)?, $short_name, $arg_type, $ret_type);
         }
     };
 
-    ($func_name: ident, $new_func_name: ident, $short_name: ident, $arg_type: ty, $ret_type: ty) => {
+    ($func_name: ident $(< $( const $var:ident : $ty: ty),* >)?, $new_func_name: ident, $short_name: ident, $arg_type: ty, $ret_type: ty) => {
         ::paste::paste! {
             #[doc(hidden)]
             #[inline(always)]
-            pub fn [<$new_func_name _ $short_name _ $short_name >]( arg0: $arg_type, arg1: $arg_type ) -> $ret_type {
-                $func_name(arg0, arg1)
+            pub fn [<$new_func_name _ $short_name _ $short_name >] $(< $(const $var : $ty ),* >)? ( arg0: $arg_type, arg1: $arg_type ) -> $ret_type {
+                $func_name $(:: < $($var),* >)? (arg0, arg1)
             }
 
-            some_existing_operator!($new_func_name, $short_name, $arg_type, $ret_type);
+            some_existing_operator!($new_func_name $(< $( const $var : $ty),* >)?, $short_name, $arg_type, $ret_type);
         }
     }
 }
@@ -890,12 +890,6 @@ pub fn abs_d(left: F64) -> F64 {
     left.abs()
 }
 
-#[doc(hidden)]
-#[inline(always)]
-pub fn abs_SqlDecimal(left: SqlDecimal) -> SqlDecimal {
-    left.abs()
-}
-
 some_polymorphic_function1!(abs, i8, i8, i8);
 some_polymorphic_function1!(abs, i16, i16, i16);
 some_polymorphic_function1!(abs, i32, i32, i32);
@@ -903,7 +897,6 @@ some_polymorphic_function1!(abs, i64, i64, i64);
 some_polymorphic_function1!(abs, i128, i128, i128);
 some_polymorphic_function1!(abs, f, F32, F32);
 some_polymorphic_function1!(abs, d, F64, F64);
-some_polymorphic_function1!(abs, SqlDecimal, SqlDecimal, SqlDecimal);
 
 #[doc(hidden)]
 #[inline(always)]

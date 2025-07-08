@@ -10,7 +10,19 @@ import TabItem from '@theme/TabItem';
 
 
 <Tabs>
-    <TabItem className="changelogItem" value="enterprise" label="Enterprise">
+    <TabItem className="changelogItem" value="enterprise"
+        label="Enterprise">
+
+        ## Unreleased
+
+        We switched the implementation of DECIMAL numbers to a new DECIMAL
+        library that we have developed in house.  The library uses 3 times
+        less space and is up to 100 times faster than our prior
+        implementation.  This is a breaking change for user-defined
+        functions.  The class exposed for DECIMALS has the same name as
+        the previous implementation (`SqlDecimal`), but its API is
+        completely different.
+
         ## 0.103.0
 
         This version changes the default values of various worker threads in our HTTP and IO runtime
@@ -24,7 +36,8 @@ import TabItem from '@theme/TabItem';
         runtimes explicitly.
 
         We also changed the amount of HTTP worker threads for control plane services (kubernetes-runner,
-        api-server, pipeline-manager) to be equal to the number of cores allocated for them.
+        api-server, pipeline-manager) to be equal to the number of cores
+        allocated for them.
 
         ## 0.97.0
 

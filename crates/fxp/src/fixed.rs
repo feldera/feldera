@@ -131,6 +131,15 @@ impl<const P: usize, const S: usize> Fixed<P, S> {
         }
     };
 
+    /// Returns the mantissa of this fixed-point decimal number.
+    ///
+    /// The mantissa is the unscaled integer representation of the decimal value.
+    /// For a decimal number `d` with a given scale `s`, the mantissa `m` satisfies:
+    /// `d = m × 10^(-s)`, or equivalently, `m = d × 10^s`.
+    pub fn mantissa(&self) -> i128 {
+        self.0
+    }
+
     /// Returns `value` in this type.
     ///
     /// # Panic
@@ -283,6 +292,12 @@ impl<const P: usize, const S: usize> Fixed<P, S> {
             .then_some(Self(value))
     }
 
+    /// Returns the internal representation of this Fixed value
+    /// This is an unstable API, use at your own risk!
+    pub fn internal_representation(self) -> i128 {
+        self.0
+    }
+
     /// Returns `Self(value * 10**exponent)`, rounding to even if `exponent` is
     /// negative, if the computed value is in the correct range for the type.
     fn try_new_with_exponent_round_even(value: i128, exponent: i32) -> Option<Self> {
@@ -350,18 +365,18 @@ impl<const P: usize, const S: usize> Fixed<P, S> {
     /// Returns `None` if `other` is zero.
     ///
     /// [General Decimal Arithmetic]: https://speleotrove.com/decimal/decarith.pdf
-    pub const fn checked_rem_integer(self, _other: Self) -> Option<Self> {
-        todo!()
-    }
-
-    /// Integer remainder like [checked_rem_integer](Self::checked_rem_integer),
-    /// but panic on error.
-    ///
-    /// # Panic
-    ///
-    /// Panics if `other` is zero.
-    pub const fn strict_rem_integer(self, other: Self) -> Self {
-        self.checked_rem_integer(other).unwrap()
+    pub fn checked_rem<const P0: usize, const S0: usize, const P1: usize, const S1: usize>(
+        self,
+        other: Fixed<P0, S0>,
+    ) -> Option<Fixed<P1, S1>> {
+        let neg = self.is_negative();
+        let left = self.abs();
+        let right = other.abs();
+        let div: Self = left.checked_div_generic(right)?;
+        let trunc: Self = div.trunc();
+        let mul: Self = right.checked_mul_generic(trunc)?;
+        let rem: Fixed<P1, S1> = left.checked_sub_generic(mul)?;
+        Some(if neg { rem.neg() } else { rem })
     }
 
     /// Returns the absolute value.  This is an exact calculation that cannot
@@ -415,7 +430,8 @@ impl<const P: usize, const S: usize> Fixed<P, S> {
     ///
     /// [checked_round]: Self::checked_round
     pub fn round(&self, n: i32) -> Self {
-        self.checked_round(n).unwrap()
+        self.checked_round(n)
+            .unwrap_or_else(|| panic!("Could not round value {} to {} digits", self, n))
     }
 
     /// Returns this value rounded to `n` digits after the decimal point, or
@@ -460,6 +476,15 @@ impl<const P: usize, const S: usize> Fixed<P, S> {
         self.checked_floor().unwrap()
     }
 
+    /// Returns this value rounded down to the nearest integer, with type Fixed<P, 0>
+    pub fn int_floor(&self) -> Fixed<P, 0> {
+        if S > 0 {
+            Fixed::<P, 0>::new(div_floor(self.0, Self::scale()), 0i32).unwrap()
+        } else {
+            Fixed::<P, 0>::new(self.0, S as i32).unwrap()
+        }
+    }
+
     /// Returns the integer part of this value, truncating non-integers toward
     /// zero.  This is an exact calculation that cannot overflow.
     ///
@@ -501,6 +526,16 @@ impl<const P: usize, const S: usize> Fixed<P, S> {
     /// [checked_ceil]: Self::checked_ceil
     pub fn ceil(&self) -> Self {
         self.checked_ceil().unwrap()
+    }
+
+    /// Returns this value rounded up to the nearest integer, or `None` if
+    /// rounding caused overflow.
+    pub fn int_ceil(&self) -> Fixed<P, 0> {
+        if S > 0 {
+            Fixed::<P, 0>::new(div_ceil(self.0, Self::scale()), 0i32).unwrap()
+        } else {
+            Fixed::<P, 0>::new(self.0, S as i32).unwrap()
+        }
     }
 
     /// Returns -1 if this value is less than zero, 0 if this value is zero, and
@@ -863,6 +898,18 @@ impl<const P: usize, const S: usize> TryFrom<f64> for Fixed<P, S> {
     /// `value` is out of range.
     fn try_from(value: f64) -> Result<Self, Self::Error> {
         cast(value * Self::scale() as f64)
+            .and_then(Self::try_new)
+            .ok_or(OutOfRange)
+    }
+}
+
+impl<const P: usize, const S: usize> TryFrom<f32> for Fixed<P, S> {
+    type Error = OutOfRange;
+
+    /// Convert `value` to `Fixed`, rounding toward zero, reporting an error if
+    /// `value` is out of range.
+    fn try_from(value: f32) -> Result<Self, Self::Error> {
+        cast(value as f64 * Self::scale() as f64)
             .and_then(Self::try_new)
             .ok_or(OutOfRange)
     }
@@ -1820,6 +1867,72 @@ mod test {
         test(-99_999_999.1, -99_999_999.0);
         test(-99_999_999.5, -99_999_999.0);
         test(-99_999_999.6, -99_999_999.0);
+    }
+
+    #[test]
+    fn round() {
+        fn test(x: f64, expected: Option<f64>) {
+            assert_eq!(f(x).checked_round(0), expected.map(f));
+        }
+        type F = Fixed<10, 2>;
+        fn test1((x, s): (i128, i32), d: i32, expected: Option<(i128, i32)>) {
+            assert_eq!(
+                F::new(x, s).unwrap().checked_round(d),
+                expected.map(|x| F::new(x.0, x.1).unwrap())
+            );
+        }
+
+        // round(5.1 , 2) = 5.1
+        test1((51, 1), 2, Some((51, 1)));
+        // round(5.1, 1) = 5.1
+        test1((51, 1), 1, Some((51, 1)));
+        // round(5.1, 0) = 5.0
+        test1((51, 1), 0, Some((50, 1)));
+        // round(5.1, -1) = 10
+        test1((51, 1), -1, Some((10, 0)));
+
+        // round(2.1, 2) = 2.1
+        test1((21, 1), 2, Some((21, 1)));
+        // round(2.1, 1) = 2.1
+        test1((21, 1), 1, Some((21, 1)));
+        // round(2.1, 0) = 2.0
+        test1((21, 1), 0, Some((20, 1)));
+        // round(2.1, -1) = 0
+        test1((21, 1), -1, Some((0, 0)));
+
+        // round(99_999_999.1, 2) = 99_999_999.1
+        test1((999_999_991, 1), 2, Some((999_999_991, 1)));
+        // round(99_999_999.1, 1) = 99_999_999.1
+        test1((999_999_991, 1), 1, Some((999_999_991, 1)));
+        // round(99_999_999.1, 0) = 99_999_999.0
+        test1((999_999_991, 1), 0, Some((999_999_990, 1)));
+        // round(99_999_999.1, -1) = None
+        test1((999_999_991, 1), -1, None);
+
+        test(5.0, Some(5.0));
+        test(5.1, Some(5.0));
+        test(5.5, Some(6.0));
+        test(5.9, Some(6.0));
+        test(-5.0, Some(-5.0));
+        test(-5.1, Some(-5.0));
+        test(-5.5, Some(-6.0));
+        test(-5.6, Some(-6.0));
+        test(4.0, Some(4.0));
+        test(4.1, Some(4.0));
+        test(4.5, Some(5.0));
+        test(4.9, Some(5.0));
+        test(-4.0, Some(-4.0));
+        test(-4.1, Some(-4.0));
+        test(-4.5, Some(-5.0));
+        test(-4.6, Some(-5.0));
+        test(99_999_999.0, Some(99_999_999.0));
+        test(99_999_999.1, Some(99_999_999.0));
+        test(99_999_999.5, None);
+        test(99_999_999.6, None);
+        test(-99_999_999.0, Some(-99_999_999.0));
+        test(-99_999_999.1, Some(-99_999_999.0));
+        test(-99_999_999.5, None);
+        test(-99_999_999.6, None);
     }
 
     #[test]

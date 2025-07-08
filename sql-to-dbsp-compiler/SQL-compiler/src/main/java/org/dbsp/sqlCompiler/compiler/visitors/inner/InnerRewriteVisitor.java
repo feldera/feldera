@@ -54,7 +54,6 @@ import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeFunction;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMillisInterval;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMonthsInterval;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeRuntimeDecimal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVariant;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeBTreeMap;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPComparatorType;
@@ -328,15 +327,6 @@ public abstract class InnerRewriteVisitor
         this.push(type);
         this.pop(type);
         DBSPType result = new DBSPTypeDecimal(type.getNode(), type.getPrecision(), type.scale, type.mayBeNull);
-        this.map(type, result);
-        return VisitDecision.STOP;
-    }
-
-    @Override
-    public VisitDecision preorder(DBSPTypeRuntimeDecimal type) {
-        this.push(type);
-        this.pop(type);
-        DBSPType result = new DBSPTypeRuntimeDecimal(type.getNode(), type.mayBeNull);
         this.map(type, result);
         return VisitDecision.STOP;
     }

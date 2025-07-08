@@ -174,7 +174,6 @@ public class MultiCrateTests extends BaseSQLTests {
         Arrays.sort(sqlFiles);
 
         for (String sqlFile: sqlFiles) {
-            System.out.println(sqlFile);
             String basename = Utilities.getBaseName(sqlFile);
             String originalUdf = basename + ".udf.rs";
             this.compileToMultiCrate(dir.getPath() + "/" + sqlFile, false);

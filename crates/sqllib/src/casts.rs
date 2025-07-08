@@ -5,26 +5,24 @@
 use crate::{
     array::Array,
     binary::{to_hex_, ByteArray},
-    dec::{is_error, DecimalContext, LargeDecimal, SqlDecimal},
     error::{r2o, SqlResult, SqlRuntimeError},
     geopoint::*,
-    get_standard_context,
     interval::*,
     map::Map,
     timestamp::*,
     uuid::*,
     variant::*,
-    SqlString, Weight,
+    DynamicDecimal, SqlDecimal, SqlString, Weight,
 };
 
 use chrono::{Datelike, NaiveDate, NaiveDateTime, NaiveTime, Timelike};
 use dbsp::algebra::{HasOne, HasZero, F32, F64};
-use dec::Rounding;
 use num::{One, Zero};
 use num_traits::cast::NumCast;
 use regex::{Captures, Regex};
 use std::cmp::{min, Ordering};
 use std::error::Error;
+use std::str::FromStr;
 use std::string::String;
 use std::sync::LazyLock;
 
@@ -138,29 +136,29 @@ fn cast_null(t: &str) -> Box<SqlRuntimeError> {
 // The original function is
 // cast_to_ $result_name _ $type_name( value: $arg_type ) -> SqlResult<$result_type>
 macro_rules! cast_function {
-    ($result_name: ident, $result_type: ty, $type_name: ident, $arg_type: ty) => {
+    ($result_name: ident $(< $( const $var:ident : $ty: ty),* >)?, $result_type: ty, $type_name: ident, $arg_type: ty) => {
         ::paste::paste! {
             #[doc(hidden)]
             #[inline]
-            pub fn [<cast_to_ $result_name N_ $type_name>]( value: $arg_type ) -> SqlResult<Option<$result_type>> {
-                r2o([<cast_to_ $result_name _ $type_name>](value))
+            pub fn [<cast_to_ $result_name N_ $type_name>] $(< $( const $var : $ty),* >)? ( value: $arg_type ) -> SqlResult<Option<$result_type>> {
+                r2o([<cast_to_ $result_name _ $type_name>] $(:: < $($var),* >)? (value))
             }
 
             #[doc(hidden)]
             #[inline]
-            pub fn [<cast_to_ $result_name _ $type_name N >]( value: Option<$arg_type> ) -> SqlResult<$result_type> {
+            pub fn [<cast_to_ $result_name _ $type_name N >] $(< $( const $var : $ty),* >)? ( value: Option<$arg_type> ) -> SqlResult<$result_type> {
                 match value {
                     None => Err(cn!($type_name)),
-                    Some(value) => [<cast_to_ $result_name _ $type_name>](value),
+                    Some(value) => [<cast_to_ $result_name _ $type_name>] $(:: < $($var),* >)? (value),
                 }
             }
 
             #[doc(hidden)]
             #[inline]
-            pub fn [<cast_to_ $result_name N_ $type_name N >]( value: Option<$arg_type> ) -> SqlResult<Option<$result_type>> {
+            pub fn [<cast_to_ $result_name N_ $type_name N >] $(< $( const $var : $ty),* >)? ( value: Option<$arg_type> ) -> SqlResult<Option<$result_type>> {
                 match value {
                     None => Ok(None),
-                    Some(v) => r2o([<cast_to_ $result_name _ $type_name >](v)),
+                    Some(v) => r2o([<cast_to_ $result_name _ $type_name >] $(:: < $($var),* >)? (v)),
                 }
             }
         }
@@ -170,35 +168,35 @@ macro_rules! cast_function {
 /////////// cast to b
 
 macro_rules! cast_to_b {
-    ($type_name: ident, $arg_type: ty) => {
+    ($type_name: ident $(< $( const $var: ident : $ty: ty),* >)?, $arg_type: ty) => {
         ::paste::paste! {
             #[doc(hidden)]
             #[inline]
-            pub fn [<cast_to_b_ $type_name>]( value: $arg_type ) -> SqlResult<bool> {
+            pub fn [<cast_to_b_ $type_name>] $(< $( const $var : $ty ),* >)? ( value: $arg_type ) -> SqlResult<bool> {
                 Ok(value != <$arg_type as num::Zero>::zero())
             }
 
             #[doc(hidden)]
             #[inline]
-            pub fn [<cast_to_b_ $type_name N >]( value: Option<$arg_type> ) -> SqlResult<bool> {
+            pub fn [<cast_to_b_ $type_name N >] $(< $( const $var : $ty ),* >)? ( value: Option<$arg_type> ) -> SqlResult<bool> {
                 match value {
                     None => Err(cast_null("bool")),
-                    Some(value) => [<cast_to_b_ $type_name>](value),
+                    Some(value) => [<cast_to_b_ $type_name>] $(:: < $( $var ),* >)? (value),
                 }
             }
 
             #[doc(hidden)]
             #[inline]
-            pub fn [<cast_to_bN_ $type_name >]( value: $arg_type ) -> SqlResult<Option<bool>> {
-                r2o([< cast_to_b_ $type_name >](value))
+            pub fn [<cast_to_bN_ $type_name >] $(< $( const $var : $ty ),* >)? ( value: $arg_type ) -> SqlResult<Option<bool>> {
+                r2o([< cast_to_b_ $type_name >] $(:: < $( $var ),* >)? (value))
             }
 
             #[doc(hidden)]
             #[inline]
-            pub fn [<cast_to_bN_ $type_name N >]( value: Option<$arg_type> ) -> SqlResult<Option<bool>> {
+            pub fn [<cast_to_bN_ $type_name N >] $(< $( const $var : $ty ),* >)? ( value: Option<$arg_type> ) -> SqlResult<Option<bool>> {
                 match value {
                     None => Ok(None),
-                    Some(value) => [<cast_to_bN_ $type_name >](value),
+                    Some(value) => [<cast_to_bN_ $type_name >] $(:: < $( $var ),* >)? (value),
                 }
             }
         }
@@ -258,7 +256,7 @@ pub fn cast_to_b_bN(value: Option<bool>) -> SqlResult<bool> {
     }
 }
 
-cast_to_b!(SqlDecimal, SqlDecimal);
+cast_to_b!(SqlDecimal<const P: usize, const S: usize>, SqlDecimal<P, S>);
 cast_to_b_fp!(d, F64);
 cast_to_b_fp!(f, F32);
 cast_to_b!(i8, i8);
@@ -403,169 +401,175 @@ cast_function!(Time, Time, Timestamp, Timestamp);
 
 #[doc(hidden)]
 #[inline]
-pub fn cast_to_SqlDecimal_b(value: bool, precision: u32, scale: u32) -> SqlResult<SqlDecimal> {
-    let result = if value {
-        <SqlDecimal as One>::one()
+pub fn cast_to_SqlDecimal_b<const P: usize, const S: usize>(
+    value: bool,
+) -> SqlResult<SqlDecimal<P, S>> {
+    if value {
+        Ok(<SqlDecimal<P, S> as One>::one())
     } else {
-        <SqlDecimal as Zero>::zero()
-    };
-    cast_to_SqlDecimal_SqlDecimal(result, precision, scale)
+        Ok(<SqlDecimal<P, S> as Zero>::zero())
+    }
 }
 
 #[doc(hidden)]
 #[inline]
-pub fn cast_to_SqlDecimal_bN(
+pub fn cast_to_SqlDecimal_bN<const P: usize, const S: usize>(
     value: Option<bool>,
-    precision: u32,
-    scale: u32,
-) -> SqlResult<SqlDecimal> {
+) -> SqlResult<SqlDecimal<P, S>> {
     match value {
         None => Err(cast_null("DECIMAL")),
-        Some(value) => cast_to_SqlDecimal_b(value, precision, scale),
+        Some(value) => cast_to_SqlDecimal_b::<P, S>(value),
     }
 }
 
 #[doc(hidden)]
 #[inline]
-pub fn cast_to_SqlDecimal_SqlDecimal(
-    value: SqlDecimal,
-    precision: u32,
-    scale: u32,
-) -> SqlResult<SqlDecimal> {
-    // make sure we can fit the left half of the number in the new wanted precision
-
-    // '1234.5678' -> DECIMAL(6, 2) is fine as the integer part fits in 4 digits
-    // but to DECIMAL(6, 3) would error as we can't fit '1234' in 3 digits
-    // This is the rounding strategy used in Calcite
-    let mut cx = DecimalContext::default();
-    cx.set_rounding(Rounding::Down);
-    cx.set_precision(precision as usize).unwrap();
-    let mut result = value.get_dec();
-    if result.is_negative() && result.is_zero() {
-        cx.abs(&mut result);
-    }
-    cx.rescale(&mut result, &LargeDecimal::from(-(scale as i32)));
-    if is_error(&cx) {
-        Err(SqlRuntimeError::from_string(
-            format!("Cannot represent {value} as DECIMAL({precision}, {scale}): precision of DECIMAL type too small to represent value")))
-    } else {
-        Ok(SqlDecimal::new(result))
+pub fn cast_to_SqlDecimal_SqlDecimal<
+    const P0: usize,
+    const S0: usize,
+    const P1: usize,
+    const S1: usize,
+>(
+    value: SqlDecimal<P1, S1>,
+) -> SqlResult<SqlDecimal<P0, S0>> {
+    let result = value.convert();
+    match result {
+        None => Err(SqlRuntimeError::from_string(
+            format!("Cannot represent {value} as DECIMAL({P0}, {S0}): precision of DECIMAL type too small to represent value"))),
+        Some(value) => Ok(value),
     }
 }
 
 #[doc(hidden)]
 #[inline]
-pub fn cast_to_SqlDecimal_SqlDecimalN(
-    value: Option<SqlDecimal>,
-    precision: u32,
-    scale: u32,
-) -> SqlResult<SqlDecimal> {
+pub fn cast_to_SqlDecimal_SqlDecimalN<
+    const P0: usize,
+    const S0: usize,
+    const P1: usize,
+    const S1: usize,
+>(
+    value: Option<SqlDecimal<P1, S1>>,
+) -> SqlResult<SqlDecimal<P0, S0>> {
     match value {
         None => Err(cast_null("DECIMAL")),
-        Some(value) => cast_to_SqlDecimal_SqlDecimal(value, precision, scale),
+        Some(value) => cast_to_SqlDecimal_SqlDecimal::<P0, S0, P1, S1>(value),
     }
 }
 
 #[doc(hidden)]
 #[inline]
-pub fn cast_to_SqlDecimal_d(value: F64, precision: u32, scale: u32) -> SqlResult<SqlDecimal> {
-    let result = SqlDecimal::from(value.into_inner());
-    cast_to_SqlDecimal_SqlDecimal(result, precision, scale)
-}
-
-#[doc(hidden)]
-#[inline]
-pub fn cast_to_SqlDecimal_dN(
-    value: Option<F64>,
-    precision: u32,
-    scale: u32,
-) -> SqlResult<SqlDecimal> {
-    match value {
-        None => Err(cast_null("DECIMAL")),
-        Some(value) => cast_to_SqlDecimal_d(value, precision, scale),
-    }
-}
-
-#[doc(hidden)]
-#[inline]
-pub fn cast_to_SqlDecimal_f(value: F32, precision: u32, scale: u32) -> SqlResult<SqlDecimal> {
-    let result = SqlDecimal::from(value.into_inner());
-    cast_to_SqlDecimal_SqlDecimal(result, precision, scale)
-}
-
-#[doc(hidden)]
-#[inline]
-pub fn cast_to_SqlDecimal_fN(
-    value: Option<F32>,
-    precision: u32,
-    scale: u32,
-) -> SqlResult<SqlDecimal> {
-    match value {
-        None => Err(cast_null("DECIMAL")),
-        Some(value) => cast_to_SqlDecimal_f(value, precision, scale),
-    }
-}
-
-#[doc(hidden)]
-#[inline]
-pub fn cast_to_SqlDecimal_s(value: SqlString, precision: u32, scale: u32) -> SqlResult<SqlDecimal> {
-    let str = value.str().trim();
-    let mut context = get_standard_context();
-    match context.parse(str) {
+pub fn cast_to_SqlDecimal_d<const P: usize, const S: usize>(
+    value: F64,
+) -> SqlResult<SqlDecimal<P, S>> {
+    match SqlDecimal::<P, S>::try_from(value.into_inner()) {
+        Ok(value) => Ok(value),
         Err(e) => Err(SqlRuntimeError::from_string(format!(
-            "While converting '{}' to DECIMAL: {}",
-            value, e
+            "Error converting {value} to DECIMAL({P}, {S}): {}",
+            e
         ))),
-        Ok(result) => cast_to_SqlDecimal_SqlDecimal(SqlDecimal::new(result), precision, scale),
     }
 }
 
 #[doc(hidden)]
 #[inline]
-pub fn cast_to_SqlDecimal_sN(
+pub fn cast_to_SqlDecimal_dN<const P: usize, const S: usize>(
+    value: Option<F64>,
+) -> SqlResult<SqlDecimal<P, S>> {
+    match value {
+        None => Err(cast_null("DECIMAL")),
+        Some(value) => cast_to_SqlDecimal_d::<P, S>(value),
+    }
+}
+
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_SqlDecimal_f<const P: usize, const S: usize>(
+    value: F32,
+) -> SqlResult<SqlDecimal<P, S>> {
+    match SqlDecimal::<P, S>::try_from(value.into_inner() as f64) {
+        Ok(value) => Ok(value),
+        Err(e) => Err(SqlRuntimeError::from_string(format!(
+            "Error converting {value} to DECIMAL({P}, {S}): {}",
+            e
+        ))),
+    }
+}
+
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_SqlDecimal_fN<const P: usize, const S: usize>(
+    value: Option<F32>,
+) -> SqlResult<SqlDecimal<P, S>> {
+    match value {
+        None => Err(cast_null("DECIMAL")),
+        Some(value) => cast_to_SqlDecimal_f::<P, S>(value),
+    }
+}
+
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_SqlDecimal_s<const P: usize, const S: usize>(
+    value: SqlString,
+) -> SqlResult<SqlDecimal<P, S>> {
+    let str = value.str().trim();
+    match str.parse() {
+        Err(_) => Err(SqlRuntimeError::from_string(format!(
+            "While converting '{}' to DECIMAL: parse error",
+            value
+        ))),
+        Ok(result) => Ok(result),
+    }
+}
+
+#[doc(hidden)]
+#[inline]
+pub fn cast_to_SqlDecimal_sN<const P: usize, const S: usize>(
     value: Option<SqlString>,
-    precision: u32,
-    scale: u32,
-) -> SqlResult<SqlDecimal> {
+) -> SqlResult<SqlDecimal<P, S>> {
     match value {
-        None => Ok(<SqlDecimal as num_traits::Zero>::zero()),
-        Some(value) => cast_to_SqlDecimal_s(value, precision, scale),
+        None => Ok(<SqlDecimal<P, S> as num_traits::Zero>::zero()),
+        Some(value) => cast_to_SqlDecimal_s::<P, S>(value),
     }
 }
 
 #[doc(hidden)]
 #[inline]
-pub fn cast_to_SqlDecimalN_V(
+pub fn cast_to_SqlDecimalN_V<const P: usize, const S: usize>(
     value: Variant,
-    precision: u32,
-    scale: u32,
-) -> SqlResult<Option<SqlDecimal>> {
+) -> SqlResult<Option<SqlDecimal<P, S>>> {
     match value {
-        Variant::TinyInt(i) => r2o(cast_to_SqlDecimal_i8(i, precision, scale)),
-        Variant::SmallInt(i) => r2o(cast_to_SqlDecimal_i16(i, precision, scale)),
-        Variant::Int(i) => r2o(cast_to_SqlDecimal_i32(i, precision, scale)),
-        Variant::BigInt(i) => r2o(cast_to_SqlDecimal_i64(i, precision, scale)),
-        Variant::UTinyInt(i) => r2o(cast_to_SqlDecimal_u8(i, precision, scale)),
-        Variant::USmallInt(i) => r2o(cast_to_SqlDecimal_u16(i, precision, scale)),
-        Variant::UInt(i) => r2o(cast_to_SqlDecimal_u32(i, precision, scale)),
-        Variant::UBigInt(i) => r2o(cast_to_SqlDecimal_u64(i, precision, scale)),
-        Variant::Real(f) => r2o(cast_to_SqlDecimal_f(f, precision, scale)),
-        Variant::Double(f) => r2o(cast_to_SqlDecimal_d(f, precision, scale)),
-        Variant::SqlDecimal(d) => r2o(cast_to_SqlDecimal_SqlDecimal(d, precision, scale)),
+        Variant::TinyInt(i) => r2o(cast_to_SqlDecimal_i8::<P, S>(i)),
+        Variant::SmallInt(i) => r2o(cast_to_SqlDecimal_i16::<P, S>(i)),
+        Variant::Int(i) => r2o(cast_to_SqlDecimal_i32::<P, S>(i)),
+        Variant::BigInt(i) => r2o(cast_to_SqlDecimal_i64::<P, S>(i)),
+        Variant::UTinyInt(i) => r2o(cast_to_SqlDecimal_u8::<P, S>(i)),
+        Variant::USmallInt(i) => r2o(cast_to_SqlDecimal_u16::<P, S>(i)),
+        Variant::UInt(i) => r2o(cast_to_SqlDecimal_u32::<P, S>(i)),
+        Variant::UBigInt(i) => r2o(cast_to_SqlDecimal_u64::<P, S>(i)),
+        Variant::Real(f) => r2o(cast_to_SqlDecimal_f::<P, S>(f)),
+        Variant::Double(f) => r2o(cast_to_SqlDecimal_d::<P, S>(f)),
+        Variant::SqlDecimal(d) => {
+            let dd = DynamicDecimal::new(d.0, d.1);
+            match SqlDecimal::<P, S>::try_from(dd) {
+                Err(e) => Err(SqlRuntimeError::from_string(format!(
+                    "Error while converting 'VARIANT({:?})' to DECIMAL({P}, {S}): {}",
+                    value, e
+                ))),
+                Ok(value) => Ok(Some(value)),
+            }
+        }
         _ => Ok(None),
     }
 }
 
 #[doc(hidden)]
 #[inline]
-pub fn cast_to_SqlDecimalN_VN(
+pub fn cast_to_SqlDecimalN_VN<const P: usize, const S: usize>(
     value: Option<Variant>,
-    precision: u32,
-    scale: u32,
-) -> SqlResult<Option<SqlDecimal>> {
+) -> SqlResult<Option<SqlDecimal<P, S>>> {
     match value {
         None => Ok(None),
-        Some(value) => cast_to_SqlDecimalN_V(value, precision, scale),
+        Some(value) => cast_to_SqlDecimalN_V::<P, S>(value),
     }
 }
 
@@ -574,32 +578,36 @@ macro_rules! cast_to_sqldecimal {
         ::paste::paste! {
             #[doc(hidden)]
             #[inline]
-            pub fn [<cast_to_SqlDecimal_ $type_name> ]( value: $arg_type, precision: u32, scale: u32 ) -> SqlResult<SqlDecimal> {
-                let result = SqlDecimal::from(value);
-                cast_to_SqlDecimal_SqlDecimal(result, precision, scale)
-            }
-
-            #[doc(hidden)]
-            #[inline]
-            pub fn [<cast_to_SqlDecimal_ $type_name N> ]( value: Option<$arg_type>, precision: u32, scale: u32 ) -> SqlResult<SqlDecimal> {
-                match value {
-                    None => Err(cast_null("DECIMAL")),
-                    Some(value) => [<cast_to_SqlDecimal_ $type_name >](value, precision, scale),
+            pub fn [<cast_to_SqlDecimal_ $type_name> ]<const P: usize, const S: usize>( value: $arg_type ) -> SqlResult<SqlDecimal<P, S>> {
+                match SqlDecimal::<P, S>::try_from(value) {
+                    Ok(value) => Ok(value),
+                    Err(e) => Err(SqlRuntimeError::from_string(
+                        format!("Error converting {value} to DECIMAL({P}, {S}): {}", e.to_string())
+                    )),
                 }
             }
 
             #[doc(hidden)]
             #[inline]
-            pub fn [<cast_to_SqlDecimalN_ $type_name> ]( value: $arg_type, precision: u32, scale: u32 ) -> SqlResult<Option<SqlDecimal>> {
-                r2o([< cast_to_SqlDecimal_ $type_name >](value, precision, scale))
+            pub fn [<cast_to_SqlDecimal_ $type_name N> ]<const P: usize, const S: usize>( value: Option<$arg_type> ) -> SqlResult<SqlDecimal<P, S>> {
+                match value {
+                    None => Err(cast_null("DECIMAL")),
+                    Some(value) => [<cast_to_SqlDecimal_ $type_name >]::<P, S>(value),
+                }
             }
 
             #[doc(hidden)]
             #[inline]
-            pub fn [<cast_to_SqlDecimalN_ $type_name N> ]( value: Option<$arg_type>, precision: u32, scale: u32 ) -> SqlResult<Option<SqlDecimal>> {
+            pub fn [<cast_to_SqlDecimalN_ $type_name> ]<const P: usize, const S: usize>( value: $arg_type ) -> SqlResult<Option<SqlDecimal<P, S>>> {
+                r2o([< cast_to_SqlDecimal_ $type_name >]::<P, S>(value))
+            }
+
+            #[doc(hidden)]
+            #[inline]
+            pub fn [<cast_to_SqlDecimalN_ $type_name N> ]<const P: usize, const S: usize>( value: Option<$arg_type> ) -> SqlResult<Option<SqlDecimal<P, S>>> {
                 match value {
                     None => Ok(None),
-                    Some(value) => [<cast_to_SqlDecimalN_ $type_name >](value, precision, scale),
+                    Some(value) => [<cast_to_SqlDecimalN_ $type_name >]::<P, S>(value),
                 }
             }
         }
@@ -621,138 +629,120 @@ cast_to_sqldecimal!(u, usize);
 
 #[doc(hidden)]
 #[inline]
-pub fn cast_to_SqlDecimalN_nullN(
+pub fn cast_to_SqlDecimalN_nullN<const P: usize, const S: usize>(
     _value: Option<()>,
-    _precision: u32,
-    _scale: i32,
-) -> SqlResult<Option<SqlDecimal>> {
+) -> SqlResult<Option<SqlDecimal<P, S>>> {
     Ok(None)
 }
 
 #[doc(hidden)]
 #[inline]
-pub fn cast_to_SqlDecimalN_b(
+pub fn cast_to_SqlDecimalN_b<const P: usize, const S: usize>(
     value: bool,
-    precision: u32,
-    scale: u32,
-) -> SqlResult<Option<SqlDecimal>> {
-    r2o(cast_to_SqlDecimal_b(value, precision, scale))
+) -> SqlResult<Option<SqlDecimal<P, S>>> {
+    r2o(cast_to_SqlDecimal_b::<P, S>(value))
 }
 
 #[doc(hidden)]
 #[inline]
-pub fn cast_to_SqlDecimalN_bN(
+pub fn cast_to_SqlDecimalN_bN<const P: usize, const S: usize>(
     value: Option<bool>,
-    precision: u32,
-    scale: u32,
-) -> SqlResult<Option<SqlDecimal>> {
+) -> SqlResult<Option<SqlDecimal<P, S>>> {
     match value {
         None => Ok(None),
-        Some(value) => cast_to_SqlDecimalN_b(value, precision, scale),
+        Some(value) => cast_to_SqlDecimalN_b::<P, S>(value),
     }
 }
 
 #[doc(hidden)]
 #[inline]
-pub fn cast_to_SqlDecimalN_SqlDecimal(
-    value: SqlDecimal,
-    precision: u32,
-    scale: u32,
-) -> SqlResult<Option<SqlDecimal>> {
-    r2o(cast_to_SqlDecimal_SqlDecimal(value, precision, scale))
+pub fn cast_to_SqlDecimalN_SqlDecimal<
+    const P0: usize,
+    const S0: usize,
+    const P1: usize,
+    const S1: usize,
+>(
+    value: SqlDecimal<P1, S1>,
+) -> SqlResult<Option<SqlDecimal<P0, S0>>> {
+    r2o(cast_to_SqlDecimal_SqlDecimal::<P0, S0, P1, S1>(value))
 }
 
 #[doc(hidden)]
 #[inline]
-pub fn cast_to_SqlDecimalN_SqlDecimalN(
-    value: Option<SqlDecimal>,
-    precision: u32,
-    scale: u32,
-) -> SqlResult<Option<SqlDecimal>> {
+pub fn cast_to_SqlDecimalN_SqlDecimalN<
+    const P0: usize,
+    const S0: usize,
+    const P1: usize,
+    const S1: usize,
+>(
+    value: Option<SqlDecimal<P1, S1>>,
+) -> SqlResult<Option<SqlDecimal<P0, S0>>> {
     match value {
         None => Ok(None),
-        Some(value) => cast_to_SqlDecimalN_SqlDecimal(value, precision, scale),
+        Some(value) => cast_to_SqlDecimalN_SqlDecimal::<P0, S0, P1, S1>(value),
     }
 }
 
 #[doc(hidden)]
 #[inline]
-pub fn cast_to_SqlDecimalN_d(
+pub fn cast_to_SqlDecimalN_d<const P: usize, const S: usize>(
     value: F64,
-    precision: u32,
-    scale: u32,
-) -> SqlResult<Option<SqlDecimal>> {
-    r2o(cast_to_SqlDecimal_d(value, precision, scale))
+) -> SqlResult<Option<SqlDecimal<P, S>>> {
+    r2o(cast_to_SqlDecimal_d::<P, S>(value))
 }
 
 #[doc(hidden)]
 #[inline]
-pub fn cast_to_SqlDecimalN_dN(
+pub fn cast_to_SqlDecimalN_dN<const P: usize, const S: usize>(
     value: Option<F64>,
-    precision: u32,
-    scale: u32,
-) -> SqlResult<Option<SqlDecimal>> {
+) -> SqlResult<Option<SqlDecimal<P, S>>> {
     match value {
         None => Ok(None),
-        Some(value) => cast_to_SqlDecimalN_d(value, precision, scale),
+        Some(value) => cast_to_SqlDecimalN_d::<P, S>(value),
     }
 }
 
 #[doc(hidden)]
 #[inline]
-pub fn cast_to_SqlDecimalN_f(
+pub fn cast_to_SqlDecimalN_f<const P: usize, const S: usize>(
     value: F32,
-    precision: u32,
-    scale: u32,
-) -> SqlResult<Option<SqlDecimal>> {
-    r2o(cast_to_SqlDecimal_f(value, precision, scale))
+) -> SqlResult<Option<SqlDecimal<P, S>>> {
+    r2o(cast_to_SqlDecimal_f::<P, S>(value))
 }
 
 #[doc(hidden)]
 #[inline]
-pub fn cast_to_SqlDecimalN_fN(
+pub fn cast_to_SqlDecimalN_fN<const P: usize, const S: usize>(
     value: Option<F32>,
-    precision: u32,
-    scale: u32,
-) -> SqlResult<Option<SqlDecimal>> {
+) -> SqlResult<Option<SqlDecimal<P, S>>> {
     match value {
         None => Ok(None),
-        Some(value) => cast_to_SqlDecimalN_f(value, precision, scale),
+        Some(value) => cast_to_SqlDecimalN_f::<P, S>(value),
     }
 }
 
 #[doc(hidden)]
 #[inline]
-pub fn cast_to_SqlDecimalN_s(
+pub fn cast_to_SqlDecimalN_s<const P: usize, const S: usize>(
     value: SqlString,
-    precision: u32,
-    scale: u32,
-) -> SqlResult<Option<SqlDecimal>> {
-    let str = value.str().trim();
-    let mut context = get_standard_context();
-    match context.parse(str) {
-        Err(e) => Err(SqlRuntimeError::from_string(format!(
-            "While converting '{}' to DECIMAL: {}",
-            value, e
+) -> SqlResult<Option<SqlDecimal<P, S>>> {
+    match SqlDecimal::<P, S>::from_str(value.str()) {
+        Ok(value) => Ok(Some(value)),
+        Err(_) => Err(SqlRuntimeError::from_string(format!(
+            "Cannot parse {} into a DECIMAL({P}, {S})",
+            value.str(),
         ))),
-        Ok(value) => r2o(cast_to_SqlDecimal_SqlDecimal(
-            SqlDecimal::new(value),
-            precision,
-            scale,
-        )),
     }
 }
 
 #[doc(hidden)]
 #[inline]
-pub fn cast_to_SqlDecimalN_sN(
+pub fn cast_to_SqlDecimalN_sN<const P: usize, const S: usize>(
     value: Option<SqlString>,
-    precision: u32,
-    scale: u32,
-) -> SqlResult<Option<SqlDecimal>> {
+) -> SqlResult<Option<SqlDecimal<P, S>>> {
     match value {
         None => Ok(None),
-        Some(value) => cast_to_SqlDecimalN_s(value, precision, scale),
+        Some(value) => cast_to_SqlDecimalN_s::<P, S>(value),
     }
 }
 
@@ -826,33 +816,15 @@ cast_function!(d, F64, b, bool);
 
 #[doc(hidden)]
 #[inline]
-pub fn cast_to_d_SqlDecimal(value: SqlDecimal) -> SqlResult<F64> {
-    let val = value.get_dec();
-    /*
-    This implementation produces FP results that have small errors
-    compared to just string parsing... 10.1 becomes 10.100000000000001
-
-    let mut context = get_standard_context();
-    match context.try_into_f64(val) {
-        Err(e) => Err(SqlRuntimeError::from_string(format!(
-            "Cannot convert {val} to DOUBLE: {e}"
-        ))),
-        Ok(d) => {
-            println!("{}->{}, {}", value, d, 10.1f64);
-            Ok(F64::from(d))
-        },
-    }
-     */
-    let str = val.to_string();
-    match str.parse::<f64>() {
-        Err(e) => Err(SqlRuntimeError::from_string(format!(
-            "Cannot convert {val} to DOUBLE: {e}"
-        ))),
-        Ok(d) => Ok(F64::from(d)),
-    }
+pub fn cast_to_d_SqlDecimal<const P: usize, const S: usize>(
+    value: SqlDecimal<P, S>,
+) -> SqlResult<F64> {
+    Ok(F64::from(
+        <f64 as std::convert::From<SqlDecimal<P, S>>>::from(value),
+    ))
 }
 
-cast_function!(d, F64, SqlDecimal, SqlDecimal);
+cast_function!(d <const P: usize, const S: usize>, F64, SqlDecimal, SqlDecimal<P, S>);
 
 #[doc(hidden)]
 #[inline]
@@ -918,31 +890,15 @@ cast_function!(f, F32, b, bool);
 
 #[doc(hidden)]
 #[inline]
-pub fn cast_to_f_SqlDecimal(value: SqlDecimal) -> SqlResult<F32> {
-    let val = value.get_dec();
-    /*
-    This implementation produces FP results that have small errors
-    compared to just string parsing... 10.1 becomes 10.100000000000001
-
-    let mut context = get_standard_context();
-    let val = value.get_dec();
-    match context.try_into_f32(val) {
-        Err(e) => Err(SqlRuntimeError::from_string(format!(
-            "Cannot convert {val} to REAL: {e}"
-        ))),
-        Ok(value) => Ok(F32::from(value)),
-    }
-     */
-    let str = val.to_string();
-    match str.parse::<f32>() {
-        Err(e) => Err(SqlRuntimeError::from_string(format!(
-            "Cannot convert {val} to REAL: {e}"
-        ))),
-        Ok(d) => Ok(F32::from(d)),
-    }
+pub fn cast_to_f_SqlDecimal<const P: usize, const S: usize>(
+    value: SqlDecimal<P, S>,
+) -> SqlResult<F32> {
+    Ok(F32::from(
+        <f64 as std::convert::From<SqlDecimal<P, S>>>::from(value) as f32,
+    ))
 }
 
-cast_function!(f, F32, SqlDecimal, SqlDecimal);
+cast_function!(f <const P: usize, const S: usize>, F32, SqlDecimal, SqlDecimal<P, S>);
 
 #[doc(hidden)]
 #[inline]
@@ -1050,29 +1006,29 @@ pub fn limit_or_size_string(value: &str, size: i32, fixed: bool) -> SqlResult<Sq
 }
 
 macro_rules! cast_to_string {
-    ($type_name: ident, $arg_type: ty) => {
+    ($type_name: ident $(< $( const $var:ident : $ty: ty),* >)?, $arg_type: ty) => {
         ::paste::paste! {
             #[doc(hidden)]
             #[inline]
-            pub fn [<cast_to_s_ $type_name N >]( value: Option<$arg_type>, size: i32, fixed: bool ) -> SqlResult<SqlString> {
+            pub fn [<cast_to_s_ $type_name N >] $(< $( const $var : $ty ),* >)? ( value: Option<$arg_type>, size: i32, fixed: bool ) -> SqlResult<SqlString> {
                 match value {
                     None => Err(cast_null("VARCHAR")),
-                    Some(value) => [<cast_to_s_ $type_name>](value, size, fixed),
+                    Some(value) => [<cast_to_s_ $type_name>] $(:: < $($var),* >)? (value, size, fixed),
                 }
             }
 
             #[doc(hidden)]
             #[inline]
-            pub fn [<cast_to_sN_ $type_name >]( value: $arg_type, size: i32, fixed: bool ) -> SqlResult<Option<SqlString>> {
-                r2o(([< cast_to_s_ $type_name >](value, size, fixed)))
+            pub fn [<cast_to_sN_ $type_name >] $(< $( const $var : $ty ),* >)? ( value: $arg_type, size: i32, fixed: bool ) -> SqlResult<Option<SqlString>> {
+                r2o(([< cast_to_s_ $type_name >] $(:: < $($var),* >)? (value, size, fixed)))
             }
 
             #[doc(hidden)]
             #[inline]
-            pub fn [<cast_to_sN_ $type_name N >]( value: Option<$arg_type>, size: i32, fixed: bool ) -> SqlResult<Option<SqlString>> {
+            pub fn [<cast_to_sN_ $type_name N >] $(< $( const $var : $ty ),* >)? ( value: Option<$arg_type>, size: i32, fixed: bool ) -> SqlResult<Option<SqlString>> {
                 match value {
                     None => Ok(None),
-                    Some(value) => [<cast_to_sN_ $type_name >](value, size, fixed),
+                    Some(value) => [<cast_to_sN_ $type_name >] $(:: < $($var),* >)? (value, size, fixed),
                 }
             }
         }
@@ -1089,13 +1045,11 @@ pub fn cast_to_s_b(value: bool, size: i32, fixed: bool) -> SqlResult<SqlString> 
 
 #[doc(hidden)]
 #[inline]
-pub fn cast_to_s_SqlDecimal(value: SqlDecimal, size: i32, fixed: bool) -> SqlResult<SqlString> {
-    // special handling for -0
-    let value = if HasZero::is_zero(&value) && value.is_negative() {
-        <SqlDecimal as Zero>::zero()
-    } else {
-        value
-    };
+pub fn cast_to_s_SqlDecimal<const P: usize, const S: usize>(
+    value: SqlDecimal<P, S>,
+    size: i32,
+    fixed: bool,
+) -> SqlResult<SqlString> {
     let result = value.to_string();
     limit_or_size_string(&result, size, fixed)
 }
@@ -1610,7 +1564,7 @@ pub fn cast_to_s_bytes(value: ByteArray, size: i32, fixed: bool) -> SqlResult<Sq
 }
 
 cast_to_string!(b, bool);
-cast_to_string!(SqlDecimal, SqlDecimal);
+cast_to_string!(SqlDecimal<const P: usize, const S: usize>, SqlDecimal<P, S>);
 cast_to_string!(f, F32);
 cast_to_string!(d, F64);
 cast_to_string!(s, SqlString);
@@ -1727,21 +1681,17 @@ macro_rules! cast_to_i {
 
             #[doc(hidden)]
             #[inline]
-            pub fn [< cast_to_ $result_type _SqlDecimal >](value: SqlDecimal) -> SqlResult<$result_type> {
-                let mut context = get_standard_context();
-                context.set_rounding(Rounding::Down);
-                let mut val = value.get_dec();
-                context.round(&mut val);
-                context.clear_status();
-                match context.[<try_into_ $result_type >](val) {
+            pub fn [< cast_to_ $result_type _SqlDecimal >]<const P: usize, const S: usize>(value: SqlDecimal<P, S>) -> SqlResult<$result_type> {
+                match value.try_into() {
                     Ok(value) => Ok(value),
-                    Err(e) => Err(SqlRuntimeError::from_string(
-                        format!("Cannot convert {value} to {}: {e}", tn!($result_type))
-                    )),
+                    Err(e) => Err(SqlRuntimeError::from_string(format!(
+                        "Error converting DECIMAL({P},{S}) {value} to {}: {}",
+                        tn!($result_type), e
+                    ))),
                 }
             }
 
-            cast_function!($result_type, $result_type, SqlDecimal, SqlDecimal);
+            cast_function!($result_type <const P: usize, const S: usize>, $result_type, SqlDecimal, SqlDecimal<P, S>);
 
             // F64
 
@@ -3182,7 +3132,9 @@ cast_function!(Timestamp, Timestamp, i64, i64);
 
 #[doc(hidden)]
 #[inline]
-pub fn cast_to_Timestamp_SqlDecimal(value: SqlDecimal) -> SqlResult<Timestamp> {
+pub fn cast_to_Timestamp_SqlDecimal<const P: usize, const S: usize>(
+    value: SqlDecimal<P, S>,
+) -> SqlResult<Timestamp> {
     match TryInto::<i64>::try_into(value) {
         // Calcite ignores sub-second units
         Ok(value) => Ok(Timestamp::new((value / 1000) * 1000)),
@@ -3193,7 +3145,7 @@ pub fn cast_to_Timestamp_SqlDecimal(value: SqlDecimal) -> SqlResult<Timestamp> {
     }
 }
 
-cast_function!(Timestamp, Timestamp, SqlDecimal, SqlDecimal);
+cast_function!(Timestamp <const P: usize, const S: usize>, Timestamp, SqlDecimal, SqlDecimal<P, S>);
 
 #[doc(hidden)]
 #[inline]
@@ -3236,51 +3188,39 @@ cast_function!(u64, u64, Timestamp, Timestamp);
 
 #[doc(hidden)]
 #[inline]
-pub fn cast_to_SqlDecimal_Timestamp(
+pub fn cast_to_SqlDecimal_Timestamp<const P: usize, const S: usize>(
     value: Timestamp,
-    precision: u32,
-    scale: u32,
-) -> SqlResult<SqlDecimal> {
-    cast_to_SqlDecimal_SqlDecimalN(
-        Some(SqlDecimal::from(value.milliseconds())),
-        precision,
-        scale,
-    )
+) -> SqlResult<SqlDecimal<P, S>> {
+    cast_to_SqlDecimal_i64::<P, S>(value.milliseconds())
 }
 
 #[doc(hidden)]
 #[inline]
-pub fn cast_to_SqlDecimalN_Timestamp(
+pub fn cast_to_SqlDecimalN_Timestamp<const P: usize, const S: usize>(
     value: Timestamp,
-    precision: u32,
-    scale: u32,
-) -> SqlResult<Option<SqlDecimal>> {
-    r2o(cast_to_SqlDecimal_Timestamp(value, precision, scale))
+) -> SqlResult<Option<SqlDecimal<P, S>>> {
+    r2o(cast_to_SqlDecimal_Timestamp::<P, S>(value))
 }
 
 #[doc(hidden)]
 #[inline]
-pub fn cast_to_SqlDecimal_TimestampN(
+pub fn cast_to_SqlDecimal_TimestampN<const P: usize, const S: usize>(
     value: Option<Timestamp>,
-    precision: u32,
-    scale: u32,
-) -> SqlResult<SqlDecimal> {
+) -> SqlResult<SqlDecimal<P, S>> {
     match value {
         None => Err(cast_null("DECIMAL")),
-        Some(value) => cast_to_SqlDecimal_Timestamp(value, precision, scale),
+        Some(value) => cast_to_SqlDecimal_Timestamp::<P, S>(value),
     }
 }
 
 #[doc(hidden)]
 #[inline]
-pub fn cast_to_SqlDecimalN_TimestampN(
+pub fn cast_to_SqlDecimalN_TimestampN<const P: usize, const S: usize>(
     value: Option<Timestamp>,
-    precision: u32,
-    scale: u32,
-) -> SqlResult<Option<SqlDecimal>> {
+) -> SqlResult<Option<SqlDecimal<P, S>>> {
     match value {
         None => Ok(None),
-        Some(value) => cast_to_SqlDecimalN_Timestamp(value, precision, scale),
+        Some(value) => cast_to_SqlDecimalN_Timestamp::<P, S>(value),
     }
 }
 
@@ -3527,24 +3467,24 @@ pub fn cast_to_bytesN_UuidN(value: Option<Uuid>, precision: i32) -> SqlResult<Op
 // cast_to_V_i32N
 // cast_to_VN_i32N
 macro_rules! cast_to_variant {
-    ($result_name: ident, $result_type: ty, $enum: ident) => {
+    ($result_name: ident $(< $( const $var:ident : $ty: ty),* >)?, $result_type: ty, $enum: ident) => {
         ::paste::paste! {
             // cast_to_V_i32
             #[doc(hidden)]
             #[inline]
-            pub fn [<cast_to_ V_ $result_name >]( value: $result_type ) -> SqlResult<Variant> {
+            pub fn [<cast_to_ V_ $result_name >] $(< $( const $var : $ty),* >)? ( value: $result_type ) -> SqlResult<Variant> {
                 Ok(Variant::from(value))
             }
 
             // cast_to_VN_i32
             #[doc(hidden)]
-            pub fn [<cast_to_ VN_ $result_name >]( value: $result_type ) -> SqlResult<Option<Variant>> {
+            pub fn [<cast_to_ VN_ $result_name >] $(< $( const $var : $ty),* >)? ( value: $result_type ) -> SqlResult<Option<Variant>> {
                 Ok(Some(Variant::from(value)))
             }
 
             // cast_to_V_i32N
             #[doc(hidden)]
-            pub fn [<cast_to_ V_ $result_name N>]( value: Option<$result_type> ) -> SqlResult<Variant> {
+            pub fn [<cast_to_ V_ $result_name N>] $(< $( const $var : $ty),* >)? ( value: Option<$result_type> ) -> SqlResult<Variant> {
                 match value {
                     None => Ok(Variant::SqlNull),
                     Some(value) => Ok(Variant::from(value)),
@@ -3553,8 +3493,8 @@ macro_rules! cast_to_variant {
 
             // cast_to_VN_i32N
             #[doc(hidden)]
-            pub fn [<cast_to_ VN_ $result_name N>]( value: Option<$result_type> ) -> SqlResult<Option<Variant>> {
-                r2o([ <cast_to_ V_ $result_name N >](value))
+            pub fn [<cast_to_ VN_ $result_name N>] $(< $( const $var : $ty),* >)? ( value: Option<$result_type> ) -> SqlResult<Option<Variant>> {
+                r2o([ <cast_to_ V_ $result_name N >] $(:: < $($var),* >)? (value))
             }
         }
     };
@@ -3614,7 +3554,17 @@ macro_rules! cast_from_variant_numeric {
                     Variant::UBigInt(value) => r2o([< cast_to_ $result_name _u64 >](value)),
                     Variant::Real(value) => r2o([< cast_to_ $result_name _f >](value)),
                     Variant::Double(value) => r2o([< cast_to_ $result_name _d >](value)),
-                    Variant::SqlDecimal(value) => r2o([< cast_to_ $result_name _SqlDecimal >](value)),
+                    Variant::SqlDecimal((value, scale)) => {
+                        let dd = DynamicDecimal::new(value, scale);
+                        let result = $result_type :: try_from(dd);
+                        match result {
+                            Ok(value) => Ok(Some(value)),
+                            Err(e) => Err(SqlRuntimeError::from_string(format!(
+                                "Error converting {value} to {}: {}",
+                                tn!($result_name), e
+                            ))),
+                        }
+                    },
                     _ => Ok(None),
                 }
             }
@@ -3650,7 +3600,7 @@ cast_variant_numeric!(u32, u32, UInt);
 cast_variant_numeric!(u64, u64, UBigInt);
 cast_variant_numeric!(f, F32, Real);
 cast_variant_numeric!(d, F64, Double);
-cast_to_variant!(SqlDecimal, SqlDecimal, SqlDecimal); // The other direction takes extra arguments
+cast_to_variant!(SqlDecimal<const P: usize, const S: usize>, SqlDecimal<P, S>, SqlDecimal); // The other direction takes extra arguments
 cast_to_variant!(s, SqlString, SqlString); // The other direction takes extra arguments
 cast_to_variant!(bytes, ByteArray, Binary); // The other direction takes extra arguments
 cast_variant!(Date, Date, Date);
@@ -3733,6 +3683,7 @@ where
 pub fn cast_to_vec_VN<T>(value: Option<Variant>) -> SqlResult<Option<Array<T>>>
 where
     Array<T>: TryFrom<Variant, Error = Box<dyn Error>>,
+    T: std::fmt::Debug,
 {
     match value {
         None => Ok(None),
@@ -3744,8 +3695,10 @@ where
 pub fn cast_to_vecN_V<T>(value: Variant) -> SqlResult<Option<Array<T>>>
 where
     Array<T>: TryFrom<Variant, Error = Box<dyn Error>>,
+    T: std::fmt::Debug,
 {
-    match value.try_into() {
+    let val = value.try_into();
+    match val {
         Ok(value) => Ok(Some(value)),
         Err(_) => Ok(None),
     }
@@ -3755,6 +3708,7 @@ where
 pub fn cast_to_vecN_VN<T>(value: Option<Variant>) -> SqlResult<Option<Array<T>>>
 where
     Array<T>: TryFrom<Variant, Error = Box<dyn Error>>,
+    T: std::fmt::Debug,
 {
     match value {
         None => Ok(None),

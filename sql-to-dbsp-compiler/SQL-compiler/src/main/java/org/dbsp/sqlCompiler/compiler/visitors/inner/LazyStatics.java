@@ -9,6 +9,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPPathExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPStaticExpression;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDecimalLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStaticItem;
@@ -24,8 +25,8 @@ public class LazyStatics extends ExpressionTranslator {
     // This is counterintuitive, but we want the default translator behavior,
     // except when we find a constant expression, and then we replace it immediately in preorder.
 
-    /** A reference to the declaration for each string literal */
-    final List<Pair<DBSPStringLiteral, DBSPPathExpression>> canonical;
+    /** A reference to the declaration for each literal */
+    final List<Pair<DBSPLiteral, DBSPPathExpression>> canonical;
     public final List<DBSPStaticItem> newDeclarations;
     /** If true, create declarations, otherwise create just static expressions */
     final boolean declare;
@@ -92,14 +93,13 @@ public class LazyStatics extends ExpressionTranslator {
         return VisitDecision.STOP;
     }
 
-    @Override
-    public VisitDecision preorder(DBSPStringLiteral expression) {
+    VisitDecision replaceLiteral(DBSPLiteral expression) {
         DBSPExpression canonical = null;
         for (var e: this.canonical) {
             if (expression.getType().sameType(e.getKey().getType()) &&
                     expression.sameValue(e.getKey())) {
-                 canonical = e.getValue();
-                 break;
+                canonical = e.getValue();
+                break;
             }
         }
 
@@ -117,6 +117,16 @@ public class LazyStatics extends ExpressionTranslator {
         }
         this.map(expression, canonical.applyClone());
         return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPStringLiteral expression) {
+        return this.replaceLiteral(expression);
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPDecimalLiteral expression) {
+        return this.replaceLiteral(expression);
     }
 
     @Override

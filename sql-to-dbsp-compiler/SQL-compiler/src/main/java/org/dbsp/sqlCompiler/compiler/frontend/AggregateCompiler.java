@@ -73,7 +73,6 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDouble;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeFP;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeNull;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeRuntimeDecimal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVoid;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeUser;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeArray;
@@ -166,6 +165,24 @@ public class AggregateCompiler implements ICompilerComponent {
         if (type.is(DBSPTypeInteger.class)) {
             DBSPTypeCode code = DBSPTypeInteger.largerSigned(type.code);
             return DBSPTypeInteger.getType(type.getNode(), code, type.mayBeNull);
+        } else if (type.is(DBSPTypeDecimal.class)) {
+            DBSPTypeDecimal decimal = type.to(DBSPTypeDecimal.class);
+            int precision = decimal.precision;
+            int scale = decimal.scale;
+            int availableBits = DBSPTypeDecimal.MAX_PRECISION - precision;
+            if (availableBits >= 2 * precision) {
+                precision = 3 * precision;
+                scale = Math.min(3 * scale, DBSPTypeDecimal.MAX_SCALE);
+            } else {
+                // Allocate proportionally
+                if (scale != 0) {
+                    scale = Math.min(
+                            (int)(scale * (double)DBSPTypeDecimal.MAX_PRECISION / precision),
+                            DBSPTypeDecimal.MAX_SCALE);
+                }
+                precision = DBSPTypeDecimal.MAX_PRECISION;
+            }
+            return new DBSPTypeDecimal(type.getNode(), precision, scale, type.mayBeNull);
         }
         return type;
     }
@@ -718,11 +735,6 @@ public class AggregateCompiler implements ICompilerComponent {
         DBSPType aggregatedValueType = this.getAggregatedValueType();
         // TODO: linear implementation
         DBSPType intermediateResultType = this.partialResultType.withMayBeNull(true);
-
-        if (intermediateResultType.is(DBSPTypeDecimal.class)) {
-            intermediateResultType = new DBSPTypeRuntimeDecimal(
-                    intermediateResultType.getNode(), intermediateResultType.mayBeNull);
-        }
 
         // Compute 3 sums: Sum(value^2), Sum(value), Count(value)
         DBSPExpression zero = new DBSPTupleExpression(

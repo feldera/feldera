@@ -90,7 +90,7 @@ mod pg {
         pub smallint_: i16,
         pub int_: i32,
         pub bigint_: i64,
-        pub decimal_: SqlDecimal,
+        pub decimal_: SqlDecimal<38, 10>,
         pub float_: F32,
         pub double_: F64,
         pub varchar_: SqlString,
@@ -134,7 +134,7 @@ mod pg {
         (smallint_, "smallint_", false, i16, None),
         (int_, "int_", false, i32, None),
         (bigint_, "bigint_", false, i64, None),
-        (decimal_, "decimal_", false, SqlDecimal, None),
+        (decimal_, "decimal_", false, SqlDecimal<38, 10>, None),
         (float_, "float_", false, F32, None),
         (double_, "double_", false, F64, None),
         (varchar_, "varchar_", false, SqlString, None),
@@ -242,7 +242,7 @@ CREATE TABLE {name} (
                 bigint_: r.get("bigint_"),
                 decimal_: r
                     .get::<_, String>("decimal_str")
-                    .parse::<SqlDecimal>()
+                    .parse::<SqlDecimal<38, 10>>()
                     .unwrap(),
                 float_: F32::new(r.get("float_")),
                 double_: F64::new(r.get("double_")),
@@ -415,7 +415,8 @@ CREATE TABLE {name} (
                 smallint_: rng.gen(),
                 int_: rng.gen(),
                 bigint_: rng.gen(),
-                decimal_: SqlDecimal::from_i128_with_scale(rng.gen_range::<i128, _>(-100..100), 3),
+                decimal_: SqlDecimal::<38, 10>::new(rng.gen_range::<i128, _>(-100..100), 3)
+                    .unwrap(),
                 float_: F32::new((rng.gen::<f32>() * 1000.0).trunc() / 1000.0),
                 double_: F64::new((rng.gen::<f64>() * 1000.0).trunc() / 1000.0),
                 varchar_: rng.gen::<u32>().to_string().into(),

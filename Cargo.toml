@@ -91,7 +91,6 @@ datafusion = "47"
 dbsp = { path = "crates/dbsp", version = "0.104.0" }
 dbsp_nexmark = { path = "crates/nexmark" }
 deadpool-postgres = "0.10.5"
-dec = { version = "0.4.9", features = ["serde"] }
 #deltalake = "0.26.2"
 deltalake = { git = "https://github.com/ryzhyk/delta-rs.git", rev = "77ef46e" }
 directories = "6.0"

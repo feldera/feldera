@@ -5,34 +5,92 @@ use num::{PrimInt, Zero};
 use num_traits::{CheckedAdd, CheckedDiv, CheckedMul, CheckedSub};
 use std::cmp::Ordering;
 
-use crate::{dec::SqlDecimal, for_all_int_operator, some_existing_operator, some_operator};
+use crate::{for_all_int_operator, some_existing_operator, some_operator};
 
 macro_rules! for_all_compare {
-    ($func_name: ident, $ret_type: ty, $t:ty where $($bounds:tt)*) => {
+    // Arguments with different types
+    ($func_name: ident, $ret_type: ty, $lt: ty, $rt: ty where $($bounds:tt)*) => {
         ::paste::paste! {
             #[doc(hidden)]
             #[inline(always)]
-            pub fn [<$func_name __ >]<T: $($bounds)*>( arg0: T, arg1: T ) -> $ret_type {
+            pub fn [<$func_name __ >]<$lt, $rt>( arg0: $lt, arg1: $rt ) -> $ret_type
+            where
+                $($bounds)*
+            {
                 $func_name(arg0, arg1)
             }
 
             #[doc(hidden)]
             #[inline(always)]
-            pub fn [<$func_name _N_ >]<T: $($bounds)*>( arg0: Option<T>, arg1: T ) -> Option<$ret_type> {
+            pub fn [<$func_name _N_ >]<$lt, $rt>( arg0: Option<$lt>, arg1: $rt ) -> Option<$ret_type>
+            where
+                $($bounds)*
+            {
                 let arg0 = arg0?;
                 Some([< $func_name __ >](arg0, arg1))
             }
 
             #[doc(hidden)]
             #[inline(always)]
-            pub fn [<$func_name __N >]<T: $($bounds)*>( arg0: T, arg1: Option<T> ) -> Option<$ret_type> {
+            pub fn [<$func_name __N >]<$lt, $rt>( arg0: $lt, arg1: Option<$rt> ) -> Option<$ret_type>
+            where
+                $($bounds)*
+            {
                 let arg1 = arg1?;
                 Some([< $func_name __ >](arg0, arg1))
             }
 
             #[doc(hidden)]
             #[inline(always)]
-            pub fn [<$func_name _N_N >]<T: $($bounds)*>( arg0: Option<T>, arg1: Option<T> ) -> Option<$ret_type> {
+            pub fn [<$func_name _N_N >]<$lt, $rt>( arg0: Option<$lt>, arg1: Option<$rt> ) -> Option<$ret_type>
+            where
+                $($bounds)*
+            {
+                let arg0 = arg0?;
+                let arg1 = arg1?;
+                Some([< $func_name __ >](arg0, arg1))
+            }
+        }
+    };
+
+    // Both arguments same type
+    ($func_name: ident, $ret_type: ty, $t: ty where $($bounds:tt)*) => {
+        ::paste::paste! {
+            #[doc(hidden)]
+            #[inline(always)]
+            pub fn [<$func_name __ >]<$t>( arg0: $t, arg1: $t ) -> $ret_type
+            where
+                $($bounds)*
+            {
+                $func_name(arg0, arg1)
+            }
+
+            #[doc(hidden)]
+            #[inline(always)]
+            pub fn [<$func_name _N_ >]<$t>( arg0: Option<$t>, arg1: $t ) -> Option<$ret_type>
+            where
+                $($bounds)*
+            {
+                let arg0 = arg0?;
+                Some([< $func_name __ >](arg0, arg1))
+            }
+
+            #[doc(hidden)]
+            #[inline(always)]
+            pub fn [<$func_name __N >]<$t>( arg0: $t, arg1: Option<$t> ) -> Option<$ret_type>
+            where
+                $($bounds)*
+            {
+                let arg1 = arg1?;
+                Some([< $func_name __ >](arg0, arg1))
+            }
+
+            #[doc(hidden)]
+            #[inline(always)]
+            pub fn [<$func_name _N_N >]<$t>( arg0: Option<$t>, arg1: Option<$t> ) -> Option<$ret_type>
+            where
+                $($bounds)*
+            {
                 let arg0 = arg0?;
                 let arg1 = arg1?;
                 Some([< $func_name __ >](arg0, arg1))
@@ -43,25 +101,25 @@ macro_rules! for_all_compare {
 
 #[inline(always)]
 #[doc(hidden)]
-pub(crate) fn eq<T>(left: T, right: T) -> bool
+pub(crate) fn eq<LT, RT>(left: LT, right: RT) -> bool
 where
-    T: Eq,
+    LT: PartialEq<RT>,
 {
     left == right
 }
 
-for_all_compare!(eq, bool, T where Eq);
+for_all_compare!(eq, bool, LT, RT where LT: PartialEq<RT>);
 
 #[doc(hidden)]
 #[inline(always)]
-pub(crate) fn neq<T>(left: T, right: T) -> bool
+pub(crate) fn neq<LT, RT>(left: LT, right: RT) -> bool
 where
-    T: Eq,
+    LT: PartialEq<RT>,
 {
     left != right
 }
 
-for_all_compare!(neq, bool, T where Eq);
+for_all_compare!(neq, bool, LT, RT where LT: PartialEq<RT>);
 
 #[doc(hidden)]
 pub fn compareN<T>(
@@ -71,7 +129,7 @@ pub fn compareN<T>(
     nullsFirst: bool,
 ) -> std::cmp::Ordering
 where
-    T: Ord,
+    T: PartialOrd<T>,
 {
     if nullsFirst {
         match (left, right) {
@@ -99,9 +157,9 @@ pub fn compare_<T>(
     _nullsFirst: bool,
 ) -> std::cmp::Ordering
 where
-    T: Ord,
+    T: PartialOrd<T>,
 {
-    let result = left.cmp(right);
+    let result = left.partial_cmp(right).unwrap();
     if ascending {
         result
     } else {
@@ -111,47 +169,47 @@ where
 
 #[doc(hidden)]
 #[inline(always)]
-pub(crate) fn lt<T>(left: T, right: T) -> bool
+pub(crate) fn lt<LT, RT>(left: LT, right: RT) -> bool
 where
-    T: Ord,
+    LT: PartialOrd<RT>,
 {
     left < right
 }
 
-for_all_compare!(lt, bool, T where Ord);
+for_all_compare!(lt, bool, LT, RT where LT: PartialOrd<RT>);
 
 #[doc(hidden)]
 #[inline(always)]
-pub(crate) fn gt<T>(left: T, right: T) -> bool
+pub(crate) fn gt<LT, RT>(left: LT, right: RT) -> bool
 where
-    T: Ord,
+    LT: PartialOrd<RT>,
 {
     left > right
 }
 
-for_all_compare!(gt, bool, T where Ord);
+for_all_compare!(gt, bool, LT, RT where LT: PartialOrd<RT>);
 
 #[doc(hidden)]
 #[inline(always)]
-pub(crate) fn lte<T>(left: T, right: T) -> bool
+pub(crate) fn lte<LT, RT>(left: LT, right: RT) -> bool
 where
-    T: Ord,
+    LT: PartialOrd<RT>,
 {
     left <= right
 }
 
-for_all_compare!(lte, bool, T where Ord);
+for_all_compare!(lte, bool, LT, RT where LT: PartialOrd<RT>);
 
 #[doc(hidden)]
 #[inline(always)]
-pub(crate) fn gte<T>(left: T, right: T) -> bool
+pub(crate) fn gte<LT, RT>(left: LT, right: RT) -> bool
 where
-    T: Ord,
+    LT: PartialOrd<RT>,
 {
     left >= right
 }
 
-for_all_compare!(gte, bool, T where Ord);
+for_all_compare!(gte, bool, LT, RT where LT: PartialOrd<RT>);
 
 #[doc(hidden)]
 #[inline(always)]
@@ -166,7 +224,6 @@ where
 }
 
 for_all_int_operator!(plus);
-some_operator!(plus, SqlDecimal, SqlDecimal, SqlDecimal);
 
 #[doc(hidden)]
 fn fp_plus<T>(left: T, right: T) -> T
@@ -192,7 +249,6 @@ where
 }
 
 for_all_int_operator!(minus);
-some_operator!(minus, SqlDecimal, SqlDecimal, SqlDecimal);
 
 #[doc(hidden)]
 fn fp_minus<T>(left: T, right: T) -> T
@@ -247,7 +303,6 @@ where
 }
 
 for_all_int_operator!(times);
-some_operator!(times, SqlDecimal, SqlDecimal, SqlDecimal);
 
 #[doc(hidden)]
 fn fp_times<T>(left: T, right: T) -> T
@@ -306,7 +361,6 @@ where
 }
 
 for_all_int_operator!(div);
-some_operator!(div, SqlDecimal, SqlDecimal, SqlDecimal);
 
 #[doc(hidden)]
 fn fp_div<T>(left: T, right: T) -> T
@@ -377,7 +431,7 @@ where
     left.max(right)
 }
 
-for_all_compare!(max, T, T where Ord);
+for_all_compare!(max, T, T where T: Ord);
 
 #[inline(always)]
 #[doc(hidden)]
@@ -388,7 +442,7 @@ where
     left.min(right)
 }
 
-for_all_compare!(min, T, T where Ord);
+for_all_compare!(min, T, T where T: Ord);
 
 #[doc(hidden)]
 pub fn blackbox<T>(value: T) -> T {

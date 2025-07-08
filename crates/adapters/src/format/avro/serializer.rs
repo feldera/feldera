@@ -1,7 +1,6 @@
 use apache_avro::schema::{Name, NamesRef, RecordSchema};
 use apache_avro::Decimal;
 use apache_avro::{types::Value as AvroValue, Schema as AvroSchema};
-use feldera_sqllib::SqlDecimal;
 use feldera_types::serde_with_context::serde_config::{BinaryFormat, DecimalFormat, UuidFormat};
 use feldera_types::serde_with_context::{DateFormat, SqlSerdeConfig, TimeFormat, TimestampFormat};
 use serde::ser::{
@@ -22,7 +21,7 @@ pub fn avro_ser_config() -> SqlSerdeConfig {
         .with_timestamp_format(TimestampFormat::MicrosSinceEpoch)
         .with_time_format(TimeFormat::Micros)
         .with_date_format(DateFormat::DaysSinceEpoch)
-        .with_decimal_format(DecimalFormat::String)
+        .with_decimal_format(DecimalFormat::I128)
         .with_uuid_format(UuidFormat::String)
         .with_binary_format(BinaryFormat::Bytes)
 }
@@ -524,6 +523,13 @@ impl<'a> Serializer for AvroSchemaSerializer<'a> {
         })
     }
 
+    fn serialize_i128(self, v: i128) -> Result<Self::Ok, Self::Error> {
+        serialize_maybe_optional(self.schema, |schema| match schema {
+            AvroSchema::Decimal(_) => Ok(AvroValue::Decimal(Decimal::from(v.to_be_bytes()))),
+            _ => Err(AvroSerializerError::incompatible("i128", schema)),
+        })
+    }
+
     fn serialize_u8(self, v: u8) -> Result<Self::Ok, Self::Error> {
         serialize_maybe_optional(self.schema, |_| Ok(AvroValue::Int(v as i32)))
     }
@@ -579,43 +585,6 @@ impl<'a> Serializer for AvroSchemaSerializer<'a> {
     fn serialize_str(self, v: &str) -> Result<Self::Ok, Self::Error> {
         serialize_maybe_optional(self.schema, |schema| match schema {
             AvroSchema::String => Ok(AvroValue::String(v.to_owned())),
-            AvroSchema::Decimal(decimal_schema) => {
-                let mut decimal: SqlDecimal = v.parse().map_err(|e| {
-                    Self::Error::custom(format!("invalid decimal string '{v}': {e}"))
-                })?;
-
-                decimal.rescale(-(decimal_schema.scale as i32));
-
-                let mut rounded_decimal = decimal;
-
-                rounded_decimal
-                    .round_to_place(decimal_schema.precision)
-                    .map_err(|e| {
-                        Self::Error::custom(format!("error rounding decimal to precision {} specified in the Avro schema: {e}", decimal_schema.precision))
-                    })?;
-
-                if rounded_decimal != decimal {
-                    return Err(AvroSerializerError::out_of_bounds(
-                        &v,
-                        "decimal",
-                        &AvroSchema::Decimal(decimal_schema.clone()),
-                    ));
-                }
-
-                // println!(
-                //     "rounded decimal: {rounded_decimal}, mantissa: {}",
-                //     rounded_decimal.mantissa()
-                // );
-
-                let mantissa = rounded_decimal.mantissa();
-                match mantissa {
-                    Ok(value) => Ok(AvroValue::Decimal(Decimal::from(value.to_be_bytes()))),
-                    Err(e) => Err(AvroSerializerError::custom(format!(
-                        "Error converting DECIMAL value {} to Avro: {}",
-                        v, e
-                    ))),
-                }
-            }
             _ => Err(AvroSerializerError::incompatible("string", schema)),
         })
     }
@@ -861,9 +830,9 @@ mod test {
     struct TestNumeric {
         float32: F32,
         float64: F64,
-        dec1: SqlDecimal,
-        dec2: SqlDecimal,
-        dec3: SqlDecimal,
+        dec1: SqlDecimal<4, 2>,
+        dec2: SqlDecimal<8, 0>,
+        dec3: SqlDecimal<6, 3>,
     }
 
     serialize_table_record!(TestNumeric[5] {
@@ -968,7 +937,7 @@ mod test {
                 ("foo".to_string(), 1),
                 ("bar".to_string(), 2),
             ])),
-            field_7: SqlDecimal::from_i128_with_scale(10000i128, 3i32),
+            field_7: SqlDecimal::<10, 3>::new(10000i128, 3i32).unwrap(),
         };
 
         let avro2_1: AvroValue = AvroValue::Record(vec![
@@ -1023,7 +992,7 @@ mod test {
             ),
             (
                 "dec2".to_string(),
-                AvroValue::Decimal(Decimal::from(&BigInt::from(1234).to_signed_bytes_be())),
+                AvroValue::Decimal(Decimal::from(&BigInt::from(1235).to_signed_bytes_be())),
             ),
             (
                 "dec3".to_string(),
@@ -1054,7 +1023,7 @@ mod test {
                 AvroValue::Union(
                     1,
                     Box::new(AvroValue::Decimal(Decimal::from(
-                        &BigInt::from(1234).to_signed_bytes_be(),
+                        &BigInt::from(1235).to_signed_bytes_be(),
                     ))),
                 ),
             ),

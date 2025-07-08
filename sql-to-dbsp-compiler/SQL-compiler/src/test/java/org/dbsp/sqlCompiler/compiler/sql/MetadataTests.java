@@ -622,8 +622,8 @@ public class MetadataTests extends BaseSQLTests {
     @Test
     public void testUDF() throws IOException, InterruptedException, SQLException {
         File file = createInputScript("""
-                CREATE FUNCTION contains_number(str VARCHAR NOT NULL, value INTEGER) RETURNS BOOLEAN NOT NULL;
-                CREATE VIEW V0 AS SELECT contains_number(CAST('YES: 10 NO:5 MAYBE: 2' AS VARCHAR), 5);
+                CREATE FUNCTION contains_number(str VARCHAR NOT NULL, value DECIMAL(2, 0)) RETURNS BOOLEAN NOT NULL;
+                CREATE VIEW V0 AS SELECT contains_number(CAST('YES: 10 NO:5.1 MAYBE: 2' AS VARCHAR), 5.1);
                 CREATE FUNCTION "EMPTY"() RETURNS VARCHAR;
                 CREATE VIEW V1 AS SELECT "EMPTY"();""");
 
@@ -631,7 +631,7 @@ public class MetadataTests extends BaseSQLTests {
         PrintWriter script = new PrintWriter(udf, StandardCharsets.UTF_8);
         script.println("""
                 use feldera_sqllib::*;
-                pub fn contains_number(str: SqlString, value: Option<i32>) -> Result<bool, Box<dyn std::error::Error>> {
+                pub fn contains_number(str: SqlString, value: Option<SqlDecimal<2, 0>>) -> Result<bool, Box<dyn std::error::Error>> {
                    match value {
                        None => Err("null value".into()),
                        Some(value) => Ok(str.str().contains(&format!("{}", value).to_string())),
@@ -660,7 +660,7 @@ public class MetadataTests extends BaseSQLTests {
 
                 use feldera_sqllib::*;
                 use crate::*;
-                pub fn contains_number(str: SqlString, value: Option<i32>) -> Result<bool, Box<dyn std::error::Error>> {
+                pub fn contains_number(str: SqlString, value: Option<SqlDecimal<2, 0>>) -> Result<bool, Box<dyn std::error::Error>> {
                     udf::contains_number(
                         str,
                         value)
