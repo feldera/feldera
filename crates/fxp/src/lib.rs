@@ -99,11 +99,6 @@ impl<const P0: usize, const S0: usize> PartialEq<usize> for Fixed<P0, S0> {
     }
 }
 
-#[inline(never)]
-pub fn eq_i32(f: Fixed<38, 0>, x: i32) -> bool {
-    f == x
-}
-
 impl<const P0: usize, const S0: usize, const P1: usize, const S1: usize> PartialOrd<Fixed<P1, S1>>
     for Fixed<P0, S0>
 {
