@@ -23,6 +23,7 @@ mod delta0;
 mod differentiate;
 mod generator;
 mod integrate;
+mod macrostep_z1;
 mod neg;
 mod output;
 mod plus;
@@ -78,6 +79,7 @@ pub use dynamic::join_range::StreamJoinRange;
 pub use dynamic::{neighborhood::NeighborhoodDescr, trace::TraceBound};
 #[cfg(not(feature = "backend-mode"))]
 pub use filter_map::FilterMap;
+pub use macrostep_z1::MacrostepZ1;
 pub use neighborhood::{NeighborhoodDescrBox, NeighborhoodDescrStream};
 pub use output::OutputHandle;
 pub use plus::{Minus, Plus};
