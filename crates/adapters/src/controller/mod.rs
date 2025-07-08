@@ -1831,6 +1831,10 @@ struct StepTrigger {
     /// The circuit needs to perform an initial step even if there are no
     /// new inputs in order to initialize state snapshot for ad hoc queries.
     needs_first_step: bool,
+
+    /// The circuit is bootstrapping. Used to detect the transition from bootstrapping
+    /// to normal mode.
+    bootstrapping: bool,
 }
 
 /// Action for the controller to take.
@@ -1860,6 +1864,7 @@ impl StepTrigger {
             min_batch_size_records,
             checkpoint_interval,
             needs_first_step: true,
+            bootstrapping: false,
         }
     }
 
@@ -1908,7 +1913,11 @@ impl StepTrigger {
 
         let now = Instant::now();
 
-        if replaying || bootstrapping {
+        // The last condition detects a transition from bootstrapping to normal
+        // operation and makes sure that the circuit performs an extra step in the normal
+        // mode in order to initialize output table snapshots of output relations that
+        // did not participate in bootstrapping.
+        let result = if replaying || bootstrapping || self.bootstrapping {
             step(self)
         } else if checkpoint.is_some_and(|t| now >= t) && !checkpoint_requested {
             Action::Checkpoint
@@ -1927,7 +1936,11 @@ impl StepTrigger {
                 .flatten()
                 .min();
             Action::Park(wakeup)
-        }
+        };
+
+        self.bootstrapping = bootstrapping;
+
+        result
     }
 }
 
