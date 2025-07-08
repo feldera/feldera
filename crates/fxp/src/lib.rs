@@ -217,6 +217,7 @@ impl<const P: usize, const S: usize> Display for Fixed<P, S> {
     }
 }
 
+/// Error returned for operations that would produce an out-of-range result.
 #[derive(Copy, Clone, Debug)]
 pub struct OutOfRange;
 
