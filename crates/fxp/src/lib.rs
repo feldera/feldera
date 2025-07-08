@@ -120,18 +120,20 @@ pub type FixedInteger = Fixed<38, 0>;
 
 impl<const P: usize, const S: usize> Debug for Fixed<P, S> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if S == 0 {
-            write!(f, "{}", self.0)
-        } else if self.0 % Self::scale() == 0 {
+        if self.0 % Self::scale() == 0 {
             write!(f, "{}", self.0 / Self::scale())
         } else {
-            write!(
-                f,
-                "{}{}.{}",
-                if self.0 < 0 { "-" } else { "" },
-                self.0.abs() / Self::scale(),
-                (self.0.abs() % Self::scale()).abs()
-            )
+            let mut buf = SmallVec::<[u8; 64]>::new();
+            write!(&mut buf, "{:01$}", self.0.unsigned_abs(), S + 1).unwrap();
+            let d = buf.len() - S;
+            while buf.ends_with(b"0") {
+                buf.pop();
+            }
+            // SAFETY: `buf` contains only ASCII characters.
+            let s = unsafe { str::from_utf8_unchecked(&buf) };
+            let (integer, fraction) = s.split_at(d);
+            let sign = if self.0 < 0 { "-" } else { "" };
+            write!(f, "{sign}{integer}.{fraction}")
         }
     }
 }
@@ -1701,6 +1703,64 @@ mod test {
         }
     }
 
+    #[test]
+    fn debug() {
+        assert_eq!(format!("{:?}", Fixed::<20, 7>::try_from(0).unwrap()), "0");
+        assert_eq!(
+            format!("{:?}", Fixed::<20, 7>::try_from(0.0001).unwrap()),
+            "0.0001"
+        );
+        assert_eq!(
+            format!("{:?}", Fixed::<20, 7>::try_from(-0.0001).unwrap()),
+            "-0.0001"
+        );
+        assert_eq!(
+            format!("{:?}", Fixed::<20, 7>::try_from(1.0001).unwrap()),
+            "1.0001"
+        );
+        assert_eq!(
+            format!("{:?}", Fixed::<20, 7>::try_from(-1.0001).unwrap()),
+            "-1.0001"
+        );
+        assert_eq!(
+            format!("{:?}", Fixed::<20, 7>::try_from(1.682501).unwrap()),
+            "1.682501"
+        );
+        assert_eq!(
+            format!("{:?}", Fixed::<20, 4>::try_from(1.6825).unwrap()),
+            "1.6825"
+        );
+        assert_eq!(
+            format!("{:?}", Fixed::<20, 6>::try_from(1.995670).unwrap()),
+            "1.99567"
+        );
+        assert_eq!(
+            format!("{:?}", Fixed::<20, 6>::try_from(0.995670).unwrap()),
+            "0.99567"
+        );
+        assert_eq!(
+            format!("{:?}", Fixed::<6, 6>::try_from(0.995670).unwrap()),
+            "0.99567"
+        );
+
+        assert_eq!(
+            format!("{:?}", Fixed::<20, 7>::try_from(-1.682501).unwrap()),
+            "-1.682501"
+        );
+        assert_eq!(
+            format!("{:?}", Fixed::<20, 4>::try_from(-1.6825).unwrap()),
+            "-1.6825"
+        );
+        assert_eq!(
+            format!("{:?}", Fixed::<20, 6>::try_from(-1.995670).unwrap()),
+            "-1.99567"
+        );
+        assert_eq!(
+            format!("{:?}", Fixed::<20, 6>::try_from(-0.995670).unwrap()),
+            "-0.99567"
+        );
+    }
+
     fn multidisplay<const P: usize, const S: usize>(number: Fixed<P, S>) -> String {
         let mut s = String::new();
         write!(&mut s, "{number}").unwrap();
@@ -1712,6 +1772,22 @@ mod test {
 
     #[test]
     fn display() {
+        assert_eq!(
+            multidisplay(Fixed::<20, 7>::try_from(0.0001).unwrap()),
+            "0.0001 0 0.0 0.00 0.000 0.0001 0.00010 0.000100 0.0001000 0.00010000"
+        );
+        assert_eq!(
+            multidisplay(Fixed::<20, 7>::try_from(-0.0001).unwrap()),
+            "-0.0001 -0 -0.0 -0.00 -0.000 -0.0001 -0.00010 -0.000100 -0.0001000 -0.00010000"
+        );
+        assert_eq!(
+            multidisplay(Fixed::<20, 7>::try_from(1.0001).unwrap()),
+            "1.0001 1 1.0 1.00 1.000 1.0001 1.00010 1.000100 1.0001000 1.00010000"
+        );
+        assert_eq!(
+            multidisplay(Fixed::<20, 7>::try_from(-1.0001).unwrap()),
+            "-1.0001 -1 -1.0 -1.00 -1.000 -1.0001 -1.00010 -1.000100 -1.0001000 -1.00010000"
+        );
         assert_eq!(
             multidisplay(Fixed::<20, 7>::try_from(1.682501).unwrap()),
             "1.682501 2 1.7 1.68 1.683 1.6825 1.68250 1.682501 1.6825010 1.68250100"
