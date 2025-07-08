@@ -1616,175 +1616,173 @@ outputs:
     let actual: serde_json::Value = serde_json::from_str(&lir).unwrap();
     let expected: serde_json::Value = serde_json::from_str(
         r#"{
-  "nodes": [
-    {
-      "id": "0",
-      "operation": "Input",
-      "implements": [
-        "input"
-      ]
-    },
-    {
-      "id": "1",
-      "operation": "ExchangeSender",
-      "implements": [
-        "input.output",
-        "output"
-      ]
-    },
-    {
-      "id": "2",
-      "operation": "ExchangeReceiver",
-      "implements": [
-        "input.output",
-        "output"
-      ]
-    },
-    {
-      "id": "3",
-      "operation": "merge shards",
-      "implements": [
-        "input.output",
-        "output"
-      ]
-    },
-    {
-      "id": "4",
-      "operation": "Output",
-      "implements": [
-        "input.output"
-      ]
-    },
-    {
-      "id": "5",
-      "operation": "Z1 (trace)",
-      "implements": [
-        "input.output",
-        "output"
-      ]
-    },
-    {
-      "id": "6",
-      "operation": "UntimedTraceAppend",
-      "implements": [
-        "input.output",
-        "output"
-      ]
-    },
-    {
-      "id": "7",
-      "operation": "Z1 (trace)",
-      "implements": [
-        "input.output",
-        "output"
-      ]
-    },
-    {
-      "id": "8",
-      "operation": "Apply",
-      "implements": [
-        "input.output"
-      ]
-    },
-    {
-      "id": "9",
-      "operation": "Output",
-      "implements": [
-        "input.output"
-      ]
-    },
-    {
-      "id": "10",
-      "operation": "Output",
-      "implements": [
-        "output"
-      ]
-    },
-    {
-      "id": "11",
-      "operation": "Apply",
-      "implements": [
-        "output"
-      ]
-    },
-    {
-      "id": "12",
-      "operation": "Output",
-      "implements": [
-        "output"
-      ]
-    }
-  ],
   "edges": [
     {
-      "stream_id": 1,
       "from": "0",
+      "stream_id": 1,
       "to": "1"
     },
     {
-      "stream_id": null,
       "from": "1",
+      "stream_id": null,
       "to": "2"
     },
     {
-      "stream_id": 2,
       "from": "2",
+      "stream_id": 2,
       "to": "3"
     },
     {
-      "stream_id": 3,
       "from": "3",
+      "stream_id": 3,
       "to": "4"
     },
     {
-      "stream_id": 3,
       "from": "3",
+      "stream_id": 3,
       "to": "6"
     },
     {
-      "stream_id": 3,
       "from": "3",
+      "stream_id": 3,
       "to": "10"
     },
     {
-      "stream_id": 4,
       "from": "5",
+      "stream_id": 4,
       "to": "6"
     },
     {
-      "stream_id": null,
       "from": "5",
+      "stream_id": null,
       "to": "7"
     },
     {
-      "stream_id": 7,
       "from": "6",
+      "stream_id": 7,
       "to": "7"
     },
     {
-      "stream_id": 7,
       "from": "6",
+      "stream_id": 7,
       "to": "8"
     },
     {
-      "stream_id": 7,
       "from": "6",
+      "stream_id": 7,
       "to": "11"
     },
     {
-      "stream_id": 8,
       "from": "8",
+      "stream_id": 8,
       "to": "9"
     },
     {
-      "stream_id": 9,
       "from": "11",
+      "stream_id": 9,
       "to": "12"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "0",
+      "implements": [
+        "input"
+      ],
+      "operation": "Input"
+    },
+    {
+      "id": "1",
+      "implements": [
+        "input"
+      ],
+      "operation": "ExchangeSender"
+    },
+    {
+      "id": "2",
+      "implements": [
+        "input"
+      ],
+      "operation": "ExchangeReceiver"
+    },
+    {
+      "id": "3",
+      "implements": [
+        "input"
+      ],
+      "operation": "merge shards"
+    },
+    {
+      "id": "4",
+      "implements": [
+        "input.output"
+      ],
+      "operation": "Output"
+    },
+    {
+      "id": "5",
+      "implements": [
+        "input.output",
+        "output"
+      ],
+      "operation": "Z1 (trace)"
+    },
+    {
+      "id": "6",
+      "implements": [
+        "input.output",
+        "output"
+      ],
+      "operation": "UntimedTraceAppend"
+    },
+    {
+      "id": "7",
+      "implements": [
+        "input.output",
+        "output"
+      ],
+      "operation": "Z1 (trace)"
+    },
+    {
+      "id": "8",
+      "implements": [
+        "input.output"
+      ],
+      "operation": "Apply"
+    },
+    {
+      "id": "9",
+      "implements": [
+        "input.output"
+      ],
+      "operation": "Output"
+    },
+    {
+      "id": "10",
+      "implements": [
+        "output"
+      ],
+      "operation": "Output"
+    },
+    {
+      "id": "11",
+      "implements": [
+        "output"
+      ],
+      "operation": "Apply"
+    },
+    {
+      "id": "12",
+      "implements": [
+        "output"
+      ],
+      "operation": "Output"
     }
   ]
 }"#,
     )
     .unwrap();
 
+    println!("{actual:#}");
     assert_eq!(actual, expected);
 }
