@@ -33,7 +33,7 @@ use tokio::{
     sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender},
     time::{sleep_until, Instant},
 };
-use tracing::info_span;
+use tracing::{info_span, warn};
 use xxhash_rust::xxh3::Xxh3Default;
 
 pub(crate) struct UrlInputEndpoint {
@@ -170,6 +170,11 @@ impl<'a> UrlStream<'a> {
                     )?;
                 let status = response.status();
                 // info!("HTTP response status code: {}", status);
+
+                if status.as_u16() == StatusCode::RANGE_NOT_SATISFIABLE {
+                    warn!("Received HTTP status code 416 (RANGE_NOT_SATISFIABLE)--connector has reached the end of input.");
+                    return Ok(None);
+                }
 
                 // All 2xx status codes are considered valid, including ones that don't provide content.
                 // Note that redirection (3xx) is not followed and will also result in an error.
