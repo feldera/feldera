@@ -467,8 +467,8 @@ pub async fn perform_rust_compilation(
     // URL where the program binary can be downloaded from
     let program_binary_url = format!(
         "http://{}:{}/binary/{}/{}/{}/{}",
-        config.binary_ref_host,
-        config.binary_ref_port,
+        common_config.compiler_host,
+        common_config.compiler_port,
         pipeline_id,
         program_version,
         source_checksum,

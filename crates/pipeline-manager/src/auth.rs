@@ -713,19 +713,22 @@ mod test {
         let auth_middleware = HttpAuthentication::with_fn(closure);
 
         let common_config = CommonConfig {
+            bind_address: "127.0.0.1".to_string(),
+            api_port: 0,
+            compiler_host: "127.0.0.1".to_string(),
+            compiler_port: 8085,
+            runner_host: "127.0.0.1".to_string(),
+            runner_port: 8089,
             platform_version: "v0".to_string(),
         };
 
         let manager_config = ApiServerConfig {
-            port: 0,
-            bind_address: "0.0.0.0".to_owned(),
             auth_provider: crate::config::AuthProviderType::AwsCognito,
             dev_mode: false,
             dump_openapi: false,
             allowed_origins: None,
             demos_dir: vec![],
             telemetry: "".to_owned(),
-            runner_hostname_port: "127.0.0.1:8089".to_string(),
         };
 
         let (conn, _temp) = crate::db::test::setup_pg().await;

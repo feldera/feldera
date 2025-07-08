@@ -163,8 +163,6 @@ pub async fn runner_main<E: PipelineExecutor + 'static>(
     common_config: CommonConfig,
     // Pipeline executor configuration
     config: E::Config,
-    // Main HTTP server port.
-    main_http_server_port: u16,
 ) -> Result<(), ManagerError> {
     // Mapping of the present pipelines to how to reach them:
     // - A notification mechanism for the automata to act quickly on change
@@ -183,7 +181,10 @@ pub async fn runner_main<E: PipelineExecutor + 'static>(
     });
     spawn(
         server
-            .bind(("0.0.0.0", main_http_server_port))
+            .bind((
+                common_config.bind_address.clone(),
+                common_config.runner_port,
+            ))
             .expect("Unable to bind runner main HTTP server to port {main_http_server_port}")
             .run(),
     );
@@ -191,12 +192,15 @@ pub async fn runner_main<E: PipelineExecutor + 'static>(
     // Reused HTTP client
     let client = reqwest::Client::new();
 
-    if !wait_for_http_server_ready(&client, main_http_server_port).await {
-        panic!("Unable to reach runner main HTTP server on port {main_http_server_port}");
+    if !wait_for_http_server_ready(&client, common_config.runner_port).await {
+        panic!(
+            "Unable to reach runner HTTP server on port {}",
+            common_config.runner_port
+        );
     }
     debug!(
-        "Runner main HTTP server ready on port {}",
-        main_http_server_port
+        "Runner HTTP server ready on port {}",
+        common_config.runner_port
     );
 
     // Launch the reconciliation loop
@@ -234,6 +238,7 @@ async fn reconcile<E: PipelineExecutor + 'static>(
                                 channel::<LogMessage>(MAXIMUM_OUTSTANDING_LOG_FOLLOW_REQUESTS);
                             let pipeline_handle = E::new(
                                 pipeline_id,
+                                common_config.clone(),
                                 config.clone(),
                                 client.clone(),
                                 logs_sender.clone(),

@@ -1416,6 +1416,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
 #[cfg(test)]
 mod test {
     use crate::auth::TenantRecord;
+    use crate::config::CommonConfig;
     use crate::db::storage::Storage;
     use crate::db::storage_postgres::StoragePostgres;
     use crate::db::types::pipeline::{
@@ -1452,6 +1453,7 @@ mod test {
 
         fn new(
             _pipeline_id: PipelineId,
+            _common_config: CommonConfig,
             _config: Self::Config,
             _client: reqwest::Client,
             _logs_sender: Sender<LogMessage>,

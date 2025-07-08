@@ -45,7 +45,6 @@ fn default_working_directory() -> PathBuf {
 }
 
 /// Default embedded postgres working directory: ~/.feldera/data
-/// Note that it also creates a password file at: ~/.feldera/data.pwfile
 fn default_pg_embed_working_directory() -> String {
     default_working_directory()
         .join("data")
@@ -80,26 +79,6 @@ fn default_db_connection_string() -> String {
 #[cfg(not(feature = "postgresql_embedded"))]
 fn default_db_connection_string() -> String {
     "".to_string()
-}
-
-/// Default address the API server, compiler and runner bind to.
-fn default_server_address() -> String {
-    "127.0.0.1".to_string()
-}
-
-/// Default port of the API server.
-const fn default_api_server_port() -> u16 {
-    8080
-}
-
-/// Default port of the compiler.
-const fn default_compiler_port() -> u16 {
-    8085
-}
-
-/// Default port of the local runner.
-const fn default_local_runner_port() -> u16 {
-    8089
 }
 
 /// Default demos directory used by the API server.
@@ -158,14 +137,38 @@ fn help_canonicalize_dir(dir: &str) -> AnyResult<String> {
 }
 
 /// Configuration common to API server, compiler and runner.
-#[derive(Parser, Deserialize, Debug, Clone)]
+#[derive(Parser, Debug, Clone)]
 #[command(author, version, about, long_about = None)]
 pub struct CommonConfig {
     /// Platform version which is used to determine if an upgrade occurred.
     /// Default is determined at compile time.
-    #[serde(default = "default_platform_version")]
     #[arg(long, default_value_t = default_platform_version())]
     pub platform_version: String,
+
+    /// IP address on which the HTTP server of the API server, compiler, runner and pipelines bind themselves.
+    /// This should be set to either `127.0.0.1` (default) or `0.0.0.0`.
+    #[arg(long, default_value = "127.0.0.1")]
+    pub bind_address: String,
+
+    /// Port used by the API server to both bind its HTTP server, and on which it can be reached.
+    #[arg(long, default_value_t = 8080)]
+    pub api_port: u16,
+
+    /// Host (hostname or IP address) at which the compiler HTTP server can be reached by the others (e.g., pipelines).
+    #[arg(long, default_value = "127.0.0.1")]
+    pub compiler_host: String,
+
+    /// Port used by the compiler to both bind its HTTP server, and on which it can be reached.
+    #[arg(long, long, default_value_t = 8085)]
+    pub compiler_port: u16,
+
+    /// Host (hostname or IP address) at which the runner HTTP server can be reached by the others (e.g., API server).
+    #[arg(long, default_value = "127.0.0.1")]
+    pub runner_host: String,
+
+    /// Port used by the runner to both bind its HTTP server, and on which it can be reached.
+    #[arg(long, default_value_t = 8089)]
+    pub runner_port: u16,
 }
 
 /// Embedded Postgres configuration.
@@ -312,16 +315,6 @@ impl std::fmt::Display for AuthProviderType {
 #[derive(Parser, Deserialize, Debug, Clone)]
 #[command(author, version, about, long_about = None)]
 pub struct ApiServerConfig {
-    /// Port number for the API server HTTP service.
-    #[serde(default = "default_api_server_port")]
-    #[arg(short, long, default_value_t = default_api_server_port())]
-    pub port: u16,
-
-    /// Bind address for the API server HTTP service.
-    #[serde(default = "default_server_address")]
-    #[arg(short, long, default_value_t = default_server_address())]
-    pub bind_address: String,
-
     /// Enable bearer-token based authorization.
     ///
     /// Usage depends on two environment variables to be set
@@ -391,12 +384,6 @@ pub struct ApiServerConfig {
     /// and sent to our telemetry service.
     #[arg(long, default_value = "", env = "FELDERA_TELEMETRY")]
     pub telemetry: String,
-
-    /// The hostname:port to use in a URL to reach the runner web server, which for instance
-    /// provides access to pipeline logs. The hostname will typically be a DNS name for the host
-    /// running the runner service.
-    #[arg(long, default_value = "127.0.0.1:8089")]
-    pub runner_hostname_port: String,
 }
 
 impl ApiServerConfig {
@@ -482,17 +469,6 @@ pub struct CompilerConfig {
     #[serde(skip)]
     #[arg(long)]
     pub precompile: bool,
-
-    /// The hostname to use in a URL for making compiled binaries available
-    /// for runners. This will typically be a DNS name for the host running
-    /// this compiler service.
-    #[arg(long, default_value = "127.0.0.1")]
-    pub binary_ref_host: String,
-
-    /// The port to use in a URL for making compiled binaries available
-    /// for runners.
-    #[arg(long, long, default_value_t = default_compiler_port())]
-    pub binary_ref_port: u16,
 }
 
 impl CompilerConfig {
@@ -515,22 +491,11 @@ impl CompilerConfig {
 #[derive(Parser, Deserialize, Debug, Clone)]
 #[command(author, version, about, long_about = None)]
 pub struct LocalRunnerConfig {
-    /// Local runner main HTTP server port.
-    #[serde(default = "default_local_runner_port")]
-    #[arg(long, default_value_t = default_local_runner_port())]
-    pub runner_main_port: u16,
-
     /// Directory where the local runner stores its filesystem state:
     /// fetched binaries, configuration files etc.
     #[serde(default = "default_local_runner_working_directory")]
     #[arg(long, default_value_t = default_local_runner_working_directory())]
     pub runner_working_directory: String,
-
-    /// The hostname or IP address over which pipelines created by
-    /// this local runner will be reachable
-    #[serde(default = "default_server_address")]
-    #[arg(long, default_value_t = default_server_address())]
-    pub pipeline_host: String,
 }
 
 impl LocalRunnerConfig {

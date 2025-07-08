@@ -34,6 +34,12 @@ impl CompilerTest {
         let workdir = compiler_tempdir.path().to_str().unwrap();
         let platform_version = "v0";
         let common_config = CommonConfig {
+            bind_address: "127.0.0.1".to_string(),
+            api_port: 8080,
+            compiler_host: "127.0.0.1".to_string(),
+            compiler_port: 8085,
+            runner_host: "127.0.0.1".to_string(),
+            runner_port: 8089,
             platform_version: platform_version.to_string(),
         };
         let compiler_config = CompilerConfig {
@@ -46,8 +52,6 @@ impl CompilerTest {
             compilation_profile: CompilationProfile::Optimized,
             precompile: false,
             compiler_working_directory: workdir.to_owned(),
-            binary_ref_host: "127.0.0.1".to_string(),
-            binary_ref_port: 8085,
         };
 
         // Test in-memory database

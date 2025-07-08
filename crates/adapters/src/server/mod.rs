@@ -234,7 +234,7 @@ pub struct ServerArgs {
     pub(crate) storage_location: Option<PathBuf>,
 
     /// TCP bind address
-    #[arg(short, long, default_value = "0.0.0.0")]
+    #[arg(short, long, default_value = "127.0.0.1")]
     bind_address: String,
 
     /// Run the server on this port if it is available. If the port is in
