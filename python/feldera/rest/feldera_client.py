@@ -454,11 +454,11 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         pipeline_name: str,
         table_name: str,
         format: str,
-        data: list[list | str | dict] | dict,
+        data: list[list | str | dict] | dict | str,
         array: bool = False,
         force: bool = False,
         update_format: str = "raw",
-        json_flavor: str = None,
+        json_flavor: Optional[str] = None,
         serialize: bool = True,
     ):
         """
