@@ -15,7 +15,10 @@ use crate::{
         require_persistent_id,
     },
     storage::file::{to_bytes, with_serializer},
-    trace::{BatchFactories, BatchReader, BatchReaderFactories, Cursor, SpineSnapshot},
+    trace::{
+        spine_async::WithSnapshot, BatchFactories, BatchReader, BatchReaderFactories, Cursor,
+        Spine, SpineSnapshot,
+    },
     Error, RootCircuit, Runtime,
 };
 use feldera_storage::StoragePath;
@@ -53,12 +56,12 @@ where
             bound_clone.set(lower.clone());
         });
         let trace = self
-            .dyn_integrate_trace_with_bound(factories, bound, TraceBound::new())
-            .delay_trace();
+            .dyn_accumulate_integrate_trace_with_bound(factories, bound, TraceBound::new())
+            .accumulate_delay_trace();
         self.circuit().add_ternary_operator(
             <Window<B, SpineSnapshot<B>>>::new(factories, inclusive),
             &trace,
-            self,
+            &self.dyn_accumulate(factories),
             bounds,
         )
     }
@@ -97,6 +100,8 @@ where
     // `None` means we're at the start of a clock epoch, no inputs
     // have been received yet, and window boundaries haven't been set.
     window: Option<(Box<B::Key>, Box<B::Key>)>,
+    delta: Option<SpineSnapshot<B>>,
+    flush: bool,
     _phantom: PhantomData<(B, T)>,
 }
 
@@ -112,6 +117,8 @@ where
             left_inclusive,
             right_inclusive,
             window: None,
+            delta: None,
+            flush: false,
             _phantom: PhantomData,
         }
     }
@@ -182,6 +189,10 @@ where
         self.window = None;
         Ok(())
     }
+
+    fn flush(&mut self) {
+        self.flush = true;
+    }
 }
 
 /// `true` if cursor points to a key to the left of the interval.
@@ -244,7 +255,7 @@ where
     }
 }
 
-impl<B, T> TernaryOperator<T, B, (Box<B::Key>, Box<B::Key>), B> for Window<B, T>
+impl<B, T> TernaryOperator<T, Option<Spine<B>>, (Box<B::Key>, Box<B::Key>), B> for Window<B, T>
 where
     B: IndexedZSet,
     T: ZBatchReader<Key = B::Key, Val = B::Val, Time = ()> + Clone,
@@ -263,9 +274,21 @@ where
     async fn eval(
         &mut self,
         trace: Cow<'_, T>,
-        batch: Cow<'_, B>,
+        delta: Cow<'_, Option<Spine<B>>>,
         bounds: Cow<'_, (Box<B::Key>, Box<B::Key>)>,
     ) -> B {
+        if let Some(delta) = &*delta {
+            assert!(self.delta.is_none());
+            self.delta = Some(delta.ro_snapshot());
+        }
+
+        let delta = if self.flush {
+            self.flush = false;
+            self.delta.take().unwrap()
+        } else {
+            return B::dyn_empty(&self.factories);
+        };
+
         //           ┌────────────────────────────────────────┐
         //           │       previous window                  │
         //           │                                        │             e1
@@ -280,7 +303,6 @@ where
         let (start1, end1) = bounds.into_owned();
         // println!("{:?}-{:?}", start1, end1);
         let trace = trace.as_ref();
-        let batch = batch.as_ref();
 
         // TODO: In order to preallocate the buffer, we need to estimate the number of
         // keys in each component below.  For this, we need to extend
@@ -290,7 +312,7 @@ where
         let mut key = self.factories.key_factory().default_box();
 
         let mut trace_cursor = trace.cursor();
-        let mut batch_cursor = batch.cursor();
+        let mut batch_cursor = delta.cursor();
 
         if let Some((start0, end0)) = &self.window {
             // Retract tuples in `trace` that slid out of the window (region 1).
