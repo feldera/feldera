@@ -2281,4 +2281,54 @@ mod test {
             );
         }
     }
+
+    #[test]
+    fn compare_against_fixed() {
+        fn check_comparisons<const PA: usize, const SA: usize, const PB: usize, const SB: usize>(
+            fx: Fixed<PA, SA>,
+            fy: Fixed<PB, SB>,
+            x: i128,
+            y: i128,
+        ) {
+            assert_eq!(fx == fy, x == y);
+            assert_eq!(fx != fy, x != y);
+            assert_eq!(fx > fy, x > y);
+            assert_eq!(fx >= fy, x >= y);
+            assert_eq!(fx < fy, x < y);
+            assert_eq!(fx <= fy, x <= y);
+        }
+
+        for x in -999..=999 {
+            let fx = Fixed::<3, 1>(x);
+            for y in -999..=999 {
+                check_comparisons(fx, Fixed::<3, 0>(y), x, y * 10);
+                check_comparisons(fx, Fixed::<3, 1>(y), x, y);
+                check_comparisons(fx, Fixed::<3, 2>(y), x * 10, y);
+            }
+        }
+    }
+
+    #[test]
+    fn compare_against_integers() {
+        for x in -999..=999 {
+            let f = Fixed::<3, 1>(x);
+            for y in -100..=100 {
+                let expect = x == y * 10;
+                assert_eq!(f == y as i8, expect);
+                assert_eq!(f == y as i16, expect);
+                assert_eq!(f == y as i32, expect);
+                assert_eq!(f == y as i64, expect);
+                assert_eq!(f == y, expect);
+                assert_eq!(f == y as isize, expect);
+                if y >= 0 {
+                    assert_eq!(f == y as u8, expect);
+                    assert_eq!(f == y as u16, expect);
+                    assert_eq!(f == y as u32, expect);
+                    assert_eq!(f == y as u64, expect);
+                    assert_eq!(f == y as u128, expect);
+                    assert_eq!(f == y as usize, expect);
+                }
+            }
+        }
+    }
 }
