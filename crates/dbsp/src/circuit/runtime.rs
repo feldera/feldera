@@ -798,6 +798,7 @@ impl Runtime {
         if let Ok(guard) = self.inner().panic_info[worker][thread_type].read() {
             guard.clone()
         } else {
+            warn!("poisoned panic_lock lock for {thread_type} worker {worker}");
             None
         }
     }
