@@ -1,3 +1,4 @@
+import os
 from typing import Optional, Any, Mapping
 
 
@@ -72,6 +73,7 @@ class RuntimeConfig:
         clock_resolution_usecs: Optional[int] = None,
         provisioning_timeout_secs: Optional[int] = None,
         resources: Optional[Resources] = None,
+        runtime_version: Optional[str] = None,
     ):
         self.workers = workers
         self.tracing = tracing
@@ -81,12 +83,19 @@ class RuntimeConfig:
         self.min_batch_size_records = min_batch_size_records
         self.clock_resolution_usecs = clock_resolution_usecs
         self.provisioning_timeout_secs = provisioning_timeout_secs
+        self.runtime_version = runtime_version or os.environ.get(
+            "FELDERA_RUNTIME_VERSION"
+        )
         if resources is not None:
             self.resources = resources.__dict__
         if isinstance(storage, bool):
             self.storage = storage
         if isinstance(storage, Storage):
             self.storage = storage.__dict__
+
+    @staticmethod
+    def default() -> "RuntimeConfig":
+        return RuntimeConfig(resources=Resources())
 
     @classmethod
     def from_dict(cls, d: Mapping[str, Any]):

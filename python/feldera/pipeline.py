@@ -473,10 +473,13 @@ metrics"""
             pipeline to stop.
         """
 
-        if len(self.views_tx) > 0:
-            for _, queue in self.views_tx.pop().items():
+        for view_queue in self.views_tx:
+            for _, queue in view_queue.items():
                 # sends a message to the callback runner to stop listening
                 queue.put(_CallbackRunnerInstruction.RanToCompletion)
+
+        if len(self.views_tx) > 0:
+            for view_name, queue in self.views_tx.pop().items():
                 # block until the callback runner has been stopped
                 queue.join()
 

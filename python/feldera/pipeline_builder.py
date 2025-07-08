@@ -29,7 +29,7 @@ class PipelineBuilder:
         udf_toml: str = "",
         description: str = "",
         compilation_profile: CompilationProfile = CompilationProfile.OPTIMIZED,
-        runtime_config: RuntimeConfig = RuntimeConfig(resources=Resources()),
+        runtime_config: RuntimeConfig = RuntimeConfig.default(),
     ):
         self.client: FelderaClient = client
         self.name: str | None = name

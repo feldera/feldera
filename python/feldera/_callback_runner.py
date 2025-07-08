@@ -54,12 +54,12 @@ class CallbackRunner(Thread):
             )
 
         # by default, we assume that the pipeline has been started
-        ack: _CallbackRunnerInstruction = _CallbackRunnerInstruction.PipelineStarted
+        ack = _CallbackRunnerInstruction.PipelineStarted
 
         # if there is Queue, we wait for the instruction to start the pipeline
         # this means that we are listening to the pipeline before running it, therefore, all data should be received
         if self.queue:
-            ack: _CallbackRunnerInstruction = self.queue.get()
+            ack = self.queue.get()
 
         match ack:
             # if the pipeline has actually been started, we start a listener
@@ -77,11 +77,12 @@ class CallbackRunner(Thread):
 
                 for chunk in gen_obj:
                     chunk: dict = chunk
-                    data: list[dict] = chunk.get("json_data")
-                    seq_no: int = chunk.get("sequence_number")
-
-                    if data is not None:
-                        self.callback(dataframe_from_response([data], schema), seq_no)
+                    data: Optional[list[dict]] = chunk.get("json_data")
+                    seq_no: Optional[int] = chunk.get("sequence_number")
+                    if data is not None and seq_no is not None:
+                        self.callback(
+                            dataframe_from_response([data], self.schema), seq_no
+                        )
 
                     if self.queue:
                         try:
