@@ -739,7 +739,7 @@ impl DBSPHandle {
     fn panicked(&self) -> bool {
         self.runtime
             .as_ref()
-            .map_or(false, |runtime| runtime.panicked())
+            .is_some_and(|runtime| runtime.panicked())
     }
 
     fn broadcast_command<F>(&mut self, command: Command, mut handler: F) -> Result<(), DbspError>
@@ -778,7 +778,7 @@ impl DBSPHandle {
             let panic_info = this.collect_panic_info().unwrap_or_default();
             this.kill_async();
 
-            return Err(DbspError::Runtime(RuntimeError::WorkerPanic { panic_info }));
+            Err(DbspError::Runtime(RuntimeError::WorkerPanic { panic_info }))
         }
         for _ in 0..self.status_receivers.len() {
             let ready = select.select();
