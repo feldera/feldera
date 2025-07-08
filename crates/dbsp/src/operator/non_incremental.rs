@@ -4,13 +4,14 @@ use crate::{
         operator_traits::{ImportOperator, Operator},
         runtime::Consensus,
         schedule::{DynamicScheduler, Executor, Scheduler},
+        OwnershipPreference,
     },
     operator::Generator,
     trace::{
         Batch as DynBatch, BatchReader as _, BatchReaderFactories, Spine as DynSpine, Trace as _,
     },
     typed_batch::{Spine, TypedBatch},
-    Batch, ChildCircuit, Circuit, SchedulerError, Stream, Timestamp,
+    Batch, ChildCircuit, Circuit, SchedulerError, Scope, Stream, Timestamp,
 };
 use impl_trait_for_tuples::impl_for_tuples;
 use std::{borrow::Cow, cell::RefCell, collections::BTreeSet, future::Future, pin::Pin, rc::Rc};
@@ -258,6 +259,95 @@ where
         self.add_dependency(subcircuit_node_id, output.local_node_id());
 
         Ok(output)
+    }
+}
+
+impl<C, D> Stream<C, D>
+where
+    D: Clone + 'static,
+    C: Circuit,
+{
+    /// Import `self` from the parent circuit to `subcircuit` via the `Delta0`
+    /// operator.
+    ///
+    /// See [`Delta0`] operator documentation.
+    #[track_caller]
+    pub fn delta0_non_iterative<CC>(&self, subcircuit: &CC) -> Stream<CC, D>
+    where
+        CC: Circuit<Parent = C>,
+    {
+        let delta =
+            subcircuit.import_stream(Delta0NonIterative::new(), &self.try_sharded_version());
+        delta.mark_sharded_if(self);
+
+        delta
+    }
+}
+
+pub struct Delta0NonIterative<D> {
+    val: Option<D>,
+    fixedpoint: bool,
+}
+
+impl<D> Delta0NonIterative<D> {
+    pub fn new() -> Self {
+        Self {
+            val: None,
+            fixedpoint: false,
+        }
+    }
+}
+
+impl<D> Default for Delta0NonIterative<D> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<D> Operator for Delta0NonIterative<D>
+where
+    D: Clone + 'static,
+{
+    fn name(&self) -> Cow<'static, str> {
+        Cow::from("delta0")
+    }
+
+    fn fixedpoint(&self, scope: Scope) -> bool {
+        if scope == 0 {
+            // Output becomes stable (all zeros) after the first clock cycle.
+            self.fixedpoint
+        } else {
+            // Delta0 does not maintain any state across epochs.
+            true
+        }
+    }
+}
+
+impl<D> ImportOperator<D, D> for Delta0NonIterative<D>
+where
+    D: Clone + 'static,
+{
+    fn import(&mut self, val: &D) {
+        self.val = Some(val.clone());
+        self.fixedpoint = false;
+    }
+
+    fn import_owned(&mut self, val: D) {
+        self.val = Some(val);
+        self.fixedpoint = false;
+    }
+
+    async fn eval(&mut self) -> D {
+        if self.val.is_none() {
+            self.fixedpoint = true;
+        }
+        self.val.take().unwrap()
+    }
+
+    /// Ownership preference on the operator's input stream
+    /// (see [`OwnershipPreference`]).
+    fn input_preference(&self) -> OwnershipPreference {
+        OwnershipPreference::PREFER_OWNED
     }
 }
 
