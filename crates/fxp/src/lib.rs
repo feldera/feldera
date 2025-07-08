@@ -2,6 +2,7 @@ use std::{
     cmp::Ordering,
     fmt::{Debug, Display},
     io::Write,
+    num::IntErrorKind,
     ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssign},
     str::FromStr,
 };
@@ -1481,8 +1482,18 @@ impl<const P: usize, const S: usize> Neg for &Fixed<P, S> {
     }
 }
 
-#[derive(Copy, Clone, Debug)]
-pub struct ParseFixedError;
+/// Error that can be returned when parsing a [Fixed].
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum ParseFixedError {
+    /// Invalid syntax.
+    SyntaxError,
+
+    /// Out of valid range.
+    ///
+    /// Underflow is rounded to zero, so this error is only returned when the
+    /// absolute value exceeds the type's range.
+    OutOfRange,
+}
 
 impl<const P: usize, const S: usize> FromStr for Fixed<P, S> {
     type Err = ParseFixedError;
@@ -1495,7 +1506,7 @@ impl<const P: usize, const S: usize> FromStr for Fixed<P, S> {
     /// representable value, rounding halfway values to even.
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         // Non-generic inner function to reduce monomorphization cost.
-        fn inner(s: &str, scale: i32) -> Option<(i128, i32)> {
+        fn inner(s: &str, scale: i32) -> Result<(i128, i32), ParseFixedError> {
             // Accumulate digits into `value`.  Adjust `exponent` such that the
             // parsed value is `value / 10**exponent`.
             let mut value = 0;
@@ -1513,7 +1524,7 @@ impl<const P: usize, const S: usize> FromStr for Fixed<P, S> {
             let mut iter = s.chars();
             while let Some(c) = iter.next() {
                 match c {
-                    '-' | '+' if sign.is_some() => return None,
+                    '-' | '+' if sign.is_some() => return Err(ParseFixedError::SyntaxError),
                     '-' => {
                         sign = Some(Sign::Negative);
                     }
@@ -1525,38 +1536,72 @@ impl<const P: usize, const S: usize> FromStr for Fixed<P, S> {
                         if value < i128::MAX / 10 {
                             value = value * 10 + (c as u8 - b'0') as i128;
                             if saw_dot {
-                                exponent = exponent.checked_sub(1)?;
+                                exponent -= 1;
                             }
                         } else if !saw_dot {
-                            exponent = exponent.checked_add(1)?;
+                            exponent =
+                                exponent.checked_add(1).ok_or(ParseFixedError::OutOfRange)?;
                         }
                     }
                     '.' => {
                         if saw_dot {
-                            return None;
+                            return Err(ParseFixedError::SyntaxError);
                         }
                         saw_dot = true;
                     }
                     'e' | 'E' => {
-                        exponent = exponent.checked_add(iter.as_str().parse().ok()?)?;
+                        if !saw_digit {
+                            return Err(ParseFixedError::SyntaxError);
+                        }
+                        let e: i32 = match iter.as_str().parse() {
+                            Ok(e) => e,
+                            Err(error) => {
+                                return match error.kind() {
+                                    IntErrorKind::Zero => unreachable!(),
+                                    IntErrorKind::PosOverflow => {
+                                        if value != 0 {
+                                            Err(ParseFixedError::OutOfRange)
+                                        } else {
+                                            Ok((0, 0))
+                                        }
+                                    }
+                                    IntErrorKind::NegOverflow => Ok((0, 0)),
+                                    _ => Err(ParseFixedError::SyntaxError),
+                                }
+                            }
+                        };
+                        exponent = match exponent.checked_add(e) {
+                            Some(exponent) => exponent,
+                            None => {
+                                if e > 0 {
+                                    // Don't see any way that `value` can be
+                                    // zero, since we only have a positive
+                                    // `exponent` if `value` would otherwise
+                                    // overflow.
+                                    debug_assert_ne!(value, 0);
+                                    return Err(ParseFixedError::OutOfRange);
+                                } else {
+                                    return Ok((0, 0));
+                                }
+                            }
+                        };
                         break;
                     }
-                    _ => return None,
+                    _ => return Err(ParseFixedError::SyntaxError),
                 }
             }
             if !saw_digit {
-                return None;
+                return Err(ParseFixedError::SyntaxError);
             }
             let value = match sign {
                 Some(Sign::Negative) => -value,
                 _ => value,
             };
-            Some((value, exponent))
+            Ok((value, exponent))
         }
 
-        inner(s, S as i32)
-            .and_then(|(value, exponent)| Self::try_new_with_exponent_round_even(value, exponent))
-            .ok_or(ParseFixedError)
+        let (value, exponent) = inner(s, S as i32)?;
+        Self::try_new_with_exponent_round_even(value, exponent).ok_or(ParseFixedError::OutOfRange)
     }
 }
 
@@ -1575,68 +1620,88 @@ fn _invalid_constant_test() {}
 mod test {
     use num_traits::{CheckedAdd, CheckedDiv, CheckedMul, CheckedSub};
 
-    use crate::Fixed;
+    use crate::{Fixed, ParseFixedError};
     use std::{fmt::Write, str::FromStr};
 
     #[test]
     fn from_str() {
-        for (s, f) in [
-            ("0", Some(0.0)),
-            ("0.", Some(0.0)),
-            (".0", Some(0.0)),
-            ("-0", Some(-0.0)),
-            ("+0", Some(-0.0)),
-            ("--0", None),
-            ("-+0", None),
-            ("0x", None),
-            ("0e5x", None),
-            ("1.23", Some(1.23)),
-            ("-1.23", Some(-1.23)),
-            ("+1.23", Some(1.23)),
-            ("99999999", Some(9999_9999.0)),
-            ("999999999", None),
-            ("999999999E-1", Some(9999_9999.9)),
-            ("9999999999e-1", None),
-            ("9999999999E-2", Some(9999_9999.99)),
-            ("99999999999e-2", None),
+        const VAR_NAME: f64 = 0.0;
+        for (s, expect) in [
+            ("0", Ok(0.0)),
+            ("0.", Ok(0.0)),
+            (".0", Ok(0.0)),
+            ("-0", Ok(-0.0)),
+            ("+0", Ok(-0.0)),
+            ("--0", Err(ParseFixedError::SyntaxError)),
+            ("-+0", Err(ParseFixedError::SyntaxError)),
+            ("0x", Err(ParseFixedError::SyntaxError)),
+            ("0e5x", Err(ParseFixedError::SyntaxError)),
+            ("1.23", Ok(1.23)),
+            ("-1.23", Ok(-1.23)),
+            ("+1.23", Ok(1.23)),
+            ("99999999", Ok(9999_9999.0)),
+            ("999999999", Err(ParseFixedError::OutOfRange)),
+            ("999999999E-1", Ok(9999_9999.9)),
+            ("9999999999e-1", Err(ParseFixedError::OutOfRange)),
+            ("9999999999E-2", Ok(9999_9999.99)),
+            ("99999999999e-2", Err(ParseFixedError::OutOfRange)),
             // This fails to parse because `99999999.999` rounds up to
             // `100000000000`, which is out of range.
-            ("99999999999e-3", None),
+            ("99999999999e-3", Err(ParseFixedError::OutOfRange)),
             // But with a `1` at the end rounds down, so it stays in range.
-            ("99999999991e-3", Some(9999_9999.99)),
+            ("99999999991e-3", Ok(9999_9999.99)),
             // This value overflows the range of `i128` as an integer, so it
             // triggers the case where we stop accepting digits and simply
             // adjust the exponent instead.
             (
                 "111111111111111111111111111111111111111111e-34",
-                Some(1111_1111.11),
+                Ok(1111_1111.11),
             ),
             // This value overflows the range of `i128` in the fraction, so it
             // triggers the case where we stop accepting digits and simply
             // adjust the exponent instead.
             (
                 "1.23456788901234567890123456789012345678890123456",
-                Some(1.23),
+                Ok(1.23),
             ),
-            ("123e5", Some(12_300_000.0)),
-            ("123E4", Some(1_230_000.0)),
-            ("123e3", Some(123_000.0)),
-            ("123e2", Some(12_300.0)),
-            ("123e1", Some(1_230.0)),
-            ("123e0", Some(123.0)),
-            ("123e-1", Some(12.3)),
-            ("123e-2", Some(1.23)),
-            (".123", Some(0.12)),
-            (".124", Some(0.12)),
-            (".125", Some(0.12)),
-            (".126", Some(0.13)),
-            (".133", Some(0.13)),
-            (".134", Some(0.13)),
-            (".135", Some(0.14)),
-            (".136", Some(0.14)),
+            // This value positively overflows the exponent.
+            ("1e999999999999999", Err(ParseFixedError::OutOfRange)),
+            // This value positively overflows the exponent but the value is 0.
+            ("0e999999999999999", Ok(0.0)),
+            // This value negatively overflows the exponent.
+            ("1e-999999999999999", Ok(VAR_NAME)),
+            // This value overflows the range of `i128` as an integer, which
+            // starts adjusting the exponent, and then it overflows the exponent
+            // with `e`.
+            (
+                "111111111111111111111111111111111111111111e2147483644",
+                Err(ParseFixedError::OutOfRange),
+            ),
+            // This value adjusts the exponent downward, and then it negatively
+            // overflows the exponent with `e`.
+            (
+                ".1111111111111111111111111111111111111111e-2147483648",
+                Ok(0.0),
+            ),
+            ("123e5", Ok(12_300_000.0)),
+            ("123E4", Ok(1_230_000.0)),
+            ("123e3", Ok(123_000.0)),
+            ("123e2", Ok(12_300.0)),
+            ("123e1", Ok(1_230.0)),
+            ("123e0", Ok(123.0)),
+            ("123e-1", Ok(12.3)),
+            ("123e-2", Ok(1.23)),
+            (".123", Ok(0.12)),
+            (".124", Ok(0.12)),
+            (".125", Ok(0.12)),
+            (".126", Ok(0.13)),
+            (".133", Ok(0.13)),
+            (".134", Ok(0.13)),
+            (".135", Ok(0.14)),
+            (".136", Ok(0.14)),
         ] {
             println!("{s}: {:?}", s.parse::<F>());
-            assert_eq!(s.parse::<F>().ok(), f.map(|f| F::try_from(f).unwrap()));
+            assert_eq!(s.parse::<F>(), expect.map(f));
         }
     }
 
