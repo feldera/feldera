@@ -16,6 +16,7 @@
 //! * Runner.  The runner component is responsible for starting and killing
 //!   compiled pipelines and for interacting with them at runtime.
 
+pub mod demo;
 mod endpoints;
 pub mod error;
 mod examples;

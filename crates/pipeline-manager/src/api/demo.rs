@@ -250,7 +250,7 @@ pub fn read_demos_from_directories(demos_dir: &Vec<String>) -> Vec<Demo> {
 
 #[cfg(test)]
 mod test {
-    use crate::demo::{parse_demo, read_demos_from_directories, Demo, DemoError};
+    use super::{parse_demo, read_demos_from_directories, Demo, DemoError};
     use std::fs;
     use std::fs::File;
     use std::io::Write;

@@ -65,7 +65,6 @@ async fn main() -> anyhow::Result<()> {
     let compiler_config = compiler_config.canonicalize()?;
     let local_runner_config = local_runner_config.canonicalize()?;
 
-    let metrics_handle = pipeline_manager::metrics::init();
     if compiler_config.precompile {
         compiler_precompile(common_config, compiler_config).await?;
         info!("Pre-compilation finished");
@@ -104,7 +103,6 @@ async fn main() -> anyhow::Result<()> {
         .await
         .expect("Local runner main failed");
     });
-    pipeline_manager::metrics::create_endpoint(metrics_handle, db.clone()).await;
     // The api-server blocks forever
     pipeline_manager::api::main::run(db, common_config, api_config, Arc::new(RwLock::new(None)))
         .await

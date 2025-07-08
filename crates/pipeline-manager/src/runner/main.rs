@@ -1,11 +1,11 @@
 use crate::api::error::ApiError;
 use crate::api::util::parse_url_parameter;
 use crate::config::CommonConfig;
+use crate::db::notifier::{DbNotification, Operation};
+use crate::db::probe::DbProbe;
 use crate::db::storage_postgres::StoragePostgres;
 use crate::db::types::pipeline::PipelineId;
-use crate::db_notifier::{DbNotification, Operation};
 use crate::error::ManagerError;
-use crate::probe::Probe;
 use crate::runner::error::RunnerError;
 use crate::runner::pipeline_automata::PipelineAutomaton;
 use crate::runner::pipeline_executor::PipelineExecutor;
@@ -54,7 +54,7 @@ type PipelinesState = BTreeMap<PipelineId, (Arc<Notify>, Sender<Sender<String>>)
 /// Returns whether the runner is healthy.
 /// The health check consults the continuous probe of database reachability.
 #[get("/healthz")]
-async fn get_healthz(data: web::Data<Arc<Mutex<Probe>>>) -> Result<impl Responder, ManagerError> {
+async fn get_healthz(data: web::Data<Arc<Mutex<DbProbe>>>) -> Result<impl Responder, ManagerError> {
     data.lock().await.status_as_http_response()
 }
 
@@ -172,7 +172,7 @@ pub async fn runner_main<E: PipelineExecutor + 'static>(
     let pipelines: Arc<Mutex<PipelinesState>> = Arc::new(Mutex::new(BTreeMap::new()));
 
     // Setup web server
-    let data_healthz = web::Data::new(Probe::new(db.clone()).await);
+    let data_healthz = web::Data::new(DbProbe::new(db.clone()).await);
     let data_logs = web::Data::new(pipelines.clone());
     let server = HttpServer::new(move || {
         actix_web::App::new()
@@ -214,7 +214,7 @@ async fn reconcile<E: PipelineExecutor + 'static>(
     config: E::Config,
 ) -> Result<(), ManagerError> {
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-    spawn(crate::db_notifier::listen(db.clone(), tx));
+    spawn(crate::db::notifier::listen(db.clone(), tx));
     debug!("Runner has started");
     loop {
         trace!("Waiting for pipeline operation notification from database...");

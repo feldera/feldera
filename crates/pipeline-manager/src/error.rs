@@ -20,11 +20,11 @@
 //! `feldera_types` crate, i.e., errors returned by the API server and
 //! by individual pipelines have the same format.
 
+use crate::api::demo::DemoError;
 use crate::api::error::ApiError;
 use crate::common_error::CommonError;
 use crate::compiler::error::CompilerError;
 use crate::db::error::DBError;
-use crate::demo::DemoError;
 use crate::runner::error::RunnerError;
 use actix_web::{
     body::BoxBody, http::StatusCode, HttpResponse, HttpResponseBuilder, ResponseError,

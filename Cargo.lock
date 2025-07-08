@@ -1281,28 +1281,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "aws-sdk-cognitoidentityprovider"
-version = "1.84.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a82001d59503c61f2926b0e6a15729ddb2cd8a78e4f2138b10d261aa903cde05"
-dependencies = [
- "aws-credential-types",
- "aws-runtime",
- "aws-smithy-async",
- "aws-smithy-http",
- "aws-smithy-json",
- "aws-smithy-runtime",
- "aws-smithy-runtime-api",
- "aws-smithy-types",
- "aws-types",
- "bytes",
- "fastrand",
- "http 0.2.12",
- "regex-lite",
- "tracing",
-]
-
-[[package]]
 name = "aws-sdk-dynamodb"
 version = "1.78.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7868,8 +7846,6 @@ dependencies = [
  "async-stream",
  "async-trait",
  "awc",
- "aws-config",
- "aws-sdk-cognitoidentityprovider",
  "base64 0.22.1",
  "bytestring",
  "cached",
@@ -7891,14 +7867,11 @@ dependencies = [
  "itertools 0.14.0",
  "jsonwebtoken 8.3.0",
  "log",
- "metrics",
- "metrics-exporter-prometheus",
  "nix 0.29.0",
  "openssl",
  "pg-client-config",
  "postgres-openssl",
  "postgresql_embedded",
- "pretty_assertions",
  "proptest",
  "proptest-derive",
  "rand 0.8.5",

@@ -9,13 +9,13 @@ use crate::compiler::sql_compiler::{
 };
 use crate::compiler::util::validate_is_sha256_checksum;
 use crate::config::{CommonConfig, CompilerConfig};
+use crate::db::probe::DbProbe;
 use crate::db::storage_postgres::StoragePostgres;
 use crate::db::types::pipeline::PipelineId;
 use crate::db::types::program::ProgramConfig;
 use crate::db::types::tenant::TenantId;
 use crate::db::types::version::Version;
 use crate::error::ManagerError;
-use crate::probe::Probe;
 use actix_files::NamedFile;
 use actix_web::{get, web, HttpRequest, HttpServer, Responder};
 use futures_util::join;
@@ -100,7 +100,7 @@ async fn get_binary(
 
 /// Health check which returns success if it is able to reach the database.
 #[get("/healthz")]
-async fn healthz(probe: web::Data<Arc<Mutex<Probe>>>) -> Result<impl Responder, ManagerError> {
+async fn healthz(probe: web::Data<Arc<Mutex<DbProbe>>>) -> Result<impl Responder, ManagerError> {
     probe.lock().await.status_as_http_response()
 }
 
@@ -251,7 +251,7 @@ pub async fn compiler_main(
     // Spawn HTTP server thread
     let port = config.binary_ref_port;
     let config = web::Data::new(config.clone());
-    let probe = web::Data::new(Probe::new(db.clone()).await);
+    let probe = web::Data::new(DbProbe::new(db.clone()).await);
     let http_server = spawn(
         HttpServer::new(move || {
             actix_web::App::new()
