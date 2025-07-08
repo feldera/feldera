@@ -554,28 +554,22 @@ fn do_bootstrap(
         return Err(ControllerError::EnterpriseFeature("fault tolerance"));
     }
 
-    // Create env logger.
+    // Initializes the logger by setting its filter and template.
+    // By default, the logging level is set to `INFO`.
+    // This can be overridden by setting the `RUST_LOG` environment variable.
     let pipeline_name = format!("[{}]", config.name.clone().unwrap_or_default()).cyan();
-    // By default, logging is set to INFO level for the Feldera crates:
-    // - "project" for the generated project<uuid> crate
-    // - "dbsp" for the dbsp crate
-    // - "dbsp_adapters" for the adapters crate which is renamed
-    // - "dbsp_nexmark" for the nexmark crate which is renamed
-    // - "feldera_types" for the feldera-types crate
-    // For all others, the WARN level is used.
-    // Note that this can be overridden by setting the RUST_LOG environment variable.
     tracing_subscriber::registry()
         .with(tracing_subscriber::fmt::layer().event_format(PipelineFormat::new(pipeline_name)))
         .with(
             EnvFilter::try_from_default_env()
-                .or_else(|_| EnvFilter::try_new("warn,project=info,dbsp=info,dbsp_adapters=info,dbsp_nexmark=info,feldera_types=info"))
-                .unwrap()
+                .or_else(|_| EnvFilter::try_new("info"))
+                .unwrap(),
         )
         .try_init()
-    .unwrap_or_else(|e| {
-        // This happens in unit tests when another test has initialized logging.
-        eprintln!("Failed to initialize logging: {e}.")
-    });
+        .unwrap_or_else(|e| {
+            // This happens in unit tests when another test has initialized logging.
+            eprintln!("Failed to initialize logging: {e}.")
+        });
     let _ = loginit_sender.send(());
 
     if config.global.tracing {
