@@ -426,8 +426,24 @@ impl<const P: usize, const S: usize> Fixed<P, S> {
 
     /// Returns the integer part of this value, truncating non-integers toward
     /// zero.  This is an exact calculation that cannot overflow.
-    pub fn truncate(&self) -> Self {
+    ///
+    /// `trunc()` is equivalent to `trunc_digits(0)`, but it might be more
+    /// efficient due to constant folding.
+    pub fn trunc(&self) -> Self {
         Self(self.0 / Self::scale() * Self::scale())
+    }
+
+    /// Returns this value, truncated toward zero at `digits` after the decimal
+    /// point. This is an exact calculation that cannot overflow.
+    pub fn trunc_digits(&self, digits: i32) -> Self {
+        let exponent = (S as i32).saturating_sub(digits);
+        if exponent <= 0 {
+            *self
+        } else if let Some(divisor) = checked_pow10(exponent.cast_unsigned()) {
+            Self(self.0 / divisor * divisor)
+        } else {
+            Self::ZERO
+        }
     }
 
     /// Returns this value rounded up to the nearest integer, or `None` if
@@ -1738,31 +1754,67 @@ mod test {
     }
 
     #[test]
-    fn truncate() {
-        assert_eq!(f(5.0).truncate(), f(5.0));
-        assert_eq!(f(5.1).truncate(), f(5.0));
-        assert_eq!(f(5.5).truncate(), f(5.0));
-        assert_eq!(f(5.9).truncate(), f(5.0));
-        assert_eq!(f(-5.0).truncate(), f(-5.0));
-        assert_eq!(f(-5.1).truncate(), f(-5.0));
-        assert_eq!(f(-5.5).truncate(), f(-5.0));
-        assert_eq!(f(-5.6).truncate(), f(-5.0));
-        assert_eq!(f(4.0).truncate(), f(4.0));
-        assert_eq!(f(4.1).truncate(), f(4.0));
-        assert_eq!(f(4.5).truncate(), f(4.0));
-        assert_eq!(f(4.9).truncate(), f(4.0));
-        assert_eq!(f(-4.0).truncate(), f(-4.0));
-        assert_eq!(f(-4.1).truncate(), f(-4.0));
-        assert_eq!(f(-4.5).truncate(), f(-4.0));
-        assert_eq!(f(-4.6).truncate(), f(-4.0));
-        assert_eq!(f(99_999_999.0).truncate(), f(99_999_999.0));
-        assert_eq!(f(99_999_999.1).truncate(), f(99_999_999.0));
-        assert_eq!(f(99_999_999.5).truncate(), f(99_999_999.0));
-        assert_eq!(f(99_999_999.6).truncate(), f(99_999_999.0));
-        assert_eq!(f(-99_999_999.0).truncate(), f(-99_999_999.0));
-        assert_eq!(f(-99_999_999.1).truncate(), f(-99_999_999.0));
-        assert_eq!(f(-99_999_999.5).truncate(), f(-99_999_999.0));
-        assert_eq!(f(-99_999_999.6).truncate(), f(-99_999_999.0));
+    fn trunc() {
+        fn test(x: f64, expected: f64) {
+            assert_eq!(f(x).trunc(), f(expected));
+            assert_eq!(f(x).trunc_digits(0), f(expected));
+        }
+
+        test(5.0, 5.0);
+        test(5.1, 5.0);
+        test(5.5, 5.0);
+        test(5.9, 5.0);
+        test(-5.0, -5.0);
+        test(-5.1, -5.0);
+        test(-5.5, -5.0);
+        test(-5.6, -5.0);
+        test(4.0, 4.0);
+        test(4.1, 4.0);
+        test(4.5, 4.0);
+        test(4.9, 4.0);
+        test(-4.0, -4.0);
+        test(-4.1, -4.0);
+        test(-4.5, -4.0);
+        test(-4.6, -4.0);
+        test(99_999_999.0, 99_999_999.0);
+        test(99_999_999.1, 99_999_999.0);
+        test(99_999_999.5, 99_999_999.0);
+        test(99_999_999.6, 99_999_999.0);
+        test(-99_999_999.0, -99_999_999.0);
+        test(-99_999_999.1, -99_999_999.0);
+        test(-99_999_999.5, -99_999_999.0);
+        test(-99_999_999.6, -99_999_999.0);
+    }
+
+    #[test]
+    fn trunc_digits() {
+        let x = Fixed::<10, 4>(245368746);
+        assert_eq!(x.trunc_digits(5).to_string(), "24536.8746");
+        assert_eq!(x.trunc_digits(4).to_string(), "24536.8746");
+        assert_eq!(x.trunc_digits(3).to_string(), "24536.874");
+        assert_eq!(x.trunc_digits(2).to_string(), "24536.87");
+        assert_eq!(x.trunc_digits(1).to_string(), "24536.8");
+        assert_eq!(x.trunc_digits(0).to_string(), "24536");
+        assert_eq!(x.trunc_digits(-1).to_string(), "24530");
+        assert_eq!(x.trunc_digits(-2).to_string(), "24500");
+        assert_eq!(x.trunc_digits(-3).to_string(), "24000");
+        assert_eq!(x.trunc_digits(-4).to_string(), "20000");
+        assert_eq!(x.trunc_digits(-5).to_string(), "0");
+        assert_eq!(x.trunc_digits(-50).to_string(), "0");
+
+        let x = -x;
+        assert_eq!(x.trunc_digits(5).to_string(), "-24536.8746");
+        assert_eq!(x.trunc_digits(4).to_string(), "-24536.8746");
+        assert_eq!(x.trunc_digits(3).to_string(), "-24536.874");
+        assert_eq!(x.trunc_digits(2).to_string(), "-24536.87");
+        assert_eq!(x.trunc_digits(1).to_string(), "-24536.8");
+        assert_eq!(x.trunc_digits(0).to_string(), "-24536");
+        assert_eq!(x.trunc_digits(-1).to_string(), "-24530");
+        assert_eq!(x.trunc_digits(-2).to_string(), "-24500");
+        assert_eq!(x.trunc_digits(-3).to_string(), "-24000");
+        assert_eq!(x.trunc_digits(-4).to_string(), "-20000");
+        assert_eq!(x.trunc_digits(-5).to_string(), "0");
+        assert_eq!(x.trunc_digits(-50).to_string(), "0");
     }
 
     #[test]
