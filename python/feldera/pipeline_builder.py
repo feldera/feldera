@@ -2,7 +2,7 @@ from feldera.rest.feldera_client import FelderaClient
 from feldera.rest.pipeline import Pipeline as InnerPipeline
 from feldera.pipeline import Pipeline
 from feldera.enums import CompilationProfile
-from feldera.runtime_config import RuntimeConfig, Resources
+from feldera.runtime_config import RuntimeConfig
 from feldera.rest.errors import FelderaAPIError
 
 

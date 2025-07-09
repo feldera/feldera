@@ -23,7 +23,7 @@ class SharedTestPipeline(unittest.TestCase):
                 ):
                     continue  # Skip DDL for enterprise-only tests if not enterprise
                 if ddl:
-                    if not ddl in cls._ddls:
+                    if ddl not in cls._ddls:
                         cls._ddls.append(ddl.strip())
 
         if not hasattr(cls, "_pipeline"):
