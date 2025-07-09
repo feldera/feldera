@@ -197,13 +197,13 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
 
         Utilities.enforce(closure.parameters.length == 1);
         closure = this.find.findUnusedFields(closure);
-        if (!this.find.foundUnusedFields(1)) {
-            super.postorder(operator);
-            return;
-        }
-
         int size = closure.getType().getToplevelFieldCount();
+
         if (operator.input().outputType().is(DBSPTypeZSet.class)) {
+            if (!this.find.foundUnusedFields(1)) {
+                super.postorder(operator);
+                return;
+            }
             RewriteFields rw = this.find.getFieldRewriter(1);
             FieldUseMap fm = rw.getUseMap(closure.parameters[0]);
             DBSPClosureExpression projection = Objects.requireNonNull(fm.getProjection(1));
@@ -224,6 +224,10 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
                     operator.getRelNode(), compressed, operator.getOutputZSetType(), adjust.outputPort());
             this.map(operator, result);
         } else {
+            if (!this.find.foundUnusedFields(2)) {
+                super.postorder(operator);
+                return;
+            }
             // closure = compressed \circ projection
             RewriteFields rw = this.find.getFieldRewriter(2);
             FieldUseMap fm = rw.getUseMap(closure.parameters[0]);
@@ -262,13 +266,13 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
         }
 
         closure = this.find.findUnusedFields(closure);
-        if (!this.find.foundUnusedFields(1)) {
-            super.postorder(operator);
-            return;
-        }
-
         int size = closure.getType().getToplevelFieldCount();
+
         if (operator.input().outputType().is(DBSPTypeZSet.class)) {
+            if (!this.find.foundUnusedFields(1)) {
+                super.postorder(operator);
+                return;
+            }
             RewriteFields rw = this.find.getFieldRewriter(1);
             FieldUseMap fm = rw.getUseMap(closure.parameters[0]);
             DBSPClosureExpression compressed = rw.rewriteClosure(closure);
@@ -287,6 +291,10 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
                     operator.getRelNode(), compressed, operator.getOutputIndexedZSetType(), adjust.outputPort());
             this.map(operator, result);
         } else {
+            if (!this.find.foundUnusedFields(2)) {
+                super.postorder(operator);
+                return;
+            }
             // closure = compressed \circ projection
             RewriteFields rw = this.find.getFieldRewriter(2);
             FieldUseMap fm = rw.getUseMap(closure.parameters[0]);
