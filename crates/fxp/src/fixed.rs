@@ -1246,6 +1246,60 @@ impl<const P: usize, const S: usize> Display for Fixed<P, S> {
     }
 }
 
+impl<const P: usize, const S: usize> Fixed<P, S> {
+    /// Value returned by `Self::MIN.to_unsigned_encoding()`.
+    ///
+    /// This is always 0.
+    pub const UNSIGNED_MIN: u128 = 0;
+
+    /// Value returned by `Self::ZERO.to_unsigned_encoding()`.
+    pub const UNSIGNED_ZERO: u128 = pow10(P).cast_unsigned() - 1;
+
+    /// Value returned by `Self::MAX.to_unsigned_encoding()`.
+    pub const UNSIGNED_MAX: u128 = pow10(P).cast_unsigned() * 2 - 2;
+
+    /// Returns this value converted to a `u128` in the range
+    /// [`Self::UNSIGNED_MIN`] to [`Self::UNSIGNED_MAX`] (inclusive).  The
+    /// values returned for any given [`Fixed<P,S>`] are suitable for equality
+    /// and order comparison, that is, `a.cmp(&b)` has the same value as
+    /// `a.to_unsigned_encoding().cmp(&b.to_unsigned_encoding())`.
+    ///
+    /// # Usage
+    ///
+    /// This might only be useful in practice for [DBSP] aggregates, which only
+    /// only support unsigned integer values.  We expose it in case it's useful
+    /// for some other purpose.
+    ///
+    /// [DBSP]: https://docs.rs/dbsp/latest/dbsp/
+    pub fn to_unsigned_encoding(self) -> u128 {
+        Self::UNSIGNED_ZERO.checked_add_signed(self.0).unwrap()
+    }
+
+    /// Inverts the transformation of [`to_unsigned_encoding`], returning the
+    /// original `Fixed` value (assuming `P` and `S` are the same as before).
+    /// Returns `None` if `encoding` is invalid (which cannot happen if
+    /// [`to_unsigned_encoding`] returned `encoding`).
+    ///
+    /// [`to_unsigned_encoding`]: Self::to_unsigned_encoding
+    ///
+    /// # Usage
+    ///
+    /// This might only be useful in practice for [DBSP] aggregates, which only
+    /// only support unsigned integer values.  We expose it in case it's useful
+    /// for some other purpose.
+    ///
+    /// [DBSP]: https://docs.rs/dbsp/latest/dbsp/
+    pub fn from_unsigned_encoding(encoding: u128) -> Option<Self> {
+        if encoding < Self::UNSIGNED_ZERO {
+            Some(Self(-(Self::UNSIGNED_ZERO - encoding).cast_signed()))
+        } else if encoding <= Self::UNSIGNED_MAX {
+            Some(Self((encoding - Self::UNSIGNED_ZERO).cast_signed()))
+        } else {
+            None
+        }
+    }
+}
+
 #[cfg(test)]
 mod test {
     use std::str::FromStr;
@@ -1833,5 +1887,21 @@ mod test {
                 }
             }
         }
+    }
+
+    #[test]
+    fn unsigned_encoding() {
+        type F = Fixed<3, 1>;
+        for x in -999..=999 {
+            let f = Fixed::<3, 1>(x);
+            assert_eq!(F::from_unsigned_encoding(f.to_unsigned_encoding()), Some(f));
+        }
+        assert_eq!(F::MIN.to_unsigned_encoding(), 0);
+        assert_eq!(F::ZERO.to_unsigned_encoding(), 999);
+        assert_eq!(F::MAX.to_unsigned_encoding(), 999 * 2);
+        assert_eq!(F::from_unsigned_encoding(0), Some(F::MIN));
+        assert_eq!(F::from_unsigned_encoding(999), Some(F::ZERO));
+        assert_eq!(F::from_unsigned_encoding(999 * 2), Some(F::MAX));
+        assert_eq!(F::from_unsigned_encoding(999 * 2 + 1), None);
     }
 }
