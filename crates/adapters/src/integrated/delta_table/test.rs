@@ -1048,11 +1048,12 @@ async fn test_cdc(
 
     let mut total_count = 0;
 
-    // Write data in 10 chunks, wait for it to show up in the output view.
-    for chunk in data.chunks(std::cmp::max(data.len() / 10, 1)) {
-        write_updates_as_json(input_file.as_file_mut(), chunk, true);
-        total_count += chunk.len();
+    let mut chunks = data.chunks(std::cmp::max(data.len() / 10, 1));
 
+    // Write data in 10 chunks, wait for it to show up in the output view.
+    loop {
+        // Perform the first suspend while the table is empty to test that the delta lake connector
+        // can successfully suspend when reading an empty table.
         if suspend {
             println!("start suspend");
             let (sender, mut receiver) = mpsc::channel(1);
@@ -1103,6 +1104,13 @@ async fn test_cdc(
                 .collect::<Vec<_>>(),
         )
         .await;
+
+        let Some(chunk) = chunks.next() else {
+            break;
+        };
+
+        write_updates_as_json(input_file.as_file_mut(), chunk, true);
+        total_count += chunk.len();
     }
 
     // Modify all records by negating the `boolean` field.
