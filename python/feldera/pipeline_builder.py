@@ -10,14 +10,16 @@ class PipelineBuilder:
     """
     A builder for creating a Feldera Pipeline.
 
-    :param client: The `.FelderaClient` instance
+    :param client: The :class:`.FelderaClient` instance
     :param name: The name of the pipeline
     :param description: The description of the pipeline
     :param sql: The SQL code of the pipeline
     :param udf_rust: Rust code for UDFs
     :param udf_toml: Rust dependencies required by UDFs (in the TOML format)
-    :param compilation_profile: The compilation profile to use
-    :param runtime_config: The runtime config to use
+    :param compilation_profile: The :class:`.CompilationProfile` to use
+    :param runtime_config: The :class:`.RuntimeConfig` to use. Enables
+        configuring the runtime behavior of the pipeline such as:
+        fault tolerance, storage and :class:`.Resources`
     """
 
     def __init__(

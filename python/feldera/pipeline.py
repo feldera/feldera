@@ -145,7 +145,7 @@ class Pipeline:
         :param data: The JSON encoded data to be pushed to the pipeline. The data should be in the form:
             `{'col1': 'val1', 'col2': 'val2'}` or `[{'col1': 'val1', 'col2': 'val2'}, {'col1': 'val1', 'col2': 'val2'}]`
         :param update_format: The update format of the JSON data to be pushed to the pipeline. Must be one of:
-            "raw", "insert_delete". <https://docs.feldera.com/formats/json#the-insertdelete-format>
+            "raw", "insert_delete". https://docs.feldera.com/formats/json#the-insertdelete-format
         :param force: `True` to push data even if the pipeline is paused. `False` by default.
 
         :raises ValueError: If the update format is invalid.
@@ -180,7 +180,7 @@ class Pipeline:
         All connectors are RUNNING by default.
 
         Refer to the connector documentation for more information:
-        <https://docs.feldera.com/connectors/#input-connector-orchestration>
+            https://docs.feldera.com/connectors/#input-connector-orchestration
 
         :param table_name: The name of the table that the connector is attached to.
         :param connector_name: The name of the connector to pause.
@@ -199,7 +199,7 @@ class Pipeline:
         All connectors are RUNNING by default.
 
         Refer to the connector documentation for more information:
-        <https://docs.feldera.com/connectors/#input-connector-orchestration>
+            https://docs.feldera.com/connectors/#input-connector-orchestration
 
         :param table_name: The name of the table that the connector is attached to.
         :param connector_name: The name of the connector to resume.
@@ -533,15 +533,13 @@ metrics"""
 
     def checkpoint(self, wait: bool = False, timeout_s=300) -> int:
         """
-        Checkpoints this pipeline, if fault-tolerance is enabled.
-        Fault Tolerance in Feldera:
-        <https://docs.feldera.com/pipelines/fault-tolerance/>
+        Checkpoints this pipeline.
 
         :param wait: If true, will block until the checkpoint completes.
         :param timeout_s: The maximum time (in seconds) to wait for the
             checkpoint to complete.
 
-        :raises FelderaAPIError: If checkpointing is not enabled.
+        :raises FelderaAPIError: If enterprise features are not enabled.
         """
 
         seq = self.client.checkpoint_pipeline(self.name)

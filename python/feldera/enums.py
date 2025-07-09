@@ -276,3 +276,38 @@ class StorageStatus(Enum):
 
     def __eq__(self, other):
         return self.value == other.value
+
+
+class FaultToleranceModel(Enum):
+    """
+    The fault tolerance model.
+    """
+
+    AtLeastOnce = 1
+    """
+    Each record is output at least once.  Crashes may duplicate output, but
+    no input or output is dropped.
+    """
+
+    ExactlyOnce = 2
+    """
+    Each record is output exactly once.  Crashes do not drop or duplicate
+    input or output.
+    """
+
+    def __str__(self) -> str:
+        match self:
+            case FaultToleranceModel.AtLeastOnce:
+                return "at_least_once"
+            case FaultToleranceModel.ExactlyOnce:
+                return "exactly_once"
+
+    @staticmethod
+    def from_str(value):
+        for member in FaultToleranceModel:
+            if str(member) == value.lower():
+                return member
+
+        raise ValueError(
+            f"Unknown value '{value}' for enum {FaultToleranceModel.__name__}"
+        )
