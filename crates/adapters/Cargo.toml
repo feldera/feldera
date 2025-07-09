@@ -23,6 +23,7 @@ default = [
     "with-nexmark",
     "with-pubsub",
     "with-redis",
+    "with-nats",
 ]
 with-kafka = ["rdkafka"]
 with-deltalake = ["deltalake", "deltalake-catalog-unity"]
@@ -35,6 +36,7 @@ with-avro = [
 ]
 with-nexmark = ["dbsp_nexmark"]
 with-redis = ["redis", "r2d2"]
+with-nats = []
 # Run delta table tests against an S3 bucket.  Requires S3 authentication key
 # to be provided via an environment variable.
 delta-s3-test = []
@@ -62,6 +64,7 @@ awc = { workspace = true, features = [
     "rustls-0_23-webpki-roots",
 ] }
 aws-config = { workspace = true }
+async-nats = { workspace = true }
 async-stream = { workspace = true }
 anyhow = { workspace = true, features = ["backtrace"] }
 bytestring = "1.4.0"
