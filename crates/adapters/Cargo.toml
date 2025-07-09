@@ -15,8 +15,9 @@ rust-version = { workspace = true }
 
 
 [features]
-default = ["with-kafka", "with-deltalake", "with-iceberg", "with-avro", "with-nexmark", "with-pubsub", "with-redis"]
+default = ["with-kafka", "with-deltalake", "with-iceberg", "with-avro", "with-nexmark", "with-pubsub", "with-redis", "with-nats"]
 with-kafka = ["rdkafka"]
+with-nats = []
 with-deltalake = ["deltalake"]
 with-iceberg = ["feldera-iceberg"]
 with-pubsub = ["google-cloud-pubsub", "google-cloud-gax"]
@@ -45,6 +46,7 @@ feldera-storage = { workspace = true }
 feldera-iceberg = { workspace = true, optional = true }
 awc = { workspace = true, features = ["compress-gzip", "compress-brotli", "cookies", "rustls-0_23-webpki-roots"] }
 aws-config = { workspace = true }
+async-nats = { workspace = true }
 async-stream = { workspace = true }
 anyhow = { workspace = true, features = ["backtrace"] }
 bytestring = "1.4.0"
