@@ -7228,6 +7228,28 @@
         ],
         "description": "The available SQL types as specified in `CREATE` statements."
       },
+      "StartFromCheckpoint": {
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "Latest"
+            ]
+          },
+          {
+            "type": "object",
+            "required": [
+              "Uuid"
+            ],
+            "properties": {
+              "Uuid": {
+                "type": "string",
+                "format": "uuid"
+              }
+            }
+          }
+        ]
+      },
       "StorageBackendConfig": {
         "oneOf": [
           {
@@ -7376,8 +7398,7 @@
       "SyncConfig": {
         "type": "object",
         "required": [
-          "bucket",
-          "start_from_checkpoint"
+          "bucket"
         ],
         "properties": {
           "access_key": {
@@ -7410,8 +7431,12 @@
             "nullable": true
           },
           "start_from_checkpoint": {
-            "type": "boolean",
-            "description": "If `true`, will try to pull the latest checkpoint from the configured\nobject store and resume from that point."
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StartFromCheckpoint"
+              }
+            ],
+            "nullable": true
           }
         }
       },
