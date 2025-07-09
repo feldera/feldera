@@ -404,7 +404,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
 
     def checkpoint_pipeline(self, pipeline_name: str) -> int:
         """
-        Checkpoint a fault-tolerant pipeline
+        Checkpoint a pipeline.
 
         :param pipeline_name: The name of the pipeline to checkpoint
         """

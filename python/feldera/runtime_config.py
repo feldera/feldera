@@ -1,5 +1,6 @@
 import os
 from typing import Optional, Any, Mapping
+from feldera.enums import FaultToleranceModel
 
 
 class Resources:
@@ -59,6 +60,11 @@ class Storage:
 class RuntimeConfig:
     """
     Runtime configuration class to define the configuration for a pipeline.
+    To create runtime config from a dictionary, use
+    :meth:`.RuntimeConfig.from_dict`.
+
+    Documentation:
+        https://docs.feldera.com/pipelines/configuration/#runtime-configuration
     """
 
     def __init__(
@@ -74,6 +80,8 @@ class RuntimeConfig:
         provisioning_timeout_secs: Optional[int] = None,
         resources: Optional[Resources] = None,
         runtime_version: Optional[str] = None,
+        fault_tolerance_model: Optional[FaultToleranceModel] = None,
+        checkpoint_interval_secs: Optional[int] = None,
     ):
         self.workers = workers
         self.tracing = tracing
@@ -86,6 +94,11 @@ class RuntimeConfig:
         self.runtime_version = runtime_version or os.environ.get(
             "FELDERA_RUNTIME_VERSION"
         )
+        if fault_tolerance_model is not None:
+            self.fault_tolerance = {
+                "model": str(fault_tolerance_model),
+                "checkpoint_interval_secs": checkpoint_interval_secs,
+            }
         if resources is not None:
             self.resources = resources.__dict__
         if isinstance(storage, bool):
@@ -100,7 +113,7 @@ class RuntimeConfig:
     @classmethod
     def from_dict(cls, d: Mapping[str, Any]):
         """
-        Create a `.RuntimeConfig` object from a dictionary.
+        Create a :class:`.RuntimeConfig` object from a dictionary.
         """
 
         conf = cls()

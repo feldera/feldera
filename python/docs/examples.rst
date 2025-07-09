@@ -76,6 +76,72 @@ Creating a Pipeline (OVERWRITING existing pipelines)
     # This will stop and overwrite any existing pipeline with the same name.
     pipeline = PipelineBuilder(client, name="notebook", sql=sql).create_or_replace()
 
+Creating a Pipeline with Fault Tolerance Enabled
+================================================
+
+.. code-block:: python
+
+    from feldera.runtime_config import RuntimeConfig
+    from feldera.enums import FaultToleranceModel
+
+    client = FelderaClient.localhost()
+    runtime_config = RuntimeConfig(
+        fault_tolerance_model=FaultToleranceModel.AtLeastOnce,
+        checkpoint_interval_secs=60
+    )
+
+    pipeline = PipelineBuilder(client, name, sql, runtime_config=runtime_config).create()
+
+Runtime configuration of a Pipeline
+===================================
+
+.. code-block:: python
+
+    from feldera.runtime_config import RuntimeConfig
+
+    client = FelderaClient.localhost()
+    config = {
+        "workers": 8,
+        "storage": {
+            "backend": {
+                "name": "default"
+            },
+            "min_storage_bytes": None,
+            "min_step_storage_bytes": None,
+            "compression": "default",
+            "cache_mib": None
+        },
+        "fault_tolerance": {
+            "model": "at_least_once",
+            "checkpoint_interval_secs": 60
+        },
+        "cpu_profiler": True,
+        "tracing": False,
+        "tracing_endpoint_jaeger": "",
+        "min_batch_size_records": 0,
+        "max_buffering_delay_usecs": 0,
+        "resources": {
+            "cpu_cores_min": None,
+            "cpu_cores_max": None,
+            "memory_mb_min": None,
+            "memory_mb_max": None,
+            "storage_mb_max": None,
+            "storage_class": None
+        },
+        "clock_resolution_usecs": 1_000_000,
+        "pin_cpus": [],
+        "provisioning_timeout_secs": None,
+        "max_parallel_connector_init": None,
+        "init_containers": None,
+        "checkpoint_during_suspend": True,
+        "dev_tweaks": {}
+    }
+
+    runtime_config = RuntimeConfig.from_dict(config)
+
+    pipeline = PipelineBuilder(client, name, sql, runtime_config=runtime_config).create()
+
+
 Starting a Pipeline
 ===================
 

@@ -8,7 +8,7 @@ Pipelines come with a set of configuration settings to toggle features, tune per
 
 ### Editing configuration
 .
-You can edit all pipeline settings when the pipeline is `Shutdown` and a limited subset when it is `Suspended`.
+You can edit all pipeline settings when the pipeline is `Stopped` with storage cleared, and a limited subset when it storage is in use.
 <Tabs
   defaultValue="web-console"
   values={[
@@ -23,7 +23,9 @@ You can edit all pipeline settings when the pipeline is `Shutdown` and a limited
     ![Configure pipeline in web-console](webconsole_configure_pipeline.png)
   </TabItem>
   <TabItem value="python">
-    You can use [feldera_client.create_or_update_pipeline()](pathname:///python/feldera.rest.html#feldera.rest.feldera_client.FelderaClient.create_or_update_pipeline) to update `program_config` and `runtime_config` fields.
+    You can use `RuntimeConfig.from_dict()` to set the runtime configuration of a pipeline.
+
+    Example: [Runtime configuration of a Pipeline](pathname:///python/examples.html#runtime-configuration-of-a-pipeline)
   </TabItem>
   <TabItem value="fda">
     You can toggle the storage for a pipeline with
