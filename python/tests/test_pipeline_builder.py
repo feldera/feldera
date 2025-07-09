@@ -1,14 +1,6 @@
-import os
-import time
 import unittest
-import uuid
-
-import pandas as pd
-from kafka import KafkaProducer, KafkaConsumer
-from kafka.admin import KafkaAdminClient, NewTopic
-
+from tests import TEST_CLIENT
 from feldera import PipelineBuilder
-from tests import TEST_CLIENT, KAFKA_SERVER, PIPELINE_TO_KAFKA_SERVER
 
 
 class TestPipelineBuilder(unittest.TestCase):

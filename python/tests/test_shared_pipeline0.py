@@ -6,16 +6,8 @@ import time
 import unittest
 
 from tests.shared_test_pipeline import SharedTestPipeline
-from tests import TEST_CLIENT
+from tests import TEST_CLIENT, enterprise_only
 from feldera.enums import PipelineStatus
-
-
-def enterprise_only(fn):
-    fn._enterprise_only = True
-    return unittest.skipUnless(
-        TEST_CLIENT.get_config().edition.is_enterprise(),
-        f"{fn.__name__} is enterprise only, skipping",
-    )(fn)
 
 
 class TestPipeline(SharedTestPipeline):
@@ -109,21 +101,18 @@ class TestPipeline(SharedTestPipeline):
         data = "1\n2\n"
         self.pipeline.start()
         TEST_CLIENT.push_to_pipeline(self.pipeline.name, "tbl", "csv", data)
-        resp = TEST_CLIENT.query_as_text(self.pipeline.name, "SELECT * FROM tbl")
+        resp = TEST_CLIENT.query_as_text(
+            self.pipeline.name, "SELECT * FROM tbl ORDER BY id"
+        )
         expected = [
             """+----+
 | id |
 +----+
 | 1  |
 | 2  |
-+----+""",
-            """+----+
-| id |
-+----+
-| 2  |
-| 1  |
-+----+""",
++----+"""
         ]
+
         got = "\n".join(resp)
         assert got in expected
         TEST_CLIENT.stop_pipeline(self.pipeline.name, force=True)
@@ -451,8 +440,8 @@ class TestPipeline(SharedTestPipeline):
         CREATE VIEW v_struct AS SELECT c1 FROM tbl_struct;
         """
         data = [{"c1": {"f1": 1, "f2": "a"}}]
-        self.pipeline.start()
         out = self.pipeline.listen("v_struct")
+        self.pipeline.start()
         self.pipeline.input_json("tbl_struct", data)
         self.pipeline.wait_for_completion(True)
         got = out.to_dict()
