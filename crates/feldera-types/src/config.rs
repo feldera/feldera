@@ -349,8 +349,9 @@ pub struct SyncConfig {
     /// this can be left empty to allow automatic authentication via the pod's service account.
     pub secret_key: Option<String>,
 
-    /// When set, the pipeline will fetch either the specified checkpoint
-    /// from the object store.
+    /// When set, the pipeline will fetch the specified checkpoint from the
+    /// object store. If the checkpoint doesn't exist, the pipeline will fail
+    /// to initialize.
     ///
     /// If the checkpoint doesn't exist in object store, the pipeline will
     /// fail to initialize.
