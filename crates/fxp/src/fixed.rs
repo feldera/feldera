@@ -239,6 +239,42 @@ impl<const P: usize, const S: usize> Fixed<P, S> {
         }
     }
 
+    /// Returns the value that represents `value * 10**-scale`, rounding
+    /// toward zero if necessary, or `None` if the rounded value is out of range
+    /// for this type.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use feldera_fxp::Fixed;
+    ///
+    /// assert_eq!(Fixed::<11, 1>::new(435, 0).unwrap().to_string(), "435");
+    /// assert_eq!(Fixed::<11, 1>::new(435, 1).unwrap().to_string(), "43.5");
+    /// assert_eq!(Fixed::<11, 1>::new(435, 2).unwrap().to_string(), "4.3");
+    /// assert_eq!(Fixed::<11, 1>::new(435, 3).unwrap().to_string(), "0.4");
+    /// ```
+    pub fn new(value: i128, scale: i32) -> Option<Self> {
+        Self::try_new_with_exponent(value, (S as i32).saturating_sub(scale))
+    }
+
+    /// Returns the value that represents `value * 10**-scale`, rounding to
+    /// nearest if necessary, with ties rounded to even, or `None` if the
+    /// rounded value is out of range for this type.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use feldera_fxp::Fixed;
+    ///
+    /// assert_eq!(Fixed::<11, 1>::new_round_even(435, 0).unwrap().to_string(), "435");
+    /// assert_eq!(Fixed::<11, 1>::new_round_even(435, 1).unwrap().to_string(), "43.5");
+    /// assert_eq!(Fixed::<11, 1>::new_round_even(435, 2).unwrap().to_string(), "4.4");
+    /// assert_eq!(Fixed::<11, 1>::new_round_even(435, 3).unwrap().to_string(), "0.4");
+    /// ```
+    pub fn new_round_even(value: i128, scale: i32) -> Option<Self> {
+        Self::try_new_with_exponent_round_even(value, (S as i32).saturating_sub(scale))
+    }
+
     /// Returns `Self(value)`, if `value` is in the correct range for this type.
     fn try_new(value: i128) -> Option<Self> {
         const { Self::check_constraints() };
@@ -1955,5 +1991,80 @@ mod test {
         assert_eq!(F::from_unsigned_encoding(999), Some(F::ZERO));
         assert_eq!(F::from_unsigned_encoding(999 * 2), Some(F::MAX));
         assert_eq!(F::from_unsigned_encoding(999 * 2 + 1), None);
+    }
+
+    #[test]
+    fn new() {
+        type F1 = Fixed<11, 1>;
+        assert_eq!(F1::new(435, -8), None);
+        assert_eq!(F1::new(435, -7).unwrap().to_string(), "4350000000");
+        assert_eq!(F1::new(435, -6).unwrap().to_string(), "435000000");
+        assert_eq!(F1::new(435, -5).unwrap().to_string(), "43500000");
+        assert_eq!(F1::new(435, -4).unwrap().to_string(), "4350000");
+        assert_eq!(F1::new(435, -3).unwrap().to_string(), "435000");
+        assert_eq!(F1::new(435, -2).unwrap().to_string(), "43500");
+        assert_eq!(F1::new(435, -1).unwrap().to_string(), "4350");
+        assert_eq!(F1::new(435, 0).unwrap().to_string(), "435");
+        assert_eq!(F1::new(435, 1).unwrap().to_string(), "43.5");
+        assert_eq!(F1::new(435, 2).unwrap().to_string(), "4.3");
+        assert_eq!(F1::new(435, 3).unwrap().to_string(), "0.4");
+        assert_eq!(F1::new(435, 4).unwrap().to_string(), "0");
+
+        type F2 = Fixed<11, 2>;
+        assert_eq!(F2::new(435, -7), None);
+        assert_eq!(F2::new(435, -6).unwrap().to_string(), "435000000");
+        assert_eq!(F2::new(435, -5).unwrap().to_string(), "43500000");
+        assert_eq!(F2::new(435, -4).unwrap().to_string(), "4350000");
+        assert_eq!(F2::new(435, -3).unwrap().to_string(), "435000");
+        assert_eq!(F2::new(435, -2).unwrap().to_string(), "43500");
+        assert_eq!(F2::new(435, -1).unwrap().to_string(), "4350");
+        assert_eq!(F2::new(435, 0).unwrap().to_string(), "435");
+        assert_eq!(F2::new(435, 1).unwrap().to_string(), "43.5");
+        assert_eq!(F2::new(435, 2).unwrap().to_string(), "4.35");
+        assert_eq!(F2::new(435, 3).unwrap().to_string(), "0.43");
+        assert_eq!(F2::new(435, 4).unwrap().to_string(), "0.04");
+        assert_eq!(F2::new(435, 5).unwrap().to_string(), "0");
+    }
+
+    #[test]
+    fn new_round_even() {
+        type F1 = Fixed<11, 1>;
+        assert_eq!(F1::new_round_even(435, -8), None);
+        assert_eq!(
+            F1::new_round_even(435, -7).unwrap().to_string(),
+            "4350000000"
+        );
+        assert_eq!(
+            F1::new_round_even(435, -6).unwrap().to_string(),
+            "435000000"
+        );
+        assert_eq!(F1::new_round_even(435, -5).unwrap().to_string(), "43500000");
+        assert_eq!(F1::new_round_even(435, -4).unwrap().to_string(), "4350000");
+        assert_eq!(F1::new_round_even(435, -3).unwrap().to_string(), "435000");
+        assert_eq!(F1::new_round_even(435, -2).unwrap().to_string(), "43500");
+        assert_eq!(F1::new_round_even(435, -1).unwrap().to_string(), "4350");
+        assert_eq!(F1::new_round_even(435, 0).unwrap().to_string(), "435");
+        assert_eq!(F1::new_round_even(435, 1).unwrap().to_string(), "43.5");
+        assert_eq!(F1::new_round_even(435, 2).unwrap().to_string(), "4.4");
+        assert_eq!(F1::new_round_even(435, 3).unwrap().to_string(), "0.4");
+        assert_eq!(F1::new_round_even(435, 4).unwrap().to_string(), "0");
+
+        type F2 = Fixed<11, 2>;
+        assert_eq!(F2::new_round_even(435, -7), None);
+        assert_eq!(
+            F2::new_round_even(435, -6).unwrap().to_string(),
+            "435000000"
+        );
+        assert_eq!(F2::new_round_even(435, -5).unwrap().to_string(), "43500000");
+        assert_eq!(F2::new_round_even(435, -4).unwrap().to_string(), "4350000");
+        assert_eq!(F2::new_round_even(435, -3).unwrap().to_string(), "435000");
+        assert_eq!(F2::new_round_even(435, -2).unwrap().to_string(), "43500");
+        assert_eq!(F2::new_round_even(435, -1).unwrap().to_string(), "4350");
+        assert_eq!(F2::new_round_even(435, 0).unwrap().to_string(), "435");
+        assert_eq!(F2::new_round_even(435, 1).unwrap().to_string(), "43.5");
+        assert_eq!(F2::new_round_even(435, 2).unwrap().to_string(), "4.35");
+        assert_eq!(F2::new_round_even(435, 3).unwrap().to_string(), "0.44");
+        assert_eq!(F2::new_round_even(435, 4).unwrap().to_string(), "0.04");
+        assert_eq!(F2::new_round_even(435, 5).unwrap().to_string(), "0");
     }
 }
