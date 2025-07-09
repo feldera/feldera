@@ -12,8 +12,9 @@ use crate::{
         },
     },
     trace::{
-        ord::merge_batcher::MergeBatcher, Batch, BatchFactories, BatchLocation, BatchReader,
-        BatchReaderFactories, Builder, Cursor, WeightedItem,
+        ord::{file::UnwrapStorage, merge_batcher::MergeBatcher},
+        Batch, BatchFactories, BatchLocation, BatchReader, BatchReaderFactories, Builder, Cursor,
+        WeightedItem,
     },
     utils::Tup2,
     DBData, DBWeight, NumEntries, Runtime, Timestamp,
@@ -266,7 +267,7 @@ where
     }
 
     fn approximate_byte_size(&self) -> usize {
-        self.file.byte_size().unwrap() as usize
+        self.file.byte_size().unwrap_storage() as usize
     }
 
     #[inline]
@@ -328,7 +329,7 @@ where
         let file = Arc::new(Reader::open(
             &[&any_factory0, &any_factory1],
             Runtime::buffer_cache,
-            &*Runtime::storage_backend().unwrap(),
+            &*Runtime::storage_backend().unwrap_storage(),
             path,
         )?);
 
@@ -401,7 +402,7 @@ where
             .rows()
             .subset(lower_bound as u64..)
             .first()
-            .unwrap();
+            .unwrap_storage();
         let mut key = batch.factories.key_factory.default_box();
         let key_valid = unsafe { cursor.key(&mut key) }.is_some();
 
@@ -423,7 +424,7 @@ where
     where
         F: Fn(&mut RawKeyCursor<'s, K, T, R>) -> Result<(), ReaderError>,
     {
-        op(&mut self.cursor).unwrap();
+        op(&mut self.cursor).unwrap_storage();
         let key_valid = unsafe { self.cursor.key(&mut self.key) }.is_some();
         self.val_valid = key_valid;
     }
@@ -449,20 +450,30 @@ where
     }
 
     fn map_times(&mut self, logic: &mut dyn FnMut(&T, &R)) {
-        let mut val_cursor = self.cursor.next_column().unwrap().first().unwrap();
+        let mut val_cursor = self
+            .cursor
+            .next_column()
+            .unwrap_storage()
+            .first()
+            .unwrap_storage();
         while unsafe { val_cursor.item((self.time.as_mut(), &mut self.diff)) }.is_some() {
             logic(self.time.as_ref(), self.diff.as_ref());
-            val_cursor.move_next().unwrap();
+            val_cursor.move_next().unwrap_storage();
         }
     }
 
     fn map_times_through(&mut self, upper: &T, logic: &mut dyn FnMut(&T, &R)) {
-        let mut val_cursor = self.cursor.next_column().unwrap().first().unwrap();
+        let mut val_cursor = self
+            .cursor
+            .next_column()
+            .unwrap_storage()
+            .first()
+            .unwrap_storage();
         while unsafe { val_cursor.item((self.time.as_mut(), &mut self.diff)) }.is_some() {
             if self.time.less_equal(upper) {
                 logic(self.time.as_ref(), self.diff.as_ref());
             }
-            val_cursor.move_next().unwrap();
+            val_cursor.move_next().unwrap_storage();
         }
     }
 
@@ -479,7 +490,12 @@ where
     where
         T: PartialEq<()>,
     {
-        let val_cursor = self.cursor.next_column().unwrap().first().unwrap();
+        let val_cursor = self
+            .cursor
+            .next_column()
+            .unwrap_storage()
+            .first()
+            .unwrap_storage();
         unsafe { val_cursor.aux(&mut self.diff) }.unwrap();
         self.diff.as_ref()
     }
@@ -595,30 +611,30 @@ where
                 &factories.factories0,
                 &factories.factories1,
                 Runtime::buffer_cache,
-                &*Runtime::storage_backend().unwrap(),
+                &*Runtime::storage_backend().unwrap_storage(),
                 Runtime::file_writer_parameters(),
                 capacity,
             )
-            .unwrap(),
+            .unwrap_storage(),
             key: factories.opt_key_factory.default_box(),
         }
     }
 
     fn push_key(&mut self, key: &K) {
-        self.writer.write0((key, &())).unwrap();
+        self.writer.write0((key, &())).unwrap_storage();
     }
 
     fn push_val(&mut self, _val: &DynUnit) {}
 
     fn push_time_diff(&mut self, time: &T, weight: &R) {
         debug_assert!(!weight.is_zero());
-        self.writer.write1((time, weight)).unwrap();
+        self.writer.write1((time, weight)).unwrap_storage();
     }
 
     fn done(self) -> FileKeyBatch<K, T, R> {
         FileKeyBatch {
             factories: self.factories,
-            file: Arc::new(self.writer.into_reader().unwrap()),
+            file: Arc::new(self.writer.into_reader().unwrap_storage()),
         }
     }
 }

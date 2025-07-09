@@ -1,4 +1,5 @@
 use crate::storage::buffer_cache::CacheStats;
+use crate::trace::ord::file::UnwrapStorage;
 use crate::trace::BatchLocation;
 use crate::{
     dynamic::{
@@ -290,7 +291,7 @@ where
     }
 
     fn approximate_byte_size(&self) -> usize {
-        self.file.byte_size().unwrap() as usize
+        self.file.byte_size().unwrap_storage() as usize
     }
 
     #[inline]
@@ -308,12 +309,12 @@ where
     {
         self.factories.factories0.key_factory.with(&mut |key| {
             let size = self.key_count();
-            let mut cursor = self.file.rows().first().unwrap();
+            let mut cursor = self.file.rows().first().unwrap_storage();
             if sample_size >= size {
                 output.reserve(size);
                 while let Some(key) = unsafe { cursor.key(key) } {
                     output.push_ref(key);
-                    cursor.move_next().unwrap();
+                    cursor.move_next().unwrap_storage();
                 }
             } else {
                 output.reserve(sample_size);
@@ -321,7 +322,7 @@ where
                 let mut indexes = sample(rng, size, sample_size).into_vec();
                 indexes.sort_unstable();
                 for index in indexes {
-                    cursor.move_to_row(index as u64).unwrap();
+                    cursor.move_to_row(index as u64).unwrap_storage();
                     output.push_ref(unsafe { cursor.key(key) }.unwrap());
                 }
             }
@@ -354,7 +355,7 @@ where
         let file = Arc::new(Reader::open(
             &[&any_factory0, &any_factory1],
             Runtime::buffer_cache,
-            &*Runtime::storage_backend().unwrap(),
+            &*Runtime::storage_backend().unwrap_storage(),
             path,
         )?);
         Ok(Self {
@@ -435,8 +436,12 @@ where
     R: WeightTrait + ?Sized,
 {
     fn new(batch: &'s FileValBatch<K, V, T, R>) -> Self {
-        let key_cursor = batch.file.rows().first().unwrap();
-        let val_cursor = key_cursor.next_column().unwrap().first().unwrap();
+        let key_cursor = batch.file.rows().first().unwrap_storage();
+        let val_cursor = key_cursor
+            .next_column()
+            .unwrap_storage()
+            .first()
+            .unwrap_storage();
         let mut key = batch.factories.factories0.key_factory.default_box();
         let mut val = batch.factories.factories1.key_factory.default_box();
 
@@ -460,7 +465,12 @@ where
         F: Fn(&mut RawKeyCursor<'s, K, V, T, R>),
     {
         op(&mut self.key_cursor);
-        self.val_cursor = self.key_cursor.next_column().unwrap().first().unwrap();
+        self.val_cursor = self
+            .key_cursor
+            .next_column()
+            .unwrap_storage()
+            .first()
+            .unwrap_storage();
         self.key_valid = unsafe { self.key_cursor.key(&mut self.key) }.is_some();
         self.val_valid = unsafe { self.val_cursor.key(&mut self.val) }.is_some();
     }
@@ -556,15 +566,17 @@ where
         self.val_cursor.has_value()
     }
     fn step_key(&mut self) {
-        self.move_key(|key_cursor| key_cursor.move_next().unwrap());
+        self.move_key(|key_cursor| key_cursor.move_next().unwrap_storage());
     }
 
     fn step_key_reverse(&mut self) {
-        self.move_key(|key_cursor| key_cursor.move_prev().unwrap());
+        self.move_key(|key_cursor| key_cursor.move_prev().unwrap_storage());
     }
 
     fn seek_key(&mut self, key: &K) {
-        self.move_key(|key_cursor| unsafe { key_cursor.advance_to_value_or_larger(key) }.unwrap());
+        self.move_key(|key_cursor| {
+            unsafe { key_cursor.advance_to_value_or_larger(key) }.unwrap_storage()
+        });
     }
 
     fn seek_key_exact(&mut self, key: &K) -> bool {
@@ -576,49 +588,63 @@ where
     }
 
     fn seek_key_with(&mut self, predicate: &dyn Fn(&K) -> bool) {
-        self.move_key(|key_cursor| unsafe { key_cursor.seek_forward_until(predicate) }.unwrap());
+        self.move_key(|key_cursor| {
+            unsafe { key_cursor.seek_forward_until(predicate) }.unwrap_storage()
+        });
     }
 
     fn seek_key_with_reverse(&mut self, predicate: &dyn Fn(&K) -> bool) {
-        self.move_key(|key_cursor| unsafe { key_cursor.seek_backward_until(predicate) }.unwrap());
+        self.move_key(|key_cursor| {
+            unsafe { key_cursor.seek_backward_until(predicate) }.unwrap_storage()
+        });
     }
 
     fn seek_key_reverse(&mut self, key: &K) {
-        self.move_key(|key_cursor| unsafe { key_cursor.rewind_to_value_or_smaller(key) }.unwrap());
+        self.move_key(|key_cursor| {
+            unsafe { key_cursor.rewind_to_value_or_smaller(key) }.unwrap_storage()
+        });
     }
     fn step_val(&mut self) {
-        self.move_val(|val_cursor| val_cursor.move_next().unwrap());
+        self.move_val(|val_cursor| val_cursor.move_next().unwrap_storage());
     }
     fn seek_val(&mut self, val: &V) {
-        self.move_val(|val_cursor| unsafe { val_cursor.advance_to_value_or_larger(val) }.unwrap());
+        self.move_val(|val_cursor| {
+            unsafe { val_cursor.advance_to_value_or_larger(val) }.unwrap_storage()
+        });
     }
     fn seek_val_with(&mut self, predicate: &dyn Fn(&V) -> bool) {
-        self.move_val(|val_cursor| unsafe { val_cursor.seek_forward_until(&predicate) }.unwrap());
+        self.move_val(|val_cursor| {
+            unsafe { val_cursor.seek_forward_until(&predicate) }.unwrap_storage()
+        });
     }
     fn rewind_keys(&mut self) {
-        self.move_key(|key_cursor| key_cursor.move_first().unwrap());
+        self.move_key(|key_cursor| key_cursor.move_first().unwrap_storage());
     }
     fn fast_forward_keys(&mut self) {
-        self.move_key(|key_cursor| key_cursor.move_last().unwrap());
+        self.move_key(|key_cursor| key_cursor.move_last().unwrap_storage());
     }
     fn rewind_vals(&mut self) {
-        self.move_val(|val_cursor| val_cursor.move_first().unwrap());
+        self.move_val(|val_cursor| val_cursor.move_first().unwrap_storage());
     }
 
     fn step_val_reverse(&mut self) {
-        self.move_val(|val_cursor| val_cursor.move_prev().unwrap());
+        self.move_val(|val_cursor| val_cursor.move_prev().unwrap_storage());
     }
 
     fn seek_val_reverse(&mut self, val: &V) {
-        self.move_val(|val_cursor| unsafe { val_cursor.rewind_to_value_or_smaller(val) }.unwrap());
+        self.move_val(|val_cursor| {
+            unsafe { val_cursor.rewind_to_value_or_smaller(val) }.unwrap_storage()
+        });
     }
 
     fn seek_val_with_reverse(&mut self, predicate: &dyn Fn(&V) -> bool) {
-        self.move_val(|val_cursor| unsafe { val_cursor.seek_backward_until(&predicate) }.unwrap());
+        self.move_val(|val_cursor| {
+            unsafe { val_cursor.seek_backward_until(&predicate) }.unwrap_storage()
+        });
     }
 
     fn fast_forward_vals(&mut self) {
-        self.move_val(|val_cursor| val_cursor.move_last().unwrap());
+        self.move_val(|val_cursor| val_cursor.move_last().unwrap_storage());
     }
 }
 
@@ -653,11 +679,11 @@ where
                 &factories.factories0,
                 &factories.factories1,
                 Runtime::buffer_cache,
-                &*Runtime::storage_backend().unwrap(),
+                &*Runtime::storage_backend().unwrap_storage(),
                 Runtime::file_writer_parameters(),
                 capacity,
             )
-            .unwrap(),
+            .unwrap_storage(),
             time_diffs: factories.timediff_factory.default_box(),
         }
     }
@@ -665,12 +691,12 @@ where
     fn done(self) -> FileValBatch<K, V, T, R> {
         FileValBatch {
             factories: self.factories,
-            file: Arc::new(self.writer.into_reader().unwrap()),
+            file: Arc::new(self.writer.into_reader().unwrap_storage()),
         }
     }
 
     fn push_key(&mut self, key: &K) {
-        self.writer.write0((key, &())).unwrap();
+        self.writer.write0((key, &())).unwrap_storage();
     }
 
     fn push_time_diff(&mut self, time: &T, weight: &R) {
@@ -679,7 +705,9 @@ where
     }
 
     fn push_val(&mut self, val: &V) {
-        self.writer.write1((val, &*self.time_diffs)).unwrap();
+        self.writer
+            .write1((val, &*self.time_diffs))
+            .unwrap_storage();
         self.time_diffs.clear();
     }
 }
