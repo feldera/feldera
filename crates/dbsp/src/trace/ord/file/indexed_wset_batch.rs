@@ -15,7 +15,7 @@ use crate::{
     trace::{
         cursor::{CursorFactory, CursorFactoryWrapper, Pending, PushCursor},
         merge_batches_by_reference,
-        ord::merge_batcher::MergeBatcher,
+        ord::{file::UnwrapStorage, merge_batcher::MergeBatcher},
         Batch, BatchFactories, BatchLocation, BatchReader, BatchReaderFactories, Builder, Cursor,
         VecIndexedWSetFactories, WeightedItem,
     },
@@ -248,25 +248,27 @@ where
             &self.factories.factories0,
             &self.factories.factories1,
             Runtime::buffer_cache,
-            &*Runtime::storage_backend().unwrap(),
+            &*Runtime::storage_backend().unwrap_storage(),
             Runtime::file_writer_parameters(),
             self.key_count(),
         )
-        .unwrap();
+        .unwrap_storage();
 
         let mut cursor = self.cursor();
         while cursor.key_valid() {
             while cursor.val_valid() {
                 let diff = cursor.diff.neg_by_ref();
-                writer.write1((cursor.val.as_ref(), diff.erase())).unwrap();
+                writer
+                    .write1((cursor.val.as_ref(), diff.erase()))
+                    .unwrap_storage();
                 cursor.step_val();
             }
-            writer.write0((cursor.key.as_ref(), &())).unwrap();
+            writer.write0((cursor.key.as_ref(), &())).unwrap_storage();
             cursor.step_key();
         }
         Self {
             factories: self.factories.clone(),
-            file: Arc::new(writer.into_reader().unwrap()),
+            file: Arc::new(writer.into_reader().unwrap_storage()),
         }
     }
 }
@@ -354,7 +356,7 @@ where
     }
 
     fn approximate_byte_size(&self) -> usize {
-        self.file.byte_size().unwrap() as usize
+        self.file.byte_size().unwrap_storage() as usize
     }
 
     #[inline]
@@ -419,10 +421,10 @@ where
         let results = self
             .file
             .fetch_indexed_zset(keys)
-            .unwrap()
+            .unwrap_storage()
             .async_results(self.factories.vec_indexed_wset_factory.clone())
             .await
-            .unwrap();
+            .unwrap_storage();
 
         Some(Box::new(CursorFactoryWrapper(results)))
     }
@@ -448,7 +450,7 @@ where
         let file = Arc::new(Reader::open(
             &[&any_factory0, &any_factory1],
             Runtime::buffer_cache,
-            &*Runtime::storage_backend().unwrap(),
+            &*Runtime::storage_backend().unwrap_storage(),
             path,
         )?);
         Ok(Self {
@@ -493,9 +495,9 @@ where
     R: WeightTrait + ?Sized,
 {
     fn new(indexed_wset: &'s FileIndexedWSet<K, V, R>) -> Self {
-        let key_bulk_rows = indexed_wset.file.bulk_rows().unwrap();
+        let key_bulk_rows = indexed_wset.file.bulk_rows().unwrap_storage();
 
-        let val_bulk_rows = key_bulk_rows.next_column().unwrap();
+        let val_bulk_rows = key_bulk_rows.next_column().unwrap_storage();
         let mut this = Self {
             key_bulk_rows,
             key: indexed_wset.factories.key_factory().default_box(),
@@ -510,7 +512,7 @@ where
 
     fn fetch_key(&mut self) {
         if unsafe { self.key_bulk_rows.key(&mut self.key) }.is_some() {
-            self.row_group = self.key_bulk_rows.row_group().unwrap().unwrap();
+            self.row_group = self.key_bulk_rows.row_group().unwrap_storage().unwrap();
             if self.val_bulk_rows.step_to(self.row_group.start)
                 && unsafe { self.val_bulk_rows.item((&mut self.val, &mut self.diff)) }.is_none()
             {
@@ -581,8 +583,8 @@ where
     }
 
     fn run(&mut self) {
-        self.key_bulk_rows.work().unwrap();
-        self.val_bulk_rows.work().unwrap();
+        self.key_bulk_rows.work().unwrap_storage();
+        self.val_bulk_rows.work().unwrap_storage();
         self.fetch_key();
     }
 }
@@ -641,11 +643,15 @@ where
     R: WeightTrait + ?Sized,
 {
     pub fn new(wset: &'s FileIndexedWSet<K, V, R>) -> Self {
-        let key_cursor = wset.file.rows().first().unwrap();
+        let key_cursor = wset.file.rows().first().unwrap_storage();
         let mut key = wset.factories.key_factory().default_box();
         unsafe { key_cursor.key(&mut key) };
 
-        let val_cursor = key_cursor.next_column().unwrap().first().unwrap();
+        let val_cursor = key_cursor
+            .next_column()
+            .unwrap_storage()
+            .first()
+            .unwrap_storage();
         let mut val = wset.factories.val_factory().default_box();
         let mut diff = wset.factories.weight_factory().default_box();
         unsafe { val_cursor.item((&mut val, &mut diff)) };
@@ -663,14 +669,14 @@ where
     where
         F: Fn(&mut KeyCursor<'s, K, V, R>) -> Result<(), ReaderError>,
     {
-        op(&mut self.key_cursor).unwrap();
+        op(&mut self.key_cursor).unwrap_storage();
         unsafe { self.key_cursor.key(&mut self.key) };
         self.val_cursor = self
             .key_cursor
             .next_column()
-            .unwrap()
+            .unwrap_storage()
             .first_with_hint(&self.val_cursor)
-            .unwrap();
+            .unwrap_storage();
         unsafe { self.val_cursor.item((&mut self.val, &mut self.diff)) };
     }
 
@@ -678,7 +684,7 @@ where
     where
         F: Fn(&mut ValCursor<'s, K, V, R>) -> Result<(), ReaderError>,
     {
-        op(&mut self.val_cursor).unwrap();
+        op(&mut self.val_cursor).unwrap_storage();
         unsafe { self.val_cursor.item((&mut self.val, &mut self.diff)) };
     }
 }
@@ -836,11 +842,11 @@ where
                 &factories.factories0,
                 &factories.factories1,
                 Runtime::buffer_cache,
-                &*Runtime::storage_backend().unwrap(),
+                &*Runtime::storage_backend().unwrap_storage(),
                 Runtime::file_writer_parameters(),
                 capacity,
             )
-            .unwrap(),
+            .unwrap_storage(),
             weight: factories.weight_factory().default_box(),
         }
     }
@@ -848,16 +854,16 @@ where
     fn done(self) -> FileIndexedWSet<K, V, R> {
         FileIndexedWSet {
             factories: self.factories,
-            file: Arc::new(self.writer.into_reader().unwrap()),
+            file: Arc::new(self.writer.into_reader().unwrap_storage()),
         }
     }
 
     fn push_key(&mut self, key: &K) {
-        self.writer.write0((key, &())).unwrap();
+        self.writer.write0((key, &())).unwrap_storage();
     }
 
     fn push_val(&mut self, val: &V) {
-        self.writer.write1((val, &*self.weight)).unwrap();
+        self.writer.write1((val, &*self.weight)).unwrap_storage();
     }
 
     fn push_time_diff(&mut self, _time: &(), weight: &R) {
@@ -867,7 +873,7 @@ where
 
     fn push_val_diff(&mut self, val: &V, weight: &R) {
         debug_assert!(!weight.is_zero());
-        self.writer.write1((val, weight)).unwrap();
+        self.writer.write1((val, weight)).unwrap_storage();
     }
 }
 

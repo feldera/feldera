@@ -15,7 +15,7 @@ use crate::{
     trace::{
         cursor::{CursorFactoryWrapper, Pending, PushCursor},
         merge_batches_by_reference,
-        ord::merge_batcher::MergeBatcher,
+        ord::{file::UnwrapStorage, merge_batcher::MergeBatcher},
         Batch, BatchFactories, BatchLocation, BatchReader, BatchReaderFactories, Builder, Cursor,
         Deserializer, Serializer, VecWSetFactories, WeightedItem,
     },
@@ -239,17 +239,19 @@ where
             Runtime::file_writer_parameters(),
             self.key_count(),
         )
-        .unwrap();
+        .unwrap_storage();
 
         let mut cursor = self.cursor();
         while cursor.key_valid() {
             let diff = cursor.diff.neg_by_ref();
-            writer.write0((cursor.key.as_ref(), diff.erase())).unwrap();
+            writer
+                .write0((cursor.key.as_ref(), diff.erase()))
+                .unwrap_storage();
             cursor.step_key();
         }
         Self {
             factories: self.factories.clone(),
-            file: Arc::new(writer.into_reader().unwrap()),
+            file: Arc::new(writer.into_reader().unwrap_storage()),
         }
     }
 }
@@ -355,7 +357,7 @@ where
     }
 
     fn approximate_byte_size(&self) -> usize {
-        self.file.byte_size().unwrap() as usize
+        self.file.byte_size().unwrap_storage() as usize
     }
 
     #[inline]
@@ -422,10 +424,10 @@ where
         let results = self
             .file
             .fetch_zset(keys)
-            .unwrap()
+            .unwrap_storage()
             .async_results(self.factories.vec_wset_factory.clone())
             .await
-            .unwrap();
+            .unwrap_storage();
 
         Some(Box::new(CursorFactoryWrapper(results)))
     }
@@ -485,7 +487,7 @@ where
 {
     fn new(wset: &'s FileWSet<K, R>) -> Self {
         let mut this = Self {
-            bulk_rows: wset.file.bulk_rows().unwrap(),
+            bulk_rows: wset.file.bulk_rows().unwrap_storage(),
             key: wset.factories.key_factory().default_box(),
             diff: wset.factories.weight_factory().default_box(),
             key_valid: Err(Pending),
@@ -543,7 +545,7 @@ where
     }
 
     fn run(&mut self) {
-        self.bulk_rows.work().unwrap();
+        self.bulk_rows.work().unwrap_storage();
         if self.key_valid == Err(Pending) {
             self.fetch_item();
         }
@@ -590,7 +592,7 @@ where
     R: WeightTrait + ?Sized,
 {
     fn new(wset: &'s FileWSet<K, R>) -> Self {
-        let cursor = wset.file.rows().first().unwrap();
+        let cursor = wset.file.rows().first().unwrap_storage();
         let mut key = wset.factories.key_factory().default_box();
         let mut diff = wset.factories.weight_factory().default_box();
         let valid = unsafe { cursor.item((&mut key, &mut diff)) }.is_some();
@@ -609,7 +611,7 @@ where
     where
         F: Fn(&mut RawCursor<'s, K, R>) -> Result<(), ReaderError>,
     {
-        op(&mut self.cursor).unwrap();
+        op(&mut self.cursor).unwrap_storage();
         let valid = unsafe { self.cursor.item((&mut self.key, &mut self.diff)) }.is_some();
         self.key_valid = valid;
         self.val_valid = valid;
@@ -769,11 +771,11 @@ where
             writer: Writer1::new(
                 &factories.file_factories,
                 Runtime::buffer_cache,
-                &*Runtime::storage_backend().unwrap(),
+                &*Runtime::storage_backend().unwrap_storage(),
                 Runtime::file_writer_parameters(),
                 capacity,
             )
-            .unwrap(),
+            .unwrap_storage(),
             weight: factories.weight_factory().default_box(),
         }
     }
@@ -781,12 +783,12 @@ where
     fn done(self) -> FileWSet<K, R> {
         FileWSet {
             factories: self.factories,
-            file: Arc::new(self.writer.into_reader().unwrap()),
+            file: Arc::new(self.writer.into_reader().unwrap_storage()),
         }
     }
 
     fn push_key(&mut self, key: &K) {
-        self.writer.write0((key, &*self.weight)).unwrap();
+        self.writer.write0((key, &*self.weight)).unwrap_storage();
     }
 
     fn push_val(&mut self, _val: &DynUnit) {}
