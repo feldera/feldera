@@ -845,6 +845,13 @@ impl DeltaTableInputEndpointInner {
             )
         })?;
 
+        // If we are about to follow the table, set resume state to the current table version, otherwise
+        // the connector will remain in the barrier state until at least one transaction is added to the log.
+        if !self.config.snapshot() {
+            *self.last_resume_status.lock().unwrap() =
+                Some(DeltaResumeInfo::new(delta_table.version()));
+        }
+
         // Register object store with datafusion, so it will recognize individual parquet
         // file URIs when processing transaction log.  The `object_store_url` function
         // generates a unique URL, which only makes sense to datafusion.  We must append
@@ -1002,14 +1009,14 @@ impl DeltaTableInputEndpointInner {
             .table("snapshot")
             .await
             .map_err(|e| {
-                ControllerError::invalid_transport_configuration(&self.endpoint_name, &format!("internal error when compiling the 'cdc_delete_filter' expession '{delete_filter}'; {REPORT_ERROR}: table 'snapshot' not found"))
+                ControllerError::invalid_transport_configuration(&self.endpoint_name, &format!("internal error when compiling the 'cdc_delete_filter' expression '{delete_filter}'; {REPORT_ERROR}: table 'snapshot' not found"))
             })?
             .schema()
             .clone();
 
         let physical_expr = DefaultPhysicalPlanner::default()
             .create_physical_expr(&filter_expr, &schema, &self.datafusion.state())
-            .map_err(|e| ControllerError::invalid_transport_configuration(&self.endpoint_name, &format!("internal error when compiling the 'cdc_delete_filter' expession '{delete_filter}'; {REPORT_ERROR}: error generating physical plan: {e}")))?;
+            .map_err(|e| ControllerError::invalid_transport_configuration(&self.endpoint_name, &format!("internal error when compiling the 'cdc_delete_filter' expression '{delete_filter}'; {REPORT_ERROR}: error generating physical plan: {e}")))?;
 
         Ok(Some(physical_expr))
     }
@@ -1035,7 +1042,7 @@ impl DeltaTableInputEndpointInner {
             .downcast_ref::<BooleanArray>()
             .ok_or_else(|| {
                 anyhow!(
-                    "internal error converting the result of the delete filter exptession to BooleanArray; {REPORT_ERROR}: expected Boolean, found {:?}", array.data_type()
+                    "internal error converting the result of the delete filter expression to BooleanArray; {REPORT_ERROR}: expected Boolean, found {:?}", array.data_type()
                 )
             })?;
 
