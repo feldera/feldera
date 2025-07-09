@@ -6,6 +6,7 @@ pub mod file;
 pub mod http;
 pub mod iceberg;
 pub mod kafka;
+pub mod nats;
 pub mod nexmark;
 pub mod postgres;
 pub mod pubsub;
