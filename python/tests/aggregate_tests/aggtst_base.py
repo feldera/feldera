@@ -232,11 +232,7 @@ class TstAccumulator:
                     f"View: `{view.name}` was expected to fail, but it passed."
                 )
             except Exception as e:
-                try:
-                    self.assert_expected_error(view, e)
-                except AssertionError as assert_err:
-                    if DEBUG:
-                        print(f"[ASSERTION ERROR] {assert_err}")
+                self.assert_expected_error(view, e)
 
     def run_expected_successes(self):
         """Run all views that are expected to pass in a single pipeline"""

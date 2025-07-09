@@ -343,7 +343,7 @@ class illarg_cos_illegal(TstView):
         self.sql = """CREATE MATERIALIZED VIEW cos_illegal AS SELECT
                       COS(tmestmp) AS tmestmp
                       FROM illegal_tbl"""
-        self.expected_error = "Cannot apply 'ABS' to arguments of type"
+        self.expected_error = "Cannot apply 'COS' to arguments of type"
 
 
 # COSH function
@@ -405,7 +405,7 @@ class illarg_csc_illegal(TstView):
         self.sql = """CREATE MATERIALIZED VIEW csc_illegal AS SELECT
                       CSC(bin) AS bin
                       FROM illegal_tbl"""
-        self.expected_error = "Cannot apply 'ABS' to arguments of type"
+        self.expected_error = "Cannot apply 'CSC' to arguments of type"
 
 
 # CSCH function
@@ -592,7 +592,7 @@ class illarg_floor_illegal(TstView):
         self.sql = """CREATE MATERIALIZED VIEW floor_illegal AS SELECT
                       FLOOR(tmestmp) AS tmestmp
                       FROM illegal_tbl"""
-        self.expected_error = "Cannot apply 'ABS' to arguments of type"
+        self.expected_error = "Cannot apply 'FLOOR' to arguments of type"
 
 
 # IS_INF function
@@ -625,7 +625,7 @@ class illarg_isinf_illegal(TstView):
         self.sql = """CREATE MATERIALIZED VIEW isinf_illegal AS SELECT
                       IS_INF(booll) AS booll
                       FROM illegal_tbl"""
-        self.expected_error = "Cannot apply 'ABS' to arguments of type"
+        self.expected_error = "Cannot apply 'IS_INF' to arguments of type"
 
 
 # IS_NAN function
@@ -658,4 +658,4 @@ class illarg_isnan_illegal(TstView):
         self.sql = """CREATE MATERIALIZED VIEW isnan_illegal AS SELECT
                       IS_NAN(booll) AS booll
                       FROM illegal_tbl"""
-        self.expected_error = "Cannot apply 'ABS' to arguments of type"
+        self.expected_error = "Cannot apply 'IS_NAN' to arguments of type"
