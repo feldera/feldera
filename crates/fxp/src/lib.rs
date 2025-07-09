@@ -14,17 +14,17 @@
 //! The following `cargo` features are provided:
 //!
 //! * `serde`: Implements [serde] traits for serializing and deserializing
-//! [Fixed] and [DynamicDecimal].
+//!   [Fixed] and [DynamicDecimal].
 //!
 //! * `rkyv`: Implements [rkyv] traits for serializing and deserializing [Fixed]
-//! and [DynamicDecimal].
+//!   and [DynamicDecimal].
 //!
 //! * `validation` (depends on `rkyv`): Implements [rkyv] traits for validation.
 //!
 //! * `size_of`: Implements [size_of] traits for measuring data sizes.
 //!
 //! * `dbsp` (depends on `serde`, `rkyv`, and `size_of`): Implements [DBSP]
-//! traits for [Fixed] and [DynamicDecimal].
+//!   traits for [Fixed] and [DynamicDecimal].
 //!
 //! [rkyv]: https://rkyv.org/
 //! [serde]: https://serde.rs/
