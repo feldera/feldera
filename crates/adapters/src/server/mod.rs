@@ -536,6 +536,29 @@ where
     }
 }
 
+/// Get the log filtering configuration.
+fn get_env_filter(config: &PipelineConfig) -> EnvFilter {
+    // The `RUST_LOG` environment variable takes precedence.  It isn't usually
+    // set.
+    if let Ok(env_filter) = EnvFilter::try_from_default_env() {
+        return env_filter;
+    }
+
+    // Otherwise, take the configuration from the pipeline.
+    if let Some(dirs) = &config.global.logging {
+        match EnvFilter::try_new(dirs) {
+            Ok(env_filter) => return env_filter,
+            Err(error) => {
+                // Write directly to stderr because logging isn't set up yet.
+                eprintln!("Invalid pipeline `logging` configuration ({error}): {dirs}")
+            }
+        }
+    }
+
+    // Otherwise, fall back to `INFO`.
+    EnvFilter::try_new("info").unwrap()
+}
+
 fn do_bootstrap(
     args: ServerArgs,
     circuit_factory: CircuitFactoryFunc,
@@ -555,16 +578,10 @@ fn do_bootstrap(
     }
 
     // Initializes the logger by setting its filter and template.
-    // By default, the logging level is set to `INFO`.
-    // This can be overridden by setting the `RUST_LOG` environment variable.
     let pipeline_name = format!("[{}]", config.name.clone().unwrap_or_default()).cyan();
     tracing_subscriber::registry()
         .with(tracing_subscriber::fmt::layer().event_format(PipelineFormat::new(pipeline_name)))
-        .with(
-            EnvFilter::try_from_default_env()
-                .or_else(|_| EnvFilter::try_new("info"))
-                .unwrap(),
-        )
+        .with(get_env_filter(&config))
         .try_init()
         .unwrap_or_else(|e| {
             // This happens in unit tests when another test has initialized logging.

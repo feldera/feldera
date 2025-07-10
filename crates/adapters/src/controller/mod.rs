@@ -2109,6 +2109,7 @@ impl ControllerInit {
                 init_containers: config.global.init_containers,
                 checkpoint_during_suspend: config.global.checkpoint_during_suspend,
                 dev_tweaks: BTreeMap::new(),
+                logging: None,
             },
 
             // Adapter configuration has to come from the checkpoint.

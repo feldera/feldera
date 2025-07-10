@@ -505,6 +505,16 @@ pub struct RuntimeConfig {
     /// another, so users should not depend on particular settings being
     /// available, or on their behavior.
     pub dev_tweaks: BTreeMap<String, serde_json::Value>,
+
+    /// Log filtering directives.
+    ///
+    /// If set to a valid [tracing-subscriber] filter, this controls the log
+    /// messages emitted by the pipeline process.  Otherwise, or if the filter
+    /// has invalid syntax, messages at "info" severity and higher are written
+    /// to the log and all others are discarded.
+    ///
+    /// [tracing-subscriber]: https://docs.rs/tracing-subscriber/latest/tracing_subscriber/filter/struct.EnvFilter.html#directives
+    pub logging: Option<String>,
 }
 
 /// Accepts "true" and "false" and converts them to the new format.
@@ -637,6 +647,7 @@ impl Default for RuntimeConfig {
             init_containers: None,
             checkpoint_during_suspend: true,
             dev_tweaks: BTreeMap::default(),
+            logging: None,
         }
     }
 }
