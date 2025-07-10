@@ -621,7 +621,7 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
                 time.sleep(0.1)
                 continue
 
-            return status
+            break
 
         return uuid
 
