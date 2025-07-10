@@ -17,11 +17,14 @@
         'SqlCompiled',
         'CompilingRust',
         'RustError',
-        'SystemError',
         () => 'fd fd-circle-check-big text-[20px] text-success-500'
       )
       .with('Pending', 'CompilingSql', undefined, () => spinnerClass)
-      .with('SqlError', () => 'fd fd-circle-x inline-block text-[20px] text-error-500')
+      .with(
+        'SqlError',
+        'SystemError',
+        () => 'fd fd-circle-x inline-block text-[20px] text-error-500'
+      )
       .exhaustive()
   )
   let rustClass = $derived(
