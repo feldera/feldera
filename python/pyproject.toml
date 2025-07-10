@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "feldera"
 readme = "README.md"
 description = "The feldera python client"
-version = "0.102.0"
+version = "0.103.0"
 license = { text = "MIT" }
 requires-python = ">=3.10"
 authors = [
