@@ -128,6 +128,7 @@
         '_delete'
       ])
       .with('Suspending', () => [
+        '_kill',
         '_spinner',
         '_saveFile',
         '_configurations',
