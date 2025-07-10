@@ -7,8 +7,8 @@ use std::{
 use smallstr::SmallString;
 
 use crate::{
-    checked_pow10, debug_decimal, display_decimal, parse_decimal, u256::I256, Fixed, OutOfRange,
-    ParseDecimalError,
+    checked_pow10, debug_decimal, display_decimal, parse_decimal, pow10, u256::I256, Fixed,
+    OutOfRange, ParseDecimalError,
 };
 
 /// Decimal real number with 38 digits of precision and dynamic scale.
@@ -18,18 +18,37 @@ use crate::{
 /// `DynamicDecimal` and then converted back into any other `Fixed`, possibly
 /// with a different precision and scale, without loss of precision (beyond that
 /// inherent in change of scale, if any).
-#[derive(Copy, Clone, Default)]
+///
+/// # Representation
+///
+/// The number is represented as an `i128` significand and a `u8` scale, that
+/// together express the value `significand * 10**-scale`.
+///
+/// # Invariants
+///
+/// These invariants on significand and scale ensure that the value is in
+/// canonical form:
+///
+/// * If `significand != 0 && scale != 0`, then `significand` must not be a
+///   multiple of 10.
+///
+/// * If `significand != 0 && scale == 0`, then `significand` may be a
+///   multiple of 10.  (This is a "denormalized" representation with fewer
+///   digits of precision than other forms.)
+///
+/// * If `significand == 0`, then `scale` must be zero.
+#[derive(Copy, Clone, Default, PartialEq, Eq, Hash)]
 #[cfg_attr(feature = "size_of", derive(size_of::SizeOf))]
 #[cfg_attr(
     feature = "rkyv",
     derive(rkyv::Archive, rkyv::Serialize, rkyv::Deserialize, rkyv::CheckBytes)
 )]
 pub struct DynamicDecimal {
-    /// The underlying value (significand), multiplied by `10**exponent`.
-    pub sig: i128,
+    /// Significand.
+    sig: i128,
 
-    /// The number of digits of `value` that follow the decimal point.
-    pub exponent: u8,
+    /// The number of digits of the value that follow the decimal point.
+    exponent: u8,
 }
 
 impl DynamicDecimal {
@@ -45,8 +64,52 @@ impl DynamicDecimal {
     /// 1 as `DynamicDecimal`.
     pub const ONE: Self = DynamicDecimal::new(1, 0);
 
-    const fn new(sig: i128, exponent: u8) -> Self {
-        Self { sig, exponent }
+    /// Constructs a new `DynamicDecimal` with value `sig * 10**-exponent`.
+    pub const fn new(sig: i128, exponent: u8) -> Self {
+        if exponent == 0 {
+            Self { sig, exponent }
+        } else if sig == 0 {
+            Self { sig, exponent: 0 }
+        } else {
+            /// Returns `(sig, exponent)` divided by `10**D` as many times as
+            /// possible without dropping nonzero decimal digits.
+            const fn reduce<const D: u8>(mut sig: i128, mut exponent: u8) -> (i128, u8) {
+                // `10**D`.
+                let scale = pow10(D as usize);
+
+                // A multiple of `10**D` has at least `D` trailing zeros, since
+                // `10 == 2*5`, so if any of the `D` trailing bits is nonzero,
+                // we can skip the expensive remainder operation.
+                while exponent >= D
+                    && sig.unsigned_abs() >= scale.cast_unsigned()
+                    && (sig & ((1 << D) - 1)) == 0
+                    && sig % scale == 0
+                {
+                    sig /= scale;
+                    exponent -= D;
+                }
+                (sig, exponent)
+            }
+
+            // Canonicalize in a few stages, so that we don't have to divide as
+            // many times as otherwise for numbers that have many trailing
+            // decimal zeros.
+            let (sig, exponent) = reduce::<8>(sig, exponent);
+            let (sig, exponent) = reduce::<4>(sig, exponent);
+            let (sig, exponent) = reduce::<1>(sig, exponent);
+            debug_assert!(sig % 10 != 0 || exponent == 0);
+            Self { sig, exponent }
+        }
+    }
+
+    /// Returns the canonical [significand](Self#representation).
+    pub const fn significand(&self) -> i128 {
+        self.sig
+    }
+
+    /// Returns the canonical [scale](Self#representation).
+    pub const fn scale(&self) -> u8 {
+        self.exponent
     }
 }
 
@@ -54,10 +117,7 @@ impl<const P: usize, const S: usize> From<Fixed<P, S>> for DynamicDecimal {
     /// Encodes `value`, for later deserialization into a new `Fixed` with
     /// possibly a different precision and scale.
     fn from(value: Fixed<P, S>) -> Self {
-        Self {
-            sig: value.0,
-            exponent: S as u8,
-        }
+        Self::new(value.0, S as u8)
     }
 }
 
@@ -102,13 +162,10 @@ impl FromStr for DynamicDecimal {
                 let sig = checked_pow10(exponent.cast_unsigned())
                     .and_then(|m| m.checked_mul(sig))
                     .ok_or(ParseDecimalError::OutOfRange)?;
-                Ok(Self { sig, exponent: 0 })
+                Ok(Self::new(sig, 0))
             }
             (_, 0) => Ok(Self { sig, exponent: 0 }),
-            (_, -255..0) => Ok(Self {
-                sig,
-                exponent: (-exponent) as u8,
-            }),
+            (_, -255..0) => Ok(Self::new(sig, (-exponent) as u8)),
             (_, ..-255) => {
                 // We could "denormalize" by dividing `sig` by a power of 10 and
                 // adjusting `exponent`, but the value would inevitably be zero
@@ -124,10 +181,7 @@ impl TryFrom<u128> for DynamicDecimal {
     type Error = OutOfRange;
 
     fn try_from(value: u128) -> Result<Self, Self::Error> {
-        Ok(Self {
-            sig: value.try_into().map_err(|_| OutOfRange)?,
-            exponent: 0,
-        })
+        Ok(Self::new(value.try_into().map_err(|_| OutOfRange)?, 0))
     }
 }
 
@@ -135,10 +189,7 @@ macro_rules! from_int {
     ($type_name:ty) => {
         impl From<$type_name> for DynamicDecimal {
             fn from(value: $type_name) -> Self {
-                Self {
-                    sig: value as i128,
-                    exponent: 0,
-                }
+                Self::new(value as i128, 0)
             }
         }
     };
@@ -229,14 +280,6 @@ impl TryFrom<f64> for DynamicDecimal {
         buf.parse().map_err(|_| OutOfRange)
     }
 }
-
-impl PartialEq for DynamicDecimal {
-    fn eq(&self, other: &Self) -> bool {
-        self.cmp(other) == Ordering::Equal
-    }
-}
-
-impl Eq for DynamicDecimal {}
 
 impl PartialOrd for DynamicDecimal {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
