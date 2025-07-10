@@ -1,8 +1,5 @@
 <script lang="ts">
-  import {
-    Datatable,
-    TableHandler,
-  } from '@vincjo/datatables'
+  import { Datatable, TableHandler } from '@vincjo/datatables'
   import PipelineStatus from '$lib/components/pipelines/list/PipelineStatus.svelte'
   import {
     type PipelineStatus as PipelineStatusType,
@@ -10,11 +7,11 @@
   } from '$lib/services/pipelineManager'
   import { type Snippet } from 'svelte'
   import ThSort from '$lib/components/pipelines/table/ThSort.svelte'
-  import { getPipelineStatusLabel } from '$lib/functions/pipelines/status'
   import { useElapsedTime } from '$lib/functions/format'
   import { dateMax } from '$lib/functions/common/date'
   import { match } from 'ts-pattern'
   import { Tooltip } from '$lib/components/common/Tooltip.svelte'
+  import { unionName, type NamesInUnion } from '$lib/functions/common/union'
   let {
     pipelines,
     preHeaderEnd,
@@ -45,8 +42,26 @@
     table.selected = selectedPipelines
   })
 
-  const statusFilter = table.createFilter('status')
-  const filterStatuses: (PipelineStatusType | '')[] = ['', 'Running', 'Paused', 'Stopped']
+  const statusMatchesFilter = (
+    entry: NamesInUnion<PipelineStatusType>,
+    _value: keyof typeof filterStatuses
+  ) => {
+    const value = filterStatuses.find((f) => f[0] === _value)![1]
+    return !value.length || value.includes(entry)
+  }
+  const statusFilter = table.createFilter(
+    (row) => unionName(row.status),
+    statusMatchesFilter as any
+  )
+
+  const filterStatuses: [string, NamesInUnion<PipelineStatusType>[]][] = [
+    ['All Pipelines', []],
+    ['Running', ['Running']],
+    ['Paused', ['Paused']],
+    ['Ready To Start', ['Stopped']],
+    ['Compiling', ['Queued', 'CompilingSql', 'SqlCompiled', 'CompilingRust']],
+    ['Failed', ['SystemError', 'SqlError', 'RustError']]
+  ]
   const { formatElapsedTime } = useElapsedTime()
 </script>
 
@@ -55,13 +70,13 @@
 >
   <select
     class="select ml-auto w-40 sm:ml-0"
-    bind:value={statusFilter.value}
-    onchange={() => statusFilter.set()}
+    onchange={(e) => {
+      statusFilter.value = filterStatuses.find((v) => e.currentTarget.value === v[0])![0]
+      statusFilter.set()
+    }}
   >
-    {#each filterStatuses as status (status)}
-      <option value={status}
-        >{status === '' ? 'All pipelines' : getPipelineStatusLabel(status)}</option
-      >
+    {#each filterStatuses as filter (filter[0])}
+      <option value={filter[0]}>{filter[0]}</option>
     {/each}
   </select>
   <div class="ml-auto flex gap-4 sm:ml-0">
@@ -117,7 +132,7 @@
           <td class="relative w-12 border-surface-100-900 group-hover:bg-surface-50-950">
             <div
               class="fd {pipeline.storageStatus === 'Cleared'
-                ? 'fd-database-off'
+                ? 'fd-database-off text-surface-500'
                 : 'fd-database'} text-center text-[20px]"
             ></div>
             <Tooltip class="bg-white-dark z-10 rounded text-surface-950-50"
@@ -150,10 +165,7 @@
           </td>
           <td class="relative w-28 border-surface-100-900 group-hover:bg-surface-50-950">
             <div class="w-32 text-nowrap text-right">
-              {formatElapsedTime(
-                pipeline.lastStatusSince,
-                'dhm'
-              )} ago
+              {formatElapsedTime(pipeline.lastStatusSince, 'dhm')} ago
             </div>
           </td>
         </tr>

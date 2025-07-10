@@ -69,7 +69,7 @@
     {:else}
       <NavigationExtras></NavigationExtras>
       <div class="relative">
-        <CreatePipelineButton class="max-w-64" btnClass="preset-filled-surface-50-950"
+        <CreatePipelineButton inputClass="max-w-64" btnClass="preset-filled-surface-50-950"
         ></CreatePipelineButton>
       </div>
       <BookADemo class="preset-filled-primary-500">Book a demo</BookADemo>
@@ -124,7 +124,9 @@
               <AvailableActions pipelines={pipelines.pipelines} bind:selectedPipelines
               ></AvailableActions>
             {:else}
-              <CreatePipelineButton class="max-w-64" btnClass="preset-filled-surface-50-950"
+              <CreatePipelineButton
+                inputClass="max-w-64"
+                btnClass="hidden sm:flex preset-filled-surface-50-950"
               ></CreatePipelineButton>
             {/if}
           {/snippet}

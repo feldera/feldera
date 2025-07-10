@@ -290,7 +290,7 @@ example = "1.0"`
       {:else}
         <NavigationExtras></NavigationExtras>
         <div class="relative">
-          <CreatePipelineButton class="max-w-64" btnClass="preset-filled-surface-50-950"
+          <CreatePipelineButton inputClass="max-w-64" btnClass="preset-filled-surface-50-950"
           ></CreatePipelineButton>
         </div>
         <BookADemo class="btn-icon preset-filled-surface-50-950"></BookADemo>
