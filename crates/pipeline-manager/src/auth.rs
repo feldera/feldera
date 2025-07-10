@@ -720,6 +720,7 @@ mod test {
             runner_host: "127.0.0.1".to_string(),
             runner_port: 8089,
             platform_version: "v0".to_string(),
+            http_workers: 1,
         };
 
         let manager_config = ApiServerConfig {

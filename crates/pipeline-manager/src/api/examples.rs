@@ -107,6 +107,8 @@ fn extended_pipeline_2() -> ExtendedPipelineDescr {
             max_parallel_connector_init: Some(10),
             init_containers: None,
             checkpoint_during_suspend: false,
+            io_workers: None,
+            http_workers: None,
             dev_tweaks: BTreeMap::new(),
             logging: None,
         })

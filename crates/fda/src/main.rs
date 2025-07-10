@@ -451,6 +451,15 @@ fn patch_runtime_config(
         RuntimeConfigKey::ClockResolutionUsecs => {
             rc.clock_resolution_usecs = Some(value.parse().map_err(|_| ())?);
         }
+        RuntimeConfigKey::Logging => {
+            rc.logging = Some(value.parse().map_err(|_| ())?);
+        }
+        RuntimeConfigKey::HttpWorkers => {
+            rc.http_workers = Some(value.parse().map_err(|_| ())?);
+        }
+        RuntimeConfigKey::IoWorkers => {
+            rc.io_workers = Some(value.parse().map_err(|_| ())?);
+        }
     };
 
     Ok(())

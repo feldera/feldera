@@ -11,6 +11,21 @@ import TabItem from '@theme/TabItem';
 
 <Tabs>
     <TabItem className="changelogItem" value="enterprise" label="Enterprise">
+        ## Unreleased
+
+        This version changes the default values of various worker threads in our HTTP and IO runtime
+        to be equal to the `worker` field in the runtime config.
+        This is a change from the previous default where it was configured to use the number of
+        CPU cores available on the node that a pod is running on.
+
+        This change was made to ensure that the number of threads is sized more appropriately
+        for the resources available to the pod. It also adds two new fields to the runtime config,
+        `http_workers` and `io_workers` which can be used to set the number of threads for both
+        runtimes explicitly.
+
+        We also changed the amount of HTTP worker threads for control plane services (kubernetes-runner,
+        api-server, pipeline-manager) to be equal to the number of cores allocated for them.
+
         ## 0.97.0
 
         This release modifies the state machine of a pipeline. The biggest user-facing change is that stopping a pipeline

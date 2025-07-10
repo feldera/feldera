@@ -1,10 +1,17 @@
 use once_cell::sync::Lazy;
+use std::{env, thread};
 use tokio::runtime::{Builder, Runtime};
+use tracing::debug;
 
 /// The process running dbsp can share a single Tokio runtime.
 ///
 /// This is `pub` so it can be used in dbsp and adapters too for IO.
 pub static TOKIO: Lazy<Runtime> = Lazy::new(|| {
+    debug!(
+        "starting service dbsp io tokio runtime, workers: {}",
+        env::var("TOKIO_WORKER_THREADS")
+            .unwrap_or_else(|_| { thread::available_parallelism().unwrap().get().to_string() })
+    );
     Builder::new_multi_thread()
         .thread_name_fn(|| {
             use std::sync::atomic::{AtomicUsize, Ordering};

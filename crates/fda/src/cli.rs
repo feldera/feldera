@@ -197,6 +197,9 @@ pub enum RuntimeConfigKey {
     StorageClass,
     MinStorageBytes,
     ClockResolutionUsecs,
+    Logging,
+    HttpWorkers,
+    IoWorkers,
 }
 
 #[derive(ValueEnum, Clone, Copy, Debug)]

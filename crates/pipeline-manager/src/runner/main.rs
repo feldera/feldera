@@ -178,7 +178,9 @@ pub async fn runner_main<E: PipelineExecutor + 'static>(
             .app_data(data_logs.clone())
             .service(get_healthz)
             .service(get_logs)
-    });
+    })
+    .workers(common_config.http_workers)
+    .worker_max_blocking_threads(std::cmp::max(512 / common_config.http_workers, 1));
     spawn(
         server
             .bind((

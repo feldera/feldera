@@ -499,6 +499,27 @@ pub struct RuntimeConfig {
     /// Deprecated: setting this true or false does not have an effect anymore.
     pub checkpoint_during_suspend: bool,
 
+    /// Sets the number of available runtime threads for the http server.
+    ///
+    /// In most cases, this does not need to be set explicitly and
+    /// the default is sufficient. Can be increased in case the
+    /// pipeline HTTP API operations are a bottleneck.
+    ///
+    /// If not specified, the default is set to `workers`.
+    pub http_workers: Option<u64>,
+
+    /// Sets the number of available runtime threads for async IO tasks.
+    ///
+    /// This affects some networking and file I/O operations
+    /// especially adapters and ad-hoc queries.
+    ///
+    /// In most cases, this does not need to be set explicitly and
+    /// the default is sufficient. Can be increased in case
+    /// ingress, egress or ad-hoc queries are a bottleneck.
+    ///
+    /// If not specified, the default is set to `workers`.
+    pub io_workers: Option<u64>,
+
     /// Optional settings for tweaking Feldera internals.
     ///
     /// The available key-value pairs change from one version of Feldera to
@@ -646,6 +667,8 @@ impl Default for RuntimeConfig {
             max_parallel_connector_init: None,
             init_containers: None,
             checkpoint_during_suspend: true,
+            io_workers: None,
+            http_workers: None,
             dev_tweaks: BTreeMap::default(),
             logging: None,
         }

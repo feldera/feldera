@@ -243,6 +243,8 @@ struct RuntimeConfigPropVal {
     val13: Option<u64>,
     val14: Option<u64>,
     val15: bool,
+    val16: Option<u64>,
+    val17: Option<u64>,
 }
 type ProgramConfigPropVal = (u8, bool, bool, bool);
 type ProgramInfoPropVal = (u8, u8, u8);
@@ -285,6 +287,8 @@ fn map_val_to_limited_runtime_config(val: RuntimeConfigPropVal) -> serde_json::V
             max_parallel_connector_init: None,
             init_containers: None,
             checkpoint_during_suspend: val.val15,
+            http_workers: val.val16,
+            io_workers: val.val17,
             dev_tweaks: BTreeMap::new(),
             logging: None,
         })
@@ -1047,6 +1051,8 @@ async fn pipeline_versioning() {
         max_parallel_connector_init: None,
         init_containers: None,
         checkpoint_during_suspend: true,
+        http_workers: None,
+        io_workers: None,
         dev_tweaks: BTreeMap::new(),
         logging: None,
     })
@@ -1607,6 +1613,8 @@ async fn pipeline_provision_version_guard() {
                     init_containers: None,
                     checkpoint_during_suspend: false,
                     dev_tweaks: BTreeMap::new(),
+                    http_workers: None,
+                    io_workers: None,
                     logging: None,
                 })
                 .unwrap(),
