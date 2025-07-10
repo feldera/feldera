@@ -52,7 +52,7 @@
     {:else}
       <NavigationExtras></NavigationExtras>
       <div class="relative">
-        <CreatePipelineButton class="max-w-64" btnClass="preset-filled-surface-50-950"
+        <CreatePipelineButton inputClass="max-w-64" btnClass="preset-filled-surface-50-950"
         ></CreatePipelineButton>
       </div>
       <BookADemo class="preset-filled-primary-500">Book a demo</BookADemo>
