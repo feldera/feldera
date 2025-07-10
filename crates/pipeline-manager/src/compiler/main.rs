@@ -260,6 +260,8 @@ pub async fn compiler_main(
                 .service(get_binary)
                 .service(healthz)
         })
+        .workers(common_config.http_workers)
+        .worker_max_blocking_threads(std::cmp::max(512 / common_config.http_workers, 1))
         .bind((common_config.bind_address, port))
         .unwrap_or_else(|_| panic!("Unable to bind compiler HTTP server on port {port}"))
         .run(),

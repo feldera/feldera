@@ -459,7 +459,9 @@ pub async fn run(
                     .wrap(api_config.cors())
                     .service(api_scope().wrap(auth_middleware))
                     .service(public_scope())
-            });
+            })
+            .workers(common_config.http_workers)
+            .worker_max_blocking_threads(std::cmp::max(512 / common_config.http_workers, 1));
             server.listen(listener)?.run()
         }
         None => {
@@ -478,7 +480,9 @@ pub async fn run(
                         srv.call(req)
                     }))
                     .service(public_scope())
-            });
+            })
+            .workers(common_config.http_workers)
+            .worker_max_blocking_threads(std::cmp::max(512 / common_config.http_workers, 1));
             server.listen(listener)?.run()
         }
     };

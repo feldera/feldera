@@ -41,6 +41,7 @@ impl CompilerTest {
             runner_host: "127.0.0.1".to_string(),
             runner_port: 8089,
             platform_version: platform_version.to_string(),
+            http_workers: 1,
         };
         let compiler_config = CompilerConfig {
             sql_compiler_path:

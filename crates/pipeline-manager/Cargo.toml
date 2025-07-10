@@ -94,7 +94,6 @@ dirs = { workspace = true }  # For: discovering home directory
 fdlimit = { workspace = true }  # For: raising file descriptor limit
 nix = { workspace = true, features = ["signal"] }  # For: terminating process group
 tempfile = { workspace = true }
-
 # Not used
 # These dependencies are not used by this crate, but by the generated pipeline crates.
 # They are provided such that they are included in the workspace `Cargo.lock`.

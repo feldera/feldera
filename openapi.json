@@ -407,6 +407,8 @@
                       "max_parallel_connector_init": null,
                       "init_containers": null,
                       "checkpoint_during_suspend": true,
+                      "http_workers": null,
+                      "io_workers": null,
                       "dev_tweaks": {},
                       "logging": null
                     },
@@ -475,6 +477,8 @@
                       "max_parallel_connector_init": 10,
                       "init_containers": null,
                       "checkpoint_during_suspend": false,
+                      "http_workers": null,
+                      "io_workers": null,
                       "dev_tweaks": {},
                       "logging": null
                     },
@@ -572,6 +576,8 @@
                   "max_parallel_connector_init": null,
                   "init_containers": null,
                   "checkpoint_during_suspend": true,
+                  "http_workers": null,
+                  "io_workers": null,
                   "dev_tweaks": {},
                   "logging": null
                 },
@@ -637,6 +643,8 @@
                     "max_parallel_connector_init": null,
                     "init_containers": null,
                     "checkpoint_during_suspend": true,
+                    "http_workers": null,
+                    "io_workers": null,
                     "dev_tweaks": {},
                     "logging": null
                   },
@@ -798,6 +806,8 @@
                     "max_parallel_connector_init": null,
                     "init_containers": null,
                     "checkpoint_during_suspend": true,
+                    "http_workers": null,
+                    "io_workers": null,
                     "dev_tweaks": {},
                     "logging": null
                   },
@@ -922,6 +932,8 @@
                   "max_parallel_connector_init": null,
                   "init_containers": null,
                   "checkpoint_during_suspend": true,
+                  "http_workers": null,
+                  "io_workers": null,
                   "dev_tweaks": {},
                   "logging": null
                 },
@@ -987,6 +999,8 @@
                     "max_parallel_connector_init": null,
                     "init_containers": null,
                     "checkpoint_during_suspend": true,
+                    "http_workers": null,
+                    "io_workers": null,
                     "dev_tweaks": {},
                     "logging": null
                   },
@@ -1065,6 +1079,8 @@
                     "max_parallel_connector_init": null,
                     "init_containers": null,
                     "checkpoint_during_suspend": true,
+                    "http_workers": null,
+                    "io_workers": null,
                     "dev_tweaks": {},
                     "logging": null
                   },
@@ -1310,6 +1326,8 @@
                     "max_parallel_connector_init": null,
                     "init_containers": null,
                     "checkpoint_during_suspend": true,
+                    "http_workers": null,
+                    "io_workers": null,
                     "dev_tweaks": {},
                     "logging": null
                   },
@@ -2824,6 +2842,8 @@
                     "max_parallel_connector_init": null,
                     "init_containers": null,
                     "checkpoint_during_suspend": true,
+                    "http_workers": null,
+                    "io_workers": null,
                     "dev_tweaks": {},
                     "logging": null
                   },
@@ -5685,9 +5705,25 @@
                   "checkpoint_interval_secs": 60
                 }
               },
+              "http_workers": {
+                "type": "integer",
+                "format": "int64",
+                "description": "Sets the number of available runtime threads for the http server.\n\nIn most cases, this does not need to be set explicitly and\nthe default is sufficient. Can be increased in case the\npipeline HTTP API operations are a bottleneck.\n\nIf not specified, the default is set to `workers`.",
+                "default": null,
+                "nullable": true,
+                "minimum": 0
+              },
               "init_containers": {
                 "description": "Specification of additional (sidecar) containers.",
                 "nullable": true
+              },
+              "io_workers": {
+                "type": "integer",
+                "format": "int64",
+                "description": "Sets the number of available runtime threads for async IO tasks.\n\nThis affects some networking and file I/O operations\nespecially adapters and ad-hoc queries.\n\nIn most cases, this does not need to be set explicitly and\nthe default is sufficient. Can be increased in case\ningress, egress or ad-hoc queries are a bottleneck.\n\nIf not specified, the default is set to `workers`.",
+                "default": null,
+                "nullable": true,
+                "minimum": 0
               },
               "logging": {
                 "type": "string",
@@ -6699,9 +6735,25 @@
               "checkpoint_interval_secs": 60
             }
           },
+          "http_workers": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Sets the number of available runtime threads for the http server.\n\nIn most cases, this does not need to be set explicitly and\nthe default is sufficient. Can be increased in case the\npipeline HTTP API operations are a bottleneck.\n\nIf not specified, the default is set to `workers`.",
+            "default": null,
+            "nullable": true,
+            "minimum": 0
+          },
           "init_containers": {
             "description": "Specification of additional (sidecar) containers.",
             "nullable": true
+          },
+          "io_workers": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Sets the number of available runtime threads for async IO tasks.\n\nThis affects some networking and file I/O operations\nespecially adapters and ad-hoc queries.\n\nIn most cases, this does not need to be set explicitly and\nthe default is sufficient. Can be increased in case\ningress, egress or ad-hoc queries are a bottleneck.\n\nIf not specified, the default is set to `workers`.",
+            "default": null,
+            "nullable": true,
+            "minimum": 0
           },
           "logging": {
             "type": "string",

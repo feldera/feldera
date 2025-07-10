@@ -13,6 +13,7 @@ use std::{
     fs::{canonicalize, create_dir_all},
     path::{Path, PathBuf},
     sync::Once,
+    thread,
 };
 
 /// The default `platform_version` is formed using three compilation environment variables:
@@ -86,6 +87,13 @@ fn default_demos_dir() -> Vec<String> {
     vec!["demo/packaged/sql".to_string()]
 }
 
+/// Determines the default amount of worker threads to spawn.
+fn default_http_workers() -> usize {
+    thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(2)
+}
+
 /// Override to inform the compiler where to locate the DBSP crates
 /// it needs for Rust compilation.
 fn default_dbsp_override_path() -> String {
@@ -136,6 +144,28 @@ fn help_canonicalize_dir(dir: &str) -> AnyResult<String> {
         .into_owned())
 }
 
+/// This parses a CPU quantity string, which can be either in millicores
+/// (e.g., "500m") or in cores (e.g., "0.5", "1", "2.25") and converts
+/// it to an integer that defines the number of threads to spawn for the
+/// given CPU quantity.
+///
+/// The input is expected to be in the Kubernetes CPU quantity format
+/// described here.
+fn cpu_quantity_to_workers(s: &str) -> Result<usize, String> {
+    let quantity = if let Some(stripped) = s.strip_suffix('m') {
+        let millicores: f64 = stripped.parse::<f64>().map_err(|e| {
+            format!("Invalid worker count specified, valid examples: `2`, `0.5`, `500m`: {e}")
+        })?;
+        millicores / 1000.0
+    } else {
+        s.parse::<f64>().map_err(|e| {
+            format!("Invalid worker count specified, valid values include: `2`, `0.5`, `500m`: {e}")
+        })?
+    };
+
+    Ok(quantity.ceil().max(1.0) as usize)
+}
+
 /// Configuration common to API server, compiler and runner.
 #[derive(Parser, Debug, Clone)]
 #[command(author, version, about, long_about = None)]
@@ -169,6 +199,24 @@ pub struct CommonConfig {
     /// Port used by the runner to both bind its HTTP server, and on which it can be reached.
     #[arg(long, default_value_t = 8089)]
     pub runner_port: u16,
+
+    /// How many HTTP worker threads to spawn for the HTTP runtime system.
+    ///
+    /// If not specified, it will default to using the number of available CPUs
+    /// in the system.
+    ///
+    /// The input is expected to be in the Kubernetes CPU quantity format
+    /// <https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/#resource-units-in-kubernetes>
+    ///
+    /// EXAMPLES:
+    ///
+    /// - `0` -> 1 threads
+    /// - `2` -> 2 threads
+    /// - `0.5` -> 1 thread
+    /// - `500m` -> 1 thread
+    /// - `1500m` -> 1 thread
+    #[arg(verbatim_doc_comment, long, default_value_t = default_http_workers(), env = "FELDERA_HTTP_WORKERS", value_parser = cpu_quantity_to_workers)]
+    pub http_workers: usize,
 }
 
 /// Embedded Postgres configuration.
@@ -526,5 +574,33 @@ impl LocalRunnerConfig {
     pub(crate) fn port_file_path(&self, pipeline_id: PipelineId) -> PathBuf {
         self.pipeline_dir(pipeline_id)
             .join(feldera_types::transport::http::SERVER_PORT_FILE)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_cpu_quantity() {
+        assert_eq!(cpu_quantity_to_workers("100m").unwrap(), 1);
+        assert_eq!(cpu_quantity_to_workers("999m").unwrap(), 1);
+        assert_eq!(cpu_quantity_to_workers("1000m").unwrap(), 1);
+        assert_eq!(cpu_quantity_to_workers("1500m").unwrap(), 2);
+
+        assert_eq!(cpu_quantity_to_workers("0").unwrap(), 1);
+        assert_eq!(cpu_quantity_to_workers("0.0").unwrap(), 1);
+        assert_eq!(cpu_quantity_to_workers("0.0005").unwrap(), 1);
+        assert_eq!(cpu_quantity_to_workers("0.1").unwrap(), 1);
+        assert_eq!(cpu_quantity_to_workers("0.99").unwrap(), 1);
+        assert_eq!(cpu_quantity_to_workers("1.0").unwrap(), 1);
+        assert_eq!(cpu_quantity_to_workers("2.1").unwrap(), 3);
+        assert_eq!(cpu_quantity_to_workers("2").unwrap(), 2);
+
+        assert!(cpu_quantity_to_workers("foo").is_err());
+        assert!(cpu_quantity_to_workers("500x").is_err());
+        assert!(cpu_quantity_to_workers("").is_err());
+        assert!(cpu_quantity_to_workers("m500").is_err());
+        assert!(cpu_quantity_to_workers("500M").is_err()); // uppercase M is invalid
     }
 }

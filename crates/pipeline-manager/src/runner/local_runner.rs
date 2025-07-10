@@ -385,6 +385,14 @@ impl PipelineExecutor for LocalRunner {
         // - Configuration file: path to config.yaml
         // - Stdout/stderr are piped to follow logs
         let mut process = Command::new(fetched_executable)
+            .env(
+                "TOKIO_WORKER_THREADS",
+                deployment_config
+                    .global
+                    .io_workers
+                    .unwrap_or(deployment_config.global.workers as u64)
+                    .to_string(),
+            )
             .current_dir(pipeline_dir)
             .arg("--config-file")
             .arg(&config_file_path)

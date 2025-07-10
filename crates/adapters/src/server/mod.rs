@@ -332,16 +332,31 @@ pub fn run_server(
     let state = WebData::new(ServerState::new(Some(terminate_sender)));
     let state_clone = state.clone();
 
-    // The bootstrap thread will read the config, including pipeline name,
-    // and initialize the logger.  Use this channel to wait for the log to
-    // be ready, so that the first few messages from the server don't get
-    // lost.
+    // The bootstrap thread initialize the logger.
+    // Use this channel to wait for the log to be ready, so that the first few
+    // messages from the server don't get lost.
     let (loginit_sender, loginit_receiver) = mpsc::channel();
+    let config = parse_config(&args.config_file).map_err(|e| {
+        // Print to stderr until logging is initialized.
+        eprintln!("{e}");
+        e
+    })?;
 
     // Initialize the pipeline in a separate thread.  On success, this thread
     // will create a `Controller` instance and store it in `state.controller`.
-    thread::spawn(move || bootstrap(args, circuit_factory, state_clone, loginit_sender));
-    let _ = loginit_receiver.recv();
+    {
+        let config = config.clone();
+        thread::spawn(move || {
+            bootstrap(args, config, circuit_factory, state_clone, loginit_sender)
+        });
+        let _ = loginit_receiver.recv();
+    }
+
+    let workers = if let Some(http_workers) = config.global.http_workers {
+        http_workers as usize
+    } else {
+        config.global.workers as usize
+    };
 
     let server = HttpServer::new(move || {
         let state = state.clone();
@@ -379,6 +394,13 @@ pub fn run_server(
             state,
         )
     })
+    // The next two settings work around the issue that std::thread::available_parallelism()
+    // which is what actix uses internally can't determine the number of threads available
+    // in k8s (it will yield the number of cores on the node rather than the number of
+    // cores assigned to the cgroup).
+    // https://github.com/rust-lang/rust/issues/74479#issuecomment-717097590
+    .workers(workers)
+    .worker_max_blocking_threads(std::cmp::max(512 / workers, 1))
     // Set timeout for graceful shutdown of workers.
     // The default in actix is 30s. We may consider making this configurable.
     .shutdown_timeout(10)
@@ -455,11 +477,12 @@ fn parse_config(config_file: &str) -> Result<PipelineConfig, ControllerError> {
 // Initialization thread function.
 fn bootstrap(
     args: ServerArgs,
+    config: PipelineConfig,
     circuit_factory: CircuitFactoryFunc,
     state: WebData<ServerState>,
     loginit_sender: StdSender<()>,
 ) {
-    do_bootstrap(args, circuit_factory, &state, loginit_sender).unwrap_or_else(|e| {
+    do_bootstrap(args, config, circuit_factory, &state, loginit_sender).unwrap_or_else(|e| {
         // Store error in `state.phase`, so that it can be
         // reported by the server.
         error!("Error initializing the pipeline: {e}.");
@@ -561,17 +584,11 @@ fn get_env_filter(config: &PipelineConfig) -> EnvFilter {
 
 fn do_bootstrap(
     args: ServerArgs,
+    config: PipelineConfig,
     circuit_factory: CircuitFactoryFunc,
     state: &WebData<ServerState>,
     loginit_sender: StdSender<()>,
 ) -> Result<(), ControllerError> {
-    // Print error directly to stdout until we've initialized the logger.
-    let config = parse_config(&args.config_file).map_err(|e| {
-        let _ = loginit_sender.send(());
-        eprintln!("{e}");
-        e
-    })?;
-
     #[cfg(not(feature = "feldera-enterprise"))]
     if config.global.fault_tolerance.is_enabled() {
         return Err(ControllerError::EnterpriseFeature("fault tolerance"));
@@ -1451,7 +1468,7 @@ async fn completion_status(
 #[cfg(test)]
 #[cfg(feature = "with-kafka")]
 mod test_with_kafka {
-    use super::{bootstrap, build_app, ServerArgs, ServerState};
+    use super::{bootstrap, build_app, parse_config, ServerArgs, ServerState};
     use crate::{
         controller::MAX_API_CONNECTIONS,
         ensure_default_crypto_provider,
@@ -1561,9 +1578,12 @@ outputs:
             default_port: None,
             storage_location: None,
         };
+
+        let config = parse_config(&args.config_file).unwrap();
         thread::spawn(move || {
             bootstrap(
                 args,
+                config,
                 Box::new(|workers| {
                     Ok(test_circuit::<TestStruct>(
                         workers,
