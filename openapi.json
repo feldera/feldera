@@ -407,7 +407,8 @@
                       "max_parallel_connector_init": null,
                       "init_containers": null,
                       "checkpoint_during_suspend": true,
-                      "dev_tweaks": {}
+                      "dev_tweaks": {},
+                      "logging": null
                     },
                     "program_code": "CREATE TABLE table1 ( col1 INT );",
                     "udf_rust": "",
@@ -474,7 +475,8 @@
                       "max_parallel_connector_init": 10,
                       "init_containers": null,
                       "checkpoint_during_suspend": false,
-                      "dev_tweaks": {}
+                      "dev_tweaks": {},
+                      "logging": null
                     },
                     "program_code": "CREATE TABLE table2 ( col2 VARCHAR );",
                     "udf_rust": "",
@@ -570,7 +572,8 @@
                   "max_parallel_connector_init": null,
                   "init_containers": null,
                   "checkpoint_during_suspend": true,
-                  "dev_tweaks": {}
+                  "dev_tweaks": {},
+                  "logging": null
                 },
                 "program_code": "CREATE TABLE table1 ( col1 INT );",
                 "udf_rust": null,
@@ -634,7 +637,8 @@
                     "max_parallel_connector_init": null,
                     "init_containers": null,
                     "checkpoint_during_suspend": true,
-                    "dev_tweaks": {}
+                    "dev_tweaks": {},
+                    "logging": null
                   },
                   "program_code": "CREATE TABLE table1 ( col1 INT );",
                   "udf_rust": "",
@@ -794,7 +798,8 @@
                     "max_parallel_connector_init": null,
                     "init_containers": null,
                     "checkpoint_during_suspend": true,
-                    "dev_tweaks": {}
+                    "dev_tweaks": {},
+                    "logging": null
                   },
                   "program_code": "CREATE TABLE table1 ( col1 INT );",
                   "udf_rust": "",
@@ -917,7 +922,8 @@
                   "max_parallel_connector_init": null,
                   "init_containers": null,
                   "checkpoint_during_suspend": true,
-                  "dev_tweaks": {}
+                  "dev_tweaks": {},
+                  "logging": null
                 },
                 "program_code": "CREATE TABLE table1 ( col1 INT );",
                 "udf_rust": null,
@@ -981,7 +987,8 @@
                     "max_parallel_connector_init": null,
                     "init_containers": null,
                     "checkpoint_during_suspend": true,
-                    "dev_tweaks": {}
+                    "dev_tweaks": {},
+                    "logging": null
                   },
                   "program_code": "CREATE TABLE table1 ( col1 INT );",
                   "udf_rust": "",
@@ -1058,7 +1065,8 @@
                     "max_parallel_connector_init": null,
                     "init_containers": null,
                     "checkpoint_during_suspend": true,
-                    "dev_tweaks": {}
+                    "dev_tweaks": {},
+                    "logging": null
                   },
                   "program_code": "CREATE TABLE table1 ( col1 INT );",
                   "udf_rust": "",
@@ -1302,7 +1310,8 @@
                     "max_parallel_connector_init": null,
                     "init_containers": null,
                     "checkpoint_during_suspend": true,
-                    "dev_tweaks": {}
+                    "dev_tweaks": {},
+                    "logging": null
                   },
                   "program_code": "CREATE TABLE table1 ( col1 INT );",
                   "udf_rust": "",
@@ -2815,7 +2824,8 @@
                     "max_parallel_connector_init": null,
                     "init_containers": null,
                     "checkpoint_during_suspend": true,
-                    "dev_tweaks": {}
+                    "dev_tweaks": {},
+                    "logging": null
                   },
                   "program_code": "CREATE TABLE table1 ( col1 INT );",
                   "udf_rust": "",
@@ -5679,6 +5689,12 @@
                 "description": "Specification of additional (sidecar) containers.",
                 "nullable": true
               },
+              "logging": {
+                "type": "string",
+                "description": "Log filtering directives.\n\nIf set to a valid [tracing-subscriber] filter, this controls the log\nmessages emitted by the pipeline process.  Otherwise, or if the filter\nhas invalid syntax, messages at \"info\" severity and higher are written\nto the log and all others are discarded.\n\n[tracing-subscriber]: https://docs.rs/tracing-subscriber/latest/tracing_subscriber/filter/struct.EnvFilter.html#directives",
+                "default": null,
+                "nullable": true
+              },
               "max_buffering_delay_usecs": {
                 "type": "integer",
                 "format": "int64",
@@ -6685,6 +6701,12 @@
           },
           "init_containers": {
             "description": "Specification of additional (sidecar) containers.",
+            "nullable": true
+          },
+          "logging": {
+            "type": "string",
+            "description": "Log filtering directives.\n\nIf set to a valid [tracing-subscriber] filter, this controls the log\nmessages emitted by the pipeline process.  Otherwise, or if the filter\nhas invalid syntax, messages at \"info\" severity and higher are written\nto the log and all others are discarded.\n\n[tracing-subscriber]: https://docs.rs/tracing-subscriber/latest/tracing_subscriber/filter/struct.EnvFilter.html#directives",
+            "default": null,
             "nullable": true
           },
           "max_buffering_delay_usecs": {
