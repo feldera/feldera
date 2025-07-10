@@ -4844,6 +4844,7 @@ dependencies = [
 name = "feldera-storage"
 version = "0.106.0"
 dependencies = [
+ "anyhow",
  "feldera-types",
  "inventory",
  "libc",
