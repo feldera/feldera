@@ -2556,6 +2556,16 @@ impl ModelHelpers for Mutex<DbModel> {
                 {
                     not_allowed.push("`runtime_config.fault_tolerance`");
                 }
+                if runtime_config
+                    .get("resources")
+                    .map(|v| v.get("storage_mb_max"))
+                    != pipeline
+                        .runtime_config
+                        .get("resources")
+                        .map(|v| v.get("storage_mb_max"))
+                {
+                    not_allowed.push("`runtime_config.resources.storage_mb_max`");
+                }
             }
             if program_code
                 .as_ref()
