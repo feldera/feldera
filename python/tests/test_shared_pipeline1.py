@@ -1,3 +1,5 @@
+import random
+import time
 from typing import Optional
 from feldera.runtime_config import RuntimeConfig, Storage
 from tests import enterprise_only
@@ -44,7 +46,8 @@ class TestCheckpointSync(SharedTestPipeline):
         self.set_runtime_config(RuntimeConfig(storage=Storage(config=storage_config)))
         self.pipeline.start()
 
-        data = [{"c0": i, "c1": str(i)} for i in range(1, 4)]
+        random.seed(time.time())
+        data = [{"c0": i, "c1": str(i)} for i in range(1, random.randint(10, 20))]
         self.pipeline.input_json("t0", data)
         self.pipeline.execute("INSERT INTO t0 VALUES (4, 'exists')")
         got_before = list(self.pipeline.query("SELECT * FROM v0"))
