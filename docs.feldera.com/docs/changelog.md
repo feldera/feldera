@@ -11,7 +11,7 @@ import TabItem from '@theme/TabItem';
 
 <Tabs>
     <TabItem className="changelogItem" value="enterprise" label="Enterprise">
-        ## Unreleased
+        ## 0.103.0
 
         This version changes the default values of various worker threads in our HTTP and IO runtime
         to be equal to the `worker` field in the runtime config.
