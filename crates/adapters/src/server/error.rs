@@ -176,6 +176,7 @@ pub enum PipelineError {
         #[serde(skip)]
         df: Option<Box<DataFusionError>>,
     },
+    LogError(String),
     Suspended,
 }
 
@@ -212,6 +213,18 @@ impl From<ParquetError> for PipelineError {
             error: error.to_string(),
             df: None,
         }
+    }
+}
+
+impl From<tracing_subscriber::reload::Error> for PipelineError {
+    fn from(value: tracing_subscriber::reload::Error) -> Self {
+        Self::LogError(value.to_string())
+    }
+}
+
+impl From<tracing_subscriber::filter::ParseError> for PipelineError {
+    fn from(value: tracing_subscriber::filter::ParseError) -> Self {
+        Self::LogError(value.to_string())
     }
 }
 
@@ -265,6 +278,9 @@ impl Display for PipelineError {
             Self::AdHocQueryError {error, df: _} => {
                 write!(f, "Error during query processing: {error}.")
             }
+            Self::LogError(error) => {
+                write!(f, "Error reloading log directives: {error}.")
+            }
             Self::Suspended => {
                 write!(f, "Operation failed because the pipeline has been suspended.")
             }
@@ -286,6 +302,7 @@ impl DetailedError for PipelineError {
             Self::ControllerError { error } => error.error_code(),
             Self::HeapProfilerError { .. } => Cow::from("HeapProfilerError"),
             Self::AdHocQueryError { .. } => Cow::from("AdHocQueryError"),
+            Self::LogError(_) => Cow::from("LogError"),
             Self::Suspended => Cow::from("Suspended"),
         }
     }
@@ -316,6 +333,7 @@ impl ResponseError for PipelineError {
             Self::HeapProfilerError { .. } => StatusCode::BAD_REQUEST,
             Self::ControllerError { error } => error.status_code(),
             Self::AdHocQueryError { .. } => StatusCode::BAD_REQUEST,
+            Self::LogError(_) => StatusCode::BAD_REQUEST,
             Self::Suspended => StatusCode::SERVICE_UNAVAILABLE,
         }
     }

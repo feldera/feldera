@@ -992,6 +992,66 @@ pub(crate) async fn pipeline_adhoc_sql(
     }
 }
 
+/// Change the log directives in the running pipeline process.
+///
+/// The log directives take the form specified for [tracing_subscriber].  The
+/// new log directives replace the old ones rather than augmenting them.
+///
+/// [tracing_subscriber]:
+/// https://docs.rs/tracing-subscriber/latest/tracing_subscriber/filter/struct.EnvFilter.html#directives
+#[utoipa::path(
+    context_path = "/v0",
+    security(("JSON web token (JWT) or API key" = [])),
+    params(
+        ("pipeline_name" = String, Path, description = "Unique pipeline name"),
+        ("directives" = String, Query, description = "Log directives"),
+    ),
+    responses(
+        (status = OK
+            , description = "Log directives have been updated"),
+        (status = NOT_FOUND
+            , description = "Pipeline with that name does not exist"
+            , body = ErrorResponse
+            , example = json!(examples::error_unknown_pipeline_name())),
+        (status = BAD_REQUEST
+            , description = "Invalid log directives"
+            , body = ErrorResponse),
+        (status = SERVICE_UNAVAILABLE
+            , body = ErrorResponse
+            , examples(
+                ("Pipeline is not deployed" = (value = json!(examples::error_pipeline_interaction_not_deployed()))),
+                ("Pipeline is currently unavailable" = (value = json!(examples::error_pipeline_interaction_currently_unavailable()))),
+                ("Disconnected during response" = (value = json!(examples::error_pipeline_interaction_disconnected()))),
+                ("Response timeout" = (value = json!(examples::error_pipeline_interaction_timeout())))
+            )
+        ),
+        (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
+    ),
+    tag = "Pipeline interaction"
+)]
+#[post("/pipelines/{pipeline_name}/set_logging")]
+pub(crate) async fn set_logging(
+    state: WebData<ServerState>,
+    client: WebData<awc::Client>,
+    tenant_id: ReqData<TenantId>,
+    path: web::Path<String>,
+    request: HttpRequest,
+) -> Result<HttpResponse, ManagerError> {
+    let pipeline_name = path.into_inner();
+    state
+        .runner
+        .forward_http_request_to_pipeline_by_name(
+            client.as_ref(),
+            *tenant_id,
+            &pipeline_name,
+            Method::POST,
+            "set_logging",
+            request.query_string(),
+            None,
+        )
+        .await
+}
+
 /// Generate a completion token for an input connector.
 ///
 /// Returns a token that can be passed to the `/completion_status` endpoint

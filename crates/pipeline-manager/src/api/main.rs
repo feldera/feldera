@@ -93,6 +93,7 @@ only the program-related core fields, and is used by the compiler to discern whe
         endpoints::pipeline_interaction::get_checkpoint_status,
         endpoints::pipeline_interaction::completion_token,
         endpoints::pipeline_interaction::completion_status,
+        endpoints::pipeline_interaction::set_logging,
 
         // API keys
         endpoints::api_key::list_api_keys,
@@ -298,6 +299,7 @@ fn api_scope() -> Scope {
         .service(endpoints::pipeline_interaction::get_pipeline_circuit_profile)
         .service(endpoints::pipeline_interaction::get_pipeline_heap_profile)
         .service(endpoints::pipeline_interaction::pipeline_adhoc_sql)
+        .service(endpoints::pipeline_interaction::set_logging)
         .service(endpoints::pipeline_interaction::completion_token)
         .service(endpoints::pipeline_interaction::completion_status)
         // API keys endpoints
