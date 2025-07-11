@@ -53,9 +53,8 @@ as one of the following:
 
  * Reconfigure the container to use a larger, initially empty storage volume.
    If the pipeline had a checkpoint synchronized to object storage (such as S3),
-   then the pipeline will read and restart from that checkpoint when it starts
-   up.  If there was no such checkpoint, then the pipeline will restart from the
-   beginning.
+   consider setting `storage.backend.config.sync.start_from_checkpoint` in the
+   runtime configuration to restart from the checkpoint.
 
  * Tune your SQL program to use fewer resources.  (Editing the SQL
    program requires clearing storage, which deletes checkpoints.)
