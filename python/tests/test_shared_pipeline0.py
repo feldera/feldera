@@ -157,8 +157,8 @@ class TestPipeline(SharedTestPipeline):
         """
         df_students = pd.read_csv("tests/students.csv")
         df_grades = pd.read_csv("tests/grades.csv")
-        self.pipeline.start()
         out = self.pipeline.listen("average_scores")
+        self.pipeline.start()
         self.pipeline.input_pandas("students", df_students)
         self.pipeline.input_pandas("grades", df_grades)
         self.pipeline.wait_for_completion(True)
@@ -168,8 +168,8 @@ class TestPipeline(SharedTestPipeline):
     def test_pipeline_get(self):
         df_students = pd.read_csv("tests/students.csv")
         df_grades = pd.read_csv("tests/grades.csv")
-        self.pipeline.start()
         out = self.pipeline.listen("average_scores")
+        self.pipeline.start()
         self.pipeline.input_pandas("students", df_students)
         self.pipeline.input_pandas("grades", df_grades)
         self.pipeline.wait_for_completion(True)
@@ -183,8 +183,9 @@ class TestPipeline(SharedTestPipeline):
         out = self.pipeline.listen("average_scores")
         self.pipeline.input_pandas("students", df_students)
         self.pipeline.input_pandas("grades", df_grades)
-        self.pipeline.wait_for_completion(True)
+        self.pipeline.wait_for_completion(False)
         df = out.to_pandas()
+        self.pipeline.stop(force=True)
         assert df.shape[0] == 100
 
     def test_foreach_chunk(self):
@@ -328,8 +329,8 @@ class TestPipeline(SharedTestPipeline):
 
     def test_input_json0(self):
         data = {"insert": {"id": 1}}
-        self.pipeline.start()
         out = self.pipeline.listen("v0")
+        self.pipeline.start()
         self.pipeline.input_json("tbl", data, update_format="insert_delete")
         self.pipeline.wait_for_completion(True)
         out_data = out.to_dict()
@@ -338,8 +339,8 @@ class TestPipeline(SharedTestPipeline):
 
     def test_input_json1(self):
         data = [{"id": 1}, {"id": 2}]
-        self.pipeline.start()
         out = self.pipeline.listen("v0")
+        self.pipeline.start()
         self.pipeline.input_json("tbl", data)
         self.pipeline.wait_for_completion(True)
         out_data = out.to_dict()
@@ -349,8 +350,8 @@ class TestPipeline(SharedTestPipeline):
     @enterprise_only
     def test_suspend(self):
         data = {"insert": {"id": 1}}
-        self.pipeline.start()
         out = self.pipeline.listen("v0")
+        self.pipeline.start()
         self.pipeline.input_json("tbl", data, update_format="insert_delete")
         self.pipeline.wait_for_completion(False)
         self.pipeline.stop(force=False)
@@ -379,8 +380,8 @@ class TestPipeline(SharedTestPipeline):
                 ],
             }
         )
-        self.pipeline.start()
         out = self.pipeline.listen("v_timestamp")
+        self.pipeline.start()
         self.pipeline.input_pandas("tbl_timestamp", df)
         self.pipeline.wait_for_completion(True)
         df_out = out.to_pandas()
@@ -393,8 +394,8 @@ class TestPipeline(SharedTestPipeline):
         """
         data = [{"c1": [12, 34, 56]}]
         expected_data = [{"c1": [34, 56], "insert_delete": 1}]
-        self.pipeline.start()
         out = self.pipeline.listen("v_binary")
+        self.pipeline.start()
         self.pipeline.input_json("tbl_binary", data=data)
         self.pipeline.wait_for_completion(True)
         got = out.to_dict()
@@ -409,8 +410,8 @@ class TestPipeline(SharedTestPipeline):
 
         data = [{"c1": 2.25}]
         expected = [{"c1": Decimal("5.00"), "insert_delete": 1}]
-        self.pipeline.start()
         out = self.pipeline.listen("v_decimal")
+        self.pipeline.start()
         self.pipeline.input_json("tbl_decimal", data=data)
         self.pipeline.wait_for_completion(True)
         got = out.to_dict()
@@ -464,8 +465,8 @@ class TestPipeline(SharedTestPipeline):
                 "insert_delete": 1,
             }
         ]
-        self.pipeline.start()
         out = self.pipeline.listen("v_datetime")
+        self.pipeline.start()
         self.pipeline.input_json("tbl_datetime", data)
         self.pipeline.wait_for_completion(True)
         got = out.to_dict()
@@ -491,8 +492,8 @@ class TestPipeline(SharedTestPipeline):
                 "c8": "c",
             }
         ]
-        self.pipeline.start()
         out = self.pipeline.listen("v_simple")
+        self.pipeline.start()
         self.pipeline.input_json("tbl_simple", data)
         self.pipeline.wait_for_completion(True)
         got = out.to_dict()
@@ -517,8 +518,8 @@ class TestPipeline(SharedTestPipeline):
         got = out.to_dict()
         assert expected == got
         # Second round: single dict
-        self.pipeline.start()
         out = self.pipeline.listen("v_map")
+        self.pipeline.start()
         self.pipeline.input_json("tbl_map", {"c1": {"a": 1, "b": 2}})
         self.pipeline.wait_for_completion(True)
         got = out.to_dict()
@@ -532,8 +533,8 @@ class TestPipeline(SharedTestPipeline):
         import uuid
 
         data = [{"c0": uuid.uuid4()}]
-        self.pipeline.start()
         out = self.pipeline.listen("v_uuid")
+        self.pipeline.start()
         self.pipeline.input_json("tbl_uuid", data)
         self.pipeline.wait_for_completion(True)
         got = out.to_dict()
