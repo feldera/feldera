@@ -44,7 +44,7 @@ impl<T> UnwrapStorage<T> for Result<T, ReaderError> {
 
 fn unwrap_storage_failed(error: String) -> ! {
     panic!(
-        r#"The pipeline crashed because writing to storage failed: {error}.
+        r#"The pipeline crashed because storage I/O failed: {error}.
 
 The crash was likely caused by storage exhaustion or storage failure, which will
 likely happen again, so it is not recommended to automatically restart the
