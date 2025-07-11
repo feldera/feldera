@@ -28,3 +28,4 @@ our [free online sandbox](https://try.feldera.com).
 1. [**Quickstart**](quickstart.md)
 2. [**Helm guide**](helm-guide.md)
 3. [**Kubernetes guides**](kubernetes-guides)
+3. [**Authentication**](authentication)
