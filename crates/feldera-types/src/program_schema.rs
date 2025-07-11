@@ -952,8 +952,14 @@ impl ColumnType {
     pub fn is_integral_type(&self) -> bool {
         matches!(
             &self.typ,
-            SqlType::TinyInt | SqlType::SmallInt | SqlType::Int | SqlType::BigInt |
-            SqlType::UTinyInt | SqlType::USmallInt | SqlType::UInt | SqlType::UBigInt
+            SqlType::TinyInt
+                | SqlType::SmallInt
+                | SqlType::Int
+                | SqlType::BigInt
+                | SqlType::UTinyInt
+                | SqlType::USmallInt
+                | SqlType::UInt
+                | SqlType::UBigInt
         )
     }
 
