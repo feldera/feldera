@@ -7076,6 +7076,34 @@
           },
           {
             "type": "string",
+            "description": "SQL `TINYINT UNSIGNED` type.",
+            "enum": [
+              "UTinyInt"
+            ]
+          },
+          {
+            "type": "string",
+            "description": "SQL `SMALLINT UNSIGNED` type.",
+            "enum": [
+              "USmallInt"
+            ]
+          },
+          {
+            "type": "string",
+            "description": "SQL `UNSIGNED`, `INTEGER UNSIGNED`, `INT UNSIGNED` type.",
+            "enum": [
+              "UInt"
+            ]
+          },
+          {
+            "type": "string",
+            "description": "SQL `BIGINT UNSIGNED` type.",
+            "enum": [
+              "UBigInt"
+            ]
+          },
+          {
+            "type": "string",
             "description": "SQL `REAL` or `FLOAT4` or `FLOAT32` type.",
             "enum": [
               "Real"
