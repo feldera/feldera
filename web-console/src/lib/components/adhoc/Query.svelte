@@ -189,6 +189,7 @@
                   {#if result.columns.length}
                     <thead>
                       <tr>
+                        <th class="bg-white-dark sticky top-0 z-10 {itemHeight}">#</th>
                         {#each result.columns as column}
                           <SqlColumnHeader
                             {column}
@@ -208,6 +209,7 @@
               {@const row = rows[index]}
               {#if !row}{:else if 'cells' in row}
                 <tr {style} class="{itemHeight} whitespace-nowrap odd:bg-white odd:dark:bg-black">
+                  <td class="select-none text-right font-mono">{index}</td>
                   {#each row.cells as value}
                     <SQLValue
                       {value}
