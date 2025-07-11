@@ -233,6 +233,10 @@ mod kafka_connect_json_converter {
             SqlType::SmallInt => RepresentationType::Int16,
             SqlType::Int => RepresentationType::Int32,
             SqlType::BigInt => RepresentationType::Int64,
+            SqlType::UTinyInt => RepresentationType::Int16,
+            SqlType::USmallInt => RepresentationType::Int32,
+            SqlType::UInt => RepresentationType::Int64,
+            SqlType::UBigInt => RepresentationType::String,
             // This requires Kafka connector to be configure with `"decimal.handling.mode":
             // "string"`. Other encodings would require serde to know the scale of the
             // decimal number, which isn't preserved in Rust.

@@ -409,6 +409,14 @@ pub enum SqlType {
     Int,
     /// SQL `BIGINT` or `INT64` type.
     BigInt,
+    /// SQL `TINYINT UNSIGNED` type.
+    UTinyInt,
+    /// SQL `SMALLINT UNSIGNED` type.
+    USmallInt,
+    /// SQL `UNSIGNED`, `INTEGER UNSIGNED`, `INT UNSIGNED` type.
+    UInt,
+    /// SQL `BIGINT UNSIGNED` type.
+    UBigInt,
     /// SQL `REAL` or `FLOAT4` or `FLOAT32` type.
     Real,
     /// SQL `DOUBLE` or `FLOAT8` or `FLOAT64` type.
@@ -476,6 +484,10 @@ impl<'de> Deserialize<'de> for SqlType {
             "smallint" => Ok(SqlType::SmallInt),
             "integer" => Ok(SqlType::Int),
             "bigint" => Ok(SqlType::BigInt),
+            "utinyint" => Ok(SqlType::UTinyInt),
+            "usmallint" => Ok(SqlType::USmallInt),
+            "uinteger" => Ok(SqlType::UInt),
+            "ubigint" => Ok(SqlType::UBigInt),
             "real" => Ok(SqlType::Real),
             "double" => Ok(SqlType::Double),
             "decimal" => Ok(SqlType::Decimal),
@@ -511,6 +523,10 @@ impl Serialize for SqlType {
             SqlType::SmallInt => "SMALLINT",
             SqlType::Int => "INTEGER",
             SqlType::BigInt => "BIGINT",
+            SqlType::UTinyInt => "UTINYINT",
+            SqlType::USmallInt => "USMALLINT",
+            SqlType::UInt => "UINTEGER",
+            SqlType::UBigInt => "UBIGINT",
             SqlType::Real => "REAL",
             SqlType::Double => "DOUBLE",
             SqlType::Decimal => "DECIMAL",
@@ -712,6 +728,58 @@ impl ColumnType {
         }
     }
 
+    pub fn utinyint(nullable: bool) -> Self {
+        ColumnType {
+            typ: SqlType::UTinyInt,
+            nullable,
+            precision: None,
+            scale: None,
+            component: None,
+            fields: None,
+            key: None,
+            value: None,
+        }
+    }
+
+    pub fn usmallint(nullable: bool) -> Self {
+        ColumnType {
+            typ: SqlType::USmallInt,
+            nullable,
+            precision: None,
+            scale: None,
+            component: None,
+            fields: None,
+            key: None,
+            value: None,
+        }
+    }
+
+    pub fn uint(nullable: bool) -> Self {
+        ColumnType {
+            typ: SqlType::UInt,
+            nullable,
+            precision: None,
+            scale: None,
+            component: None,
+            fields: None,
+            key: None,
+            value: None,
+        }
+    }
+
+    pub fn ubigint(nullable: bool) -> Self {
+        ColumnType {
+            typ: SqlType::UBigInt,
+            nullable,
+            precision: None,
+            scale: None,
+            component: None,
+            fields: None,
+            key: None,
+            value: None,
+        }
+    }
+
     pub fn double(nullable: bool) -> Self {
         ColumnType {
             typ: SqlType::Double,
@@ -884,7 +952,8 @@ impl ColumnType {
     pub fn is_integral_type(&self) -> bool {
         matches!(
             &self.typ,
-            SqlType::TinyInt | SqlType::SmallInt | SqlType::Int | SqlType::BigInt
+            SqlType::TinyInt | SqlType::SmallInt | SqlType::Int | SqlType::BigInt |
+            SqlType::UTinyInt | SqlType::USmallInt | SqlType::UInt | SqlType::UBigInt
         )
     }
 
@@ -915,6 +984,10 @@ mod tests {
             ("SmallInt", SqlType::SmallInt),
             ("Integer", SqlType::Int),
             ("BigInt", SqlType::BigInt),
+            ("UTinyInt", SqlType::UTinyInt),
+            ("USmallInt", SqlType::USmallInt),
+            ("UInteger", SqlType::UInt),
+            ("UBigInt", SqlType::UBigInt),
             ("Real", SqlType::Real),
             ("Double", SqlType::Double),
             ("Decimal", SqlType::Decimal),
@@ -1010,6 +1083,13 @@ mod tests {
       "case_sensitive" : false,
       "columntype" : {
         "type" : "INTEGER",
+        "nullable" : true
+      }
+    }, {
+      "name" : "age",
+      "case_sensitive" : false,
+      "columntype" : {
+        "type" : "UINTEGER",
         "nullable" : true
       }
     }, {
@@ -1213,6 +1293,10 @@ mod tests {
           "precision" : 30,
           "name" : "LASTNAME"
         }, {
+          "type" : "UINTEGER",
+          "nullable" : true,
+          "name" : "AGE"
+        }, {
           "fields" : {
             "fields" : [ {
               "type" : "VARCHAR",
@@ -1255,9 +1339,10 @@ mod tests {
         let p0_fields = p0.columntype.fields.as_ref().unwrap();
         assert_eq!(p0_fields[0].columntype.typ, SqlType::Varchar);
         assert_eq!(p0_fields[1].columntype.typ, SqlType::Varchar);
-        assert_eq!(p0_fields[2].columntype.typ, SqlType::Struct);
-        assert_eq!(p0_fields[2].name, "ADDRESS");
-        let address = &p0_fields[2].columntype.fields.as_ref().unwrap();
+        assert_eq!(p0_fields[2].columntype.typ, SqlType::UInt);
+        assert_eq!(p0_fields[3].columntype.typ, SqlType::Struct);
+        assert_eq!(p0_fields[3].name, "ADDRESS");
+        let address = &p0_fields[3].columntype.fields.as_ref().unwrap();
         assert_eq!(address.len(), 4);
         assert_eq!(address[0].name, "STREET");
         assert_eq!(address[0].columntype.typ, SqlType::Varchar);

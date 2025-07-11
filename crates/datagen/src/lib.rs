@@ -848,6 +848,10 @@ impl<'a> RecordGenerator<'a> {
             | SqlType::SmallInt
             | SqlType::Int
             | SqlType::BigInt
+            | SqlType::UTinyInt
+            | SqlType::USmallInt
+            | SqlType::UInt
+            | SqlType::UBigInt
             | SqlType::Real
             | SqlType::Double
             | SqlType::Decimal => Value::Number(serde_json::Number::from(0)),
@@ -913,6 +917,10 @@ impl<'a> RecordGenerator<'a> {
             SqlType::SmallInt => self.generate_integer::<i16>(field, settings, incr, rng, obj),
             SqlType::Int => self.generate_integer::<i32>(field, settings, incr, rng, obj),
             SqlType::BigInt => self.generate_integer::<i64>(field, settings, incr, rng, obj),
+            SqlType::UTinyInt => self.generate_integer::<u8>(field, settings, incr, rng, obj),
+            SqlType::USmallInt => self.generate_integer::<u16>(field, settings, incr, rng, obj),
+            SqlType::UInt => self.generate_integer::<u32>(field, settings, incr, rng, obj),
+            SqlType::UBigInt => self.generate_integer::<u64>(field, settings, incr, rng, obj),
             SqlType::Real => self.generate_real::<f64>(field, settings, incr, rng, obj),
             SqlType::Double => self.generate_real::<f64>(field, settings, incr, rng, obj),
             SqlType::Decimal => self.generate_real::<f64>(field, settings, incr, rng, obj),
@@ -1632,8 +1640,8 @@ impl<'a> RecordGenerator<'a> {
         let max = if field.columntype.scale.is_none() {
             N::max_value().to_i64().unwrap_or(i64::MAX)
         } else {
-            // We don't have a SQL type for u8 but we need one for the value type of the binary array
-            // so by setting scale on tinyint we currently indicate that we're dealing with a u8
+            // We need this for binary array;
+            // by setting scale on tinyint we currently indicate that we're dealing with a u8
             // rather than an i8
             u8::MAX as i64
         };

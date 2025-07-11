@@ -258,6 +258,10 @@ pub fn relation_to_arrow_fields(fields: &[Field], delta_lake: bool) -> Vec<Arrow
             SqlType::SmallInt => DataType::Int16,
             SqlType::Int => DataType::Int32,
             SqlType::BigInt => DataType::Int64,
+            SqlType::UTinyInt => DataType::UInt8,
+            SqlType::USmallInt => DataType::UInt16,
+            SqlType::UInt => DataType::UInt32,
+            SqlType::UBigInt => DataType::UInt64,
             SqlType::Real => DataType::Float32,
             SqlType::Double => DataType::Float64,
             SqlType::Decimal => DataType::Decimal128(
