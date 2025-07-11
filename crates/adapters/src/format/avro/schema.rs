@@ -253,7 +253,10 @@ pub fn validate_field_schema(
     let expected = match field_schema.typ {
         SqlType::Boolean => AvroSchema::Boolean,
         SqlType::TinyInt | SqlType::SmallInt | SqlType::Int => AvroSchema::Int,
+        SqlType::UTinyInt | SqlType::USmallInt => AvroSchema::Int,
+        SqlType::UInt => AvroSchema::Long,
         SqlType::BigInt => AvroSchema::Long,
+        SqlType::UBigInt => AvroSchema::String,
         SqlType::Real => AvroSchema::Float,
         SqlType::Double => AvroSchema::Double,
         SqlType::Decimal => {
@@ -468,6 +471,10 @@ impl AvroSchemaBuilder {
             SqlType::SmallInt => AvroSchema::Int,
             SqlType::Int => AvroSchema::Int,
             SqlType::BigInt => AvroSchema::Long,
+            SqlType::UTinyInt => AvroSchema::Int,
+            SqlType::USmallInt => AvroSchema::Int,
+            SqlType::UInt => AvroSchema::Long,
+            SqlType::UBigInt => AvroSchema::String,
             SqlType::Real => AvroSchema::Float,
             SqlType::Double => AvroSchema::Double,
             SqlType::Decimal => {
