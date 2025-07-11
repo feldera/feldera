@@ -100,8 +100,7 @@ jobs:
           RUST_BACKTRACE: 1
 
       - name: Run python tests
-        #if: ${{ vars.CI_DRY_RUN != 'true' }}
-        if: false
+        if: ${{ vars.CI_DRY_RUN != 'true' }}
         run: uv run --locked pytest . --timeout=600
         working-directory: python
         env:
@@ -109,8 +108,7 @@ jobs:
           IN_CI: 1 # We use this flag to skip some kafka tests in the python code base
 
       - name: Run python aggregate tests
-        #if: ${{ vars.CI_DRY_RUN != 'true' }}
-        if: false
+        if: ${{ vars.CI_DRY_RUN != 'true' }}
         run: uv run --locked ./tests/aggregate_tests/main.py
         working-directory: python
         env:
