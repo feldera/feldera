@@ -51,10 +51,6 @@ likely happen again, so it is not recommended to automatically restart the
 pipeline.  To avoid repeating the crash, take some remedial action first, such
 as one of the following:
 
- * Increase the size of the storage volume available to the container, retaining
-   the existing contents.  The pipeline will restart from the latest checkpoint,
-   if any, when it starts up.
-
  * Reconfigure the container to use a larger, initially empty storage volume.
    If the pipeline had a checkpoint synchronized to object storage (such as S3),
    then the pipeline will read and restart from that checkpoint when it starts
