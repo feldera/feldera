@@ -669,7 +669,7 @@ mod tests {
 
         for mut vec in input_vecs {
             input_handle.append(&mut vec);
-            dbsp.step().unwrap();
+            dbsp.transaction().unwrap();
         }
     }
 }

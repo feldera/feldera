@@ -569,7 +569,7 @@ mod test {
             let expected_output = OrdZSet::from_tuples((), input_tuples);
 
             input.append(&mut input_vec);
-            dbsp.step().unwrap();
+            dbsp.transaction().unwrap();
             let output = output.consolidate();
             assert_eq!(output, expected_output);
         }
@@ -609,13 +609,13 @@ mod test {
 
             input.append(&mut input_vec.clone());
             guard.set_for_all(false);
-            dbsp.step().unwrap();
+            dbsp.transaction().unwrap();
             let output1 = output.consolidate();
             assert_eq!(output1, OrdZSet::empty());
 
             input.append(&mut input_vec);
             guard.set_for_all(true);
-            dbsp.step().unwrap();
+            dbsp.transaction().unwrap();
             let output2 = output.consolidate();
 
             assert_eq!(output2, expected_output);

@@ -71,7 +71,7 @@ fn spawn_dbsp_consumer(
                 dbsp.enable_cpu_profiler().unwrap();
             }
             while let Ok(()) = step_do_rx.recv() {
-                dbsp.step().unwrap();
+                dbsp.transaction().unwrap();
                 step_done_tx.send(()).unwrap();
             }
             if let Some(profile_path) = profile_path {

@@ -1131,17 +1131,17 @@ mod test {
 
         for (round, batch) in input_batches().into_iter().enumerate() {
             input_handle.set_for_worker(round % workers, batch);
-            dbsp.step().unwrap();
+            dbsp.transaction().unwrap();
         }
 
         for (round, batch) in input_batches().into_iter().enumerate() {
             input_handle.update_for_worker(round % workers, |b| *b = batch);
-            dbsp.step().unwrap();
+            dbsp.transaction().unwrap();
         }
 
         for batch in input_batches().into_iter() {
             input_handle.set_for_all(batch);
-            dbsp.step().unwrap();
+            dbsp.transaction().unwrap();
         }
 
         dbsp.kill().unwrap();
@@ -1205,7 +1205,7 @@ mod test {
 
         for mut vec in input_vecs().into_iter() {
             input_handle.append(&mut vec);
-            dbsp.step().unwrap();
+            dbsp.transaction().unwrap();
         }
 
         for vec in input_vecs().into_iter() {
@@ -1214,14 +1214,14 @@ mod test {
             }
             input_handle.push(5, 1);
             input_handle.push(5, -1);
-            dbsp.step().unwrap();
+            dbsp.transaction().unwrap();
         }
 
         for mut vec in input_vecs().into_iter() {
             input_handle.append(&mut vec);
         }
         input_handle.clear_input();
-        dbsp.step().unwrap();
+        dbsp.transaction().unwrap();
 
         dbsp.kill().unwrap();
     }
@@ -1310,14 +1310,14 @@ mod test {
 
         for mut vec in input_indexed_vecs().into_iter() {
             input_handle.append(&mut vec);
-            dbsp.step().unwrap();
+            dbsp.transaction().unwrap();
         }
 
         for vec in input_indexed_vecs().into_iter() {
             for Tup2(k, v) in vec.into_iter() {
                 input_handle.push(k, (v.0, v.1));
             }
-            dbsp.step().unwrap();
+            dbsp.transaction().unwrap();
         }
 
         dbsp.kill().unwrap();
@@ -1402,7 +1402,7 @@ mod test {
 
         for mut vec in input_set_updates().into_iter() {
             input_handle.append(&mut vec);
-            dbsp.step().unwrap();
+            dbsp.transaction().unwrap();
         }
 
         dbsp.kill().unwrap();
@@ -1414,7 +1414,7 @@ mod test {
             for Tup2(k, b) in vec.into_iter() {
                 input_handle.push(k, b);
             }
-            dbsp.step().unwrap();
+            dbsp.transaction().unwrap();
         }
 
         dbsp.kill().unwrap();
@@ -1640,7 +1640,7 @@ mod test {
 
         for mut vec in inputs().into_iter() {
             input_handle.append(&mut vec);
-            dbsp.step().unwrap();
+            dbsp.transaction().unwrap();
         }
 
         dbsp.kill().unwrap();
@@ -1654,7 +1654,7 @@ mod test {
             for Tup2(k, v) in vec.into_iter() {
                 input_handle.push(k, v);
             }
-            dbsp.step().unwrap();
+            dbsp.transaction().unwrap();
         }
 
         dbsp.kill().unwrap();
