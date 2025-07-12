@@ -1315,13 +1315,13 @@ mod test {
     fn test_partitioned_over_range_2() {
         let (mut circuit, input) = partition_rolling_aggregate_circuit(u64::MAX, None);
 
-        circuit.step().unwrap();
+        circuit.transaction().unwrap();
 
         input.append(&mut vec![Tup2(2u64, Tup2(Tup2(110271u64, 100i64), 1i64))]);
-        circuit.step().unwrap();
+        circuit.transaction().unwrap();
 
         input.append(&mut vec![Tup2(2u64, Tup2(Tup2(0u64, 100i64), 1i64))]);
-        circuit.step().unwrap();
+        circuit.transaction().unwrap();
 
         circuit.kill().unwrap();
     }
@@ -1330,7 +1330,7 @@ mod test {
     fn test_partitioned_over_range() {
         let (mut circuit, input) = partition_rolling_aggregate_circuit(u64::MAX, None);
 
-        circuit.step().unwrap();
+        circuit.transaction().unwrap();
 
         input.append(&mut vec![
             Tup2(0u64, Tup2(Tup2(1u64, 100i64), 1)),
@@ -1338,7 +1338,7 @@ mod test {
             Tup2(0, Tup2(Tup2(20, 100), 1)),
             Tup2(0, Tup2(Tup2(30, 100), 1)),
         ]);
-        circuit.step().unwrap();
+        circuit.transaction().unwrap();
 
         input.append(&mut vec![
             Tup2(0u64, Tup2(Tup2(5u64, 100i64), 1)),
@@ -1346,7 +1346,7 @@ mod test {
             Tup2(0, Tup2(Tup2(25, 100), 1)),
             Tup2(0, Tup2(Tup2(35, 100), 1)),
         ]);
-        circuit.step().unwrap();
+        circuit.transaction().unwrap();
 
         input.append(&mut vec![
             Tup2(0u64, Tup2(Tup2(1u64, 100i64), -1)),
@@ -1360,7 +1360,7 @@ mod test {
             Tup2(1, Tup2(Tup2(2000, 100), 1)),
             Tup2(1, Tup2(Tup2(3000, 100), 1)),
         ]);
-        circuit.step().unwrap();
+        circuit.transaction().unwrap();
 
         circuit.kill().unwrap();
     }
@@ -1371,10 +1371,10 @@ mod test {
 
         for _ in 0..1000 {
             input.append(&mut vec![Tup2(0u64, Tup2(Tup2(1u64, 100i64), 1))]);
-            circuit.step().unwrap();
+            circuit.transaction().unwrap();
 
             input.append(&mut vec![Tup2(0u64, Tup2(Tup2(1u64, 100i64), -1))]);
-            circuit.step().unwrap();
+            circuit.transaction().unwrap();
         }
 
         circuit.kill().unwrap();
@@ -1593,7 +1593,7 @@ mod test {
 
             for mut batch in trace {
                 input.append(&mut batch);
-                circuit.step().unwrap();
+                circuit.transaction().unwrap();
             }
 
             circuit.kill().unwrap();
@@ -1607,7 +1607,7 @@ mod test {
 
             for mut batch in trace {
                 input.append(&mut batch);
-                circuit.step().unwrap();
+                circuit.transaction().unwrap();
             }
 
             circuit.kill().unwrap();
@@ -1619,7 +1619,7 @@ mod test {
 
             for mut batch in trace {
                 input.append(&mut batch);
-                circuit.step().unwrap();
+                circuit.transaction().unwrap();
             }
 
             circuit.kill().unwrap();

@@ -797,7 +797,7 @@ mod test {
             // CCNum = 3
             Tup2(Tup3(100, 3, F32::new(30.0)), 1),
         ]);
-        dbsp.step().unwrap();
+        dbsp.transaction().unwrap();
 
         assert_eq!(
             result.consolidate(),
@@ -819,7 +819,7 @@ mod test {
             // CCNum = 3
             Tup2(Tup3(110, 3, "C110".to_string()), 1),
         ]);
-        dbsp.step().unwrap();
+        dbsp.transaction().unwrap();
 
         assert_eq!(
             result.consolidate(),
@@ -848,7 +848,7 @@ mod test {
 
         transactions.append(&mut vec![Tup2(Tup3(200, 3, F32::new(30.0)), 1)]);
 
-        dbsp.step().unwrap();
+        dbsp.transaction().unwrap();
 
         assert_eq!(
             result.consolidate(),
@@ -874,7 +874,7 @@ mod test {
             Tup2(Tup3(110, 3, "C105".to_string()), 1),
         ]);
 
-        dbsp.step().unwrap();
+        dbsp.transaction().unwrap();
 
         assert_eq!(result.consolidate(), zset! {});
 
@@ -889,7 +889,7 @@ mod test {
             // CCNum = 3
             Tup2(Tup3(100, 3, F32::new(300.0)), 1),
         ]);
-        dbsp.step().unwrap();
+        dbsp.transaction().unwrap();
 
         assert_eq!(
             result.consolidate(),
@@ -909,7 +909,7 @@ mod test {
             Tup2(Tup3(10, 3, "C10".to_string()), -1),
         ]);
 
-        dbsp.step().unwrap();
+        dbsp.transaction().unwrap();
 
         assert_eq!(result.consolidate(), zset! {});
 
@@ -927,7 +927,7 @@ mod test {
             Tup2(Tup3(110, 3, "C110".to_string()), -1),
         ]);
 
-        dbsp.step().unwrap();
+        dbsp.transaction().unwrap();
 
         assert_eq!(
             result.consolidate(),
@@ -958,16 +958,16 @@ mod test {
             Tup2(Tup3(37, 0, "L".to_string()), 1),
             Tup2(Tup3(0, 0, "A".to_string()), 1),
         ]);
-        dbsp.step().unwrap();
+        dbsp.transaction().unwrap();
 
         transactions.append(&mut vec![Tup2(Tup3(37, 0, F32::new(0.0)), 1)]);
-        dbsp.step().unwrap();
+        dbsp.transaction().unwrap();
 
         users.append(&mut vec![Tup2(Tup3(37, 0, "L".to_string()), -1)]);
-        dbsp.step().unwrap();
+        dbsp.transaction().unwrap();
 
         users.append(&mut vec![Tup2(Tup3(0, 0, "A".to_string()), -1)]);
-        dbsp.step().unwrap();
+        dbsp.transaction().unwrap();
     }
 
     /// Reference implementaton of asof-join for testing.
@@ -1069,14 +1069,14 @@ mod test {
                 htransactions.append(&mut transactions);
                 husers.append(&mut users);
 
-                dbsp.step().unwrap();
+                dbsp.transaction().unwrap();
             }
 
             for (mut transactions, mut users) in deletions {
                 htransactions.append(&mut transactions);
                 husers.append(&mut users);
 
-                dbsp.step().unwrap();
+                dbsp.transaction().unwrap();
             }
         }
     }

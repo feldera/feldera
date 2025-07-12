@@ -40,7 +40,7 @@
 //! thread parks itself waiting for the next ready notification.
 
 use std::{
-    cell::{RefCell, RefMut},
+    cell::{Ref, RefCell, RefMut},
     collections::{BTreeSet, HashMap, HashSet},
     panic,
     sync::{Arc, Mutex},
@@ -148,7 +148,11 @@ struct Inner {
     /// True when the scheduler is waiting for at least one task to become ready.
     waiting: bool,
 
+    step_in_progress: bool,
+
     flush: bool,
+
+    flush_complete: bool,
 
     // Reset on each macrostep
     unflushed_operators: usize,
@@ -314,7 +318,9 @@ impl Inner {
             notifications: Notifications::new(num_async_nodes),
             handles: JoinSet::new(),
             waiting: false,
+            step_in_progress: false,
             flush: false,
+            flush_complete: false,
             unflushed_operators: nodes.len(),
             global_flush_consensus: Consensus::new(),
         };
@@ -385,43 +391,78 @@ impl Inner {
         for task in self.tasks.values_mut() {
             task.flush_state = FlushState::UnflushedDependencies(task.num_predecessors);
         }
-        self.flush = false
+        self.step_in_progress = true;
+        self.flush = false;
+        self.flush_complete = false;
+    }
+
+    fn flush(&mut self) -> Result<(), Error> {
+        if !self.step_in_progress {
+            return Err(Error::FlushWithoutStep);
+        }
+        self.flush = true;
+
+        Ok(())
+    }
+
+    fn is_flush_complete(&self) -> bool {
+        self.flush_complete
     }
 
     async fn microstep<C>(&mut self, circuit: &C) -> Result<(), Error>
     where
         C: Circuit,
     {
+        if !self.step_in_progress {
+            return Err(Error::MicrostepWithoutStep);
+        }
+
         circuit.log_scheduler_event(&SchedulerEvent::step_start(circuit.global_id()));
         let result = self.do_microstep(circuit).await;
+        if self.flush {
+            self.flush_complete = self
+                .global_flush_consensus
+                .check(self.unflushed_operators == 0)
+                .await?;
+        }
+
         circuit.log_scheduler_event(&SchedulerEvent::step_end(circuit.global_id()));
+        if self.flush_complete {
+            self.step_in_progress = false;
+            circuit.tick();
+        }
         result
     }
 
-    async fn finish_step<C>(&mut self, circuit: &C) -> Result<(), Error>
-    where
-        C: Circuit,
-    {
-        self.flush = true;
-        // All workers must agree on whether they are ready to finish the step.
-        while !self
-            .global_flush_consensus
-            .check(self.unflushed_operators == 0)
-            .await?
-        {
-            self.microstep(circuit).await?;
-        }
+    // async fn finish_step<C>(&mut self, circuit: &C) -> Result<(), Error>
+    // where
+    //     C: Circuit,
+    // {
+    //     self.flush = true;
+    //     // All workers must agree on whether they are ready to finish the step.
+    //     while !self
+    //         .global_flush_consensus
+    //         .check(self.unflushed_operators == 0)
+    //         .await?
+    //     {
+    //         self.microstep(circuit).await?;
+    //     }
 
-        Ok(())
-    }
+    //     Ok(())
+    // }
 
-    async fn step<C>(&mut self, circuit: &C) -> Result<(), Error>
-    where
-        C: Circuit,
-    {
-        self.start_step();
-        self.finish_step(circuit).await
-    }
+    // async fn step<C>(&mut self, circuit: &C) -> Result<(), Error>
+    // where
+    //     C: Circuit,
+    // {
+    //     self.start_step();
+    //     self.flush();
+    //     while !self.flush_complete {
+    //         self.microstep(circuit).await?;
+    //     }
+
+    //     Ok(())
+    // }
 
     async fn do_microstep<C>(&mut self, circuit: &C) -> Result<(), Error>
     where
@@ -524,6 +565,13 @@ impl Inner {
 pub struct DynamicScheduler(Option<RefCell<Inner>>);
 
 impl DynamicScheduler {
+    fn inner(&self) -> Ref<'_, Inner> {
+        self.0
+            .as_ref()
+            .expect("DynamicScheduler: prepare() must be called before running the circuit")
+            .borrow()
+    }
+
     fn inner_mut(&self) -> RefMut<'_, Inner> {
         self.0
             .as_ref()
@@ -566,25 +614,40 @@ impl Scheduler for DynamicScheduler {
         inner.microstep(circuit).await
     }
 
-    #[allow(clippy::await_holding_refcell_ref)]
-    async fn finish_step<C>(&self, circuit: &C) -> Result<(), Error>
-    where
-        C: Circuit,
-    {
-        let inner = &mut *self.inner_mut();
+    // #[allow(clippy::await_holding_refcell_ref)]
+    // async fn finish_step<C>(&self, circuit: &C) -> Result<(), Error>
+    // where
+    //     C: Circuit,
+    // {
+    //     let inner = &mut *self.inner_mut();
 
-        inner.finish_step(circuit).await
+    //     inner.finish_step(circuit).await
+    // }
+
+    // #[allow(clippy::await_holding_refcell_ref)]
+    // async fn step<C>(&self, circuit: &C) -> Result<(), Error>
+    // where
+    //     C: Circuit,
+    // {
+    //     let inner = &mut *self.inner_mut();
+
+    //     let result = inner.step(circuit).await;
+    //     circuit.tick();
+    //     result
+    // }
+
+    fn flush(&self) -> Result<(), Error> {
+        self.inner_mut().flush()
     }
 
-    #[allow(clippy::await_holding_refcell_ref)]
-    async fn step<C>(&self, circuit: &C) -> Result<(), Error>
-    where
-        C: Circuit,
-    {
-        let inner = &mut *self.inner_mut();
-
-        let result = inner.step(circuit).await;
-        circuit.tick();
-        result
+    fn is_flush_complete(&self) -> bool {
+        self.inner().is_flush_complete()
     }
+
+    // async fn finish_step<C>(&self, circuit: &C) -> Result<(), Error>
+    // where
+    //     C: Circuit,
+    // {
+    //     todo!()
+    // }
 }

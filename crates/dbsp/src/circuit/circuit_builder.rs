@@ -5996,7 +5996,7 @@ where
     }
 
     fn flush(&mut self) {
-        self.executor.flush();
+        self.executor.flush().unwrap();
     }
 
     fn is_flush_complete(&self) -> bool {
@@ -6151,6 +6151,14 @@ impl CircuitHandle {
             .map_err(DbspError::Scheduler)
     }
 
+    pub fn flush(&self) -> Result<(), DbspError> {
+        self.executor.flush().map_err(DbspError::Scheduler)
+    }
+
+    pub fn is_flush_complete(&self) -> bool {
+        self.executor.is_flush_complete()
+    }
+
     pub fn microstep(&self) -> Result<(), DbspError> {
         self.tokio_runtime
             .block_on(async {
@@ -6162,16 +6170,16 @@ impl CircuitHandle {
             .map_err(DbspError::Scheduler)
     }
 
-    pub fn finish_step(&self) -> Result<(), DbspError> {
-        self.tokio_runtime
-            .block_on(async {
-                let local_set = LocalSet::new();
-                local_set
-                    .run_until(async { self.executor.finish_step(&self.circuit).await })
-                    .await
-            })
-            .map_err(DbspError::Scheduler)
-    }
+    // pub fn finish_step(&self) -> Result<(), DbspError> {
+    //     self.tokio_runtime
+    //         .block_on(async {
+    //             let local_set = LocalSet::new();
+    //             local_set
+    //                 .run_until(async { self.executor.finish_step(&self.circuit).await })
+    //                 .await
+    //         })
+    //         .map_err(DbspError::Scheduler)
+    // }
 
     pub fn commit(&mut self, base: &StoragePath) -> Result<(), DbspError> {
         // if Runtime::worker_index() == 0 {
