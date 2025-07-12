@@ -6,6 +6,7 @@ use super::{
 };
 use crate::circuit::metrics::{FILES_CREATED, FILES_DELETED};
 use crate::storage::{buffer_cache::FBuf, init};
+use crate::Runtime;
 use feldera_storage::tokio::TOKIO;
 use feldera_storage::{
     append_to_path, default_read_async, StorageBackend, StorageBackendFactory, StorageFileType,
@@ -251,6 +252,15 @@ impl PosixWriter {
     }
 
     fn flush(&mut self) -> Result<(), IoError> {
+        if let Some(storage_mb_max) = Runtime::with_dev_tweaks(|tweaks| tweaks.storage_mb_max) {
+            let usage_mb = (self.drop.usage.load(Ordering::Relaxed) / 1024 / 1024)
+                .max(0)
+                .cast_unsigned();
+            if usage_mb > storage_mb_max {
+                return Err(IoError::from(ErrorKind::StorageFull));
+            }
+        }
+
         let mut bufs = self
             .buffers
             .iter()
