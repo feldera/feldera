@@ -1,6 +1,7 @@
 package org.dbsp.sqlCompiler.compiler.visitors.unusedFields;
 
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.ResolveReferences;
@@ -9,6 +10,10 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.SymbolicInterpreter;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.IDBSPDeclaration;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
+import org.dbsp.sqlCompiler.ir.aggregate.IAggregate;
+import org.dbsp.sqlCompiler.ir.aggregate.LinearAggregate;
+import org.dbsp.sqlCompiler.ir.aggregate.MinMaxAggregate;
+import org.dbsp.sqlCompiler.ir.aggregate.NonLinearAggregate;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyBaseExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPAssignmentExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBaseTupleExpression;
@@ -19,6 +24,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCloneExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPComparatorExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPConditionalAggregateExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPConstructorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCustomOrdField;
 import org.dbsp.sqlCompiler.ir.expression.DBSPDerefExpression;
@@ -70,14 +76,14 @@ public class FindUnusedFields extends SymbolicInterpreter<FieldUseMap> {
     }
 
     /** Create a visitor which will rewrite parameters to only contain the used fields.
-     * @param depth: Depth up to which unused fields are eliminated.
+     * @param depth Depth up to which unused fields are eliminated.
      * Note: you cannot mutate the finder; it and the rewrite share state. */
     public RewriteFields getFieldRewriter(int depth) {
         Substitution<DBSPParameter, DBSPParameter> newParam = new Substitution<>();
         for (DBSPParameter param: this.parameterFieldMap.getParameters()) {
             FieldUseMap map = this.parameterFieldMap.get(param);
             DBSPType newType = Objects.requireNonNull(map.compressedType(depth));
-            newParam.substitute(param, newType.var().asParameter());
+            newParam.substitute(param, new DBSPParameter(param.name, newType));
         }
         return new RewriteFields(
                 this.compiler, newParam, this.parameterFieldMap, depth);
@@ -234,6 +240,14 @@ public class FindUnusedFields extends SymbolicInterpreter<FieldUseMap> {
     }
 
     @Override
+    public void postorder(DBSPConditionalAggregateExpression expression) {
+        if (expression.condition != null)
+            this.used(expression.condition);
+        this.used(expression.left);
+        this.used(expression.right);
+    }
+
+    @Override
     public void postorder(DBSPLetStatement statement) {
         if (statement.initializer != null)
             this.used(statement.initializer);
@@ -356,6 +370,47 @@ public class FindUnusedFields extends SymbolicInterpreter<FieldUseMap> {
         this.closure = closure;
         this.apply(closure);
         return closure;
+    }
+
+    public record AggregateUseMap(IAggregate aggregate, FieldUseMap useMap) {}
+
+    AggregateUseMap computeUnusedFields(LinearAggregate aggregate) {
+        DBSPClosureExpression closure = this.findUnusedFields(aggregate.map);
+        return new AggregateUseMap(
+                new LinearAggregate(aggregate.getNode(),
+                        closure, aggregate.postProcess, aggregate.emptySetResult),
+                this.parameterFieldMap.get(closure.parameters[0]));
+    }
+
+    AggregateUseMap computeUnusedFields(NonLinearAggregate aggregate) {
+        DBSPClosureExpression closure = this.findUnusedFields(aggregate.increment);
+        this.parameterFieldMap.get(aggregate.increment.parameters[0]).setUsed();
+        this.parameterFieldMap.get(aggregate.increment.parameters[2]).setUsed();
+        return new AggregateUseMap(
+                new NonLinearAggregate(aggregate.getNode(), aggregate.zero,
+                        closure, aggregate.postProcess, aggregate.emptySetResult, aggregate.semigroup),
+            this.parameterFieldMap.get(closure.parameters[1]));
+    }
+
+    AggregateUseMap computeUnusedFields(MinMaxAggregate aggregate) {
+        DBSPClosureExpression closure = this.findUnusedFields(aggregate.aggregatedValue);
+        return new AggregateUseMap(
+                new MinMaxAggregate(aggregate.getNode(), aggregate.zero,
+                        aggregate.increment.deepCopy().to(DBSPClosureExpression.class),
+                        aggregate.emptySetResult, aggregate.semigroup, closure, aggregate.isMin),
+            this.parameterFieldMap.get(closure.parameters[0]));
+    }
+
+    public AggregateUseMap computeUnusedFields(IAggregate aggregate) {
+        // Maybe I should use a visitor pattern here as well?
+        if (aggregate.is(MinMaxAggregate.class))
+            // Try this one first, since it extends NonLinearAggregate
+            return this.computeUnusedFields(aggregate.to(MinMaxAggregate.class));
+        else if (aggregate.is(NonLinearAggregate.class))
+            return this.computeUnusedFields(aggregate.to(NonLinearAggregate.class));
+        else if (aggregate.is(LinearAggregate.class))
+            return this.computeUnusedFields(aggregate.to(LinearAggregate.class));
+        throw new InternalCompilerError("Unexpected aggregate " + aggregate);
     }
 
     public static FieldUseMap computeUsedFields(DBSPClosureExpression closure, DBSPCompiler compiler) {

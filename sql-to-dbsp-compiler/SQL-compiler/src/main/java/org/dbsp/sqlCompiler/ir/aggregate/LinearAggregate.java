@@ -57,6 +57,7 @@ public class LinearAggregate extends IAggregate {
 
         DBSPType mapType = this.map.body.getType();
         Utilities.enforce(postProcess.parameters.length == 1);
+        Utilities.enforce(map.parameters.length == 1);
         Utilities.enforce(mapType.sameType(postProcess.parameters[0].getType()));
     }
 

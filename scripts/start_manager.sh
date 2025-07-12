@@ -15,7 +15,7 @@ fi
 #    exit 1
 # fi
 
-cd "${SQL_COMPILER_DIR}" && ./build.sh
+#cd "${SQL_COMPILER_DIR}" && ./build.sh
 
 DEFAULT_BIND_ADDRESS="127.0.0.1"
 BIND_ADDRESS="${2:-$DEFAULT_BIND_ADDRESS}"

@@ -507,4 +507,40 @@ public class Regression1Tests extends SqlIoTest {
                 CREATE TABLE S(x VARCHAR);
                 CREATE VIEW V AS SELECT T.x, y FROM T LEFT JOIN S ON T.x = S.x;""");
     }
+
+    @Test
+    public void issue4335() {
+        var ccs = this.getCCS("""
+                CREATE TABLE T(id INT, od INT, val DECIMAL(5, 2), ct INT, e BOOLEAN);
+                CREATE VIEW V AS SELECT
+                    SUM(CASE WHEN od = 0 THEN 1 ELSE 0 END),
+                    SUM(CASE WHEN od = 1 THEN 1 ELSE 0 END),
+                    COUNT(*),
+                    SUM(val),
+                    COUNT(DISTINCT CASE WHEN od = 0 THEN id END),
+                    COUNT(DISTINCT CASE WHEN od = 1 THEN id END),
+                    COUNT(DISTINCT id),
+                    SUM(CASE WHEN (od = 0 AND e) THEN 1 ELSE 0 END),
+                    SUM(CASE WHEN (od = 1 AND e) THEN 1 ELSE 0 END),
+                    SUM(CASE WHEN e THEN 1 ELSE 0 END),
+                    SUM(CASE WHEN (od = 0 AND e) THEN ROUND(val, 0) ELSE 0.0 END),
+                    COUNT(DISTINCT CASE WHEN (od = 0 AND e) THEN id END),
+                    COUNT(DISTINCT CASE WHEN (od = 1 AND e) THEN id END),
+                    COUNT(DISTINCT CASE WHEN (e) THEN id END),
+                    COUNT(DISTINCT id)
+                FROM T""");
+        ccs.visit(new CircuitVisitor(ccs.compiler) {
+            @Override
+            public void postorder(DBSPAggregateLinearPostprocessOperator operator) {
+                // Unused input fields for aggregates are removed
+                int width = operator.input().getOutputIndexedZSetType().elementType.getToplevelFieldCount();
+                Assert.assertTrue(width < 10);
+            }
+        });
+        // Validated on MySQL
+        ccs.step("INSERT INTO T VALUES(0, 1, 2, 3, true), (1, 2, 3, 4, false)", """
+                 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | weight
+                --------------------------------------------------------------------------
+                 0 | 1 | 2 | 5 | 0 | 1 | 2 | 0 | 1 | 1  |  0 |  0 |  1 |  1 |  2 | 1""");
+    }
 }
