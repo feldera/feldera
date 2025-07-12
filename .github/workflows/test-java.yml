@@ -10,7 +10,7 @@ jobs:
       matrix:
         include:
           - runner: [self-hosted, skylake40]
-          - runner: [self-hosted, alteram128]
+          - runner: [k8s-runners-arm64]
     runs-on: ${{ matrix.runner }}
 
     container:

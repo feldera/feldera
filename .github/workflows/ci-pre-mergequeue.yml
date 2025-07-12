@@ -4,11 +4,6 @@ on:
   pull_request:
     types: [opened, synchronize]
 
-env:
-  RUSTC_WRAPPER: sccache
-  SCCACHE_DIR: /sccache
-  SCCACHE_CACHE_SIZE: 512G
-
 permissions:
   contents: write
 
@@ -18,10 +13,7 @@ jobs:
   main:
     container:
       image: ghcr.io/feldera/feldera-dev:sha-cfae3f2af7e7676dde51af39ed76332f67d91b6a
-      options: --user=ubuntu
-      volumes:
-        - /sccache:/sccache
-    runs-on: [self-hosted]
+    runs-on: [k8s-runners-arm64]
     steps:
       - uses: actions/checkout@v4
         with:
