@@ -541,6 +541,24 @@ pub enum PipelineAction {
         #[command(flatten)]
         args: BenchmarkArgs,
     },
+    /// Change the log directives in a running pipeline process.
+    ///
+    /// The new log directives are effective only for the lifetime of the
+    /// pipeline process.  To instead change log directives for future pipeline
+    /// processes, use `set-config logging`.
+    SetLogging {
+        /// The name of the pipeline.
+        #[arg(value_hint = ValueHint::Other, add = ArgValueCompleter::new(pipeline_names))]
+        name: String,
+
+        /// The new log directives, in the form specified for
+        /// [tracing_subscriber].  The new log directives replace the old ones
+        /// rather than augmenting them.
+        ///
+        /// [tracing_subscriber]:
+        /// https://docs.rs/tracing-subscriber/latest/tracing_subscriber/filter/struct.EnvFilter.html#dir
+        directives: String,
+    },
 }
 
 #[derive(Args, Debug)]

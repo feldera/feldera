@@ -1397,6 +1397,20 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
             }
         }
         PipelineAction::Bench { args } => bench::bench(client, format, args).await,
+        PipelineAction::SetLogging { name, directives } => {
+            client
+                .set_logging()
+                .pipeline_name(name)
+                .directives(directives)
+                .send()
+                .await
+                .map_err(handle_errors_fatal(
+                    client.baseurl().clone(),
+                    "Failed to set logging directives",
+                    1,
+                ))
+                .unwrap();
+        }
     }
 }
 

@@ -73,7 +73,7 @@ use tracing_subscriber::fmt::{FormatEvent, FormatFields};
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::registry::LookupSpan;
 use tracing_subscriber::util::SubscriberInitExt;
-use tracing_subscriber::EnvFilter;
+use tracing_subscriber::{reload, EnvFilter};
 use uuid::Uuid;
 
 pub mod error;
@@ -200,6 +200,7 @@ struct ServerState {
     /// the self-destruct task when shutting down
     /// the server.
     terminate_sender: Option<Sender<()>>,
+    logging_handle: RwLock<Option<LoggingHandle>>,
 }
 
 impl ServerState {
@@ -212,6 +213,7 @@ impl ServerState {
             sync_checkpoint_state: Arc::new(Mutex::new(CheckpointSyncState::default())),
             prometheus: RwLock::new(None),
             terminate_sender,
+            logging_handle: RwLock::new(None),
         }
     }
 }
@@ -582,6 +584,18 @@ fn get_env_filter(config: &PipelineConfig) -> EnvFilter {
     EnvFilter::try_new("info").unwrap()
 }
 
+type LoggingHandle = tracing_subscriber::reload::Handle<
+    EnvFilter,
+    tracing_subscriber::layer::Layered<
+        tracing_subscriber::fmt::Layer<
+            tracing_subscriber::Registry,
+            tracing_subscriber::fmt::format::DefaultFields,
+            PipelineFormat,
+        >,
+        tracing_subscriber::Registry,
+    >,
+>;
+
 fn do_bootstrap(
     args: ServerArgs,
     config: PipelineConfig,
@@ -596,9 +610,12 @@ fn do_bootstrap(
 
     // Initializes the logger by setting its filter and template.
     let pipeline_name = format!("[{}]", config.name.clone().unwrap_or_default()).cyan();
+    let (env_filter, reload_handle): (_, LoggingHandle) =
+        reload::Layer::new(get_env_filter(&config));
+    *state.logging_handle.write().unwrap() = Some(reload_handle);
     tracing_subscriber::registry()
         .with(tracing_subscriber::fmt::layer().event_format(PipelineFormat::new(pipeline_name)))
-        .with(get_env_filter(&config))
+        .with(env_filter)
         .try_init()
         .unwrap_or_else(|e| {
             // This happens in unit tests when another test has initialized logging.
@@ -697,6 +714,7 @@ where
         .service(start_input_endpoint)
         .service(input_endpoint_status)
         .service(output_endpoint_status)
+        .service(set_logging)
 }
 
 #[get("/start")]
@@ -790,6 +808,22 @@ async fn query(
         }
         None => Err(missing_controller_error(&state)),
     }
+}
+
+#[derive(Debug, Deserialize)]
+struct SetLogging {
+    directives: String,
+}
+
+#[post("/set_logging")]
+async fn set_logging(state: WebData<ServerState>, args: Query<SetLogging>) -> impl Responder {
+    let Some(logging_handle) = &*state.logging_handle.read().unwrap() else {
+        return Err(PipelineError::LogError(String::from(
+            "Logging handle missing",
+        )));
+    };
+    logging_handle.reload(EnvFilter::try_new(&*args.directives)?)?;
+    Ok(HttpResponse::Ok())
 }
 
 #[get("/stats")]
