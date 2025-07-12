@@ -79,6 +79,9 @@ pub enum TemporarySuspendError {
     #[error("The pipeline is bootstrapping")]
     Bootstrapping,
 
+    #[error("The pipeline is processing a transaction")]
+    TransactionInProgress,
+
     #[error("Input endpoint {0:?} is blocking suspend")]
     InputEndpointBarrier(String),
 }
