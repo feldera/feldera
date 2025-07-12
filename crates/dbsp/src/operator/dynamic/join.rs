@@ -1506,8 +1506,7 @@ mod test {
         vec,
     };
 
-    #[test]
-    fn join_test() {
+    fn do_join_test(workers: usize) {
         let mut input1 = vec![
             vec![
                 Tup2(Tup2(1, "a".to_string()), 1i64),
@@ -1539,173 +1538,170 @@ mod test {
         ]
         .into_iter();
 
-        let (circuit, (input_handle1, input_handle2)) = RootCircuit::build(move |circuit| {
-            let mut outputs = vec![
-                zset! {
-                    Tup2(2, "c g".to_string()) => 9i64,
-                    Tup2(2, "c h".to_string()) => 12,
-                    Tup2(2, "d g".to_string()) => 12,
-                    Tup2(2, "d h".to_string()) => 16,
-                    Tup2(3, "e i".to_string()) => 25,
-                    Tup2(3, "e j".to_string()) => -10,
-                    Tup2(3, "f i".to_string()) => -10,
-                    Tup2(3, "f j".to_string()) => 4
-                },
-                zset! {
-                    Tup2(1, "a b".to_string()) => 1,
-                },
-                zset! {},
-                zset! {},
-                zset! {},
-            ]
-            .into_iter();
-            let inc_outputs_vec = vec![
-                zset! {
-                    Tup2(2, "c g".to_string()) => 9,
-                    Tup2(2, "c h".to_string()) => 12,
-                    Tup2(2, "d g".to_string()) => 12,
-                    Tup2(2, "d h".to_string()) => 16,
-                    Tup2(3, "e i".to_string()) => 25,
-                    Tup2(3, "e j".to_string()) => -10,
-                    Tup2(3, "f i".to_string()) => -10,
-                    Tup2(3, "f j".to_string()) => 4
-                },
-                zset! {
-                    Tup2(1, "a b".to_string()) => 2,
-                    Tup2(1, "b b".to_string()) => 2,
-                },
-                zset! {
-                    Tup2(1, "a b".to_string()) => 1,
-                },
-                zset! {
-                    Tup2(4, "n k".to_string()) => 10,
-                    Tup2(4, "n l".to_string()) => -4,
-                    Tup2(4, "n m".to_string()) => 2,
-                },
-                zset! {},
-            ];
-            let inc_filtered_outputs_vec = vec![
-                zset! {
-                    Tup2(2, "c g".to_string()) => 9,
-                    Tup2(2, "c h".to_string()) => 12,
-                    Tup2(2, "d g".to_string()) => 12,
-                    Tup2(2, "d h".to_string()) => 16,
-                    Tup2(3, "e i".to_string()) => 25,
-                    Tup2(3, "e j".to_string()) => -10,
-                    Tup2(3, "f i".to_string()) => -10,
-                    Tup2(3, "f j".to_string()) => 4
-                },
-                zset! {
-                    Tup2(1, "b b".to_string()) => 2,
-                },
-                zset! {},
-                zset! {
-                    Tup2(4, "n k".to_string()) => 10,
-                    Tup2(4, "n l".to_string()) => -4,
-                    Tup2(4, "n m".to_string()) => 2,
-                },
-                zset! {},
-            ];
+        let (mut circuit, (input_handle1, input_handle2)) =
+            Runtime::init_circuit(workers, move |circuit| {
+                let mut outputs = vec![
+                    zset! {
+                        Tup2(2, "c g".to_string()) => 9i64,
+                        Tup2(2, "c h".to_string()) => 12,
+                        Tup2(2, "d g".to_string()) => 12,
+                        Tup2(2, "d h".to_string()) => 16,
+                        Tup2(3, "e i".to_string()) => 25,
+                        Tup2(3, "e j".to_string()) => -10,
+                        Tup2(3, "f i".to_string()) => -10,
+                        Tup2(3, "f j".to_string()) => 4
+                    },
+                    zset! {
+                        Tup2(1, "a b".to_string()) => 1,
+                    },
+                    zset! {},
+                    zset! {},
+                    zset! {},
+                ]
+                .into_iter();
+                let inc_outputs_vec = vec![
+                    zset! {
+                        Tup2(2, "c g".to_string()) => 9,
+                        Tup2(2, "c h".to_string()) => 12,
+                        Tup2(2, "d g".to_string()) => 12,
+                        Tup2(2, "d h".to_string()) => 16,
+                        Tup2(3, "e i".to_string()) => 25,
+                        Tup2(3, "e j".to_string()) => -10,
+                        Tup2(3, "f i".to_string()) => -10,
+                        Tup2(3, "f j".to_string()) => 4
+                    },
+                    zset! {
+                        Tup2(1, "a b".to_string()) => 2,
+                        Tup2(1, "b b".to_string()) => 2,
+                    },
+                    zset! {
+                        Tup2(1, "a b".to_string()) => 1,
+                    },
+                    zset! {
+                        Tup2(4, "n k".to_string()) => 10,
+                        Tup2(4, "n l".to_string()) => -4,
+                        Tup2(4, "n m".to_string()) => 2,
+                    },
+                    zset! {},
+                ];
+                let inc_filtered_outputs_vec = vec![
+                    zset! {
+                        Tup2(2, "c g".to_string()) => 9,
+                        Tup2(2, "c h".to_string()) => 12,
+                        Tup2(2, "d g".to_string()) => 12,
+                        Tup2(2, "d h".to_string()) => 16,
+                        Tup2(3, "e i".to_string()) => 25,
+                        Tup2(3, "e j".to_string()) => -10,
+                        Tup2(3, "f i".to_string()) => -10,
+                        Tup2(3, "f j".to_string()) => 4
+                    },
+                    zset! {
+                        Tup2(1, "b b".to_string()) => 2,
+                    },
+                    zset! {},
+                    zset! {
+                        Tup2(4, "n k".to_string()) => 10,
+                        Tup2(4, "n l".to_string()) => -4,
+                        Tup2(4, "n m".to_string()) => 2,
+                    },
+                    zset! {},
+                ];
 
-            //let mut inc_outputs = inc_outputs_vec.clone().into_iter();
-            let mut inc_outputs2 = inc_outputs_vec.into_iter();
-            let mut inc_filtered_outputs = inc_filtered_outputs_vec.into_iter();
+                //let mut inc_outputs = inc_outputs_vec.clone().into_iter();
+                let mut inc_outputs2 = inc_outputs_vec.into_iter();
+                let mut inc_filtered_outputs = inc_filtered_outputs_vec.into_iter();
 
-            let (input1, input_handle1) = circuit.add_input_zset::<Tup2<u64, String>>();
-            let index1 = input1.map_index(|Tup2(k, v)| (*k, v.clone()));
+                let (input1, input_handle1) = circuit.add_input_zset::<Tup2<u64, String>>();
+                let index1 = input1.map_index(|Tup2(k, v)| (*k, v.clone()));
 
-            let (input2, input_handle2) = circuit.add_input_zset::<Tup2<u64, String>>();
-            let index2 = input2.map_index(|Tup2(k, v)| (*k, v.clone()));
+                let (input2, input_handle2) = circuit.add_input_zset::<Tup2<u64, String>>();
+                let index2 = input2.map_index(|Tup2(k, v)| (*k, v.clone()));
 
-            index1
-                .stream_join(&index2, |&k: &u64, s1, s2| {
-                    Tup2(k, format!("{} {}", s1, s2))
-                })
+                circuit
+                    .non_incremental(
+                        &(index1.clone(), index2.clone()),
+                        |_child, (index1, index2)| {
+                            Ok(index1
+                                .stream_join(&index2, |&k: &u64, s1, s2| {
+                                    Tup2(k, format!("{} {}", s1, s2))
+                                })
+                                .gather(0)
+                                .inspect(move |fm| {
+                                    if Runtime::worker_index() == 0 {
+                                        assert_eq!(
+                                            fm.iter().collect::<Vec<_>>(),
+                                            outputs.next().unwrap().iter().collect::<Vec<_>>()
+                                        )
+                                    }
+                                }))
+                        },
+                    )
+                    .unwrap();
+
+                /*index1
+                .join_incremental(&index2, |&k: &u64, s1, s2| Tup2(k, format!("{} {}", s1, s2)))
                 .gather(0)
-                .accumulate()
-                .inspect(move |fm: &Option<Spine<OrdZSet<Tup2<u64, String>>>>| {
-                    if Runtime::worker_index() == 0 && fm.is_some() {
-                        assert_eq!(
-                            fm.as_ref().unwrap().iter().collect::<Vec<_>>(),
-                            outputs.next().unwrap().iter().collect::<Vec<_>>()
-                        )
+                .inspect(move |fm: &OrdZSet<Tup2<u64, String>>| {
+                    if Runtime::worker_index() == 0 {
+                        assert_eq!(fm, &inc_outputs.next().unwrap())
                     }
-                });
-            /*index1
-            .join_incremental(&index2, |&k: &u64, s1, s2| Tup2(k, format!("{} {}", s1, s2)))
-            .gather(0)
-            .inspect(move |fm: &OrdZSet<Tup2<u64, String>>| {
-                if Runtime::worker_index() == 0 {
-                    assert_eq!(fm, &inc_outputs.next().unwrap())
-                }
-            });*/
+                });*/
 
-            index1
-                .join(&index2, |&k: &u64, s1, s2| {
-                    Tup2(k, format!("{} {}", s1, s2))
-                })
-                .gather(0)
-                .accumulate()
-                .inspect(move |fm: &Option<Spine<OrdZSet<Tup2<u64, String>>>>| {
-                    if Runtime::worker_index() == 0 && fm.is_some() {
-                        assert_eq!(
-                            fm.as_ref().unwrap().iter().collect::<Vec<_>>(),
-                            inc_outputs2.next().unwrap().iter().collect::<Vec<_>>()
-                        )
-                    }
-                });
+                index1
+                    .join(&index2, |&k: &u64, s1, s2| {
+                        Tup2(k, format!("{} {}", s1, s2))
+                    })
+                    .gather(0)
+                    .accumulate()
+                    .inspect(move |fm: &Option<Spine<OrdZSet<Tup2<u64, String>>>>| {
+                        if Runtime::worker_index() == 0 && fm.is_some() {
+                            assert_eq!(
+                                fm.as_ref().unwrap().iter().collect::<Vec<_>>(),
+                                inc_outputs2.next().unwrap().iter().collect::<Vec<_>>()
+                            )
+                        }
+                    });
 
-            index1
-                .join_flatmap(&index2, |&k: &u64, s1, s2| {
-                    if s1.as_str() == "a" {
-                        None
-                    } else {
-                        Some(Tup2(k, format!("{} {}", s1, s2)))
-                    }
-                })
-                .gather(0)
-                .accumulate()
-                .inspect(move |fm: &Option<Spine<OrdZSet<Tup2<u64, String>>>>| {
-                    if Runtime::worker_index() == 0 && fm.is_some() {
-                        assert_eq!(
-                            fm.as_ref().unwrap().iter().collect::<Vec<_>>(),
-                            inc_filtered_outputs
-                                .next()
-                                .unwrap()
-                                .iter()
-                                .collect::<Vec<_>>()
-                        )
-                    }
-                });
+                index1
+                    .join_flatmap(&index2, |&k: &u64, s1, s2| {
+                        if s1.as_str() == "a" {
+                            None
+                        } else {
+                            Some(Tup2(k, format!("{} {}", s1, s2)))
+                        }
+                    })
+                    .gather(0)
+                    .accumulate()
+                    .inspect(move |fm: &Option<Spine<OrdZSet<Tup2<u64, String>>>>| {
+                        if Runtime::worker_index() == 0 && fm.is_some() {
+                            assert_eq!(
+                                fm.as_ref().unwrap().iter().collect::<Vec<_>>(),
+                                inc_filtered_outputs
+                                    .next()
+                                    .unwrap()
+                                    .iter()
+                                    .collect::<Vec<_>>()
+                            )
+                        }
+                    });
 
-            Ok((input_handle1, input_handle2))
-        })
-        .unwrap();
+                Ok((input_handle1, input_handle2))
+            })
+            .unwrap();
 
         for _ in 0..5 {
-            if Runtime::worker_index() == 0 {
-                input_handle1.append(&mut input1.next().unwrap());
-                input_handle2.append(&mut input2.next().unwrap());
-            }
+            input_handle1.append(&mut input1.next().unwrap());
+            input_handle2.append(&mut input2.next().unwrap());
             circuit.step().unwrap();
         }
     }
 
-    fn do_join_test_mt(workers: usize) {
-        let hruntime = Runtime::run(workers, |_parker| {
-            join_test();
-        })
-        .expect("failed to run test");
-
-        hruntime.join().unwrap();
-    }
-
     #[test]
     fn join_test_mt() {
-        do_join_test_mt(1);
-        do_join_test_mt(2);
-        do_join_test_mt(4);
-        do_join_test_mt(16);
+        do_join_test(1);
+        do_join_test(2);
+        do_join_test(4);
+        do_join_test(16);
     }
 
     // Compute pairwise reachability relation between graph nodes as the
