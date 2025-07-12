@@ -1326,7 +1326,7 @@ mod test {
             Tup2(2, Tup2(0, 1)),
             Tup2(2, Tup2(1, 1)),
         ]);
-        circuit.step().unwrap();
+        circuit.transaction().unwrap();
         assert_eq!(
             &*output1.lock().unwrap(),
             &indexed_zset! { 1 => { 0 => 1, 1 => 1}, 2 => { 0 => 1, 1 => 1 } }
@@ -1334,7 +1334,7 @@ mod test {
         assert_eq!(&*output1.lock().unwrap(), &*output2.lock().unwrap(),);
 
         input.append(&mut vec![Tup2(3, Tup2(1, 1)), Tup2(2, Tup2(1, 1))]);
-        circuit.step().unwrap();
+        circuit.transaction().unwrap();
         assert_eq!(
             &*output1.lock().unwrap(),
             &indexed_zset! { 1 => { 0 => 1, 1 => 1}, 2 => { 0 => 1, 1 => 1 }, 3 => { 1 => 1 } }
@@ -1342,7 +1342,7 @@ mod test {
         assert_eq!(&*output1.lock().unwrap(), &*output2.lock().unwrap(),);
 
         input.append(&mut vec![Tup2(1, Tup2(1, 3)), Tup2(2, Tup2(1, -3))]);
-        circuit.step().unwrap();
+        circuit.transaction().unwrap();
         assert_eq!(
             &*output1.lock().unwrap(),
             &indexed_zset! { 1 => { 0 => 1, 1 => 1}, 2 => { 0 => 1 }, 3 => { 1 => 1 } }
@@ -1558,7 +1558,7 @@ mod test {
             let (mut circuit, (inc_output, hash_inc_output, noninc_output)) = Runtime::init_circuit(workers, |circuit| distinct_test_circuit(circuit, inputs)).unwrap();
 
             for _ in 0..iterations {
-                circuit.step().unwrap();
+                circuit.transaction().unwrap();
 
                 let noninc_output = noninc_output.take_from_all();
                 let inc_output = inc_output.take_from_all();
@@ -1589,7 +1589,7 @@ mod test {
             let (mut circuit, (inc_output, hash_inc_output, noninc_output)) = Runtime::init_circuit(workers, |circuit| distinct_indexed_test_circuit(circuit, inputs)).unwrap();
 
             for _ in 0..iterations {
-                circuit.step().unwrap();
+                circuit.transaction().unwrap();
 
                 let noninc_output = noninc_output.take_from_all();
                 let inc_output = inc_output.take_from_all();
@@ -1626,7 +1626,7 @@ mod test {
             let mut circuit = Runtime::init_circuit(workers, |circuit| distinct_indexed_nested_test_circuit(circuit, inputs)).unwrap().0;
 
             for _ in 0..iterations {
-                circuit.step().unwrap();
+                circuit.transaction().unwrap();
             }
 
             circuit.kill().unwrap();
