@@ -44,6 +44,7 @@ import org.dbsp.sqlCompiler.compiler.ICompilerComponent;
 import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.Simplify;
 import org.dbsp.sqlCompiler.ir.aggregate.IAggregate;
 import org.dbsp.sqlCompiler.ir.aggregate.LinearAggregate;
 import org.dbsp.sqlCompiler.ir.aggregate.MinMaxAggregate;
@@ -521,6 +522,8 @@ public class AggregateCompiler implements ICompilerComponent {
                     typedZero);
             DBSPExpression second = new DBSPIfExpression(node, condition, one, realZero);
             DBSPExpression mapBody = new DBSPTupleExpression(first, second, one);
+            Simplify simplify = new Simplify(this.compiler);
+            mapBody = simplify.apply(mapBody).to(DBSPExpression.class);
             DBSPVariablePath postVar = mapBody.getType().var();
             // post = |x| if (x.1 != 0) { cast(Some(x.0), result_type) } else { None }
             DBSPExpression postBody = new DBSPIfExpression(node,

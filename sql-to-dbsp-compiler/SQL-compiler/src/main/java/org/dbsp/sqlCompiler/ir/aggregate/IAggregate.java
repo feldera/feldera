@@ -25,7 +25,7 @@ public abstract class IAggregate extends DBSPExpression implements IDBSPInnerNod
 
     public abstract boolean isLinear();
 
-    /** Return references to all paramters inside the aggregate that refer to the row */
+    /** Return references to all parameters inside the aggregate that refer to the row */
     public abstract List<DBSPParameter> getRowVariableReferences();
 
     /** True if these two aggregates are "compatible", i.e. they

@@ -2,6 +2,7 @@ package org.dbsp.sqlCompiler.compiler.visitors.unusedFields;
 
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.circuit.annotation.IsProjection;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAsofJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinFilterMapOperator;
@@ -10,15 +11,20 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPUnaryOperator;
 import org.dbsp.sqlCompiler.compiler.AnalyzedSet;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.frontend.ExpressionCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitCloneVisitor;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
+import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregateList;
+import org.dbsp.sqlCompiler.ir.aggregate.IAggregate;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
@@ -29,7 +35,10 @@ import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
 
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 
 /**
@@ -178,6 +187,114 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
         boolean done = this.processJoin(join);
         if (!done)
             super.postorder(join);
+    }
+
+    /** Given an operator with an IndexedZSet input, project the value part
+     * to keep only the specified fields */
+    DBSPMapIndexOperator projectValue(DBSPUnaryOperator operator, FieldUseMap fm) {
+        OutputPort source = this.mapped(operator.input());
+        DBSPClosureExpression projection = Objects.requireNonNull(fm.getProjection(1));
+        // This projection is only for the values of the input indexed Z-set, we need an identity
+        // projection for the keys
+
+        DBSPVariablePath var = operator.input().getOutputIndexedZSetType().getKVRefType().var();
+        projection = new DBSPRawTupleExpression(
+                ExpressionCompiler.expandTuple(var.getNode(), var.field(0).deref()),
+                projection.call(var.field(1)))
+                .closure(var)
+                .reduce(this.compiler)
+                .to(DBSPClosureExpression.class);
+
+        int size = projection.getType().getToplevelFieldCount();
+        DBSPMapIndexOperator adjust = new DBSPMapIndexOperator(operator.getRelNode(), projection, source)
+                .addAnnotation(new IsProjection(size), DBSPMapIndexOperator.class);
+        this.addOperator(adjust);
+        return adjust;
+    }
+
+    @Override
+    public void postorder(DBSPAggregateLinearPostprocessOperator operator) {
+        DBSPClosureExpression closure = operator.getClosureFunction();
+        if (this.done(closure)) {
+            super.postorder(operator);
+            return;
+        }
+
+        Utilities.enforce(closure.parameters.length == 1);
+        closure = this.find.findUnusedFields(closure);
+
+        if (!this.find.foundUnusedFields(1)) {
+            super.postorder(operator);
+            return;
+        }
+        // closure = compressed \circ projection
+        RewriteFields rw = this.find.getFieldRewriter(1);
+        FieldUseMap fm = rw.getUseMap(closure.parameters[0]);
+        DBSPClosureExpression compressed = rw.rewriteClosure(closure);
+        if (EquivalenceContext.equiv(closure, compressed)) {
+            // This optimization achieves nothing
+            super.postorder(operator);
+            return;
+        }
+
+        DBSPMapIndexOperator adjust = this.projectValue(operator, fm);
+        DBSPSimpleOperator result = new DBSPAggregateLinearPostprocessOperator(
+                operator.getRelNode(), operator.getOutputIndexedZSetType(), compressed,
+                operator.postProcess, adjust.outputPort());
+        this.map(operator, result);
+    }
+
+    @Override
+    public void postorder(DBSPStreamAggregateOperator operator) {
+        var list = operator.aggregateList;
+        if (list == null) {
+            // This can only happen for ORDER BY when --ignoreOrder is not supplied
+            super.postorder(operator);
+            return;
+        }
+        for (IAggregate aggregate: list.aggregates) {
+            if (this.done(aggregate)) {
+                super.postorder(operator);
+                return;
+            }
+        }
+
+        Map<IAggregate, FindUnusedFields> finders = new HashMap<>();
+        FieldUseMap fum = new FieldUseMap(list.rowVar.getType(), false);
+        // FindUnusedFields converts closures to trees, so it allocates new aggregates
+        List<IAggregate> treeified = new ArrayList<>();
+        for (IAggregate aggregate: list.aggregates) {
+            FindUnusedFields finder = new FindUnusedFields(this.compiler);
+            FindUnusedFields.AggregateUseMap used = finder.computeUnusedFields(aggregate);
+            Utilities.putNew(finders, used.aggregate(), finder);
+            treeified.add(used.aggregate());
+            fum = fum.reduce(used.useMap());
+        }
+
+        if (!fum.hasUnusedFields(1)) {
+            super.postorder(operator);
+            return;
+        }
+
+        List<IAggregate> results = new ArrayList<>();
+        for (IAggregate aggregate: treeified) {
+            FindUnusedFields finder = Utilities.getExists(finders, aggregate);
+            for (DBSPParameter param: aggregate.getRowVariableReferences()) {
+                finder.setParameterUseMap(param, fum);
+            }
+            RewriteFields fieldRewriter = finder.getFieldRewriter(1);
+            IAggregate rewritten = fieldRewriter.apply(aggregate).to(IAggregate.class);
+            results.add(rewritten);
+        }
+
+        DBSPVariablePath rowVar = new DBSPVariablePath(list.rowVar.variable,
+                Objects.requireNonNull(fum.compressedType(1)));
+        DBSPMapIndexOperator adjust = this.projectValue(operator, fum);
+        DBSPAggregateList newList = new DBSPAggregateList(operator.aggregateList.getNode(), rowVar, results);
+        DBSPSimpleOperator result = new DBSPStreamAggregateOperator(operator.getRelNode(), operator.getOutputIndexedZSetType(),
+                null, newList, adjust.outputPort())
+                .copyAnnotations(operator);
+        this.map(operator, result);
     }
 
     @Override
