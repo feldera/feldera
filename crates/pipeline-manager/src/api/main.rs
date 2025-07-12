@@ -166,6 +166,7 @@ only the program-related core fields, and is used by the compiler to discern whe
         feldera_types::config::StorageOptions,
         feldera_types::config::StorageBackendConfig,
         feldera_types::config::SyncConfig,
+        feldera_types::config::StartFromCheckpoint,
         feldera_types::config::FileBackendConfig,
         feldera_types::config::StorageCompression,
         feldera_types::config::RuntimeConfig,
