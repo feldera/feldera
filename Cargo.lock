@@ -3654,6 +3654,7 @@ version = "0.104.0"
 dependencies = [
  "anyhow",
  "arc-swap",
+ "async-stream",
  "binrw",
  "chrono",
  "clap",
@@ -3675,6 +3676,7 @@ dependencies = [
  "feldera-storage",
  "feldera-types",
  "futures",
+ "futures-util",
  "hashbrown 0.14.5",
  "impl-trait-for-tuples",
  "indexmap 2.9.0",

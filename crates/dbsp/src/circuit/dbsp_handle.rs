@@ -502,26 +502,38 @@ impl Runtime {
                             return;
                         }
                     }
+                    Ok(Command::Flush(span)) => {
+                        let _guard = span.set_local_parent();
+                        let _worker_span = LocalSpan::enter_with_local_parent("worker-flush")
+                            .with_property(|| ("worker", worker_index_str));
+                        let status = circuit.flush().map(|_| Response::Unit);
+                        // Send response.
+                        if status_sender.send(status).is_err() {
+                            return;
+                        }
+                    }
                     Ok(Command::Microstep(span)) => {
                         let _guard = span.set_local_parent();
                         let _worker_span = LocalSpan::enter_with_local_parent("worker-microstep")
                             .with_property(|| ("worker", worker_index_str));
-                        let status = circuit.microstep().map(|_| Response::Unit);
+                        let status = circuit
+                            .microstep()
+                            .map(|_| Response::FlushComplete(circuit.is_flush_complete()));
                         // Send response.
                         if status_sender.send(status).is_err() {
                             return;
                         }
                     }
-                    Ok(Command::FinishStep(span)) => {
-                        let _guard = span.set_local_parent();
-                        let _worker_span = LocalSpan::enter_with_local_parent("worker-finish-step")
-                            .with_property(|| ("worker", worker_index_str));
-                        let status = circuit.finish_step().map(|_| Response::Unit);
-                        // Send response.
-                        if status_sender.send(status).is_err() {
-                            return;
-                        }
-                    }
+                    // Ok(Command::FinishStep(span)) => {
+                    //     let _guard = span.set_local_parent();
+                    //     let _worker_span = LocalSpan::enter_with_local_parent("worker-finish-step")
+                    //         .with_property(|| ("worker", worker_index_str));
+                    //     let status = circuit.finish_step().map(|_| Response::Unit);
+                    //     // Send response.
+                    //     if status_sender.send(status).is_err() {
+                    //         return;
+                    //     }
+                    // }
                     Ok(Command::BootstrapStep(span)) => {
                         let _guard = span.set_local_parent();
                         let _worker_span = LocalSpan::enter_with_local_parent("worker-step")
@@ -656,7 +668,7 @@ impl Runtime {
 enum Command {
     StartStep(Arc<Span>),
     Microstep(Arc<Span>),
-    FinishStep(Arc<Span>),
+    Flush(Arc<Span>),
     Step(Arc<Span>),
     /// Execute a step in bootstrap mode.
     BootstrapStep(Arc<Span>),
@@ -676,6 +688,7 @@ enum Command {
 #[derive(Debug)]
 enum Response {
     Unit,
+    FlushComplete(bool),
     BootstrapComplete(bool),
     ProfileDump(Graph),
     Profile(WorkerProfile),
@@ -855,11 +868,37 @@ impl DBSPHandle {
         result
     }
 
-    pub fn microstep(&mut self) -> Result<(), DbspError> {
+    pub fn microstep(&mut self) -> Result<bool, DbspError> {
         let start = Instant::now();
         let span = Arc::new(Span::root("microstep", SpanContext::random()));
         let _guard = span.set_local_parent();
-        let result = self.broadcast_command(Command::Microstep(span), |_, _| {});
+        let mut flush_complete = Vec::with_capacity(self.status_receivers.len());
+
+        let result = self.broadcast_command(Command::Microstep(span), |_worker, response| {
+            let Response::FlushComplete(complete) = response else {
+                panic!("Expected FlushComplete response, got {response:?}");
+            };
+            flush_complete.push(complete);
+        });
+        if let Some(handle) = self.runtime.as_ref() {
+            self.runtime_elapsed +=
+                start.elapsed() * handle.runtime().layout().local_workers().len() as u32 * 2;
+        }
+
+        result?;
+
+        if flush_complete.iter().all(|complete| *complete) {
+            info!("Flush complete");
+        }
+
+        Ok(flush_complete.iter().all(|complete| *complete))
+    }
+
+    pub fn flush(&mut self) -> Result<(), DbspError> {
+        let start = Instant::now();
+        let span = Arc::new(Span::root("flush", SpanContext::random()));
+        let _guard = span.set_local_parent();
+        let result = self.broadcast_command(Command::Flush(span), |_, _| {});
         if let Some(handle) = self.runtime.as_ref() {
             self.runtime_elapsed +=
                 start.elapsed() * handle.runtime().layout().local_workers().len() as u32 * 2;
@@ -868,15 +907,14 @@ impl DBSPHandle {
     }
 
     pub fn finish_step(&mut self) -> Result<(), DbspError> {
-        let start = Instant::now();
-        let span = Arc::new(Span::root("finish_step", SpanContext::random()));
-        let _guard = span.set_local_parent();
-        let result = self.broadcast_command(Command::FinishStep(span), |_, _| {});
-        if let Some(handle) = self.runtime.as_ref() {
-            self.runtime_elapsed +=
-                start.elapsed() * handle.runtime().layout().local_workers().len() as u32 * 2;
+        self.flush()?;
+
+        loop {
+            let flush_complete = self.microstep()?;
+            if flush_complete {
+                return Ok(());
+            }
         }
-        result
     }
 
     pub fn set_replay_step_size(&mut self, step_size: usize) {

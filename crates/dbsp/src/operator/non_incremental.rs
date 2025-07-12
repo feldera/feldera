@@ -101,13 +101,6 @@ where
         todo!()
     }
 
-    fn finish_step<'a>(
-        &'a self,
-        _circuit: &'a C,
-    ) -> Pin<Box<dyn Future<Output = Result<(), SchedulerError>> + 'a>> {
-        todo!()
-    }
-
     fn step<'a>(
         &'a self,
         circuit: &'a C,
@@ -123,8 +116,9 @@ where
         })
     }
 
-    fn flush(&self) {
+    fn flush(&self) -> Result<(), SchedulerError> {
         *self.flush.borrow_mut() = true;
+        Ok(())
     }
 
     fn is_flush_complete(&self) -> bool {
