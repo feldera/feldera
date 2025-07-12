@@ -219,16 +219,16 @@ mod tests {
         .unwrap();
 
         input_handle.append(&mut vec![Tup2(100, 1), Tup2(110, 1), Tup2(50, 1)]);
-        dbsp.step().unwrap();
+        dbsp.transaction().unwrap();
 
         input_handle.append(&mut vec![Tup2(90, 1), Tup2(90, 1), Tup2(50, 1)]);
-        dbsp.step().unwrap();
+        dbsp.transaction().unwrap();
 
         input_handle.append(&mut vec![Tup2(110, 1), Tup2(120, 1), Tup2(100, 1)]);
-        dbsp.step().unwrap();
+        dbsp.transaction().unwrap();
 
         input_handle.append(&mut vec![Tup2(130, 1), Tup2(140, 1), Tup2(0, 1)]);
-        dbsp.step().unwrap();
+        dbsp.transaction().unwrap();
 
         dbsp.kill().unwrap();
     }
@@ -273,28 +273,28 @@ mod tests {
             Tup2(-10, Tup2(1, 1)),
             Tup2(-200, Tup2(1, 1)),
         ]);
-        dbsp.step().unwrap();
+        dbsp.transaction().unwrap();
 
         input_handle.append(&mut vec![
             Tup2(0, Tup2(1, 1)),
             Tup2(-100, Tup2(2, 1)),
             Tup2(100, Tup2(3, 1)),
         ]);
-        dbsp.step().unwrap();
+        dbsp.transaction().unwrap();
 
         input_handle.append(&mut vec![
             Tup2(50, Tup2(5, 1)),
             Tup2(-200, Tup2(-10, 1)),
             Tup2(99, Tup2(7, 1)),
         ]);
-        dbsp.step().unwrap();
+        dbsp.transaction().unwrap();
 
         input_handle.append(&mut vec![
             Tup2(130, Tup2(1, 1)),
             Tup2(140, Tup2(1, 1)),
             Tup2(250, Tup2(1, 1)),
         ]);
-        dbsp.step().unwrap();
+        dbsp.transaction().unwrap();
 
         dbsp.kill().unwrap();
     }

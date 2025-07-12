@@ -22,6 +22,7 @@ use crate::controller::checkpoint::{
     CheckpointInputEndpointMetrics, CheckpointOffsets, CheckpointOutputEndpointMetrics,
 };
 use crate::controller::journal::Journal;
+use crate::controller::stats::TransactionState;
 use crate::controller::stats::{InputEndpointMetrics, OutputEndpointMetrics};
 #[cfg(feature = "feldera-enterprise")]
 use crate::controller::sync::continuous_pull;
@@ -681,6 +682,20 @@ impl Controller {
         Ok(())
     }
 
+    pub fn start_transaction(&self) -> Result<(), ControllerError> {
+        self.inner.fail_if_bootstrapping_or_restoring()?;
+
+        self.inner.status.set_transaction_requested(true);
+        Ok(())
+    }
+
+    pub fn start_commit_transaction(&self) -> Result<(), ControllerError> {
+        self.inner.fail_if_bootstrapping_or_restoring()?;
+
+        self.inner.status.set_transaction_requested(false);
+        Ok(())
+    }
+
     /// Check whether the pipeline has processed all input data to completion.
     ///
     /// Returns `true` when the following conditions are satisfied:
@@ -1294,9 +1309,7 @@ impl CircuitThread {
         // Wake up the backpressure thread to unpause endpoints blocked due to
         // backpressure.
         self.controller.unpark_backpressure();
-        SamplySpan::new(debug_span!("step"))
-            .in_scope(|| self.circuit.step())
-            .unwrap_or_else(|e| self.controller.error(Arc::new(e.into())));
+        self.step_circuit();
 
         // Memorize if the step was performed while bootstrapping.
         let bootstrapping = self.controller.status.bootstrap_in_progress();
@@ -1339,6 +1352,61 @@ impl CircuitThread {
             );
 
         Ok(true)
+    }
+
+    fn step_circuit(&mut self) {
+        match (
+            self.controller.status.get_transaction_requested(),
+            &self.controller.status.get_transaction_state(),
+        ) {
+            (true, TransactionState::None) => {
+                debug!("Starting transaction");
+                self.circuit.start_transaction().unwrap_or_else(|e| {
+                    self.controller.error(Arc::new(e.into()));
+                });
+                self.controller
+                    .status
+                    .set_transaction_state(TransactionState::Started);
+            }
+            (false, TransactionState::Started) => {
+                debug!("Committing transaction");
+                self.circuit.start_commit_transaction().unwrap_or_else(|e| {
+                    self.controller.error(Arc::new(e.into()));
+                });
+                self.controller
+                    .status
+                    .set_transaction_state(TransactionState::Committing);
+            }
+            _ => {}
+        }
+
+        if self.controller.status.transaction_in_progress() {
+            debug!("circuit thread: calling 'circuit.step'");
+
+            let committed = SamplySpan::new(debug_span!("step"))
+                .in_scope(|| self.circuit.step())
+                .unwrap_or_else(|e| {
+                    self.controller.error(Arc::new(e.into()));
+                    false
+                });
+
+            debug!("circuit thread: 'circuit.step' returned");
+
+            if self.controller.status.commit_in_progress() && committed {
+                debug!("Transaction committed");
+                self.controller
+                    .status
+                    .set_transaction_state(TransactionState::None);
+            }
+        } else {
+            debug!("circuit thread: calling 'circuit.transaction'");
+
+            // FIXME: we're using "span" for both step() (above) and transaction() (here).
+            SamplySpan::new(debug_span!("step"))
+                .in_scope(|| self.circuit.transaction())
+                .unwrap_or_else(|e| self.controller.error(Arc::new(e.into())));
+            debug!("circuit thread: 'circuit.transaction' returned");
+        }
     }
 
     // Update `trace_snapshot` to the latest traces.
@@ -1604,7 +1672,9 @@ impl CircuitThread {
     /// - `Err(error)` if there was an error.
     fn input_step(&mut self) -> Result<Option<BufferSize>, ControllerError> {
         // No ingestion during bootstrap.
-        if self.controller.status.bootstrap_in_progress() {
+        if self.controller.status.bootstrap_in_progress()
+            || self.controller.status.commit_in_progress()
+        {
             return Ok(Some(BufferSize::empty()));
         }
         let mut step_metadata = HashMap::new();
@@ -3972,6 +4042,9 @@ impl ControllerInner {
         }
         if self.status.bootstrap_in_progress() {
             temporary.push(TemporarySuspendError::Bootstrapping);
+        }
+        if self.status.transaction_in_progress() {
+            temporary.push(TemporarySuspendError::TransactionInProgress);
         }
         for endpoint_stats in self.status.input_status().values() {
             if endpoint_stats.is_barrier() {

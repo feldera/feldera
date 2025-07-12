@@ -467,7 +467,7 @@ mod test {
 
                 sample_size_handle.set_for_all(sample_size);
 
-                dbsp.step().unwrap();
+                dbsp.transaction().unwrap();
 
                 let output_sample = output_sample_handle.consolidate();
                 let output_quantile = output_quantile_handle.consolidate();
@@ -527,7 +527,7 @@ mod test {
 
                 sample_size_handle.set_for_all(sample_size);
 
-                dbsp.step().unwrap();
+                dbsp.transaction().unwrap();
 
                 let output_sample = output_sample_handle.consolidate();
                 let output_quantile = output_quantile_handle.consolidate();

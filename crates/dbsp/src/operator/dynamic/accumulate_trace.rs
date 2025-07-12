@@ -214,7 +214,6 @@ where
         bounds
     }
 
-    // TODO: this method should replace `Stream::integrate()`.
     #[track_caller]
     pub fn dyn_accumulate_integrate_trace(&self, factories: &B::Factories) -> Stream<C, Spine<B>>
     where

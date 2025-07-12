@@ -318,7 +318,7 @@ mod test {
         for (mut input, expected_counts) in input_copy.into_iter().zip(expected.into_iter()) {
             println!("step");
             source_handle.append(&mut input);
-            circuit.step().unwrap();
+            circuit.transaction().unwrap();
 
             let counts = SpineSnapshot::<OrdIndexedZSet<u64, i64>>::concat(&counts.take_from_all())
                 .iter()

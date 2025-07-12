@@ -378,7 +378,7 @@ fn lead_test(trace: Vec<Vec<(i32, i32, ZWeight)>>) {
         for (k, v, r) in batch.into_iter() {
             input_handle.push(k, (v, r));
         }
-        dbsp.step().unwrap();
+        dbsp.transaction().unwrap();
 
         let lead_result = lead_handle.consolidate();
         let ref_lead = ref_trace.lead::<i32, i32>(3);
@@ -405,7 +405,7 @@ fn lag_test(trace: Vec<Vec<(i32, i32, ZWeight)>>) {
         for (k, v, r) in batch.into_iter() {
             input_handle.push(k, (v, r));
         }
-        dbsp.step().unwrap();
+        dbsp.transaction().unwrap();
 
         let lag_result = SpineSnapshot::<TypedBatch<i32, Tup2<i32, Option<i32>>, _, _>>::concat(
             &lag_handle.take_from_all(),
@@ -590,7 +590,7 @@ fn test_topk_custom_ord() {
         for (k, v, r) in batch.into_iter() {
             input_handle.push(k, (v, r));
         }
-        dbsp.step().unwrap();
+        dbsp.transaction().unwrap();
 
         let topk_result = topk_handle.consolidate();
 
@@ -706,7 +706,7 @@ fn test_lag_custom_ord() {
         for (k, v, r) in batch.into_iter() {
             input_handle.push(k, (v, r));
         }
-        dbsp.step().unwrap();
+        dbsp.transaction().unwrap();
 
         let topk_result = lag_handle.consolidate();
 
@@ -730,7 +730,7 @@ proptest! {
             for (k, v, r) in batch.into_iter() {
                 input_handle.push(k, (v, r));
             }
-            dbsp.step().unwrap();
+            dbsp.transaction().unwrap();
 
             let topk_asc_result = topk_asc_handle.consolidate();
             let topk_desc_result = topk_desc_handle.consolidate();

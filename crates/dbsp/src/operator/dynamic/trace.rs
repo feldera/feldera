@@ -1289,7 +1289,7 @@ mod test {
             for batch in batches {
                 let mut tuples = batch.into_iter().map(|((k, v), r)| Tup2(k, Tup2(v, r))).collect::<Vec<_>>();
                 input_handle.append(&mut tuples);
-                dbsp.step().unwrap();
+                dbsp.transaction().unwrap();
             }
         }
     }

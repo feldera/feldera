@@ -31,6 +31,7 @@ mod stream_fold;
 mod sum;
 mod z1;
 
+mod accumulate_trace;
 mod aggregate;
 mod asof_join;
 mod average;

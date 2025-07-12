@@ -1369,7 +1369,7 @@ pub mod test {
             let mut circuit = Runtime::init_circuit(workers, |circuit| aggregate_test_circuit(circuit, inputs)).unwrap().0;
 
             for _ in 0..iterations {
-                circuit.step().unwrap();
+                circuit.transaction().unwrap();
             }
 
             circuit.kill().unwrap();
@@ -1440,7 +1440,7 @@ pub mod test {
         .unwrap();
 
         input_handle.append(&mut vec![Tup2(1u64, Tup2(1u64, 1)), Tup2(1, Tup2(2, 2))]);
-        dbsp.step().unwrap();
+        dbsp.transaction().unwrap();
         assert_eq!(
             &*count_distinct_output_clone.lock().unwrap(),
             &indexed_zset! {1 => {2 => 1}}
@@ -1463,7 +1463,7 @@ pub mod test {
             Tup2(2, Tup2(4, 1)),
             Tup2(1, Tup2(2, -1)),
         ]);
-        dbsp.step().unwrap();
+        dbsp.transaction().unwrap();
         assert_eq!(
             &*count_distinct_output_clone.lock().unwrap(),
             &indexed_zset! {2 => {2 => 1}}
@@ -1482,7 +1482,7 @@ pub mod test {
         );
 
         input_handle.append(&mut vec![Tup2(1, Tup2(3, 1)), Tup2(1, Tup2(2, -1))]);
-        dbsp.step().unwrap();
+        dbsp.transaction().unwrap();
         assert_eq!(
             &*count_distinct_output_clone.lock().unwrap(),
             &indexed_zset! {}
@@ -1530,7 +1530,7 @@ pub mod test {
             Tup2(1u64, Tup2(Tup1(None), 1)),
             Tup2(2u64, Tup2(Tup1(Some(5)), 1)),
         ]);
-        dbsp.step().unwrap();
+        dbsp.transaction().unwrap();
         let output = output_handle.consolidate();
         assert_eq!(
             &output,
@@ -1543,7 +1543,7 @@ pub mod test {
             Tup2(1u64, Tup2(Tup1(Some(3)), 1)),
             Tup2(2u64, Tup2(Tup1(None), 1)),
         ]);
-        dbsp.step().unwrap();
+        dbsp.transaction().unwrap();
         let output = output_handle.consolidate();
         assert_eq!(
             &output,
@@ -1556,7 +1556,7 @@ pub mod test {
             Tup2(1u64, Tup2(Tup1(None), -1)),
             Tup2(2u64, Tup2(Tup1(Some(5)), -1)),
         ]);
-        dbsp.step().unwrap();
+        dbsp.transaction().unwrap();
         let output = output_handle.consolidate();
         assert_eq!(
             &output,
@@ -1585,7 +1585,7 @@ pub mod test {
             Tup2(1u64, Tup2(Tup1(1), 1)),
             Tup2(2u64, Tup2(Tup1(5), 1)),
         ]);
-        dbsp.step().unwrap();
+        dbsp.transaction().unwrap();
         let output = output_handle.consolidate();
         assert_eq!(
             &output,
@@ -1596,7 +1596,7 @@ pub mod test {
             Tup2(1u64, Tup2(Tup1(3), 1)),
             Tup2(2u64, Tup2(Tup1(2), 1)),
         ]);
-        dbsp.step().unwrap();
+        dbsp.transaction().unwrap();
         let output = output_handle.consolidate();
         assert_eq!(
             &output,
@@ -1607,7 +1607,7 @@ pub mod test {
             Tup2(1u64, Tup2(Tup1(1), -1)),
             Tup2(2u64, Tup2(Tup1(5), -1)),
         ]);
-        dbsp.step().unwrap();
+        dbsp.transaction().unwrap();
         let output = output_handle.consolidate();
         assert_eq!(
             &output,
@@ -1680,7 +1680,7 @@ pub mod test {
 
         // A single NULL element -> aggregate is NULL
         input_handle.append(&mut vec![Tup2(Tup2(1i32, None), 2)]);
-        dbsp.step().unwrap();
+        dbsp.transaction().unwrap();
         assert_eq!(
             output_handle.consolidate(),
             indexed_zset! {1 => {None => 1}}
@@ -1688,7 +1688,7 @@ pub mod test {
 
         // +5 -> aggregate = 5
         input_handle.append(&mut vec![Tup2(Tup2(1i32, Some(5)), 1)]);
-        dbsp.step().unwrap();
+        dbsp.transaction().unwrap();
         assert_eq!(
             output_handle.consolidate(),
             indexed_zset! {1 => {Some(5) => 1}}
@@ -1696,7 +1696,7 @@ pub mod test {
 
         // +3 * 2 -> aggrregate = 11
         input_handle.append(&mut vec![Tup2(Tup2(1i32, Some(3)), 2)]);
-        dbsp.step().unwrap();
+        dbsp.transaction().unwrap();
         assert_eq!(
             output_handle.consolidate(),
             indexed_zset! {1 => {Some(11) => 1}}
@@ -1704,7 +1704,7 @@ pub mod test {
 
         // + (-11) -> aggregate = 0
         input_handle.append(&mut vec![Tup2(Tup2(1i32, Some(-11)), 1)]);
-        dbsp.step().unwrap();
+        dbsp.transaction().unwrap();
         assert_eq!(
             output_handle.consolidate(),
             indexed_zset! {1 => {Some(0) => 1}}
@@ -1716,7 +1716,7 @@ pub mod test {
             Tup2(Tup2(1i32, Some(5)), -1),
             Tup2(Tup2(1i32, Some(3)), -2),
         ]);
-        dbsp.step().unwrap();
+        dbsp.transaction().unwrap();
         assert_eq!(
             output_handle.consolidate(),
             indexed_zset! {1 => {None => 1}}
@@ -1724,7 +1724,7 @@ pub mod test {
 
         // Remove the remaining NULL -> the whole group disappears.
         input_handle.append(&mut vec![Tup2(Tup2(1i32, None), -2)]);
-        dbsp.step().unwrap();
+        dbsp.transaction().unwrap();
         assert_eq!(output_handle.consolidate(), indexed_zset! {});
     }
 
@@ -1775,7 +1775,7 @@ pub mod test {
 
         // A single NULL element -> aggregate is NULL
         input_handle.append(&mut vec![Tup2(Tup2(1i8, None), 2)]);
-        dbsp.step().unwrap();
+        dbsp.transaction().unwrap();
         assert_eq!(
             output_handle.consolidate(),
             indexed_zset! {1 => {None => 1}}
@@ -1783,7 +1783,7 @@ pub mod test {
 
         // +5 -> aggregate = 5
         input_handle.append(&mut vec![Tup2(Tup2(1i8, Some(5)), 1)]);
-        dbsp.step().unwrap();
+        dbsp.transaction().unwrap();
         assert_eq!(
             output_handle.consolidate(),
             indexed_zset! {1 => {Some(5) => 1}}
@@ -1791,7 +1791,7 @@ pub mod test {
 
         // +3 * 2 -> aggrregate = 11
         input_handle.append(&mut vec![Tup2(Tup2(1i8, Some(3)), 2)]);
-        dbsp.step().unwrap();
+        dbsp.transaction().unwrap();
         assert_eq!(
             output_handle.consolidate(),
             indexed_zset! {1 => {Some(11) => 1}}
@@ -1799,7 +1799,7 @@ pub mod test {
 
         // + (-11) -> aggregate = 0
         input_handle.append(&mut vec![Tup2(Tup2(1i8, Some(-11)), 1)]);
-        dbsp.step().unwrap();
+        dbsp.transaction().unwrap();
         assert_eq!(
             output_handle.consolidate(),
             indexed_zset! {1 => {Some(0) => 1}}
@@ -1811,7 +1811,7 @@ pub mod test {
             Tup2(Tup2(1i8, Some(5)), -1),
             Tup2(Tup2(1i8, Some(3)), -2),
         ]);
-        dbsp.step().unwrap();
+        dbsp.transaction().unwrap();
         assert_eq!(
             output_handle.consolidate(),
             indexed_zset! {1 => {None => 1}}
@@ -1819,7 +1819,7 @@ pub mod test {
 
         // Remove the remaining NULL -> the whole group disappears.
         input_handle.append(&mut vec![Tup2(Tup2(1i8, None), -2)]);
-        dbsp.step().unwrap();
+        dbsp.transaction().unwrap();
         assert_eq!(output_handle.consolidate(), indexed_zset! {});
     }
 }

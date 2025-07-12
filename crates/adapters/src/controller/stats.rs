@@ -119,6 +119,15 @@ impl CompletionToken {
     }
 }
 
+#[derive(Debug, Default, Copy, PartialEq, Eq, Clone, Serialize, NoUninit)]
+#[repr(u8)]
+pub enum TransactionState {
+    #[default]
+    None,
+    Started,
+    Committing,
+}
+
 #[derive(Default, Serialize)]
 pub struct GlobalControllerMetrics {
     /// State of the pipeline: running, paused, or terminating.
@@ -128,6 +137,11 @@ pub struct GlobalControllerMetrics {
     /// The pipeline has been resumed from a checkpoint and is currently bootstrapping
     /// new and modified views.
     bootstrap_in_progress: AtomicBool,
+
+    transaction_requested: AtomicBool,
+
+    #[serde(serialize_with = "serialize_atomic")]
+    transaction_state: Atomic<TransactionState>,
 
     /// Resident set size of the pipeline process, in bytes.
     // This field is computed on-demand by calling `ControllerStatus::update`.
@@ -252,6 +266,8 @@ impl GlobalControllerMetrics {
         Self {
             state: Atomic::new(PipelineState::Paused),
             bootstrap_in_progress: AtomicBool::new(false),
+            transaction_requested: AtomicBool::new(false),
+            transaction_state: Atomic::new(TransactionState::None),
             rss_bytes: AtomicU64::new(0),
             cpu_msecs: AtomicU64::new(0),
             uptime_msecs: AtomicU64::new(0),
@@ -362,6 +378,23 @@ impl GlobalControllerMetrics {
 
     fn set_step_requested(&self) -> bool {
         self.step_requested.swap(true, Ordering::AcqRel)
+    }
+
+    fn get_transaction_requested(&self) -> bool {
+        self.transaction_requested.load(Ordering::Acquire)
+    }
+
+    fn set_transaction_requested(&self, transaction_requested: bool) {
+        self.transaction_requested
+            .store(transaction_requested, Ordering::Release);
+    }
+
+    fn get_transaction_state(&self) -> TransactionState {
+        self.transaction_state.load(Ordering::Acquire)
+    }
+
+    fn set_transaction_state(&self, state: TransactionState) {
+        self.transaction_state.store(state, Ordering::Release);
     }
 }
 
@@ -658,11 +691,36 @@ impl ControllerStatus {
             .set_bootstrap_in_progress(bootstrap_in_progress);
     }
 
+    pub fn get_transaction_requested(&self) -> bool {
+        self.global_metrics.get_transaction_requested()
+    }
+
+    pub fn set_transaction_requested(&self, transaction_requested: bool) {
+        self.global_metrics
+            .set_transaction_requested(transaction_requested);
+    }
+
+    pub fn get_transaction_state(&self) -> TransactionState {
+        self.global_metrics.get_transaction_state()
+    }
+
+    pub fn set_transaction_state(&self, state: TransactionState) {
+        self.global_metrics.set_transaction_state(state);
+    }
+
     pub fn request_step(&self, circuit_thread_unparker: &Unparker) {
         let old = self.global_metrics.set_step_requested();
         if !old {
             circuit_thread_unparker.unpark();
         }
+    }
+
+    pub fn transaction_in_progress(&self) -> bool {
+        self.get_transaction_state() != TransactionState::None
+    }
+
+    pub fn commit_in_progress(&self) -> bool {
+        self.get_transaction_state() == TransactionState::Committing
     }
 
     /// Input endpoint stats.

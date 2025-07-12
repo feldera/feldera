@@ -101,13 +101,6 @@ where
         todo!()
     }
 
-    fn finish_step<'a>(
-        &'a self,
-        _circuit: &'a C,
-    ) -> Pin<Box<dyn Future<Output = Result<(), SchedulerError>> + 'a>> {
-        todo!()
-    }
-
     fn step<'a>(
         &'a self,
         circuit: &'a C,
@@ -123,8 +116,9 @@ where
         })
     }
 
-    fn flush(&self) {
+    fn flush(&self) -> Result<(), SchedulerError> {
         *self.flush.borrow_mut() = true;
+        Ok(())
     }
 
     fn is_flush_complete(&self) -> bool {
@@ -372,30 +366,30 @@ mod test {
         })
         .unwrap();
 
-        dbsp.start_step().unwrap();
+        dbsp.start_transaction().unwrap();
 
         input_handle.push(5, 1);
-        dbsp.microstep().unwrap();
+        dbsp.step().unwrap();
 
         input_handle.push(5, 1);
-        dbsp.microstep().unwrap();
+        dbsp.step().unwrap();
 
-        dbsp.finish_step().unwrap();
+        dbsp.commit_transaction().unwrap();
         let output = SpineSnapshot::<OrdZSet<i64>>::concat(&output_handle.take_from_all())
             .iter()
             .collect::<Vec<_>>();
 
         debug_assert_eq!(output, vec![(5, (), 2)]);
 
-        dbsp.start_step().unwrap();
+        dbsp.start_transaction().unwrap();
 
         input_handle.push(5, 1);
-        dbsp.microstep().unwrap();
+        dbsp.step().unwrap();
 
         input_handle.push(2, 1);
-        dbsp.microstep().unwrap();
+        dbsp.step().unwrap();
 
-        dbsp.finish_step().unwrap();
+        dbsp.commit_transaction().unwrap();
         let output = SpineSnapshot::<OrdZSet<i64>>::concat(&output_handle.take_from_all())
             .iter()
             .collect::<Vec<_>>();

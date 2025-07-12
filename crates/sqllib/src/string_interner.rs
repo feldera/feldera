@@ -444,7 +444,7 @@ mod interned_string_test {
             .collect::<Vec<_>>();
         hqueries.append(&mut tuples);
 
-        circuit.step().unwrap();
+        circuit.transaction().unwrap();
         let output = houtput_strings.consolidate();
         let mut output = output.iter().map(|(s, _, _)| s.clone()).collect::<Vec<_>>();
         output.sort();
@@ -458,7 +458,7 @@ mod interned_string_test {
             .collect::<Vec<_>>();
         hqueries.append(&mut tuples);
 
-        circuit.step().unwrap();
+        circuit.transaction().unwrap();
     }
 
     #[test]
@@ -619,10 +619,10 @@ mod interned_string_test {
                 .map(|i| Tup2(SqlString::from(i.as_str()), -1))
                 .collect::<Vec<_>>();
             hinput_strings.append(&mut chunk);
-            circuit.step().unwrap();
+            circuit.transaction().unwrap();
         }
-        circuit.step().unwrap();
-        circuit.step().unwrap();
+        circuit.transaction().unwrap();
+        circuit.transaction().unwrap();
 
         super::INTERNED_STRING_BY_ID.with_borrow(|by_id| {
             let mut cursor = by_id.read().unwrap().cursor();

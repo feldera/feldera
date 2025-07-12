@@ -1692,7 +1692,7 @@ mod test {
         for _ in 0..5 {
             input_handle1.append(&mut input1.next().unwrap());
             input_handle2.append(&mut input2.next().unwrap());
-            circuit.step().unwrap();
+            circuit.transaction().unwrap();
         }
     }
 
@@ -1812,23 +1812,23 @@ mod test {
             Tup2(2, Tup2(0, 1)),
             Tup2(2, Tup2(1, 1)),
         ]);
-        circuit.step().unwrap();
+        circuit.transaction().unwrap();
         assert_eq!(
             &*output.lock().unwrap(),
             &vec![(1, 0, 1), (1, 1, 2), (2, 0, 1), (2, 1, 1)]
         );
 
         input1.append(&mut vec![Tup2(3, Tup2(1, 1))]);
-        circuit.step().unwrap();
+        circuit.transaction().unwrap();
         assert_eq!(&*output.lock().unwrap(), &vec![(3, 1, 1)]);
 
         input2.append(&mut vec![Tup2(1, Tup2(1, 3))]);
-        circuit.step().unwrap();
+        circuit.transaction().unwrap();
         assert_eq!(&*output.lock().unwrap(), &vec![(1, 0, -1), (1, 1, -2)]);
 
         input2.append(&mut vec![Tup2(2, Tup2(5, 1))]);
         input1.append(&mut vec![Tup2(2, Tup2(2, 1)), Tup2(4, Tup2(1, 1))]);
-        circuit.step().unwrap();
+        circuit.transaction().unwrap();
         assert_eq!(
             &*output.lock().unwrap(),
             &vec![(2, 0, -1), (2, 1, -1), (4, 1, 1)]
@@ -1837,7 +1837,7 @@ mod test {
         // Issue https://github.com/feldera/feldera/issues/3365. Multiple values per key in the right-hand input shouldn't
         // produce outputs with negative weights.
         input2.append(&mut vec![Tup2(2, Tup2(6, 1))]);
-        circuit.step().unwrap();
+        circuit.transaction().unwrap();
         assert_eq!(&*output.lock().unwrap(), &vec![]);
 
         circuit.kill().unwrap();

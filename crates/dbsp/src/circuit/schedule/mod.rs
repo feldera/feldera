@@ -34,6 +34,8 @@ pub enum Error {
     CyclicCircuit {
         node_id: GlobalNodeId,
     },
+    FlushWithoutStep,
+    MicrostepWithoutStep,
     /// Execution of the circuit interrupted by the user (via
     /// [`RuntimeHandle::kill`](`crate::circuit::RuntimeHandle::kill`)).
     Killed,
@@ -55,6 +57,8 @@ impl DetailedError for Error {
         match self {
             Self::OwnershipConflict { .. } => Cow::from("OwnershipConflict"),
             Self::CyclicCircuit { .. } => Cow::from("CyclicCircuit"),
+            Self::FlushWithoutStep => Cow::from("FlushWithoutStep"),
+            Self::MicrostepWithoutStep => Cow::from("MicrostepWithoutStep"),
             Self::Killed => Cow::from("Killed"),
             Self::TokioError { .. } => Cow::from("TokioError"),
             Self::ReplayInfoConflict { .. } => Cow::from("ReplayInfoConflict"),
@@ -67,11 +71,13 @@ impl Display for Error {
         match self {
             Self::OwnershipConflict { origin, consumers } => {
                 write!(f, "ownership conflict: output of node '{origin}' is consumed by value by the following nodes: [{}]",
-                       consumers.iter().map(ToString::to_string).format(","))
+                               consumers.iter().map(ToString::to_string).format(","))
             }
             Self::CyclicCircuit { node_id } => {
                 write!(f, "unschedulable circuit due to a cyclic topology: cycle through node '{node_id}'")
             }
+            Error::FlushWithoutStep => f.write_str("commit invoked outside of a transaction"),
+            Error::MicrostepWithoutStep => f.write_str("microstep called outside of a transaction"),
             Self::Killed => f.write_str("circuit has been killed by the user"),
             Self::TokioError { error } => write!(f, "tokio error: {error}"),
             Self::ReplayInfoConflict { error } => {
@@ -126,13 +132,17 @@ where
     where
         C: Circuit;
 
+    fn flush(&self) -> Result<(), Error>;
+
+    fn is_flush_complete(&self) -> bool;
+
     async fn microstep<C>(&self, circuit: &C) -> Result<(), Error>
     where
         C: Circuit;
 
-    async fn finish_step<C>(&self, circuit: &C) -> Result<(), Error>
-    where
-        C: Circuit;
+    // async fn finish_step<C>(&self, circuit: &C) -> Result<(), Error>
+    // where
+    //     C: Circuit;
 
     /// Evaluate the circuit at runtime.
     ///
@@ -147,7 +157,16 @@ where
     ///   which the schedule was computed.
     async fn step<C>(&self, circuit: &C) -> Result<(), Error>
     where
-        C: Circuit;
+        C: Circuit,
+    {
+        self.start_step(circuit).await?;
+        self.flush()?;
+        while !self.is_flush_complete() {
+            self.microstep(circuit).await?;
+        }
+
+        Ok(())
+    }
 }
 
 /// An executor executes a circuit by evaluating all of its operators using a
@@ -156,7 +175,7 @@ where
 pub trait Executor<C>: 'static {
     fn prepare(&mut self, circuit: &C, nodes: Option<&BTreeSet<NodeId>>) -> Result<(), Error>;
 
-    fn flush(&self);
+    fn flush(&self) -> Result<(), Error>;
 
     fn is_flush_complete(&self) -> bool;
 
@@ -170,10 +189,10 @@ pub trait Executor<C>: 'static {
         circuit: &'a C,
     ) -> Pin<Box<dyn Future<Output = Result<(), Error>> + 'a>>;
 
-    fn finish_step<'a>(
-        &'a self,
-        circuit: &'a C,
-    ) -> Pin<Box<dyn Future<Output = Result<(), Error>> + 'a>>;
+    // fn finish_step<'a>(
+    //     &'a self,
+    //     circuit: &'a C,
+    // ) -> Pin<Box<dyn Future<Output = Result<(), Error>> + 'a>>;
 
     fn step<'a>(&'a self, circuit: &'a C) -> Pin<Box<dyn Future<Output = Result<(), Error>> + 'a>>;
 }
@@ -227,23 +246,23 @@ where
         Box::pin(async move { self.scheduler.microstep(&circuit).await })
     }
 
-    fn finish_step<'a>(
-        &'a self,
-        circuit: &C,
-    ) -> Pin<Box<dyn Future<Output = Result<(), Error>> + 'a>> {
-        let circuit = circuit.clone();
-        Box::pin(async move {
-            self.scheduler.finish_step(&circuit).await?;
+    // fn finish_step<'a>(
+    //     &'a self,
+    //     circuit: &C,
+    // ) -> Pin<Box<dyn Future<Output = Result<(), Error>> + 'a>> {
+    //     let circuit = circuit.clone();
+    //     Box::pin(async move {
+    //         self.scheduler.finish_step(&circuit).await?;
 
-            while (self.termination_check)().await? {
-                self.scheduler.step(&circuit).await?;
-            }
+    //         while (self.termination_check)().await? {
+    //             self.scheduler.step(&circuit).await?;
+    //         }
 
-            circuit.log_scheduler_event(&SchedulerEvent::clock_end());
-            circuit.clock_end(0);
-            Ok(())
-        })
-    }
+    //         circuit.log_scheduler_event(&SchedulerEvent::clock_end());
+    //         circuit.clock_end(0);
+    //         Ok(())
+    //     })
+    // }
 
     fn step<'a>(&'a self, circuit: &C) -> Pin<Box<dyn Future<Output = Result<(), Error>> + 'a>> {
         let circuit = circuit.clone();
@@ -268,7 +287,9 @@ where
         self.scheduler.prepare(circuit, nodes)
     }
 
-    fn flush(&self) {}
+    fn flush(&self) -> Result<(), Error> {
+        Ok(())
+    }
 
     fn is_flush_complete(&self) -> bool {
         true
@@ -312,12 +333,12 @@ where
         Box::pin(async { self.scheduler.microstep(circuit).await })
     }
 
-    fn finish_step<'a>(
-        &'a self,
-        circuit: &'a C,
-    ) -> Pin<Box<dyn Future<Output = Result<(), Error>> + 'a>> {
-        Box::pin(async { self.scheduler.finish_step(circuit).await })
-    }
+    // fn finish_step<'a>(
+    //     &'a self,
+    //     circuit: &'a C,
+    // ) -> Pin<Box<dyn Future<Output = Result<(), Error>> + 'a>> {
+    //     Box::pin(async { self.scheduler.finish_step(circuit).await })
+    // }
 
     fn step<'a>(&'a self, circuit: &'a C) -> Pin<Box<dyn Future<Output = Result<(), Error>> + 'a>> {
         Box::pin(async { self.scheduler.step(circuit).await })
@@ -327,10 +348,12 @@ where
         self.scheduler.prepare(circuit, nodes)
     }
 
-    fn flush(&self) {}
+    fn flush(&self) -> Result<(), Error> {
+        self.scheduler.flush()
+    }
 
     fn is_flush_complete(&self) -> bool {
-        true
+        self.scheduler.is_flush_complete()
     }
 }
 

@@ -265,7 +265,7 @@ mod test {
 
             for mut batch in inputs.into_iter() {
                 input.append(&mut batch);
-                dbsp.step().unwrap();
+                dbsp.transaction().unwrap();
                 assert_eq!(SpineSnapshot::<OrdIndexedZSet<u64, String>>::concat(&aggregate.take_from_all()).iter().collect::<Vec<_>>(), SpineSnapshot::<OrdIndexedZSet<u64, String>>::concat(&delta_aggregate.take_from_all()).iter().collect::<Vec<_>>());
             }
         }
