@@ -3928,29 +3928,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "dec"
-version = "0.4.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "09ae126ef80702bd514a66279b6dac1e58ff1dbcb12024f7110de95608348fd7"
-dependencies = [
- "decnumber-sys",
- "libc",
- "paste",
- "serde",
- "static_assertions",
-]
-
-[[package]]
-name = "decnumber-sys"
-version = "0.1.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "23b4bc33814bd5bcd46dd13f9471a29ab1a22c4701ae0c4a182e45e8336d1a5b"
-dependencies = [
- "cc",
- "libc",
-]
-
-[[package]]
 name = "delta_kernel"
 version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4835,7 +4812,7 @@ dependencies = [
  "blake3",
  "chrono",
  "dbsp",
- "dec",
+ "feldera-fxp",
  "feldera-size-of",
  "feldera-types",
  "flate2",
