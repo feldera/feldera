@@ -294,7 +294,7 @@ mod test {
         let handle = thread::spawn(move || {
             for i in 0..100 {
                 edges_handle.append(&mut vec![Tup2(Tup2(i, i + 1), 1)]);
-                circuit.step().unwrap();
+                circuit.transaction().unwrap();
             }
         });
 

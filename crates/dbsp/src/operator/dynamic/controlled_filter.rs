@@ -363,7 +363,7 @@ mod test {
                 input_handle.push(10 * i + j - 10, 1);
             }
 
-            dbsp.step().unwrap();
+            dbsp.transaction().unwrap();
 
             let expected_output = (4..10).map(|j| Tup2(10 * i + j - 10, 1)).collect();
 
@@ -414,7 +414,7 @@ mod test {
                 input_handle.push(10 * i + j - 10, 1);
             }
 
-            dbsp.step().unwrap();
+            dbsp.transaction().unwrap();
 
             let expected_output = [4, 6, 8]
                 .iter()

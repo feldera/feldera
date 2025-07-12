@@ -109,7 +109,7 @@ fn circuit0() -> Result<()> {
         input.push(Tup3::new(datum.to_string(), "artist".to_owned(), 1), 1);
     }
 
-    dbsp.step()?;
+    dbsp.transaction()?;
 
     _ = dbsp.kill();
 
@@ -255,7 +255,7 @@ fn circuit1() -> Result<()> {
         );
     }
 
-    dbsp.step()?;
+    dbsp.transaction()?;
 
     _ = dbsp.kill();
 
