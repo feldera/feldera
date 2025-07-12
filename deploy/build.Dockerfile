@@ -50,10 +50,21 @@ RUN apt-get update --fix-missing && apt-get install -y \
     # somehow it works fine without npm on x86_64 machines :/
     npm
 
+# Install docker cli tool
+RUN  curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" \
+        | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null \
+    && apt-get update \
+    && apt-get install -y docker-ce-cli
 FROM install-pkgs AS base
-# Give ubuntu user with sudo privileges for mounting dirs in blacksmith runner
-RUN usermod -aG sudo ubuntu
-RUN echo '%sudo ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers
+
+# Modify ubuntu user UID/GID to 1001 and create docker group with GID 123
+# This corresponds to the permission of the default github runner and
+# causes the least CI woes when used in docker/k8s
+RUN groupmod -g 1001 ubuntu && usermod -u 1001 -g 1001 ubuntu \
+    && groupadd -g 123 docker && usermod -aG docker,sudo ubuntu \
+    && chown -R ubuntu:ubuntu /home/ubuntu \
+    && echo '%sudo ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers
 
 # Install redpanda's rpk cli
 RUN arch=`dpkg --print-architecture`; \

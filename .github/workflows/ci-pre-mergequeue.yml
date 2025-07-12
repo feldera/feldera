@@ -6,31 +6,58 @@ on:
 
 env:
   RUSTC_WRAPPER: sccache
-  SCCACHE_DIR: /sccache
-  SCCACHE_CACHE_SIZE: 512G
-
-permissions:
-  contents: write
+  SCCACHE_CACHE_SIZE: ${{ vars.SCCACHE_CACHE_SIZE }}
+  SCCACHE_BUCKET: ${{ vars.SCCACHE_BUCKET }}
+  SCCACHE_ENDPOINT: ${{ vars.SCCACHE_ENDPOINT }}
+  SCCACHE_REGION: ${{ vars.SCCACHE_REGION }}
+  AWS_ACCESS_KEY_ID: "${{ secrets.CI_K8S_MINIO_ACCESS_KEY_ID }}"
+  AWS_SECRET_ACCESS_KEY: "${{ secrets.CI_K8S_MINIO_SECRET_ACCESS_KEY }}"
 
 jobs:
   # This job needs to be called main (the same as the ci.yml workflow)
   # because of how merge queues work: https://stackoverflow.com/a/78030618
   main:
     container:
-      image: ghcr.io/feldera/feldera-dev:sha-cfae3f2af7e7676dde51af39ed76332f67d91b6a
-      options: --user=ubuntu
-      volumes:
-        - /sccache:/sccache
-    runs-on: [self-hosted]
+      image: ghcr.io/feldera/feldera-dev:sha-8781162739b57966b50e89e85730d522d08d3d87
+    runs-on: [k8s-runners-amd64]
     steps:
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.CI_ACCESS_APP_ID }}
+          private-key: ${{ secrets.CI_ACCESS_APP_PKEY }}
+          permission-contents: write
+
       - uses: actions/checkout@v4
         with:
-          token: ${{ secrets.CI_RELEASE }}
-      - uses: actions/cache@v4
+          # This needs to be set to a token to trigger a follow-up workflow
+          # in case some changes were corrected.
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Cache uv pre-commit environments
+        uses: actions/cache@v4
         with:
-          path: ~/.cache/pre-commit
-          key: pre-commit-3|${{ hashFiles('.pre-commit-config.yaml') }}
-      - run: pre-commit run --show-diff-on-failure --color=always --all-files
+          path: |
+            ~/.cache/pre-commit
+            ~/.cache/uv
+          key: pre-commit-uv-1|${{ hashFiles('.pre-commit-config.yaml') }}
+
+      - name: Cache Cargo registry and index
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-registry-${{ runner.os }}-${{ matrix.target }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-registry-${{ runner.os }}-${{ matrix.target }}-
+
+      - run: |
+          # Don't build the webconsole for rust checks
+          export WEBCONSOLE_BUILD_DIR="$(mktemp -d)"
+          touch $WEBCONSOLE_BUILD_DIR/index.html
+          pre-commit run --show-diff-on-failure --color=always --all-files
         shell: bash
         if: ${{ vars.CI_DRY_RUN != 'true' }}
       - name: Print sccache stats

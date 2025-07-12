@@ -2,32 +2,31 @@ name: Adapter Tests
 
 on:
   workflow_call:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: "ID of the workflow run that uploaded the artifact"
+        required: true
 
 jobs:
   adapter-tests:
+    if: ${{ !contains(vars.CI_SKIP_JOBS, 'adapter-tests') }}
     name: Test Adapters
     strategy:
       matrix:
         include:
-          - runner: ubuntu-latest
+          - runner: [k8s-runners-amd64]
             arch: x86_64
             target: x86_64-unknown-linux-gnu
-          - runner: [self-hosted, alteram128]
+          - runner: [k8s-runners-arm64]
             arch: aarch64
             target: aarch64-unknown-linux-gnu
     runs-on: ${{ matrix.runner }}
-    # can't run in container because see below
-    # For some dumb reason we can't run these tests in the dev container
-    # because while it finds redis on the docker network it doesn't find
-    # redpanda or pubsub (wtf?)
-    #container:
-    #  image: ghcr.io/feldera/feldera-dev:sha-cfae3f2af7e7676dde51af39ed76332f67d91b6a
-    #  options: --user=ubuntu
+    container:
+      image: ghcr.io/feldera/feldera-dev:sha-8781162739b57966b50e89e85730d522d08d3d87
     services:
       postgres:
         image: postgres:15
-        ports:
-          - 5432:5432
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: password
@@ -38,12 +37,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
       redpanda:
-        image: redpandadata/redpanda:v24.2.20
-        ports:
-          - 8081:8081
-          - 8082:8082
-          - 9092:9092
-          - 9644:9644
+        image: ghcr.io/feldera/redpanda-ci:v24
         options: >-
           --health-cmd "rpk cluster health"
           --health-interval 10s
@@ -52,8 +46,6 @@ jobs:
           --cpuset-cpus 0-1
       redis:
         image: redis:7-alpine
-        ports:
-          - 6379:6379
         options: >-
           --health-cmd "redis-cli ping"
           --health-interval 10s
@@ -68,6 +60,8 @@ jobs:
         with:
           name: feldera-test-binaries-${{ matrix.target }}
           path: build
+          run-id: ${{ github.event.inputs.run_id || github.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
       # Remove if https://github.com/actions/upload-artifact/issues/38 ever gets fixed
       - name: Make binaries executable
@@ -91,11 +85,12 @@ jobs:
           source .venv/bin/activate
           ../../build/dbsp_adapters-* --skip pubsub
         working-directory: crates/adapters
+        shell: bash
         env:
           RUST_BACKTRACE: 1
           REDIS_URL: redis://localhost:6379/0
           POSTGRES_URL: postgres://postgres:password@localhost:5432
-          REDPANDA_BROKERS: localhost
+          REDPANDA_BROKERS: 127.0.0.1
           # This thing can't resolve `localhost` (?), needs to be an IP address
           PUBSUB_EMULATOR_HOST: 127.0.0.1:8681
           ICEBERG_TEST_AWS_ACCESS_KEY_ID: ${{ secrets.delta_table_test_aws_access_key_id }}
@@ -107,6 +102,7 @@ jobs:
   # arm image for the pubsub emulator:
   # https://github.com/TheKevJames/tools/issues/453
   adapter-tests-pubsub:
+    if: ${{ !contains(vars.CI_SKIP_JOBS, 'adapter-tests-pubsub') }}
     name: Test Adapters (PubSub only)
     runs-on: ubuntu-latest
     services:
@@ -129,6 +125,8 @@ jobs:
         with:
           name: feldera-test-binaries-x86_64-unknown-linux-gnu
           path: build
+          run-id: ${{ github.event.inputs.run_id || github.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
       # Remove if https://github.com/actions/upload-artifact/issues/38 ever gets fixed
       - name: Make binaries executable

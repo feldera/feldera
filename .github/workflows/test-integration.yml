@@ -3,12 +3,20 @@ name: Integration Tests
 
 on:
   workflow_call:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: "ID of the workflow run that uploaded the artifact"
+        required: true
 
 jobs:
   manager-no-network:
+    if: ${{ !contains(vars.CI_SKIP_JOBS, 'manager-no-network') }}
     name: Make sure manager runs without access to a network
     runs-on: ubuntu-latest
     steps:
+      - name: Login to GHCR with GITHUB_TOKEN
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
       - name: Create a network
         run: |
           docker network create --internal --driver bridge no-internet-net
@@ -43,24 +51,26 @@ jobs:
         if: always()
         run: |
           docker logs pipeline-manager-no-internet || true
+          docker inspect pipeline-manager-no-internet || true
           docker rm -f pipeline-manager-no-internet || true
           docker network rm no-internet-net || true
 
   manager-tests:
+    if: ${{ !contains(vars.CI_SKIP_JOBS, 'manager-tests') }}
     name: Integration Tests
     strategy:
       matrix:
         include:
-          - runner: [self-hosted, skylake40]
+          - runner: [k8s-runners-amd64]
             arch: x86_64
             target: x86_64-unknown-linux-gnu
-          #- runner: [self-hosted, alteram128]
+          #- runner: [k8s-runners-arm64 ]
           #  arch: aarch64
           #  target: aarch64-unknown-linux-gnu
     runs-on: ${{ matrix.runner }}
 
     container:
-      image: ghcr.io/feldera/feldera-dev:sha-cfae3f2af7e7676dde51af39ed76332f67d91b6a
+      image: ghcr.io/feldera/feldera-dev:sha-8781162739b57966b50e89e85730d522d08d3d87
     services:
       pipeline-manager:
         image: ${{ vars.FELDERA_IMAGE_NAME }}:sha-${{ github.sha }}
@@ -79,6 +89,8 @@ jobs:
         with:
           name: feldera-test-binaries-${{ matrix.target }}
           path: build
+          run-id: ${{ github.event.inputs.run_id || github.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
       # Remove if https://github.com/actions/upload-artifact/issues/38 ever gets fixed
       - name: Make binaries executable
@@ -88,7 +100,7 @@ jobs:
         if: ${{ vars.CI_DRY_RUN != 'true' }}
         run: |
           (cd demo/packaged && uv run validate-preamble.py sql/*.sql)
-          uv run demo/all-packaged/run.py --api-url http://pipeline-manager:8080
+          uv run demo/all-packaged/run.py --api-url http://localhost:8080
         env:
           PYTHONPATH: ${{ github.workspace }}/python
 
@@ -96,7 +108,7 @@ jobs:
         if: ${{ vars.CI_DRY_RUN != 'true' }}
         run: ./build/integration_test-*
         env:
-          TEST_FELDERA_URL: http://pipeline-manager:8080
+          TEST_FELDERA_URL: http://localhost:8080
           RUST_BACKTRACE: 1
 
       - name: Run python tests
@@ -104,7 +116,7 @@ jobs:
         run: uv run --locked pytest . --timeout=600
         working-directory: python
         env:
-          FELDERA_BASE_URL: http://pipeline-manager:8080
+          FELDERA_BASE_URL: http://localhost:8080
           IN_CI: 1 # We use this flag to skip some kafka tests in the python code base
 
       - name: Run python aggregate tests
@@ -112,5 +124,5 @@ jobs:
         run: uv run --locked ./tests/aggregate_tests/main.py
         working-directory: python
         env:
-          FELDERA_BASE_URL: http://pipeline-manager:8080
+          FELDERA_BASE_URL: http://localhost:8080
           PYTHONPATH: ${{ github.workspace }}/python

@@ -7,8 +7,12 @@ env:
   CARGO_FLAGS: "--release --locked --all-targets --features pubsub-emulator-test,iceberg-tests-fs,iceberg-tests-glue"
   FELDERA_PLATFORM_VERSION_SUFFIX: ${{ github.sha }}
   RUSTC_WRAPPER: sccache
-  SCCACHE_DIR: /sccache
-  SCCACHE_CACHE_SIZE: 512G
+  SCCACHE_CACHE_SIZE: ${{ vars.SCCACHE_CACHE_SIZE }}
+  SCCACHE_BUCKET: ${{ vars.SCCACHE_BUCKET }}
+  SCCACHE_ENDPOINT: ${{ vars.SCCACHE_ENDPOINT }}
+  SCCACHE_REGION: ${{ vars.SCCACHE_REGION }}
+  AWS_ACCESS_KEY_ID: "${{ secrets.CI_K8S_MINIO_ACCESS_KEY_ID }}"
+  AWS_SECRET_ACCESS_KEY: "${{ secrets.CI_K8S_MINIO_SECRET_ACCESS_KEY }}"
 
 jobs:
   build-rust:
@@ -18,31 +22,47 @@ jobs:
     strategy:
       matrix:
         include:
-          - runner: [self-hosted, skylake40]
+          - runner: [k8s-runners-amd64]
             arch: x86_64
             target: x86_64-unknown-linux-gnu
-          - runner: [self-hosted, alteram128]
+          - runner: [k8s-runners-arm64]
             arch: aarch64
             target: aarch64-unknown-linux-gnu
     runs-on: ${{ matrix.runner }}
 
     container:
-      image: ghcr.io/feldera/feldera-dev:sha-cfae3f2af7e7676dde51af39ed76332f67d91b6a
-      options: --user=ubuntu
-      volumes:
-        - /sccache:/sccache
+      image: ghcr.io/feldera/feldera-dev:sha-8781162739b57966b50e89e85730d522d08d3d87
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Cache Cargo registry and index
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-registry-${{ runner.os }}-${{ matrix.target }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-registry-${{ runner.os }}-${{ matrix.target }}-
+
+      # Thanks to rust cargo non-sense it's too hard to split this into test job
+      #
+      # limiting jobs with --test-threads 18: doc test call the linker for every test, on arm machines
+      # this can lead up to 128 parallel linkers being used OOM'ing the pod
+      # https://github.com/rust-lang/cargo/issues/10702
+      - name: Run Rust doc tests
+        if: matrix.arch == 'x86_64'
+        run: |
+          # Don't build the webconsole again for rust tests
+          export WEBCONSOLE_BUILD_DIR="$(mktemp -d)"
+          touch $WEBCONSOLE_BUILD_DIR/index.html
+          cargo test --locked --doc --workspace -- --test-threads 18
+
       - name: Build Rust binaries
         run: |
           cargo build ${{ env.CARGO_FLAGS }} --target=${{ matrix.target }}
-
-      # Thanks to rust cargo non-sense it's too hard to split this into separate build and test jobs
-      - name: Run Rust doc tests
-        run: cargo test --locked --doc --workspace
 
       - name: Print sccache stats
         run: |

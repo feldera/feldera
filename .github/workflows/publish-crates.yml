@@ -9,12 +9,9 @@ on:
 
 jobs:
   deploy:
-    runs-on: [self-hosted, skylake40]
+    runs-on: [k8s-runners-amd64]
     container:
-      image: ghcr.io/feldera/feldera-dev:sha-cfae3f2af7e7676dde51af39ed76332f67d91b6a
-      options: --user=ubuntu
-      volumes:
-        - /sccache:/sccache
+      image: ghcr.io/feldera/feldera-dev:sha-8781162739b57966b50e89e85730d522d08d3d87
     steps:
       - uses: actions/checkout@v4
 
