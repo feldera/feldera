@@ -563,7 +563,7 @@ where
             val: None,
             phantom: PhantomData,
         };
-        debug_assert!(!result.cursor.key_valid() || !result.weight() != 0);
+        debug_assert!(!result.cursor.key_valid() || result.weight() != 0);
 
         result.update_key();
         result.update_val();
