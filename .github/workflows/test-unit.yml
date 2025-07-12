@@ -13,17 +13,16 @@ jobs:
     strategy:
       matrix:
         include:
-          - runner: [self-hosted, skylake40]
+          - runner: [k8s-runners-amd64]
             arch: x86_64
             target: x86_64-unknown-linux-gnu
-          - runner: [self-hosted, alteram128]
+          - runner: [k8s-runners-arm64]
             arch: aarch64
             target: aarch64-unknown-linux-gnu
     runs-on: ${{ matrix.runner }}
 
     container:
-      image: ghcr.io/feldera/feldera-dev:sha-cfae3f2af7e7676dde51af39ed76332f67d91b6a
-      options: --user=ubuntu
+      image: ghcr.io/feldera/feldera-dev:sha-8781162739b57966b50e89e85730d522d08d3d87
 
     steps:
       - name: Checkout repository
@@ -37,7 +36,6 @@ jobs:
 
       # Remove if https://github.com/actions/upload-artifact/issues/38 ever gets fixed
       - name: Make binaries executable
-        if: ${{ vars.CI_DRY_RUN != 'true' }}
         run: chmod +x ./build/*
 
       - name: feldera-types
@@ -49,6 +47,7 @@ jobs:
         run: ./build/dbsp-*
 
       - name: feldera-fxp
+        if: ${{ vars.CI_DRY_RUN != 'true' }}
         run: ./build/feldera_fxp-*
 
       - name: feldera-sqllib

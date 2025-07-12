@@ -24,15 +24,17 @@ jobs:
     strategy:
       matrix:
         include:
-          - runner: [self-hosted, skylake40]
+          - runner: [k8s-runners-amd64]
             rust_target: x86_64-unknown-linux-gnu
             docker_arch: amd64
             docker_platform: linux/amd64
-          - runner: [self-hosted, alteram128]
+          - runner: [k8s-runners-arm64]
             rust_target: aarch64-unknown-linux-gnu
             docker_arch: arm64
             docker_platform: linux/arm64
     runs-on: ${{ matrix.runner }}
+    container:
+      image: ghcr.io/feldera/feldera-dev:sha-8781162739b57966b50e89e85730d522d08d3d87
 
     steps:
       - name: Checkout Repository
@@ -64,6 +66,7 @@ jobs:
           ls -la ${{ steps.binaries.outputs.download-path }}
 
       - name: Prepare Platform Environment Variable
+        shell: bash
         run: |
           platform=${{ matrix.docker_platform }}
           echo "PLATFORM_PAIR=${platform//\//-}" >> $GITHUB_ENV
@@ -102,12 +105,14 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      # If you wonder why this needs to be $RUNNER_TEMP here
+      # and not ${{ runner.temp }}: https://github.com/actions/runner/issues/2498
       - name: Export digest
         run: |
-          rm -rf ${{ runner.temp }}/digests
-          mkdir -p ${{ runner.temp }}/digests
+          rm -rf $RUNNER_TEMP/digests
+          mkdir -p $RUNNER_TEMP/digests
           digest="${{ steps.build.outputs.digest }}"
-          touch "${{ runner.temp }}/digests/${digest#sha256:}"
+          touch "$RUNNER_TEMP/digests/${digest#sha256:}"
 
       - name: Upload digest
         uses: actions/upload-artifact@v4

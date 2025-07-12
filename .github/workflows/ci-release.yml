@@ -11,6 +11,15 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.CI_ACCESS_APP_ID }}
+          private-key: ${{ secrets.CI_ACCESS_APP_PKEY }}
+          owner: ${{ github.repository_owner }}
+          permission-contents: write
+
       - name: Set SHA_TO_RELEASE and CURRENT_VERSION
         run: |
           echo "CURRENT_VERSION=${{ github.event.client_payload.version }}" >> $GITHUB_ENV
@@ -63,7 +72,7 @@ jobs:
             sql2dbsp-jar-with-dependencies-v${{ env.CURRENT_VERSION }}.jar
           # A custom token is necessary so the ci-post-release.yml workflow is triggered
           # see also https://github.com/softprops/action-gh-release/issues/59
-          token: ${{ secrets.CI_RELEASE }}
+          token: ${{ steps.app-token.outputs.token }}
 
       - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -84,10 +93,10 @@ jobs:
 
       - name: Deploy docs.feldera.com
         if: ${{ vars.RELEASE_DRY_RUN == 'false' }}
-        uses: JamesIves/github-pages-deploy-action@v4
+        uses: JamesIves/github-pages-deploy-action@6c2d9db40f9296374acc17b90404b6e8864128c8
         with:
           folder: docs
-          token: ${{ secrets.CI_RELEASE }}
+          token: ${{ steps.app-token.outputs.token }}
           branch: ${{ vars.DOCS_PUBLISH_BRANCH }}
           git-config-name: feldera-ci
           git-config-email: dev@feldera.com

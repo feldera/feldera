@@ -8,6 +8,7 @@ jobs:
   invoke-build-rust:
     name: Build Rust
     uses: ./.github/workflows/build-rust.yml
+    secrets: inherit
 
   invoke-build-java:
     name: Build Java
@@ -17,11 +18,13 @@ jobs:
   invoke-build-docs:
     name: Build Docs
     uses: ./.github/workflows/build-docs.yml
+    secrets: inherit
 
   invoke-tests-unit:
     name: Unit Tests
     needs: [invoke-build-rust, invoke-build-java]
     uses: ./.github/workflows/test-unit.yml
+    secrets: inherit
 
   invoke-tests-adapter:
     name: Adapter Tests
@@ -33,16 +36,19 @@ jobs:
     name: Build Docker
     needs: [invoke-build-rust, invoke-build-java]
     uses: ./.github/workflows/build-docker.yml
+    secrets: inherit
 
   invoke-tests-integration:
     name: Integration Tests
     needs: [invoke-build-docker]
     uses: ./.github/workflows/test-integration.yml
+    secrets: inherit
 
   invoke-tests-java:
     name: Java Tests
     needs: [invoke-build-java]
     uses: ./.github/workflows/test-java.yml
+    secrets: inherit
 
   # This job needs to be called main (the same as the ci-pre-mergequeue.yml workflow)
   # because of how merge queues work: https://stackoverflow.com/a/78030618
@@ -62,5 +68,5 @@ jobs:
     steps:
       - name: Finalize Workflow
         run: echo "All tasks completed!"
-      - if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')  || contains(needs.*.result, 'skipped') }}
+      - if: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
         run: exit 1

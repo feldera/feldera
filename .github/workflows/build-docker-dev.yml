@@ -13,21 +13,24 @@ jobs:
     strategy:
       matrix:
         include:
-          - runner: [self-hosted, skylake40]
+          - runner: [k8s-runners-amd64]
             rust_target: x86_64-unknown-linux-gnu
             docker_arch: amd64
             docker_platform: linux/amd64
-          - runner: [self-hosted, alteram128]
+          - runner: [k8s-runners-arm64]
             rust_target: aarch64-unknown-linux-gnu
             docker_arch: arm64
             docker_platform: linux/arm64
     runs-on: ${{ matrix.runner }}
+    container:
+      image: ghcr.io/feldera/feldera-dev:sha-8781162739b57966b50e89e85730d522d08d3d87
 
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
       - name: Prepare Platform Environment Variable
+        shell: bash
         run: |
           platform=${{ matrix.docker_platform }}
           echo "PLATFORM_PAIR=${platform//\//-}" >> $GITHUB_ENV
