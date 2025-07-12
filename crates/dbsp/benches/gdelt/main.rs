@@ -184,7 +184,7 @@ fn main() {
         }
 
         let start = Instant::now();
-        handle.step().unwrap();
+        handle.transaction().unwrap();
 
         let elapsed = start.elapsed();
         if args.aggregate_batches.get() == 1 {

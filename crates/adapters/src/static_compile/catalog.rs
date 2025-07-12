@@ -11,6 +11,7 @@ use dbsp::utils::Tup1;
 use dbsp::OrdZSet;
 use dbsp::{
     operator::{MapHandle, SetHandle, ZSetHandle},
+    typed_batch::BatchReader,
     DBData, OrdIndexedZSet, RootCircuit, Stream, ZSet, ZWeight,
 };
 use feldera_adapterlib::catalog::CircuitCatalog;
@@ -449,8 +450,8 @@ impl Catalog {
         stream.circuit().set_mir_node_id(&delta_gid, persistent_id);
 
         let (integrate_handle, integrate_gid) = stream
-            .integrate_trace()
-            .apply(|t| TypedBatch::<Z::Key, (), ZWeight, _>::new(t.ro_snapshot()))
+            .accumulate_integrate_trace()
+            .apply(|t| TypedBatch::<Z::Key, (), ZWeight, _>::new(t.inner().ro_snapshot()))
             .output_persistent_with_gid(
                 persistent_id.map(|id| format!("{id}.integral")).as_deref(),
             );
@@ -606,8 +607,8 @@ impl Catalog {
         stream.circuit().set_mir_node_id(&delta_gid, persistent_id);
 
         let (integrate_handle, integral_gid) = delta
-            .integrate_trace()
-            .apply(|s| TypedBatch::<V, (), ZWeight, _>::new(s.ro_snapshot()))
+            .accumulate_integrate_trace()
+            .apply(|s| TypedBatch::<V, (), ZWeight, _>::new(s.inner().ro_snapshot()))
             .output_persistent_with_gid(
                 persistent_id.map(|id| format!("{id}.integral")).as_deref(),
             );
@@ -795,7 +796,7 @@ mod test {
             .unwrap();
         input_stream_handle.flush();
 
-        circuit.step().unwrap();
+        circuit.transaction().unwrap();
 
         let delta = batch_to_json(output_stream_handles.delta_handle.consolidate().deref());
         assert_eq!(
@@ -812,7 +813,7 @@ mod test {
             .unwrap();
         input_stream_handle.flush();
 
-        circuit.step().unwrap();
+        circuit.transaction().unwrap();
 
         let delta = batch_to_json(output_stream_handles.delta_handle.consolidate().deref());
         assert_eq!(
@@ -827,7 +828,7 @@ mod test {
         input_stream_handle.delete(br#"2"#).unwrap();
         input_stream_handle.flush();
 
-        circuit.step().unwrap();
+        circuit.transaction().unwrap();
 
         let delta = batch_to_json(output_stream_handles.delta_handle.consolidate().deref());
         assert_eq!(

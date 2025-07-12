@@ -206,7 +206,7 @@ fn test_replay<I1, I2, I3, O1, O2, O3>(
             I1::push_inputs(data1.clone(), &input_handles1);
             I2::push_inputs(data2.clone(), &input_handles2);
 
-            circuit.step().unwrap();
+            circuit.transaction().unwrap();
 
             reference_output1.push(O1::read_outputs(&output_handles1));
             reference_output2.push(O2::read_outputs(&output_handles2));
@@ -215,7 +215,7 @@ fn test_replay<I1, I2, I3, O1, O2, O3>(
         for data2 in inputs2_2.iter() {
             I2::push_inputs(data2.clone(), &input_handles2);
 
-            circuit.step().unwrap();
+            circuit.transaction().unwrap();
 
             reference_output2.push(O2::read_outputs(&output_handles2));
         }
@@ -232,7 +232,7 @@ fn test_replay<I1, I2, I3, O1, O2, O3>(
         for data2 in inputs2_1.iter() {
             I2::push_inputs(data2.clone(), &input_handles2);
 
-            circuit.step().unwrap();
+            circuit.transaction().unwrap();
 
             reference_output2_2.push(O2::read_outputs(&output_handles2));
         }
@@ -241,7 +241,7 @@ fn test_replay<I1, I2, I3, O1, O2, O3>(
             I2::push_inputs(data2.clone(), &input_handles2);
             I3::push_inputs(data3.clone(), &input_handles3);
 
-            circuit.step().unwrap();
+            circuit.transaction().unwrap();
 
             reference_output2_2.push(O2::read_outputs(&output_handles2));
             reference_output3.push(O3::read_outputs(&output_handles3));
@@ -272,7 +272,7 @@ fn test_replay<I1, I2, I3, O1, O2, O3>(
             I1::push_inputs(data1.clone(), &input_handles1);
             I2::push_inputs(data2.clone(), &input_handles2);
 
-            circuit.step().unwrap();
+            circuit.transaction().unwrap();
 
             actual_output1.push(O1::read_outputs(&output_handles1));
             actual_output2.push(O2::read_outputs(&output_handles2));
@@ -302,7 +302,7 @@ fn test_replay<I1, I2, I3, O1, O2, O3>(
             .unwrap();
 
         while circuit.bootstrap_in_progress() {
-            circuit.step().unwrap();
+            circuit.transaction().unwrap();
         }
         println!("Replay finished");
 
@@ -311,7 +311,7 @@ fn test_replay<I1, I2, I3, O1, O2, O3>(
             I2::push_inputs(data2.clone(), &input_handles2);
             I3::push_inputs(data3.clone(), &input_handles3);
 
-            circuit.step().unwrap();
+            circuit.transaction().unwrap();
 
             actual_output2.push(O2::read_outputs(&output_handles2));
             actual_output3.push(O3::read_outputs(&output_handles3));

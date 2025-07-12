@@ -842,7 +842,7 @@ mod test {
             for j in i * 100..(i + 1) * 100 {
                 input_handle.push(j, (1, 1));
             }
-            dbsp.step().unwrap();
+            dbsp.transaction().unwrap();
         }
     }
 
@@ -921,7 +921,7 @@ mod test {
             for j in (i - 1) * 10..i * 10 {
                 data_handle.push(Tup3(j, format!("{}", j % 10), j as u64), 1);
             }
-            dbsp.step().unwrap();
+            dbsp.transaction().unwrap();
         }
     }
 
@@ -989,7 +989,7 @@ mod test {
 
             index1_handle.append(&mut input.next().unwrap());
 
-            circuit.step().unwrap();
+            circuit.transaction().unwrap();
 
             let output = SpineSnapshot::<OrdIndexedZSet<u64, String>>::concat(
                 &output_handle.take_from_all(),
