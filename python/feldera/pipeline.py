@@ -381,9 +381,8 @@ method or use `Pipeline.resume()` to resume a paused pipeline."""
         Wait for the pipeline to become idle and then returns.
 
         Idle is defined as a sufficiently long interval in which the number of
-        input and processed records reported by the pipeline do not change, and
-        they equal each other (thus, all input records present at the pipeline
-        have been processed).
+        input and processed records reported by the pipeline change insignificantly,
+        (thus, all input records present at the pipeline have been processed).
 
         :param idle_interval_s: Idle interval duration (default is 5.0 seconds).
         :param timeout_s: Timeout waiting for idle (default is 600.0 seconds).
@@ -411,6 +410,7 @@ method or use `Pipeline.resume()` to resume a paused pipeline."""
         start_time_s = time.monotonic()
         idle_started_s = None
         prev = (0, 0)
+        delta = (float('inf'), float('inf'))
         while True:
             now_s = time.monotonic()
 
@@ -429,12 +429,22 @@ metrics"""
                 )
 
             # Idle check
-            unchanged = (
-                prev[0] == total_input_records and prev[1] == total_processed_records
-            )
-            equal = total_input_records == total_processed_records
+            delta = (total_input_records - prev[0], total_processed_records - prev[1])
             prev = (total_input_records, total_processed_records)
-            if unchanged and equal:
+
+            # If input connectors have malformed records, then total_input_records
+            # will never be equal to total_processed_records. That's intended.
+
+            # If NOW() is used, it will generate one new input record every second,
+            # even if all records from input connectors are ingested.
+            # That's intended.
+
+            # To check that all input records from connectors are ingested,
+            # even in cases when NOW() is used and when there are malformed records
+            # in input simply check that delta is =< 1
+
+            delta_stabilized = (delta[0] <= 1) and (delta[1] <= 1)
+            if delta_stabilized:
                 if idle_started_s is None:
                     idle_started_s = now_s
             else:
