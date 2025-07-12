@@ -367,30 +367,30 @@ mod test {
         })
         .unwrap();
 
-        dbsp.start_step().unwrap();
+        dbsp.start_transaction().unwrap();
 
         input_handle.push(5, 1);
-        dbsp.microstep().unwrap();
+        dbsp.step().unwrap();
 
         input_handle.push(5, 1);
-        dbsp.microstep().unwrap();
+        dbsp.step().unwrap();
 
-        dbsp.finish_step().unwrap();
+        dbsp.commit_transaction().unwrap();
         let output = SpineSnapshot::<OrdZSet<i64>>::concat(&output_handle.take_from_all())
             .iter()
             .collect::<Vec<_>>();
 
         debug_assert_eq!(output, vec![(5, (), 2)]);
 
-        dbsp.start_step().unwrap();
+        dbsp.start_transaction().unwrap();
 
         input_handle.push(5, 1);
-        dbsp.microstep().unwrap();
+        dbsp.step().unwrap();
 
         input_handle.push(2, 1);
-        dbsp.microstep().unwrap();
+        dbsp.step().unwrap();
 
-        dbsp.finish_step().unwrap();
+        dbsp.commit_transaction().unwrap();
         let output = SpineSnapshot::<OrdZSet<i64>>::concat(&output_handle.take_from_all())
             .iter()
             .collect::<Vec<_>>();

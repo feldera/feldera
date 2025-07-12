@@ -952,7 +952,7 @@ impl CircuitThread {
         self.controller.unpark_backpressure();
         debug!("circuit thread: calling 'circuit.step'");
         self.circuit
-            .step()
+            .transaction()
             .unwrap_or_else(|e| self.controller.error(Arc::new(e.into())));
         debug!("circuit thread: 'circuit.step' returned");
 

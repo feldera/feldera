@@ -847,7 +847,7 @@ impl DBSPHandle {
     }
 
     /// Evaluate the circuit for one clock cycle.
-    pub fn step(&mut self) -> Result<(), DbspError> {
+    pub fn transaction(&mut self) -> Result<(), DbspError> {
         if self.bootstrap_in_progress() {
             self.step_bootstrap()
         } else {
@@ -855,7 +855,7 @@ impl DBSPHandle {
         }
     }
 
-    pub fn start_step(&mut self) -> Result<(), DbspError> {
+    pub fn start_transaction(&mut self) -> Result<(), DbspError> {
         counter!("feldera.dbsp.step").increment(1);
         let start = Instant::now();
         let span = Arc::new(Span::root("start_step", SpanContext::random()));
@@ -868,7 +868,7 @@ impl DBSPHandle {
         result
     }
 
-    pub fn microstep(&mut self) -> Result<bool, DbspError> {
+    pub fn step(&mut self) -> Result<bool, DbspError> {
         let start = Instant::now();
         let span = Arc::new(Span::root("microstep", SpanContext::random()));
         let _guard = span.set_local_parent();
@@ -894,7 +894,7 @@ impl DBSPHandle {
         Ok(flush_complete.iter().all(|complete| *complete))
     }
 
-    pub fn flush(&mut self) -> Result<(), DbspError> {
+    pub fn start_commit_transaction(&mut self) -> Result<(), DbspError> {
         let start = Instant::now();
         let span = Arc::new(Span::root("flush", SpanContext::random()));
         let _guard = span.set_local_parent();
@@ -906,11 +906,11 @@ impl DBSPHandle {
         result
     }
 
-    pub fn finish_step(&mut self) -> Result<(), DbspError> {
-        self.flush()?;
+    pub fn commit_transaction(&mut self) -> Result<(), DbspError> {
+        self.start_commit_transaction()?;
 
         loop {
-            let flush_complete = self.microstep()?;
+            let flush_complete = self.step()?;
             if flush_complete {
                 return Ok(());
             }
@@ -1277,7 +1277,7 @@ pub(crate) mod tests {
         })
         .unwrap();
 
-        if let DbspError::Runtime(err) = handle.step().unwrap_err() {
+        if let DbspError::Runtime(err) = handle.transaction().unwrap_err() {
             // println!("error: {err}");
             matches!(err, RuntimeError::WorkerPanic { .. });
         } else {
@@ -1299,7 +1299,7 @@ pub(crate) mod tests {
         })
         .unwrap();
 
-        if let DbspError::Runtime(err) = handle.step().unwrap_err() {
+        if let DbspError::Runtime(err) = handle.transaction().unwrap_err() {
             // println!("error: {err}");
             matches!(err, RuntimeError::WorkerPanic { .. });
         } else {
@@ -1326,7 +1326,7 @@ pub(crate) mod tests {
         .unwrap();
 
         handle.enable_cpu_profiler().unwrap();
-        handle.step().unwrap();
+        handle.transaction().unwrap();
         handle
             .dump_profile(std::env::temp_dir().join("test_kill"))
             .unwrap();
@@ -1351,7 +1351,7 @@ pub(crate) mod tests {
         })
         .unwrap();
 
-        handle.step().unwrap();
+        handle.transaction().unwrap();
     }
 
     #[test]
@@ -1508,7 +1508,7 @@ pub(crate) mod tests {
 
                 sample_size_handle.set_for_all(SAMPLE_SIZE);
                 input_handle.append(&mut batch);
-                dbsp.step().unwrap();
+                dbsp.transaction().unwrap();
 
                 let res = output_handle.take_from_all();
                 committed.push(res[0].clone());
@@ -1525,7 +1525,7 @@ pub(crate) mod tests {
                 mkcircuit(&cconf).unwrap();
             sample_size_handle.set_for_all(SAMPLE_SIZE);
             input_handle.append(&mut batches_to_insert[i]);
-            dbsp.step().unwrap();
+            dbsp.transaction().unwrap();
 
             let res = output_handle.take_from_all();
             let expected_zset = committed[i].clone();
@@ -1540,7 +1540,7 @@ pub(crate) mod tests {
         let (mut dbsp, (input_handle, _, _)) = mkcircuit(&cconf).unwrap();
         let mut batch = vec![Tup2(1, Tup2(2, 1))];
         input_handle.append(&mut batch);
-        dbsp.step().unwrap();
+        dbsp.transaction().unwrap();
         let cpm = dbsp.commit().expect("commit failed");
         let batchfiles = dbsp
             .checkpointer
@@ -1561,9 +1561,9 @@ pub(crate) mod tests {
             let (mut dbsp, (_input_handle, _output_handle, sample_size_handle)) =
                 mkcircuit(&cconf).unwrap();
             sample_size_handle.set_for_all(2);
-            dbsp.step().unwrap();
+            dbsp.transaction().unwrap();
             dbsp.commit_named("test-commit").expect("commit failed");
-            dbsp.step().unwrap();
+            dbsp.transaction().unwrap();
             dbsp.commit().expect("commit failed");
         }
 
@@ -1676,7 +1676,7 @@ pub(crate) mod tests {
         for chunk in batches.chunks_mut(2) {
             input_handle.append(&mut chunk[0]);
             input_handle.append(&mut chunk[1]);
-            dbsp.step().unwrap();
+            dbsp.transaction().unwrap();
             let _cpm = dbsp.commit().expect("commit failed");
         }
 
@@ -1842,7 +1842,7 @@ pub(crate) mod tests {
             let expected_waterlines: Vec<i32> = expected_waterlines[idx..].into();
             let (mut dbsp, input_handle) = mkcircuit(&cconf, expected_waterlines.into_iter());
             input_handle.append(&mut batch);
-            dbsp.step().unwrap();
+            dbsp.transaction().unwrap();
             let cpm = dbsp.commit().unwrap();
             cconf.storage.as_mut().unwrap().init_checkpoint = Some(cpm.uuid);
             dbsp.kill().unwrap();
