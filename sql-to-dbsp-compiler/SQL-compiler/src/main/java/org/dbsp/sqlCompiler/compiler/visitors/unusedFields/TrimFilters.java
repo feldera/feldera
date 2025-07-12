@@ -18,7 +18,7 @@ import org.dbsp.util.Utilities;
 
 /** Trim unused fields from filters.
  * This is harder than it looks.
- * A filter propagates unused filters upwards, but only if they are not
+ * A filter propagates unused fields upwards, but only if they are not
  * used in the filter computation itself.
  * The algorithm looks for projections following filters with unused fields,
  * and replaces both of them in one shot. */

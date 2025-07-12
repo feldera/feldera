@@ -457,6 +457,7 @@ public class FieldUseMap {
         return new FieldUseMap(this.fieldInfo.to(Ref.class).field);
     }
 
+    /** Find the union of the used fields in 'this' and 'with' */
     public FieldUseMap reduce(FieldUseMap with) {
         return new FieldUseMap(this.fieldInfo.reduce(with.fieldInfo));
     }
