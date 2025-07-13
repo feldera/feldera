@@ -16,13 +16,12 @@ use crate::trace::cursor::{CursorFactory, CursorList};
 use crate::trace::{merge_batches, Batch, BatchReader, BatchReaderFactories, Cursor, Spine};
 use crate::NumEntries;
 
-pub trait WithSnapshot<B>
-where
-    B: Batch,
-{
+pub trait WithSnapshot {
+    type Batch: Batch;
+
     /// Returns a read-only, non-merging snapshot of the current trace
     /// state.
-    fn ro_snapshot(&self) -> SpineSnapshot<B>;
+    fn ro_snapshot(&self) -> SpineSnapshot<Self::Batch>;
 }
 
 #[derive(Clone, SizeOf)]
@@ -35,10 +34,12 @@ where
     factories: B::Factories,
 }
 
-impl<B> WithSnapshot<B> for SpineSnapshot<B>
+impl<B> WithSnapshot for SpineSnapshot<B>
 where
     B: Batch + Send + Sync,
 {
+    type Batch = B;
+
     fn ro_snapshot(&self) -> SpineSnapshot<B> {
         self.clone()
     }
