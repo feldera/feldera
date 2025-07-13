@@ -75,7 +75,7 @@ struct CommittedWindow {
     window: Option<(Vec<u8>, Vec<u8>)>,
 }
 
-impl<B: IndexedZSet, T: WithSnapshot<B>> From<&Window<B, T>> for CommittedWindow {
+impl<B: IndexedZSet, T: WithSnapshot<Batch = B>> From<&Window<B, T>> for CommittedWindow {
     fn from(value: &Window<B, T>) -> Self {
         // Transform the window bounds into a serialized form and store it as a byte vector.
         // This is necessary because the key type is not sized.
@@ -92,7 +92,7 @@ impl<B: IndexedZSet, T: WithSnapshot<B>> From<&Window<B, T>> for CommittedWindow
 struct Window<B, T>
 where
     B: IndexedZSet,
-    T: WithSnapshot<B>,
+    T: WithSnapshot<Batch = B>,
 {
     // For error reporting.
     global_id: GlobalNodeId,
@@ -110,7 +110,7 @@ where
 impl<B, T> Window<B, T>
 where
     B: IndexedZSet,
-    T: WithSnapshot<B>,
+    T: WithSnapshot<Batch = B>,
 {
     pub fn new(factories: &B::Factories, (left_inclusive, right_inclusive): (bool, bool)) -> Self {
         Self {
@@ -134,7 +134,7 @@ where
 impl<B, T> Operator for Window<B, T>
 where
     B: IndexedZSet,
-    T: WithSnapshot<B> + 'static,
+    T: WithSnapshot<Batch = B> + 'static,
 {
     fn name(&self) -> Cow<'static, str> {
         Cow::from("Window")
@@ -261,7 +261,7 @@ impl<B, T> StreamingTernaryOperator<T, Option<Spine<B>>, (Box<B::Key>, Box<B::Ke
     for Window<B, T>
 where
     B: IndexedZSet,
-    T: WithSnapshot<B> + Clone + 'static,
+    T: WithSnapshot<Batch = B> + Clone + 'static,
     Box<B::Key>: Clone,
 {
     /// * `batch` - input stream containing new time series data points indexed

@@ -2,7 +2,7 @@
 //! into multiple output records.
 
 use crate::{
-    algebra::{HasZero, IndexedZSet, OrdIndexedZSet, ZCursor, ZTrace},
+    algebra::{HasZero, IndexedZSet, OrdIndexedZSet, ZCursor},
     circuit::{operator_traits::Operator, Scope},
     dynamic::{DataTrait, DynUnit, Factory},
     operator::{
@@ -406,9 +406,9 @@ impl<B, OB, T, OT> StreamingTernaryOperator<Option<Spine<B>>, T, OT, OB>
     for GroupTransform<B, OB, T, OT>
 where
     B: IndexedZSet,
-    T: WithSnapshot<B> + Clone + 'static,
+    T: WithSnapshot<Batch = B> + Clone + 'static,
     OB: IndexedZSet<Key = B::Key>,
-    OT: ZTrace<Key = B::Key, Val = OB::Val, Time = ()> + WithSnapshot<OT::Batch> + Clone,
+    OT: WithSnapshot<Batch = OB> + Clone + 'static,
 {
     #[trace]
     fn eval(
