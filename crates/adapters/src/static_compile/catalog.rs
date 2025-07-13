@@ -382,7 +382,7 @@ impl Catalog {
         }
 
         // Create handle for the stream itself.
-        let (delta_handle, delta_gid) = stream.output_persistent_with_gid(persistent_id);
+        let (delta_handle, delta_gid) = stream.accumulate_output_persistent_with_gid(persistent_id);
         stream.circuit().set_mir_node_id(&delta_gid, persistent_id);
 
         let handles = OutputCollectionHandles {
@@ -446,7 +446,7 @@ impl Catalog {
         let stream = stream.shard();
 
         // Create handle for the stream itself.
-        let (delta_handle, delta_gid) = stream.output_persistent_with_gid(persistent_id);
+        let (delta_handle, delta_gid) = stream.accumulate_output_persistent_with_gid(persistent_id);
         stream.circuit().set_mir_node_id(&delta_gid, persistent_id);
 
         let (integrate_handle, integrate_gid) = stream
@@ -531,7 +531,7 @@ impl Catalog {
         // Create handle for the stream itself.
         let (delta_handle, delta_gid) = stream
             .map(|(_k, v)| v.clone())
-            .output_persistent_with_gid(persistent_id);
+            .accumulate_output_persistent_with_gid(persistent_id);
         stream.circuit().set_mir_node_id(&delta_gid, persistent_id);
 
         let handles = OutputCollectionHandles {
@@ -603,7 +603,7 @@ impl Catalog {
                 .as_deref(),
         );
 
-        let (delta_handle, delta_gid) = delta.output_persistent_with_gid(persistent_id);
+        let (delta_handle, delta_gid) = delta.accumulate_output_persistent_with_gid(persistent_id);
         stream.circuit().set_mir_node_id(&delta_gid, persistent_id);
 
         let (integrate_handle, integral_gid) = delta
@@ -691,7 +691,8 @@ impl Catalog {
 
         let view_handles = self.output_handles(view_name)?;
 
-        let (stream_handle, stream_gid) = stream.output_persistent_with_gid(persistent_id);
+        let (stream_handle, stream_gid) =
+            stream.accumulate_output_persistent_with_gid(persistent_id);
         stream.circuit().set_mir_node_id(&stream_gid, persistent_id);
 
         let handles = OutputCollectionHandles {
