@@ -794,44 +794,57 @@ where
 /// aggregate value.  Of course these are not always true, and we may
 /// want to one day build an alternative implementation using the
 /// other approach.
-struct AggregateIncremental<Z, B, IT, Acc, Out, Clk>
+struct AggregateIncremental<Z, IT, Acc, Out, Clk>
 where
     Acc: DataTrait + ?Sized,
     Out: DataTrait + ?Sized,
     Z: BatchReader,
-    B: Batch,
-    IT: BatchReader,
+    IT: WithSnapshot,
 {
-    keys_factory: &'static dyn Factory<DynSet<IT::Key>>,
-    output_pair_factory: &'static dyn Factory<DynPair<IT::Key, DynOpt<Out>>>,
-    output_pairs_factory: &'static dyn Factory<DynPairs<IT::Key, DynOpt<Out>>>,
+    keys_factory: &'static dyn Factory<DynSet<Z::Key>>,
+    output_pair_factory: &'static dyn Factory<DynPair<Z::Key, DynOpt<Out>>>,
+    output_pairs_factory: &'static dyn Factory<DynPairs<Z::Key, DynOpt<Out>>>,
     clock: Clk,
-    aggregator: Box<dyn DynAggregator<Z::Val, IT::Time, Z::R, Accumulator = Acc, Output = Out>>,
+    aggregator: Box<
+        dyn DynAggregator<
+            Z::Val,
+            <IT::Batch as BatchReader>::Time,
+            Z::R,
+            Accumulator = Acc,
+            Output = Out,
+        >,
+    >,
     // The last input batch was empty - used in fixedpoint computation.
     empty_input: RefCell<bool>,
     // The last output batch was empty - used in fixedpoint computation.
     empty_output: RefCell<bool>,
     // Keys that may need updating at future times.
-    keys_of_interest: RefCell<BTreeMap<IT::Time, Box<DynSet<IT::Key>>>>,
+    keys_of_interest: RefCell<BTreeMap<<IT::Batch as BatchReader>::Time, Box<DynSet<Z::Key>>>>,
     // Buffer used in computing per-key outputs.
     // Keep it here to reuse allocation across multiple operations.
-    _type: PhantomData<fn(&Z, &B, &IT)>,
+    _type: PhantomData<fn(&Z, &IT)>,
 }
 
-impl<Z, B, IT, Acc, Out, Clk> AggregateIncremental<Z, B, IT, Acc, Out, Clk>
+impl<Z, IT, Acc, Out, Clk> AggregateIncremental<Z, IT, Acc, Out, Clk>
 where
-    Clk: WithClock<Time = IT::Time>,
+    Clk: WithClock<Time = <IT::Batch as BatchReader>::Time>,
     Z: BatchReader<Time = ()>,
-    B: Batch<Key = Z::Key, Val = Z::Val, R = Z::R, Time = IT::Time>,
-    IT: BatchReader<Key = Z::Key, Val = Z::Val, R = Z::R>,
+    IT: WithSnapshot,
+    IT::Batch: BatchReader<Key = Z::Key, Val = Z::Val, R = Z::R>,
     Acc: DataTrait + ?Sized,
     Out: DataTrait + ?Sized,
 {
     pub fn new(
-        keys_factory: &'static dyn Factory<DynSet<IT::Key>>,
-        output_pair_factory: &'static dyn Factory<DynPair<IT::Key, DynOpt<Out>>>,
-        output_pairs_factory: &'static dyn Factory<DynPairs<IT::Key, DynOpt<Out>>>,
-        aggregator: &dyn DynAggregator<Z::Val, IT::Time, Z::R, Accumulator = Acc, Output = Out>,
+        keys_factory: &'static dyn Factory<DynSet<Z::Key>>,
+        output_pair_factory: &'static dyn Factory<DynPair<Z::Key, DynOpt<Out>>>,
+        output_pairs_factory: &'static dyn Factory<DynPairs<Z::Key, DynOpt<Out>>>,
+        aggregator: &dyn DynAggregator<
+            Z::Val,
+            <IT::Batch as BatchReader>::Time,
+            Z::R,
+            Accumulator = Acc,
+            Output = Out,
+        >,
         clock: Clk,
     ) -> Self {
         Self {
@@ -885,7 +898,7 @@ where
     fn eval_key(
         self: &Rc<Self>,
         key: &Z::Key,
-        input_cursor: &mut SpineCursor<B>,
+        input_cursor: &mut SpineCursor<IT::Batch>,
         output: &mut DynPairs<Z::Key, DynOpt<Out>>,
         time: &Clk::Time,
         // Temporary variable.
@@ -917,7 +930,7 @@ where
             //
             // Skip this relatively expensive computation when running in the root
             // scope using unit timestamps (`IT::Time = ()`).
-            if TypeId::of::<IT::Time>() != TypeId::of::<()>() {
+            if TypeId::of::<<IT::Batch as BatchReader>::Time>() != TypeId::of::<()>() {
                 input_cursor.rewind_vals();
 
                 let mut time_of_interest = None;
@@ -956,12 +969,11 @@ where
     }
 }
 
-impl<Z, B, IT, Acc, Out, Clk> Operator for AggregateIncremental<Z, B, IT, Acc, Out, Clk>
+impl<Z, IT, Acc, Out, Clk> Operator for AggregateIncremental<Z, IT, Acc, Out, Clk>
 where
-    Clk: WithClock<Time = IT::Time> + 'static,
+    Clk: WithClock<Time = <IT::Batch as BatchReader>::Time> + 'static,
     Z: BatchReader,
-    B: Batch,
-    IT: BatchReader,
+    IT: WithSnapshot + 'static,
     Acc: DataTrait + ?Sized,
     Out: DataTrait + ?Sized,
 {
@@ -1001,14 +1013,14 @@ where
     }
 }
 
-impl<Z, B, IT, Acc, Out, Clk>
+impl<Z, IT, Acc, Out, Clk>
     StreamingBinaryOperator<Option<Spine<Z>>, IT, Box<DynPairs<Z::Key, DynOpt<Out>>>>
-    for AggregateIncremental<Z, B, IT, Acc, Out, Clk>
+    for AggregateIncremental<Z, IT, Acc, Out, Clk>
 where
-    Clk: WithClock<Time = IT::Time> + 'static,
+    Clk: WithClock<Time = <IT::Batch as BatchReader>::Time> + 'static,
     Z: Batch<Time = ()>,
-    B: Batch<Key = Z::Key, Val = Z::Val, R = Z::R, Time = IT::Time>,
-    IT: BatchReader<Key = Z::Key, Val = Z::Val, R = Z::R> + Clone + WithSnapshot<B>,
+    IT: WithSnapshot + 'static,
+    IT::Batch: BatchReader<Key = Z::Key, Val = Z::Val, R = Z::R>,
     Acc: DataTrait + ?Sized,
     Out: DataTrait + ?Sized,
 {
