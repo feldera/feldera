@@ -1,5 +1,6 @@
 //! Distinct operator.
 
+use crate::algebra::ZBatchReader;
 use crate::circuit::circuit_builder::StreamId;
 use crate::dynamic::{ClonableTrait, Data, DynData};
 use crate::operator::async_stream_operators::{StreamingBinaryOperator, StreamingBinaryWrapper};
@@ -8,7 +9,7 @@ use crate::trace::{Spine, TupleBuilder};
 use crate::{
     algebra::{
         AddByRef, HasOne, HasZero, IndexedZSet, Lattice, OrdIndexedZSet, OrdIndexedZSetFactories,
-        PartialOrder, ZRingValue, ZTrace,
+        PartialOrder, ZRingValue,
     },
     circuit::{
         metadata::{
@@ -482,7 +483,7 @@ where
 impl<Z, I> StreamingBinaryOperator<Option<Spine<Z>>, I, Z> for DistinctIncrementalTotal<Z, I>
 where
     Z: IndexedZSet,
-    I: WithSnapshot<Z> + 'static,
+    I: WithSnapshot<Batch = Z> + 'static,
 {
     #[trace]
     fn eval(
@@ -595,7 +596,7 @@ type KeysOfInterest<TS, K, V, R> = BTreeMap<TS, Box<DynWeightedPairs<DynPair<K, 
 struct DistinctIncremental<Z, T, Clk>
 where
     Z: IndexedZSet,
-    T: ZTrace<Key = Z::Key, Val = Z::Val>,
+    T: WithSnapshot,
 {
     #[size_of(skip)]
     input_factories: Z::Factories,
@@ -607,7 +608,8 @@ where
     #[size_of(skip)]
     clock: Clk,
     // Keys that may need updating at future times.
-    keys_of_interest: RefCell<KeysOfInterest<T::Time, Z::Key, Z::Val, Z::R>>,
+    keys_of_interest:
+        RefCell<KeysOfInterest<<T::Batch as BatchReader>::Time, Z::Key, Z::Val, Z::R>>,
     // True if the operator received empty input during the last clock
     // tick.
     empty_input: RefCell<bool>,
@@ -615,7 +617,7 @@ where
     empty_output: RefCell<bool>,
     // Used in computing partial derivatives
     // (we keep it here to reuse allocations across `eval_keyval` calls).
-    distinct_vals: RefCell<Vec<(Option<T::Time>, ZWeight)>>,
+    distinct_vals: RefCell<Vec<(Option<<T::Batch as BatchReader>::Time>, ZWeight)>>,
     // Total number of input tuples processed by the operator.
     num_inputs: RefCell<usize>,
 
@@ -628,8 +630,9 @@ where
 impl<Z, T, Clk> DistinctIncremental<Z, T, Clk>
 where
     Z: IndexedZSet,
-    T: ZTrace<Key = Z::Key, Val = Z::Val>,
-    Clk: WithClock<Time = T::Time>,
+    T: WithSnapshot,
+    T::Batch: ZBatchReader<Key = Z::Key, Val = Z::Val>,
+    Clk: WithClock<Time = <T::Batch as BatchReader>::Time>,
 {
     fn new(
         location: &'static Location<'static>,
@@ -637,7 +640,7 @@ where
         aux_factories: &OrdIndexedZSetFactories<Z::Key, Z::Val>,
         clock: Clk,
     ) -> Self {
-        let depth = T::Time::NESTING_DEPTH;
+        let depth = <T::Batch as BatchReader>::Time::NESTING_DEPTH;
 
         Self {
             location,
@@ -829,7 +832,10 @@ where
         }
     }
 
-    fn init_distinct_vals(vals: &mut [(Option<T::Time>, ZWeight)], ts: Option<T::Time>) {
+    fn init_distinct_vals(
+        vals: &mut [(Option<<T::Batch as BatchReader>::Time>, ZWeight)],
+        ts: Option<<T::Batch as BatchReader>::Time>,
+    ) {
         if vals.len() == 1 {
             vals[0] = (ts, HasZero::zero());
         } else {
@@ -850,7 +856,7 @@ where
     }
 
     /// Compute partial derivative.
-    fn partial_derivative(vals: &[(Option<T::Time>, ZWeight)]) -> ZWeight {
+    fn partial_derivative(vals: &[(Option<<T::Batch as BatchReader>::Time>, ZWeight)]) -> ZWeight {
         // Split vals in two halves.  Compute `partial_derivative` recursively
         // for each half, return the difference.
         if vals.len() == 1 {
@@ -865,8 +871,9 @@ where
 impl<Z, T, Clk> Operator for DistinctIncremental<Z, T, Clk>
 where
     Z: IndexedZSet,
-    T: ZTrace<Key = Z::Key, Val = Z::Val>,
-    Clk: WithClock<Time = T::Time> + 'static,
+    T: WithSnapshot + 'static,
+    T::Batch: ZBatchReader<Key = Z::Key, Val = Z::Val>,
+    Clk: WithClock<Time = <T::Batch as BatchReader>::Time> + 'static,
 {
     fn name(&self) -> Cow<'static, str> {
         Cow::Borrowed("DistinctIncremental")
@@ -930,8 +937,9 @@ where
 impl<Z, T, Clk> StreamingBinaryOperator<Option<Spine<Z>>, T, Z> for DistinctIncremental<Z, T, Clk>
 where
     Z: IndexedZSet,
-    T: ZTrace<Key = Z::Key, Val = Z::Val> + WithSnapshot<T::Batch>,
-    Clk: WithClock<Time = T::Time> + 'static,
+    T: WithSnapshot + 'static,
+    T::Batch: ZBatchReader<Key = Z::Key, Val = Z::Val>,
+    Clk: WithClock<Time = <T::Batch as BatchReader>::Time> + 'static,
 {
     // TODO: add eval_owned, so we can use keys and values from `delta` without
     // cloning.

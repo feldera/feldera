@@ -1514,10 +1514,12 @@ where
     }
 }
 
-impl<B: Batch> WithSnapshot<B> for Spine<B>
+impl<B: Batch> WithSnapshot for Spine<B>
 where
     B: Batch,
 {
+    type Batch = B;
+
     fn ro_snapshot(&self) -> SpineSnapshot<B> {
         self.into()
     }
