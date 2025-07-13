@@ -1288,7 +1288,7 @@ impl<I, B, T, Z, Clk> BinaryOperator<Option<Spine<I>>, T, Z> for JoinTrace<I, B,
 where
     I: ZBatch<Time = ()>,
     B: ZBatch<Key = I::Key>,
-    T: ZBatchReader<Key = B::Key, Val = B::Val, Time = B::Time> + WithSnapshot<B>,
+    T: ZBatchReader<Key = B::Key, Val = B::Val, Time = B::Time> + WithSnapshot<Batch = B>,
     Z: IndexedZSet,
     Clk: WithClock<Time = T::Time> + 'static,
 {
