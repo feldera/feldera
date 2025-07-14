@@ -7,3 +7,5 @@ pub const CHECKPOINT_FILE_NAME: &str = "checkpoints.feldera";
 pub const STATE_FILE: &str = "state.json";
 
 pub const STEPS_FILE: &str = "steps.bin";
+
+pub const CHECKPOINT_DEPENDENCIES: &str = "dependencies.json";

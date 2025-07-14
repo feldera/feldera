@@ -904,17 +904,29 @@ impl DBSPHandle {
 
     /// Create a new checkpoint by taking consistent snapshot of the state in
     /// dbsp.
-    pub fn commit(&mut self) -> Result<CheckpointMetadata, DbspError> {
-        self.commit_as(Uuid::now_v7(), None)
+    pub fn commit_with_metadata(
+        &mut self,
+        steps: u64,
+        processed_records: u64,
+    ) -> Result<CheckpointMetadata, DbspError> {
+        self.commit_as(Uuid::now_v7(), None, Some(steps), Some(processed_records))
     }
 
+    /// TODO: take params steps and processed_records
+    /// Create a new checkpoint by taking consistent snapshot of the state in
+    /// dbsp.
+    pub fn commit(&mut self) -> Result<CheckpointMetadata, DbspError> {
+        self.commit_as(Uuid::now_v7(), None, None, None)
+    }
+
+    /// TODO: take params steps and processed_records
     /// Create a new named checkpoint by taking consistent snapshot of the state
     /// in dbsp.
     pub fn commit_named<S: Into<String> + AsRef<str>>(
         &mut self,
         name: S,
     ) -> Result<CheckpointMetadata, DbspError> {
-        self.commit_as(Uuid::now_v7(), Some(name.into()))
+        self.commit_as(Uuid::now_v7(), Some(name.into()), None, None)
     }
 
     /// Reset circuit state to the point of the given Commit.
@@ -974,10 +986,14 @@ impl DBSPHandle {
         &mut self,
         uuid: Uuid,
         identifier: Option<String>,
+        steps: Option<u64>,
+        processed_records: Option<u64>,
     ) -> Result<CheckpointMetadata, DbspError> {
         let checkpoint_dir = Checkpointer::checkpoint_dir(uuid);
         self.broadcast_command(Command::Commit(checkpoint_dir), |_, _| {})?;
-        self.checkpointer().unwrap().commit(uuid, identifier)
+        self.checkpointer()
+            .unwrap()
+            .commit(uuid, identifier, steps, processed_records)
     }
 
     /// List all currently available checkpoints.

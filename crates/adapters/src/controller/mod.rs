@@ -1049,9 +1049,14 @@ impl CircuitThread {
                     )
                 })
                 .collect();
+            let processed_records = this
+                .controller
+                .status
+                .global_metrics
+                .num_total_processed_records();
             let checkpoint = this
                 .circuit
-                .commit()
+                .commit_with_metadata(this.step, processed_records)
                 .map_err(|e| Arc::new(ControllerError::from(e)))
                 .and_then(|circuit| {
                     let uuid = circuit.uuid.to_string();
@@ -1059,11 +1064,7 @@ impl CircuitThread {
                         circuit: Some(circuit),
                         step: this.step,
                         config,
-                        processed_records: this
-                            .controller
-                            .status
-                            .global_metrics
-                            .num_total_processed_records(),
+                        processed_records,
                         input_metadata: CheckpointOffsets(input_metadata),
                     };
                     checkpoint
@@ -1080,6 +1081,7 @@ impl CircuitThread {
                         .map(|()| checkpoint)
                         .map_err(Arc::new)
                 })?;
+
             // TODO: check the requested checkpoint UUID
             if this.sync_checkpoint_request.is_none() {
                 if let Err(error) = this.circuit.gc_checkpoint() {
@@ -2029,8 +2031,6 @@ impl ControllerInit {
                                 .to_owned(),
                         ));
                     };
-
-                    tracing::info!("pulling checkpoints from object store");
 
                     synchronizer
                         .pull(storage.backend.clone(), sync.to_owned())
