@@ -39,10 +39,14 @@ public abstract class CalciteRelNode extends CalciteObject implements IHasId {
     }
 
     public static String toSqlString(RelNode node) {
-        SqlNode sql = CONVERTER.visitRoot(node).asStatement();
-        final SqlWriter sqlWriter = new SqlPrettyWriter();
-        sql.unparse(sqlWriter, 0, 0);
-        return sqlWriter.toSqlString().toString();
+        try {
+            SqlNode sql = CONVERTER.visitRoot(node).asStatement();
+            final SqlWriter sqlWriter = new SqlPrettyWriter();
+            sql.unparse(sqlWriter, 0, 0);
+            return sqlWriter.toSqlString().toString();
+        } catch (Throwable ex) {
+            return "<could not convert representation to SQL>";
+        }
     }
 
     @Override
