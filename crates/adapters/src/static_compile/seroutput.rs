@@ -2,7 +2,7 @@ use crate::catalog::{SerBatchReader, SerBatchReaderHandle, SerTrace, SyncSerBatc
 #[cfg(feature = "with-avro")]
 use crate::format::avro::serializer::{avro_ser_config, AvroSchemaSerializer, AvroSerializerError};
 use crate::{
-    catalog::{RecordFormat, SerBatch, SerCollectionHandle, SerCursor},
+    catalog::{RecordFormat, SerBatch, SerCursor},
     ControllerError,
 };
 use anyhow::{anyhow, Result as AnyResult};
@@ -13,10 +13,16 @@ use apache_avro::types::Value as AvroValue;
 #[cfg(feature = "with-avro")]
 use apache_avro::Schema as AvroSchema;
 use csv::{Writer as CsvWriter, WriterBuilder as CsvWriterBuilder};
-use dbsp::dynamic::DowncastTrait;
-use dbsp::trace::merge_batches;
-use dbsp::typed_batch::{DynBatchReader, DynSpine, DynTrace, Spine, TypedBatch};
+use dbsp::{dynamic::DowncastTrait, DBWeight};
+use dbsp::{
+    dynamic::Erase,
+    typed_batch::{DynBatchReader, DynSpine, DynTrace, Spine, TypedBatch},
+};
 use dbsp::{trace::Cursor, Batch, BatchReader, OutputHandle, Trace};
+use dbsp::{
+    trace::{merge_batches, WithSnapshot},
+    DBData,
+};
 use erased_serde::{Serialize as ErasedSerialize, Serializer as ErasedSerializer};
 use feldera_types::serde_with_context::serialize::{
     SerializeFieldsWithContextWrapper, SerializeWithContextWrapper,
@@ -303,17 +309,21 @@ impl<B, KD, VD> SerCollectionHandleImpl<B, KD, VD> {
     }
 }
 
-impl<B, KD, VD> SerBatchReaderHandle for SerCollectionHandleImpl<B, KD, VD>
+impl<K, V, R, B, KD, VD> SerBatchReaderHandle
+    for SerCollectionHandleImpl<TypedBatch<K, V, R, B>, KD, VD>
 where
-    B: BatchReader<Time = ()> + Send + Sync + Clone,
-    B::Inner: Send,
-    B::R: Into<i64>,
-    KD: From<B::Key> + SerializeWithContext<SqlSerdeConfig> + 'static + Send + Debug,
-    VD: From<B::Val> + SerializeWithContext<SqlSerdeConfig> + 'static + Send + Debug,
+    B: DynBatchReader<Time = ()> + WithSnapshot + Send + Clone + Sync,
+    B::Batch: DynBatchReader<Key = B::Key, Val = B::Val, R = B::R, Time = ()>,
+    K: DBData + Erase<<B::Batch as DynBatchReader>::Key>,
+    V: DBData + Erase<<B::Batch as DynBatchReader>::Val>,
+    R: DBWeight + Erase<<B::Batch as DynBatchReader>::R> + Into<i64>,
+    KD: From<K> + SerializeWithContext<SqlSerdeConfig> + 'static + Send + Debug,
+    VD: From<V> + SerializeWithContext<SqlSerdeConfig> + 'static + Send + Debug,
 {
     fn take_from_worker(&self, worker: usize) -> Option<Box<dyn SyncSerBatchReader>> {
         self.handle.take_from_worker(worker).map(|batch| {
-            Box::new(<SerBatchImpl<B, KD, VD>>::new(batch)) as Box<dyn SyncSerBatchReader>
+            Box::new(<SerBatchImpl<TypedBatch<K, V, R, B>, KD, VD>>::new(batch))
+                as Box<dyn SyncSerBatchReader>
         })
     }
 
@@ -326,45 +336,21 @@ where
             .take_from_all()
             .into_iter()
             .map(|batch| {
-                Arc::new(<SerBatchImpl<B, KD, VD>>::new(batch)) as Arc<dyn SyncSerBatchReader>
+                Arc::new(<SerBatchImpl<TypedBatch<K, V, R, B>, KD, VD>>::new(batch))
+                    as Arc<dyn SyncSerBatchReader>
             })
             .collect()
     }
-}
 
-impl<B, KD, VD> SerCollectionHandle for SerCollectionHandleImpl<B, KD, VD>
-where
-    B: Batch<Time = ()> + Send + Sync + Clone,
-    B::InnerBatch: Send,
-    B::R: Into<i64>,
-    KD: From<B::Key> + SerializeWithContext<SqlSerdeConfig> + 'static + Send + Debug,
-    VD: From<B::Val> + SerializeWithContext<SqlSerdeConfig> + 'static + Send + Debug,
-{
-    fn take_from_worker(&self, worker: usize) -> Option<Box<dyn SerBatch>> {
-        self.handle
-            .take_from_worker(worker)
-            .map(|batch| Box::new(<SerBatchImpl<B, KD, VD>>::new(batch)) as Box<dyn SerBatch>)
-    }
-
-    fn num_nonempty_mailboxes(&self) -> usize {
-        self.handle.num_nonempty_mailboxes()
-    }
-
-    fn take_from_all(&self) -> Vec<Arc<dyn SerBatch>> {
-        self.handle
-            .take_from_all()
-            .into_iter()
-            .map(|batch| Arc::new(<SerBatchImpl<B, KD, VD>>::new(batch)) as Arc<dyn SerBatch>)
-            .collect()
-    }
-
-    fn consolidate(&self) -> Box<dyn SerBatch> {
-        let batch = self.handle.consolidate();
-        Box::new(<SerBatchImpl<B, KD, VD>>::new(batch))
+    fn concat(&self) -> Arc<dyn SyncSerBatchReader> {
+        Arc::new(<SerBatchImpl<TypedBatch<K, V, R, _>, KD, VD>>::new(
+            self.handle.concat(),
+        )) as Arc<dyn SyncSerBatchReader>
     }
 }
 
 /// [`SerBatch`] implementation that wraps a `BatchReader`.
+#[repr(transparent)]
 pub struct SerBatchImpl<B, KD, VD>
 where
     B: BatchReader,
@@ -394,6 +380,10 @@ where
             batch,
             phantom: PhantomData,
         }
+    }
+
+    pub fn new_arc(batch: Arc<B>) -> Arc<Self> {
+        unsafe { std::mem::transmute::<Arc<B>, Arc<Self>>(batch) }
     }
 }
 
@@ -447,6 +437,14 @@ where
             )),
             RecordFormat::Raw => todo!(),
         })
+    }
+
+    fn batches(&self) -> Vec<Arc<dyn SerBatch>> {
+        self.batch
+            .batches()
+            .into_iter()
+            .map(|b| SerBatchImpl::<_, KD, VD>::new_arc(b) as Arc<dyn SerBatch>)
+            .collect()
     }
 }
 
