@@ -444,6 +444,99 @@ where
 
 for_all_compare!(min, T, T where T: Ord);
 
+#[inline(always)]
+#[doc(hidden)]
+pub fn max_ignore_nulls__<T>(left: T, right: T) -> T
+where
+    T: Ord,
+{
+    left.max(right)
+}
+
+#[inline(always)]
+#[doc(hidden)]
+pub fn max_ignore_nulls_N_<T>(left: Option<T>, right: T) -> Option<T>
+where
+    T: Ord,
+{
+    match left {
+        None => Some(right),
+        Some(left) => Some(left.max(right)),
+    }
+}
+
+#[inline(always)]
+#[doc(hidden)]
+pub fn max_ignore_nulls__N<T>(left: T, right: Option<T>) -> Option<T>
+where
+    T: Ord,
+{
+    match right {
+        None => Some(left),
+        Some(right) => Some(left.max(right)),
+    }
+}
+
+#[inline(always)]
+#[doc(hidden)]
+pub fn max_ignore_nulls_N_N<T>(left: Option<T>, right: Option<T>) -> Option<T>
+where
+    T: Ord,
+{
+    match left {
+        None => right,
+        _ => left.max(right),
+    }
+}
+
+#[inline(always)]
+#[doc(hidden)]
+pub fn min_ignore_nulls__<T>(left: T, right: T) -> T
+where
+    T: Ord,
+{
+    left.min(right)
+}
+
+#[inline(always)]
+#[doc(hidden)]
+pub fn min_ignore_nulls_N_<T>(left: Option<T>, right: T) -> Option<T>
+where
+    T: Ord,
+{
+    match left {
+        None => Some(right),
+        Some(left) => Some(left.min(right)),
+    }
+}
+
+#[inline(always)]
+#[doc(hidden)]
+pub fn min_ignore_nulls__N<T>(left: T, right: Option<T>) -> Option<T>
+where
+    T: Ord,
+{
+    match right {
+        None => Some(left),
+        Some(right) => Some(left.min(right)),
+    }
+}
+
+#[inline(always)]
+#[doc(hidden)]
+pub fn min_ignore_nulls_N_N<T>(left: Option<T>, right: Option<T>) -> Option<T>
+where
+    T: Ord,
+{
+    match left {
+        None => right,
+        Some(left) => match right {
+            None => Some(left),
+            Some(right) => Some(left.min(right)),
+        },
+    }
+}
+
 #[doc(hidden)]
 pub fn blackbox<T>(value: T) -> T {
     value

@@ -71,6 +71,8 @@ public class CustomFunctions {
         this.functions.add(new ArrayContainsFunction());
         this.functions.add(new ArrayExistsFunction());
         this.functions.add(new ArrayPositionFunction());
+        this.functions.add(new GreatestNonNullsFunction());
+        this.functions.add(new LeastNonNullsFunction());
         this.functions.add(new BroundFunction());
         this.udf = new HashMap<>();
     }
@@ -150,6 +152,18 @@ public class CustomFunctions {
     static class FormatDateFunction extends CalciteFunctionClone {
         private FormatDateFunction() {
             super(SqlLibraryOperators.FORMAT_DATE, "datetime#date-parsing-and-formatting");
+        }
+    }
+
+    static class GreatestNonNullsFunction extends CalciteFunctionClone {
+        private GreatestNonNullsFunction() {
+            super("GREATEST_IGNORE_NULLS", SqlLibraryOperators.GREATEST_PG, "comparisons#greatest_ignore_nulls");
+        }
+    }
+
+    static class LeastNonNullsFunction extends CalciteFunctionClone {
+        private LeastNonNullsFunction() {
+            super("LEAST_IGNORE_NULLS", SqlLibraryOperators.LEAST_PG, "comparisons#least_ignore_nulls");
         }
     }
 

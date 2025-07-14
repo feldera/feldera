@@ -140,7 +140,11 @@ with `NULL` values are compared smaller than any other value.
   </tr>
   <tr>
     <td><a id="greatest"></a><code>GREATEST( expr [, expr ]* )</code></td>
-    <td>The largest of a number of expressions.</td>
+    <td>The largest of a number of expressions; if any argument is <code>NULL</code>, the result is <code>NULL</code>.</td>
+  </tr>
+  <tr>
+    <td><a id="greatest_ignore_nulls"></a><code>GREATEST_IGNORE_NULLS( expr [, expr ]* )</code></td>
+    <td>The largest of a number of expressions; only if all arguments are <code>NULL</code>, the result is <code>NULL</code>; otherwise <code>NULL</code> values are ignored.</td>
   </tr>
   <tr>
     <td><a id="if"></a><code>IF( condition, ifTrue, ifFalse )</code></td>
@@ -148,7 +152,11 @@ with `NULL` values are compared smaller than any other value.
   </tr>
   <tr>
     <td><a id="least"></a><code>LEAST( expr [, expr ]* )</code></td>
-    <td>The smallest of a number of expressions.</td>
+    <td>The smallest of a number of expressions; if any argument is <code>NULL</code>, the result is <code>NULL</code>.</td>
+  </tr>
+  <tr>
+    <td><a id="least_ignore_nulls"></a><code>LEAST_IGNORE_NULLS( expr [, expr ]* )</code></td>
+    <td>The smallest of a number of expressions; only if all arguments are <code>NULL</code>, the result is <code>NULL</code>; otherwise <code>NULL</code> values are ignored.</td>
   </tr>
   <tr>
     <td><a id="nullif"></a><code>NULLIF(value0, value1)</code></td>
