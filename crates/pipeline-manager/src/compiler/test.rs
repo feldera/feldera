@@ -42,6 +42,9 @@ impl CompilerTest {
             runner_port: 8089,
             platform_version: platform_version.to_string(),
             http_workers: 1,
+            enable_https: false,
+            https_tls_cert_path: None,
+            https_tls_key_path: None,
         };
         let compiler_config = CompilerConfig {
             sql_compiler_path:
