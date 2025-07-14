@@ -3,7 +3,8 @@
 use crate::dynamic::{self, data::DataTyped};
 use crate::{Error, TypedBox};
 use feldera_types::checkpoint::CheckpointMetadata;
-use feldera_types::constants::CHECKPOINT_FILE_NAME;
+use feldera_types::constants::{CHECKPOINT_DEPENDENCIES, CHECKPOINT_FILE_NAME};
+use itertools::Itertools;
 
 use std::io::ErrorKind;
 use std::sync::atomic::Ordering;
@@ -25,7 +26,7 @@ use super::RuntimeError;
 ///
 /// It handles list of available checkpoints, and the files associated
 /// with each checkpoint.
-#[derive(derive_more::Debug)]
+#[derive(derive_more::Debug, Clone)]
 pub(crate) struct Checkpointer {
     #[debug(skip)]
     backend: Arc<dyn StorageBackend>,
@@ -105,6 +106,19 @@ impl Checkpointer {
         Ok(usage)
     }
 
+    pub(super) fn measure_checkpoint_storage_use(&self, uuid: uuid::Uuid) -> Result<u64, Error> {
+        let mut usage = 0;
+        StorageError::ignore_notfound(self.backend.list(
+            &Self::checkpoint_dir(uuid),
+            &mut |_path, file_type| {
+                if let StorageFileType::File { size } = file_type {
+                    usage += size;
+                }
+            },
+        ))?;
+        Ok(usage)
+    }
+
     pub(super) fn gather_batches_for_checkpoint(
         &self,
         cpm: &CheckpointMetadata,
@@ -164,17 +178,32 @@ impl Checkpointer {
         &mut self,
         uuid: Uuid,
         identifier: Option<String>,
+        steps: Option<u64>,
+        processed_records: Option<u64>,
     ) -> Result<CheckpointMetadata, Error> {
         // Write marker file to ensure that this directory is detected as a
         // checkpoint.
         self.backend
             .write(&Self::checkpoint_dir(uuid).child("CHECKPOINT"), FBuf::new())?;
 
-        let md = CheckpointMetadata {
+        let mut md = CheckpointMetadata {
             uuid,
             identifier,
             fingerprint: self.fingerprint,
+            size: None,
+            processed_records,
+            steps,
         };
+
+        let batches = self.gather_batches_for_checkpoint(&md)?;
+
+        self.backend.write_json(
+            &Self::checkpoint_dir(uuid).child(CHECKPOINT_DEPENDENCIES),
+            &batches.into_iter().map(|p| p.to_string()).collect_vec(),
+        )?;
+
+        md.size = Some(self.measure_checkpoint_storage_use(uuid)?);
+
         self.checkpoint_list.push_back(md.clone());
         self.update_checkpoint_file()?;
         Ok(md)

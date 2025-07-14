@@ -80,16 +80,12 @@ pub struct CheckpointMetadata {
     pub identifier: Option<String>,
     /// Fingerprint of the circuit at the time of the checkpoint.
     pub fingerprint: u64,
-}
-
-impl CheckpointMetadata {
-    pub fn new(uuid: Uuid, identifier: Option<String>, fingerprint: u64) -> Self {
-        CheckpointMetadata {
-            uuid,
-            identifier,
-            fingerprint,
-        }
-    }
+    /// Total size of the checkpoint files in bytes.
+    pub size: Option<u64>,
+    /// Total number of steps made.
+    pub steps: Option<u64>,
+    /// Total number of records processed.
+    pub processed_records: Option<u64>,
 }
 
 /// Format of `pspine-batches-*.dat` in storage.
