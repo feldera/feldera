@@ -49,7 +49,9 @@ pub mod cursor;
 pub mod layers;
 pub mod ord;
 pub mod spine_async;
-pub use spine_async::{ListMerger, MergerType, Spine, SpineSnapshot};
+pub use spine_async::{
+    BatchReaderWithSnapshot, ListMerger, MergerType, Spine, SpineSnapshot, WithSnapshot,
+};
 
 #[cfg(test)]
 pub mod test;

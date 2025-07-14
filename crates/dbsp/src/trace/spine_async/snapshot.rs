@@ -16,12 +16,36 @@ use crate::trace::cursor::{CursorFactory, CursorList};
 use crate::trace::{merge_batches, Batch, BatchReader, BatchReaderFactories, Cursor, Spine};
 use crate::NumEntries;
 
-pub trait WithSnapshot {
+pub trait WithSnapshot: Sized {
     type Batch: Batch;
+
+    fn into_ro_snapshot(self) -> SpineSnapshot<Self::Batch> {
+        self.ro_snapshot()
+    }
 
     /// Returns a read-only, non-merging snapshot of the current trace
     /// state.
     fn ro_snapshot(&self) -> SpineSnapshot<Self::Batch>;
+}
+
+pub trait BatchReaderWithSnapshot:
+    BatchReader<
+        Key = <Self::Batch as BatchReader>::Key,
+        Val = <Self::Batch as BatchReader>::Val,
+        Time = <Self::Batch as BatchReader>::Time,
+        R = <Self::Batch as BatchReader>::R,
+    > + WithSnapshot
+{
+}
+
+impl<B> BatchReaderWithSnapshot for B where
+    B: BatchReader<
+            Key = <Self::Batch as BatchReader>::Key,
+            Val = <Self::Batch as BatchReader>::Val,
+            Time = <Self::Batch as BatchReader>::Time,
+            R = <Self::Batch as BatchReader>::R,
+        > + WithSnapshot
+{
 }
 
 #[derive(Clone, SizeOf)]
@@ -40,8 +64,34 @@ where
 {
     type Batch = B;
 
+    fn into_ro_snapshot(self) -> SpineSnapshot<Self::Batch> {
+        self
+    }
+
     fn ro_snapshot(&self) -> SpineSnapshot<B> {
         self.clone()
+    }
+}
+
+impl<B> WithSnapshot for B
+where
+    B: Batch,
+{
+    type Batch = B;
+    fn into_ro_snapshot(self) -> SpineSnapshot<B> {
+        let factories = self.factories();
+
+        SpineSnapshot {
+            batches: vec![Arc::new(self)],
+            factories,
+        }
+    }
+
+    fn ro_snapshot(&self) -> SpineSnapshot<Self::Batch> {
+        SpineSnapshot {
+            batches: vec![Arc::new(self.clone())],
+            factories: self.factories(),
+        }
     }
 }
 
@@ -92,6 +142,10 @@ where
             &None,
             &None,
         )
+    }
+
+    pub fn into_batches(self) -> Vec<Arc<B>> {
+        self.batches
     }
 }
 

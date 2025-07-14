@@ -38,8 +38,8 @@ use crate::transport::Step;
 use crate::transport::{input_transport_config_to_endpoint, output_transport_config_to_endpoint};
 use crate::util::{run_on_thread_pool, RateLimitCheckResult, TokenBucketRateLimiter};
 use crate::{
-    catalog::SerBatch, CircuitCatalog, Encoder, InputConsumer, OutputConsumer, OutputEndpoint,
-    ParseError, PipelineState, TransportInputEndpoint,
+    CircuitCatalog, Encoder, InputConsumer, OutputConsumer, OutputEndpoint, ParseError,
+    PipelineState, TransportInputEndpoint,
 };
 use anyhow::{anyhow, Error as AnyError};
 use arrow::datatypes::Schema;
@@ -1912,8 +1912,8 @@ impl CircuitThread {
     fn push_output(&mut self, bootstrapping: bool, processed_records: u64) {
         let outputs = self.controller.outputs.read().unwrap();
         for (stream, (output_handles, endpoints)) in outputs.iter_by_stream() {
-            let delta_batch = output_handles.delta_handle.as_ref().take_from_all();
-            let num_delta_records = delta_batch.iter().map(|b| b.len()).sum();
+            let delta_batch = output_handles.delta_handle.as_ref().concat();
+            let num_delta_records = delta_batch.len();
 
             // Some of the output handles may not produce any output while bootstrapping.
             // Note 1: this is different from the connector producing an empty output, in which case
@@ -2851,7 +2851,7 @@ impl Drop for StatisticsThread {
 /// that is equal to the number of input records fully processed by
 /// DBSP before emitting this batch of outputs.  The label increases
 /// monotonically over time.
-type BatchQueue = SegQueue<(Step, Vec<Arc<dyn SerBatch>>, u64)>;
+type BatchQueue = SegQueue<(Step, Arc<dyn SyncSerBatchReader>, u64)>;
 
 /// State tracked by the controller for each output endpoint.
 struct OutputEndpointDescr {
@@ -2980,11 +2980,19 @@ impl OutputBuffer {
     }
 
     /// Insert `batch` into the buffer.
-    fn insert(&mut self, batch: Arc<dyn SerBatch>, step: Step, processed_records: u64) {
+    fn insert(&mut self, batch: Arc<dyn SyncSerBatchReader>, step: Step, processed_records: u64) {
         if let Some(buffer) = &mut self.buffer {
-            buffer.insert(batch);
+            for batch in batch.batches() {
+                buffer.insert(batch);
+            }
         } else {
-            self.buffer = Some(batch.into_trace());
+            for batch in batch.batches() {
+                if let Some(buffer) = self.buffer.as_mut() {
+                    buffer.insert(batch);
+                } else {
+                    self.buffer = Some(batch.into_trace());
+                };
+            }
             self.buffer_since = Instant::now();
         }
         self.buffered_step = step;
@@ -3663,12 +3671,6 @@ impl ControllerInner {
         Ok(endpoint_id)
     }
 
-    fn merge_batches(mut data: Vec<Arc<dyn SerBatch>>) -> Arc<dyn SerBatch> {
-        let last = data.pop().unwrap();
-
-        last.merge(data)
-    }
-
     fn push_batch_to_encoder(
         batch: &dyn SerBatchReader,
         endpoint_id: EndpointId,
@@ -3728,14 +3730,13 @@ impl ControllerInner {
                 // buffer; we will check if the buffer needs to be flushed at the next iteration of
                 // the loop.  If buffering is disabled, push the buffer directly to the encoder.
 
-                let num_records = data.iter().map(|b| b.len()).sum();
-                let consolidated = Self::merge_batches(data);
+                let num_records = data.len();
 
                 // trace!("Pushing {num_records} records to output endpoint {endpoint_name}");
 
                 // Buffer the new output if buffering is enabled.
                 if output_buffer_config.enable_output_buffer {
-                    output_buffer.insert(consolidated, step, processed_records);
+                    output_buffer.insert(data, step, processed_records);
                     controller.status.buffer_batch(
                         endpoint_id,
                         num_records,
@@ -3743,7 +3744,7 @@ impl ControllerInner {
                     );
                 } else {
                     Self::push_batch_to_encoder(
-                        consolidated.as_batch_reader(),
+                        data.as_ref(),
                         endpoint_id,
                         &endpoint_name,
                         encoder.as_mut(),

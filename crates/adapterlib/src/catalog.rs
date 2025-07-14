@@ -209,6 +209,8 @@ pub trait SerBatchReader: 'static {
         &'a self,
         record_format: RecordFormat,
     ) -> Result<Box<dyn SerCursor + Send + 'a>, ControllerError>;
+
+    fn batches(&self) -> Vec<Arc<dyn SerBatch>>;
 }
 
 impl Debug for dyn SerBatchReader {
@@ -265,10 +267,10 @@ pub trait SerBatch: SyncSerBatchReader {
     /// Merge `self` with all batches in `other`.
     fn merge(self: Arc<Self>, other: Vec<Arc<dyn SerBatch>>) -> Arc<dyn SerBatch>;
 
+    fn as_batch_reader(&self) -> &dyn SerBatchReader;
+
     /// Convert batch into a trace with identical contents.
     fn into_trace(self: Arc<Self>) -> Box<dyn SerTrace>;
-
-    fn as_batch_reader(&self) -> &dyn SerBatchReader;
 }
 
 /// A type-erased `Trace`.
@@ -396,34 +398,11 @@ pub trait SerBatchReaderHandle: Send + Sync + DynClone {
     /// Like [`OutputHandle::take_from_all`](`dbsp::OutputHandle::take_from_all`),
     /// but returns output batches as [`SyncSerBatchReader`] trait objects.
     fn take_from_all(&self) -> Vec<Arc<dyn SyncSerBatchReader>>;
+
+    fn concat(&self) -> Arc<dyn SyncSerBatchReader>;
 }
 
 dyn_clone::clone_trait_object!(SerBatchReaderHandle);
-
-/// A handle to an output stream of a circuit that yields type-erased
-/// output batches.
-///
-/// A trait for a type that wraps around an
-/// [`OutputHandle`](`dbsp::OutputHandle`) and yields output batches produced by
-/// the circuit as [`SerBatch`]s.
-pub trait SerCollectionHandle: Send + Sync + DynClone {
-    /// See [`OutputHandle::num_nonempty_mailboxes`](`dbsp::OutputHandle::num_nonempty_mailboxes`)
-    fn num_nonempty_mailboxes(&self) -> usize;
-
-    /// Like [`OutputHandle::take_from_worker`](`dbsp::OutputHandle::take_from_worker`),
-    /// but returns output batch as a [`SerBatch`] trait object.
-    fn take_from_worker(&self, worker: usize) -> Option<Box<dyn SerBatch>>;
-
-    /// Like [`OutputHandle::take_from_all`](`dbsp::OutputHandle::take_from_all`),
-    /// but returns output batches as [`SerBatch`] trait objects.
-    fn take_from_all(&self) -> Vec<Arc<dyn SerBatch>>;
-
-    /// Like [`OutputHandle::consolidate`](`dbsp::OutputHandle::consolidate`),
-    /// but returns the output batch as a [`SerBatch`] trait object.
-    fn consolidate(&self) -> Box<dyn SerBatch>;
-}
-
-dyn_clone::clone_trait_object!(SerCollectionHandle);
 
 /// Cursor that iterates over deletions before insertions.
 ///
@@ -623,5 +602,5 @@ pub struct OutputCollectionHandles {
     pub integrate_handle: Option<Arc<dyn SerBatchReaderHandle>>,
 
     /// A stream of changes to the collection.
-    pub delta_handle: Box<dyn SerCollectionHandle>,
+    pub delta_handle: Box<dyn SerBatchReaderHandle>,
 }
