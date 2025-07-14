@@ -459,12 +459,11 @@ pub struct RuntimeConfig {
     ///
     /// This parameter controls the execution of queries that use the `NOW()` function.  The output of such
     /// queries depends on the real-time clock and can change over time without any external
-    /// inputs.  The pipeline will update the clock value and trigger incremental recomputation
-    /// at most each `clock_resolution_usecs` microseconds.
+    /// inputs.  If the query uses `NOW()`, the pipeline will update the clock value and trigger incremental
+    /// recomputation at most each `clock_resolution_usecs` microseconds.  If the query does not use
+    /// `NOW()`, then clock value updates are suppressed and the pipeline ignores this setting.
     ///
     /// It is set to 1 second (1,000,000 microseconds) by default.
-    ///
-    /// Set to `null` to disable periodic clock updates.
     pub clock_resolution_usecs: Option<u64>,
 
     /// Optionally, a list of CPU numbers for CPUs to which the pipeline may pin
