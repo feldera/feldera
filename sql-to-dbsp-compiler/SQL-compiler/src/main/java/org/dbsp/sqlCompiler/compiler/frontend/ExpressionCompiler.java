@@ -1779,7 +1779,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 throw new UnimplementedException("Please use the TABLE function HOP", node);
             case ROW:
                 return new DBSPTupleExpression(node, ops);
-            case COALESCE:
+            case COALESCE: {
                 if (ops.isEmpty()) {
                     throw new CompilationError(
                             "Function " + Utilities.singleQuote(operationName) +
@@ -1800,6 +1800,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                             node, op.is_null(), last, op.cast(node, type, false));
                 }
                 return last;
+            }
             case TIMESTAMP_ADD:
                 throw new UnimplementedException("Function " + Utilities.singleQuote(call.getOperator().toString())
                         + " not yet implemented", 1265,
@@ -1810,6 +1811,23 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 boolean anyNull = Linq.any(ops, o -> o.getType().mayBeNull);
                 var cmp = makeBinaryExpression(node, DBSPTypeBool.create(anyNull), DBSPOpcode.EQ, ops.get(0), ops.get(1));
                 return new DBSPIfExpression(node, cmp.wrapBoolIfNeeded(), type.none(), ops.get(0).cast(node, type, false));
+            }
+            case GREATEST_PG:
+            case LEAST_PG: {
+                if (ops.isEmpty()) {
+                    throw new CompilationError(
+                            "Function " + Utilities.singleQuote(operationName) +
+                                    " with 0 arguments is unknown", node);
+                }
+                ops = Linq.where(ops, op -> !op.is(DBSPNullLiteral.class));
+                DBSPOpcode code = call.getKind() == SqlKind.GREATEST_PG ?
+                        DBSPOpcode.MAX_IGNORE_NULLS : DBSPOpcode.MIN_IGNORE_NULLS;
+                DBSPExpression next = ops.get(0).cast(node, type, false);
+                for (int i = 1; i < ops.size(); i++) {
+                    DBSPExpression op = ops.get(i);
+                    next = new DBSPBinaryExpression(node, type, code, next, op.cast(node, type, false));
+                }
+                return next;
             }
             case DOT:
             default:

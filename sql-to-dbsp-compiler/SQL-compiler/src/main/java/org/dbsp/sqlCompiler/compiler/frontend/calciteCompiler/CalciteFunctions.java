@@ -163,12 +163,12 @@ public class CalciteFunctions implements FunctionDocumentation.FunctionRegistry 
             new Func(SqlStdOperatorTable.LOWER, "LOWER", SqlLibrary.STANDARD, "string#lower", false),
             new Func(SqlStdOperatorTable.INITCAP, "INITCAP", SqlLibrary.STANDARD, "string#initcap", false),
             new Func(SqlStdOperatorTable.ASCII, "ASCII", SqlLibrary.STANDARD, "string#ascii", false),
-            new Func(SqlStdOperatorTable.POWER, "POWER", SqlLibrary.STANDARD, "decimal#power,float#power", false),
-            new Func(SqlStdOperatorTable.SQRT, "SQRT", SqlLibrary.STANDARD, "decimal#sqrt,float#sqrt", false),
+            new Func(SqlStdOperatorTable.POWER, "POWER", SqlLibrary.STANDARD, "float#power", false),
+            new Func(SqlStdOperatorTable.SQRT, "SQRT", SqlLibrary.STANDARD, "float#sqrt", false),
 
             new Func(SqlStdOperatorTable.MOD, "MOD", SqlLibrary.STANDARD, "integer#mod", false),
-            new Func(SqlStdOperatorTable.LN, "LN", SqlLibrary.STANDARD, "decimal#ln,float#ln", false),
-            new Func(SqlStdOperatorTable.LOG10, "LOG10", SqlLibrary.STANDARD, "decimal#log10,float#log10", false),
+            new Func(SqlStdOperatorTable.LN, "LN", SqlLibrary.STANDARD, "float#ln", false),
+            new Func(SqlStdOperatorTable.LOG10, "LOG10", SqlLibrary.STANDARD, "float#log10", false),
             new Func(SqlStdOperatorTable.ABS, "ABS", SqlLibrary.STANDARD, "decimal#abs,float#abs,integer#abs,datetime#abs", false),
 
             new Func(SqlStdOperatorTable.ACOS, "ACOS", SqlLibrary.STANDARD, "float#acos", false),
