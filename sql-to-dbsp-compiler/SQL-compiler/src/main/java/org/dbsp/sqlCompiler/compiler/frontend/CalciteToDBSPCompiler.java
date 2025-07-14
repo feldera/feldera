@@ -778,55 +778,80 @@ public class CalciteToDBSPCompiler extends RelVisitor
         return new DBSPTupleExpression(keys);
     }
 
+    /** Given two results of aggregation functions, join them on the common keys and concatenate the fields */
+    DBSPStreamJoinIndexOperator combineTwoAggregates(
+            CalciteRelNode node, DBSPType groupKeyType,
+            DBSPSimpleOperator left, DBSPSimpleOperator right) {
+        DBSPTypeTupleBase leftType = left.getOutputIndexedZSetType().getElementTypeTuple();
+        DBSPTypeTupleBase rightType = right.getOutputIndexedZSetType().getElementTypeTuple();
+
+        DBSPVariablePath leftVar = leftType.ref().var();
+        DBSPVariablePath rightVar = rightType.ref().var();
+
+        leftType = leftType.concat(rightType);
+        DBSPTypeIndexedZSet joinOutputType = makeIndexedZSet(groupKeyType, leftType);
+
+        DBSPVariablePath key = groupKeyType.ref().var();
+        DBSPExpression body = new DBSPRawTupleExpression(
+                DBSPTupleExpression.flatten(key.deref()),
+                DBSPTupleExpression.flatten(leftVar.deref(), rightVar.deref()));
+        DBSPClosureExpression appendFields = body.closure(key, leftVar, rightVar);
+
+        DBSPStreamJoinIndexOperator result = new DBSPStreamJoinIndexOperator(
+                node, joinOutputType, appendFields, false, left.outputPort(), right.outputPort());
+        this.addOperator(result);
+        return result;
+    }
+
+    /** Implement an AggregateList using an aggregate operator */
+    DBSPSimpleOperator implementAggregate(
+            CalciteRelNode node, DBSPType groupKeyType, OutputPort indexedInput, DBSPAggregateList agg) {
+        DBSPTypeTuple typeFromAggregate = agg.getEmptySetResultType();
+        DBSPTypeIndexedZSet aggregateType = makeIndexedZSet(groupKeyType, typeFromAggregate);
+
+        DBSPSimpleOperator aggOp;
+        if (agg.isLinear()) {
+            // incremental-only operator
+            DBSPDifferentiateOperator diff = new DBSPDifferentiateOperator(node, indexedInput);
+            this.addOperator(diff);
+            LinearAggregate linear = agg.asLinear(this.compiler());
+            aggOp = new DBSPAggregateLinearPostprocessOperator(
+                    node, aggregateType, linear.map, linear.postProcess, diff.outputPort());
+            this.addOperator(aggOp);
+            aggOp = new DBSPIntegrateOperator(node, aggOp.outputPort());
+        } else {
+            aggOp = new DBSPStreamAggregateOperator(
+                    node, aggregateType, null, agg, indexedInput);
+        }
+        this.addOperator(aggOp);
+        return aggOp;
+    }
+
+    /** Given a list of aggregates, combine them using joins in a balanced binary tree. */
+    DBSPSimpleOperator combineAggregateList(
+            CalciteRelNode node, DBSPType groupKeyType, List<DBSPSimpleOperator> aggregates) {
+        if (aggregates.size() == 1) {
+            return aggregates.get(0);
+        }
+
+        List<DBSPSimpleOperator> pairs = new ArrayList<>();
+        for (int i = 0; i < aggregates.size(); i += 2) {
+            if (i == aggregates.size() - 1) {
+                pairs.add(aggregates.get(i));
+            } else {
+                DBSPSimpleOperator join = this.combineTwoAggregates(node, groupKeyType, aggregates.get(i), aggregates.get(i + 1));
+                pairs.add(join);
+            }
+        }
+        return this.combineAggregateList(node, groupKeyType, pairs);
+    }
+
     DBSPSimpleOperator joinAllAggregates(
             CalciteRelNode node, DBSPType groupKeyType, OutputPort indexedInput,
             List<DBSPAggregateList> aggregates) {
-        DBSPSimpleOperator result = null;
-        for (DBSPAggregateList agg : aggregates) {
-            // We synthesize each aggregate and repeatedly join it with the previous result.
-            // The aggregate operator will not return a stream of type aggType, but a stream
-            // with a type given by fd.defaultZero.
-            DBSPTypeTuple typeFromAggregate = agg.getEmptySetResultType();
-            DBSPTypeIndexedZSet aggregateType = makeIndexedZSet(groupKeyType, typeFromAggregate);
-
-            DBSPSimpleOperator aggOp;
-            if (agg.isLinear()) {
-                // incremental-only operator
-                DBSPDifferentiateOperator diff = new DBSPDifferentiateOperator(node, indexedInput);
-                this.addOperator(diff);
-                LinearAggregate linear = agg.asLinear(this.compiler());
-                aggOp = new DBSPAggregateLinearPostprocessOperator(
-                        node, aggregateType, linear.map, linear.postProcess, diff.outputPort());
-                this.addOperator(aggOp);
-                aggOp = new DBSPIntegrateOperator(node, aggOp.outputPort());
-            } else {
-                aggOp = new DBSPStreamAggregateOperator(
-                        node, aggregateType, null, agg, indexedInput);
-            }
-            this.addOperator(aggOp);
-
-            if (result == null) {
-                result = aggOp;
-            } else {
-                // Create a join to combine the fields
-                DBSPTypeTupleBase valueType = result.getOutputIndexedZSetType().getElementTypeTuple();
-                DBSPVariablePath left = valueType.ref().var();
-                valueType = valueType.concat(typeFromAggregate);
-                DBSPTypeIndexedZSet joinOutputType = makeIndexedZSet(groupKeyType, valueType);
-
-                DBSPVariablePath key = groupKeyType.ref().var();
-                DBSPVariablePath right = typeFromAggregate.ref().var();
-                DBSPExpression body = new DBSPRawTupleExpression(
-                        DBSPTupleExpression.flatten(key.deref()),
-                        DBSPTupleExpression.flatten(left.deref(), right.deref()));
-                DBSPClosureExpression appendFields = body.closure(
-                        key, left, right);
-
-                result = new DBSPStreamJoinIndexOperator(
-                        node, joinOutputType, appendFields, false, result.outputPort(), aggOp.outputPort());
-                this.addOperator(result);
-            }
-        }
+        List<DBSPSimpleOperator> implementations =
+                Linq.map(aggregates, a -> this.implementAggregate(node, groupKeyType, indexedInput, a));
+        DBSPSimpleOperator result = this.combineAggregateList(node, groupKeyType, implementations);
         return Objects.requireNonNull(result);
     }
 

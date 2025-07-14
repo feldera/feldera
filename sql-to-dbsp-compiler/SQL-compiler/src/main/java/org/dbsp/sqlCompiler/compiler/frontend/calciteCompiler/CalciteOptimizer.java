@@ -253,18 +253,19 @@ public class CalciteOptimizer implements IWritesLogs {
                 // Bushy join optimization fails when the query contains outer joins.
                 boolean hasOuterJoins = (finder.outerJoinCount > 0) || (finder.joinCount < 3);
                 if (!hasOuterJoins) {
+                    this.builder.addMatchOrder(HepMatchOrder.BOTTOM_UP);
                     this.addRules(level,
                             CoreRules.JOIN_TO_MULTI_JOIN,
                             CoreRules.PROJECT_MULTI_JOIN_MERGE,
-                            CoreRules.MULTI_JOIN_OPTIMIZE_BUSHY
+                            CoreRules.MULTI_JOIN_OPTIMIZE_BUSHY,
+                            // If bushy failed, this one will generate back normal joins
+                            CoreRules.MULTI_JOIN_OPTIMIZE
                             //CoreRules.FILTER_MULTI_JOIN_MERGE,
                             //CoreRules.MULTI_JOIN_BOTH_PROJECT,
                             //CoreRules.MULTI_JOIN_LEFT_PROJECT,
                             //CoreRules.MULTI_JOIN_RIGHT_PROJECT,
-                            //CoreRules.MULTI_JOIN_OPTIMIZE
                     );
                 }
-                this.builder.addMatchOrder(HepMatchOrder.BOTTOM_UP);
                 return this.builder.build();
             }
         });
