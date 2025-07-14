@@ -1,9 +1,6 @@
 use super::{DeMapHandle, DeSetHandle, DeZSetHandle, SerCollectionHandleImpl};
 use crate::catalog::{InputCollectionHandle, SerBatchReaderHandle};
-use crate::{
-    catalog::{OutputCollectionHandles, SerCollectionHandle},
-    Catalog, ControllerError,
-};
+use crate::{catalog::OutputCollectionHandles, Catalog, ControllerError};
 use dbsp::circuit::circuit_builder::CircuitBase;
 use dbsp::trace::spine_async::WithSnapshot;
 use dbsp::typed_batch::TypedBatch;
@@ -390,7 +387,7 @@ impl Catalog {
             value_schema: schema,
             index_of: None,
             delta_handle: Box::new(<SerCollectionHandleImpl<_, D, ()>>::new(delta_handle))
-                as Box<dyn SerCollectionHandle>,
+                as Box<dyn SerBatchReaderHandle>,
             integrate_handle: None,
         };
 
@@ -467,7 +464,7 @@ impl Catalog {
                 integrate_handle,
             )) as Arc<dyn SerBatchReaderHandle>),
             delta_handle: Box::new(<SerCollectionHandleImpl<_, D, ()>>::new(delta_handle))
-                as Box<dyn SerCollectionHandle>,
+                as Box<dyn SerBatchReaderHandle>,
         };
 
         self.register_output_batch_handles(&name, handles).unwrap();
@@ -539,7 +536,7 @@ impl Catalog {
             value_schema: schema,
             index_of: None,
             delta_handle: Box::new(<SerCollectionHandleImpl<_, VD, ()>>::new(delta_handle))
-                as Box<dyn SerCollectionHandle>,
+                as Box<dyn SerBatchReaderHandle>,
             integrate_handle: None,
         };
 
@@ -621,7 +618,7 @@ impl Catalog {
             value_schema: schema,
             index_of: None,
             delta_handle: Box::new(<SerCollectionHandleImpl<_, VD, ()>>::new(delta_handle))
-                as Box<dyn SerCollectionHandle>,
+                as Box<dyn SerBatchReaderHandle>,
             integrate_handle: Some(Arc::new(<SerCollectionHandleImpl<_, VD, ()>>::new(
                 integrate_handle,
             )) as Arc<dyn SerBatchReaderHandle>),
@@ -704,7 +701,7 @@ impl Catalog {
             value_schema: view_handles.value_schema.clone(),
             index_of: Some(view_name.clone()),
             delta_handle: Box::new(<SerCollectionHandleImpl<_, KD, VD>>::new(stream_handle))
-                as Box<dyn SerCollectionHandle>,
+                as Box<dyn SerBatchReaderHandle>,
             integrate_handle: None,
         };
 
@@ -738,13 +735,14 @@ fn index_schema(
 mod test {
     use std::{io::Write, ops::Deref};
 
-    use crate::{catalog::RecordFormat, test::TestStruct, Catalog, CircuitCatalog, SerBatch};
+    use crate::{catalog::RecordFormat, test::TestStruct, Catalog, CircuitCatalog};
     use dbsp::Runtime;
+    use feldera_adapterlib::catalog::SerBatchReader;
     use feldera_types::format::json::JsonFlavor;
 
     const RECORD_FORMAT: RecordFormat = RecordFormat::Json(JsonFlavor::Default);
 
-    fn batch_to_json(batch: &dyn SerBatch) -> String {
+    fn batch_to_json(batch: &dyn SerBatchReader) -> String {
         let mut cursor = batch.cursor(RECORD_FORMAT.clone()).unwrap();
         let mut result = Vec::new();
 
@@ -799,7 +797,7 @@ mod test {
 
         circuit.transaction().unwrap();
 
-        let delta = batch_to_json(output_stream_handles.delta_handle.consolidate().deref());
+        let delta = batch_to_json(output_stream_handles.delta_handle.concat().deref());
         assert_eq!(
             delta,
             r#"1: {"id":1,"b":true,"i":null,"s":"1"}
@@ -816,7 +814,7 @@ mod test {
 
         circuit.transaction().unwrap();
 
-        let delta = batch_to_json(output_stream_handles.delta_handle.consolidate().deref());
+        let delta = batch_to_json(output_stream_handles.delta_handle.concat().deref());
         assert_eq!(
             delta,
             r#"-1: {"id":1,"b":true,"i":null,"s":"1"}
@@ -831,7 +829,7 @@ mod test {
 
         circuit.transaction().unwrap();
 
-        let delta = batch_to_json(output_stream_handles.delta_handle.consolidate().deref());
+        let delta = batch_to_json(output_stream_handles.delta_handle.concat().deref());
         assert_eq!(
             delta,
             r#"-1: {"id":2,"b":true,"i":null,"s":"2"}

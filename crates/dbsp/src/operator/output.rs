@@ -6,9 +6,11 @@ use crate::{
         GlobalNodeId, LocalStoreMarker, OwnershipPreference, RootCircuit, Scope,
     },
     storage::file::to_bytes,
-    trace::BatchReaderFactories,
-    typed_batch::{Spine, SpineSnapshot},
-    Batch, Circuit, Error, Runtime, Stream,
+    trace::{
+        BatchReader as DynBatchReader, BatchReaderFactories, SpineSnapshot as DynSpineSnapshot,
+    },
+    typed_batch::{Spine, SpineSnapshot, TypedBatch},
+    Batch, BatchReader, Circuit, Error, Runtime, Stream,
 };
 use feldera_storage::StoragePath;
 use std::{
@@ -314,6 +316,23 @@ where
         let factories = BatchReaderFactories::new::<T::Key, T::Val, T::R>();
         let handle: &OutputHandle<T::Inner> = unsafe { transmute(self) };
         T::from_inner(handle.dyn_consolidate(&factories))
+    }
+}
+
+impl<T> OutputHandle<T>
+where
+    T: BatchReader<Time = ()> + Send + Clone,
+    T::Inner: Send,
+{
+    pub fn concat(&self) -> TypedBatch<T::Key, T::Val, T::R, DynSpineSnapshot<T::IntoBatch>> {
+        TypedBatch::new(DynSpineSnapshot::concat(
+            <T::IntoBatch as DynBatchReader>::Factories::new::<T::Key, T::Val, T::R>(),
+            self.take_from_all()
+                .into_iter()
+                .map(|b| b.into_dyn_snapshot())
+                .collect::<Vec<_>>()
+                .iter(),
+        ))
     }
 }
 
