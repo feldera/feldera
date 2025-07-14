@@ -56,7 +56,7 @@ mod list_merger;
 mod push_merger;
 mod snapshot;
 use self::thread::{BackgroundThread, WorkerStatus};
-pub use snapshot::{SpineSnapshot, WithSnapshot};
+pub use snapshot::{BatchReaderWithSnapshot, SpineSnapshot, WithSnapshot};
 
 use super::{cursor::CursorFactory, BatchLocation};
 
