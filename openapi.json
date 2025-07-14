@@ -5678,7 +5678,7 @@
               "clock_resolution_usecs": {
                 "type": "integer",
                 "format": "int64",
-                "description": "Real-time clock resolution in microseconds.\n\nThis parameter controls the execution of queries that use the `NOW()` function.  The output of such\nqueries depends on the real-time clock and can change over time without any external\ninputs.  The pipeline will update the clock value and trigger incremental recomputation\nat most each `clock_resolution_usecs` microseconds.\n\nIt is set to 1 second (1,000,000 microseconds) by default.\n\nSet to `null` to disable periodic clock updates.",
+                "description": "Real-time clock resolution in microseconds.\n\nThis parameter controls the execution of queries that use the `NOW()` function.  The output of such\nqueries depends on the real-time clock and can change over time without any external\ninputs.  If the query uses `NOW()`, the pipeline will update the clock value and trigger incremental\nrecomputation at most each `clock_resolution_usecs` microseconds.  If the query does not use\n`NOW()`, then clock value updates are suppressed and the pipeline ignores this setting.\n\nIt is set to 1 second (1,000,000 microseconds) by default.",
                 "default": 1000000,
                 "nullable": true,
                 "minimum": 0
@@ -6708,7 +6708,7 @@
           "clock_resolution_usecs": {
             "type": "integer",
             "format": "int64",
-            "description": "Real-time clock resolution in microseconds.\n\nThis parameter controls the execution of queries that use the `NOW()` function.  The output of such\nqueries depends on the real-time clock and can change over time without any external\ninputs.  The pipeline will update the clock value and trigger incremental recomputation\nat most each `clock_resolution_usecs` microseconds.\n\nIt is set to 1 second (1,000,000 microseconds) by default.\n\nSet to `null` to disable periodic clock updates.",
+            "description": "Real-time clock resolution in microseconds.\n\nThis parameter controls the execution of queries that use the `NOW()` function.  The output of such\nqueries depends on the real-time clock and can change over time without any external\ninputs.  If the query uses `NOW()`, the pipeline will update the clock value and trigger incremental\nrecomputation at most each `clock_resolution_usecs` microseconds.  If the query does not use\n`NOW()`, then clock value updates are suppressed and the pipeline ignores this setting.\n\nIt is set to 1 second (1,000,000 microseconds) by default.",
             "default": 1000000,
             "nullable": true,
             "minimum": 0
