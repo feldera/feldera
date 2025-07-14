@@ -135,7 +135,7 @@ public class Linq {
         if (left.length != right.length)
             return false;
         for (int i = 0; i < left.length; i++)
-            if (left[i] != right[i]) return false;
+            if (!left[i].equals(right[i])) return false;
         return true;
     }
 
@@ -164,7 +164,7 @@ public class Linq {
         while (li.hasNext()) {
             T l = li.next();
             T r = ri.next();
-            if (l != r)
+            if (!l.equals(r))
                 return false;
         }
         return true;

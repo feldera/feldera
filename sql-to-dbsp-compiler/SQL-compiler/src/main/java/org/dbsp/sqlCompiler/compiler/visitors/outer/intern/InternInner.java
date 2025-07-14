@@ -530,11 +530,10 @@ public class InternInner extends ExpressionTranslator {
 
     @Override
     public void postorder(DBSPVariantExpression expression) {
-        if (expression.isSqlNull) {
+        if (expression.isSqlNull || expression.value == null) {
             this.map(expression, expression);
             return;
         }
-        Utilities.enforce(expression.value != null);
         DBSPExpression value = this.uninternIfNecessary(expression.value);
         this.map(expression, new DBSPVariantExpression(value, expression.type));
     }
