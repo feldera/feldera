@@ -1,6 +1,7 @@
 package org.dbsp.sqlCompiler.ir.expression;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.compiler.IConstructor;
 import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -15,8 +16,8 @@ import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 
-public class DBSPVariantExpression extends DBSPExpression implements ISameValue {
-    // this is usually a literal
+public class DBSPVariantExpression extends DBSPExpression implements ISameValue, IConstructor {
+    // this is usually a literal; if null, this is a NULL VARIANT literal.
     @Nullable public final DBSPExpression value;
     // If true this VARIANT has the value NULL inside.
     // But it's a VARIANT object, not a NULL
@@ -112,7 +113,7 @@ public class DBSPVariantExpression extends DBSPExpression implements ISameValue 
     @Override
     public IIndentStream toString(IIndentStream builder) {
         if (this.value == null)
-            return builder.append("null");
+            return builder.append("(VARIANT)null");
         if (this.isSqlNull)
             return builder.append("VARIANT(NULL)");
         return builder.append("VARIANT(")

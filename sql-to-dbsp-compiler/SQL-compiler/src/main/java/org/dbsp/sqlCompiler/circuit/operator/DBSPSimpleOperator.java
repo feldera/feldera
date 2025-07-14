@@ -210,7 +210,10 @@ public abstract class DBSPSimpleOperator extends DBSPOperator
     }
 
     protected boolean mustReplace(boolean force, @Nullable DBSPExpression function, List<OutputPort> inputs, DBSPType outputType) {
-        return force || function != this.function || this.inputsDiffer(inputs) || !this.outputType.sameType(outputType);
+        return force ||
+                function != this.function ||
+                this.inputsDiffer(inputs) ||
+                !this.outputType.sameType(outputType);
     }
 
     public String getOutputName() {

@@ -613,11 +613,15 @@ public class RewriteInternedFields extends CircuitCloneVisitor {
     @Override
     public void postorder(DBSPDeindexOperator operator) {
         OutputPort input = this.mapped(operator.input());
+        if (input.equals(operator.input())) {
+            super.postorder(operator);
+            return;
+        }
         var ix = input.getOutputIndexedZSetType();
-        // This is not really used in with, but we compute it anyway
+        // This is not really used in 'operator.with', but we compute it anyway
         var outputType = new DBSPTypeZSet(ix.getNode(), ix.elementType);
         DBSPSimpleOperator replacement = operator.with(
-                null, outputType, Linq.list(input), false);
+                operator.function, outputType, Linq.list(input), false);
         Utilities.enforce(outputType.sameType(replacement.outputType));
         this.map(operator, replacement);
     }

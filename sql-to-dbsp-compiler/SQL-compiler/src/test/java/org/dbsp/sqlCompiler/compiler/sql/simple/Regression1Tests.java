@@ -543,4 +543,13 @@ public class Regression1Tests extends SqlIoTest {
                 --------------------------------------------------------------------------
                  0 | 1 | 2 | 5 | 0 | 1 | 2 | 0 | 1 | 1  |  0 |  0 |  1 |  1 |  2 | 1""");
     }
+
+    @Test
+    public void variantNullIntern() {
+        this.getCC("""
+                CREATE TABLE T(X INT, C VARCHAR INTERNED);
+                CREATE TABLE S(X INT, Z VARIANT);
+                CREATE MATERIALIZED VIEW V AS SELECT T.X, S.Z
+                FROM T LEFT JOIN S ON T.X = S.X;""");
+    }
 }
