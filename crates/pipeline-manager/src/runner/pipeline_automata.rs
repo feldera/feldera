@@ -53,7 +53,9 @@ enum State {
 enum StatusCheckResult {
     Paused,
     Running,
-    /// Unable to be reached or responded to not yet be ready.
+    /// Contoller is still Initializing
+    Initializing,
+    /// Unable to be reached
     Unavailable,
     /// Failed to parse response or a runtime error was returned.
     Error(ErrorResponse),
@@ -133,9 +135,6 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
     /// The stop operation is done synchronously, as such this period is
     /// for when to retry if it failed.
     const POLL_PERIOD_STOPPING: Duration = Duration::from_millis(1_000);
-
-    // Initialization is over once its internal state and connectors are ready.
-    const INITIALIZING_TIMEOUT: Duration = Duration::from_secs(600);
 
     /// Timeout for an HTTP request of the automaton to a pipeline.
     const HTTP_REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
@@ -306,18 +305,14 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                 StorageStatus::InUse,
                 PipelineStatus::Initializing,
                 PipelineDesiredStatus::Paused | PipelineDesiredStatus::Running,
-            ) => {
-                self.transit_initializing_towards_paused_or_running(pipeline)
-                    .await
-            }
+            ) => self.probe_pipeline_for_status(pipeline).await,
 
             // Paused
             (StorageStatus::InUse, PipelineStatus::Paused, PipelineDesiredStatus::Paused) => {
-                self.probe_initialized_pipeline(pipeline).await
+                self.probe_pipeline_for_status(pipeline).await
             }
             (StorageStatus::InUse, PipelineStatus::Paused, PipelineDesiredStatus::Running) => {
-                self.perform_action_initialized_pipeline(pipeline, true)
-                    .await
+                self.perform_action_on_pipeline(pipeline, true).await
             }
             (StorageStatus::InUse, PipelineStatus::Paused, PipelineDesiredStatus::Suspended) => {
                 State::TransitionToSuspending
@@ -325,11 +320,10 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
 
             // Running
             (StorageStatus::InUse, PipelineStatus::Running, PipelineDesiredStatus::Paused) => {
-                self.perform_action_initialized_pipeline(pipeline, false)
-                    .await
+                self.perform_action_on_pipeline(pipeline, false).await
             }
             (StorageStatus::InUse, PipelineStatus::Running, PipelineDesiredStatus::Running) => {
-                self.probe_initialized_pipeline(pipeline).await
+                self.probe_pipeline_for_status(pipeline).await
             }
             (StorageStatus::InUse, PipelineStatus::Running, PipelineDesiredStatus::Suspended) => {
                 State::TransitionToSuspending
@@ -340,7 +334,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                 StorageStatus::InUse,
                 PipelineStatus::Unavailable,
                 PipelineDesiredStatus::Paused | PipelineDesiredStatus::Running,
-            ) => self.probe_initialized_pipeline(pipeline).await,
+            ) => self.probe_pipeline_for_status(pipeline).await,
             (
                 StorageStatus::InUse,
                 PipelineStatus::Unavailable,
@@ -692,10 +686,10 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
     async fn check_pipeline_status(
         &self,
         pipeline_id: PipelineId,
-        deployment_location: String,
+        deployment_location: &str,
     ) -> StatusCheckResult {
         match self
-            .http_request_pipeline_json(Method::GET, &deployment_location, "status")
+            .http_request_pipeline_json(Method::GET, deployment_location, "status")
             .await
         {
             Ok((http_status, http_body)) => {
@@ -726,16 +720,23 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                         ));
                     }
                 } else if http_status == StatusCode::SERVICE_UNAVAILABLE {
-                    // Pipeline HTTP server is running but indicates it is not yet available
-                    warn!(
-                        "Pipeline {} responds to status check it is not (yet) ready",
-                        pipeline_id
-                    );
-                    StatusCheckResult::Unavailable
+                    // Check if pipeline returned SERVICE_UNAVAILABLE because it is Initializing
+                    if http_body["error_code"]
+                        .as_str()
+                        .is_some_and(|s| s == "Initializing")
+                    {
+                        StatusCheckResult::Initializing
+                    } else {
+                        // Pipeline HTTP server is running but indicates it is not yet available
+                        warn!(
+                            "Pipeline {pipeline_id} responds to status check it is not (yet) ready"
+                        );
+                        StatusCheckResult::Unavailable
+                    }
                 } else {
                     // All other status codes indicate a fatal error
                     // The HTTP server is still running, but the pipeline itself failed
-                    error!("Error response to status check for pipeline {}. Status code: {http_status}. Body: {http_body}", pipeline_id);
+                    error!("Error response to status check for pipeline {pipeline_id}. Status code: {http_status}. Body: {http_body}");
                     StatusCheckResult::Error(Self::error_response_from_json(
                         pipeline_id,
                         http_status,
@@ -744,10 +745,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                 }
             }
             Err(e) => {
-                debug!(
-                    "Unable to reach pipeline {} for status check due to: {e}",
-                    pipeline_id
-                );
+                debug!("Unable to reach pipeline {pipeline_id} for status check due to: {e}");
                 StatusCheckResult::Unavailable
             }
         }
@@ -1065,9 +1063,54 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                 .expect("Provision must have been called"),
         );
         match self.pipeline_handle.is_provisioned().await {
-            Ok(Some(location)) => State::TransitionToInitializing {
-                deployment_location: location,
-            },
+            Ok(Some(location)) => {
+                match self
+                    .check_pipeline_status(self.pipeline_id, &location)
+                    .await
+                {
+                    StatusCheckResult::Unavailable
+                        if Self::has_timeout_expired(
+                            pipeline.deployment_status_since,
+                            provisioning_timeout,
+                        ) =>
+                    {
+                        error!(
+                            "Pipeline {} was provisioned, but didn't respond to status check in {} seconds - terminating the pipeline",
+                            pipeline.id,
+                            provisioning_timeout.as_secs()
+                        );
+                        State::TransitionToStopping {
+                            error: Some(
+                                RunnerError::AutomatonProvisioningTimeout {
+                                    timeout: provisioning_timeout,
+                                }
+                                .into(),
+                            ),
+                            suspend_info: None,
+                        }
+                    }
+                    StatusCheckResult::Unavailable => {
+                        warn!(
+                            "Pipeline {} is provisioned, but is not yet reachable, retrying...",
+                            pipeline.id
+                        );
+                        State::Unchanged
+                    }
+                    // Only valid transitions from Provisioning is to Initializing or Stopping
+                    // so even when we see it is running, we are transitioning to Initializing
+                    // first which would then probe pipeline and move to actual state.
+                    StatusCheckResult::Initializing
+                    | StatusCheckResult::Running
+                    | StatusCheckResult::Paused => State::TransitionToInitializing {
+                        deployment_location: location,
+                    },
+                    StatusCheckResult::Error(error) => State::TransitionToStopping {
+                        error: Some(error),
+                        suspend_info: None,
+                    },
+                }
+            }
+
             Ok(None) => {
                 debug!(
                     "Pipeline provisioning: pipeline {} is not yet provisioned",
@@ -1105,78 +1148,10 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         }
     }
 
-    /// Transits from `Initializing` towards `Paused` or `Running`.
-    /// Awaits the pipeline HTTP server to respond it has finished initialization.
-    async fn transit_initializing_towards_paused_or_running(
-        &mut self,
-        pipeline: &ExtendedPipelineDescrMonitoring,
-    ) -> State {
-        // Check deployment when initialized
-        if let Err(e) = self.pipeline_handle.check().await {
-            return State::TransitionToStopping {
-                error: Some(ErrorResponse::from_error_nolog(&e)),
-                suspend_info: None,
-            };
-        }
-
-        // Probe pipeline
-        let deployment_location = match Self::get_required_deployment_location(pipeline) {
-            Ok(deployment_location) => deployment_location,
-            Err(e) => {
-                return State::TransitionToStopping {
-                    error: Some(ErrorResponse::from_error_nolog(&e)),
-                    suspend_info: None,
-                };
-            }
-        };
-        match self
-            .check_pipeline_status(pipeline.id, deployment_location)
-            .await
-        {
-            StatusCheckResult::Paused => State::TransitionToPaused,
-            StatusCheckResult::Running => {
-                // After initialization, it should not become running automatically
-                State::TransitionToStopping {
-                    error: Some(RunnerError::AutomatonAfterInitializationBecameRunning.into()),
-                    suspend_info: None,
-                }
-            }
-            StatusCheckResult::Unavailable => {
-                debug!(
-                    "Pipeline initialization: could not (yet) connect to pipeline {}",
-                    pipeline.id
-                );
-                if Self::has_timeout_expired(
-                    pipeline.deployment_status_since,
-                    Self::INITIALIZING_TIMEOUT,
-                ) {
-                    error!(
-                        "Pipeline initialization: timed out for pipeline {}",
-                        pipeline.id
-                    );
-                    State::TransitionToStopping {
-                        error: Some(
-                            RunnerError::AutomatonInitializingTimeout {
-                                timeout: Self::INITIALIZING_TIMEOUT,
-                            }
-                            .into(),
-                        ),
-                        suspend_info: None,
-                    }
-                } else {
-                    State::Unchanged
-                }
-            }
-            StatusCheckResult::Error(error) => State::TransitionToStopping {
-                error: Some(error),
-                suspend_info: None,
-            },
-        }
-    }
-
     /// Transits from `Paused` or `Running` towards the other one.
+    /// Can go to other states based on pipelines current state
     /// It issues a request to the pipeline HTTP server `/start` or `/pause` HTTP endpoint.
-    async fn perform_action_initialized_pipeline(
+    async fn perform_action_on_pipeline(
         &mut self,
         pipeline: &ExtendedPipelineDescrMonitoring,
         is_start: bool,
@@ -1206,24 +1181,34 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             .await
         {
             Ok((status, body)) => {
-                if status == StatusCode::OK {
-                    if is_start {
-                        State::TransitionToRunning
-                    } else {
-                        State::TransitionToPaused
+                match status {
+                    StatusCode::OK if is_start => State::TransitionToRunning,
+                    StatusCode::OK => State::TransitionToPaused,
+                    // Check if pipeline returned SERVICE_UNAVAILABLE because it is Initializing
+                    StatusCode::SERVICE_UNAVAILABLE
+                        if body["error_code"]
+                            .as_str()
+                            .is_some_and(|s| s == "Initializing") =>
+                    {
+                        warn!("Unable to perform action '{action}' on pipeline {} because pipeline indicated it is not (yet) ready", pipeline.id);
+                        State::TransitionToInitializing {
+                            deployment_location,
+                        }
                     }
-                } else if status == StatusCode::SERVICE_UNAVAILABLE {
-                    warn!("Unable to perform action '{action}' on pipeline {} because pipeline indicated it is not (yet) ready", pipeline.id);
-                    State::TransitionToUnavailable
-                } else {
-                    error!("Error response to action '{action}' on pipeline {}. Status: {status}. Body: {body}", pipeline.id);
-                    State::TransitionToStopping {
-                        error: Some(Self::error_response_from_json(
-                            self.pipeline_id,
-                            status,
-                            &body,
-                        )),
-                        suspend_info: None,
+                    StatusCode::SERVICE_UNAVAILABLE => {
+                        warn!("Unable to perform action '{action}' on pipeline {} because pipeline is unreachable", pipeline.id);
+                        State::TransitionToUnavailable
+                    }
+                    _ => {
+                        error!("Error response to action '{action}' on pipeline {}. Status: {status}. Body: {body}", pipeline.id);
+                        State::TransitionToStopping {
+                            error: Some(Self::error_response_from_json(
+                                self.pipeline_id,
+                                status,
+                                &body,
+                            )),
+                            suspend_info: None,
+                        }
                     }
                 }
             }
@@ -1237,9 +1222,9 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         }
     }
 
-    /// Transits between `Paused`, `Running` and `Unavailable` depending
+    /// Transits between `Initializing`, `Paused`, `Running` and `Unavailable` depending
     /// on what the pipeline HTTP `/status` endpoint reports.
-    async fn probe_initialized_pipeline(
+    async fn probe_pipeline_for_status(
         &mut self,
         pipeline: &ExtendedPipelineDescrMonitoring,
     ) -> State {
@@ -1262,7 +1247,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             }
         };
         match self
-            .check_pipeline_status(pipeline.id, deployment_location)
+            .check_pipeline_status(pipeline.id, &deployment_location)
             .await
         {
             StatusCheckResult::Paused => {
@@ -1287,13 +1272,16 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                     State::TransitionToRunning
                 }
             }
-            StatusCheckResult::Unavailable => {
-                if pipeline.deployment_status == PipelineStatus::Unavailable {
-                    State::Unchanged
-                } else {
-                    State::TransitionToUnavailable
-                }
-            }
+            StatusCheckResult::Initializing => match pipeline.deployment_status {
+                PipelineStatus::Initializing => State::Unchanged,
+                _ => State::TransitionToInitializing {
+                    deployment_location,
+                },
+            },
+            StatusCheckResult::Unavailable => match pipeline.deployment_status {
+                PipelineStatus::Unavailable => State::Unchanged,
+                _ => State::TransitionToUnavailable,
+            },
             StatusCheckResult::Error(error) => State::TransitionToStopping {
                 error: Some(error),
                 suspend_info: None,
@@ -1343,6 +1331,8 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                         suspend_info: Some(json!({})),
                     }
                 } else if status == StatusCode::SERVICE_UNAVAILABLE {
+                    // NOTE: we don't care about the error_code of response here,
+                    // because we want to try it again irrespective of it.
                     warn!("Unable to suspend pipeline {} because pipeline indicated it is not (yet) ready", pipeline.id);
                     State::Unchanged
                 } else {

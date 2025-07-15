@@ -41,9 +41,6 @@ pub enum RunnerError {
     AutomatonProvisioningTimeout {
         timeout: Duration,
     },
-    AutomatonInitializingTimeout {
-        timeout: Duration,
-    },
     AutomatonSuspendingComputeTimeout {
         timeout: Duration,
     },
@@ -117,9 +114,6 @@ impl DetailedError for RunnerError {
             }
             RunnerError::AutomatonProvisioningTimeout { .. } => {
                 Cow::from("AutomatonProvisioningTimeout")
-            }
-            RunnerError::AutomatonInitializingTimeout { .. } => {
-                Cow::from("AutomatonInitializingTimeout")
             }
             RunnerError::AutomatonSuspendingComputeTimeout { .. } => {
                 Cow::from("AutomatonSuspendingComputeTimeout")
@@ -238,20 +232,6 @@ impl Display for RunnerError {
                     timeout.as_secs()
                 }
             }
-            Self::AutomatonInitializingTimeout { timeout } => {
-                writedoc! {
-                    f,
-                    "
-                    Pipeline could not be initialized within the timeout of {}s. Possible reasons:
-
-                    (1) It takes too long to initialize the internal state and connectors compared to the timeout.
-
-                    (2) Initialization encountered an unexpected issue.
-                        The pipeline logs might provide more insight if this is the case.
-                    ",
-                    timeout.as_secs()
-                }
-            }
             Self::AutomatonSuspendingComputeTimeout { timeout } => {
                 writedoc! {
                     f,
@@ -366,7 +346,6 @@ impl ResponseError for RunnerError {
                 StatusCode::INTERNAL_SERVER_ERROR
             }
             Self::AutomatonProvisioningTimeout { .. } => StatusCode::INTERNAL_SERVER_ERROR,
-            Self::AutomatonInitializingTimeout { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::AutomatonSuspendingComputeTimeout { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::AutomatonAfterInitializationBecameRunning => StatusCode::INTERNAL_SERVER_ERROR,
             Self::AutomatonImpossibleDesiredStatus { .. } => StatusCode::INTERNAL_SERVER_ERROR,
