@@ -56,7 +56,7 @@ CREATE TABLE customer (
 CREATE TABLE transaction (
     -- Lateness annotation: transactions cannot arrive more than 1 day out of order.
     ts TIMESTAMP LATENESS INTERVAL 1 DAYS,
-    amt DOUBLE,
+    amt DECIMAL(38, 2),
     customer_id BIGINT NOT NULL,
     state VARCHAR
 ) WITH (

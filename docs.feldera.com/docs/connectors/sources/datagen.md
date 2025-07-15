@@ -152,7 +152,7 @@ the `range` parameter.
 CREATE TABLE Stocks (
     symbol VARCHAR NOT NULL,
     price_time BIGINT NOT NULL,  -- UNIX timestamp
-    price DOUBLE NOT NULL
+    price DECIMAL(38, 2) NOT NULL
 ) with (
   'connectors' = '[{
     "transport": {
@@ -183,7 +183,7 @@ Will generate the following data:
 CREATE TABLE Stocks (
     symbol VARCHAR NOT NULL,
     price_time BIGINT NOT NULL,  -- UNIX timestamp
-    price DOUBLE NOT NULL
+    price DECIMAL(38, 2) NOT NULL
 ) with (
   'connectors' = '[{
     "transport": {
