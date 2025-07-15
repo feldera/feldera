@@ -46,22 +46,26 @@ impl Display for PipelineId {
 ///
 /// ```text
 ///                 Stopped ◄─────────── Stopping ◄───── All states can transition
-///                    │                    ▲            to Stopping by either:
-///   /start or /pause │                    │            (1) user calling /stop?force=true, or;
-///                    ▼                    │            (2) pipeline encountering a fatal
-///             ⌛Provisioning          Suspending            resource or runtime error,
-///                    │                    ▲                having the system call /stop?force=true
-///                    ▼                    │ /stop          effectively
-///             ⌛Initializing ──────────────┤  ?force=false
-///                    │                    │
-///          ┌─────────┼────────────────────┴─────┐
-///          │         ▼                          │
-///          │       Paused  ◄──────► Unavailable │
-///          │        │   ▲                ▲      │
-///          │ /start │   │  /pause        │      │
-///          │        ▼   │                │      │
-///          │       Running ◄─────────────┘      │
-///          └────────────────────────────────────┘
+///                    │                   ▲            to Stopping by either:
+///   /start or /pause │                   │            (1) user calling /stop?force=true, or;
+///                    ▼                   │            (2) pipeline encountering a fatal
+///             ⌛Provisioning         Suspending            resource or runtime error,
+///                    │                   ▲                having the system call /stop?force=true
+///                    │                   │ /stop          effectively
+///                    │                   │  ?force=false
+///                    │                   │
+///     ┌──────────────┼───────────────────┴─────┐
+///     │              ▼                         │
+///     │  ┌──► Initializing                     │
+///     │  │           ▲  ▲                      │
+///     │  │           │  └───────────┐          │
+///     │  │           ▼              ▼          │
+///     │  │        Paused  ◄──────► Unavailable │
+///     │  │          │  ▲                ▲      │
+///     │  │   /start │  │  /pause        │      │
+///     │  │          ▼  │                │      │
+///     │  └─────►  Running ◄─────────────┘      │
+///     └────────────────────────────────────────┘
 /// ```
 ///
 /// ### Desired and actual status
@@ -111,8 +115,9 @@ pub enum PipelineStatus {
     ///
     /// The pipeline remains in this state until:
     ///
-    /// 1. Resources check passes, indicating all resources were provisioned.
-    ///    It transitions to `Initializing`.
+    /// 1. Resources check passes, indicating all resources were provisioned,
+    ///    and status check outcome is not Unavailable.
+    ///    It transitions to `Initializing` or `Stopping` depending on check outcome
     ///
     /// 2. Resource provisioning fails or takes too long (timeout exceeded).
     ///    It transitions to `Stopping` with `deployment_error` set.
@@ -130,10 +135,9 @@ pub enum PipelineStatus {
     /// The pipeline remains in this state until:
     ///
     /// 1. Initialization check passes, indicating pipeline is ready.
-    ///    It transitions to `Paused` state.
+    ///    It transitions to either `Paused` or `Running` depending on check outcome.
     ///
-    /// 2. Resource error or runtime error is encountered,
-    ///    or initialization takes too long (timeout exceeded).
+    /// 2. Resource error or runtime error is encountered.
     ///    It transitions to `Stopping` with `deployment_error` set.
     ///
     /// 3. The user suspends the pipeline by invoking the `/stop?force=false` endpoint.
@@ -187,7 +191,7 @@ pub enum PipelineStatus {
     /// The pipeline remains in this state until:
     ///
     /// 1. A status check succeeds, in which case it transitions to either
-    ///    `Paused` or `Running` depending on the check outcome.
+    ///    `Initializing`, `Paused` or `Running` depending on the check outcome.
     ///
     /// 2. Resource error or runtime error is encountered.
     ///    It transitions to `Stopping` with `deployment_error` set.
@@ -315,16 +319,21 @@ pub fn validate_deployment_status_transition(
         | (StorageStatus::InUse,PipelineStatus::Provisioning, PipelineStatus::Initializing)
         | (StorageStatus::InUse, PipelineStatus::Provisioning, PipelineStatus::Stopping)
         | (StorageStatus::InUse, PipelineStatus::Initializing, PipelineStatus::Paused)
+        | (StorageStatus::InUse, PipelineStatus::Initializing, PipelineStatus::Running)
         | (StorageStatus::InUse, PipelineStatus::Initializing, PipelineStatus::Suspending)
         | (StorageStatus::InUse, PipelineStatus::Initializing, PipelineStatus::Stopping)
+        | (StorageStatus::InUse, PipelineStatus::Initializing, PipelineStatus::Unavailable)
         | (StorageStatus::InUse, PipelineStatus::Running, PipelineStatus::Paused)
         | (StorageStatus::InUse, PipelineStatus::Running, PipelineStatus::Unavailable)
+        | (StorageStatus::InUse, PipelineStatus::Running, PipelineStatus::Initializing)
         | (StorageStatus::InUse, PipelineStatus::Running, PipelineStatus::Suspending)
         | (StorageStatus::InUse, PipelineStatus::Running, PipelineStatus::Stopping)
         | (StorageStatus::InUse, PipelineStatus::Paused, PipelineStatus::Running)
         | (StorageStatus::InUse, PipelineStatus::Paused, PipelineStatus::Unavailable)
+        | (StorageStatus::InUse, PipelineStatus::Paused, PipelineStatus::Initializing)
         | (StorageStatus::InUse, PipelineStatus::Paused, PipelineStatus::Suspending)
         | (StorageStatus::InUse, PipelineStatus::Paused, PipelineStatus::Stopping)
+        | (StorageStatus::InUse, PipelineStatus::Unavailable, PipelineStatus::Initializing)
         | (StorageStatus::InUse, PipelineStatus::Unavailable, PipelineStatus::Running)
         | (StorageStatus::InUse, PipelineStatus::Unavailable, PipelineStatus::Paused)
         | (StorageStatus::InUse, PipelineStatus::Unavailable, PipelineStatus::Suspending)
