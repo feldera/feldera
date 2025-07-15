@@ -1,6 +1,6 @@
 //! An input adapter that generates Nexmark event input data.
 
-use feldera_adapterlib::transport::{InputReaderCommand, Resume};
+use feldera_adapterlib::transport::{parse_resume_info, InputReaderCommand, Resume};
 use feldera_types::config::FtModel;
 use std::cmp::min;
 use std::collections::VecDeque;
@@ -52,11 +52,13 @@ impl TransportInputEndpoint for NexmarkEndpoint {
         consumer: Box<dyn InputConsumer>,
         parser: Box<dyn Parser>,
         _schema: Relation,
+        resume_info: Option<serde_json::Value>,
     ) -> AnyResult<Box<dyn InputReader>> {
         Ok(Box::new(InputGenerator::new(
             &self.config,
             consumer,
             parser,
+            resume_info,
         )?))
     }
 }
@@ -72,7 +74,13 @@ impl InputGenerator {
         config: &NexmarkInputConfig,
         consumer: Box<dyn InputConsumer>,
         parser: Box<dyn Parser>,
+        resume_info: Option<serde_json::Value>,
     ) -> AnyResult<Self> {
+        let resume_info = if let Some(resume_info) = resume_info {
+            Some(parse_resume_info::<Metadata>(&resume_info)?)
+        } else {
+            None
+        };
         let mut guard = INNER.lock().unwrap();
         let inner = guard.upgrade().unwrap_or_else(|| {
             let inner = Arc::new(Inner::new());
@@ -81,7 +89,7 @@ impl InputGenerator {
         });
         drop(guard);
 
-        inner.configure(config, consumer.clone(), parser)?;
+        inner.configure(config, consumer.clone(), parser, resume_info)?;
 
         Ok(Self {
             table: config.table,
@@ -98,7 +106,6 @@ impl InputReader for InputGenerator {
                 let _ = self.inner.command_sender.send(command);
             }
             _ => match command {
-                InputReaderCommand::Seek(_) => (),
                 InputReaderCommand::Replay { .. } => self.consumer.replayed(0, 0),
                 InputReaderCommand::Extend => (),
                 InputReaderCommand::Pause => (),
@@ -179,7 +186,7 @@ impl InnerInit {
     pub fn fully_configured(&self) -> bool {
         self.parsers.values().all(|p| p.is_some())
     }
-    pub fn start_worker(self) {
+    pub fn start_worker(self, resume_info: Option<Metadata>) {
         assert!(self.fully_configured());
 
         let Self {
@@ -197,9 +204,13 @@ impl InnerInit {
             .name(String::from("nexmark"))
             .spawn({
                 move || {
-                    if let Err(error) =
-                        worker_thread(options, parsers, consumers.clone(), command_receiver)
-                    {
+                    if let Err(error) = worker_thread(
+                        options,
+                        parsers,
+                        consumers.clone(),
+                        command_receiver,
+                        resume_info,
+                    ) {
                         for consumer in consumers.values() {
                             consumer.error(true, anyhow!("{error}"));
                         }
@@ -233,6 +244,7 @@ impl Inner {
         config: &NexmarkInputConfig,
         consumer: Box<dyn InputConsumer>,
         parser: Box<dyn Parser>,
+        resume_info: Option<Metadata>,
     ) -> AnyResult<()> {
         let mut status = self.status.lock().unwrap();
         match &mut *status {
@@ -248,7 +260,7 @@ impl Inner {
                     else {
                         unreachable!()
                     };
-                    init.start_worker();
+                    init.start_worker(resume_info);
                 }
                 Ok(())
             }
@@ -269,6 +281,7 @@ fn worker_thread(
     parsers: EnumMap<NexmarkTable, Box<dyn Parser>>,
     consumers: EnumMap<NexmarkTable, Box<dyn InputConsumer>>,
     command_receiver: UnboundedReceiver<InputReaderCommand>,
+    resume_info: Option<Metadata>,
 ) -> AnyResult<()> {
     let mut command_receiver = InputCommandReceiver::<Metadata, ()>::new(command_receiver);
 
@@ -302,7 +315,7 @@ fn worker_thread(
         .collect::<Vec<_>>();
     drop(parsers);
 
-    let mut next_event_id = if let Some(metadata) = command_receiver.blocking_recv_seek()? {
+    let mut next_event_id = if let Some(metadata) = resume_info {
         metadata.event_ids.end
     } else {
         0
@@ -332,7 +345,7 @@ fn worker_thread(
             Some(command_receiver.blocking_recv()?)
         };
         match command {
-            Some(InputReaderCommand::Seek(_)) | Some(InputReaderCommand::Replay { .. }) => {
+            Some(InputReaderCommand::Replay { .. }) => {
                 unreachable!("{command:?} must be at the beginning of the command stream")
             }
             Some(InputReaderCommand::Extend) => running = true,

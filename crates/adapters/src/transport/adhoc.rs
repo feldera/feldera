@@ -249,6 +249,7 @@ impl TransportInputEndpoint for AdHocInputEndpoint {
         consumer: Box<dyn InputConsumer>,
         parser: Box<dyn Parser>,
         _schema: Relation,
+        _resume_info: Option<serde_json::Value>,
     ) -> AnyResult<Box<dyn InputReader>> {
         let queue = InputQueue::new(consumer.clone());
         *self.inner.details.lock().unwrap() = Some(AdHocInputEndpointDetails {
@@ -263,7 +264,6 @@ impl TransportInputEndpoint for AdHocInputEndpoint {
 impl InputReader for AdHocInputEndpoint {
     fn request(&self, command: InputReaderCommand) {
         match command {
-            InputReaderCommand::Seek(_) => (),
             InputReaderCommand::Replay { data, .. } => {
                 let Metadata { batches: chunks } = rmpv::ext::from_value(data).unwrap();
                 let mut guard = self.inner.details.lock().unwrap();

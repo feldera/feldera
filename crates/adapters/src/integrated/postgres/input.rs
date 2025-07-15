@@ -73,6 +73,7 @@ impl IntegratedInputEndpoint for PostgresInputEndpoint {
     fn open(
         self: Box<Self>,
         input_handle: &InputCollectionHandle,
+        _resume_info: Option<serde_json::Value>,
     ) -> AnyResult<Box<dyn InputReader>> {
         Ok(Box::new(PostgresInputReader::new(
             &self.inner,

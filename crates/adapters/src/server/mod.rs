@@ -1109,6 +1109,7 @@ async fn create_http_input_endpoint(
                 &endpoint_name,
                 config,
                 Box::new(endpoint.clone()) as Box<dyn TransportInputEndpoint>,
+                None,
             ) {
                 Ok(endpoint_id) => {
                     let mut prometheus = state.prometheus.write().unwrap();

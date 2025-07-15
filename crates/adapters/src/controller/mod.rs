@@ -364,10 +364,11 @@ impl Controller {
         &self,
         endpoint_name: &str,
         config: &InputEndpointConfig,
+        resume_info: Option<JsonValue>,
     ) -> Result<EndpointId, ControllerError> {
         debug!("Connecting input endpoint '{endpoint_name}'; config: {config:?}");
         self.inner.fail_if_bootstrapping_or_restoring()?;
-        self.inner.connect_input(endpoint_name, config)
+        self.inner.connect_input(endpoint_name, config, resume_info)
     }
 
     /// Disconnect an existing input endpoint.
@@ -400,10 +401,11 @@ impl Controller {
         endpoint_name: &str,
         endpoint_config: InputEndpointConfig,
         endpoint: Box<dyn TransportInputEndpoint>,
+        resume_info: Option<JsonValue>,
     ) -> Result<EndpointId, ControllerError> {
         self.inner.fail_if_bootstrapping_or_restoring()?;
         self.inner
-            .add_input_endpoint(endpoint_name, endpoint_config, Some(endpoint))
+            .add_input_endpoint(endpoint_name, endpoint_config, Some(endpoint), resume_info)
     }
 
     /// Disconnect an existing output endpoint.
@@ -757,29 +759,22 @@ impl CircuitThread {
 
         let (mut circuit, catalog) = circuit_factory(circuit_config)?;
         let lir = circuit.lir()?;
-        let (parker, backpressure_thread, command_receiver, controller) =
-            ControllerInner::new(pipeline_config, catalog, lir, error_cb, processed_records)?;
-
-        controller
-            .status
-            .set_bootstrap_in_progress(circuit.bootstrap_in_progress());
 
         // Seek each input endpoint to its initial offset.
         //
         // If we're not restoring from a checkpoint, `input_metadata` will be empty so
         // this will do nothing.
-        let input_metadata = if let Some(input_metadata) = input_metadata {
-            for (endpoint_name, metadata) in &input_metadata {
-                let Ok(endpoint_id) = controller.input_endpoint_id_by_name(endpoint_name) else {
+        let resume_info = if let Some(input_metadata) = &input_metadata {
+            let mut resume_info = HashMap::new();
+
+            for (endpoint_name, seek) in input_metadata.iter() {
+                let Some(endpoint_config) = config.inputs.get(endpoint_name.as_str()) else {
                     info!("Found checkpointed state for input connector '{endpoint_name}', but the connector is not present in the new pipeline configuration; this connector will not be added to the pipeline");
                     continue;
                 };
 
-                let endpoint = &controller.status.input_status()[&endpoint_id];
-
-                let node_id = controller
-                    .catalog
-                    .input_collection_handle(&SqlIdentifier::from(&endpoint.config.stream))
+                let node_id = catalog
+                    .input_collection_handle(&SqlIdentifier::from(&endpoint_config.stream))
                     .unwrap()
                     .node_id;
 
@@ -790,17 +785,32 @@ impl CircuitThread {
                     }
                 }
 
-                endpoint.reader.seek(metadata.clone());
+                resume_info.insert(endpoint_name.clone(), seek.clone());
             }
-            Some(
-                input_metadata
-                    .into_iter()
-                    .map(|(name, seek)| (name, Some(Resume::Seek { seek })))
-                    .collect(),
-            )
+            resume_info
         } else {
-            None
+            HashMap::new()
         };
+
+        let (parker, backpressure_thread, command_receiver, controller) = ControllerInner::new(
+            pipeline_config,
+            catalog,
+            lir,
+            error_cb,
+            processed_records,
+            &resume_info,
+        )?;
+
+        controller
+            .status
+            .set_bootstrap_in_progress(circuit.bootstrap_in_progress());
+
+        let input_metadata = input_metadata.map(|input_metadata| {
+            input_metadata
+                .into_iter()
+                .map(|(name, seek)| (name, Some(Resume::Seek { seek })))
+                .collect()
+        });
 
         let ft = match ft_model {
             Some(FtModel::ExactlyOnce) => {
@@ -1666,7 +1676,7 @@ impl FtState {
             controller.disconnect_input(&endpoint_id);
         }
         for (endpoint_name, config) in &metadata.add_inputs {
-            controller.connect_input(endpoint_name, config)?;
+            controller.connect_input(endpoint_name, config, None)?;
         }
         for (endpoint_name, pause) in &metadata.changed_inputs {
             if *pause {
@@ -2556,6 +2566,7 @@ impl ControllerInner {
         lir: LirCircuit,
         error_cb: Box<dyn Fn(Arc<ControllerError>) + Send + Sync>,
         processed_records: u64,
+        resume_info: &HashMap<String, JsonValue>,
     ) -> Result<(Parker, BackpressureThread, Receiver<Command>, Arc<Self>), ControllerError> {
         let status = Arc::new(ControllerStatus::new(config.clone(), processed_records));
         let circuit_thread_parker = Parker::new();
@@ -2592,9 +2603,12 @@ impl ControllerInner {
                     let controller = controller.clone();
                     let input_name = input_name.clone();
                     let input_config = input_config.clone();
+
+                    let resume_info = resume_info.get(&*input_name).cloned();
+
                     Box::new(move || {
                         catch_unwind(AssertUnwindSafe(|| {
-                            controller.connect_input(&input_name, &input_config)
+                            controller.connect_input(&input_name, &input_config, resume_info)
                         }))
                         .unwrap_or_else(|_| Err(ControllerError::ControllerPanic))
                     }) as Box<dyn FnOnce() -> Result<_, ControllerError> + Send>
@@ -2625,7 +2639,7 @@ impl ControllerInner {
             source_tasks.chain(sink_tasks),
         )?;
 
-        let _ = controller.connect_input("now", &now_endpoint_config(&config));
+        let _ = controller.connect_input("now", &now_endpoint_config(&config), None);
 
         let backpressure_thread =
             BackpressureThread::new(controller.clone(), backpressure_thread_parker);
@@ -2682,6 +2696,7 @@ impl ControllerInner {
         self: &Arc<Self>,
         endpoint_name: &str,
         endpoint_config: &InputEndpointConfig,
+        resume_info: Option<JsonValue>,
     ) -> Result<EndpointId, ControllerError> {
         let endpoint = input_transport_config_to_endpoint(
             endpoint_config.connector_config.transport.clone(),
@@ -2691,7 +2706,12 @@ impl ControllerInner {
 
         // If `endpoint` is `None`, it means that the endpoint config specifies an integrated
         // input connector.  Such endpoints are instantiated inside `add_input_endpoint`.
-        self.add_input_endpoint(endpoint_name, endpoint_config.clone(), endpoint)
+        self.add_input_endpoint(
+            endpoint_name,
+            endpoint_config.clone(),
+            endpoint,
+            resume_info,
+        )
     }
 
     pub fn disconnect_input(self: &Arc<Self>, endpoint_id: &EndpointId) {
@@ -2709,6 +2729,7 @@ impl ControllerInner {
         endpoint_name: &str,
         endpoint_config: InputEndpointConfig,
         endpoint: Option<Box<dyn TransportInputEndpoint>>,
+        resume_info: Option<JsonValue>,
     ) -> Result<EndpointId, ControllerError> {
         debug!("Adding input endpoint '{endpoint_name}'; config: {endpoint_config:?}");
 
@@ -2787,7 +2808,7 @@ impl ControllerInner {
                     format.new_parser(endpoint_name, input_handle, &format_config.config)?;
 
                 let reader = endpoint
-                    .open(probe, parser, input_handle.schema.clone())
+                    .open(probe, parser, input_handle.schema.clone(), resume_info)
                     .map_err(|e| ControllerError::input_transport_error(endpoint_name, true, e))?;
                 (reader, endpoint.fault_tolerance())
             }
@@ -2797,7 +2818,7 @@ impl ControllerInner {
 
                 let fault_tolerance = endpoint.fault_tolerance();
                 let reader = endpoint
-                    .open(input_handle)
+                    .open(input_handle, resume_info)
                     .map_err(|e| ControllerError::input_transport_error(endpoint_name, true, e))?;
                 (reader, fault_tolerance)
             }

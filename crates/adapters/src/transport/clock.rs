@@ -102,6 +102,7 @@ impl TransportInputEndpoint for ClockEndpoint {
         consumer: Box<dyn InputConsumer>,
         parser: Box<dyn Parser>,
         _schema: Relation,
+        _resume_info: Option<serde_json::Value>,
     ) -> AnyResult<Box<dyn InputReader>> {
         Ok(Box::new(ClockReader::new(
             self.config.clone(),
@@ -183,8 +184,6 @@ impl ClockReader {
                         // channel closed
                         break;
                     }
-                    // Nothing to do for Seek: the connector simply starts from the current timestamp.
-                    Some(InputReaderCommand::Seek(..)) => {}
                     Some(InputReaderCommand::Replay { data, .. }) => {
                         // Parse serialized timestamp, push it to the circuit.
                         let Some(ts_millis) = (match data {

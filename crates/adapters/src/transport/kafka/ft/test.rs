@@ -113,6 +113,7 @@ outputs:
 
 fn create_reader(
     topic: &str,
+    resume_info: Option<JsonValue>,
 ) -> (
     Box<dyn TransportInputEndpoint>,
     DummyInputReceiver,
@@ -140,6 +141,7 @@ config:
             receiver.consumer(),
             Box::new(DummyParser::new(&receiver)),
             Relation::empty(),
+            resume_info,
         )
         .unwrap();
 
@@ -176,7 +178,7 @@ fn test_input(topic: &str, batch_sizes: &[u32]) {
 
     let mut _kafka_resources = KafkaResources::create_topics(&[(topic, 1)]);
 
-    let (_endpoint, receiver, reader) = create_reader(topic);
+    let (_endpoint, receiver, reader) = create_reader(topic, None);
     reader.extend();
 
     fn metadata(batch: &Range<u32>) -> JsonValue {
@@ -234,13 +236,15 @@ fn test_input(topic: &str, batch_sizes: &[u32]) {
         for replay in 0..n_batches - seek {
             println!();
             println!("seeking to {seek}, replaying {replay} batches, and then reading the rest");
-            let (_endpoint, receiver, reader) = create_reader(topic);
+            let resume_info = if seek > 0 {
+                println!("- seek to {seek}");
+                Some(metadata(&batches[seek - 1]))
+            } else {
+                None
+            };
+            let (_endpoint, receiver, reader) = create_reader(topic, resume_info);
             receiver.inner.drop_buffered.store(true, Ordering::Release);
 
-            if seek > 0 {
-                println!("- seek to {seek}");
-                reader.seek(metadata(&batches[seek - 1]));
-            }
             for batch in &batches[seek..seek + replay] {
                 println!("- replaying {batch:?}");
                 reader.replay(metadata(batch), RmpValue::Nil);

@@ -94,7 +94,6 @@ impl HttpInputEndpointInner {
         let input_span = info_span!("http_input");
         while let Some(message) = receiver.recv().await {
             input_span.in_scope(|| match message {
-                InputReaderCommand::Seek(_) => (),
                 InputReaderCommand::Replay { data, .. } => {
                     let Data { chunks } = rmpv::ext::from_value(data).unwrap();
                     let mut guard = self.details.lock().unwrap();
@@ -297,6 +296,7 @@ impl TransportInputEndpoint for HttpInputEndpoint {
         consumer: Box<dyn InputConsumer>,
         parser: Box<dyn Parser>,
         _schema: Relation,
+        _resume_info: Option<serde_json::Value>,
     ) -> AnyResult<Box<dyn InputReader>> {
         let splitter = StreamSplitter::new(parser.splitter());
         let queue = InputQueue::new(consumer.clone());

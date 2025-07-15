@@ -13,7 +13,10 @@ use anyhow::{bail, Result as AnyResult};
 use async_channel::{bounded, unbounded, Receiver, SendError, Sender};
 use aws_sdk_s3::operation::{get_object::GetObjectOutput, list_objects_v2::ListObjectsV2Error};
 use dbsp::circuit::tokio::TOKIO;
-use feldera_adapterlib::{transport::Resume, PipelineState};
+use feldera_adapterlib::{
+    transport::{parse_resume_info, Resume},
+    PipelineState,
+};
 use feldera_types::transport::s3::S3InputConfig;
 use feldera_types::{config::FtModel, program_schema::Relation};
 use futures::future::join_all;
@@ -218,8 +221,14 @@ impl TransportInputEndpoint for S3InputEndpoint {
         consumer: Box<dyn crate::InputConsumer>,
         parser: Box<dyn Parser>,
         _schema: Relation,
+        seek: Option<serde_json::Value>,
     ) -> anyhow::Result<Box<dyn crate::InputReader>> {
-        Ok(Box::new(S3InputReader::new(&self.config, consumer, parser)))
+        Ok(Box::new(S3InputReader::new(
+            &self.config,
+            consumer,
+            parser,
+            seek,
+        )?))
     }
 }
 
@@ -347,12 +356,25 @@ impl S3InputReader {
         config: &Arc<S3InputConfig>,
         consumer: Box<dyn InputConsumer>,
         parser: Box<dyn Parser>,
-    ) -> S3InputReader {
+        seek: Option<serde_json::Value>,
+    ) -> AnyResult<S3InputReader> {
+        let resume_info = if let Some(resume_info) = seek {
+            Some(parse_resume_info::<Metadata>(&resume_info)?)
+        } else {
+            None
+        };
+
         let s3_config = to_s3_config(config);
         let client = Arc::new(S3Client {
             inner: aws_sdk_s3::Client::from_conf(s3_config),
         }) as Arc<dyn S3Api>;
-        Self::new_inner(config, consumer, parser, client)
+        Ok(Self::new_inner(
+            config,
+            consumer,
+            parser,
+            client,
+            resume_info,
+        ))
     }
 
     fn new_inner(
@@ -360,6 +382,7 @@ impl S3InputReader {
         consumer: Box<dyn InputConsumer>,
         parser: Box<dyn Parser>,
         s3_client: Arc<dyn S3Api>,
+        resume_info: Option<Metadata>,
     ) -> S3InputReader {
         let (sender, receiver) = unbounded();
         std::thread::spawn({
@@ -367,9 +390,16 @@ impl S3InputReader {
             move || {
                 let span = info_span!("s3_input", bucket = config.bucket_name.clone());
                 TOKIO.block_on(async {
-                    let _ = Self::worker_task(s3_client, config, consumer, parser, receiver)
-                        .instrument(span)
-                        .await;
+                    let _ = Self::worker_task(
+                        s3_client,
+                        config,
+                        consumer,
+                        parser,
+                        receiver,
+                        resume_info,
+                    )
+                    .instrument(span)
+                    .await;
                 })
             }
         });
@@ -382,21 +412,14 @@ impl S3InputReader {
         consumer: Box<dyn InputConsumer>,
         parser: Box<dyn Parser>,
         command_receiver: Receiver<InputReaderCommand>,
+        resume_info: Option<Metadata>,
     ) -> anyhow::Result<()> {
         let mut command_receiver = BufferedReceiver::new(command_receiver);
         let mut partially_processed_keys = PartiallyProcessedKeys::new();
 
-        match command_receiver.recv().await {
-            Some(InputReaderCommand::Seek(metadata)) => {
-                let by_index = serde_json::from_value::<Metadata>(metadata)
-                    .map_err(|e| anyhow!("Error deserializing checkpoint metadata: {e}"))?
-                    .partially_processed_keys;
-                partially_processed_keys = PartiallyProcessedKeys::from_by_index(by_index);
-            }
-            None | Some(InputReaderCommand::Disconnect) => return Ok(()),
-            Some(other) => {
-                command_receiver.put_back(other);
-            }
+        if let Some(resume_info) = resume_info {
+            partially_processed_keys =
+                PartiallyProcessedKeys::from_by_index(resume_info.partially_processed_keys);
         }
 
         let (tx, rx) = bounded(OBJECT_QUEUE_LEN);
@@ -600,9 +623,6 @@ impl S3InputReader {
 
         loop {
             match command_receiver.recv().await {
-                Some(InputReaderCommand::Seek(_)) => {
-                    panic!("seek command must be at the beginning of the command stream; this is a bug, please report it to developers")
-                }
                 Some(InputReaderCommand::Replay { .. }) => {
                     panic!(
                         "replay command is not supported by the S3 input connector; this is a bug, please report it to developers")
@@ -707,11 +727,6 @@ impl<T> BufferedReceiver<T> {
             Some(value) => Some(value),
             None => self.receiver.recv().await.ok(),
         }
-    }
-
-    fn put_back(&mut self, value: T) {
-        assert!(self.buffer.is_none());
-        self.buffer = Some(value);
     }
 }
 
@@ -833,6 +848,7 @@ format:
             Box::new(consumer.clone()),
             Box::new(parser.clone()),
             Arc::new(mock),
+            None,
         )) as Box<dyn crate::InputReader>;
         (reader, consumer, parser, input_handle)
     }
