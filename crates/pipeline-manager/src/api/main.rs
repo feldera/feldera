@@ -422,7 +422,7 @@ pub async fn run(
         .unwrap_or_else(|_| {
             panic!(
                 "API server unable to bind listener to {}:{} -- is the port occupied?",
-                common_config.bind_address, common_config.compiler_port
+                common_config.bind_address, common_config.api_port
             )
         });
     let state = WebData::new(
