@@ -51,7 +51,7 @@ use deltalake::table::builder::ensure_table_uri;
 use deltalake::table::PeekCommit;
 use deltalake::{datafusion, DeltaTable, DeltaTableBuilder, Path};
 use feldera_adapterlib::format::ParseError;
-use feldera_adapterlib::transport::Resume;
+use feldera_adapterlib::transport::{parse_resume_info, Resume};
 use feldera_adapterlib::utils::datafusion::{
     execute_query_collect, execute_singleton_query, timestamp_to_sql_expression,
     validate_sql_expression, validate_timestamp_column,
@@ -65,6 +65,7 @@ use futures::TryFutureExt;
 use futures_util::StreamExt;
 use rkyv::with::Atomic;
 use serde::{Deserialize, Serialize};
+use serde_json::Value as JsonValue;
 use std::collections::{BTreeSet, HashMap, VecDeque};
 use std::error::Error;
 use std::fmt::format;
@@ -146,12 +147,14 @@ impl IntegratedInputEndpoint for DeltaTableInputEndpoint {
     fn open(
         self: Box<Self>,
         input_handle: &InputCollectionHandle,
+        resume_info: Option<JsonValue>,
     ) -> AnyResult<Box<dyn InputReader>> {
         Ok(Box::new(DeltaTableInputReader::new(
             self.endpoint_name,
             self.config,
             self.consumer,
             input_handle,
+            resume_info,
         )?))
     }
 }
@@ -167,9 +170,22 @@ impl DeltaTableInputReader {
         mut config: DeltaTableReaderConfig,
         consumer: Box<dyn InputConsumer>,
         input_handle: &InputCollectionHandle,
+        resume_info: Option<JsonValue>,
     ) -> AnyResult<Self> {
         let (sender, receiver) = channel(PipelineState::Paused);
         let receiver_clone = receiver.clone();
+
+        let resume_info = if let Some(resume_info) = resume_info {
+            let resume_info = parse_resume_info::<DeltaResumeInfo>(&resume_info)?;
+            info!(
+                "delta_table {}: resuming from table version {}",
+                endpoint_name, resume_info.version
+            );
+
+            Some(resume_info)
+        } else {
+            None
+        };
 
         // Used to communicate the status of connector initialization.
         let (init_status_sender, mut init_status_receiver) =
@@ -240,6 +256,7 @@ impl DeltaTableInputReader {
             config,
             consumer,
             schema,
+            resume_info,
         ));
         let endpoint_clone = endpoint.clone();
 
@@ -269,32 +286,6 @@ impl DeltaTableInputReader {
 impl InputReader for DeltaTableInputReader {
     fn request(&self, command: InputReaderCommand) {
         match command {
-            InputReaderCommand::Seek(value) => {
-                let resume_info = match serde_json::from_value::<DeltaResumeInfo>(value.clone())  {
-                    Ok(resume_info) => resume_info,
-                    Err(e) =>{
-                        self.inner.consumer.error(
-                            true,
-                            anyhow!("unable to parse checkpointed connector state (checkpointed state: {value}; parse error: {e})"),
-                        );
-                        return;
-                    }
-                };
-
-                // When resuming from a checkpoint, set the initial table version to start reading from.
-                // The worker thread will check this version after receiving the Extend command and will
-                // jump to it instead of reading the entire table snapshot.
-                //
-                // In addition, this version will be reported by each `Queue` command until we start getting
-                // any actual input data, so the connector will remain checkpointable (i.e., will not create a
-                // checkpoint barrier) until then.
-                info!(
-                    "delta_table {}: resuming from table version {}",
-                    &self.inner.endpoint_name, resume_info.version
-                );
-
-                *self.inner.last_resume_status.lock().unwrap() = Some(resume_info);
-            }
             InputReaderCommand::Replay { metadata, data } => panic!(
                 "replay command is not supported by DeltaTableInputReader; this is a bug, please report it to developers"),
             InputReaderCommand::Extend => {
@@ -365,8 +356,7 @@ struct DeltaTableInputEndpointInner {
     datafusion: SessionContext,
 
     /// The latest resume status of this endpoint:
-    /// * Initialized to `None`.
-    /// * Updated to `Some(version)` when a Seek command is received when resuming from a checkpoint.
+    /// * Initialized to `None` or `Some(version)` (when resume_info is specified) on initialization.
     /// * Updated to `Some(new_version)` after advancing to the next table version in the transaction log
     ///   in follow mode or after ingesting the initial snapshot.
     last_resume_status: Mutex<Option<DeltaResumeInfo>>,
@@ -379,6 +369,7 @@ impl DeltaTableInputEndpointInner {
         config: DeltaTableReaderConfig,
         consumer: Box<dyn InputConsumer>,
         schema: Relation,
+        resume_info: Option<DeltaResumeInfo>,
     ) -> Self {
         let queue = Arc::new(InputQueue::new(consumer.clone()));
         // Configure datafusion not to generate Utf8View arrow types, which are not yet
@@ -394,7 +385,7 @@ impl DeltaTableInputEndpointInner {
             config,
             consumer,
             datafusion: SessionContext::new_with_config(session_config),
-            last_resume_status: Mutex::new(None),
+            last_resume_status: Mutex::new(resume_info),
             queue,
         }
     }
@@ -719,15 +710,14 @@ impl DeltaTableInputEndpointInner {
 
         let mut version = table.version();
 
-        if let Some(resume_status) = last_resume_status {
-            // If resume_status was set during initialization, it means that we are resuming from a checkpoint,
-            // and should start reading from the specified version instead of reading the entire snapshot.
-            version = resume_status.version;
-        } else if self.config.snapshot() && self.config.timestamp_column.is_none() {
+        if last_resume_status.is_none()
+            && self.config.snapshot()
+            && self.config.timestamp_column.is_none()
+        {
             // Read snapshot chunk-by-chunk.
             self.read_unordered_snapshot(&table, input_stream.as_mut(), &mut receiver)
                 .await;
-        } else if self.config.snapshot() {
+        } else if last_resume_status.is_none() && self.config.snapshot() {
             // Read the entire snapshot in one query.
             self.read_ordered_snapshot(&table, input_stream.as_mut(), &mut receiver)
                 .await;
@@ -799,40 +789,46 @@ impl DeltaTableInputEndpointInner {
             })?
             .with_storage_options(self.config.object_store_config.clone());
 
-        let table_builder = match &self.config {
-            DeltaTableReaderConfig {
-                version: Some(_),
-                datetime: Some(_),
-                ..
-            } => {
-                return Err(ControllerError::invalid_transport_configuration(
-                    &self.endpoint_name,
-                    "at most one of 'version' and 'datetime' options can be specified",
-                ));
-            }
-            DeltaTableReaderConfig {
-                version: None,
-                datetime: None,
-                ..
-            } => table_builder,
-            DeltaTableReaderConfig {
-                version: Some(version),
-                datetime: None,
-                ..
-            } => table_builder.with_version(*version),
-            DeltaTableReaderConfig {
-                version: None,
-                datetime: Some(datetime),
-                ..
-            } => table_builder.with_datestring(datetime).map_err(|e| {
-                ControllerError::invalid_transport_configuration(
-                    &self.endpoint_name,
-                    &format!(
-                        "invalid 'datetime' format (expected ISO-8601/RFC-3339 timestamp): {e}"
-                    ),
-                )
-            })?,
-        };
+        let table_builder =
+            if let Some(resume_info) = self.last_resume_status.lock().unwrap().clone() {
+                // If we are resuming from a checkpoint, use the version specified in the checkpoint.
+                table_builder.with_version(resume_info.version)
+            } else {
+                match &self.config {
+                    DeltaTableReaderConfig {
+                        version: Some(_),
+                        datetime: Some(_),
+                        ..
+                    } => {
+                        return Err(ControllerError::invalid_transport_configuration(
+                            &self.endpoint_name,
+                            "at most one of 'version' and 'datetime' options can be specified",
+                        ));
+                    }
+                    DeltaTableReaderConfig {
+                        version: None,
+                        datetime: None,
+                        ..
+                    } => table_builder,
+                    DeltaTableReaderConfig {
+                        version: Some(version),
+                        datetime: None,
+                        ..
+                    } => table_builder.with_version(*version),
+                    DeltaTableReaderConfig {
+                        version: None,
+                        datetime: Some(datetime),
+                        ..
+                    } => table_builder.with_datestring(datetime).map_err(|e| {
+                        ControllerError::invalid_transport_configuration(
+                            &self.endpoint_name,
+                            &format!(
+                            "invalid 'datetime' format (expected ISO-8601/RFC-3339 timestamp): {e}"
+                        ),
+                        )
+                    })?,
+                }
+            };
 
         let delta_table = table_builder.load().await.map_err(|e| {
             ControllerError::invalid_transport_configuration(

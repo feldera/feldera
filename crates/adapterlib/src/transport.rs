@@ -9,6 +9,7 @@ use dyn_clone::DynClone;
 use feldera_types::config::FtModel;
 use feldera_types::program_schema::Relation;
 use rmpv::{ext::Error as RmpDecodeError, Value as RmpValue};
+use serde::de::DeserializeOwned;
 use serde::Deserialize;
 use serde_json::{Error as JsonError, Value as JsonValue};
 use tokio::sync::mpsc::error::TryRecvError;
@@ -55,12 +56,19 @@ pub trait TransportInputEndpoint: InputEndpoint {
     /// data into records. Returns an [`InputReader`] for reading the endpoint's
     /// data.  The endpoint will use `consumer` to report its progress.
     ///
+    /// The `resume_info` parameter is used when resuming the pipeline from a
+    /// checkpoint. It contains resume metadata that the endpoint returned via the
+    /// [`InputConsumer::extended`] function before suspending. When specified,
+    /// it tells a fault-tolerant input reader to seek past the data already read
+    /// in the step whose metadata is given by the value.
+    ///
     /// The reader is initially paused.
     fn open(
         &self,
         consumer: Box<dyn InputConsumer>,
         parser: Box<dyn Parser>,
         schema: Relation,
+        resume_info: Option<JsonValue>,
     ) -> AnyResult<Box<dyn InputReader>>;
 }
 
@@ -68,6 +76,7 @@ pub trait IntegratedInputEndpoint: InputEndpoint {
     fn open(
         self: Box<Self>,
         input_handle: &InputCollectionHandle,
+        resume_info: Option<JsonValue>,
     ) -> AnyResult<Box<dyn InputReader>>;
 }
 
@@ -80,9 +89,6 @@ pub trait IntegratedInputEndpoint: InputEndpoint {
 ///
 /// ```text
 ///   ┌─⯇─ (start) ─⯈──┐
-///   │      │         │
-///   │      ▼         │
-///   ├─⯇─ Seek ─⯈─────│
 ///   │      │         │
 ///   │      │  ┌───┐  │
 ///   │      ▼  ▼   │  │
@@ -150,15 +156,6 @@ pub trait IntegratedInputEndpoint: InputEndpoint {
 /// record the step properly and fault tolerance replay will be incorrect.
 #[derive(Debug)]
 pub enum InputReaderCommand {
-    /// Tells a fault-tolerant input reader to seek past the data already read
-    /// in the step whose metadata is given by the value.
-    ///
-    /// # Constraints
-    ///
-    /// Only fault-tolerant input readers need to accept this. If it is given,
-    /// it will be issued only once and before any of the other commands.
-    Seek(JsonValue),
-
     /// Tells the input reader to replay the step described by `metadata` and
     /// `data` by reading and flushing buffers for the data in the step, and
     /// then [InputConsumer::replayed] to signal completion.
@@ -172,18 +169,13 @@ pub enum InputReaderCommand {
     /// # Constraints
     ///
     /// Only fault-tolerant input readers need to accept this. It will be issued
-    /// zero or more times, after [InputReaderCommand::Seek] but before any
-    /// other commands.
+    /// zero or more times, before any other command.
     Replay { metadata: JsonValue, data: RmpValue },
 
     /// Tells the input reader to accept further input. The first time it
-    /// receives this command, the reader should start from:
-    ///
-    /// - If [InputReaderCommand::Seek] or [InputReaderCommand::Replay] was
-    ///   previously issued, then just beyond the end of the data from the last
-    ///   call.
-    ///
-    /// - Otherwise, from the beginning of the input.
+    /// receives this command, the reader should start from the resume point
+    /// passed as `resume_info` when the endpoint was opened, if any, and
+    /// otherwise from the beginning of input.
     ///
     /// The input reader should report the data that it queues to
     /// [InputConsumer::buffered] as it queues it.
@@ -246,7 +238,7 @@ impl InputReaderCommand {
     /// fault-tolerant endpoints).
     pub fn as_nonft(&self) -> Option<NonFtInputReaderCommand> {
         match self {
-            InputReaderCommand::Seek(_) | InputReaderCommand::Replay { .. } => None,
+            InputReaderCommand::Replay { .. } => None,
             InputReaderCommand::Queue { .. } => Some(NonFtInputReaderCommand::Queue),
             InputReaderCommand::Extend => {
                 Some(NonFtInputReaderCommand::Transition(PipelineState::Running))
@@ -454,10 +446,6 @@ pub trait InputReader: Send + Sync {
     /// channel's sender.
     fn is_closed(&self) -> bool;
 
-    fn seek(&self, metadata: JsonValue) {
-        self.request(InputReaderCommand::Seek(metadata));
-    }
-
     fn replay(&self, metadata: JsonValue, data: RmpValue) {
         self.request(InputReaderCommand::Replay { metadata, data });
     }
@@ -595,7 +583,7 @@ pub enum Resume {
     /// the step exactly.
     Seek {
         /// Metadata needed for the controller to restart the input adapter from
-        /// just after this input step using [InputReaderCommand::Seek].
+        /// just after this input step.
         seek: JsonValue,
     },
 
@@ -603,7 +591,7 @@ pub enum Resume {
     /// step.
     Replay {
         /// Metadata needed for the controller to restart the input adapter from
-        /// just after this input step using [InputReaderCommand::Seek].
+        /// just after this input step.
         seek: JsonValue,
 
         /// The data needed for the controller to replay exactly this input step
@@ -689,6 +677,15 @@ impl Resume {
 }
 
 dyn_clone::clone_trait_object!(InputConsumer);
+
+/// Helper function to parse resume info passed to [`InputConsumer::extended`].
+pub fn parse_resume_info<M>(metadata: &JsonValue) -> AnyResult<M>
+where
+    M: DeserializeOwned,
+{
+    serde_json::from_value::<M>(metadata.clone())
+            .map_err(|e| anyhow::anyhow!("unable to parse checkpointed connector state (checkpointed state: {metadata}; parse error: {e})"))
+}
 
 pub type AsyncErrorCallback = Box<dyn Fn(bool, AnyError) + Send + Sync>;
 
@@ -777,8 +774,6 @@ pub trait OutputEndpoint: Send {
 ///
 /// A fault-tolerant connector wants to receive, in order:
 ///
-/// - Zero or one [InputReaderCommand::Seek]s.
-///
 /// - Zero or more [InputReaderCommand::Replay]s.
 ///
 /// - Zero or more other commands.
@@ -835,40 +830,6 @@ impl<M, D> InputCommandReceiver<M, D> {
         }
     }
 
-    pub fn blocking_recv_seek(&mut self) -> Result<Option<M>, InputCommandReceiverError>
-    where
-        M: for<'a> Deserialize<'a>,
-    {
-        let command = self.blocking_recv()?;
-        self.take_seek(command)
-    }
-
-    pub async fn recv_seek(&mut self) -> Result<Option<M>, InputCommandReceiverError>
-    where
-        M: for<'a> Deserialize<'a>,
-    {
-        let command = self.recv().await?;
-        self.take_seek(command)
-    }
-
-    fn take_seek(
-        &mut self,
-        command: InputReaderCommand,
-    ) -> Result<Option<M>, InputCommandReceiverError>
-    where
-        M: for<'a> Deserialize<'a>,
-    {
-        debug_assert!(self.buffer.is_none());
-        match command {
-            InputReaderCommand::Seek(metadata) => Ok(Some(serde_json::from_value::<M>(metadata)?)),
-            InputReaderCommand::Disconnect => Err(InputCommandReceiverError::Disconnected),
-            other => {
-                self.put_back(other);
-                Ok(None)
-            }
-        }
-    }
-
     pub fn blocking_recv_replay(&mut self) -> Result<Option<(M, D)>, InputCommandReceiverError>
     where
         M: for<'a> Deserialize<'a>,
@@ -896,7 +857,6 @@ impl<M, D> InputCommandReceiver<M, D> {
         D: for<'a> Deserialize<'a>,
     {
         match command {
-            InputReaderCommand::Seek(_) => unreachable!(),
             InputReaderCommand::Replay { metadata, data } => Ok(Some((
                 serde_json::from_value::<M>(metadata)?,
                 rmpv::ext::from_value::<D>(data)?,

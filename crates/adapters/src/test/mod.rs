@@ -211,6 +211,7 @@ where
         Box::new(consumer.clone()),
         Box::new(parser.clone()),
         relation,
+        None,
     )?;
 
     Ok((reader, consumer, parser, input_handle))

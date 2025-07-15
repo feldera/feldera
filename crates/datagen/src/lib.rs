@@ -33,8 +33,8 @@ use tokio::{sync::mpsc::UnboundedSender, time::Instant as TokioInstant};
 use dbsp::circuit::tokio::TOKIO;
 use feldera_adapterlib::format::{InputBuffer, Parser};
 use feldera_adapterlib::transport::{
-    InputCommandReceiver, InputConsumer, InputEndpoint, InputReader, InputReaderCommand, Resume,
-    TransportInputEndpoint,
+    parse_resume_info, InputCommandReceiver, InputConsumer, InputEndpoint, InputReader,
+    InputReaderCommand, Resume, TransportInputEndpoint,
 };
 use feldera_types::program_schema::{ColumnType, Field, Relation, SqlIdentifier, SqlType};
 use feldera_types::transport::datagen::{
@@ -313,12 +313,14 @@ impl TransportInputEndpoint for GeneratorEndpoint {
         consumer: Box<dyn InputConsumer>,
         parser: Box<dyn Parser>,
         schema: Relation,
+        seek: Option<Value>,
     ) -> AnyResult<Box<dyn InputReader>> {
         Ok(Box::new(InputGenerator::new(
             consumer,
             parser,
             self.config.clone(),
             schema,
+            seek,
         )?))
     }
 }
@@ -334,6 +336,7 @@ impl InputGenerator {
         parser: Box<dyn Parser>,
         mut config: DatagenInputConfig,
         schema: Relation,
+        seek: Option<Value>,
     ) -> AnyResult<Self> {
         let (command_sender, command_receiver) = unbounded_channel();
 
@@ -358,9 +361,14 @@ impl InputGenerator {
         }
 
         let join_handle = std::thread::spawn(move || {
-            if let Err(error) =
-                Self::datagen_thread(command_receiver, consumer.clone(), parser, config, schema)
-            {
+            if let Err(error) = Self::datagen_thread(
+                command_receiver,
+                consumer.clone(),
+                parser,
+                config,
+                schema,
+                seek,
+            ) {
                 consumer.error(true, error);
             }
         });
@@ -378,6 +386,7 @@ impl InputGenerator {
         parser: Box<dyn Parser>,
         config: DatagenInputConfig,
         schema: Relation,
+        seek: Option<Value>,
     ) -> AnyResult<()> {
         let rate_limiters = Arc::new(
             config
@@ -439,7 +448,8 @@ impl InputGenerator {
         let mut command_receiver = InputCommandReceiver::<RawMetadata, ()>::new(command_receiver);
 
         // Tracks work that needs to be sent to a worker for execution.
-        let mut unassigned = if let Some(metadata) = command_receiver.blocking_recv_seek()? {
+        let mut unassigned = if let Some(metadata) = seek {
+            let metadata = parse_resume_info::<RawMetadata>(&metadata)?;
             seed = metadata.seed;
             range_sets_from_vecs(metadata.todo)
         } else {
@@ -503,8 +513,7 @@ impl InputGenerator {
         let mut completed = VecDeque::new();
         loop {
             match command_receiver.try_recv()? {
-                Some(command @ InputReaderCommand::Seek(_))
-                | Some(command @ InputReaderCommand::Replay { .. }) => {
+                Some(command @ InputReaderCommand::Replay { .. }) => {
                     unreachable!("{command:?} must be at the beginning of the command stream")
                 }
                 Some(InputReaderCommand::Extend) => running = true,

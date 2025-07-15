@@ -60,11 +60,13 @@ impl TransportInputEndpoint for UrlInputEndpoint {
         consumer: Box<dyn InputConsumer>,
         parser: Box<dyn Parser>,
         _schema: Relation,
+        seek: Option<serde_json::Value>,
     ) -> AnyResult<Box<dyn InputReader>> {
         Ok(Box::new(UrlInputReader::new(
             &self.config,
             consumer,
             parser,
+            seek,
         )?))
     }
 }
@@ -255,6 +257,7 @@ impl UrlInputReader {
         config: &Arc<UrlInputConfig>,
         consumer: Box<dyn InputConsumer>,
         mut parser: Box<dyn Parser>,
+        seek: Option<serde_json::Value>,
     ) -> AnyResult<Self> {
         let (sender, receiver) = unbounded_channel();
         spawn({
@@ -263,7 +266,8 @@ impl UrlInputReader {
                 let _guard = info_span!("url_input", path = config.path.clone()).entered();
                 System::new().block_on(async move {
                     if let Err(error) =
-                        Self::worker_thread(config, &mut parser, receiver, consumer.as_ref()).await
+                        Self::worker_thread(config, &mut parser, receiver, consumer.as_ref(), seek)
+                            .await
                     {
                         consumer.error(true, error);
                     };
@@ -279,11 +283,14 @@ impl UrlInputReader {
         parser: &mut Box<dyn Parser>,
         command_receiver: UnboundedReceiver<InputReaderCommand>,
         consumer: &dyn InputConsumer,
+        seek: Option<serde_json::Value>,
     ) -> AnyResult<()> {
         ensure_default_crypto_provider();
 
         let mut command_receiver = InputCommandReceiver::<Metadata, ()>::new(command_receiver);
-        let offset = if let Some(metadata) = command_receiver.recv_seek().await? {
+        let offset = if let Some(metadata) = seek {
+            let metadata = serde_json::from_value::<Metadata>(metadata)
+                .map_err(|e| anyhow!("error deserializing checkpointed connector metadata: {e}"))?;
             metadata.offsets.end
         } else {
             0
@@ -345,7 +352,7 @@ impl UrlInputReader {
                 },
                 command = command_receiver.recv() => {
                     match command? {
-                        command @ InputReaderCommand::Seek(_) | command @ InputReaderCommand::Replay{..} => {
+                        command @ InputReaderCommand::Replay{..} => {
                             unreachable!("{command:?} must be at the beginning of the command stream")
                         }
                         InputReaderCommand::Extend => {

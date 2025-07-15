@@ -13,7 +13,7 @@ use crate::{InputBuffer, Parser};
 use anyhow::{anyhow, bail, Error as AnyError, Result as AnyResult};
 use crossbeam::queue::ArrayQueue;
 use crossbeam::sync::{Parker, Unparker};
-use feldera_adapterlib::transport::{InputEndpoint, InputReaderCommand, Resume};
+use feldera_adapterlib::transport::{parse_resume_info, InputEndpoint, InputReaderCommand, Resume};
 use feldera_types::config::FtModel;
 use feldera_types::program_schema::Relation;
 use feldera_types::transport::kafka::{KafkaInputConfig, KafkaStartFromConfig};
@@ -179,13 +179,14 @@ impl KafkaFtInputReaderInner {
         mut parser: Box<dyn Parser>,
         n_partitions: usize,
         command_receiver: UnboundedReceiver<InputReaderCommand>,
+        resume_info: Option<Metadata>,
     ) -> AnyResult<()> {
         let topic = &config.topic;
 
         // Start reading the partitions either at the resume point or at the
         // beginning.
         let mut command_receiver = InputCommandReceiver::<Metadata, ()>::new(command_receiver);
-        let initial_offsets = match command_receiver.blocking_recv_seek()? {
+        let initial_offsets = match resume_info {
             Some(metadata) => metadata
                 .parse(n_partitions)?
                 .into_iter()
@@ -391,8 +392,7 @@ impl KafkaFtInputReaderInner {
             let was_running = running;
             while let Some(command) = command_receiver.try_recv()? {
                 match command {
-                    command @ InputReaderCommand::Seek(_)
-                    | command @ InputReaderCommand::Replay { .. } => {
+                    command @ InputReaderCommand::Replay { .. } => {
                         unreachable!("{command:?} must be at the beginning of the command stream")
                     }
                     InputReaderCommand::Extend => running = true,
@@ -541,7 +541,13 @@ impl KafkaFtInputReader {
         config: &Arc<KafkaInputConfig>,
         consumer: Box<dyn InputConsumer>,
         parser: Box<dyn Parser>,
+        resume_info: Option<serde_json::Value>,
     ) -> AnyResult<Self> {
+        let resume_info = if let Some(resume_info) = resume_info {
+            Some(parse_resume_info::<Metadata>(&resume_info)?)
+        } else {
+            None
+        };
         let _guard = span(&config.topic);
 
         // Create Kafka consumer configuration.
@@ -591,6 +597,7 @@ impl KafkaFtInputReader {
                         .map(|p| p.len())
                         .unwrap_or(partition_count),
                     command_receiver,
+                    resume_info,
                 ) {
                     consumer.error(true, e);
                 }
@@ -617,11 +624,13 @@ impl TransportInputEndpoint for KafkaFtInputEndpoint {
         consumer: Box<dyn InputConsumer>,
         parser: Box<dyn Parser>,
         _schema: Relation,
+        resume_info: Option<serde_json::Value>,
     ) -> AnyResult<Box<dyn InputReader>> {
         Ok(Box::new(KafkaFtInputReader::new(
             &self.config,
             consumer,
             parser,
+            resume_info,
         )?))
     }
 }

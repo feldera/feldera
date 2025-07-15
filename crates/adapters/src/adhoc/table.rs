@@ -302,6 +302,7 @@ impl DataSink for AdHocTableSink {
                 &endpoint_name,
                 config,
                 Some(Box::new(endpoint.clone()) as Box<dyn TransportInputEndpoint>),
+                None,
             )
             .map_err(|e| DataFusionError::External(e.into()))?;
 

@@ -5,7 +5,7 @@ use super::{
 use crate::format::StreamSplitter;
 use crate::{InputBuffer, Parser};
 use anyhow::{bail, Error as AnyError, Result as AnyResult};
-use feldera_adapterlib::transport::Resume;
+use feldera_adapterlib::transport::{parse_resume_info, Resume};
 use feldera_types::config::FtModel;
 use feldera_types::program_schema::Relation;
 use feldera_types::transport::file::{FileInputConfig, FileOutputConfig};
@@ -68,8 +68,14 @@ impl TransportInputEndpoint for FileInputEndpoint {
         consumer: Box<dyn InputConsumer>,
         parser: Box<dyn Parser>,
         _schema: Relation,
+        resume_info: Option<serde_json::Value>,
     ) -> AnyResult<Box<dyn InputReader>> {
-        Ok(Box::new(FileInputReader::new(self, consumer, parser)?))
+        Ok(Box::new(FileInputReader::new(
+            self,
+            consumer,
+            parser,
+            resume_info,
+        )?))
     }
 }
 
@@ -83,7 +89,14 @@ impl FileInputReader {
         endpoint: &FileInputEndpoint,
         consumer: Box<dyn InputConsumer>,
         parser: Box<dyn Parser>,
+        resume_info: Option<serde_json::Value>,
     ) -> AnyResult<Self> {
+        let resume_info = if let Some(resume_info) = resume_info {
+            Some(parse_resume_info::<Metadata>(&resume_info)?)
+        } else {
+            None
+        };
+
         let config = &endpoint.config;
         let file = File::open(&config.path).map_err(|e| {
             AnyError::msg(format!("Failed to open input file '{}': {e}", config.path))
@@ -107,6 +120,7 @@ impl FileInputReader {
                     parser,
                     receiver,
                     follow,
+                    resume_info,
                 ) {
                     consumer.error(true, error);
                 }
@@ -119,6 +133,7 @@ impl FileInputReader {
         })
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn worker_thread(
         mut file: File,
         path: String,
@@ -127,8 +142,15 @@ impl FileInputReader {
         mut parser: Box<dyn Parser>,
         mut receiver: UnboundedReceiver<InputReaderCommand>,
         follow: bool,
+        resume_info: Option<Metadata>,
     ) -> AnyResult<()> {
         let mut splitter = StreamSplitter::new(parser.splitter());
+
+        if let Some(resume_info) = resume_info {
+            let offset = resume_info.offsets.end;
+            file.seek(SeekFrom::Start(offset))?;
+            splitter.seek(offset);
+        }
 
         let mut queue = VecDeque::<(Range<u64>, Box<dyn InputBuffer>)>::new();
         let mut extending = false;
@@ -186,12 +208,6 @@ impl FileInputReader {
                         };
 
                         consumer.extended(total, Some(resume));
-                    }
-                    Ok(InputReaderCommand::Seek(metadata)) => {
-                        let Metadata { offsets } = serde_json::from_value(metadata)?;
-                        let offset = offsets.end;
-                        file.seek(SeekFrom::Start(offset))?;
-                        splitter.seek(offset);
                     }
                     Ok(InputReaderCommand::Replay { metadata, .. }) => {
                         let Metadata { offsets } = serde_json::from_value(metadata)?;

@@ -54,6 +54,7 @@ impl TransportInputEndpoint for PubSubInputEndpoint {
         consumer: Box<dyn InputConsumer>,
         parser: Box<dyn Parser>,
         _schema: Relation,
+        _seek: Option<serde_json::Value>,
     ) -> AnyResult<Box<dyn InputReader>> {
         Ok(Box::new(PubSubReader::new(
             self.config.clone(),

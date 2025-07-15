@@ -83,6 +83,7 @@ impl IntegratedInputEndpoint for IcebergInputEndpoint {
     fn open(
         self: Box<Self>,
         input_handle: &InputCollectionHandle,
+        _seek: Option<serde_json::Value>,
     ) -> AnyResult<Box<dyn InputReader>> {
         Ok(Box::new(IcebergInputReader::new(
             &self.inner,
