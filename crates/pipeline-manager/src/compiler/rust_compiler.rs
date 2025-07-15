@@ -507,6 +507,7 @@ fn main() {
 "#;
 
 /// Checkout the requested runtime version.
+#[allow(unused)]
 async fn checkout_runtime_version(
     dbsp_override_path: &str,
     requested_runtime_version: &RuntimeSelector,
@@ -610,7 +611,7 @@ You can either commit outstanding changes before running the manager or clone a 
 /// configuring the workspace itself (e.g., its Cargo.toml and Cargo.lock).
 async fn prepare_workspace(
     config: &CompilerConfig,
-    requested_runtime_version: &RuntimeSelector,
+    #[allow(unused)] requested_runtime_version: &RuntimeSelector,
     pipeline_id: PipelineId,
     main_rust: &str,
     udf_rust: &str,
@@ -883,6 +884,7 @@ extern crate sync_checkpoint;"#,
     // Sources: config.dbsp_override_path
     // ---------------------
     // Make sure the runtime version is checked out.
+    #[cfg(not(feature = "feldera-enterprise"))]
     checkout_runtime_version(&config.dbsp_override_path, requested_runtime_version).await?;
 
     // Workspace: Cargo.lock
