@@ -70,7 +70,7 @@ CREATE TABLE CUSTOMER (
 -- Credit card transactions.
 CREATE TABLE TRANSACTION (
     ts TIMESTAMP LATENESS INTERVAL 10 MINUTES, -- Transaction time
-    amt DOUBLE,                                -- Transaction amount
+    amt DECIMAL(38, 2),                        -- Transaction amount
     cc_num BIGINT NOT NULL,                    -- Credit card number
     shipping_lat DOUBLE,                       -- Shipping address latitude
     shipping_long DOUBLE,                      -- Shipping address longitude

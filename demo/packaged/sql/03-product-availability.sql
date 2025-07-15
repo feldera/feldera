@@ -48,8 +48,8 @@ CREATE TABLE warehouse (
 CREATE TABLE product (
     id INT NOT NULL PRIMARY KEY,
     name VARCHAR NOT NULL,
-    mass DOUBLE NOT NULL,
-    volume DOUBLE NOT NULL
+    mass DECIMAL(38, 2) NOT NULL,
+    volume DECIMAL(38, 2) NOT NULL
 ) with (
     'materialized' = 'true',
     'connectors' = '[{

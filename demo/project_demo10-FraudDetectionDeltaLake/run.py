@@ -273,7 +273,7 @@ def build_program(
         cc_num BIGINT,
         merchant STRING,
         category STRING,
-        amt DOUBLE,
+        amt DECIMAL(38, 2),
         trans_num STRING,
         unix_time BIGINT LATENESS 3600 * 24 * 30,
         merch_lat DOUBLE,

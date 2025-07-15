@@ -294,7 +294,7 @@ This example shows creating and running a pipeline with Feldera's internal data 
             CREATE TABLE Stocks (
             symbol VARCHAR NOT NULL,
             price_time BIGINT NOT NULL,  -- UNIX timestamp
-            price DOUBLE NOT NULL
+            price DECIMAL(38, 2) NOT NULL
             ) with (
               'connectors' = '[{
                 "transport": {

@@ -90,7 +90,7 @@ def build_program(transactions_connectors: str, demographics_connectors: str, fe
         cc_num BIGINT,
         merchant STRING,
         category STRING,
-        amt DOUBLE,
+        amt DECIMAL(38, 2),
         trans_num STRING,
         unix_time BIGINT,
         merch_lat DOUBLE,
