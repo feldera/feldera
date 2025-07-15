@@ -1434,6 +1434,15 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                                 node, method, type.withMayBeNull(nullable), ops.get(0), ops.get(1))
                                 .cast(node, type, false);
                     }
+                    case "transform": {
+                        validateArgCount(node, operationName, ops.size(), 2);
+                        String method = "transform" +
+                                ops.get(0).getType().nullableUnderlineSuffix();
+                        boolean nullable = ops.get(0).getType().mayBeNull;
+                        return new DBSPApplyExpression(
+                                node, method, type.withMayBeNull(nullable), ops.get(0), ops.get(1))
+                                .cast(node, type, false);
+                    }
                 }
                 return this.compileUdfOrConstructor(node, call, type, ops);
             }
