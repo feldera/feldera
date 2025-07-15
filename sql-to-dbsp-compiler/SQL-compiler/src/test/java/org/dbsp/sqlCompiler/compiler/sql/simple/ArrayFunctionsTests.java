@@ -1243,8 +1243,142 @@ public class ArrayFunctionsTests extends SqlIoTest {
     }
 
     @Test
-    public void testAmbiguousArray() {
-        this.queryFailingInCompilation("SELECT \"array_exists\"(array(), x -> true)",
+    public void testArrayExistsTable() {
+        var ccs = this.getCCS("""
+                CREATE TABLE T(x INT ARRAY);
+                CREATE VIEW V AS SELECT ARRAY_EXISTS(x, e -> e % 2 = 0) FROM T;""");
+        ccs.step("INSERT INTO T VALUES(ARRAY[1, 2, 3])", """
+                  r     | weight
+                 ----------------
+                  true  | 1""");
+        ccs.step("INSERT INTO T VALUES(ARRAY())", """
+                  r     | weight
+                 ----------------
+                  false | 1""");
+    }
+
+    @Test
+    public void testTransform() {
+        this.qs("""
+                SELECT transform(array[1, 2, 3], x -> x + 3);
+                result
+                ------
+                 { 4, 5, 6 }
+                (1 row)
+
+                SELECT transform(array[1, 2, 3], x -> x > 2);
+                result
+                ------
+                 { false, false, true }
+                (1 row)
+
+                SELECT transform(array[1, 2, 3], x -> false);
+                result
+                ------
+                 { false, false, false }
+                (1 row)
+
+                SELECT transform(array[1, 2, 3], x -> CAST(x as VARCHAR));
+                result
+                ------
+                 { 1, 2, 3 }
+                (1 row)
+
+                SELECT transform(CAST(array() AS INT ARRAY), x -> true);
+                result
+                ------
+                 {}
+                (1 row)
+
+                SELECT transform(CAST(array() AS INT ARRAY), x -> cast(x as varchar));
+                result
+                ------
+                 {}
+                (1 row)
+
+                SELECT transform(array[-1, 2, 3], y -> abs(y));
+                result
+                ------
+                 { 1, 2, 3 }
+                (1 row)
+
+                SELECT transform(array[1, 2, 3], x -> x > 2 and x < 4);
+                result
+                ------
+                 { false, false, true }
+                (1 row)
+
+                SELECT transform(array[array[1, 2], array[3, 4]], x -> x[1]);
+                result
+                ------
+                 { 1, 3 }
+                (1 row)
+
+                SELECT transform(array[array[1, 2], array[3, 4]], x -> x[1] + 5);
+                result
+                ------
+                 { 6, 8 }
+                (1 row)
+
+                SELECT transform(array[null, 3], x -> x + 2);
+                result
+                ------
+                 { NULL, 5 }
+                (1 row)
+
+                SELECT transform(array[null, 3], x -> x is null);
+                result
+                ------
+                 { true, false }
+                (1 row)
+
+                SELECT transform(array[null, 3], x -> cast(null as boolean));
+                result
+                ------
+                 { NULL, NULL }
+                (1 row)
+
+                SELECT transform(array[null, 3], x -> x = null);
+                result
+                ------
+                 { NULL, NULL }
+                (1 row)
+                
+                SELECT transform(cast(null as integer array), x -> x > 2);
+                result
+                ------
+                NULL
+                (1 row)""");
+    }
+
+    @Test
+    public void testArrayTransformTable() {
+        var ccs = this.getCCS("""
+                CREATE TABLE T(x INT ARRAY);
+                CREATE VIEW V AS SELECT TRANSFORM(x, e -> e % 2) FROM T;""");
+        ccs.step("INSERT INTO T VALUES(ARRAY[1, 2, 3])", """
+                  r           | weight
+                 ----------------
+                  { 1, 0, 1 } | 1""");
+        ccs.step("INSERT INTO T VALUES(ARRAY())", """
+                  r     | weight
+                 ----------------
+                  {}    | 1""");
+    }
+
+    @Test
+    public void failingLambdaCases() {
+        this.queryFailingInCompilation("SELECT array_exists(array(), x -> true)",
                 "Could not infer a type for array elements");
+        this.queryFailingInCompilation("SELECT array_exists(array[1], (x, y) -> x AND y)",
+                "Cannot apply 'array_exists' to arguments of type");
+        this.queryFailingInCompilation("SELECT array_exists(array[1], x -> 1)",
+                "Cannot apply 'array_exists' to arguments of type");
+        this.queryFailingInCompilation("SELECT transform(array(), x -> x)",
+                "Could not infer a type for array elements");
+        this.queryFailingInCompilation("SELECT transform(array[1], (x, y) -> x + y)",
+                "Cannot apply 'transform' to arguments of type");
+        this.queryFailingInCompilation("SELECT transform(array[1], x -> x AND true)",
+                "Cannot apply 'AND' to arguments of type '<INTEGER> AND <BOOLEAN>'");
     }
 }

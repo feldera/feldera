@@ -219,6 +219,7 @@
 * `TO_HEX`: [binary](binary.md#to_hex)
 * `TO_INT`: [binary](binary.md#to_int)
 * `TO_JSON`: [json](json.md#to_json)
+* `TRANSFORM`: [array](array.md#transform)
 * `TRIM`: [string](string.md#trim)
 * `TRUNC`: [decimal](decimal.md#trunc), [decimal](decimal.md#trunc2), [float](float.md#trunc)
 * `TRUNCATE`: [decimal](decimal.md#truncate), [float](float.md#truncate)

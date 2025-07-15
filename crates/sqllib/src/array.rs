@@ -997,3 +997,20 @@ where
     let array = array?;
     array_exists_N(array, f)
 }
+
+#[doc(hidden)]
+pub fn transform_<T, S, F>(array: Array<T>, f: F) -> Array<S>
+where
+    F: Fn(&T) -> S,
+{
+    Arc::new(array.iter().map(f).collect())
+}
+
+#[doc(hidden)]
+pub fn transformN<T, S, F>(array: Option<Array<T>>, f: F) -> Option<Array<S>>
+where
+    F: Fn(&T) -> S,
+{
+    let array = array?;
+    Some(transform_(array, f))
+}
