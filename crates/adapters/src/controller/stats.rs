@@ -1387,8 +1387,9 @@ pub struct InputEndpointStatus {
     #[serde(skip)]
     pub progress: Mutex<Option<StepResults>>,
 
+    /// May be None during endpoint initialization.
     #[serde(skip)]
-    pub reader: Box<dyn InputReader>,
+    pub reader: Option<Box<dyn InputReader>>,
 
     /// Endpoint support for fault tolerance.
     #[serde(skip)]
@@ -1441,7 +1442,6 @@ impl InputEndpointStatus {
     pub fn new(
         endpoint_name: &str,
         config: InputEndpointConfig,
-        reader: Box<dyn InputReader>,
         fault_tolerance: Option<FtModel>,
     ) -> Self {
         let paused_by_user =
@@ -1455,7 +1455,7 @@ impl InputEndpointStatus {
             progress: Mutex::new(None),
             paused: AtomicBool::new(paused_by_user),
             barrier: AtomicBool::new(false),
-            reader,
+            reader: None,
             fault_tolerance,
             completion_tokens: TokenList::new(),
         }

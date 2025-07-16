@@ -1285,7 +1285,9 @@ impl CircuitThread {
                 }
             } else {
                 if !self.replaying() {
-                    status.reader.queue(self.checkpoint_requested());
+                    if let Some(reader) = status.reader.as_ref() {
+                        reader.queue(self.checkpoint_requested())
+                    }
                 } else {
                     // We already started the input adapters replaying. The set of
                     // input adapters can't change during replay (because we disable
@@ -1314,7 +1316,12 @@ impl CircuitThread {
                     // We check for results first, because if an input adapter
                     // queues its last input batch and then exits, we want to
                     // take the input.
-                    if status.reader.is_closed() {
+                    if status
+                        .reader
+                        .as_ref()
+                        .map(|reader| reader.is_closed())
+                        .unwrap_or(false)
+                    {
                         if status.metrics.end_of_input.load(Ordering::Acquire) {
                             warn!("Input endpoint {} exited", status.endpoint_name);
                         } else {
@@ -1687,9 +1694,12 @@ impl FtState {
         }
         for (endpoint_name, log) in &metadata.input_logs {
             let endpoint_id = controller.input_endpoint_id_by_name(endpoint_name)?;
-            controller.status.input_status()[&endpoint_id]
+            if let Some(reader) = controller.status.input_status()[&endpoint_id]
                 .reader
-                .replay(log.metadata.clone(), log.data.clone());
+                .as_ref()
+            {
+                reader.replay(log.metadata.clone(), log.data.clone())
+            }
         }
         Ok(())
     }
@@ -2253,12 +2263,16 @@ impl BackpressureThread {
                 match should_run {
                     true => {
                         if running_endpoints.insert(*epid) {
-                            ep.reader.extend();
+                            if let Some(reader) = ep.reader.as_ref() {
+                                reader.extend()
+                            }
                         }
                     }
                     false => {
                         if running_endpoints.remove(epid) {
-                            ep.reader.pause();
+                            if let Some(reader) = ep.reader.as_ref() {
+                                reader.pause()
+                            }
                         }
                     }
                 }
@@ -2718,7 +2732,9 @@ impl ControllerInner {
         debug!("Disconnecting input endpoint {endpoint_id}");
 
         if let Some(ep) = self.status.remove_input(endpoint_id) {
-            ep.reader.disconnect();
+            if let Some(reader) = ep.reader.as_ref() {
+                reader.disconnect()
+            }
             self.unpark_circuit();
             self.unpark_backpressure();
         }
@@ -2769,7 +2785,7 @@ impl ControllerInner {
             &endpoint_config.connector_config,
             self.clone(),
         ));
-        let (reader, fault_tolerance) = match endpoint {
+        let fault_tolerance = match endpoint {
             Some(endpoint) => {
                 // Create parser.
                 let format_config = if endpoint_config.connector_config.transport.name()
@@ -2807,20 +2823,66 @@ impl ControllerInner {
                 let parser =
                     format.new_parser(endpoint_name, input_handle, &format_config.config)?;
 
-                let reader = endpoint
+                let fault_tolerance = endpoint.fault_tolerance();
+
+                // Register the endpoint, so that if the the `open` call below signals `eoi` to the controller,
+                // the eoi status is recorded and not dropped on the floor.
+                self.status.inputs.write().unwrap().insert(
+                    endpoint_id,
+                    InputEndpointStatus::new(endpoint_name, endpoint_config, fault_tolerance),
+                );
+
+                match endpoint
                     .open(probe, parser, input_handle.schema.clone(), resume_info)
-                    .map_err(|e| ControllerError::input_transport_error(endpoint_name, true, e))?;
-                (reader, endpoint.fault_tolerance())
+                    .map_err(|e| ControllerError::input_transport_error(endpoint_name, true, e))
+                {
+                    Ok(reader) => {
+                        self.status
+                            .inputs
+                            .write()
+                            .unwrap()
+                            .get_mut(&endpoint_id)
+                            .unwrap()
+                            .reader = Some(reader);
+                    }
+                    Err(e) => {
+                        self.status.inputs.write().unwrap().remove(&endpoint_id);
+                        return Err(e);
+                    }
+                }
+
+                fault_tolerance
             }
             None => {
                 let endpoint =
                     create_integrated_input_endpoint(endpoint_name, &endpoint_config, probe)?;
 
                 let fault_tolerance = endpoint.fault_tolerance();
-                let reader = endpoint
+
+                self.status.inputs.write().unwrap().insert(
+                    endpoint_id,
+                    InputEndpointStatus::new(endpoint_name, endpoint_config, fault_tolerance),
+                );
+
+                match endpoint
                     .open(input_handle, resume_info)
-                    .map_err(|e| ControllerError::input_transport_error(endpoint_name, true, e))?;
-                (reader, fault_tolerance)
+                    .map_err(|e| ControllerError::input_transport_error(endpoint_name, true, e))
+                {
+                    Ok(reader) => {
+                        self.status
+                            .inputs
+                            .write()
+                            .unwrap()
+                            .get_mut(&endpoint_id)
+                            .unwrap()
+                            .reader = Some(reader);
+                    }
+                    Err(e) => {
+                        self.status.inputs.write().unwrap().remove(&endpoint_id);
+                        return Err(e);
+                    }
+                }
+                fault_tolerance
             }
         };
 
@@ -2833,11 +2895,6 @@ impl ControllerInner {
                         FtModel::option_as_str(fault_tolerance)
                 )));
         }
-
-        self.status.inputs.write().unwrap().insert(
-            endpoint_id,
-            InputEndpointStatus::new(endpoint_name, endpoint_config, reader, fault_tolerance),
-        );
 
         self.unpark_backpressure();
         Ok(endpoint_id)
@@ -3232,7 +3289,9 @@ impl ControllerInner {
         };
 
         for ep in inputs.values() {
-            ep.reader.disconnect();
+            if let Some(reader) = ep.reader.as_ref() {
+                reader.disconnect()
+            }
         }
         inputs.clear();
 
