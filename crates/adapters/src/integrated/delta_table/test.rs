@@ -844,24 +844,24 @@ async fn test_follow(
             .unwrap(),
     );
 
-    // // The input connector is paused. Make sure that we can suspend the connector
-    // // before it started reading the checkpoint.
-    // if suspend {
-    //     if suspend {
-    //         suspend_pipeline(pipeline).await;
+    // The input connector is paused. Make sure that we can suspend the connector
+    // before it started reading the checkpoint.
+    if suspend {
+        if suspend {
+            suspend_pipeline(pipeline).await;
 
-    //         pipeline = start_pipeline(
-    //             input_table_uri,
-    //             output_table_uri,
-    //             &input_config,
-    //             &output_config,
-    //             &storage_dir,
-    //             buffer_size,
-    //             buffer_timeout_ms,
-    //         )
-    //         .await;
-    //     }
-    // }
+            pipeline = start_pipeline(
+                input_table_uri,
+                output_table_uri,
+                &input_config,
+                &output_config,
+                &storage_dir,
+                buffer_size,
+                buffer_timeout_ms,
+            )
+            .await;
+        }
+    }
 
     pipeline.start_input_endpoint("test_input1").unwrap();
 
