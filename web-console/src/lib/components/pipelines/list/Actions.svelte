@@ -88,7 +88,7 @@
         '_delete'
       ])
       .with('Preparing', 'Provisioning', 'Initializing', () => [
-        '_multiStop',
+        '_kill',
         '_spinner',
         '_saveFile',
         '_configurations',
