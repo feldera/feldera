@@ -52,7 +52,7 @@ impl Display for PipelineId {
 ///             ⌛Provisioning          Suspending            resource or runtime error,
 ///                    │                    ▲                having the system call /stop?force=true
 ///                    ▼                    │ /stop          effectively
-///             ⌛Initializing ──────────────┤  ?force=false
+///              Initializing ──────────────┤  ?force=false
 ///                    │                    │
 ///          ┌─────────┼────────────────────┴─────┐
 ///          │         ▼                          │
@@ -132,8 +132,7 @@ pub enum PipelineStatus {
     /// 1. Initialization check passes, indicating pipeline is ready.
     ///    It transitions to `Paused` state.
     ///
-    /// 2. Resource error or runtime error is encountered,
-    ///    or initialization takes too long (timeout exceeded).
+    /// 2. Resource error or runtime error is encountered.
     ///    It transitions to `Stopping` with `deployment_error` set.
     ///
     /// 3. The user suspends the pipeline by invoking the `/stop?force=false` endpoint.

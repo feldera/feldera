@@ -134,9 +134,6 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
     /// for when to retry if it failed.
     const POLL_PERIOD_STOPPING: Duration = Duration::from_millis(1_000);
 
-    // Initialization is over once its internal state and connectors are ready.
-    const INITIALIZING_TIMEOUT: Duration = Duration::from_secs(600);
-
     /// Timeout for an HTTP request of the automaton to a pipeline.
     const HTTP_REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -1146,26 +1143,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                     "Pipeline initialization: could not (yet) connect to pipeline {}",
                     pipeline.id
                 );
-                if Self::has_timeout_expired(
-                    pipeline.deployment_status_since,
-                    Self::INITIALIZING_TIMEOUT,
-                ) {
-                    error!(
-                        "Pipeline initialization: timed out for pipeline {}",
-                        pipeline.id
-                    );
-                    State::TransitionToStopping {
-                        error: Some(
-                            RunnerError::AutomatonInitializingTimeout {
-                                timeout: Self::INITIALIZING_TIMEOUT,
-                            }
-                            .into(),
-                        ),
-                        suspend_info: None,
-                    }
-                } else {
-                    State::Unchanged
-                }
+                State::Unchanged
             }
             StatusCheckResult::Error(error) => State::TransitionToStopping {
                 error: Some(error),
