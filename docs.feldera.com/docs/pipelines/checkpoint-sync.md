@@ -25,7 +25,7 @@ Here is a sample configuration:
         "provider": "AWS",
         "access_key": "ACCESS_KEY",
         "secret_key": "SECRET_KEY",
-        "start_from_checkpoint": false
+        "start_from_checkpoint": "latest"
       }
     }
   }
