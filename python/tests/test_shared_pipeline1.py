@@ -36,7 +36,7 @@ def storage_cfg(
 
 class TestCheckpointSync(SharedTestPipeline):
     @enterprise_only
-    def test_checkpoint_sync(self, auth_err: bool = False):
+    def test_checkpoint_sync(self, from_uuid: bool = False, auth_err: bool = False):
         """
         CREATE TABLE t0 (c0 INT, c1 VARCHAR);
         CREATE MATERIALIZED VIEW v0 AS SELECT c0 FROM t0;
@@ -53,13 +53,15 @@ class TestCheckpointSync(SharedTestPipeline):
         got_before = list(self.pipeline.query("SELECT * FROM v0"))
 
         self.pipeline.checkpoint(wait=True)
-        self.pipeline.sync_checkpoint(wait=True)
+        uuid = self.pipeline.sync_checkpoint(wait=True)
 
         self.pipeline.stop(force=True)
         self.pipeline.clear_storage()
 
         # Restart pipeline from checkpoint
-        storage_config = storage_cfg(start_from_checkpoint="latest", auth_err=auth_err)
+        storage_config = storage_cfg(
+            start_from_checkpoint=uuid if from_uuid else "latest", auth_err=auth_err
+        )
         self.set_runtime_config(RuntimeConfig(storage=Storage(config=storage_config)))
         self.pipeline.start()
         got_after = list(self.pipeline.query("SELECT * FROM v0"))
@@ -68,6 +70,10 @@ class TestCheckpointSync(SharedTestPipeline):
 
         self.pipeline.stop(force=True)
         self.pipeline.clear_storage()
+
+    @enterprise_only
+    def test_checkpoint_sync_from_uuid(self):
+        self.test_checkpoint_sync(from_uuid=True)
 
     @enterprise_only
     def test_checkpoint_sync_err(self):
