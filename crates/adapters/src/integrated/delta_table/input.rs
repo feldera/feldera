@@ -187,6 +187,12 @@ impl DeltaTableInputReader {
             None
         };
 
+        let eoi = if let Some(resume_info) = &resume_info {
+            resume_info.eoi
+        } else {
+            false
+        };
+
         // Used to communicate the status of connector initialization.
         let (init_status_sender, mut init_status_receiver) =
             mpsc::channel::<Result<(), ControllerError>>(1);
@@ -258,23 +264,28 @@ impl DeltaTableInputReader {
             schema,
             resume_info,
         ));
-        let endpoint_clone = endpoint.clone();
 
-        std::thread::spawn(move || {
-            TOKIO.block_on(async {
-                let _ = endpoint_clone
-                    .worker_task(input_stream, receiver_clone, init_status_sender)
-                    .await;
-            })
-        });
+        if eoi {
+            endpoint.consumer.eoi();
+            info!("delta_table {endpoint_name}: skipping connector initialization because the connector is already in the end-of-input state");
+        } else {
+            let endpoint_clone = endpoint.clone();
+            std::thread::spawn(move || {
+                TOKIO.block_on(async {
+                    let _ = endpoint_clone
+                        .worker_task(input_stream, receiver_clone, init_status_sender)
+                        .await;
+                })
+            });
 
-        init_status_receiver.blocking_recv().ok_or_else(|| {
-            ControllerError::input_transport_error(
-                &endpoint.endpoint_name,
-                true,
-                anyhow!("worker thread terminated unexpectedly during initialization"),
-            )
-        })??;
+            init_status_receiver.blocking_recv().ok_or_else(|| {
+                ControllerError::input_transport_error(
+                    &endpoint.endpoint_name,
+                    true,
+                    anyhow!("worker thread terminated unexpectedly during initialization"),
+                )
+            })??;
+        }
 
         Ok(Self {
             sender,
@@ -340,11 +351,13 @@ impl Drop for DeltaTableInputReader {
 struct DeltaResumeInfo {
     /// Table version where the connector stopped reading before the checkpoint.
     version: i64,
+    /// True if the connector reached the end-of-input state.
+    eoi: bool,
 }
 
 impl DeltaResumeInfo {
-    fn new(version: i64) -> Self {
-        Self { version }
+    fn new(version: i64, eoi: bool) -> Self {
+        Self { version, eoi }
     }
 }
 
@@ -531,7 +544,7 @@ impl DeltaTableInputEndpointInner {
         self.queue.push_with_aux(
             (None, Vec::new()),
             0,
-            Some(DeltaResumeInfo::new(table.version())),
+            Some(DeltaResumeInfo::new(table.version(), !self.config.follow())),
         );
 
         //let _ = self.datafusion.deregister_table("snapshot");
@@ -557,7 +570,7 @@ impl DeltaTableInputEndpointInner {
         self.queue.push_with_aux(
             (None, Vec::new()),
             0,
-            Some(DeltaResumeInfo::new(table.version())),
+            Some(DeltaResumeInfo::new(table.version(), !self.config.follow())),
         );
     }
 
@@ -751,6 +764,14 @@ impl DeltaTableInputEndpointInner {
                             self.config.end_version.unwrap()
                         );
                         self.consumer.eoi();
+
+                        // Empty buffer to indicate eoi.
+                        self.queue.push_with_aux(
+                            (None, Vec::new()),
+                            0,
+                            Some(DeltaResumeInfo::new(new_version, true)),
+                        );
+
                         break;
                     }
                     Err(e) => {
@@ -845,7 +866,7 @@ impl DeltaTableInputEndpointInner {
         // the connector will remain in the barrier state until at least one transaction is added to the log.
         if !self.config.snapshot() {
             *self.last_resume_status.lock().unwrap() =
-                Some(DeltaResumeInfo::new(delta_table.version()));
+                Some(DeltaResumeInfo::new(delta_table.version(), false));
         }
 
         // Register object store with datafusion, so it will recognize individual parquet
@@ -1290,7 +1311,7 @@ impl DeltaTableInputEndpointInner {
         self.queue.push_with_aux(
             (None, Vec::new()),
             0,
-            Some(DeltaResumeInfo::new(new_version)),
+            Some(DeltaResumeInfo::new(new_version, false)),
         );
     }
 
