@@ -19,6 +19,7 @@ from feldera.output_handler import OutputHandler
 from feldera._helpers import ensure_dataframe_has_columns, chunk_dataframe
 from feldera.rest.sql_table import SQLTable
 from feldera.rest.sql_view import SQLView
+from feldera.runtime_config import RuntimeConfig
 from feldera.stats import PipelineStatistics
 
 
@@ -834,6 +835,15 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
 
         self.refresh()
         return self._inner.runtime_config
+
+    def set_runtime_config(self, runtime_config: RuntimeConfig):
+        """
+        Updates the runtime config of the pipeline.
+        """
+
+        self.client.patch_pipeline(
+            name=self._inner.name, runtime_config=runtime_config.to_dict()
+        )
 
     def id(self) -> str:
         """

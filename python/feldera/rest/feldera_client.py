@@ -4,11 +4,11 @@ import logging
 import time
 import json
 from decimal import Decimal
-from typing import Generator
+from typing import Generator, Mapping
 
 from feldera.rest.config import Config
 from feldera.rest.feldera_config import FelderaConfig
-from feldera.rest.errors import FelderaTimeoutError
+from feldera.rest.errors import FelderaTimeoutError, FelderaAPIError
 from feldera.rest.pipeline import Pipeline
 from feldera.rest._httprequests import HttpRequests
 from feldera.rest._helpers import client_version
@@ -191,18 +191,32 @@ class FelderaClient:
 
         return self.__wait_for_compilation(pipeline.name)
 
-    def patch_pipeline(self, name: str, sql: str):
+    def patch_pipeline(
+        self,
+        name: str,
+        sql: Optional[str] = None,
+        udf_rust: Optional[str] = None,
+        udf_toml: Optional[str] = None,
+        program_config: Optional[Mapping[str, Any]] = None,
+        runtime_config: Optional[Mapping[str, Any]] = None,
+        description: Optional[str] = None,
+    ):
         """
-        Incrementally update the pipeline SQL
+        Incrementally update pipeline
 
         :param name: The name of the pipeline
-        :param sql: The SQL snippet. Replaces the existing SQL code with this
-            one.
         """
 
         self.http.patch(
             path=f"/pipelines/{name}",
-            body={"program_code": sql},
+            body={
+                "program_code": sql,
+                "udf_rust": udf_rust,
+                "udf_toml": udf_toml,
+                "program_config": program_config,
+                "runtime_config": runtime_config,
+                "description": description,
+            },
         )
 
     def delete_pipeline(self, name: str):
