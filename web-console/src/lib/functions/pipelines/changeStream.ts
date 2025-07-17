@@ -2,95 +2,98 @@ import { BigNumber } from 'bignumber.js/bignumber.js'
 import { JSONParser, Tokenizer, TokenParser, type JSONParserOptions } from '@streamparser/json'
 import { findIndex } from '$lib/functions/common/array'
 import { tuple } from '$lib/functions/common/tuple'
-import invariant from 'tiny-invariant'
+import { RecordBatchReader, RecordBatch, Schema, Field, type TypeMap } from 'apache-arrow'
+import JSONbig from 'true-json-bigint'
+import { arrowIpcBatchToJS } from '../apacheArrow'
 
 class BigNumberTokenizer extends Tokenizer {
   parseNumber = BigNumber as any
 }
 
-/**
- *
- * @param stream
- * @param pushChanges
- * @param options.bufferSize Threshold size of the buffer that holds unprocessed JSON chunks.
- * If the buffer size exceeds this value - when the new JSON batch arrives previous JSON batches are dropped
- * until the buffer size is under the threshold, or only one batch remains.
- * @returns
- */
-export const parseCancellable = <T, Transformer extends TransformStream<Uint8Array, T>>(
-  source: {
-    stream: ReadableStream<Uint8Array<ArrayBufferLike>>
-    cancel: () => void
-  },
-  cbs: {
-    pushChanges: (changes: T[]) => void
-    onBytesSkipped?: (bytes: number) => void
-    onParseEnded?: (reason: 'ended' | 'cancelled') => void
-    onNetworkError?: (e: TypeError, injectValue: (value: T) => void) => void
-  },
-  transformer: Transformer,
-  options?: { bufferSize?: number }
-) => {
-  invariant(
-    source.stream instanceof ReadableStream,
-    `parseCancellable(): stream is ${JSON.stringify(source.stream)}`
-  )
-  const maxChunkSize = 100000
-  const reader = source.stream
-    .pipeThrough(
-      splitStreamByMaxChunk(maxChunkSize, options?.bufferSize ?? 1000000, cbs.onBytesSkipped)
-    )
-    .pipeThrough(transformer)
-    .getReader()
-  let resultBuffer = [] as T[]
-  setTimeout(async () => {
-    while (true) {
-      try {
-        const { done, value } = await reader.read()
-        if (done || value === undefined) {
-          break
-        }
-        resultBuffer.push(value)
-      } catch (e) {
-        cbs.onNetworkError?.(e as TypeError, (value: T) => resultBuffer.push(value))
-        cbs.onParseEnded?.('ended')
-        break
-      }
-    }
-  })
+// Batching transform stream that collects items and emits batches based on timer
+export function createBatchingTransform<T>(flushIntervalMs: number = 100): TransformStream<T, T[]> {
+  let buffer: T[] = []
+  let flushTimer: number | null = null
+  let controller: TransformStreamDefaultController<T[]> | null = null
+
   const flush = () => {
-    if (resultBuffer.length) {
-      cbs.pushChanges?.(resultBuffer)
-      resultBuffer.length = 0
+    if (buffer.length > 0 && controller) {
+      controller.enqueue([...buffer])
+      buffer.length = 0
+    }
+    flushTimer = null
+  }
+
+  const scheduleFlush = () => {
+    if (flushTimer === null) {
+      flushTimer = setTimeout(flush, flushIntervalMs) as any
     }
   }
-  let closedReason: null | 'ended' | 'cancelled' = null
-  setTimeout(async () => {
-    reader.closed.then(
-      () => {
-        closedReason ??= 'ended'
-      },
-      (e) => {
-        closedReason = 'ended'
-        cbs.onNetworkError?.(e, (value: T) => resultBuffer.push(value))
+
+  return new TransformStream<T, T[]>({
+    start(ctrl) {
+      controller = ctrl
+    },
+
+    transform(chunk) {
+      buffer.push(chunk)
+      scheduleFlush()
+    },
+
+    flush() {
+      if (flushTimer !== null) {
+        clearTimeout(flushTimer)
+        flushTimer = null
       }
-    )
-    while (true) {
       flush()
-      if (closedReason) {
-        break
-      }
-      await new Promise((resolve) => setTimeout(resolve, 100))
     }
-    cbs.onParseEnded?.(closedReason)
   })
-  return {
-    cancel: () => {
-      flush()
-      closedReason = 'cancelled'
-      reader.cancel().then(() => {
-        source.cancel()
-      })
+}
+
+export class BatchProcessor<T> extends WritableStream<T[]> {
+  private closedReason: 'ended' | 'cancelled' | null = null
+
+  constructor(
+    private readonly source: {
+      cancel: () => void
+    },
+    private readonly cbs: {
+      pushChanges: (changes: T[]) => void
+      onParseEnded?: (reason: 'ended' | 'cancelled') => void
+      onNetworkError?: (e: TypeError, injectValue: (value: T) => void) => void
+    }
+  ) {
+    super({
+      write: async (batch: T[]) => {
+        if (batch && batch.length > 0 && this.closedReason !== 'cancelled') {
+          cbs.pushChanges(batch)
+        }
+      },
+
+      close: () => {
+        this.closedReason ??= 'ended'
+        this.cbs.onParseEnded?.(this.closedReason)
+      }
+    })
+  }
+  async abort(e?: any) {
+    this.closedReason = 'ended'
+    this.handleNetworkError(e)
+    this.cbs.onParseEnded?.(this.closedReason)
+  }
+
+  cancel() {
+    this.closedReason = 'cancelled'
+    this.source.cancel()
+    this.cbs.onParseEnded?.(this.closedReason)
+  }
+
+  private handleNetworkError(e: unknown) {
+    const error = e instanceof TypeError ? e : new TypeError('Unknown stream error')
+    const errorBatch: T[] = []
+    this.cbs.onNetworkError?.(error, (value: T) => errorBatch.push(value))
+    if (errorBatch.length > 0) {
+      this.cbs.pushChanges(errorBatch)
     }
   }
 }
@@ -102,11 +105,15 @@ export const parseCancellable = <T, Transformer extends TransformStream<Uint8Arr
  * @param maxChunkBufferSize When output buffer size grows close to this value backpressure occurs
  * @returns
  */
-function splitStreamByMaxChunk(
-  maxChunkBytes: number,
-  maxChunkBufferSize: number,
+export function splitStreamByMaxChunk({
+  maxChunkBytes,
+  maxChunkBufferSize,
+  onBytesSkipped
+}: {
+  maxChunkBytes: number
+  maxChunkBufferSize: number
   onBytesSkipped?: (bytes: number) => void
-): TransformStream<Uint8Array, Uint8Array> {
+}): TransformStream<Uint8Array, Uint8Array> {
   return new TransformStream<Uint8Array, Uint8Array>(
     {
       async transform(chunk, controller) {
@@ -285,3 +292,48 @@ export const pushAsCircularBuffer =
     arr().push(...vs.slice(0, numNewItems))
     return numItemsToDrop
   }
+
+interface HeaderChunk {
+  header: {
+    schema: Schema
+    fields: Field[]
+    metadata?: Map<string, string>
+  }
+}
+
+interface RowChunk {
+  row: any[]
+}
+
+export type ArrowIpcChunk = HeaderChunk | RowChunk
+
+export const arrowIPCTransformStream = <T extends TypeMap = any>(
+  writableStrategy?: ByteLengthQueuingStrategy,
+  readableStrategy?: { autoDestroy: boolean }
+) => RecordBatchReader.throughDOM<T>(writableStrategy, readableStrategy)
+
+export function arrowIPCChunkTransform<T extends TypeMap = any>(): TransformStream<
+  RecordBatch<T>,
+  ArrowIpcChunk[]
+> {
+  let headerEmitted = false
+
+  return new TransformStream<RecordBatch<T>, ArrowIpcChunk[]>({
+    transform(batch, controller) {
+      if (!headerEmitted && batch.schema) {
+        controller.enqueue([
+          {
+            header: {
+              schema: batch.schema,
+              fields: batch.schema.fields,
+              metadata: batch.schema.metadata
+            }
+          }
+        ])
+        headerEmitted = true
+      }
+
+      controller.enqueue(arrowIpcBatchToJS(batch))
+    }
+  })
+}

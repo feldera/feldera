@@ -13,8 +13,11 @@
   import { isPipelineInteractive } from '$lib/functions/pipelines/status'
   import type { SQLValueJS } from '$lib/types/sql.ts'
   import {
-    CustomJSONParserTransformStream,
-    parseCancellable
+    arrowIPCChunkTransform,
+    BatchProcessor,
+    arrowIPCTransformStream,
+    splitStreamByMaxChunk,
+    type ArrowIpcChunk
   } from '$lib/functions/pipelines/changeStream'
   import invariant from 'tiny-invariant'
   import WarningBanner from '$lib/components/pipelines/editor/WarningBanner.svelte'
@@ -34,8 +37,9 @@
     adhocQueries[pipelineName] ??= { queries: [{ query: '' }] }
   })
   const api = usePipelineManager()
-  const isDataRow = (record: Record<string, SQLValueJS>) =>
+  const isJsonRow = (record: Record<string, SQLValueJS>) =>
     !(Object.keys(record).length === 1 && ('error' in record || 'warning' in record))
+  const isArrowRow = (chunk: ArrowIpcChunk) => 'row' in chunk
 
   const onSubmitQuery = (pipelineName: string, i: number) => async (query: string) => {
     const request = api.adHocQuery(pipelineName, query)
@@ -58,7 +62,7 @@
       return
     }
     const bufferSize = 1000
-    const pushChanges = (
+    const pushChangesJson = (
       input: (Record<string, SQLValueJS> | { error: string } | { warning: string })[]
     ) => {
       if (!adhocQueries[pipelineName].queries[i]?.result) {
@@ -66,7 +70,7 @@
       }
       if (
         adhocQueries[pipelineName].queries[i].result.columns.length === 0 &&
-        isDataRow(input[0])
+        isJsonRow(input[0])
       ) {
         adhocQueries[pipelineName].queries[i].result.columns.push(
           ...Object.keys(input[0]).map((name) => ({
@@ -85,7 +89,7 @@
           .push(
             ...input
               .slice(0, bufferSize - previousLength)
-              .map((v) => (isDataRow(v) ? { cells: Object.values(v) } : v) as Row)
+              .map((v) => (isJsonRow(v) ? { cells: Object.values(v) } : v) as Row)
           )
         reclosureKey(adhocQueries[pipelineName].queries[i].result, 'rows')
         if (input.length > bufferSize - previousLength) {
@@ -104,16 +108,52 @@
         }
       }
     }
-    const { cancel } = parseCancellable(
-      result,
+    const pushChangesArrow = (input: ArrowIpcChunk[]) => {
+      if (!adhocQueries[pipelineName].queries[i]?.result) {
+        return
+      }
+      if ('header' in input[0]) {
+        adhocQueries[pipelineName].queries[i].result.columns.push(
+          ...input[0].header.fields.map((field) => ({
+            name: field.name,
+            case_sensitive: true,
+            columntype: { nullable: field.nullable },
+            unused: false
+          }))
+        )
+        return
+      }
       {
-        pushChanges,
-        onBytesSkipped: (skippedBytes) => {
-          if (!adhocQueries[pipelineName].queries[i]?.result) {
-            return
-          }
-          adhocQueries[pipelineName].queries[i].result.totalSkippedBytes += skippedBytes
-        },
+        // Limit result size behavior - ignore all but first bufferSize rows
+        const previousLength = adhocQueries[pipelineName].queries[i].result.rows().length
+        adhocQueries[pipelineName].queries[i].result
+          .rows()
+          .push(
+            ...input
+              .slice(0, bufferSize - previousLength)
+              .map((v) => (isArrowRow(v) ? { cells: v.row } : v) as Row)
+          )
+        reclosureKey(adhocQueries[pipelineName].queries[i].result, 'rows')
+        if (input.length > bufferSize - previousLength) {
+          queueMicrotask(() => {
+            if (!adhocQueries[pipelineName].queries[i]) {
+              return
+            }
+            if (adhocQueries[pipelineName].queries[i].result?.rows) {
+              adhocQueries[pipelineName].queries[i].result.rows().push({
+                warning: `The result contains more rows, but only the first ${bufferSize} are shown`
+              })
+              reclosureKey(adhocQueries[pipelineName].queries[i].result, 'rows')
+            }
+            adhocQueries[pipelineName].queries[i].result?.endResultStream()
+          })
+        }
+      }
+    }
+    const batchProcessor = new BatchProcessor(
+      { cancel: () => result.cancel() },
+      {
+        pushChanges: pushChangesArrow,
         onParseEnded: () => {
           if (!adhocQueries[pipelineName].queries[i]) {
             return
@@ -121,7 +161,7 @@
           // Add field for the next query if the last query did not yield an error right away
           if (
             adhocQueries[pipelineName].queries.length === i + 1 &&
-            ((row) => !row || isDataRow(row))(
+            ((row) => !row || isJsonRow(row))(
               adhocQueries[pipelineName].queries[i].result?.rows().at(0)
             )
           ) {
@@ -130,17 +170,39 @@
           adhocQueries[pipelineName].queries[i].progress = false
         },
         onNetworkError(e, injectValue) {
-          injectValue({ error: e.message })
+          // injectValue({ error: e.message })
         }
-      },
-      new CustomJSONParserTransformStream<Record<string, SQLValueJS>>({
-        paths: ['$'],
-        separator: ''
-      }),
-      {
-        bufferSize: 8 * 1024 * 1024
       }
     )
+    const cancel = () => {
+      batchProcessor.cancel()
+    }
+    result.stream
+      .pipeThrough(
+        splitStreamByMaxChunk({
+          maxChunkBytes: 100000,
+          maxChunkBufferSize: 8 * 1024 * 1024,
+          onBytesSkipped: (skippedBytes) => {
+            if (!adhocQueries[pipelineName].queries[i]?.result) {
+              return
+            }
+            adhocQueries[pipelineName].queries[i].result.totalSkippedBytes += skippedBytes
+          }
+        })
+      )
+      .pipeThrough(arrowIPCTransformStream())
+      .pipeThrough(arrowIPCChunkTransform())
+      .pipeTo(batchProcessor)
+      .catch((err) => {
+        if (!adhocQueries[pipelineName]?.queries[i]?.result) {
+          return
+        }
+        adhocQueries[pipelineName].queries[i].result.rows().push({
+          error: err instanceof Error ? err.message : JSON.stringify(err)
+        })
+        reclosureKey(adhocQueries[pipelineName].queries[i].result, 'rows')
+        batchProcessor.cancel()
+      })
     adhocQueries[pipelineName].queries[i].result.endResultStream = cancel
   }
 </script>

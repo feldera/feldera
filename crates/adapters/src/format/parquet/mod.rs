@@ -296,7 +296,8 @@ pub fn relation_to_arrow_fields(fields: &[Field], delta_lake: bool) -> Vec<Arrow
             SqlType::Array => {
                 // SqlType::Array implies c.component.is_some()
                 let array_component = c.component.as_ref().unwrap();
-                DataType::LargeList(Arc::new(ArrowField::new_list_field(
+                // TODO: Replace with LargeList when apache-arrow JS library supports it
+                DataType::List(Arc::new(ArrowField::new_list_field(
                     columntype_to_datatype(array_component, delta_lake),
                     // FIXME: Databricks refuses to understand the `nullable: false` constraint.
                     delta_lake || array_component.nullable,
