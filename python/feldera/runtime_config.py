@@ -101,10 +101,13 @@ class RuntimeConfig:
             }
         if resources is not None:
             self.resources = resources.__dict__
-        if isinstance(storage, bool):
-            self.storage = storage
-        if isinstance(storage, Storage):
-            self.storage = storage.__dict__
+        if storage is not None:
+            if isinstance(storage, bool):
+                self.storage = storage
+            elif isinstance(storage, Storage):
+                self.storage = storage.__dict__
+            else:
+                raise ValueError(f"Unknown value '{storage}' for storage")
 
     @staticmethod
     def default() -> "RuntimeConfig":
