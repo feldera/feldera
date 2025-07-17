@@ -3,6 +3,14 @@ name: Create a new release
 on:
   repository_dispatch:
     types: [trigger-oss-release]
+  workflow_dispatch:
+    inputs:
+      sha_to_release:
+        description: "SHA to release (don't invoke this manually except to fix release issues)"
+        required: true
+      version:
+        description: "Current version to release"
+        required: true
 
 env:
   REGISTRY: ghcr.io
@@ -21,9 +29,18 @@ jobs:
           permission-contents: write
 
       - name: Set SHA_TO_RELEASE and CURRENT_VERSION
+        if: github.event_name == 'repository_dispatch'
         run: |
+          echo "Setting version from repository_dispatch"
           echo "CURRENT_VERSION=${{ github.event.client_payload.version }}" >> $GITHUB_ENV
           echo "SHA_TO_RELEASE=${{ github.event.client_payload.sha_to_release }}" >> $GITHUB_ENV
+
+      - name: Set SHA_TO_RELEASE and CURRENT_VERSION
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          echo "Setting version from workflow_dispatch"
+          echo "CURRENT_VERSION=${{ github.event.inputs.version }}" >> $GITHUB_ENV
+          echo "SHA_TO_RELEASE=${{ github.event.inputs.sha_to_release }}" >> $GITHUB_ENV
 
       - name: Check SHA and version inputs
         run: |
