@@ -69,10 +69,10 @@ jobs:
 
       - name: Export digest
         run: |
-          rm -rf ${{ runner.temp }}/digests
-          mkdir -p ${{ runner.temp }}/digests
+          rm -rf $RUNNER_TEMP/digests
+          mkdir -p $RUNNER_TEMP/digests
           digest="${{ steps.build.outputs.digest }}"
-          touch "${{ runner.temp }}/digests/${digest#sha256:}"
+          touch "$RUNNER_TEMP/digests/${digest#sha256:}"
 
       - name: Upload digest
         uses: actions/upload-artifact@v4
