@@ -966,7 +966,7 @@ public class MetadataTests extends BaseSQLTests {
                         "precision" : 3,
                         "type" : "VARCHAR"
                       },
-                      "unused" : true
+                      "unused" : false
                     }, {
                       "name" : "col4",
                       "case_sensitive" : false,
