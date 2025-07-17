@@ -12,6 +12,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceTableOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.TestUtil;
 import org.dbsp.sqlCompiler.compiler.backend.rust.ToRustVisitor;
+import org.dbsp.sqlCompiler.compiler.backend.rust.multi.ProjectDeclarations;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.sql.tools.CompilerCircuitStream;
 import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
@@ -19,11 +20,10 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
+import org.dbsp.util.IndentStreamBuilder;
 import org.junit.Assert;
 import org.junit.Ignore;
 import org.junit.Test;
-
-import java.util.HashSet;
 
 public class RegressionTests extends SqlIoTest {
     @Test
@@ -798,7 +798,8 @@ public class RegressionTests extends SqlIoTest {
         // This is not executed, since the udfs have no definitions
         var cc = this.getCC(sql);
         // Test that code generation does not crash
-        ToRustVisitor.toRustString(cc.compiler, cc.getCircuit(), new HashSet<>());
+        ToRustVisitor.toRustString(cc.compiler, new IndentStreamBuilder(),
+                cc.getCircuit(), new ProjectDeclarations());
     }
 
     @Test

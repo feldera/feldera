@@ -9,6 +9,7 @@ use crate::{
     geopoint::*,
     interval::*,
     map::Map,
+    source::SourceMap,
     timestamp::*,
     uuid::*,
     variant::*,
@@ -104,19 +105,28 @@ macro_rules! cn {
     };
 }
 
-/// Standard cast implementation: if the result is Error, panic
+/// Standard implementation: if the result is Error, panic
 #[doc(hidden)]
-pub fn unwrap_cast<T>(value: SqlResult<T>) -> T {
+pub fn handle_error<T>(value: SqlResult<T>) -> T {
     match value {
         Err(ce) => panic!("{}", *ce),
         Ok(v) => v,
     }
 }
 
+/// Panic, but report source position
 #[doc(hidden)]
-pub fn unwrap_cast_position<T>(position: &str, value: SqlResult<T>) -> T {
+pub fn handle_error_with_position<T>(
+    operator_hash: &'static str,
+    id: u32,
+    map: &'static SourceMap,
+    value: SqlResult<T>,
+) -> T {
     match value {
-        Err(ce) => panic!("{}: {}", position, *ce),
+        Err(ce) => match map.getPosition(operator_hash, id) {
+            None => panic!("{}", *ce),
+            Some(position) => panic!("{}: {}", position, *ce),
+        },
         Ok(v) => v,
     }
 }
@@ -124,7 +134,7 @@ pub fn unwrap_cast_position<T>(position: &str, value: SqlResult<T>) -> T {
 /// Safe cast implementation: if the result is Error, return null (None).
 // The result is always Option<T>.
 #[doc(hidden)]
-pub fn unwrap_safe_cast<T>(value: SqlResult<Option<T>>) -> Option<T> {
+pub fn handle_error_safe<T>(value: SqlResult<Option<T>>) -> Option<T> {
     value.unwrap_or_default()
 }
 

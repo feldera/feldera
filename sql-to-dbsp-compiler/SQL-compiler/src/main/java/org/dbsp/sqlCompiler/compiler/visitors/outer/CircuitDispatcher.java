@@ -25,7 +25,9 @@ public class CircuitDispatcher extends CircuitVisitor {
 
     @Override
     public void postorder(DBSPSimpleOperator operator) {
+        this.innerVisitor.setOperatorContext(operator);
         operator.accept(this.innerVisitor);
+        this.innerVisitor.setOperatorContext(null);
     }
 
     @Override

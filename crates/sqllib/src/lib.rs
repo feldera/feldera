@@ -34,6 +34,7 @@ pub mod operators;
 pub use operators::*;
 #[doc(hidden)]
 pub mod source;
+pub use source::*;
 #[doc(hidden)]
 pub mod string;
 pub use string::*;
@@ -55,8 +56,6 @@ pub use source::{SourcePosition, SourcePositionRange};
 
 mod string_interner;
 pub use string_interner::{build_string_interner, intern_string, unintern_string};
-
-use std::sync::LazyLock;
 
 // Re-export these types, so they can be used in UDFs without having to import the dbsp crate directly.
 // Perhaps they should be defined in sqllib in the first place?
@@ -82,6 +81,7 @@ use num_traits::Pow;
 use std::fmt::Debug;
 use std::marker::PhantomData;
 use std::ops::{Add, Deref, Neg};
+use std::sync::{LazyLock, OnceLock};
 
 /// Convert a value of a SQL data type to an integer
 /// that preserves ordering.  Used for partitioned_rolling_aggregates
@@ -1294,5 +1294,96 @@ where
                 right.1.clone()
             },
         )
+    }
+}
+
+/// A lazily initialized static value, where the initialized can be a capturing
+/// closure.
+///
+/// This struct is supposed to do the same thing as some other lazy
+/// Rust types, like std::sync::Lazy, or std::cell::LazyCell: it holds
+/// a constant value, but which needs to be initialized only on demand
+/// (because it could panic).  Unfortunately I could not use an
+/// off-the-shelf struct like the ones mentioned, because the
+/// initializer is not always `const`.  This implementation separates
+/// the creation (`new`) from the initialization (`init`).  This
+/// enables us to use this class to declare `static` Rust values,
+/// which nevertheless are initialized on first use.  In the
+/// initializers we actually always use static constant values to, but
+/// they are sometimes passed through function arguments, so the Rust
+/// compiler cannot recognize them as such.  For example:
+/// ```ignore
+/// // In the main crate:
+/// pub static SOURCE_MAP_STATIC: OnceLock<SourceMap> = OnceLock::new();
+/// SOURCE_MAP_STATIC.get_or_init(|| {
+///      let mut m = SourceMap::new();
+///           m.insert("0ee9907f", 0, SourcePosition::new(222, 2));
+///           m.insert("0ee9907f", 1, SourcePosition::new(223, 2));
+///           m
+///       });
+/// let sourceMap = SOURCE_MAP_STATIC.get().unwrap();
+/// let s3 = create_operator_x(&circuit, Some("0ee9907f"), &sourceMap, &mut catalog, s2);
+/// ...
+/// // In the operator crate
+/// pub fn create_operator_x(
+///         circuit: &RootCircuit,
+///         hash: Option<&'static str>,
+///         sourceMap: &'static SourceMap,  // static lifetime, but not const
+///         catalog: &mut Catalog,
+///         i0: &Stream<RootCircuit, WSet<...>>) -> Stream<RootCircuit, ...> {
+///    static STATIC_4dbc5aebe9c4edea: StaticLazy<Option<SqlDecimal<38, 6>>> = StaticLazy::new();
+///    STATIC_4dbc5aebe9c4edea.init(move || handle_error_with_position(
+///               "global", 25, &sourceMap, cast_to_SqlDecimalN_i32N::<38, 6>(Some(1i32));
+///    ...
+/// };
+/// ```
+/// The function `handle_error_with_position` may panic, so it needs to be lazily evaluated.
+#[derive(Default)]
+#[doc(hidden)]
+pub struct StaticLazy<T: 'static> {
+    cell: OnceLock<T>,
+    init: OnceLock<&'static (dyn Fn() -> T + Send + Sync)>,
+}
+
+#[doc(hidden)]
+impl<T> StaticLazy<T> {
+    #[doc(hidden)]
+    pub const fn new() -> Self {
+        Self {
+            cell: OnceLock::new(),
+            init: OnceLock::new(),
+        }
+    }
+
+    #[doc(hidden)]
+    pub fn init<F>(&'static self, f: F)
+    where
+        F: Fn() -> T + Send + Sync + 'static,
+    {
+        if self.cell.get().is_some() {
+            return;
+        }
+        let leaked: &'static (dyn Fn() -> T + Send + Sync) = Box::leak(Box::new(f));
+        self.init.set(leaked).unwrap_or(());
+    }
+
+    #[doc(hidden)]
+    fn get(&self) -> &T {
+        self.cell.get_or_init(|| {
+            let f = self
+                .init
+                .get()
+                .unwrap_or_else(|| panic!("Initializer not set"));
+            f()
+        })
+    }
+}
+
+#[doc(hidden)]
+impl<T> Deref for StaticLazy<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        self.get()
     }
 }

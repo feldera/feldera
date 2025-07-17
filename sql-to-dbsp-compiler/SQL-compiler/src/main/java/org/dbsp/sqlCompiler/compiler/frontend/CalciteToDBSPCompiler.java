@@ -184,6 +184,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPIntervalMillisLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.expression.DBSPArrayExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPUSizeLiteral;
 import org.dbsp.sqlCompiler.ir.statement.DBSPFunctionItem;
 import org.dbsp.sqlCompiler.ir.statement.DBSPItem;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStructItem;
@@ -2433,7 +2434,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         // Since TopK is always incremental we have to wrap it into a D-I pair
         DBSPDifferentiateOperator diff = new DBSPDifferentiateOperator(node, index.outputPort());
         this.addOperator(diff);
-        DBSPI32Literal limitValue = new DBSPI32Literal(limit);
+        DBSPUSizeLiteral limitValue = new DBSPUSizeLiteral(limit);
         DBSPEqualityComparatorExpression eq = new DBSPEqualityComparatorExpression(node, comparator);
         DBSPIndexedTopKOperator topK = new DBSPIndexedTopKOperator(
                 node, numbering, comparator, limitValue, eq, outputProducer, diff.outputPort());
@@ -2816,7 +2817,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             // Since TopK is always incremental we have to wrap it into a D-I pair
             DBSPDifferentiateOperator diff = new DBSPDifferentiateOperator(node, index.outputPort());
             this.compiler.addOperator(diff);
-            DBSPI32Literal limitValue = new DBSPI32Literal(1);
+            DBSPUSizeLiteral limitValue = new DBSPUSizeLiteral(1);
             DBSPEqualityComparatorExpression eq = new DBSPEqualityComparatorExpression(node, comparator);
             DBSPIndexedTopKOperator topK = new DBSPIndexedTopKOperator(
                     node, ROW_NUMBER, comparator, limitValue, eq, outputProducer, diff.outputPort());
@@ -3423,6 +3424,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             DBSPTupleExpression tuple = new DBSPTupleExpression(flattened, false);
             DBSPClosureExpression outputProducer = tuple.closure(left, right);
 
+            limit = limit.cast(limit.getNode(), DBSPTypeUSize.create(limit.getType().mayBeNull), false);
             DBSPIndexedTopKOperator topK = new DBSPIndexedTopKOperator(
                     node, DBSPIndexedTopKOperator.TopKNumbering.ROW_NUMBER,
                     comparator, limit, eq, outputProducer, diff.outputPort());

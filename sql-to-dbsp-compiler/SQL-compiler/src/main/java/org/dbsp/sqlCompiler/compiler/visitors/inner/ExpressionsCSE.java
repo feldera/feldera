@@ -13,7 +13,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPCloneExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPDerefExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPLazyCellExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPLazyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPLetExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
@@ -154,7 +154,7 @@ public class ExpressionsCSE extends ExpressionTranslator {
         for (Assignment assign : assignments) {
             if (assign.dependsOn.contains(node)) {
                 consumer = new DBSPLetExpression(
-                        assign.var, new DBSPLazyCellExpression(assign.expression), consumer);
+                        assign.var, new DBSPLazyExpression(assign.expression), consumer);
             } else {
                 // Put it back, we'll insert it later
                 this.assignments.add(assign);
@@ -189,7 +189,7 @@ public class ExpressionsCSE extends ExpressionTranslator {
                 for (Assignment assign : assignments) {
                     if (assign.dependsOn.contains(let)) {
                         var add = new DBSPLetStatement(
-                                assign.var.variable, new DBSPLazyCellExpression(assign.expression));
+                                assign.var.variable, new DBSPLazyExpression(assign.expression));
                         result.add(add);
                     } else {
                         this.assignments.add(assign);
@@ -220,7 +220,7 @@ public class ExpressionsCSE extends ExpressionTranslator {
             }
             if (insert) {
                 translation = new DBSPLetExpression(
-                        assign.var, new DBSPLazyCellExpression(assign.expression), translation);
+                        assign.var, new DBSPLazyExpression(assign.expression), translation);
             } else {
                 // Put it back, we'll insert it later
                 this.assignments.add(assign);

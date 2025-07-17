@@ -6,6 +6,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.CreateRuntimeErrorWrappers;
 import org.dbsp.sqlCompiler.ir.DBSPFunction;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
@@ -78,6 +79,7 @@ public class TableValue {
         Set<ProgramIdentifier> seen = new HashSet<>();
         for (int i = 0; i < tables.length; i++) {
             fields[i] = tables[i].contents;
+            fields[i] = CreateRuntimeErrorWrappers.process(compiler, fields[i]);
             if (seen.contains(tables[i].tableName))
                 throw new RuntimeException("Table " + tables[i].tableName + " already in input");
             seen.add(tables[i].tableName);

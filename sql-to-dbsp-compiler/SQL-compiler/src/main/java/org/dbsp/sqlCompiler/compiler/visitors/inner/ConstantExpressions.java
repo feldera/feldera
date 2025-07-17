@@ -2,6 +2,7 @@ package org.dbsp.sqlCompiler.compiler.visitors.inner;
 
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CustomFunctions;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyMethodExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPArrayExpression;
@@ -16,6 +17,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPDerefExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPEnumValue;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPGeoPointConstructor;
+import org.dbsp.sqlCompiler.ir.expression.DBSPHandleErrorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPIfExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPIndexedZSetExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPIsNullExpression;
@@ -31,7 +33,10 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.util.Logger;
 
+import javax.annotation.Nullable;
 import java.util.HashSet;
+import java.util.Locale;
+import java.util.Set;
 
 /** Builds a list with all expressions that are "constant" */
 public class ConstantExpressions extends InnerVisitor {
@@ -97,6 +102,12 @@ public class ConstantExpressions extends InnerVisitor {
     }
 
     @Override
+    public void postorder(DBSPHandleErrorExpression expression) {
+        if (this.isConstant(expression.source))
+            this.setConstant(expression);
+    }
+
+    @Override
     public void postorder(DBSPPathExpression expression) {
         this.setConstant(expression);
     }
@@ -119,10 +130,27 @@ public class ConstantExpressions extends InnerVisitor {
             this.setConstant(expression);
     }
 
+    // Functions that have side effects
+    static final Set<String> SIDE_EFFECTS = new HashSet<>() {{
+        add(CustomFunctions.WriteLogFunction.NAME.toUpperCase(Locale.ENGLISH));
+        add("print");
+        add("print_opt");
+    }};
+
+    boolean hasSideEffects(@Nullable String functionName) {
+        if (functionName == null)
+            return false;
+        return SIDE_EFFECTS.contains(functionName.toLowerCase(Locale.ENGLISH));
+    }
+
     @Override
     public void postorder(DBSPApplyExpression expression) {
-        if (this.allConstant(expression.arguments))
+        if (this.allConstant(expression.arguments)) {
+            String function = expression.getFunctionName();
+            if (this.hasSideEffects(function))
+                return;
             this.setConstant(expression);
+        }
     }
 
     @Override

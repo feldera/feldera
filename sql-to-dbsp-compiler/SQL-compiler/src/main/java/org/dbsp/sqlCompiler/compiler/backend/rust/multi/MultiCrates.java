@@ -95,11 +95,12 @@ public class MultiCrates {
 
         CircuitWriter mainWriter = new CircuitWriter();
         BaseRustCodeGenerator globalsWriter = new RustFileWriter()
-                .withUdf(true).withMalloc(false).withGenerateTuples(false);
+                .withUdf(true).withMalloc(false).withGenerateTuples(false).withDeclareSourceMap(true);
         // Main crate contains the circuit
         this.main = new CrateGenerator(this.rootDirectory, this.getMainName(), mainWriter, enterprise);
         // Crate with global variables
         this.globals = new CrateGenerator(this.rootDirectory, this.getGlobalsName(), globalsWriter, enterprise);
+        this.main.addDependency(this.globals);
     }
 
     CrateGenerator createOperatorCrate(DBSPCircuit circuit, DBSPOperator operator, ICircuit parent, boolean enterprise) {
@@ -167,8 +168,10 @@ public class MultiCrates {
         RustWriter.StructuresUsed locallyUsed = new RustWriter.StructuresUsed();
         RustWriter.FindResources finder = new RustWriter.FindResources(compiler, locallyUsed);
         CircuitVisitor circuitFinder = finder.getCircuitVisitor(false);
-        if (!operator.is(DBSPNestedOperator.class))
+        if (!operator.is(DBSPNestedOperator.class)) {
+            finder.setOperatorContext(operator);
             operator.accept(circuitFinder);
+        }
 
         for (var input : operator.inputs) {
             input.outputType().accept(finder);

@@ -31,7 +31,7 @@ public class MerkleInner extends ToJsonInnerVisitor {
 
     @Override
     public VisitDecision preorder(IDBSPInnerNode node) {
-        String rust = ToRustInnerVisitor.toRustString(this.compiler, node, false);
+        String rust = ToRustInnerVisitor.toRustString(this.compiler, node, null, false);
         HashString hash = hash(rust);
         this.stream.append(hash.toString());
         return VisitDecision.STOP;

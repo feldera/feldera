@@ -37,7 +37,7 @@ public class ToDotEdgesVisitor extends CircuitVisitor implements IWritesLogs {
         DBSPType type = source.getOutputRowType();
         String name = source.node().getCompactName();
         return name + " " +
-                ToRustInnerVisitor.toRustString(this.compiler(), type, this.details < 3);
+                ToRustInnerVisitor.toRustString(this.compiler(), type, null, this.details < 3);
     }
 
     @Override

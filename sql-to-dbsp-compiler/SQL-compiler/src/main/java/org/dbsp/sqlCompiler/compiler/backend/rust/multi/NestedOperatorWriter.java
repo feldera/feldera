@@ -18,8 +18,6 @@ import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeStream;
 import org.dbsp.util.HashString;
 import org.dbsp.util.Utilities;
 
-import java.util.HashSet;
-
 /** Writes the implementation of a {@link DBSPNestedOperator} as a function that instantiates
  * the operator in circuit. */
 public final class NestedOperatorWriter extends BaseRustCodeGenerator {
@@ -60,6 +58,8 @@ public final class NestedOperatorWriter extends BaseRustCodeGenerator {
         } else {
             this.builder().append("None, ");
         }
+        this.builder().append(CircuitWriter.SOURCE_MAP_VARIABLE_NAME)
+                .append(", ");
         for (var input: op.inputs) {
             name = "";
             int index = 0;
@@ -90,7 +90,7 @@ public final class NestedOperatorWriter extends BaseRustCodeGenerator {
                 .append(RustWriter.COMMON_PREAMBLE)
                 .append(RustWriter.STANDARD_PREAMBLE);
         ToRustVisitor visitor = new ToRustVisitor(
-                compiler, this.builder(), this.circuit.metadata, new HashSet<>())
+                compiler, this.builder(), this.circuit.metadata, new ProjectDeclarations())
                 .withPreferHash(true);
         final String hash = this.operator.getNodeName(true);
         this.builder().newline();
@@ -101,6 +101,9 @@ public final class NestedOperatorWriter extends BaseRustCodeGenerator {
                 .append(hash)
                 .append("(circuit: &")
                 .append(this.dbspCircuit(true))
+                .append(", ")
+                .append(CircuitWriter.SOURCE_MAP_VARIABLE_NAME)
+                .append(": &'static SourceMap")
                 .append(", catalog: &mut Catalog,")
                 .increase();
         int input = 0;

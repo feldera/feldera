@@ -9,24 +9,26 @@ import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeLazy;
 import org.dbsp.util.IIndentStream;
 
-/** Represents an expression that is lazily evaluated.  Implemented using
- * Rust LazyCell. */
-public class DBSPLazyCellExpression extends DBSPExpression {
+/** Represents an expression that is lazily evaluated. */
+public class DBSPLazyExpression extends DBSPExpression {
     public final DBSPExpression expression;
 
-    public DBSPLazyCellExpression(DBSPExpression expression) {
+    public static final String RUST_CRATE = "std::cell::LazyCell";
+    public static final String RUST_IMPLEMENTATION = "LazyCell";
+
+    public DBSPLazyExpression(DBSPExpression expression) {
         super(expression.getNode(), new DBSPTypeLazy(expression.getType()));
         this.expression = expression;
     }
 
     @Override
     public DBSPExpression deepCopy() {
-        return new DBSPLazyCellExpression(this.expression.deepCopy());
+        return new DBSPLazyExpression(this.expression.deepCopy());
     }
 
     @Override
     public boolean equivalent(EquivalenceContext context, DBSPExpression other) {
-        DBSPLazyCellExpression otherExpression = other.as(DBSPLazyCellExpression.class);
+        DBSPLazyExpression otherExpression = other.as(DBSPLazyExpression.class);
         if (otherExpression == null)
             return false;
         return context.equivalent(this.expression, otherExpression.expression);
@@ -45,7 +47,7 @@ public class DBSPLazyCellExpression extends DBSPExpression {
 
     @Override
     public boolean sameFields(IDBSPInnerNode other) {
-        DBSPLazyCellExpression otherExpression = other.as(DBSPLazyCellExpression.class);
+        DBSPLazyExpression otherExpression = other.as(DBSPLazyExpression.class);
         if (otherExpression == null)
             return false;
         return this.expression == otherExpression.expression;
@@ -59,8 +61,8 @@ public class DBSPLazyCellExpression extends DBSPExpression {
     }
 
     @SuppressWarnings("unused")
-    public static DBSPLazyCellExpression fromJson(JsonNode node, JsonDecoder decoder) {
+    public static DBSPLazyExpression fromJson(JsonNode node, JsonDecoder decoder) {
         DBSPExpression expression = fromJsonInner(node, "expression", decoder, DBSPExpression.class);
-        return new DBSPLazyCellExpression(expression);
+        return new DBSPLazyExpression(expression);
     }
 }

@@ -708,7 +708,7 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
 
     public VisitDecision preorder(DBSPWindowBoundExpression node) { return this.preorder((DBSPExpression) node); }
 
-    public VisitDecision preorder(DBSPLazyCellExpression node) { return this.preorder((DBSPExpression) node); }
+    public VisitDecision preorder(DBSPLazyExpression node) { return this.preorder((DBSPExpression) node); }
 
     // Literals
     public VisitDecision preorder(DBSPLiteral node) {
@@ -856,6 +856,10 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
     }
 
     public VisitDecision preorder(DBSPGeoPointConstructor node) {
+        return this.preorder((DBSPExpression) node);
+    }
+
+    public VisitDecision preorder(DBSPHandleErrorExpression node) {
         return this.preorder((DBSPExpression) node);
     }
 
@@ -1344,7 +1348,7 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
         this.postorder((DBSPExpression) node);
     }
 
-    public void postorder(DBSPLazyCellExpression node) {
+    public void postorder(DBSPLazyExpression node) {
         this.postorder((DBSPExpression) node);
     }
 
@@ -1494,6 +1498,10 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
     }
 
     public void postorder(DBSPGeoPointConstructor node)  {
+        this.postorder((DBSPExpression) node);
+    }
+
+    public void postorder(DBSPHandleErrorExpression node)  {
         this.postorder((DBSPExpression) node);
     }
 

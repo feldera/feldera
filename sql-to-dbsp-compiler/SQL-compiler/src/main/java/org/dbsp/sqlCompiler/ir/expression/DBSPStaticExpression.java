@@ -11,11 +11,13 @@ import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.util.IIndentStream;
 
 /** Represents an expression that is compiled into a
- * LazyLock declaration and a reference to the lazy lock value.
+ * Lazy declaration and a reference to the lazy lock value.
  * The name of the cell is not represented explicitly. */
 public class DBSPStaticExpression extends DBSPExpression {
     public final DBSPExpression initializer;
     final String name;
+
+    public static final String RUST_IMPLEMENTATION = "StaticLazy";
 
     public DBSPStaticExpression(CalciteObject node, DBSPExpression initializer) {
         super(node, initializer.getType());

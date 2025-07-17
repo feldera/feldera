@@ -2,6 +2,7 @@ package org.dbsp.sqlCompiler.compiler.visitors.inner;
 
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CustomFunctions;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
@@ -48,7 +49,7 @@ public class ExpandWriteLog extends InnerRewriteVisitor {
         if (function.is(DBSPPathExpression.class)) {
             DBSPPathExpression func = function.to(DBSPPathExpression.class);
             String path = func.path.asString();
-            if (path.equalsIgnoreCase("writelog")) {
+            if (path.equalsIgnoreCase(CustomFunctions.WriteLogFunction.NAME)) {
                 List<DBSPStatement> statements = new ArrayList<>();
                 DBSPExpression format = arguments[0];
                 if (!format.is(DBSPStringLiteral.class))

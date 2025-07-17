@@ -82,8 +82,8 @@ use crate::*;
 
         for (DBSPFunction function : extern) {
             function = this.generateStubBody(function);
-            String str = ToRustInnerVisitor.toRustString(compiler, function, false);
-            this.builder().append(str).newline();
+            ToRustInnerVisitor.toRustString(compiler, this.builder(), function, null, false);
+            this.builder().newline();
         }
 
         this.stream.close();

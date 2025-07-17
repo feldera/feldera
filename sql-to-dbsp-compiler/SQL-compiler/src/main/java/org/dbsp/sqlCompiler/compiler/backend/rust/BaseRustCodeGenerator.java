@@ -1,6 +1,7 @@
 package org.dbsp.sqlCompiler.compiler.backend.rust;
 
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
+import org.dbsp.sqlCompiler.ir.expression.DBSPLazyExpression;
 import org.dbsp.util.IIndentStream;
 
 import javax.annotation.Nullable;
@@ -22,6 +23,7 @@ public abstract class BaseRustCodeGenerator implements ICodeGenerator {
     boolean generateUdfInclude = true;
     boolean generateMalloc = true;
     boolean generateTuples = true;
+    boolean declareSourceMap = false;
 
     protected BaseRustCodeGenerator() {
         this.id = crdId++;
@@ -31,6 +33,11 @@ public abstract class BaseRustCodeGenerator implements ICodeGenerator {
 
     public BaseRustCodeGenerator withGenerateTuples(boolean generate) {
         this.generateTuples = generate;
+        return this;
+    }
+
+    public BaseRustCodeGenerator withDeclareSourceMap(boolean declare) {
+        this.declareSourceMap = declare;
         return this;
     }
 
@@ -128,15 +135,18 @@ public abstract class BaseRustCodeGenerator implements ICodeGenerator {
             use size_of::*;
             use ::serde::{Deserialize,Serialize};
             use std::{
-                cell::LazyCell,
                 collections::BTreeMap,
                 convert::identity,
                 ops::Neg,
                 fmt::{Debug, Formatter, Result as FmtResult},
                 path::Path,
                 marker::PhantomData,
-                sync::{Arc, LazyLock},
+                sync::Arc,
             };
             use core::cmp::Ordering;
-            use feldera_sqllib::*;""";
+            use feldera_sqllib::*;
+            use std::sync::OnceLock;
+            """ +
+            "use " + DBSPLazyExpression.RUST_CRATE + ";\n";
+            //"use " + DBSPStaticExpression.RUST_CRATE + ";\n";
 }

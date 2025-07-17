@@ -35,25 +35,25 @@ public class ProfilingTests extends StreamingTestBase {
         try (PrintWriter mainFile = new PrintWriter(file, StandardCharsets.UTF_8)) {
             mainFile.print(main);
         }
-        //file.deleteOnExit();
-        Utilities.compileAndTestRust(RUST_DIRECTORY, true, "--release");
-        File mainFile = new File(mainFilePath);
-        boolean deleted;
-        deleted = mainFile.delete();
-        Assert.assertTrue(deleted);
-
-        // After executing this Rust program the output is in file "mem.txt"
-        // It contains three numbers: time taken (ms), memory used (bytes), and late records.
-        String outFile = "mem.txt";
-        Path outFilePath = Paths.get(RUST_DIRECTORY, "..", outFile);
-        List<String> strings = Files.readAllLines(outFilePath);
-        // System.out.println(strings);
-        Assert.assertEquals(1, strings.size());
-        String[] split = strings.get(0).split(",");
-        Assert.assertEquals(3, split.length);
-        deleted = outFilePath.toFile().delete();
-        Assert.assertTrue(deleted);
-        return Linq.map(split, Long::parseLong, Long.class);
+        try {
+            Utilities.compileAndTestRust(RUST_DIRECTORY, true, "--release");
+            // After executing this Rust program the output is in file "mem.txt"
+            // It contains three numbers: time taken (ms), memory used (bytes), and late records.
+            String outFile = "mem.txt";
+            Path outFilePath = Paths.get(RUST_DIRECTORY, "..", outFile);
+            List<String> strings = Files.readAllLines(outFilePath);
+            // System.out.println(strings);
+            Assert.assertEquals(1, strings.size());
+            String[] split = strings.get(0).split(",");
+            Assert.assertEquals(3, split.length);
+            boolean deleted = outFilePath.toFile().delete();
+            Assert.assertTrue(deleted);
+            return Linq.map(split, Long::parseLong, Long.class);
+        } finally {
+            File mainFile = new File(mainFilePath);
+            boolean deleted = mainFile.delete();
+            Assert.assertTrue(deleted);
+        }
     }
 
     String createMain(String rustDataGenerator) {
@@ -72,7 +72,7 @@ public class ProfilingTests extends StreamingTestBase {
                 use feldera_sqllib::{
                     append_to_collection_handle,
                     read_output_handle,
-                    casts::{cast_to_Timestamp_s,unwrap_cast},
+                    casts::{cast_to_Timestamp_s,handle_error},
                     string::SqlString,
                 };
 
@@ -171,7 +171,7 @@ public class ProfilingTests extends StreamingTestBase {
         // Rust program which profiles the circuit.
         String main = this.createMain("""
                     // Initial data value for timestamp
-                    let mut timestamp = unwrap_cast(cast_to_Timestamp_s(SqlString::from_ref("2024-01-10 10:10:10")));
+                    let mut timestamp = handle_error(cast_to_Timestamp_s(SqlString::from_ref("2024-01-10 10:10:10")));
                     for i in 0..1000000 {
                         let value = Some(F64::new(i.into()));
                         timestamp = timestamp.add(20000);
@@ -231,7 +231,7 @@ public class ProfilingTests extends StreamingTestBase {
         // Rust program which profiles the circuit.
         String main = this.createMain("""
                     // Initial data value for timestamp
-                    let mut timestamp = unwrap_cast(cast_to_Timestamp_s(SqlString::from_ref("2024-01-10 10:10:10")));
+                    let mut timestamp = handle_error(cast_to_Timestamp_s(SqlString::from_ref("2024-01-10 10:10:10")));
                     for i in 0..1000000 {
                         let expire = timestamp.add(1000000);
                         timestamp = timestamp.add(20000);

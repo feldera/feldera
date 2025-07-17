@@ -129,7 +129,7 @@ public abstract class SqlIoTest extends BaseSQLTests {
 
     static Change getCachedChange(DBSPCompiler compiler, DBSPZSetExpression[] data) {
         DBSPTupleExpression tuple = new DBSPTupleExpression(data);
-        String string = ToRustInnerVisitor.toRustString(compiler, tuple, false);
+        String string = ToRustInnerVisitor.toRustString(compiler, tuple, null, false);
         Change change = cachedChangeList.get(string);
         if (change != null)
             return change;

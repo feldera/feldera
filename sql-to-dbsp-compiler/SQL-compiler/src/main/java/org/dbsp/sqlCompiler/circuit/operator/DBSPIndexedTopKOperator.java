@@ -16,6 +16,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPEqualityComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPPathExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeUSize;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.util.Utilities;
 
@@ -81,6 +82,7 @@ public final class DBSPIndexedTopKOperator extends DBSPUnaryOperator {
         this.numbering = numbering;
         this.outputProducer = outputProducer;
         this.equalityComparator = equalityComparator;
+        Utilities.enforce(this.limit.getType().is(DBSPTypeUSize.class));
         if (!this.outputType.is(DBSPTypeIndexedZSet.class))
             throw new InternalCompilerError("Expected the input to be an IndexedZSet type",
                     source.outputType());

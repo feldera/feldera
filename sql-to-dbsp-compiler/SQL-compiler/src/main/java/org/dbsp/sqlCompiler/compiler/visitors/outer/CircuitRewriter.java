@@ -710,9 +710,10 @@ public class CircuitRewriter extends CircuitCloneVisitor {
     public void postorder(DBSPDeclaration decl) {
         DBSPDeclaration toAdd = decl;
         if (this.processDeclarations) {
-            DBSPItem rewritten = this.transform.apply(decl.item).to(DBSPItem.class);
-            if (!rewritten.sameFields(decl.item))
-                toAdd = new DBSPDeclaration(rewritten);
+            IDBSPInnerNode rewritten = this.transform.apply(decl.item);
+            DBSPItem item = rewritten.to(DBSPItem.class);
+            if (!item.sameFields(decl.item))
+                toAdd = new DBSPDeclaration(item);
         }
         this.getUnderConstructionCircuit().addDeclaration(toAdd);
     }

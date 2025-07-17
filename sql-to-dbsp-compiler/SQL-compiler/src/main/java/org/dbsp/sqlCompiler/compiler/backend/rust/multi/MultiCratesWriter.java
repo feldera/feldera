@@ -14,10 +14,8 @@ import org.dbsp.util.Utilities;
 
 /**
  * This class helps generate Rust code. It is given a set of circuit and
- * functions and generates code in multiple crates.
- */
+ * functions and generates code in multiple crates. */
 public final class MultiCratesWriter extends RustWriter {
-
     public final String outputDirectory;
     public final String pipelineName;
     File rootDirectory;

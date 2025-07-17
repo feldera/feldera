@@ -101,6 +101,11 @@ public class MonotoneAnalyzer implements CircuitTransform, IWritesLogs {
                     return e.to(DBSPExpression.class).ensureTree(compiler);
                 return e;
             }
+
+            @Override
+            public String toString() {
+                return "EnsuresTree";
+            }
         };
         CircuitRewriter toTree = new CircuitRewriter(this.compiler, transform, false);
         circuit = toTree.apply(circuit);
