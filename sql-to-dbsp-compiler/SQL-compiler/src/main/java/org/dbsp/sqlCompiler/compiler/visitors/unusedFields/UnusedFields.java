@@ -103,8 +103,8 @@ public class UnusedFields extends Passes {
 
                     if (map.hasUnusedFields(1)) {
                         for (int i = 0; i < map.size(); i++) {
-                            if (!map.isUsed(i)) {
-                                InputColumnMetadata meta = src.metadata.getColumnMetadata(i);
+                            InputColumnMetadata meta = src.metadata.getColumnMetadata(i);
+                            if (!map.isUsed(i) && !meta.isPrimaryKey) {
                                 this.compiler.reportWarning(
                                         meta.getPositionRange(), "Unused column",
                                         "Column " + meta.name.singleQuote() + " of table " +
