@@ -119,3 +119,6 @@ class RuntimeConfig:
         conf = cls()
         conf.__dict__ = d
         return conf
+
+    def to_dict(self) -> dict:
+        return dict((k, v) for k, v in self.__dict__.items() if v is not None)
