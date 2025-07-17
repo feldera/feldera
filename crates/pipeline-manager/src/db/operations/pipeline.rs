@@ -565,9 +565,6 @@ pub(crate) async fn update_pipeline(
             if runtime_config.get("workers") != current.runtime_config.get("workers") {
                 not_allowed.push("`runtime_config.workers`");
             }
-            if runtime_config.get("storage") != current.runtime_config.get("storage") {
-                not_allowed.push("`runtime_config.storage`");
-            }
             if runtime_config.get("fault_tolerance")
                 != current.runtime_config.get("fault_tolerance")
             {
