@@ -135,6 +135,7 @@ public class CircuitOptimizer extends Passes {
         this.add(new ExpandWriteLog(compiler).circuitRewriter(false));
         this.add(new CSE(compiler));
         this.add(new RecursiveComponents.ValidateRecursiveOperators(compiler));
+        this.add(new LowerAsof(compiler));
         this.add(new LowerCircuitVisitor(compiler));
         this.add(new OptimizeWithGraph(compiler, g -> new ChainVisitor(compiler, g)));
         this.add(new ImplementChains(compiler));
@@ -149,6 +150,7 @@ public class CircuitOptimizer extends Passes {
         this.add(new StaticDeclarations(compiler, new LazyStatics(compiler, !compiler.options.ioOptions.multiCrates())));
         this.add(new ComparatorDeclarations(compiler, new DeclareComparators(compiler)));
         // this.add(new TestSerialize(compiler));
+        this.add(new OptimizeWithGraph(compiler, g -> new StrayGC(compiler, g)));
         // The canonical form is needed if we want the Merkle hashes to be "stable".
         this.add(new CanonicalForm(compiler).getCircuitRewriter(false));
         this.add(new CompactNames(compiler));
