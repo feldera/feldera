@@ -28,12 +28,20 @@ jobs:
     container:
       image: ghcr.io/feldera/feldera-dev:sha-8781162739b57966b50e89e85730d522d08d3d87
     steps:
+      - name: Generate GitHub App token
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.CI_ACCESS_APP_ID }}
+          private-key: ${{ secrets.CI_ACCESS_APP_PKEY }}
+          permission-contents: write
+
       - uses: actions/checkout@v4
         with:
           # This runs on main because we make the commit on main at the end of the workflow,
           # we use the token so it can circument push to main protection rules
           ref: main
-          token: ${{ secrets.CI_RELEASE }}
+          token: ${{ steps.app-token.outputs.token }}
       - name: Determine current version based on pipeline-manager
         run: |
           echo "CURRENT_VERSION=$(cargo metadata --no-deps | jq -r '.packages[]|select(.name == "pipeline-manager")|.version')" >> $GITHUB_ENV
