@@ -2,13 +2,11 @@ package org.dbsp.sqlCompiler.compiler.backend.rust;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.backend.rust.multi.ProjectDeclarations;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.util.ProgramAndTester;
 import org.dbsp.util.Utilities;
-
-import java.util.HashSet;
-import java.util.Set;
 
 /** This class helps generate Rust code.
  * It is given a set of circuit and functions and generates a compilable Rust file. */
@@ -113,17 +111,21 @@ public class RustFileWriter extends RustWriter {
 
         for (String dep : this.dependencies)
             this.builder().append("use ").append(dep).append("::*;");
-        Set<String> declarationsDone = new HashSet<>();
+
+        if (this.declareSourceMap) {
+            SourcePositionResource.generateDeclaration(this.outputBuilder);
+        }
+
+        ProjectDeclarations declarationsDone = new ProjectDeclarations();
         for (IDBSPNode node : this.toWrite) {
-            String str;
             IDBSPInnerNode inner = node.as(IDBSPInnerNode.class);
             if (inner != null) {
-                str = ToRustInnerVisitor.toRustString(compiler, inner, false);
+                ToRustInnerVisitor.toRustString(compiler, this.builder(), inner, null,  false);
             } else {
                 DBSPCircuit outer = node.to(DBSPCircuit.class);
-                str = ToRustVisitor.toRustString(compiler, outer, declarationsDone);
+                ToRustVisitor.toRustString(compiler, this.builder(), outer, declarationsDone);
             }
-            this.builder().append(str).newline();
+            this.builder().newline();
         }
     }
 }

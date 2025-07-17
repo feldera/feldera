@@ -21,7 +21,6 @@ import org.dbsp.sqlCompiler.ir.statement.DBSPStaticItem;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.Map;
 
 /** Writes the implementation of a single operator as a function that instantiates
@@ -34,7 +33,7 @@ public final class SingleOperatorWriter extends BaseRustCodeGenerator {
 
     /* Example output:
      * ... preamble ...
-     * pub fn create_xxx(circuit: &RootCircuit, catalog: &mut Catalog,
+     * pub fn create_xxx(circuit: &RootCircuit, hash: Option<&'static str>, sourceMap: &'static SourceMap, catalog: &mut Catalog,
      *                  i0: &Stream<RootCircuit, WSet<Tup1<Option<i32>>>>,
      *                  i1: &Stream<RootCircuit, WSet<Tup1<Option<i32>>>>,
      *                  i2: &Stream<RootCircuit, WSet<Tup1<Option<i32>>>>, ) ->
@@ -73,7 +72,7 @@ public final class SingleOperatorWriter extends BaseRustCodeGenerator {
                 .append(RustWriter.COMMON_PREAMBLE)
                 .append(RustWriter.STANDARD_PREAMBLE);
         ToRustVisitor visitor = new ToRustVisitor(
-                compiler, this.builder(), this.circuit.metadata, new HashSet<>())
+                compiler, this.builder(), this.circuit.metadata, new ProjectDeclarations())
                 .withPreferHash(true);
         final String name = this.operator.getNodeName(true);
         this.builder().newline();
@@ -87,7 +86,9 @@ public final class SingleOperatorWriter extends BaseRustCodeGenerator {
                 .append(name)
                 .append("(circuit: &")
                 .append(this.dbspCircuit(this.topLevel))
-                .append(", hash: Option<&str>, ");
+                .append(", hash: Option<&'static str>, ")
+                .append(CircuitWriter.SOURCE_MAP_VARIABLE_NAME)
+                .append(": &'static SourceMap, ");
         if (this.topLevel)
             this.builder().append("catalog: &mut Catalog,");
         this.builder().increase();

@@ -236,6 +236,15 @@ public class ToJsonInnerVisitor extends InnerVisitor {
     }
 
     @Override
+    public void postorder(DBSPHandleErrorExpression node) {
+        this.property("runtimeBehavior");
+        this.stream.append(node.runtimeBehavior.toString());
+        this.property("index");
+        this.stream.append(node.index);
+        super.postorder(node);
+    }
+
+    @Override
     public void postorder(DBSPI128Literal node) {
         if (node.value != null) {
             this.property("value");

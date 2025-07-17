@@ -85,11 +85,25 @@ public class MultiCrateTests extends BaseSQLTests {
                 c8 BIGINT NOT NULL);
 
                 CREATE MATERIALIZED VIEW int_array_agg AS SELECT
-                ARRAY_AGG(c1) AS c1, ARRAY_AGG(c2) AS c2, ARRAY_AGG(c3) AS c3, ARRAY_AGG(c4) AS c4, ARRAY_AGG(c5) AS c5, ARRAY_AGG(c6) AS c6, ARRAY_AGG(c7) AS c7, ARRAY_AGG(c8) AS c8
+                ARRAY_AGG(c1) AS c1,
+                ARRAY_AGG(c2) AS c2,
+                ARRAY_AGG(c3) AS c3,
+                ARRAY_AGG(c4) AS c4,
+                ARRAY_AGG(c5) AS c5,
+                ARRAY_AGG(c6) AS c6,
+                ARRAY_AGG(c7) AS c7,
+                ARRAY_AGG(c8) AS c8
                 FROM int0_tbl;
 
                 CREATE MATERIALIZED VIEW int_array_agg_where AS SELECT
-                ARRAY_AGG(c1) FILTER(WHERE (c5+C6)> 3) AS f_c1, ARRAY_AGG(c2) FILTER(WHERE (c5+C6)> 3) AS f_c2, ARRAY_AGG(c3) FILTER(WHERE (c5+C6)> 3) AS f_c3, ARRAY_AGG(c4) FILTER(WHERE (c5+C6)> 3) AS f_c4, ARRAY_AGG(c5) FILTER(WHERE (c5+C6)> 3) AS f_c5, ARRAY_AGG(c6) FILTER(WHERE (c5+C6)> 3) AS f_c6,  ARRAY_AGG(c7) FILTER(WHERE (c5+C6)> 3) AS f_c7,  ARRAY_AGG(c8) FILTER(WHERE (c5+C6)> 3) AS f_c8
+                ARRAY_AGG(c1) FILTER(WHERE (c5+C6)> 3) AS f_c1,
+                ARRAY_AGG(c2) FILTER(WHERE (c5+C6)> 3) AS f_c2,
+                ARRAY_AGG(c3) FILTER(WHERE (c5+C6)> 3) AS f_c3,
+                ARRAY_AGG(c4) FILTER(WHERE (c5+C6)> 3) AS f_c4,
+                ARRAY_AGG(c5) FILTER(WHERE (c5+C6)> 3) AS f_c5,
+                ARRAY_AGG(c6) FILTER(WHERE (c5+C6)> 3) AS f_c6,
+                ARRAY_AGG(c7) FILTER(WHERE (c5+C6)> 3) AS f_c7,
+                ARRAY_AGG(c8) FILTER(WHERE (c5+C6)> 3) AS f_c8
                 FROM int0_tbl;""";
         File file = createInputScript(sql);
         this.compileToMultiCrate(file.getAbsolutePath(), true);
@@ -266,6 +280,14 @@ public class MultiCrateTests extends BaseSQLTests {
         this.compileToMultiCrate(file.getAbsolutePath(), true);
         //noinspection ResultOfMethodCallIgnored
         udf.delete();
+    }
+
+    @Test
+    public void testMultiSqlUdf() throws IOException, InterruptedException, SQLException {
+        File file = createInputScript("""
+                CREATE FUNCTION decode_boolean(str VARCHAR NOT NULL) RETURNS BOOLEAN NOT NULL AS CAST(str AS BOOLEAN);
+                CREATE VIEW V0 AS SELECT decode_boolean(CAST('TRUE' AS VARCHAR));""");
+        this.compileToMultiCrate(file.getAbsolutePath(), true);
     }
 
     @Test

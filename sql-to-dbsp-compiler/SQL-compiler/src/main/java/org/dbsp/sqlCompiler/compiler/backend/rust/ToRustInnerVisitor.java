@@ -28,16 +28,15 @@ import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.InputColumnMetadata;
 import org.dbsp.sqlCompiler.compiler.TableMetadata;
+import org.dbsp.sqlCompiler.compiler.backend.rust.multi.CircuitWriter;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
-import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
-import org.dbsp.sqlCompiler.compiler.frontend.ExpressionCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EliminateStructs;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
-import org.dbsp.sqlCompiler.compiler.visitors.inner.Simplify;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.CreateRuntimeErrorWrappers;
 import org.dbsp.sqlCompiler.ir.DBSPFunction;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
@@ -66,9 +65,10 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFieldComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFieldExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPForExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPHandleErrorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPIfExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPIsNullExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPLazyCellExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPLazyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPLetExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPNoComparatorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
@@ -134,7 +134,6 @@ import org.dbsp.sqlCompiler.ir.statement.DBSPStaticItem;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStructItem;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
-import org.dbsp.sqlCompiler.ir.type.IsNumericType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeFunction;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRef;
@@ -145,7 +144,6 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBinary;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeISize;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMillisInterval;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMonthsInterval;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeNull;
@@ -180,13 +178,19 @@ public class ToRustInnerVisitor extends InnerVisitor {
     protected final CompilerOptions options;
     /** Set by binary expressions */
     int visitingChild;
+    @Nullable
+    final SourcePositionResource sourcePositionResource;
+    final CreateRuntimeErrorWrappers createErrorWrappers;
 
-    public ToRustInnerVisitor(DBSPCompiler compiler, IIndentStream builder, boolean compact) {
+    public ToRustInnerVisitor(DBSPCompiler compiler, IIndentStream builder,
+                              @Nullable SourcePositionResource sourcePositionResource, boolean compact) {
         super(compiler);
         this.builder = builder;
         this.compact = compact;
         this.options = compiler.options;
+        this.sourcePositionResource = sourcePositionResource;
         this.visitingChild = 0;
+        this.createErrorWrappers = new CreateRuntimeErrorWrappers(compiler);
     }
 
     @SuppressWarnings("SameReturnValue")
@@ -437,9 +441,10 @@ public class ToRustInnerVisitor extends InnerVisitor {
     }
 
     @Override
-    public VisitDecision preorder(DBSPLazyCellExpression expression) {
+    public VisitDecision preorder(DBSPLazyExpression expression) {
         this.push(expression);
-        this.builder.append("LazyCell::new(|| { ");
+        this.builder.append(DBSPLazyExpression.RUST_IMPLEMENTATION)
+                .append("::new(|| { ");
         expression.expression.accept(this);
         this.builder.append(" })");
         this.pop(expression);
@@ -1118,7 +1123,8 @@ public class ToRustInnerVisitor extends InnerVisitor {
                 this.builder.append(field.type.mayBeNull ? "Some(None)" : "None");
             } else {
                 this.builder.append("Some(");
-                meta.defaultValue.accept(this);
+                IDBSPInnerNode defaultValue = this.createErrorWrappers.apply(meta.defaultValue);
+                defaultValue.accept(this);
                 this.builder.append(")");
             }
             if (isOption)
@@ -1294,21 +1300,6 @@ public class ToRustInnerVisitor extends InnerVisitor {
         DBSPTypeArray destVecType = destType.as(DBSPTypeArray.class);
         String functionName;
 
-        if (!this.compact) {
-            if (expression.safe) {
-                this.builder.append("unwrap_safe_cast(");
-            }
-            else {
-                SourcePositionRange range = expression.getNode().getPositionRange();
-                if (range.isValid()) {
-                    this.builder.append("unwrap_cast_position(")
-                            .append(range.toRustConstant())
-                            .append(", ");
-                } else {
-                    this.builder.append("unwrap_cast(");
-                }
-            }
-        }
         if (destVecType != null) {
             if (sourceType.is(DBSPTypeVariant.class)) {
                 // Cast variant to vec
@@ -1317,8 +1308,6 @@ public class ToRustInnerVisitor extends InnerVisitor {
                 expression.source.accept(this);
                 this.builder.decrease().append(")");
                 this.pop(expression);
-                if (!this.compact)
-                    this.builder.append(")");
                 return VisitDecision.STOP;
             }
         }
@@ -1335,8 +1324,6 @@ public class ToRustInnerVisitor extends InnerVisitor {
                         .increase();
                 expression.source.accept(this);
                 this.builder.decrease().append(")");
-                if (!this.compact)
-                    this.builder.append(")");
                 this.pop(expression);
                 return VisitDecision.STOP;
             }
@@ -1356,8 +1343,6 @@ public class ToRustInnerVisitor extends InnerVisitor {
                 this.builder.append(functionName).append("(").increase();
                 expression.source.accept(this);
                 this.builder.decrease().append(")");
-                if (!this.compact)
-                    this.builder.append(")");
                 this.pop(expression);
                 return VisitDecision.STOP;
             } else {
@@ -1371,8 +1356,6 @@ public class ToRustInnerVisitor extends InnerVisitor {
                 this.builder.append(functionName).append("(").increase();
                 expression.source.accept(this);
                 this.builder.decrease().append(")");
-                if (!this.compact)
-                    this.builder.append(")");
                 this.pop(expression);
                 return VisitDecision.STOP;
             } else {
@@ -1389,8 +1372,6 @@ public class ToRustInnerVisitor extends InnerVisitor {
             this.builder.append("(");
             expression.type.accept(this);
             this.builder.append(")");
-            if (!this.compact)
-                this.builder.append(")");
             expression.source.accept(this);
             this.pop(expression);
             return VisitDecision.STOP;
@@ -1403,8 +1384,6 @@ public class ToRustInnerVisitor extends InnerVisitor {
             this.builder.append("(");
             expression.type.accept(this);
             this.builder.append(")");
-            if (!this.compact)
-                this.builder.append(")");
             expression.source.accept(this);
             this.pop(expression);
             return VisitDecision.STOP;
@@ -1443,8 +1422,34 @@ public class ToRustInnerVisitor extends InnerVisitor {
                     .append(binary.precision);
         }
         this.builder.append(")");
-        if (!this.compact)
+        this.pop(expression);
+        return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPHandleErrorExpression expression) {
+        this.push(expression);
+        if (!this.compact) {
+            this.builder.append(expression.getFunction());
+            this.builder.append("(");
+            if (expression.runtimeBehavior == DBSPHandleErrorExpression.RuntimeBehavior.PanicWithSource) {
+                if (this.operatorContext == null) {
+                    this.builder.append("\"")
+                            .append(SourcePositionResource.NO_OPERATOR_HASH)
+                            .append("\", ");
+                } else {
+                    this.builder.append("hash.unwrap(), ");
+                }
+                this.builder.append(expression.index)
+                        .append(", &")
+                        .append(CircuitWriter.SOURCE_MAP_VARIABLE_NAME)
+                        .append(", ");
+            }
+        }
+        expression.source.accept(this);
+        if (!this.compact) {
             this.builder.append(")");
+        }
         this.pop(expression);
         return VisitDecision.STOP;
     }
@@ -1500,16 +1505,9 @@ public class ToRustInnerVisitor extends InnerVisitor {
                 this.builder.append(")");
                 break;
             }
+            case SQL_INDEX:
+                throw new InternalCompilerError("Should have been eliminated");
             case RUST_INDEX: {
-                this.visitingChild = 0;
-                expression.left.accept(this);
-                this.builder.append("[");
-                this.visitingChild = 1;
-                expression.right.accept(this);
-                this.builder.append("]");
-                break;
-            }
-            case SQL_INDEX: {
                 DBSPType collectionType = expression.left.getType();
                 DBSPType indexType = expression.right.getType();
                 DBSPTypeArray arrayType = collectionType.to(DBSPTypeArray.class);
@@ -1562,13 +1560,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
                 }
                 this.visitingChild = 1;
                 this.builder.append(", ");
-                DBSPExpression sub1 = ExpressionCompiler.makeBinaryExpression(
-                        expression.getNode(), indexType, DBSPOpcode.SUB,
-                        expression.right, indexType.to(IsNumericType.class).getOne());
-                sub1 = sub1.cast(expression.getNode(), DBSPTypeISize.create(indexType.mayBeNull), false);
-                Simplify simplify = new Simplify(this.compiler);
-                sub1 = simplify.apply(sub1).to(DBSPExpression.class);
-                sub1.accept(this);
+                expression.right.accept(this);
                 this.builder.append(")");
                 break;
             }
@@ -1859,6 +1851,21 @@ public class ToRustInnerVisitor extends InnerVisitor {
         return VisitDecision.STOP;
     }
 
+    static class NeedsSourceMap extends InnerVisitor {
+        public boolean found = false;
+
+        public NeedsSourceMap(DBSPCompiler compiler) {
+            super(compiler);
+        }
+
+        @Override
+        public VisitDecision preorder(DBSPHandleErrorExpression expression) {
+            if (expression.runtimeBehavior == DBSPHandleErrorExpression.RuntimeBehavior.PanicWithSource)
+                this.found = true;
+            return VisitDecision.STOP;
+        }
+    }
+
     @Override
     public VisitDecision preorder(DBSPFunction function) {
         if (function.body == null)
@@ -1885,6 +1892,11 @@ public class ToRustInnerVisitor extends InnerVisitor {
             function.body.accept(this);
         } else {
             this.builder.append("{").increase();
+            NeedsSourceMap finder = new NeedsSourceMap(this.compiler);
+            finder.apply(function.body);
+            if (finder.found) {
+                SourcePositionResource.generateReference(this.builder, CircuitWriter.SOURCE_MAP_VARIABLE_NAME);
+            }
             function.body.accept(this);
             this.builder.decrease()
                     .newline()
@@ -2111,13 +2123,18 @@ public class ToRustInnerVisitor extends InnerVisitor {
     @Override
     public VisitDecision preorder(DBSPStaticItem item) {
         DBSPStaticExpression stat = item.expression;
-        // static NAME: LazyLock<type> = LazyLock::new(|| expression);
         String name = stat.getName();
-        this.builder.append("pub static ")
+        this.builder.append("static ")
                 .append(name)
-                .append(": LazyLock<");
+                .append(": ")
+                .append(DBSPStaticExpression.RUST_IMPLEMENTATION)
+                .append("<");
         stat.getType().accept(this);
-        this.builder.append("> = LazyLock::new(|| ");
+        this.builder.append("> = ")
+                .append(DBSPStaticExpression.RUST_IMPLEMENTATION)
+                .append("::new();").newline();
+        this.builder.append(name)
+                .append(".init(move || ");
         stat.initializer.accept(this);
         this.builder.append(");").newline();
         return VisitDecision.STOP;
@@ -2132,6 +2149,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
             if (parent.is(DBSPBinaryExpression.class)) {
                 DBSPBinaryExpression bin = parent.to(DBSPBinaryExpression.class);
                 if (bin.opcode == DBSPOpcode.SQL_INDEX ||
+                        bin.opcode == DBSPOpcode.RUST_INDEX ||
                         bin.opcode == DBSPOpcode.MAP_INDEX ||
                         bin.opcode == DBSPOpcode.VARIANT_INDEX) {
                     if (this.visitingChild == 0)
@@ -2550,10 +2568,18 @@ public class ToRustInnerVisitor extends InnerVisitor {
         throw new InternalCompilerError("Should have been eliminated", implementation.getNode());
     }
 
-    public static String toRustString(DBSPCompiler compiler, IDBSPInnerNode node, boolean compact) {
+    public static String toRustString(DBSPCompiler compiler, IDBSPInnerNode node,
+                                      @Nullable SourcePositionResource sourcePosition, boolean compact) {
         IndentStream stream = new IndentStreamBuilder();
-        ToRustInnerVisitor visitor = new ToRustInnerVisitor(compiler, stream, compact);
+        ToRustInnerVisitor visitor = new ToRustInnerVisitor(compiler, stream, sourcePosition, compact);
         node.accept(visitor);
         return stream.toString();
+    }
+
+    public static void toRustString(
+            DBSPCompiler compiler, IIndentStream stream, IDBSPInnerNode node,
+            @Nullable SourcePositionResource sourcePositionResource, boolean compact) {
+        ToRustInnerVisitor visitor = new ToRustInnerVisitor(compiler, stream, sourcePositionResource, compact);
+        node.accept(visitor);
     }
 }

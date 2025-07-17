@@ -11,7 +11,7 @@ public class SourcePosition {
         this.column = column;
     }
 
-    boolean isValid() {
+    public boolean isValid() {
         return this.line > 0 && this.column > 0;
     }
 
@@ -26,6 +26,10 @@ public class SourcePosition {
 
         SourcePosition that = (SourcePosition) o;
         return line == that.line && column == that.column;
+    }
+
+    public String toRustConstant() {
+        return "SourcePosition::new(" + this.line + ", " + this.column + ")";
     }
 
     @Override

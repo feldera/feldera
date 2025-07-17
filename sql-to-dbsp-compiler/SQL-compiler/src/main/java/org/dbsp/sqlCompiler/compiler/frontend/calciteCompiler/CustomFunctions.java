@@ -476,10 +476,11 @@ public class CustomFunctions {
     /** WRITELOG(format, arg) returns its argument 'arg' unchanged but also logs
      * its value to stdout.  Used for debugging.  In the format string
      * each occurrence of %% is replaced with the arg */
-    static class WriteLogFunction extends NonOptimizedFunction {
+    public static class WriteLogFunction extends NonOptimizedFunction {
+        public static final String NAME = "WRITELOG";
+
         private WriteLogFunction() {
-            super("WRITELOG",
-                    ARG1,
+            super(NAME, ARG1,
                     family(SqlTypeFamily.CHARACTER, SqlTypeFamily.ANY),
                     SqlFunctionCategory.USER_DEFINED_FUNCTION, "");
         }

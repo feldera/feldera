@@ -140,7 +140,7 @@ public class ToDotNodesVisitor extends CircuitVisitor {
     }
 
     String convertFunction(DBSPExpression expression) {
-        String result = ToRustInnerVisitor.toRustString(this.compiler(), expression, true);
+        String result = ToRustInnerVisitor.toRustString(this.compiler(), expression, null, true);
         result = escapeString(result);
         result = result.replace("\n", "\\l");
         return result;

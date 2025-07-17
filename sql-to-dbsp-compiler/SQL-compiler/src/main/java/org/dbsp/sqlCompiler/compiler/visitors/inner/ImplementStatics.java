@@ -3,10 +3,12 @@ package org.dbsp.sqlCompiler.compiler.visitors.inner;
 import org.apache.calcite.util.Pair;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
+import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBaseTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBorrowExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPHandleErrorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPPathExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPStaticExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDecimalLiteral;
@@ -20,7 +22,7 @@ import java.util.List;
 
 /** Use static values when possible.  If 'declare' is true, creates declarations for static values
  * and replaces their uses with PathExpressions that refer to the declarations. */
-public class LazyStatics extends ExpressionTranslator {
+public class ImplementStatics extends ExpressionTranslator {
     // Yes, we extend ExpressionTranslator, but we override some preorder methods.
     // This is counterintuitive, but we want the default translator behavior,
     // except when we find a constant expression, and then we replace it immediately in preorder.
@@ -33,11 +35,49 @@ public class LazyStatics extends ExpressionTranslator {
     @Nullable
     ConstantExpressions constants = null;
 
-    public LazyStatics(DBSPCompiler compiler, boolean declare) {
+    /** Used to renumber indexes in {@link org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression}.
+     * These expressions hold an index within the operator they belong to; when made global, the index
+     * has to be recomputed. */
+    static class RenumberErrorHandlers extends ExpressionTranslator {
+        int index;
+
+        @Override
+        protected void set(IDBSPInnerNode node, IDBSPInnerNode translation) {
+            if (this.translationMap.containsKey(node)) {
+                return;
+            }
+            this.translationMap.putNew(node, translation);
+        }
+
+        public RenumberErrorHandlers(DBSPCompiler compiler) {
+            super(compiler);
+            this.index = 0;
+        }
+
+        @Override
+        public void postorder(DBSPHandleErrorExpression expression) {
+            DBSPExpression source = this.getE(expression.source);
+            DBSPExpression result = new DBSPHandleErrorExpression(expression.getNode(), this.index++, source);
+            this.map(expression, result);
+        }
+    }
+
+    final RenumberErrorHandlers renumber;
+
+    public ImplementStatics(DBSPCompiler compiler, boolean declare) {
         super(compiler);
         this.canonical = new ArrayList<>();
         this.newDeclarations = new ArrayList<>();
         this.declare = declare;
+        this.renumber = new RenumberErrorHandlers(compiler);
+    }
+
+    @Override
+    protected void set(IDBSPInnerNode node, IDBSPInnerNode translation) {
+        if (this.translationMap.containsKey(node)) {
+            return;
+        }
+        this.translationMap.putNew(node, translation);
     }
 
     @Override
@@ -81,7 +121,8 @@ public class LazyStatics extends ExpressionTranslator {
         }
 
         DBSPExpression result;
-        DBSPStaticExpression stat = new DBSPStaticExpression(expression.getNode(), expression);
+        DBSPExpression renumbered = this.renumber.apply(expression).to(DBSPExpression.class);
+        DBSPStaticExpression stat = new DBSPStaticExpression(expression.getNode(), renumbered);
         if (this.declare) {
             DBSPStaticItem item = new DBSPStaticItem(stat);
             this.newDeclarations.add(item);

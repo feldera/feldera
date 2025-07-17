@@ -61,10 +61,6 @@ public class SourcePositionRange implements IHasSourcePositionRange {
         return result;
     }
 
-    public String toRustConstant() {
-        return "\"line " + this.start.line + " column " + this.start.column + "\"";
-    }
-
     @Override
     public boolean equals(Object o) {
         if (o == null || getClass() != o.getClass()) return false;

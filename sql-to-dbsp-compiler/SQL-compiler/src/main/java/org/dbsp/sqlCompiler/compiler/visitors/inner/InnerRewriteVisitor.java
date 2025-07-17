@@ -535,6 +535,16 @@ public abstract class InnerRewriteVisitor
     }
 
     @Override
+    public VisitDecision preorder(DBSPHandleErrorExpression expression) {
+        this.push(expression);
+        DBSPExpression source = this.transform(expression.source);
+        this.pop(expression);
+        DBSPExpression result = new DBSPHandleErrorExpression(expression.getNode(), expression.index, source);
+        this.map(expression, result);
+        return VisitDecision.STOP;
+    }
+
+    @Override
     public VisitDecision preorder(DBSPI16Literal expression) {
         this.push(expression);
         DBSPType type = this.transform(expression.getType());
@@ -879,11 +889,11 @@ public abstract class InnerRewriteVisitor
     }
 
     @Override
-    public VisitDecision preorder(DBSPLazyCellExpression expression) {
+    public VisitDecision preorder(DBSPLazyExpression expression) {
         this.push(expression);
         DBSPExpression source = this.transform(expression.expression);
         this.pop(expression);
-        DBSPExpression result = new DBSPLazyCellExpression(source);
+        DBSPExpression result = new DBSPLazyExpression(source);
         this.map(expression, result);
         return VisitDecision.STOP;
     }

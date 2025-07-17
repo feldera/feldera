@@ -276,6 +276,12 @@ public class ExpressionTranslator extends TranslateVisitor<IDBSPInnerNode> {
     }
 
     @Override
+    public void postorder(DBSPHandleErrorExpression node) {
+        DBSPExpression source = this.getE(node.source);
+        this.map(node, new DBSPHandleErrorExpression(node.getNode(), node.index, source));
+    }
+
+    @Override
     public void postorder(DBSPStructItem node) {
         this.map(node, node);
     }
@@ -453,9 +459,9 @@ public class ExpressionTranslator extends TranslateVisitor<IDBSPInnerNode> {
     }
 
     @Override
-    public void postorder(DBSPLazyCellExpression node) {
+    public void postorder(DBSPLazyExpression node) {
         DBSPExpression expression = this.getE(node.expression);
-        this.map(node, new DBSPLazyCellExpression(expression));
+        this.map(node, new DBSPLazyExpression(expression));
     }
 
     @Override
@@ -533,7 +539,8 @@ public class ExpressionTranslator extends TranslateVisitor<IDBSPInnerNode> {
 
     @Override
     public void postorder(DBSPFunctionItem item) {
-        this.map(item, item);
+        IDBSPInnerNode result = this.get(item.function);
+        this.map(item, new DBSPFunctionItem(result.to(DBSPFunction.class)));
     }
 
     @Override

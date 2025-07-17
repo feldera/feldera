@@ -1,6 +1,7 @@
 //! Source position representation.
 //! Used for reporting run-time errors.
 
+use std::collections::BTreeMap;
 use std::fmt;
 
 #[doc(hidden)]
@@ -36,7 +37,7 @@ impl fmt::Display for SourcePosition {
     #[doc(hidden)]
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         if self.isValid() {
-            write!(f, "{}:{}", self.line, self.column)
+            write!(f, "line {} column {}", self.line, self.column)
         } else {
             write!(f, "")
         }
@@ -63,5 +64,27 @@ impl fmt::Display for SourcePositionRange {
         } else {
             write!(f, "")
         }
+    }
+}
+
+/// Maps "keys" to source line position information
+#[doc(hidden)]
+#[derive(Default)]
+pub struct SourceMap {
+    map: BTreeMap<(&'static str, u32), SourcePosition>,
+}
+
+#[doc(hidden)]
+impl SourceMap {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn getPosition(&self, key: &'static str, index: u32) -> Option<String> {
+        self.map.get(&(key, index)).map(|value| value.to_string())
+    }
+
+    pub fn insert(&mut self, key: &'static str, index: u32, value: SourcePosition) {
+        self.map.insert((key, index), value);
     }
 }

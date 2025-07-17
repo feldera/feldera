@@ -1361,8 +1361,8 @@ public class MetadataTests extends BaseSQLTests {
                 CREATE FUNCTION str2str(i VARCHAR) RETURNS VARCHAR;
                 CREATE FUNCTION nstr2nstr(i VARCHAR NOT NULL) RETURNS VARCHAR NOT NULL;
                 
-                -- CREATE FUNCTION struct2struct(i my_struct) RETURNS my_struct;
-                -- CREATE FUNCTION nstruct2nstruct(i my_struct NOT NULL) RETURNS my_struct NOT NULL;
+                CREATE FUNCTION struct2struct(i my_struct) RETURNS my_struct;
+                CREATE FUNCTION nstruct2nstruct(i my_struct NOT NULL) RETURNS my_struct NOT NULL;
                 
                 CREATE MATERIALIZED VIEW v AS
                 SELECT

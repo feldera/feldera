@@ -36,7 +36,8 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.CanonicalForm;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EliminateDump;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.ExpandCasts;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.ExpandWriteLog;
-import org.dbsp.sqlCompiler.compiler.visitors.inner.LazyStatics;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.ImplementStatics;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.CreateRuntimeErrorWrappers;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Simplify;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.SimplifyWaterline;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.intern.Intern;
@@ -115,8 +116,6 @@ public class CircuitOptimizer extends Passes {
         this.add(new OptimizeWithGraph(compiler, g -> new FilterJoinVisitor(compiler, g)));
         this.add(new DeadCode(compiler, true, false));
         this.add(new Simplify(compiler).circuitRewriter(true));
-        // The predicate below controls which nodes have their output dumped at runtime
-        this.add(new InstrumentDump(compiler, t -> false));
         if (options.languageOptions.incrementalize)
             this.add(new NoIntegralVisitor(compiler));
         this.add(new ExpandHop(compiler));
@@ -137,6 +136,7 @@ public class CircuitOptimizer extends Passes {
         this.add(new RecursiveComponents.ValidateRecursiveOperators(compiler));
         this.add(new LowerAsof(compiler));
         this.add(new LowerCircuitVisitor(compiler));
+        this.add(new AdjustSqlIndex(compiler).circuitRewriter(true));
         this.add(new OptimizeWithGraph(compiler, g -> new ChainVisitor(compiler, g)));
         this.add(new ImplementChains(compiler));
         // Lowering may surface additional casts that need to be expanded
@@ -147,7 +147,8 @@ public class CircuitOptimizer extends Passes {
         this.add(new ExpandJoins(compiler));
         this.add(new RemoveViewOperators(compiler, true));
         this.add(new CircuitRewriter(compiler, new InnerCSE(compiler), false, InnerCSE::process));
-        this.add(new StaticDeclarations(compiler, new LazyStatics(compiler, !compiler.options.ioOptions.multiCrates())));
+        this.add(new CreateRuntimeErrorWrappers(compiler).getCircuitRewriter(true));
+        this.add(new StaticDeclarations(compiler, new ImplementStatics(compiler, !compiler.options.ioOptions.multiCrates())));
         this.add(new ComparatorDeclarations(compiler, new DeclareComparators(compiler)));
         // this.add(new TestSerialize(compiler));
         this.add(new OptimizeWithGraph(compiler, g -> new StrayGC(compiler, g)));

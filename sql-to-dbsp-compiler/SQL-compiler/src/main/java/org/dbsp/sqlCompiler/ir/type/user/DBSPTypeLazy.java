@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.ir.expression.DBSPLazyExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
 import org.dbsp.util.Utilities;
@@ -12,10 +13,10 @@ import java.util.List;
 
 import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.USER;
 
-/** A LazyCell type */
+/** The type of DBSPLazyExpression */
 public class DBSPTypeLazy extends DBSPTypeUser {
     public DBSPTypeLazy(DBSPType resultType) {
-        super(resultType.getNode(), USER, "LazyCell",
+        super(resultType.getNode(), USER, DBSPLazyExpression.RUST_IMPLEMENTATION,
                 false, resultType, DBSPTypeAny.getDefault());
     }
 

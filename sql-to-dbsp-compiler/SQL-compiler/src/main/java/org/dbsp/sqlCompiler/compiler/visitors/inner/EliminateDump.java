@@ -1,6 +1,7 @@
 package org.dbsp.sqlCompiler.compiler.visitors.inner;
 
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CustomFunctions;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
@@ -16,6 +17,7 @@ import org.dbsp.util.Utilities;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.function.Function;
 
 /* Implement the dump() function. */
@@ -54,7 +56,8 @@ public class EliminateDump extends InnerRewriteVisitor {
                     DBSPExpression fieldI = arguments[1].field(i);
                     DBSPExpression format = new DBSPStringLiteral("%%,");
                     DBSPExpression writeLog = new DBSPApplyExpression(
-                            expression.getNode(), "writelog", fieldI.type, format, fieldI);
+                            expression.getNode(), CustomFunctions.WriteLogFunction.NAME.toLowerCase(Locale.ENGLISH),
+                            fieldI.type, format, fieldI);
                     block.add(writeLog.toStatement());
                 }
                 block.add(makePrint.apply(new DBSPStringLiteral(")\n")));

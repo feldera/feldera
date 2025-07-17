@@ -71,6 +71,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU16Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU32Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU64Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU8Literal;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPUSizeLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.IHasZero;
 import org.dbsp.sqlCompiler.ir.type.IsNumericType;
@@ -83,6 +84,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeNull;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTime;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeUSize;
 import org.dbsp.util.Logger;
 import org.dbsp.util.Utilities;
 
@@ -370,6 +372,10 @@ public class Simplify extends ExpressionTranslator {
                 } else if (type.is(DBSPTypeISize.class)) {
                     if (!i.isNull()) {
                         result = new DBSPISizeLiteral(source.getNode(), type, i.value.longValue());
+                    }
+                } else if (type.is(DBSPTypeUSize.class)) {
+                    if (!i.isNull() && i.value >= 0) {
+                        result = new DBSPUSizeLiteral(source.getNode(), type, i.value.longValue());
                     }
                 }
             } else if (lit.is(DBSPDecimalLiteral.class)) {
