@@ -228,4 +228,19 @@ public class AsofTests extends StreamingTestBase {
                 ON t1.k = t2.k;""",
                 "Not yet implemented: Currently the only MATCH_CONDITION comparison supported by ASOF joins is '>='");
     }
+
+    @Test
+    public void cloudIssue994() {
+        this.getCCS("""
+                CREATE TABLE T(x BIGINT, y INT, z INT);
+                CREATE TABLE S(x TIMESTAMP, y INT, v INT);
+                
+                CREATE VIEW V AS
+                SELECT
+                    T.y, T.z
+                FROM
+                    T LEFT ASOF JOIN S
+                    MATCH_CONDITION ( CAST(T.x AS TIMESTAMP) >= S.x )
+                    ON T.y = S.y;""");
+    }
 }

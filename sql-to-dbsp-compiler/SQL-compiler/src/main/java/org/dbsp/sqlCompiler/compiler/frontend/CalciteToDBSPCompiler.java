@@ -1946,7 +1946,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             throw new InternalCompilerError("Unexpected join with " + join.getInputs().size() + " inputs", node);
         DBSPSimpleOperator left = this.getInputAs(join.getInput(0), true);
         DBSPSimpleOperator right = this.getInputAs(join.getInput(1), true);
-        DBSPTypeTuple leftElementType = left.getType().to(DBSPTypeZSet.class).elementType
+        DBSPTypeTuple leftElementType = left.getOutputZSetElementType()
                 .to(DBSPTypeTuple.class);
         int leftSize = leftElementType.size();
 
@@ -2017,6 +2017,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 left = new DBSPMapOperator(node, addCast.closure(l), left.outputPort());
                 this.addOperator(left);
                 leftTsIndex = leftElementType.size();
+                leftElementType = left.getOutputZSetElementType().to(DBSPTypeTuple.class);
             }
             if (needsRightCast) {
                 DBSPTypeTuple rightElementType = right.getType().to(DBSPTypeZSet.class).elementType
