@@ -8,7 +8,7 @@ from typing import Generator, Mapping
 
 from feldera.rest.config import Config
 from feldera.rest.feldera_config import FelderaConfig
-from feldera.rest.errors import FelderaTimeoutError, FelderaAPIError
+from feldera.rest.errors import FelderaTimeoutError
 from feldera.rest.pipeline import Pipeline
 from feldera.rest._httprequests import HttpRequests
 from feldera.rest._helpers import client_version
