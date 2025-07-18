@@ -105,6 +105,7 @@ tikv-jemallocator = { workspace = true, features = ["profiling", "unprefixed_mal
 [features]
 default = ["postgresql_embedded"]
 feldera-enterprise = []
+runtime-version = []
 
 [build-dependencies]
 change-detection = { workspace = true }

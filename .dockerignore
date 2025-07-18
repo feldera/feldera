@@ -5,6 +5,7 @@
 **/ldbc-graphalytics-data
 **/__pycache__
 **/.venv
+**/.git
 web-console/pipeline-manager-*/
 web-console/node_modules/
 web-console/.svelte-kit/

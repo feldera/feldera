@@ -42,6 +42,7 @@ jobs:
         with:
           fetch-depth: 0
           fetch-tags: true
+          persist-credentials: false
 
       - name: Download Binaries
         id: binaries
