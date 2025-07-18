@@ -1,12 +1,13 @@
 import random
 import time
+import os
 from typing import Optional
 from feldera.runtime_config import RuntimeConfig, Storage
 from tests import enterprise_only
 from tests.shared_test_pipeline import SharedTestPipeline
 
 
-DEFAULT_ENDPOINT = "http://minio.extra.svc.cluster.local:9000"
+DEFAULT_ENDPOINT = os.environ.get("DEFAULT_MINIO_ENDPOINT", "http://minio.extra.svc.cluster.local:9000")
 DEFAULT_BUCKET = "default"
 ACCESS_KEY = "minio"
 SECRET_KEY = "miniopasswd"
