@@ -57,6 +57,9 @@ RUN mkdir -p feldera/sql-to-dbsp-compiler/lib
 COPY --chown=ubuntu sql-to-dbsp-compiler/lib feldera/sql-to-dbsp-compiler/lib
 COPY --chown=ubuntu sql-to-dbsp-compiler/temp feldera/sql-to-dbsp-compiler/temp
 COPY --chown=ubuntu sql-to-dbsp-compiler/SQL-compiler/sql-to-dbsp feldera/sql-to-dbsp-compiler/SQL-compiler/sql-to-dbsp
+# Copy over demos
+RUN mkdir -p feldera/demo/packaged/sql
+COPY --chown=ubuntu demo/packaged/sql feldera/demo/packaged/sql
 
 # Install cargo and rust for this non-root user
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain 1.87.0
