@@ -828,17 +828,25 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
         self.refresh()
         return self._inner.program_config
 
-    def runtime_config(self) -> Mapping[str, Any]:
+    def runtime_config(self) -> RuntimeConfig:
         """
         Return the runtime config of the pipeline.
         """
 
         self.refresh()
-        return self._inner.runtime_config
+        return RuntimeConfig.from_dict(self._inner.runtime_config)
 
     def set_runtime_config(self, runtime_config: RuntimeConfig):
-        """
-        Updates the runtime config of the pipeline.
+        """Updates the runtime config of the pipeline.  The pipeline
+        must be stopped and, in addition, changing some pipeline
+        configuration requires storage to be cleared.
+
+        For example, to set 'min_batch_size_records' on a pipeline:
+
+        runtime_config = pipeline.runtime_config()
+        runtime_config.min_batch_size_records = 500
+        pipeline.set_runtime_config(runtime_config)
+
         """
 
         self.client.patch_pipeline(
