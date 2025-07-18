@@ -47,8 +47,16 @@ ENV LANGUAGE=en_US:en
 # permissions when mounting volumes
 
 RUN mkdir -p feldera
-COPY --chown=ubuntu . feldera
-RUN cd feldera
+COPY --chown=ubuntu Cargo.lock feldera/Cargo.lock
+COPY --chown=ubuntu Cargo.toml feldera/Cargo.toml
+COPY --chown=ubuntu build/ feldera/build
+COPY --chown=ubuntu crates/ feldera/crates
+COPY --chown=ubuntu README.md feldera/README.md
+RUN mkdir -p feldera/sql-to-dbsp-compiler/lib
+# Copy over the rust code and sql-to-dbsp script
+COPY --chown=ubuntu sql-to-dbsp-compiler/lib feldera/sql-to-dbsp-compiler/lib
+COPY --chown=ubuntu sql-to-dbsp-compiler/temp feldera/sql-to-dbsp-compiler/temp
+COPY --chown=ubuntu sql-to-dbsp-compiler/SQL-compiler/sql-to-dbsp feldera/sql-to-dbsp-compiler/SQL-compiler/sql-to-dbsp
 
 # Install cargo and rust for this non-root user
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain 1.87.0

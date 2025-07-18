@@ -884,7 +884,7 @@ extern crate sync_checkpoint;"#,
     // Sources: config.dbsp_override_path
     // ---------------------
     // Make sure the runtime version is checked out.
-    #[cfg(not(feature = "feldera-enterprise"))]
+    #[cfg(feature = "runtime-version")]
     checkout_runtime_version(&config.dbsp_override_path, requested_runtime_version).await?;
 
     // Workspace: Cargo.lock
