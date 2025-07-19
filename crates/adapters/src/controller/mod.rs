@@ -2160,7 +2160,11 @@ impl ControllerInit {
 }
 
 mod metrics_recorder {
-    use std::sync::{Arc, OnceLock};
+    use std::{
+        sync::{Arc, OnceLock},
+        thread::{self, sleep},
+        time::Duration,
+    };
 
     use metrics::set_global_recorder;
     use metrics_exporter_prometheus::{PrometheusBuilder, PrometheusHandle};
@@ -2186,6 +2190,21 @@ mod metrics_recorder {
             let builder = FanoutBuilder::default()
                 .add_recorder(debugging_recorder)
                 .add_recorder(prometheus_recorder);
+
+            // The Prometheus recorder needs to run periodic maintenance.  It
+            // does that automatically in some cases but not in ours.  Spawn a
+            // thread to do it every 5 seconds, which is also the interval it
+            // uses by default when it takes of it internally.
+            thread::Builder::new()
+                .name(String::from("prometheus"))
+                .spawn({
+                    let prometheus_handle = prometheus_handle.clone();
+                    move || loop {
+                        sleep(Duration::from_secs(5));
+                        prometheus_handle.run_upkeep();
+                    }
+                })
+                .unwrap();
 
             set_global_recorder(builder.build()).expect("failed to install metrics exporter");
 
