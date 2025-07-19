@@ -1004,7 +1004,7 @@ where
 mod test {
     use crate::{
         algebra::{DefaultSemigroup, UnsignedPrimInt},
-        circuit::circuit_builder::NonIterativeCircuit,
+        circuit::CircuitConfig,
         dynamic::{DowncastTrait, DynData, DynDataTyped, DynOpt, DynPair, Erase},
         lean_vec,
         operator::{
@@ -1022,8 +1022,8 @@ mod test {
         trace::{BatchReaderFactories, Cursor},
         typed_batch::{DynBatchReader, DynOrdIndexedZSet, SpineSnapshot, TypedBatch},
         utils::Tup2,
-        DBData, DBSPHandle, IndexedZSetHandle, OrdIndexedZSet, RootCircuit, Runtime, Stream,
-        TypedBox, ZWeight,
+        DBData, DBSPHandle, IndexedZSetHandle, OrdIndexedZSet, OutputHandle, RootCircuit, Runtime,
+        Stream, TypedBox, ZWeight,
     };
     use proptest::{collection, prelude::*};
     use size_of::SizeOf;
@@ -1097,287 +1097,396 @@ mod test {
 
     // Reference implementation of `partitioned_rolling_aggregate` for testing.
     fn partitioned_rolling_aggregate_slow(
-        stream: &Stream<NonIterativeCircuit<RootCircuit>, DataBatch>,
+        stream: &Stream<RootCircuit, DataBatch>,
         range_spec: RelRange<u64>,
-    ) -> Stream<NonIterativeCircuit<RootCircuit>, OutputBatch> {
+    ) -> Stream<RootCircuit, OutputBatch> {
         let stream = stream.typed::<TypedBatch<u64, Tup2<u64, i64>, ZWeight, _>>();
+
         stream
-            .gather(0)
-            .integrate()
-            .apply(move |batch: &TypedBatch<_, _, _, DataBatch>| {
-                let mut tuples = Vec::with_capacity(batch.len());
+            .circuit()
+            .non_incremental(&stream, |_child, stream| {
+                Ok(stream
+                    .gather(0)
+                    .integrate()
+                    .apply(move |batch: &TypedBatch<_, _, _, DataBatch>| {
+                        let mut tuples = Vec::with_capacity(batch.len());
 
-                let mut cursor = batch.cursor();
+                        let mut cursor = batch.cursor();
 
-                while cursor.key_valid() {
-                    while cursor.val_valid() {
-                        let partition = *cursor.key().downcast_checked::<u64>();
-                        let Tup2(ts, _val) = *cursor.val().downcast_checked::<Tup2<u64, i64>>();
-                        let agg = range_spec
-                            .range_of(&ts)
-                            .and_then(|range| aggregate_range_slow(batch, partition, range));
-                        tuples.push(Tup2(Tup2(partition, Tup2(ts, agg)), 1));
-                        cursor.step_val();
-                    }
-                    cursor.step_key();
-                }
+                        while cursor.key_valid() {
+                            while cursor.val_valid() {
+                                let partition = *cursor.key().downcast_checked::<u64>();
+                                let Tup2(ts, _val) =
+                                    *cursor.val().downcast_checked::<Tup2<u64, i64>>();
+                                let agg = range_spec.range_of(&ts).and_then(|range| {
+                                    aggregate_range_slow(batch, partition, range)
+                                });
+                                tuples.push(Tup2(Tup2(partition, Tup2(ts, agg)), 1));
+                                cursor.step_val();
+                            }
+                            cursor.step_key();
+                        }
 
-                OutputBatch::from_tuples((), tuples)
+                        OutputBatch::from_tuples((), tuples)
+                    })
+                    .stream_distinct()
+                    .gather(0))
             })
-            .stream_distinct()
-            .gather(0)
+            .unwrap()
     }
+
+    type TestOutputHandle = OutputHandle<
+        SpineSnapshot<
+            OrdPartitionedIndexedZSet<u64, u64, DynDataTyped<u64>, Option<i64>, DynOpt<DynData>>,
+        >,
+    >;
 
     fn partition_rolling_aggregate_circuit(
         lateness: u64,
         size_bound: Option<usize>,
-    ) -> (DBSPHandle, IndexedZSetHandle<u64, Tup2<u64, i64>>) {
-        Runtime::init_circuit(1, move |circuit| {
-            let (input_stream, input_handle) =
-                circuit.add_input_indexed_zset::<u64, Tup2<u64, i64>>();
+    ) -> (
+        DBSPHandle,
+        (
+            IndexedZSetHandle<u64, Tup2<u64, i64>>,
+            TestOutputHandle,
+            TestOutputHandle,
+            TestOutputHandle,
+            TestOutputHandle,
+            TestOutputHandle,
+            TestOutputHandle,
+            TestOutputHandle,
+            TestOutputHandle,
+            TestOutputHandle,
+            TestOutputHandle,
+            TestOutputHandle,
+            TestOutputHandle,
+            TestOutputHandle,
+            TestOutputHandle,
+        ),
+    ) {
+        Runtime::init_circuit(
+            CircuitConfig::from(2).with_splitter_chunk_size_records(6),
+            move |circuit| {
+                let (input_stream, input_handle) =
+                    circuit.add_input_indexed_zset::<u64, Tup2<u64, i64>>();
 
-            let input_by_time =
-                input_stream.map_index(|(partition, Tup2(ts, val))| (*ts, Tup2(*partition, *val)));
+                let input_by_time = input_stream
+                    .map_index(|(partition, Tup2(ts, val))| (*ts, Tup2(*partition, *val)));
 
-            let input_stream = input_stream.as_partitioned_zset();
+                let input_stream = input_stream.as_partitioned_zset();
 
-            let waterline: Stream<_, TypedBox<u64, DynDataTyped<u64>>> =
-                input_by_time.waterline_monotonic(|| 0, move |ts| ts.saturating_sub(lateness));
+                let waterline: Stream<_, TypedBox<u64, DynDataTyped<u64>>> = input_by_time
+                    .waterline_monotonic(|| 0, move |ts| ts.saturating_sub(lateness))
+                    .inspect(|w| println!("waterline: {w:?}"));
 
-            let aggregator = <Fold<i64, i64, DefaultSemigroup<_>, _, _>>::new(
-                0i64,
-                |agg: &mut i64, val: &i64, w: ZWeight| *agg += val * w,
-            );
+                let aggregator = <Fold<i64, i64, DefaultSemigroup<_>, _, _>>::new(
+                    0i64,
+                    |agg: &mut i64, val: &i64, w: ZWeight| *agg += val * w,
+                );
 
-            let range_spec = RelRange::new(RelOffset::Before(1000), RelOffset::Before(0));
-            let output_1000_0 = input_by_time.partitioned_rolling_aggregate(
-                |Tup2(partition, val)| (*partition, *val),
-                aggregator.clone(),
-                range_spec,
-            );
+                let range_spec = RelRange::new(RelOffset::Before(1000), RelOffset::Before(0));
+                let output_1000_0 = input_by_time
+                    .partitioned_rolling_aggregate(
+                        |Tup2(partition, val)| (*partition, *val),
+                        aggregator.clone(),
+                        range_spec,
+                    )
+                    .accumulate_integrate()
+                    .accumulate_output();
 
-            circuit
-                .non_incremental(
-                    &(input_stream.clone(), output_1000_0),
-                    |_child, (input_stream, output_1000_0)| {
-                        let actual = output_1000_0.gather(0).integrate();
-                        let expected =
-                            partitioned_rolling_aggregate_slow(&input_stream.inner(), range_spec);
-                        Ok(expected
-                            .apply2(&actual, |expected, actual| assert_eq!(expected, actual)))
-                    },
-                )
-                .unwrap();
+                let output_1000_0_expected =
+                    partitioned_rolling_aggregate_slow(&input_stream.inner(), range_spec)
+                        .accumulate_output();
 
-            let output_1000_0_waterline = Stream::partitioned_rolling_aggregate_with_waterline(
-                &input_by_time,
-                &waterline,
-                |Tup2(partition, val)| (*partition, *val),
-                aggregator.clone(),
-                range_spec,
-            );
-
-            circuit
-                .non_incremental(
-                    &(input_stream.clone(), output_1000_0_waterline),
-                    |_child, (input_stream, output_1000_0_waterline)| {
-                        let actual = output_1000_0_waterline.gather(0).integrate();
-                        let expected =
-                            partitioned_rolling_aggregate_slow(&input_stream.inner(), range_spec);
-                        Ok(expected
-                            .apply2(&actual, |expected, actual| assert_eq!(expected, actual)))
-                    },
-                )
-                .unwrap();
-
-            let output_1000_0_linear = input_by_time.partitioned_rolling_aggregate_linear(
-                |Tup2(partition, val)| (*partition, *val),
-                |v| *v,
-                |v| v,
-                range_spec,
-            );
-
-            circuit
-                .non_incremental(
-                    &(input_stream.clone(), output_1000_0_linear),
-                    |_child, (input_stream, output_1000_0_linear)| {
-                        let actual = output_1000_0_linear.gather(0).integrate();
-                        let expected =
-                            partitioned_rolling_aggregate_slow(&input_stream.inner(), range_spec);
-                        Ok(expected
-                            .apply2(&actual, |expected, actual| assert_eq!(expected, actual)))
-                    },
-                )
-                .unwrap();
-
-            let range_spec = RelRange::new(RelOffset::Before(500), RelOffset::After(500));
-            let aggregate_500_500 = input_by_time.partitioned_rolling_aggregate(
-                |Tup2(partition, val)| (*partition, *val),
-                aggregator.clone(),
-                range_spec,
-            );
-
-            circuit
-                .non_incremental(
-                    &(input_stream.clone(), aggregate_500_500),
-                    |_child, (input_stream, aggregate_500_500)| {
-                        let actual = aggregate_500_500.gather(0).integrate();
-                        let expected =
-                            partitioned_rolling_aggregate_slow(&input_stream.inner(), range_spec);
-                        Ok(expected
-                            .apply2(&actual, |expected, actual| assert_eq!(expected, actual)))
-                    },
-                )
-                .unwrap();
-
-            let aggregate_500_500_waterline = input_by_time
-                .partitioned_rolling_aggregate_with_waterline(
+                let output_1000_0_waterline = Stream::partitioned_rolling_aggregate_with_waterline(
+                    &input_by_time,
                     &waterline,
                     |Tup2(partition, val)| (*partition, *val),
                     aggregator.clone(),
                     range_spec,
-                );
-
-            // let output_500_500_waterline = aggregate_500_500_waterline.gather(0).integrate();
-
-            let bound: TraceBound<DynPair<DynDataTyped<u64>, DynOpt<DynData>>> = TraceBound::new();
-            let b: Tup2<u64, Option<i64>> = Tup2(u64::MAX, None::<i64>);
-
-            bound.set(Box::new(b).erase_box());
-
-            aggregate_500_500_waterline
-                .integrate_trace_with_bound(TraceBound::new(), bound)
-                .apply(move |trace| {
-                    if let Some(bound) = size_bound {
-                        assert!(trace.size_of().total_bytes() <= bound);
-                    }
-                });
-
-            circuit
-                .non_incremental(
-                    &(input_stream.clone(), aggregate_500_500_waterline),
-                    |_child, (input_stream, aggregate_500_500_waterline)| {
-                        let actual = aggregate_500_500_waterline.gather(0).integrate();
-                        let expected =
-                            partitioned_rolling_aggregate_slow(&input_stream.inner(), range_spec);
-                        Ok(expected
-                            .apply2(&actual, |expected, actual| assert_eq!(expected, actual)))
-                    },
                 )
-                .unwrap();
+                .accumulate_integrate()
+                .accumulate_output();
 
-            let output_500_500_linear = input_by_time.partitioned_rolling_aggregate_linear(
-                |Tup2(partition, val)| (*partition, *val),
-                |v| *v,
-                |v| v,
-                range_spec,
-            );
+                let output_1000_0_waterline_expected =
+                    partitioned_rolling_aggregate_slow(&input_stream.inner(), range_spec)
+                        .accumulate_output();
 
-            circuit
-                .non_incremental(
-                    &(input_stream.clone(), output_500_500_linear),
-                    |_child, (input_stream, output_500_500_linear)| {
-                        let actual = output_500_500_linear.gather(0).integrate();
-                        let expected =
-                            partitioned_rolling_aggregate_slow(&input_stream.inner(), range_spec);
-                        Ok(expected
-                            .apply2(&actual, |expected, actual| assert_eq!(expected, actual)))
-                    },
-                )
-                .unwrap();
+                let output_1000_0_linear = input_by_time
+                    .partitioned_rolling_aggregate_linear(
+                        |Tup2(partition, val)| (*partition, *val),
+                        |v| *v,
+                        |v| v,
+                        range_spec,
+                    )
+                    .accumulate_integrate()
+                    .accumulate_output();
 
-            let range_spec = RelRange::new(RelOffset::Before(500), RelOffset::Before(100));
-            let output_500_100 = input_by_time.partitioned_rolling_aggregate(
-                |Tup2(partition, val)| (*partition, *val),
-                aggregator,
-                range_spec,
-            );
+                let output_1000_0_linear_expected =
+                    partitioned_rolling_aggregate_slow(&input_stream.inner(), range_spec)
+                        .accumulate_output();
 
-            circuit
-                .non_incremental(
-                    &(input_stream.clone(), output_500_100),
-                    |_child, (input_stream, output_500_100)| {
-                        let actual = output_500_100.gather(0).integrate();
-                        let expected =
-                            partitioned_rolling_aggregate_slow(&input_stream.inner(), range_spec);
-                        Ok(expected
-                            .apply2(&actual, |expected, actual| assert_eq!(expected, actual)))
-                    },
-                )
-                .unwrap();
+                let range_spec = RelRange::new(RelOffset::Before(500), RelOffset::After(500));
+                let aggregate_500_500 = input_by_time
+                    .partitioned_rolling_aggregate(
+                        |Tup2(partition, val)| (*partition, *val),
+                        aggregator.clone(),
+                        range_spec,
+                    )
+                    .accumulate_integrate()
+                    .accumulate_output();
 
-            Ok(input_handle)
-        })
+                let aggregate_500_500_expected =
+                    partitioned_rolling_aggregate_slow(&input_stream.inner(), range_spec)
+                        .accumulate_output();
+
+                let aggregate_500_500_waterline = input_by_time
+                    .partitioned_rolling_aggregate_with_waterline(
+                        &waterline,
+                        |Tup2(partition, val)| (*partition, *val),
+                        aggregator.clone(),
+                        range_spec,
+                    );
+
+                // let output_500_500_waterline = aggregate_500_500_waterline.gather(0).integrate();
+
+                let bound: TraceBound<DynPair<DynDataTyped<u64>, DynOpt<DynData>>> =
+                    TraceBound::new();
+                let b: Tup2<u64, Option<i64>> = Tup2(u64::MAX, None::<i64>);
+
+                bound.set(Box::new(b).erase_box());
+
+                aggregate_500_500_waterline
+                    .integrate_trace_with_bound(TraceBound::new(), bound)
+                    .apply(move |trace| {
+                        if let Some(bound) = size_bound {
+                            assert!(trace.size_of().total_bytes() <= bound);
+                        }
+                    });
+
+                let aggregate_500_500_waterline = aggregate_500_500_waterline
+                    .accumulate_integrate()
+                    .accumulate_output();
+
+                let aggregate_500_500_waterline_expected =
+                    partitioned_rolling_aggregate_slow(&input_stream.inner(), range_spec)
+                        .accumulate_output();
+
+                let output_500_500_linear = input_by_time
+                    .partitioned_rolling_aggregate_linear(
+                        |Tup2(partition, val)| (*partition, *val),
+                        |v| *v,
+                        |v| v,
+                        range_spec,
+                    )
+                    .accumulate_integrate()
+                    .accumulate_output();
+
+                let output_500_500_linear_expected =
+                    partitioned_rolling_aggregate_slow(&input_stream.inner(), range_spec)
+                        .accumulate_output();
+
+                let range_spec = RelRange::new(RelOffset::Before(500), RelOffset::Before(100));
+                let output_500_100 = input_by_time
+                    .partitioned_rolling_aggregate(
+                        |Tup2(partition, val)| (*partition, *val),
+                        aggregator,
+                        range_spec,
+                    )
+                    .accumulate_integrate()
+                    .accumulate_output();
+
+                let output_500_100_expected =
+                    partitioned_rolling_aggregate_slow(&input_stream.inner(), range_spec)
+                        .accumulate_output();
+
+                Ok((
+                    input_handle,
+                    output_1000_0,
+                    output_1000_0_expected,
+                    output_1000_0_waterline,
+                    output_1000_0_waterline_expected,
+                    output_1000_0_linear,
+                    output_1000_0_linear_expected,
+                    aggregate_500_500,
+                    aggregate_500_500_expected,
+                    aggregate_500_500_waterline,
+                    aggregate_500_500_waterline_expected,
+                    output_500_500_linear,
+                    output_500_500_linear_expected,
+                    output_500_100,
+                    output_500_100_expected,
+                ))
+            },
+        )
         .unwrap()
+    }
+
+    fn test_partition_rolling_aggregate(
+        lateness: u64,
+        size_bound: Option<usize>,
+        trace: Vec<InputBatch>,
+        transaction: bool,
+    ) {
+        let (
+            mut circuit,
+            (
+                input,
+                output_1000_0,
+                output_1000_0_expected,
+                output_1000_0_waterline,
+                output_1000_0_waterline_expected,
+                output_1000_0_linear,
+                output_1000_0_linear_expected,
+                aggregate_500_500,
+                aggregate_500_500_expected,
+                aggregate_500_500_waterline,
+                aggregate_500_500_waterline_expected,
+                aggregate_500_500_linear,
+                aggregate_500_500_linear_expected,
+                output_500_100,
+                output_500_100_expected,
+            ),
+        ) = partition_rolling_aggregate_circuit(lateness, size_bound);
+
+        if transaction {
+            circuit.start_transaction().unwrap();
+            for mut batch in trace {
+                input.append(&mut batch);
+                circuit.step().unwrap();
+            }
+
+            circuit.commit_transaction().unwrap();
+
+            assert_eq!(
+                output_1000_0.concat().consolidate(),
+                output_1000_0_expected.concat().consolidate()
+            );
+            assert_eq!(
+                output_1000_0_waterline.concat().consolidate(),
+                output_1000_0_waterline_expected.concat().consolidate()
+            );
+            assert_eq!(
+                output_1000_0_linear.concat().consolidate(),
+                output_1000_0_linear_expected.concat().consolidate()
+            );
+            assert_eq!(
+                aggregate_500_500.concat().consolidate(),
+                aggregate_500_500_expected.concat().consolidate()
+            );
+            assert_eq!(
+                aggregate_500_500_waterline.concat().consolidate(),
+                aggregate_500_500_waterline_expected.concat().consolidate()
+            );
+            assert_eq!(
+                aggregate_500_500_linear.concat().consolidate(),
+                aggregate_500_500_linear_expected.concat().consolidate()
+            );
+            assert_eq!(
+                output_500_100.concat().consolidate(),
+                output_500_100_expected.concat().consolidate()
+            );
+        } else {
+            for mut batch in trace {
+                input.append(&mut batch);
+                circuit.transaction().unwrap();
+
+                assert_eq!(
+                    output_1000_0.concat().consolidate(),
+                    output_1000_0_expected.concat().consolidate()
+                );
+                assert_eq!(
+                    output_1000_0_waterline.concat().consolidate(),
+                    output_1000_0_waterline_expected.concat().consolidate()
+                );
+                assert_eq!(
+                    output_1000_0_linear.concat().consolidate(),
+                    output_1000_0_linear_expected.concat().consolidate()
+                );
+                assert_eq!(
+                    aggregate_500_500.concat().consolidate(),
+                    aggregate_500_500_expected.concat().consolidate()
+                );
+                assert_eq!(
+                    aggregate_500_500_waterline.concat().consolidate(),
+                    aggregate_500_500_waterline_expected.concat().consolidate()
+                );
+                assert_eq!(
+                    aggregate_500_500_linear.concat().consolidate(),
+                    aggregate_500_500_linear_expected.concat().consolidate()
+                );
+                assert_eq!(
+                    output_500_100.concat().consolidate(),
+                    output_500_100_expected.concat().consolidate()
+                );
+            }
+        }
+
+        circuit.kill().unwrap();
     }
 
     #[test]
     fn test_partitioned_over_range_2() {
-        let (mut circuit, input) = partition_rolling_aggregate_circuit(u64::MAX, None);
-
-        circuit.transaction().unwrap();
-
-        input.append(&mut vec![Tup2(2u64, Tup2(Tup2(110271u64, 100i64), 1i64))]);
-        circuit.transaction().unwrap();
-
-        input.append(&mut vec![Tup2(2u64, Tup2(Tup2(0u64, 100i64), 1i64))]);
-        circuit.transaction().unwrap();
-
-        circuit.kill().unwrap();
+        test_partition_rolling_aggregate(
+            u64::MAX,
+            None,
+            vec![
+                vec![Tup2(2u64, Tup2(Tup2(110271u64, 100i64), 1i64))],
+                vec![Tup2(2u64, Tup2(Tup2(0u64, 100i64), 1i64))],
+            ],
+            false,
+        );
     }
 
     #[test]
     fn test_partitioned_over_range() {
-        let (mut circuit, input) = partition_rolling_aggregate_circuit(u64::MAX, None);
-
-        circuit.transaction().unwrap();
-
-        input.append(&mut vec![
-            Tup2(0u64, Tup2(Tup2(1u64, 100i64), 1)),
-            Tup2(0, Tup2(Tup2(10, 100), 1)),
-            Tup2(0, Tup2(Tup2(20, 100), 1)),
-            Tup2(0, Tup2(Tup2(30, 100), 1)),
-        ]);
-        circuit.transaction().unwrap();
-
-        input.append(&mut vec![
-            Tup2(0u64, Tup2(Tup2(5u64, 100i64), 1)),
-            Tup2(0, Tup2(Tup2(15, 100), 1)),
-            Tup2(0, Tup2(Tup2(25, 100), 1)),
-            Tup2(0, Tup2(Tup2(35, 100), 1)),
-        ]);
-        circuit.transaction().unwrap();
-
-        input.append(&mut vec![
-            Tup2(0u64, Tup2(Tup2(1u64, 100i64), -1)),
-            Tup2(0, Tup2(Tup2(10, 100), -1)),
-            Tup2(0, Tup2(Tup2(20, 100), -1)),
-            Tup2(0, Tup2(Tup2(30, 100), -1)),
-        ]);
-        input.append(&mut vec![
-            Tup2(1u64, Tup2(Tup2(1u64, 100i64), 1)),
-            Tup2(1, Tup2(Tup2(1000, 100), 1)),
-            Tup2(1, Tup2(Tup2(2000, 100), 1)),
-            Tup2(1, Tup2(Tup2(3000, 100), 1)),
-        ]);
-        circuit.transaction().unwrap();
-
-        circuit.kill().unwrap();
+        test_partition_rolling_aggregate(
+            u64::MAX,
+            None,
+            vec![
+                vec![
+                    Tup2(0u64, Tup2(Tup2(1u64, 100i64), 1)),
+                    Tup2(0, Tup2(Tup2(10, 100), 1)),
+                    Tup2(0, Tup2(Tup2(20, 100), 1)),
+                    Tup2(0, Tup2(Tup2(30, 100), 1)),
+                ],
+                vec![
+                    Tup2(0u64, Tup2(Tup2(1u64, 100i64), 1)),
+                    Tup2(0, Tup2(Tup2(10, 100), 1)),
+                    Tup2(0, Tup2(Tup2(20, 100), 1)),
+                    Tup2(0, Tup2(Tup2(30, 100), 1)),
+                ],
+                vec![
+                    Tup2(0u64, Tup2(Tup2(5u64, 100i64), 1)),
+                    Tup2(0, Tup2(Tup2(15, 100), 1)),
+                    Tup2(0, Tup2(Tup2(25, 100), 1)),
+                    Tup2(0, Tup2(Tup2(35, 100), 1)),
+                ],
+                vec![
+                    Tup2(1u64, Tup2(Tup2(1u64, 100i64), 1)),
+                    Tup2(1, Tup2(Tup2(1000, 100), 1)),
+                    Tup2(1, Tup2(Tup2(2000, 100), 1)),
+                    Tup2(1, Tup2(Tup2(3000, 100), 1)),
+                ],
+            ],
+            false,
+        );
     }
 
     #[test]
     fn test_empty_tree() {
-        let (mut circuit, input) = partition_rolling_aggregate_circuit(u64::MAX, None);
-
-        for _ in 0..1000 {
-            input.append(&mut vec![Tup2(0u64, Tup2(Tup2(1u64, 100i64), 1))]);
-            circuit.transaction().unwrap();
-
-            input.append(&mut vec![Tup2(0u64, Tup2(Tup2(1u64, 100i64), -1))]);
-            circuit.transaction().unwrap();
-        }
-
-        circuit.kill().unwrap();
+        test_partition_rolling_aggregate(
+            u64::MAX,
+            None,
+            std::iter::repeat(vec![
+                vec![Tup2(0u64, Tup2(Tup2(1u64, 100i64), 1))],
+                vec![Tup2(0u64, Tup2(Tup2(1u64, 100i64), -1))],
+            ])
+            .take(1000)
+            .flatten()
+            .collect::<Vec<_>>(),
+            false,
+        );
     }
 
     // Test derived from issue #199 (https://github.com/feldera/feldera/issues/199).
@@ -1587,42 +1696,37 @@ mod test {
         #![proptest_config(ProptestConfig::with_cases(5))]
 
         #[test]
-        fn proptest_partitioned_rolling_aggregate_quasi_monotone(trace in input_trace_quasi_monotone(5, 10_000, 2_000, 20, 200)) {
+        fn proptest_partitioned_rolling_aggregate_quasi_monotone_small_steps(trace in input_trace_quasi_monotone(5, 10_000, 2_000, 20, 200)) {
             // 10_000 is an empirically established bound: without GC this test needs >10KB.
-            let (mut circuit, input) = partition_rolling_aggregate_circuit(10000, Some(30_000));
+            test_partition_rolling_aggregate(10000, Some(30_000), trace, false);
+        }
 
-            for mut batch in trace {
-                input.append(&mut batch);
-                circuit.transaction().unwrap();
-            }
-
-            circuit.kill().unwrap();
+        #[test]
+        fn proptest_partitioned_rolling_aggregate_quasi_monotone_big_step(trace in input_trace_quasi_monotone(5, 10_000, 2_000, 20, 200)) {
+            // 10_000 is an empirically established bound: without GC this test needs >10KB.
+            test_partition_rolling_aggregate(10000, Some(30_000), trace, true);
         }
     }
 
     proptest! {
         #[test]
-        fn proptest_partitioned_over_range_sparse(trace in input_trace(5, 1_000_000, 10, 10)) {
-            let (mut circuit, input) = partition_rolling_aggregate_circuit(u64::MAX, None);
-
-            for mut batch in trace {
-                input.append(&mut batch);
-                circuit.transaction().unwrap();
-            }
-
-            circuit.kill().unwrap();
+        fn proptest_partitioned_over_range_sparse_small_steps(trace in input_trace(5, 1_000_000, 10, 10)) {
+            test_partition_rolling_aggregate(u64::MAX, None, trace, false);
         }
 
         #[test]
-        fn proptest_partitioned_over_range_dense(trace in input_trace(5, 500, 25, 10)) {
-            let (mut circuit, input) = partition_rolling_aggregate_circuit(u64::MAX, None);
+        fn proptest_partitioned_over_range_sparse_big_step(trace in input_trace(5, 1_000_000, 10, 10)) {
+            test_partition_rolling_aggregate(u64::MAX, None, trace, true);
+        }
 
-            for mut batch in trace {
-                input.append(&mut batch);
-                circuit.transaction().unwrap();
-            }
+        #[test]
+        fn proptest_partitioned_over_range_dense_small_steps(trace in input_trace(5, 500, 25, 10)) {
+            test_partition_rolling_aggregate(u64::MAX, None, trace, false);
+        }
 
-            circuit.kill().unwrap();
+        #[test]
+        fn proptest_partitioned_over_range_dense_big_step(trace in input_trace(5, 500, 25, 10)) {
+            test_partition_rolling_aggregate(u64::MAX, None, trace, true);
         }
     }
 }
