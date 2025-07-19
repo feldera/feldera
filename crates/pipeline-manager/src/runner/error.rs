@@ -16,7 +16,9 @@ use std::{borrow::Cow, error::Error as StdError, fmt, fmt::Display, time::Durati
 pub enum RunnerError {
     // Automaton encountered an error during one of its own operations
     AutomatonMissingProgramInfo,
-    AutomatonMissingProgramBinaryUrl,
+    AutomatonCannotConstructProgramBinaryUrl {
+        error: String,
+    },
     AutomatonMissingDeploymentConfig,
     AutomatonMissingDeploymentLocation,
     AutomatonInvalidRuntimeConfig {
@@ -88,8 +90,8 @@ impl DetailedError for RunnerError {
     fn error_code(&self) -> Cow<'static, str> {
         match self {
             RunnerError::AutomatonMissingProgramInfo => Cow::from("AutomatonMissingProgramInfo"),
-            RunnerError::AutomatonMissingProgramBinaryUrl => {
-                Cow::from("AutomatonMissingProgramBinaryUrl")
+            RunnerError::AutomatonCannotConstructProgramBinaryUrl { .. } => {
+                Cow::from("AutomatonCannotConstructProgramBinaryUrl")
             }
             RunnerError::AutomatonMissingDeploymentConfig => {
                 Cow::from("AutomatonMissingDeploymentConfig")
@@ -159,11 +161,8 @@ impl Display for RunnerError {
                     "Unable to provision pipeline because its program information is missing, which is necessary to construct the deployment configuration"
                 )
             }
-            Self::AutomatonMissingProgramBinaryUrl => {
-                write!(
-                    f,
-                    "Unable to provision pipeline because its program binary URL is missing"
-                )
+            Self::AutomatonCannotConstructProgramBinaryUrl { error } => {
+                write!(f, "Cannot construct program binary URL due to: {error}")
             }
             Self::AutomatonMissingDeploymentConfig => {
                 write!(
@@ -333,7 +332,9 @@ impl ResponseError for RunnerError {
     fn status_code(&self) -> StatusCode {
         match self {
             Self::AutomatonMissingProgramInfo => StatusCode::INTERNAL_SERVER_ERROR,
-            Self::AutomatonMissingProgramBinaryUrl => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::AutomatonCannotConstructProgramBinaryUrl { .. } => {
+                StatusCode::INTERNAL_SERVER_ERROR
+            }
             Self::AutomatonMissingDeploymentConfig => StatusCode::INTERNAL_SERVER_ERROR,
             Self::AutomatonMissingDeploymentLocation => StatusCode::INTERNAL_SERVER_ERROR,
             Self::AutomatonInvalidRuntimeConfig { .. } => StatusCode::INTERNAL_SERVER_ERROR,
