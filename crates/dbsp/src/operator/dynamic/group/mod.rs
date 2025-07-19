@@ -3,7 +3,7 @@
 
 use crate::{
     algebra::{HasZero, IndexedZSet, OrdIndexedZSet, ZCursor},
-    circuit::{operator_traits::Operator, Scope},
+    circuit::{operator_traits::Operator, splitter_output_chunk_size, Scope},
     dynamic::{DataTrait, DynUnit, Factory},
     operator::{
         async_stream_operators::{StreamingTernaryOperator, StreamingTernaryWrapper},
@@ -33,8 +33,6 @@ use minitrace::trace;
 use crate::dynamic::{ClonableTrait, Erase};
 pub use lag::{LagCustomOrdFactories, LagFactories};
 pub use topk::{TopKCustomOrdFactories, TopKFactories, TopKRankCustomOrdFactories};
-
-const GROUP_TRANSFORM_CHUNK_SIZE: usize = 2;
 
 /// Specifies the order in which a group transformer produces output tuples.
 #[derive(PartialEq, Eq)]
@@ -418,6 +416,7 @@ where
         output_trace: Cow<'_, OT>,
     ) -> impl AsyncStream<Item = (OB, bool)> + 'static {
         let delta = (*delta).as_ref().map(|b| b.ro_snapshot());
+        let chunk_size = splitter_output_chunk_size();
 
         let input_trace = if delta.is_some() {
             Some(input_trace.ro_snapshot())
@@ -447,7 +446,7 @@ where
             );
 
             let mut buffer = self.output_factories.weighted_items_factory().default_box();
-            buffer.reserve(2*GROUP_TRANSFORM_CHUNK_SIZE);
+            buffer.reserve(2 * chunk_size);
             let monotonicity = self.transformer.borrow().monotonicity();
 
             while delta_cursor.key_valid() {
@@ -557,7 +556,7 @@ where
                 }
                 buffer.clear();
 
-                if builder.num_tuples() >= GROUP_TRANSFORM_CHUNK_SIZE {
+                if builder.num_tuples() >= chunk_size {
                     yield (builder.done(), false);
                     builder = TupleBuilder::new(
                         &self.output_factories,

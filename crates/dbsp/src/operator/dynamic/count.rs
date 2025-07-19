@@ -195,65 +195,73 @@ where
 mod test {
     use crate::{
         indexed_zset,
-        operator::Generator,
         typed_batch::{OrdIndexedZSet, SpineSnapshot},
         utils::Tup2,
-        zset, Circuit, RootCircuit, Runtime,
+        Runtime,
     };
     use core::ops::Range;
     use rand::{rngs::StdRng, seq::SliceRandom, Rng, SeedableRng};
 
     #[test]
     fn weighted_count_test() {
-        let (circuit, (counts, stream_counts, expected_counts)) =
-            RootCircuit::build(move |circuit| {
-                // Generate sequence with key 1 and weights 1, -2, 4, -8, 16, -32, ...
-                let mut next = 1;
-                let ones = circuit.add_source(Generator::new(move || {
-                    let this = zset! { 1 => next };
-                    next *= -2;
-                    this
-                }));
+        let (mut circuit, (input_handle, counts, stream_counts)) =
+            Runtime::init_circuit(1, move |circuit| {
+                let (inputs, input_handle) = circuit.add_input_zset::<i64>();
 
-                // Generate sequence with key 2 and delayed weights.
-                let twos = ones.map(|_| 2).delay();
-
-                let counts = ones.plus(&twos).weighted_count().integrate();
-                let stream_counts = ones.plus(&twos).integrate().stream_weighted_count();
-
-                // Generate expected values in `counts` by another means, using the formula for
-                // A077925 (https://oeis.org/A077925).
-                let mut term = 0;
-                fn a077925(n: i64) -> i64 {
-                    let mut x = 2 << n;
-                    if (n & 1) == 0 {
-                        x = -x;
-                    }
-                    (1 - x) / 3
-                }
-                let expected_ones = circuit.add_source(Generator::new(move || {
-                    term += 1;
-                    indexed_zset! { 1 => {a077925 (term - 1) => 1 } }
-                }));
-                let expected_twos = expected_ones.map_index(|(&_k, &v)| (2, v)).delay();
-                let expected_counts = expected_ones.plus(&expected_twos);
+                let counts = inputs.weighted_count().accumulate_integrate();
+                let stream_counts = circuit
+                    .non_incremental(&inputs, |_child, inputs| {
+                        Ok(inputs.integrate().stream_weighted_count())
+                    })
+                    .unwrap();
 
                 Ok((
-                    counts.output(),
-                    stream_counts.output(),
-                    expected_counts.output(),
+                    input_handle,
+                    counts.accumulate_output(),
+                    stream_counts.accumulate_output(),
                 ))
             })
             .unwrap();
 
+        // Generate expected values in `counts` by another means, using the formula for
+        // A077925 (https://oeis.org/A077925).
+        fn a077925(n: i64) -> i64 {
+            let mut x = 2 << n;
+            if (n & 1) == 0 {
+                x = -x;
+            }
+            (1 - x) / 3
+        }
+
+        let mut next = 0;
+        let mut term = 0;
+        let mut ones_count = 0;
+
         for _ in 0..10 {
-            circuit.step().unwrap();
-            let counts = counts.consolidate();
-            let stream_counts = stream_counts.consolidate();
-            let expected_counts = expected_counts.consolidate();
+            // Generate sequence with key 1 and weights 1, -2, 4, -8, 16, -32, ...
+            // Generate sequence with key 2 and delayed weights.
+            input_handle.push(2, next);
+            next = if next == 0 { 1 } else { next * (-2) };
+            input_handle.push(1, next);
+
+            circuit.transaction().unwrap();
+            let counts = counts.concat().consolidate();
+            let stream_counts = stream_counts.concat().consolidate();
             // println!("counts={}", counts);
             // println!("stream_counts={}", stream_counts);
             // println!("expected={}", expected_counts);
+
+            term += 1;
+
+            let twos_count = ones_count;
+            ones_count = a077925(term - 1);
+
+            let expected_counts = if twos_count == 0 {
+                indexed_zset! { 1 => {ones_count => 1 } }
+            } else {
+                indexed_zset! { 1 => {ones_count => 1 }, 2 => {twos_count => 1} }
+            };
+
             assert_eq!(counts, expected_counts);
             assert_eq!(stream_counts, expected_counts);
         }
