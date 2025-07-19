@@ -1180,19 +1180,15 @@ where
 #[cfg(test)]
 mod test {
     use anyhow::Result as AnyResult;
-
-    use std::{
-        cell::RefCell,
-        rc::Rc,
-        sync::{Arc, Mutex},
-    };
+    use std::{cell::RefCell, rc::Rc};
 
     use crate::{
+        circuit::CircuitConfig,
         indexed_zset,
-        operator::{Generator, GeneratorNested, OutputHandle},
+        operator::{GeneratorNested, OutputHandle},
         typed_batch::{OrdIndexedZSet, OrdZSet, SpineSnapshot},
         utils::Tup2,
-        zset, Circuit, RootCircuit, Runtime,
+        zset, Circuit, IndexedZSetHandle, RootCircuit, Runtime, ZSetHandle,
     };
     use proptest::{collection, prelude::*};
 
@@ -1288,79 +1284,87 @@ mod test {
     }
 
     #[test]
-    fn distinct_indexed_test() {
-        let output1 = Arc::new(Mutex::new(OrdIndexedZSet::empty()));
-        let output1_clone = output1.clone();
-        let output1_clone_2 = output1.clone();
+    fn distinct_indexed_test_small_steps() {
+        distinct_indexed_test(false);
+    }
 
-        let output2 = Arc::new(Mutex::new(OrdIndexedZSet::empty()));
-        let output2_clone = output2.clone();
+    #[test]
+    fn distinct_indexed_test_big_step() {
+        distinct_indexed_test(true);
+    }
 
-        let (mut circuit, input) = Runtime::init_circuit(4, move |circuit| {
-            let (input, input_handle) = circuit.add_input_indexed_zset::<u64, u64>();
+    fn distinct_indexed_test(transaction: bool) {
+        let inputs = vec![
+            vec![
+                Tup2(1, Tup2(0, 1)),
+                Tup2(1, Tup2(1, 2)),
+                Tup2(2, Tup2(0, 1)),
+                Tup2(2, Tup2(1, 1)),
+            ],
+            vec![Tup2(3, Tup2(1, 1)), Tup2(2, Tup2(1, 1))],
+            vec![Tup2(1, Tup2(1, 3)), Tup2(2, Tup2(1, -3))],
+        ];
 
-            input
-                .integrate()
-                .stream_distinct()
-                .gather(0)
-                .inspect(move |batch| {
-                    if Runtime::worker_index() == 0 {
-                        *output2_clone.lock().unwrap() = batch.clone();
-                    }
-                });
+        let expected_outputs = vec![
+            indexed_zset! { 1 => { 0 => 1, 1 => 1}, 2 => { 0 => 1, 1 => 1 } },
+            indexed_zset! { 1 => { 0 => 1, 1 => 1}, 2 => { 0 => 1, 1 => 1 }, 3 => { 1 => 1 } },
+            indexed_zset! { 1 => { 0 => 1, 1 => 1}, 2 => { 0 => 1 }, 3 => { 1 => 1 } },
+        ];
 
-            input
-                .distinct()
-                .integrate()
-                .gather(0)
-                .inspect(move |batch| {
-                    if Runtime::worker_index() == 0 {
-                        *output1_clone.lock().unwrap() = batch.clone();
-                    }
-                });
+        let (mut circuit, (input, stream_distinct_output, distinct_output, hash_distinct_output)) =
+            Runtime::init_circuit(4, move |circuit| {
+                let (input, input_handle) = circuit.add_input_indexed_zset::<u64, u64>();
 
-            input
-                .hash_distinct()
-                .integrate()
-                .gather(0)
-                .inspect(move |batch| {
-                    if Runtime::worker_index() == 0 {
-                        *output1_clone_2.lock().unwrap() = batch.clone();
-                    }
-                });
+                let stream_distinct_output = circuit
+                    .non_incremental(&input, |_child, input| {
+                        Ok(input.integrate().stream_distinct())
+                    })
+                    .unwrap()
+                    .accumulate_output();
 
-            Ok(input_handle)
-        })
-        .unwrap();
+                let distinct_output = input.distinct().accumulate_integrate().accumulate_output();
 
-        input.append(&mut vec![
-            Tup2(1, Tup2(0, 1)),
-            Tup2(1, Tup2(1, 2)),
-            Tup2(2, Tup2(0, 1)),
-            Tup2(2, Tup2(1, 1)),
-        ]);
-        circuit.transaction().unwrap();
-        assert_eq!(
-            &*output1.lock().unwrap(),
-            &indexed_zset! { 1 => { 0 => 1, 1 => 1}, 2 => { 0 => 1, 1 => 1 } }
-        );
-        assert_eq!(&*output1.lock().unwrap(), &*output2.lock().unwrap(),);
+                let hash_distinct_output = input
+                    .hash_distinct()
+                    .accumulate_integrate()
+                    .accumulate_output();
 
-        input.append(&mut vec![Tup2(3, Tup2(1, 1)), Tup2(2, Tup2(1, 1))]);
-        circuit.transaction().unwrap();
-        assert_eq!(
-            &*output1.lock().unwrap(),
-            &indexed_zset! { 1 => { 0 => 1, 1 => 1}, 2 => { 0 => 1, 1 => 1 }, 3 => { 1 => 1 } }
-        );
-        assert_eq!(&*output1.lock().unwrap(), &*output2.lock().unwrap(),);
+                Ok((
+                    input_handle,
+                    stream_distinct_output,
+                    distinct_output,
+                    hash_distinct_output,
+                ))
+            })
+            .unwrap();
 
-        input.append(&mut vec![Tup2(1, Tup2(1, 3)), Tup2(2, Tup2(1, -3))]);
-        circuit.transaction().unwrap();
-        assert_eq!(
-            &*output1.lock().unwrap(),
-            &indexed_zset! { 1 => { 0 => 1, 1 => 1}, 2 => { 0 => 1 }, 3 => { 1 => 1 } }
-        );
-        assert_eq!(&*output1.lock().unwrap(), &*output2.lock().unwrap(),);
+        if transaction {
+            circuit.start_transaction().unwrap();
+
+            for mut i in inputs.into_iter() {
+                input.append(&mut i);
+                circuit.step().unwrap();
+            }
+
+            circuit.commit_transaction().unwrap();
+
+            let expected_output = expected_outputs.last().unwrap().clone();
+
+            assert_eq!(
+                stream_distinct_output.concat().consolidate(),
+                expected_output
+            );
+            assert_eq!(distinct_output.concat().consolidate(), expected_output);
+            assert_eq!(hash_distinct_output.concat().consolidate(), expected_output);
+        } else {
+            for (mut i, o) in inputs.into_iter().zip(expected_outputs.into_iter()) {
+                input.append(&mut i);
+                circuit.transaction().unwrap();
+                assert_eq!(stream_distinct_output.concat().consolidate(), o);
+                assert_eq!(distinct_output.concat().consolidate(), o);
+                assert_eq!(hash_distinct_output.concat().consolidate(), o);
+            }
+        }
 
         circuit.kill().unwrap();
     }
@@ -1374,19 +1378,12 @@ mod test {
     const MAX_VAL: i64 = 3;
     const MAX_TUPLES: usize = 10;
 
-    fn test_zset() -> impl Strategy<Value = TestZSet> {
-        collection::vec((0..NUM_KEYS, -1..=1i64), 0..MAX_TUPLES).prop_map(|tuples| {
-            OrdZSet::from_tuples(
-                (),
-                tuples
-                    .into_iter()
-                    .map(|(k, w)| Tup2(Tup2(k, ()), w))
-                    .collect(),
-            )
-        })
+    fn test_zset() -> impl Strategy<Value = Vec<Tup2<u64, i64>>> {
+        collection::vec((0..NUM_KEYS, -1..=1i64), 0..MAX_TUPLES)
+            .prop_map(|tuples| tuples.into_iter().map(|(k, w)| Tup2(k, w)).collect())
     }
 
-    fn test_input() -> impl Strategy<Value = Vec<TestZSet>> {
+    fn test_input() -> impl Strategy<Value = Vec<Vec<Tup2<u64, i64>>>> {
         collection::vec(test_zset(), 0..MAX_ROUNDS * MAX_ITERATIONS)
     }
 
@@ -1402,8 +1399,19 @@ mod test {
         .prop_map(|tuples| OrdIndexedZSet::from_tuples((), tuples))
     }
 
-    fn test_indexed_input() -> impl Strategy<Value = Vec<TestIndexedZSet>> {
-        collection::vec(test_indexed_zset(), 0..MAX_ROUNDS * MAX_ITERATIONS)
+    fn test_indexed_vec() -> impl Strategy<Value = Vec<Tup2<u64, Tup2<i64, i64>>>> {
+        collection::vec(
+            (
+                (0..NUM_KEYS, -MAX_VAL..MAX_VAL).prop_map(|(x, y)| Tup2(x, y)),
+                -1..=1i64,
+            )
+                .prop_map(|(x, y)| Tup2(x.0, Tup2(x.1, y))),
+            0..MAX_TUPLES,
+        )
+    }
+
+    fn test_indexed_input() -> impl Strategy<Value = Vec<Vec<Tup2<u64, Tup2<i64, i64>>>>> {
+        collection::vec(test_indexed_vec(), 0..MAX_ROUNDS * MAX_ITERATIONS)
     }
 
     fn test_indexed_nested_input() -> impl Strategy<Value = Vec<Vec<TestIndexedZSet>>> {
@@ -1415,21 +1423,13 @@ mod test {
 
     fn distinct_test_circuit(
         circuit: &mut RootCircuit,
-        inputs: Vec<TestZSet>,
     ) -> AnyResult<(
+        ZSetHandle<u64>,
         OutputHandle<SpineSnapshot<TestZSet>>,
         OutputHandle<SpineSnapshot<TestZSet>>,
         OutputHandle<SpineSnapshot<TestZSet>>,
     )> {
-        let mut inputs = inputs.into_iter();
-
-        let input = circuit.add_source(Generator::new(Box::new(move || {
-            if Runtime::worker_index() == 0 {
-                inputs.next().unwrap_or_default()
-            } else {
-                zset! {}
-            }
-        })));
+        let (input, input_handle) = circuit.add_input_zset::<u64>();
 
         let distinct_inc = input.distinct().accumulate_output();
         let hash_distinct_inc = input.hash_distinct().accumulate_output();
@@ -1441,26 +1441,23 @@ mod test {
             .unwrap()
             .accumulate_output();
 
-        Ok((distinct_inc, hash_distinct_inc, distinct_noninc))
+        Ok((
+            input_handle,
+            distinct_inc,
+            hash_distinct_inc,
+            distinct_noninc,
+        ))
     }
 
     fn distinct_indexed_test_circuit(
         circuit: &mut RootCircuit,
-        inputs: Vec<TestIndexedZSet>,
     ) -> AnyResult<(
+        IndexedZSetHandle<u64, i64>,
         OutputHandle<SpineSnapshot<TestIndexedZSet>>,
         OutputHandle<SpineSnapshot<TestIndexedZSet>>,
         OutputHandle<SpineSnapshot<TestIndexedZSet>>,
     )> {
-        let mut inputs = inputs.into_iter();
-
-        let input = circuit.add_source(Generator::new(Box::new(move || {
-            if Runtime::worker_index() == 0 {
-                inputs.next().unwrap_or_default()
-            } else {
-                indexed_zset! {}
-            }
-        })));
+        let (input, input_handle) = circuit.add_input_indexed_zset::<u64, i64>();
 
         let distinct_inc = input.distinct().accumulate_output();
         let hash_distinct_inc = input.hash_distinct().accumulate_output();
@@ -1472,7 +1469,12 @@ mod test {
             .unwrap()
             .accumulate_output();
 
-        Ok((distinct_inc, hash_distinct_inc, distinct_noninc))
+        Ok((
+            input_handle,
+            distinct_inc,
+            hash_distinct_inc,
+            distinct_noninc,
+        ))
     }
 
     fn distinct_indexed_nested_test_circuit(
@@ -1535,96 +1537,118 @@ mod test {
         Ok(())
     }
 
+    fn proptest_distinct_test_mt(
+        inputs: Vec<Vec<Tup2<u64, i64>>>,
+        workers: usize,
+        transaction: bool,
+    ) {
+        let (mut circuit, (input_handle, inc_output, hash_inc_output, noninc_output)) =
+            Runtime::init_circuit(
+                CircuitConfig::from(workers).with_splitter_chunk_size_records(2),
+                |circuit| distinct_test_circuit(circuit),
+            )
+            .unwrap();
+
+        if transaction {
+            circuit.start_transaction().unwrap();
+            for mut input_batch in inputs.into_iter() {
+                input_handle.append(&mut input_batch);
+
+                circuit.step().unwrap();
+            }
+
+            circuit.commit_transaction().unwrap();
+
+            let noninc_output = noninc_output.concat().consolidate();
+            let inc_output = inc_output.concat().consolidate();
+            let hash_inc_output = hash_inc_output.concat().consolidate();
+
+            assert_eq!(noninc_output, hash_inc_output);
+            assert_eq!(noninc_output, inc_output);
+            assert_eq!(hash_inc_output, inc_output);
+        } else {
+            for mut input_batch in inputs.into_iter() {
+                input_handle.append(&mut input_batch);
+
+                circuit.transaction().unwrap();
+
+                let noninc_output = noninc_output.concat().consolidate();
+                let inc_output = inc_output.concat().consolidate();
+                let hash_inc_output = hash_inc_output.concat().consolidate();
+
+                assert_eq!(noninc_output, hash_inc_output);
+                assert_eq!(noninc_output, inc_output);
+                assert_eq!(hash_inc_output, inc_output);
+            }
+        }
+
+        circuit.kill().unwrap();
+    }
+
+    fn proptest_distinct_indexed_test_mt(
+        inputs: Vec<Vec<Tup2<u64, Tup2<i64, i64>>>>,
+        workers: usize,
+        transaction: bool,
+    ) {
+        let (mut circuit, (input_handle, inc_output, hash_inc_output, noninc_output)) =
+            Runtime::init_circuit(workers, |circuit| distinct_indexed_test_circuit(circuit))
+                .unwrap();
+
+        if transaction {
+            circuit.start_transaction().unwrap();
+            for mut input_batch in inputs.into_iter() {
+                input_handle.append(&mut input_batch);
+
+                circuit.step().unwrap();
+            }
+
+            circuit.commit_transaction().unwrap();
+
+            let noninc_output = noninc_output.concat().consolidate();
+            let inc_output = inc_output.concat().consolidate();
+            let hash_inc_output = hash_inc_output.concat().consolidate();
+
+            assert_eq!(noninc_output, hash_inc_output);
+            assert_eq!(noninc_output, inc_output);
+            assert_eq!(hash_inc_output, inc_output);
+        } else {
+            for mut input_batch in inputs.into_iter() {
+                input_handle.append(&mut input_batch);
+
+                circuit.transaction().unwrap();
+
+                let noninc_output = noninc_output.concat().consolidate();
+                let inc_output = inc_output.concat().consolidate();
+                let hash_inc_output = hash_inc_output.concat().consolidate();
+
+                assert_eq!(noninc_output, hash_inc_output);
+                assert_eq!(noninc_output, inc_output);
+                assert_eq!(hash_inc_output, inc_output);
+            }
+        }
+
+        circuit.kill().unwrap();
+    }
+
     proptest! {
         #[test]
-        fn proptest_distinct_test_st(inputs in test_input()) {
-            let iterations = inputs.len();
-            let (circuit, (inc_output, hash_inc_output, noninc_output)) = RootCircuit::build(|circuit| distinct_test_circuit(circuit, inputs)).unwrap();
-
-            for _ in 0..iterations {
-                circuit.step().unwrap();
-
-                let noninc_output = noninc_output.take_from_all();
-                let inc_output = inc_output.take_from_all();
-                let hash_inc_output = hash_inc_output.take_from_all();
-
-                assert_eq!(
-                    SpineSnapshot::<TestZSet>::concat(&noninc_output).iter().collect::<Vec<_>>(),
-                    SpineSnapshot::<TestZSet>::concat(&hash_inc_output).iter().collect::<Vec<_>>()
-                );
-
-                assert_eq!(
-                    SpineSnapshot::<TestZSet>::concat(&noninc_output).iter().collect::<Vec<_>>(),
-                    SpineSnapshot::<TestZSet>::concat(&inc_output).iter().collect::<Vec<_>>()
-                );
-
-                assert_eq!(
-                    SpineSnapshot::<TestZSet>::concat(&hash_inc_output).iter().collect::<Vec<_>>(),
-                    SpineSnapshot::<TestZSet>::concat(&inc_output).iter().collect::<Vec<_>>()
-                );
-            }
+        fn proptest_distinct_test_mt_small_step(inputs in test_input(), workers in (2..=16usize)) {
+            proptest_distinct_test_mt(inputs, workers, false);
         }
 
         #[test]
-        fn proptest_distinct_test_mt(inputs in test_input(), workers in (2..=16usize)) {
-            let iterations = inputs.len();
-            let (mut circuit, (inc_output, hash_inc_output, noninc_output)) = Runtime::init_circuit(workers, |circuit| distinct_test_circuit(circuit, inputs)).unwrap();
-
-            for _ in 0..iterations {
-                circuit.transaction().unwrap();
-
-                let noninc_output = noninc_output.take_from_all();
-                let inc_output = inc_output.take_from_all();
-                let hash_inc_output = hash_inc_output.take_from_all();
-
-                assert_eq!(
-                    SpineSnapshot::<TestZSet>::concat(&noninc_output).iter().collect::<Vec<_>>(),
-                    SpineSnapshot::<TestZSet>::concat(&hash_inc_output).iter().collect::<Vec<_>>()
-                );
-
-                assert_eq!(
-                    SpineSnapshot::<TestZSet>::concat(&noninc_output).iter().collect::<Vec<_>>(),
-                    SpineSnapshot::<TestZSet>::concat(&inc_output).iter().collect::<Vec<_>>()
-                );
-
-                assert_eq!(
-                    SpineSnapshot::<TestZSet>::concat(&hash_inc_output).iter().collect::<Vec<_>>(),
-                    SpineSnapshot::<TestZSet>::concat(&inc_output).iter().collect::<Vec<_>>()
-                );
-            }
-
-            circuit.kill().unwrap();
+        fn proptest_distinct_test_mt_big_step(inputs in test_input(), workers in (2..=16usize)) {
+            proptest_distinct_test_mt(inputs, workers, true);
         }
 
         #[test]
-        fn proptest_distinct_indexed_test_mt(inputs in test_indexed_input(), workers in (2..=4usize)) {
-            let iterations = inputs.len();
-            let (mut circuit, (inc_output, hash_inc_output, noninc_output)) = Runtime::init_circuit(workers, |circuit| distinct_indexed_test_circuit(circuit, inputs)).unwrap();
+        fn proptest_distinct_indexed_test_mt_small_steps(inputs in test_indexed_input(), workers in (2..=4usize)) {
+            proptest_distinct_indexed_test_mt(inputs, workers, false);
+        }
 
-            for _ in 0..iterations {
-                circuit.transaction().unwrap();
-
-                let noninc_output = noninc_output.take_from_all();
-                let inc_output = inc_output.take_from_all();
-                let hash_inc_output = hash_inc_output.take_from_all();
-
-                assert_eq!(
-                    SpineSnapshot::<TestIndexedZSet>::concat(&noninc_output).iter().collect::<Vec<_>>(),
-                    SpineSnapshot::<TestIndexedZSet>::concat(&hash_inc_output).iter().collect::<Vec<_>>()
-                );
-
-                assert_eq!(
-                    SpineSnapshot::<TestIndexedZSet>::concat(&noninc_output).iter().collect::<Vec<_>>(),
-                    SpineSnapshot::<TestIndexedZSet>::concat(&inc_output).iter().collect::<Vec<_>>()
-                );
-
-                assert_eq!(
-                    SpineSnapshot::<TestIndexedZSet>::concat(&hash_inc_output).iter().collect::<Vec<_>>(),
-                    SpineSnapshot::<TestIndexedZSet>::concat(&inc_output).iter().collect::<Vec<_>>()
-                );
-            }
-
-            circuit.kill().unwrap();
+        #[test]
+        fn proptest_distinct_indexed_test_mt_big_step(inputs in test_indexed_input(), workers in (2..=4usize)) {
+            proptest_distinct_indexed_test_mt(inputs, workers, true);
         }
 
         #[test]
