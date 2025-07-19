@@ -11,8 +11,8 @@ pub use crate::{
         ZSetReader as DynZSetReader,
     },
     trace::{
-        merge_batches_by_reference, Batch as DynBatch, BatchReader as DynBatchReader,
-        BatchReaderWithSnapshot as DynBatchReaderWithSnapshot,
+        merge_batches as dyn_merge_batches, merge_batches_by_reference, Batch as DynBatch,
+        BatchReader as DynBatchReader, BatchReaderWithSnapshot as DynBatchReaderWithSnapshot,
         FallbackIndexedWSet as DynFallbackIndexedWSet, FallbackKeyBatch as DynFallbackKeyBatch,
         FallbackValBatch as DynFallbackValBatch, FallbackWSet as DynFallbackWSet,
         FileIndexedWSet as DynFileIndexedWSet, FileKeyBatch as DynFileKeyBatch,
@@ -364,6 +364,18 @@ where
         Self::new(merge_batches_by_reference(
             &self.inner.factories(),
             [&self.inner, &other.inner],
+            &None,
+            &None,
+        ))
+    }
+
+    pub fn merge_batches<I>(batches: I) -> Self
+    where
+        I: IntoIterator<Item = Self>,
+    {
+        Self::new(dyn_merge_batches(
+            &Self::factories(),
+            batches.into_iter().map(|b| b.into_inner()),
             &None,
             &None,
         ))
