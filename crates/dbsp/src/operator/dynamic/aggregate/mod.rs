@@ -1188,13 +1188,14 @@ pub mod test {
 
     use crate::{
         algebra::DefaultSemigroup,
+        circuit::CircuitConfig,
         indexed_zset,
         operator::{
             dynamic::aggregate::{MinSome1, Postprocess},
             Fold, GeneratorNested, Min,
         },
         trace::{BatchReader, Cursor},
-        typed_batch::{OrdIndexedZSet, OrdZSet},
+        typed_batch::{OrdIndexedZSet, OrdZSet, TypedBatch},
         utils::{Tup1, Tup3},
         zset, Circuit, RootCircuit, Runtime, Stream,
     };
@@ -1383,7 +1384,7 @@ pub mod test {
         }
     }
 
-    fn count_test(workers: usize) {
+    fn count_test(workers: usize, transaction: bool) {
         let (
             mut dbsp,
             (
@@ -1393,212 +1394,276 @@ pub mod test {
                 count_distinct_output,
                 sum_distinct_output,
             ),
-        ) = Runtime::init_circuit(workers, move |circuit| {
-            let (input_stream, input_handle) = circuit.add_input_indexed_zset::<u64, u64>();
-            let count_weighted_output = input_stream.weighted_count().accumulate_output();
+        ) = Runtime::init_circuit(
+            CircuitConfig::from(workers).with_splitter_chunk_size_records(2),
+            move |circuit| {
+                let (input_stream, input_handle) = circuit.add_input_indexed_zset::<u64, u64>();
+                let count_weighted_output = input_stream.weighted_count().accumulate_output();
 
-            let sum_weighted_output = input_stream
-                .aggregate_linear(|value: &u64| *value as i64)
-                .accumulate_output();
+                let sum_weighted_output = input_stream
+                    .aggregate_linear(|value: &u64| *value as i64)
+                    .accumulate_output();
 
-            let count_distinct_output = input_stream
-                .aggregate(<Fold<_, _, DefaultSemigroup<_>, _, _>>::new(
-                    0,
-                    |sum: &mut u64, _v: &u64, _w| *sum += 1,
+                let count_distinct_output = input_stream
+                    .aggregate(<Fold<_, _, DefaultSemigroup<_>, _, _>>::new(
+                        0,
+                        |sum: &mut u64, _v: &u64, _w| *sum += 1,
+                    ))
+                    .accumulate_output();
+
+                let sum_distinct_output = input_stream
+                    .aggregate(<Fold<_, _, DefaultSemigroup<_>, _, _>>::new(
+                        0,
+                        |sum: &mut u64, v: &u64, _w| *sum += v,
+                    ))
+                    .accumulate_output();
+
+                Ok((
+                    input_handle,
+                    count_weighted_output,
+                    sum_weighted_output,
+                    count_distinct_output,
+                    sum_distinct_output,
                 ))
-                .accumulate_output();
-
-            let sum_distinct_output = input_stream
-                .aggregate(<Fold<_, _, DefaultSemigroup<_>, _, _>>::new(
-                    0,
-                    |sum: &mut u64, v: &u64, _w| *sum += v,
-                ))
-                .accumulate_output();
-
-            Ok((
-                input_handle,
-                count_weighted_output,
-                sum_weighted_output,
-                count_distinct_output,
-                sum_distinct_output,
-            ))
-        })
+            },
+        )
         .unwrap();
 
-        input_handle.append(&mut vec![Tup2(1u64, Tup2(1u64, 1)), Tup2(1, Tup2(2, 2))]);
-        dbsp.transaction().unwrap();
-        assert_eq!(
-            count_distinct_output.concat().consolidate(),
-            indexed_zset! {1 => {2 => 1}}
-        );
-        assert_eq!(
-            sum_distinct_output.concat().consolidate(),
-            indexed_zset! {1 => {3 => 1}}
-        );
-        assert_eq!(
-            count_weighted_output.concat().consolidate(),
-            indexed_zset! {1 => {3 => 1}}
-        );
-        assert_eq!(
-            sum_weighted_output.concat().consolidate(),
-            indexed_zset! {1 => {5 => 1}}
-        );
+        let input = vec![
+            vec![Tup2(1u64, Tup2(1u64, 1)), Tup2(1, Tup2(2, 2))],
+            vec![
+                Tup2(2, Tup2(2, 1)),
+                Tup2(2, Tup2(4, 1)),
+                Tup2(1, Tup2(2, -1)),
+            ],
+            vec![Tup2(1, Tup2(3, 1)), Tup2(1, Tup2(2, -1))],
+        ];
 
-        input_handle.append(&mut vec![
-            Tup2(2, Tup2(2, 1)),
-            Tup2(2, Tup2(4, 1)),
-            Tup2(1, Tup2(2, -1)),
-        ]);
-        dbsp.transaction().unwrap();
-        assert_eq!(
-            count_distinct_output.concat().consolidate(),
-            indexed_zset! {2 => {2 => 1}}
-        );
-        assert_eq!(
-            sum_distinct_output.concat().consolidate(),
-            indexed_zset! {2 => {6 => 1}}
-        );
-        assert_eq!(
-            count_weighted_output.concat().consolidate(),
-            indexed_zset! {1 => {3 => -1, 2 => 1}, 2 => {2 => 1}}
-        );
-        assert_eq!(
-            sum_weighted_output.concat().consolidate(),
-            indexed_zset! {2 => {6 => 1}, 1 => {5 => -1, 3 => 1}}
-        );
+        let expected_count_output = vec![
+            indexed_zset! {1 => {2 => 1}},
+            indexed_zset! {2 => {2 => 1}},
+            indexed_zset! {},
+        ];
 
-        input_handle.append(&mut vec![Tup2(1, Tup2(3, 1)), Tup2(1, Tup2(2, -1))]);
-        dbsp.transaction().unwrap();
-        assert_eq!(
-            count_distinct_output.concat().consolidate(),
-            indexed_zset! {}
-        );
-        assert_eq!(
-            sum_distinct_output.concat().consolidate(),
-            indexed_zset! {1 => {3 => -1, 4 => 1}}
-        );
-        assert_eq!(
-            count_weighted_output.concat().consolidate(),
-            indexed_zset! {}
-        );
-        assert_eq!(
-            sum_weighted_output.concat().consolidate(),
-            indexed_zset! {1 => {3 => -1, 4 => 1}}
-        );
+        let expected_sum_output = vec![
+            indexed_zset! {1 => {3 => 1}},
+            indexed_zset! {2 => {6 => 1}},
+            indexed_zset! {1 => {3 => -1, 4 => 1}},
+        ];
+
+        let expected_count_weighted_output = vec![
+            indexed_zset! {1 => {3 => 1}},
+            indexed_zset! {1 => {3 => -1, 2 => 1}, 2 => {2 => 1}},
+            indexed_zset! {},
+        ];
+
+        let expected_sum_weighted_output = vec![
+            indexed_zset! {1 => {5 => 1}},
+            indexed_zset! {2 => {6 => 1}, 1 => {5 => -1, 3 => 1}},
+            indexed_zset! {1 => {3 => -1, 4 => 1}},
+        ];
+
+        if transaction {
+            dbsp.start_transaction().unwrap();
+            for i in 0..input.len() {
+                input_handle.append(&mut input[i].clone());
+                dbsp.step().unwrap();
+            }
+
+            dbsp.commit_transaction().unwrap();
+
+            assert_eq!(
+                count_distinct_output.concat().consolidate(),
+                TypedBatch::merge_batches(expected_count_output)
+            );
+            assert_eq!(
+                sum_distinct_output.concat().consolidate(),
+                TypedBatch::merge_batches(expected_sum_output)
+            );
+            assert_eq!(
+                count_weighted_output.concat().consolidate(),
+                TypedBatch::merge_batches(expected_count_weighted_output)
+            );
+            assert_eq!(
+                sum_weighted_output.concat().consolidate(),
+                TypedBatch::merge_batches(expected_sum_weighted_output)
+            );
+        } else {
+            for i in 0..input.len() {
+                input_handle.append(&mut input[i].clone());
+                dbsp.transaction().unwrap();
+
+                assert_eq!(
+                    count_distinct_output.concat().consolidate(),
+                    expected_count_output[i]
+                );
+                assert_eq!(
+                    sum_distinct_output.concat().consolidate(),
+                    expected_sum_output[i]
+                );
+                assert_eq!(
+                    count_weighted_output.concat().consolidate(),
+                    expected_count_weighted_output[i]
+                );
+                assert_eq!(
+                    sum_weighted_output.concat().consolidate(),
+                    expected_sum_weighted_output[i]
+                );
+            }
+        }
 
         dbsp.kill().unwrap();
     }
 
     #[test]
-    fn count_test1() {
-        count_test(1);
+    fn count_test1_small_step() {
+        count_test(1, false);
     }
 
     #[test]
-    fn count_test4() {
-        count_test(4);
+    fn count_test4_small_step() {
+        count_test(4, false);
     }
 
     #[test]
-    fn min_some_test() {
-        let (mut dbsp, (input_handle, output_handle)) = Runtime::init_circuit(4, move |circuit| {
-            let (input_stream, input_handle) =
-                circuit.add_input_indexed_zset::<u64, Tup1<Option<u64>>>();
-            let output_handle = input_stream.aggregate(MinSome1).integrate().output();
+    fn count_test1_big_step() {
+        count_test(1, true);
+    }
 
-            Ok((input_handle, output_handle))
-        })
+    #[test]
+    fn count_test4_big_step() {
+        count_test(4, true);
+    }
+
+    #[test]
+    fn min_some_test_small_steps() {
+        min_some_test(false);
+    }
+
+    #[test]
+    fn min_some_test_big_step() {
+        min_some_test(true);
+    }
+
+    fn min_some_test(transaction: bool) {
+        let (mut dbsp, (input_handle, output_handle)) = Runtime::init_circuit(
+            CircuitConfig::from(4).with_splitter_chunk_size_records(1),
+            move |circuit| {
+                let (input_stream, input_handle) =
+                    circuit.add_input_indexed_zset::<u64, Tup1<Option<u64>>>();
+                let output_handle = input_stream
+                    .aggregate(MinSome1)
+                    .accumulate_integrate()
+                    .accumulate_output();
+
+                Ok((input_handle, output_handle))
+            },
+        )
         .unwrap();
 
-        // min({None}) = None
-        // min({5}) = 5
-        input_handle.append(&mut vec![
-            Tup2(1u64, Tup2(Tup1(None), 1)),
-            Tup2(2u64, Tup2(Tup1(Some(5)), 1)),
-        ]);
-        dbsp.transaction().unwrap();
-        let output = output_handle.consolidate();
-        assert_eq!(
-            &output,
-            &indexed_zset! {1 => {Tup1(None) => 1}, 2 => { Tup1(Some(5)) => 1 }}
-        );
+        let inputs = vec![
+            vec![
+                Tup2(1u64, Tup2(Tup1(None), 1)),
+                Tup2(2u64, Tup2(Tup1(Some(5)), 1)),
+            ],
+            vec![
+                Tup2(1u64, Tup2(Tup1(Some(3)), 1)),
+                Tup2(2u64, Tup2(Tup1(None), 1)),
+            ],
+            vec![
+                Tup2(1u64, Tup2(Tup1(None), -1)),
+                Tup2(2u64, Tup2(Tup1(Some(5)), -1)),
+            ],
+        ];
 
-        // min({None, 3}) = 3
-        // min({None, 5}) = 5
-        input_handle.append(&mut vec![
-            Tup2(1u64, Tup2(Tup1(Some(3)), 1)),
-            Tup2(2u64, Tup2(Tup1(None), 1)),
-        ]);
-        dbsp.transaction().unwrap();
-        let output = output_handle.consolidate();
-        assert_eq!(
-            &output,
-            &indexed_zset! {1 => {Tup1(Some(3)) => 1}, 2 => { Tup1(Some(5)) => 1 }}
-        );
+        let expected_outputs = vec![
+            indexed_zset! {1 => {Tup1(None) => 1}, 2 => { Tup1(Some(5)) => 1 }},
+            indexed_zset! {1 => {Tup1(Some(3)) => 1}, 2 => { Tup1(Some(5)) => 1 }},
+            indexed_zset! {1 => {Tup1(Some(3)) => 1}, 2 => { Tup1(None) => 1 }},
+        ];
 
-        // min({3}) = 3
-        // min({None}) = None
-        input_handle.append(&mut vec![
-            Tup2(1u64, Tup2(Tup1(None), -1)),
-            Tup2(2u64, Tup2(Tup1(Some(5)), -1)),
-        ]);
-        dbsp.transaction().unwrap();
-        let output = output_handle.consolidate();
-        assert_eq!(
-            &output,
-            &indexed_zset! {1 => {Tup1(Some(3)) => 1}, 2 => { Tup1(None) => 1 }}
-        );
+        if transaction {
+            dbsp.start_transaction().unwrap();
+            for i in 0..inputs.len() {
+                input_handle.append(&mut inputs[i].clone());
+                dbsp.step().unwrap();
+            }
+
+            dbsp.commit_transaction().unwrap();
+
+            assert_eq!(
+                output_handle.concat().consolidate(),
+                expected_outputs.last().unwrap().clone()
+            );
+        } else {
+            for i in 0..inputs.len() {
+                input_handle.append(&mut inputs[i].clone());
+                dbsp.transaction().unwrap();
+                assert_eq!(output_handle.concat().consolidate(), expected_outputs[i]);
+            }
+        }
 
         dbsp.kill().unwrap();
     }
 
     // Test `Postprocess` wrapper.
     #[test]
-    fn postprocess_test() {
-        let (mut dbsp, (input_handle, output_handle)) = Runtime::init_circuit(4, move |circuit| {
-            let (input_stream, input_handle) = circuit.add_input_indexed_zset::<u64, Tup1<u64>>();
-            // Postprocessing ofren used in SQL: wrap result in Option.
-            let output_handle = input_stream
-                .aggregate(Postprocess::new(Min, |x: &Tup1<u64>| Tup1(Some(x.0))))
-                .integrate()
-                .output();
+    fn postprocess_test_small_steps() {
+        postprocess_test(false);
+    }
 
-            Ok((input_handle, output_handle))
-        })
+    #[test]
+    fn postprocess_test_big_steps() {
+        postprocess_test(true);
+    }
+
+    fn postprocess_test(transaction: bool) {
+        let (mut dbsp, (input_handle, output_handle)) = Runtime::init_circuit(
+            CircuitConfig::from(4).with_splitter_chunk_size_records(2),
+            move |circuit| {
+                let (input_stream, input_handle) =
+                    circuit.add_input_indexed_zset::<u64, Tup1<u64>>();
+                // Postprocessing ofren used in SQL: wrap result in Option.
+                let output_handle = input_stream
+                    .aggregate(Postprocess::new(Min, |x: &Tup1<u64>| Tup1(Some(x.0))))
+                    .accumulate_integrate()
+                    .accumulate_output();
+
+                Ok((input_handle, output_handle))
+            },
+        )
         .unwrap();
 
-        input_handle.append(&mut vec![
-            Tup2(1u64, Tup2(Tup1(1), 1)),
-            Tup2(2u64, Tup2(Tup1(5), 1)),
-        ]);
-        dbsp.transaction().unwrap();
-        let output = output_handle.consolidate();
-        assert_eq!(
-            &output,
-            &indexed_zset! {1 => {Tup1(Some(1)) => 1}, 2 => { Tup1(Some(5)) => 1 }}
-        );
+        let inputs = vec![
+            vec![Tup2(1u64, Tup2(Tup1(1), 1)), Tup2(2u64, Tup2(Tup1(5), 1))],
+            vec![Tup2(1u64, Tup2(Tup1(3), 1)), Tup2(2u64, Tup2(Tup1(2), 1))],
+            vec![Tup2(1u64, Tup2(Tup1(1), -1)), Tup2(2u64, Tup2(Tup1(5), -1))],
+        ];
 
-        input_handle.append(&mut vec![
-            Tup2(1u64, Tup2(Tup1(3), 1)),
-            Tup2(2u64, Tup2(Tup1(2), 1)),
-        ]);
-        dbsp.transaction().unwrap();
-        let output = output_handle.consolidate();
-        assert_eq!(
-            &output,
-            &indexed_zset! {1 => {Tup1(Some(1)) => 1}, 2 => { Tup1(Some(2)) => 1 }}
-        );
+        let expected_outputs = vec![
+            indexed_zset! {1 => {Tup1(Some(1)) => 1}, 2 => { Tup1(Some(5)) => 1 }},
+            indexed_zset! {1 => {Tup1(Some(1)) => 1}, 2 => { Tup1(Some(2)) => 1 }},
+            indexed_zset! {1 => {Tup1(Some(3)) => 1}, 2 => { Tup1(Some(2)) => 1 }},
+        ];
 
-        input_handle.append(&mut vec![
-            Tup2(1u64, Tup2(Tup1(1), -1)),
-            Tup2(2u64, Tup2(Tup1(5), -1)),
-        ]);
-        dbsp.transaction().unwrap();
-        let output = output_handle.consolidate();
-        assert_eq!(
-            &output,
-            &indexed_zset! {1 => {Tup1(Some(3)) => 1}, 2 => { Tup1(Some(2)) => 1 }}
-        );
+        if transaction {
+            dbsp.start_transaction().unwrap();
+            for i in 0..inputs.len() {
+                input_handle.append(&mut inputs[i].clone());
+                dbsp.step().unwrap();
+            }
+            dbsp.commit_transaction().unwrap();
+
+            let output = output_handle.concat().consolidate();
+            assert_eq!(output, expected_outputs.last().unwrap().clone());
+        } else {
+            for i in 0..inputs.len() {
+                input_handle.append(&mut inputs[i].clone());
+                dbsp.transaction().unwrap();
+                let output = output_handle.concat().consolidate();
+                assert_eq!(output, expected_outputs[i]);
+            }
+        }
 
         dbsp.kill().unwrap();
     }
@@ -1608,13 +1673,22 @@ pub mod test {
     /// - All elements in a group are NULL -> sum = NULL
     /// - Otherwise it's the sum of all non-null elements.
     #[test]
-    fn aggregate_linear_postprocess_test() {
+    fn aggregate_linear_postprocess_test_small_step() {
+        aggregate_linear_postprocess_test(false)
+    }
+
+    #[test]
+    fn aggregate_linear_postprocess_test_big_step() {
+        aggregate_linear_postprocess_test(true)
+    }
+
+    fn aggregate_linear_postprocess_test(transaction: bool) {
         // Aggregation function that returns a 3-tuple including:
         // 1. Number of elements in the group.
         // 2. Number of non-null elements
         // 3. Sum of non-null elements
         // Note we only compute 1 to make sure that the aggregate is not
-        // zero unless the group is actualy empty.
+        // zero unless the group is actually empty.
         fn agg_func(x: &Option<i32>) -> Tup3<i32, i32, i32> {
             let v = x.unwrap_or_default();
 
@@ -1631,8 +1705,19 @@ pub mod test {
             }
         }
 
-        let (mut dbsp, (input_handle, _waterline_handle, output_handle)) =
-            Runtime::init_circuit(4, |circuit| {
+        let (
+            mut dbsp,
+            (
+                input_handle,
+                _waterline_handle,
+                sum_handle,
+                sum_slow_handle,
+                sum_retain_handle,
+                sum_slow_retain_handle,
+            ),
+        ) = Runtime::init_circuit(
+            CircuitConfig::from(2).with_splitter_chunk_size_records(1),
+            |circuit| {
                 let (input, input_handle) = circuit.add_input_zset::<Tup2<i32, Option<i32>>>();
                 let (waterline, waterline_handle) = circuit.add_input_stream::<i32>();
 
@@ -1654,75 +1739,113 @@ pub mod test {
                     .aggregate_linear_retain_keys(&waterline.typed_box(), |k, ts| k >= ts, agg_func)
                     .map_index(|(k, v)| (*k, postprocess_func(*v)));
 
-                sum.apply2(&sum_slow, |sum, sum_slow| assert_eq!(sum, sum_slow));
-                sum_retain.apply2(&sum_slow, |sum, sum_slow| assert_eq!(sum, sum_slow));
-                sum_slow_retain.apply2(&sum_slow, |sum, sum_slow| assert_eq!(sum, sum_slow));
+                let sum_handle = sum.accumulate_integrate().accumulate_output();
+                let sum_slow_handle = sum_slow.accumulate_integrate().accumulate_output();
+                let sum_retain_handle = sum_retain.accumulate_integrate().accumulate_output();
+                let sum_slow_retain_handle =
+                    sum_slow_retain.accumulate_integrate().accumulate_output();
 
-                let output_handle = sum.integrate().output();
+                Ok((
+                    input_handle,
+                    waterline_handle,
+                    sum_handle,
+                    sum_slow_handle,
+                    sum_retain_handle,
+                    sum_slow_retain_handle,
+                ))
+            },
+        )
+        .unwrap();
 
-                Ok((input_handle, waterline_handle, output_handle))
-            })
-            .unwrap();
+        let inputs = vec![
+            // A single NULL element -> aggregate is NULL
+            vec![Tup2(Tup2(1i32, None), 2)],
+            // +5 -> aggregate = 5
+            vec![Tup2(Tup2(1i32, Some(5)), 1)],
+            // +3 * 2 -> aggregate = 11
+            vec![Tup2(Tup2(1i32, Some(3)), 2)],
+            // + (-11) -> aggregate = 0
+            vec![Tup2(Tup2(1i32, Some(-11)), 1)],
+            // Remove all non-NULL elements -> aggregate = NULL
+            vec![
+                Tup2(Tup2(1i32, Some(-11)), -1),
+                Tup2(Tup2(1i32, Some(5)), -1),
+                Tup2(Tup2(1i32, Some(3)), -2),
+            ],
+            // Remove the remaining NULL -> the whole group disappears.
+            vec![Tup2(Tup2(1i32, None), -2)],
+        ];
 
-        // A single NULL element -> aggregate is NULL
-        input_handle.append(&mut vec![Tup2(Tup2(1i32, None), 2)]);
-        dbsp.transaction().unwrap();
-        assert_eq!(
-            output_handle.consolidate(),
-            indexed_zset! {1 => {None => 1}}
-        );
+        let expected_output = vec![
+            indexed_zset! {1 => {None => 1}},
+            indexed_zset! {1 => {Some(5) => 1}},
+            indexed_zset! {1 => {Some(11) => 1}},
+            indexed_zset! {1 => {Some(0) => 1}},
+            indexed_zset! {1 => {None => 1}},
+            indexed_zset! {},
+        ];
 
-        // +5 -> aggregate = 5
-        input_handle.append(&mut vec![Tup2(Tup2(1i32, Some(5)), 1)]);
-        dbsp.transaction().unwrap();
-        assert_eq!(
-            output_handle.consolidate(),
-            indexed_zset! {1 => {Some(5) => 1}}
-        );
+        if transaction {
+            dbsp.start_transaction().unwrap();
 
-        // +3 * 2 -> aggrregate = 11
-        input_handle.append(&mut vec![Tup2(Tup2(1i32, Some(3)), 2)]);
-        dbsp.transaction().unwrap();
-        assert_eq!(
-            output_handle.consolidate(),
-            indexed_zset! {1 => {Some(11) => 1}}
-        );
+            for i in 0..inputs.len() {
+                input_handle.append(&mut inputs[i].clone());
+                dbsp.step().unwrap();
+            }
 
-        // + (-11) -> aggregate = 0
-        input_handle.append(&mut vec![Tup2(Tup2(1i32, Some(-11)), 1)]);
-        dbsp.transaction().unwrap();
-        assert_eq!(
-            output_handle.consolidate(),
-            indexed_zset! {1 => {Some(0) => 1}}
-        );
+            dbsp.commit_transaction().unwrap();
 
-        // Remove all non-NULL eleements -> aggregate = NULL
-        input_handle.append(&mut vec![
-            Tup2(Tup2(1i32, Some(-11)), -1),
-            Tup2(Tup2(1i32, Some(5)), -1),
-            Tup2(Tup2(1i32, Some(3)), -2),
-        ]);
-        dbsp.transaction().unwrap();
-        assert_eq!(
-            output_handle.consolidate(),
-            indexed_zset! {1 => {None => 1}}
-        );
+            assert_eq!(
+                sum_handle.concat().consolidate(),
+                expected_output.last().unwrap().clone()
+            );
+            assert_eq!(
+                sum_slow_handle.concat().consolidate(),
+                expected_output.last().unwrap().clone()
+            );
+            assert_eq!(
+                sum_retain_handle.concat().consolidate(),
+                expected_output.last().unwrap().clone()
+            );
+            assert_eq!(
+                sum_slow_retain_handle.concat().consolidate(),
+                expected_output.last().unwrap().clone()
+            );
+        } else {
+            for i in 0..inputs.len() {
+                input_handle.append(&mut inputs[i].clone());
+                dbsp.transaction().unwrap();
+                assert_eq!(sum_handle.concat().consolidate(), expected_output[i]);
+                assert_eq!(sum_slow_handle.concat().consolidate(), expected_output[i]);
+                assert_eq!(sum_retain_handle.concat().consolidate(), expected_output[i]);
+                assert_eq!(
+                    sum_slow_retain_handle.concat().consolidate(),
+                    expected_output[i]
+                );
+            }
+        }
 
-        // Remove the remaining NULL -> the whole group disappears.
-        input_handle.append(&mut vec![Tup2(Tup2(1i32, None), -2)]);
-        dbsp.transaction().unwrap();
-        assert_eq!(output_handle.consolidate(), indexed_zset! {});
+        dbsp.kill().unwrap()
     }
 
     // Like previous test but uses i8
     #[test]
-    fn aggregate_linear_postprocess_test_i8() {
+    fn aggregate_linear_postprocess_test_i8_small_step() {
+        aggregate_linear_postprocess_test_i8(false)
+    }
+
+    #[test]
+    fn aggregate_linear_postprocess_test_i8_big_step() {
+        aggregate_linear_postprocess_test_i8(true)
+    }
+
+    fn aggregate_linear_postprocess_test_i8(transaction: bool) {
         // Aggregation function that returns a 3-tuple including:
         // 1. Number of elements in the group.
         // 2. Number of non-null elements
         // 3. Sum of non-null elements
         // Note we only compute 1 to make sure that the aggregate is not
-        // zero unless the group is actualy empty.
+        // zero unless the group is actually empty.
         fn agg_func(x: &Option<i8>) -> Tup3<i8, i8, i8> {
             let v = x.unwrap_or_default();
 
@@ -1739,73 +1862,126 @@ pub mod test {
             }
         }
 
-        let (mut dbsp, (input_handle, output_handle)) = Runtime::init_circuit(4, |circuit| {
-            let (input, input_handle) = circuit.add_input_zset::<Tup2<i8, Option<i8>>>();
+        let (
+            mut dbsp,
+            (
+                input_handle,
+                _waterline_handle,
+                sum_handle,
+                sum_slow_handle,
+                sum_retain_handle,
+                sum_slow_retain_handle,
+            ),
+        ) = Runtime::init_circuit(
+            CircuitConfig::from(2).with_splitter_chunk_size_records(1),
+            |circuit| {
+                let (input, input_handle) = circuit.add_input_zset::<Tup2<i8, Option<i8>>>();
+                let (waterline, waterline_handle) = circuit.add_input_stream::<i8>();
 
-            let indexed_input = input.map_index(|Tup2(k, v)| (*k, *v));
+                let indexed_input = input.map_index(|Tup2(k, v)| (*k, *v));
 
-            let sum = indexed_input.aggregate_linear_postprocess(agg_func, postprocess_func);
+                let sum = indexed_input.aggregate_linear_postprocess(agg_func, postprocess_func);
+                let sum_retain = indexed_input.aggregate_linear_postprocess_retain_keys(
+                    &waterline.typed_box(),
+                    |k, ts| k >= ts,
+                    agg_func,
+                    postprocess_func,
+                );
 
-            // aggregate_linear_postprocess must be equivalent to aggregate_linear().map_index().
-            let sum_slow = indexed_input
-                .aggregate_linear(agg_func)
-                .map_index(|(k, v)| (*k, postprocess_func(*v)));
+                // aggregate_linear_postprocess must be equivalent to aggregate_linear().map_index().
+                let sum_slow = indexed_input
+                    .aggregate_linear(agg_func)
+                    .map_index(|(k, v)| (*k, postprocess_func(*v)));
+                let sum_slow_retain = indexed_input
+                    .aggregate_linear_retain_keys(&waterline.typed_box(), |k, ts| k >= ts, agg_func)
+                    .map_index(|(k, v)| (*k, postprocess_func(*v)));
 
-            sum.apply2(&sum_slow, |sum, sum_slow| assert_eq!(sum, sum_slow));
+                let sum_handle = sum.accumulate_integrate().accumulate_output();
+                let sum_slow_handle = sum_slow.accumulate_integrate().accumulate_output();
+                let sum_retain_handle = sum_retain.accumulate_integrate().accumulate_output();
+                let sum_slow_retain_handle =
+                    sum_slow_retain.accumulate_integrate().accumulate_output();
 
-            let output_handle = sum.integrate().output();
-
-            Ok((input_handle, output_handle))
-        })
+                Ok((
+                    input_handle,
+                    waterline_handle,
+                    sum_handle,
+                    sum_slow_handle,
+                    sum_retain_handle,
+                    sum_slow_retain_handle,
+                ))
+            },
+        )
         .unwrap();
 
-        // A single NULL element -> aggregate is NULL
-        input_handle.append(&mut vec![Tup2(Tup2(1i8, None), 2)]);
-        dbsp.transaction().unwrap();
-        assert_eq!(
-            output_handle.consolidate(),
-            indexed_zset! {1 => {None => 1}}
-        );
+        let inputs = vec![
+            // A single NULL element -> aggregate is NULL
+            vec![Tup2(Tup2(1i8, None), 2)],
+            // +5 -> aggregate = 5
+            vec![Tup2(Tup2(1i8, Some(5)), 1)],
+            // +3 * 2 -> aggregate = 11
+            vec![Tup2(Tup2(1i8, Some(3)), 2)],
+            // + (-11) -> aggregate = 0
+            vec![Tup2(Tup2(1i8, Some(-11)), 1)],
+            // Remove all non-NULL elements -> aggregate = NULL
+            vec![
+                Tup2(Tup2(1i8, Some(-11)), -1),
+                Tup2(Tup2(1i8, Some(5)), -1),
+                Tup2(Tup2(1i8, Some(3)), -2),
+            ],
+            // Remove the remaining NULL -> the whole group disappears.
+            vec![Tup2(Tup2(1i8, None), -2)],
+        ];
 
-        // +5 -> aggregate = 5
-        input_handle.append(&mut vec![Tup2(Tup2(1i8, Some(5)), 1)]);
-        dbsp.transaction().unwrap();
-        assert_eq!(
-            output_handle.consolidate(),
-            indexed_zset! {1 => {Some(5) => 1}}
-        );
+        let expected_output = vec![
+            indexed_zset! {1 => {None => 1}},
+            indexed_zset! {1 => {Some(5) => 1}},
+            indexed_zset! {1 => {Some(11) => 1}},
+            indexed_zset! {1 => {Some(0) => 1}},
+            indexed_zset! {1 => {None => 1}},
+            indexed_zset! {},
+        ];
 
-        // +3 * 2 -> aggrregate = 11
-        input_handle.append(&mut vec![Tup2(Tup2(1i8, Some(3)), 2)]);
-        dbsp.transaction().unwrap();
-        assert_eq!(
-            output_handle.consolidate(),
-            indexed_zset! {1 => {Some(11) => 1}}
-        );
+        if transaction {
+            dbsp.start_transaction().unwrap();
 
-        // + (-11) -> aggregate = 0
-        input_handle.append(&mut vec![Tup2(Tup2(1i8, Some(-11)), 1)]);
-        dbsp.transaction().unwrap();
-        assert_eq!(
-            output_handle.consolidate(),
-            indexed_zset! {1 => {Some(0) => 1}}
-        );
+            for i in 0..inputs.len() {
+                input_handle.append(&mut inputs[i].clone());
+                dbsp.step().unwrap();
+            }
 
-        // Remove all non-NULL eleements -> aggregate = NULL
-        input_handle.append(&mut vec![
-            Tup2(Tup2(1i8, Some(-11)), -1),
-            Tup2(Tup2(1i8, Some(5)), -1),
-            Tup2(Tup2(1i8, Some(3)), -2),
-        ]);
-        dbsp.transaction().unwrap();
-        assert_eq!(
-            output_handle.consolidate(),
-            indexed_zset! {1 => {None => 1}}
-        );
+            dbsp.commit_transaction().unwrap();
 
-        // Remove the remaining NULL -> the whole group disappears.
-        input_handle.append(&mut vec![Tup2(Tup2(1i8, None), -2)]);
-        dbsp.transaction().unwrap();
-        assert_eq!(output_handle.consolidate(), indexed_zset! {});
+            assert_eq!(
+                sum_handle.concat().consolidate(),
+                expected_output.last().unwrap().clone()
+            );
+            assert_eq!(
+                sum_slow_handle.concat().consolidate(),
+                expected_output.last().unwrap().clone()
+            );
+            assert_eq!(
+                sum_retain_handle.concat().consolidate(),
+                expected_output.last().unwrap().clone()
+            );
+            assert_eq!(
+                sum_slow_retain_handle.concat().consolidate(),
+                expected_output.last().unwrap().clone()
+            );
+        } else {
+            for i in 0..inputs.len() {
+                input_handle.append(&mut inputs[i].clone());
+                dbsp.transaction().unwrap();
+                assert_eq!(sum_handle.concat().consolidate(), expected_output[i]);
+                assert_eq!(sum_slow_handle.concat().consolidate(), expected_output[i]);
+                assert_eq!(sum_retain_handle.concat().consolidate(), expected_output[i]);
+                assert_eq!(
+                    sum_slow_retain_handle.concat().consolidate(),
+                    expected_output[i]
+                );
+            }
+        }
+
+        dbsp.kill().unwrap()
     }
 }
