@@ -18,7 +18,7 @@ use crate::{
     algebra::{HasOne, IndexedZSet, IndexedZSetReader, Lattice, OrdIndexedZSet, PartialOrder},
     circuit::{
         operator_traits::{Operator, UnaryOperator},
-        Circuit, Scope, Stream, WithClock,
+        splitter_output_chunk_size, Circuit, Scope, Stream, WithClock,
     },
     dynamic::{
         DataTrait, DynData, DynOpt, DynPair, DynPairs, DynSet, DynUnit, DynWeight, Erase, Factory,
@@ -60,8 +60,6 @@ pub use max::{Max, MaxSemigroup};
 pub use min::{ArgMinSome, Min, MinSemigroup, MinSome1, MinSome1Semigroup};
 
 use super::MonoIndexedZSet;
-
-const AGGREGATE_OUTPUT_CHUNK_SIZE: usize = 10_000;
 
 pub struct IncAggregateFactories<I: BatchReader, O: IndexedZSet, T: Timestamp> {
     pub input_factories: I::Factories,
@@ -1030,6 +1028,7 @@ where
         delta: &Option<Spine<Z>>,
         input_trace: &IT,
     ) -> impl AsyncStream<Item = (Box<DynPairs<Z::Key, DynOpt<Out>>>, bool)> + 'static {
+        let chunk_size = splitter_output_chunk_size();
         // println!(
         //     "{}: AggregateIncremental::eval({delta:?})",
         //     Runtime::worker_index()
@@ -1058,7 +1057,7 @@ where
             *self.empty_output.borrow_mut() = true;
 
             let mut result = self.output_pairs_factory.default_box();
-            result.reserve(AGGREGATE_OUTPUT_CHUNK_SIZE);
+            result.reserve(chunk_size);
 
             let mut delta_cursor = delta.cursor();
             let mut input_trace_cursor = input_trace.unwrap().cursor();
@@ -1121,13 +1120,13 @@ where
                     }
                 }
 
-                if result.len() >= AGGREGATE_OUTPUT_CHUNK_SIZE {
+                if result.len() >= chunk_size {
                     // println!("yield {:?}", result);
 
                     *self.empty_output.borrow_mut() &= result.is_empty();
                     yield (result, !(delta_cursor.key_valid() || key_of_interest.is_some()));
                     result = self.output_pairs_factory.default_box();
-                    result.reserve(AGGREGATE_OUTPUT_CHUNK_SIZE);
+                    result.reserve(chunk_size);
                 }
             }
 
@@ -1143,13 +1142,13 @@ where
                 );
                 delta_cursor.step_key();
 
-                if result.len() >= AGGREGATE_OUTPUT_CHUNK_SIZE {
+                if result.len() >= chunk_size {
                     // println!("yield {:?}", result);
 
                     *self.empty_output.borrow_mut() &= result.is_empty();
                     yield (result, !(delta_cursor.key_valid() || key_of_interest.is_some()));
                     result = self.output_pairs_factory.default_box();
-                    result.reserve(AGGREGATE_OUTPUT_CHUNK_SIZE);
+                    result.reserve(chunk_size);
                 }
             }
 
@@ -1165,13 +1164,13 @@ where
                 );
                 key_of_interest = keys_of_interest.next();
 
-                if result.len() >= AGGREGATE_OUTPUT_CHUNK_SIZE {
+                if result.len() >= chunk_size {
                     // println!("yield {:?}", result);
 
                     *self.empty_output.borrow_mut() &= result.is_empty();
                     yield (result, !(delta_cursor.key_valid() || key_of_interest.is_some()));
                     result = self.output_pairs_factory.default_box();
-                    result.reserve(AGGREGATE_OUTPUT_CHUNK_SIZE);
+                    result.reserve(chunk_size);
                 }
             }
 
@@ -1185,11 +1184,7 @@ where
 pub mod test {
     use anyhow::Result as AnyResult;
 
-    use std::{
-        cell::RefCell,
-        rc::Rc,
-        sync::{Arc, Mutex},
-    };
+    use std::{cell::RefCell, rc::Rc};
 
     use crate::{
         algebra::DefaultSemigroup,
@@ -1201,7 +1196,7 @@ pub mod test {
         trace::{BatchReader, Cursor},
         typed_batch::{OrdIndexedZSet, OrdZSet},
         utils::{Tup1, Tup3},
-        zset, Circuit, RootCircuit, Runtime, Stream, ZWeight,
+        zset, Circuit, RootCircuit, Runtime, Stream,
     };
 
     type TestZSet = OrdZSet<Tup2<u64, i64>>;
@@ -1389,85 +1384,64 @@ pub mod test {
     }
 
     fn count_test(workers: usize) {
-        let count_weighted_output: Arc<Mutex<OrdIndexedZSet<u64, ZWeight>>> =
-            Arc::new(Mutex::new(indexed_zset! {}));
-        let sum_weighted_output: Arc<Mutex<OrdIndexedZSet<u64, i64>>> =
-            Arc::new(Mutex::new(indexed_zset! {}));
-        let count_distinct_output: Arc<Mutex<OrdIndexedZSet<u64, u64>>> =
-            Arc::new(Mutex::new(indexed_zset! {}));
-        let sum_distinct_output: Arc<Mutex<OrdIndexedZSet<u64, u64>>> =
-            Arc::new(Mutex::new(indexed_zset! {}));
-
-        let count_weighted_output_clone = count_weighted_output.clone();
-        let count_distinct_output_clone = count_distinct_output.clone();
-        let sum_weighted_output_clone = sum_weighted_output.clone();
-        let sum_distinct_output_clone = sum_distinct_output.clone();
-
-        let (mut dbsp, input_handle) = Runtime::init_circuit(workers, move |circuit| {
+        let (
+            mut dbsp,
+            (
+                input_handle,
+                count_weighted_output,
+                sum_weighted_output,
+                count_distinct_output,
+                sum_distinct_output,
+            ),
+        ) = Runtime::init_circuit(workers, move |circuit| {
             let (input_stream, input_handle) = circuit.add_input_indexed_zset::<u64, u64>();
-            input_stream
-                .weighted_count()
-                .gather(0)
-                .inspect(move |batch| {
-                    if Runtime::worker_index() == 0 {
-                        *count_weighted_output.lock().unwrap() = batch.clone();
-                    }
-                });
+            let count_weighted_output = input_stream.weighted_count().accumulate_output();
 
-            input_stream
+            let sum_weighted_output = input_stream
                 .aggregate_linear(|value: &u64| *value as i64)
-                .gather(0)
-                .inspect(move |batch| {
-                    if Runtime::worker_index() == 0 {
-                        *sum_weighted_output.lock().unwrap() = batch.clone();
-                    }
-                });
+                .accumulate_output();
 
-            input_stream
+            let count_distinct_output = input_stream
                 .aggregate(<Fold<_, _, DefaultSemigroup<_>, _, _>>::new(
                     0,
                     |sum: &mut u64, _v: &u64, _w| *sum += 1,
                 ))
-                .gather(0)
-                .inspect(move |batch| {
-                    if Runtime::worker_index() == 0 {
-                        *count_distinct_output.lock().unwrap() = batch.clone();
-                    }
-                });
+                .accumulate_output();
 
-            input_stream
+            let sum_distinct_output = input_stream
                 .aggregate(<Fold<_, _, DefaultSemigroup<_>, _, _>>::new(
                     0,
                     |sum: &mut u64, v: &u64, _w| *sum += v,
                 ))
-                .gather(0)
-                .inspect(move |batch| {
-                    if Runtime::worker_index() == 0 {
-                        *sum_distinct_output.lock().unwrap() = batch.clone();
-                    }
-                });
+                .accumulate_output();
 
-            Ok(input_handle)
+            Ok((
+                input_handle,
+                count_weighted_output,
+                sum_weighted_output,
+                count_distinct_output,
+                sum_distinct_output,
+            ))
         })
         .unwrap();
 
         input_handle.append(&mut vec![Tup2(1u64, Tup2(1u64, 1)), Tup2(1, Tup2(2, 2))]);
         dbsp.transaction().unwrap();
         assert_eq!(
-            &*count_distinct_output_clone.lock().unwrap(),
-            &indexed_zset! {1 => {2 => 1}}
+            count_distinct_output.concat().consolidate(),
+            indexed_zset! {1 => {2 => 1}}
         );
         assert_eq!(
-            &*sum_distinct_output_clone.lock().unwrap(),
-            &indexed_zset! {1 => {3 => 1}}
+            sum_distinct_output.concat().consolidate(),
+            indexed_zset! {1 => {3 => 1}}
         );
         assert_eq!(
-            &*count_weighted_output_clone.lock().unwrap(),
-            &indexed_zset! {1 => {3 => 1}}
+            count_weighted_output.concat().consolidate(),
+            indexed_zset! {1 => {3 => 1}}
         );
         assert_eq!(
-            &*sum_weighted_output_clone.lock().unwrap(),
-            &indexed_zset! {1 => {5 => 1}}
+            sum_weighted_output.concat().consolidate(),
+            indexed_zset! {1 => {5 => 1}}
         );
 
         input_handle.append(&mut vec![
@@ -1477,39 +1451,39 @@ pub mod test {
         ]);
         dbsp.transaction().unwrap();
         assert_eq!(
-            &*count_distinct_output_clone.lock().unwrap(),
-            &indexed_zset! {2 => {2 => 1}}
+            count_distinct_output.concat().consolidate(),
+            indexed_zset! {2 => {2 => 1}}
         );
         assert_eq!(
-            &*sum_distinct_output_clone.lock().unwrap(),
-            &indexed_zset! {2 => {6 => 1}}
+            sum_distinct_output.concat().consolidate(),
+            indexed_zset! {2 => {6 => 1}}
         );
         assert_eq!(
-            &*count_weighted_output_clone.lock().unwrap(),
-            &indexed_zset! {1 => {3 => -1, 2 => 1}, 2 => {2 => 1}}
+            count_weighted_output.concat().consolidate(),
+            indexed_zset! {1 => {3 => -1, 2 => 1}, 2 => {2 => 1}}
         );
         assert_eq!(
-            &*sum_weighted_output_clone.lock().unwrap(),
-            &indexed_zset! {2 => {6 => 1}, 1 => {5 => -1, 3 => 1}}
+            sum_weighted_output.concat().consolidate(),
+            indexed_zset! {2 => {6 => 1}, 1 => {5 => -1, 3 => 1}}
         );
 
         input_handle.append(&mut vec![Tup2(1, Tup2(3, 1)), Tup2(1, Tup2(2, -1))]);
         dbsp.transaction().unwrap();
         assert_eq!(
-            &*count_distinct_output_clone.lock().unwrap(),
-            &indexed_zset! {}
+            count_distinct_output.concat().consolidate(),
+            indexed_zset! {}
         );
         assert_eq!(
-            &*sum_distinct_output_clone.lock().unwrap(),
-            &indexed_zset! {1 => {3 => -1, 4 => 1}}
+            sum_distinct_output.concat().consolidate(),
+            indexed_zset! {1 => {3 => -1, 4 => 1}}
         );
         assert_eq!(
-            &*count_weighted_output_clone.lock().unwrap(),
-            &indexed_zset! {}
+            count_weighted_output.concat().consolidate(),
+            indexed_zset! {}
         );
         assert_eq!(
-            &*sum_weighted_output_clone.lock().unwrap(),
-            &indexed_zset! {1 => {3 => -1, 4 => 1}}
+            sum_weighted_output.concat().consolidate(),
+            indexed_zset! {1 => {3 => -1, 4 => 1}}
         );
 
         dbsp.kill().unwrap();
