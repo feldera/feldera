@@ -1,5 +1,6 @@
 use crate::algebra::{ZBatch, ZBatchReader};
 use crate::circuit::circuit_builder::StreamId;
+use crate::circuit::splitter_output_chunk_size;
 use crate::dynamic::DynData;
 use crate::trace::cursor::CursorFactory;
 use crate::trace::spine_async::WithSnapshot;
@@ -41,9 +42,6 @@ use std::{
 };
 
 use super::{MonoIndexedZSet, MonoZSet};
-
-const JOIN_OUTPUT_CHUNK_SIZE: usize = 10_000;
-
 circuit_cache_key!(AntijoinId<C, D>((StreamId, StreamId) => Stream<C, D>));
 
 pub trait TraceJoinFuncTrait<K: ?Sized, V1: ?Sized, V2: ?Sized, OK: ?Sized, OV: ?Sized>:
@@ -1294,6 +1292,8 @@ where
 {
     #[trace]
     async fn eval(&mut self, index: &Option<Spine<I>>, trace: &T) -> Z {
+        let chunk_size = splitter_output_chunk_size();
+
         if self.state.is_some() && index.is_some() {
             panic!("JoinTrace::eval received new input before previous input was fully processed");
         }
@@ -1336,7 +1336,7 @@ where
             // TODO: Sub-scopes can cause a lot of inner clock cycles to be set off, so this
             //       actually could be significant
             let mut output_tuples = self.timed_items_factory.default_box();
-            output_tuples.reserve(JOIN_OUTPUT_CHUNK_SIZE);
+            output_tuples.reserve(chunk_size);
 
             let mut timed_item = self.timed_item_factory.default_box();
 
@@ -1417,7 +1417,7 @@ where
                 .unwrap_or_else(|| Z::dyn_empty(&self.output_factories))
         } else {
             let mut output_tuples = self.output_factories.weighted_items_factory().default_box();
-            output_tuples.reserve(JOIN_OUTPUT_CHUNK_SIZE);
+            output_tuples.reserve(chunk_size);
 
             let mut output_tuple = self.output_factories.weighted_item_factory().default_box();
 
@@ -1431,9 +1431,7 @@ where
                         let v1 = state.index_cursor.val();
                         //println!("v1: {}, w1: {}", v1, w1);
 
-                        while state.trace_cursor.val_valid()
-                            && output_tuples.len() <= JOIN_OUTPUT_CHUNK_SIZE
-                        {
+                        while state.trace_cursor.val_valid() && output_tuples.len() <= chunk_size {
                             // FIXME: this clone is only needed to avoid borrow checker error due to
                             // borrowing `trace_cursor` below.
                             state.trace_cursor.val().clone_to(val.as_mut());
@@ -1454,14 +1452,14 @@ where
                             state.trace_cursor.step_val();
                         }
 
-                        if output_tuples.len() >= JOIN_OUTPUT_CHUNK_SIZE {
+                        if output_tuples.len() >= chunk_size {
                             break;
                         }
                         state.trace_cursor.rewind_vals();
                         state.index_cursor.step_val();
                     }
                 }
-                if output_tuples.len() >= JOIN_OUTPUT_CHUNK_SIZE {
+                if output_tuples.len() >= chunk_size {
                     break;
                 }
                 state.key_found = false;

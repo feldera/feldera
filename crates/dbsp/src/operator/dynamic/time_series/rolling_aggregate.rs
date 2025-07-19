@@ -1,6 +1,6 @@
 use crate::{
     algebra::{HasZero, IndexedZSet, UnsignedPrimInt, ZRingValue},
-    circuit::{operator_traits::Operator, Scope},
+    circuit::{operator_traits::Operator, splitter_output_chunk_size, Scope},
     dynamic::{
         ClonableTrait, DataTrait, DowncastTrait, DynDataTyped, DynOpt, DynPair, DynUnit, Erase,
         Factory, WeightTrait, WithFactory,
@@ -45,8 +45,6 @@ use std::{
 };
 
 use super::radix_tree::{FilePartitionedRadixTreeFactories, Prefix};
-
-const ROLLING_AGGREGATE_CHUNK_SIZE: usize = 2;
 
 pub trait WeighFunc<V: ?Sized, R: ?Sized, A: ?Sized>: Fn(&V, &R, &mut A) + DynClone {}
 
@@ -832,6 +830,8 @@ where
         radix_tree: Cow<'_, Spine<RT>>,
         output_trace: Cow<'_, Spine<OT>>,
     ) -> impl AsyncStream<Item = (O, bool)> + 'static {
+        let chunk_size = splitter_output_chunk_size();
+
         if let Some(input_delta) = input_delta.as_ref().as_ref() {
             assert!(self.input_delta.borrow().is_none());
             *self.input_delta.borrow_mut() = Some(input_delta.ro_snapshot());
@@ -869,9 +869,9 @@ where
             let mut tree_cursor = radix_tree.unwrap().cursor();
 
             let mut retraction_builder =
-                O::Builder::with_capacity(&self.output_factories, ROLLING_AGGREGATE_CHUNK_SIZE);
+                O::Builder::with_capacity(&self.output_factories, chunk_size);
             let mut insertion_builder =
-                O::Builder::with_capacity(&self.output_factories, ROLLING_AGGREGATE_CHUNK_SIZE);
+                O::Builder::with_capacity(&self.output_factories, chunk_size);
 
             // println!("delta: {input_delta:#x?}");
             // println!("radix tree: {radix_tree:#x?}");
@@ -906,11 +906,11 @@ where
                             retraction_builder.push_val_diff_mut(&mut *val, &mut weight.neg());
                             any_values = true;
 
-                            if retraction_builder.num_tuples() >= ROLLING_AGGREGATE_CHUNK_SIZE {
+                            if retraction_builder.num_tuples() >= chunk_size {
                                 retraction_builder.push_key(delta_cursor.key());
                                 yield (retraction_builder.done(), false);
                                 any_values = false;
-                                retraction_builder = O::Builder::with_capacity(&self.output_factories, ROLLING_AGGREGATE_CHUNK_SIZE);
+                                retraction_builder = O::Builder::with_capacity(&self.output_factories, chunk_size);
                             }
                             range_cursor.step_val();
                         }
@@ -969,12 +969,12 @@ where
                                 insertion_builder.push_val_diff_mut(&mut *val, 1.erase_mut());
                                 any_values = true;
 
-                                if insertion_builder.num_tuples() >= ROLLING_AGGREGATE_CHUNK_SIZE {
+                                if insertion_builder.num_tuples() >= chunk_size {
                                     insertion_builder.push_key(delta_cursor.key());
                                     any_values = false;
                                     yield (insertion_builder.done(), false);
                                     insertion_builder =
-                                        O::Builder::with_capacity(&self.output_factories, ROLLING_AGGREGATE_CHUNK_SIZE);
+                                        O::Builder::with_capacity(&self.output_factories, chunk_size);
                                 }
 
                                 break;

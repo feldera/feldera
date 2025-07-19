@@ -2,7 +2,9 @@
 
 use crate::{
     algebra::{IndexedZSet, NegByRef},
-    circuit::{operator_traits::Operator, Circuit, GlobalNodeId, Scope, Stream},
+    circuit::{
+        operator_traits::Operator, splitter_output_chunk_size, Circuit, GlobalNodeId, Scope, Stream,
+    },
     dynamic::{
         rkyv::{DeserializableDyn, SerializeDyn},
         ClonableTrait, DataTrait, DynData, WeightTrait,
@@ -25,8 +27,6 @@ use futures::Stream as AsyncStream;
 use minitrace::trace;
 use rkyv::Deserialize;
 use std::{borrow::Cow, cell::RefCell, marker::PhantomData, rc::Rc};
-
-const WINDOW_CHUNK_SIZE: usize = 2;
 
 impl Stream<RootCircuit, MonoIndexedZSet> {
     pub fn dyn_window_mono(
@@ -280,6 +280,8 @@ where
         delta: Cow<'_, Option<Spine<B>>>,
         bounds: Cow<'_, (Box<B::Key>, Box<B::Key>)>,
     ) -> impl AsyncStream<Item = (B, bool)> + 'static {
+        let chunk_size = splitter_output_chunk_size();
+
         if let Some(delta) = &*delta {
             assert!(self.delta.borrow().is_none());
             *self.delta.borrow_mut() = Some(delta.ro_snapshot());
@@ -321,7 +323,7 @@ where
             // keys in each component below.  For this, we need to extend
             // `Cursor::seek` to return the number of keys skipped over by the search.
             let mut tuples = self.factories.weighted_items_factory().default_box();
-            tuples.reserve(WINDOW_CHUNK_SIZE);
+            tuples.reserve(chunk_size);
 
             let mut tuple = self.factories.weighted_item_factory().default_box();
             let mut key = self.factories.key_factory().default_box();
@@ -345,10 +347,10 @@ where
                         **w = trace_cursor.weight().neg_by_ref();
                         tuples.push_val(&mut *tuple);
 
-                        if tuples.len() >= WINDOW_CHUNK_SIZE {
+                        if tuples.len() >= chunk_size {
                             yield (B::dyn_from_tuples(&self.factories, (), &mut tuples), false);
                             tuples = self.factories.weighted_items_factory().default_box();
-                            tuples.reserve(WINDOW_CHUNK_SIZE);
+                            tuples.reserve(chunk_size);
                         }
 
                         trace_cursor.step_val();
@@ -374,10 +376,10 @@ where
 
                             tuples.push_val(&mut *tuple);
 
-                            if tuples.len() >= WINDOW_CHUNK_SIZE {
+                            if tuples.len() >= chunk_size {
                                 yield (B::dyn_from_tuples(&self.factories, (), &mut tuples), false);
                                 tuples = self.factories.weighted_items_factory().default_box();
-                                tuples.reserve(WINDOW_CHUNK_SIZE);
+                                tuples.reserve(chunk_size);
                             }
 
                             trace_cursor.step_val();
@@ -404,10 +406,10 @@ where
 
                         tuples.push_val(&mut *tuple);
 
-                        if tuples.len() >= WINDOW_CHUNK_SIZE {
+                        if tuples.len() >= chunk_size {
                             yield (B::dyn_from_tuples(&self.factories, (), &mut tuples), false);
                             tuples = self.factories.weighted_items_factory().default_box();
-                            tuples.reserve(WINDOW_CHUNK_SIZE);
+                            tuples.reserve(chunk_size);
                         }
 
                         trace_cursor.step_val();
@@ -430,10 +432,10 @@ where
 
                     tuples.push_val(&mut *tuple);
 
-                    if tuples.len() >= WINDOW_CHUNK_SIZE {
+                    if tuples.len() >= chunk_size {
                         yield (B::dyn_from_tuples(&self.factories, (), &mut tuples), false);
                         tuples = self.factories.weighted_items_factory().default_box();
-                        tuples.reserve(WINDOW_CHUNK_SIZE);
+                        tuples.reserve(chunk_size);
                     }
 
                     batch_cursor.step_val();
@@ -465,7 +467,7 @@ mod test {
 
     type Time = u64;
 
-    // A simple, but ineffient implementation of `window` for testing.
+    // A simple, but inefficient implementation of `window` for testing.
     // (it's inefficient even for a non-incremental implementation).
     impl<C, B> Stream<C, B>
     where

@@ -2,6 +2,7 @@
 
 use crate::algebra::ZBatchReader;
 use crate::circuit::circuit_builder::StreamId;
+use crate::circuit::splitter_output_chunk_size;
 use crate::dynamic::{ClonableTrait, Data, DynData};
 use crate::operator::async_stream_operators::{StreamingBinaryOperator, StreamingBinaryWrapper};
 use crate::trace::spine_async::{SpineCursor, WithSnapshot};
@@ -43,8 +44,6 @@ use std::{
 
 use super::filter_map::DynFilterMap;
 use super::{MonoIndexedZSet, MonoZSet};
-
-const DISTINCT_OUTPUT_CHUNK_SIZE: usize = 2;
 
 circuit_cache_key!(DistinctId<C, D>(StreamId => Stream<C, D>));
 circuit_cache_key!(DistinctIncrementalId<C, D>(StreamId => Stream<C, D>));
@@ -414,6 +413,8 @@ struct DistinctIncrementalTotal<Z: IndexedZSet, I> {
     // Total number of output tuples processed by the operator.
     num_outputs: RefCell<usize>,
 
+    chunk_size: usize,
+
     _type: PhantomData<(Z, I)>,
 }
 
@@ -422,8 +423,9 @@ impl<Z: IndexedZSet, I> DistinctIncrementalTotal<Z, I> {
         Self {
             input_factories: input_factories.clone(),
             location,
-            num_inputs: 0,
-            num_outputs: 0,
+            num_inputs: RefCell::new(0),
+            num_outputs: RefCell::new(0),
+            chunk_size: splitter_output_chunk_size(),
             _type: PhantomData,
         }
     }
@@ -434,7 +436,7 @@ impl<Z: IndexedZSet, I> DistinctIncrementalTotal<Z, I> {
         delta_cursor: &mut SpineCursor<Z>,
         any_values: &mut bool,
     ) -> Option<(Z, bool)> {
-        if builder.num_tuples() >= DISTINCT_OUTPUT_CHUNK_SIZE {
+        if builder.num_tuples() >= self.chunk_size {
             if *any_values {
                 builder.push_key(delta_cursor.key());
                 *any_values = false;
@@ -442,7 +444,7 @@ impl<Z: IndexedZSet, I> DistinctIncrementalTotal<Z, I> {
 
             let builder = std::mem::replace(
                 builder,
-                Z::Builder::with_capacity(&self.input_factories, DISTINCT_OUTPUT_CHUNK_SIZE),
+                Z::Builder::with_capacity(&self.input_factories, self.chunk_size),
             );
 
             let result = builder.done();
@@ -507,7 +509,7 @@ where
 
             *self.num_inputs.borrow_mut() += delta.len();
 
-            let mut builder = Z::Builder::with_capacity(&self.input_factories, DISTINCT_OUTPUT_CHUNK_SIZE);
+            let mut builder = Z::Builder::with_capacity(&self.input_factories, self.chunk_size);
             let mut delta_cursor = delta.cursor();
 
             let fetched = if Runtime::with_dev_tweaks(|d| d.fetch_distinct) {
@@ -624,6 +626,8 @@ where
     // Total number of output tuples processed by the operator.
     num_outputs: RefCell<usize>,
 
+    chunk_size: usize,
+
     _type: PhantomData<(Z, T)>,
 }
 
@@ -653,6 +657,7 @@ where
             distinct_vals: RefCell::new(vec![(None, HasZero::zero()); 2 << depth]),
             num_inputs: RefCell::new(0),
             num_outputs: RefCell::new(0),
+            chunk_size: splitter_output_chunk_size(),
             _type: PhantomData,
         }
     }
@@ -813,12 +818,12 @@ where
     }
 
     fn maybe_yield(&self, result_builder: &mut TupleBuilder<Z::Builder, Z>) -> Option<(Z, bool)> {
-        if result_builder.num_tuples() >= DISTINCT_OUTPUT_CHUNK_SIZE {
+        if result_builder.num_tuples() >= self.chunk_size {
             let builder = std::mem::replace(
                 result_builder,
                 TupleBuilder::new(
                     &self.input_factories,
-                    Z::Builder::with_capacity(&self.input_factories, DISTINCT_OUTPUT_CHUNK_SIZE),
+                    Z::Builder::with_capacity(&self.input_factories, self.chunk_size),
                 ),
             );
 
@@ -972,7 +977,7 @@ where
             *self.empty_input.borrow_mut() = delta.is_empty();
 
             // We iterate over keys and values in order, so it is safe to use `Builder`.
-            let result_builder = Z::Builder::with_capacity(&self.input_factories, DISTINCT_OUTPUT_CHUNK_SIZE);
+            let result_builder = Z::Builder::with_capacity(&self.input_factories, self.chunk_size);
             let mut result_builder = TupleBuilder::new(&self.input_factories, result_builder);
 
             let mut delta_cursor = delta.cursor();
