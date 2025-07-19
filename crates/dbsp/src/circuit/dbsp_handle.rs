@@ -266,7 +266,6 @@ pub struct CircuitConfig {
 
 #[derive(Debug, Clone, Eq, PartialEq, Deserialize)]
 #[serde(default)]
-#[derive(Default)]
 pub struct DevTweaks {
     /// Whether to asynchronously fetch keys needed for the join operator from
     /// storage.  Asynchronous fetching should be faster for high-latency
@@ -298,6 +297,27 @@ pub struct DevTweaks {
     // parsing DevTweaks. If the name or type of this field changes, make sure to
     // adjust `server/mod.rs` accordingly.
     pub stack_overflow_backtrace: bool,
+
+    /// Controls the maximal number of records output by splitter operators
+    /// (joins, distinct, aggregation, rolling window and group operators) at
+    /// each step.
+    ///
+    /// The default value is 10,000 records.
+    // TODO: splitter_chunk_size_bytes, per-operator chunk size.
+    pub splitter_chunk_size_records: u64,
+}
+
+impl Default for DevTweaks {
+    fn default() -> Self {
+        Self {
+            fetch_join: false,
+            fetch_distinct: false,
+            merger: MergerType::default(),
+            storage_mb_max: None,
+            stack_overflow_backtrace: false,
+            splitter_chunk_size_records: 10_000,
+        }
+    }
 }
 
 impl DevTweaks {
@@ -313,6 +333,10 @@ impl DevTweaks {
         }
         tweaks
     }
+}
+
+pub fn splitter_output_chunk_size() -> usize {
+    Runtime::with_dev_tweaks(|d| d.splitter_chunk_size_records as usize)
 }
 
 /// Configuration for storage in a [Runtime]-hosted circuit.

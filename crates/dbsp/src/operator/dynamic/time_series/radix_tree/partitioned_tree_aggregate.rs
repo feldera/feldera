@@ -4,7 +4,7 @@ use super::{
 };
 use crate::{
     algebra::{HasOne, OrdIndexedZSet},
-    circuit::{operator_traits::Operator, Scope},
+    circuit::{operator_traits::Operator, splitter_output_chunk_size, Scope},
     dynamic::{ClonableTrait, DataTrait, DynDataTyped, DynPair, Erase},
     operator::{
         async_stream_operators::{StreamingTernaryOperator, StreamingTernaryWrapper},
@@ -34,8 +34,6 @@ use std::{
     borrow::Cow, cmp::Ordering, collections::BTreeMap, fmt, fmt::Write, marker::PhantomData,
     ops::Neg, rc::Rc,
 };
-
-const PARTITIONED_TREE_AGGREGATE_OUTPUT_CHUNK_SIZE: usize = 2;
 
 /// Partitioned radix tree batch.
 ///
@@ -376,6 +374,7 @@ where
         input_trace: Cow<'_, Spine<Z>>,
         output_trace: Cow<'_, Spine<O>>,
     ) -> impl AsyncStream<Item = (O, bool)> + 'static {
+        let chunk_size = splitter_output_chunk_size();
         let delta = delta.as_ref().as_ref().map(|b| b.ro_snapshot());
 
         let input_trace = if delta.is_some() {
@@ -397,7 +396,7 @@ where
             };
 
             let mut builder =
-                O::Builder::with_capacity(&self.factories.output_factories, PARTITIONED_TREE_AGGREGATE_OUTPUT_CHUNK_SIZE + 2);
+                O::Builder::with_capacity(&self.factories.output_factories, chunk_size + 2);
 
             let mut updates = self
                 .factories
@@ -513,12 +512,12 @@ where
                         }
                     }
 
-                    if builder.num_tuples() >= PARTITIONED_TREE_AGGREGATE_OUTPUT_CHUNK_SIZE && any_values {
+                    if builder.num_tuples() >= chunk_size && any_values {
                         builder.push_key(&*key);
                         let result = builder.done();
                         yield (result, false);
                         builder =
-                            O::Builder::with_capacity(&self.factories.output_factories, PARTITIONED_TREE_AGGREGATE_OUTPUT_CHUNK_SIZE + 1);
+                            O::Builder::with_capacity(&self.factories.output_factories, chunk_size + 1);
                         any_values = false;
                     }
                 }
