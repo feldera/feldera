@@ -415,6 +415,11 @@ impl CircuitConfig {
         self.storage = Some(storage);
         self
     }
+
+    pub fn with_splitter_chunk_size_records(mut self, records: u64) -> Self {
+        self.dev_tweaks.splitter_chunk_size_records = records;
+        self
+    }
 }
 
 impl From<&CircuitConfig> for CircuitConfig {

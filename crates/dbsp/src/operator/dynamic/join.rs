@@ -1494,15 +1494,14 @@ where
 #[cfg(test)]
 mod test {
     use crate::{
+        circuit::CircuitConfig,
+        indexed_zset,
         operator::Generator,
-        typed_batch::{OrdIndexedZSet, OrdZSet, Spine, TypedBatch},
+        typed_batch::{OrdZSet, TypedBatch},
         utils::Tup2,
         zset, Circuit, RootCircuit, Runtime, Stream,
     };
-    use std::{
-        sync::{Arc, Mutex},
-        vec,
-    };
+    use std::vec;
 
     fn do_join_test(workers: usize, transaction: bool) {
         let mut input1 = vec![
@@ -1606,58 +1605,61 @@ mod test {
         let (
             mut circuit,
             (input_handle1, input_handle2, join_output, join_flatmap_output, stream_join_output),
-        ) = Runtime::init_circuit(workers, move |circuit| {
-            let (input1, input_handle1) = circuit.add_input_zset::<Tup2<u64, String>>();
-            let index1 = input1.map_index(|Tup2(k, v)| (*k, v.clone()));
+        ) = Runtime::init_circuit(
+            CircuitConfig::from(workers).with_splitter_chunk_size_records(2),
+            move |circuit| {
+                let (input1, input_handle1) = circuit.add_input_zset::<Tup2<u64, String>>();
+                let index1 = input1.map_index(|Tup2(k, v)| (*k, v.clone()));
 
-            let (input2, input_handle2) = circuit.add_input_zset::<Tup2<u64, String>>();
-            let index2 = input2.map_index(|Tup2(k, v)| (*k, v.clone()));
+                let (input2, input_handle2) = circuit.add_input_zset::<Tup2<u64, String>>();
+                let index2 = input2.map_index(|Tup2(k, v)| (*k, v.clone()));
 
-            let stream_join_output = circuit
-                .non_incremental(
-                    &(index1.clone(), index2.clone()),
-                    |_child, (index1, index2)| {
-                        Ok(index1.stream_join(&index2, |&k: &u64, s1, s2| {
-                            Tup2(k, format!("{} {}", s1, s2))
-                        }))
-                    },
-                )
-                .unwrap()
-                .accumulate_output();
+                let stream_join_output = circuit
+                    .non_incremental(
+                        &(index1.clone(), index2.clone()),
+                        |_child, (index1, index2)| {
+                            Ok(index1.stream_join(&index2, |&k: &u64, s1, s2| {
+                                Tup2(k, format!("{} {}", s1, s2))
+                            }))
+                        },
+                    )
+                    .unwrap()
+                    .accumulate_output();
 
-            /*index1
-            .join_incremental(&index2, |&k: &u64, s1, s2| Tup2(k, format!("{} {}", s1, s2)))
-            .gather(0)
-            .inspect(move |fm: &OrdZSet<Tup2<u64, String>>| {
-                if Runtime::worker_index() == 0 {
-                    assert_eq!(fm, &inc_outputs.next().unwrap())
-                }
-            });*/
-
-            let join_output = index1
-                .join(&index2, |&k: &u64, s1, s2| {
-                    Tup2(k, format!("{} {}", s1, s2))
-                })
-                .accumulate_output();
-
-            let join_flatmap_output = index1
-                .join_flatmap(&index2, |&k: &u64, s1, s2| {
-                    if s1.as_str() == "a" {
-                        None
-                    } else {
-                        Some(Tup2(k, format!("{} {}", s1, s2)))
+                /*index1
+                .join_incremental(&index2, |&k: &u64, s1, s2| Tup2(k, format!("{} {}", s1, s2)))
+                .gather(0)
+                .inspect(move |fm: &OrdZSet<Tup2<u64, String>>| {
+                    if Runtime::worker_index() == 0 {
+                        assert_eq!(fm, &inc_outputs.next().unwrap())
                     }
-                })
-                .accumulate_output();
+                });*/
 
-            Ok((
-                input_handle1,
-                input_handle2,
-                join_output,
-                join_flatmap_output,
-                stream_join_output,
-            ))
-        })
+                let join_output = index1
+                    .join(&index2, |&k: &u64, s1, s2| {
+                        Tup2(k, format!("{} {}", s1, s2))
+                    })
+                    .accumulate_output();
+
+                let join_flatmap_output = index1
+                    .join_flatmap(&index2, |&k: &u64, s1, s2| {
+                        if s1.as_str() == "a" {
+                            None
+                        } else {
+                            Some(Tup2(k, format!("{} {}", s1, s2)))
+                        }
+                    })
+                    .accumulate_output();
+
+                Ok((
+                    input_handle1,
+                    input_handle2,
+                    join_output,
+                    join_flatmap_output,
+                    stream_join_output,
+                ))
+            },
+        )
         .unwrap();
 
         if transaction {
@@ -1703,6 +1705,8 @@ mod test {
                 );
             }
         }
+
+        circuit.kill().unwrap()
     }
 
     #[test]
@@ -1801,63 +1805,86 @@ mod test {
             circuit.step().unwrap();
         }
     }
-    #[test]
-    fn antijoin_test() {
-        let output = Arc::new(Mutex::new(Vec::new()));
-        let output_clone = output.clone();
 
-        let (mut circuit, (input1, input2)) = Runtime::init_circuit(4, move |circuit| {
-            let (input1, input_handle1) = circuit.add_input_indexed_zset::<u64, u64>();
-            let (input2, input_handle2) = circuit.add_input_indexed_zset::<u64, u64>();
+    fn antijoin_test(transaction: bool) {
+        let inputs1 = vec![
+            vec![
+                Tup2(1, Tup2(0, 1)),
+                Tup2(1, Tup2(1, 2)),
+                Tup2(2, Tup2(0, 1)),
+                Tup2(2, Tup2(1, 1)),
+            ],
+            vec![Tup2(3, Tup2(1, 1))],
+            vec![],
+            vec![Tup2(2, Tup2(2, 1)), Tup2(4, Tup2(1, 1))],
+            vec![],
+        ];
 
-            input1.antijoin(&input2).gather(0).accumulate().inspect(
-                move |fm: &Option<Spine<OrdIndexedZSet<_, _>>>| {
-                    if Runtime::worker_index() == 0 && fm.is_some() {
-                        *output_clone.lock().unwrap() =
-                            fm.as_ref().unwrap().iter().collect::<Vec<_>>();
-                    }
-                },
-            );
+        let inputs2 = vec![
+            vec![],
+            vec![],
+            vec![Tup2(1, Tup2(1, 3))],
+            vec![Tup2(2, Tup2(5, 1))],
+            // Issue https://github.com/feldera/feldera/issues/3365. Multiple values per key in the right-hand input shouldn't
+            // produce outputs with negative weights.
+            vec![Tup2(2, Tup2(6, 1))],
+        ];
 
-            Ok((input_handle1, input_handle2))
-        })
+        let expected_outputs = vec![
+            indexed_zset! {1 => {0 => 1, 1 => 2}, 2 => {0 => 1, 1 => 1}},
+            indexed_zset! {3 => {1 => 1}},
+            indexed_zset! { 1 => {0 => -1, 1 => -2}},
+            indexed_zset! {2 => { 0 => -1, 1 => -1}, 4 => {1 => 1}},
+            indexed_zset! {},
+        ];
+
+        let (mut circuit, (input1, input2, output)) = Runtime::init_circuit(
+            CircuitConfig::from(4).with_splitter_chunk_size_records(2),
+            move |circuit| {
+                let (input1, input_handle1) = circuit.add_input_indexed_zset::<u64, u64>();
+                let (input2, input_handle2) = circuit.add_input_indexed_zset::<u64, u64>();
+
+                let output = input1.antijoin(&input2).accumulate_output();
+
+                Ok((input_handle1, input_handle2, output))
+            },
+        )
         .unwrap();
 
-        input1.append(&mut vec![
-            Tup2(1, Tup2(0, 1)),
-            Tup2(1, Tup2(1, 2)),
-            Tup2(2, Tup2(0, 1)),
-            Tup2(2, Tup2(1, 1)),
-        ]);
-        circuit.transaction().unwrap();
-        assert_eq!(
-            &*output.lock().unwrap(),
-            &vec![(1, 0, 1), (1, 1, 2), (2, 0, 1), (2, 1, 1)]
-        );
+        if transaction {
+            circuit.start_transaction().unwrap();
+            for i in 0..inputs1.len() {
+                input1.append(&mut inputs1[i].clone());
+                input2.append(&mut inputs2[i].clone());
+                circuit.step().unwrap();
+            }
 
-        input1.append(&mut vec![Tup2(3, Tup2(1, 1))]);
-        circuit.transaction().unwrap();
-        assert_eq!(&*output.lock().unwrap(), &vec![(3, 1, 1)]);
+            circuit.commit_transaction().unwrap();
 
-        input2.append(&mut vec![Tup2(1, Tup2(1, 3))]);
-        circuit.transaction().unwrap();
-        assert_eq!(&*output.lock().unwrap(), &vec![(1, 0, -1), (1, 1, -2)]);
-
-        input2.append(&mut vec![Tup2(2, Tup2(5, 1))]);
-        input1.append(&mut vec![Tup2(2, Tup2(2, 1)), Tup2(4, Tup2(1, 1))]);
-        circuit.transaction().unwrap();
-        assert_eq!(
-            &*output.lock().unwrap(),
-            &vec![(2, 0, -1), (2, 1, -1), (4, 1, 1)]
-        );
-
-        // Issue https://github.com/feldera/feldera/issues/3365. Multiple values per key in the right-hand input shouldn't
-        // produce outputs with negative weights.
-        input2.append(&mut vec![Tup2(2, Tup2(6, 1))]);
-        circuit.transaction().unwrap();
-        assert_eq!(&*output.lock().unwrap(), &vec![]);
+            assert_eq!(
+                output.concat().consolidate(),
+                TypedBatch::merge_batches(expected_outputs)
+            );
+        } else {
+            for i in 0..inputs1.len() {
+                input1.append(&mut inputs1[i].clone());
+                input2.append(&mut inputs2[i].clone());
+                circuit.transaction().unwrap();
+                assert_eq!(output.concat().consolidate(), expected_outputs[i]);
+            }
+        }
 
         circuit.kill().unwrap();
+    }
+
+    #[test]
+    fn antijoin_test_small_steps() {
+        antijoin_test(false);
+    }
+
+    #[test]
+    fn antijoin_test_big_step() {
+        antijoin_test(true);
     }
 }
 
