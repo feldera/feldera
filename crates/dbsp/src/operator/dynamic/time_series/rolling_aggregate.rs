@@ -25,8 +25,8 @@ use crate::{
         Avg,
     },
     trace::{
-        spine_async::WithSnapshot, Batch, BatchReader, BatchReaderFactories, Builder, Cursor,
-        Spine, SpineSnapshot,
+        merge_batches, spine_async::WithSnapshot, Batch, BatchReader, BatchReaderFactories,
+        Builder, Cursor, Spine, SpineSnapshot,
     },
     utils::Tup2,
     Circuit, DBData, DBWeight, DynZWeight, RootCircuit, Stream, ZWeight,
@@ -994,8 +994,10 @@ where
             }
 
             *self.flush.borrow_mut() = false;
-            yield (retraction_builder.done(), false);
-            yield (insertion_builder.done(), true);
+            let retractions = retraction_builder.done();
+            let insertions = insertion_builder.done();
+
+            yield (merge_batches(&insertions.factories(), [insertions,retractions], &None, &None), true);
         }
     }
 }
@@ -1177,6 +1179,7 @@ mod test {
 
                 let waterline: Stream<_, TypedBox<u64, DynDataTyped<u64>>> = input_by_time
                     .waterline_monotonic(|| 0, move |ts| ts.saturating_sub(lateness))
+                    .macrostep_delay_with_initial_value(TypedBox::new(0))
                     .inspect(|w| println!("waterline: {w:?}"));
 
                 let aggregator = <Fold<i64, i64, DefaultSemigroup<_>, _, _>>::new(
