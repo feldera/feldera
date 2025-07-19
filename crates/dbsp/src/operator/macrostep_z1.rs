@@ -164,10 +164,10 @@ where
     T: Checkpoint + Eq + SizeOf + NumEntries + Clone + 'static,
 {
     async fn eval(&mut self, i: &T) -> T {
-        self.new_value = i.clone();
         if self.flush {
             self.flush = false;
             self.old_value = self.new_value.clone();
+            self.new_value = i.clone();
         }
 
         self.old_value.clone()
@@ -195,12 +195,19 @@ mod test {
         assert_eq!(z1.eval(&3).await, 0);
 
         z1.flush();
-        assert_eq!(z1.eval(&4).await, 4);
-        assert_eq!(z1.eval(&5).await, 4);
-        assert_eq!(z1.eval(&6).await, 4);
+        assert_eq!(z1.eval(&4).await, 0);
+
+        assert_eq!(z1.eval(&5).await, 0);
+        assert_eq!(z1.eval(&6).await, 0);
+
+        z1.flush();
+        assert_eq!(z1.eval(&7).await, 4);
+
+        assert_eq!(z1.eval(&8).await, 4);
+        assert_eq!(z1.eval(&9).await, 4);
 
         z1.clock_end(0);
 
-        assert_eq!(z1.eval(&7).await, 0);
+        assert_eq!(z1.eval(&10).await, 0);
     }
 }
