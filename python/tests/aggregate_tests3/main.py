@@ -9,6 +9,10 @@ from tests.aggregate_tests3.test_un_int_avg import *  # noqa: F403
 from tests.aggregate_tests3.test_un_int_max import *  # noqa: F403
 from tests.aggregate_tests3.test_un_int_min import *  # noqa: F403
 from tests.aggregate_tests3.test_un_int_sum import *  # noqa: F403
+from tests.aggregate_tests3.test_un_int_every import *  # noqa: F403
+from tests.aggregate_tests3.test_un_int_some import *  # noqa: F403
+from tests.aggregate_tests3.test_un_int_stddev import *  # noqa: F403
+from tests.aggregate_tests3.test_un_int_stddev_pop import *  # noqa: F403
 
 
 def main():
