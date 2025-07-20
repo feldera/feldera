@@ -114,7 +114,7 @@ pub(crate) async fn http_input(
             &endpoint,
             req,
             body,
-            Some(Duration::from_secs(300)),
+            Some(Duration::from_secs(30)),
         )
         .await
 }
