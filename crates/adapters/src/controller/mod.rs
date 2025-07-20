@@ -693,6 +693,7 @@ impl Controller {
         self.inner.fail_if_bootstrapping_or_restoring()?;
 
         self.inner.status.set_transaction_requested(false);
+        self.inner.unpark_circuit();
         Ok(())
     }
 
@@ -2423,6 +2424,10 @@ impl StepTrigger {
             .checkpoint_interval
             .map(|interval| last_checkpoint + interval);
 
+        let transaction_state = self.controller.status.get_transaction_state();
+        let transaction_requested = self.controller.status.get_transaction_requested();
+        let committing = transaction_state != TransactionState::None && !transaction_requested;
+
         fn step(trigger: &mut StepTrigger) -> Action {
             trigger.needs_first_step = false;
             trigger.buffer_timeout = None;
@@ -2435,7 +2440,7 @@ impl StepTrigger {
         // operation and makes sure that the circuit performs an extra step in the normal
         // mode in order to initialize output table snapshots of output relations that
         // did not participate in bootstrapping.
-        let result = if replaying || bootstrapping || self.bootstrapping {
+        let result = if replaying || committing || bootstrapping || self.bootstrapping {
             step(self)
         } else if checkpoint.is_some_and(|t| now >= t) && !checkpoint_requested {
             Action::Checkpoint
