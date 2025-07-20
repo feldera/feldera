@@ -761,6 +761,8 @@ where
         .service(shutdown)
         .service(status)
         .service(suspendable)
+        .service(start_transaction)
+        .service(commit_transaction)
         .service(completion_token)
         .service(completion_status)
         .service(query)
@@ -1203,6 +1205,28 @@ async fn suspend(state: WebData<ServerState>) -> Result<impl Responder, Pipeline
 #[get("/shutdown")]
 async fn shutdown(state: WebData<ServerState>) -> impl Responder {
     do_shutdown(state).await
+}
+
+#[post("/start_transaction")]
+async fn start_transaction(state: WebData<ServerState>) -> impl Responder {
+    match &*state.controller.read().unwrap() {
+        Some(controller) => {
+            controller.start_transaction()?;
+            Ok(HttpResponse::Ok().json("Transaction started"))
+        }
+        None => Err(missing_controller_error(&state)),
+    }
+}
+
+#[post("/commit_transaction")]
+async fn commit_transaction(state: WebData<ServerState>) -> impl Responder {
+    match &*state.controller.read().unwrap() {
+        Some(controller) => {
+            controller.start_commit_transaction()?;
+            Ok(HttpResponse::Ok().json("Transaction commit initiated"))
+        }
+        None => Err(missing_controller_error(&state)),
+    }
 }
 
 async fn do_shutdown(state: WebData<ServerState>) -> Result<impl Responder, PipelineError> {
@@ -1995,5 +2019,104 @@ outputs:
 
         drop(buffer_consumer);
         drop(kafka_resources);
+    }
+
+    #[actix_web::test]
+    async fn test_transactions() {
+        ensure_default_crypto_provider();
+
+        // We cannot use proptest macros in `async` context, so generate
+        // some random data manually.
+        let mut runner = TestRunner::default();
+        let data = generate_test_batches(0, 100, 1000)
+            .new_tree(&mut runner)
+            .unwrap()
+            .current();
+
+        // Config string
+        let config_str = r#"
+name: test
+inputs:
+outputs:
+"#;
+
+        let mut config_file = NamedTempFile::new().unwrap();
+        config_file.write_all(config_str.as_bytes()).unwrap();
+
+        println!("Creating HTTP server");
+
+        let state = WebData::new(ServerState::new(None));
+        let state_clone = state.clone();
+
+        let args = ServerArgs {
+            config_file: config_file.path().display().to_string(),
+            metadata_file: None,
+            bind_address: "127.0.0.1".to_string(),
+            default_port: None,
+            storage_location: None,
+            enable_https: false,
+            https_tls_cert_path: None,
+            https_tls_key_path: None,
+        };
+
+        let config = parse_config(&args.config_file).unwrap();
+        thread::spawn(move || {
+            bootstrap(
+                args,
+                config,
+                Box::new(|workers| {
+                    Ok(test_circuit::<TestStruct>(
+                        workers,
+                        &TestStruct::schema(),
+                        &[None],
+                    ))
+                }),
+                state_clone,
+                std::sync::mpsc::channel().0,
+            )
+        });
+
+        let server =
+            actix_test::start(move || build_app(App::new().wrap(Logger::default()), state.clone()));
+
+        let start = Instant::now();
+        while server.get("/stats").send().await.unwrap().status() == StatusCode::SERVICE_UNAVAILABLE
+        {
+            assert!(start.elapsed() < Duration::from_millis(20_000));
+            sleep(Duration::from_millis(200));
+        }
+
+        // Start pipeline.
+        println!("/start");
+        let resp = server.get("/start").send().await.unwrap();
+        assert!(resp.status().is_success());
+
+        println!("/start_transaction");
+        let resp = server.post("/start_transaction").send().await.unwrap();
+        assert!(resp.status().is_success());
+
+        println!("Connecting to HTTP output endpoint");
+        let mut egress_resp = server
+            .post("/egress/test_output1?backpressure=true")
+            .send()
+            .await
+            .unwrap();
+
+        let req = server.post("/ingress/test_input1");
+
+        TestHttpSender::send_stream(req, &data).await;
+        println!("data sent");
+
+        println!("/commit_transaction");
+        let resp = server.post("/commit_transaction").send().await.unwrap();
+        assert!(resp.status().is_success());
+
+        TestHttpReceiver::wait_for_output_unordered(&mut egress_resp, &data).await;
+
+        // Shutdown
+        println!("/shutdown");
+        let resp = server.get("/shutdown").send().await.unwrap();
+        // println!("Response: {resp:?}");
+        assert!(resp.status().is_success());
     }
 }
