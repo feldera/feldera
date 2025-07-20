@@ -3,6 +3,10 @@
 from tests.aggregate_tests.aggtst_base import *  # noqa: F403
 from tests.aggregate_tests.atest_run import run  # noqa: F403
 from tests.aggregate_tests3.test_unsigned_int_tbl import *  # noqa: F403
+from tests.aggregate_tests3.test_un_int_array_agg import *  # noqa: F403
+from tests.aggregate_tests3.test_un_int_count import *  # noqa: F403
+from tests.aggregate_tests3.test_un_int_count_col import *  # noqa: F403
+from tests.aggregate_tests3.test_un_int_countif import *  # noqa: F403
 from tests.aggregate_tests3.test_un_int_arg_max import *  # noqa: F403
 from tests.aggregate_tests3.test_un_int_arg_min import *  # noqa: F403
 from tests.aggregate_tests3.test_un_int_avg import *  # noqa: F403
