@@ -736,6 +736,31 @@ enum Command {
     Restore(StoragePath),
 }
 
+impl Debug for Command {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            Command::StartStep(_span) => write!(f, "StartStep"),
+            Command::Microstep(_span) => write!(f, "Microstep"),
+            Command::Flush(_span) => write!(f, "Flush"),
+            Command::Step(_span) => write!(f, "Step"),
+            Command::BootstrapStep(_span) => write!(f, "BootstrapStep"),
+            Command::CompleteBootstrap => write!(f, "CompleteBootstrap"),
+            Command::EnableProfiler => write!(f, "EnableProfiler"),
+            Command::DumpProfile { runtime_elapsed } => f
+                .debug_struct("DumpProfile")
+                .field("runtime_elapsed", runtime_elapsed)
+                .finish(),
+            Command::RetrieveProfile { runtime_elapsed } => f
+                .debug_struct("RetrieveProfile")
+                .field("runtime_elapsed", runtime_elapsed)
+                .finish(),
+            Command::GetLir => write!(f, "GetLir"),
+            Command::Commit(path) => f.debug_tuple("Commit").field(path).finish(),
+            Command::Restore(path) => f.debug_tuple("Restore").field(path).finish(),
+        }
+    }
+}
+
 #[derive(Debug)]
 enum Response {
     Unit,
