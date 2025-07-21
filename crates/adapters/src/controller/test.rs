@@ -435,8 +435,8 @@ fn test_ft(rounds: &[FtTestRound]) {
     create_dir(tempdir.path().join("kubernetes")).unwrap();
     create_dir(tempdir.path().join("kubernetes/paths")).unwrap();
 
-    const INPUT_SECRET_REFERENCE: &'static str = "${secret:kubernetes:paths/input}";
-    const OUTPUT_SECRET_REFERENCE: &'static str = "${secret:kubernetes:paths/output}";
+    const INPUT_SECRET_REFERENCE: &str = "${secret:kubernetes:paths/input}";
+    const OUTPUT_SECRET_REFERENCE: &str = "${secret:kubernetes:paths/output}";
     let config_str = format!(
         r#"
 name: test
@@ -484,7 +484,7 @@ outputs:
     let mut prev_input_path = None;
     let mut prev_output_path = None;
 
-    const TABOO: &'static str = "TABOO";
+    const TABOO: &str = "TABOO";
 
     for (
         round,
