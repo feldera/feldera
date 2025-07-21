@@ -1208,11 +1208,11 @@ async fn shutdown(state: WebData<ServerState>) -> impl Responder {
 }
 
 #[post("/start_transaction")]
-async fn start_transaction(state: WebData<ServerState>) -> impl Responder {
+async fn start_transaction(state: WebData<ServerState>) -> Result<impl Responder, PipelineError> {
     match &*state.controller.read().unwrap() {
         Some(controller) => {
-            controller.start_transaction()?;
-            Ok(HttpResponse::Ok().json("Transaction started"))
+            let response = controller.start_transaction()?;
+            Ok(HttpResponse::Ok().json(response))
         }
         None => Err(missing_controller_error(&state)),
     }

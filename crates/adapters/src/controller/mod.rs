@@ -22,8 +22,7 @@ use crate::controller::checkpoint::{
     CheckpointInputEndpointMetrics, CheckpointOffsets, CheckpointOutputEndpointMetrics,
 };
 use crate::controller::journal::Journal;
-use crate::controller::stats::TransactionState;
-use crate::controller::stats::{InputEndpointMetrics, OutputEndpointMetrics};
+use crate::controller::stats::{InputEndpointMetrics, OutputEndpointMetrics, TransactionStatus};
 #[cfg(feature = "feldera-enterprise")]
 use crate::controller::sync::continuous_pull;
 use crate::controller::sync::SYNCHRONIZER;
@@ -78,6 +77,7 @@ use feldera_types::format::json::JsonLines;
 use feldera_types::secret_resolver::resolve_secret_references_in_connector_config;
 use feldera_types::suspend::{PermanentSuspendError, SuspendError, TemporarySuspendError};
 use feldera_types::time_series::SampleStatistics;
+use feldera_types::transaction::{StartTransactionResponse, TransactionId};
 use governor::DefaultDirectRateLimiter;
 use governor::Quota;
 use governor::RateLimiter;
@@ -94,7 +94,7 @@ use std::io::ErrorKind;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::PathBuf;
 use std::sync::mpsc::{channel, sync_channel, Receiver, SendError, Sender};
-use std::sync::{LazyLock, Weak};
+use std::sync::{LazyLock, Mutex, Weak};
 use std::thread;
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -682,19 +682,17 @@ impl Controller {
         Ok(())
     }
 
-    pub fn start_transaction(&self) -> Result<(), ControllerError> {
+    pub fn start_transaction(&self) -> Result<StartTransactionResponse, ControllerError> {
         self.inner.fail_if_bootstrapping_or_restoring()?;
 
-        self.inner.status.set_transaction_requested(true);
-        Ok(())
+        let transaction_id = self.inner.start_transaction()?;
+        Ok(StartTransactionResponse::new(transaction_id))
     }
 
     pub fn start_commit_transaction(&self) -> Result<(), ControllerError> {
         self.inner.fail_if_bootstrapping_or_restoring()?;
 
-        self.inner.status.set_transaction_requested(false);
-        self.inner.unpark_circuit();
-        Ok(())
+        self.inner.start_commit_transaction()
     }
 
     /// Check whether the pipeline has processed all input data to completion.
@@ -1356,32 +1354,29 @@ impl CircuitThread {
     }
 
     fn step_circuit(&mut self) {
-        match (
-            self.controller.status.get_transaction_requested(),
-            &self.controller.status.get_transaction_state(),
-        ) {
-            (true, TransactionState::None) => {
-                debug!("Starting transaction");
+        match self.controller.advance_transaction_state() {
+            Some(TransactionState::Started(transaction_id)) => {
+                debug!("Starting transaction {transaction_id}");
                 self.circuit.start_transaction().unwrap_or_else(|e| {
                     self.controller.error(Arc::new(e.into()));
+                    self.controller
+                        .set_transaction_state(TransactionState::None);
                 });
-                self.controller
-                    .status
-                    .set_transaction_state(TransactionState::Started);
             }
-            (false, TransactionState::Started) => {
-                debug!("Committing transaction");
+            Some(TransactionState::Committing(transaction_id)) => {
+                debug!("Committing transaction {transaction_id}");
                 self.circuit.start_commit_transaction().unwrap_or_else(|e| {
                     self.controller.error(Arc::new(e.into()));
+                    self.controller
+                        .set_transaction_state(TransactionState::Started(transaction_id));
                 });
-                self.controller
-                    .status
-                    .set_transaction_state(TransactionState::Committing);
             }
             _ => {}
         }
 
-        if self.controller.status.transaction_in_progress() {
+        let transaction_state = self.controller.get_transaction_state();
+
+        if transaction_state != TransactionState::None {
             debug!("circuit thread: calling 'circuit.step'");
 
             let committed = SamplySpan::new(debug_span!("step"))
@@ -1393,11 +1388,12 @@ impl CircuitThread {
 
             debug!("circuit thread: 'circuit.step' returned");
 
-            if self.controller.status.commit_in_progress() && committed {
-                debug!("Transaction committed");
-                self.controller
-                    .status
-                    .set_transaction_state(TransactionState::None);
+            if let TransactionState::Committing(transaction_id) = transaction_state {
+                if committed {
+                    debug!("Transaction {transaction_id} committed");
+                    self.controller
+                        .set_transaction_state(TransactionState::None);
+                }
             }
         } else {
             debug!("circuit thread: calling 'circuit.transaction'");
@@ -1674,7 +1670,7 @@ impl CircuitThread {
     fn input_step(&mut self) -> Result<Option<BufferSize>, ControllerError> {
         // No ingestion during bootstrap.
         if self.controller.status.bootstrap_in_progress()
-            || self.controller.status.commit_in_progress()
+            || self.controller.transaction_commit_in_progress()
         {
             return Ok(Some(BufferSize::empty()));
         }
@@ -2424,9 +2420,8 @@ impl StepTrigger {
             .checkpoint_interval
             .map(|interval| last_checkpoint + interval);
 
-        let transaction_state = self.controller.status.get_transaction_state();
-        let transaction_requested = self.controller.status.get_transaction_requested();
-        let committing = transaction_state != TransactionState::None && !transaction_requested;
+        // Used to force a step regardless of input
+        let committing = self.controller.transaction_commit_requested();
 
         fn step(trigger: &mut StepTrigger) -> Action {
             trigger.needs_first_step = false;
@@ -3041,6 +3036,43 @@ impl OutputBuffer {
 pub type ConsistentSnapshots =
     Arc<TokioMutex<BTreeMap<SqlIdentifier, Vec<Arc<dyn SyncSerBatchReader>>>>>;
 
+/// Current state of transaction processing.
+#[derive(Default, Debug, Clone, PartialEq, Eq, Copy)]
+pub enum TransactionState {
+    /// No transaction in progress.
+    #[default]
+    None,
+    /// A transaction is running. New inputs ingested in this state become part of the transaction.
+    /// No outputs are produced until the state changes to committing.
+    Started(TransactionId),
+    /// A transaction is committing. In this state the pipeline doesn't accept new inputs from
+    /// connectors and computes all outputs for the inputs received in the Started state.
+    Committing(TransactionId),
+}
+
+#[derive(Default, Clone)]
+struct TransactionInfo {
+    /// Used to assign the next transaction id.
+    last_transaction_id: TransactionId,
+    /// Desired state of the transaction. Set to Some() to start a new transaction.
+    /// Set to None to commit the current transaction.
+    ///
+    /// This field is modified by the REST API.
+    transaction_requested: Option<TransactionId>,
+    /// Actual pipeline state, set by the circuit thread.
+    transaction_state: TransactionState,
+}
+
+impl TransactionInfo {
+    fn new() -> Self {
+        TransactionInfo {
+            last_transaction_id: 0,
+            transaction_requested: None,
+            transaction_state: TransactionState::None,
+        }
+    }
+}
+
 /// Controller state sharable across threads.
 ///
 /// A reference to this struct is held by each input probe and by both
@@ -3062,6 +3094,9 @@ pub struct ControllerInner {
     error_cb: Box<dyn Fn(Arc<ControllerError>) + Send + Sync>,
     session_ctxt: SessionContext,
     fault_tolerance: Option<FtModel>,
+    // The mutex is acquired from async context by actix and
+    // from the sync context by the circuit thread.
+    transaction_info: Mutex<TransactionInfo>,
 
     /// Is the circuit thread still restoring from a checkpoint (this includes the journal replay phase)?
     restoring: AtomicBool,
@@ -3104,6 +3139,7 @@ impl ControllerInner {
             error_cb,
             session_ctxt,
             fault_tolerance: config.global.fault_tolerance.model,
+            transaction_info: Mutex::new(TransactionInfo::new()),
             restoring: AtomicBool::new(config.global.fault_tolerance.is_enabled()),
         });
         controller.initialize_adhoc_queries();
@@ -4071,6 +4107,183 @@ impl ControllerInner {
         } else {
             Ok(())
         }
+    }
+
+    /// Update transaction status in GlobalControllerMetrics given the current value of TransactionInfo.
+    fn update_transaction_status(&self, transaction_info: &TransactionInfo) {
+        match (
+            transaction_info.transaction_state,
+            transaction_info.transaction_requested,
+        ) {
+            (TransactionState::None, None) => {
+                self.status
+                    .global_metrics
+                    .transaction_id
+                    .store(0, Ordering::Release);
+                self.status
+                    .global_metrics
+                    .transaction_status
+                    .store(TransactionStatus::None, Ordering::Release);
+            }
+            (TransactionState::Started(tid), None) => {
+                assert_ne!(tid, 0);
+
+                self.status
+                    .global_metrics
+                    .transaction_id
+                    .store(tid, Ordering::Release);
+                self.status
+                    .global_metrics
+                    .transaction_status
+                    .store(TransactionStatus::CommitRequested, Ordering::Release);
+            }
+            (TransactionState::Committing(tid), None) => {
+                assert_ne!(tid, 0);
+
+                self.status
+                    .global_metrics
+                    .transaction_id
+                    .store(tid, Ordering::Release);
+                self.status
+                    .global_metrics
+                    .transaction_status
+                    .store(TransactionStatus::CommitInProgress, Ordering::Release);
+            }
+            (TransactionState::None, Some(tid)) => {
+                assert_ne!(tid, 0);
+
+                self.status
+                    .global_metrics
+                    .transaction_id
+                    .store(tid, Ordering::Release);
+                self.status
+                    .global_metrics
+                    .transaction_status
+                    .store(TransactionStatus::TransactionStarting, Ordering::Release);
+            }
+            (TransactionState::Started(tid), Some(tid2)) => {
+                assert_ne!(tid, 0);
+                assert_eq!(tid, tid2);
+
+                self.status
+                    .global_metrics
+                    .transaction_id
+                    .store(tid, Ordering::Release);
+                self.status
+                    .global_metrics
+                    .transaction_status
+                    .store(TransactionStatus::TransactionInProgress, Ordering::Release);
+            }
+            (TransactionState::Committing(_), Some(_)) => {
+                error!(
+                    "Invalid transaction state: actual state: {:?}; desired state {:?}",
+                    transaction_info.transaction_state, transaction_info.transaction_requested
+                )
+            }
+        }
+    }
+
+    /// Initiate a new transaction.
+    ///
+    /// Fails if there is already a transaction in progress.
+    ///
+    /// Returns new transaction id on success.
+    pub fn start_transaction(&self) -> Result<TransactionId, ControllerError> {
+        let transaction_info = &mut *self.transaction_info.lock().unwrap();
+
+        if transaction_info.transaction_requested.is_some()
+            || transaction_info.transaction_state != TransactionState::None
+        {
+            return Err(ControllerError::TransactionInProgress);
+        }
+
+        transaction_info.last_transaction_id += 1;
+        transaction_info.transaction_requested = Some(transaction_info.last_transaction_id);
+        self.update_transaction_status(transaction_info);
+
+        Ok(transaction_info.last_transaction_id)
+    }
+
+    /// Start committing the current transaction by setting desired state to None.
+    ///
+    /// Fails if transaction_requested is already None, i.e., there is no transaction in
+    /// progress or commit has already been initiated for the current transaction.
+    pub fn start_commit_transaction(&self) -> Result<(), ControllerError> {
+        let transaction_info = &mut *self.transaction_info.lock().unwrap();
+
+        if transaction_info.transaction_requested.is_none() {
+            Err(ControllerError::NoTransactionInProgress)
+        } else {
+            transaction_info.transaction_requested = None;
+            self.update_transaction_status(transaction_info);
+
+            self.unpark_circuit();
+
+            Ok(())
+        }
+    }
+
+    /// Update transaction_info.transaction_state.
+    pub fn set_transaction_state(&self, transaction_state: TransactionState) {
+        let transaction_info = &mut *self.transaction_info.lock().unwrap();
+
+        transaction_info.transaction_state = transaction_state;
+        self.update_transaction_status(transaction_info);
+    }
+
+    /// Read the current value of transaction_info.transaction_state.
+    pub fn get_transaction_state(&self) -> TransactionState {
+        self.transaction_info.lock().unwrap().transaction_state
+    }
+
+    /// Returns true if there is a transaction in progress (transaction_state != None)
+    /// and the client requested to commit the transaction (transaction_requested = None).
+    ///
+    /// Used to decide whether the circuit needs to perform a step in order to advance
+    /// commit processing.
+    pub fn transaction_commit_requested(&self) -> bool {
+        let TransactionInfo {
+            transaction_requested,
+            transaction_state,
+            ..
+        } = &mut *self.transaction_info.lock().unwrap();
+
+        *transaction_state != TransactionState::None && transaction_requested.is_none()
+    }
+
+    /// Returns true if (transaction_state == Committing).
+    ///
+    /// Used to prevent the pipeline from ingesting new inputs while committing a transaction.
+    pub fn transaction_commit_in_progress(&self) -> bool {
+        let TransactionInfo {
+            transaction_state, ..
+        } = &mut *self.transaction_info.lock().unwrap();
+
+        matches!(transaction_state, TransactionState::Committing(_))
+    }
+
+    /// Advance transaction state from None to Started or from Started to committing in response
+    /// to desired state changes.
+    pub fn advance_transaction_state(&self) -> Option<TransactionState> {
+        let transaction_info = &mut *self.transaction_info.lock().unwrap();
+
+        let result = match (
+            transaction_info.transaction_requested,
+            transaction_info.transaction_state,
+        ) {
+            (Some(transaction_id), TransactionState::None) => {
+                transaction_info.transaction_state = TransactionState::Started(transaction_id);
+                Some(transaction_info.transaction_state)
+            }
+            (None, TransactionState::Started(transaction_id)) => {
+                transaction_info.transaction_state = TransactionState::Committing(transaction_id);
+                Some(transaction_info.transaction_state)
+            }
+            _ => None,
+        };
+
+        self.update_transaction_status(transaction_info);
+        result
     }
 }
 
