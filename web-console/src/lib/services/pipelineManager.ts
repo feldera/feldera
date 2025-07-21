@@ -471,7 +471,11 @@ const streamingFetch = async <E1, E2>(
     return result.status === 200 && result.body
       ? {
           stream: result.body,
-          cancel: controller.abort.bind(controller)
+          cancel: () => {
+            try {
+              controller.abort()
+            } catch {}
+          }
         }
       : result.json().then(handleResponseError)
   } catch (e) {
