@@ -6,6 +6,7 @@ use crate::{
     Controller, PipelineConfig,
 };
 use csv::{ReaderBuilder as CsvReaderBuilder, WriterBuilder as CsvWriterBuilder};
+use feldera_types::constants::STATE_FILE;
 use std::{
     cmp::min,
     fmt::Write as _,
@@ -434,6 +435,8 @@ fn test_ft(rounds: &[FtTestRound]) {
     create_dir(tempdir.path().join("kubernetes")).unwrap();
     create_dir(tempdir.path().join("kubernetes/paths")).unwrap();
 
+    const INPUT_SECRET_REFERENCE: &'static str = "${secret:kubernetes:paths/input}";
+    const OUTPUT_SECRET_REFERENCE: &'static str = "${secret:kubernetes:paths/output}";
     let config_str = format!(
         r#"
 name: test
@@ -450,7 +453,7 @@ inputs:
         transport:
             name: file_input
             config:
-                path: ${{secret:kubernetes:paths/input}}
+                path: {INPUT_SECRET_REFERENCE}
                 follow: true
         format:
             name: csv
@@ -460,7 +463,7 @@ outputs:
         transport:
             name: file_output
             config:
-                path: ${{secret:kubernetes:paths/output}}
+                path: {OUTPUT_SECRET_REFERENCE}
         format:
             name: csv
             config:
@@ -481,6 +484,8 @@ outputs:
     let mut prev_input_path = None;
     let mut prev_output_path = None;
 
+    const TABOO: &'static str = "TABOO";
+
     for (
         round,
         FtTestRound {
@@ -492,7 +497,7 @@ outputs:
     ) in rounds.iter().cloned().enumerate()
     {
         // Create input file, or move it from its previous location.
-        let input_path = tempdir_path.join(format!("input{round}.csv"));
+        let input_path = tempdir_path.join(format!("{TABOO}-input{round}.csv"));
         let input_file = if let Some(prev_input_path) = &prev_input_path {
             std::fs::rename(prev_input_path, &input_path).unwrap();
             File::options().append(true).open(&input_path).unwrap()
@@ -504,7 +509,7 @@ outputs:
             .from_writer(&input_file);
 
         // Move output file from its previous location, if any.
-        let output_path = tempdir_path.join(format!("output{round}.csv"));
+        let output_path = tempdir_path.join(format!("{TABOO}-output{round}.csv"));
         if let Some(prev_output_path) = &prev_output_path {
             std::fs::rename(prev_output_path, &output_path).unwrap();
         };
@@ -646,12 +651,54 @@ outputs:
 
         if do_checkpoint || immedate_checkpoint {
             checkpointed_records = total_records;
+
+            // Read the checkpoint file and make sure that:
+            //
+            // - The TABOO string does not appear in it.  It must not be in
+            //   there because it appears only in the expanded version of the
+            //   secret, not in the name of the secret.
+            //
+            // - The INPUT_SECRET_REFERENCE and OUTPUT_SECRET_REFERENCE strings
+            //   do appear in it.  These must be there because they are what
+            //   expands to the secrets.
+            //
+            //   It is valuable to check for these because this gives us some
+            //   confidence that the file isn't encoded in some form such that
+            //   TABOO appears but just not literally.  That is, our check for
+            //   TABOO would fail if TABOO were to be base64-encoded, but in
+            //   that case it's likely that INPUT_SECRET_REFERENCE and
+            //   OUTPUT_SECRET_REFERENCE are also base64-encoded, so that these
+            //   tests would fail.
+            //
+            //   (As of this writing, the checkpoint file is encoded in
+            //   plaintext JSON, but this check will alert us if that changes
+            //   without updating this test.)
+            let checkpoint = std::fs::read(storage_dir.join(STATE_FILE)).unwrap();
+            assert!(!contains_subslice(&checkpoint, TABOO.as_bytes()));
+            assert!(contains_subslice(
+                &checkpoint,
+                INPUT_SECRET_REFERENCE.as_bytes()
+            ));
+            assert!(contains_subslice(
+                &checkpoint,
+                OUTPUT_SECRET_REFERENCE.as_bytes()
+            ));
         }
         println!();
 
         prev_input_path = Some(input_path);
         prev_output_path = Some(output_path);
     }
+}
+
+/// Returns true if `needle` is present as any subslice of `haystack`.
+///
+/// Yes it's appalling that this isn't part of the standard library, see
+/// https://github.com/rust-lang/rust/issues/54961
+fn contains_subslice(haystack: &[u8], needle: &[u8]) -> bool {
+    haystack
+        .windows(needle.len())
+        .any(|window| window == needle)
 }
 
 fn _test_concurrent_init(max_parallel_connector_init: u64) {
