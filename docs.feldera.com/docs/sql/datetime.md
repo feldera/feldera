@@ -370,8 +370,10 @@ is triggered when the pipeline receives one or more new inputs or after a
 user-configurable period of time if no new inputs arrive.
 When executing a step, the pipeline incrementally updates all its views.
 In particular, views that depend on the value of `NOW()` are updated
-using the new current time.  The value of `NOW()` remains constant within a
-step.
+using the new current time.  The value of `NOW()` remains constant
+within a step.  The value returned by the `NOW()` function
+is a `TIMESTAMP WITHOUT TIMEZONE` returning the current time in the UTC
+timezone, and thus is guaranteed to always be increasing.
 
 By default, in the absence of new inputs, a step is triggered every
 100 milliseconds.  This behavior is controlled by the
