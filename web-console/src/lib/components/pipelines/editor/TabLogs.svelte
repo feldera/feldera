@@ -26,9 +26,11 @@
   import LogsStreamList from '$lib/components/pipelines/editor/LogsStreamList.svelte'
 
   import {
-    parseCancellable,
+    BatchProcessor,
+    createBatchingTransform,
     pushAsCircularBuffer,
-    SplitNewlineTransformStream
+    SplitNewlineTransformStream,
+    splitStreamByMaxChunk
   } from '$lib/functions/pipelines/changeStream'
   import { type ExtendedPipeline, type PipelineStatus } from '$lib/services/pipelineManager'
   import { usePipelineActionCallbacks } from '$lib/compositions/pipelines/usePipelineActionCallbacks.svelte'
@@ -109,8 +111,8 @@
         tryRestartStream(pipelineName, 5000)
         return
       }
-      const { cancel } = parseCancellable(
-        result,
+      const batchProcessor = new BatchProcessor(
+        { cancel: () => result.cancel() },
         {
           pushChanges: (changes: string[]) => {
             const droppedNum = pushAsCircularBuffer(
@@ -126,16 +128,25 @@
               return
             }
             tryRestartStream(pipelineName, 5000)
-          },
-          onBytesSkipped(bytes) {
-            streams[pipelineName].totalSkippedBytes += bytes
           }
-        },
-        new SplitNewlineTransformStream(),
-        {
-          bufferSize: 16 * 1024 * 1024
         }
       )
+      const cancel = () => {
+        batchProcessor.cancel()
+      }
+      result.stream
+        .pipeThrough(
+          splitStreamByMaxChunk({
+            maxChunkBytes: 100000,
+            maxChunkBufferSize: 16 * 1024 * 1024,
+            onBytesSkipped(bytes) {
+              streams[pipelineName].totalSkippedBytes += bytes
+            }
+          })
+        )
+        .pipeThrough(new SplitNewlineTransformStream())
+        .pipeThrough(createBatchingTransform())
+        .pipeTo(batchProcessor)
       streams[pipelineName] = {
         firstRowIndex: 0,
         stream: { open: result.stream, stop: cancel },
