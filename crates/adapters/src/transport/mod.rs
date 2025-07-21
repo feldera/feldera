@@ -20,9 +20,12 @@
 //! let endpoint = input_transport_config_to_endpoint(config.clone());
 //! let reader = endpoint.open(consumer, 0);
 //! ```
+use std::path::Path;
+
 use adhoc::AdHocInputEndpoint;
 use anyhow::Result as AnyResult;
 use clock::ClockEndpoint;
+use feldera_types::secret_resolver::resolve_secret_references_via_yaml;
 use http::HttpInputEndpoint;
 #[cfg(feature = "with-pubsub")]
 use pubsub::PubSubInputEndpoint;
@@ -66,15 +69,18 @@ use feldera_datagen::GeneratorEndpoint;
 
 pub use feldera_adapterlib::transport::*;
 
-/// Creates an input transport endpoint instance using an input transport configuration.
+/// Creates an input transport endpoint instance using an input transport
+/// configuration, resolving secrets by reading `secrets_dir`.
 ///
 /// Returns an error if there is a invalid configuration for the endpoint.
 /// Returns `None` if the transport configuration variant is incompatible with an input endpoint.
 #[allow(unused_variables)]
 pub fn input_transport_config_to_endpoint(
-    config: TransportConfig,
+    config: &TransportConfig,
     endpoint_name: &str,
+    secrets_dir: &Path,
 ) -> AnyResult<Option<Box<dyn TransportInputEndpoint>>> {
+    let config = resolve_secret_references_via_yaml(secrets_dir, config)?;
     let endpoint: Box<dyn TransportInputEndpoint> = match config {
         TransportConfig::FileInput(config) => Box::new(FileInputEndpoint::new(config)),
         #[cfg(feature = "with-kafka")]
@@ -108,7 +114,8 @@ pub fn input_transport_config_to_endpoint(
     Ok(Some(endpoint))
 }
 
-/// Creates an output transport endpoint instance using an output transport configuration.
+/// Creates an output transport endpoint instance using an output transport
+/// configuration, resolving secrets by reading `secrets_dir`.
 ///
 /// If `fault_tolerant` is true, this function attempts to create a
 /// fault-tolerant output endpoint (but it will still return a non-FT endpoint
@@ -118,10 +125,12 @@ pub fn input_transport_config_to_endpoint(
 /// Returns `None` if the transport configuration variant is incompatible with an output endpoint.
 #[allow(unused_variables)]
 pub fn output_transport_config_to_endpoint(
-    config: TransportConfig,
+    config: &TransportConfig,
     endpoint_name: &str,
     fault_tolerant: bool,
+    secrets_dir: &Path,
 ) -> AnyResult<Option<Box<dyn OutputEndpoint>>> {
+    let config = resolve_secret_references_via_yaml(secrets_dir, config)?;
     match config {
         TransportConfig::FileOutput(config) => Ok(Some(Box::new(FileOutputEndpoint::new(config)?))),
         #[cfg(feature = "with-kafka")]

@@ -34,9 +34,6 @@ use feldera_types::completion_token::{
     CompletionStatusArgs, CompletionStatusResponse, CompletionTokenResponse,
 };
 use feldera_types::query_params::{MetricsFormat, MetricsParameters};
-use feldera_types::secret_resolver::{
-    resolve_secret_references_in_connector_config, DEFAULT_SECRETS_DIRECTORY_PATH,
-};
 use feldera_types::suspend::{SuspendError, SuspendableResponse};
 use feldera_types::{
     checkpoint::CheckpointMetadata,
@@ -50,7 +47,7 @@ use serde::Deserialize;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::hash::{BuildHasherDefault, DefaultHasher};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::{
     borrow::Cow,
     net::TcpListener,
@@ -452,26 +449,8 @@ fn parse_config(config_file: &str) -> Result<PipelineConfig, ControllerError> {
     eprintln!("Pipeline configuration:\n{yaml_config}");
 
     // Deserialize the pipeline configuration
-    let mut pipeline_config: PipelineConfig = serde_yaml::from_str(yaml_config.as_str())
-        .map_err(|e| ControllerError::pipeline_config_parse_error(&e))?;
-
-    // Replace the secret references with their actual secret values
-    for (_k, v) in pipeline_config.inputs.iter_mut() {
-        v.connector_config = resolve_secret_references_in_connector_config(
-            Path::new(DEFAULT_SECRETS_DIRECTORY_PATH),
-            &v.connector_config,
-        )
-        .map_err(|e| ControllerError::pipeline_config_parse_error(&e))?;
-    }
-    for (_k, v) in pipeline_config.outputs.iter_mut() {
-        v.connector_config = resolve_secret_references_in_connector_config(
-            Path::new(DEFAULT_SECRETS_DIRECTORY_PATH),
-            &v.connector_config,
-        )
-        .map_err(|e| ControllerError::pipeline_config_parse_error(&e))?;
-    }
-
-    Ok(pipeline_config)
+    serde_yaml::from_str(yaml_config.as_str())
+        .map_err(|e| ControllerError::pipeline_config_parse_error(&e))
 }
 
 // Initialization thread function.

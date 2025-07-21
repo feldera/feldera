@@ -23,6 +23,7 @@ use feldera_types::config::{
     InputEndpointConfig, OutputBufferConfig, TransportConfig,
 };
 use feldera_types::program_schema::Relation;
+use feldera_types::secret_resolver::default_secrets_directory;
 use feldera_types::transport::kafka::{
     default_group_join_timeout_secs, default_redpanda_server, KafkaInputConfig, KafkaLogLevel,
     KafkaStartFromConfig,
@@ -129,10 +130,13 @@ config:
 "#
     );
 
-    let endpoint =
-        input_transport_config_to_endpoint(serde_yaml::from_str(&config_str).unwrap(), "")
-            .unwrap()
-            .unwrap();
+    let endpoint = input_transport_config_to_endpoint(
+        &serde_yaml::from_str(&config_str).unwrap(),
+        "",
+        default_secrets_directory(),
+    )
+    .unwrap()
+    .unwrap();
     assert!(endpoint.fault_tolerance() == Some(FtModel::ExactlyOnce));
 
     let receiver = DummyInputReceiver::new();
@@ -576,10 +580,14 @@ config:
 "#
     );
 
-    let mut endpoint =
-        output_transport_config_to_endpoint(serde_yaml::from_str(&config_str).unwrap(), "", true)
-            .unwrap()
-            .unwrap();
+    let mut endpoint = output_transport_config_to_endpoint(
+        &serde_yaml::from_str(&config_str).unwrap(),
+        "",
+        true,
+        default_secrets_directory(),
+    )
+    .unwrap()
+    .unwrap();
     assert!(endpoint.is_fault_tolerant());
     endpoint
         .connect(Box::new(|fatal, error| info!("({fatal:?}, {error:?})")))
@@ -600,10 +608,14 @@ config:
     topic: my_topic
 "#;
 
-    let mut endpoint =
-        output_transport_config_to_endpoint(serde_yaml::from_str(config_str).unwrap(), "", true)
-            .unwrap()
-            .unwrap();
+    let mut endpoint = output_transport_config_to_endpoint(
+        &serde_yaml::from_str(config_str).unwrap(),
+        "",
+        true,
+        default_secrets_directory(),
+    )
+    .unwrap()
+    .unwrap();
     assert!(endpoint.is_fault_tolerant());
     endpoint
         .connect(Box::new(|fatal, error| info!("({fatal:?}, {error:?})")))

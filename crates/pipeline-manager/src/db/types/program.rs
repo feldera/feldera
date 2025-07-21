@@ -764,6 +764,7 @@ pub fn generate_pipeline_config(
         name: Some(format!("pipeline-{pipeline_id}")),
         global: runtime_config.clone(),
         storage_config: None, // Set by the runner based on global field
+        secrets_dir: None,
         inputs: inputs.clone(),
         outputs: outputs.clone(),
     }

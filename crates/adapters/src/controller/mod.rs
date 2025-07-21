@@ -53,6 +53,7 @@ use feldera_ir::LirCircuit;
 use feldera_storage::checkpoint_synchronizer::CheckpointSynchronizer;
 use feldera_types::checkpoint::CheckpointMetadata;
 use feldera_types::format::json::JsonLines;
+use feldera_types::secret_resolver::resolve_secret_references_in_connector_config;
 use feldera_types::suspend::{PermanentSuspendError, SuspendError, TemporarySuspendError};
 use governor::DefaultDirectRateLimiter;
 use governor::Quota;
@@ -69,6 +70,7 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::io::ErrorKind;
 use std::panic::{catch_unwind, AssertUnwindSafe};
+use std::path::PathBuf;
 use std::sync::atomic::AtomicI64;
 use std::sync::mpsc::{channel, sync_channel, Receiver, SendError, Sender};
 use std::sync::LazyLock;
@@ -2132,6 +2134,7 @@ impl ControllerInit {
             outputs: checkpoint_config.outputs,
 
             // Other settings from the pipeline manager.
+            secrets_dir: config.secrets_dir,
             name: config.name,
             storage_config: config.storage_config,
         };
@@ -2573,6 +2576,7 @@ pub type ConsistentSnapshots =
 /// controller threads.
 pub struct ControllerInner {
     pub status: Arc<ControllerStatus>,
+    secrets_dir: PathBuf,
     num_api_connections: AtomicU64,
     command_sender: Sender<Command>,
     catalog: Arc<Box<dyn CircuitCatalog>>,
@@ -2608,6 +2612,7 @@ impl ControllerInner {
         let session_ctxt = create_session_context(&config)?;
         let controller = Arc::new(Self {
             status,
+            secrets_dir: config.secrets_dir().to_path_buf(),
             num_api_connections: AtomicU64::new(0),
             command_sender,
             catalog: Arc::new(catalog),
@@ -2732,8 +2737,9 @@ impl ControllerInner {
         resume_info: Option<JsonValue>,
     ) -> Result<EndpointId, ControllerError> {
         let endpoint = input_transport_config_to_endpoint(
-            endpoint_config.connector_config.transport.clone(),
+            &endpoint_config.connector_config.transport,
             endpoint_name,
+            &self.secrets_dir,
         )
         .map_err(|e| ControllerError::input_transport_error(endpoint_name, true, e))?;
 
@@ -2787,6 +2793,12 @@ impl ControllerInner {
             Err(ControllerError::duplicate_input_endpoint(endpoint_name))?;
         }
 
+        let resolved_connector_config = resolve_secret_references_in_connector_config(
+            &self.secrets_dir,
+            &endpoint_config.connector_config,
+        )
+        .map_err(|e| ControllerError::pipeline_config_parse_error(&e))?;
+
         // Create input pipeline, consisting of a transport endpoint and parser.
 
         let input_handle = self
@@ -2807,23 +2819,11 @@ impl ControllerInner {
         let fault_tolerance = match endpoint {
             Some(endpoint) => {
                 // Create parser.
-                let format_config = if endpoint_config.connector_config.transport.name()
-                    != "datagen"
-                {
-                    endpoint_config
-                        .connector_config
-                        .format
-                        .as_ref()
-                        .ok_or_else(|| ControllerError::input_format_not_specified(endpoint_name))?
-                        .clone()
-                } else {
-                    if endpoint_config.connector_config.format.is_some() {
-                        return Err(ControllerError::input_format_not_supported(
-                            endpoint_name,
-                            "datagen endpoints do not support custom formats: remove the 'format' section from connector specification",
-                        ));
-                    }
-                    FormatConfig {
+                let format_config = match (
+                    &resolved_connector_config.transport,
+                    &resolved_connector_config.format,
+                ) {
+                    (TransportConfig::Datagen(_), None) => FormatConfig {
                         name: Cow::from("json"),
                         config: serde_yaml::to_value(JsonParserConfig {
                             update_format: JsonUpdateFormat::Raw,
@@ -2832,7 +2832,14 @@ impl ControllerInner {
                             lines: JsonLines::Multiple,
                         })
                         .unwrap(),
-                    }
+                    },
+                    (TransportConfig::Datagen(_), Some(_)) =>
+                        return Err(ControllerError::input_format_not_supported(
+                            endpoint_name,
+                            "datagen endpoints do not support custom formats: remove the 'format' section from connector specification",
+                        )),
+                    (_, Some(format)) => format.clone(),
+                    (_, None) => return Err(ControllerError::input_format_not_specified(endpoint_name)),
                 };
 
                 let format = get_input_format(&format_config.name).ok_or_else(|| {
@@ -2873,8 +2880,11 @@ impl ControllerInner {
                 fault_tolerance
             }
             None => {
-                let endpoint =
-                    create_integrated_input_endpoint(endpoint_name, &endpoint_config, probe)?;
+                let endpoint = create_integrated_input_endpoint(
+                    endpoint_name,
+                    &resolved_connector_config,
+                    probe,
+                )?;
 
                 let fault_tolerance = endpoint.fault_tolerance();
 
@@ -2959,9 +2969,10 @@ impl ControllerInner {
         endpoint_config: &OutputEndpointConfig,
     ) -> Result<EndpointId, ControllerError> {
         let endpoint = output_transport_config_to_endpoint(
-            endpoint_config.connector_config.transport.clone(),
+            &endpoint_config.connector_config.transport,
             endpoint_name,
             self.fault_tolerance == Some(FtModel::ExactlyOnce),
+            &self.secrets_dir,
         )
         .map_err(|e| ControllerError::output_transport_error(endpoint_name, true, e))?;
 
@@ -3005,6 +3016,12 @@ impl ControllerInner {
         {
             Err(ControllerError::duplicate_output_endpoint(endpoint_name))?;
         }
+
+        let resolved_connector_config = resolve_secret_references_in_connector_config(
+            &self.secrets_dir,
+            &endpoint_config.connector_config,
+        )
+        .map_err(|e| ControllerError::pipeline_config_parse_error(&e))?;
 
         // Create output pipeline, consisting of an encoder, output probe and
         // transport endpoint; run the pipeline in a separate thread.
@@ -3086,8 +3103,7 @@ impl ControllerInner {
             ));
 
             // Create encoder.
-            let format_config = endpoint_config
-                .connector_config
+            let format_config = resolved_connector_config
                 .format
                 .as_ref()
                 .ok_or_else(|| ControllerError::output_format_not_specified(endpoint_name))?
@@ -3098,7 +3114,7 @@ impl ControllerInner {
             })?;
             format.new_encoder(
                 endpoint_name,
-                &endpoint_config.connector_config,
+                &resolved_connector_config,
                 &handles.key_schema,
                 &handles.value_schema,
                 probe,
@@ -3108,7 +3124,7 @@ impl ControllerInner {
             let endpoint = create_integrated_output_endpoint(
                 endpoint_id,
                 endpoint_name,
-                endpoint_config,
+                &resolved_connector_config,
                 &handles.key_schema,
                 &handles.value_schema,
                 self_weak,
