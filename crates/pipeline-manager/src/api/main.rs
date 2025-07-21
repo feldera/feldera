@@ -302,6 +302,8 @@ fn api_scope() -> Scope {
         .service(endpoints::pipeline_interaction::pipeline_adhoc_sql)
         .service(endpoints::pipeline_interaction::completion_token)
         .service(endpoints::pipeline_interaction::completion_status)
+        .service(endpoints::pipeline_interaction::start_transaction)
+        .service(endpoints::pipeline_interaction::commit_transaction)
         // API keys endpoints
         .service(endpoints::api_key::list_api_keys)
         .service(endpoints::api_key::get_api_key)

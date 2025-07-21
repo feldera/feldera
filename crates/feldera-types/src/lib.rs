@@ -11,4 +11,5 @@ pub mod secret_ref;
 pub mod secret_resolver;
 pub mod serde_with_context;
 pub mod suspend;
+pub mod transaction;
 pub mod transport;

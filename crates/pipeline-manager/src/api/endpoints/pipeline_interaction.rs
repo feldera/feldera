@@ -1130,3 +1130,112 @@ pub(crate) async fn completion_status(
 
     Ok(response)
 }
+
+/// Start a transaction.
+#[utoipa::path(
+    context_path = "/v0",
+    security(("JSON web token (JWT) or API key" = [])),
+    params(
+        ("pipeline_name" = String, Path, description = "Unique pipeline name"),
+    ),
+    responses(
+        (status = OK
+            , description = "Transaction successfully started."
+            , content_type = "application/json"
+            , body = StartTransactionResponse),
+        (status = CONFLICT
+            , description = "Another transaction is already in progress."
+            , body = ErrorResponse),
+        (status = SERVICE_UNAVAILABLE
+            , body = ErrorResponse
+            , examples(
+                ("Pipeline is not deployed" = (value = json!(examples::error_pipeline_interaction_not_deployed()))),
+                ("Pipeline is currently unavailable" = (value = json!(examples::error_pipeline_interaction_currently_unavailable()))),
+                ("Disconnected during response" = (value = json!(examples::error_pipeline_interaction_disconnected()))),
+                ("Response timeout" = (value = json!(examples::error_pipeline_interaction_timeout())))
+            )
+        ),
+        (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
+    ),
+    tag = "Pipeline interaction"
+)]
+#[post("/pipelines/{pipeline_name}/start_transaction")]
+pub(crate) async fn start_transaction(
+    state: WebData<ServerState>,
+    client: WebData<awc::Client>,
+    tenant_id: ReqData<TenantId>,
+    path: web::Path<String>,
+    request: HttpRequest,
+) -> Result<HttpResponse, ManagerError> {
+    let pipeline_name = path.into_inner();
+
+    // Forward the action request to the pipeline
+    let response = state
+        .runner
+        .forward_http_request_to_pipeline_by_name(
+            client.as_ref(),
+            *tenant_id,
+            &pipeline_name,
+            Method::POST,
+            "start_transaction",
+            request.query_string(),
+            None,
+        )
+        .await?;
+
+    Ok(response)
+}
+
+/// Commit the current transaction.
+#[utoipa::path(
+    context_path = "/v0",
+    security(("JSON web token (JWT) or API key" = [])),
+    params(
+        ("pipeline_name" = String, Path, description = "Unique pipeline name"),
+    ),
+    responses(
+        (status = OK
+            , description = "Commit operation initiated."
+            , content_type = "application/json"),
+        (status = CONFLICT
+            , description = "Another transaction is already in progress."
+            , body = ErrorResponse),
+        (status = SERVICE_UNAVAILABLE
+            , body = ErrorResponse
+            , examples(
+                ("Pipeline is not deployed" = (value = json!(examples::error_pipeline_interaction_not_deployed()))),
+                ("Pipeline is currently unavailable" = (value = json!(examples::error_pipeline_interaction_currently_unavailable()))),
+                ("Disconnected during response" = (value = json!(examples::error_pipeline_interaction_disconnected()))),
+                ("Response timeout" = (value = json!(examples::error_pipeline_interaction_timeout())))
+            )
+        ),
+        (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
+    ),
+    tag = "Pipeline interaction"
+)]
+#[post("/pipelines/{pipeline_name}/commit_transaction")]
+pub(crate) async fn commit_transaction(
+    state: WebData<ServerState>,
+    client: WebData<awc::Client>,
+    tenant_id: ReqData<TenantId>,
+    path: web::Path<String>,
+    request: HttpRequest,
+) -> Result<HttpResponse, ManagerError> {
+    let pipeline_name = path.into_inner();
+
+    // Forward the action request to the pipeline
+    let response = state
+        .runner
+        .forward_http_request_to_pipeline_by_name(
+            client.as_ref(),
+            *tenant_id,
+            &pipeline_name,
+            Method::POST,
+            "commit_transaction",
+            request.query_string(),
+            None,
+        )
+        .await?;
+
+    Ok(response)
+}
