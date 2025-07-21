@@ -6,7 +6,9 @@
 use crate::controller::{ControllerInner, EndpointId};
 use crate::transport::IntegratedInputEndpoint;
 use crate::{ControllerError, Encoder, InputConsumer, OutputEndpoint, TransportInputEndpoint};
-use feldera_types::config::{InputEndpointConfig, OutputEndpointConfig, TransportConfig};
+use feldera_types::config::{
+    ConnectorConfig, InputEndpointConfig, OutputEndpointConfig, TransportConfig,
+};
 use feldera_types::program_schema::Relation;
 use postgres::PostgresOutputEndpoint;
 use std::sync::Weak;
@@ -53,12 +55,13 @@ where
 pub fn create_integrated_output_endpoint(
     endpoint_id: EndpointId,
     endpoint_name: &str,
-    config: &OutputEndpointConfig,
+
+    connector_config: &ConnectorConfig,
     key_schema: &Option<Relation>,
     schema: &Relation,
     controller: Weak<ControllerInner>,
 ) -> Result<Box<dyn IntegratedOutputEndpoint>, ControllerError> {
-    let ep: Box<dyn IntegratedOutputEndpoint> = match &config.connector_config.transport {
+    let ep: Box<dyn IntegratedOutputEndpoint> = match &connector_config.transport {
         #[cfg(feature = "with-deltalake")]
         TransportConfig::DeltaTableOutput(config) => Box::new(DeltaTableWriter::new(
             endpoint_id,
@@ -84,12 +87,12 @@ pub fn create_integrated_output_endpoint(
         }
     };
 
-    if config.connector_config.format.is_some() {
+    if connector_config.format.is_some() {
         return Err(ControllerError::invalid_parser_configuration(
             endpoint_name,
             &format!(
                 "{} transport does not allow 'format' specification",
-                config.connector_config.transport.name()
+                connector_config.transport.name()
             ),
         ));
     }
@@ -99,10 +102,10 @@ pub fn create_integrated_output_endpoint(
 
 pub fn create_integrated_input_endpoint(
     endpoint_name: &str,
-    config: &InputEndpointConfig,
+    config: &ConnectorConfig,
     consumer: Box<dyn InputConsumer>,
 ) -> Result<Box<dyn IntegratedInputEndpoint>, ControllerError> {
-    let ep: Box<dyn IntegratedInputEndpoint> = match &config.connector_config.transport {
+    let ep: Box<dyn IntegratedInputEndpoint> = match &config.transport {
         #[cfg(feature = "with-deltalake")]
         DeltaTableInput(config) => Box::new(DeltaTableInputEndpoint::new(
             endpoint_name,
@@ -126,12 +129,12 @@ pub fn create_integrated_input_endpoint(
         }
     };
 
-    if config.connector_config.format.is_some() {
+    if config.format.is_some() {
         return Err(ControllerError::invalid_parser_configuration(
             endpoint_name,
             &format!(
                 "{} transport does not allow 'format' specification",
-                config.connector_config.transport.name()
+                config.transport.name()
             ),
         ));
     }

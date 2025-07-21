@@ -448,6 +448,7 @@ fn limited_pipeline_config() -> impl Strategy<Value = serde_json::Value> {
                 global: serde_json::from_value(runtime_config).unwrap(),
                 name: Some(format!("pipeline-{}", val.1)),
                 storage_config: None,
+                secrets_dir: None,
                 inputs: program_info.input_connectors,
                 outputs: program_info.output_connectors,
             })

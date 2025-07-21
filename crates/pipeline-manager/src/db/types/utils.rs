@@ -259,6 +259,7 @@ mod tests {
             global: Default::default(),
             name: None,
             storage_config: None,
+            secrets_dir: None,
             inputs: Default::default(),
             outputs: Default::default(),
         };

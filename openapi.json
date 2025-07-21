@@ -5846,6 +5846,11 @@
                   "$ref": "#/components/schemas/OutputEndpointConfig"
                 }
               },
+              "secrets_dir": {
+                "type": "string",
+                "description": "Directory containing values of secrets.\n\nIf this is not set, a default directory is used.",
+                "nullable": true
+              },
               "storage_config": {
                 "allOf": [
                   {

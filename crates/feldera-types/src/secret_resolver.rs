@@ -1,5 +1,7 @@
 use crate::config::ConnectorConfig;
 use crate::secret_ref::{MaybeSecretRef, MaybeSecretRefParseError, SecretRef};
+use serde::de::DeserializeOwned;
+use serde::Serialize;
 use serde_yaml::{Mapping, Value};
 use std::collections::BTreeSet;
 use std::fmt::Debug;
@@ -73,7 +75,9 @@ fn discover_secret_references_in_yaml(
 }
 
 /// Path of the default secrets directory.
-pub const DEFAULT_SECRETS_DIRECTORY_PATH: &str = "/etc/feldera-secrets";
+pub fn default_secrets_directory() -> &'static Path {
+    Path::new("/etc/feldera-secrets")
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, ThisError)]
 pub enum SecretRefResolutionError {
@@ -110,24 +114,29 @@ pub fn resolve_secret_references_in_connector_config(
     secrets_dir: &Path,
     connector_config: &ConnectorConfig,
 ) -> Result<ConnectorConfig, SecretRefResolutionError> {
-    let mut yaml_value = serde_yaml::to_value(connector_config).map_err(|e| {
-        SecretRefResolutionError::SerializationFailed {
+    let connector_config = connector_config.clone();
+    Ok(ConnectorConfig {
+        transport: resolve_secret_references_via_yaml(secrets_dir, &connector_config.transport)?,
+        format: resolve_secret_references_via_yaml(secrets_dir, &connector_config.format)?,
+        ..connector_config
+    })
+}
+
+/// Resolves secret references in `value`.
+pub fn resolve_secret_references_via_yaml<T>(
+    secrets_dir: &Path,
+    value: &T,
+) -> Result<T, SecretRefResolutionError>
+where
+    T: Serialize + DeserializeOwned,
+{
+    let yaml_value =
+        serde_yaml::to_value(value).map_err(|e| SecretRefResolutionError::SerializationFailed {
             error: e.to_string(),
-        }
-    })?;
-    if let Some(transport_config_yaml) = yaml_value.get("transport").and_then(|v| v.get("config")) {
-        let transport_config_yaml_resolved =
-            resolve_secret_references_in_yaml(secrets_dir, transport_config_yaml.clone())?;
-        yaml_value["transport"]["config"] = transport_config_yaml_resolved;
-    }
-    if let Some(format_config_yaml) = yaml_value.get("format").and_then(|v| v.get("config")) {
-        let format_config_yaml_resolved =
-            resolve_secret_references_in_yaml(secrets_dir, format_config_yaml.clone())?;
-        yaml_value["format"]["config"] = format_config_yaml_resolved;
-    }
-    let connector_config_resolved = serde_yaml::from_value(yaml_value)
-        .map_err(|_e| SecretRefResolutionError::DeserializationFailed)?;
-    Ok(connector_config_resolved)
+        })?;
+    let resolved_yaml = resolve_secret_references_in_yaml(secrets_dir, yaml_value)?;
+    serde_yaml::from_value(resolved_yaml)
+        .map_err(|_e| SecretRefResolutionError::DeserializationFailed)
 }
 
 /// Resolves recursively the secret references in the YAML.

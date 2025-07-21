@@ -5,6 +5,7 @@
 //! endpoint configs.  We represent these configs as opaque JSON values, so
 //! that the entire configuration tree can be deserialized from a JSON file.
 
+use crate::secret_resolver::default_secrets_directory;
 use crate::transport::adhoc::AdHocInputConfig;
 use crate::transport::clock::ClockConfig;
 use crate::transport::datagen::DatagenInputConfig;
@@ -72,6 +73,11 @@ pub struct PipelineConfig {
     #[serde(default)]
     pub storage_config: Option<StorageConfig>,
 
+    /// Directory containing values of secrets.
+    ///
+    /// If this is not set, a default directory is used.
+    pub secrets_dir: Option<String>,
+
     /// Input endpoint configuration.
     pub inputs: BTreeMap<Cow<'static, str>, InputEndpointConfig>,
 
@@ -106,6 +112,15 @@ impl PipelineConfig {
         let storage_options = self.global.storage.as_ref();
         let storage_config = self.storage_config.as_ref();
         storage_config.zip(storage_options)
+    }
+
+    /// Returns `self.secrets_dir`, or the default secrets directory if it isn't
+    /// set.
+    pub fn secrets_dir(&self) -> &Path {
+        match &self.secrets_dir {
+            Some(dir) => Path::new(dir.as_str()),
+            None => default_secrets_directory(),
+        }
     }
 }
 

@@ -8,6 +8,7 @@ use crate::{
 use anyhow::Result as AnyResult;
 use dbsp::{DBData, DBSPHandle, OrdZSet, Runtime};
 use feldera_adapterlib::format::InputBuffer;
+use feldera_types::secret_resolver::default_secrets_directory;
 use feldera_types::serde_with_context::{
     DeserializeWithContext, SerializeWithContext, SqlSerdeConfig,
 };
@@ -204,8 +205,12 @@ where
             .unwrap_or(&default_format),
     )?;
 
-    let endpoint =
-        input_transport_config_to_endpoint(config.connector_config.transport.clone(), "")?.unwrap();
+    let endpoint = input_transport_config_to_endpoint(
+        &config.connector_config.transport,
+        "",
+        default_secrets_directory(),
+    )?
+    .unwrap();
 
     let reader = endpoint.open(
         Box::new(consumer.clone()),

@@ -191,8 +191,15 @@ proptest! {
         let output_path = temp_output_path.to_str().unwrap().to_string();
         temp_output_path.close().unwrap();
 
+        let secrets_dir = TempDir::new().unwrap();
+        create_dir(secrets_dir.path().join("kubernetes")).unwrap();
+        create_dir(secrets_dir.path().join("kubernetes/paths")).unwrap();
+        std::fs::write(secrets_dir.path().join("kubernetes/paths/input"), temp_input_file.path().as_os_str().as_encoded_bytes()).unwrap();
+        std::fs::write(secrets_dir.path().join("kubernetes/paths/output"), &output_path).unwrap();
+
         let config_str = format!(
             r#"
+secrets_dir: {:?}
 min_batch_size_records: {min_batch_size_records}
 max_buffering_delay_usecs: {max_buffering_delay_usecs}
 name: test
@@ -203,7 +210,7 @@ inputs:
         transport:
             name: file_input
             config:
-                path: {:?}
+                path: ${{secret:kubernetes:paths/input}}
                 buffer_size_bytes: {input_buffer_size_bytes}
                 follow: false
         format:
@@ -214,14 +221,13 @@ outputs:
         transport:
             name: file_output
             config:
-                path: {:?}
+                path: ${{secret:kubernetes:paths/output}}
         format:
             name: csv
             config:
                 buffer_size_records: {output_buffer_size_records}
         "#,
-        temp_input_file.path().to_str().unwrap(),
-        output_path,
+        secrets_dir.path().to_str().unwrap()
         );
 
         info!("input file: {}", temp_input_file.path().to_str().unwrap());
@@ -403,6 +409,14 @@ fn wait_for_records(controller: &Controller, expect_n: &[usize]) {
 /// pipeline and waits for it to process the data.  If `do_checkpoint` is
 /// true, it creates a new checkpoint. Then it stops the pipeline, checks
 /// that the output is as expected, and goes on to the next round.
+///
+/// This also tests that the controller resolves secrets and that it freshly
+/// resolves them every time it resumes from a checkpoint, by using a secret for
+/// the location of its input and output files and renaming these files before
+/// each round.  If the controller did not re-resolve the secrets when it
+/// resumes, then it would try to read an input file that was no longer there,
+/// or it would try to write output to an old location, and in either case that
+/// would cause an error.
 fn test_ft(rounds: &[FtTestRound]) {
     init_test_logger();
     let tempdir = TempDir::new().unwrap();
@@ -416,9 +430,9 @@ fn test_ft(rounds: &[FtTestRound]) {
 
     let storage_dir = tempdir_path.join("storage");
     create_dir(&storage_dir).unwrap();
-    let input_path = tempdir_path.join("input.csv");
-    let input_file = File::create(&input_path).unwrap();
-    let output_path = tempdir_path.join("output.csv");
+
+    create_dir(tempdir.path().join("kubernetes")).unwrap();
+    create_dir(tempdir.path().join("kubernetes/paths")).unwrap();
 
     let config_str = format!(
         r#"
@@ -429,13 +443,14 @@ storage_config:
 storage: true
 fault_tolerance: {{}}
 clock_resolution_usecs: null
+secrets_dir: {tempdir_path:?}
 inputs:
     test_input1:
         stream: test_input1
         transport:
             name: file_input
             config:
-                path: {input_path:?}
+                path: ${{secret:kubernetes:paths/input}}
                 follow: true
         format:
             name: csv
@@ -445,7 +460,7 @@ outputs:
         transport:
             name: file_output
             config:
-                path: {output_path:?}
+                path: ${{secret:kubernetes:paths/output}}
         format:
             name: csv
             config:
@@ -453,10 +468,6 @@ outputs:
     );
 
     let config: PipelineConfig = serde_yaml::from_str(&config_str).unwrap();
-
-    let mut writer = CsvWriterBuilder::new()
-        .has_headers(false)
-        .from_writer(&input_file);
 
     // Number of records written to the input.
     let mut total_records = 0usize;
@@ -466,6 +477,9 @@ outputs:
     let mut checkpointed_records = 0usize;
 
     let mut paused = false;
+
+    let mut prev_input_path = None;
+    let mut prev_output_path = None;
 
     for (
         round,
@@ -477,6 +491,43 @@ outputs:
         },
     ) in rounds.iter().cloned().enumerate()
     {
+        // Create input file, or move it from its previous location.
+        let input_path = tempdir_path.join(format!("input{round}.csv"));
+        let input_file = if let Some(prev_input_path) = &prev_input_path {
+            std::fs::rename(prev_input_path, &input_path).unwrap();
+            File::options().append(true).open(&input_path).unwrap()
+        } else {
+            File::create_new(&input_path).unwrap()
+        };
+        let mut writer = CsvWriterBuilder::new()
+            .has_headers(false)
+            .from_writer(&input_file);
+
+        // Move output file from its previous location, if any.
+        let output_path = tempdir_path.join(format!("output{round}.csv"));
+        if let Some(prev_output_path) = &prev_output_path {
+            std::fs::rename(prev_output_path, &output_path).unwrap();
+        };
+
+        // Update secrets to point to new locations.
+        for (name, path) in [("input", &input_path), ("output", &output_path)] {
+            std::fs::write(
+                tempdir.path().join("kubernetes/paths").join(name),
+                path.as_os_str().as_encoded_bytes(),
+            )
+            .unwrap();
+        }
+        std::fs::write(
+            tempdir.path().join("kubernetes/paths/input"),
+            input_path.as_os_str().as_encoded_bytes(),
+        )
+        .unwrap();
+        std::fs::write(
+            tempdir.path().join("kubernetes/paths/output"),
+            output_path.as_os_str().as_encoded_bytes(),
+        )
+        .unwrap();
+
         println!(
             "--- round {round}: {}{}add {n_records} records{}, {} --- ",
             if paused { "unpause the input, " } else { "" },
@@ -597,6 +648,9 @@ outputs:
             checkpointed_records = total_records;
         }
         println!();
+
+        prev_input_path = Some(input_path);
+        prev_output_path = Some(output_path);
     }
 }
 
