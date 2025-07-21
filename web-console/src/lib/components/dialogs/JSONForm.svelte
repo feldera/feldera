@@ -9,42 +9,76 @@
   import { editor } from 'monaco-editor/esm/vs/editor/editor.api'
 
   let {
-    json,
     filePath,
     onSubmit,
-    getData = $bindable(),
+    value = $bindable(),
     readOnlyMessage,
-    disabled
+    disabled,
+    refreshOnChange = true
   }: {
-    json: string
     filePath: string
     onSubmit: (json: string) => Promise<void>
-    getData?: () => string
+    value?: string
     readOnlyMessage?: { value: string }
     disabled?: boolean
+    refreshOnChange?: boolean
   } = $props()
+
   const theme = useSkeletonTheme()
   const darkMode = useDarkMode()
   const { editorFontSize } = useCodeEditorSettings()
-  getData = () => currentModel?.getValue() ?? ''
 
   let currentModel: editor.ITextModel = $state(undefined!)
+  let editorRef: editor.IStandaloneCodeEditor = $state()!
+
+  const getValue = () => currentModel?.getValue() ?? ''
+
+  const updateUpstream = () => {
+    value = getValue()
+  }
+
+  const modelUri = $derived(MonacoImports.Uri.file(filePath))
+
+  $effect(() => {
+    if (!refreshOnChange) {
+      return
+    }
+    value
+    if (editor.getModel(modelUri)?.getValue() !== value) {
+      if (value) {
+        editor.getModel(modelUri)?.setValue(value)
+      }
+    }
+  })
+
+  $effect(() => {
+    return () => {
+      currentModel?.dispose()
+      currentModel = undefined!
+    }
+  })
+
   $effect.pre(() => {
-    const modelUri = MonacoImports.Uri.file(filePath)
-    const model = editor.getModel(modelUri) ?? editor.createModel(json, 'json', modelUri)
+    const model = editor.getModel(modelUri) ?? editor.createModel(value ?? '', 'json', modelUri)
     currentModel = model
   })
-  let editorRef: editor.IStandaloneCodeEditor = $state()!
 </script>
 
 <MonacoEditor
   model={currentModel}
-  onready={(x) => {
-    x.onKeyDown((e) => {
+  onready={(ref) => {
+    ref.onKeyDown((e) => {
       if (e.code === 'KeyS' && (e.ctrlKey || e.metaKey)) {
-        onSubmit(currentModel.getValue())
+        const currentValue = currentModel.getValue()
+        updateUpstream()
+        onSubmit(currentValue)
         e.preventDefault()
       }
+    })
+
+    // Update bound value when editor loses focus (avoiding keystroke updates)
+    ref.onDidBlurEditorText(() => {
+      setTimeout(() => updateUpstream())
     })
   }}
   bind:editor={editorRef}
