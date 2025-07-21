@@ -12,6 +12,7 @@ import json
 import requests
 from requests.packages import urllib3
 from typing import Callable, Optional, Any, Union, Mapping, Sequence, List
+import time
 
 
 def json_serialize(body: Any) -> str:
@@ -42,6 +43,7 @@ class HttpRequests:
         params: Optional[Mapping[str, Any]] = None,
         stream: bool = False,
         serialize: bool = True,
+        max_retries: int = 3,
     ) -> Any:
         """
         :param http_method: The HTTP method to use. Takes the equivalent `requests.*` module. (Example: `requests.get`)
@@ -68,39 +70,49 @@ class HttpRequests:
                 str(params),
             )
 
-            if http_method.__name__ == "get":
-                request = http_method(
-                    request_path,
-                    timeout=timeout,
-                    headers=headers,
-                    params=params,
-                    stream=stream,
-                    verify=self.requests_verify,
-                )
-            elif isinstance(body, bytes):
-                request = http_method(
-                    request_path,
-                    timeout=timeout,
-                    headers=headers,
-                    data=body,
-                    params=params,
-                    stream=stream,
-                    verify=self.requests_verify,
-                )
-            else:
-                request = http_method(
-                    request_path,
-                    timeout=timeout,
-                    headers=headers,
-                    data=json_serialize(body) if serialize else body,
-                    params=params,
-                    stream=stream,
-                    verify=self.requests_verify,
-                )
+            for attempt in range(max_retries):
+                if http_method.__name__ == "get":
+                    request = http_method(
+                        request_path,
+                        timeout=timeout,
+                        headers=headers,
+                        params=params,
+                        stream=stream,
+                        verify=self.requests_verify,
+                    )
+                elif isinstance(body, bytes):
+                    request = http_method(
+                        request_path,
+                        timeout=timeout,
+                        headers=headers,
+                        data=body,
+                        params=params,
+                        stream=stream,
+                        verify=self.requests_verify,
+                    )
+                else:
+                    request = http_method(
+                        request_path,
+                        timeout=timeout,
+                        headers=headers,
+                        data=json_serialize(body) if serialize else body,
+                        params=params,
+                        stream=stream,
+                        verify=self.requests_verify,
+                    )
 
-            resp = self.__validate(request, stream=stream)
-            logging.debug("got response: %s", str(resp))
-            return resp
+                try:
+                    resp = self.__validate(request, stream=stream)
+                    logging.debug("got response: %s", str(resp))
+                    return resp
+                except FelderaAPIError as err:
+                    # Only retry on 503
+                    if err.status_code == 503:
+                        if attempt < max_retries:
+                            logging.warning("HTTP 503 received for %s, retrying (%d/%d)...", path, attempt+1, max_retries)
+                            time.sleep(2)  # backoff, adjust as needed
+                            continue
+                    raise  # re-raise for all other errors or if out of retries
 
         except requests.exceptions.Timeout as err:
             raise FelderaTimeoutError(str(err)) from err
