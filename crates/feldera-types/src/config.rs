@@ -272,10 +272,40 @@ pub enum StorageCompression {
     Snappy,
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, ToSchema)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub enum StartFromCheckpoint {
     Latest,
     Uuid(uuid::Uuid),
+}
+
+impl ToSchema<'_> for StartFromCheckpoint {
+    fn schema() -> (
+        &'static str,
+        utoipa::openapi::RefOr<utoipa::openapi::schema::Schema>,
+    ) {
+        (
+            "StartFromCheckpoint",
+            utoipa::openapi::RefOr::T(Schema::OneOf(
+                OneOfBuilder::new()
+                    .item(
+                        ObjectBuilder::new()
+                            .schema_type(SchemaType::String)
+                            .enum_values(Some(["latest"].into_iter()))
+                            .build(),
+                    )
+                    .item(
+                        ObjectBuilder::new()
+                            .schema_type(SchemaType::String)
+                            .format(Some(utoipa::openapi::SchemaFormat::KnownFormat(
+                                utoipa::openapi::KnownFormat::Uuid,
+                            )))
+                            .build(),
+                    )
+                    .nullable(true)
+                    .build(),
+            )),
+        )
+    }
 }
 
 impl<'de> Deserialize<'de> for StartFromCheckpoint {

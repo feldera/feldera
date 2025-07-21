@@ -1,4 +1,3 @@
-import os
 from typing import Optional, Any, Mapping
 from feldera.enums import FaultToleranceModel
 
@@ -79,7 +78,6 @@ class RuntimeConfig:
         clock_resolution_usecs: Optional[int] = None,
         provisioning_timeout_secs: Optional[int] = None,
         resources: Optional[Resources] = None,
-        runtime_version: Optional[str] = None,
         fault_tolerance_model: Optional[FaultToleranceModel] = None,
         checkpoint_interval_secs: Optional[int] = None,
     ):
@@ -91,9 +89,6 @@ class RuntimeConfig:
         self.min_batch_size_records = min_batch_size_records
         self.clock_resolution_usecs = clock_resolution_usecs
         self.provisioning_timeout_secs = provisioning_timeout_secs
-        self.runtime_version = runtime_version or os.environ.get(
-            "FELDERA_RUNTIME_VERSION"
-        )
         if fault_tolerance_model is not None:
             self.fault_tolerance = {
                 "model": str(fault_tolerance_model),

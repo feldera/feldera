@@ -1,3 +1,6 @@
+import os
+from typing import Optional
+
 from feldera.rest.feldera_client import FelderaClient
 from feldera.rest.pipeline import Pipeline as InnerPipeline
 from feldera.pipeline import Pipeline
@@ -32,6 +35,7 @@ class PipelineBuilder:
         description: str = "",
         compilation_profile: CompilationProfile = CompilationProfile.OPTIMIZED,
         runtime_config: RuntimeConfig = RuntimeConfig.default(),
+        runtime_version: Optional[str] = None,
     ):
         self.client: FelderaClient = client
         self.name: str | None = name
@@ -41,6 +45,9 @@ class PipelineBuilder:
         self.udf_toml: str = udf_toml
         self.compilation_profile: CompilationProfile = compilation_profile
         self.runtime_config: RuntimeConfig = runtime_config
+        self.runtime_version: Optional[str] = runtime_version or os.environ.get(
+            "FELDERA_RUNTIME_VERSION"
+        )
 
     def create(self) -> Pipeline:
         """
@@ -67,6 +74,7 @@ class PipelineBuilder:
             udf_toml=self.udf_toml,
             program_config={
                 "profile": self.compilation_profile.value,
+                "runtime_version": self.runtime_version,
             },
             runtime_config=self.runtime_config.to_dict(),
         )

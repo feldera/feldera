@@ -7238,22 +7238,15 @@
           {
             "type": "string",
             "enum": [
-              "Latest"
+              "latest"
             ]
           },
           {
-            "type": "object",
-            "required": [
-              "Uuid"
-            ],
-            "properties": {
-              "Uuid": {
-                "type": "string",
-                "format": "uuid"
-              }
-            }
+            "type": "string",
+            "format": "uuid"
           }
-        ]
+        ],
+        "nullable": true
       },
       "StorageBackendConfig": {
         "oneOf": [
