@@ -20,6 +20,14 @@ import java.util.function.Function;
 
 public class Regression1Tests extends SqlIoTest {
     @Test
+    public void issue4093() {
+        this.statementsFailingInCompilation("""
+                CREATE TABLE T(t0 int, t1 int NOT NULL);
+                CREATE VIEW V AS SELECT string(t0) FROM T;""",
+                "Cannot apply 'string' to arguments of type 'string(<INTEGER>)'");
+    }
+
+    @Test
     public void issue4053() {
         var cc = this.getCC("""
                 CREATE TABLE tbl(t0 int, t1 int NOT NULL);
@@ -542,6 +550,21 @@ public class Regression1Tests extends SqlIoTest {
                  1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | weight
                 --------------------------------------------------------------------------
                  0 | 1 | 2 | 5 | 0 | 1 | 2 | 0 | 1 | 1  |  0 |  0 |  1 |  1 |  2 | 1""");
+    }
+
+    @Test
+    public void issue3942() {
+        var ccs = this.getCCS("""
+                CREATE TABLE tbl(
+                row_map ROW(v1 MAP<VARIANT, VARIANT> NULL));
+                CREATE MATERIALIZED VIEW v AS SELECT
+                CAST(row_map[1]['x'] AS INTEGER) AS x
+                FROM tbl;""");
+        ccs.step("""
+                INSERT INTO tbl VALUES(ROW(ROW(MAP['x', 1, 'y', 2])))""", """
+                 result | weight
+                ------------------
+                 1      |1""");
     }
 
     @Test
