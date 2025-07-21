@@ -9,7 +9,8 @@
     onApply,
     onClose,
     title,
-    disabled
+    disabled,
+    refreshOnChange = true
   }: {
     values: Record<string, string>
     metadata?: Record<
@@ -20,25 +21,40 @@
     onClose: () => void
     title: Snippet
     disabled?: boolean
+    refreshOnChange?: boolean
   } = $props()
-  let states = $state(values)
-  let refs: Record<string, () => string> = $state({})
+
+  let current = $state(values)
+  {
+    let original = $state(refreshOnChange ? values : undefined)
+    $effect(() => {
+      if (original === undefined) {
+        return
+      }
+      values
+      $effect.root(() => {
+        Object.keys(values).forEach((key) => {
+          if (original[key] !== values[key]) {
+            current[key] = original[key] = values[key]
+          }
+        })
+      })
+    })
+  }
+
   const submitResults = async () => {
-    let res: Record<string, string> = {}
-    Object.entries(refs).forEach(([key, getData]) => (res[key] = getData()))
-    onApply(res).then(onClose)
+    onApply(current).then(onClose, () => {})
   }
 </script>
 
 <GenericDialog onApply={submitResults} {onClose} {title} {disabled}>
-  {#each Object.keys(states) as key}
+  {#each Object.keys(current) as key}
     <span class="font-normal">{metadata?.[key].title ?? ''}</span>
     <div class={metadata?.[key].editorClass}>
       <JsonForm
         filePath={metadata?.[key].filePath ?? key}
-        json={states[key]}
         onSubmit={submitResults}
-        bind:getData={refs[key]}
+        bind:value={current[key]}
         readOnlyMessage={metadata?.[key]?.readOnlyMessage
           ? { value: metadata[key].readOnlyMessage }
           : undefined}

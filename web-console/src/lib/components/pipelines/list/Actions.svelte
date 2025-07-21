@@ -557,7 +557,7 @@
 {#snippet pipelineResourcesDialog(dialogTitle: string, field: keyof typeof pipeline.current)}
   <JSONDialog
     disabled={editConfigDisabled}
-    json={JSONbig.stringify(pipeline.current[field], undefined, '  ')}
+    value={JSONbig.stringify(pipeline.current[field], undefined, '  ')}
     filePath="file://feldera/pipelines/{pipeline.current.name}/{field}.json"
     onApply={async (json) => {
       await pipeline.patch({

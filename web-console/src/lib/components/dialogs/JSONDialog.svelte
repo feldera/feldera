@@ -4,31 +4,53 @@
   import JsonForm from '$lib/components/dialogs/JSONForm.svelte'
 
   let {
-    json,
+    value,
     filePath,
     onApply,
     onClose,
     title,
     readOnlyMessage,
-    disabled
+    disabled,
+    refreshOnChange = true
   }: {
-    json: string
+    value: string
     filePath: string
     onApply: (json: string) => Promise<void>
     onClose: () => void
     title: Snippet
     readOnlyMessage?: { value: string }
     disabled?: boolean
+    refreshOnChange?: boolean
   } = $props()
-  let value = $state(json)
+
+  let current = $state(value)
+  {
+    let original = $state(refreshOnChange ? value : undefined)
+    $effect(() => {
+      if (original === undefined) {
+        return
+      }
+      value
+      $effect.root(() => {
+        if (original !== value) {
+          current = original = value
+        }
+      })
+    })
+  }
+
   $effect(() => {
-    value = json
+    current = value
   })
-  let onsubmit: () => void = $state(() => {})
+
+  const submitHandler = async () => {
+    onApply(current).then(onClose, () => {})
+  }
 </script>
 
-<GenericDialog onApply={onsubmit} {onClose} {title}>
+<GenericDialog onApply={submitHandler} {onClose} {title} {disabled}>
   <div class="h-96">
-    <JsonForm {json} {filePath} onSubmit={onApply} {disabled} {readOnlyMessage}></JsonForm>
+    <JsonForm {filePath} onSubmit={onApply} bind:value={current} {disabled} {readOnlyMessage}
+    ></JsonForm>
   </div>
 </GenericDialog>

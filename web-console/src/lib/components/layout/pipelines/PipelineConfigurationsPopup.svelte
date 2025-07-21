@@ -20,8 +20,6 @@
 
   const globalDialog = useGlobalDialog()
   const { toastError } = useToast()
-
-  let storageBound = $state(true)
 </script>
 
 <button
@@ -82,11 +80,11 @@
       try {
         patch.runtimeConfig = JSONbig.parse(json.runtimeConfig)
         patch.programConfig = JSONbig.parse(json.programConfig)
+        await pipeline.patch(patch)
       } catch (e) {
         toastError(e as any)
         throw e
       }
-      await pipeline.patch(patch)
     }}
     onClose={() => (globalDialog.dialog = null)}
   >
