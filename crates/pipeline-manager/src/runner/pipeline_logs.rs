@@ -1,7 +1,8 @@
 use chrono::{SecondsFormat, Utc};
-use log::{error, Level};
+use log::{debug, error, warn, Level};
 use std::collections::VecDeque;
-use tokio::sync::mpsc::error::TrySendError;
+use std::time::Duration;
+use tokio::sync::mpsc::error::{SendTimeoutError, TrySendError};
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 use tokio::{select, spawn};
@@ -9,6 +10,12 @@ use tokio::{select, spawn};
 // Logs buffer size limit constants.
 const LOGS_BUFFER_LIMIT_BYTE: usize = 1_000_000; // 1 MB
 const LOGS_BUFFER_LIMIT_NUM_LINES: usize = 50_000; // 50K lines
+
+// Timeout to send to the pipeline logs.
+const SEND_LOG_MESSAGE_TIMEOUT: Duration = Duration::from_millis(100);
+
+// Number of time to try sending the logs message before giving up.
+const SEND_LOG_MESSAGE_TRIES: u64 = 100;
 
 #[derive(Clone)]
 pub struct LogMessage {
@@ -189,6 +196,54 @@ async fn process_log_line_with_followers(
     // Any Senders that were not retained will go out of scope, which
     // results in them being dropped and the Receiver being notified
     // no Sender exists anymore.
+}
+
+/// Wrapper around the logs sender channel, which gracefully handles inability to send a message.
+#[derive(Clone)]
+pub struct LogsSender {
+    sender: mpsc::Sender<LogMessage>,
+}
+
+impl LogsSender {
+    pub fn new(sender: mpsc::Sender<LogMessage>) -> Self {
+        Self { sender }
+    }
+
+    pub async fn send(&mut self, mut message: LogMessage) {
+        // This will momentarily block when the receiver buffer is full. This should generally not
+        // happen as the receiving thread continuously listens for new log messages and puts them
+        // into a circular buffer. It retries a set amount of times with a timeout inbetween before
+        // giving up.
+        for i in 1..=SEND_LOG_MESSAGE_TRIES {
+            message = match self
+                .sender
+                .send_timeout(message, SEND_LOG_MESSAGE_TIMEOUT)
+                .await
+            {
+                Ok(()) => {
+                    // Successfully sent
+                    return;
+                }
+                Err(e) => match e {
+                    SendTimeoutError::Timeout(unsent_message) => {
+                        warn!(
+                            "Unable to send logs message because receiver buffer is full -- trying again in {}ms (attempt {} / {})",
+                            SEND_LOG_MESSAGE_TIMEOUT.as_millis(), i, SEND_LOG_MESSAGE_TRIES
+                        );
+                        unsent_message
+                    }
+                    SendTimeoutError::Closed(_) => {
+                        debug!("Unable to send logs message because receiver is closed -- this can happen when the pipeline is deleted");
+                        return;
+                    }
+                },
+            }
+        }
+        error!(
+            "Unable to send logs message after attempting {SEND_LOG_MESSAGE_TRIES} times -- receiver buffer is consistently full: message (byte length: {}) is dropped",
+            message.line.len()
+        )
+    }
 }
 
 /// The LogsBuffer maintains internally a circular buffer of Strings whose

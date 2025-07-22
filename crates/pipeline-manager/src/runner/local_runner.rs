@@ -8,7 +8,7 @@ use crate::db::types::version::Version;
 use crate::error::ManagerError;
 use crate::runner::error::RunnerError;
 use crate::runner::pipeline_executor::PipelineExecutor;
-use crate::runner::pipeline_logs::LogMessage;
+use crate::runner::pipeline_logs::{LogMessage, LogsSender};
 use async_trait::async_trait;
 use feldera_types::config::{PipelineConfig, StorageCacheConfig, StorageConfig};
 use log::{error, warn, Level};
@@ -19,7 +19,7 @@ use std::time::Duration;
 use tokio::fs::{remove_dir_all, remove_file};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStderr, ChildStdout, Command};
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 use tokio::{fs, fs::create_dir_all, select, spawn};
 
@@ -107,7 +107,7 @@ pub struct LocalRunner {
     config: LocalRunnerConfig,
     client: reqwest::Client,
     process: Option<Child>,
-    logs_sender: mpsc::Sender<LogMessage>,
+    logs_sender: LogsSender,
     logs_thread_terminate_sender_and_join_handle: Option<(oneshot::Sender<()>, JoinHandle<()>)>,
 }
 
@@ -139,7 +139,7 @@ impl LocalRunner {
         pipeline_id: PipelineId,
         stdout: ChildStdout,
         stderr: ChildStderr,
-        logs_sender: mpsc::Sender<LogMessage>,
+        mut logs_sender: LogsSender,
     ) -> (oneshot::Sender<()>, JoinHandle<()>) {
         let (terminate_sender, mut terminate_receiver) = oneshot::channel::<()>();
         let join_handle = spawn(async move {
@@ -165,17 +165,17 @@ impl LocalRunner {
                             Ok(line) => match line {
                                 None => {
                                     stdout_finished = true;
-                                    logs_sender.send(LogMessage::new_from_control_plane(Level::Info, "stdout ended")).await.unwrap(); // TODO
+                                    logs_sender.send(LogMessage::new_from_control_plane(Level::Info, "stdout ended")).await;
                                 }
                                 Some(line) => {
                                     println!("{line}"); // Print to manager stdout
-                                    logs_sender.send(LogMessage::new_from_pipeline(&line)).await.unwrap(); // TODO
+                                    logs_sender.send(LogMessage::new_from_pipeline(&line)).await;
                                 }
                             },
                             Err(e) => {
                                 stdout_finished = true;
                                 let line = format!("stdout encountered I/O error: {e}");
-                                logs_sender.send(LogMessage::new_from_control_plane(Level::Error, &line)).await.unwrap(); // TODO
+                                logs_sender.send(LogMessage::new_from_control_plane(Level::Error, &line)).await;
                                 error!("Logs of pipeline {pipeline_id}: {line}");
                             }
                         }
@@ -187,17 +187,17 @@ impl LocalRunner {
                             Ok(line) => match line {
                                 None => {
                                     stderr_finished = true;
-                                    logs_sender.send(LogMessage::new_from_control_plane(Level::Info, "stderr ended")).await.unwrap(); // TODO
+                                    logs_sender.send(LogMessage::new_from_control_plane(Level::Info, "stderr ended")).await;
                                 }
                                 Some(line) => {
                                     eprintln!("{line}"); // Print to manager stderr
-                                    logs_sender.send(LogMessage::new_from_pipeline(&line)).await.unwrap(); // TODO
+                                    logs_sender.send(LogMessage::new_from_pipeline(&line)).await;
                                 }
                             },
                             Err(e) => {
                                 stderr_finished = true;
                                 let line = format!("stderr encountered I/O error: {e}");
-                                logs_sender.send(LogMessage::new_from_control_plane(Level::Error, &line)).await.unwrap(); // TODO
+                                logs_sender.send(LogMessage::new_from_control_plane(Level::Error, &line)).await;
                                 error!("Logs of pipeline {pipeline_id}: {line}");
                             }
                         }
@@ -265,8 +265,7 @@ impl LocalRunner {
                     Level::Error,
                     &format!("Resource error: {error}"),
                 ))
-                .await
-                .unwrap(); // TODO
+                .await;
         }
 
         // Result
@@ -290,7 +289,7 @@ impl PipelineExecutor for LocalRunner {
         common_config: CommonConfig,
         config: Self::Config,
         client: reqwest::Client,
-        logs_sender: mpsc::Sender<LogMessage>,
+        logs_sender: LogsSender,
     ) -> Self {
         Self {
             pipeline_id,

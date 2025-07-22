@@ -15,7 +15,7 @@ use crate::error::ManagerError;
 use crate::runner::error::RunnerError;
 use crate::runner::interaction::{format_pipeline_url, format_timeout_error_message};
 use crate::runner::pipeline_executor::PipelineExecutor;
-use crate::runner::pipeline_logs::{start_thread_pipeline_logs, LogMessage};
+use crate::runner::pipeline_logs::{start_thread_pipeline_logs, LogMessage, LogsSender};
 use chrono::{DateTime, Utc};
 use feldera_types::error::ErrorResponse;
 use log::{debug, error, info, warn, Level};
@@ -51,13 +51,15 @@ enum State {
 
 /// Outcome of a status check for a pipeline by polling its `/status` endpoint.
 enum StatusCheckResult {
+    /// Pipeline responded it is `Paused` (status code: OK).
     Paused,
+    /// Pipeline responded it is `Running` (status code: OK).
     Running,
-    /// Contoller is still Initializing
+    /// Pipeline responded it is `Initializing` (status code: SERVICE_UNAVAILABLE).
     Initializing,
-    /// Unable to be reached
+    /// The pipeline could not be reached, as such there is no response.
     Unavailable,
-    /// Failed to parse response or a runtime error was returned.
+    /// The pipeline responded, but the response could not be parsed or was a runtime error.
     Error(ErrorResponse),
 }
 
@@ -100,7 +102,7 @@ where
     database_error_counter: u64,
 
     /// Sender to the pipeline logs.
-    logs_sender: mpsc::Sender<LogMessage>,
+    logs_sender: LogsSender,
 
     /// Terminate sender and join handle for the logs thread.
     logs_thread_terminate_sender_and_join_handle: Option<(oneshot::Sender<()>, JoinHandle<()>)>,
@@ -111,7 +113,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
     /// the desired status, which will preempt the waiting.
     const POLL_PERIOD_STOPPED: Duration = Duration::from_millis(2_500);
 
-    /// During initialization, there is regular polling to check whether the pipeline
+    /// During provisioning, there is regular polling to check whether the pipeline
     /// resources have become available. Usually nothing will change in the database,
     /// which means no notifications will occur in this phase: as such, this poll
     /// period is frequent.
@@ -136,8 +138,14 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
     /// for when to retry if it failed.
     const POLL_PERIOD_STOPPING: Duration = Duration::from_millis(1_000);
 
-    /// Timeout for an HTTP request of the automaton to a pipeline.
-    const HTTP_REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
+    /// Timeout for an HTTP request to the pipeline `/status`.
+    const HTTP_REQUEST_STATUS_TIMEOUT: Duration = Duration::from_secs(5);
+
+    /// Timeout for an HTTP request to the pipeline `/start` or `/pause`.
+    const HTTP_REQUEST_ACTION_TIMEOUT: Duration = Duration::from_secs(5);
+
+    /// Timeout for an HTTP request to the pipeline `/suspend`.
+    const HTTP_REQUEST_SUSPEND_TIMEOUT: Duration = Duration::from_secs(600);
 
     /// Creates a new automaton for a given pipeline.
     #[allow(clippy::too_many_arguments)]
@@ -151,7 +159,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         pipeline_handle: T,
         default_provisioning_timeout: Duration,
         follow_request_receiver: mpsc::Receiver<mpsc::Sender<String>>,
-        logs_sender: mpsc::Sender<LogMessage>,
+        logs_sender: LogsSender,
         logs_receiver: mpsc::Receiver<LogMessage>,
     ) -> Self {
         // Start the thread which composes the pipeline logs and serves them
@@ -563,8 +571,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                         Level::Info,
                         "Storage has been cleared",
                     ))
-                    .await
-                    .unwrap(); // TODO
+                    .await;
             } else {
                 info!(
                     "Transition: {} -> {} (desired: {}) for pipeline {}",
@@ -581,8 +588,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                             pipeline.deployment_status, new_status
                         ),
                     ))
-                    .await
-                    .unwrap(); // TODO
+                    .await;
             }
         }
 
@@ -626,18 +632,19 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         method: Method,
         location: &str,
         endpoint: &str,
+        timeout: Duration,
     ) -> Result<(StatusCode, serde_json::Value), ManagerError> {
         let url = format_pipeline_url("http", location, endpoint, "");
         let response = self
             .client
             .request(method, &url)
-            .timeout(Self::HTTP_REQUEST_TIMEOUT)
+            .timeout(timeout)
             .send()
             .await
             .map_err(|e| {
                 if e.is_timeout() {
                     RunnerError::PipelineInteractionUnreachable {
-                        error: format_timeout_error_message(Self::HTTP_REQUEST_TIMEOUT, e),
+                        error: format_timeout_error_message(timeout, e),
                     }
                 } else {
                     RunnerError::PipelineInteractionUnreachable {
@@ -689,7 +696,12 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         deployment_location: &str,
     ) -> StatusCheckResult {
         match self
-            .http_request_pipeline_json(Method::GET, deployment_location, "status")
+            .http_request_pipeline_json(
+                Method::GET,
+                deployment_location,
+                "status",
+                Self::HTTP_REQUEST_STATUS_TIMEOUT,
+            )
             .await
         {
             Ok((http_status, http_body)) => {
@@ -751,7 +763,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         }
     }
 
-    /// Transits from `Stopped` or `Suspended` towards `Paused` or `Running`.
+    /// Transits from `Stopped` towards `Paused` or `Running`.
     async fn transit_stopped_towards_paused_or_running(
         &mut self,
         pipeline_monitoring_or_complete: &ExtendedPipelineDescrRunner,
@@ -762,7 +774,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         {
             if let ExtendedPipelineDescrRunner::Complete(pipeline) = pipeline_monitoring_or_complete
             {
-                self.transit_stopped_or_suspended_towards_paused_or_running_phase_ready(pipeline)
+                self.transit_stopped_towards_paused_or_running_phase_ready(pipeline)
                     .await
             } else {
                 panic!(
@@ -772,14 +784,14 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                 );
             }
         } else {
-            self.transit_stopped_or_suspended_towards_paused_or_running_early_start(&pipeline)
+            self.transit_stopped_towards_paused_or_running_early_start(&pipeline)
                 .await
         }
     }
 
-    /// Transits from `Stopped` or `Suspended` towards `Paused` or `Running`
+    /// Transits from `Stopped` towards `Paused` or `Running`
     /// when it has not yet successfully compiled at the current platform version.
-    async fn transit_stopped_or_suspended_towards_paused_or_running_early_start(
+    async fn transit_stopped_towards_paused_or_running_early_start(
         &mut self,
         pipeline: &ExtendedPipelineDescrMonitoring,
     ) -> Result<State, DBError> {
@@ -857,9 +869,9 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         Ok(State::Unchanged)
     }
 
-    /// Transits from `Stopped` or `Suspended` towards `Paused` or `Running`
+    /// Transits from `Stopped` towards `Paused` or `Running`
     /// when it has successfully compiled at the current platform version.
-    async fn transit_stopped_or_suspended_towards_paused_or_running_phase_ready(
+    async fn transit_stopped_towards_paused_or_running_phase_ready(
         &mut self,
         pipeline: &ExtendedPipelineDescr,
     ) -> Result<State, DBError> {
@@ -1177,7 +1189,12 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         // Issue request to the /start or /pause endpoint
         let action = if is_start { "start" } else { "pause" };
         match self
-            .http_request_pipeline_json(Method::GET, &deployment_location, action)
+            .http_request_pipeline_json(
+                Method::GET,
+                &deployment_location,
+                action,
+                Self::HTTP_REQUEST_ACTION_TIMEOUT,
+            )
             .await
         {
             Ok((status, body)) => {
@@ -1318,7 +1335,12 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             }
         };
         match self
-            .http_request_pipeline_json(Method::POST, &deployment_location, "suspend")
+            .http_request_pipeline_json(
+                Method::POST,
+                &deployment_location,
+                "suspend",
+                Self::HTTP_REQUEST_SUSPEND_TIMEOUT,
+            )
             .await
         {
             Ok((status, body)) => {
@@ -1419,7 +1441,7 @@ mod test {
     use crate::runner::main::MAXIMUM_OUTSTANDING_LOG_FOLLOW_REQUESTS;
     use crate::runner::pipeline_automata::PipelineAutomaton;
     use crate::runner::pipeline_executor::PipelineExecutor;
-    use crate::runner::pipeline_logs::LogMessage;
+    use crate::runner::pipeline_logs::{LogMessage, LogsSender};
     use async_trait::async_trait;
     use feldera_types::config::{PipelineConfig, StorageConfig};
     use feldera_types::program_schema::ProgramSchema;
@@ -1446,7 +1468,7 @@ mod test {
             _common_config: CommonConfig,
             _config: Self::Config,
             _client: reqwest::Client,
-            _logs_sender: Sender<LogMessage>,
+            _logs_sender: LogsSender,
         ) -> Self {
             unimplemented!()
         }
@@ -1652,6 +1674,7 @@ mod test {
             channel::<Sender<String>>(MAXIMUM_OUTSTANDING_LOG_FOLLOW_REQUESTS);
         let (logs_sender, logs_receiver) =
             channel::<LogMessage>(MAXIMUM_OUTSTANDING_LOG_FOLLOW_REQUESTS);
+        let logs_sender = LogsSender::new(logs_sender);
         let notifier = Arc::new(Notify::new());
         let client = reqwest::Client::new();
         let automaton = PipelineAutomaton::new(

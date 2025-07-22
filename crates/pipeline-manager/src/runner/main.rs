@@ -9,7 +9,7 @@ use crate::error::ManagerError;
 use crate::runner::error::RunnerError;
 use crate::runner::pipeline_automata::PipelineAutomaton;
 use crate::runner::pipeline_executor::PipelineExecutor;
-use crate::runner::pipeline_logs::LogMessage;
+use crate::runner::pipeline_logs::{LogMessage, LogsSender};
 use actix_web::HttpResponse;
 use actix_web::Responder;
 use actix_web::{get, web, HttpRequest, HttpServer};
@@ -237,7 +237,8 @@ async fn reconcile<E: PipelineExecutor + 'static>(
                             let (follow_request_sender, follow_request_receiver) =
                                 channel::<Sender<String>>(MAXIMUM_OUTSTANDING_LOG_FOLLOW_REQUESTS);
                             let (logs_sender, logs_receiver) =
-                                channel::<LogMessage>(MAXIMUM_OUTSTANDING_LOG_FOLLOW_REQUESTS);
+                                channel::<LogMessage>(MAXIMUM_BUFFERED_LINES_PER_FOLLOWER);
+                            let logs_sender = LogsSender::new(logs_sender);
                             let pipeline_handle = E::new(
                                 pipeline_id,
                                 common_config.clone(),
