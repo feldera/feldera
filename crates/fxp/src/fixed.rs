@@ -729,7 +729,7 @@ impl<const P0: usize, const S0: usize> Fixed<P0, S0> {
                 }
             }
             Ordering::Equal => {
-                Fixed::try_new_with_exponent(self.0.checked_add(other.0)?, (S2 - S0) as i32)
+                Fixed::try_new_with_exponent(self.0.checked_add(other.0)?, S2 as i32 - S0 as i32)
             }
             Ordering::Greater => {
                 let factor = pow10(S0 - S1);

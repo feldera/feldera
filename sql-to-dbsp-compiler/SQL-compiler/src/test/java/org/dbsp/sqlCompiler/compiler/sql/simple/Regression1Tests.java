@@ -562,6 +562,19 @@ public class Regression1Tests extends SqlIoTest {
     }
 
     @Test
+    public void issue4404() {
+        var ccs = this.getCCS("""
+                CREATE TABLE tbl(str VARCHAR);
+                CREATE MATERIALIZED VIEW v AS SELECT
+                MOD(str, 3) AS arr
+                FROM tbl;""");
+        ccs.step("INSERT INTO tbl VALUES('14')", """
+                 mod | weight
+                --------------
+                 2   | 1""");
+    }
+
+    @Test
     public void issue3942() {
         var ccs = this.getCCS("""
                 CREATE TABLE tbl(
