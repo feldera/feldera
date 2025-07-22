@@ -1,4 +1,5 @@
 import random
+from uuid import uuid4
 import time
 from typing import Optional
 from feldera.runtime_config import RuntimeConfig, Storage
@@ -36,7 +37,13 @@ def storage_cfg(
 
 class TestCheckpointSync(SharedTestPipeline):
     @enterprise_only
-    def test_checkpoint_sync(self, from_uuid: bool = False, auth_err: bool = False):
+    def test_checkpoint_sync(
+        self,
+        from_uuid: bool = False,
+        random_uuid: bool = False,
+        clear_storage: bool = True,
+        auth_err: bool = False,
+    ):
         """
         CREATE TABLE t0 (c0 INT, c1 VARCHAR);
         CREATE MATERIALIZED VIEW v0 AS SELECT c0 FROM t0;
@@ -56,7 +63,12 @@ class TestCheckpointSync(SharedTestPipeline):
         uuid = self.pipeline.sync_checkpoint(wait=True)
 
         self.pipeline.stop(force=True)
-        self.pipeline.clear_storage()
+
+        if clear_storage:
+            self.pipeline.clear_storage()
+
+        if random_uuid:
+            uuid = uuid4()
 
         # Restart pipeline from checkpoint
         storage_config = storage_cfg(
@@ -69,13 +81,24 @@ class TestCheckpointSync(SharedTestPipeline):
         self.assertCountEqual(got_before, got_after)
 
         self.pipeline.stop(force=True)
-        self.pipeline.clear_storage()
+
+        if clear_storage:
+            self.pipeline.clear_storage()
 
     @enterprise_only
     def test_checkpoint_sync_from_uuid(self):
         self.test_checkpoint_sync(from_uuid=True)
 
     @enterprise_only
+    def test_checkpoint_sync_without_clearing_storage(self):
+        self.test_checkpoint_sync(clear_storage=False)
+
+    @enterprise_only
     def test_checkpoint_sync_err(self):
         with self.assertRaisesRegex(RuntimeError, "SignatureDoesNotMatch"):
             self.test_checkpoint_sync(auth_err=True)
+
+    @enterprise_only
+    def test_checkpoint_sync_err_nonexistent_checkpoint(self):
+        with self.assertRaisesRegex(RuntimeError, "were not found in source"):
+            self.test_checkpoint_sync(random_uuid=True, from_uuid=True)
