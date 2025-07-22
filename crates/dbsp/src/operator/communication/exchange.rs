@@ -7,7 +7,9 @@
 
 use crate::{
     circuit::{
-        metadata::{MetaItem, OperatorLocation, OperatorMeta, NUM_INPUTS, NUM_OUTPUTS},
+        metadata::{
+            MetaItem, OperatorLocation, OperatorMeta, EXCHANGE_WAIT_TIME, NUM_INPUTS, NUM_OUTPUTS,
+        },
         metrics::Gauge,
         operator_traits::{Operator, SinkOperator, SourceOperator},
         tokio::TOKIO,
@@ -27,9 +29,10 @@ use std::{
     net::SocketAddr,
     ops::Range,
     sync::{
-        atomic::{AtomicPtr, AtomicUsize, Ordering},
+        atomic::{AtomicPtr, AtomicU64, AtomicUsize, Ordering},
         Arc, Mutex, RwLock,
     },
+    time::{Duration, SystemTime},
 };
 use tarpc::{
     client, context,
@@ -43,6 +46,14 @@ use tokio::{
     time::sleep,
 };
 use typedmap::TypedMapKey;
+
+/// Current time in microseconds.
+fn current_time_usecs() -> u64 {
+    SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_micros() as u64)
+        .unwrap_or(0)
+}
 
 // We use the `Runtime::local_store` mechanism to connect multiple workers
 // to an `Exchange` instance.  During circuit construction, each worker
@@ -235,6 +246,11 @@ impl InnerExchange {
         }
     }
 
+    #[allow(dead_code)]
+    fn exchange_id(&self) -> ExchangeId {
+        self.exchange_id
+    }
+
     /// Returns the `sender_notify` for a sender/receiver pair.  `receiver`
     /// must be a local worker ID, and `sender` must be a remote worker ID.
     fn sender_notify(&self, sender: usize, receiver: usize) -> &Notify {
@@ -423,6 +439,11 @@ where
             .and_modify(|_| panic!())
             .or_insert(inner.clone());
         Self { inner, mailboxes }
+    }
+
+    #[allow(dead_code)]
+    fn exchange_id(&self) -> ExchangeId {
+        self.inner.exchange_id()
     }
 
     /// Returns a reference to a mailbox for the sender/receiver pair.
@@ -677,7 +698,7 @@ where
 ///
 /// This operator works in tandem with [`ExchangeReceiver`], which reassembles
 /// the data on the receiving side.  Together they implement an all-to-all
-/// comunication mechanism, where at every clock cycle each worker partitions
+/// communication mechanism, where at every clock cycle each worker partitions
 /// its incoming data into `N` values, one for each worker, using a
 /// user-provided closure.  It then reads values sent to it by all peers and
 /// reassembles them into a single value using another user-provided closure.
@@ -812,6 +833,11 @@ where
     num_inputs: usize,
     num_inputs_metric: Option<Gauge>,
 
+    // The instant when the sender produced its outputs, and the
+    // receiver starts waiting for all other workers to produce their
+    // outputs.
+    start_wait_usecs: Arc<AtomicU64>,
+
     phantom: PhantomData<D>,
 }
 
@@ -824,6 +850,7 @@ where
         worker_index: usize,
         location: OperatorLocation,
         exchange_id: ExchangeId,
+        start_wait_usecs: Arc<AtomicU64>,
         partition: L,
     ) -> Self {
         debug_assert!(worker_index < runtime.num_workers());
@@ -835,6 +862,7 @@ where
             exchange: Exchange::with_runtime(runtime, exchange_id),
             num_inputs: 0,
             num_inputs_metric: None,
+            start_wait_usecs,
             phantom: PhantomData,
         }
     }
@@ -917,6 +945,8 @@ where
         debug_assert!(self.ready());
         self.outputs.clear();
         (self.partition)(input, &mut self.outputs);
+        self.start_wait_usecs
+            .store(current_time_usecs(), Ordering::Release);
         let res = self
             .exchange
             .try_send_all(self.worker_index, &mut self.outputs.drain(..));
@@ -952,6 +982,8 @@ where
     init: IF,
     combine: L,
     exchange: Arc<Exchange<T>>,
+    start_wait_usecs: Arc<AtomicU64>,
+    total_wait_time: Arc<AtomicU64>,
 
     // Total number of input tuples processed by the operator.
     num_outputs: usize,
@@ -968,6 +1000,7 @@ where
         location: OperatorLocation,
         exchange_id: ExchangeId,
         init: IF,
+        start_wait_usecs: Arc<AtomicU64>,
         combine: L,
     ) -> Self {
         debug_assert!(worker_index < runtime.num_workers());
@@ -978,6 +1011,8 @@ where
             init,
             combine,
             exchange: Exchange::with_runtime(runtime, exchange_id),
+            start_wait_usecs,
+            total_wait_time: Arc::new(AtomicU64::new(0)),
             num_outputs: 0,
             num_outputs_metric: None,
         }
@@ -1018,6 +1053,7 @@ where
     fn metadata(&self, meta: &mut OperatorMeta) {
         meta.extend(metadata! {
             NUM_OUTPUTS => MetaItem::Count(self.num_outputs),
+            EXCHANGE_WAIT_TIME => MetaItem::Duration(Duration::from_micros(self.total_wait_time.load(Ordering::Acquire)))
         });
     }
 
@@ -1029,6 +1065,32 @@ where
     where
         F: Fn() + Send + Sync + 'static,
     {
+        let start_wait_usecs = self.start_wait_usecs.clone();
+        let total_wait_time = self.total_wait_time.clone();
+        let exchange = self.exchange.clone();
+        let worker_index = self.worker_index;
+
+        let cb = move || {
+            if exchange.ready_to_receive(worker_index) {
+                // The callback can be invoked multiple times per step.
+                // Reset start_wait_usecs to 0 to make sure we don't double-count.
+                let start = start_wait_usecs.swap(0, Ordering::Acquire);
+                if start != 0 {
+                    let end = current_time_usecs();
+                    if end > start {
+                        let wait_time_usecs = end - start;
+                        // if worker_index == 0 {
+                        //     info!(
+                        //         "{worker_index}: {} +{wait_time_usecs}",
+                        //         exchange.exchange_id()
+                        //     );
+                        // }
+                        total_wait_time.fetch_add(wait_time_usecs, Ordering::AcqRel);
+                    }
+                }
+            }
+            cb()
+        };
         self.exchange
             .register_receiver_callback(self.worker_index, cb)
     }
@@ -1124,9 +1186,24 @@ where
     CL: Fn(&mut TO, TE) + 'static,
 {
     let exchange_id = runtime.sequence_next();
-    let sender = ExchangeSender::new(runtime, worker_index, location, exchange_id, partition);
-    let receiver =
-        ExchangeReceiver::new(runtime, worker_index, location, exchange_id, init, combine);
+    let start_wait_usecs = Arc::new(AtomicU64::new(0));
+    let sender = ExchangeSender::new(
+        runtime,
+        worker_index,
+        location,
+        exchange_id,
+        start_wait_usecs.clone(),
+        partition,
+    );
+    let receiver = ExchangeReceiver::new(
+        runtime,
+        worker_index,
+        location,
+        exchange_id,
+        init,
+        start_wait_usecs,
+        combine,
+    );
     (sender, receiver)
 }
 
