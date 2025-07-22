@@ -514,7 +514,7 @@ mod test {
         // its socket address as `addr`.
         let (sender, receiver) = channel();
         thread::Builder::new()
-            .name(format!("url-connector-test"))
+            .name("url-connector-test".to_string())
             .spawn(move || {
                 System::new().block_on(async {
                     let server = HttpServer::new(move || {
