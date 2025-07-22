@@ -221,7 +221,7 @@ public class CalciteFunctions implements FunctionDocumentation.FunctionRegistry 
                     "datetime#date_second,datetime#time_second,datetime#timestamp_second", false),
 
             new Func(SqlStdOperatorTable.ELEMENT, "ELEMENT", SqlLibrary.STANDARD, "array#element", false),
-            new Func(SqlStdOperatorTable.ITEM, "[]", SqlLibrary.STANDARD, "", false),
+            new Func(SqlStdOperatorTable.ITEM, "SAFE_OFFSET", SqlLibrary.STANDARD, "array#safe_offset", false),
             new Func(SqlStdOperatorTable.SLICE, "$SLICE", SqlLibrary.STANDARD, "", false),
             new Func(SqlStdOperatorTable.ELEMENT_SLICE, "$ELEMENT_SLICE", SqlLibrary.STANDARD, "", false),
             new Func(SqlStdOperatorTable.SCALAR_QUERY, "$SCALAR_QUERY", SqlLibrary.STANDARD, "", false),

@@ -189,6 +189,7 @@
 * `ROW`: [types](types.md#row_constructor)
 * `ROW_NUMBER` (aggregate): [aggregates](aggregates.md#row_number)
 * `SAFE_CAST`: [casts](casts.md#safe-casts)
+* `SAFE_OFFSET`: [array](array.md#safe_offset)
 * `SEC`: [float](float.md#sec)
 * `SECH`: [float](float.md#sech)
 * `SECOND`: [datetime](datetime.md#date_second), [datetime](datetime.md#time_second), [datetime](datetime.md#timestamp_second)

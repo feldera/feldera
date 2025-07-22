@@ -575,4 +575,18 @@ public class Regression1Tests extends SqlIoTest {
                 CREATE MATERIALIZED VIEW V AS SELECT T.X, S.Z
                 FROM T LEFT JOIN S ON T.X = S.X;""");
     }
+
+    @Test
+    public void issue4405() {
+        var ccs = this.getCCS("""
+                CREATE TABLE tbl(arr VARCHAR ARRAY);
+                CREATE MATERIALIZED VIEW v AS SELECT
+                arr[2] AS arr,
+                arr[SAFE_OFFSET(2)] AS arr2
+                FROM tbl;""");
+        ccs.step("INSERT INTO tbl VALUES(ARRAY['bye', '14', 'See you!', '-0.52']);", """
+                 arr | arr2 | weight
+                ---------------------
+                 14  | See you! | 1""");
+    }
 }

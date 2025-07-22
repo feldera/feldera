@@ -1507,7 +1507,8 @@ public class ToRustInnerVisitor extends InnerVisitor {
             }
             case SQL_INDEX:
                 throw new InternalCompilerError("Should have been eliminated");
-            case RUST_INDEX: {
+            case RUST_INDEX:
+            case SAFE_RUST_INDEX: {
                 DBSPType collectionType = expression.left.getType();
                 DBSPType indexType = expression.right.getType();
                 DBSPTypeArray arrayType = collectionType.to(DBSPTypeArray.class);
@@ -2151,6 +2152,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
                 if (bin.opcode == DBSPOpcode.SQL_INDEX ||
                         bin.opcode == DBSPOpcode.RUST_INDEX ||
                         bin.opcode == DBSPOpcode.MAP_INDEX ||
+                        bin.opcode == DBSPOpcode.SAFE_RUST_INDEX ||
                         bin.opcode == DBSPOpcode.VARIANT_INDEX) {
                     if (this.visitingChild == 0)
                         // We are explicitly taking a reference for these cases

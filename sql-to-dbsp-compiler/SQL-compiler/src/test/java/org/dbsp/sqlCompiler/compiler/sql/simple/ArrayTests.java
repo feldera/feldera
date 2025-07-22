@@ -632,7 +632,7 @@ public class ArrayTests extends BaseSQLTests {
     @Test
     public void testSafeOrdinal() {
         String sql = """
-                SELECT a[SAFE_OFFSET(2)], a[SAFE_OFFSET(3)] FROM
+                SELECT a[SAFE_OFFSET(1)], a[SAFE_OFFSET(2)] FROM
                 (SELECT ARRAY[1, 2] a)""";
         this.testQuery("", sql,
                 new InputOutputChangeStream().addPair(new Change(),
