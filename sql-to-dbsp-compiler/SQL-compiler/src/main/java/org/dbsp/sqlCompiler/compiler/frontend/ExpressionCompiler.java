@@ -1635,7 +1635,13 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 int operands = ops.size();
                 DBSPExpression result = ops.get(0).cast(node, type, false);
                 for (int i = 1; i < operands; i++) {
-                    DBSPExpression op = ops.get(i).cast(node, type, false);
+                    // Extra check due to https://issues.apache.org/jira/browse/CALCITE-7105
+                    DBSPExpression opi = ops.get(i);
+                    if (opi.getType().code != ARRAY) {
+                        throw new CompilationError(
+                                "Arguments of '" + operationName + "' must have ARRAY types", node);
+                    }
+                    DBSPExpression op = opi.cast(node, type, false);
                     String name = call.op.getName().toLowerCase();
                     name += result.type.nullableUnderlineSuffix();
                     name += op.type.nullableUnderlineSuffix();
