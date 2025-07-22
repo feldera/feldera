@@ -34,7 +34,7 @@ use iceberg_catalog_glue::{
 use iceberg_catalog_rest::{RestCatalog, RestCatalogConfig};
 use iceberg_datafusion::IcebergTableProvider;
 use log::{debug, info, trace};
-use std::sync::Arc;
+use std::{sync::Arc, thread};
 use tokio::{
     select,
     sync::{
@@ -125,13 +125,16 @@ impl IcebergInputReader {
             .configure_arrow_deserializer(iceberg_input_serde_config())?;
         let schema = input_handle.schema.clone();
 
-        std::thread::spawn(move || {
-            TOKIO.block_on(async {
-                let _ = endpoint_clone
-                    .worker_task(input_stream, schema, receiver_clone, init_status_sender)
-                    .await;
+        thread::Builder::new()
+            .name("iceberg-input-tokio-wrapper".to_string())
+            .spawn(move || {
+                TOKIO.block_on(async {
+                    let _ = endpoint_clone
+                        .worker_task(input_stream, schema, receiver_clone, init_status_sender)
+                        .await;
+                })
             })
-        });
+            .expect("failed to spawn iceberg-input tokio wrapper thread");
 
         init_status_receiver.blocking_recv().ok_or_else(|| {
             anyhow!("worker thread terminated unexpectedly during initialization")

@@ -33,6 +33,7 @@ use serde_arrow::schema::SerdeArrowSchema;
 use serde_arrow::ArrayBuilder;
 use std::cmp::min;
 use std::sync::{Arc, Weak};
+use std::thread;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tracing::{debug, error, info, trace};
 
@@ -134,11 +135,14 @@ impl DeltaTableWriter {
         let (response_sender, mut response_receiver) = channel::<Result<(), (AnyError, bool)>>(1);
 
         // Start tokio runtime.
-        std::thread::spawn(move || {
-            TOKIO.block_on(async {
-                let _ = Self::worker_task(inner_clone, command_receiver, response_sender).await;
+        thread::Builder::new()
+            .name(format!("{endpoint_name}-delta-output-tokio-wrapper"))
+            .spawn(move || {
+                TOKIO.block_on(async {
+                    let _ = Self::worker_task(inner_clone, command_receiver, response_sender).await;
+                })
             })
-        });
+            .expect("failed to spawn output delta connector tokio wrapper thread");
 
         response_receiver
             .blocking_recv()

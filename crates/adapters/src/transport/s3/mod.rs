@@ -1,6 +1,7 @@
 use std::{
     collections::{BTreeMap, VecDeque},
     sync::Arc,
+    thread,
 };
 
 use super::InputReaderCommand;
@@ -385,24 +386,27 @@ impl S3InputReader {
         resume_info: Option<Metadata>,
     ) -> S3InputReader {
         let (sender, receiver) = unbounded();
-        std::thread::spawn({
-            let config = config.clone();
-            move || {
-                let span = info_span!("s3_input", bucket = config.bucket_name.clone());
-                TOKIO.block_on(async {
-                    let _ = Self::worker_task(
-                        s3_client,
-                        config,
-                        consumer,
-                        parser,
-                        receiver,
-                        resume_info,
-                    )
-                    .instrument(span)
-                    .await;
-                })
-            }
-        });
+        thread::Builder::new()
+            .name("s3-input-tokio-wrapper".to_string())
+            .spawn({
+                let config = config.clone();
+                move || {
+                    let span = info_span!("s3_input", bucket = config.bucket_name.clone());
+                    TOKIO.block_on(async {
+                        let _ = Self::worker_task(
+                            s3_client,
+                            config,
+                            consumer,
+                            parser,
+                            receiver,
+                            resume_info,
+                        )
+                        .instrument(span)
+                        .await;
+                    })
+                }
+            })
+            .expect("failed to create S3 input connector tokio wrapper thread");
         S3InputReader { sender }
     }
 

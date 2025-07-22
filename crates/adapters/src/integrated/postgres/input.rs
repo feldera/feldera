@@ -28,6 +28,7 @@ use std::collections::{HashMap, VecDeque};
 use std::fmt::format;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex, Weak};
+use std::thread;
 use std::time::Duration;
 use tokio::select;
 use tokio::sync::mpsc;
@@ -105,13 +106,16 @@ impl PostgresInputReader {
             .configure_deserializer(RecordFormat::Json(JsonFlavor::Datagen))?;
         let schema = input_handle.schema.clone();
 
-        std::thread::spawn(move || {
-            TOKIO.block_on(async {
-                let _ = endpoint_clone
-                    .worker_task(input_stream, schema, receiver_clone, init_status_sender)
-                    .await;
+        thread::Builder::new()
+            .name("postgres-input-tokio-wrapper".to_string())
+            .spawn(move || {
+                TOKIO.block_on(async {
+                    let _ = endpoint_clone
+                        .worker_task(input_stream, schema, receiver_clone, init_status_sender)
+                        .await;
+                })
             })
-        });
+            .expect("failed to create Postgres input connector tokio wrapper thread");
 
         init_status_receiver.blocking_recv().ok_or_else(|| {
             ControllerError::input_transport_error(
