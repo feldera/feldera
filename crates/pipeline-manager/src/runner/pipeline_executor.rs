@@ -2,11 +2,10 @@ use crate::config::CommonConfig;
 use crate::db::types::pipeline::PipelineId;
 use crate::db::types::version::Version;
 use crate::error::ManagerError;
-use crate::runner::pipeline_logs::LogMessage;
+use crate::runner::pipeline_logs::LogsSender;
 use async_trait::async_trait;
 use feldera_types::config::{PipelineConfig, StorageConfig};
 use std::time::Duration;
-use tokio::sync::mpsc;
 
 /// Trait to be implemented by any pipeline runner.
 /// The `PipelineAutomaton` invokes these methods per pipeline.
@@ -24,7 +23,7 @@ pub trait PipelineExecutor: Sync + Send {
         common_config: CommonConfig,
         config: Self::Config,
         client: reqwest::Client,
-        logs_sender: mpsc::Sender<LogMessage>,
+        logs_sender: LogsSender,
     ) -> Self;
 
     /// Generates the storage configuration of the pipeline if storage is enabled.
