@@ -7,7 +7,7 @@ use std::hash::Hasher;
 use std::num::NonZeroU32;
 use std::ops::{Range, RangeInclusive};
 use std::sync::{Arc, LazyLock};
-use std::thread::Thread;
+use std::thread::{self, Thread};
 use std::time::Duration as StdDuration;
 
 use anyhow::{anyhow, bail, Result as AnyResult};
@@ -435,9 +435,12 @@ impl InputGenerator {
                 std::thread::current(),
             );
             if needs_blocking_tasks {
-                std::thread::spawn(move || {
-                    TOKIO.block_on(task);
-                });
+                thread::Builder::new()
+                    .name("datagen-tokio-wrapper".to_string())
+                    .spawn(move || {
+                        TOKIO.block_on(task);
+                    })
+                    .expect("failed to spawn datagen tokio wrapper thread");
             } else {
                 TOKIO.spawn(task);
             }

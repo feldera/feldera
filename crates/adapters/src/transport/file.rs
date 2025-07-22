@@ -15,7 +15,7 @@ use std::hash::Hasher;
 use std::io::{Seek, SeekFrom};
 use std::ops::Range;
 use std::thread::{self, Thread};
-use std::{fs::File, io::Write, thread::spawn, time::Duration};
+use std::{fs::File, io::Write, time::Duration};
 use tokio::sync::mpsc::error::TryRecvError;
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 use tracing::{error, info_span};
@@ -103,29 +103,32 @@ impl FileInputReader {
         })?;
 
         let (sender, receiver) = unbounded_channel();
-        let join_handle = spawn({
-            let follow = config.follow;
-            let path = config.path.clone();
-            let buffer_size = match config.buffer_size_bytes {
-                Some(size) if size > 0 => size,
-                _ => 8192,
-            };
-            move || {
-                let _guard = info_span!("file_input", path).entered();
-                if let Err(error) = Self::worker_thread(
-                    file,
-                    path,
-                    buffer_size,
-                    consumer.as_ref(),
-                    parser,
-                    receiver,
-                    follow,
-                    resume_info,
-                ) {
-                    consumer.error(true, error);
+        let join_handle = thread::Builder::new()
+            .name("file-input".to_string())
+            .spawn({
+                let follow = config.follow;
+                let path = config.path.clone();
+                let buffer_size = match config.buffer_size_bytes {
+                    Some(size) if size > 0 => size,
+                    _ => 8192,
+                };
+                move || {
+                    let _guard = info_span!("file_input", path).entered();
+                    if let Err(error) = Self::worker_thread(
+                        file,
+                        path,
+                        buffer_size,
+                        consumer.as_ref(),
+                        parser,
+                        receiver,
+                        follow,
+                        resume_info,
+                    ) {
+                        consumer.error(true, error);
+                    }
                 }
-            }
-        });
+            })
+            .expect("failed to spawn file-input thread");
 
         Ok(Self {
             sender,

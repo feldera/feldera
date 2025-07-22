@@ -343,9 +343,10 @@ pub fn run_server(
     // will create a `Controller` instance and store it in `state.controller`.
     {
         let config = config.clone();
-        thread::spawn(move || {
-            bootstrap(args, config, circuit_factory, state_clone, loginit_sender)
-        });
+        thread::Builder::new()
+            .name("pipeline-init".to_string())
+            .spawn(move || bootstrap(args, config, circuit_factory, state_clone, loginit_sender))
+            .expect("failed to spawn pipeline initialization thread");
         let _ = loginit_receiver.recv();
     }
 

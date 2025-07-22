@@ -18,6 +18,7 @@ use feldera_types::program_schema::Relation;
 use feldera_types::transport::url::UrlInputConfig;
 use futures::{future::OptionFuture, StreamExt};
 use serde::{Deserialize, Serialize};
+use std::thread;
 use std::{
     cmp::{min, Ordering},
     collections::VecDeque,
@@ -25,7 +26,6 @@ use std::{
     ops::Range,
     str::FromStr,
     sync::Arc,
-    thread::spawn,
     time::Duration,
 };
 use tokio::{
@@ -260,20 +260,28 @@ impl UrlInputReader {
         seek: Option<serde_json::Value>,
     ) -> AnyResult<Self> {
         let (sender, receiver) = unbounded_channel();
-        spawn({
-            let config = config.clone();
-            move || {
-                let _guard = info_span!("url_input", path = config.path.clone()).entered();
-                System::new().block_on(async move {
-                    if let Err(error) =
-                        Self::worker_thread(config, &mut parser, receiver, consumer.as_ref(), seek)
-                            .await
-                    {
-                        consumer.error(true, error);
-                    };
-                });
-            }
-        });
+        thread::Builder::new()
+            .name("url-connector".to_string())
+            .spawn({
+                let config = config.clone();
+                move || {
+                    let _guard = info_span!("url_input", path = config.path.clone()).entered();
+                    System::new().block_on(async move {
+                        if let Err(error) = Self::worker_thread(
+                            config,
+                            &mut parser,
+                            receiver,
+                            consumer.as_ref(),
+                            seek,
+                        )
+                        .await
+                        {
+                            consumer.error(true, error);
+                        };
+                    });
+                }
+            })
+            .expect("failed to spawn URL connector thread");
 
         Ok(Self { sender })
     }
@@ -464,7 +472,7 @@ mod test {
     use std::{
         io::Error as IoError,
         sync::mpsc::channel,
-        thread::{sleep, spawn},
+        thread::{self, sleep},
         time::Duration,
     };
 
@@ -505,21 +513,24 @@ mod test {
         // Start HTTP server listening on an arbitrary local port, and obtain
         // its socket address as `addr`.
         let (sender, receiver) = channel();
-        spawn(move || {
-            System::new().block_on(async {
-                let server = HttpServer::new(move || {
-                    App::new()
-                        // enable logger
-                        .wrap(middleware::Logger::default())
-                        .service(web::resource("/test.csv").to(response))
-                })
-                .workers(1)
-                .bind(("127.0.0.1", 0))
-                .unwrap();
-                sender.send(server.addrs()[0]).unwrap();
-                server.run().await.unwrap();
-            });
-        });
+        thread::Builder::new()
+            .name(format!("url-connector-test"))
+            .spawn(move || {
+                System::new().block_on(async {
+                    let server = HttpServer::new(move || {
+                        App::new()
+                            // enable logger
+                            .wrap(middleware::Logger::default())
+                            .service(web::resource("/test.csv").to(response))
+                    })
+                    .workers(1)
+                    .bind(("127.0.0.1", 0))
+                    .unwrap();
+                    sender.send(server.addrs()[0]).unwrap();
+                    server.run().await.unwrap();
+                });
+            })
+            .expect("failed to spawn test thread");
         let addr = receiver.recv().unwrap();
         // Create a transport endpoint attached to the file.
         let config_str = format!(

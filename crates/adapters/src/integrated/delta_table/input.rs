@@ -73,6 +73,7 @@ use std::future::Future;
 use std::str::FromStr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, Weak};
+use std::thread;
 use std::time::Duration;
 use tokio::select;
 use tokio::sync::watch::{channel, Receiver, Sender};
@@ -274,13 +275,16 @@ impl DeltaTableInputReader {
             info!("delta_table {endpoint_name}: skipping connector initialization because the connector is already in the end-of-input state");
         } else {
             let endpoint_clone = endpoint.clone();
-            std::thread::spawn(move || {
-                TOKIO.block_on(async {
-                    let _ = endpoint_clone
-                        .worker_task(input_stream, receiver_clone, init_status_sender)
-                        .await;
+            thread::Builder::new()
+                .name(format!("{endpoint_name}-delta-input-tokio-wrapper"))
+                .spawn(move || {
+                    TOKIO.block_on(async {
+                        let _ = endpoint_clone
+                            .worker_task(input_stream, receiver_clone, init_status_sender)
+                            .await;
+                    })
                 })
-            });
+                .expect("failed to spawn delta connector tokio wrapper thread");
 
             init_status_receiver.blocking_recv().ok_or_else(|| {
                 ControllerError::input_transport_error(

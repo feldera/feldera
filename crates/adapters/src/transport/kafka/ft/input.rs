@@ -582,27 +582,30 @@ impl KafkaFtInputReader {
         *inner.kafka_consumer.context().endpoint.lock().unwrap() = Arc::downgrade(&inner);
 
         let (command_sender, command_receiver) = unbounded_channel();
-        let poller_handle = spawn({
-            let endpoint = inner.clone();
-            let config = config.clone();
-            move || {
-                let _guard = span(&config.topic);
-                if let Err(e) = endpoint.poller_thread(
-                    config.clone(),
-                    &consumer,
-                    parser,
-                    config
-                        .partitions
-                        .as_deref()
-                        .map(|p| p.len())
-                        .unwrap_or(partition_count),
-                    command_receiver,
-                    resume_info,
-                ) {
-                    consumer.error(true, e);
+        let poller_handle = thread::Builder::new()
+            .name("kafka-input-poller".to_string())
+            .spawn({
+                let endpoint = inner.clone();
+                let config = config.clone();
+                move || {
+                    let _guard = span(&config.topic);
+                    if let Err(e) = endpoint.poller_thread(
+                        config.clone(),
+                        &consumer,
+                        parser,
+                        config
+                            .partitions
+                            .as_deref()
+                            .map(|p| p.len())
+                            .unwrap_or(partition_count),
+                        command_receiver,
+                        resume_info,
+                    ) {
+                        consumer.error(true, e);
+                    }
                 }
-            }
-        });
+            })
+            .expect("failed to spawn Kafka input poller thread");
         let poller_thread = poller_handle.thread().clone();
         Ok(KafkaFtInputReader {
             _inner: inner,

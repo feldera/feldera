@@ -82,7 +82,7 @@ use std::{
         atomic::{AtomicBool, AtomicU64, Ordering},
         Arc,
     },
-    thread::{spawn, JoinHandle},
+    thread::JoinHandle,
     time::{Duration, Instant},
 };
 use tokio::sync::oneshot;
@@ -310,9 +310,10 @@ impl Controller {
             let (init_status_sender, init_status_receiver) =
                 sync_channel::<Result<Arc<ControllerInner>, ControllerError>>(0);
             let config = config.clone();
-            let handle =
-                spawn(
-                    move || match CircuitThread::new(circuit_factory, config, error_cb) {
+            let handle = thread::Builder::new()
+                .name("circuit-thread".to_string())
+                .spawn(move || {
+                    match CircuitThread::new(circuit_factory, config, error_cb) {
                         Err(error) => {
                             let _ = init_status_sender.send(Err(error));
                             Ok(())
@@ -326,8 +327,9 @@ impl Controller {
                                 error!("circuit thread died with error: {error}")
                             })
                         }
-                    },
-                );
+                    }
+                })
+                .expect("failed to spawn circuit-thread");
             // If `recv` fails, it indicates that the circuit thread panicked
             // during initialization.
             let inner = init_status_receiver
@@ -1531,15 +1533,18 @@ impl CircuitThread {
         let storage = storage.to_owned();
         let config = sync.to_owned();
 
-        std::thread::spawn(move || {
-            if let Err(err) = synchronizer.push(uuid, storage.clone(), config.clone()) {
-                cb(Err(Arc::new(ControllerError::checkpoint_push_error(
-                    err.to_string(),
-                ))));
-            } else {
-                cb(Ok(()))
-            }
-        });
+        thread::Builder::new()
+            .name("s3-synchronizer".to_string())
+            .spawn(move || {
+                if let Err(err) = synchronizer.push(uuid, storage.clone(), config.clone()) {
+                    cb(Err(Arc::new(ControllerError::checkpoint_push_error(
+                        err.to_string(),
+                    ))));
+                } else {
+                    cb(Ok(()))
+                }
+            })
+            .expect("failed to spawn s3-synchronizer thread");
     }
 }
 
@@ -2255,9 +2260,12 @@ impl BackpressureThread {
         if let Some(parker) = self.parker.take() {
             let exit = self.exit.clone();
             let controller = self.controller.clone();
-            self.join_handle = Some(spawn(move || {
-                Self::backpressure_thread(controller, parker, exit)
-            }));
+            self.join_handle = Some(
+                thread::Builder::new()
+                    .name("backpressure-thread".to_string())
+                    .spawn(move || Self::backpressure_thread(controller, parker, exit))
+                    .expect("failed to spawn backpressure-thread"),
+            );
         }
     }
 
@@ -3156,18 +3164,21 @@ impl ControllerInner {
             .add_output(&endpoint_id, endpoint_name, endpoint_config);
 
         // Thread to run the output pipeline.
-        spawn(move || {
-            Self::output_thread_func(
-                endpoint_id,
-                endpoint_name_string,
-                output_buffer_config,
-                encoder,
-                parker,
-                queue,
-                disconnect_flag,
-                controller,
-            )
-        });
+        thread::Builder::new()
+            .name(format!("{endpoint_name_string}-output"))
+            .spawn(move || {
+                Self::output_thread_func(
+                    endpoint_id,
+                    endpoint_name_string,
+                    output_buffer_config,
+                    encoder,
+                    parker,
+                    queue,
+                    disconnect_flag,
+                    controller,
+                )
+            })
+            .expect("failed to spawn output thread");
 
         Ok(endpoint_id)
     }
