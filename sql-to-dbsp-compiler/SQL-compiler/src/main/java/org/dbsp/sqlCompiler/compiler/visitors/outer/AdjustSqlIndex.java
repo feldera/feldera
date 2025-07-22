@@ -19,7 +19,8 @@ public class AdjustSqlIndex extends ExpressionTranslator {
 
     @Override
     public void postorder(DBSPBinaryExpression expression) {
-        if (expression.opcode != DBSPOpcode.SQL_INDEX) {
+        if (expression.opcode != DBSPOpcode.SQL_INDEX &&
+            expression.opcode != DBSPOpcode.SAFE_RUST_INDEX) {
             super.postorder(expression);
             return;
         }
@@ -28,12 +29,14 @@ public class AdjustSqlIndex extends ExpressionTranslator {
         DBSPExpression right = this.getE(expression.right);
         DBSPType indexType = right.getType();
 
-        DBSPExpression sub1 = ExpressionCompiler.makeBinaryExpression(
-                expression.getNode(), indexType, DBSPOpcode.SUB,
-                right, indexType.to(IsNumericType.class).getOne());
-        sub1 = sub1.cast(expression.getNode(), DBSPTypeISize.create(indexType.mayBeNull), false);
+        if (expression.opcode == DBSPOpcode.SQL_INDEX) {
+            right = ExpressionCompiler.makeBinaryExpression(
+                    expression.getNode(), indexType, DBSPOpcode.SUB,
+                    right, indexType.to(IsNumericType.class).getOne());
+        }
+        right = right.cast(expression.getNode(), DBSPTypeISize.create(indexType.mayBeNull), false);
         Simplify simplify = new Simplify(this.compiler);
-        DBSPExpression index = simplify.apply(sub1).to(DBSPExpression.class);
+        DBSPExpression index = simplify.apply(right).to(DBSPExpression.class);
         DBSPExpression result = new DBSPBinaryExpression(
                 expression.getNode(), expression.type, DBSPOpcode.RUST_INDEX, left, index);
         this.map(expression, result);

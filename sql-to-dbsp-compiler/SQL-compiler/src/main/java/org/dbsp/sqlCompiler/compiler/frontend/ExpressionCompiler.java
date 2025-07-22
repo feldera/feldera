@@ -1558,14 +1558,18 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 DBSPType collectionType = op0.getType();
                 DBSPExpression index = ops.get(1);
                 DBSPOpcode opcode = DBSPOpcode.SQL_INDEX;
+                String name = call.op.getName();
                 if (collectionType.is(DBSPTypeMap.class)) {
                     // index into a map
+                    Utilities.enforce(name.equals("ITEM"));
                     DBSPTypeMap map = collectionType.to(DBSPTypeMap.class);
                     index = index.applyCloneIfNeeded().cast(node, map.getKeyType(), false);
                     opcode = DBSPOpcode.MAP_INDEX;
                 } else if (collectionType.is(DBSPTypeVariant.class)) {
+                    Utilities.enforce(name.equals("ITEM"));
                     opcode = DBSPOpcode.VARIANT_INDEX;
                 } else if (collectionType.is(DBSPTypeTuple.class)) {
+                    Utilities.enforce(name.equals("ITEM"));
                     DBSPTypeTuple tuple = collectionType.to(DBSPTypeTuple.class);
                     Utilities.enforce(index.is(DBSPStringLiteral.class));
                     DBSPStringLiteral lit = index.to(DBSPStringLiteral.class);
@@ -1578,6 +1582,11 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                     int fieldIndex = field.index;
                     return op0.field(fieldIndex).applyCloneIfNeeded();
                 } else {
+                    switch (name) {
+                        case "ITEM": break;
+                        case "SAFE_OFFSET": opcode = DBSPOpcode.SAFE_RUST_INDEX; break;
+                        default: throw new UnimplementedException("Not yet implemented", node);
+                    }
                     Utilities.enforce(collectionType.is(DBSPTypeArray.class));
                 }
                 return new DBSPBinaryExpression(node, type, opcode, op0, index);
