@@ -1584,6 +1584,12 @@ mod test {
                     Fixed::<10, 0>((a * 10 + b) / 1000),
                     "{af} + {bf} ?= {ef}"
                 );
+
+                let ff: Fixed<10, 2> = Fixed(b);
+                let gf: Fixed<10, 1> = af.checked_add_generic(ff).unwrap();
+                assert_eq!(gf, Fixed::<10, 1>((a + b) / 10), "{af} + {ff} ?= {gf}");
+                let hf: Fixed<10, 3> = af.checked_add_generic(ff).unwrap();
+                assert_eq!(hf, Fixed::<10, 3>((a + b) * 10), "{af} + {ff} ?= {hf}");
             }
         }
     }
