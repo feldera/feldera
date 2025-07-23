@@ -652,6 +652,6 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         Utilities.runProcess(BaseSQLTests.PROJECT_DIRECTORY + "/../crates/sqllib",
                 "cargo", "fmt", "--all", "--", "--check");
         Utilities.runProcess(BaseSQLTests.PROJECT_DIRECTORY + "/../crates/sqllib",
-                "cargo", "clippy", "--", "-D", "warnings");
+                "cargo", "clippy", "--all-targets", "--tests", "--", "-D", "warnings");
     }
 }

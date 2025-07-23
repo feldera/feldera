@@ -4,13 +4,12 @@ use crate::InputReader;
 use anyhow::Result as AnyResult;
 use dbsp::algebra::F64;
 use feldera_sqllib::binary::ByteArray;
-use feldera_sqllib::{Date, Time, Timestamp};
+use feldera_sqllib::{Date, SqlDecimal, Time, Timestamp};
 use feldera_types::config::{InputEndpointConfig, TransportConfig};
 use feldera_types::program_schema::{ColumnType, Field, Relation};
 use feldera_types::serde_with_context::{DeserializeWithContext, SqlSerdeConfig};
 use feldera_types::transport::datagen::GenerationPlan;
 use feldera_types::{deserialize_table_record, serialize_table_record};
-use rust_decimal::Decimal;
 use size_of::SizeOf;
 use std::collections::BTreeMap;
 use std::hash::Hash;
@@ -72,11 +71,11 @@ struct RealStruct {
     #[serde(rename = "double")]
     field: F64,
     #[serde(rename = "dec")]
-    field_1: Decimal,
+    field_1: SqlDecimal<28, 0>,
     #[serde(rename = "dec_scale")]
-    field_2: Decimal,
+    field_2: SqlDecimal<10, 10>,
     #[serde(rename = "dec_w_scale")]
-    field_3: Decimal,
+    field_3: SqlDecimal<2, 1>,
 }
 
 impl RealStruct {
@@ -91,16 +90,16 @@ impl RealStruct {
 }
 serialize_table_record!(RealStruct[4]{
     r#field["double"]: F64,
-    r#field_1["dec"]: Decimal,
-    r#field_2["dec_scale"]: Decimal,
-    r#field_3["dec_w_scale"]: Decimal
+    r#field_1["dec"]: SqlDecimal<28, 0>,
+    r#field_2["dec_scale"]: SqlDecimal<10, 10>,
+    r#field_3["dec_w_scale"]: SqlDecimal<2, 1>
 });
 
 deserialize_table_record!(RealStruct["RealStruct", 4] {
     (r#field, "double", false, F64, None),
-    (r#field_1, "dec", false, Decimal, None),
-    (r#field_2, "dec_scale", false, Decimal, None),
-    (r#field_3, "dec_w_scale", false, Decimal, None)
+    (r#field_1, "dec", false, SqlDecimal<28, 0>, None),
+    (r#field_2, "dec_scale", false, SqlDecimal<10, 10>, None),
+    (r#field_3, "dec_w_scale", false, SqlDecimal<2, 1>, None)
 });
 
 fn mk_pipeline<T, U>(
@@ -237,14 +236,14 @@ transport:
     let iter = zst.flushed.iter();
     for upd in iter {
         let record = upd.unwrap_insert();
-        assert!(record.field_1 >= Decimal::new(0, 0));
-        assert!(record.field_1 < Decimal::new(20, 0));
+        assert!(record.field_1 >= SqlDecimal::<28, 0>::new(0, 0).unwrap());
+        assert!(record.field_1 < SqlDecimal::<27, 0>::new(20, 0).unwrap());
 
-        assert!(record.field_2 >= Decimal::new(0, 0));
-        assert!(record.field_2 < Decimal::new(1, 0));
+        assert!(record.field_2 >= SqlDecimal::<10, 10>::new(0, 0).unwrap());
+        assert!(record.field_2 < SqlDecimal::<10, 10>::new(9999, 4).unwrap());
 
-        assert!(record.field_3 >= Decimal::new(0, 1));
-        assert!(record.field_3 < Decimal::new(10, 0));
+        assert!(record.field_3 >= SqlDecimal::<2, 1>::new(0, 1).unwrap());
+        assert!(record.field_3 < SqlDecimal::<3, 1>::new(10, 0).unwrap());
     }
 
     let config_str = r#"
@@ -263,12 +262,12 @@ transport:
     let iter = zst.flushed.iter();
     for upd in iter {
         let record = upd.unwrap_insert();
-        assert!(record.field_1 >= Decimal::new(1, 0));
-        assert!(record.field_1 < Decimal::new(5, 0));
+        assert!(record.field_1 >= SqlDecimal::<28, 0>::new(1, 0).unwrap());
+        assert!(record.field_1 < SqlDecimal::<28, 0>::new(5, 0).unwrap());
         assert!(
-            record.field_3 == Decimal::new(1, 1)
-                || record.field_3 == Decimal::new(1, 0)
-                || record.field_3 == Decimal::new(99, 1)
+            record.field_3 == SqlDecimal::<2, 1>::new(1, 1).unwrap()
+                || record.field_3 == SqlDecimal::<2, 1>::new(1, 0).unwrap()
+                || record.field_3 == SqlDecimal::<2, 1>::new(99, 1).unwrap()
         );
     }
 }
@@ -292,16 +291,16 @@ transport:
     for upd in iter {
         let record = upd.unwrap_insert();
         assert!(
-            record.field_1 == Decimal::new(1, 1)
-                || record.field_1 == Decimal::ONE
-                || record.field_1 == Decimal::new(2, 0)
+            record.field_1 == SqlDecimal::<28, 0>::new(1, 1).unwrap()
+                || record.field_1 == SqlDecimal::<28, 0>::ONE
+                || record.field_1 == SqlDecimal::<28, 0>::new(2, 0).unwrap()
         );
 
-        assert!(record.field_2 >= Decimal::new(5, 1));
-        assert!(record.field_2 < Decimal::new(6, 1));
+        assert!(record.field_2 >= SqlDecimal::<10, 10>::new(5, 1).unwrap());
+        assert!(record.field_2 < SqlDecimal::<10, 10>::new(6, 1).unwrap());
 
-        assert!(record.field_3 >= Decimal::new(-99, 1));
-        assert!(record.field_3 < Decimal::new(99, 1));
+        assert!(record.field_3 >= SqlDecimal::<2, 1>::new(-99, 1).unwrap());
+        assert!(record.field_3 < SqlDecimal::<2, 1>::new(99, 1).unwrap());
     }
 }
 
@@ -324,16 +323,17 @@ transport:
     for upd in iter {
         let record = upd.unwrap_insert();
         assert!(
-            record.field_1 == Decimal::new(1, 1)
-                || record.field_1 == Decimal::ONE
-                || record.field_1 == Decimal::new(2, 0)
+            record.field_1 == SqlDecimal::<28, 0>::new(1, 1).unwrap()
+                || record.field_1 == SqlDecimal::<28, 0>::ONE
+                || record.field_1 == SqlDecimal::<28, 0>::new(2, 0).unwrap()
         );
 
-        assert!(record.field_2 >= Decimal::new(0, 0));
-        assert!(record.field_2 < Decimal::new(1, 0));
+        assert!(record.field_2 >= SqlDecimal::<10, 10>::new(0, 0).unwrap());
+        // Decimal::<10, 10> cannot represent 1
+        assert!(record.field_2 < SqlDecimal::<11, 10>::new(1, 0).unwrap());
 
-        assert!(record.field_3 >= Decimal::new(0, 0));
-        assert!(record.field_3 < Decimal::new(99, 1));
+        assert!(record.field_3 >= SqlDecimal::<2, 1>::new(0, 0).unwrap());
+        assert!(record.field_3 < SqlDecimal::<2, 1>::new(99, 1).unwrap());
     }
 }
 
