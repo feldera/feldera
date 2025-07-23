@@ -1,7 +1,10 @@
 package org.dbsp.sqlCompiler.compiler.sql.simple;
 
+import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinIndexOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.sql.tools.CompilerCircuitStream;
@@ -18,6 +21,8 @@ import org.junit.Test;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.HashMap;
+import java.util.Map;
 
 /** Regression tests that failed in incremental mode using the Catalog API */
 public class IncrementalRegressionTests extends SqlIoTest {
@@ -733,6 +738,37 @@ public class IncrementalRegressionTests extends SqlIoTest {
                              where y = T.z limit 1) as w
                 FROM S;""";
         this.getCCS(sql);
+    }
+
+    @Test
+    public void aggTree() {
+        var ccs = this.getCCS("""
+                CREATE TABLE T(id INT, od INT, val DECIMAL(5, 2), ct INT, e BOOLEAN);
+                CREATE VIEW V AS SELECT
+                    MAX(CASE WHEN od = 0 THEN 1 ELSE 0 END),
+                    MAX(CASE WHEN od = 1 THEN 1 ELSE 0 END),
+                    COUNT(*),
+                    SUM(val),
+                    COUNT(DISTINCT id),
+                    MIN(CASE WHEN (od = 0 AND e) THEN 1 ELSE 0 END),
+                    MIN(CASE WHEN (od = 1 AND e) THEN 1 ELSE 0 END),
+                    MAX(CASE WHEN e THEN 1 ELSE 0 END),
+                    MIN(CASE WHEN (od = 0 AND e) THEN ROUND(val, 0) ELSE 0.0 END)
+                FROM T""");
+        Map<DBSPOperator, Integer> depthMap = new HashMap<>();
+        ccs.visit(new CircuitVisitor(ccs.compiler) {
+            @Override
+            public void postorder(DBSPJoinIndexOperator operator) {
+                // Check that no long chains of JoinIndex operators are produced
+                int depth = 0;
+                if (operator.left().operator.is(DBSPJoinIndexOperator.class))
+                    depth = depthMap.get(operator.left().operator) + 1;
+                if (operator.right().operator.is(DBSPJoinIndexOperator.class))
+                    depth = Math.max(depth, depthMap.get(operator.right().operator) + 1);
+                depthMap.put(operator, depth);
+                Assert.assertTrue(depth < 3);
+            }
+        });
     }
 
     // Tests that are not in the repository; run manually
