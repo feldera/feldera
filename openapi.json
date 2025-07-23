@@ -7408,10 +7408,42 @@
             "type": "string",
             "description": "The name of the storage bucket.\n\nThis may include a path to a folder inside the bucket (e.g., `my-bucket/data`)."
           },
+          "checkers": {
+            "type": "integer",
+            "format": "int32",
+            "description": "The number of checkers to run in parallel.\nDefault: 20",
+            "nullable": true,
+            "minimum": 0
+          },
           "endpoint": {
             "type": "string",
             "description": "The endpoint URL for the storage service.\n\nThis is typically required for custom or local S3-compatible storage providers like MinIO.\nExample: `http://localhost:9000`\n\nRelevant rclone config key: [`endpoint`](https://rclone.org/s3/#s3-endpoint)",
             "nullable": true
+          },
+          "flags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Extra flags to pass to `rclone`.\n\nWARNING: Supplying incorrect or conflicting flags can break `rclone`.\nUse with caution.\n\nRefer to the docs to see the supported flags:\nGlobal flags: https://rclone.org/flags/\nS3 specific flags: https://rclone.org/s3/",
+            "nullable": true
+          },
+          "ignore_checksum": {
+            "type": "boolean",
+            "description": "Set to skip post copy check of checksums, and only check the file sizes.\nThis can significantly improve the throughput.\nDefualt: false",
+            "nullable": true
+          },
+          "multi_thread_cutoff": {
+            "type": "string",
+            "description": "Use multi-thread download for files above this size.\nFormat: [size][Suffix] (Example: 1G, 500M)\nSupported suffixes: k|M|G|T\nDefault: 100M",
+            "nullable": true
+          },
+          "multi_thread_streams": {
+            "type": "integer",
+            "format": "int32",
+            "description": "Number of streams to use for multi-thread downloads.\nDefault: 10",
+            "nullable": true,
+            "minimum": 0
           },
           "provider": {
             "type": "string",
@@ -7435,6 +7467,13 @@
               }
             ],
             "nullable": true
+          },
+          "transfers": {
+            "type": "integer",
+            "format": "int32",
+            "description": "The number of file transfers to run in parallel.\nDefault: 20",
+            "nullable": true,
+            "minimum": 0
           }
         }
       },
