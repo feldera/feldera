@@ -25,7 +25,8 @@ Here is a sample configuration:
         "provider": "AWS",
         "access_key": "ACCESS_KEY",
         "secret_key": "SECRET_KEY",
-        "start_from_checkpoint": "latest"
+        "start_from_checkpoint": "latest",
+        "flags": ["--s3-server-side-encryption", "aws:kms"]
       }
     }
   }
@@ -34,14 +35,23 @@ Here is a sample configuration:
 
 ### `sync` configuration fields
 
-| Field                     | Type      | Description                                                                                                                        |
-| ------------------------- | --------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `endpoint`                | `string`  | The S3-compatible object store endpoint (e.g., for MinIO, AWS).                                                                               |
-| `bucket`\*                | `string`  | The bucket name and optional prefix to store checkpoints (e.g., `mybucket/checkpoints`).                                                      |
-| `provider`\*              | `string`  | The S3 provider identifier. Must match [rclone's list](https://rclone.org/s3/#providers). Case-sensitive. Use `"Other"` if unsure.            |
-| `access_key`              | `string`  | Your S3 access key. Not required if using environment-based authentication (e.g., IRSA).                                                      |
-| `secret_key`              | `string`  | Your S3 secret key. Same rules as `access_key`.                                                                                               |
-| `start_from_checkpoint`   | `string`  | Provide a checkpoint UUID to resume from it, or use `latest` to restore from the latest one. The provided UUID must exist in object store.    |
+| Field                   | Type            | Description                                                                                                                                                                          |
+|-------------------------|-----------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `endpoint`              | `string`        | The S3-compatible object store endpoint (e.g., `http://localhost:9000` for MinIO).                                                                                                   |
+| `bucket` \*             | `string`        | The bucket name and optional prefix to store checkpoints (e.g., `mybucket/checkpoints`).                                                                                             |
+| `region`                | `string`        | The region of the bucket. Leave empty for MinIO or use AWS default like `us-east-1`.                                                                                                 |
+| `provider` \*           | `string`        | The S3 provider identifier. Must match [rclone’s list](https://rclone.org/s3/#providers). Case-sensitive. Use `"Other"` if unsure.                                                   |
+| `access_key`            | `string`        | Your S3 access key. Not required if using environment-based auth (e.g.,  IRSA).                                                                                                      |
+| `secret_key`            | `string`        | Your S3 secret key. Not required if using environment-based auth.                                                                                                                    |
+| `start_from_checkpoint` | `string`        | Provide a checkpoint UUID to resume from it, or use `latest` to restore from the latest one. The provided UUID must exist in object store.                                           |
+| `transfers`             | `integer (u8)`  | Number of concurrent file transfers. Default: `20`.                                                                                                                                  |
+| `checkers`              | `integer (u8)`  | Number of parallel checkers for verification. Default: `20`.                                                                                                                         |
+| `ignore_checksum`       | `boolean`       | Skip checksum verification after transfer and only check the file size. Default: `false`. Might improve throughput.                                                                  |
+| `multi_thread_streams`  | `integer (u8)`  | Number of streams for multi-threaded downloads. Default: `10`.                                                                                                                       |
+| `multi_thread_cutoff`   | `string`        | File size threshold to enable multi-threaded downloads (e.g., `100M`, `1G`). Supported suffixes: `k`, `M`, `G`, `T`. Default: `100M`.                                                |
+| `upload_concurrency`    | `integer (u8)`  | Number of concurrent chunks to upload during multipart uploads. Default: `10`.                                                                                                       |
+| `flags`                 | `array[string]` | Extra flags to pass to `rclone`.<p> ⚠️ Incorrect or conflicting flags may break behavior. See [rclone flags](https://rclone.org/flags/) and [S3 flags](https://rclone.org/s3/). </p> |
+
 
 ## S3 permissions
 
@@ -94,7 +104,23 @@ For more details, refer to [rclone S3 permissions](https://rclone.org/s3/#s3-per
 To use **IRSA** (IAM Roles for Service Accounts) **omit** fields `access_key`
 and `secret_key`. This loads credentials from the environment.
 
-## triggering a checkpoint sync
+## Buckets with server side encryption
+
+If the bucket has server side encryption enabled, set the flag
+[--s3-server-side-encryption](https://rclone.org/s3/#s3-server-side-encryption)
+in the `flags` field.
+
+Example:
+```json
+      "sync": {
+        "bucket": "BUCKET_NAME/DIRECTORY_NAME",
+        "provider": "AWS",
+        "start_from_checkpoint": "latest",
+        "flags": ["--s3-server-side-encryption", "aws:kms"]
+      }
+```
+
+## Triggering a checkpoint sync
 
 A sync operation can be trigged by making a `POST` request to:
 
