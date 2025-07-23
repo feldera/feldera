@@ -258,10 +258,13 @@ class FelderaClient:
                 if chunk:
                     yield chunk.decode("utf-8")
 
-    def start_pipeline(self, pipeline_name: str, timeout_s: Optional[float] = 300):
+    def start_pipeline(
+        self, pipeline_name: str, wait: bool = True, timeout_s: Optional[float] = 300
+    ):
         """
 
         :param pipeline_name: The name of the pipeline to start
+        :param wait: Set True to wait for the pipeline to start. True by default
         :param timeout_s: The amount of time in seconds to wait for the pipeline
             to start. 300 seconds by default.
         """
@@ -272,6 +275,9 @@ class FelderaClient:
         self.http.post(
             path=f"/pipelines/{pipeline_name}/start",
         )
+
+        if not wait:
+            return
 
         start_time = time.monotonic()
 
@@ -308,6 +314,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         self,
         pipeline_name: str,
         error_message: str = None,
+        wait: bool = True,
         timeout_s: Optional[float] = 300,
     ):
         """
@@ -316,6 +323,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         :param pipeline_name: The name of the pipeline to stop
         :param error_message: The error message to show if the pipeline is in
              STOPPED state due to a failure.
+        :param wait: Set True to wait for the pipeline to pause. True by default
         :param timeout_s: The amount of time in seconds to wait for the pipeline
             to pause. 300 seconds by default.
         """
@@ -326,6 +334,9 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         self.http.post(
             path=f"/pipelines/{pipeline_name}/pause",
         )
+
+        if not wait:
+            return
 
         if error_message is None:
             error_message = "Unable to PAUSE the pipeline.\n"
@@ -362,7 +373,11 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             time.sleep(0.1)
 
     def stop_pipeline(
-        self, pipeline_name: str, force: bool, timeout_s: Optional[float] = 300
+        self,
+        pipeline_name: str,
+        force: bool,
+        wait: bool = True,
+        timeout_s: Optional[float] = 300,
     ):
         """
         Stop a pipeline
@@ -370,6 +385,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         :param pipeline_name: The name of the pipeline to stop
         :param force: Set True to immediately scale compute resources to zero.
             Set False to automatically checkpoint before stopping.
+        :param wait: Set True to wait for the pipeline to stop. True by default
         :param timeout_s: The amount of time in seconds to wait for the pipeline
             to stop. Default is 300 seconds.
         """
@@ -383,6 +399,9 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             path=f"/pipelines/{pipeline_name}/stop",
             params=params,
         )
+
+        if not wait:
+            return
 
         start = time.monotonic()
 

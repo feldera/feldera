@@ -118,7 +118,8 @@ class Pipeline:
             tbl.name.lower() for tbl in pipeline.tables
         ]:
             raise ValueError(
-                f"Cannot push to table '{table_name}': table with this name does not exist in the '{self.name}' pipeline"
+                f"Cannot push to table '{table_name}': table with this name"
+                f" does not exist in the '{self.name}' pipeline"
             )
         else:
             # consider validating the schema here
@@ -313,10 +314,12 @@ class Pipeline:
                 elapsed = time.monotonic() - start_time
                 if elapsed > timeout_s:
                     raise TimeoutError(
-                        f"timeout ({timeout_s}s) reached while waiting for pipeline '{self.name}' to complete"
+                        f"timeout ({timeout_s}s) reached while waiting for"
+                        f" pipeline '{self.name}' to complete"
                     )
                 logging.debug(
-                    f"waiting for pipeline {self.name} to complete: elapsed time {elapsed}s, timeout: {timeout_s}s"
+                    f"waiting for pipeline {self.name} to complete: elapsed"
+                    f" time {elapsed}s, timeout: {timeout_s}s"
                 )
 
             pipeline_complete: bool = self.stats().global_metrics.pipeline_complete
@@ -332,7 +335,7 @@ class Pipeline:
         if force_stop:
             self.stop(force=True)
 
-    def start(self, timeout_s: Optional[float] = None):
+    def start(self, wait: bool = True, timeout_s: Optional[float] = None):
         """
         .. _start:
 
@@ -344,6 +347,7 @@ class Pipeline:
 
         :param timeout_s: The maximum time (in seconds) to wait for the
             pipeline to start.
+        :param wait: Set True to wait for the pipeline to start. True by default
 
         :raises RuntimeError: If the pipeline is not in STOPPED state.
         """
@@ -357,11 +361,21 @@ started. You can either stop the pipeline using the `Pipeline.stop()` \
 method or use `Pipeline.resume()` to resume a paused pipeline."""
             )
 
+        if not wait:
+            if len(self.views_tx) > 0:
+                raise ValueError(
+                    "cannot start with 'wait=False' when output listeners are configured. Try setting 'wait=True'."
+                )
+
+            self.client.start_pipeline(self.name, wait=wait)
+
+            return
+
         self.client.pause_pipeline(
             self.name, "Unable to START the pipeline.\n", timeout_s
         )
         self.__setup_output_listeners()
-        self.resume(timeout_s)
+        self.resume(timeout_s=timeout_s)
 
     def restart(self, timeout_s: Optional[float] = None):
         """
@@ -376,7 +390,7 @@ method or use `Pipeline.resume()` to resume a paused pipeline."""
         """
 
         self.stop(force=True, timeout_s=timeout_s)
-        self.start(timeout_s)
+        self.start(timeout_s=timeout_s)
 
     def wait_for_idle(
         self,
@@ -403,11 +417,13 @@ method or use `Pipeline.resume()` to resume a paused pipeline."""
         """
         if idle_interval_s > timeout_s:
             raise ValueError(
-                f"idle interval ({idle_interval_s}s) cannot be larger than timeout ({timeout_s}s)"
+                f"idle interval ({idle_interval_s}s) cannot be larger than"
+                f" timeout ({timeout_s}s)"
             )
         if poll_interval_s > timeout_s:
             raise ValueError(
-                f"poll interval ({poll_interval_s}s) cannot be larger than timeout ({timeout_s}s)"
+                f"poll interval ({poll_interval_s}s) cannot be larger than"
+                f" timeout ({timeout_s}s)"
             )
         if poll_interval_s > idle_interval_s:
             raise ValueError(
@@ -454,7 +470,7 @@ metrics"""
                 raise RuntimeError(f"waiting for idle reached timeout ({timeout_s}s)")
             time.sleep(poll_interval_s)
 
-    def pause(self, timeout_s: Optional[float] = None):
+    def pause(self, wait: bool = True, timeout_s: Optional[float] = None):
         """
         Pause the pipeline.
 
@@ -462,13 +478,14 @@ metrics"""
         state. If the pipeline is already paused, it will remain in the PAUSED
         state.
 
+        :param wait: Set True to wait for the pipeline to pause. True by default
         :param timeout_s: The maximum time (in seconds) to wait for the
             pipeline to pause.
         """
 
-        self.client.pause_pipeline(self.name, timeout_s=timeout_s)
+        self.client.pause_pipeline(self.name, wait=wait, timeout_s=timeout_s)
 
-    def stop(self, force: bool, timeout_s: Optional[float] = None):
+    def stop(self, force: bool, wait: bool = True, timeout_s: Optional[float] = None):
         """
         Stops the pipeline.
 
@@ -476,34 +493,39 @@ metrics"""
 
         :param force: Set True to immediately scale compute resources to zero.
             Set False to automatically checkpoint before stopping.
+        :param wait: Set True to gracefully shutdown listeners and wait for the
+            pipeline to stop. True by default.
         :param timeout_s: The maximum time (in seconds) to wait for the
             pipeline to stop.
         """
 
-        for view_queue in self.views_tx:
-            for _, queue in view_queue.items():
-                # sends a message to the callback runner to stop listening
-                queue.put(_CallbackRunnerInstruction.RanToCompletion)
+        if wait:
+            for view_queue in self.views_tx:
+                for _, queue in view_queue.items():
+                    # sends a message to the callback runner to stop listening
+                    queue.put(_CallbackRunnerInstruction.RanToCompletion)
 
-        if len(self.views_tx) > 0:
-            for view_name, queue in self.views_tx.pop().items():
-                # block until the callback runner has been stopped
-                queue.join()
-        import time
+            if len(self.views_tx) > 0:
+                for view_name, queue in self.views_tx.pop().items():
+                    # block until the callback runner has been stopped
+                    queue.join()
 
         time.sleep(3)
-        self.client.stop_pipeline(self.name, force=force, timeout_s=timeout_s)
+        self.client.stop_pipeline(
+            self.name, force=force, wait=wait, timeout_s=timeout_s
+        )
 
-    def resume(self, timeout_s: Optional[float] = None):
+    def resume(self, wait: bool = True, timeout_s: Optional[float] = None):
         """
         Resumes the pipeline from the PAUSED state. If the pipeline is already
         running, it will remain in the RUNNING state.
 
+        :param wait: Set True to wait for the pipeline to resume. True by default
         :param timeout_s: The maximum time (in seconds) to wait for the
             pipeline to resume.
         """
 
-        self.client.start_pipeline(self.name, timeout_s=timeout_s)
+        self.client.start_pipeline(self.name, wait=wait, timeout_s=timeout_s)
 
     def delete(self, clear_storage: bool = False):
         """
