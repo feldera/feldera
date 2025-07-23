@@ -838,14 +838,14 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
 
     def set_runtime_config(self, runtime_config: RuntimeConfig):
         """Updates the runtime config of the pipeline.  The pipeline
-        must be stopped and, in addition, changing some pipeline
-        configuration requires storage to be cleared.
+        must be stopped.  Changing some pipeline configuration, such
+        as the number of workers, requires storage to be cleared.
 
-        For example, to set 'min_batch_size_records' on a pipeline:
+        For example, to set 'min_batch_size_records' on a pipeline::
 
-        runtime_config = pipeline.runtime_config()
-        runtime_config.min_batch_size_records = 500
-        pipeline.set_runtime_config(runtime_config)
+            runtime_config = pipeline.runtime_config()
+            runtime_config.min_batch_size_records = 500
+            pipeline.set_runtime_config(runtime_config)
 
         """
 
