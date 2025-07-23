@@ -112,6 +112,10 @@ pub enum OutputFormat {
     ///
     /// This format can only be specified for SQL queries.
     Parquet,
+    /// Returns the output in Prometheus format.
+    ///
+    /// This format can only be specified for the `metrics` command.
+    Prometheus,
 }
 
 impl Display for OutputFormat {
@@ -121,6 +125,7 @@ impl Display for OutputFormat {
             OutputFormat::Json => "json",
             OutputFormat::ArrowIpc => "arrow_ipc",
             OutputFormat::Parquet => "parquet",
+            OutputFormat::Prometheus => "prometheus",
         };
         write!(f, "{}", output)
     }
@@ -353,6 +358,14 @@ pub enum PipelineAction {
     /// Retrieve the runtime statistics of a pipeline.
     #[clap(aliases = &["statistics"])]
     Stats {
+        /// The name of the pipeline.
+        #[arg(value_hint = ValueHint::Other, add = ArgValueCompleter::new(pipeline_names))]
+        name: String,
+    },
+    /// Retrieve the pipeline metrics.
+    ///
+    /// Metrics are available in `json` and `prometheus` output formats.
+    Metrics {
         /// The name of the pipeline.
         #[arg(value_hint = ValueHint::Other, add = ArgValueCompleter::new(pipeline_names))]
         name: String,
