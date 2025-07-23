@@ -255,6 +255,7 @@ impl KafkaFtInputReaderInner {
         let n_threads = config.poller_threads().min(n_partitions);
         let mut threads = (0..n_threads)
             .map(|_| RecvThread {
+                topic: topic.clone(),
                 exit: exit.clone(),
                 main_thread: thread::current(),
                 parker: Parker::new(),
@@ -876,6 +877,7 @@ impl Drop for RecvThreadHandle {
 
 struct RecvThread {
     exit: Arc<AtomicBool>,
+    topic: String,
     main_thread: Thread,
     parker: Parker,
     base_consumer: Arc<BaseConsumer<KafkaFtInputContext>>,
@@ -886,6 +888,7 @@ struct RecvThread {
 
 impl RecvThread {
     fn run(&mut self) {
+        let _guard = span(&self.topic);
         while !self.exit.load(Ordering::Relaxed) {
             let mut did_work = false;
             for receiver in &self.receivers {
