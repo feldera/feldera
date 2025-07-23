@@ -76,7 +76,9 @@ impl InputGenerator {
         parser: Box<dyn Parser>,
         resume_info: Option<serde_json::Value>,
     ) -> AnyResult<Self> {
-        let resume_info = if let Some(resume_info) = resume_info {
+        let resume_info = if config.table != NexmarkTable::Bid {
+            None
+        } else if let Some(resume_info) = resume_info {
             Some(parse_resume_info::<Metadata>(&resume_info)?)
         } else {
             None
