@@ -35,23 +35,24 @@ Here is a sample configuration:
 
 ### `sync` configuration fields
 
-| Field                   | Type            | Description                                                                                                                                                                          |
-|-------------------------|-----------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `endpoint`              | `string`        | The S3-compatible object store endpoint (e.g., `http://localhost:9000` for MinIO).                                                                                                   |
-| `bucket` \*             | `string`        | The bucket name and optional prefix to store checkpoints (e.g., `mybucket/checkpoints`).                                                                                             |
-| `region`                | `string`        | The region of the bucket. Leave empty for MinIO or use AWS default like `us-east-1`.                                                                                                 |
-| `provider` \*           | `string`        | The S3 provider identifier. Must match [rclone’s list](https://rclone.org/s3/#providers). Case-sensitive. Use `"Other"` if unsure.                                                   |
-| `access_key`            | `string`        | Your S3 access key. Not required if using environment-based auth (e.g.,  IRSA).                                                                                                      |
-| `secret_key`            | `string`        | Your S3 secret key. Not required if using environment-based auth.                                                                                                                    |
-| `start_from_checkpoint` | `string`        | Provide a checkpoint UUID to resume from it, or use `latest` to restore from the latest one. The provided UUID must exist in object store.                                           |
-| `transfers`             | `integer (u8)`  | Number of concurrent file transfers. Default: `20`.                                                                                                                                  |
-| `checkers`              | `integer (u8)`  | Number of parallel checkers for verification. Default: `20`.                                                                                                                         |
-| `ignore_checksum`       | `boolean`       | Skip checksum verification after transfer and only check the file size. Default: `false`. Might improve throughput.                                                                  |
-| `multi_thread_streams`  | `integer (u8)`  | Number of streams for multi-threaded downloads. Default: `10`.                                                                                                                       |
-| `multi_thread_cutoff`   | `string`        | File size threshold to enable multi-threaded downloads (e.g., `100M`, `1G`). Supported suffixes: `k`, `M`, `G`, `T`. Default: `100M`.                                                |
-| `upload_concurrency`    | `integer (u8)`  | Number of concurrent chunks to upload during multipart uploads. Default: `10`.                                                                                                       |
-| `flags`                 | `array[string]` | Extra flags to pass to `rclone`.<p> ⚠️ Incorrect or conflicting flags may break behavior. See [rclone flags](https://rclone.org/flags/) and [S3 flags](https://rclone.org/s3/). </p> |
+| Field                   | Type            | Default     | Description                                                                                                                                                                          |
+|-------------------------|-----------------|-------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `endpoint`              | `string`        |             | The S3-compatible object store endpoint (e.g., `http://localhost:9000` for MinIO).                                                                                                   |
+| `bucket` \*             | `string`        |             | The bucket name and optional prefix to store checkpoints (e.g., `mybucket/checkpoints`).                                                                                             |
+| `region`                | `string`        | `us-east-1` | The region of the bucket. Leave empty for MinIO. If `provider` is AWS, and no region is specified, `us-east-1` is used.                                                              |
+| `provider` \*           | `string`        |             | The S3 provider identifier. Must match [rclone’s list](https://rclone.org/s3/#providers). Case-sensitive. Use `"Other"` if unsure.                                                   |
+| `access_key`            | `string`        |             | S3 access key. Not required if using environment-based auth (e.g., IRSA).                                                                                                            |
+| `secret_key`            | `string`        |             | S3 secret key. Not required if using environment-based auth.                                                                                                                         |
+| `start_from_checkpoint` | `string`        |             | Checkpoint UUID to resume from it, or `latest` to restore from the latest checkpoint. The provided UUID must exist in object store.                                                  |
+| `transfers`             | `integer (u8)`  | `20`        | Number of concurrent file transfers.                                                                                                                                                 |
+| `checkers`              | `integer (u8)`  | `20`        | Number of parallel checkers for verification.                                                                                                                                        |
+| `ignore_checksum`       | `boolean`       | `false`     | Skip checksum verification after transfer and only check the file size. Might improve throughput.                                                                                    |
+| `multi_thread_streams`  | `integer (u8)`  | `10`        | Number of streams for multi-threaded downloads.                                                                                                                                      |
+| `multi_thread_cutoff`   | `string`        | `100M`      | File size threshold to enable multi-threaded downloads (e.g., `100M`, `1G`). Supported suffixes: `k`, `M`, `G`, `T`.                                                                 |
+| `upload_concurrency`    | `integer (u8)`  | `10`        | Number of concurrent chunks to upload during multipart uploads.                                                                                                                      |
+| `flags`                 | `array[string]` |             | Extra flags to pass to `rclone`.<p> ⚠️ Incorrect or conflicting flags may break behavior. See [rclone flags](https://rclone.org/flags/) and [S3 flags](https://rclone.org/s3/). </p> |
 
+*Fields marked with an asterisk are required.
 
 ## S3 permissions
 
