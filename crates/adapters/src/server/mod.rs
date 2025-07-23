@@ -76,6 +76,9 @@ use uuid::Uuid;
 pub mod error;
 mod prometheus;
 
+#[cfg(target_family = "unix")]
+mod stack_overflow_backtrace;
+
 pub use self::error::{ErrorResponse, PipelineError, MAX_REPORTED_PARSE_ERRORS};
 use self::prometheus::PrometheusMetrics;
 
@@ -338,6 +341,23 @@ pub fn run_server(
         eprintln!("{e}");
         e
     })?;
+
+    // Install stack overflow handler early, before creating the controller and parsing DevTweaks.
+    #[cfg(target_family = "unix")]
+    if config
+        .global
+        .dev_tweaks
+        .get("stack_overflow_backtrace")
+        .cloned()
+        == Some(serde_json::Value::Bool(true))
+    {
+        unsafe {
+            use crate::server::stack_overflow_backtrace::enable_stack_overflow_backtrace_with_limit;
+
+            // TODO: make count configurable.
+            enable_stack_overflow_backtrace_with_limit(200);
+        }
+    }
 
     // Initialize the pipeline in a separate thread.  On success, this thread
     // will create a `Controller` instance and store it in `state.controller`.

@@ -137,12 +137,17 @@ aws-msk-iam-sasl-signer = "1.0.0"
 aws-credential-types = "1.2.3"
 feldera-sqllib = { workspace = true }
 inventory = { workspace = true }
+backtrace = { workspace = true }
 
 [package.metadata.cargo-machete]
 ignored = ["num-traits"]
 
 [target.'cfg(target_os = "linux")'.dependencies]
 jemalloc_pprof = { workspace = true, features = ["symbolize"] }
+
+[target.'cfg(unix)'.dependencies]
+libc = { workspace = true }
+nix = { workspace = true, features = ["signal"] }
 
 [dev-dependencies]
 actix-test = { workspace = true }

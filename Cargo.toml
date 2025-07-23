@@ -245,6 +245,7 @@ wiremock = "0.6"
 xxhash-rust = "0.8.6"
 zip = "0.6.2"
 zstd = "0.12.0"
+backtrace = "0.3.75"
 
 [workspace.metadata.release]
 release = false
