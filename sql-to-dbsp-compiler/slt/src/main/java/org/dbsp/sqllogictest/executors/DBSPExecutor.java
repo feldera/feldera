@@ -39,6 +39,7 @@ import org.dbsp.sqlCompiler.compiler.backend.rust.RustFileWriter;
 import org.dbsp.sqlCompiler.compiler.frontend.TableContents;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.CreateRuntimeErrorWrappers;
 import org.dbsp.sqlCompiler.ir.DBSPFunction;
 import org.dbsp.sqlCompiler.ir.DBSPNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
@@ -216,7 +217,8 @@ public class DBSPExecutor extends SqlSltTestExecutor {
     }
 
     /** Convert a description of the data in the SLT format to a ZSet. */
-    public static DBSPZSetExpression convert(@Nullable List<String> data, DBSPTypeZSet outputType) {
+    public static DBSPZSetExpression convert(
+            DBSPCompiler compiler, @Nullable List<String> data, DBSPTypeZSet outputType) {
         if (data == null)
             data = Linq.list();
         DBSPZSetExpression result;
@@ -272,6 +274,8 @@ public class DBSPExecutor extends SqlSltTestExecutor {
             throw new RuntimeException("Could not assign all query output values to rows. " +
                     "I have " + col + " leftover values in the last row");
         }
+        CreateRuntimeErrorWrappers cw = new CreateRuntimeErrorWrappers(compiler);
+        result = cw.apply(result).to(DBSPZSetExpression.class);
         return result;
     }
 
@@ -311,7 +315,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
         DBSPTypeZSet outputType = sink.outputType.to(DBSPTypeZSet.class);
         DBSPZSetExpression expectedOutput = null;
         if (testQuery.outputDescription.hash == null) {
-            expectedOutput = DBSPExecutor.convert(testQuery.outputDescription.getQueryResults(), outputType);
+            expectedOutput = DBSPExecutor.convert(compiler, testQuery.outputDescription.getQueryResults(), outputType);
         }
 
         return createTesterCode(
