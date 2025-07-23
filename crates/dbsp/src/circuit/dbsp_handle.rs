@@ -290,6 +290,14 @@ pub struct DevTweaks {
     ///
     /// [StorageFull]: std::io::ErrorKind::StorageFull
     pub storage_mb_max: Option<u64>,
+
+    /// Attempt to print a stack trace on stack overflow.
+    ///
+    /// To be used for debugging only; do not enable in production.
+    // NOTE: this flag is handled manually in `adapters/src/server/mod.rs` before
+    // parsing DevTweaks. If the name or type of this field changes, make sure to
+    // adjust `server/mod.rs` accordingly.
+    pub stack_overflow_backtrace: bool,
 }
 
 impl DevTweaks {
