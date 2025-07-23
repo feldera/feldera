@@ -272,7 +272,11 @@ class FelderaClient:
 
             if status == "Running":
                 break
-            elif status == "Failed":
+            elif (
+                status == "Stopped"
+                and len(resp.deployment_error or {}) > 0
+                and resp.deployment_desired_status == "Stopped"
+            ):
                 raise RuntimeError(
                     f"""Unable to START the pipeline.
 Reason: The pipeline is in a STOPPED state due to the following error:
