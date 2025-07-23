@@ -22,6 +22,7 @@ use actix_web::{
 use actix_web_httpauth::middleware::HttpAuthentication;
 use actix_web_static_files::ResourceFiles;
 use anyhow::{Error as AnyError, Result as AnyResult};
+use awc::Connector;
 use futures_util::FutureExt;
 use log::{error, log, trace, Level};
 use std::io::Write;
@@ -448,7 +449,12 @@ pub async fn run(
         Some(auth_configuration) => {
             let server = HttpServer::new(move || {
                 let auth_middleware = HttpAuthentication::with_fn(crate::auth::auth_validator);
-                let client = WebData::new(awc::Client::new());
+                let client = WebData::new(
+                    awc::Client::builder()
+                        // disable the limit for simultaneous connections
+                        .connector(Connector::new().limit(0))
+                        .finish(),
+                );
                 App::new()
                     .app_data(state.clone())
                     .app_data(auth_configuration.clone())
@@ -467,7 +473,12 @@ pub async fn run(
         }
         None => {
             let server = HttpServer::new(move || {
-                let client = WebData::new(awc::Client::new());
+                let client = WebData::new(
+                    awc::Client::builder()
+                        // disable the limit for simultaneous connections
+                        .connector(Connector::new().limit(0))
+                        .finish(),
+                );
                 App::new()
                     .app_data(state.clone())
                     .app_data(client)
