@@ -379,6 +379,7 @@ mod interned_string_test {
     /// The first input stream contains strings to be interned.
     /// The second input stream contains queries for interned strings. It is joined with the first stream
     /// to produce an output stream of un-interned strings.
+    #[allow(clippy::type_complexity)]
     pub fn interner_test_circuit(
         path: &Path,
         checkpoint: Option<Uuid>,

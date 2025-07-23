@@ -14,6 +14,7 @@ use anyhow::{anyhow, bail, Result as AnyResult};
 use async_channel::Receiver as AsyncReceiver;
 use chrono::format::{Item, StrftimeItems};
 use chrono::{DateTime, Days, Duration, NaiveDate, NaiveTime, Timelike};
+use feldera_fxp::{pow10, DynamicDecimal, UniformDecimal};
 use feldera_types::config::FtModel;
 use governor::clock::DefaultClock;
 use governor::middleware::NoOpMiddleware;
@@ -25,7 +26,6 @@ use rand::rngs::SmallRng;
 use rand::{thread_rng, Rng, SeedableRng};
 use rand_distr::{Distribution, Zipf};
 use range_set::RangeSet;
-use rust_decimal::{prelude::FromPrimitive, Decimal};
 use serde::{Deserialize, Serialize};
 use serde_json::{to_writer, Map, Value};
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver};
@@ -87,7 +87,7 @@ fn range_as_f64(
     }
 }
 
-fn decimal_max_range(field: &Field) -> AnyResult<(Decimal, Decimal)> {
+fn decimal_max_range(field: &Field) -> AnyResult<(DynamicDecimal, DynamicDecimal)> {
     let precision = field
         .columntype
         .precision
@@ -121,17 +121,17 @@ fn decimal_max_range(field: &Field) -> AnyResult<(Decimal, Decimal)> {
 fn range_as_decimal(
     name: &SqlIdentifier,
     range: &Option<(Value, Value)>,
-) -> AnyResult<Option<(Decimal, Decimal)>> {
+) -> AnyResult<Option<(DynamicDecimal, DynamicDecimal)>> {
     match range {
         None => Ok(None),
         Some((a, b)) => {
-            let a = serde_json::from_value::<Decimal>(a.clone()).map_err(|_| {
+            let a = serde_json::from_value::<DynamicDecimal>(a.clone()).map_err(|_| {
                 anyhow!(
                     "Invalid range, min is not a valid decimal for field {:?}",
                     name
                 )
             })?;
-            let b = serde_json::from_value::<Decimal>(b.clone()).map_err(|_| {
+            let b = serde_json::from_value::<DynamicDecimal>(b.clone()).map_err(|_| {
                 anyhow!(
                     "Invalid range, max is not a valid decimal for field {:?}",
                     name
@@ -348,31 +348,28 @@ fn parse_range_for_datetime(
 }
 
 /// This is our max precision for decimals.
-const FELDERA_MAX_DECIMAL_PRECISION: u32 = 28;
+const FELDERA_MAX_DECIMAL_PRECISION: u32 = 38;
 
 /// This is our max scale for decimals.
 ///
 /// Note that in feldera `scale` is the number of digits to the right of the decimal point.
-const FELDERA_MAX_DECIMAL_SCALE: u32 = 10;
+const FELDERA_MAX_DECIMAL_SCALE: u32 = 38;
 
-/// Given a precision and scale calculate the maximum Decimal value for it.
+/// Given a precision and scale calculate the maximum DynamicDecimal value for it.
 /// For example, the number `3.1415` has a precision of `5` and a scale of `4`.
-fn decimal_max(p: u32, s: u32) -> Decimal {
+fn decimal_max(p: u32, s: u32) -> DynamicDecimal {
+    assert!(p > 0);
     assert!(p <= FELDERA_MAX_DECIMAL_PRECISION);
     assert!(s <= FELDERA_MAX_DECIMAL_SCALE);
     assert!(p >= s);
 
-    // 10^p
-    let ten_pow_p = Decimal::from_u128(10u128.pow(p)).unwrap();
-    // 10^s
-    let ten_pow_s = Decimal::from_u128(10u128.pow(s)).unwrap();
-
     // (10^p - 1) / 10^s
-    (ten_pow_p - Decimal::ONE) / ten_pow_s
+    let nines = pow10(p as usize) - 1;
+    DynamicDecimal::new(nines, s as u8)
 }
 
 /// Given a precision and scale calculate the minimum Decimal value for it.
-fn decimal_min(p: u32, s: u32) -> Decimal {
+fn decimal_min(p: u32, s: u32) -> DynamicDecimal {
     -decimal_max(p, s)
 }
 
@@ -951,7 +948,7 @@ impl<'a> RecordGenerator<'a> {
             | SqlType::UBigInt
             | SqlType::Real
             | SqlType::Double => Value::Number(serde_json::Number::from(0)),
-            SqlType::Decimal => Value::String(Decimal::ZERO.to_string()),
+            SqlType::Decimal => Value::String("0".to_string()),
             SqlType::Binary | SqlType::Varbinary => Value::Array(Vec::new()),
             SqlType::Char
             | SqlType::Varchar
@@ -1935,18 +1932,18 @@ impl<'a> RecordGenerator<'a> {
             *obj = nl;
             return Ok(());
         }
-        let scale = Decimal::from(settings.scale);
-        let incr_dec = Decimal::from(incr);
+        let scale = DynamicDecimal::from(settings.scale);
+        let incr_dec = DynamicDecimal::from(incr);
 
         match (&settings.strategy, &settings.values, &range) {
             (DatagenStrategy::Increment, None, None) => {
-                let val = (incr_dec * scale) % max.floor();
+                let val = (incr_dec * scale) % max;
                 *obj = Value::String(val.to_string());
             }
             (DatagenStrategy::Increment, None, Some((a, b))) => {
-                let range = b - a;
-                let val_in_range = (incr_dec * scale) % range.floor();
-                let val = a + val_in_range;
+                let range = *b - *a;
+                let val_in_range = (incr_dec * scale) % range;
+                let val = *a + val_in_range;
                 debug_assert!(val >= *a && val < *b);
                 *obj = Value::String(val.to_string());
             }
@@ -1954,13 +1951,15 @@ impl<'a> RecordGenerator<'a> {
                 *obj = values[incr % values.len()].clone();
             }
             (DatagenStrategy::Uniform, None, None) => {
-                let dist = Uniform::from(min..max);
-                let val = rng.sample(dist) * scale;
+                let dist =
+                    UniformDecimal::new(min.significand(), max.significand(), settings.scale as u8);
+                let val = dist.sample(rng);
                 *obj = Value::String(val.to_string());
             }
             (DatagenStrategy::Uniform, None, Some((a, b))) => {
-                let dist = Uniform::from(*a..*b);
-                let val = rng.sample(dist) * scale;
+                let dist =
+                    UniformDecimal::new(a.significand(), b.significand(), settings.scale as u8);
+                let val = dist.sample(rng);
                 *obj = Value::String(val.to_string());
             }
             (DatagenStrategy::Uniform, Some(values), _) => {
@@ -1968,7 +1967,7 @@ impl<'a> RecordGenerator<'a> {
                 *obj = values[rng.sample(dist)].clone();
             }
             (DatagenStrategy::Zipf, None, None) => {
-                let max_int = max.to_u64().ok_or_else(|| {
+                let max_int = u64::try_from(max).map_err(|_| {
                     anyhow!(
                         "Unable to convert value to u64 for use with Zipf in field: `{}`",
                         field.name
@@ -1985,8 +1984,8 @@ impl<'a> RecordGenerator<'a> {
                 *obj = Value::String(val_in_range.to_string());
             }
             (DatagenStrategy::Zipf, None, Some((a, b))) => {
-                let range = b - a;
-                let range_int = range.to_u64().ok_or_else(|| {
+                let range = *b - *a;
+                let range_int = u64::try_from(range).map_err(|_| {
                     anyhow!(
                         "Unable to convert value to u64 for use with Zipf in field: `{}`",
                         field.name
@@ -2000,12 +1999,13 @@ impl<'a> RecordGenerator<'a> {
                     )
                 })?;
                 let val_in_range = rng.sample(zipf) - 1.0;
-                let val_as_decimal = a + Decimal::from_f64(val_in_range).ok_or_else(|| {
-                    anyhow!(
-                        "Unable to convert value to decimal from Zipf in field: `{}`",
-                        field.name
-                    )
-                })?;
+                let val_as_decimal = *a
+                    + DynamicDecimal::try_from(val_in_range).map_err(|_| {
+                        anyhow!(
+                            "Unable to convert value to decimal from Zipf in field: `{}`",
+                            field.name
+                        )
+                    })?;
                 *obj = Value::String(val_as_decimal.to_string());
             }
             (DatagenStrategy::Zipf, Some(values), _) => {
@@ -2179,16 +2179,18 @@ mod tests {
     use super::{
         decimal_max, decimal_min, FELDERA_MAX_DECIMAL_PRECISION, FELDERA_MAX_DECIMAL_SCALE,
     };
-    use rust_decimal::Decimal;
+    use feldera_fxp::{DynamicDecimal, UniformDecimal};
+    use rand::rngs::SmallRng;
+    use rand::SeedableRng;
 
     /// Verify we can generate all feldera min/max decimals without panicking.
     #[test]
     fn rust_decimal_min_max_no_panics() {
-        for p in 0..=FELDERA_MAX_DECIMAL_PRECISION {
+        for p in 1..=FELDERA_MAX_DECIMAL_PRECISION {
             for s in 0..=FELDERA_MAX_DECIMAL_SCALE {
                 if p >= s {
-                    let max_val = decimal_max(p, s);
-                    let min_val = decimal_min(p, s);
+                    let _max_val = decimal_max(p, s);
+                    let _min_val = decimal_min(p, s);
                     //eprintln!("p: {}, s: {} min {} max {}", p, s, min_val, max_val);
                 }
             }
@@ -2198,12 +2200,30 @@ mod tests {
     /// Verify we get something sane for rust decimal modulo.
     #[test]
     fn rust_decimal_rem_check() {
-        let a = Decimal::from(19);
-        let b = Decimal::from(10);
-        assert_eq!(a % b, Decimal::from(9));
+        let a = DynamicDecimal::from(19);
+        let b = DynamicDecimal::from(10);
+        assert_eq!(a % b, DynamicDecimal::from(9));
 
-        let a = Decimal::from_str_exact("19.1").unwrap();
-        let b = Decimal::from(10);
-        assert_eq!(a % b, Decimal::from_str_exact("9.1").unwrap());
+        let a = DynamicDecimal::try_from(19.1).unwrap();
+        let b = DynamicDecimal::from(10);
+        assert_eq!(a % b, DynamicDecimal::try_from(9.1f64).unwrap());
+    }
+
+    #[test]
+    fn uniform() {
+        let dist = UniformDecimal::new(-1000, 1000, 2);
+        let mut rng = SmallRng::seed_from_u64(0);
+        let mut big = false;
+        let mut small = false;
+        for _i in 0..100 {
+            let d = dist.sample(&mut rng);
+            if d < DynamicDecimal::new(1, 0) {
+                small = true;
+            } else if d > DynamicDecimal::new(5, 0) {
+                big = true;
+            }
+            assert!(d >= DynamicDecimal::new(-10, 0) && d <= DynamicDecimal::new(10, 0));
+        }
+        assert!(small && big);
     }
 }

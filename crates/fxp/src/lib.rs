@@ -47,6 +47,7 @@ mod rkyv_impl;
 
 mod dynamic;
 pub use dynamic::DynamicDecimal;
+pub use dynamic::UniformDecimal;
 
 mod fixed;
 pub use fixed::Fixed;
