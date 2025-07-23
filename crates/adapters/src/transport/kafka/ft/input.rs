@@ -499,6 +499,7 @@ impl KafkaFtInputReaderInner {
                 return Ok(());
             }
             if receivers.values().all(|r| r.eof()) {
+                tracing::info!("reached end of all partitions (`enable.partition.eof` configured)");
                 consumer.eoi();
                 return Ok(());
             }
@@ -604,6 +605,7 @@ impl KafkaFtInputReader {
                     ) {
                         consumer.error(true, e);
                     }
+                    tracing::info!("kafka input complete")
                 }
             })
             .expect("failed to spawn Kafka input poller thread");
