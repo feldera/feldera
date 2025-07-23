@@ -4830,7 +4830,7 @@
           },
           "path": {
             "type": "string",
-            "description": "File path."
+            "description": "File path.\n\nThis may be a file name or a `file://` URL with an absolute path."
           }
         }
       },
