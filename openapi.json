@@ -2606,9 +2606,10 @@
           "200": {
             "description": "Pipeline circuit metrics retrieved successfully",
             "content": {
-              "application/json": {
+              "application/octet-stream": {
                 "schema": {
-                  "type": "object"
+                  "type": "string",
+                  "format": "binary"
                 }
               }
             }

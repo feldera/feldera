@@ -324,7 +324,7 @@ impl Benchmark {
         match format {
             OutputFormat::Json => serde_json::to_string_pretty(&self.as_map()).unwrap(),
             OutputFormat::Text => self.format_as_text(),
-            OutputFormat::ArrowIpc | OutputFormat::Parquet => {
+            OutputFormat::ArrowIpc | OutputFormat::Parquet | OutputFormat::Prometheus => {
                 warn!("Format '{}' is not supported for benchmark results, falling back to text format", format);
                 self.format_as_text()
             }

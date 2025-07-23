@@ -153,6 +153,7 @@ pub async fn shell(format: OutputFormat, name: String, client: Client) {
                                 OutputFormat::Json => "json",
                                 OutputFormat::ArrowIpc => "arrow",
                                 OutputFormat::Parquet => "parquet",
+                                OutputFormat::Prometheus => "prometheus",
                             };
                             match client
                                 .pipeline_adhoc_sql()

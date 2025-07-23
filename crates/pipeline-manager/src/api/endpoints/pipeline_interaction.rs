@@ -522,7 +522,7 @@ pub(crate) async fn get_pipeline_stats(
     responses(
         (status = OK
             , description = "Pipeline circuit metrics retrieved successfully"
-            , body = Object),
+            , body = Vec<u8>),
         (status = NOT_FOUND
             , description = "Pipeline with that name does not exist"
             , body = ErrorResponse

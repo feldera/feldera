@@ -2,7 +2,7 @@
 
 use std::convert::Infallible;
 use std::fs::File;
-use std::io::{ErrorKind, Read, Write};
+use std::io::{stdout, ErrorKind, Read, Write};
 use std::path::PathBuf;
 
 use clap::{CommandFactory, Parser};
@@ -961,6 +961,45 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                 _ => {
                     eprintln!("Unsupported output format: {}", format);
                     std::process::exit(1);
+                }
+            }
+        }
+        PipelineAction::Metrics { name } => {
+            let format = match format {
+                OutputFormat::Json => MetricsFormat::Json,
+                OutputFormat::Prometheus => MetricsFormat::Prometheus,
+                _ => {
+                    eprintln!("`{format}` is not supported as a metrics format (use `--format json` or `--format prometheus`)");
+                    std::process::exit(1);
+                }
+            };
+            let response = client
+                .get_pipeline_metrics()
+                .format(format)
+                .pipeline_name(name)
+                .send()
+                .await
+                .map_err(handle_errors_fatal(
+                    client.baseurl().clone(),
+                    "Failed to get pipeline metrics",
+                    1,
+                ))
+                .unwrap();
+
+            let mut byte_stream = response.into_inner();
+            while let Some(chunk) = byte_stream.next().await {
+                match chunk {
+                    Ok(chunk) => match stdout().write_all(&chunk) {
+                        Ok(_) => (),
+                        Err(error) => {
+                            eprintln!("write to stdout failed ({error})");
+                            std::process::exit(1);
+                        }
+                    },
+                    Err(e) => {
+                        eprintln!("ERROR: Unable to read server response: {}", e);
+                        std::process::exit(1);
+                    }
                 }
             }
         }

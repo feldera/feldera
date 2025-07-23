@@ -153,6 +153,10 @@ pub(crate) async fn handle_adhoc_query(
         }
         OutputFormat::ArrowIpc => AdHocResultFormat::ArrowIpc,
         OutputFormat::Parquet => AdHocResultFormat::Parquet,
+        OutputFormat::Prometheus => {
+            eprintln!("`query` command does not support Prometheus output format");
+            std::process::exit(1);
+        }
     };
     let sql = sql.unwrap_or_else(|| {
         if stdin {
