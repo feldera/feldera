@@ -451,8 +451,11 @@ pub async fn run(
                 let auth_middleware = HttpAuthentication::with_fn(crate::auth::auth_validator);
                 let client = WebData::new(
                     awc::Client::builder()
-                        // disable the limit for simultaneous connections
-                        .connector(Connector::new().limit(0))
+                        // The connection if kept open for endpoints
+                        // that return streaming response ( eg. /logs ).
+                        // Set to 25k because its the default for
+                        // actix server max connections
+                        .connector(Connector::new().limit(25000))
                         .finish(),
                 );
                 App::new()
@@ -475,8 +478,11 @@ pub async fn run(
             let server = HttpServer::new(move || {
                 let client = WebData::new(
                     awc::Client::builder()
-                        // disable the limit for simultaneous connections
-                        .connector(Connector::new().limit(0))
+                        // The connection if kept open for endpoints
+                        // that return streaming response ( eg. /logs ).
+                        // Set to 25k because its the default for
+                        // actix server max connections
+                        .connector(Connector::new().limit(25000))
                         .finish(),
                 );
                 App::new()
