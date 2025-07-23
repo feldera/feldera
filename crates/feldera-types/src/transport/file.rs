@@ -5,6 +5,8 @@ use utoipa::ToSchema;
 #[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
 pub struct FileInputConfig {
     /// File path.
+    ///
+    /// This may be a file name or a `file://` URL with an absolute path.
     pub path: String,
 
     /// Read buffer size.
