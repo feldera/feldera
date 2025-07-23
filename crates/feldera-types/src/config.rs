@@ -401,6 +401,39 @@ pub struct SyncConfig {
     /// If the checkpoint doesn't exist in object store, the pipeline will
     /// fail to initialize.
     pub start_from_checkpoint: Option<StartFromCheckpoint>,
+
+    /// The number of file transfers to run in parallel.
+    /// Default: 20
+    pub transfers: Option<u8>,
+
+    /// The number of checkers to run in parallel.
+    /// Default: 20
+    pub checkers: Option<u8>,
+
+    /// Set to skip post copy check of checksums, and only check the file sizes.
+    /// This can significantly improve the throughput.
+    /// Defualt: false
+    pub ignore_checksum: Option<bool>,
+
+    /// Number of streams to use for multi-thread downloads.
+    /// Default: 10
+    pub multi_thread_streams: Option<u8>,
+
+    /// Use multi-thread download for files above this size.
+    /// Format: [size][Suffix] (Example: 1G, 500M)
+    /// Supported suffixes: k|M|G|T
+    /// Default: 100M
+    pub multi_thread_cutoff: Option<String>,
+
+    /// Extra flags to pass to `rclone`.
+    ///
+    /// WARNING: Supplying incorrect or conflicting flags can break `rclone`.
+    /// Use with caution.
+    ///
+    /// Refer to the docs to see the supported flags:
+    /// Global flags: https://rclone.org/flags/
+    /// S3 specific flags: https://rclone.org/s3/
+    pub flags: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Default, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
