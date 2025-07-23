@@ -7475,6 +7475,13 @@
             "description": "The number of file transfers to run in parallel.\nDefault: 20",
             "nullable": true,
             "minimum": 0
+          },
+          "upload_concurrency": {
+            "type": "integer",
+            "format": "int32",
+            "description": "The number of chunks of the same file that are uploaded for multipart uploads.\nDefault: 10",
+            "nullable": true,
+            "minimum": 0
           }
         }
       },

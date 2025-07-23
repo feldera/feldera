@@ -425,6 +425,10 @@ pub struct SyncConfig {
     /// Default: 100M
     pub multi_thread_cutoff: Option<String>,
 
+    /// The number of chunks of the same file that are uploaded for multipart uploads.
+    /// Default: 10
+    pub upload_concurrency: Option<u8>,
+
     /// Extra flags to pass to `rclone`.
     ///
     /// WARNING: Supplying incorrect or conflicting flags can break `rclone`.
