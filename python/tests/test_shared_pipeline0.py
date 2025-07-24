@@ -74,8 +74,9 @@ class TestPipeline(SharedTestPipeline):
             table_name="v0",
             format="csv",
         )
+        iterator = gen_obj()
         counter = 0
-        for chunk in gen_obj:
+        for chunk in iterator:
             counter += 1
             text_data = chunk.get("text_data")
             if text_data:
