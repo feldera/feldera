@@ -538,6 +538,7 @@ class TestPipeline(SharedTestPipeline):
         with self.assertRaises(ValueError):
             data = {"m_var": {None: 1}}
             self.pipeline.input_json("tbl_map_issue3754", [data])
+        self.pipeline.stop(force=True)
 
     def test_pipeline_resource_config(self):
         from feldera.runtime_config import Resources, RuntimeConfig
