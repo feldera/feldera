@@ -684,7 +684,7 @@ class arithtst_interval_negation_str(TstView):
         self.data = [
             {
                 "id": 0,
-                "sec_str": "-160342920.000000",
+                "sec_str": "-160342920",
                 "min_str": "-2672382",
                 "hrs_str": "-44539",
                 "days_str": "-1855",
@@ -693,7 +693,7 @@ class arithtst_interval_negation_str(TstView):
             },
             {
                 "id": 1,
-                "sec_str": "84686400.000000",
+                "sec_str": "84686400",
                 "min_str": "1411440",
                 "hrs_str": "23524",
                 "days_str": "980",
@@ -702,7 +702,7 @@ class arithtst_interval_negation_str(TstView):
             },
             {
                 "id": 2,
-                "sec_str": "-332907420.000000",
+                "sec_str": "-332907420",
                 "min_str": "-5548457",
                 "hrs_str": "-92474",
                 "days_str": "-3853",

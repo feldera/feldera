@@ -113,6 +113,7 @@ class View(SqlObject):
         sorted_expected = sorted(expected, key=lambda x: str(x))
 
         if sorted_data != sorted_expected:
+            #print(f"{msg}\nExpected:\n{sorted_expected}\nReceived:\n{sorted_data}")
             raise AssertionError(
                 f"{msg}\nExpected:\n{sorted_expected}\nReceived:\n{sorted_data}"
             )
@@ -171,27 +172,30 @@ class TstAccumulator:
 
     def run_pipeline(self, sql: str, views: list[View]):
         """Run pipeline with the given SQL, load tables, validate views, and shutdown"""
-        pipeline = PipelineBuilder(
-            TEST_CLIENT,
-            "test",
-            sql=sql,
-            compilation_profile=CompilationProfile.DEV,
-            runtime_config=RuntimeConfig(provisioning_timeout_secs=60),
-        ).create_or_replace()
+        pipeline = None
+        try:
+            pipeline = PipelineBuilder(
+                TEST_CLIENT,
+                "test",
+                sql=sql,
+                compilation_profile=CompilationProfile.DEV,
+                runtime_config=RuntimeConfig(provisioning_timeout_secs=60),
+            ).create_or_replace()
 
-        pipeline.start()
+            pipeline.start()
 
-        for table in self.tables:
-            pipeline.input_json(
-                table.name, table.get_data(), update_format="insert_delete"
-            )
+            for table in self.tables:
+                pipeline.input_json(
+                    table.name, table.get_data(), update_format="insert_delete"
+                )
 
-        pipeline.wait_for_completion(force_stop=False, timeout_s=3600)
+                pipeline.wait_for_completion(force_stop=False, timeout_s=3600)
 
-        for view in views:
-            view.validate(pipeline)
-
-        pipeline.stop(force=True)
+            for view in views:
+                view.validate(pipeline)
+        finally:
+            if pipeline is not None:
+                pipeline.stop(force=True)
 
     def assert_expected_error(self, view: View, actual_exception: Exception):
         """Validate the error produced by the failing pipeline with the expected error type"""
