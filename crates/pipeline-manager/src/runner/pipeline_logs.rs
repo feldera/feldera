@@ -5,6 +5,7 @@ use std::time::Duration;
 use tokio::sync::mpsc::error::{SendTimeoutError, TrySendError};
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
+use tokio::time::interval;
 use tokio::{select, spawn};
 
 // Logs buffer size limit constants.
@@ -64,6 +65,12 @@ pub fn start_thread_pipeline_logs(
         // Followers interested in receiving the logs
         let mut log_followers: Vec<mpsc::Sender<String>> = Vec::new();
 
+        // Normally dead followers are dropped when we receive new message.
+        // This just helps in cleanup without the need for new message.
+        // Hence, we can just do it if idle for 5 mins, as in ideal case,
+        // there would be new messages before it.
+        let mut idle_interval_for_cleanup = interval(Duration::from_secs(300));
+
         loop {
             select! {
                 // Termination request
@@ -98,6 +105,11 @@ pub fn start_thread_pipeline_logs(
                             break;
                         }
                     }
+                }
+
+                _ = idle_interval_for_cleanup.tick() => {
+                    // drop the dead followers
+                    log_followers.retain(|follower| !follower.is_closed());
                 }
             }
         }
