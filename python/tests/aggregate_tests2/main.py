@@ -53,6 +53,7 @@ from tests.aggregate_tests2.test_date_max import *  # noqa: F403
 from tests.aggregate_tests2.test_date_min import *  # noqa: F403
 from tests.aggregate_tests2.test_date_tbl import *  # noqa: F403
 
+
 def main():
     run("aggtst_", "aggregate_tests2")
 

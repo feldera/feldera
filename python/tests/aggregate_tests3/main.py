@@ -38,6 +38,7 @@ from tests.aggregate_tests3.test_binary_every import *  # noqa: F403
 from tests.aggregate_tests3.test_binary_some import *  # noqa: F403
 from tests.aggregate_tests3.test_binary_tbl import *  # noqa: F403
 
+
 def main():
     run("aggtst_", "aggregate_tests3")
 

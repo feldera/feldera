@@ -113,7 +113,7 @@ class View(SqlObject):
         sorted_expected = sorted(expected, key=lambda x: str(x))
 
         if sorted_data != sorted_expected:
-            #print(f"{msg}\nExpected:\n{sorted_expected}\nReceived:\n{sorted_data}")
+            # print(f"{msg}\nExpected:\n{sorted_expected}\nReceived:\n{sorted_data}")
             raise AssertionError(
                 f"{msg}\nExpected:\n{sorted_expected}\nReceived:\n{sorted_data}"
             )
