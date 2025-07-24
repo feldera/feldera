@@ -1230,6 +1230,9 @@ where
     builder.done()
 }
 
+/// Separator that identifies the end of values for a key.
+const SEPARATOR: u64 = u64::MAX;
+
 fn serialize_indexed_wset<B, K, V, R>(batch: &B) -> Vec<u8>
 where
     B: BatchReader<Key = K, Val = V, Time = (), R = R>,
@@ -1251,7 +1254,7 @@ where
             cursor.step_val();
         }
         cursor.step_key();
-        offsets.push(0);
+        offsets.push(SEPARATOR as usize);
     }
     let _offset = s.serialize_value(&offsets).unwrap();
     s.into_serializer().into_inner().into_vec()
@@ -1277,10 +1280,11 @@ where
     while current_offset < offsets.len() {
         unsafe { key.deserialize_from_bytes(data, offsets[current_offset] as usize) };
         current_offset += 1;
-        while offsets[current_offset] != 0 {
+        while offsets[current_offset] != SEPARATOR {
             unsafe { val.deserialize_from_bytes(data, offsets[current_offset] as usize) };
             current_offset += 1;
             unsafe { diff.deserialize_from_bytes(data, offsets[current_offset] as usize) };
+
             builder.push_val_diff(&val, &diff);
             current_offset += 1;
         }
@@ -1307,6 +1311,43 @@ mod serialize_test {
         let test2 = indexed_zset! { 1 => { 1 => 1 } };
         let test3 =
             indexed_zset! { 1 => { 1 => 1, 2 => 2, 3 => 3 }, 2 => { 1 => 1, 2 => 2, 3 => 3 } };
+
+        for test in [test1, test2, test3] {
+            let serialized = serialize_indexed_wset(&*test);
+            let deserialized = deserialize_indexed_wset::<
+                DynOrdIndexedZSet<DynData, DynData>,
+                DynData,
+                DynData,
+                DynZWeight,
+            >(&test.factories(), &serialized);
+
+            assert_eq!(&*test, &deserialized);
+        }
+    }
+
+    #[test]
+    fn test_serialize_indexed_wset_tup0_key() {
+        let test1: OrdIndexedZSet<(), u64> = indexed_zset! {};
+        let test2 = indexed_zset! { () => { 1 => 1 } };
+
+        for test in [test1, test2] {
+            let serialized = serialize_indexed_wset(&*test);
+            let deserialized = deserialize_indexed_wset::<
+                DynOrdIndexedZSet<DynData, DynData>,
+                DynData,
+                DynData,
+                DynZWeight,
+            >(&test.factories(), &serialized);
+
+            assert_eq!(&*test, &deserialized);
+        }
+    }
+
+    #[test]
+    fn test_serialize_indexed_wset_tup0_val() {
+        let test1: OrdIndexedZSet<u64, ()> = indexed_zset! {};
+        let test2 = indexed_zset! { 1 => { () => 1 } };
+        let test3 = indexed_zset! { 1 => { () => 1 }, 2 => { () => 1 } };
 
         for test in [test1, test2, test3] {
             let serialized = serialize_indexed_wset(&*test);
