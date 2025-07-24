@@ -256,9 +256,7 @@ impl Div<DynamicDecimal> for DynamicDecimal {
                 panic!("Division overflow");
             } else {
                 let scaled = I256::from_product(self.sig, pow10(shift_left as usize));
-                let div = scaled
-                    .narrowing_div(other.sig)
-                    .unwrap();
+                let div = scaled.narrowing_div(other.sig).unwrap();
                 let exp = self.exponent.saturating_sub(other.exponent + digits);
                 let adjust = div * pow10(exp as usize);
                 DynamicDecimal::new(adjust, digits)
@@ -505,7 +503,7 @@ pub struct UniformDecimal {
     scale: u8,
 }
 
-impl /* UniformSampler for */ UniformDecimal {
+impl UniformDecimal {
     /// Create a new UniformDecimal
     pub fn new(low: DynamicDecimal, high: DynamicDecimal, scale: u8) -> Self {
         if low >= high {
@@ -514,7 +512,7 @@ impl /* UniformSampler for */ UniformDecimal {
         let pow = pow10(scale as usize);
         Self {
             significand: UniformInt::new(&low.significand() * pow, &high.significand() * pow),
-            scale: scale,
+            scale,
         }
     }
 

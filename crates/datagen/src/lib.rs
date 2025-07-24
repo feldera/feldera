@@ -2207,10 +2207,13 @@ mod tests {
         assert_eq!(a % b, DynamicDecimal::try_from(9.1f64).unwrap());
     }
 
-
     #[test]
     fn uniform() {
-        let dist = UniformDecimal::new(DynamicDecimal::new(-1000, 2), DynamicDecimal::new(1000, 2), 2);
+        let dist = UniformDecimal::new(
+            DynamicDecimal::new(-1000, 2),
+            DynamicDecimal::new(1000, 2),
+            2,
+        );
         let mut rng = SmallRng::seed_from_u64(0);
         let mut big = false;
         let mut small = false;
