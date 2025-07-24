@@ -150,7 +150,7 @@ public class ProfilingTests extends StreamingTestBase {
                         let input = zset!(Tup2::new(value, timestamp) => 1);
                         append_to_collection_handle(&input, &streams.0);
                         if i % 1000 == 0 {
-                            let _ = circuit.step().expect("could not run circuit");
+                            let _ = circuit.transaction().expect("could not run circuit");
                             let _ = &read_output_handle(&streams.1);
                             /*
                             let end = SystemTime::now();
@@ -212,7 +212,7 @@ public class ProfilingTests extends StreamingTestBase {
                         let bid = zset!(Tup3::new(timestamp.add(100), Some(i), Some(i)) => 1);
                         append_to_collection_handle(&bid, &streams.1);
                         if i % 100 == 0 {
-                            let _ = circuit.step().expect("could not run circuit");
+                            let _ = circuit.transaction().expect("could not run circuit");
                             let _ = &read_output_handle(&streams.2);
                             /*
                             let end = SystemTime::now();
@@ -276,8 +276,8 @@ public class ProfilingTests extends StreamingTestBase {
                 """;
 
         String main = this.createMain("""
-                let _ = circuit.step().expect("could not run circuit");
-                let _ = circuit.step().expect("could not run circuit");
+                let _ = circuit.transaction().expect("could not run circuit");
+                let _ = circuit.transaction().expect("could not run circuit");
                 """);
         this.measure(sql, main);
     }

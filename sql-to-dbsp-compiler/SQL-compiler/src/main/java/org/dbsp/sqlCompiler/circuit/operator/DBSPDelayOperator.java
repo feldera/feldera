@@ -18,7 +18,7 @@ import java.util.List;
  * If the function is specified, it is the initial value produced by the delay. */
 public final class DBSPDelayOperator extends DBSPUnaryOperator {
     public DBSPDelayOperator(CalciteRelNode node, @Nullable DBSPExpression initial, OutputPort source) {
-        super(node, initial == null ? "delay" : "delay_with_initial_value",
+        super(node, initial == null ? "macrostep_delay" : "macrostep_delay_with_initial_value",
                 initial, source.outputType(), source.isMultiset(), source);
         if (initial != null && !initial.getType().sameType(source.outputType()))
             throw new InternalCompilerError("Delay input has type " + source.outputType() +
