@@ -75,7 +75,9 @@ class CallbackRunner(Thread):
                     # stop blocking the main thread on `join` for the previous message
                     self.queue.task_done()
 
-                for chunk in gen_obj:
+                iterator = gen_obj()
+
+                for chunk in iterator:
                     chunk: dict = chunk
                     data: Optional[list[dict]] = chunk.get("json_data")
                     seq_no: Optional[int] = chunk.get("sequence_number")

@@ -605,13 +605,15 @@ Reason: The pipeline is in a STOPPED state due to the following error:
 
         end = time.monotonic() + timeout if timeout else None
 
-        # Using the default chunk size below makes `iter_lines` extremely
-        # inefficient when dealing with long lines.
-        for chunk in resp.iter_lines(chunk_size=50000000):
-            if end and time.monotonic() > end:
-                break
-            if chunk:
-                yield json.loads(chunk, parse_float=Decimal)
+        def generator():
+            # Using the default chunk size below makes `iter_lines` extremely
+            # inefficient when dealing with long lines.
+            for chunk in resp.iter_lines(chunk_size=50000000):
+                if end and time.monotonic() > end:
+                    break
+                if chunk:
+                    yield json.loads(chunk, parse_float=Decimal)
+        return generator
 
     def query_as_text(
         self, pipeline_name: str, query: str
