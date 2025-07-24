@@ -3,8 +3,8 @@
 from tests.aggregate_tests.aggtst_base import *  # noqa: F403
 from tests.aggregate_tests.atest_run import run  # noqa: F403
 from tests.aggregate_tests4.test_int_table import *; # noqa: F403
-from tests.aggregate_tests4.test_varchar_table import *  # noqa: F403
-from tests.aggregate_tests4.test_atbl_charn import *  # noqa: F403
+from tests.aggregate_tests4.test_varchar_table4 import *  # noqa: F403
+from tests.aggregate_tests4.test_atbl_charn4 import *  # noqa: F403
 from tests.aggregate_tests4.test_array import *  # noqa: F403
 from tests.aggregate_tests4.test_array_tbl import *  # noqa: F403
 from tests.aggregate_tests4.test_array_arg_max import *  # noqa: F403
@@ -25,7 +25,7 @@ from tests.aggregate_tests4.test_varchar_every import *  # noqa: F403
 from tests.aggregate_tests4.test_varchar_max import *  # noqa: F403
 from tests.aggregate_tests4.test_varchar_min import *  # noqa: F403
 from tests.aggregate_tests4.test_varchar_some import *  # noqa: F403
-from tests.aggregate_tests4.test_atbl_varcharn import *  # noqa: F403
+from tests.aggregate_tests4.test_atbl_varcharn4 import *  # noqa: F403
 from tests.aggregate_tests4.test_varcharn_arragg import *  # noqa: F403
 from tests.aggregate_tests4.test_varcharn_count import *  # noqa: F403
 from tests.aggregate_tests4.test_varcharn_count_col import *  # noqa: F403

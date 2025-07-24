@@ -291,6 +291,15 @@ public class MultiCrateTests extends BaseSQLTests {
     }
 
     @Test
+    public void issue4430() throws IOException, SQLException, InterruptedException {
+        File file = createInputScript("""
+                CREATE TYPE row_type AS(r1 ROW(v11 VARCHAR NOT NULL));
+                CREATE TABLE T(c1 row_type);
+                CREATE VIEW V AS SELECT *, T.c1.r1.v11 FROM T;""");
+        this.compileToMultiCrate(file.getAbsolutePath(), true);
+    }
+
+    @Test
     public void testMultiUdfUdt() throws IOException, InterruptedException, SQLException {
         File file = createInputScript("""
                 CREATE TYPE X AS (a0 int, a1 int, a2 int, a3 int, a4 int, a5 int,

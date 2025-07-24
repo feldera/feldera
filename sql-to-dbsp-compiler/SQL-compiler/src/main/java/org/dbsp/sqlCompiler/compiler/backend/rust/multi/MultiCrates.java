@@ -18,6 +18,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPPathExpression;
+import org.dbsp.sqlCompiler.ir.statement.DBSPStructItem;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPComparatorType;
 import org.dbsp.util.Utilities;
 
@@ -200,8 +201,12 @@ public class MultiCrates {
                 DBSPCircuit circuit = node.to(DBSPCircuit.class);
                 this.main.add(node);
                 // Add all declarations to the globals crate
-                for (DBSPDeclaration decl: circuit.declarations)
+                for (DBSPDeclaration decl: circuit.declarations) {
+                    if (decl.item.is(DBSPStructItem.class))
+                        // These are added by CREATE TYPE, but they will be emitted in the operators that use them
+                        continue;
                     this.globals.add(decl.item);
+                }
                 this.declarationMap = circuit.declarationMap;
                 for (DBSPOperator operator: circuit.allOperators) {
                     CrateGenerator op;
