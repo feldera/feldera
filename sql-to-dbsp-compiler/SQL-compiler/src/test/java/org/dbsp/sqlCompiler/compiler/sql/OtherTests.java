@@ -446,7 +446,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
                     // Second input has a count of "2"
                     person.push( (SqlString::from_ref("Tom"), Some(20), Some(false)).into(), 2 );
                     // Execute the circuit on these inputs
-                    circuit.step().unwrap();
+                    circuit.transaction().unwrap();
                     // Read the produced output
                     let out = adult.consolidate();
                     // Print the produced output
@@ -479,7 +479,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
                     persons_stream.flush();
                     // Execute the circuit on these inputs
                     circuit
-                        .step()
+                        .transaction()
                         .unwrap();
 
                     let adult = &catalog
