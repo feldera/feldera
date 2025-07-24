@@ -484,7 +484,8 @@ metrics"""
             for view_name, queue in self.views_tx.pop().items():
                 # block until the callback runner has been stopped
                 queue.join()
-
+        import time
+        time.sleep(3)
         self.client.stop_pipeline(self.name, force=force, timeout_s=timeout_s)
 
     def resume(self, timeout_s: Optional[float] = None):
