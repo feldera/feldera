@@ -1017,7 +1017,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                         if (leftType.is(DBSPTypeInteger.class)) {
                             this.compiler.reportWarning(node.getPositionRange(),
                                     "Useless operation",
-                                    Utilities.singleQuote(opName) + " applied to intger value does nothing");
+                                    Utilities.singleQuote(opName) + " applied to integer value does nothing");
                             return left;
                         }
 
