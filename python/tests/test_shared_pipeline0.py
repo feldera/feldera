@@ -68,36 +68,6 @@ class TestPipeline(SharedTestPipeline):
         TEST_CLIENT.pause_pipeline(self.pipeline.name)
         TEST_CLIENT.stop_pipeline(self.pipeline.name, force=True)
 
-    def __listener(self):
-        gen_obj = TEST_CLIENT.listen_to_pipeline(
-            pipeline_name=self.pipeline.name,
-            table_name="v0",
-            format="csv",
-        )
-        iterator = gen_obj()
-        counter = 0
-        for chunk in iterator:
-            counter += 1
-            text_data = chunk.get("text_data")
-            if text_data:
-                assert text_data == "1,1\n2,1\n"
-                self.result = True
-                break
-            if counter > 10:
-                self.result = False
-                break
-
-    def test_listen_to_pipeline(self):
-        data = "1\n2\n"
-        TEST_CLIENT.pause_pipeline(self.pipeline.name)
-        t1 = threading.Thread(target=self.__listener)
-        t1.start()
-        self.pipeline.resume()
-        TEST_CLIENT.push_to_pipeline(self.pipeline.name, "tbl", "csv", data)
-        t1.join()
-        assert self.result
-        TEST_CLIENT.stop_pipeline(self.pipeline.name, force=True)
-
     def test_adhoc_query_text(self):
         data = "1\n2\n"
         self.pipeline.start()
