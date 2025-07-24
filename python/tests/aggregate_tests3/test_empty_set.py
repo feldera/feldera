@@ -1,5 +1,6 @@
 from tests.aggregate_tests.aggtst_base import TstView
 
+
 # Array
 class aggtst_count_emp_test(TstView):
     def __init__(self):
@@ -76,6 +77,7 @@ class aggtst_arr_agg_emp_test(TstView):
                       ARRAY_AGG(c1) AS arr_agg
                       FROM array_tbl
                       WHERE FALSE"""
+
 
 # Map
 class aggtst_count_emp_test_map(TstView):

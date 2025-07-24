@@ -2,7 +2,7 @@
 
 from tests.aggregate_tests.aggtst_base import *  # noqa: F403
 from tests.aggregate_tests.atest_run import run  # noqa: F403
-from tests.aggregate_tests4.test_int_table import *; # noqa: F403
+from tests.aggregate_tests4.test_int_table import *  # noqa: F403
 from tests.aggregate_tests4.test_varchar_table4 import *  # noqa: F403
 from tests.aggregate_tests4.test_atbl_charn4 import *  # noqa: F403
 from tests.aggregate_tests4.test_array import *  # noqa: F403
@@ -46,6 +46,7 @@ from tests.aggregate_tests4.test_map_max import *  # noqa: F403
 from tests.aggregate_tests4.test_map_min import *  # noqa: F403
 from tests.aggregate_tests4.test_map_some import *  # noqa: F403
 from tests.aggregate_tests4.test_map_every import *  # noqa: F403
+
 
 def main():
     run("aggtst_", "aggregate_tests4")
