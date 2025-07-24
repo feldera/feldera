@@ -261,10 +261,8 @@ where
     D: Clone + 'static,
     C: Circuit,
 {
-    /// Import `self` from the parent circuit to `subcircuit` via the `Delta0`
+    /// Import `self` from the parent circuit to `subcircuit` via the `Delta0NonIterative`
     /// operator.
-    ///
-    /// See [`Delta0`] operator documentation.
     #[track_caller]
     pub fn delta0_non_iterative<CC>(&self, subcircuit: &CC) -> Stream<CC, D>
     where
