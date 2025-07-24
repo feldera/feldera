@@ -200,7 +200,7 @@ mod test {
         .unwrap();
 
         input_handle.append(&mut vec![Tup2(1u64, Tup2(d(1), 1)), Tup2(1, Tup2(d(2), 2))]);
-        dbsp.step().unwrap();
+        dbsp.transaction().unwrap();
         assert_eq!(
             &*count_distinct_output_clone.lock().unwrap(),
             &indexed_zset! {1 => {d(2) => 1}}
@@ -223,7 +223,7 @@ mod test {
             Tup2(2, Tup2(d(4), 1)),
             Tup2(1, Tup2(d(2), -1)),
         ]);
-        dbsp.step().unwrap();
+        dbsp.transaction().unwrap();
         assert_eq!(
             &*count_distinct_output_clone.lock().unwrap(),
             &indexed_zset! {2 => {d(2) => 1}}
@@ -242,7 +242,7 @@ mod test {
         );
 
         input_handle.append(&mut vec![Tup2(1, Tup2(d(3), 1)), Tup2(1, Tup2(d(2), -1))]);
-        dbsp.step().unwrap();
+        dbsp.transaction().unwrap();
         assert_eq!(
             &*count_distinct_output_clone.lock().unwrap(),
             &indexed_zset! {}
