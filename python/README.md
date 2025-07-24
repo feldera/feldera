@@ -69,14 +69,14 @@ To run tests from a specific file:
 (cd python && python3 -m pytest ./tests/path-to-file.py)
 ```
 
-#### Running Aggregate Tests
+#### Running Tests
 
-The aggregate tests validate end-to-end correctness of SQL functionality.
-To run the aggregate tests use:
+The tests validate end-to-end correctness of SQL functionality.  To
+run the tests use:
 
 ```bash
 cd python
-PYTHONPATH=`pwd` python3 ./tests/aggregate_tests/main.py
+PYTHONPATH=`pwd` ./tests/run-all-tests.sh
 ```
 
 ### Reducing Compilation Cycles

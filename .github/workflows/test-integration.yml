@@ -119,9 +119,9 @@ jobs:
           FELDERA_BASE_URL: http://localhost:8080
           IN_CI: 1 # We use this flag to skip some kafka tests in the python code base
 
-      - name: Run python aggregate tests
+      - name: Run python tests
         if: ${{ vars.CI_DRY_RUN != 'true' }}
-        run: uv run --locked ./tests/aggregate_tests/main.py
+        run: uv run --locked ./tests/run-all-tests.sh
         working-directory: python
         env:
           FELDERA_BASE_URL: http://localhost:8080
