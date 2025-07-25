@@ -133,8 +133,7 @@ pub async fn rust_compiler_task(
 /// 3. Updates pipeline database `program_status` to `CompilingRust`
 /// 4. Performs Rust compilation on `program_info.main`, `udf_rust` and `udf_toml`, configured
 ///    with `program_config`
-/// 5. Upon completion, the compilation status is set to `Success` with the `program_binary_url`
-///    containing the URL where the binary can be retrieved from
+/// 5. Upon completion, the compilation status is set to `Success`
 ///
 /// Note that this function assumes it runs in isolation, and as such at the beginning resets
 /// any lingering pipelines that have `CompilingRust` status to `SqlCompiled`. This recovers from
@@ -196,13 +195,7 @@ async fn attempt_end_to_end_rust_compilation(
 
     // (5) Update database that Rust compilation is finished
     match compilation_result {
-        Ok((
-            program_binary_url,
-            source_checksum,
-            integrity_checksum,
-            duration,
-            compilation_info,
-        )) => {
+        Ok((source_checksum, integrity_checksum, duration, compilation_info)) => {
             info!(
                 "Rust compilation success: pipeline {} (program version: {}) (took {:.2}s; source checksum: {}; integrity checksum: {})",
                 pipeline.id,
@@ -220,7 +213,6 @@ async fn attempt_end_to_end_rust_compilation(
                     &compilation_info,
                     &source_checksum,
                     &integrity_checksum,
-                    &program_binary_url,
                 )
                 .await?;
         }
@@ -364,7 +356,7 @@ pub async fn perform_rust_compilation(
     program_info: &Option<serde_json::Value>,
     udf_rust: &str,
     udf_toml: &str,
-) -> Result<(String, String, String, Duration, RustCompilationInfo), RustCompilationError> {
+) -> Result<(String, String, Duration, RustCompilationInfo), RustCompilationError> {
     let start = Instant::now();
 
     // These must always be the same, the Rust compiler should never pick up
@@ -467,19 +459,7 @@ pub async fn perform_rust_compilation(
     )
     .await?;
 
-    // URL where the program binary can be downloaded from
-    let program_binary_url = format!(
-        "http://{}:{}/binary/{}/{}/{}/{}",
-        common_config.compiler_host,
-        common_config.compiler_port,
-        pipeline_id,
-        program_version,
-        source_checksum,
-        integrity_checksum.clone()
-    );
-
     Ok((
-        program_binary_url,
         source_checksum,
         integrity_checksum.clone(),
         start.elapsed(),

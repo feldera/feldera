@@ -14,9 +14,9 @@ use actix_web::HttpResponse;
 use actix_web::Responder;
 use actix_web::{get, web, HttpRequest, HttpServer};
 use async_stream::try_stream;
-use log::{debug, error, trace};
-use reqwest::{Method, StatusCode};
+use log::{debug, error, info, trace};
 use std::collections::BTreeMap;
+use std::net::TcpListener;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -24,7 +24,6 @@ use tokio::spawn;
 use tokio::sync::mpsc::error::TrySendError;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
 use tokio::sync::{Mutex, Notify};
-use tokio::time::sleep;
 use tokio_stream::Stream;
 use uuid::Uuid;
 
@@ -131,30 +130,7 @@ async fn get_logs(
     }
 }
 
-/// Waits for the HTTP server to become ready by polling it.
-/// Returns false if after a predefined number of tries with timeouts
-/// it was unable to receive an OK response from the health endpoint.
-async fn wait_for_http_server_ready(client: &reqwest::Client, port: u16) -> bool {
-    let url = format!("http://127.0.0.1:{port}/healthz");
-    let mut tries = READY_CHECK_HTTP_RETRIES;
-    while tries > 0 {
-        if let Ok(response) = client
-            .request(Method::GET, &url)
-            .timeout(READY_CHECK_HTTP_REQUEST_TIMEOUT)
-            .send()
-            .await
-        {
-            if response.status() == StatusCode::OK {
-                return true;
-            }
-        }
-        sleep(READY_CHECK_POLL_PERIOD).await;
-        tries -= 1;
-    }
-    false
-}
-
-/// Main to start the runner, which consists of starting a web server and
+/// Main to start the runner, which consists of starting an HTTP(S) server and
 /// a reconciliation loop which matches pipelines with runner automatons.
 pub async fn runner_main<E: PipelineExecutor + 'static>(
     // Database handle
@@ -169,7 +145,7 @@ pub async fn runner_main<E: PipelineExecutor + 'static>(
     // - A sender channel to request getting logs from the pipeline runner
     let pipelines: Arc<Mutex<PipelinesState>> = Arc::new(Mutex::new(BTreeMap::new()));
 
-    // Setup web server
+    // Setup HTTP(S) server
     let data_healthz = web::Data::new(DbProbe::new(db.clone()).await);
     let data_logs = web::Data::new(pipelines.clone());
     let server = HttpServer::new(move || {
@@ -181,29 +157,42 @@ pub async fn runner_main<E: PipelineExecutor + 'static>(
     })
     .workers(common_config.http_workers)
     .worker_max_blocking_threads(std::cmp::max(512 / common_config.http_workers, 1));
-    spawn(
-        server
-            .bind((
-                common_config.bind_address.clone(),
-                common_config.runner_port,
-            ))
-            .expect("Unable to bind runner main HTTP server to port {main_http_server_port}")
-            .run(),
-    );
-
-    // Reused HTTP client
-    let client = reqwest::Client::new();
-
-    if !wait_for_http_server_ready(&client, common_config.runner_port).await {
+    let listener = TcpListener::bind((
+        common_config.bind_address.clone(),
+        common_config.runner_port,
+    ))
+    .unwrap_or_else(|_| {
         panic!(
-            "Unable to reach runner HTTP server on port {}",
-            common_config.runner_port
-        );
-    }
-    debug!(
-        "Runner HTTP server ready on port {}",
-        common_config.runner_port
+            "runner unable to bind listener to {}:{} -- is the port occupied?",
+            common_config.bind_address, common_config.runner_port
+        )
+    });
+    spawn(
+        if let Some(server_config) = common_config.https_server_config() {
+            server
+                .listen_rustls_0_23(listener, server_config)
+                .expect("runner HTTPS server unable to listen")
+                .run()
+        } else {
+            server
+                .listen(listener)
+                .expect("runner HTTP server unable to listen")
+                .run()
+        },
     );
+    info!(
+        "Runner {} server: ready on port {} ({} workers)",
+        if common_config.enable_https {
+            "HTTPS"
+        } else {
+            "HTTP"
+        },
+        common_config.runner_port,
+        common_config.http_workers,
+    );
+
+    // Reused HTTP(S) client
+    let client = common_config.reqwest_client().await;
 
     // Launch the reconciliation loop
     reconcile::<E>(db, client, pipelines, common_config, config).await
@@ -248,7 +237,7 @@ async fn reconcile<E: PipelineExecutor + 'static>(
                             );
                             spawn(
                                 PipelineAutomaton::new(
-                                    &common_config.platform_version,
+                                    common_config.clone(),
                                     pipeline_id,
                                     tenant_id,
                                     db.clone(),

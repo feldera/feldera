@@ -46,6 +46,8 @@ use feldera_types::{
 use feldera_types::{query::AdhocQueryArgs, transport::http::SERVER_PORT_FILE};
 use futures_util::FutureExt;
 use minitrace::collector::Config;
+use rustls::pki_types::pem::PemObject;
+use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use serde::Deserialize;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -216,7 +218,7 @@ impl ServerState {
     }
 }
 
-#[derive(Parser, Debug, Default)]
+#[derive(Parser, Debug, Default, Clone)]
 #[command(author, version, about, long_about = None)]
 pub struct ServerArgs {
     /// Pipeline configuration YAML file
@@ -242,6 +244,19 @@ pub struct ServerArgs {
     /// automatically
     #[arg(short = 'p', long)]
     default_port: Option<u16>,
+
+    /// Whether to enable TLS on the HTTP server.
+    /// Iff true, is it allowed and required to set `https_tls_cert_path` and `https_tls_key_path`.
+    #[arg(long, default_value_t = false)]
+    pub enable_https: bool,
+
+    /// Path to the TLS x509 certificate PEM file (e.g., `/path/to/tls.crt`).
+    #[arg(long)]
+    pub https_tls_cert_path: Option<String>,
+
+    /// Path to the TLS key PEM file corresponding to the x509 certificate (e.g., `/path/to/tls.key`).
+    #[arg(long)]
+    pub https_tls_key_path: Option<String>,
 }
 
 pub trait CircuitBuilderFunc:
@@ -362,6 +377,7 @@ pub fn run_server(
     // Initialize the pipeline in a separate thread.  On success, this thread
     // will create a `Controller` instance and store it in `state.controller`.
     {
+        let args = args.clone();
         let config = config.clone();
         thread::Builder::new()
             .name("pipeline-init".to_string())
@@ -421,10 +437,55 @@ pub fn run_server(
     .worker_max_blocking_threads(std::cmp::max(512 / workers, 1))
     // Set timeout for graceful shutdown of workers.
     // The default in actix is 30s. We may consider making this configurable.
-    .shutdown_timeout(10)
-    .listen(listener)
-    .map_err(|e| ControllerError::io_error("binding server to the listener".to_string(), e))?
-    .run();
+    .shutdown_timeout(10);
+
+    let server = if args.enable_https
+        || args.https_tls_cert_path.is_some()
+        || args.https_tls_key_path.is_some()
+    {
+        assert!(
+            args.enable_https,
+            "--enable-https is required to pass --https-tls-cert-path or --https-tls-key-path"
+        );
+        let https_tls_cert_path = args
+            .https_tls_cert_path
+            .as_ref()
+            .expect("CLI argument --https-tls-cert-path is required");
+        let https_tls_key_path = args
+            .https_tls_key_path
+            .as_ref()
+            .expect("CLI argument --https-tls-key-path is required");
+
+        // Load in certificate (public)
+        let cert_chain = CertificateDer::pem_file_iter(https_tls_cert_path)
+            .expect("HTTPS TLS certificate should be read")
+            .flatten()
+            .collect();
+
+        // Load in key (private)
+        let key_der =
+            PrivateKeyDer::from_pem_file(https_tls_key_path).expect("HTTPS TLS key should be read");
+
+        // Server configuration
+        let server_config = rustls::ServerConfig::builder()
+            .with_no_client_auth()
+            .with_single_cert(cert_chain, key_der)
+            .expect("server configuration should be built");
+
+        server
+            .listen_rustls_0_23(listener, server_config)
+            .map_err(|e| {
+                ControllerError::io_error("binding HTTPS server to the listener".to_string(), e)
+            })?
+            .run()
+    } else {
+        server
+            .listen(listener)
+            .map_err(|e| {
+                ControllerError::io_error("binding HTTP server to the listener".to_string(), e)
+            })?
+            .run()
+    };
 
     rt::System::new().block_on(async {
         // Spawn a task that will shut down the server on `/kill`.
@@ -434,7 +495,10 @@ pub fn run_server(
             server_handle.stop(true).await
         });
 
-        info!("Started HTTP server on port {port}");
+        info!(
+            "Started {} server on port {port}",
+            if args.enable_https { "HTTPS" } else { "HTTP" }
+        );
 
         // We don't want outside observers (e.g., the local runner) to observe a partially
         // written port file, so we write it to a temporary file first, and then rename the
@@ -1573,6 +1637,9 @@ outputs:
             bind_address: "127.0.0.1".to_string(),
             default_port: None,
             storage_location: None,
+            enable_https: false,
+            https_tls_cert_path: None,
+            https_tls_key_path: None,
         };
 
         let config = parse_config(&args.config_file).unwrap();

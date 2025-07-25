@@ -626,7 +626,6 @@ async fn pipeline_creation() {
     assert_eq!(actual.program_status, ProgramStatus::Pending);
     // actual.program_status_since
     assert_eq!(actual.program_info, None);
-    assert_eq!(actual.program_binary_url, None);
 
     // System-decided deployment fields
     assert_eq!(actual.deployment_status, PipelineStatus::Stopped);
@@ -1247,7 +1246,6 @@ async fn pipeline_program_compilation() {
             },
             "abc",
             "123",
-            "abc",
         )
         .await
         .unwrap();
@@ -1381,7 +1379,6 @@ async fn pipeline_deployment() {
             },
             "def",
             "123",
-            "abcdef",
         )
         .await
         .unwrap();
@@ -1582,7 +1579,6 @@ async fn pipeline_provision_version_guard() {
             },
             "def",
             "123",
-            "abcdef",
         )
         .await
         .unwrap();
@@ -1771,7 +1767,6 @@ enum StorageAction {
         #[proptest(strategy = "limited_rust_compilation_info()")] RustCompilationInfo,
         #[proptest(strategy = "limited_program_binary_source_checksum()")] String,
         #[proptest(strategy = "limited_program_binary_integrity_checksum()")] String,
-        String,
     ),
     TransitProgramStatusToSqlError(
         TenantId,
@@ -2271,10 +2266,10 @@ fn db_impl_behaves_like_model() {
                                 let impl_response = handle.db.transit_program_status_to_compiling_rust(tenant_id, pipeline_id, program_version_guard).await;
                                 check_responses(i, model_response, impl_response);
                             }
-                            StorageAction::TransitProgramStatusToSuccess(tenant_id, pipeline_id, program_version_guard, rust_compilation, program_binary_source_checksum, program_binary_integrity_checksum, program_binary_url) => {
+                            StorageAction::TransitProgramStatusToSuccess(tenant_id, pipeline_id, program_version_guard, rust_compilation, program_binary_source_checksum, program_binary_integrity_checksum) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
-                                let model_response = model.transit_program_status_to_success(tenant_id, pipeline_id, program_version_guard, &rust_compilation, &program_binary_source_checksum, &program_binary_integrity_checksum, &program_binary_url).await;
-                                let impl_response = handle.db.transit_program_status_to_success(tenant_id, pipeline_id, program_version_guard, &rust_compilation, &program_binary_source_checksum, &program_binary_integrity_checksum, &program_binary_url).await;
+                                let model_response = model.transit_program_status_to_success(tenant_id, pipeline_id, program_version_guard, &rust_compilation, &program_binary_source_checksum, &program_binary_integrity_checksum).await;
+                                let impl_response = handle.db.transit_program_status_to_success(tenant_id, pipeline_id, program_version_guard, &rust_compilation, &program_binary_source_checksum, &program_binary_integrity_checksum).await;
                                 check_responses(i, model_response, impl_response);
                             }
                             StorageAction::TransitProgramStatusToSqlError(tenant_id, pipeline_id, program_version_guard, sql_compilation) => {
@@ -2689,7 +2684,6 @@ impl ModelHelpers for Mutex<DbModel> {
                 system_error: None,
             };
             pipeline.program_info = None;
-            pipeline.program_binary_url = None;
             pipeline.program_binary_source_checksum = None;
             pipeline.program_binary_integrity_checksum = None;
         }
@@ -3121,7 +3115,6 @@ impl Storage for Mutex<DbModel> {
             program_info: None,
             program_binary_source_checksum: None,
             program_binary_integrity_checksum: None,
-            program_binary_url: None,
             deployment_status: PipelineStatus::Stopped,
             deployment_status_since: now,
             deployment_desired_status: PipelineDesiredStatus::Stopped,
@@ -3256,7 +3249,6 @@ impl Storage for Mutex<DbModel> {
             system_error: None,
         };
         pipeline.program_info = None;
-        pipeline.program_binary_url = None;
         pipeline.refresh_version = Version(pipeline.refresh_version.0 + 1);
         self.lock()
             .await
@@ -3343,7 +3335,6 @@ impl Storage for Mutex<DbModel> {
         rust_compilation: &RustCompilationInfo,
         program_binary_source_checksum: &str,
         program_binary_integrity_checksum: &str,
-        program_binary_url: &str,
     ) -> Result<(), DBError> {
         let new_status = ProgramStatus::Success;
         let mut pipeline = self
@@ -3359,7 +3350,6 @@ impl Storage for Mutex<DbModel> {
         pipeline.program_binary_source_checksum = Some(program_binary_source_checksum.to_string());
         pipeline.program_binary_integrity_checksum =
             Some(program_binary_integrity_checksum.to_string());
-        pipeline.program_binary_url = Some(program_binary_url.to_string());
         pipeline.refresh_version = Version(pipeline.refresh_version.0 + 1);
         self.lock()
             .await

@@ -7,7 +7,12 @@ use clap::Parser;
 use log::warn;
 use openssl::ssl::{SslConnector, SslMethod, SslVerifyMode};
 use postgres_openssl::MakeTlsConnector;
+use reqwest::Certificate;
+use rustls::pki_types::pem::PemObject;
+use rustls::pki_types::{CertificateDer, PrivateKeyDer};
+use rustls::{ClientConfig, RootCertStore};
 use serde::Deserialize;
+use std::sync::Arc;
 use std::{
     env,
     fs::{canonicalize, create_dir_all},
@@ -131,15 +136,10 @@ fn help_create_dir(dir: &str) -> AnyResult<()> {
     Ok(())
 }
 
-/// Converts the directory path to an absolute path.
-fn help_canonicalize_dir(dir: &str) -> AnyResult<String> {
-    Ok(canonicalize(dir)
-        .map_err(|e| {
-            AnyError::msg(format!(
-                "error canonicalizing working directory path '{}': {e}",
-                dir
-            ))
-        })?
+/// Converts the directory or file path to an absolute path.
+fn help_canonicalize_path(path: &str) -> AnyResult<String> {
+    Ok(canonicalize(path)
+        .map_err(|e| AnyError::msg(format!("error canonicalizing path '{}': {e}", path)))?
         .to_string_lossy()
         .into_owned())
 }
@@ -226,6 +226,152 @@ pub struct CommonConfig {
     /// - `runtime_version`: Allows to override the runtime version of a pipeline on the platform.
     #[arg(verbatim_doc_comment, long, env = "FELDERA_UNSTABLE_FEATURES")]
     pub unstable_features: Option<String>,
+
+    /// Whether to enable TLS on the HTTP servers (API server, compiler, runner, pipelines).
+    /// Iff true, is it allowed and required to set `https_tls_cert_path` and `https_tls_key_path`.
+    #[arg(long, default_value_t = false)]
+    pub enable_https: bool,
+
+    /// Path to the TLS x509 certificate PEM file (e.g., `/path/to/tls.crt`).
+    /// The same TLS certificate is used by all HTTP servers.
+    #[arg(long)]
+    pub https_tls_cert_path: Option<String>,
+
+    /// Path to the TLS key PEM file corresponding to the x509 certificate (e.g.,
+    /// `/path/to/tls.key`).
+    #[arg(long)]
+    pub https_tls_key_path: Option<String>,
+}
+
+impl CommonConfig {
+    /// Converts all paths in the `self` to absolute paths.
+    pub fn canonicalize(mut self) -> AnyResult<Self> {
+        let _ = self.https_config();
+        if let Some(https_tls_cert_path) = self.https_tls_cert_path {
+            self.https_tls_cert_path = Some(help_canonicalize_path(&https_tls_cert_path)?);
+        }
+        if let Some(https_tls_key_path) = self.https_tls_key_path {
+            self.https_tls_key_path = Some(help_canonicalize_path(&https_tls_key_path)?);
+        }
+        Ok(self)
+    }
+
+    /// Parses the HTTPS configuration arguments.
+    /// If HTTPS is enabled, returns a pair of strings `Some((certificate path, key path))`.
+    /// Otherwise, if HTTPS is not enabled, returns `None`.
+    pub fn https_config(&self) -> Option<(String, String)> {
+        if self.enable_https
+            || self.https_tls_cert_path.is_some()
+            || self.https_tls_key_path.is_some()
+        {
+            assert!(
+                self.enable_https,
+                "--enable-https is required to pass --https-tls-cert-path or --https-tls-key-path"
+            );
+            let https_tls_cert_path = self
+                .https_tls_cert_path
+                .as_ref()
+                .expect("CLI argument --https-tls-cert-path is required");
+            let https_tls_key_path = self
+                .https_tls_key_path
+                .as_ref()
+                .expect("CLI argument --https-tls-key-path is required");
+            Some((https_tls_cert_path.clone(), https_tls_key_path.clone()))
+        } else {
+            None
+        }
+    }
+
+    /// Creates the `ServerConfig` for the HTTP servers of the API server, compiler and runner if
+    /// HTTPS is enabled. Otherwise, returns `None`.
+    pub fn https_server_config(&self) -> Option<rustls::ServerConfig> {
+        if let Some((https_tls_cert_path, https_tls_key_path)) = self.https_config() {
+            // Load in certificate (public)
+            let cert_chain = CertificateDer::pem_file_iter(https_tls_cert_path)
+                .expect("HTTPS TLS certificate should be read")
+                .flatten()
+                .collect();
+
+            // Load in key (private)
+            let key_der = PrivateKeyDer::from_pem_file(https_tls_key_path)
+                .expect("HTTPS TLS key should be read");
+
+            // Server configuration
+            let server_config = rustls::ServerConfig::builder()
+                .with_no_client_auth()
+                .with_single_cert(cert_chain, key_der)
+                .expect(
+                    "server configuration should be built using the certificate and private key",
+                );
+
+            Some(server_config)
+        } else {
+            None
+        }
+    }
+
+    /// Creates `awc` client.
+    ///
+    /// - If HTTPS is enabled for Feldera HTTP servers, the client will only have our HTTPS certificate
+    ///   as the only valid one. As such, it will be only able to connect to Feldera HTTPS servers.
+    ///   Unfortunately, it is not possible to configure `awc` to refuse to connect over HTTP at all.
+    ///
+    /// - If HTTPS is not enabled for Feldera HTTP servers, it will return the default client which can
+    ///   connect to both HTTP and HTTPS (for any valid system certificates).
+    pub fn awc_client(&self) -> awc::Client {
+        if let Some((https_tls_cert_path, _)) = self.https_config() {
+            let cert_chain: Vec<_> = CertificateDer::pem_file_iter(https_tls_cert_path)
+                .expect("HTTPS TLS certificate should be read")
+                .flatten()
+                .collect();
+            let mut root_cert_store = RootCertStore::empty();
+            for certificate in cert_chain {
+                root_cert_store.add(certificate).unwrap();
+            }
+            let config = ClientConfig::builder()
+                .with_root_certificates(root_cert_store)
+                .with_no_client_auth();
+            // In the `awc` implementation, the connection is kept open for endpoints that return a
+            // streaming response (e.g., `/logs`) when they are half closed. As a workaround,
+            // increase the max connections limit to 25'000. This is also the default maximum number
+            // of connections for an actix server.
+            awc::Client::builder()
+                .connector(
+                    awc::Connector::new()
+                        .rustls_0_23(Arc::new(config))
+                        .limit(25000),
+                )
+                .finish()
+        } else {
+            awc::Client::new()
+        }
+    }
+
+    /// Creates `reqwest` client.
+    ///
+    /// - If HTTPS is enabled for Feldera HTTP servers, the client will only have our HTTPS certificate
+    ///   as the only valid one. As such, it will be only able to connect to Feldera HTTPS servers.
+    ///   It will refuse to connect over HTTP at all.
+    ///
+    /// - If HTTPS is not enabled for Feldera HTTP servers, it will return the default client which can
+    ///   connect to both HTTP and HTTPS (for any valid system certificates).
+    pub async fn reqwest_client(&self) -> reqwest::Client {
+        if let Some((https_tls_cert_path, _)) = self.https_config() {
+            let cert_pem = tokio::fs::read_to_string(https_tls_cert_path)
+                .await
+                .expect("HTTPS TLS certificate should be read");
+            let certificate = Certificate::from_pem(cert_pem.as_bytes())
+                .expect("HTTPS TLS certificate should be readable");
+            reqwest::ClientBuilder::new()
+                .https_only(true) // Only connect to HTTPS
+                .add_root_certificate(certificate) // Add our own TLS certificate which is used
+                .tls_built_in_root_certs(false) // Other TLS certificates are not used
+                .build()
+                .expect("HTTPS client should be built")
+        } else {
+            reqwest::Client::new()
+        }
+    }
 }
 
 /// Embedded Postgres configuration.
@@ -242,7 +388,7 @@ impl PgEmbedConfig {
     /// Converts all directory paths in the `self` to absolute paths.
     pub fn canonicalize(mut self) -> AnyResult<Self> {
         help_create_dir(&self.pg_embed_working_directory)?;
-        self.pg_embed_working_directory = help_canonicalize_dir(&self.pg_embed_working_directory)?;
+        self.pg_embed_working_directory = help_canonicalize_path(&self.pg_embed_working_directory)?;
         Ok(self)
     }
 
@@ -552,11 +698,11 @@ impl CompilerConfig {
     /// Convert all directory paths in the `self` to absolute paths.
     pub fn canonicalize(mut self) -> AnyResult<Self> {
         help_create_dir(&self.compiler_working_directory)?;
-        self.compiler_working_directory = help_canonicalize_dir(&self.compiler_working_directory)?;
-        self.sql_compiler_path = help_canonicalize_dir(&self.sql_compiler_path)?;
+        self.compiler_working_directory = help_canonicalize_path(&self.compiler_working_directory)?;
+        self.sql_compiler_path = help_canonicalize_path(&self.sql_compiler_path)?;
         self.compilation_cargo_lock_path =
-            help_canonicalize_dir(&self.compilation_cargo_lock_path)?;
-        self.dbsp_override_path = help_canonicalize_dir(&self.dbsp_override_path)?;
+            help_canonicalize_path(&self.compilation_cargo_lock_path)?;
+        self.dbsp_override_path = help_canonicalize_path(&self.dbsp_override_path)?;
         Ok(self)
     }
 }
@@ -575,7 +721,7 @@ impl LocalRunnerConfig {
     /// Creates and converts all directory paths in `self` to absolute paths.
     pub fn canonicalize(mut self) -> AnyResult<Self> {
         help_create_dir(&self.runner_working_directory)?;
-        self.runner_working_directory = help_canonicalize_dir(&self.runner_working_directory)?;
+        self.runner_working_directory = help_canonicalize_path(&self.runner_working_directory)?;
         Ok(self)
     }
 

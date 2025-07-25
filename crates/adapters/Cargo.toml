@@ -63,7 +63,7 @@ rdkafka = { workspace = true, features = ["ssl-vendored", "gssapi-vendored", "zs
 aws-sdk-s3 = { workspace = true, features = ["behavior-version-latest"] }
 aws-types = { workspace = true }
 actix = { workspace = true }
-actix-web = { workspace = true, features = ["cookies", "macros", "compress-gzip", "compress-brotli"] }
+actix-web = { workspace = true, features = ["cookies", "macros", "compress-gzip", "compress-brotli", "rustls-0_23"] }
 actix-ws = { workspace = true }
 mime = { workspace = true }
 size-of = { workspace = true }

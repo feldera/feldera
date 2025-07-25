@@ -20,6 +20,7 @@ use actix_files::NamedFile;
 use actix_web::{get, web, HttpRequest, HttpServer, Responder};
 use futures_util::join;
 use log::{error, info};
+use std::net::TcpListener;
 use std::str::FromStr;
 use std::sync::Arc;
 use tokio::{fs, spawn, sync::Mutex};
@@ -181,7 +182,7 @@ pub async fn compiler_precompile(
     })?;
 
     // Rust
-    let (_, source_checksum, integrity_checksum, rust_duration, _) = perform_rust_compilation(
+    let (source_checksum, integrity_checksum, rust_duration, _) = perform_rust_compilation(
         &common_config,
         &config,
         None,
@@ -249,22 +250,49 @@ pub async fn compiler_main(
     ));
 
     // Spawn HTTP server thread
-    let port = common_config.compiler_port;
     let config = web::Data::new(config.clone());
     let probe = web::Data::new(DbProbe::new(db.clone()).await);
+    let server = HttpServer::new(move || {
+        actix_web::App::new()
+            .app_data(config.clone())
+            .app_data(probe.clone())
+            .service(get_binary)
+            .service(healthz)
+    })
+    .workers(common_config.http_workers)
+    .worker_max_blocking_threads(std::cmp::max(512 / common_config.http_workers, 1));
+    let listener = TcpListener::bind((
+        common_config.bind_address.clone(),
+        common_config.compiler_port,
+    ))
+    .unwrap_or_else(|_| {
+        panic!(
+            "compiler unable to bind listener to {}:{} -- is the port occupied?",
+            common_config.bind_address, common_config.compiler_port
+        )
+    });
     let http_server = spawn(
-        HttpServer::new(move || {
-            actix_web::App::new()
-                .app_data(config.clone())
-                .app_data(probe.clone())
-                .service(get_binary)
-                .service(healthz)
-        })
-        .workers(common_config.http_workers)
-        .worker_max_blocking_threads(std::cmp::max(512 / common_config.http_workers, 1))
-        .bind((common_config.bind_address, port))
-        .unwrap_or_else(|_| panic!("Unable to bind compiler HTTP server on port {port}"))
-        .run(),
+        if let Some(server_config) = common_config.https_server_config() {
+            server
+                .listen_rustls_0_23(listener, server_config)
+                .expect("compiler HTTPS server unable to listen")
+                .run()
+        } else {
+            server
+                .listen(listener)
+                .expect("compiler HTTP server unable to listen")
+                .run()
+        },
+    );
+    info!(
+        "Compiler {} server: ready on port {} ({} workers)",
+        if common_config.enable_https {
+            "HTTPS"
+        } else {
+            "HTTP"
+        },
+        common_config.compiler_port,
+        common_config.http_workers,
     );
 
     // All threads should run indefinitely

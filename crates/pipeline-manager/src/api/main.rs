@@ -22,10 +22,9 @@ use actix_web::{
 };
 use actix_web_httpauth::middleware::HttpAuthentication;
 use actix_web_static_files::ResourceFiles;
-use anyhow::{Error as AnyError, Result as AnyResult};
-use awc::Connector;
+use anyhow::Result as AnyResult;
 use futures_util::FutureExt;
-use log::{error, log, trace, Level};
+use log::{error, info, log, trace, Level};
 use std::io::Write;
 use std::time::Duration;
 use std::{env, io, net::TcpListener, sync::Arc};
@@ -381,20 +380,7 @@ impl ServerState {
     }
 }
 
-fn create_listener(common_config: &CommonConfig) -> AnyResult<TcpListener> {
-    // Check that the port is available before turning into a daemon, so we can fail
-    // early if the port is taken.
-    let listener = TcpListener::bind((common_config.bind_address.clone(), common_config.api_port))
-        .map_err(|e| {
-            AnyError::msg(format!(
-                "failed to bind port '{}:{}': {e}",
-                common_config.bind_address, common_config.api_port
-            ))
-        })?;
-    Ok(listener)
-}
-
-/// Logs the responses of the web server.
+/// Logs the responses of the HTTP(S) server.
 pub fn log_response(
     res: Result<ServiceResponse<BoxBody>, actix_web::Error>,
 ) -> Result<ServiceResponse<BoxBody>, actix_web::Error> {
@@ -439,7 +425,13 @@ pub async fn run(
     api_config: ApiServerConfig,
     license_check: Arc<RwLock<Option<LicenseCheck>>>,
 ) -> AnyResult<()> {
-    let listener = create_listener(&common_config)?;
+    let listener = TcpListener::bind((common_config.bind_address.clone(), common_config.api_port))
+        .unwrap_or_else(|_| {
+            panic!(
+                "API server unable to bind listener to {}:{} -- is the port occupied?",
+                common_config.bind_address, common_config.api_port
+            )
+        });
     let state = WebData::new(
         ServerState::new(common_config.clone(), api_config.clone(), db, license_check).await?,
     );
@@ -453,17 +445,10 @@ pub async fn run(
         // make outgoing calls. This object is not meant to have more than one instance
         // per thread (otherwise, it causes high resource pressure on both CPU and fds).
         Some(auth_configuration) => {
+            let common_config_cloned = common_config.clone();
             let server = HttpServer::new(move || {
                 let auth_middleware = HttpAuthentication::with_fn(crate::auth::auth_validator);
-                let client = WebData::new(
-                    awc::Client::builder()
-                        // The connection if kept open for endpoints
-                        // that return streaming response ( eg. /logs ).
-                        // Set to 25k because its the default for
-                        // actix server max connections
-                        .connector(Connector::new().limit(25000))
-                        .finish(),
-                );
+                let client = WebData::new(common_config_cloned.awc_client());
                 App::new()
                     .app_data(state.clone())
                     .app_data(auth_configuration.clone())
@@ -478,19 +463,22 @@ pub async fn run(
             })
             .workers(common_config.http_workers)
             .worker_max_blocking_threads(std::cmp::max(512 / common_config.http_workers, 1));
-            server.listen(listener)?.run()
+            if let Some(server_config) = common_config.https_server_config() {
+                server
+                    .listen_rustls_0_23(listener, server_config)
+                    .expect("API HTTPS server unable to listen")
+                    .run()
+            } else {
+                server
+                    .listen(listener)
+                    .expect("API HTTP server unable to listen")
+                    .run()
+            }
         }
         None => {
+            let common_config_cloned = common_config.clone();
             let server = HttpServer::new(move || {
-                let client = WebData::new(
-                    awc::Client::builder()
-                        // The connection if kept open for endpoints
-                        // that return streaming response ( eg. /logs ).
-                        // Set to 25k because its the default for
-                        // actix server max connections
-                        .connector(Connector::new().limit(25000))
-                        .finish(),
-                );
+                let client = WebData::new(common_config_cloned.awc_client());
                 App::new()
                     .app_data(state.clone())
                     .app_data(client)
@@ -507,17 +495,46 @@ pub async fn run(
             })
             .workers(common_config.http_workers)
             .worker_max_blocking_threads(std::cmp::max(512 / common_config.http_workers, 1));
-            server.listen(listener)?.run()
+            if let Some(server_config) = common_config.https_server_config() {
+                server
+                    .listen_rustls_0_23(listener, server_config)
+                    .expect("API HTTPS server unable to listen")
+                    .run()
+            } else {
+                server
+                    .listen(listener)
+                    .expect("API HTTP server unable to listen")
+                    .run()
+            }
         }
     };
+    info!(
+        "API {} server: ready on port {} ({} workers)",
+        if common_config.enable_https {
+            "HTTPS"
+        } else {
+            "HTTP"
+        },
+        common_config.api_port,
+        common_config.http_workers,
+    );
 
     let banner = if theme(Duration::from_millis(500)).unwrap_or(Theme::Light) == Theme::Dark {
         include_str!("../../light-banner.ascii")
     } else {
         include_str!("../../dark-banner.ascii")
     };
-    let addr = env::var("BANNER_ADDR").unwrap_or(common_config.bind_address);
-    let url = format!("http://{}:{}", addr, common_config.api_port);
+    let addr = env::var("BANNER_ADDR").unwrap_or("127.0.0.1".to_string());
+    let url = format!(
+        "{}://{}:{}",
+        if common_config.enable_https {
+            "https"
+        } else {
+            "http"
+        },
+        addr,
+        common_config.api_port
+    );
 
     // Lock both out streams so that the banner is printed in one go
     // and not interrupted by log messages from other threads.
