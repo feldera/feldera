@@ -53,6 +53,7 @@ import invariant from 'tiny-invariant'
 import { tuple } from '$lib/functions/common/tuple'
 import { sleep } from '$lib/functions/common/promise'
 import { type NamesInUnion, unionName } from '$lib/functions/common/union'
+import { singleton } from '$lib/functions/common/array'
 
 const unauthenticatedClient = createClient({
   bodySerializer: JSONbig.stringify,
@@ -466,7 +467,7 @@ const streamingFetch = async <E1, E2>(
     const controller = new AbortController()
     const result = await fetch(input, {
       ...init,
-      signal: controller.signal
+      signal: AbortSignal.any([controller.signal, ...singleton(init.signal)])
     })
     return result.status === 200 && result.body
       ? {
@@ -494,11 +495,11 @@ export const relationEgressStream = async (pipelineName: string, relationName: s
   )
 }
 
-export const pipelineLogsStream = async (pipelineName: string) => {
+export const pipelineLogsStream = async (pipelineName: string, requestInit?: RequestInit) => {
   return streamingFetch(
     getAuthenticatedFetch(),
     `${felderaEndpoint}/v0/pipelines/${pipelineName}/logs`,
-    {},
+    requestInit ?? {},
     (msg) => new Error(`Failed to connect to the log stream: \n${msg}`),
     (e) => new Error(e.details?.error ?? e.message, { cause: e })
   )
