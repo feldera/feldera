@@ -722,6 +722,9 @@ mod test {
             platform_version: "v0".to_string(),
             http_workers: 1,
             unstable_features: None,
+            enable_https: false,
+            https_tls_cert_path: None,
+            https_tls_key_path: None,
         };
 
         let manager_config = ApiServerConfig {

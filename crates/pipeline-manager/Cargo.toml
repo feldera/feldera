@@ -72,7 +72,7 @@ refinery = { workspace = true, features = ["tokio-postgres"] }
 postgres-openssl = { workspace = true }
 
 # HTTP server and client
-actix-web = { workspace = true }
+actix-web = { workspace = true, features = ["rustls-0_23"] }
 actix-http = { workspace = true }
 actix-web-static-files = { workspace = true }
 actix-files = { workspace = true }
@@ -84,7 +84,9 @@ jsonwebtoken = { workspace = true }
 static-files = { workspace = true }
 utoipa = { workspace = true, features = ["actix_extras", "chrono", "uuid"] }
 utoipa-swagger-ui = { workspace = true, features = ["actix-web"] }
-awc = { workspace = true, features = ["openssl"] }  # For: auth workflows
+# The `rustls-0_23-native-roots` feature is such that when you create a default awc::Client (during auth workflow),
+# it can connect to HTTPS with the system root certificates.
+awc = { workspace = true, features = ["rustls-0_23", "rustls-0_23-native-roots"] }
 reqwest = { workspace = true, features = ["json"]}
 cached = { workspace = true }
 crossbeam = { workspace = true }

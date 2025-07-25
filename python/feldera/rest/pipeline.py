@@ -49,7 +49,6 @@ class Pipeline:
         self.deployment_desired_status: Optional[str] = None
         self.deployment_error: Optional[dict] = None
         self.deployment_location: Optional[str] = None
-        self.program_binary_url: Optional[str] = None
         self.program_info: Optional[dict] = (
             None  # info about input & output connectors and the schema
         )

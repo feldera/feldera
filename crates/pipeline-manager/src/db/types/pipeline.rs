@@ -510,9 +510,6 @@ pub struct ExtendedPipelineDescr {
     /// Checksum of the binary file itself.
     pub program_binary_integrity_checksum: Option<String>,
 
-    /// URL where to download the program binary from.
-    pub program_binary_url: Option<String>,
-
     /// Current status of the pipeline.
     pub deployment_status: PipelineStatus,
 

@@ -1019,16 +1019,6 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
         self.refresh()
         return self._inner.deployment_location
 
-    def program_binary_url(self) -> str:
-        """
-        Return the program binary URL of the pipeline.
-        This is the URL where the compiled program binary can be downloaded
-        from.
-        """
-
-        self.refresh()
-        return self._inner.program_binary_url
-
     def program_info(self) -> Mapping[str, Any]:
         """
         Return the program info of the pipeline.

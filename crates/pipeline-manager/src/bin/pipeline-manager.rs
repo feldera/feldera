@@ -62,6 +62,7 @@ async fn main() -> anyhow::Result<()> {
         .map_err(|err| err.exit())
         .unwrap();
 
+    let common_config = common_config.canonicalize()?;
     #[cfg(feature = "postgresql_embedded")]
     let pg_embed_config = pg_embed_config.canonicalize()?;
     // `api_config` currently does not have any paths
