@@ -1,6 +1,5 @@
 import os
 import pathlib
-import threading
 import pandas as pd
 import time
 import unittest

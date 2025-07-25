@@ -485,6 +485,7 @@ metrics"""
                 # block until the callback runner has been stopped
                 queue.join()
         import time
+
         time.sleep(3)
         self.client.stop_pipeline(self.name, force=force, timeout_s=timeout_s)
 

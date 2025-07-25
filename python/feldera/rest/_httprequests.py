@@ -109,7 +109,12 @@ class HttpRequests:
                     # Only retry on 503
                     if err.status_code == 503:
                         if attempt < max_retries:
-                            logging.warning("HTTP 503 received for %s, retrying (%d/%d)...", path, attempt+1, max_retries)
+                            logging.warning(
+                                "HTTP 503 received for %s, retrying (%d/%d)...",
+                                path,
+                                attempt + 1,
+                                max_retries,
+                            )
                             time.sleep(2)  # backoff, adjust as needed
                             continue
                     raise  # re-raise for all other errors or if out of retries
