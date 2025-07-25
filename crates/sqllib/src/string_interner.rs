@@ -372,7 +372,9 @@ mod interned_string_test {
     use dbsp::circuit::{CircuitConfig, CircuitStorageConfig, StorageConfig, StorageOptions};
     use dbsp::trace::{BatchReader, Cursor};
     use dbsp::utils::{Tup1, Tup2};
-    use dbsp::{DBSPHandle, OrdZSet, OutputHandle, Runtime, ZSetHandle};
+    use dbsp::{
+        typed_batch::SpineSnapshot, DBSPHandle, OrdZSet, OutputHandle, Runtime, ZSetHandle,
+    };
     use std::path::Path;
     use uuid::Uuid;
 
@@ -388,7 +390,7 @@ mod interned_string_test {
         (
             ZSetHandle<SqlString>,
             ZSetHandle<SqlString>,
-            OutputHandle<OrdZSet<SqlString>>,
+            OutputHandle<SpineSnapshot<OrdZSet<SqlString>>>,
         ),
     ) {
         let (circuit, handles) = Runtime::init_circuit(
@@ -420,7 +422,7 @@ mod interned_string_test {
                         |_, intern_string_id, _| unintern_string(intern_string_id).unwrap(),
                     );
 
-                Ok((hinput_strings, hqueries, output_strings.output()))
+                Ok((hinput_strings, hqueries, output_strings.accumulate_output()))
             },
         )
         .unwrap();
@@ -431,7 +433,7 @@ mod interned_string_test {
     fn query<'a, I>(
         circuit: &mut DBSPHandle,
         hqueries: &ZSetHandle<SqlString>,
-        houtput_strings: &OutputHandle<OrdZSet<SqlString>>,
+        houtput_strings: &OutputHandle<SpineSnapshot<OrdZSet<SqlString>>>,
         queries: I,
     ) where
         I: IntoIterator<Item = &'a str>,
@@ -445,7 +447,7 @@ mod interned_string_test {
         hqueries.append(&mut tuples);
 
         circuit.transaction().unwrap();
-        let output = houtput_strings.consolidate();
+        let output = houtput_strings.concat().consolidate();
         let mut output = output.iter().map(|(s, _, _)| s.clone()).collect::<Vec<_>>();
         output.sort();
 
