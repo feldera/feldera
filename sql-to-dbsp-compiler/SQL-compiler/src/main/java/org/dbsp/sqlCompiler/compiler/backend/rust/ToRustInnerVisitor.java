@@ -2487,7 +2487,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
         if (type.outerCircuit)
             this.builder.append("RootCircuit");
         else
-            this.builder.append("ChildCircuit<RootCircuit>");
+            this.builder.append("NestedCircuit");
         this.builder.append(", ");
         type.elementType.accept(this);
         this.builder.append(">");
