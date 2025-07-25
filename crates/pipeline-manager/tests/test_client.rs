@@ -7,9 +7,13 @@ use futures_util::StreamExt;
 use pipeline_manager::db::types::pipeline::PipelineStatus;
 use pipeline_manager::db::types::program::ProgramStatus;
 use pipeline_manager::db::types::storage::StorageStatus;
+use rustls::pki_types::pem::PemObject;
+use rustls::pki_types::CertificateDer;
+use rustls::{ClientConfig, RootCertStore};
 use serde_json::json;
 use std::env::VarError;
 use std::future::Future;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::time::{sleep, timeout};
 
@@ -43,6 +47,7 @@ impl TestClient {
         let feldera_url = std::env::var("TEST_FELDERA_URL")
             .expect("Set TEST_FELDERA_URL to run integration tests");
         // println!("Running integration test against TEST_FELDERA_URL: {}", feldera_url);
+        assert!(feldera_url.starts_with("http://") || feldera_url.starts_with("https://"));
 
         // Feldera authentication bearer token (optional)
         let bearer_token = match std::env::var("TEST_FELDERA_BEARER_TOKEN") {
@@ -56,10 +61,30 @@ impl TestClient {
             },
         };
 
-        // HTTP client which is reused
-        let client = awc::ClientBuilder::new()
-            .timeout(Duration::from_secs(10))
-            .finish();
+        // HTTP(S) client which is reused
+        let client = match std::env::var("TEST_FELDERA_HTTPS_TLS_CERT_PATH") {
+            Ok(https_tls_cert_path) => {
+                assert!(feldera_url.starts_with("https://"), "TEST_FELDERA_HTTPS_TLS_CERT_PATH should only be set for a Feldera URL starting with https://");
+                let cert_chain: Vec<_> = CertificateDer::pem_file_iter(https_tls_cert_path)
+                    .expect("HTTPS TLS certificate should be read")
+                    .flatten()
+                    .collect();
+                let mut root_cert_store = RootCertStore::empty();
+                for certificate in cert_chain {
+                    root_cert_store.add(certificate).unwrap();
+                }
+                let config = ClientConfig::builder()
+                    .with_root_certificates(root_cert_store)
+                    .with_no_client_auth();
+                awc::Client::builder()
+                    .connector(awc::Connector::new().rustls_0_23(Arc::new(config)))
+                    .finish()
+            }
+            Err(_) => {
+                assert!(feldera_url.starts_with("http://"), "TEST_FELDERA_HTTPS_TLS_CERT_PATH should be set for a Feldera URL starting with https://");
+                awc::Client::default()
+            }
+        };
 
         TestClient {
             feldera_url,

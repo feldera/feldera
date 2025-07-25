@@ -23,76 +23,6 @@ use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 use tokio::{fs, fs::create_dir_all, select, spawn};
 
-/// Retrieve the binary executable using its URL.
-pub async fn fetch_binary_ref(
-    config: &LocalRunnerConfig,
-    client: &reqwest::Client,
-    binary_ref: &str,
-    pipeline_id: PipelineId,
-    program_version: Version,
-) -> Result<String, ManagerError> {
-    let parsed =
-        url::Url::parse(binary_ref).expect("Can only be invoked with valid URLs created by us");
-    match parsed.scheme() {
-        // Access a file over HTTP/HTTPS
-        // TODO: implement retries
-        "http" | "https" => {
-            let resp = client.get(binary_ref).send().await;
-            match resp {
-                Ok(resp) => {
-                    if resp.status() != StatusCode::OK {
-                        return Err(RunnerError::RunnerProvisionError {
-                            error: format!(
-                                "response status of retrieving {} is {} instead of expected {}",
-                                binary_ref, resp.status(), StatusCode::OK
-                            ),
-                        }.into());
-                    }
-                    let resp = resp.bytes().await.expect("Binary reference should be accessible as bytes");
-                    let resp_ref = resp.as_ref();
-                    let path = config.binary_file_path(pipeline_id, program_version);
-                    let mut file = tokio::fs::File::options()
-                        .create(true)
-                        .truncate(true)
-                        .write(true)
-                        .read(true)
-                        .mode(0o760)
-                        .open(path.clone())
-                        .await
-                        .map_err(|e|
-                            ManagerError::from(CommonError::io_error(
-                                format!("File creation failed ({:?}) while saving {pipeline_id} binary fetched from '{}'", path, parsed.path()),
-                                e,
-                            ))
-                        )?;
-                    file.write_all(resp_ref).await.map_err(|e|
-                        ManagerError::from(CommonError::io_error(
-                            format!("File write failed ({:?}) while saving binary file for {pipeline_id} fetched from '{}'", path, parsed.path()),
-                            e,
-                        ))
-                    )?;
-                    file.flush().await.map_err(|e|
-                        ManagerError::from(CommonError::io_error(
-                            format!("File flush() failed ({:?}) while saving binary file for {pipeline_id} fetched from '{}'", path, parsed.path()),
-                            e,
-                        ))
-                    )?;
-                    Ok(path.into_os_string().into_string().expect("Path should be valid Unicode"))
-                }
-                Err(e) => {
-                    Err(RunnerError::RunnerProvisionError {
-                        error: format!(
-                            "Fetching URL {} for binary required by pipeline {pipeline_id} returned an error: {}",
-                            parsed.path(), e
-                        ),
-                    }.into())
-                }
-            }
-        }
-        _ => todo!("Unsupported URL scheme for binary ref"),
-    }
-}
-
 /// A runner handle to run a pipeline using a local process.
 /// During provisioning, it spawns a process, retrieves its location (port)
 /// and follows the logs of the process stdout and stderr. Upon stop, it kills
@@ -165,7 +95,6 @@ impl LocalRunner {
                             Ok(line) => match line {
                                 None => {
                                     stdout_finished = true;
-                                    logs_sender.send(LogMessage::new_from_control_plane(Level::Info, "stdout ended")).await;
                                 }
                                 Some(line) => {
                                     println!("{line}"); // Print to manager stdout
@@ -187,7 +116,6 @@ impl LocalRunner {
                             Ok(line) => match line {
                                 None => {
                                     stderr_finished = true;
-                                    logs_sender.send(LogMessage::new_from_control_plane(Level::Info, "stderr ended")).await;
                                 }
                                 Some(line) => {
                                     eprintln!("{line}"); // Print to manager stderr
@@ -206,6 +134,97 @@ impl LocalRunner {
             }
         });
         (terminate_sender, join_handle)
+    }
+
+    /// Retrieves the binary executable of the pipeline from the compiler server using the
+    /// `binary_url` and stores it in the local runner working directory for that pipeline
+    /// located at `target_file_path`.
+    pub async fn retrieve_pipeline_binary(
+        &self,
+        binary_url: &str,
+        target_file_path: &Path,
+    ) -> Result<(), ManagerError> {
+        // URL validation
+        let parsed = url::Url::parse(binary_url).map_err(|e| {
+            ManagerError::from(RunnerError::RunnerProvisionError {
+                error: format!("pipeline binary retrieval failed: invalid URL due to: {e}"),
+            })
+        })?;
+
+        // Scheme must match either HTTP or HTTPS depending on configuration
+        let scheme = parsed.scheme();
+        if !self.common_config.enable_https && scheme != "http" {
+            return Err(RunnerError::RunnerProvisionError {
+                error: format!("pipeline binary retrieval failed: URL has scheme '{scheme}' whereas 'http' is expected"),
+            }.into());
+        }
+        if self.common_config.enable_https && parsed.scheme() != "https" {
+            return Err(RunnerError::RunnerProvisionError {
+                error: format!("pipeline binary retrieval failed: URL has scheme '{scheme}' whereas 'https' is expected"),
+            }.into());
+        }
+
+        // Perform request
+        match self.client.get(binary_url).send().await {
+            Ok(response) => {
+                // Check status code
+                if response.status() != StatusCode::OK {
+                    return Err(RunnerError::RunnerProvisionError {
+                        error: format!(
+                            "pipeline binary retrieval failed: expected response status code {} but got {}",
+                            StatusCode::OK, response.status(),
+                        ),
+                    }.into());
+                }
+
+                // Parse response as bytes
+                let body = response.bytes().await.map_err(|_e| {
+                    ManagerError::from(RunnerError::RunnerProvisionError {
+                        error: "pipeline binary retrieval failed: could not convert response body into bytes".to_string(),
+                    })
+                })?;
+
+                // Create, open, write and flush file
+                let mut file = fs::File::options()
+                    .create(true)
+                    .truncate(true)
+                    .write(true)
+                    .read(true)
+                    .mode(0o760) // User: rwx, Group: rw, Others: /
+                    .open(target_file_path)
+                    .await
+                    .map_err(|e| {
+                        ManagerError::from(RunnerError::RunnerProvisionError {
+                            error: format!(
+                                "pipeline binary retrieval failed: unable to create file '{}': {e}",
+                                target_file_path.display()
+                            ),
+                        })
+                    })?;
+                file.write_all(&body).await.map_err(|e| {
+                    ManagerError::from(RunnerError::RunnerProvisionError {
+                        error: format!(
+                            "pipeline binary retrieval failed: unable to write file '{}': {e}",
+                            target_file_path.display()
+                        ),
+                    })
+                })?;
+                file.flush().await.map_err(|e| {
+                    ManagerError::from(RunnerError::RunnerProvisionError {
+                        error: format!(
+                            "pipeline binary retrieval failed: unable to flush file '{}': {e}",
+                            target_file_path.display()
+                        ),
+                    })
+                })?;
+
+                Ok(())
+            }
+            Err(e) => Err(RunnerError::RunnerProvisionError {
+                error: format!("pipeline binary retrieval failed: unable to get response: {e}"),
+            }
+            .into()),
+        }
     }
 
     /// Checks the process and working directory of the deployment.
@@ -370,20 +389,18 @@ impl PipelineExecutor for LocalRunner {
         let _ = remove_file(&self.config.port_file_path(self.pipeline_id)).await;
 
         // Retrieve and store executable in pipeline working directory
-        let fetched_executable = fetch_binary_ref(
-            &self.config,
-            &self.client,
-            program_binary_url,
-            self.pipeline_id,
-            program_version,
-        )
-        .await?;
+        let target_file_path = self
+            .config
+            .binary_file_path(self.pipeline_id, program_version);
+        self.retrieve_pipeline_binary(program_binary_url, &target_file_path)
+            .await?;
 
         // Run executable:
         // - Current directory: pipeline working directory
         // - Configuration file: path to config.yaml
         // - Stdout/stderr are piped to follow logs
-        let mut process = Command::new(fetched_executable)
+        let mut command = Command::new(target_file_path);
+        command
             .env(
                 "TOKIO_WORKER_THREADS",
                 deployment_config
@@ -399,7 +416,16 @@ impl PipelineExecutor for LocalRunner {
             .arg(&self.common_config.bind_address)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
+            .stderr(Stdio::piped());
+        if let Some((https_tls_cert_path, https_tls_key_path)) = self.common_config.https_config() {
+            command
+                .arg("--enable-https")
+                .arg("--https-tls-cert-path")
+                .arg(https_tls_cert_path)
+                .arg("--https-tls-key-path")
+                .arg(https_tls_key_path);
+        }
+        let mut process = command
             .spawn()
             .map_err(|e| RunnerError::RunnerProvisionError {
                 error: format!("unable to spawn process due to: {e}"),
