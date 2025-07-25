@@ -7,6 +7,7 @@
       rowBoundaries: number[]
       totalSkippedBytes: number
       stream:
+        | { cancelFetch: () => void }
         | { open: ReadableStream<Uint8Array>; stop: () => void }
         | { closed: {} }
         | { closed: {}; cancelRetry: () => void; retryAtTimestamp: number }
@@ -62,9 +63,19 @@
       // Close log stream when leaving log tab, or switching to another pipeline
       let oldPipelineName = pipelineName
       return () => {
-        if (streams[oldPipelineName] && 'open' in streams[oldPipelineName].stream) {
-          streams[oldPipelineName].stream.stop()
-          return
+        if (streams[oldPipelineName]) {
+          if ('open' in streams[oldPipelineName].stream) {
+            streams[oldPipelineName].stream.stop()
+            return
+          }
+          if ('cancelRetry' in streams[oldPipelineName].stream) {
+            streams[oldPipelineName].stream.cancelRetry()
+            return
+          }
+          if ('cancelFetch' in streams[oldPipelineName].stream) {
+            streams[oldPipelineName].stream.cancelFetch()
+            return
+          }
         }
       }
     }
@@ -102,7 +113,18 @@
     if ('open' in streams[pipelineName].stream) {
       return
     }
-    api.pipelineLogsStream(pipelineName).then((result) => {
+    const abortController = new AbortController()
+    streams[pipelineName].stream = {
+      cancelFetch: () => {
+        abortController.abort()
+        streams[pipelineName].stream = { closed: {} }
+      }
+    }
+    api.pipelineLogsStream(pipelineName, { signal: abortController.signal }).then((result) => {
+      if (streams[pipelineName].stream && 'closed' in streams[pipelineName].stream) {
+        // The stream was cancelled, so we shouldn't re-try it
+        return
+      }
       if (result instanceof Error) {
         streams[pipelineName].stream = { closed: {} }
         streams[pipelineName].rows.push(result.message)
@@ -165,6 +187,7 @@
 
   $effect.pre(() => {
     pipelineStatusName
+    pipelineName
     untrack(() => {
       if ('cancelRetry' in streams[pipelineName].stream) {
         streams[pipelineName].stream.cancelRetry()
@@ -221,6 +244,8 @@
         </WarningBanner>
       {/if}
     {/if}
+  {:else if 'cancelFetch' in stream}
+    <WarningBanner>Connecting to logs stream...</WarningBanner>
   {/if}
   {#key pipelineName}
     <LogsStreamList logs={getStreams()[pipelineName]}></LogsStreamList>
