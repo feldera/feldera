@@ -11,7 +11,7 @@ use crate::{
     operator::{integrate::IntegralId, Minus},
     NumEntries,
 };
-use crate::{ChildCircuit, DBData, OrdIndexedZSet, Timestamp};
+use crate::{ChildCircuit, DBData, OrdIndexedZSet, OrdZSet, Timestamp};
 use size_of::SizeOf;
 
 circuit_cache_key!(DifferentiateId<C, D>(StreamId => Stream<C, D>));
@@ -61,6 +61,19 @@ where
     V: DBData,
 {
     pub fn accumulate_differentiate(&self) -> Stream<ChildCircuit<C, T>, OrdIndexedZSet<K, V>> {
+        self.circuit()
+            .non_incremental(self, |_child_circuit, stream| Ok(stream.differentiate()))
+            .unwrap()
+    }
+}
+
+impl<C, T, K> Stream<ChildCircuit<C, T>, OrdZSet<K>>
+where
+    C: Clone + 'static,
+    T: Timestamp,
+    K: DBData,
+{
+    pub fn accumulate_differentiate(&self) -> Stream<ChildCircuit<C, T>, OrdZSet<K>> {
         self.circuit()
             .non_incremental(self, |_child_circuit, stream| Ok(stream.differentiate()))
             .unwrap()
