@@ -98,6 +98,7 @@ metrics = { workspace = true }
 metrics-util = { workspace = true }
 metrics-exporter-prometheus = { workspace = true }
 ordered-float = { workspace = true }
+openssl = { workspace = true }
 minitrace = { workspace = true, features = ["enable"] }
 minitrace-jaeger = { workspace = true }
 atomic = { workspace = true }
@@ -128,6 +129,7 @@ bytemuck = { workspace = true }
 num-derive = { workspace = true }
 num-traits = { workspace = true } # Used by num-derive derive macro, which cargo-machete can't see
 postgres = { workspace = true }
+postgres-openssl = { workspace = true }
 dyn-clone = { workspace = true }
 cpu-time = "1.0.0"
 memory-stats = { version = "1.2.0", features = ["always_use_statm"] }

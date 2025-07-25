@@ -1,7 +1,10 @@
+use std::io::Write as _;
 use std::{
     collections::HashSet,
+    io::Write,
     marker::PhantomPinned,
     mem::take,
+    path::PathBuf,
     pin::{pin, Pin},
     str::FromStr,
     sync::Weak,
@@ -16,14 +19,22 @@ use crate::{
     util::{truncate_ellipse, IndexedOperationType},
 };
 use crate::{util::indexed_operation_type, ControllerError};
-use anyhow::{anyhow, bail, Result as AnyResult};
+use anyhow::{anyhow, bail, Context, Result as AnyResult};
 use feldera_adapterlib::transport::{AsyncErrorCallback, Step};
 use feldera_types::{
     format::{csv::CsvParserConfig, json::JsonFlavor},
     program_schema::{Relation, SqlIdentifier},
     transport::postgres::PostgresWriterConfig,
 };
+use openssl::{
+    pkey::PKey,
+    rsa::Rsa,
+    ssl::{SslConnector, SslConnectorBuilder, SslFiletype, SslMethod},
+    x509::{store::X509StoreBuilder, X509},
+};
 use postgres::{Client, NoTls, Statement};
+use postgres_openssl::MakeTlsConnector;
+use tempfile::NamedTempFile;
 use tracing::{info_span, span::EnteredSpan};
 
 enum BackoffError {
@@ -144,7 +155,7 @@ pub struct PostgresOutputEndpoint {
     endpoint_name: String,
     table: String,
     client: postgres::Client,
-    config: postgres::Config,
+    config: PostgresWriterConfig,
     transaction: Option<postgres::Transaction<'static>>,
     raw_queries: RawQueries,
     prepared_statements: PreparedStatements,
@@ -164,6 +175,84 @@ impl Drop for PostgresOutputEndpoint {
 
 const PG_CONNECTION_VALIDITY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 
+fn set_certs(
+    builder: &mut SslConnectorBuilder,
+    config: &PostgresWriterConfig,
+) -> AnyResult<()> {
+    let Some(ca_cert) = &config.ssl_ca_pem else {
+        return Ok(());
+    };
+
+    let ca_cert_path = {
+        let mut file =
+            NamedTempFile::new().context("failed to create tempfile to write CA certificate to")?;
+        let path = file.path().to_owned();
+
+        file.write_all(ca_cert.as_bytes())
+            .context("failed to write CA certificate to tempfile")?;
+        file.flush()
+            .context("failed to flush CA certificate to tempfile")?;
+
+        let (_, path) = file.keep()?;
+        path
+    };
+
+    builder
+        .set_ca_file(ca_cert_path)
+        .context("failed to set CA certificate in SSL connector")?;
+
+    if let (Some(client_cert), Some(client_key)) = (&config.ssl_client_pem, &config.ssl_client_key)
+    {
+        tracing::info!("postgres: using client certificate and key to connect to postgres");
+        let cert = X509::from_pem(client_cert.as_bytes())
+            .context("failed to parse client certificate as X509")?;
+        builder
+            .set_certificate(&cert)
+            .context("failed to set client certificate in SSL connector")?;
+        let rsa = Rsa::private_key_from_pem(client_key.as_bytes())
+            .context("failed to parse client private key as RSA")?;
+        let key = PKey::from_rsa(rsa).context("failed to client private key from RSA")?;
+        builder
+            .set_private_key(key.as_ref())
+            .context("failed to set client private key")?;
+    };
+
+    Ok(())
+}
+
+fn connect(config: &PostgresWriterConfig) -> Result<Client, BackoffError> {
+    let connector_config = config.clone();
+
+    let pgcnf = postgres::Config::from_str(&config.uri).map_err(|e| {
+        BackoffError::Permanent(anyhow!("error parsing postgres connection string: {e}"))
+    })?;
+
+    let client = if let Some(ca_cert) = &config.ssl_ca_pem {
+        let mut builder = SslConnector::builder(SslMethod::tls())
+            .map_err(|e| BackoffError::Permanent(anyhow!("failed to build SSL connection: {e}")))?;
+
+        set_certs(&mut builder, config).map_err(BackoffError::Permanent)?;
+
+        let mut connector = MakeTlsConnector::new(builder.build());
+
+        if Some(false) == config.verify_hostname {
+            connector.set_callback(|ctx, _| {
+                tracing::info!("postgres: ssl: disabling hostname verification");
+                ctx.set_verify_hostname(false);
+                Ok(())
+            });
+        }
+
+        tracing::info!("CA certificate found, connecting to postgres using TLS");
+        pgcnf.connect(connector)
+    } else {
+        tracing::info!("no CA certificate found, connecting to postgres without TLS");
+        pgcnf.connect(NoTls)
+    }?;
+
+    Ok(client)
+}
+
 impl PostgresOutputEndpoint {
     pub fn new(
         endpoint_id: EndpointId,
@@ -174,19 +263,8 @@ impl PostgresOutputEndpoint {
         controller: Weak<ControllerInner>,
     ) -> Result<Self, ControllerError> {
         let table = config.table.to_owned();
-
-        let config = postgres::Config::from_str(&config.uri).map_err(|e| {
-            ControllerError::invalid_transport_configuration(
-                endpoint_name,
-                &format!("error parsing postgres connection string: {e}"),
-            )
-        })?;
-
-        let mut client = config.connect(NoTls).map_err(|e| {
-            ControllerError::invalid_transport_configuration(
-                endpoint_name,
-                &format!("failed to connect to postgres: {e}"),
-            )
+        let mut client = connect(config).map_err(|e| {
+            ControllerError::invalid_transport_configuration(endpoint_name, &e.inner().to_string())
         })?;
 
         let key_schema = key_schema
@@ -258,7 +336,7 @@ impl PostgresOutputEndpoint {
             endpoint_name: endpoint_name.to_owned(),
             controller,
             table,
-            config,
+            config: config.clone(),
             client,
             transaction: None,
             raw_queries,
@@ -388,7 +466,7 @@ impl PostgresOutputEndpoint {
         };
 
         self.transaction = None;
-        self.client = self.config.connect(NoTls)?;
+        self.client = connect(&self.config)?;
 
         self.prepared_statements =
             PreparedStatements::new(&self.raw_queries, &mut self.client, &self.endpoint_name)
@@ -734,6 +812,10 @@ mod tests {
         PostgresWriterConfig {
             uri: postgres_url(),
             table: table.into(),
+            ssl_ca_pem: None,
+            ssl_client_pem: None,
+            ssl_client_key: None,
+            verify_hostname: None,
         }
     }
 
