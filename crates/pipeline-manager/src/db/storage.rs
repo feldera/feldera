@@ -227,7 +227,6 @@ pub(crate) trait Storage {
         rust_compilation: &RustCompilationInfo,
         program_binary_source_checksum: &str,
         program_binary_integrity_checksum: &str,
-        program_binary_url: &str,
     ) -> Result<(), DBError>;
 
     /// Transitions program status to `SqlError`.

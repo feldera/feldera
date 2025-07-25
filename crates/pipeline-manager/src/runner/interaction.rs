@@ -191,6 +191,7 @@ impl RunnerInteraction {
     /// identifier and location. It thus does not need to retrieve it
     /// from the database.
     pub async fn forward_http_request_to_pipeline(
+        common_config: &CommonConfig,
         client: &awc::Client,
         location: &str,
         method: Method,
@@ -199,7 +200,16 @@ impl RunnerInteraction {
         timeout: Option<Duration>,
     ) -> Result<HttpResponse, ManagerError> {
         // Perform request to the pipeline
-        let url = format_pipeline_url("http", location, endpoint, query_string);
+        let url = format_pipeline_url(
+            if common_config.enable_https {
+                "https"
+            } else {
+                "http"
+            },
+            location,
+            endpoint,
+            query_string,
+        );
         let timeout = timeout.unwrap_or(Self::PIPELINE_HTTP_REQUEST_TIMEOUT);
         let mut original_response = client
             .request(method, &url)
@@ -264,6 +274,7 @@ impl RunnerInteraction {
     ) -> Result<HttpResponse, ManagerError> {
         let (location, cache_hit) = self.check_pipeline(tenant_id, pipeline_name).await?;
         let r = RunnerInteraction::forward_http_request_to_pipeline(
+            &self.common_config,
             client,
             &location,
             method.clone(),
@@ -434,7 +445,16 @@ impl RunnerInteraction {
         let (location, _cache_hit) = self.check_pipeline(tenant_id, pipeline_name).await?;
 
         // Build new request to pipeline
-        let url = format_pipeline_url("http", &location, endpoint, request.query_string());
+        let url = format_pipeline_url(
+            if self.common_config.enable_https {
+                "https"
+            } else {
+                "http"
+            },
+            &location,
+            endpoint,
+            request.query_string(),
+        );
         let timeout = timeout.unwrap_or(Self::PIPELINE_HTTP_REQUEST_TIMEOUT);
         let mut new_request = client
             .request(request.method().clone(), &url)
@@ -492,8 +512,15 @@ impl RunnerInteraction {
 
         // Build request to the runner
         let url = format!(
-            "http://{}:{}/logs/{}",
-            self.common_config.runner_host, self.common_config.runner_port, pipeline.id
+            "{}://{}:{}/logs/{}",
+            if self.common_config.enable_https {
+                "https"
+            } else {
+                "http"
+            },
+            self.common_config.runner_host,
+            self.common_config.runner_port,
+            pipeline.id
         );
 
         // Perform request to the runner

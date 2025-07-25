@@ -1,3 +1,4 @@
+use crate::config::CommonConfig;
 use crate::db::error::DBError;
 use crate::db::storage::{ExtendedPipelineDescrRunner, Storage};
 use crate::db::storage_postgres::StoragePostgres;
@@ -81,6 +82,7 @@ where
     T: PipelineExecutor,
 {
     platform_version: String,
+    common_config: CommonConfig,
     pipeline_id: PipelineId,
     tenant_id: TenantId,
     pipeline_handle: T,
@@ -150,7 +152,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
     /// Creates a new automaton for a given pipeline.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        platform_version: &str,
+        common_config: CommonConfig,
         pipeline_id: PipelineId,
         tenant_id: TenantId,
         db: Arc<Mutex<StoragePostgres>>,
@@ -167,7 +169,8 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             start_thread_pipeline_logs(follow_request_receiver, logs_receiver);
 
         Self {
-            platform_version: platform_version.to_string(),
+            platform_version: common_config.platform_version.clone(),
+            common_config,
             pipeline_id,
             tenant_id,
             pipeline_handle,
@@ -634,7 +637,16 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         endpoint: &str,
         timeout: Duration,
     ) -> Result<(StatusCode, serde_json::Value), ManagerError> {
-        let url = format_pipeline_url("http", location, endpoint, "");
+        let url = format_pipeline_url(
+            if self.common_config.enable_https {
+                "https"
+            } else {
+                "http"
+            },
+            location,
+            endpoint,
+            "",
+        );
         let response = self
             .client
             .request(method, &url)
@@ -705,7 +717,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             .await
         {
             Ok((http_status, http_body)) => {
-                // Able to reach the pipeline web server and get a response
+                // Able to reach the pipeline HTTP(S) server and get a response
                 if http_status == StatusCode::OK {
                     // Fatal error: cannot deserialize status
                     let Some(pipeline_status) = http_body.as_str() else {
@@ -1020,17 +1032,44 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                 }
             },
         };
-        let program_binary_url = match pipeline.program_binary_url.clone() {
-            None => {
+
+        // URL where the program binary can be downloaded from
+        let program_binary_url = format!(
+            "{}://{}:{}/binary/{}/{}/{}/{}",
+            if self.common_config.enable_https {
+                "https"
+            } else {
+                "http"
+            },
+            self.common_config.compiler_host,
+            self.common_config.compiler_port,
+            self.pipeline_id,
+            pipeline.program_version,
+            if let Some(source_checksum) = pipeline.program_binary_source_checksum.as_ref() {
+                source_checksum
+            } else {
                 return State::TransitionToStopping {
                     error: Some(ErrorResponse::from_error_nolog(
-                        &RunnerError::AutomatonMissingProgramBinaryUrl,
+                        &RunnerError::AutomatonCannotConstructProgramBinaryUrl {
+                            error: "source checksum is missing".to_string(),
+                        },
                     )),
                     suspend_info: None,
                 };
-            }
-            Some(program_binary_url) => program_binary_url,
-        };
+            },
+            if let Some(integrity_checksum) = pipeline.program_binary_integrity_checksum.as_ref() {
+                integrity_checksum
+            } else {
+                return State::TransitionToStopping {
+                    error: Some(ErrorResponse::from_error_nolog(
+                        &RunnerError::AutomatonCannotConstructProgramBinaryUrl {
+                            error: "integrity checksum is missing".to_string(),
+                        },
+                    )),
+                    suspend_info: None,
+                };
+            },
+        );
 
         match self
             .pipeline_handle
@@ -1664,7 +1703,6 @@ mod test {
                 },
                 "not-used-program-binary-source-checksum",
                 "not-used-program-binary-integrity-checksum",
-                "not-used-program-binary-url",
             )
             .await
             .unwrap();
@@ -1678,7 +1716,19 @@ mod test {
         let notifier = Arc::new(Notify::new());
         let client = reqwest::Client::new();
         let automaton = PipelineAutomaton::new(
-            "v0",
+            CommonConfig {
+                platform_version: "v0".to_string(),
+                bind_address: "127.0.0.1".to_string(),
+                api_port: 8080,
+                compiler_host: "127.0.0.1".to_string(),
+                compiler_port: 8085,
+                runner_host: "127.0.0.1".to_string(),
+                runner_port: 8089,
+                http_workers: 1,
+                enable_https: false,
+                https_tls_cert_path: None,
+                https_tls_key_path: None,
+            },
             pipeline_id,
             tenant_id,
             db.clone(),
@@ -1737,9 +1787,9 @@ mod test {
         test.check_current_state(PipelineStatus::Provisioning).await;
         test.tick().await; // provision()
         test.check_current_state(PipelineStatus::Provisioning).await;
+        mock_endpoint(&mut server, "GET", "/status", 200, json!("Paused")).await;
         test.tick().await; // is_provisioned()
         test.check_current_state(PipelineStatus::Initializing).await;
-        mock_endpoint(&mut server, "GET", "/status", 200, json!("Paused")).await;
         test.tick().await;
         test.check_current_state(PipelineStatus::Paused).await;
         test.tick().await;
@@ -1760,9 +1810,9 @@ mod test {
         test.check_current_state(PipelineStatus::Provisioning).await;
         test.tick().await; // provision()
         test.check_current_state(PipelineStatus::Provisioning).await;
+        mock_endpoint(&mut server, "GET", "/status", 200, json!("Paused")).await;
         test.tick().await; // is_provisioned()
         test.check_current_state(PipelineStatus::Initializing).await;
-        mock_endpoint(&mut server, "GET", "/status", 200, json!("Paused")).await;
         test.tick().await;
         test.check_current_state(PipelineStatus::Paused).await;
         mock_endpoint(&mut server, "GET", "/start", 200, json!({})).await;
@@ -1787,9 +1837,9 @@ mod test {
         test.check_current_state(PipelineStatus::Provisioning).await;
         test.tick().await; // provision()
         test.check_current_state(PipelineStatus::Provisioning).await;
+        mock_endpoint(&mut server, "GET", "/status", 200, json!("Paused")).await;
         test.tick().await; // is_provisioned()
         test.check_current_state(PipelineStatus::Initializing).await;
-        mock_endpoint(&mut server, "GET", "/status", 200, json!("Paused")).await;
         test.tick().await;
         test.check_current_state(PipelineStatus::Paused).await;
         test.tick().await;
@@ -1824,13 +1874,14 @@ mod test {
 
     #[tokio::test]
     async fn stop_initializing() {
-        let (_mock_server, _temp, mut test) = setup_complete().await;
+        let (mut server, _temp, mut test) = setup_complete().await;
         test.set_desired_state(PipelineDesiredStatus::Paused).await;
         test.check_current_state(PipelineStatus::Stopped).await;
         test.tick().await;
         test.check_current_state(PipelineStatus::Provisioning).await;
         test.tick().await; // provision()
         test.check_current_state(PipelineStatus::Provisioning).await;
+        mock_endpoint(&mut server, "GET", "/status", 200, json!("Paused")).await;
         test.tick().await; // is_provisioned()
         test.check_current_state(PipelineStatus::Initializing).await;
         test.set_desired_state(PipelineDesiredStatus::Stopped).await;
@@ -1849,9 +1900,9 @@ mod test {
         test.check_current_state(PipelineStatus::Provisioning).await;
         test.tick().await; // provision()
         test.check_current_state(PipelineStatus::Provisioning).await;
+        mock_endpoint(&mut server, "GET", "/status", 200, json!("Paused")).await;
         test.tick().await; // is_provisioned()
         test.check_current_state(PipelineStatus::Initializing).await;
-        mock_endpoint(&mut server, "GET", "/status", 200, json!("Paused")).await;
         test.tick().await;
         test.check_current_state(PipelineStatus::Paused).await;
         test.set_desired_state(PipelineDesiredStatus::Suspended)
