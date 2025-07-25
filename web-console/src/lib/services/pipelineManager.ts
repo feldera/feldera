@@ -474,7 +474,7 @@ const streamingFetch = async <E1, E2>(
           stream: result.body,
           cancel: controller.abort.bind(controller)
         }
-      : result.json().then(handleResponseError)
+      : result.json().then((body) => handleResponseError({ ...body, status_code: result.status }))
   } catch (e) {
     const msg = e instanceof Error ? e.message : JSON.stringify(e, undefined, '\t')
     return handleRequestError(msg)

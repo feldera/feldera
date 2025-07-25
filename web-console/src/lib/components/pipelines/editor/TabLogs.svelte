@@ -57,25 +57,25 @@
       }
     }
   })
+
   $effect(() => {
     pipelineName // Reactive dependency only needed when closing the previous stream when switching pipelines
-    {
-      // Close log stream when leaving log tab, or switching to another pipeline
-      let oldPipelineName = pipelineName
-      return () => {
-        if (streams[oldPipelineName]) {
-          if ('open' in streams[oldPipelineName].stream) {
-            streams[oldPipelineName].stream.stop()
-            return
-          }
-          if ('cancelRetry' in streams[oldPipelineName].stream) {
-            streams[oldPipelineName].stream.cancelRetry()
-            return
-          }
-          if ('cancelFetch' in streams[oldPipelineName].stream) {
-            streams[oldPipelineName].stream.cancelFetch()
-            return
-          }
+    startStream(pipelineName, 0)
+    // Close log stream when leaving log tab, or switching to another pipeline
+    let oldPipelineName = pipelineName
+    return () => {
+      if (streams[oldPipelineName]) {
+        if ('open' in streams[oldPipelineName].stream) {
+          streams[oldPipelineName].stream.stop()
+          return
+        }
+        if ('cancelRetry' in streams[oldPipelineName].stream) {
+          streams[oldPipelineName].stream.cancelRetry()
+          return
+        }
+        if ('cancelFetch' in streams[oldPipelineName].stream) {
+          streams[oldPipelineName].stream.cancelFetch()
+          return
         }
       }
     }
@@ -109,8 +109,8 @@
       .exhaustive()
 
   const api = usePipelineManager()
-  const startStream = (pipelineName: string) => {
-    if ('open' in streams[pipelineName].stream) {
+  const startStream = (pipelineName: string, attempts: number) => {
+    if ('open' in streams[pipelineName].stream || 'cancelFetch' in streams[pipelineName].stream) {
       return
     }
     const abortController = new AbortController()
@@ -128,7 +128,8 @@
       if (result instanceof Error) {
         streams[pipelineName].stream = { closed: {} }
         streams[pipelineName].rows.push(result.message)
-        tryRestartStream(pipelineName, 5000)
+        const isServerOverloaded = (result.cause as any).status_code === 503
+        tryRestartStream(pipelineName, isServerOverloaded ? attempts + 1 : 0)
         return
       }
       const { cancel } = parseCancellable(
@@ -147,7 +148,7 @@
             if (reason === 'cancelled' || !areLogsExpected(pipelineStatusName)) {
               return
             }
-            tryRestartStream(pipelineName, 5000)
+            tryRestartStream(pipelineName, 0)
           },
           onBytesSkipped(bytes) {
             streams[pipelineName].totalSkippedBytes += bytes
@@ -168,13 +169,15 @@
       getStreams = () => streams
     })
   }
-
+  const backoffDelaysMs = [5, 5, 15, 30, 60].map(s => s * 1000)
+  const getDelayMs = (attempts: number) => backoffDelaysMs.at(attempts) ?? backoffDelaysMs.at(-1)!
   // Start stream unless it ended less than retryAllowedSinceDelayMs ago
-  const tryRestartStream = (pipelineName: string, delayMs: number) => {
+  const tryRestartStream = (pipelineName: string, attempts: number) => {
     if ('cancelRetry' in streams[pipelineName].stream) {
       return
     }
-    const timeout = setTimeout(() => startStream(pipelineName), delayMs)
+    const delayMs = getDelayMs(attempts)
+    const timeout = setTimeout(() => startStream(pipelineName, attempts), delayMs)
     streams[pipelineName].stream = {
       closed: {},
       cancelRetry: () => {
@@ -184,20 +187,6 @@
       retryAtTimestamp: Date.now() + delayMs
     }
   }
-
-  $effect.pre(() => {
-    pipelineStatusName
-    pipelineName
-    untrack(() => {
-      if ('cancelRetry' in streams[pipelineName].stream) {
-        streams[pipelineName].stream.cancelRetry()
-      }
-      if (areLogsExpected(pipelineStatusName)) {
-        startStream(pipelineName)
-        return
-      }
-    })
-  })
 
   // Trigger update to display the latest rows when switching to another pipeline
   $effect(() => {
@@ -229,7 +218,7 @@
         {#if seconds > 0}Retrying in
           {seconds}s...
         {:else}
-          Retrying now...
+          Retrying in 1s...
         {/if}
       </WarningBanner>
     {:else if !areLogsExpected(pipelineStatusName)}
