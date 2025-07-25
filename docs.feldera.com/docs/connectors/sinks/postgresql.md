@@ -17,21 +17,56 @@ in the PostgreSQL table.
 
 ## PostgreSQL output configuration
 
-| Property | Type   | Default | Description                                                                                                                                                                                                                                     |
-|----------|--------|---------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `uri`*   | string |         | A PostgreSQL connection URL, e.g., "postgresql://postgres:1234@127.0.0.1:7373/postgres" (see the tokio-postgres [Config](https://docs.rs/tokio-postgres/0.7.12/tokio_postgres/config/struct.Config.html) struct for a detailed list of options) |
-| `table`* | string |         | The PostgreSQL table to write the outputs to. The schema of this table should be compatible with the schema of the output view.                                                                                                                 |
+| Property          | Type    | Default | Description                                                                                                                                                                                                                                        |
+|-------------------|---------|---------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `uri`*            | string  |         | A PostgreSQL connection URL, e.g., `"postgresql://postgres:1234@127.0.0.1:7373/postgres"` (see the tokio-postgres [Config](https://docs.rs/tokio-postgres/0.7.12/tokio_postgres/config/struct.Config.html) struct for a detailed list of options). |
+| `table`*          | string  |         | The PostgreSQL table to write the outputs to. The schema of this table should be compatible with the schema of the output view.                                                                                                                    |
+| `ssl_ca_pem`      | string  |         | The CA certificate in PEM format. Required for TLS.                                                                                                                                                                                                |
+| `ssl_client_pem`  | string  |         | The client certificate in PEM format.                                                                                                                                                                                                              |
+| `ssl_client_key`  | string  |         | The client certificate key in PEM format.                                                                                                                                                                                                          |
+| `verify_hostname` | boolean | `true`  | True to enable hostname verification when using TLS. True by default.                                                                                                                                                                              |
+
 
 [*]: Required fields
 
-The schema of the PostgreSQL table should match the schema of the Feldera view, as outlined in the table below, with the following exceptions::
+The schema of the PostgreSQL table should match the schema of the Feldera view, as outlined in the table below, with the following exceptions:
 - Narrower Feldera types such as `INT2` and `FLOAT4` can be stored in wider PostgreSQL column types like `INT8` and `FLOAT8` respectively.
 - Columns in the PostgreSQL table that are **nullable** or have **default** values may be omitted from the Feldera view.
 
 ### Connecting with TLS / SSL
 
-Currently, we do not support connecting to PostgreSQL with TLS / SSL.
-Please [let us know](https://github.com/feldera/feldera/issues) if you need TLS / SSL support.
+Feldera supports connecting to PostgreSQL over TLS / SSL.
+To enable a secure connection, you **must** provide the following field:
+- `ssl_ca_pem`: The CA certificate in PEM format, used to verify the server certificate.
+
+You can optionally provide the following fields:
+- `ssl_client_pem`: The client certificate in PEM format (if the server requires client authentication).
+- `ssl_client_key`: The private key corresponding to the client certificate.
+- `verify_hostname`: Set to `false` to disable hostname verification (not recommended). Defaults to `true`.
+
+If `ssl_ca_pem` is not specified, the connection will default to **plaintext**.
+
+Example:
+
+```sql
+create materialized view v1 with (
+    'connectors' = '[{
+        "index": "v1_idx",
+        "transport": {
+            "name": "postgres_output",
+            "config": {
+                "uri": "postgres://postgres:secret@db.badhostname.feldera.com:5432/postgres",
+                "table": "feldera_out",
+                "ssl_client_key": "[REDACTED]",
+                "ssl_client_pem": "[REDACTED]",
+                "ssl_ca_pem": "[REDACTED]",
+                "verify_hostname": false
+            }
+        }
+    }]'
+) as select * from t0;
+create index v1_idx on v1(id);
+```
 
 ## Data type mapping
 

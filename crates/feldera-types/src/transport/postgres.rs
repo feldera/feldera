@@ -21,4 +21,16 @@ pub struct PostgresWriterConfig {
 
     /// The table to write the output to.
     pub table: String,
+
+    /// The CA certificate in PEM format.
+    pub ssl_ca_pem: Option<String>,
+
+    /// The client certificate in PEM format.
+    pub ssl_client_pem: Option<String>,
+
+    /// The client certificate key in PEM format.
+    pub ssl_client_key: Option<String>,
+
+    /// True to enable hostname verification when using TLS. True by default.
+    pub verify_hostname: Option<bool>,
 }
