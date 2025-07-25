@@ -613,6 +613,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
                     break
                 if chunk:
                     yield json.loads(chunk, parse_float=Decimal)
+
         return generator
 
     def query_as_text(
