@@ -14,11 +14,13 @@ use std::collections::VecDeque;
 use std::hash::Hasher;
 use std::io::{Seek, SeekFrom};
 use std::ops::Range;
+use std::path::PathBuf;
 use std::thread::{self, Thread};
 use std::{fs::File, io::Write, time::Duration};
 use tokio::sync::mpsc::error::TryRecvError;
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 use tracing::{error, info_span};
+use url::Url;
 use xxhash_rust::xxh3::Xxh3Default;
 
 const SLEEP: Duration = Duration::from_millis(200);
@@ -84,6 +86,14 @@ pub struct FileInputReader {
     thread: Thread,
 }
 
+fn parse_url(path: &str) -> Option<PathBuf> {
+    let url = Url::parse(path).ok()?;
+    if url.scheme() != "file" {
+        return None;
+    }
+    url.to_file_path().ok()
+}
+
 impl FileInputReader {
     fn new(
         endpoint: &FileInputEndpoint,
@@ -98,8 +108,12 @@ impl FileInputReader {
         };
 
         let config = &endpoint.config;
-        let file = File::open(&config.path).map_err(|e| {
-            AnyError::msg(format!("Failed to open input file '{}': {e}", config.path))
+        let path = parse_url(&config.path).unwrap_or_else(|| PathBuf::from(&config.path));
+        let file = File::open(&path).map_err(|e| {
+            AnyError::msg(format!(
+                "Failed to open input file '{}': {e}",
+                path.display()
+            ))
         })?;
 
         let (sender, receiver) = unbounded_channel();
@@ -357,6 +371,7 @@ mod test {
     use serde::{Deserialize, Serialize};
     use std::{io::Write, thread::sleep, time::Duration};
     use tempfile::NamedTempFile;
+    use url::Url;
 
     #[derive(Debug, PartialEq, Eq, Hash, Serialize, Deserialize, Clone)]
     pub struct TestStruct {
@@ -444,6 +459,7 @@ format:
             TestStruct::new("bar".to_string(), false, -10),
         ];
         let temp_file = NamedTempFile::new().unwrap();
+        let temp_file_url = Url::from_file_path(temp_file.path()).unwrap();
 
         // Create a transport endpoint attached to the file.
         // Use a very small buffer size for testing.
@@ -453,13 +469,12 @@ stream: test_input
 transport:
     name: file_input
     config:
-        path: {:?}
+        path: "{temp_file_url}"
         buffer_size_bytes: 5
         follow: true
 format:
     name: csv
 "#,
-            temp_file.path().to_str().unwrap()
         );
 
         println!("Config:\n{}", config_str);
