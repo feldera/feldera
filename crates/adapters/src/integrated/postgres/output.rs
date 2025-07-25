@@ -175,10 +175,7 @@ impl Drop for PostgresOutputEndpoint {
 
 const PG_CONNECTION_VALIDITY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 
-fn set_certs(
-    builder: &mut SslConnectorBuilder,
-    config: &PostgresWriterConfig,
-) -> AnyResult<()> {
+fn set_certs(builder: &mut SslConnectorBuilder, config: &PostgresWriterConfig) -> AnyResult<()> {
     let Some(ca_cert) = &config.ssl_ca_pem else {
         return Ok(());
     };
