@@ -4,7 +4,7 @@ use serde::Deserialize;
 use utoipa::{IntoParams, ToSchema};
 
 /// Circuit metrics output format.
-/// - `prometheus`: [format](https://github.com/prometheus/docs/blob/main/content/docs/instrumenting/exposition_formats.md) expected by Prometheus
+/// - `prometheus`: [format](https://github.com/prometheus/docs/blob/4b1b80f5f660a2f8dc25a54f52a65a502f31879a/docs/instrumenting/exposition_formats.md) expected by Prometheus
 /// - `json`: JSON format
 #[derive(Debug, Deserialize, ToSchema)]
 #[serde(rename_all = "snake_case")]

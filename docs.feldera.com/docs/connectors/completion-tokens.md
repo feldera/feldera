@@ -62,7 +62,7 @@ There are two ways to generate a completion token, depending on the type of the 
 ## Checking completion status
 
 To check the processing status of a token, call the
-[`/completion_status`](https://docs.feldera.com/api/check-the-status-of-a-completion-token-returned-by-the-ingress-or-completion-token-endpoint)
+[`/completion_status`](https://docs.feldera.com/api/check-the-status-of-a-completion-token-returned-by-the-ingress-or-completion-token)
 endpoint with the token.  The endpoint returns
 `"complete"` if the data associated with the token has been fully processed and all outputs derived from
 it have been written to all connected data sinks.  It returns `"inprogress"` otherwise.
