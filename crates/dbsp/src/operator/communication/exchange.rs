@@ -8,10 +8,9 @@
 use crate::{
     circuit::{
         metadata::{MetaItem, OperatorLocation, OperatorMeta, NUM_INPUTS, NUM_OUTPUTS},
-        metrics::Gauge,
         operator_traits::{Operator, SinkOperator, SourceOperator},
         tokio::TOKIO,
-        GlobalNodeId, Host, LocalStoreMarker, OwnershipPreference, Runtime, Scope,
+        Host, LocalStoreMarker, OwnershipPreference, Runtime, Scope,
     },
     circuit_cache_key,
     storage::file::to_bytes,
@@ -810,7 +809,6 @@ where
 
     // Total number of input tuples processed by the operator.
     num_inputs: usize,
-    num_inputs_metric: Option<Gauge>,
 
     phantom: PhantomData<D>,
 }
@@ -834,7 +832,6 @@ where
             outputs: Vec::with_capacity(runtime.num_workers()),
             exchange: Exchange::with_runtime(runtime, exchange_id),
             num_inputs: 0,
-            num_inputs_metric: None,
             phantom: PhantomData,
         }
     }
@@ -848,23 +845,6 @@ where
 {
     fn name(&self) -> Cow<'static, str> {
         Cow::from("ExchangeSender")
-    }
-
-    fn init(&mut self, global_id: &GlobalNodeId) {
-        self.num_inputs_metric = Some(Gauge::new(
-            NUM_INPUTS,
-            None,
-            Some("count"),
-            global_id,
-            vec![],
-        ));
-    }
-
-    fn metrics(&self) {
-        self.num_inputs_metric
-            .as_ref()
-            .unwrap()
-            .set(self.num_inputs as f64);
     }
 
     fn metadata(&self, meta: &mut OperatorMeta) {
@@ -955,7 +935,6 @@ where
 
     // Total number of input tuples processed by the operator.
     num_outputs: usize,
-    num_outputs_metric: Option<Gauge>,
 }
 
 impl<IF, T, L> ExchangeReceiver<IF, T, L>
@@ -979,7 +958,6 @@ where
             combine,
             exchange: Exchange::with_runtime(runtime, exchange_id),
             num_outputs: 0,
-            num_outputs_metric: None,
         }
     }
 }
@@ -998,24 +976,7 @@ where
         self.location
     }
 
-    fn init(&mut self, global_id: &GlobalNodeId) {
-        self.num_outputs_metric = Some(Gauge::new(
-            NUM_OUTPUTS,
-            None,
-            Some("count"),
-            global_id,
-            vec![],
-        ));
-    }
-
-    fn metrics(&self) {
-        self.num_outputs_metric
-            .as_ref()
-            .unwrap()
-            .set(self.num_outputs as f64);
-    }
-
-    fn metadata(&self, meta: &mut OperatorMeta) {
+     fn metadata(&self, meta: &mut OperatorMeta) {
         meta.extend(metadata! {
             NUM_OUTPUTS => MetaItem::Count(self.num_outputs),
         });

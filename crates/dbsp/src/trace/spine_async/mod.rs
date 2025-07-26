@@ -7,11 +7,7 @@
 //! so it is beneficial to reduce the number by merging batches.
 
 use crate::{
-    circuit::{
-        metadata::{MetaItem, OperatorMeta},
-        metrics::Gauge,
-        GlobalNodeId,
-    },
+    circuit::metadata::{MetaItem, OperatorMeta},
     dynamic::{DynVec, Factory, Weight},
     storage::buffer_cache::CacheStats,
     time::Timestamp,
@@ -62,14 +58,11 @@ use super::{cursor::CursorFactory, BatchLocation};
 
 mod thread;
 
-use crate::circuit::metrics::{BATCHES_PER_LEVEL, COMPACTION_STALL_TIME, ONGOING_MERGES_PER_LEVEL};
+use crate::circuit::metrics::COMPACTION_STALL_TIME;
 pub use list_merger::ListMerger;
 
 /// Maximum amount of levels in the spine.
 pub(crate) const MAX_LEVELS: usize = 9;
-
-/// Levels as &'static str for metrics
-pub(crate) const LEVELS_AS_STR: [&str; MAX_LEVELS] = ["0", "1", "2", "3", "4", "5", "6", "7", "8"];
 
 impl<B: Batch + Send + Sync> From<(Vec<String>, &Spine<B>)> for CommittedSpine {
     fn from((batches, spine): (Vec<String>, &Spine<B>)) -> Self {
@@ -599,19 +592,6 @@ where
         });
 
         cache_stats.metadata(meta);
-    }
-
-    fn metrics(&self, metrics: &SpineMetrics) {
-        for (level, slot) in self.state.lock().unwrap().slots.iter().enumerate() {
-            metrics.ongoing_merges[level].set(
-                slot.merging_batches
-                    .as_ref()
-                    .map(|merging| merging.len())
-                    .unwrap_or(0) as f64,
-            );
-
-            metrics.batches[level].set(slot.n_batches() as f64);
-        }
     }
 
     fn maybe_relieve_backpressure(
@@ -1293,18 +1273,11 @@ impl<B: Batch> Cursor<B::Key, B::Val, B::Time, B::R> for SpineCursor<B> {
     }
 }
 
-pub struct SpineMetrics {
-    ongoing_merges: [Gauge; MAX_LEVELS],
-    batches: [Gauge; MAX_LEVELS],
-}
-
 impl<B> Trace for Spine<B>
 where
     B: Batch,
 {
     type Batch = B;
-
-    type Metrics = SpineMetrics;
 
     fn new(factories: &B::Factories) -> Self {
         Self::with_effort(factories, 1)
@@ -1494,33 +1467,6 @@ where
 
     fn metadata(&self, meta: &mut OperatorMeta) {
         self.merger.metadata(meta);
-    }
-
-    fn metrics(&self, metrics: &SpineMetrics) {
-        self.merger.metrics(metrics);
-    }
-
-    fn init_operator_metrics(global_node_id: &GlobalNodeId) -> Self::Metrics {
-        SpineMetrics {
-            ongoing_merges: std::array::from_fn(|level| {
-                Gauge::new(
-                    ONGOING_MERGES_PER_LEVEL,
-                    None,
-                    Some("count"),
-                    global_node_id,
-                    vec![("level".to_string(), LEVELS_AS_STR[level].to_string())],
-                )
-            }),
-            batches: std::array::from_fn(|level| {
-                Gauge::new(
-                    BATCHES_PER_LEVEL,
-                    None,
-                    Some("count"),
-                    global_node_id,
-                    vec![("level".to_string(), LEVELS_AS_STR[level].to_string())],
-                )
-            }),
-        }
     }
 }
 

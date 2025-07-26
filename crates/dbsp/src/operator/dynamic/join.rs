@@ -1,6 +1,5 @@
 use crate::algebra::ZBatchReader;
 use crate::circuit::circuit_builder::StreamId;
-use crate::circuit::metrics::Gauge;
 use crate::dynamic::DynData;
 use crate::{
     algebra::{
@@ -13,7 +12,7 @@ use crate::{
             USED_BYTES_LABEL,
         },
         operator_traits::{BinaryOperator, Operator},
-        Circuit, GlobalNodeId, RootCircuit, Scope, Stream, WithClock,
+        Circuit, RootCircuit, Scope, Stream, WithClock,
     },
     circuit_cache_key,
     dynamic::{
@@ -1064,16 +1063,6 @@ where
     // True if empty output was produced at the current clock cycle.
     empty_output: bool,
     stats: JoinStats,
-    // Handle to update the metric `left_tuples`
-    left_tuples_metric: Option<Gauge>,
-    // Handle to update the metric `right_tuples`
-    right_tuples_metric: Option<Gauge>,
-    // Handle to update the metric `computed_output`
-    computed_output_metric: Option<Gauge>,
-    // Handle to update the metric `produced_output`
-    produced_output_metric: Option<Gauge>,
-    // Handle to update the metric `output_redundancy`
-    output_redundancy_metric: Option<Gauge>,
     _types: PhantomData<(I, T, Z)>,
 }
 
@@ -1109,11 +1098,6 @@ where
             empty_output: false,
             stats: JoinStats::new(),
             _types: PhantomData,
-            left_tuples_metric: None,
-            right_tuples_metric: None,
-            produced_output_metric: None,
-            computed_output_metric: None,
-            output_redundancy_metric: None,
         }
     }
 }
@@ -1145,78 +1129,6 @@ where
             .output_batchers
             .keys()
             .all(|time| !time.less_equal(&self.clock.time())));
-    }
-
-    fn init(&mut self, global_id: &GlobalNodeId) {
-        self.left_tuples_metric = Some(Gauge::new(
-            "left_tuples",
-            None,
-            Some("count"),
-            global_id,
-            vec![],
-        ));
-        self.right_tuples_metric = Some(Gauge::new(
-            "right_tuples",
-            None,
-            Some("count"),
-            global_id,
-            vec![],
-        ));
-        self.computed_output_metric = Some(Gauge::new(
-            "computed_output",
-            None,
-            Some("count"),
-            global_id,
-            vec![],
-        ));
-        self.produced_output_metric = Some(Gauge::new(
-            "produced_output",
-            None,
-            Some("count"),
-            global_id,
-            vec![],
-        ));
-        self.output_redundancy_metric = Some(Gauge::new(
-            "output_redundancy",
-            None,
-            Some("count"),
-            global_id,
-            vec![],
-        ));
-    }
-
-    fn metrics(&self) {
-        // Find the percentage of consolidated outputs
-        let mut output_redundancy = ((self.stats.output_tuples as f64
-            - self.stats.produced_tuples as f64)
-            / self.stats.output_tuples as f64)
-            * 100.0;
-        if output_redundancy.is_nan() {
-            output_redundancy = 0.0;
-        } else if output_redundancy.is_infinite() {
-            output_redundancy = 100.0;
-        }
-
-        self.output_redundancy_metric
-            .as_ref()
-            .unwrap()
-            .set(output_redundancy);
-        self.left_tuples_metric
-            .as_ref()
-            .unwrap()
-            .set(self.stats.lhs_tuples as f64);
-        self.right_tuples_metric
-            .as_ref()
-            .unwrap()
-            .set(self.stats.rhs_tuples as f64);
-        self.computed_output_metric
-            .as_ref()
-            .unwrap()
-            .set(self.stats.output_tuples as f64);
-        self.produced_output_metric
-            .as_ref()
-            .unwrap()
-            .set(self.stats.produced_tuples as f64);
     }
 
     fn metadata(&self, meta: &mut OperatorMeta) {

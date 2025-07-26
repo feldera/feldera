@@ -1,7 +1,6 @@
 //! Distinct operator.
 
 use crate::circuit::circuit_builder::StreamId;
-use crate::circuit::metrics::Gauge;
 use crate::dynamic::{ClonableTrait, Data, DynData};
 use crate::trace::TupleBuilder;
 use crate::{
@@ -15,7 +14,7 @@ use crate::{
             SHARED_BYTES_LABEL, USED_BYTES_LABEL,
         },
         operator_traits::{BinaryOperator, Operator, UnaryOperator},
-        Circuit, GlobalNodeId, Scope, Stream, WithClock,
+        Circuit, Scope, Stream, WithClock,
     },
     circuit_cache_key,
     dynamic::{DynPair, DynWeightedPairs, Erase},
@@ -399,11 +398,9 @@ struct DistinctIncrementalTotal<Z: IndexedZSet, I> {
 
     // Total number of input tuples processed by the operator.
     num_inputs: usize,
-    num_inputs_metric: Option<Gauge>,
 
     // Total number of output tuples processed by the operator.
     num_outputs: usize,
-    num_outputs_metric: Option<Gauge>,
 
     _type: PhantomData<(Z, I)>,
 }
@@ -414,9 +411,7 @@ impl<Z: IndexedZSet, I> DistinctIncrementalTotal<Z, I> {
             input_factories: input_factories.clone(),
             location,
             num_inputs: 0,
-            num_inputs_metric: None,
             num_outputs: 0,
-            num_outputs_metric: None,
             _type: PhantomData,
         }
     }
@@ -433,36 +428,6 @@ where
 
     fn location(&self) -> OperatorLocation {
         Some(self.location)
-    }
-
-    fn init(&mut self, global_id: &GlobalNodeId) {
-        self.num_inputs_metric = Some(Gauge::new(
-            NUM_INPUTS,
-            None,
-            Some("count"),
-            global_id,
-            vec![],
-        ));
-
-        self.num_outputs_metric = Some(Gauge::new(
-            NUM_OUTPUTS,
-            None,
-            Some("count"),
-            global_id,
-            vec![],
-        ));
-    }
-
-    fn metrics(&self) {
-        self.num_inputs_metric
-            .as_ref()
-            .unwrap()
-            .set(self.num_inputs as f64);
-
-        self.num_outputs_metric
-            .as_ref()
-            .unwrap()
-            .set(self.num_inputs as f64);
     }
 
     fn metadata(&self, meta: &mut OperatorMeta) {
@@ -593,15 +558,11 @@ where
     // Used in computing partial derivatives
     // (we keep it here to reuse allocations across `eval_keyval` calls).
     distinct_vals: Vec<(Option<T::Time>, ZWeight)>,
-    // Handle to update the metric `total size`
-    total_size_metric: Option<Gauge>,
     // Total number of input tuples processed by the operator.
     num_inputs: usize,
-    num_inputs_metric: Option<Gauge>,
 
     // Total number of output tuples processed by the operator.
     num_outputs: usize,
-    num_outputs_metric: Option<Gauge>,
 
     _type: PhantomData<(Z, T)>,
 }
@@ -630,11 +591,8 @@ where
             empty_output: false,
             distinct_vals: vec![(None, HasZero::zero()); 2 << depth],
             _type: PhantomData,
-            total_size_metric: None,
             num_inputs: 0,
-            num_inputs_metric: None,
             num_outputs: 0,
-            num_outputs_metric: None,
         }
     }
 
@@ -837,47 +795,6 @@ where
 
     fn location(&self) -> OperatorLocation {
         Some(self.location)
-    }
-
-    fn init(&mut self, global_id: &GlobalNodeId) {
-        self.total_size_metric = Some(Gauge::new(
-            NUM_ENTRIES_LABEL,
-            None,
-            Some("count"),
-            global_id,
-            vec![],
-        ));
-
-        self.num_inputs_metric = Some(Gauge::new(
-            NUM_INPUTS,
-            None,
-            Some("count"),
-            global_id,
-            vec![],
-        ));
-
-        self.num_outputs_metric = Some(Gauge::new(
-            NUM_OUTPUTS,
-            None,
-            Some("count"),
-            global_id,
-            vec![],
-        ));
-    }
-
-    fn metrics(&self) {
-        let size: usize = self.keys_of_interest.values().map(|v| v.len()).sum();
-        self.total_size_metric.as_ref().unwrap().set(size as f64);
-
-        self.num_inputs_metric
-            .as_ref()
-            .unwrap()
-            .set(self.num_inputs as f64);
-
-        self.num_outputs_metric
-            .as_ref()
-            .unwrap()
-            .set(self.num_outputs as f64);
     }
 
     fn metadata(&self, meta: &mut OperatorMeta) {
