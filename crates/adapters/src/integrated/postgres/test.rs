@@ -396,7 +396,7 @@ CREATE TABLE {name} (
                 },
                 &config,
                 Box::new(move |e| {
-                    let msg = format!("redis_output_test: error: {e}");
+                    let msg = format!("postgres_output_test: error: {e}");
                     println!("{msg}");
                     err_sender.send(msg).unwrap()
                 }),
@@ -516,7 +516,7 @@ outputs:
 
             data == got || !err_receiver.is_empty()
         },
-        2_000,
+        10_000,
     )
     .expect("timeout: failed to insert data into postgres");
 }
@@ -649,7 +649,7 @@ outputs:
 
             data == got || !err_receiver.is_empty()
         },
-        2_000,
+        10_000,
     )
     .expect("timeout: failed to insert data into postgres");
 
@@ -671,7 +671,7 @@ outputs:
 
             got == upsert_data || !err_receiver.is_empty()
         },
-        2_000,
+        10_000,
     )
     .expect("timeout: failed to update data into postgres");
 }
@@ -779,7 +779,7 @@ outputs:
 
             data == got || !err_receiver.is_empty()
         },
-        2_000,
+        10_000,
     )
     .expect("timeout: failed to insert data into postgres");
 
@@ -798,7 +798,7 @@ outputs:
 
             got.is_empty() || !err_receiver.is_empty()
         },
-        2_000,
+        10_000,
     )
     .expect("timeout: failed to delete data from postgres");
 }

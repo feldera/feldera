@@ -265,6 +265,11 @@ pub struct DatabaseConfig {
     #[serde(default)]
     #[arg(long, env = "FELDERA_DB_TLS_DISABLE_VERIFY")]
     pub disable_tls_verify: bool,
+
+    /// Disables TLS hostname verification.
+    #[serde(default)]
+    #[arg(long, env = "FELDERA_DB_TLS_DISABLE_HOSTNAME_VERIFY")]
+    pub disable_tls_hostname_verify: bool,
 }
 
 impl DatabaseConfig {
@@ -273,6 +278,7 @@ impl DatabaseConfig {
             db_connection_string,
             db_tls_certificate_path,
             disable_tls_verify: false,
+            disable_tls_hostname_verify: false,
         }
     }
 
@@ -337,7 +343,17 @@ impl DatabaseConfig {
                 })?;
         }
 
-        Ok(MakeTlsConnector::new(builder.build()))
+        let mut connector = MakeTlsConnector::new(builder.build());
+
+        if self.disable_tls_hostname_verify {
+            log::info!("PostgreSQL TLS hostname verification is disabled");
+            connector.set_callback(|ctx, _| {
+                ctx.set_verify_hostname(false);
+                Ok(())
+            });
+        }
+
+        Ok(connector)
     }
 }
 
