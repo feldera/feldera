@@ -2,7 +2,7 @@ name: Link Checker docs.feldera.com
 
 on:
   schedule:
-    - cron: "0 0 * * *"
+    - cron: "0 16 * * *"
   workflow_dispatch:
 
 jobs:
@@ -21,3 +21,4 @@ jobs:
       - name: Check links on feldera.com
         run: |
           uv run --locked linkchecker https://docs.feldera.com --check-extern --no-warnings --ignore-url "https?://localhost|https://crates.io|https://www.linkedin.com|https://ieeexplore.ieee.org|https://x.com|https?://127.0.0.1" --no-robots
+        working-directory: docs.feldera.com
