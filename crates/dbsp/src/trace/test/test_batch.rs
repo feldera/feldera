@@ -1207,7 +1207,6 @@ where
     T: Timestamp,
 {
     type Batch = Self;
-    type Metrics = ();
 
     fn new(_factories: &Self::Factories) -> Self {
         Self {
@@ -1261,10 +1260,6 @@ where
     fn value_filter(&self) -> &Option<Filter<Self::Val>> {
         &self.value_filter
     }
-
-    fn init_operator_metrics(_global_node_id: &crate::circuit::GlobalNodeId) -> Self::Metrics {}
-
-    fn metrics(&self, _metrics: &Self::Metrics) {}
 }
 
 /// Test random sampling methods.

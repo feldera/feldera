@@ -1,7 +1,6 @@
 //! z^-1 operator delays its input by one timestamp.
 
 use crate::circuit::circuit_builder::StreamId;
-use crate::circuit::metrics::Gauge;
 use crate::Runtime;
 use crate::{
     algebra::HasZero,
@@ -223,8 +222,6 @@ pub struct Z1<T> {
     global_id: GlobalNodeId,
     empty_output: bool,
     values: T,
-    // Handle to update the metric `total_size`.
-    total_size_metric: Option<Gauge>,
 }
 
 #[derive(rkyv::Serialize, rkyv::Deserialize, rkyv::Archive)]
@@ -255,7 +252,6 @@ where
             global_id: GlobalNodeId::root(),
             zero: zero.clone(),
             values: zero,
-            total_size_metric: None,
         }
     }
 
@@ -286,20 +282,6 @@ where
 
     fn init(&mut self, global_id: &GlobalNodeId) {
         self.global_id = global_id.clone();
-        self.total_size_metric = Some(Gauge::new(
-            NUM_ENTRIES_LABEL,
-            Some("Total number of entries stored by the operator".to_owned()),
-            Some("count"),
-            global_id,
-            vec![],
-        ))
-    }
-
-    fn metrics(&self) {
-        self.total_size_metric
-            .as_ref()
-            .unwrap()
-            .set(self.values.num_entries_deep() as f64);
     }
 
     fn metadata(&self, meta: &mut OperatorMeta) {
@@ -349,9 +331,6 @@ where
     fn clear_state(&mut self) -> Result<(), Error> {
         self.empty_output = false;
         self.values = self.zero.clone();
-        if let Some(metric) = self.total_size_metric.as_ref() {
-            metric.set(0.0)
-        }
         Ok(())
     }
 }
@@ -443,8 +422,6 @@ pub struct Z1Nested<T> {
     zero: T,
     timestamp: usize,
     values: Vec<T>,
-    // Handle to the metric `total_size`.
-    total_size_metric: Option<Gauge>,
 }
 
 impl<T> Z1Nested<T> {
@@ -453,7 +430,6 @@ impl<T> Z1Nested<T> {
             zero,
             timestamp: 0,
             values: Vec::new(),
-            total_size_metric: None,
         }
     }
 
@@ -482,29 +458,6 @@ where
         if scope > 0 {
             self.reset();
         }
-    }
-
-    fn init(&mut self, global_id: &GlobalNodeId) {
-        self.total_size_metric = Some(Gauge::new(
-            NUM_ENTRIES_LABEL,
-            Some("Total number of entries stored by the operator".to_owned()),
-            Some("count"),
-            global_id,
-            vec![],
-        ));
-    }
-
-    fn metrics(&self) {
-        let total_size: usize = self
-            .values
-            .iter()
-            .map(|batch| batch.num_entries_deep())
-            .sum();
-
-        self.total_size_metric
-            .as_ref()
-            .unwrap()
-            .set(total_size as f64);
     }
 
     fn metadata(&self, meta: &mut OperatorMeta) {

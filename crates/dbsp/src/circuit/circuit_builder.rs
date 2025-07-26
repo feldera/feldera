@@ -1016,8 +1016,6 @@ pub trait Node: Any {
 
     fn init(&mut self) {}
 
-    fn metrics(&self) {}
-
     fn metadata(&self, output: &mut OperatorMeta);
 
     fn fixedpoint(&self, scope: Scope) -> bool;
@@ -1267,26 +1265,6 @@ impl GlobalNodeId {
     /// Format global node id as LIR node id.
     pub fn lir_node_id(&self) -> LirNodeId {
         LirNodeId::new(&self.path_as_string())
-    }
-
-    pub(crate) fn metrics_id(&self) -> String {
-        let mut mid = String::with_capacity(3 + self.0.len() * 3);
-        mid.push('o');
-
-        let path = self.path();
-
-        if path.is_empty() {
-            mid.push_str("root");
-        } else {
-            for (i, node) in path.iter().enumerate() {
-                if i > 0 {
-                    mid.push('_');
-                }
-                write!(&mut mid, "{}", node.0).unwrap();
-            }
-        }
-
-        mid
     }
 }
 
@@ -3240,8 +3218,6 @@ where
 
         circuit.nodes.borrow()[id.0].borrow_mut().eval().await?;
 
-        circuit.nodes.borrow()[id.0].borrow().metrics();
-
         circuit.log_scheduler_event(&SchedulerEvent::eval_end(
             circuit.nodes.borrow()[id.0].borrow().as_ref(),
         ));
@@ -4127,10 +4103,6 @@ where
         self.operator.init(&self.id);
     }
 
-    fn metrics(&self) {
-        self.operator.metrics()
-    }
-
     fn metadata(&self, output: &mut OperatorMeta) {
         self.operator.metadata(output);
     }
@@ -4257,10 +4229,6 @@ where
 
     fn init(&mut self) {
         self.operator.init(&self.id);
-    }
-
-    fn metrics(&self) {
-        self.operator.metrics();
     }
 
     fn metadata(&self, output: &mut OperatorMeta) {
@@ -4405,10 +4373,6 @@ where
         self.operator.init(&self.id);
     }
 
-    fn metrics(&self) {
-        self.operator.metrics();
-    }
-
     fn metadata(&self, output: &mut OperatorMeta) {
         self.operator.metadata(output);
     }
@@ -4542,10 +4506,6 @@ where
 
     fn init(&mut self) {
         self.operator.init(&self.id);
-    }
-
-    fn metrics(&self) {
-        self.operator.metrics();
     }
 
     fn metadata(&self, output: &mut OperatorMeta) {
@@ -4740,10 +4700,6 @@ where
         self.operator.init(&self.id);
     }
 
-    fn metrics(&self) {
-        self.operator.metrics();
-    }
-
     fn metadata(&self, output: &mut OperatorMeta) {
         self.operator.metadata(output);
     }
@@ -4936,10 +4892,6 @@ where
         self.operator.init(&self.id);
     }
 
-    fn metrics(&self) {
-        self.operator.metrics()
-    }
-
     fn metadata(&self, output: &mut OperatorMeta) {
         self.operator.metadata(output);
     }
@@ -5104,10 +5056,6 @@ where
 
     fn init(&mut self) {
         self.operator.init(&self.id);
-    }
-
-    fn metrics(&self) {
-        self.operator.metrics();
     }
 
     fn metadata(&self, output: &mut OperatorMeta) {
@@ -5297,10 +5245,6 @@ where
         self.operator.init(&self.id);
     }
 
-    fn metrics(&self) {
-        self.operator.metrics();
-    }
-
     fn metadata(&self, output: &mut OperatorMeta) {
         self.operator.metadata(output);
     }
@@ -5473,10 +5417,6 @@ where
         self.operator.init(&self.id);
     }
 
-    fn metrics(&self) {
-        self.operator.metrics();
-    }
-
     fn metadata(&self, output: &mut OperatorMeta) {
         self.operator.metadata(output);
     }
@@ -5635,11 +5575,6 @@ where
         self.operator.borrow_mut().init(&self.id);
     }
 
-    fn metrics(&self) {
-        // Avoid producing duplicate metrics for input and output parts of the operator;
-        // otherwise it will be double-counted in circuit-level metrics.
-    }
-
     fn metadata(&self, _output: &mut OperatorMeta) {
         // Avoid producing duplicate metadata for input and output parts of the operator;
         // otherwise it will be double-counted in circuit-level metrics.
@@ -5783,10 +5718,6 @@ where
 
     fn init(&mut self) {
         self.operator.borrow_mut().init(&self.id);
-    }
-
-    fn metrics(&self) {
-        self.operator.borrow().metrics()
     }
 
     fn metadata(&self, output: &mut OperatorMeta) {

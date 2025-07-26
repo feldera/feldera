@@ -1,6 +1,5 @@
 use crate::circuit::circuit_builder::{register_replay_stream, StreamId};
 use crate::circuit::metadata::NUM_INPUTS;
-use crate::circuit::metrics::Gauge;
 use crate::dynamic::{Weight, WeightTrait};
 use crate::operator::require_persistent_id;
 use crate::trace::{BatchReaderFactories, Builder, MergeCursor};
@@ -694,7 +693,6 @@ where
 {
     // Total number of input tuples processed by the operator.
     num_inputs: usize,
-    num_inputs_metric: Option<Gauge>,
 
     _phantom: PhantomData<T>,
 }
@@ -715,7 +713,6 @@ where
     pub fn new() -> Self {
         Self {
             num_inputs: 0,
-            num_inputs_metric: None,
             _phantom: PhantomData,
         }
     }
@@ -727,23 +724,6 @@ where
 {
     fn name(&self) -> Cow<'static, str> {
         Cow::from("UntimedTraceAppend")
-    }
-
-    fn init(&mut self, global_id: &GlobalNodeId) {
-        self.num_inputs_metric = Some(Gauge::new(
-            NUM_INPUTS,
-            None,
-            Some("count"),
-            global_id,
-            vec![],
-        ));
-    }
-
-    fn metrics(&self) {
-        self.num_inputs_metric
-            .as_ref()
-            .unwrap()
-            .set(self.num_inputs as f64);
     }
 
     fn metadata(&self, meta: &mut OperatorMeta) {
@@ -802,7 +782,6 @@ pub struct TraceAppend<T: Trace, B: BatchReader, C> {
 
     // Total number of input tuples processed by the operator.
     num_inputs: usize,
-    num_inputs_metric: Option<Gauge>,
 
     _phantom: PhantomData<(T, B)>,
 }
@@ -813,7 +792,6 @@ impl<T: Trace, B: BatchReader, C> TraceAppend<T, B, C> {
             clock,
             output_factories: output_factories.clone(),
             num_inputs: 0,
-            num_inputs_metric: None,
             _phantom: PhantomData,
         }
     }
@@ -830,23 +808,6 @@ where
     }
     fn fixedpoint(&self, _scope: Scope) -> bool {
         true
-    }
-
-    fn init(&mut self, global_id: &GlobalNodeId) {
-        self.num_inputs_metric = Some(Gauge::new(
-            NUM_INPUTS,
-            None,
-            Some("count"),
-            global_id,
-            vec![],
-        ));
-    }
-
-    fn metrics(&self) {
-        self.num_inputs_metric
-            .as_ref()
-            .unwrap()
-            .set(self.num_inputs as f64);
     }
 
     fn metadata(&self, meta: &mut OperatorMeta) {
@@ -946,11 +907,8 @@ pub struct Z1Trace<C: Circuit, B: Batch, T: Trace> {
     root_scope: Scope,
     reset_on_clock_start: bool,
     bounds: TraceBounds<T::Key, T::Val>,
-    // Handle to update the metric `total_size`.
-    total_size_metric: Option<Gauge>,
 
     // Metrics maintained by the trace.
-    trace_metrics: Option<T::Metrics>,
     batch_factories: B::Factories,
     // Stream whose integral this Z1 operator stores, if any.
     delta_stream: Option<Stream<C, B>>,
@@ -981,8 +939,6 @@ where
             root_scope,
             reset_on_clock_start,
             bounds,
-            total_size_metric: None,
-            trace_metrics: None,
             delta_stream: None,
         }
     }
@@ -1053,31 +1009,6 @@ where
 
     fn init(&mut self, global_id: &GlobalNodeId) {
         self.global_id = global_id.clone();
-        self.total_size_metric = Some(Gauge::new(
-            "total_size",
-            None,
-            Some("count"),
-            global_id,
-            vec![],
-        ));
-
-        self.trace_metrics = Some(T::init_operator_metrics(global_id));
-    }
-
-    fn metrics(&self) {
-        let total_size = self
-            .trace
-            .as_ref()
-            .map(|trace| trace.num_entries_deep())
-            .unwrap_or(0);
-
-        self.total_size_metric
-            .as_ref()
-            .unwrap()
-            .set(total_size as f64);
-        if let Some(trace) = self.trace.as_ref() {
-            trace.metrics(self.trace_metrics.as_ref().unwrap());
-        }
     }
 
     fn metadata(&self, meta: &mut OperatorMeta) {
@@ -1133,9 +1064,6 @@ where
         self.trace = Some(T::new(&self.trace_factories));
         self.replay_state = None;
         self.dirty = vec![false; self.root_scope as usize + 1];
-        if let Some(metric) = self.total_size_metric.as_ref() {
-            metric.set(0.0)
-        }
 
         Ok(())
     }
