@@ -104,7 +104,7 @@ jobs:
   adapter-tests-pubsub:
     if: ${{ !contains(vars.CI_SKIP_JOBS, 'adapter-tests-pubsub') }}
     name: Test Adapters (PubSub only)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest-amd64
     services:
       pubsub:
         image: thekevjames/gcloud-pubsub-emulator:e852273e07

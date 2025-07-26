@@ -128,7 +128,7 @@ jobs:
   # https://github.com/orgs/community/discussions/45969
   merge-manifests:
     name: Merge Docker Manifests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest-amd64
     needs: build-docker
     steps:
       - name: Download digests

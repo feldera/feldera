@@ -55,7 +55,7 @@ jobs:
   # and https://github.com/orgs/community/discussions/103114
   main:
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest-amd64
     needs:
       - invoke-build-rust
       - invoke-build-java
