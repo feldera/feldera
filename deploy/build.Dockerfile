@@ -48,7 +48,9 @@ RUN apt-get update --fix-missing && apt-get install -y \
     # Looks like on our arm machines we need npm,
     # otherwise `bun run build` fails during `svelte-kit sync` with SIGABRT (?)
     # somehow it works fine without npm on x86_64 machines :/
-    npm
+    npm \
+    # For envsubst (used in some scripts)
+    gettext
 
 # Install trufflehog
 RUN curl -sSfL https://raw.githubusercontent.com/trufflesecurity/trufflehog/main/scripts/install.sh | sh -s -- -b /usr/local/bin v3.90.1
