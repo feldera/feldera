@@ -5417,7 +5417,7 @@
       },
       "MetricsFormat": {
         "type": "string",
-        "description": "Circuit metrics output format.\n- `prometheus`: [format](https://github.com/prometheus/docs/blob/main/content/docs/instrumenting/exposition_formats.md) expected by Prometheus\n- `json`: JSON format",
+        "description": "Circuit metrics output format.\n- `prometheus`: [format](https://github.com/prometheus/docs/blob/4b1b80f5f660a2f8dc25a54f52a65a502f31879a/docs/instrumenting/exposition_formats.md) expected by Prometheus\n- `json`: JSON format",
         "enum": [
           "prometheus",
           "json"
