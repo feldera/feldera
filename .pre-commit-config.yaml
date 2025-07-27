@@ -45,6 +45,8 @@ repos:
         language: system
         files: \.rs$
         pass_filenames: false
+      # The reason this runs after the openapi update is because the openapi
+      # generation adds documentation to e.g., the rest-api crate.
       - id: cargo-doc
         name: Cargo Documentation
         description: Generate documentation with warnings treated as errors
