@@ -24,6 +24,7 @@ pub mod checkpoint_synchronizer;
 pub mod error;
 pub mod fbuf;
 pub mod file;
+pub mod histogram;
 pub mod tokio;
 
 /// Extension for batch files used by the engine.

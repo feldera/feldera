@@ -75,13 +75,12 @@ use dbsp::{
     utils::*,
     DBData, OrdIndexedZSet, OrdZSet, OutputHandle, SetHandle, ZSetHandle, ZWeight,
 };
-use metrics::{counter, Counter};
 use num::PrimInt;
 use num_traits::Pow;
-use std::fmt::Debug;
 use std::marker::PhantomData;
 use std::ops::{Add, Deref, Neg};
-use std::sync::{LazyLock, OnceLock};
+use std::sync::OnceLock;
+use std::{fmt::Debug, sync::atomic::Ordering};
 
 /// Convert a value of a SQL data type to an integer
 /// that preserves ordering.  Used for partitioned_rolling_aggregates
@@ -1063,11 +1062,7 @@ where
 
 #[doc(hidden)]
 pub fn late() {
-    static TOTAL_LATE_RECORDS_COUNTER: LazyLock<Counter> =
-        LazyLock::new(|| counter!(TOTAL_LATE_RECORDS));
-
-    // println!("Late record");
-    TOTAL_LATE_RECORDS_COUNTER.increment(1);
+    TOTAL_LATE_RECORDS.fetch_add(1, Ordering::Relaxed);
 }
 
 #[doc(hidden)]

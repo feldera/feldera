@@ -15,7 +15,6 @@ use feldera_storage::{
 use feldera_types::config::{
     FileBackendConfig, StorageBackendConfig, StorageCacheConfig, StorageConfig,
 };
-use metrics::counter;
 use std::ffi::OsString;
 use std::fs::{create_dir_all, DirEntry};
 use std::io::{ErrorKind, IoSlice, Write};
@@ -154,7 +153,7 @@ impl Drop for DeleteOnDrop {
                 warn!("Unable to delete file {:?}: {:?}", self.path, e);
             } else {
                 self.usage.fetch_sub(self.size as i64, Ordering::Relaxed);
-                counter!(FILES_DELETED).increment(1);
+                FILES_DELETED.fetch_add(1, Ordering::Relaxed);
             }
         }
     }
@@ -396,7 +395,7 @@ impl StorageBackend for PosixBackend {
             }
             other => other,
         }?;
-        counter!(FILES_CREATED).increment(1);
+        FILES_CREATED.fetch_add(1, Ordering::Relaxed);
         Ok(Box::new(PosixWriter::new(
             file,
             name.clone(),

@@ -31,7 +31,6 @@ itertools = { workspace = true }
 lexical-core = { workspace = true }
 like = { workspace = true }
 md-5 = { workspace = true }
-metrics = { workspace = true }
 num = { workspace = true }
 num-traits = { workspace = true, features = ["std"] }
 paste = { workspace = true }

@@ -1,4 +1,5 @@
 use crate::circuit::checkpointer::Checkpointer;
+use crate::circuit::metrics::DBSP_STEP;
 use crate::circuit::runtime::ThreadType;
 use crate::monitor::visual_graph::Graph;
 use crate::storage::backend::StorageError;
@@ -14,13 +15,13 @@ use feldera_storage::{StorageBackend, StoragePath};
 use feldera_types::checkpoint::CheckpointMetadata;
 pub use feldera_types::config::{StorageCacheConfig, StorageConfig, StorageOptions};
 use itertools::Either;
-use metrics::counter;
 use minitrace::collector::SpanContext;
 use minitrace::local::LocalSpan;
 use minitrace::Span;
 use serde::Deserialize;
 use serde_json::Value;
 use std::collections::BTreeMap;
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::time::Duration;
 use std::{
@@ -844,7 +845,7 @@ impl DBSPHandle {
     }
 
     fn step_regular(&mut self) -> Result<(), DbspError> {
-        counter!("feldera.dbsp.step").increment(1);
+        DBSP_STEP.fetch_add(1, Ordering::Relaxed);
         let start = Instant::now();
         let span = Arc::new(Span::root("step", SpanContext::random()));
         let _guard = span.set_local_parent();
@@ -859,7 +860,7 @@ impl DBSPHandle {
     /// In the bootstrap mode, after performing a step, check if all workers have finished bootstrapping.
     /// If so, notify all workers to exit the bootstrap phase and start normal operation.
     fn step_bootstrap(&mut self) -> Result<(), DbspError> {
-        counter!("feldera.dbsp.step").increment(1);
+        DBSP_STEP.fetch_add(1, Ordering::Relaxed);
         let start = Instant::now();
         let span = Arc::new(Span::root("step_bootstrap", SpanContext::random()));
         let _guard = span.set_local_parent();

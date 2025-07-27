@@ -7,7 +7,10 @@
 //! so it is beneficial to reduce the number by merging batches.
 
 use crate::{
-    circuit::metadata::{MetaItem, OperatorMeta},
+    circuit::{
+        metadata::{MetaItem, OperatorMeta},
+        metrics::COMPACTION_STALL_TIME,
+    },
     dynamic::{DynVec, Factory, Weight},
     storage::buffer_cache::CacheStats,
     time::Timestamp,
@@ -29,7 +32,6 @@ use crate::trace::CommittedSpine;
 use enum_map::EnumMap;
 use feldera_storage::StoragePath;
 use feldera_types::checkpoint::PSpineBatches;
-use metrics::counter;
 use ouroboros::self_referencing;
 use rand::Rng;
 use rkyv::{
@@ -37,9 +39,9 @@ use rkyv::{
     Fallible, Serialize,
 };
 use size_of::{Context, SizeOf};
-use std::collections::VecDeque;
 use std::sync::{Arc, MutexGuard};
 use std::time::{Duration, Instant};
+use std::{collections::VecDeque, sync::atomic::Ordering};
 use std::{
     fmt::{self, Debug, Display, Formatter},
     ops::DerefMut,
@@ -58,7 +60,6 @@ use super::{cursor::CursorFactory, BatchLocation};
 
 mod thread;
 
-use crate::circuit::metrics::COMPACTION_STALL_TIME;
 pub use list_merger::ListMerger;
 
 /// Maximum amount of levels in the spine.
@@ -439,7 +440,7 @@ where
             let start = Instant::now();
             let mut state = self.no_backpressure.wait(state).unwrap();
             state.spine_stats.backpressure_wait += start.elapsed();
-            counter!(COMPACTION_STALL_TIME).increment(start.elapsed().as_nanos() as u64);
+            COMPACTION_STALL_TIME.fetch_add(start.elapsed().as_nanos() as u64, Ordering::Relaxed);
         }
     }
 
