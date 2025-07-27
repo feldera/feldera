@@ -22,8 +22,7 @@ impl<const P: usize, const S: usize> HasZero for Fixed<P, S> {
 }
 
 impl<const P: usize, const S: usize> HasOne for Fixed<P, S> {
-    /// This will panic if 1 can't be represented in this type (that is, if `S
-    /// >= P`).
+    /// This will panic if 1 can't be represented in this type (that is, if `S >= P`).
     fn one() -> Self {
         Self::ONE
     }

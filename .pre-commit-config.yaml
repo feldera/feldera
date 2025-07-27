@@ -45,6 +45,13 @@ repos:
         language: system
         files: \.rs$
         pass_filenames: false
+      - id: cargo-doc
+        name: Cargo Documentation
+        description: Generate documentation with warnings treated as errors
+        entry: bash -c 'RUSTDOCFLAGS="-D warnings" cargo doc --no-deps'
+        language: rust
+        files: \.rs$
+        pass_filenames: false
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.9.10
     hooks:
