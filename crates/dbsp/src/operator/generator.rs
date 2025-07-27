@@ -50,6 +50,55 @@ where
     }
 }
 
+/// A version of Generator that passes a flag to the generator function when `flush` has been called.
+pub struct MacrostepGenerator<T, F> {
+    generator: F,
+    flush: bool,
+    _t: PhantomData<T>,
+}
+
+impl<T, F> MacrostepGenerator<T, F>
+where
+    T: Clone,
+{
+    /// Creates a generator
+    pub fn new(g: F) -> Self {
+        Self {
+            generator: g,
+            flush: false,
+            _t: Default::default(),
+        }
+    }
+}
+
+impl<T, F> Operator for MacrostepGenerator<T, F>
+where
+    T: Data,
+    F: 'static,
+{
+    fn name(&self) -> Cow<'static, str> {
+        Cow::from("Generator")
+    }
+    fn flush(&mut self) {
+        self.flush = true;
+    }
+    fn fixedpoint(&self, _scope: Scope) -> bool {
+        false
+    }
+}
+
+impl<T, F> SourceOperator<T> for MacrostepGenerator<T, F>
+where
+    F: FnMut(bool) -> T + 'static,
+    T: Data,
+{
+    async fn eval(&mut self) -> T {
+        let result = (self.generator)(self.flush);
+        self.flush = false;
+        result
+    }
+}
+
 /// Generator operator for nested circuits.
 ///
 /// At each parent clock tick, invokes a user-provided reset closure, which

@@ -1515,8 +1515,8 @@ public class ToRustVisitor extends CircuitVisitor {
         this.builder.append(" = ")
                 .append("circuit.add_source(")
                 .increase()
-                .append("Generator::new(|| ");
-        this.builder.append("if Runtime::worker_index() == 0 {");
+                .append("MacrostepGenerator::new(|flush| ");
+        this.builder.append("if Runtime::worker_index() == 0 && flush {");
         operator.function.accept(this.innerVisitor);
         this.builder.append("} else {");
         if (operator.outputType.is(DBSPTypeZSet.class)) {

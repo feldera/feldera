@@ -66,7 +66,7 @@ pub use dynamic::aggregate::{
     Aggregator, Avg, Fold, Max, MaxSemigroup, Min, MinSemigroup, Postprocess,
 };
 pub use dynamic::neighborhood::DynNeighborhood;
-pub use generator::{Generator, GeneratorNested};
+pub use generator::{Generator, GeneratorNested, MacrostepGenerator};
 // // //pub use index::Index;
 pub use group::CmpFunc;
 use input::Mailbox;
