@@ -20,7 +20,9 @@
 use crate::catalog::OutputCollectionHandles;
 use crate::controller::checkpoint::CheckpointOffsets;
 use crate::controller::journal::Journal;
+use crate::controller::stats::{InputEndpointMetrics, OutputEndpointMetrics};
 use crate::create_integrated_output_endpoint;
+use crate::server::metrics::{LabelStack, MetricsFormatter, MetricsWriter};
 use crate::transport::clock::now_endpoint_config;
 use crate::transport::Step;
 use crate::transport::{input_transport_config_to_endpoint, output_transport_config_to_endpoint};
@@ -38,6 +40,9 @@ use crossbeam::{
     sync::{Parker, ShardedLock, Unparker},
 };
 use datafusion::prelude::*;
+use dbsp::circuit::metrics::{
+    COMPACTION_STALL_TIME, DBSP_STEP, FILES_CREATED, FILES_DELETED, TOTAL_LATE_RECORDS,
+};
 use dbsp::circuit::tokio::TOKIO;
 use dbsp::circuit::{CircuitStorageConfig, DevTweaks, Mode};
 use dbsp::storage::backend::{StorageBackend, StoragePath};
@@ -59,8 +64,6 @@ use governor::DefaultDirectRateLimiter;
 use governor::Quota;
 use governor::RateLimiter;
 use journal::StepMetadata;
-use metrics_exporter_prometheus::PrometheusHandle;
-use metrics_util::debugging::Snapshotter;
 use nonzero_ext::nonzero;
 use rmpv::Value as RmpValue;
 use serde_json::Value as JsonValue;
@@ -111,9 +114,7 @@ use feldera_types::config::{FileBackendConfig, FtConfig, FtModel, OutputBufferCo
 use feldera_types::constants::{STATE_FILE, STEPS_FILE};
 use feldera_types::format::json::{JsonFlavor, JsonParserConfig, JsonUpdateFormat};
 use feldera_types::program_schema::{canonical_identifier, SqlIdentifier};
-pub use stats::{
-    CompletionToken, ControllerMetric, ControllerStatus, InputEndpointStatus, OutputEndpointStatus,
-};
+pub use stats::{CompletionToken, ControllerStatus, InputEndpointStatus};
 
 /// Maximal number of concurrent API connections per circuit
 /// (including both input and output connections).
@@ -547,10 +548,6 @@ impl Controller {
         &self.inner.status
     }
 
-    pub fn metrics_snapshotter(&self) -> Arc<Snapshotter> {
-        metrics_recorder::snapshotter()
-    }
-
     pub fn catalog(&self) -> &Arc<Box<dyn CircuitCatalog>> {
         &self.inner.catalog
     }
@@ -667,8 +664,144 @@ impl Controller {
         self.inner.status.pipeline_complete()
     }
 
-    pub(crate) fn metrics(&self) -> PrometheusHandle {
-        metrics_recorder::prometheus_handle()
+    pub fn write_metrics<F>(
+        &self,
+        metrics: &mut MetricsWriter<F>,
+        labels: &LabelStack,
+        status: &ControllerStatus,
+    ) where
+        F: MetricsFormatter,
+    {
+        metrics.gauge(
+            "mpu_msecs",
+            "cpu time used by the pipeline process in milliseconds",
+            |w| w.write_value(labels, status.global_metrics.cpu_msecs()),
+        );
+        metrics.gauge(
+            "rss_bytes",
+            "resident set size of the pipeline process in bytes",
+            |w| w.write_value(labels, status.global_metrics.rss_bytes()),
+        );
+        metrics.gauge(
+            "buffered_input_records",
+            "total number of records currently buffered by all endpoints",
+            |w| w.write_value(labels, status.num_buffered_input_records()),
+        );
+        metrics.gauge(
+            "total_input_records",
+            "total number of input records received from all connectors",
+            |w| w.write_value(labels, status.num_total_input_records()),
+        );
+        metrics.gauge(
+            "total_processed_records",
+            "total number of input records processed by the pipeline",
+            |w| w.write_value(labels, status.num_total_processed_records()),
+        );
+        metrics.gauge("pipeline_complete", "boolean, 1 if true", |w| {
+            w.write_value(labels, status.pipeline_complete() as u8)
+        });
+        metrics.counter(
+            "records.late",
+            "Number of records dropped due to LATENESS annotations",
+            |w| w.write_value(labels, &TOTAL_LATE_RECORDS),
+        );
+        metrics.counter(
+            "file.compaction_stall_time",
+            "Time in nanoseconds a worker was stalled waiting for more merges to complete",
+            |w| w.write_value(labels, &COMPACTION_STALL_TIME),
+        );
+        metrics.counter(
+            "file.total_files_created",
+            "Total number of files created",
+            |w| w.write_value(labels, &FILES_CREATED),
+        );
+        metrics.counter(
+            "file.total_files_deleted",
+            "Total number of files deleted",
+            |w| w.write_value(labels, &FILES_DELETED),
+        );
+        metrics.counter(
+            "feldera.dbsp.step",
+            "Total number of DBSP steps executed",
+            |w| w.write_value(labels, &DBSP_STEP),
+        );
+
+        fn write_input_metric<F, M>(
+            metrics: &mut MetricsWriter<F>,
+            labels: &LabelStack,
+            status: &ControllerStatus,
+            name: &str,
+            func: M,
+        ) where
+            F: MetricsFormatter,
+            M: Fn(&InputEndpointMetrics) -> &AtomicU64,
+        {
+            metrics.gauge(name, "", |w| {
+                for input in status.input_status().values() {
+                    w.write_value(
+                        &labels.with("endpoint", &input.endpoint_name),
+                        func(&input.metrics),
+                    );
+                }
+            });
+        }
+        write_input_metric(metrics, labels, status, "input_total_bytes", |m| {
+            &m.total_bytes
+        });
+        write_input_metric(metrics, labels, status, "input_total_records", |m| {
+            &m.total_records
+        });
+        write_input_metric(metrics, labels, status, "input_buffered_records", |m| {
+            &m.buffered_records
+        });
+        write_input_metric(metrics, labels, status, "input_num_transport_errors", |m| {
+            &m.num_transport_errors
+        });
+        write_input_metric(metrics, labels, status, "input_num_parse_errors", |m| {
+            &m.num_parse_errors
+        });
+
+        fn write_output_metric<F, M>(
+            metrics: &mut MetricsWriter<F>,
+            labels: &LabelStack,
+            status: &ControllerStatus,
+            name: &str,
+            func: M,
+        ) where
+            F: MetricsFormatter,
+            M: Fn(&OutputEndpointMetrics) -> &AtomicU64,
+        {
+            metrics.gauge(name, "", |w| {
+                for output in status.output_status().values() {
+                    w.write_value(
+                        &labels.with("endpoint", &output.endpoint_name),
+                        func(&output.metrics),
+                    );
+                }
+            });
+        }
+        write_output_metric(metrics, labels, status, "output_transmitted_bytes", |m| {
+            &m.transmitted_bytes
+        });
+        write_output_metric(metrics, labels, status, "output_transmitted_records", |m| {
+            &m.transmitted_records
+        });
+        write_output_metric(metrics, labels, status, "output_buffered_records", |m| {
+            &m.buffered_records
+        });
+        write_output_metric(metrics, labels, status, "output_buffered_batches", |m| {
+            &m.buffered_batches
+        });
+        write_output_metric(
+            metrics,
+            labels,
+            status,
+            "output_num_transport_errors",
+            |m| &m.num_transport_errors,
+        );
+        write_output_metric(metrics, labels, status, "output_num_encode_errors", |m| {
+            &m.num_encode_errors
+        });
     }
 
     /// Execute a SQL query over materialized tables and views;
@@ -2014,14 +2147,6 @@ impl ControllerInit {
         })
     }
     fn new(config: PipelineConfig) -> Result<Self, ControllerError> {
-        // Initialize the metrics recorder early.  If we don't install it before
-        // creating the circuit, DBSP metrics will not be recorded.
-        let pipeline_name = config
-            .name
-            .as_ref()
-            .map_or_else(|| "unnamed".to_string(), |n| n.clone());
-        metrics_recorder::init(pipeline_name);
-
         let Some((storage_config, storage_options)) = config.storage() else {
             if !config.global.fault_tolerance.is_enabled() {
                 info!("storage not configured, so suspend-and-resume and fault tolerance will not be available");
@@ -2164,70 +2289,6 @@ impl ControllerInit {
             mode: Mode::Persistent,
             dev_tweaks: DevTweaks::from_config(&pipeline_config.global.dev_tweaks),
         })
-    }
-}
-
-mod metrics_recorder {
-    use std::{
-        sync::{Arc, OnceLock},
-        thread::{self, sleep},
-        time::Duration,
-    };
-
-    use metrics::set_global_recorder;
-    use metrics_exporter_prometheus::{PrometheusBuilder, PrometheusHandle};
-    use metrics_util::{
-        debugging::{DebuggingRecorder, Snapshotter},
-        layers::FanoutBuilder,
-    };
-
-    static METRIC_HANDLES: OnceLock<(Arc<Snapshotter>, PrometheusHandle)> = OnceLock::new();
-
-    /// Initializes the global metrics recorder.
-    ///
-    /// This has to happen early, before the circuit is initialized; otherwise,
-    /// DBSP metrics won't be recorded.
-    pub fn init(pipeline_name: String) {
-        METRIC_HANDLES.get_or_init(|| {
-            let debugging_recorder = DebuggingRecorder::new();
-            let snapshotter = debugging_recorder.snapshotter();
-            let prometheus_recorder = PrometheusBuilder::new()
-                .add_global_label("pipeline", pipeline_name)
-                .build_recorder();
-            let prometheus_handle = prometheus_recorder.handle();
-            let builder = FanoutBuilder::default()
-                .add_recorder(debugging_recorder)
-                .add_recorder(prometheus_recorder);
-
-            // The Prometheus recorder needs to run periodic maintenance.  It
-            // does that automatically in some cases but not in ours.  Spawn a
-            // thread to do it every 5 seconds, which is also the interval it
-            // uses by default when it takes of it internally.
-            thread::Builder::new()
-                .name(String::from("prometheus"))
-                .spawn({
-                    let prometheus_handle = prometheus_handle.clone();
-                    move || loop {
-                        sleep(Duration::from_secs(5));
-                        prometheus_handle.run_upkeep();
-                    }
-                })
-                .unwrap();
-
-            set_global_recorder(builder.build()).expect("failed to install metrics exporter");
-
-            (Arc::new(snapshotter), prometheus_handle)
-        });
-    }
-
-    /// Returns the global metrics snapshotter. [init] must already have been called.
-    pub fn snapshotter() -> Arc<Snapshotter> {
-        METRIC_HANDLES.get().unwrap().0.clone()
-    }
-
-    /// Returns the global Prometheus handle. [init] must already have been called.
-    pub fn prometheus_handle() -> PrometheusHandle {
-        METRIC_HANDLES.get().unwrap().1.clone()
     }
 }
 

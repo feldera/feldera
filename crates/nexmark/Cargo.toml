@@ -38,8 +38,6 @@ clap = { workspace = true }
 cached = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 rkyv = { workspace = true, features = ["std", "size_64"] }
-metrics = { workspace = true }
-metrics-util = { workspace = true }
 size-of = { workspace = true, features = ["hashbrown", "xxhash-xxh3", "rust_decimal"] }
 
 [dev-dependencies]

@@ -2,7 +2,6 @@
 //! fashion.
 
 use crate::circuit::checkpointer::Checkpointer;
-use crate::circuit::metrics::describe_metrics;
 use crate::circuit::DevTweaks;
 use crate::error::Error as DbspError;
 use crate::storage::backend::StorageBackend;
@@ -490,8 +489,6 @@ impl Runtime {
         let config: CircuitConfig = config.into();
 
         let workers = config.layout.local_workers();
-
-        describe_metrics();
 
         let runtime = Self(Arc::new(RuntimeInner::new(config)?));
 

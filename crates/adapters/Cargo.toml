@@ -94,9 +94,6 @@ apache-avro = { workspace = true, optional = true }
 schema_registry_converter = { workspace = true, features = ["avro", "blocking"], optional = true }
 rust_decimal = { package = "feldera_rust_decimal", version = "1.33.1-feldera.1", features = ["tokio-pg"] }
 url = { workspace = true }
-metrics = { workspace = true }
-metrics-util = { workspace = true }
-metrics-exporter-prometheus = { workspace = true }
 ordered-float = { workspace = true }
 openssl = { workspace = true }
 minitrace = { workspace = true, features = ["enable"] }
@@ -140,6 +137,7 @@ aws-credential-types = "1.2.3"
 feldera-sqllib = { workspace = true }
 inventory = { workspace = true }
 backtrace = { workspace = true }
+itertools = { workspace = true }
 
 [package.metadata.cargo-machete]
 ignored = ["num-traits"]

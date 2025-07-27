@@ -5,13 +5,9 @@
 use super::{
     BlockLocation, FileId, FileReader, FileWriter, HasFileId, StorageBackend, StorageError,
 };
-use crate::circuit::metrics::{
-    FILES_CREATED, READS_FAILED, READS_SUCCESS, TOTAL_BYTES_READ, TOTAL_BYTES_WRITTEN,
-    WRITES_SUCCESS,
-};
+use crate::circuit::metrics::FILES_CREATED;
 use crate::storage::buffer_cache::FBuf;
 use feldera_storage::{StorageFileType, StoragePath};
-use metrics::counter;
 use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 use std::{
     collections::HashMap,
@@ -102,9 +98,6 @@ impl FileWriter for MemoryWriter {
             .usage
             .fetch_add(data.len() as i64, Ordering::Relaxed);
 
-        counter!(TOTAL_BYTES_WRITTEN).increment(data.len() as u64);
-        counter!(WRITES_SUCCESS).increment(1);
-
         Ok(data)
     }
 
@@ -157,14 +150,8 @@ impl FileReader for MemoryReader {
 
     fn read_block(&self, location: BlockLocation) -> Result<Arc<FBuf>, StorageError> {
         if location.after() > self.file.size {
-            counter!(READS_FAILED).increment(1);
             return Err(IoError::from(ErrorKind::UnexpectedEof).into());
         }
-
-        // We know that the read will succeed, we're just not sure how yet, so
-        // increment counters.
-        counter!(TOTAL_BYTES_READ).increment(location.size as u64);
-        counter!(READS_SUCCESS).increment(1);
 
         let index = self
             .file
@@ -210,7 +197,7 @@ impl Drop for MemoryReader {
 impl StorageBackend for MemoryBackend {
     fn create_named(&self, name: &StoragePath) -> Result<Box<dyn FileWriter>, StorageError> {
         let fm = MemoryWriter::new(self.clone(), name);
-        counter!(FILES_CREATED).increment(1);
+        FILES_CREATED.fetch_add(1, Ordering::Relaxed);
         Ok(Box::new(fm))
     }
 

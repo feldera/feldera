@@ -1,5 +1,8 @@
-use crate::controller::{CompletionToken, ControllerMetric};
+use crate::controller::CompletionToken;
 use crate::format::{get_input_format, get_output_format};
+use crate::server::metrics::{
+    JsonFormatter, LabelStack, MetricsFormatter, MetricsWriter, PrometheusFormatter,
+};
 use crate::{
     adhoc::{adhoc_websocket, stream_adhoc_result},
     controller::ConnectorConfig,
@@ -74,13 +77,12 @@ use tracing_subscriber::EnvFilter;
 use uuid::Uuid;
 
 pub mod error;
-mod prometheus;
+pub mod metrics;
 
 #[cfg(target_family = "unix")]
 mod stack_overflow_backtrace;
 
 pub use self::error::{ErrorResponse, PipelineError, MAX_REPORTED_PARSE_ERRORS};
-use self::prometheus::PrometheusMetrics;
 
 /// Tracks the health of the pipeline.
 ///
@@ -193,7 +195,6 @@ struct ServerState {
     phase: Arc<RwLock<PipelinePhase>>,
     metadata: RwLock<String>,
     controller: RwLock<Option<Controller>>,
-    prometheus: RwLock<Option<PrometheusMetrics>>,
     checkpoint_state: Arc<Mutex<CheckpointState>>,
     sync_checkpoint_state: Arc<Mutex<CheckpointSyncState>>,
     /// Channel used to send a `kill` command to
@@ -210,7 +211,6 @@ impl ServerState {
             controller: RwLock::new(None),
             checkpoint_state: Arc::new(Mutex::new(CheckpointState::default())),
             sync_checkpoint_state: Arc::new(Mutex::new(CheckpointSyncState::default())),
-            prometheus: RwLock::new(None),
             terminate_sender,
         }
     }
@@ -650,9 +650,6 @@ fn do_bootstrap(
             as Box<dyn Fn(Arc<ControllerError>) + Send + Sync>,
     )?;
 
-    *state.prometheus.write().unwrap() = Some(
-        PrometheusMetrics::new(&controller).map_err(|e| ControllerError::prometheus_error(&e))?,
-    );
     *state.controller.write().unwrap() = Some(controller);
 
     info!("Pipeline initialization complete");
@@ -682,7 +679,7 @@ where
         .service(completion_status)
         .service(query)
         .service(stats)
-        .service(metrics)
+        .service(metrics_handler)
         .service(metadata)
         .service(heap_profile)
         .service(dump_profile)
@@ -802,40 +799,37 @@ async fn stats(state: WebData<ServerState>) -> impl Responder {
 
 /// Retrieve circuit metrics.
 #[get("/metrics")]
-async fn metrics(
+async fn metrics_handler(
     state: WebData<ServerState>,
     query_params: web::Query<MetricsParameters>,
 ) -> impl Responder {
+    fn serialize_metrics<F>(controller: &Controller) -> String
+    where
+        F: MetricsFormatter,
+    {
+        let controller_status = controller.status();
+        let mut metrics_writer = MetricsWriter::<F>::new();
+        let labels = LabelStack::new();
+        let labels = labels.with(
+            "pipeline",
+            controller_status
+                .pipeline_config
+                .name
+                .as_ref()
+                .map_or("unnamed", |s| s.as_str()),
+        );
+        controller.write_metrics(&mut metrics_writer, &labels, controller_status);
+        metrics_writer.into_output()
+    }
+
     match &*state.controller.read().unwrap() {
         Some(controller) => match &query_params.format {
-            MetricsFormat::Prometheus => {
-                match state
-                    .prometheus
-                    .read()
-                    .unwrap()
-                    .as_ref()
-                    .unwrap()
-                    .metrics(controller)
-                {
-                    Ok(metrics) => Ok(HttpResponse::Ok()
-                        .content_type(mime::TEXT_PLAIN)
-                        .body(metrics)),
-                    Err(e) => Err(PipelineError::PrometheusError {
-                        error: e.to_string(),
-                    }),
-                }
-            }
-            MetricsFormat::Json => {
-                let snapshotter = controller.metrics_snapshotter();
-                let metrics: Vec<ControllerMetric> = snapshotter
-                    .snapshot()
-                    .into_vec()
-                    .into_iter()
-                    .map(|element| element.into())
-                    .collect();
-
-                Ok(HttpResponse::Ok().json(&metrics))
-            }
+            MetricsFormat::Prometheus => Ok(HttpResponse::Ok()
+                .content_type(mime::TEXT_PLAIN)
+                .body(serialize_metrics::<PrometheusFormatter>(controller))),
+            MetricsFormat::Json => Ok(HttpResponse::Ok()
+                .content_type(mime::APPLICATION_JSON)
+                .body(serialize_metrics::<JsonFormatter>(controller))),
         },
         None => Err(missing_controller_error(&state)),
     }
@@ -1111,15 +1105,7 @@ async fn create_http_input_endpoint(
                 Box::new(endpoint.clone()) as Box<dyn TransportInputEndpoint>,
                 None,
             ) {
-                Ok(endpoint_id) => {
-                    let mut prometheus = state.prometheus.write().unwrap();
-                    if let Some(prometheus) = prometheus.as_mut() {
-                        prometheus
-                            .add_input_endpoint(endpoint_id, &endpoint_name)
-                            .unwrap();
-                    }
-                    endpoint_id
-                }
+                Ok(endpoint_id) => endpoint_id,
                 Err(e) => {
                     controller.unregister_api_connection();
                     debug!("Failed to create API endpoint: '{e}'");

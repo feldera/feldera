@@ -976,7 +976,7 @@ where
         self.location
     }
 
-     fn metadata(&self, meta: &mut OperatorMeta) {
+    fn metadata(&self, meta: &mut OperatorMeta) {
         meta.extend(metadata! {
             NUM_OUTPUTS => MetaItem::Count(self.num_outputs),
         });
