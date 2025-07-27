@@ -132,4 +132,16 @@ where
             None
         }
     }
+
+    async fn eval_owned(&mut self, batch: B) -> Option<Spine<B>> {
+        self.state.insert(batch);
+        if self.flush {
+            self.flush = false;
+            let mut spine = Spine::<B>::new(&self.factories);
+            std::mem::swap(&mut self.state, &mut spine);
+            Some(spine)
+        } else {
+            None
+        }
+    }
 }
