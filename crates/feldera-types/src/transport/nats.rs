@@ -1,6 +1,6 @@
+use async_nats::jetstream::consumer::pull::OrderedConfig;
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
-use async_nats::jetstream::consumer::pull::OrderedConfig;
 
 #[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
 // TODO Expose more/all of async_nats::ConnectOptions here
