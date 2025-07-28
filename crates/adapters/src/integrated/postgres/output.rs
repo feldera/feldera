@@ -248,11 +248,6 @@ fn connect(config: &PostgresWriterConfig, endpoint_name: &str) -> Result<Client,
         tracing::debug!("CA certificate provided, connecting to postgres with TLS");
         pgcnf.connect(connector)
     } else {
-        let ssl_mode = pgcnf.get_ssl_mode();
-        if !matches!(ssl_mode, postgres::config::SslMode::Disable) {
-            return Err(BackoffError::Permanent(anyhow!("`sslmode` set to `{ssl_mode:?}` but no CA certificate provided. CA certificate is required for TLS.\nTry setting the `sslmode` to `disable` or providing a CA certificate.")));
-        }
-
         tracing::debug!("no CA certificates provided, connecting to postgres without TLS");
         pgcnf.connect(NoTls)
     }?;
