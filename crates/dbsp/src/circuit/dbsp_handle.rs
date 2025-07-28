@@ -298,6 +298,10 @@ pub struct DevTweaks {
     // parsing DevTweaks. If the name or type of this field changes, make sure to
     // adjust `server/mod.rs` accordingly.
     pub stack_overflow_backtrace: bool,
+
+    /// Enable backfill avoidance feature.
+    // This flag is only used by the pipeline manager.
+    pub backfill_avoidance: bool,
 }
 
 impl DevTweaks {
