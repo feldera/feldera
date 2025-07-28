@@ -671,6 +671,30 @@ where
         }
     }
 
+    /// Like `from_batch`, but avoids cloning the batch if the output type is identical to the input type.
+    fn from_arc_batch<BI>(
+        batch: &Arc<BI>,
+        timestamp: &Self::Time,
+        factories: &Self::Factories,
+    ) -> Arc<Self>
+    where
+        BI: BatchReader<Key = Self::Key, Val = Self::Val, Time = (), R = Self::R>,
+    {
+        // Source and destination types are usually the same in the top-level scope.
+        // Optimize for this case by simply cloning the source batch. If the batch is
+        // implemented as `Arc` internally, this is essentially zero cost.
+        if TypeId::of::<BI>() == TypeId::of::<Self>() {
+            unsafe { std::mem::transmute::<&Arc<BI>, &Arc<Self>>(batch).clone() }
+        } else {
+            Arc::new(Self::from_cursor(
+                batch.cursor(),
+                timestamp,
+                factories,
+                batch.len(),
+            ))
+        }
+    }
+
     /// Creates a new batch as a copy of the tuples accessible via `cursor``,
     /// using `timestamp` for all of the new batch's timestamps.
     fn from_cursor<C>(
