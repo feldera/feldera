@@ -520,7 +520,7 @@ where
         if let Some(delta) = delta {
             self.num_inputs += delta.len();
             for batch in delta.ro_snapshot().batches() {
-                trace.insert(batch.as_ref().clone());
+                trace.insert_arc(batch.clone());
             }
         }
         trace

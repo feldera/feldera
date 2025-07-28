@@ -1242,6 +1242,10 @@ where
         self.data = Self::merge(self, &batch, &self.key_filter, &self.value_filter).data;
     }
 
+    fn insert_arc(&mut self, batch: std::sync::Arc<Self::Batch>) {
+        self.data = Self::merge(self, batch.as_ref(), &self.key_filter, &self.value_filter).data;
+    }
+
     fn clear_dirty_flag(&mut self) {}
 
     fn dirty(&self) -> bool {
