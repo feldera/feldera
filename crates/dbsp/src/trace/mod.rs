@@ -264,6 +264,10 @@ pub trait Trace: BatchReader {
     /// Introduces a batch of updates to the trace.
     fn insert(&mut self, batch: Self::Batch);
 
+    /// Introduces a batch of updates to the trace. More efficient that cloning
+    /// a batch and calling `insert`.
+    fn insert_arc(&mut self, batch: Arc<Self::Batch>);
+
     /// Clears the value of the "dirty" flag to `false`.
     ///
     /// The "dirty" flag is used to efficiently track changes to the trace,

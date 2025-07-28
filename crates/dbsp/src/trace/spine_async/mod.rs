@@ -1357,6 +1357,13 @@ where
         }
     }
 
+    fn insert_arc(&mut self, batch: Arc<Self::Batch>) {
+        if !batch.is_empty() {
+            self.dirty = true;
+            self.merger.add_batch(batch);
+        }
+    }
+
     fn clear_dirty_flag(&mut self) {
         self.dirty = false;
     }
