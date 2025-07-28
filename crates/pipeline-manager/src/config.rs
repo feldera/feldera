@@ -346,7 +346,7 @@ impl DatabaseConfig {
         let mut connector = MakeTlsConnector::new(builder.build());
 
         if self.disable_tls_hostname_verify {
-            log::info!("PostgreSQL TLS hostname verification is disabled");
+            warn!("PostgreSQL TLS hostname verification is disabled. The PostgreSQL server's hostname may not match the one specified in the SSL certificate.");
             connector.set_callback(|ctx, _| {
                 ctx.set_verify_hostname(false);
                 Ok(())
