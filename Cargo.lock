@@ -4959,6 +4959,7 @@ version = "0.96.0"
 dependencies = [
  "actix-web",
  "anyhow",
+ "async-nats",
  "csv",
  "enum-map",
  "erased-serde",
