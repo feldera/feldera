@@ -175,6 +175,10 @@ impl Drop for PostgresOutputEndpoint {
 
 const PG_CONNECTION_VALIDITY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 
+/// Configures SSL certificates for the PostgreSQL connection if enabled.
+///
+/// Sets the CA certificate (`ssl_ca_pem`) and optionally the client certificate
+/// and private key when provided.
 fn set_certs(builder: &mut SslConnectorBuilder, config: &PostgresWriterConfig) -> AnyResult<()> {
     let Some(ca_cert) = &config.ssl_ca_pem else {
         return Ok(());
@@ -217,7 +221,7 @@ fn set_certs(builder: &mut SslConnectorBuilder, config: &PostgresWriterConfig) -
     Ok(())
 }
 
-fn connect(config: &PostgresWriterConfig) -> Result<Client, BackoffError> {
+fn connect(config: &PostgresWriterConfig, endpoint_name: &str) -> Result<Client, BackoffError> {
     let connector_config = config.clone();
 
     let pgcnf = postgres::Config::from_str(&config.uri).map_err(|e| {
@@ -233,17 +237,23 @@ fn connect(config: &PostgresWriterConfig) -> Result<Client, BackoffError> {
         let mut connector = MakeTlsConnector::new(builder.build());
 
         if Some(false) == config.verify_hostname {
-            connector.set_callback(|ctx, _| {
-                tracing::info!("postgres: ssl: disabling hostname verification");
+            let endpoint_name = endpoint_name.to_owned();
+            connector.set_callback(move |ctx, _| {
+                tracing::warn!("postgres: ssl: disabling hostname verification in output connector '{endpoint_name}'. The PostgreSQL server's hostname may not match the one specified in the SSL certificate.");
                 ctx.set_verify_hostname(false);
                 Ok(())
             });
         }
 
-        tracing::info!("CA certificate found, connecting to postgres using TLS");
+        tracing::debug!("CA certificate provided, connecting to postgres with TLS");
         pgcnf.connect(connector)
     } else {
-        tracing::info!("no CA certificate found, connecting to postgres without TLS");
+        let ssl_mode = pgcnf.get_ssl_mode();
+        if !matches!(ssl_mode, postgres::config::SslMode::Disable) {
+            return Err(BackoffError::Permanent(anyhow!("`sslmode` set to `{ssl_mode:?}` but no CA certificate provided. CA certificate is required for TLS.\nTry setting the `sslmode` to `disable` or providing a CA certificate.")));
+        }
+
+        tracing::debug!("no CA certificates provided, connecting to postgres without TLS");
         pgcnf.connect(NoTls)
     }?;
 
@@ -260,7 +270,7 @@ impl PostgresOutputEndpoint {
         controller: Weak<ControllerInner>,
     ) -> Result<Self, ControllerError> {
         let table = config.table.to_owned();
-        let mut client = connect(config).map_err(|e| {
+        let mut client = connect(config, endpoint_name).map_err(|e| {
             ControllerError::invalid_transport_configuration(endpoint_name, &e.inner().to_string())
         })?;
 
@@ -463,7 +473,7 @@ impl PostgresOutputEndpoint {
         };
 
         self.transaction = None;
-        self.client = connect(&self.config)?;
+        self.client = connect(&self.config, &self.endpoint_name)?;
 
         self.prepared_statements =
             PreparedStatements::new(&self.raw_queries, &mut self.client, &self.endpoint_name)
