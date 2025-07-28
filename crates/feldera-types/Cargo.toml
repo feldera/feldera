@@ -33,6 +33,7 @@ thiserror = { workspace = true }
 regex = { workspace = true }
 chrono = { workspace = true, features = ["serde"] }
 feldera-ir = { workspace = true }
+async-nats = { workspace = true }
 
 [dev-dependencies]
 csv = { workspace = true }
