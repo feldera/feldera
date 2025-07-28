@@ -32,6 +32,7 @@ uuid = { workspace = true, features = ["v7"] }
 thiserror = { workspace = true }
 regex = { workspace = true }
 chrono = { workspace = true, features = ["serde"] }
+async-nats = { workspace = true }
 
 [dev-dependencies]
 csv = { workspace = true }
