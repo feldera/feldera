@@ -59,7 +59,7 @@
   } = $props()
 
   let editCodeDisabled = $derived(
-    nonNull(pipeline.current.status) && !isPipelineCodeEditable(pipeline.current.status)
+    nonNull(pipeline.current.status) && !isPipelineCodeEditable(pipeline.current.status) || (pipeline.current.storageStatus !== 'Cleared' && !pipeline.current.runtimeConfig?.dev_tweaks?.['backfill_avoidance'])
   )
   let editConfigDisabled = $derived(
     nonNull(pipeline.current.status) && !isPipelineConfigEditable(pipeline.current.status)
@@ -347,7 +347,7 @@ example = "1.0"`
         <CodeEditor
           path={pipelineName}
           {files}
-          editDisabled={editCodeDisabled || pipeline.current.storageStatus !== 'Cleared'}
+          editDisabled={editCodeDisabled}
           bind:currentFileName={currentPipelineFile[pipelineName]}
           bind:downstreamChanged
           bind:saveFile
