@@ -396,7 +396,7 @@ CREATE TABLE {name} (
                 },
                 &config,
                 Box::new(move |e| {
-                    let msg = format!("postgres_output_test: error: {e}");
+                    let msg = format!("postgres_output_test: error: {}", e.to_string());
                     println!("{msg}");
                     err_sender.send(msg).unwrap()
                 }),
