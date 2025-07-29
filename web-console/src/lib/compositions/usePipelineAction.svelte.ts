@@ -9,41 +9,6 @@ import { unionName } from '$lib/functions/common/union'
 import { page } from '$app/state'
 import { match } from 'ts-pattern'
 
-//     const ignoreStatuses: NamesInUnion<PipelineStatus>[] = [
-//       'Preparing',
-//       'Provisioning',
-//       'Initializing',
-//       'CompilingRust',
-//       'SqlCompiled',
-//       'CompilingSql',
-//       'Stopping',
-//       'Pausing',
-//       'Suspending',
-//       'Resuming',
-//       'Queued'
-//     ]
-//     $effect(() => {
-//       pipelines()
-
-//     })
-//     return {
-//     awaitPipelineAction: async (pipeline_name: string, action: PipelineAction) => {
-//       const desiredStatus = (
-//       {
-//         start: 'Running',
-//         pause: 'Paused',
-//         start_paused: 'Paused',
-//         stop: 'Stopped',
-//         kill: 'Stopped',
-//         clear: 'Stopped'
-//       } satisfies Record<PipelineAction, PipelineStatus>
-//     )[action]
-//       await api.postPipelineAction(pipeline_name, action)
-
-//     }
-//   }
-// }
-
 export const usePipelineAction = () => {
   const data: { preloaded: { pipelines: PipelineThumb[] } } = page.data as any
   const api = usePipelineManager()
