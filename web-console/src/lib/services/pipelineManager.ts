@@ -368,69 +368,12 @@ export const deletePipeline = async (pipeline_name: string) => {
 export type PipelineAction = 'start' | 'pause' | 'stop' | 'kill' | 'start_paused' | 'clear'
 
 export const postPipelineAction = async (pipeline_name: string, action: PipelineAction) => {
-  await mapResponse(
+  return mapResponse(
     _postPipelineAction({
       path: { pipeline_name, action: action === 'start_paused' ? 'pause' : action }
     }),
     (v) => v
   )
-  let timer: [Timer | undefined] | undefined
-  return {
-    waitFor: async () => {
-      if (timer) {
-        return
-      }
-      timer = [undefined]
-      const desiredStatus = (
-        {
-          start: 'Running',
-          pause: 'Paused',
-          start_paused: 'Paused',
-          stop: 'Stopped',
-          kill: 'Stopped',
-          clear: 'Stopped'
-        } satisfies Record<PipelineAction, PipelineStatus>
-      )[action]
-      const ignoreStatuses: NamesInUnion<PipelineStatus>[] = [
-        'Preparing',
-        'Provisioning',
-        'Initializing',
-        'CompilingRust',
-        'SqlCompiled',
-        'CompilingSql',
-        'Stopping',
-        'Pausing',
-        'Suspending',
-        'Resuming',
-        'Queued'
-      ]
-      return new Promise<void>((resolve, reject) => {
-        const checkStatus = async () => {
-          if (!timer) {
-            return
-          }
-          const { status } = await getPipelineStatus(pipeline_name)
-          if (status === desiredStatus) {
-            resolve()
-            return
-          }
-          if (!ignoreStatuses.includes(unionName(status))) {
-            reject(
-              new Error(
-                `Unexpected status ${JSON.stringify(status)} while waiting for pipeline ${pipeline_name} to complete action ${action}`
-              )
-            )
-            return
-          }
-          timer[0] = setTimeout(checkStatus, 1000)
-        }
-        checkStatus()
-      })
-    },
-    cancelWait: () => {
-      clearTimeout(timer?.[0])
-    }
-  }
 }
 
 export const getAuthConfig = () =>

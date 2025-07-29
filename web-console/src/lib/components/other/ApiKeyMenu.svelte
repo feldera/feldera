@@ -27,7 +27,11 @@
     {#each $apiKeys as key}
       {#snippet deleteDialog()}
         <DeleteDialog
-          {...deleteDialogProps('Delete', (name) => `${name} API key`, api.deleteApiKey)(key.name)}
+          {...deleteDialogProps(
+            'Delete',
+            (name) => `Delete ${name} API key?`,
+            api.deleteApiKey
+          )(key.name)}
           onClose={() => (globalDialog.dialog = thisDialog)}
         ></DeleteDialog>
       {/snippet}
