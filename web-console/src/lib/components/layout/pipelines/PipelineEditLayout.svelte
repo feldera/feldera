@@ -65,7 +65,7 @@
     nonNull(pipeline.current.status) && !isPipelineConfigEditable(pipeline.current.status)
   )
 
-  const { updatePipelines } = useUpdatePipelineList()
+  const { updatePipelines, updatePipeline } = useUpdatePipelineList()
 
   const api = usePipelineManager()
   const pipelineActionCallbacks = usePipelineActionCallbacks()
@@ -80,6 +80,7 @@
     await Promise.allSettled(cbs.map((x) => x(pipelineName)))
     if (action === 'start_paused_start') {
       api.postPipelineAction(pipelineName, 'start')
+      updatePipeline(pipelineName, p => ({...p, status: 'Provisioning'}))
     }
   }
   const handleDeletePipeline = async (pipelineName: string) => {
