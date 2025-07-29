@@ -255,6 +255,7 @@ public class CompilerOptions implements IDiff<CompilerOptions>, IValidate {
                     ",\n\tinputFile=" + Utilities.singleQuote(this.inputFile) +
                     ",\n\ttrimInputs=" + this.trimInputs +
                     ",\n\tverbosity=" + this.verbosity +
+                    ",\n\tquiet=" + this.quiet +
                     ",\n\tnoRust=" + this.noRust +
                     '}';
         }
