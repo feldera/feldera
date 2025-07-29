@@ -115,6 +115,7 @@
 * `ILIKE`: [string](string.md#ilike)
 * `IN`: [comparisons](comparisons.md#in)
 * `INITCAP`: [string](string.md#initcap)
+* `INITCAP_SPACES`: [string](string.md#initcap_spaces)
 * `INTERSECT`: [grammar](grammar.md#setop)
 * `INTERVAL`: [datetime](datetime.md#time-intervals)
 * `IS DISTINCT FROM`: [comparisons](comparisons.md#distinct)

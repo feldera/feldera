@@ -2187,4 +2187,32 @@ public class FunctionsTest extends SqlIoTest {
                 """
         );
     }
+
+    @Test
+    public void testInitcapSpaces() {
+        this.qs("""
+                SELECT INITCAP_SPACES('hi man');
+                 r
+                ---
+                 Hi Man
+                (1 row)
+               
+                SELECT INITCAP_SPACES('hi THOMAS-SON');
+                 r
+                ---
+                 Hi Thomas-son
+                (1 row)
+                
+                SELECT INITCAP_SPACES(NULL);
+                 r
+                ---
+                NULL
+                (1 row)
+                
+                SELECT INITCAP('ggj12341jhg12341=-012341asdf');
+                 r
+                ---
+                 Ggj12341jhg12341=-012341asdf
+                (1 row)""");
+    }
 }
