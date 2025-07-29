@@ -7,6 +7,7 @@ use super::{
 use crate::circuit::metrics::{FILES_CREATED, FILES_DELETED};
 use crate::storage::{buffer_cache::FBuf, init};
 use crate::Runtime;
+use feldera_storage::metrics::{READ_LATENCY, SYNC_LATENCY, WRITE_LATENCY};
 use feldera_storage::tokio::TOKIO;
 use feldera_storage::{
     append_to_path, default_read_async, StorageBackend, StorageBackendFactory, StorageFileType,
@@ -19,7 +20,7 @@ use std::ffi::OsString;
 use std::fs::{create_dir_all, DirEntry};
 use std::io::{ErrorKind, IoSlice, Write};
 use std::thread::sleep;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use std::{
     fs::{self, File, OpenOptions},
     io::Error as IoError,
@@ -95,13 +96,15 @@ impl FileReader for PosixReader {
     }
 
     fn read_block(&self, location: BlockLocation) -> Result<Arc<FBuf>, StorageError> {
-        sleep(self.ioop_delay);
-        let mut buffer = FBuf::with_capacity(location.size);
+        READ_LATENCY.record_callback(|| {
+            sleep(self.ioop_delay);
+            let mut buffer = FBuf::with_capacity(location.size);
 
-        match buffer.read_exact_at(&self.file, location.offset, location.size) {
-            Ok(()) => Ok(Arc::new(buffer)),
-            Err(e) => Err(e.into()),
-        }
+            match buffer.read_exact_at(&self.file, location.offset, location.size) {
+                Ok(()) => Ok(Arc::new(buffer)),
+                Err(e) => Err(e.into()),
+            }
+        })
     }
 
     fn read_async(
@@ -112,23 +115,26 @@ impl FileReader for PosixReader {
         if self.async_threads {
             let file = self.file.clone();
             let ioop_delay = self.ioop_delay;
+            let start = Instant::now();
             TOKIO.spawn_blocking(move || {
                 // For background reads, we only sleep once, not once per block.
                 sleep(ioop_delay);
-                callback(
-                    blocks
-                        .into_iter()
-                        .map(|location| {
-                            let mut buffer = FBuf::with_capacity(location.size);
-                            match buffer.read_exact_at(&file, location.offset, location.size) {
-                                Ok(()) => Ok(Arc::new(buffer)),
-                                Err(e) => Err(e.into()),
-                            }
-                        })
-                        .collect(),
-                );
+                let blocks = blocks
+                    .into_iter()
+                    .map(|location| {
+                        let mut buffer = FBuf::with_capacity(location.size);
+                        match buffer.read_exact_at(&file, location.offset, location.size) {
+                            Ok(()) => Ok(Arc::new(buffer)),
+                            Err(e) => Err(e.into()),
+                        }
+                    })
+                    .collect();
+                READ_LATENCY.record_elapsed(start);
+                callback(blocks);
             });
         } else {
+            // This will call back into [Self::read_block], so don't measure the
+            // latency directly (that would double-count).
             default_read_async(self, blocks, callback);
         }
     }
@@ -210,22 +216,25 @@ impl FileWriter for PosixWriter {
         if !self.buffers.is_empty() {
             self.flush()?;
         }
-        self.file.sync_all()?;
 
-        // Remove the .mut extension from the file.
-        let finalized_path = self.drop.path.with_extension("");
-        fs::rename(&self.drop.path, &finalized_path)?;
+        SYNC_LATENCY.record_callback(|| {
+            self.file.sync_all()?;
 
-        Ok((
-            Arc::new(PosixReader::new(
-                Arc::new(self.file),
-                self.file_id,
-                self.drop.with_path(finalized_path),
-                self.async_threads,
-                self.ioop_delay,
-            )),
-            self.name,
-        ))
+            // Remove the .mut extension from the file.
+            let finalized_path = self.drop.path.with_extension("");
+            fs::rename(&self.drop.path, &finalized_path)?;
+
+            Ok((
+                Arc::new(PosixReader::new(
+                    Arc::new(self.file),
+                    self.file_id,
+                    self.drop.with_path(finalized_path),
+                    self.async_threads,
+                    self.ioop_delay,
+                )) as Arc<dyn FileReader>,
+                self.name,
+            ))
+        })
     }
 }
 
@@ -251,29 +260,31 @@ impl PosixWriter {
     }
 
     fn flush(&mut self) -> Result<(), IoError> {
-        if let Some(storage_mb_max) = Runtime::with_dev_tweaks(|tweaks| tweaks.storage_mb_max) {
-            let usage_mb = (self.drop.usage.load(Ordering::Relaxed) / 1024 / 1024)
-                .max(0)
-                .cast_unsigned();
-            if usage_mb > storage_mb_max {
-                return Err(IoError::from(ErrorKind::StorageFull));
+        WRITE_LATENCY.record_callback(|| {
+            if let Some(storage_mb_max) = Runtime::with_dev_tweaks(|tweaks| tweaks.storage_mb_max) {
+                let usage_mb = (self.drop.usage.load(Ordering::Relaxed) / 1024 / 1024)
+                    .max(0)
+                    .cast_unsigned();
+                if usage_mb > storage_mb_max {
+                    return Err(IoError::from(ErrorKind::StorageFull));
+                }
             }
-        }
 
-        let mut bufs = self
-            .buffers
-            .iter()
-            .map(|buf| IoSlice::new(buf.as_slice()))
-            .collect::<Vec<_>>();
-        let mut cursor = bufs.as_mut_slice();
-        while !cursor.is_empty() {
-            let n = self.file.write_vectored(cursor)?;
-            self.drop.size += n as u64;
-            self.drop.usage.fetch_add(n as i64, Ordering::Relaxed);
-            IoSlice::advance_slices(&mut cursor, n);
-        }
-        self.buffers.clear();
-        Ok(())
+            let mut bufs = self
+                .buffers
+                .iter()
+                .map(|buf| IoSlice::new(buf.as_slice()))
+                .collect::<Vec<_>>();
+            let mut cursor = bufs.as_mut_slice();
+            while !cursor.is_empty() {
+                let n = self.file.write_vectored(cursor)?;
+                self.drop.size += n as u64;
+                self.drop.usage.fetch_add(n as i64, Ordering::Relaxed);
+                IoSlice::advance_slices(&mut cursor, n);
+            }
+            self.buffers.clear();
+            Ok(())
+        })
     }
 
     fn write(&mut self, buffer: &Arc<FBuf>) -> Result<(), StorageError> {

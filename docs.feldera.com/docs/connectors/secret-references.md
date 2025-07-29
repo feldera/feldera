@@ -14,9 +14,9 @@ It refers to an identifiable secret provided by a provider. Feldera's control pl
 into the pipeline. When the pipeline initializes, it will replace the secret references in the
 configuration with their values. We currently only support a single secret provider, Kubernetes.
 
-> ⚠️ Feldera resolves secrets once at pipeline startup.  Checkpointed state for
-> fault tolerant pipelines and suspended pipelines will contain
-> resolved secrets.
+Feldera resolves secrets when a pipeline starts, as well as each time
+it resumes.  Feldera does not write resolved values of secrets to
+checkpoints or journals.
 
 ## Kubernetes
 
