@@ -3812,6 +3812,15 @@ public class CalciteToDBSPCompiler extends RelVisitor
             identifier = CalciteObject.create(sct.name);
         }
         List<InputColumnMetadata> metadata = Linq.map(create.columns, this::convertMetadata);
+        boolean hasPrimaryKey = Linq.any(metadata, m -> m.isPrimaryKey);
+        boolean hasLateness = Linq.any(metadata, m -> m.lateness != null);
+        if (hasLateness && hasPrimaryKey) {
+            this.compiler.reportWarning(create.getPosition(), "Lateness together with PRIMARY KEY", """
+                            The runtime behavior of tables with PRIMARY KEYs and 
+                            LATENESS annotations is only correct if the data never violates the LATENESS constraints.
+                            See https://github.com/feldera/feldera/issues/4457 and
+                            https://github.com/feldera/feldera/issues/2669""");
+        }
         boolean materialized = create.isMaterialized();
         boolean appendOnly = create.isAppendOnly() ||
                 options.languageOptions.streaming;

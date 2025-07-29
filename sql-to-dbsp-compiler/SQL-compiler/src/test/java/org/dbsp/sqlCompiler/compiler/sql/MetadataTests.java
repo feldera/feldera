@@ -1482,4 +1482,23 @@ public class MetadataTests extends BaseSQLTests {
                 "FOREIGN KEY column 't.a' has type INT which does " +
                         "not match the type VARCHAR of the referenced column 's.a'");
     }
+
+    @Test
+    public void issue4457() {
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.options.ioOptions.quiet = false;
+        compiler.submitStatementsForCompilation("""
+                CREATE TABLE test_events (
+                    id VARCHAR NOT NULL PRIMARY KEY,
+                    a VARCHAR,
+                    t TIMESTAMP NOT NULL LATENESS INTERVAL 1 MINUTE
+                );
+                CREATE MATERIALIZED VIEW test_events_mv AS SELECT * FROM test_events;""");
+        TestUtil.assertMessagesContain(compiler, """
+                (no input file): Lateness together with PRIMARY KEY
+                (no input file):1:1: warning: Lateness together with PRIMARY KEY: The runtime behavior of tables with PRIMARY KEYs and
+                LATENESS annotations is only correct if the data never violates the LATENESS constraints.
+                See https://github.com/feldera/feldera/issues/4457 and
+                https://github.com/feldera/feldera/issues/2669""");
+    }
 }
