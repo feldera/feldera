@@ -2501,9 +2501,9 @@ async fn pipeline_metrics() {
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 
     // Minimally check formats
-    assert!(metrics_default.contains("# TYPE total_processed_records gauge"));
-    assert!(metrics_prometheus.contains("# TYPE total_processed_records gauge"));
-    assert!(metrics_json.contains("\"key\":\"total_input_records\""));
+    assert!(metrics_default.contains("# TYPE records_processed_total counter"));
+    assert!(metrics_prometheus.contains("# TYPE records_processed_total counter"));
+    assert!(metrics_json.contains("\"key\":\"records_processed_total\""));
 }
 
 /// Tests retrieving pipeline statistics via `/stats`.

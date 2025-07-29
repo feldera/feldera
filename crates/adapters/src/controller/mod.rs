@@ -22,7 +22,9 @@ use crate::controller::checkpoint::CheckpointOffsets;
 use crate::controller::journal::Journal;
 use crate::controller::stats::{InputEndpointMetrics, OutputEndpointMetrics};
 use crate::create_integrated_output_endpoint;
-use crate::server::metrics::{LabelStack, MetricsFormatter, MetricsWriter};
+use crate::server::metrics::{
+    HistogramDiv, LabelStack, MetricsFormatter, MetricsWriter, ValueType,
+};
 use crate::transport::clock::now_endpoint_config;
 use crate::transport::Step;
 use crate::transport::{input_transport_config_to_endpoint, output_transport_config_to_endpoint};
@@ -673,81 +675,94 @@ impl Controller {
     ) where
         F: MetricsFormatter,
     {
+        metrics.process_metrics(labels);
         metrics.gauge(
-            "mpu_msecs",
-            "cpu time used by the pipeline process in milliseconds",
-            |w| w.write_value(labels, status.global_metrics.cpu_msecs()),
-        );
-        metrics.gauge(
-            "rss_bytes",
-            "resident set size of the pipeline process in bytes",
-            |w| w.write_value(labels, status.global_metrics.rss_bytes()),
-        );
-        metrics.gauge(
-            "buffered_input_records",
-            "total number of records currently buffered by all endpoints",
-            |w| w.write_value(labels, status.num_buffered_input_records()),
-        );
-        metrics.gauge(
-            "total_input_records",
-            "total number of input records received from all connectors",
-            |w| w.write_value(labels, status.num_total_input_records()),
-        );
-        metrics.gauge(
-            "total_processed_records",
-            "total number of input records processed by the pipeline",
-            |w| w.write_value(labels, status.num_total_processed_records()),
-        );
-        metrics.gauge("pipeline_complete", "boolean, 1 if true", |w| {
-            w.write_value(labels, status.pipeline_complete() as u8)
-        });
-        metrics.counter(
-            "records.late",
-            "Number of records dropped due to LATENESS annotations",
-            |w| w.write_value(labels, &TOTAL_LATE_RECORDS),
+            "records_input_buffered",
+            "Total number of records currently buffered by all endpoints.",
+            labels,
+            status.num_buffered_input_records(),
         );
         metrics.counter(
-            "file.compaction_stall_time",
-            "Time in nanoseconds a worker was stalled waiting for more merges to complete",
-            |w| w.write_value(labels, &COMPACTION_STALL_TIME),
+            "records_input_total",
+            "Total number of input records received from all connectors.",
+            labels,
+            status.num_total_input_records(),
         );
         metrics.counter(
-            "file.total_files_created",
-            "Total number of files created",
-            |w| w.write_value(labels, &FILES_CREATED),
+            "records_processed_total",
+            "Total number of input records processed by the pipeline.",
+            labels,
+            status.num_total_processed_records(),
         );
         metrics.counter(
-            "file.total_files_deleted",
-            "Total number of files deleted",
-            |w| w.write_value(labels, &FILES_DELETED),
+            "pipeline_complete",
+            "Transitions from 0 to 1 when pipeline completes.",
+            labels,
+            status.pipeline_complete() as u8,
         );
         metrics.counter(
-            "feldera.dbsp.step",
-            "Total number of DBSP steps executed",
-            |w| w.write_value(labels, &DBSP_STEP),
+            "records_late_total",
+            "Number of records dropped due to LATENESS annotations.",
+            labels,
+            &TOTAL_LATE_RECORDS,
+        );
+        metrics.counter(
+            "compaction_stall_duration_seconds",
+            "Time in seconds a worker was stalled waiting for more merges to complete.",
+            labels,
+            COMPACTION_STALL_TIME.load(Ordering::Relaxed) as f64 / 1_000_000_000.0,
+        );
+        metrics.counter(
+            "files_created_total",
+            "Total number of files created.",
+            labels,
+            &FILES_CREATED,
+        );
+        metrics.counter(
+            "files_deleted_total",
+            "Total number of files deleted.",
+            labels,
+            &FILES_DELETED,
+        );
+        metrics.counter(
+            "dbsp_steps_total",
+            "Total number of DBSP steps executed.",
+            labels,
+            &DBSP_STEP,
         );
 
-        metrics.histogram("read_latency_us", "Read latency in microseconds", |w| {
-            w.write_histogram(labels, &READ_LATENCY.snapshot())
-        });
-        metrics.histogram("write_latency_us", "Write latency in microseconds", |w| {
-            w.write_histogram(labels, &WRITE_LATENCY.snapshot())
-        });
-        metrics.histogram("sync_latency_us", "Sync latency in microseconds", |w| {
-            w.write_histogram(labels, &SYNC_LATENCY.snapshot())
-        });
+        metrics.histogram(
+            "storage_read_latency_seconds",
+            "Read latency for storage blocks in seconds",
+            labels,
+            &HistogramDiv::new(READ_LATENCY.snapshot(), 1_000_000.0),
+        );
+        metrics.histogram(
+            "storage_write_latency_seconds",
+            "Write latency for storage blocks in seconds",
+            labels,
+            &HistogramDiv::new(WRITE_LATENCY.snapshot(), 1_000_000.0),
+        );
+        metrics.histogram(
+            "sync_latency_seconds",
+            "Sync latency in seconds",
+            labels,
+            &HistogramDiv::new(SYNC_LATENCY.snapshot(), 1_000_000.0),
+        );
 
         fn write_input_metric<F, M>(
             metrics: &mut MetricsWriter<F>,
             labels: &LabelStack,
             status: &ControllerStatus,
             name: &str,
+            help: &str,
+            value_type: ValueType,
             func: M,
         ) where
             F: MetricsFormatter,
             M: Fn(&InputEndpointMetrics) -> &AtomicU64,
         {
-            metrics.gauge(name, "", |w| {
+            metrics.values(name, help, value_type, |w| {
                 for input in status.input_status().values() {
                     w.write_value(
                         &labels.with("endpoint", &input.endpoint_name),
@@ -756,33 +771,65 @@ impl Controller {
                 }
             });
         }
-        write_input_metric(metrics, labels, status, "input_total_bytes", |m| {
-            &m.total_bytes
-        });
-        write_input_metric(metrics, labels, status, "input_total_records", |m| {
-            &m.total_records
-        });
-        write_input_metric(metrics, labels, status, "input_buffered_records", |m| {
-            &m.buffered_records
-        });
-        write_input_metric(metrics, labels, status, "input_num_transport_errors", |m| {
-            &m.num_transport_errors
-        });
-        write_input_metric(metrics, labels, status, "input_num_parse_errors", |m| {
-            &m.num_parse_errors
-        });
+        write_input_metric(
+            metrics,
+            labels,
+            status,
+            "input_connector_bytes_total",
+            "Total number of bytes received by an input connector.",
+            ValueType::Counter,
+            |m| &m.total_bytes,
+        );
+        write_input_metric(
+            metrics,
+            labels,
+            status,
+            "input_connector_records_total",
+            "Total number of records received by an input connector.",
+            ValueType::Counter,
+            |m| &m.total_records,
+        );
+        write_input_metric(
+            metrics,
+            labels,
+            status,
+            "input_connector_buffered_records",
+            "Number of records currently buffered by an input connector.",
+            ValueType::Gauge,
+            |m| &m.buffered_records,
+        );
+        write_input_metric(
+            metrics,
+            labels,
+            status,
+            "input_connector_errors_transport_total",
+            "Total number of errors encountered by the input connector at the transport layer.",
+            ValueType::Counter,
+            |m| &m.num_transport_errors,
+        );
+        write_input_metric(
+            metrics,
+            labels,
+            status,
+            "input_connector_errors_parse_total",
+            "Total number of errors encountered parsing records received by the input connector.",
+            ValueType::Counter,
+            |m| &m.num_parse_errors,
+        );
 
         fn write_output_metric<F, M>(
             metrics: &mut MetricsWriter<F>,
             labels: &LabelStack,
             status: &ControllerStatus,
             name: &str,
+            help: &str,
+            value_type: ValueType,
             func: M,
         ) where
             F: MetricsFormatter,
             M: Fn(&OutputEndpointMetrics) -> &AtomicU64,
         {
-            metrics.gauge(name, "", |w| {
+            metrics.values(name, help, value_type, |w| {
                 for output in status.output_status().values() {
                     w.write_value(
                         &labels.with("endpoint", &output.endpoint_name),
@@ -791,28 +838,60 @@ impl Controller {
                 }
             });
         }
-        write_output_metric(metrics, labels, status, "output_transmitted_bytes", |m| {
-            &m.transmitted_bytes
-        });
-        write_output_metric(metrics, labels, status, "output_transmitted_records", |m| {
-            &m.transmitted_records
-        });
-        write_output_metric(metrics, labels, status, "output_buffered_records", |m| {
-            &m.buffered_records
-        });
-        write_output_metric(metrics, labels, status, "output_buffered_batches", |m| {
-            &m.buffered_batches
-        });
         write_output_metric(
             metrics,
             labels,
             status,
-            "output_num_transport_errors",
+            "output_connector_bytes_total",
+            "Total number of bytes of records sent by the output connector.",
+            ValueType::Counter,
+            |m| &m.transmitted_bytes,
+        );
+        write_output_metric(
+            metrics,
+            labels,
+            status,
+            "output_connector_records_total",
+            "Total number of records sent by the output connector.",
+            ValueType::Counter,
+            |m| &m.transmitted_records,
+        );
+        write_output_metric(
+            metrics,
+            labels,
+            status,
+            "output_connector_buffered_records",
+            "Number of records currently buffered by the output connector.",
+            ValueType::Gauge,
+            |m| &m.buffered_records,
+        );
+        write_output_metric(
+            metrics,
+            labels,
+            status,
+            "output_buffered_batches",
+            "Number of batches of records currently buffered by the output connector.",
+            ValueType::Gauge,
+            |m| &m.buffered_batches,
+        );
+        write_output_metric(
+            metrics,
+            labels,
+            status,
+            "output_connector_errors_transport_total",
+            "Total number of errors encountered at the transport layer sending records.",
+            ValueType::Counter,
             |m| &m.num_transport_errors,
         );
-        write_output_metric(metrics, labels, status, "output_num_encode_errors", |m| {
-            &m.num_encode_errors
-        });
+        write_output_metric(
+            metrics,
+            labels,
+            status,
+            "output_connector_errors_encode_total",
+            "Total number of errors encountered encoding records to send.",
+            ValueType::Counter,
+            |m| &m.num_encode_errors,
+        );
     }
 
     /// Execute a SQL query over materialized tables and views;
