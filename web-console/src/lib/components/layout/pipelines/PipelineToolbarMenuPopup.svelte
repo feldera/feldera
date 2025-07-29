@@ -120,7 +120,7 @@
   <DeleteDialog
     {...deleteDialogProps(
       'Delete',
-      (name) => `${name} pipeline`,
+      (name) => `Delete ${name} pipeline?`,
       (name: string) => {
         deletePipeline(name)
       }

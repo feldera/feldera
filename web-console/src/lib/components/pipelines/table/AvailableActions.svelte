@@ -16,11 +16,12 @@
   import { usePremiumFeatures } from '$lib/compositions/usePremiumFeatures.svelte'
   import { tuple } from '$lib/functions/common/tuple'
   import type { StorageStatus } from '$lib/services/manager'
+  import { usePipelineAction } from '$lib/compositions/usePipelineAction.svelte'
   let {
     pipelines,
     selectedPipelines = $bindable()
   }: { pipelines: PipelineThumb[]; selectedPipelines: string[] } = $props()
-  const { updatePipelines } = useUpdatePipelineList()
+  const { updatePipelines, updatePipeline } = useUpdatePipelineList()
   const availableActions = [
     'start' as const,
     'pause' as const,
@@ -67,7 +68,7 @@
       (_, p) => p
     )
   )
-  let actions = $derived(
+  let actions = $derived(selected.length === 0 ? [] :
     selected
       .map(statusActions)
       .reduce(
@@ -99,16 +100,28 @@
     selectedPipelines = []
   }
   const { toastError } = useToast()
+  const { postPipelineAction } = usePipelineAction()
   let deletePipelines = () => {
     selected.forEach(async (pipeline) => {
       if (!isPipelineCodeEditable(pipeline.status)) {
-        await api
-          .postPipelineAction(pipeline.name, isPremium.value ? 'stop' : 'kill')
-          .then(({ waitFor }) => waitFor().catch(toastError))
+        const { waitFor } = await postPipelineAction(
+          pipeline.name,
+          isPremium.value ? 'stop' : 'kill'
+        )
+        updatePipeline(pipeline.name, (p) => ({
+          ...p,
+          status: isPremium.value ? 'Suspending' : 'Stopping'
+        }))
+        await waitFor().catch(toastError)
+      }
+      if (pipeline.storageStatus !== 'Cleared') {
+        const { waitFor } = await postPipelineAction(pipeline.name, 'clear')
+        updatePipeline(pipeline.name, (p) => ({ ...p, storageStatus: 'Clearing' }))
+        await waitFor().catch(toastError)
       }
       return api.deletePipeline(pipeline.name)
     })
-    updatePipelines((ps) => ps.filter((p) => !selectedPipelines.includes(p.name)))
+    // updatePipelines((ps) => ps.filter((p) => !selectedPipelines.includes(p.name)))
     selectedPipelines = []
   }
 </script>
@@ -160,9 +173,12 @@
       'Delete',
       () =>
         selectedPipelines.length === 1
-          ? '1 pipeline'
-          : selectedPipelines.length.toFixed() + ' pipelines',
-      deletePipelines
+          ? 'You are about to delete 1 pipeline:'
+          : 'You are about to delete ' + selectedPipelines.length.toFixed() + ' pipelines:',
+      deletePipelines,
+      selectedPipelines.join('\n') +
+        '\n' +
+        'Are you sure? You will lose the associated code and computation state.\nThis action is irreversible.'
     )()}
     onClose={() => (globalDialog.dialog = null)}
   ></DeleteDialog>
@@ -174,12 +190,16 @@
       'Clear',
       () =>
         selectedPipelines.length === 1
-          ? "1 pipeline's storage"
-          : selectedPipelines.length.toFixed() + " pipelines' storage",
+          ? 'You are about to clear storage of 1 pipeline:'
+          : 'You are about to clear storage of ' +
+            selectedPipelines.length.toFixed() +
+            ' pipelines:',
       () => postPipelinesAction('clear'),
-      selectedPipelines.length === 1
-        ? 'This will delete any checkpoints of this pipeline.'
-        : 'This will delete any checkpoints of these pipelines.'
+      selectedPipelines.join('\n') +
+        '\n' +
+        (selectedPipelines.length === 1
+          ? 'This will delete any checkpoints of this pipeline.'
+          : 'This will delete any checkpoints of these pipelines.')
     )()}
     onClose={() => (globalDialog.dialog = null)}
   ></DeleteDialog>
@@ -191,12 +211,14 @@
       'Stop',
       () =>
         selectedPipelines.length === 1
-          ? '1 pipeline'
-          : selectedPipelines.length.toFixed() + ' pipelines',
+          ? 'You are about to stop 1 pipeline:'
+          : 'You are about to stop ' + selectedPipelines.length.toFixed() + ' pipelines:',
       () => postPipelinesAction('stop'),
-      selectedPipelines.length === 1
-        ? 'The pipeline will stop processing inputs and make a checkpoint of its state.'
-        : 'These pipelines will stop processing inputs and make checkpoints of their states.'
+      selectedPipelines.join('\n') +
+        '\n' +
+        (selectedPipelines.length === 1
+          ? 'The pipeline will stop processing inputs and make a checkpoint of its state.'
+          : 'These pipelines will stop processing inputs and make checkpoints of their states.')
     )()}
     onClose={() => (globalDialog.dialog = null)}
   ></DeleteDialog>
@@ -208,12 +230,16 @@
       'Force stop',
       () =>
         selectedPipelines.length === 1
-          ? '1 pipeline'
-          : selectedPipelines.length.toFixed() + ' pipelines',
+          ? 'You are about to forcefully stop 1 pipeline"'
+          : 'You are about to forcefully stop ' +
+            selectedPipelines.length.toFixed() +
+            ' pipelines:',
       () => postPipelinesAction('kill'),
-      selectedPipelines.length === 1
-        ? 'The pipeline will stop processing inputs without making a checkpoint, leaving only a previous one, if any.'
-        : 'These pipelines will stop processing inputs without making checkpoints, leaving only previous ones, if any.'
+      selectedPipelines.join('\n') +
+        '\n' +
+        (selectedPipelines.length === 1
+          ? 'The pipeline will stop processing inputs without making a checkpoint, leaving only a previous one, if any.'
+          : 'These pipelines will stop processing inputs without making checkpoints, leaving only previous ones, if any.')
     )()}
     onClose={() => (globalDialog.dialog = null)}
   ></DeleteDialog>

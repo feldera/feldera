@@ -14,7 +14,9 @@
         aria-label="Confirm dangerous action"
       ></button>
     </div>
-    {content.description}
+    <span class="whitespace-pre-wrap">
+      {content.description}
+    </span>
   </div>
   <div class="flex flex-col-reverse gap-4 pt-4 sm:flex-row sm:justify-end">
     <button class="btn px-4 preset-filled-surface-50-950" onclick={onClose}> Cancel </button>

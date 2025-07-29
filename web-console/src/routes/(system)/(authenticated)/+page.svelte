@@ -120,10 +120,9 @@
       {#if pipelines.pipelines.length}
         <PipelineTable pipelines={pipelines.pipelines} bind:selectedPipelines>
           {#snippet preHeaderEnd()}
-            {#if selectedPipelines.length}
               <AvailableActions pipelines={pipelines.pipelines} bind:selectedPipelines
               ></AvailableActions>
-            {:else}
+            {#if !selectedPipelines.length}
               <CreatePipelineButton
                 inputClass="max-w-64"
                 btnClass="hidden sm:flex preset-filled-surface-50-950"

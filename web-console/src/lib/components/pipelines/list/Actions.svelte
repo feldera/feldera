@@ -22,6 +22,8 @@
   import Popup from '$lib/components/common/Popup.svelte'
   import { slide } from 'svelte/transition'
   import { useIsMobile } from '$lib/compositions/layout/useIsMobile.svelte'
+  import { usePipelineAction } from '$lib/compositions/usePipelineAction.svelte'
+  import { useUpdatePipelineList } from '$lib/compositions/pipelines/usePipelineList.svelte'
 
   let {
     pipeline,
@@ -45,6 +47,7 @@
     class?: string
   } = $props()
 
+  const { updatePipeline } = useUpdatePipelineList()
   const globalDialog = useGlobalDialog()
   const api = usePipelineManager()
   const deletePipeline = async (pipelineName: string) => {
@@ -178,16 +181,18 @@
   const basicBtnColor = 'preset-filled-surface-100-900'
   const importantBtnColor = 'preset-filled-primary-500'
 
+  const { postPipelineAction } = usePipelineAction()
   const performStartAction = async (
     action: PipelineAction | 'start_paused_start',
     pipelineName: string,
     nextStatus: PipelineStatus
   ) => {
-    const { waitFor } = await api.postPipelineAction(
+    const { waitFor } = await postPipelineAction(
       pipeline.current.name,
       action === 'start_paused_start' ? 'start_paused' : action
     )
     pipeline.optimisticUpdate({ status: nextStatus })
+    updatePipeline(pipelineName, (p) => ({ ...p, status: nextStatus }))
     waitFor().then(() => onActionSuccess?.(pipelineName, action), toastError)
   }
 
@@ -198,10 +203,11 @@
   <DeleteDialog
     {...deleteDialogProps(
       'Clear',
-      (name) => `${name} pipeline storage`,
-      async (name: string) => {
-        await api.postPipelineAction(name, 'clear')
+      (name) => `Clear ${name} pipeline storage?`,
+      async (pipelineName: string) => {
+        await api.postPipelineAction(pipelineName, 'clear')
         pipeline.optimisticUpdate({ storageStatus: 'Clearing' })
+        updatePipeline(pipelineName, (p) => ({ ...p, storageStatus: 'Clearing' }))
       },
       'This will delete all checkpoints.'
     )(pipeline.current.name)}
@@ -213,7 +219,7 @@
   <DeleteDialog
     {...deleteDialogProps(
       'Delete',
-      (name) => `${name} pipeline`,
+      (name) => `Delete ${name} pipeline?`,
       (name: string) => {
         deletePipeline(name)
       }
@@ -226,11 +232,12 @@
   <DeleteDialog
     {...deleteDialogProps(
       'Force stop',
-      (name) => `${name} pipeline`,
+      (name) => `Force stop ${name} pipeline?`,
       (pipelineName: string) => {
         return api.postPipelineAction(pipelineName, 'kill').then(() => {
           onActionSuccess?.(pipelineName, 'kill')
           pipeline.optimisticUpdate({ status: 'Stopping' })
+          updatePipeline(pipelineName, (p) => ({ ...p, status: 'Stopping' }))
         })
       },
       'The pipeline will stop processing inputs without making a checkpoint, leaving only a previous one, if any.'
@@ -243,11 +250,12 @@
   <DeleteDialog
     {...deleteDialogProps(
       'Stop',
-      (name) => `${name} pipeline`,
+      (name) => `Stop ${name} pipeline?`,
       (pipelineName: string) => {
         return api.postPipelineAction(pipelineName, 'stop').then(() => {
           onActionSuccess?.(pipelineName, 'stop')
           pipeline.optimisticUpdate({ status: 'Suspending' })
+          updatePipeline(pipelineName, (p) => ({ ...p, status: 'Suspending' }))
         })
       },
       'The pipeline will stop processing inputs and make a checkpoint of its state.'
@@ -438,6 +446,7 @@
       await api.postPipelineAction(pipelineName, 'pause')
       onActionSuccess?.(pipelineName, 'pause')
       pipeline.optimisticUpdate({ status: 'Pausing' })
+      updatePipeline(pipelineName, (p) => ({ ...p, status: 'Pausing' }))
     }}
   >
     <span class="fd fd-pause {iconClass}"></span>
@@ -451,6 +460,7 @@
       await api.postPipelineAction(pipelineName, 'pause')
       onActionSuccess?.(pipelineName, 'pause')
       pipeline.optimisticUpdate({ status: 'Pausing' })
+      updatePipeline(pipelineName, (p) => ({ ...p, status: 'Pausing' }))
     }}
   >
     <span class="fd fd-pause {iconClass}"></span>

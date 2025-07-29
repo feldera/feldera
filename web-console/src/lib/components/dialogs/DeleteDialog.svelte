@@ -35,7 +35,7 @@
   } = $props()
 
   let content = $derived({
-    title: actionName + ' ' + (typeof itemName === 'string' ? itemName : itemName(...args)) + '?',
+    title: typeof itemName === 'string' ? itemName : itemName(...args),
     description,
     onSuccess: {
       name: actionName,
