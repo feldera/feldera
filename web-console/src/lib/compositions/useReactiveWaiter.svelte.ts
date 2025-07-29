@@ -137,7 +137,7 @@ export function useReactiveWaiter<T>(
       onError = () => {},
       onTimeout = () => {}
     } = waiterOptions
-    
+
     const effectiveTimeout = timeout ?? defaultTimeout
 
     let waiterError = $state<Error | null>(null)
