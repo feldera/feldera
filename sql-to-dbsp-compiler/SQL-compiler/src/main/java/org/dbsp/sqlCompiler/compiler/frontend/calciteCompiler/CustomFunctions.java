@@ -13,6 +13,7 @@ import org.apache.calcite.sql.SqlOperandCountRange;
 import org.apache.calcite.sql.SqlOperator;
 import org.apache.calcite.sql.SqlOperatorBinding;
 import org.apache.calcite.sql.fun.SqlLibraryOperators;
+import org.apache.calcite.sql.fun.SqlStdOperatorTable;
 import org.apache.calcite.sql.type.ArraySqlType;
 import org.apache.calcite.sql.type.FunctionSqlType;
 import org.apache.calcite.sql.type.OperandTypes;
@@ -75,6 +76,7 @@ public class CustomFunctions {
         this.functions.add(new ArrayTransformFunction());
         this.functions.add(new ArrayPositionFunction());
         this.functions.add(new GreatestNonNullsFunction());
+        this.functions.add(new InitcapSpacesFunction());
         this.functions.add(new LeastNonNullsFunction());
         this.functions.add(new BroundFunction());
         this.udf = new HashMap<>();
@@ -180,6 +182,12 @@ public class CustomFunctions {
 
     static class ArrayContainsFunction extends CalciteFunctionClone {
         private ArrayContainsFunction() { super(SqlLibraryOperators.ARRAY_CONTAINS, "array#contains"); }
+    }
+
+    static class InitcapSpacesFunction extends CalciteFunctionClone {
+        private InitcapSpacesFunction() {
+            super("INITCAP_SPACES", SqlStdOperatorTable.INITCAP, "string#initcap_spaces");
+        }
     }
 
     static class ArrayRemoveFunction extends CalciteFunctionClone {

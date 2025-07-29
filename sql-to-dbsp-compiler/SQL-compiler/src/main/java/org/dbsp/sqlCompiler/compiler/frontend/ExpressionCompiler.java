@@ -1229,6 +1229,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                     case "lower":
                     case "upper":
                     case "initcap":
+                    case "initcap_spaces":
                         validateArgCount(node, opName, ops.size(), 1);
                         this.ensureString(ops, 0);
                         // fall through

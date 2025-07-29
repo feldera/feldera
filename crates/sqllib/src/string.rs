@@ -368,6 +368,33 @@ pub fn initcap_(source: SqlString) -> SqlString {
 some_function1!(initcap, SqlString, SqlString);
 
 #[doc(hidden)]
+pub fn initcap_spaces_(source: SqlString) -> SqlString {
+    let mut result = String::with_capacity(source.str().len());
+    let mut capitalize_next = true;
+    for c in source.str().chars() {
+        if !c.is_whitespace() {
+            if capitalize_next {
+                for r in c.to_uppercase() {
+                    result.push(r);
+                }
+                capitalize_next = false;
+            } else {
+                for r in c.to_lowercase() {
+                    result.push(r);
+                }
+                capitalize_next = false;
+            }
+        } else {
+            capitalize_next = true;
+            result.push(c);
+        }
+    }
+    SqlString::from(result)
+}
+
+some_function1!(initcap_spaces, SqlString, SqlString);
+
+#[doc(hidden)]
 pub fn replace___(haystack: SqlString, needle: SqlString, replacement: SqlString) -> SqlString {
     SqlString::from(haystack.str().replace(needle.str(), replacement.str()))
 }

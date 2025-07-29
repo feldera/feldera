@@ -150,6 +150,11 @@ addition to the normal way of `''`.
     <td><code>initcap('hi THOMAS')</code> => <code>Hi Thomas</code></td>
   </tr>
   <tr>
+    <td><a id="initcap_spaces"></a><code>INITCAP_SPACES ( string )</code></td>
+    <td>Converts the first letter of each word to upper case and the rest to lower case. Words are sequences of characters separated by spaces.</td>
+    <td><code>initcap('hi THOMAS-SON')</code> => <code>Hi Thomas-son</code></td>
+  </tr>
+  <tr>
     <td><a id="left"></a><code>LEFT ( string, count )</code></td>
     <td>Returns first <code>count</code> characters in the string.  If any argument is <code>NULL</code>, return <code>NULL</code>.</td>
     <td><code>left('abcde', 2)</code> => <code>ab</code></td>
