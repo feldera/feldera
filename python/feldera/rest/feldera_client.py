@@ -242,6 +242,22 @@ class FelderaClient:
 
         return resp
 
+    def get_pipeline_logs(self, pipeline_name: str) -> Generator[str, None, None]:
+        """
+        Get the pipeline logs
+
+        :param name: The name of the pipeline
+        :return: A generator yielding the logs, one line at a time.
+        """
+        chunk: bytes
+        with self.http.get(
+            path=f"/pipelines/{pipeline_name}/logs",
+            stream=True,
+        ) as resp:
+            for chunk in resp.iter_lines(chunk_size=50000000):
+                if chunk:
+                    yield chunk.decode("utf-8")
+
     def start_pipeline(self, pipeline_name: str, timeout_s: Optional[float] = 300):
         """
 

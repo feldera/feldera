@@ -78,6 +78,11 @@ class Pipeline:
 
         return PipelineStatistics.from_dict(self.client.get_pipeline_stats(self.name))
 
+    def logs(self) -> Generator[str, None, None]:
+        """Gets the pipeline logs."""
+
+        return self.client.get_pipeline_logs(self.name)
+
     def input_pandas(self, table_name: str, df: pandas.DataFrame, force: bool = False):
         """
         Push all rows in a pandas DataFrame to the pipeline.
