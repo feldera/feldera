@@ -1191,6 +1191,7 @@ where
     R: WeightTrait + ?Sized,
     T: Timestamp,
 {
+    type Timed<T2: Timestamp> = TestBatch<K, V, T2, R>;
     type Batcher = TestBatchBatcher<K, V, T, R>;
     type Builder = TestBatchBuilder<K, V, T, R>;
 
