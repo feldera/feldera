@@ -80,7 +80,7 @@
     await Promise.allSettled(cbs.map((x) => x(pipelineName)))
     if (action === 'start_paused_start') {
       api.postPipelineAction(pipelineName, 'start')
-      updatePipeline(pipelineName, p => ({...p, status: 'Provisioning'}))
+      updatePipeline(pipelineName, p => ({...p, status: 'Initializing'}))
     }
   }
   const handleDeletePipeline = async (pipelineName: string) => {

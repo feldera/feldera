@@ -121,7 +121,6 @@
       }
       return api.deletePipeline(pipeline.name)
     })
-    // updatePipelines((ps) => ps.filter((p) => !selectedPipelines.includes(p.name)))
     selectedPipelines = []
   }
 </script>
