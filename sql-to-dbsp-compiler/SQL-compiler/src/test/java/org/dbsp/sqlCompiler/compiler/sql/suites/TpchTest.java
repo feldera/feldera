@@ -18,6 +18,15 @@ import org.junit.Test;
 import java.io.IOException;
 
 public class TpchTest extends BaseSQLTests {
+    @Override
+    public CompilerOptions testOptions() {
+        CompilerOptions result = super.testOptions();
+        result.languageOptions.incrementalize = true;
+        result.languageOptions.optimizationLevel = 2;
+        result.languageOptions.ignoreOrderBy = true;
+        return result;
+    }
+
     String getQuery(int query) throws IOException {
         String tpch = TestUtil.readStringFromResourceFile("tpch.sql");
         // Convert all other views to local, which will cause them to be removed
@@ -29,11 +38,7 @@ public class TpchTest extends BaseSQLTests {
     @Test
     public void compileTpch() throws IOException {
         String tpch = TestUtil.readStringFromResourceFile("tpch.sql");
-        CompilerOptions options = this.testOptions();
-        options.languageOptions.incrementalize = true;
-        options.languageOptions.optimizationLevel = 2;
-        DBSPCompiler compiler = new DBSPCompiler(options);
-        options.languageOptions.ignoreOrderBy = true;
+        DBSPCompiler compiler = this.testCompiler();
         compiler.submitStatementsForCompilation(tpch);
         CompilerCircuitStream ccs = this.getCCS(compiler);
         ccs.showErrors();
@@ -41,11 +46,7 @@ public class TpchTest extends BaseSQLTests {
 
     CompilerCircuit compileQuery(int query) throws IOException {
         String tpch = this.getQuery(query);
-        CompilerOptions options = this.testOptions();
-        options.languageOptions.incrementalize = true;
-        options.languageOptions.optimizationLevel = 2;
-        DBSPCompiler compiler = new DBSPCompiler(options);
-        options.languageOptions.ignoreOrderBy = true;
+        DBSPCompiler compiler = this.testCompiler();
         compiler.submitStatementsForCompilation(tpch);
         CompilerCircuit cc = new CompilerCircuit(compiler);
         cc.showErrors();

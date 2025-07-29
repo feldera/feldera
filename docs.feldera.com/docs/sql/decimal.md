@@ -119,15 +119,15 @@ But invalid casts such as: ``CAST('1234.1234' AS DECIMAL(6, 3))`` will throw a r
     <td>The "sign" function: -1, 0, or 1 showing if value is &lt;0, =0, or &gt;0 (result is a <code>DECIMAL</code> value).</td>
   </tr>
   <tr>
-    <td><a id="trunc"></a><code>TRUNCATE(value)</code></td>
+    <td><a id="truncate"></a><code>TRUNCATE(value)</code></td>
     <td>same as <code>TRUNCATE(value, 0)</code> (result is a <code>DECIMAL</code> value).</td>
   </tr>
   <tr>
-    <td><a id="trunc2"></a><code>TRUNC(value [, digits] )</code></td>
+    <td><a id="trunc"></a><code>TRUNC(value [, digits] )</code></td>
     <td>same as <code>TRUNCATE(value [, digits])</code> (result is a <code>DECIMAL</code> value).</td>
   </tr>
   <tr>
-    <td><a id="truncate"></a><code>TRUNCATE(value, digits)</code></td>
+    <td><a id="truncate2"></a><code>TRUNCATE(value, digits)</code></td>
     <td>where <code>digits</code> is an integer value, which may be negative. Truncates the value to the specified number of <em>decimal</em> digits after the decimal point (result is a <code>DECIMAL</code> value).</td>
   </tr>
 </table>
