@@ -877,7 +877,6 @@ impl DBSPHandle {
     }
 
     pub fn start_transaction(&mut self) -> Result<(), DbspError> {
-        counter!("feldera.dbsp.step").increment(1);
         let start = Instant::now();
         let span = Arc::new(Span::root("start_step", SpanContext::random()));
         let _guard = span.set_local_parent();
