@@ -1,6 +1,7 @@
 use crate::api::demo::{read_demos_from_directories, Demo};
 use crate::api::endpoints;
 use crate::auth::JwkCache;
+use crate::cluster_health::HealthStatus;
 use crate::config::{ApiServerConfig, CommonConfig};
 use crate::db::probe::DbProbe;
 use crate::db::storage_postgres::StoragePostgres;
@@ -110,6 +111,9 @@ only the program-related core fields, and is used by the compiler to discern whe
 
         // Metrics
         endpoints::metrics::get_metrics,
+
+        // Cluster Health
+        endpoints::cluster_healthz::get_health
     ),
     components(schemas(
         // Authentication
@@ -243,6 +247,10 @@ only the program-related core fields, and is used by the compiler to discern whe
         feldera_types::checkpoint::CheckpointResponse,
         feldera_types::checkpoint::CheckpointFailure,
         feldera_types::transaction::StartTransactionResponse,
+
+        // Cluster health check
+        crate::cluster_health::HealthStatus,
+        crate::cluster_health::ServiceStatus,
     ),),
     tags(
         (name = "Pipeline management", description = "Create, retrieve, update, delete and deploy pipelines."),
@@ -318,6 +326,8 @@ fn api_scope() -> Scope {
         .service(endpoints::config::get_config_demos)
         // Metrics of all pipelines belonging to this tenant
         .service(endpoints::metrics::get_metrics)
+        // Cluster health check
+        .service(endpoints::cluster_healthz::get_health)
 }
 
 struct SecurityAddon;
@@ -356,6 +366,7 @@ pub(crate) struct ServerState {
     probe: Arc<Mutex<DbProbe>>,
     pub demos: Vec<Demo>,
     pub license_check: Arc<RwLock<Option<LicenseCheck>>>,
+    pub health_check: Arc<RwLock<Option<HealthStatus>>>,
 }
 
 impl ServerState {
@@ -364,6 +375,7 @@ impl ServerState {
         config: ApiServerConfig,
         db: Arc<Mutex<StoragePostgres>>,
         license_check: Arc<RwLock<Option<LicenseCheck>>>,
+        health_check: Arc<RwLock<Option<HealthStatus>>>,
     ) -> AnyResult<Self> {
         let runner = RunnerInteraction::new(common_config.clone(), db.clone());
         let db_copy = db.clone();
@@ -377,6 +389,7 @@ impl ServerState {
             probe: DbProbe::new(db_copy).await,
             demos,
             license_check,
+            health_check,
         })
     }
 }
@@ -425,6 +438,7 @@ pub async fn run(
     common_config: CommonConfig,
     api_config: ApiServerConfig,
     license_check: Arc<RwLock<Option<LicenseCheck>>>,
+    health_check: Arc<RwLock<Option<HealthStatus>>>,
 ) -> AnyResult<()> {
     let listener = TcpListener::bind((common_config.bind_address.clone(), common_config.api_port))
         .unwrap_or_else(|_| {
@@ -434,7 +448,14 @@ pub async fn run(
             )
         });
     let state = WebData::new(
-        ServerState::new(common_config.clone(), api_config.clone(), db, license_check).await?,
+        ServerState::new(
+            common_config.clone(),
+            api_config.clone(),
+            db,
+            license_check,
+            health_check,
+        )
+        .await?,
     );
     let auth_configuration = match api_config.auth_provider {
         crate::config::AuthProviderType::None => None,
