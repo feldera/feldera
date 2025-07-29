@@ -2,9 +2,9 @@ use crate::algebra::{ZBatch, ZBatchReader};
 use crate::circuit::circuit_builder::StreamId;
 use crate::circuit::splitter_output_chunk_size;
 use crate::dynamic::DynData;
-use crate::trace::cursor::CursorFactory;
+use crate::operator::async_stream_operators::{StreamingBinaryOperator, StreamingBinaryWrapper};
 use crate::trace::spine_async::WithSnapshot;
-use crate::trace::{Spine, SpineSnapshot, Trace};
+use crate::trace::{Spine, Trace};
 use crate::{
     algebra::{
         IndexedZSet, IndexedZSetReader, Lattice, MulByRef, OrdIndexedZSet, OrdZSet, PartialOrder,
@@ -30,8 +30,11 @@ use crate::{
     DBData, ZWeight,
 };
 use crate::{NestedCircuit, Runtime};
+use async_stream::stream;
 use minitrace::trace;
 use size_of::{Context, SizeOf};
+use std::cell::RefCell;
+use std::rc::Rc;
 use std::{
     borrow::Cow,
     cmp::{min, Ordering},
@@ -598,7 +601,7 @@ where
                 .dyn_accumulate_trace(&factories.right_trace_factories, &factories.right_factories);
 
             let left = self.circuit().add_binary_operator(
-                JoinTrace::new(
+                StreamingBinaryWrapper::new(JoinTrace::new(
                     &factories.right_trace_factories,
                     &factories.output_factories,
                     factories.timed_item_factory,
@@ -606,13 +609,13 @@ where
                     join_funcs.left,
                     Location::caller(),
                     self.circuit().clone(),
-                ),
+                )),
                 &left.dyn_accumulate(&factories.left_factories),
                 &right_trace,
             );
 
             let right = self.circuit().add_binary_operator(
-                JoinTrace::new(
+                StreamingBinaryWrapper::new(JoinTrace::new(
                     &factories.left_trace_factories,
                     &factories.output_factories,
                     factories.timed_item_factory,
@@ -620,7 +623,7 @@ where
                     join_funcs.right,
                     Location::caller(),
                     self.circuit().clone(),
-                ),
+                )),
                 &right.dyn_accumulate(&factories.right_factories),
                 &left_trace.accumulate_delay_trace(),
             );
@@ -1041,69 +1044,6 @@ impl JoinStats {
     }
 }
 
-struct JoinState<I, T>
-where
-    I: ZBatchReader,
-    T: ZBatchReader,
-{
-    _index: I,
-    _fetched: Option<Box<dyn CursorFactory<T::Key, T::Val, T::Time, T::R>>>,
-    _trace: Option<T>,
-    key_found: bool,
-    index_cursor: I::Cursor<'static>,
-    trace_cursor: Box<dyn Cursor<T::Key, T::Val, T::Time, T::R>>,
-}
-
-impl<I, T> JoinState<I, T>
-where
-    I: ZBatchReader,
-    T: ZBatchReader,
-{
-    fn from_snapshot(index: I, trace: T) -> Self {
-        let index_cursor = index.cursor();
-        let index_cursor =
-            unsafe { std::mem::transmute::<I::Cursor<'_>, I::Cursor<'static>>(index_cursor) };
-        let trace_cursor = trace.cursor();
-        let trace_cursor =
-            unsafe { std::mem::transmute::<T::Cursor<'_>, T::Cursor<'static>>(trace_cursor) };
-
-        Self {
-            _index: index,
-            _fetched: None,
-            _trace: Some(trace),
-            key_found: false,
-            index_cursor,
-            trace_cursor: Box::new(trace_cursor),
-        }
-    }
-
-    fn from_fetched(
-        index: I,
-        fetched: Box<dyn CursorFactory<T::Key, T::Val, T::Time, T::R>>,
-    ) -> Self {
-        let index_cursor = index.cursor();
-        let index_cursor =
-            unsafe { std::mem::transmute::<I::Cursor<'_>, I::Cursor<'static>>(index_cursor) };
-
-        let trace_cursor = fetched.get_cursor();
-        let trace_cursor = unsafe {
-            std::mem::transmute::<
-                Box<dyn Cursor<T::Key, T::Val, T::Time, T::R> + '_>,
-                Box<dyn Cursor<T::Key, T::Val, T::Time, T::R> + 'static>,
-            >(trace_cursor)
-        };
-
-        Self {
-            _index: index,
-            _fetched: Some(fetched),
-            _trace: None,
-            key_found: false,
-            index_cursor,
-            trace_cursor,
-        }
-    }
-}
-
 pub struct JoinTrace<I, B, T, Z, Clk>
 where
     I: ZBatch,
@@ -1118,28 +1058,17 @@ where
     clock: Clk,
     timed_items_factory:
         &'static dyn Factory<DynPairs<DynDataTyped<T::Time>, WeightedItem<Z::Key, Z::Val, Z::R>>>,
-    join_func: TraceJoinFunc<I::Key, I::Val, T::Val, Z::Key, Z::Val>,
+    join_func: RefCell<TraceJoinFunc<I::Key, I::Val, T::Val, Z::Key, Z::Val>>,
     location: &'static Location<'static>,
-    state: Option<JoinState<SpineSnapshot<I>, SpineSnapshot<B>>>,
     // Future updates computed ahead of time, indexed by time
     // when each set of updates should be output.
-    future_outputs: HashMap<T::Time, Spine<Z>>,
+    future_outputs: RefCell<HashMap<T::Time, Spine<Z>>>,
     // True if empty input batch was received at the current clock cycle.
-    empty_input: bool,
+    empty_input: RefCell<bool>,
     // True if empty output was produced at the current clock cycle.
-    empty_output: bool,
-    stats: JoinStats,
-    // Handle to update the metric `left_tuples`
-    left_tuples_metric: Option<Gauge>,
-    // Handle to update the metric `right_tuples`
-    right_tuples_metric: Option<Gauge>,
-    // Handle to update the metric `computed_output`
-    computed_output_metric: Option<Gauge>,
-    // Handle to update the metric `produced_output`
-    produced_output_metric: Option<Gauge>,
-    // Handle to update the metric `output_redundancy`
-    output_redundancy_metric: Option<Gauge>,
-    _types: PhantomData<(I, T, Z)>,
+    empty_output: RefCell<bool>,
+    stats: RefCell<JoinStats>,
+    _types: PhantomData<(I, B, T, Z)>,
 }
 
 impl<I, B, T, Z, Clk> JoinTrace<I, B, T, Z, Clk>
@@ -1168,13 +1097,12 @@ where
             timed_item_factory,
             timed_items_factory,
             clock,
-            join_func,
+            join_func: RefCell::new(join_func),
             location,
-            state: None,
-            future_outputs: HashMap::new(),
-            empty_input: false,
-            empty_output: false,
-            stats: JoinStats::new(),
+            future_outputs: RefCell::new(HashMap::new()),
+            empty_input: RefCell::new(false),
+            empty_output: RefCell::new(false),
+            stats: RefCell::new(JoinStats::new()),
             _types: PhantomData,
         }
     }
@@ -1198,23 +1126,31 @@ where
 
     fn clock_start(&mut self, scope: Scope) {
         if scope == 0 {
-            self.empty_input = false;
-            self.empty_output = false;
+            *self.empty_input.borrow_mut() = false;
+            *self.empty_output.borrow_mut() = false;
         }
     }
 
     fn clock_end(&mut self, _scope: Scope) {
         debug_assert!(self
             .future_outputs
+            .borrow()
             .keys()
             .all(|time| !time.less_equal(&self.clock.time())));
     }
 
     fn metadata(&self, meta: &mut OperatorMeta) {
-        let total_size: usize = self.future_outputs.values().map(|spine| spine.len()).sum();
+        let stats = self.stats.borrow();
+        let total_size: usize = self
+            .future_outputs
+            .borrow()
+            .values()
+            .map(|spine| spine.len())
+            .sum();
 
         let batch_sizes = MetaItem::Array(
             self.future_outputs
+                .borrow()
                 .values()
                 .map(|batcher| {
                     let size = batcher.size_of();
@@ -1232,7 +1168,7 @@ where
 
         let bytes = {
             let mut context = Context::new();
-            for batcher in self.future_outputs.values() {
+            for batcher in self.future_outputs.borrow().values() {
                 batcher.size_of_with_context(&mut context);
             }
 
@@ -1241,8 +1177,8 @@ where
 
         // Find the percentage of consolidated outputs
         let output_redundancy = MetaItem::Percent {
-            numerator: (self.stats.output_tuples - self.stats.produced_tuples) as u64,
-            denominator: self.stats.output_tuples as u64,
+            numerator: (stats.output_tuples - stats.produced_tuples) as u64,
+            denominator: stats.output_tuples as u64,
         };
 
         meta.extend(metadata! {
@@ -1251,10 +1187,10 @@ where
             USED_BYTES_LABEL => MetaItem::bytes(bytes.used_bytes()),
             "allocations" => MetaItem::Count(bytes.distinct_allocations()),
             SHARED_BYTES_LABEL => MetaItem::bytes(bytes.shared_bytes()),
-            "left inputs" => self.stats.lhs_tuples,
-            "right inputs" => self.stats.rhs_tuples,
-            "computed outputs" => self.stats.output_tuples,
-            "produced outputs" => self.stats.produced_tuples,
+            "left inputs" => stats.lhs_tuples,
+            "right inputs" => stats.rhs_tuples,
+            "computed outputs" => stats.output_tuples,
+            "produced outputs" => stats.produced_tuples,
             "output redundancy" => output_redundancy,
         });
     }
@@ -1264,25 +1200,17 @@ where
         // We're in a stable state if input and output at the current clock cycle are
         // both empty, and there are no precomputed outputs before the end of the
         // clock epoch.
-        self.empty_input
-            && self.empty_output
+        *self.empty_input.borrow()
+            && *self.empty_output.borrow()
             && self
                 .future_outputs
+                .borrow()
                 .keys()
                 .all(|time| !time.less_equal(&epoch_end))
     }
-
-    fn is_flush_complete(&self) -> bool {
-        // println!(
-        //     "{}: join::is_flush_complete = {:?}",
-        //     Runtime::worker_index(),
-        //     self.state.is_none()
-        // );
-        self.state.is_none()
-    }
 }
 
-impl<I, B, T, Z, Clk> BinaryOperator<Option<Spine<I>>, T, Z> for JoinTrace<I, B, T, Z, Clk>
+impl<I, B, T, Z, Clk> StreamingBinaryOperator<Option<Spine<I>>, T, Z> for JoinTrace<I, B, T, Z, Clk>
 where
     I: ZBatch<Time = ()>,
     B: ZBatch<Key = I::Key>,
@@ -1291,203 +1219,217 @@ where
     Clk: WithClock<Time = T::Time> + 'static,
 {
     #[trace]
-    async fn eval(&mut self, index: &Option<Spine<I>>, trace: &T) -> Z {
+    fn eval(
+        self: Rc<Self>,
+        delta: &Option<Spine<I>>,
+        trace: &T,
+    ) -> impl futures::Stream<Item = (Z, bool)> + 'static {
         let chunk_size = splitter_output_chunk_size();
 
-        if self.state.is_some() && index.is_some() {
-            panic!("JoinTrace::eval received new input before previous input was fully processed");
-        }
+        let delta = delta.as_ref().map(|b| b.ro_snapshot());
 
-        if let Some(index) = index {
-            self.empty_input = index.is_empty();
-            self.empty_output = true;
-            self.stats.lhs_tuples += index.len();
-            self.stats.rhs_tuples = trace.len();
-
-            let index_snapshot = index.ro_snapshot();
-            let trace_snapshot = trace.ro_snapshot();
-
-            self.state = Some(
-                if Runtime::with_dev_tweaks(|dev_tweaks| dev_tweaks.fetch_join) {
-                    if let Some(fetched) = trace.fetch(index).await {
-                        JoinState::from_fetched(index_snapshot, fetched)
-                    } else {
-                        JoinState::from_snapshot(index_snapshot, trace_snapshot)
-                    }
-                } else {
-                    JoinState::from_snapshot(index_snapshot, trace_snapshot)
-                },
-            );
-        };
-
-        let Some(state) = &mut self.state else {
-            return Z::dyn_empty(&self.output_factories);
-        };
-
-        let mut val = self.right_factories.val_factory().default_box();
-
-        let batch = if size_of::<T::Time>() != 0 {
-            let time = self.clock.time();
-
-            // Buffer to collect output tuples.
-            // One allocation per clock tick is acceptable; however the actual output can be
-            // larger than `index.len()`.  If re-allocations becomes a problem, we
-            // may need to do something smarter, like a chain of buffers.
-            // TODO: Sub-scopes can cause a lot of inner clock cycles to be set off, so this
-            //       actually could be significant
-            let mut output_tuples = self.timed_items_factory.default_box();
-            output_tuples.reserve(chunk_size);
-
-            let mut timed_item = self.timed_item_factory.default_box();
-
-            while state.index_cursor.key_valid() {
-                if state.trace_cursor.seek_key_exact(state.index_cursor.key()) {
-                    //println!("key: {}", index_cursor.key(index));
-
-                    while state.index_cursor.val_valid() {
-                        let w1 = **state.index_cursor.weight();
-                        let v1 = state.index_cursor.val();
-                        //println!("v1: {}, w1: {}", v1, w1);
-
-                        while state.trace_cursor.val_valid() {
-                            // FIXME: this clone is only needed to avoid borrow checker error due to
-                            // borrowing `trace_cursor` below.
-                            state.trace_cursor.val().clone_to(val.as_mut());
-
-                            (self.join_func)(state.index_cursor.key(), v1, &val, &mut |k, v| {
-                                state
-                                    .trace_cursor
-                                    .map_times(&mut |ts: &T::Time, w2: &T::R| {
-                                        let (time_ref, item) = timed_item.split_mut();
-                                        let (kv, w) = item.split_mut();
-                                        let (key, val) = kv.split_mut();
-
-                                        **w = w1.mul_by_ref(&**w2);
-                                        k.clone_to(key);
-                                        v.clone_to(val);
-                                        **time_ref = ts.join(&time);
-                                        output_tuples.push_val(timed_item.as_mut());
-                                    });
-                            });
-                            state.trace_cursor.step_val();
-                        }
-                        state.trace_cursor.rewind_vals();
-                        state.index_cursor.step_val();
-                    }
-                }
-                state.index_cursor.step_key();
-            }
-
-            self.stats.output_tuples += output_tuples.len();
-
-            // Sort `output_tuples` by timestamp and push all tuples for each unique
-            // timestamp to the appropriate spine.
-            output_tuples.sort_by_key();
-
-            let mut batch = self.output_factories.weighted_items_factory().default_box();
-            let mut start: usize = 0;
-
-            while start < output_tuples.len() {
-                let batch_time = output_tuples[start].fst().deref().clone();
-
-                let run_length =
-                    output_tuples.advance_while(start, output_tuples.len(), &|tuple| {
-                        tuple.fst().deref() == &batch_time
-                    });
-                batch.reserve(run_length);
-
-                for i in start..start + run_length {
-                    batch.push_val(unsafe { output_tuples.index_mut_unchecked(i) }.snd_mut());
-                }
-
-                start += run_length;
-
-                self.future_outputs.entry(batch_time).or_insert_with(|| {
-                    let mut spine = <Spine<Z> as Trace>::new(&self.output_factories);
-                    spine.insert(Z::dyn_from_tuples(&self.output_factories, (), &mut batch));
-                    spine
-                });
-                batch.clear();
-            }
-
-            // Consolidate the spine for the current timestamp and return it.
-            self.future_outputs
-                .remove(&time)
-                .and_then(|spine| spine.consolidate())
-                .unwrap_or_else(|| Z::dyn_empty(&self.output_factories))
+        let trace = if delta.is_some() {
+            Some(trace.ro_snapshot())
         } else {
-            let mut output_tuples = self.output_factories.weighted_items_factory().default_box();
-            output_tuples.reserve(chunk_size);
-
-            let mut output_tuple = self.output_factories.weighted_item_factory().default_box();
-
-            while state.index_cursor.key_valid() {
-                if state.key_found || state.trace_cursor.seek_key_exact(state.index_cursor.key()) {
-                    state.key_found = true;
-                    //println!("key: {}", index_cursor.key(index));
-
-                    while state.index_cursor.val_valid() {
-                        let w1 = **state.index_cursor.weight();
-                        let v1 = state.index_cursor.val();
-                        //println!("v1: {}, w1: {}", v1, w1);
-
-                        while state.trace_cursor.val_valid() && output_tuples.len() <= chunk_size {
-                            // FIXME: this clone is only needed to avoid borrow checker error due to
-                            // borrowing `trace_cursor` below.
-                            state.trace_cursor.val().clone_to(val.as_mut());
-
-                            (self.join_func)(state.index_cursor.key(), v1, &val, &mut |k, v| {
-                                state
-                                    .trace_cursor
-                                    .map_times(&mut |_ts: &T::Time, w2: &T::R| {
-                                        let (kv, w) = output_tuple.split_mut();
-                                        let (key, val) = kv.split_mut();
-
-                                        **w = w1.mul_by_ref(&**w2);
-                                        k.clone_to(key);
-                                        v.clone_to(val);
-                                        output_tuples.push_val(output_tuple.as_mut());
-                                    });
-                            });
-                            state.trace_cursor.step_val();
-                        }
-
-                        if output_tuples.len() >= chunk_size {
-                            break;
-                        }
-                        state.trace_cursor.rewind_vals();
-                        state.index_cursor.step_val();
-                    }
-                }
-                if output_tuples.len() >= chunk_size {
-                    break;
-                }
-                state.key_found = false;
-                state.index_cursor.step_key();
-            }
-
-            self.stats.output_tuples += output_tuples.len();
-            Z::dyn_from_tuples(&self.output_factories, (), &mut output_tuples)
+            None
         };
 
-        if !state.index_cursor.key_valid() {
-            self.state = None;
+        stream! {
+            let Some(delta) = delta else {
+                // println!("yield empty");
+                yield(Z::dyn_empty(&self.output_factories), true);
+                return;
+            };
+            let trace = trace.unwrap();
+
+            *self.empty_input.borrow_mut() = delta.is_empty();
+            *self.empty_output.borrow_mut() = true;
+            self.stats.borrow_mut().lhs_tuples += delta.len();
+            self.stats.borrow_mut().rhs_tuples = trace.len();
+
+            let fetched = if Runtime::with_dev_tweaks(|dev_tweaks| dev_tweaks.fetch_join) {
+                trace.fetch(&delta).await
+            } else {
+                None
+            };
+
+            let mut delta_cursor = delta.cursor();
+
+            let mut trace_cursor = if let Some(fetched) = fetched.as_ref() {
+                fetched.get_cursor()
+            } else {
+                Box::new(trace.cursor())
+            };
+
+            let mut val = self.right_factories.val_factory().default_box();
+
+            let batch = if size_of::<T::Time>() != 0 {
+                let time = self.clock.time();
+
+                // Buffer to collect output tuples.
+                // One allocation per clock tick is acceptable; however the actual output can be
+                // larger than `index.len()`.  If re-allocations becomes a problem, we
+                // may need to do something smarter, like a chain of buffers.
+                // TODO: Sub-scopes can cause a lot of inner clock cycles to be set off, so this
+                //       actually could be significant
+                let mut output_tuples = self.timed_items_factory.default_box();
+                output_tuples.reserve(chunk_size);
+
+                let mut timed_item = self.timed_item_factory.default_box();
+
+                while delta_cursor.key_valid() {
+                    if trace_cursor.seek_key_exact(delta_cursor.key()) {
+                        //println!("key: {}", index_cursor.key(index));
+
+                        while delta_cursor.val_valid() {
+                            let w1 = **delta_cursor.weight();
+                            let v1 = delta_cursor.val();
+                            //println!("v1: {}, w1: {}", v1, w1);
+
+                            while trace_cursor.val_valid() {
+                                // FIXME: this clone is only needed to avoid borrow checker error due to
+                                // borrowing `trace_cursor` below.
+                                trace_cursor.val().clone_to(val.as_mut());
+
+                                (self.join_func.borrow_mut())(delta_cursor.key(), v1, &val, &mut |k, v| {
+                                        trace_cursor
+                                        .map_times(&mut |ts: &T::Time, w2: &T::R| {
+                                            let (time_ref, item) = timed_item.split_mut();
+                                            let (kv, w) = item.split_mut();
+                                            let (key, val) = kv.split_mut();
+
+                                            **w = w1.mul_by_ref(&**w2);
+                                            k.clone_to(key);
+                                            v.clone_to(val);
+                                            **time_ref = ts.join(&time);
+                                            output_tuples.push_val(timed_item.as_mut());
+                                        });
+                                });
+                                trace_cursor.step_val();
+                            }
+                            trace_cursor.rewind_vals();
+                            delta_cursor.step_val();
+                        }
+                    }
+                    delta_cursor.step_key();
+                }
+
+                self.stats.borrow_mut().output_tuples += output_tuples.len();
+
+                // Sort `output_tuples` by timestamp and push all tuples for each unique
+                // timestamp to the appropriate spine.
+                output_tuples.sort_by_key();
+
+                let mut batch = self.output_factories.weighted_items_factory().default_box();
+                let mut start: usize = 0;
+
+                while start < output_tuples.len() {
+                    let batch_time = output_tuples[start].fst().deref().clone();
+
+                    let run_length =
+                        output_tuples.advance_while(start, output_tuples.len(), &|tuple| {
+                            tuple.fst().deref() == &batch_time
+                        });
+                    batch.reserve(run_length);
+
+                    for i in start..start + run_length {
+                        batch.push_val(unsafe { output_tuples.index_mut_unchecked(i) }.snd_mut());
+                    }
+
+                    start += run_length;
+
+                    self.future_outputs.borrow_mut().entry(batch_time).or_insert_with(|| {
+                        let mut spine = <Spine<Z> as Trace>::new(&self.output_factories);
+                        spine.insert(Z::dyn_from_tuples(&self.output_factories, (), &mut batch));
+                        spine
+                    });
+                    batch.clear();
+                }
+
+                // Consolidate the spine for the current timestamp and return it.
+                let output = self.future_outputs.borrow_mut()
+                    .remove(&time)
+                    .and_then(|spine| spine.consolidate())
+                    .unwrap_or_else(|| Z::dyn_empty(&self.output_factories));
+
+                output
+            } else {
+                let mut output_tuples = self.output_factories.weighted_items_factory().default_box();
+                output_tuples.reserve(chunk_size);
+
+                let mut output_tuple = self.output_factories.weighted_item_factory().default_box();
+
+                while delta_cursor.key_valid() {
+                    if trace_cursor.seek_key_exact(delta_cursor.key()) {
+                        //println!("key: {}", index_cursor.key(index));
+
+                        while delta_cursor.val_valid() {
+                            let w1 = **delta_cursor.weight();
+                            let v1 = delta_cursor.val();
+                            //println!("v1: {}, w1: {}", v1, w1);
+
+                            while trace_cursor.val_valid() {
+                                // FIXME: this clone is only needed to avoid borrow checker error due to
+                                // borrowing `trace_cursor` below.
+                                trace_cursor.val().clone_to(val.as_mut());
+
+                                (self.join_func.borrow_mut())(delta_cursor.key(), v1, &val, &mut |k, v| {
+                                    trace_cursor
+                                        .map_times(&mut |_ts: &T::Time, w2: &T::R| {
+                                            let (kv, w) = output_tuple.split_mut();
+                                            let (key, val) = kv.split_mut();
+
+                                            **w = w1.mul_by_ref(&**w2);
+                                            k.clone_to(key);
+                                            v.clone_to(val);
+                                            output_tuples.push_val(output_tuple.as_mut());
+                                        });
+                                });
+
+                                if output_tuples.len() >= chunk_size {
+                                    self.stats.borrow_mut().output_tuples += output_tuples.len();
+
+                                    let batch = Z::dyn_from_tuples(&self.output_factories, (), &mut output_tuples);
+                                    self.stats.borrow_mut().produced_tuples += batch.len();
+
+                                    if !batch.is_empty() {
+                                        *self.empty_output.borrow_mut() = false;
+                                    }
+
+                                    yield (batch, false);
+
+                                    let mut output_tuples = self.timed_items_factory.default_box();
+                                    output_tuples.reserve(chunk_size);
+                                }
+
+                                trace_cursor.step_val();
+                            }
+
+                            trace_cursor.rewind_vals();
+                            delta_cursor.step_val();
+                        }
+                    }
+                    delta_cursor.step_key();
+                }
+
+                Z::dyn_from_tuples(&self.output_factories, (), &mut output_tuples)
+            };
+
+            // println!(
+            //     "{}: join produces {} outputs (final = {:?}):{:?}",
+            //     Runtime::worker_index(),
+            //     batch.len(),
+            //     self.state.is_none(),
+            //     batch
+            // );
+
+            self.stats.borrow_mut().produced_tuples += batch.len();
+            if !batch.is_empty() {
+                *self.empty_output.borrow_mut() = false;
+            }
+
+            yield (batch, true)
         }
-
-        // println!(
-        //     "{}: join produces {} outputs (final = {:?}):{:?}",
-        //     Runtime::worker_index(),
-        //     batch.len(),
-        //     self.state.is_none(),
-        //     batch
-        // );
-
-        self.stats.produced_tuples += batch.len();
-        if !batch.is_empty() {
-            self.empty_output = false;
-        }
-
-        batch
     }
 }
 
