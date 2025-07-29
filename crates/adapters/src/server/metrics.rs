@@ -250,6 +250,31 @@ where
     }
 }
 
+/// The type of a metric whose values are [Value].
+pub enum ValueType {
+    /// A counter.
+    ///
+    /// The value of a counter never decreases, but it can increase.  For
+    /// example, a counter might report the amount of CPU time used by a
+    /// process.
+    Counter,
+
+    /// A gauge.
+    ///
+    /// A gauge can vary over time.  For example, a gauge might report the
+    /// amount of memory used by a process.
+    Gauge,
+}
+
+impl ValueType {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ValueType::Counter => "counter",
+            ValueType::Gauge => "gauge",
+        }
+    }
+}
+
 impl<F> MetricsWriter<F>
 where
     F: MetricsFormatter,
@@ -261,26 +286,79 @@ where
         }
     }
 
+    /// Adds a collection of values for a `value_type` metric with the given
+    /// `name`.  Supply `help` as a human-readable text string explaining the
+    /// metric.  `write_values` should call [ValueWriter::write_value] for each
+    /// value of the metric (each value should have different labels).
+    ///
+    /// Consider Prometheus [metric and label naming] rules when adding new
+    /// metrics.
+    ///
+    /// The values have to be specified together in a callback because the
+    /// [Prometheus exposition format] requires that all of the values for a
+    /// given metric be written together in one block.
+    ///
+    /// [Prometheus exposition format]: https://prometheus.io/docs/instrumenting/exposition_formats/
+    /// [metric and label naming]: https://prometheus.io/docs/practices/naming/
+    pub fn values<W>(&mut self, name: &str, help: &str, value_type: ValueType, write_values: W)
+    where
+        W: FnOnce(&mut ValueWriter<F>),
+    {
+        self.formatter
+            .write_description(name, help, value_type.as_str());
+        write_values(&mut ValueWriter {
+            name,
+            formatter: &mut self.formatter,
+        });
+        self.formatter.end_values();
+    }
+
+    /// Adds a single `value` of type `value_type`, labeled with `labels`, with
+    /// the given `name` and `help`.
+    ///
+    /// This is a convenience function that is only correctly use for a metric
+    /// with a single value.  If the metric might have multiple values, use
+    /// [values](Self::values) instead.
+    pub fn value(
+        &mut self,
+        name: &str,
+        help: &str,
+        labels: &LabelStack,
+        value_type: ValueType,
+        value: impl Value,
+    ) {
+        self.values(name, help, value_type, |w| w.write_value(labels, value));
+    }
+
     /// Adds a collection of counters for the metric with the given `name`.
     /// Supply `help` as a human-readable text string explaining the counter.
     /// `write_values` should call [ValueWriter::write_value] for each value of
     /// the counter (each value should have different labels).
+    ///
+    /// Consider Prometheus [metric and label naming] rules when adding new
+    /// metrics.
     ///
     /// The values have to be specified together in a callback because the
     /// [Prometheus exposition format] requires that all of the values for a
     /// given counter be written together in one block.
     ///
     /// [Prometheus exposition format]: https://prometheus.io/docs/instrumenting/exposition_formats/
-    pub fn counter<W>(&mut self, name: &str, help: &str, write_values: W)
+    /// [metric and label naming]: https://prometheus.io/docs/practices/naming/
+    pub fn counters<W>(&mut self, name: &str, help: &str, write_values: W)
     where
         W: FnOnce(&mut ValueWriter<F>),
     {
-        self.formatter.write_description(name, help, "counter");
-        write_values(&mut ValueWriter {
-            name,
-            formatter: &mut self.formatter,
-        });
-        self.formatter.end_values();
+        self.values(name, help, ValueType::Counter, write_values);
+    }
+
+    /// Adds a single counter `value`, labeled with `labels`, with the given
+    /// `name` and `help`.
+    ///
+    /// This is a convenience function that is only correctly use for a counter
+    /// with a single value.  If the counter might have multiple values, use
+    /// [counters](Self::counters) instead.
+    pub fn counter(&mut self, name: &str, help: &str, labels: &LabelStack, value: impl Value) {
+        self.value(name, help, labels, ValueType::Counter, value);
     }
 
     /// Adds a collection of gauges for the metric with the given `name`.
@@ -288,21 +366,30 @@ where
     /// `write_values` should call [ValueWriter::write_value] for each value of
     /// the gauge (each value should have different labels).
     ///
+    /// Consider Prometheus [metric and label naming] rules when adding new
+    /// metrics.
+    ///
     /// The values have to be specified together in a callback because the
     /// [Prometheus exposition format] requires that all of the values for a
     /// given gauge be written together in one block.
     ///
     /// [Prometheus exposition format]: https://prometheus.io/docs/instrumenting/exposition_formats/
-    pub fn gauge<W>(&mut self, name: &str, help: &str, write_values: W)
+    /// [metric and label naming]: https://prometheus.io/docs/practices/naming/
+    pub fn gauges<W>(&mut self, name: &str, help: &str, write_values: W)
     where
         W: FnOnce(&mut ValueWriter<F>),
     {
-        self.formatter.write_description(name, help, "gauge");
-        write_values(&mut ValueWriter {
-            name,
-            formatter: &mut self.formatter,
-        });
-        self.formatter.end_values();
+        self.values(name, help, ValueType::Gauge, write_values);
+    }
+
+    /// Adds a single gauge `value`, labeled with `labels`, with the given
+    /// `name` and `help`.
+    ///
+    /// This is a convenience function that is only correctly use for a gauge
+    /// with a single value.  If the gauge might have multiple values, use
+    /// [gauges](Self::gauges) instead.
+    pub fn gauge(&mut self, name: &str, help: &str, labels: &LabelStack, value: impl Value) {
+        self.value(name, help, labels, ValueType::Gauge, value);
     }
 
     /// Adds a collection of histograms for the metric with the given `name`.
@@ -310,12 +397,16 @@ where
     /// `write_values` should call [HistogramWriter::write_histogram] for each value
     /// of the histogram (each value should have different labels).
     ///
+    /// Consider Prometheus [metric and label naming] rules when adding new
+    /// metrics.
+    ///
     /// The values have to be specified together in a callback because the
     /// [Prometheus exposition format] requires that all of the values for a
     /// given histogram be written together in one block.
     ///
     /// [Prometheus exposition format]: https://prometheus.io/docs/instrumenting/exposition_formats/
-    pub fn histogram<W>(&mut self, name: &str, help: &str, f: W)
+    /// [metric and label naming]: https://prometheus.io/docs/practices/naming/
+    pub fn histograms<W>(&mut self, name: &str, help: &str, f: W)
     where
         W: FnOnce(&mut HistogramWriter<F>),
     {
@@ -325,6 +416,95 @@ where
             name,
         });
         self.formatter.end_values();
+    }
+
+    /// Adds a single histogram `value`, labeled with `labels`, with the
+    /// given `name` and `help`.
+    ///
+    /// This is a convenience function that is only correctly use for a
+    /// histogram with a single value.  If the histogram might have multiple
+    /// values, use [histogram](Self::histograms) instead.
+    pub fn histogram(
+        &mut self,
+        name: &str,
+        help: &str,
+        labels: &LabelStack,
+        value: &impl Histogram,
+    ) {
+        self.histograms(name, help, |w| w.write_histogram(labels, value));
+    }
+
+    /// Collects and writes semi-standardized Prometheus process metrics to this
+    /// metrics writer, labeling them with `labels`.
+    ///
+    /// Uses [metrics_process] to collect process metrics.
+    pub fn process_metrics(&mut self, labels: &LabelStack) {
+        let metrics = metrics_process::collector::collect();
+
+        if let Some(cpu_seconds_total) = metrics.cpu_seconds_total {
+            self.counter(
+                "process_cpu_seconds_total",
+                "Total user and system CPU time spent in seconds.",
+                labels,
+                cpu_seconds_total,
+            );
+        }
+        if let Some(open_fds) = metrics.open_fds {
+            self.gauge(
+                "process_open_fds",
+                "Number of open file descriptors.",
+                labels,
+                open_fds,
+            );
+        }
+        if let Some(max_fds) = metrics.max_fds {
+            self.gauge(
+                "process_max_fds",
+                "Maximum number of open file descriptors.",
+                labels,
+                max_fds,
+            );
+        }
+        if let Some(virtual_memory_bytes) = metrics.virtual_memory_bytes {
+            self.gauge(
+                "process_virtual_memory_bytes",
+                "Virtual memory size in bytes.",
+                labels,
+                virtual_memory_bytes,
+            );
+        }
+        if let Some(virtual_memory_max_bytes) = metrics.virtual_memory_max_bytes {
+            self.gauge(
+                "process_virtual_memory_max_bytes",
+                "Maximum amount of virtual memory available in bytes.",
+                labels,
+                virtual_memory_max_bytes,
+            );
+        }
+        if let Some(resident_memory_bytes) = metrics.resident_memory_bytes {
+            self.gauge(
+                "process_resident_memory_bytes",
+                "Resident set size in bytes.",
+                labels,
+                resident_memory_bytes,
+            );
+        }
+        if let Some(start_time_seconds) = metrics.start_time_seconds {
+            self.counter(
+                "process_start_time_seconds",
+                "Start time of the process since the Unix epoch in seconds.",
+                labels,
+                start_time_seconds,
+            );
+        }
+        if let Some(threads) = metrics.threads {
+            self.gauge(
+                "process_threads",
+                "Number of OS threads in the process.",
+                labels,
+                threads,
+            );
+        }
     }
 
     /// Consumes this metrics writer and returns the output.
@@ -564,6 +744,45 @@ pub trait Histogram {
     fn buckets(&self) -> impl Iterator<Item = Bucket>;
 }
 
+/// A wrapper for a [Histogram] that divides bucket boundaries by a fixed
+/// factor.
+///
+/// This is useful for converting a histogram for, say, microseconds, into one
+/// for seconds.
+pub struct HistogramDiv<H> {
+    /// Inner histogram.
+    pub inner: H,
+    /// Divisor.
+    pub divisor: f64,
+}
+
+impl<H> HistogramDiv<H> {
+    /// Constructs a a new [HistogramDiv].
+    pub fn new(inner: H, divisor: f64) -> Self {
+        Self { inner, divisor }
+    }
+}
+
+impl<H> Histogram for HistogramDiv<H>
+where
+    H: Histogram,
+{
+    fn sum(&self) -> f64 {
+        self.inner.sum() / self.divisor
+    }
+
+    fn count(&self) -> f64 {
+        self.inner.count()
+    }
+
+    fn buckets(&self) -> impl Iterator<Item = Bucket> {
+        self.inner.buckets().map(|bucket| Bucket {
+            upper: bucket.upper / self.divisor,
+            count: bucket.count,
+        })
+    }
+}
+
 impl Histogram for ExponentialHistogramSnapshot {
     fn sum(&self) -> f64 {
         self.sum() as f64
@@ -633,7 +852,7 @@ http_request_duration_seconds_count 144320
         let mut metrics_writer = MetricsWriter::<F>::new();
         let binding = LabelStack::new();
         let labels = binding.with("method", "post");
-        metrics_writer.counter(
+        metrics_writer.counters(
             "http_requests_total",
             "The total number of HTTP requests",
             |counter| {
@@ -686,7 +905,8 @@ http_request_duration_seconds_count 144320
         metrics_writer.histogram(
             "http_request_duration_seconds",
             "A histogram of the request duration.",
-            |h| h.write_histogram(&LabelStack::new(), &H),
+            &LabelStack::new(),
+            &H,
         );
 
         metrics_writer.into_output()
