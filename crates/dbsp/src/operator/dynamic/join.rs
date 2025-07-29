@@ -1560,7 +1560,7 @@ mod test {
                     .non_incremental(
                         &(index1.clone(), index2.clone()),
                         |_child, (index1, index2)| {
-                            Ok(index1.stream_join(&index2, |&k: &u64, s1, s2| {
+                            Ok(index1.stream_join(index2, |&k: &u64, s1, s2| {
                                 Tup2(k, format!("{} {}", s1, s2))
                             }))
                         },
@@ -1749,7 +1749,7 @@ mod test {
     }
 
     fn antijoin_test(transaction: bool) {
-        let inputs1 = vec![
+        let inputs1 = [
             vec![
                 Tup2(1, Tup2(0, 1)),
                 Tup2(1, Tup2(1, 2)),

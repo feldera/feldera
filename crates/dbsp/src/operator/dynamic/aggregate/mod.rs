@@ -1429,7 +1429,7 @@ pub mod test {
         )
         .unwrap();
 
-        let input = vec![
+        let input = [
             vec![Tup2(1u64, Tup2(1u64, 1)), Tup2(1, Tup2(2, 2))],
             vec![
                 Tup2(2, Tup2(2, 1)),
@@ -1561,7 +1561,7 @@ pub mod test {
         )
         .unwrap();
 
-        let inputs = vec![
+        let inputs = [
             vec![
                 Tup2(1u64, Tup2(Tup1(None), 1)),
                 Tup2(2u64, Tup2(Tup1(Some(5)), 1)),
@@ -1634,7 +1634,7 @@ pub mod test {
         )
         .unwrap();
 
-        let inputs = vec![
+        let inputs = [
             vec![Tup2(1u64, Tup2(Tup1(1), 1)), Tup2(2u64, Tup2(Tup1(5), 1))],
             vec![Tup2(1u64, Tup2(Tup1(3), 1)), Tup2(2u64, Tup2(Tup1(2), 1))],
             vec![Tup2(1u64, Tup2(Tup1(1), -1)), Tup2(2u64, Tup2(Tup1(5), -1))],

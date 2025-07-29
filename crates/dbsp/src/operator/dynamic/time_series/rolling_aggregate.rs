@@ -1481,11 +1481,13 @@ mod test {
         test_partition_rolling_aggregate(
             u64::MAX,
             None,
-            std::iter::repeat(vec![
-                vec![Tup2(0u64, Tup2(Tup2(1u64, 100i64), 1))],
-                vec![Tup2(0u64, Tup2(Tup2(1u64, 100i64), -1))],
-            ])
-            .take(1000)
+            std::iter::repeat_n(
+                vec![
+                    vec![Tup2(0u64, Tup2(Tup2(1u64, 100i64), 1))],
+                    vec![Tup2(0u64, Tup2(Tup2(1u64, 100i64), -1))],
+                ],
+                1000,
+            )
             .flatten()
             .collect::<Vec<_>>(),
             false,
