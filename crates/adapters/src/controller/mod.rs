@@ -43,7 +43,8 @@ use crossbeam::{
 };
 use datafusion::prelude::*;
 use dbsp::circuit::metrics::{
-    COMPACTION_STALL_TIME, DBSP_STEP, FILES_CREATED, FILES_DELETED, TOTAL_LATE_RECORDS,
+    COMPACTION_STALL_TIME, DBSP_OPERATOR_COMMIT_LATENCY, DBSP_STEP, DBSP_STEP_LATENCY,
+    FILES_CREATED, FILES_DELETED, TOTAL_LATE_RECORDS,
 };
 use dbsp::circuit::tokio::TOKIO;
 use dbsp::circuit::{CircuitStorageConfig, DevTweaks, Mode};
@@ -58,7 +59,10 @@ use feldera_adapterlib::transport::Resume;
 use feldera_adapterlib::utils::datafusion::execute_query_text;
 use feldera_ir::LirCircuit;
 use feldera_storage::checkpoint_synchronizer::CheckpointSynchronizer;
-use feldera_storage::metrics::{READ_LATENCY, SYNC_LATENCY, WRITE_LATENCY};
+use feldera_storage::histogram::ExponentialHistogram;
+use feldera_storage::metrics::{
+    READ_BLOCKS, READ_LATENCY, SYNC_LATENCY, WRITE_BLOCKS, WRITE_LATENCY,
+};
 use feldera_types::checkpoint::CheckpointMetadata;
 use feldera_types::format::json::JsonLines;
 use feldera_types::secret_resolver::resolve_secret_references_in_connector_config;
@@ -125,6 +129,16 @@ pub use stats::{CompletionToken, ControllerStatus, InputEndpointStatus};
 pub(crate) const MAX_API_CONNECTIONS: u64 = 100;
 
 pub(crate) type EndpointId = u64;
+
+/// Latency of checkpoint operations, in microseconds.
+static CHECKPOINT_LATENCY: ExponentialHistogram = ExponentialHistogram::new();
+
+/// Amount of storage written during checkpoint operations, in megabytes.
+static CHECKPOINT_WRITTEN: ExponentialHistogram = ExponentialHistogram::new();
+
+/// Number of records successfully processed at the time of the last successful
+/// checkpoint.
+static CHECKPOINT_PROCESSED_RECORDS: AtomicU64 = AtomicU64::new(0);
 
 /// Controller that coordinates the creation, reconfiguration, teardown of
 /// input/output adapters, and implements runtime flow control.
@@ -730,6 +744,36 @@ impl Controller {
             labels,
             &DBSP_STEP,
         );
+        metrics.histogram(
+            "dbsp_step_latency_seconds",
+            "Latency of DBSP steps over the last 60 seconds or 1000 steps, whichever is less, in seconds",
+            labels,
+            &HistogramDiv::new(DBSP_STEP_LATENCY.lock().unwrap().snapshot(), 1_000_000.0));
+        metrics.histogram(
+            "dbsp_operator_checkpoint_latency_seconds",
+            "Latency of individual operator checkpoint operations in seconds. (Because checkpoints run in parallel across workers, these will not add to `feldera_checkpoint_latency_seconds`.)",
+            labels,
+            &HistogramDiv::new(DBSP_OPERATOR_COMMIT_LATENCY.snapshot(), 1_000_000.0),
+        );
+
+        metrics.histogram(
+            "feldera_checkpoint_latency_seconds",
+            "Latency of overall checkpoint operations in seconds",
+            labels,
+            &HistogramDiv::new(CHECKPOINT_LATENCY.snapshot(), 1_000_000.0),
+        );
+        metrics.histogram(
+            "feldera_checkpoint_written_bytes",
+            "Amount of data written to storage during checkpoints, in bytes.",
+            labels,
+            &HistogramDiv::new(CHECKPOINT_WRITTEN.snapshot(), 1.0 / 1_000_000.0),
+        );
+        metrics.counter(
+            "feldera_checkpoint_records_processed_total",
+            "Total number of records that had processed when the most recent checkpoint successfully committed.",
+            labels,
+            &CHECKPOINT_PROCESSED_RECORDS,
+        );
 
         metrics.histogram(
             "storage_read_latency_seconds",
@@ -744,10 +788,23 @@ impl Controller {
             &HistogramDiv::new(WRITE_LATENCY.snapshot(), 1_000_000.0),
         );
         metrics.histogram(
-            "sync_latency_seconds",
+            "storage_sync_latency_seconds",
             "Sync latency in seconds",
             labels,
             &HistogramDiv::new(SYNC_LATENCY.snapshot(), 1_000_000.0),
+        );
+
+        metrics.histogram(
+            "storage_read_block_bytes",
+            "Sizes in bytes of blocks read from storage.",
+            labels,
+            &READ_BLOCKS.snapshot(),
+        );
+        metrics.histogram(
+            "storage_write_block_bytes",
+            "Sizes in bytes of blocks written to storage.",
+            labels,
+            &WRITE_BLOCKS.snapshot(),
         );
 
         fn write_input_metric<F, M>(
@@ -1291,33 +1348,38 @@ impl CircuitThread {
                 .status
                 .global_metrics
                 .num_total_processed_records();
-            let checkpoint = this
-                .circuit
-                .commit_with_metadata(this.step, processed_records)
-                .map_err(|e| Arc::new(ControllerError::from(e)))
-                .and_then(|circuit| {
-                    let uuid = circuit.uuid.to_string();
-                    let checkpoint = Checkpoint {
-                        circuit: Some(circuit),
-                        step: this.step,
-                        config,
-                        processed_records,
-                        input_metadata: CheckpointOffsets(input_metadata),
-                    };
-                    checkpoint
-                        .write(
-                            &**this.storage.as_ref().unwrap(),
-                            &StoragePath::from(STATE_FILE),
-                        )
-                        .map_err(Arc::new)?;
-                    checkpoint
-                        .write(
-                            &**this.storage.as_ref().unwrap(),
-                            &StoragePath::from(uuid).child(STATE_FILE),
-                        )
-                        .map(|()| checkpoint)
-                        .map_err(Arc::new)
-                })?;
+            let written_before = WRITE_BLOCKS.sum();
+            let checkpoint = CHECKPOINT_LATENCY.record_callback(|| {
+                this.circuit
+                    .commit_with_metadata(this.step, processed_records)
+                    .map_err(|e| Arc::new(ControllerError::from(e)))
+                    .and_then(|circuit| {
+                        let uuid = circuit.uuid.to_string();
+                        let checkpoint = Checkpoint {
+                            circuit: Some(circuit),
+                            step: this.step,
+                            config,
+                            processed_records,
+                            input_metadata: CheckpointOffsets(input_metadata),
+                        };
+                        checkpoint
+                            .write(
+                                &**this.storage.as_ref().unwrap(),
+                                &StoragePath::from(STATE_FILE),
+                            )
+                            .map_err(Arc::new)?;
+                        checkpoint
+                            .write(
+                                &**this.storage.as_ref().unwrap(),
+                                &StoragePath::from(uuid).child(STATE_FILE),
+                            )
+                            .map(|()| checkpoint)
+                            .map_err(Arc::new)
+                    })
+            })?;
+            let written_after = WRITE_BLOCKS.sum();
+            CHECKPOINT_WRITTEN.record((written_after - written_before) / 1_000_000);
+            CHECKPOINT_PROCESSED_RECORDS.store(processed_records, Ordering::Relaxed);
 
             // TODO: check the requested checkpoint UUID
             if this.sync_checkpoint_request.is_none() {

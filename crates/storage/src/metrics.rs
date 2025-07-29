@@ -8,3 +8,9 @@ pub static WRITE_LATENCY: ExponentialHistogram = ExponentialHistogram::new();
 
 /// Histogram of latency syncing to stable storage, in microseconds.
 pub static SYNC_LATENCY: ExponentialHistogram = ExponentialHistogram::new();
+
+/// Histogram of read block sizes, in bytes.
+pub static READ_BLOCKS: ExponentialHistogram = ExponentialHistogram::new();
+
+/// Histogram of write block sizes, in bytes.
+pub static WRITE_BLOCKS: ExponentialHistogram = ExponentialHistogram::new();

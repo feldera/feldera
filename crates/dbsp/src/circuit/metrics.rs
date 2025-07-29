@@ -3,7 +3,12 @@
 //! The constants defined in this module are the names of metrics that the
 //! backends maintain via [`metrics`] crate interfaces.
 
-use std::sync::atomic::AtomicU64;
+use std::{
+    sync::{atomic::AtomicU64, Mutex},
+    time::Duration,
+};
+
+use feldera_storage::histogram::{ExponentialHistogram, SlidingHistogram};
 
 /// Total number of files created.
 pub static FILES_CREATED: AtomicU64 = AtomicU64::new(0);
@@ -19,3 +24,10 @@ pub static TOTAL_LATE_RECORDS: AtomicU64 = AtomicU64::new(0);
 
 /// Total number of DBSP steps executed.
 pub static DBSP_STEP: AtomicU64 = AtomicU64::new(0);
+
+/// Latency of recent DBSP steps, in microseconds.
+pub static DBSP_STEP_LATENCY: Mutex<SlidingHistogram> =
+    Mutex::new(SlidingHistogram::new(1000, Duration::from_secs(60)));
+
+/// Latency of individual operator commits, in microseconds.
+pub static DBSP_OPERATOR_COMMIT_LATENCY: ExponentialHistogram = ExponentialHistogram::new();

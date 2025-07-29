@@ -7,7 +7,9 @@ use super::{
 use crate::circuit::metrics::{FILES_CREATED, FILES_DELETED};
 use crate::storage::{buffer_cache::FBuf, init};
 use crate::Runtime;
-use feldera_storage::metrics::{READ_LATENCY, SYNC_LATENCY, WRITE_LATENCY};
+use feldera_storage::metrics::{
+    READ_BLOCKS, READ_LATENCY, SYNC_LATENCY, WRITE_BLOCKS, WRITE_LATENCY,
+};
 use feldera_storage::tokio::TOKIO;
 use feldera_storage::{
     append_to_path, default_read_async, StorageBackend, StorageBackendFactory, StorageFileType,
@@ -96,6 +98,7 @@ impl FileReader for PosixReader {
     }
 
     fn read_block(&self, location: BlockLocation) -> Result<Arc<FBuf>, StorageError> {
+        READ_BLOCKS.record(location.size);
         READ_LATENCY.record_callback(|| {
             sleep(self.ioop_delay);
             let mut buffer = FBuf::with_capacity(location.size);
@@ -122,6 +125,7 @@ impl FileReader for PosixReader {
                 let blocks = blocks
                     .into_iter()
                     .map(|location| {
+                        READ_BLOCKS.record(location.size);
                         let mut buffer = FBuf::with_capacity(location.size);
                         match buffer.read_exact_at(&file, location.offset, location.size) {
                             Ok(()) => Ok(Arc::new(buffer)),
@@ -278,6 +282,7 @@ impl PosixWriter {
             let mut cursor = bufs.as_mut_slice();
             while !cursor.is_empty() {
                 let n = self.file.write_vectored(cursor)?;
+                WRITE_BLOCKS.record(n);
                 self.drop.size += n as u64;
                 self.drop.usage.fetch_add(n as i64, Ordering::Relaxed);
                 IoSlice::advance_slices(&mut cursor, n);
