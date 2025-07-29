@@ -627,6 +627,14 @@ pub trait Batch: BatchReader + Clone + Send + Sync
 where
     Self: Sized,
 {
+    /// A batch type equivalent to `Self`, but with timestamp type `T` instead of `Self::Time`.
+    type Timed<T: Timestamp>: Batch<
+        Key = <Self as BatchReader>::Key,
+        Val = <Self as BatchReader>::Val,
+        Time = T,
+        R = <Self as BatchReader>::R,
+    >;
+
     /// A type used to assemble batches from disordered updates.
     type Batcher: Batcher<Self>;
 
