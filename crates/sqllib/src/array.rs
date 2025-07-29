@@ -447,7 +447,7 @@ where
 }
 
 #[doc(hidden)]
-pub fn array_compact_N<T>(vector: Option<Array<Option<T>>>) -> Option<Array<T>>
+pub fn array_compactN<T>(vector: Option<Array<Option<T>>>) -> Option<Array<T>>
 where
     T: Clone,
 {
