@@ -389,6 +389,7 @@ where
     T: Timestamp,
     O: OrdOffset,
 {
+    type Timed<T2: Timestamp> = VecValBatch<K, V, T2, R, O>;
     type Batcher = MergeBatcher<Self>;
     type Builder = VecValBuilder<K, V, T, R, O>;
 
