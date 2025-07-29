@@ -8,10 +8,11 @@ use crate::{
         cursor::{DelegatingCursor, PushCursor},
         ord::{
             file::key_batch::FileKeyBuilder, merge_batcher::MergeBatcher,
-            vec::key_batch::VecKeyBuilder, FileKeyBatch, OrdKeyBatch,
+            vec::key_batch::VecKeyBuilder, FileKeyBatch,
         },
         Batch, BatchFactories, BatchLocation, BatchReader, BatchReaderFactories, Builder,
-        FileKeyBatchFactories, Filter, MergeCursor, OrdKeyBatchFactories, WeightedItem,
+        FileKeyBatchFactories, Filter, MergeCursor, VecKeyBatch, VecKeyBatchFactories,
+        WeightedItem,
     },
     DBData, DBWeight, NumEntries, Timestamp,
 };
@@ -30,7 +31,7 @@ where
     R: WeightTrait + ?Sized,
 {
     file: FileKeyBatchFactories<K, T, R>,
-    vec: OrdKeyBatchFactories<K, T, R>,
+    vec: VecKeyBatchFactories<K, T, R>,
 }
 
 impl<K, T, R> Clone for FallbackKeyBatchFactories<K, T, R>
@@ -61,7 +62,7 @@ where
     {
         Self {
             file: FileKeyBatchFactories::new::<KType, VType, RType>(),
-            vec: OrdKeyBatchFactories::new::<KType, VType, RType>(),
+            vec: VecKeyBatchFactories::new::<KType, VType, RType>(),
         }
     }
 
@@ -136,7 +137,7 @@ where
     T: Timestamp,
     R: WeightTrait + ?Sized,
 {
-    Vec(OrdKeyBatch<K, T, R>),
+    Vec(VecKeyBatch<K, T, R>),
     File(FileKeyBatch<K, T, R>),
 }
 
