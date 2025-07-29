@@ -582,9 +582,9 @@ mod test {
         let (index1, index1_handle) = circuit.add_input_indexed_zset::<Time, String>();
 
         let bounds = &bounds.apply(|(start, end)| (TypedBox::new(*start), TypedBox::new(*end)));
-        let output_handle = index1.window((true, false), &bounds).accumulate_output();
+        let output_handle = index1.window((true, false), bounds).accumulate_output();
 
-        compare_with_reference(&index1, &bounds);
+        compare_with_reference(&index1, bounds);
 
         Ok((bounds_handle, index1_handle, output_handle))
     }
@@ -631,7 +631,7 @@ mod test {
             .into_iter();
 
         let (circuit, (bounds_handle, index1_handle, output_handle)) =
-            RootCircuit::build(move |circuit| window_test_circuit(circuit)).unwrap();
+            RootCircuit::build(window_test_circuit).unwrap();
 
         for clock in 1000..1006 {
             bounds_handle.set_for_all(((clock - 100), clock));
@@ -699,7 +699,7 @@ mod test {
         const WINDOW_SIZE: Time = 5;
 
         let (circuit, (bounds_handle, index1_handle, output_handle)) =
-            RootCircuit::build(move |circuit| window_test_circuit(circuit)).unwrap();
+            RootCircuit::build(window_test_circuit).unwrap();
 
         for clock in 1000..1011 {
             bounds_handle.set_for_all((
@@ -785,7 +785,7 @@ mod test {
         .into_iter();
 
         let (circuit, (bounds_handle, index1_handle, output_handle)) =
-            RootCircuit::build(move |circuit| window_test_circuit(circuit)).unwrap();
+            RootCircuit::build(window_test_circuit).unwrap();
 
         for _ in 1000..1006 {
             bounds_handle.set_for_all(windows.next().unwrap());
@@ -981,7 +981,7 @@ mod test {
 
                     let bounds =
                         &bounds.apply(|(start, end)| (TypedBox::new(*start), TypedBox::new(*end)));
-                    let output_handle = index1.window((true, false), &bounds).accumulate_output();
+                    let output_handle = index1.window((true, false), bounds).accumulate_output();
 
                     Ok((bounds_handle, index1_handle, output_handle))
                 })
