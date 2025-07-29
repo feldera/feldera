@@ -999,6 +999,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
             case OTHER_FUNCTION: {
                 String opName = call.op.getName().toLowerCase();
                 switch (opName) {
+                    case "trunc":
                     case "truncate":
                     case "round": {
                         DBSPExpression right;
