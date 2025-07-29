@@ -1545,7 +1545,7 @@ mod test {
         let (mut circuit, (input_handle, inc_output, hash_inc_output, noninc_output)) =
             Runtime::init_circuit(
                 CircuitConfig::from(workers).with_splitter_chunk_size_records(2),
-                |circuit| distinct_test_circuit(circuit),
+                distinct_test_circuit,
             )
             .unwrap();
 
@@ -1591,8 +1591,7 @@ mod test {
         transaction: bool,
     ) {
         let (mut circuit, (input_handle, inc_output, hash_inc_output, noninc_output)) =
-            Runtime::init_circuit(workers, |circuit| distinct_indexed_test_circuit(circuit))
-                .unwrap();
+            Runtime::init_circuit(workers, distinct_indexed_test_circuit).unwrap();
 
         if transaction {
             circuit.start_transaction().unwrap();
