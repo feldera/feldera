@@ -702,7 +702,7 @@ fn test_lag_custom_ord(transaction: bool) {
     )
     .unwrap();
 
-    let trace = vec![
+    let trace = [
         vec![
             (1, Tup2(1, "f".to_string()), 1),
             (1, Tup2(1, "e".to_string()), 1),
