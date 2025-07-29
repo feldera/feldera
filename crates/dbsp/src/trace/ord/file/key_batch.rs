@@ -315,6 +315,7 @@ where
     T: Timestamp,
     R: WeightTrait + ?Sized,
 {
+    type Timed<T2: Timestamp> = FileKeyBatch<K, T2, R>;
     type Batcher = MergeBatcher<Self>;
     type Builder = FileKeyBuilder<K, T, R>;
 

@@ -17,7 +17,7 @@ use crate::{
         merge_batches_by_reference,
         ord::{file::UnwrapStorage, merge_batcher::MergeBatcher},
         Batch, BatchFactories, BatchLocation, BatchReader, BatchReaderFactories, Builder, Cursor,
-        VecIndexedWSetFactories, WeightedItem,
+        FileValBatch, VecIndexedWSetFactories, WeightedItem,
     },
     DBData, DBWeight, NumEntries, Runtime,
 };
@@ -436,6 +436,7 @@ where
     V: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
+    type Timed<T: crate::Timestamp> = FileValBatch<K, V, T, R>;
     type Batcher = MergeBatcher<Self>;
     type Builder = FileIndexedWSetBuilder<K, V, R>;
 

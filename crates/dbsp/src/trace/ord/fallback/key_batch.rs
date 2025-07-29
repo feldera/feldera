@@ -303,6 +303,7 @@ where
     T: Timestamp,
     R: WeightTrait + ?Sized,
 {
+    type Timed<T2: Timestamp> = FallbackKeyBatch<K, T2, R>;
     type Batcher = MergeBatcher<Self>;
     type Builder = FallbackKeyBuilder<K, T, R>;
 

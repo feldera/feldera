@@ -133,15 +133,15 @@ where
 
 pub struct JoinFactories<I1, I2, T, O>
 where
-    I1: IndexedZSetReader,
-    I2: IndexedZSetReader,
+    I1: IndexedZSet,
+    I2: IndexedZSet,
     O: IndexedZSet,
     T: Timestamp,
 {
     pub left_factories: I1::Factories,
     pub right_factories: I2::Factories,
-    pub left_trace_factories: <T::ValBatch<I1::Key, I1::Val, I1::R> as BatchReader>::Factories,
-    pub right_trace_factories: <T::ValBatch<I1::Key, I2::Val, I1::R> as BatchReader>::Factories,
+    pub left_trace_factories: <T::TimedBatch<I1> as BatchReader>::Factories,
+    pub right_trace_factories: <T::TimedBatch<I2> as BatchReader>::Factories,
     pub output_factories: O::Factories,
     pub timed_item_factory:
         &'static dyn Factory<DynPair<DynDataTyped<T>, WeightedItem<O::Key, O::Val, O::R>>>,
@@ -151,8 +151,8 @@ where
 
 impl<I1, I2, T, O> JoinFactories<I1, I2, T, O>
 where
-    I1: IndexedZSetReader,
-    I2: IndexedZSetReader<Key = I1::Key>,
+    I1: IndexedZSet,
+    I2: IndexedZSet<Key = I1::Key>,
     O: IndexedZSet,
     T: Timestamp,
 {
@@ -180,8 +180,8 @@ where
 
 impl<I1, I2, T, O> Clone for JoinFactories<I1, I2, T, O>
 where
-    I1: IndexedZSetReader,
-    I2: IndexedZSetReader,
+    I1: IndexedZSet,
+    I2: IndexedZSet,
     O: IndexedZSet,
     T: Timestamp,
 {
