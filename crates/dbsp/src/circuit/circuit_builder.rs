@@ -34,6 +34,7 @@ use crate::{
         cache::{CircuitCache, CircuitStoreMarker},
         fingerprinter::Fingerprinter,
         metadata::OperatorMeta,
+        metrics::DBSP_OPERATOR_COMMIT_LATENCY,
         operator_traits::{
             BinaryOperator, BinarySinkOperator, Data, ImportOperator, NaryOperator,
             QuaternaryOperator, SinkOperator, SourceOperator, StrictUnaryOperator, TernaryOperator,
@@ -73,10 +74,9 @@ use std::{
     rc::Rc,
     sync::Arc,
     thread::panicking,
-    time::{Duration, Instant},
 };
 use tokio::{runtime::Runtime as TokioRuntime, sync::Notify, task::LocalSet};
-use tracing::{debug, info};
+use tracing::debug;
 use typedmap::{TypedMap, TypedMapKey};
 
 use super::dbsp_handle::Mode;
@@ -6085,19 +6085,7 @@ impl CircuitHandle {
 
         self.circuit
             .map_nodes_recursive_mut(&mut |node: &mut dyn Node| {
-                let start = Instant::now();
-                node.commit(base)?;
-                let elapsed = start.elapsed();
-                if elapsed >= Duration::from_secs(3) {
-                    info!(
-                        "{:?}: committing {} node took {:.2} s",
-                        node.global_id(),
-                        node.name(),
-                        elapsed.as_secs_f64()
-                    );
-                }
-
-                Ok(())
+                DBSP_OPERATOR_COMMIT_LATENCY.record_callback(|| node.commit(base))
             })
     }
 
