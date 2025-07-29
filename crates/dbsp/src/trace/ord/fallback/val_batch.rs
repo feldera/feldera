@@ -12,7 +12,7 @@ use crate::{
     storage::file::reader::Error as ReaderError,
     trace::{
         ord::merge_batcher::MergeBatcher, Batch, BatchFactories, BatchReader, BatchReaderFactories,
-        Builder, FileValBatch, FileValBatchFactories, Filter, OrdValBatch, OrdValBatchFactories,
+        Builder, FileValBatch, FileValBatchFactories, Filter, VecValBatch, VecValBatchFactories,
         WeightedItem,
     },
     DBData, DBWeight, NumEntries, Timestamp,
@@ -33,7 +33,7 @@ where
     R: WeightTrait + ?Sized,
 {
     file: FileValBatchFactories<K, V, T, R>,
-    vec: OrdValBatchFactories<K, V, T, R>,
+    vec: VecValBatchFactories<K, V, T, R>,
 }
 
 impl<K, V, T, R> Clone for FallbackValBatchFactories<K, V, T, R>
@@ -66,7 +66,7 @@ where
     {
         Self {
             file: FileValBatchFactories::new::<KType, VType, RType>(),
-            vec: OrdValBatchFactories::new::<KType, VType, RType>(),
+            vec: VecValBatchFactories::new::<KType, VType, RType>(),
         }
     }
 
@@ -141,7 +141,7 @@ where
     T: Timestamp,
     R: WeightTrait + ?Sized,
 {
-    Vec(OrdValBatch<K, V, T, R>),
+    Vec(VecValBatch<K, V, T, R>),
     File(FileValBatch<K, V, T, R>),
 }
 
