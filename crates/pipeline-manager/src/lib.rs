@@ -6,6 +6,7 @@ use std::sync::OnceLock;
 mod auth;
 
 pub mod api;
+pub mod cluster_health;
 pub mod common_error;
 pub mod compiler;
 pub mod config;

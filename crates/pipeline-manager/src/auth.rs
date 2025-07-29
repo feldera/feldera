@@ -764,6 +764,7 @@ mod test {
                 manager_config,
                 db,
                 Arc::new(RwLock::new(None)),
+                Arc::new(RwLock::new(None)),
             )
             .await
             .unwrap(),

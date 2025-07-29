@@ -5,6 +5,7 @@ use clap::{Args, Command, FromArgMatches};
 use colored::Colorize;
 use log::info;
 use pipeline_manager::api::main::ApiDoc;
+use pipeline_manager::cluster_health::regular_health_check;
 use pipeline_manager::compiler::main::{compiler_main, compiler_precompile};
 #[cfg(feature = "postgresql_embedded")]
 use pipeline_manager::config::PgEmbedConfig;
@@ -102,9 +103,23 @@ async fn main() -> anyhow::Result<()> {
             .await
             .expect("Local runner main failed");
     });
+
+    let health_check = Arc::new(RwLock::new(None));
+    let health_check_handle = health_check.clone();
+    let common_config_clone = common_config.clone();
+    tokio::spawn(async move {
+        regular_health_check(health_check_handle, common_config_clone, None).await;
+    });
+
     // The api-server blocks forever
-    pipeline_manager::api::main::run(db, common_config, api_config, Arc::new(RwLock::new(None)))
-        .await
-        .expect("API server main failed");
+    pipeline_manager::api::main::run(
+        db,
+        common_config,
+        api_config,
+        Arc::new(RwLock::new(None)),
+        health_check,
+    )
+    .await
+    .expect("API server main failed");
     Ok(())
 }
