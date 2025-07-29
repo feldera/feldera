@@ -56,6 +56,7 @@ use feldera_adapterlib::transport::Resume;
 use feldera_adapterlib::utils::datafusion::execute_query_text;
 use feldera_ir::LirCircuit;
 use feldera_storage::checkpoint_synchronizer::CheckpointSynchronizer;
+use feldera_storage::metrics::{READ_LATENCY, SYNC_LATENCY, WRITE_LATENCY};
 use feldera_types::checkpoint::CheckpointMetadata;
 use feldera_types::format::json::JsonLines;
 use feldera_types::secret_resolver::resolve_secret_references_in_connector_config;
@@ -725,6 +726,16 @@ impl Controller {
             "Total number of DBSP steps executed",
             |w| w.write_value(labels, &DBSP_STEP),
         );
+
+        metrics.histogram("read_latency_us", "Read latency in microseconds", |w| {
+            w.write_histogram(labels, &READ_LATENCY.snapshot())
+        });
+        metrics.histogram("write_latency_us", "Write latency in microseconds", |w| {
+            w.write_histogram(labels, &WRITE_LATENCY.snapshot())
+        });
+        metrics.histogram("sync_latency_us", "Sync latency in microseconds", |w| {
+            w.write_histogram(labels, &SYNC_LATENCY.snapshot())
+        });
 
         fn write_input_metric<F, M>(
             metrics: &mut MetricsWriter<F>,

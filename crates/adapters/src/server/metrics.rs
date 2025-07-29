@@ -1,3 +1,4 @@
+use feldera_storage::histogram::ExponentialHistogramSnapshot;
 use itertools::Itertools;
 use std::{
     fmt::{Display, Write},
@@ -561,6 +562,30 @@ pub trait Histogram {
     /// All the buckets in the histogram.  The final bucket should have upper
     /// limit [f64::INFINITY] and count equal to [count][Self::count].
     fn buckets(&self) -> impl Iterator<Item = Bucket>;
+}
+
+impl Histogram for ExponentialHistogramSnapshot {
+    fn sum(&self) -> f64 {
+        self.sum() as f64
+    }
+
+    fn count(&self) -> f64 {
+        self.iter_buckets().map(|bucket| bucket.count).sum::<u64>() as f64
+    }
+
+    fn buckets(&self) -> impl Iterator<Item = Bucket> {
+        let mut running_total = 0;
+        self.iter_buckets().map(move |b| {
+            running_total += b.count;
+            Bucket {
+                upper: match *b.range.end() {
+                    u64::MAX => f64::INFINITY,
+                    other => other as f64,
+                },
+                count: running_total as f64,
+            }
+        })
+    }
 }
 
 #[cfg(test)]
