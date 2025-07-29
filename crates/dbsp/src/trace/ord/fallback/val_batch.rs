@@ -313,6 +313,7 @@ where
     T: Timestamp,
     R: WeightTrait + ?Sized,
 {
+    type Timed<T2: Timestamp> = FallbackValBatch<K, V, T2, R>;
     type Batcher = MergeBatcher<Self>;
     type Builder = FallbackValBuilder<K, V, T, R>;
 

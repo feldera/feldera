@@ -12,8 +12,8 @@ use crate::{
             merge_batcher::MergeBatcher,
             vec::wset_batch::{VecWSet, VecWSetBuilder},
         },
-        serialize_wset, Batch, BatchLocation, BatchReader, Builder, FileWSet, FileWSetFactories,
-        Filter, MergeCursor,
+        serialize_wset, Batch, BatchLocation, BatchReader, Builder, FallbackKeyBatch, FileWSet,
+        FileWSetFactories, Filter, MergeCursor,
     },
     DBWeight, NumEntries,
 };
@@ -327,6 +327,7 @@ where
     K: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
+    type Timed<T: crate::Timestamp> = FallbackKeyBatch<K, T, R>;
     type Batcher = MergeBatcher<Self>;
     type Builder = FallbackWSetBuilder<K, R>;
 

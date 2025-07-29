@@ -9,9 +9,9 @@ use crate::{
     operator::dynamic::{
         accumulate_trace::{
             AccumulateBoundsId, AccumulateDelayedTraceId, AccumulateTraceAppend, AccumulateTraceId,
-            AccumulateZ1Trace,
+            AccumulateZ1Trace, TimedSpine,
         },
-        trace::{DelayedTraceId, TraceAppend, TraceBounds, TraceId, ValSpine, Z1Trace},
+        trace::{DelayedTraceId, TraceAppend, TraceBounds, TraceId, Z1Trace},
     },
     trace::{
         Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor, TupleBuilder,
@@ -21,11 +21,11 @@ use crate::{
 use minitrace::trace;
 use std::{borrow::Cow, marker::PhantomData, ops::Neg};
 
-use super::trace::{BoundsId, KeySpine};
+use super::trace::BoundsId;
 
 pub struct UpdateSetFactories<T: Timestamp, B: ZSet> {
     pub batch_factories: B::Factories,
-    pub trace_factories: <T::KeyBatch<B::Key, B::R> as BatchReader>::Factories,
+    pub trace_factories: <T::TimedBatch<B> as BatchReader>::Factories,
 }
 
 impl<T: Timestamp, B: ZSet> Clone for UpdateSetFactories<T, B> {
@@ -55,7 +55,7 @@ where
 
 pub struct UpsertFactories<T: Timestamp, B: IndexedZSet> {
     pub batch_factories: B::Factories,
-    pub trace_factories: <T::ValBatch<B::Key, B::Val, B::R> as BatchReader>::Factories,
+    pub trace_factories: <T::TimedBatch<B> as BatchReader>::Factories,
 }
 
 impl<T: Timestamp, B: IndexedZSet> Clone for UpsertFactories<T, B> {
@@ -155,7 +155,7 @@ where
 
             let delta = circuit
                 .add_binary_operator(
-                    <Upsert<KeySpine<B, C>, B, _>>::new(
+                    <Upsert<TimedSpine<B, C>, B, _>>::new(
                         &factories.batch_factories,
                         bounds.clone(),
                         circuit.clone(),
@@ -168,7 +168,7 @@ where
             let replay_stream = z1feedback.operator_mut().prepare_replay_stream(&delta);
 
             let trace = circuit.add_binary_operator_with_preference(
-                <TraceAppend<KeySpine<B, C>, B, C>>::new(
+                <TraceAppend<TimedSpine<B, C>, B, C>>::new(
                     &factories.trace_factories,
                     circuit.clone(),
                 ),
@@ -262,7 +262,7 @@ where
 
             let delta = circuit
                 .add_binary_operator(
-                    <Upsert<ValSpine<B, C>, B, _>>::new(
+                    <Upsert<TimedSpine<B, C>, B, _>>::new(
                         &factories.batch_factories,
                         bounds.clone(),
                         circuit.clone(),
@@ -275,7 +275,7 @@ where
             let replay_stream = z1feedback.operator_mut().prepare_replay_stream(&delta);
 
             let trace = circuit.add_binary_operator_with_preference(
-                <AccumulateTraceAppend<ValSpine<B, C>, B, C>>::new(
+                <AccumulateTraceAppend<TimedSpine<B, C>, B, C>>::new(
                     &factories.trace_factories,
                     circuit.clone(),
                 ),

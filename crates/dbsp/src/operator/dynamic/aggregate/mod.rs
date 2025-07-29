@@ -61,9 +61,9 @@ pub use min::{ArgMinSome, Min, MinSemigroup, MinSome1, MinSome1Semigroup};
 
 use super::MonoIndexedZSet;
 
-pub struct IncAggregateFactories<I: BatchReader, O: IndexedZSet, T: Timestamp> {
+pub struct IncAggregateFactories<I: Batch<Time = ()>, O: IndexedZSet, T: Timestamp> {
     pub input_factories: I::Factories,
-    pub trace_factories: <T::ValBatch<I::Key, I::Val, I::R> as BatchReader>::Factories,
+    pub trace_factories: <T::TimedBatch<I> as BatchReader>::Factories,
     pub upsert_factories: UpsertFactories<T, O>,
     keys_factory: &'static dyn Factory<DynSet<I::Key>>,
     output_pair_factory: &'static dyn Factory<DynPair<I::Key, DynOpt<O::Val>>>,
@@ -72,7 +72,7 @@ pub struct IncAggregateFactories<I: BatchReader, O: IndexedZSet, T: Timestamp> {
 
 impl<I, O, T> IncAggregateFactories<I, O, T>
 where
-    I: BatchReader,
+    I: Batch<Time = ()>,
     O: IndexedZSet<Key = I::Key>,
     T: Timestamp,
 {

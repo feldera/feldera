@@ -11,7 +11,7 @@ use crate::{
             Cursor as _, Layer, LayerCursor, LayerFactories, Leaf, LeafFactories, OrdOffset, Trie,
         },
         serialize_indexed_wset, Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder,
-        Cursor, Deserializer, Filter, MergeCursor, Serializer, WeightedItem,
+        Cursor, Deserializer, Filter, MergeCursor, Serializer, VecValBatch, WeightedItem,
     },
     utils::Tup2,
     DBData, DBWeight, Error, NumEntries,
@@ -466,6 +466,7 @@ where
     R: WeightTrait + ?Sized,
     O: OrdOffset,
 {
+    type Timed<T: crate::Timestamp> = VecValBatch<K, V, T, R, O>;
     type Batcher = MergeBatcher<Self>;
     type Builder = VecIndexedWSetBuilder<K, V, R, O>;
 }
