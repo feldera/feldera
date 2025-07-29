@@ -9,8 +9,14 @@ pub use fallback::{
         FallbackIndexedWSetBuilder as OrdIndexedWSetBuilder, FallbackIndexedWSetFactories,
         FallbackIndexedWSetFactories as OrdIndexedWSetFactories,
     },
-    key_batch::{FallbackKeyBatch, FallbackKeyBatchFactories},
-    val_batch::{FallbackValBatch, FallbackValBatchFactories},
+    key_batch::{
+        FallbackKeyBatch, FallbackKeyBatch as OrdKeyBatch, FallbackKeyBatchFactories,
+        FallbackKeyBatchFactories as OrdKeyBatchFactories,
+    },
+    val_batch::{
+        FallbackValBatch, FallbackValBatch as OrdValBatch, FallbackValBatchFactories,
+        FallbackValBatchFactories as OrdValBatchFactories,
+    },
     wset::{
         FallbackWSet, FallbackWSet as OrdWSet, FallbackWSetBuilder,
         FallbackWSetBuilder as OrdWSetBuilder, FallbackWSetFactories,
@@ -22,8 +28,6 @@ pub use file::{
     FileValBatchFactories, FileWSet, FileWSetFactories,
 };
 pub use vec::{
-    VecIndexedWSet, VecIndexedWSetFactories, VecKeyBatch, VecKeyBatch as OrdKeyBatch,
-    VecKeyBatchFactories, VecKeyBatchFactories as OrdKeyBatchFactories, VecValBatch,
-    VecValBatch as OrdValBatch, VecValBatchFactories, VecValBatchFactories as OrdValBatchFactories,
-    VecWSet, VecWSetFactories,
+    VecIndexedWSet, VecIndexedWSetFactories, VecKeyBatch, VecKeyBatchFactories, VecValBatch,
+    VecValBatchFactories, VecWSet, VecWSetFactories,
 };
