@@ -611,4 +611,53 @@ public class Regression1Tests extends SqlIoTest {
                 ---------------------
                  14  | See you! | 1""");
     }
+
+    @Test
+    public void issue4448() {
+        var ccs = this.getCCS("""
+                CREATE TABLE T(x CHAR(4), y INT);
+                CREATE TABLE S(y INT, z INT);
+                CREATE VIEW V AS SELECT T.x, T.y, S.z FROM T, S WHERE T.x in ('a', 'ab') AND T.y = S.y;""");
+        ccs.step("INSERT INTO T VALUES('a', 1), ('b', 2);" +
+                "INSERT INTO S VALUES(1, 3);", """
+                 x   | y | z | weight
+                ----------------------
+                 a   | 1 | 3 | 1""");
+    }
+
+    @Test
+    public void issue4448a() {
+        var ccs = this.getCCS("""
+                CREATE TABLE T(x CHAR(10));
+                CREATE VIEW V AS SELECT * FROM T WHERE x in ('hi', 'hey');""");
+        ccs.step("INSERT INTO T VALUES('hi');", """
+                 x         | weight
+                --------------------
+                 hi        | 1""");
+
+        // Here the constant needs to be padded, but not above.
+        ccs = this.getCCS("""
+                CREATE TABLE T(x CHAR(10));
+                CREATE VIEW V AS SELECT * FROM T WHERE x in ('hi        ');""");
+        ccs.step("INSERT INTO T VALUES('hi');", """
+                 x         | weight
+                --------------------
+                 hi        | 1""");
+    }
+
+    @Test
+    public void issue4446() {
+        this.getCC("""
+                create table t (d decimal(8,3));
+                create view v as select trunc(d) from t;""");
+    }
+
+    @Test
+    public void issue4456() {
+        this.getCCS("""
+                CREATE TABLE tbl(arr VARCHAR ARRAY);
+                CREATE MATERIALIZED VIEW v AS SELECT
+                ARRAY_COMPACT(arr) AS arr
+                FROM tbl;""");
+    }
 }
