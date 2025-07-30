@@ -270,3 +270,25 @@ impl SlidingHistogram {
         self.sum -= sample.value;
     }
 }
+
+#[cfg(test)]
+mod test {
+    use crate::histogram::{bucket_to_range, number_to_bucket, N_BUCKETS};
+
+    #[test]
+    fn buckets() {
+        let mut base = 1;
+        while base <= u64::MAX / 10 {
+            for multiple in 1..10 {
+                let number = base * multiple;
+                for number in [number - 1, number, number + 1] {
+                    let bucket = number_to_bucket(number);
+                    assert!((0..N_BUCKETS).contains(&bucket));
+                    let bucket_range = bucket_to_range(bucket);
+                    assert!(bucket_range.contains(&number));
+                }
+            }
+            base *= 10;
+        }
+    }
+}
