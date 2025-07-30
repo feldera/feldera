@@ -26,7 +26,7 @@ Here is a sample configuration:
         "access_key": "ACCESS_KEY",
         "secret_key": "SECRET_KEY",
         "start_from_checkpoint": "latest",
-        "strict_start_from": false,
+        "fail_if_no_checkpoint": false,
         "flags": ["--s3-server-side-encryption", "aws:kms"]
       }
     }
@@ -45,7 +45,7 @@ Here is a sample configuration:
 | `access_key`            | `string`        |             | S3 access key. Not required if using environment-based auth (e.g., IRSA).                                                                                                                                        |
 | `secret_key`            | `string`        |             | S3 secret key. Not required if using environment-based auth.                                                                                                                                                     |
 | `start_from_checkpoint` | `string`        |             | Checkpoint UUID to resume from, or `latest` to restore from the latest checkpoint.                                                                                                                               |
-| `strict_start_from`     | `boolean`       | `false`     | When `true` the pipeline will fail to initialize if fetching the specified checkpoint fails. <p> When `false`, the pipeline will start from scratch instead. Ignored if `start_from_checkpoint` is not set. </p> |
+| `fail_if_no_checkpoint` | `boolean`       | `false`     | When `true` the pipeline will fail to initialize if fetching the specified checkpoint fails. <p> When `false`, the pipeline will start from scratch instead. Ignored if `start_from_checkpoint` is not set. </p> |
 | `transfers`             | `integer (u8)`  | `20`        | Number of concurrent file transfers.                                                                                                                                                                             |
 | `checkers`              | `integer (u8)`  | `20`        | Number of parallel checkers for verification.                                                                                                                                                                    |
 | `ignore_checksum`       | `boolean`       | `false`     | Skip checksum verification after transfer and only check the file size. Might improve throughput.                                                                                                                |

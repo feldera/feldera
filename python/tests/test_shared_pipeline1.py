@@ -33,7 +33,7 @@ def storage_cfg(
                     "provider": "Minio",
                     "endpoint": endpoint or DEFAULT_ENDPOINT,
                     "start_from_checkpoint": start_from_checkpoint,
-                    "strict_start_from": strict,
+                    "fail_if_no_checkpoint": strict,
                 }
             },
         }
