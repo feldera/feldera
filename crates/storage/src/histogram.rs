@@ -1,7 +1,8 @@
 use std::{
+    collections::VecDeque,
     ops::RangeInclusive,
     sync::atomic::{AtomicU64, Ordering},
-    time::Instant,
+    time::{Duration, Instant},
 };
 
 use itertools::Itertools;
@@ -67,6 +68,8 @@ impl ExponentialHistogram {
         }
     }
 
+    /// Calls `f` and records the amount of time that it takes to run, in
+    /// microseconds, in the histogram.
     pub fn record_callback<F, T>(&self, f: F) -> T
     where
         F: FnOnce() -> T,
@@ -157,5 +160,103 @@ fn bucket_to_range(bucket: usize) -> RangeInclusive<u64> {
         82..=90 => bucket_range(bucket - 82, 1_000_000_000),
         91 => 1_000_000_001..=u64::MAX,
         _ => unreachable!(),
+    }
+}
+
+/// A sliding histogram with exponential buckets.
+///
+/// This histogram records up to a specified number of samples across a
+/// specified maximum amount of time.  Within that range, it maintains an
+/// exponential histogram with the same form as [ExponentialHistogram].
+#[derive(Debug)]
+pub struct SlidingHistogram {
+    buckets: [u64; N_BUCKETS],
+    samples: VecDeque<Sample>,
+    sum: u64,
+    max_samples: usize,
+    max_elapsed: Duration,
+}
+
+#[derive(Debug)]
+struct Sample {
+    time: Instant,
+    value: u64,
+}
+
+impl SlidingHistogram {
+    /// Constructs a new sliding histogram.  The histogram will keep at most the
+    /// most recent `max_samples` samples that have been recorded over at most
+    /// the most recent `max_elapsed` amount of time.
+    pub const fn new(max_samples: usize, max_elapsed: Duration) -> Self {
+        Self {
+            buckets: [0; N_BUCKETS],
+            samples: VecDeque::new(),
+            sum: 0,
+            max_samples,
+            max_elapsed,
+        }
+    }
+
+    /// Records `value` in the histogram.
+    pub fn record(&mut self, value: impl TryInto<u64>) {
+        if let Ok(value) = value.try_into() {
+            if self.samples.len() >= self.max_samples {
+                self.drop_sample();
+            }
+            self.samples.push_back(Sample {
+                time: Instant::now(),
+                value,
+            });
+            self.buckets[number_to_bucket(value)] += 1;
+            self.sum += value;
+        }
+    }
+
+    /// Records the time elapsed since `start` in the histogram, as a count of
+    /// microseconds.
+    pub fn record_elapsed(&mut self, start: Instant) {
+        self.record(start.elapsed().as_micros());
+    }
+
+    /// Returns a snapshot of the histogram.
+    pub fn snapshot(&mut self) -> ExponentialHistogramSnapshot {
+        // Drop samples that are more than `max_elapsed` older than the most
+        // recent sample.
+        //
+        // (We use the most recent sample instead of the current time to avoid
+        // dropping all the samples if nothing has been recorded recently.)
+        if let Some(most_recent) = self.samples.back() {
+            let cutoff = most_recent.time - self.max_elapsed;
+            while self
+                .samples
+                .front()
+                .is_some_and(|sample| sample.time < cutoff)
+            {
+                self.drop_sample();
+            }
+        }
+
+        ExponentialHistogramSnapshot {
+            buckets: self.buckets,
+            sum: self.sum,
+        }
+    }
+
+    /// Calls `f` and records the amount of time that it takes to run, in
+    /// microseconds, in the histogram.
+    pub fn record_callback<F, T>(&mut self, f: F) -> T
+    where
+        F: FnOnce() -> T,
+    {
+        let start = Instant::now();
+        let retval = f();
+        self.record_elapsed(start);
+        retval
+    }
+
+    fn drop_sample(&mut self) {
+        let sample = self.samples.pop_front().unwrap();
+        self.buckets[number_to_bucket(sample.value)] -= 1;
+        self.sum -= sample.value;
     }
 }
