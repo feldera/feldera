@@ -2,7 +2,7 @@
 
 use crate::{some_function2, some_generic_function2, ConcatSemigroup, Semigroup, Weight};
 use itertools::Itertools;
-use std::{collections::HashSet, fmt::Debug, hash::Hash, ops::Index, sync::Arc};
+use std::{collections::HashSet, fmt::Debug, hash::Hash, sync::Arc};
 
 pub type Array<T> = Arc<Vec<T>>;
 
@@ -128,15 +128,8 @@ pub fn index___<T>(value: &Array<T>, index: isize) -> Option<T>
 where
     T: Clone,
 {
-    if index < 0 {
-        return None;
-    };
-    let index: usize = index as usize;
-    if index >= value.len() {
-        None
-    } else {
-        Some(value.index(index).clone())
-    }
+    let index: usize = index.try_into().ok()?;
+    value.get(index).cloned()
 }
 
 #[doc(hidden)]
@@ -153,15 +146,8 @@ pub fn index_N_<T>(value: &Array<Option<T>>, index: isize) -> Option<T>
 where
     T: Clone,
 {
-    if index < 0 {
-        return None;
-    };
-    let index: usize = index as usize;
-    if index >= value.len() {
-        None
-    } else {
-        value.index(index).clone()
-    }
+    let index: usize = index.try_into().ok()?;
+    value.get(index)?.clone()
 }
 
 #[doc(hidden)]
@@ -169,16 +155,8 @@ pub fn index_NN<T>(value: &Array<Option<T>>, index: Option<isize>) -> Option<T>
 where
     T: Clone,
 {
-    let index = index?;
-    if index < 0 {
-        return None;
-    };
-    let index: usize = index as usize;
-    if index >= value.len() {
-        None
-    } else {
-        value.index(index).clone()
-    }
+    let index: usize = index?.try_into().ok()?;
+    value.get(index)?.clone()
 }
 
 #[doc(hidden)]
@@ -186,10 +164,7 @@ pub fn indexN__<T>(value: &Option<Array<T>>, index: isize) -> Option<T>
 where
     T: Clone,
 {
-    match value {
-        None => None,
-        Some(value) => index___(value, index),
-    }
+    index___(value.as_ref()?, index)
 }
 
 #[doc(hidden)]
@@ -197,11 +172,7 @@ pub fn indexN_N<T>(value: &Option<Array<T>>, index: Option<isize>) -> Option<T>
 where
     T: Clone,
 {
-    let index = index?;
-    match value {
-        None => None,
-        Some(value) => index___(value, index),
-    }
+    index___(value.as_ref()?, index?)
 }
 
 #[doc(hidden)]
@@ -209,10 +180,7 @@ pub fn indexNN_<T>(value: &Option<Array<Option<T>>>, index: isize) -> Option<T>
 where
     T: Clone,
 {
-    match value {
-        None => None,
-        Some(value) => index_N_(value, index),
-    }
+    index_N_(value.as_ref()?, index)
 }
 
 #[doc(hidden)]
@@ -220,11 +188,7 @@ pub fn indexNNN<T>(value: &Option<Array<Option<T>>>, index: Option<isize>) -> Op
 where
     T: Clone,
 {
-    let index = index?;
-    match value {
-        None => None,
-        Some(value) => index_N_(value, index),
-    }
+    index_N_(value.as_ref()?, index?)
 }
 
 #[doc(hidden)]
