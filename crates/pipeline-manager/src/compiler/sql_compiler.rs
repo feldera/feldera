@@ -16,6 +16,7 @@ use crate::db::types::program::{
 use crate::db::types::tenant::TenantId;
 use crate::db::types::utils::validate_program_config;
 use crate::db::types::version::Version;
+use crate::has_unstable_feature;
 use feldera_types::program_schema::ProgramSchema;
 use futures_util::StreamExt;
 use indoc::formatdoc;
@@ -321,6 +322,11 @@ async fn fetch_sql_compiler(
     config: &CompilerConfig,
     runtime_selector: &RuntimeSelector,
 ) -> Result<(), SqlCompilationError> {
+    assert!(
+        has_unstable_feature("runtime_version"),
+        "This code-path is only enabled in unstable mode"
+    );
+
     let jar_cache_dir = config
         .working_dir()
         .join("sql-compilation")
@@ -451,7 +457,8 @@ pub(crate) async fn perform_sql_compilation(
             "})
     })?;
 
-    let runtime_selector = program_config.runtime_version.unwrap_or_default();
+    let runtime_selector = program_config.runtime_version();
+    assert!(has_unstable_feature("runtime_version") || runtime_selector.is_platform());
     info!(
         "SQL compilation started: pipeline {} (program version: {}{})",
         pipeline_id,
@@ -499,11 +506,11 @@ pub(crate) async fn perform_sql_compilation(
 
     // SQL compiler executable
     let sql_compiler_executable_file_path = determine_sql_compiler_path(config, &runtime_selector);
-    if !sql_compiler_executable_file_path.exists() {
+    if has_unstable_feature("runtime_version") && !sql_compiler_executable_file_path.exists() {
         fetch_sql_compiler(config, &runtime_selector).await?;
+        // Either executable exists now or we error'd out
+        assert!(sql_compiler_executable_file_path.exists());
     }
-    // Either executable exists now or we error'd out
-    assert!(sql_compiler_executable_file_path.exists());
 
     // Call executable with arguments
     //
@@ -801,18 +808,19 @@ pub(crate) async fn cleanup_sql_compilation(
                             if let Ok(elapsed) = atime.elapsed() {
                                 if elapsed < MAX_AGE {
                                     trace!("Keeping {_jar_name} because it was accessed within the last 7 days ({elapsed:?} ago)");
-                                    return CleanupDecision::Keep {
+                                    CleanupDecision::Keep {
                                         motivation: "Accessed within the last week".to_string(),
-                                    };
+                                    }
+                                } else {
+                                    CleanupDecision::Remove
                                 }
                             } else {
                                 warn!("Unable to determine access time for JAR file, your system clock may be set incorrectly.");
+                                CleanupDecision::Ignore
                             }
-                            CleanupDecision::Ignore
-
                         }
-                        Err(_e) => {
-                            debug!("Failed to get access time for JAR file");
+                        Err(e) => {
+                            debug!("Failed to get access time for JAR file: {:?}", e);
                             CleanupDecision::Ignore
                         }
                     }

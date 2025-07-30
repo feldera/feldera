@@ -7,6 +7,7 @@ use crate::api::error::ApiError;
 use crate::api::main::ServerState;
 use crate::error::ManagerError;
 use crate::license::{DisplaySchedule, LicenseValidity, LICENSE_INFO_READ_LOCK_TIMEOUT};
+use crate::unstable_features;
 
 #[derive(Serialize, ToSchema)]
 pub(crate) struct UpdateInformation {
@@ -72,6 +73,8 @@ pub(crate) struct Configuration {
     pub revision: String,
     /// Specific revision corresponding to the default runtime version of the platform (e.g., git commit hash).
     pub runtime_revision: String,
+    /// List of unstable features that are enabled.
+    pub unstable_features: Option<String>,
     /// URL that navigates to the changelog of the current version
     pub changelog_url: String,
     /// Information about the checked Enterprise license
@@ -144,6 +147,8 @@ pub(crate) async fn get_config(
         version: version.clone(),
         revision: revision.to_string(),
         runtime_revision: runtime_revision.to_string(),
+        unstable_features: unstable_features()
+            .map(|features| features.iter().cloned().collect::<Vec<&str>>().join(",")),
         changelog_url: if cfg!(feature = "feldera-enterprise") {
             "https://docs.feldera.com/changelog/".to_string()
         } else {

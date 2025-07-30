@@ -217,6 +217,15 @@ pub struct CommonConfig {
     /// - `1500m` -> 1 thread
     #[arg(verbatim_doc_comment, long, default_value_t = default_http_workers(), env = "FELDERA_HTTP_WORKERS", value_parser = cpu_quantity_to_workers)]
     pub http_workers: usize,
+
+    /// Enable experimental platform features.
+    ///
+    /// These features are not yet stable and may change or be removed in the future.
+    ///
+    /// Currently supported features:
+    /// - `runtime_version`: Allows to override the runtime version of a pipeline on the platform.
+    #[arg(verbatim_doc_comment, long, env = "FELDERA_UNSTABLE_FEATURES")]
+    pub unstable_features: Option<String>,
 }
 
 /// Embedded Postgres configuration.

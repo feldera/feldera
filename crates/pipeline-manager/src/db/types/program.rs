@@ -1,6 +1,7 @@
 use crate::db::error::DBError;
 use crate::db::types::pipeline::PipelineId;
 use crate::db::types::utils::validate_name;
+use crate::has_unstable_feature;
 use clap::Parser;
 use feldera_types::config::{
     ConnectorConfig, InputEndpointConfig, OutputEndpointConfig, PipelineConfig, RuntimeConfig,
@@ -8,6 +9,7 @@ use feldera_types::config::{
 };
 use feldera_types::program_schema::{ProgramSchema, PropertyValue, SourcePosition, SqlIdentifier};
 use log::error;
+use log::warn;
 use rand::distributions::Uniform;
 use rand::{thread_rng, Rng};
 use regex::Regex;
@@ -398,8 +400,10 @@ pub struct ProgramConfig {
 
     /// Override runtime version of the pipeline being executed.
     ///
-    /// Warning: This option is experimental and may change in the future.
-    /// Should only be used for CI/testing purposes, and requires network access.
+    /// Warning: This setting is experimental and may change in the future.
+    /// Requires the platform to run with the unstable feature `runtime_version`
+    /// enabled. Should only be used for testing purposes, and requires
+    /// network access.
     ///
     /// A runtime version can be specified in the form of a version
     /// or SHA taken from the `feldera/feldera` repository main branch.
@@ -418,6 +422,20 @@ pub struct ProgramConfig {
     /// If not set (null), the runtime version will be the same as the platform version.
     #[schema(value_type = Option<String>)]
     pub runtime_version: Option<RuntimeSelector>,
+}
+
+impl ProgramConfig {
+    pub(crate) fn runtime_version(&self) -> RuntimeSelector {
+        let rt = self.runtime_version.clone().unwrap_or_default();
+        if has_unstable_feature("runtime_version") {
+            rt
+        } else if !has_unstable_feature("runtime_version") && !rt.is_platform() {
+            warn!("Runtime version {rt} specified but argument is ignored because the platform does not have the unstable feature `runtime_version` enabled.");
+            RuntimeSelector::default()
+        } else {
+            RuntimeSelector::default()
+        }
+    }
 }
 
 impl Default for ProgramConfig {

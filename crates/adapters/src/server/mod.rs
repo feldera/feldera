@@ -653,6 +653,12 @@ fn do_bootstrap(
     *state.controller.write().unwrap() = Some(controller);
 
     info!("Pipeline initialization complete");
+    if let Some(runtime_override) = option_env!("FELDERA_RUNTIME_OVERRIDE") {
+        warn!(
+            "Pipeline runtime version was overridden and does not match platform version: {}",
+            runtime_override
+        );
+    }
     *state.phase.write().unwrap() = PipelinePhase::InitializationComplete;
 
     Ok(())
