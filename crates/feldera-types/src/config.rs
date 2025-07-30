@@ -397,7 +397,7 @@ pub struct SyncConfig {
     /// When set, the pipeline will try fetch the specified checkpoint from the
     /// object store.
     ///
-    /// If `strict_start_from` is `true`, the pipeline will fail to initialize.
+    /// If `fail_if_no_checkpoint` is `true`, the pipeline will fail to initialize.
     pub start_from_checkpoint: Option<StartFromCheckpoint>,
 
     /// When true, the pipeline will fail to initialize if fetching the
@@ -407,7 +407,7 @@ pub struct SyncConfig {
     /// False by default.
     #[schema(default = std::primitive::bool::default)]
     #[serde(default)]
-    pub strict_start_from: bool,
+    pub fail_if_no_checkpoint: bool,
 
     /// The number of file transfers to run in parallel.
     /// Default: 20

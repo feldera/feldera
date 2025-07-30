@@ -7441,6 +7441,11 @@
             "description": "The endpoint URL for the storage service.\n\nThis is typically required for custom or local S3-compatible storage providers like MinIO.\nExample: `http://localhost:9000`\n\nRelevant rclone config key: [`endpoint`](https://rclone.org/s3/#s3-endpoint)",
             "nullable": true
           },
+          "fail_if_no_checkpoint": {
+            "type": "boolean",
+            "description": "When true, the pipeline will fail to initialize if fetching the\nspecified checkpoint fails (missing, download error).\nWhen false, the pipeline will start from scratch instead.\n\nFalse by default.",
+            "default": false
+          },
           "flags": {
             "type": "array",
             "items": {
@@ -7488,11 +7493,6 @@
               }
             ],
             "nullable": true
-          },
-          "strict_start_from": {
-            "type": "boolean",
-            "description": "When true, the pipeline will fail to initialize if fetching the\nspecified checkpoint fails (missing, download error).\nWhen false, the pipeline will start from scratch instead.\n\nFalse by default.",
-            "default": false
           },
           "transfers": {
             "type": "integer",
