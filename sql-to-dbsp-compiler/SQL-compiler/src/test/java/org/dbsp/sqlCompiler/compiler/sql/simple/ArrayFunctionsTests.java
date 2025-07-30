@@ -1281,7 +1281,7 @@ public class ArrayFunctionsTests extends SqlIoTest {
                 SELECT transform(array[1, 2, 3], x -> CAST(x as VARCHAR));
                 result
                 ------
-                 { 1, 2, 3 }
+                 { 1, 2, 3}
                 (1 row)
 
                 SELECT transform(CAST(array() AS INT ARRAY), x -> true);

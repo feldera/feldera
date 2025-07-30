@@ -23,11 +23,11 @@ public class BigQueryTests extends SqlIoTest {
                 +------------+-------------+------------+
                 | casted     | input       | as         |
                 +------------+-------------+------------+
-                |NULL        | a           | int        |
-                | a          | a           | varchar(1) |
-                | 2023-03-07 | 2023-03-07  | date       |
-                |NULL        | 2023-03-07a | date       |
-                | FALSE      | 0           | boolean    |
+                |NULL        | a| int|
+                | a| a| varchar(1)|
+                | 2023-03-07| 2023-03-07| date|
+                |NULL        | 2023-03-07a| date|
+                | FALSE| 0| boolean|
                 +------------+-------------+------------+
                 (5 rows)
                 
@@ -42,8 +42,8 @@ public class BigQueryTests extends SqlIoTest {
                 +----------+-----------+-----+
                 | casted   | input     | as  |
                 +----------+-----------+-----+
-                | 12:12:11 | 12:12:11  | time|
-                |          | 12:12:11a | time|
+                | 12:12:11 | 12:12:11| time|
+                |          | 12:12:11a| time|
                 +----------+-----------+-----+
                 (2 rows)
                 
@@ -59,8 +59,8 @@ public class BigQueryTests extends SqlIoTest {
                 +--------+-------+--------+
                 | casted | input | as     |
                 +--------+-------+--------+
-                | true   | true  | boolean|
-                | false  | false | boolean|
+                | true   | true| boolean|
+                | false  | false| boolean|
                 +--------+-------+--------+
                 (2 rows)
                 
@@ -78,9 +78,9 @@ public class BigQueryTests extends SqlIoTest {
                 +--------+------------------+--------------+
                 | casted | input            | as           |
                 +--------+------------------+--------------+
-                | 1 year | interval 1 month | interval year|
-                |        | a                | interval year|
-                |        | null             | interval year|
+                | 1 year | interval 1 month| interval year|
+                |        | a| interval year|
+                |        | null| interval year|
                 +--------+------------------+--------------+
                 (3 rows)
                 
@@ -97,8 +97,8 @@ public class BigQueryTests extends SqlIoTest {
                 +---------------+-----------------------------+--------------------------+
                 | casted        | input                       | as                       |
                 +---------------+-----------------------------+--------------------------+
-                | 61 mins       | interval 1:1 hour to minute | interval minute to second|
-                |               | a                           | interval minute to second|
+                | 61 mins       | interval 1:1 hour to minute| interval minute to second|
+                |               | a| interval minute to second|
                 +---------------+-----------------------------+--------------------------+
                 (2 rows)
                 
@@ -116,9 +116,9 @@ public class BigQueryTests extends SqlIoTest {
                 +--------+-------+-------+
                 | casted | input | as    |
                 +--------+-------+-------+
-                |        | true  | bigint|
-                |      1 | 1.0   | bigint|
-                |      1 | 1     | bigint|
+                |        | true| bigint|
+                |      1 | 1.0| bigint|
+                |      1 | 1| bigint|
                 +--------+-------+-------+
                 (3 rows)""");
     }

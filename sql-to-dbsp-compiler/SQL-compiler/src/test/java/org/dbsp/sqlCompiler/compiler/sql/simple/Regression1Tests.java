@@ -129,7 +129,7 @@ public class Regression1Tests extends SqlIoTest {
                         for (var bk : Linq.list("NULL", "0")) {
                             String result = "";
                             if (nn(ad) && nn(av) && nn(bg) && nn(bk) && !bg.equals("0")) {
-                                result = "\n " + c + " | a | " + (bk.equals("0") ? "1" : "0") + " | 0 | 1 | 1 | 0 | 1 | 1";
+                                result = "\n " + c + " | a| " + (bk.equals("0") ? "1" : "0") + " | 0 | 1 | 1 | 0 | 1 | 1";
                             }
                             ccs.step("INSERT INTO A VALUES(" + c + ", '" + j + "', " + ad + ", " + av + ", " + bg + ", " + bk + ")", """
                                      bn | bo | bp | bq | br | bs | bt | weight
@@ -478,9 +478,9 @@ public class Regression1Tests extends SqlIoTest {
                 CREATE TABLE T(x BINARY(2));
                 CREATE VIEW V AS SELECT CAST(x AS VARCHAR), CAST(x'AB01' AS VARCHAR) FROM T;""");
         ccs.step("INSERT INTO T VALUES(x'AB01')", """
-                    x | y    | weight
-                ----------------------
-                 ab01 | ab01 | 1""");
+                    x| y   | weight
+                --------------------
+                 ab01| ab01| 1""");
     }
 
     @Test
@@ -609,7 +609,7 @@ public class Regression1Tests extends SqlIoTest {
         ccs.step("INSERT INTO tbl VALUES(ARRAY['bye', '14', 'See you!', '-0.52']);", """
                  arr | arr2 | weight
                 ---------------------
-                 14  | See you! | 1""");
+                 14| See you!| 1""");
     }
 
     @Test
@@ -659,5 +659,44 @@ public class Regression1Tests extends SqlIoTest {
                 CREATE MATERIALIZED VIEW v AS SELECT
                 ARRAY_COMPACT(arr) AS arr
                 FROM tbl;""");
+    }
+
+    @Test
+    public void issue4467() {
+        var ccs = this.getCCS("""
+                CREATE TABLE tbl(arr1 VARCHAR ARRAY, str VARCHAR);
+                CREATE MATERIALIZED VIEW v AS SELECT
+                ARRAY_EXCEPT(arr1, ARRAY['hello ']) AS res
+                FROM tbl;""");
+        ccs.step("INSERT INTO tbl VALUES(ARRAY['bye', '14', 'See you!', '-0.52', NULL, '14', 'hello '], 'hello ');", """
+                 res                               | weight
+                --------------------------------------------
+                 {NULL, -0.52, 14, See you!, bye} | 1""");
+    }
+
+    @Test
+    public void issue4467a() {
+        var ccs = this.getCCS("""
+                CREATE TABLE tbl(arr VARCHAR ARRAY, str VARCHAR);
+                CREATE MATERIALIZED VIEW v AS SELECT
+                ARRAY_INTERSECT(arr, ARRAY['hello ']) AS arr
+                FROM tbl;""");
+        ccs.step("INSERT INTO tbl VALUES(ARRAY['bye', '14', 'See you!', '-0.52', NULL, '14', 'hello '], 'hello ');", """
+                 res       | weight
+                --------------------
+                 { hello } | 1""");
+    }
+
+    @Test
+    public void issue4467b() {
+        var ccs = this.getCCS("""
+                CREATE TABLE tbl(arr VARCHAR ARRAY, str VARCHAR);
+                CREATE MATERIALIZED VIEW v AS SELECT
+                ARRAYS_OVERLAP(arr, ARRAY['hello ']) AS arr
+                FROM tbl;""");
+        ccs.step("INSERT INTO tbl VALUES(ARRAY['bye', '14', 'See you!', '-0.52', NULL, '14', 'hello '], 'hello ');", """
+                 res  | weight
+                ---------------
+                 true | 1""");
     }
 }

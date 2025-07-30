@@ -675,7 +675,7 @@ where
 #[doc(hidden)]
 pub fn array_except__<T>(left: Array<T>, right: Array<T>) -> Array<T>
 where
-    T: Eq + Clone + Hash + Ord,
+    T: Eq + Clone + Hash + Ord + Debug,
 {
     let left = to_set(&left);
     let right = to_set(&right);
@@ -688,7 +688,7 @@ where
 #[doc(hidden)]
 pub fn array_exceptN_<T>(left: Option<Array<T>>, right: Array<T>) -> Option<Array<T>>
 where
-    T: Eq + Clone + Hash + Ord,
+    T: Eq + Clone + Hash + Ord + Debug,
 {
     let left = left?;
     Some(array_except__(left, right))
@@ -697,7 +697,7 @@ where
 #[doc(hidden)]
 pub fn array_except_N<T>(left: Array<T>, right: Option<Array<T>>) -> Option<Array<T>>
 where
-    T: Eq + Clone + Hash + Ord,
+    T: Eq + Clone + Hash + Ord + Debug,
 {
     let right = right?;
     Some(array_except__(left, right))
@@ -706,7 +706,7 @@ where
 #[doc(hidden)]
 pub fn array_exceptNN<T>(left: Option<Array<T>>, right: Option<Array<T>>) -> Option<Array<T>>
 where
-    T: Eq + Clone + Hash + Ord,
+    T: Eq + Clone + Hash + Ord + Debug,
 {
     let left = left?;
     let right = right?;

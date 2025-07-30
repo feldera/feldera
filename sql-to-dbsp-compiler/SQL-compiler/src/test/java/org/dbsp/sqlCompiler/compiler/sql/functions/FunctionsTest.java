@@ -1865,9 +1865,9 @@ public class FunctionsTest extends SqlIoTest {
                 CREATE VIEW V AS SELECT MD5(x), MD5(y) FROM T;""");
         ccs.step("INSERT INTO T VALUES('Feldera', x'0123456789ABCDEF');",
                 """
-                         s                                | binary                           | weight
-                        ------------------------------------------------------------------------------
-                         841afc2f65b5763600818ef42a56d7d1 | a1cd1d1fc6491068d91007283ed84489 | 1""");
+                         s                               | binary                          | weight
+                        ----------------------------------------------------------------------------
+                         841afc2f65b5763600818ef42a56d7d1| a1cd1d1fc6491068d91007283ed84489| 1""");
     }
 
     @Test

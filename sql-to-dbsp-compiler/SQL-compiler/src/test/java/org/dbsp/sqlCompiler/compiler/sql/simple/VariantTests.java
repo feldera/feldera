@@ -484,9 +484,9 @@ public class VariantTests extends BaseSQLTests {
                 """);
         ccs.step("INSERT INTO DATA VALUES (" + data + ")",
                 """
-                         name | uuid  | weight
-                        -----------------------
-                         blah | uuid0 | 1
-                         boo  |NULL   | 1""");
+                         name | uuid| weight
+                        ---------------------
+                         blah| uuid0| 1
+                         boo|NULL   | 1""");
     }
 }
