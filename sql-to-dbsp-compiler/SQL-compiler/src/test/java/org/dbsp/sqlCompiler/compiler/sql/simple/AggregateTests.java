@@ -1,7 +1,11 @@
 package org.dbsp.sqlCompiler.compiler.sql.simple;
 
+import org.dbsp.sqlCompiler.circuit.operator.DBSPChainAggregateOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAggregateOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
+import org.junit.Assert;
 import org.junit.Test;
 
 public class AggregateTests extends SqlIoTest {
@@ -38,7 +42,7 @@ public class AggregateTests extends SqlIoTest {
                    I INT NOT NULL,
                    J INT,
                    K INT
-                );
+                ) with ('append_only' = 'true');
                 INSERT INTO NN VALUES
                    (0, 0, 0),
                    (1, 1, 1),
@@ -63,6 +67,21 @@ public class AggregateTests extends SqlIoTest {
                 -------------------------
                  0 | 2  | 0  | NULL | 0
                  1 | 3  | 1  | NULL | 1
+                (2 rows)
+                
+                SELECT ARG_MIN(I, I), ARG_MIN(I, J), ARG_MIN(J, I), ARG_MIN(J, J)
+                FROM NN;
+                 ii | ij | ji   | jj
+                --------------------
+                 0  | 0  | 0    | 0
+                (1 row)
+
+                SELECT K, ARG_MIN(I, I), ARG_MIN(I, J), ARG_MIN(J, I), ARG_MIN(J, J)
+                FROM NN GROUP BY K;
+                 k | ii | ij | ji   | jj
+                -------------------------
+                 0 | 0  | 0  | 0    | 0
+                 1 | 1  | 1  | 1    | 1
                 (2 rows)""");
     }
 
@@ -328,5 +347,29 @@ public class AggregateTests extends SqlIoTest {
                 ---------------
                  3 | 3 | 3 | 3
                 (1 row)""");
+    }
+
+    @Test
+    public void testArgMinMin() {
+        var cc = this.getCC("CREATE VIEW V AS SELECT ARG_MIN(I, J), MIN(J) FROM NN;");
+        CircuitVisitor visitor = new CircuitVisitor(cc.compiler) {
+            int chains = 0;
+
+            @Override
+            public void postorder(DBSPChainAggregateOperator operator) {
+                this.chains++;
+            }
+
+            public void postorder(DBSPStreamAggregateOperator operator) {
+                Assert.fail("There should be no aggregate operators");
+            }
+
+            @Override
+            public void endVisit() {
+                // Both MIN and ARG_MIN are combined in a single operator
+                Assert.assertEquals(1, this.chains);
+            }
+        };
+        cc.visit(visitor);
     }
 }

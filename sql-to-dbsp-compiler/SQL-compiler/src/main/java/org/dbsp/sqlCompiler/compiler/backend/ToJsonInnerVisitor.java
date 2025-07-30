@@ -8,6 +8,7 @@ import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregateList;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPMinMax;
+import org.dbsp.sqlCompiler.ir.aggregate.MinMaxAggregate;
 import org.dbsp.sqlCompiler.ir.expression.*;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBinaryLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
@@ -568,6 +569,13 @@ public class ToJsonInnerVisitor extends InnerVisitor {
     public void postorder(DBSPConditionalAggregateExpression node) {
         this.property("opcode");
         this.stream.append(node.opcode.name());
+        super.postorder(node);
+    }
+
+    @Override
+    public void postorder(MinMaxAggregate node) {
+        this.property("operation");
+        this.stream.append(node.operation.toString());
         super.postorder(node);
     }
 

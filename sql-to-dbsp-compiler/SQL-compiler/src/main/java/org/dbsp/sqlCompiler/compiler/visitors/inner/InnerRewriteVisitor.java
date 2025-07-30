@@ -121,7 +121,7 @@ public abstract class InnerRewriteVisitor
      * any of its fields differs. */
     protected void map(IDBSPInnerNode old, IDBSPInnerNode newOp) {
         // noinspection ConstantValue
-        Utilities.enforce(newOp != null);
+        Utilities.enforce(newOp != null, "No replacement computed for " + old);
         if ((old == newOp) || (!this.force && old.sameFields(newOp))) {
             // Ignore new op.
             this.lastResult = old;
@@ -1397,7 +1397,8 @@ public abstract class InnerRewriteVisitor
         DBSPExpression zero = this.transform(implementation.zero);
         DBSPExpression increment = this.transform(implementation.increment);
         DBSPExpression emptySetResult = this.transform(implementation.emptySetResult);
-        DBSPExpression aggregatedValue = this.transform(implementation.aggregatedValue);
+        DBSPExpression aggregatedValue = this.transform(implementation.comparedValue);
+        DBSPExpression postProcessing = this.transformN(implementation.postProcess);
         DBSPTypeUser semiGroup = this.transform(implementation.semigroup).to(DBSPTypeUser.class);
         this.pop(implementation);
 
@@ -1405,7 +1406,8 @@ public abstract class InnerRewriteVisitor
                 implementation.getNode(), zero,
                 increment.to(DBSPClosureExpression.class),
                 emptySetResult, semiGroup, aggregatedValue.to(DBSPClosureExpression.class),
-                implementation.isMin);
+                postProcessing != null ? postProcessing.to(DBSPClosureExpression.class) : null,
+                implementation.operation);
         result.validate();
         this.map(implementation, result);
         return VisitDecision.STOP;

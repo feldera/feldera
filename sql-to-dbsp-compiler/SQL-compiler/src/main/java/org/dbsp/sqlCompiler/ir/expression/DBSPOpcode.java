@@ -71,6 +71,9 @@ public enum DBSPOpcode {
     AGG_XOR("agg_xor", true),
     AGG_MAX("agg_max", true),
     AGG_MIN("agg_min", true),
+    // Similar to agg_max, but takes a raw tuple with 2 arguments and only ignores NULLs in the first field.
+    AGG_MAX1("agg_max1", true),
+    AGG_MIN1("agg_min1", true),
     // Operation which combines an accumulator and a *weighted* value
     AGG_ADD("agg_plus", true),
     // Operation which combines an accumulator and a *weighted* value; accumulator and result are never nullable
@@ -116,7 +119,7 @@ public enum DBSPOpcode {
         return switch (this) {
             case WRAP_BOOL, MAP_CONVERT, ARRAY_CONVERT, CONTROLLED_FILTER_GTE, AGG_LTE, AGG_GTE, AGG_ADD, AGG_MIN,
                  AGG_MAX, AGG_XOR, AGG_OR, AGG_AND, IS_DISTINCT, CONCAT, MIN, MAX, OR, AND, IS_NOT_FALSE, IS_NOT_TRUE,
-                 INDICATOR -> false;
+                 AGG_MAX1, AGG_MIN1, INDICATOR -> false;
             case NEG, INTERVAL_DIV, INTERVAL_MUL, TS_SUB, TS_ADD, DECIMAL_TO_INTEGER, INTEGER_TO_DECIMAL,
                  RUST_INDEX, VARIANT_INDEX, MAP_INDEX,
                  SQL_INDEX, XOR, BW_OR, MUL_WEIGHT, BW_AND, GTE, LTE, GT, LT, NEQ, EQ, MOD, DIV_NULL, DIV, MUL, SUB,

@@ -542,17 +542,16 @@ public class ToRustVisitor extends CircuitVisitor {
         DBSPTypeZSet zsetType = operator.getType().to(DBSPTypeZSet.class);
         this.innerVisitor.setOperatorContext(operator);
         zsetType.elementType.accept(this.innerVisitor);
-        this.builder.append(">();").newline();
+        this.builder.append(">();");
         if (this.options.ioOptions.sqlNames) {
-            this.builder.append("let ")
+            this.builder.newline()
+                    .append("let ")
                     .append(operator.tableName.name())
                     .append(" = &")
                     .append(operator.getNodeName(this.preferHash))
-                    .append(";")
-                    .newline();
+                    .append(";");
         }
         this.tagStream(operator);
-        this.builder.newline();
         if (!this.useHandles) {
             this.generateStructHelpers(operator.originalRowType, operator.metadata);
             String registerFunction = operator.metadata.materialized ?
@@ -951,6 +950,8 @@ public class ToRustVisitor extends CircuitVisitor {
             this.builder.append(this.getInputName(operator, 0))
                     .append(".");
         this.operationCall(operator);
+        if (operator.function != null)
+            this.builder.increase();
         for (int i = 1; i < operator.inputs.size(); i++) {
             if (i > 1)
                 this.builder.append(",");
@@ -960,9 +961,8 @@ public class ToRustVisitor extends CircuitVisitor {
         if (operator.function != null) {
             if (operator.inputs.size() > 1)
                 this.builder.append(", ");
-            this.innerVisitor.setOperatorContext(operator);
             operator.function.accept(this.innerVisitor);
-            this.innerVisitor.setOperatorContext(null);
+            this.builder.newline().decrease();
         }
         this.innerVisitor.setOperatorContext(null);
         this.builder.append(")")
@@ -987,11 +987,12 @@ public class ToRustVisitor extends CircuitVisitor {
                 .append(this.getInputName(operator, 0))
                 .append(".");
         this.operationCall(operator);
+        this.builder.increase();
         operator.init.accept(this.innerVisitor);
-        this.builder.append(", ");
+        this.builder.append(", ").newline();
         operator.getFunction().accept(this.innerVisitor);
         this.innerVisitor.setOperatorContext(null);
-        this.builder.append(")")
+        this.builder.newline().decrease().append(")")
                 .append(this.markDistinct(operator))
                 .append(";");
         this.innerVisitor.setOperatorContext(null);
@@ -1093,15 +1094,18 @@ public class ToRustVisitor extends CircuitVisitor {
                 .append(".")
                 .append(operator.operation)
                 .append("(&")
+                .increase()
                 .append(this.getInputName(operator, 1))
                 .append(", ")
                 .newline();
         operator.getFunction().accept(this.innerVisitor);
-        this.builder.append(", ");
+        this.builder.append(", ").newline();
         operator.leftTimestamp.accept(this.innerVisitor);
-        this.builder.append(", ");
+        this.builder.append(", ").newline();
         operator.rightTimestamp.accept(this.innerVisitor);
-        this.builder.append(")")
+        this.builder.newline()
+                .decrease()
+                .append(")")
                 .append(this.markDistinct(operator))
                 .append(";");
         this.tagStream(operator);
@@ -1168,14 +1172,17 @@ public class ToRustVisitor extends CircuitVisitor {
         this.builder.append("::<_, _, _, ");
         operator.comparator.accept(this.innerVisitor);
         this.builder.append(", _>")
-                .append("(hash, ");
+                .append("(hash, ")
+                .increase();
         DBSPISizeLiteral offset = new DBSPISizeLiteral(operator.offset);
         offset.accept(this.innerVisitor);
-        this.builder.append(", ");
+        this.builder.append(", ").newline();
         operator.projection.accept(this.innerVisitor);
-        this.builder.append(", ");
+        this.builder.append(", ").newline();
         operator.getFunction().accept(this.innerVisitor);
-        this.builder.append(")")
+        this.builder.newline()
+                .decrease()
+                .append(")")
                 .append(this.markDistinct(operator))
                 .append(";");
         this.innerVisitor.setOperatorContext(null);
@@ -1210,15 +1217,19 @@ public class ToRustVisitor extends CircuitVisitor {
                 .append(this.getInputName(operator, 0))
                 .append(".");
         this.operationCall(operator);
+        this.builder.increase();
         operator.partitioningFunction.accept(this.innerVisitor);
-        this.builder.append(", ");
+        this.builder.append(", ").newline();
         operator.getFunction().accept(this.innerVisitor);
-        this.builder.append(", ");
+        this.builder.append(", ").newline();
         this.builder.append("RelRange::new(").increase();
         this.emitWindowBound(operator.lower);
         this.builder.append(",").newline();
         this.emitWindowBound(operator.upper);
-        this.builder.decrease().append("))")
+        this.builder.decrease().append(")")
+                .newline()
+                .decrease()
+                .append(")")
                 .append(this.markDistinct(operator))
                 .append(";");
         this.tagStream(operator);
@@ -1240,18 +1251,22 @@ public class ToRustVisitor extends CircuitVisitor {
                 .append(this.getInputName(operator, 0))
                 .append(".");
         this.operationCall(operator);
-        this.builder.append("&")
+        this.builder.increase()
+                .append("&")
                 .append(this.getInputName(operator, 1))
                 .append(", ");
         operator.partitioningFunction.accept(this.innerVisitor);
-        this.builder.append(", ");
+        this.builder.append(", ").newline();
         operator.getFunction().accept(this.innerVisitor);
-        this.builder.append(", ");
+        this.builder.append(", ").newline();
         this.builder.append("RelRange::new(");
         this.emitWindowBound(operator.lower);
-        this.builder.append(", ");
+        this.builder.append(", ").newline();
         this.emitWindowBound(operator.upper);
-        this.builder.append("))")
+        this.builder.append(")")
+                .newline()
+                .decrease()
+                .append(")")
                 .append(this.markDistinct(operator))
                 .append(";");
         this.tagStream(operator);
@@ -1273,8 +1288,11 @@ public class ToRustVisitor extends CircuitVisitor {
         this.builder.append(this.getInputName(operator, 0))
                     .append(".");
         this.operationCall(operator);
+        this.builder.increase();
         operator.getFunction().accept(this.innerVisitor);
-        this.builder.append(")")
+        this.builder.newline()
+                .decrease()
+                .append(")")
                 .append(this.markDistinct(operator))
                 .append(";");
         this.tagStream(operator);
@@ -1296,10 +1314,13 @@ public class ToRustVisitor extends CircuitVisitor {
         this.builder.append(this.getInputName(operator, 0))
                 .append(".");
         this.operationCall(operator);
+        this.builder.increase();
         operator.getFunction().accept(this.innerVisitor);
-        this.builder.append(", ");
+        this.builder.append(", ").newline();
         operator.postProcess.accept(this.innerVisitor);
-        this.builder.append(")")
+        this.builder.newline()
+                .decrease()
+                .append(")")
                 .append(this.markDistinct(operator))
                 .append(";");
         this.tagStream(operator);
@@ -1321,17 +1342,19 @@ public class ToRustVisitor extends CircuitVisitor {
         this.builder.append(this.getInputName(operator, 0))
                 .append(".");
         this.operationCall(operator);
-        this.builder.append("&")
+        this.builder.increase().append("&")
                 .append(this.getInputName(operator, 1))
                 // FIXME: temporary workaround until the compiler learns about TypedBox
                 .append(".apply(|bound| TypedBox::<_, DynData>::new(bound.clone()))")
-                .append(", ");
+                .append(", ").newline();
         operator.retainKeysFunction.accept(this.innerVisitor);
-        this.builder.append(", ");
+        this.builder.append(", ").newline();
         operator.getFunction().accept(this.innerVisitor);
-        this.builder.append(", ");
+        this.builder.append(", ").newline();
         operator.postProcess.accept(this.innerVisitor);
-        this.builder.append(")")
+        this.builder.newline()
+                .decrease()
+                .append(")")
                 .append(this.markDistinct(operator))
                 .append(";");
         this.tagStream(operator);
@@ -1436,7 +1459,9 @@ public class ToRustVisitor extends CircuitVisitor {
                 .append(": ");
         streamType.accept(this.innerVisitor);
         this.builder.append(" = ")
-                .append("circuit.add_source(Generator::new(|| ");
+                .append("circuit.add_source(")
+                .increase()
+                .append("Generator::new(|| ");
         this.builder.append("if Runtime::worker_index() == 0 {");
         operator.function.accept(this.innerVisitor);
         this.builder.append("} else {");
@@ -1448,7 +1473,10 @@ public class ToRustVisitor extends CircuitVisitor {
             Utilities.enforce(operator.function.to(DBSPIndexedZSetExpression.class).isEmpty());
             operator.function.accept(this.innerVisitor);
         }
-        this.builder.append("}));");
+        this.builder.append("})")
+                .newline()
+                .decrease()
+                .append(");");
         this.tagStream(operator);
         this.innerVisitor.setOperatorContext(null);
         return VisitDecision.STOP;

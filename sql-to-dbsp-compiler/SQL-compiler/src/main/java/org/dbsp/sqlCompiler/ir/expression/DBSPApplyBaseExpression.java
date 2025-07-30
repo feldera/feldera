@@ -30,7 +30,7 @@ public abstract class DBSPApplyBaseExpression extends DBSPExpression {
                 throw new InternalCompilerError("Null argument for apply expression", this);
             }
             if (parameterTypes != null && !parameterTypes[index].sameType(arg.getType()))
-                    throw new InternalCompilerError("Argument " + arg + " type " +
+                    throw new InternalCompilerError("Argument " + index + " " + arg + " type " +
                     arg.getType() + " does not match parameter type " + parameterTypes[index]);
             index++;
         }

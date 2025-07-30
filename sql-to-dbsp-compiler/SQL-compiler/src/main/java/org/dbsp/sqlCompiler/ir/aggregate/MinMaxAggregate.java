@@ -13,22 +13,35 @@ import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
 
+import javax.annotation.Nullable;
 import java.util.List;
 
-/** High-level representation of an aggregate that is a call to a Min or Max function.
- * This is lowered later into a more concrete implementation. */
+/** High-level representation of an aggregate that is a call to a Min, Max,
+ * ArgMin or ArgMax function. This is lowered later into a concrete implementation. */
 public class MinMaxAggregate extends NonLinearAggregate {
-    public final boolean isMin;
-    /** A closure with signature |row| -> { aggregated value }, where 'row'
-     * has the same type as the row variable (second parameter of the increment). */
-    public final DBSPClosureExpression aggregatedValue;
+    public enum Operation {
+        Min,
+        Max,
+        ArgMin,
+        ArgMax,
+    }
+    public final Operation operation;
+    /** A closure with signature |row| -> { compared value }, where 'row'
+     * has the same type as the row variable (second parameter of the increment).
+     * For min and max this is the argument value; for arg_min and arg_max this
+     * contains both arguments.  This is currently only used for optimizing Min and Max
+     * aggregate implementations. */
+    public final DBSPClosureExpression comparedValue;
 
     public MinMaxAggregate(CalciteObject origin, DBSPExpression zero, DBSPClosureExpression increment,
                            DBSPExpression emptySetResult, DBSPTypeUser semigroup,
-                           DBSPClosureExpression aggregatedValue, boolean isMin) {
-        super(origin, zero, increment, emptySetResult, semigroup);
-        this.aggregatedValue = aggregatedValue;
-        this.isMin = isMin;
+                           DBSPClosureExpression comparedValue,
+                           // Only non-null for arg_max and arg_min
+                           @Nullable DBSPClosureExpression postProcess,
+                           Operation operation) {
+        super(origin, zero, increment, postProcess, emptySetResult, semigroup);
+        this.comparedValue = comparedValue;
+        this.operation = operation;
     }
 
     @Override
@@ -49,7 +62,7 @@ public class MinMaxAggregate extends NonLinearAggregate {
         visitor.property("emptySetResult");
         this.emptySetResult.accept(visitor);
         visitor.property("aggregatedValue");
-        this.aggregatedValue.accept(visitor);
+        this.comparedValue.accept(visitor);
         visitor.pop(this);
         visitor.postorder(this);
     }
@@ -61,6 +74,7 @@ public class MinMaxAggregate extends NonLinearAggregate {
 
     @Override
     public IIndentStream toString(IIndentStream builder) {
+        builder.append(this.operation.toString());
         builder.append("[").increase();
         builder.append("zero=")
                 .append(this.zero)
@@ -79,15 +93,15 @@ public class MinMaxAggregate extends NonLinearAggregate {
                 .append("semigroup=")
                 .append(this.semigroup)
                 .newline()
-                .append("aggregatedValue=")
-                .append(this.aggregatedValue);
+                .append("comparedValue=")
+                .append(this.comparedValue);
         builder.newline().decrease().append("]");
         return builder;
     }
 
     @Override
     public List<DBSPParameter> getRowVariableReferences() {
-        return Linq.list(this.increment.parameters[1], this.aggregatedValue.parameters[0]);
+        return Linq.list(this.increment.parameters[1], this.comparedValue.parameters[0]);
     }
 
     @SuppressWarnings("unused")
@@ -96,8 +110,11 @@ public class MinMaxAggregate extends NonLinearAggregate {
         DBSPClosureExpression increment = fromJsonInner(node, "increment", decoder, DBSPClosureExpression.class);
         DBSPExpression emptySetResult = fromJsonInner(node, "emptySetResult", decoder, DBSPExpression.class);
         DBSPTypeUser semigroup = fromJsonInner(node, "semigroup", decoder, DBSPTypeUser.class);
-        DBSPClosureExpression aggregatedValue = fromJsonInner(node, "aggregatedValue", decoder, DBSPClosureExpression.class);
-        boolean isMin = Utilities.getBooleanProperty(node, "isMin");
-        return new MinMaxAggregate(CalciteObject.EMPTY, zero, increment, emptySetResult, semigroup, aggregatedValue, isMin);
+        DBSPClosureExpression comparedValue = fromJsonInner(node, "comparedValue", decoder, DBSPClosureExpression.class);
+        DBSPClosureExpression postProcessing = null;
+        if (node.has("postProcessing"))
+            postProcessing = fromJsonInner(node, "postProcessing", decoder, DBSPClosureExpression.class);
+        Operation operation = Operation.valueOf(Utilities.getStringProperty(node, "operation"));
+        return new MinMaxAggregate(CalciteObject.EMPTY, zero, increment, emptySetResult, semigroup, comparedValue, postProcessing, operation);
     }
 }

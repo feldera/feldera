@@ -1,6 +1,7 @@
 package org.dbsp.sqlCompiler.compiler.visitors.inner;
 
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
@@ -9,6 +10,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
+import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.DBSPMapExpression;
@@ -16,6 +18,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.expression.DBSPArrayExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.IsDateType;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
@@ -118,13 +121,32 @@ public class ExpandCasts extends InnerRewriteVisitor {
             }
             DBSPExpression expression;
             if (fieldType.is(DBSPTypeTuple.class)) {
-                expression = convertToStruct(index.applyClone(), fieldType.to(DBSPTypeTuple.class));
+                expression = this.convertToStruct(index.applyClone(), fieldType.to(DBSPTypeTuple.class));
             } else {
                 expression = index.applyCloneIfNeeded().cast(source.getNode(), fieldType, false);
             }
             fields.add(expression);
         }
         return new DBSPTupleExpression(source.getNode(), type, fields);
+    }
+
+    DBSPExpression convertToTuple(DBSPExpression source, DBSPTypeRawTuple type) {
+        List<DBSPExpression> fields = new ArrayList<>();
+        DBSPType sourceType = source.getType();
+        if (!sourceType.is(DBSPTypeRawTuple.class))
+            throw new InternalCompilerError("Cast to RAW tuple from " + sourceType);
+        for (int i = 0; i < type.size(); i++) {
+            DBSPType fieldType = type.getFieldType(i);
+            DBSPExpression index = source.field(i);
+            DBSPExpression expression;
+            if (fieldType.is(DBSPTypeTuple.class)) {
+                expression = this.convertToStruct(index.applyClone(), fieldType.to(DBSPTypeTuple.class));
+            } else {
+                expression = index.applyCloneIfNeeded().cast(source.getNode(), fieldType, false);
+            }
+            fields.add(expression);
+        }
+        return new DBSPRawTupleExpression(fields);
     }
 
     @Nullable DBSPExpression convertToVector(DBSPExpression source, DBSPTypeArray type, boolean safe) {
@@ -223,6 +245,8 @@ public class ExpandCasts extends InnerRewriteVisitor {
             result = this.convertToVector(source, type.to(DBSPTypeArray.class), expression.safe);
         } else if (type.is(DBSPTypeTuple.class)) {
             result = this.convertToStruct(source, type.to(DBSPTypeTuple.class));
+        } else if (type.is(DBSPTypeRawTuple.class)) {
+            result = this.convertToTuple(source, type.to(DBSPTypeRawTuple.class));
         } else if (type.is(DBSPTypeMap.class)) {
             result = this.convertToMap(source, type.to(DBSPTypeMap.class), expression.safe);
         } else if (type.is(IsDateType.class) && source.getType().is(DBSPTypeBinary.class)) {
