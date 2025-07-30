@@ -6,11 +6,11 @@ use std::{
 
 use itertools::Itertools;
 
-const N_BUCKETS: usize = 65;
+const N_BUCKETS: usize = 92;
 
 /// A histogram with exponential buckets.
 ///
-/// This histogram maintains 65 buckets, one for each value or range below,
+/// This histogram maintains 92 buckets, one for each value or range below,
 /// listing ranges by their lower endpoints:
 ///
 /// - 0
@@ -21,7 +21,10 @@ const N_BUCKETS: usize = 65;
 /// - 10_000, 20_000, 30_000, ... 90_000
 /// - 100_000, 200_000, 300_000, ... 900_000
 /// - 1_000_000, 2_000_000, 3_000_000, ... 9_000_000
-/// - 10_000_000 through [u64::MAX].
+/// - 10_000_000, 20_000_000, 30_000_000, ... 90_000_000
+/// - 100_000_000, 200_000_000, 300_000_000, ... 900_000_000
+/// - 1_000_000_000, 2_000_000_000, 3_000_000_000, ... 9_000_000_000
+/// - 10_000_000_000 through [u64::MAX].
 #[derive(Debug)]
 pub struct ExponentialHistogram {
     buckets: [AtomicU64; N_BUCKETS],
@@ -122,8 +125,14 @@ fn number_to_bucket(number: u64) -> usize {
         100_000..1_000_000 => (number - 100_000) / 100_000 + 46,
         // buckets 55..=63
         1_000_000..10_000_000 => (number - 1_000_000) / 1_000_000 + 55,
-        // bucket 64
-        _ => 64,
+        // buckets 64..=72
+        10_000_000..100_000_000 => (number - 10_000_000) / 10_000_000 + 64,
+        // buckets 73..=81
+        100_000_000..1_000_000_000 => (number - 100_000_000) / 100_000_000 + 73,
+        // buckets 82..=90
+        1_000_000_000..10_000_000_000 => (number - 1_000_000_000) / 1_000_000_000 + 82,
+        // bucket 91
+        _ => 91,
     };
     bucket as usize
 }
@@ -143,7 +152,10 @@ fn bucket_to_range(bucket: usize) -> RangeInclusive<u64> {
         37..=45 => bucket_range(bucket - 37, 10_000),
         46..=54 => bucket_range(bucket - 46, 100_000),
         55..=63 => bucket_range(bucket - 55, 1_000_000),
-        64 => 10_000_001..=u64::MAX,
+        64..=72 => bucket_range(bucket - 64, 10_000_000),
+        73..=81 => bucket_range(bucket - 73, 100_000_000),
+        82..=90 => bucket_range(bucket - 82, 1_000_000_000),
+        91 => 1_000_000_001..=u64::MAX,
         _ => unreachable!(),
     }
 }
