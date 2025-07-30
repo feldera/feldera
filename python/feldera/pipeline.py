@@ -527,6 +527,42 @@ metrics"""
 
         self.client.start_pipeline(self.name, wait=wait, timeout_s=timeout_s)
 
+    def start_transaction(self):
+        """
+        Start a new transaction.
+
+        Returns:
+            Transaction ID.
+        """
+
+        self.client.start_transaction(self.name)
+
+    def commit_transaction(
+        self,
+        transaction_id: Optional[int] = None,
+        wait: bool = True,
+        timeout_s: Optional[float] = None,
+    ):
+        """
+        Commits the currently active transaction.
+
+        :param transaction_id: If provided, the function verifies that the currently active transaction matches this ID.
+            If the active transaction ID does not match, the function raises an error.
+
+        :param wait: If True, the function blocks until the transaction either commits successfully or the timeout is reached.
+            If False, the function initiates the commit and returns immediately without waiting for completion. The default value is True.
+
+        :param timeout_s: Maximum time (in seconds) to wait for the transaction to commit when `wait` is True.
+            If None, the function will wait indefinitely.
+
+        :raises RuntimeError: If there is currently no transaction in progress.
+        :raises ValueError: If the provided `transaction_id` does not match the current transaction.
+        :raises TimeoutError: If the transaction does not commit within the specified timeout (when `wait` is True).
+        :raises FelderaAPIError: If the pipeline fails to start a transaction.
+        """
+
+        self.client.commit_transaction(self.name, transaction_id, wait, timeout_s)
+
     def delete(self, clear_storage: bool = False):
         """
         Deletes the pipeline.
@@ -624,7 +660,7 @@ pipeline '{self.name}' to make checkpoint '{seq}'"""
         """
         Syncs this checkpoint to object store.
 
-        :param wait: If true, will block until the checkpoint sync opeartion
+        :param wait: If true, will block until the checkpoint sync operation
             completes.
         :param timeout_s: The maximum time (in seconds) to wait for the
             checkpoint to complete syncing.

@@ -455,6 +455,86 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             f"timeout error: pipeline '{pipeline_name}' did not clear storage in {timeout_s} seconds"
         )
 
+    def start_transaction(self, pipeline_name: str) -> int:
+        """
+        Start a new transaction.
+
+            Transaction ID.
+
+        :param pipeline_name: The name of the pipeline.
+        """
+
+        resp = self.http.post(
+            path=f"/pipelines/{pipeline_name}/start_transaction",
+        )
+
+        return int(resp.get("transaction_id"))
+
+    def commit_transaction(
+        self,
+        pipeline_name: str,
+        transaction_id: Optional[int] = None,
+        wait: bool = True,
+        timeout_s: Optional[float] = None,
+    ):
+        """
+        Commits the currently active transaction.
+
+        :param pipeline_name: The name of the pipeline.
+
+        :param transaction_id: If provided, the function verifies that the currently active transaction matches this ID.
+            If the active transaction ID does not match, the function raises an error.
+
+        :param wait: If True, the function blocks until the transaction either commits successfully or the timeout is reached.
+            If False, the function initiates the commit and returns immediately without waiting for completion. The default value is True.
+
+        :param timeout_s: Maximum time (in seconds) to wait for the transaction to commit when `wait` is True.
+            If None, the function will wait indefinitely.
+
+        :raises RuntimeError: If there is currently no transaction in progress.
+        :raises ValueError: If the provided `transaction_id` does not match the current transaction.
+        :raises TimeoutError: If the transaction does not commit within the specified timeout (when `wait` is True).
+        :raises FelderaAPIError: If the pipeline fails to start a transaction.
+        """
+
+        # TODO: implement this without using /stats when we have a better pipeline status reporting API.
+        stats = self.get_pipeline_stats(pipeline_name)
+        current_transaction_id = stats["global_metrics"]["transaction_id"]
+
+        if current_transaction_id == 0:
+            raise RuntimeError(
+                "Attempting to commit a transaction, but there is no transaction in progress"
+            )
+
+        if transaction_id and current_transaction_id != transaction_id:
+            raise ValueError(
+                f"Specified transaction id {transaction_id} doesn't match current active transaction id {current_transaction_id}"
+            )
+
+        transaction_id = current_transaction_id
+
+        self.http.post(
+            path=f"/pipelines/{pipeline_name}/commit_transaction",
+        )
+
+        start_time = time.monotonic()
+
+        if not wait:
+            return
+
+        while True:
+            if timeout_s is not None:
+                elapsed = time.monotonic() - start_time
+                if elapsed > timeout_s:
+                    raise TimeoutError("Timed out waiting for transaction to commit")
+
+            stats = self.get_pipeline_stats(pipeline_name)
+            if stats["global_metrics"]["transaction_id"] != transaction_id:
+                return
+
+            logging.debug("commit hasn't completed, waiting for 1 more second")
+            time.sleep(1.0)
+
     def checkpoint_pipeline(self, pipeline_name: str) -> int:
         """
         Checkpoint a pipeline.
