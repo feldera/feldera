@@ -1,7 +1,7 @@
 {
   "openapi": "3.0.3",
   "info": {
-    "title": "Benchmark API Minified Using https://www.npmjs.com/package/openapi-format at https://openapi-format-playground.vercel.app",
+    "title": "Benchmark API Minified Using <https://www.npmjs.com/package/openapi-format> at <https://openapi-format-playground.vercel.app>",
     "version": "0.5.1"
   },
   "paths": {
@@ -75,7 +75,10 @@
             "$ref": "#/components/responses/Error"
           }
         },
-        "tags": ["run", "reports"]
+        "tags": [
+          "run",
+          "reports"
+        ]
       }
     }
   },
@@ -117,17 +120,23 @@
           {
             "description": "The alert is active.",
             "type": "string",
-            "enum": ["active"]
+            "enum": [
+              "active"
+            ]
           },
           {
             "description": "The alert has been dismissed by a user.",
             "type": "string",
-            "enum": ["dismissed"]
+            "enum": [
+              "dismissed"
+            ]
           },
           {
             "description": "The alert has been silenced by the system.",
             "type": "string",
-            "enum": ["silenced"]
+            "enum": [
+              "silenced"
+            ]
           }
         ]
       },
@@ -148,7 +157,10 @@
       },
       "BoundaryLimit": {
         "type": "string",
-        "enum": ["lower", "upper"]
+        "enum": [
+          "lower",
+          "upper"
+        ]
       },
       "BranchName": {
         "type": "string"
@@ -175,7 +187,10 @@
             "type": "string"
           }
         },
-        "required": ["message", "request_id"]
+        "required": [
+          "message",
+          "request_id"
+        ]
       },
       "GitHash": {
         "type": "string"
@@ -242,7 +257,10 @@
       },
       "JsonAverage": {
         "type": "string",
-        "enum": ["mean", "median"]
+        "enum": [
+          "mean",
+          "median"
+        ]
       },
       "JsonBenchmark": {
         "type": "object",
@@ -274,7 +292,14 @@
             "$ref": "#/components/schemas/BenchmarkUuid"
           }
         },
-        "required": ["created", "modified", "name", "project", "slug", "uuid"]
+        "required": [
+          "created",
+          "modified",
+          "name",
+          "project",
+          "slug",
+          "uuid"
+        ]
       },
       "JsonBoundary": {
         "type": "object",
@@ -341,7 +366,12 @@
       },
       "JsonFold": {
         "type": "string",
-        "enum": ["min", "max", "mean", "median"]
+        "enum": [
+          "min",
+          "max",
+          "mean",
+          "median"
+        ]
       },
       "JsonHead": {
         "type": "object",
@@ -377,7 +407,10 @@
             "nullable": true
           }
         },
-        "required": ["created", "uuid"]
+        "required": [
+          "created",
+          "uuid"
+        ]
       },
       "JsonMeasure": {
         "type": "object",
@@ -443,7 +476,10 @@
             "format": "double"
           }
         },
-        "required": ["uuid", "value"]
+        "required": [
+          "uuid",
+          "value"
+        ]
       },
       "JsonModel": {
         "type": "object",
@@ -506,7 +542,11 @@
             "nullable": true
           }
         },
-        "required": ["created", "test", "uuid"]
+        "required": [
+          "created",
+          "test",
+          "uuid"
+        ]
       },
       "JsonNewRun": {
         "type": "object",
@@ -607,7 +647,11 @@
             "nullable": true
           }
         },
-        "required": ["end_time", "results", "start_time"]
+        "required": [
+          "end_time",
+          "results",
+          "start_time"
+        ]
       },
       "JsonProject": {
         "type": "object",
@@ -673,7 +717,11 @@
             "$ref": "#/components/schemas/UserUuid"
           }
         },
-        "required": ["name", "slug", "uuid"]
+        "required": [
+          "name",
+          "slug",
+          "uuid"
+        ]
       },
       "JsonReport": {
         "type": "object",
@@ -765,7 +813,10 @@
             "nullable": true
           }
         },
-        "required": ["measure", "metric"]
+        "required": [
+          "measure",
+          "metric"
+        ]
       },
       "JsonReportResult": {
         "type": "object",
@@ -783,7 +834,11 @@
             }
           }
         },
-        "required": ["benchmark", "iteration", "measures"]
+        "required": [
+          "benchmark",
+          "iteration",
+          "measures"
+        ]
       },
       "JsonReportSettings": {
         "type": "object",
@@ -848,7 +903,11 @@
             "$ref": "#/components/schemas/JsonVersion"
           }
         },
-        "required": ["branch", "head", "version"]
+        "required": [
+          "branch",
+          "head",
+          "version"
+        ]
       },
       "JsonTestbed": {
         "type": "object",
@@ -880,7 +939,14 @@
             "$ref": "#/components/schemas/TestbedUuid"
           }
         },
-        "required": ["created", "modified", "name", "project", "slug", "uuid"]
+        "required": [
+          "created",
+          "modified",
+          "name",
+          "project",
+          "slug",
+          "uuid"
+        ]
       },
       "JsonThreshold": {
         "type": "object",
@@ -941,7 +1007,12 @@
             "$ref": "#/components/schemas/ThresholdUuid"
           }
         },
-        "required": ["created", "model", "project", "uuid"]
+        "required": [
+          "created",
+          "model",
+          "project",
+          "uuid"
+        ]
       },
       "JsonUpdateStartPoint": {
         "type": "object",
@@ -998,7 +1069,9 @@
             "$ref": "#/components/schemas/VersionNumber"
           }
         },
-        "required": ["number"]
+        "required": [
+          "number"
+        ]
       },
       "MeasureUuid": {
         "type": "string",
@@ -1065,7 +1138,9 @@
             "nullable": true
           }
         },
-        "required": ["test"]
+        "required": [
+          "test"
+        ]
       },
       "ModelTest": {
         "type": "string",
@@ -1143,7 +1218,10 @@
       },
       "Visibility": {
         "type": "string",
-        "enum": ["public", "private"]
+        "enum": [
+          "public",
+          "private"
+        ]
       },
       "Window": {
         "type": "integer",

@@ -427,7 +427,7 @@ pub struct SyncConfig {
     pub multi_thread_streams: Option<u8>,
 
     /// Use multi-thread download for files above this size.
-    /// Format: [size][Suffix] (Example: 1G, 500M)
+    /// Format: `[size][Suffix]` (Example: 1G, 500M)
     /// Supported suffixes: k|M|G|T
     /// Default: 100M
     pub multi_thread_cutoff: Option<String>,
@@ -442,8 +442,8 @@ pub struct SyncConfig {
     /// Use with caution.
     ///
     /// Refer to the docs to see the supported flags:
-    /// Global flags: https://rclone.org/flags/
-    /// S3 specific flags: https://rclone.org/s3/
+    /// - [Global flags](https://rclone.org/flags/)
+    /// - [S3 specific flags](https://rclone.org/s3/)
     pub flags: Option<Vec<String>>,
 }
 

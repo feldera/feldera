@@ -1856,6 +1856,105 @@
         ]
       }
     },
+    "/v0/pipelines/{pipeline_name}/commit_transaction": {
+      "post": {
+        "tags": [
+          "Pipeline interaction"
+        ],
+        "summary": "Commit the current transaction.",
+        "operationId": "commit_transaction",
+        "parameters": [
+          {
+            "name": "pipeline_name",
+            "in": "path",
+            "description": "Unique pipeline name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Commit operation initiated."
+          },
+          "409": {
+            "description": "Another transaction is already in progress.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "Disconnected during response": {
+                    "value": {
+                      "message": "Unable to reach pipeline to interact due to: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs.",
+                      "error_code": "PipelineInteractionUnreachable",
+                      "details": {
+                        "error": "the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs."
+                      }
+                    }
+                  },
+                  "Pipeline is currently unavailable": {
+                    "value": {
+                      "message": "Unable to reach pipeline to interact due to: deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again",
+                      "error_code": "PipelineInteractionUnreachable",
+                      "details": {
+                        "error": "deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again"
+                      }
+                    }
+                  },
+                  "Pipeline is not deployed": {
+                    "value": {
+                      "message": "Unable to interact with pipeline because the deployment status ('stopped') is not one of the deployed statuses ('running', 'paused' or 'unavailable') -- to resolve this: wait for the pipeline to become running or paused",
+                      "error_code": "PipelineInteractionNotDeployed",
+                      "details": {
+                        "status": "Stopped",
+                        "desired_status": "Running"
+                      }
+                    }
+                  },
+                  "Response timeout": {
+                    "value": {
+                      "message": "Unable to reach pipeline to interact due to: timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)",
+                      "error_code": "PipelineInteractionUnreachable",
+                      "details": {
+                        "error": "timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JSON web token (JWT) or API key": []
+          }
+        ]
+      }
+    },
     "/v0/pipelines/{pipeline_name}/completion_status": {
       "get": {
         "tags": [
@@ -3119,6 +3218,112 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JSON web token (JWT) or API key": []
+          }
+        ]
+      }
+    },
+    "/v0/pipelines/{pipeline_name}/start_transaction": {
+      "post": {
+        "tags": [
+          "Pipeline interaction"
+        ],
+        "summary": "Start a transaction.",
+        "operationId": "start_transaction",
+        "parameters": [
+          {
+            "name": "pipeline_name",
+            "in": "path",
+            "description": "Unique pipeline name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Transaction successfully started.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StartTransactionResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Another transaction is already in progress.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "Disconnected during response": {
+                    "value": {
+                      "message": "Unable to reach pipeline to interact due to: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs.",
+                      "error_code": "PipelineInteractionUnreachable",
+                      "details": {
+                        "error": "the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs."
+                      }
+                    }
+                  },
+                  "Pipeline is currently unavailable": {
+                    "value": {
+                      "message": "Unable to reach pipeline to interact due to: deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again",
+                      "error_code": "PipelineInteractionUnreachable",
+                      "details": {
+                        "error": "deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again"
+                      }
+                    }
+                  },
+                  "Pipeline is not deployed": {
+                    "value": {
+                      "message": "Unable to interact with pipeline because the deployment status ('stopped') is not one of the deployed statuses ('running', 'paused' or 'unavailable') -- to resolve this: wait for the pipeline to become running or paused",
+                      "error_code": "PipelineInteractionNotDeployed",
+                      "details": {
+                        "status": "Stopped",
+                        "desired_status": "Running"
+                      }
+                    }
+                  },
+                  "Response timeout": {
+                    "value": {
+                      "message": "Unable to reach pipeline to interact due to: timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)",
+                      "error_code": "PipelineInteractionUnreachable",
+                      "details": {
+                        "error": "timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)"
+                      }
+                    }
+                  }
                 }
               }
             }
@@ -7274,6 +7479,19 @@
         ],
         "nullable": true
       },
+      "StartTransactionResponse": {
+        "type": "object",
+        "description": "Response to a `/start_transaction` request.",
+        "required": [
+          "transaction_id"
+        ],
+        "properties": {
+          "transaction_id": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
       "StorageBackendConfig": {
         "oneOf": [
           {
@@ -7456,7 +7674,7 @@
             "items": {
               "type": "string"
             },
-            "description": "Extra flags to pass to `rclone`.\n\nWARNING: Supplying incorrect or conflicting flags can break `rclone`.\nUse with caution.\n\nRefer to the docs to see the supported flags:\nGlobal flags: https://rclone.org/flags/\nS3 specific flags: https://rclone.org/s3/",
+            "description": "Extra flags to pass to `rclone`.\n\nWARNING: Supplying incorrect or conflicting flags can break `rclone`.\nUse with caution.\n\nRefer to the docs to see the supported flags:\n- [Global flags](https://rclone.org/flags/)\n- [S3 specific flags](https://rclone.org/s3/)",
             "nullable": true
           },
           "ignore_checksum": {
@@ -7466,7 +7684,7 @@
           },
           "multi_thread_cutoff": {
             "type": "string",
-            "description": "Use multi-thread download for files above this size.\nFormat: [size][Suffix] (Example: 1G, 500M)\nSupported suffixes: k|M|G|T\nDefault: 100M",
+            "description": "Use multi-thread download for files above this size.\nFormat: `[size][Suffix]` (Example: 1G, 500M)\nSupported suffixes: k|M|G|T\nDefault: 100M",
             "nullable": true
           },
           "multi_thread_streams": {

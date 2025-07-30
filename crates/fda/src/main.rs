@@ -1,5 +1,6 @@
 //! A CLI App for the Feldera REST API.
 
+use std::collections::BTreeMap;
 use std::convert::Infallible;
 use std::fs::File;
 use std::io::{stdout, ErrorKind, Read, Write};
@@ -23,7 +24,7 @@ use tabled::settings::Style;
 use tempfile::tempfile;
 use tokio::process::Command;
 use tokio::runtime::Handle;
-use tokio::time::{sleep, timeout, Duration};
+use tokio::time::{sleep, timeout, Duration, Instant};
 
 mod adhoc;
 mod bench;
@@ -460,6 +461,10 @@ fn patch_runtime_config(
         RuntimeConfigKey::IoWorkers => {
             rc.io_workers = Some(value.parse().map_err(|_| ())?);
         }
+        RuntimeConfigKey::DevTweaks => {
+            rc.dev_tweaks = serde_json::from_str::<BTreeMap<String, serde_json::Value>>(value)
+                .map_err(|_| ())?;
+        }
     };
 
     Ok(())
@@ -511,7 +516,7 @@ async fn wait_for_status(
     wait_for: PipelineStatus,
     waiting_text: &str,
 ) {
-    let mut print_every_30_seconds = tokio::time::Instant::now();
+    let mut print_every_30_seconds = Instant::now();
     let mut is_transitioning = true;
     while is_transitioning {
         let pc = client
@@ -528,7 +533,7 @@ async fn wait_for_status(
         is_transitioning = pc.deployment_status != wait_for;
         if print_every_30_seconds.elapsed().as_secs() > 30 {
             info!("{}", waiting_text);
-            print_every_30_seconds = tokio::time::Instant::now();
+            print_every_30_seconds = Instant::now();
         }
 
         if let Some(deployment_error) = &pc.deployment_error {
@@ -555,7 +560,7 @@ async fn wait_for_status(
 }
 
 async fn wait_for_checkpoint(client: &Client, name: String, seq_number: u64, waiting_text: &str) {
-    let mut print_every_30_seconds = tokio::time::Instant::now();
+    let mut print_every_30_seconds = Instant::now();
     let mut is_waiting_for_checkpoint = true;
     while is_waiting_for_checkpoint {
         let cs = client
@@ -592,7 +597,7 @@ async fn wait_for_checkpoint(client: &Client, name: String, seq_number: u64, wai
 
         if print_every_30_seconds.elapsed().as_secs() > 30 {
             info!("{}", waiting_text);
-            print_every_30_seconds = tokio::time::Instant::now();
+            print_every_30_seconds = Instant::now();
         }
 
         sleep(Duration::from_millis(500)).await;
@@ -716,7 +721,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                 cd.restore().await;
             };
 
-            let mut print_every_30_seconds = tokio::time::Instant::now();
+            let mut print_every_30_seconds = Instant::now();
             let mut compiling = true;
             while compiling {
                 let pc = client
@@ -737,7 +742,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
 
                 if print_every_30_seconds.elapsed().as_secs() > 30 {
                     info!("Compiling pipeline...");
-                    print_every_30_seconds = tokio::time::Instant::now();
+                    print_every_30_seconds = Instant::now();
                 }
                 sleep(Duration::from_millis(500)).await;
             }
@@ -1431,6 +1436,151 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                         format
                     );
                     println!("{}", &response.into_inner().status.to_string());
+                    std::process::exit(1);
+                }
+            }
+        }
+        PipelineAction::StartTransaction { name } => {
+            let response = client
+                .start_transaction()
+                .pipeline_name(name)
+                .send()
+                .await
+                .map_err(handle_errors_fatal(
+                    client.baseurl().clone(),
+                    "Failed to start transaction",
+                    1,
+                ))
+                .unwrap();
+
+            match format {
+                OutputFormat::Text => {
+                    println!(
+                        "Transaction started successfully with ID: {}",
+                        response.into_inner().transaction_id
+                    );
+                }
+                OutputFormat::Json => {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&response.into_inner())
+                            .expect("Failed to serialize transaction response")
+                    );
+                }
+                _ => {
+                    eprintln!(
+                        "Unsupported output format, falling back to text: {}",
+                        format
+                    );
+                    println!(
+                        "Transaction started successfully with ID: {}",
+                        response.into_inner().transaction_id
+                    );
+                    std::process::exit(1);
+                }
+            }
+        }
+        PipelineAction::CommitTransaction {
+            name,
+            transaction_id,
+            no_wait,
+        } => {
+            // First, get the current transaction ID from stats
+            let stats = client
+                .get_pipeline_stats()
+                .pipeline_name(name.clone())
+                .send()
+                .await
+                .map_err(handle_errors_fatal(
+                    client.baseurl().clone(),
+                    "Failed to get pipeline stats",
+                    1,
+                ))
+                .unwrap();
+            let current_transaction_id = stats
+                .into_inner()
+                .get("global_metrics")
+                .and_then(|v| v.get("transaction_id"))
+                .and_then(|v| v.as_i64())
+                .unwrap_or(0) as u64;
+
+            // Check if there's no transaction in progress
+            if current_transaction_id == 0 {
+                eprintln!(
+                    "Attempting to commit a transaction, but there is no transaction in progress"
+                );
+                std::process::exit(1);
+            }
+
+            // Verify transaction ID if provided
+            if let Some(expected_transaction_id) = transaction_id {
+                if current_transaction_id != expected_transaction_id {
+                    eprintln!(
+                        "Specified transaction {} doesn't match current active transaction {}",
+                        expected_transaction_id, current_transaction_id
+                    );
+                    std::process::exit(1);
+                }
+            }
+
+            let actual_transaction_id = current_transaction_id;
+
+            let response = client
+                .commit_transaction()
+                .pipeline_name(name.clone())
+                .send()
+                .await
+                .map_err(handle_errors_fatal(
+                    client.baseurl().clone(),
+                    "Failed to commit transaction",
+                    1,
+                ))
+                .unwrap();
+
+            if !no_wait {
+                // Wait for the transaction to commit by polling the stats
+                loop {
+                    let stats = client
+                        .get_pipeline_stats()
+                        .pipeline_name(name.clone())
+                        .send()
+                        .await
+                        .map_err(handle_errors_fatal(
+                            client.baseurl().clone(),
+                            "Failed to get pipeline stats",
+                            1,
+                        ))
+                        .unwrap();
+
+                    let current_transaction_id = stats
+                        .into_inner()
+                        .get("global_metrics")
+                        .and_then(|v| v.get("transaction_id"))
+                        .and_then(|v| v.as_i64())
+                        .unwrap_or(0) as u64;
+
+                    // If transaction_id is 0, it means the transaction has been committed
+                    if current_transaction_id != actual_transaction_id {
+                        break;
+                    }
+
+                    sleep(Duration::from_secs(1)).await;
+                }
+            }
+
+            match format {
+                OutputFormat::Text => {
+                    println!("Transaction committed successfully.");
+                }
+                OutputFormat::Json => {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&response.into_inner())
+                            .expect("Failed to serialize commit response")
+                    );
+                }
+                _ => {
+                    eprintln!("Unsupported output format: {}", format);
                     std::process::exit(1);
                 }
             }

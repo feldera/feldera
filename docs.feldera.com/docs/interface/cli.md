@@ -128,6 +128,18 @@ Run the pipeline `p1`:
 fda start p1
 ```
 
+Start a transaction for `p1`:
+
+```bash
+fda start-transaction p1
+```
+
+Commit a transaction for `p1`:
+
+```bash
+fda commit-transaction p1
+```
+
 Retrieve the stats for `p1`:
 
 ```bash
