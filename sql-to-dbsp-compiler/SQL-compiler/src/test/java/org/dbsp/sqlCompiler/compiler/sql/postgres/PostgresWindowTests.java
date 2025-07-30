@@ -120,16 +120,16 @@ public class PostgresWindowTests extends SqlIoTest {
                 ;
                   depname  | empno | salary |  sum
                 -----------+-------+--------+-------
-                 develop   |     7 |   4200 | 25100
-                 develop   |     9 |   4500 | 25100
-                 develop   |    11 |   5200 | 25100
-                 develop   |    10 |   5200 | 25100
-                 develop   |     8 |   6000 | 25100
-                 personnel |     5 |   3500 |  7400
-                 personnel |     2 |   3900 |  7400
-                 sales     |     3 |   4800 | 14600
-                 sales     |     4 |   4800 | 14600
-                 sales     |     1 |   5000 | 14600
+                 develop|        7 |   4200 | 25100
+                 develop|        9 |   4500 | 25100
+                 develop|       11 |   5200 | 25100
+                 develop|       10 |   5200 | 25100
+                 develop|        8 |   6000 | 25100
+                 personnel|      5 |   3500 |  7400
+                 personnel|      2 |   3900 |  7400
+                 sales|          3 |   4800 | 14600
+                 sales|          4 |   4800 | 14600
+                 sales|          1 |   5000 | 14600
                 (10 rows)""");
     }
 

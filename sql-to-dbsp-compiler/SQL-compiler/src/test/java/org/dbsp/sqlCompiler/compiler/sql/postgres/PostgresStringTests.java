@@ -110,13 +110,13 @@ public class PostgresStringTests extends SqlIoTest {
     @Test
     public void testCharN() {
         this.q("""
-                SELECT CAST(f1 AS text) AS "text(char)" FROM CHAR_TBL;
-                 text(char)
-                ------------
-                 a
-                 ab
-                 abcd
-                 abcd""");
+                SELECT CAST(f1 AS text) AS "text(char)", 1 FROM CHAR_TBL;
+                 text(char) | 1 
+                ----------------
+                 a   | 1
+                 ab  | 1
+                 abcd| 1
+                 abcd| 1""");
     }
 
     @Test
@@ -142,25 +142,25 @@ public class PostgresStringTests extends SqlIoTest {
     @Test
     public void testVarcharN() {
         this.q("""
-                SELECT CAST(f1 AS text) AS "text(varchar)" FROM VARCHAR_TBL;
-                 text(varchar)
-                ------------
-                 a
-                 ab
-                 abcd
-                 abcd""");
+                SELECT CAST(f1 AS text) AS "text(varchar)", 1 FROM VARCHAR_TBL;
+                 text(varchar) | 1
+                -------------------
+                 a|    1
+                 ab|   1
+                 abcd| 1
+                 abcd| 1""");
     }
 
     @Test
     public void testVarchar() {
         this.q("""
-                SELECT f1 AS "text(varchar)" FROM UVARCHAR_TBL;
-                 text(varchar)
-                ------------
-                 a
-                 ab
-                 abcd
-                 abcd""");
+                SELECT f1 AS "text(varchar)", 1 FROM UVARCHAR_TBL;
+                 text(varchar) | 1
+                -------------------
+                 a| 1
+                 ab| 1
+                 abcd| 1
+                 abcd    | 1""");
     }
 
     // 'name' not supported
@@ -211,13 +211,13 @@ public class PostgresStringTests extends SqlIoTest {
     @Test
     public void testCharTbl() {
         this.q("""
-                SELECT CAST(f1 AS varchar) AS "varchar(char)" FROM CHAR_TBL;
-                 varchar(char)
-                ---------------
-                 a
-                 ab
-                 abcd
-                 abcd""");
+                SELECT CAST(f1 AS varchar) AS "varchar(char)", 1 FROM CHAR_TBL;
+                 varchar(char) | 1
+                -------------------
+                 a   | 1
+                 ab  | 1
+                 abcd| 1
+                 abcd| 1""");
     }
 
     @Test

@@ -837,7 +837,7 @@ INSERT INTO BID VALUES(1, 1, 100, 'my-channel', 'https://example.com', '2020-01-
 """, """
  id | item | description | initialBid | reserve | date_time           | expires             | seller | category | extra | auction | bidder | price | bid_datetime         | bid_extra | weight
 -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-  1 | item-name | description | 5     |      10 | 2020-01-01 00:00:00 | 2020-01-01 00:00:10 |     99 |        1 |       |       1 |      1 |    100 | 2020-01-01 00:00:02 |           | 1""",
+  1 | item-name| description| 5     |      10 | 2020-01-01 00:00:00 | 2020-01-01 00:00:10 |     99 |        1 | |       1 |      1 |    100 | 2020-01-01 00:00:02 | | 1""",
         // The second batch has a new highest bid for the (currently) only auction.
         // And adds a new auction without any bids (empty join).
         """
@@ -846,8 +846,8 @@ INSERT INTO AUCTION VALUES(2, 'item-name', 'description', 5, 10, '2020-01-01 00:
                         """, """
  id | item | description | initialBid | reserve | date_time           | expires             | seller | category | extra | auction | bidder | price | bid_datetime         | bid_extra | weight
 -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-  1 | item-name | description | 5     |      10 | 2020-01-01 00:00:00 | 2020-01-01 00:00:10 |     99 |        1 |       |       1 |      1 |    100 | 2020-01-01 00:00:02 |           | -1
-  1 | item-name | description | 5     |      10 | 2020-01-01 00:00:00 | 2020-01-01 00:00:10 |     99 |        1 |       |       1 |      1 |    200 | 2020-01-01 00:00:09 |           | 1""",
+  1 | item-name| description| 5     |      10 | 2020-01-01 00:00:00 | 2020-01-01 00:00:10 |     99 |        1 | |       1 |      1 |    100 | 2020-01-01 00:00:02 | | -1
+  1 | item-name| description| 5     |      10 | 2020-01-01 00:00:00 | 2020-01-01 00:00:10 |     99 |        1 | |       1 |      1 |    200 | 2020-01-01 00:00:09 | | 1""",
         // The third batch has a new bid, but it's not higher, so no effect to the first
         // auction. A bid added for the second auction, so it is added.
                 """
@@ -856,7 +856,7 @@ INSERT INTO BID VALUES(2, 1, 400, 'my-channel', 'https://example.com', '2020-01-
                 
 id | item | description | initialBid | reserve | date_time           | expires             | seller | category | extra | auction | bidder | price | bid_datetime         | bid_extra | weight
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
- 2 | item-name | description | 5     |      10 | 2020-01-01 00:00:00 | 2020-01-01 00:00:20 |    101 |        1 |       |       2 |      1 |    400 | 2020-01-01 00:00:19 |           | 1""",
+ 2 | item-name| description| 5     |      10 | 2020-01-01 00:00:00 | 2020-01-01 00:00:20 |    101 |        1 | |       2 |      1 |    400 | 2020-01-01 00:00:19 | | 1""",
         // The fourth and final batch has a new bid for auction 2, but it's
         // come in too late to be valid, so no change.
                 """

@@ -11,15 +11,15 @@ public class OuterTests extends PostBaseTests {
                 +-------+--------+--------+
                 | ENAME | DEPTNO | GENDER |
                 +-------+--------+--------+
-                | Jane  |     10 | F|
-                | Bob   |     10 | M|
-                | Eric  |     20 | M|
-                | Susan |     30 | F|
-                | Alice |     30 | F|
-                | Adam  |     50 | M|
-                | Eve   |     50 | F|
-                | Grace |     60 | F|
-                | Wilma |        | F|
+                | Jane|       10 | F|
+                | Bob|        10 | M|
+                | Eric|       20 | M|
+                | Susan|      30 | F|
+                | Alice|      30 | F|
+                | Adam|       50 | M|
+                | Eve|        50 | F|
+                | Grace|      60 | F|
+                | Wilma|         | F|
                 +-------+--------+--------+
                 (9 rows)
                 
@@ -27,11 +27,11 @@ public class OuterTests extends PostBaseTests {
                 +-------+--------+--------+---------+-------------+
                 | ENAME | DEPTNO | GENDER | DEPTNO0 | DNAME       |
                 +-------+--------+--------+---------+-------------+
-                | Jane  |     10 | F|            10 | Sales       |
-                | Bob   |     10 | M|            10 | Sales       |
-                | Eric  |     20 | M|            20 | Marketing   |
-                | Susan |     30 | F|            30 | Engineering |
-                | Alice |     30 | F|            30 | Engineering |
+                | Jane|       10 | F|            10 | Sales|
+                | Bob|        10 | M|            10 | Sales|
+                | Eric|       20 | M|            20 | Marketing|
+                | Susan|      30 | F|            30 | Engineering|
+                | Alice|      30 | F|            30 | Engineering|
                 +-------+--------+--------+---------+-------------+
                 (5 rows)
                 
@@ -39,9 +39,9 @@ public class OuterTests extends PostBaseTests {
                 +-------+--------+--------+---------+-------------+
                 | ENAME | DEPTNO | GENDER | DEPTNO0 | DNAME       |
                 +-------+--------+--------+---------+-------------+
-                | Alice |     30 | F|            30 | Engineering |
-                | Jane  |     10 | F|            10 | Sales       |
-                | Susan |     30 | F|            30 | Engineering |
+                | Alice|      30 | F|            30 | Engineering|
+                | Jane|       10 | F|            10 | Sales|
+                | Susan|      30 | F|            30 | Engineering|
                 +-------+--------+--------+---------+-------------+
                 (3 rows)
                 
@@ -49,9 +49,9 @@ public class OuterTests extends PostBaseTests {
                 +-------+--------+--------+---------+-------------+
                 | ENAME | DEPTNO | GENDER | DEPTNO0 | DNAME       |
                 +-------+--------+--------+---------+-------------+
-                | Jane  |     10 | F|            10 | Sales       |
-                | Susan |     30 | F|            30 | Engineering |
-                | Alice |     30 | F|            30 | Engineering |
+                | Jane|       10 | F|            10 | Sales|
+                | Susan|      30 | F|            30 | Engineering|
+                | Alice|      30 | F|            30 | Engineering|
                 +-------+--------+--------+---------+-------------+
                 (3 rows)
                 
@@ -59,9 +59,9 @@ public class OuterTests extends PostBaseTests {
                 +-------+--------+--------+---------+-------------+
                 | ENAME | DEPTNO | GENDER | DEPTNO0 | DNAME       |
                 +-------+--------+--------+---------+-------------+
-                | Jane  |     10 | F|            10 | Sales       |
-                | Susan |     30 | F|            30 | Engineering |
-                | Alice |     30 | F|            30 | Engineering |
+                | Jane|       10 | F|            10 | Sales|
+                | Susan|      30 | F|            30 | Engineering|
+                | Alice|      30 | F|            30 | Engineering|
                 +-------+--------+--------+---------+-------------+
                 (3 rows)
                 
@@ -69,15 +69,15 @@ public class OuterTests extends PostBaseTests {
                 +-------+--------+--------+---------+-------------+
                 | ENAME | DEPTNO | GENDER | DEPTNO0 | DNAME       |
                 +-------+--------+--------+---------+-------------+
-                | Adam  |     50 | M|               |NULL         |
-                | Alice |     30 | F|            30 | Engineering |
-                | Bob   |     10 | M|               |NULL         |
-                | Eric  |     20 | M|               |NULL         |
-                | Eve   |     50 | F|               |NULL         |
-                | Grace |     60 | F|               |NULL         |
-                | Jane  |     10 | F|            10 | Sales       |
-                | Susan |     30 | F|            30 | Engineering |
-                | Wilma |        | F|               |NULL         |
+                | Adam|       50 | M|               |NULL         |
+                | Alice|      30 | F|            30 | Engineering|
+                | Bob|        10 | M|               |NULL         |
+                | Eric|       20 | M|               |NULL         |
+                | Eve|        50 | F|               |NULL         |
+                | Grace|      60 | F|               |NULL         |
+                | Jane|       10 | F|            10 | Sales|
+                | Susan|      30 | F|            30 | Engineering|
+                | Wilma|         | F|               |NULL         |
                 +-------+--------+--------+---------+-------------+
                 (9 rows)
                 
@@ -85,12 +85,12 @@ public class OuterTests extends PostBaseTests {
                 +-------+--------+--------+---------+-------------+
                 | ENAME | DEPTNO | GENDER | DEPTNO0 | DNAME       |
                 +-------+--------+--------+---------+-------------+
-                | Jane  |     10 | F|            10 | Sales       |
-                | Susan |     30 | F|            30 | Engineering |
-                | Alice |     30 | F|            30 | Engineering |
-                | Eve   |     50 | F|               |NULL         |
-                | Grace |     60 | F|               |NULL         |
-                | Wilma |        | F|               |NULL         |
+                | Jane|       10 | F|            10 | Sales|
+                | Susan|      30 | F|            30 | Engineering|
+                | Alice|      30 | F|            30 | Engineering|
+                | Eve|        50 | F|               |NULL         |
+                | Grace|      60 | F|               |NULL         |
+                | Wilma|         | F|               |NULL         |
                 +-------+--------+--------+---------+-------------+
                 (6 rows)
                 
@@ -98,12 +98,12 @@ public class OuterTests extends PostBaseTests {
                 +-------+--------+--------+---------+-------------+
                 | ENAME | DEPTNO | GENDER | DEPTNO0 | DNAME       |
                 +-------+--------+--------+---------+-------------+
-                | Jane  |     10 | F|            10 | Sales       |
-                | Susan |     30 | F|            30 | Engineering |
-                | Alice |     30 | F|            30 | Engineering |
-                | Eve   |     50 | F|               |NULL         |
-                | Grace |     60 | F|               |NULL         |
-                | Wilma |        | F|               |NULL         |
+                | Jane|       10 | F|            10 | Sales|
+                | Susan|      30 | F|            30 | Engineering|
+                | Alice|      30 | F|            30 | Engineering|
+                | Eve|        50 | F|               |NULL         |
+                | Grace|      60 | F|               |NULL         |
+                | Wilma|         | F|               |NULL         |
                 +-------+--------+--------+---------+-------------+
                 (6 rows)
                 
@@ -111,11 +111,11 @@ public class OuterTests extends PostBaseTests {
                 +-------+--------+--------+---------+-------------+
                 | ENAME | DEPTNO | GENDER | DEPTNO0 | DNAME       |
                 +-------+--------+--------+---------+-------------+
-                | Alice |     30 | F|            30 | Engineering |
-                | Jane  |     10 | F|            10 | Sales       |
-                | Susan |     30 | F|            30 | Engineering |
-                |NULL   |        |NULL|          20 | Marketing   |
-                |NULL   |        |NULL|          40 | Empty       |
+                | Alice|      30 | F|            30 | Engineering|
+                | Jane|       10 | F|            10 | Sales|
+                | Susan|      30 | F|            30 | Engineering|
+                |NULL   |        |NULL|          20 | Marketing|
+                |NULL   |        |NULL|          40 | Empty|
                 +-------+--------+--------+---------+-------------+
                 (5 rows)
                 
@@ -123,9 +123,9 @@ public class OuterTests extends PostBaseTests {
                 +-------+--------+--------+---------+-------------+
                 | ENAME | DEPTNO | GENDER | DEPTNO0 | DNAME       |
                 +-------+--------+--------+---------+-------------+
-                | Jane  |     10 | F|            10 | Sales       |
-                | Susan |     30 | F|            30 | Engineering |
-                | Alice |     30 | F|            30 | Engineering |
+                | Jane|       10 | F|            10 | Sales|
+                | Susan|      30 | F|            30 | Engineering|
+                | Alice|      30 | F|            30 | Engineering|
                 +-------+--------+--------+---------+-------------+
                 (3 rows)
                 
@@ -133,11 +133,11 @@ public class OuterTests extends PostBaseTests {
                 +-------+--------+--------+---------+-------------+
                 | ENAME | DEPTNO | GENDER | DEPTNO0 | DNAME       |
                 +-------+--------+--------+---------+-------------+
-                | Jane  |     10 | F|            10 | Sales       |
-                | Susan |     30 | F|            30 | Engineering |
-                | Alice |     30 | F|            30 | Engineering |
-                |NULL   |        |NULL|          20 | Marketing   |
-                |NULL   |        |NULL|          40 | Empty       |
+                | Jane|       10 | F|            10 | Sales|
+                | Susan|      30 | F|            30 | Engineering|
+                | Alice|      30 | F|            30 | Engineering|
+                |NULL   |        |NULL|          20 | Marketing|
+                |NULL   |        |NULL|          40 | Empty|
                 +-------+--------+--------+---------+-------------+
                 (5 rows)
                 
@@ -145,17 +145,17 @@ public class OuterTests extends PostBaseTests {
                 +-------+--------+--------+---------+-------------+
                 | ENAME | DEPTNO | GENDER | DEPTNO0 | DNAME       |
                 +-------+--------+--------+---------+-------------+
-                | Adam  |     50 | M|               |NULL         |
-                | Alice |     30 | F|            30 | Engineering |
-                | Bob   |     10 | M|               |NULL         |
-                | Eric  |     20 | M|               |NULL         |
-                | Eve   |     50 | F|               |NULL         |
-                | Grace |     60 | F|               |NULL         |
-                | Jane  |     10 | F|            10 | Sales       |
-                | Susan |     30 | F|            30 | Engineering |
-                | Wilma |        | F|               |NULL         |
-                |NULL   |        |NULL|          20 | Marketing   |
-                |NULL   |        |NULL|          40 | Empty       |
+                | Adam|       50 | M|               |NULL         |
+                | Alice|      30 | F|            30 | Engineering|
+                | Bob|        10 | M|               |NULL         |
+                | Eric|       20 | M|               |NULL         |
+                | Eve|        50 | F|               |NULL         |
+                | Grace|      60 | F|               |NULL         |
+                | Jane|       10 | F|            10 | Sales|
+                | Susan|      30 | F|            30 | Engineering|
+                | Wilma|         | F|               |NULL         |
+                |NULL   |        |NULL|          20 | Marketing|
+                |NULL   |        |NULL|          40 | Empty|
                 +-------+--------+--------+---------+-------------+
                 (11 rows)
                 
@@ -163,12 +163,12 @@ public class OuterTests extends PostBaseTests {
                 +-------+--------+--------+---------+-------------+
                 | ENAME | DEPTNO | GENDER | DEPTNO0 | DNAME       |
                 +-------+--------+--------+---------+-------------+
-                | Jane  |     10 | F|            10 | Sales       |
-                | Susan |     30 | F|            30 | Engineering |
-                | Alice |     30 | F|            30 | Engineering |
-                | Eve   |     50 | F|               |NULL         |
-                | Grace |     60 | F|               |NULL         |
-                | Wilma |        | F|               |NULL         |
+                | Jane|       10 | F|            10 | Sales|
+                | Susan|      30 | F|            30 | Engineering|
+                | Alice|      30 | F|            30 | Engineering|
+                | Eve|        50 | F|               |NULL         |
+                | Grace|      60 | F|               |NULL         |
+                | Wilma|         | F|               |NULL         |
                 +-------+--------+--------+---------+-------------+
                 (6 rows)
                 
@@ -176,14 +176,14 @@ public class OuterTests extends PostBaseTests {
                 +-------+--------+--------+---------+-------------+
                 | ENAME | DEPTNO | GENDER | DEPTNO0 | DNAME       |
                 +-------+--------+--------+---------+-------------+
-                | Jane  |     10 | F|            10 | Sales       |
-                | Susan |     30 | F|            30 | Engineering |
-                | Alice |     30 | F|            30 | Engineering |
-                | Eve   |     50 | F|               |NULL         |
-                | Grace |     60 | F|               |NULL         |
-                | Wilma |        | F|               |NULL         |
-                |NULL   |        |NULL|          20 | Marketing   |
-                |NULL   |        |NULL|          40 | Empty       |
+                | Jane|       10 | F|            10 | Sales|
+                | Susan|      30 | F|            30 | Engineering|
+                | Alice|      30 | F|            30 | Engineering|
+                | Eve|        50 | F|               |NULL         |
+                | Grace|      60 | F|               |NULL         |
+                | Wilma|         | F|               |NULL         |
+                |NULL   |        |NULL|          20 | Marketing|
+                |NULL   |        |NULL|          40 | Empty|
                 +-------+--------+--------+---------+-------------+
                 (8 rows)
                 
@@ -192,14 +192,14 @@ public class OuterTests extends PostBaseTests {
                 +-------+--------+--------+---------+-------------+
                 | ENAME | DEPTNO | GENDER | DEPTNO0 | DNAME       |
                 +-------+--------+--------+---------+-------------+
-                | Jane  |     10 | F|            10 | Sales       |
-                | Susan |     30 | F|            30 | Engineering |
-                | Alice |     30 | F|            30 | Engineering |
-                | Eve   |     50 | F|               |NULL         |
-                | Grace |     60 | F|               |NULL         |
-                | Wilma |        | F|               |NULL         |
-                |NULL   |        |NULL|          20 | Marketing   |
-                |NULL   |        |NULL|          40 | Empty       |
+                | Jane|       10 | F|            10 | Sales|
+                | Susan|      30 | F|            30 | Engineering|
+                | Alice|      30 | F|            30 | Engineering|
+                | Eve|        50 | F|               |NULL         |
+                | Grace|      60 | F|               |NULL         |
+                | Wilma|         | F|               |NULL         |
+                |NULL   |        |NULL|          20 | Marketing|
+                |NULL   |        |NULL|          40 | Empty|
                 +-------+--------+--------+---------+-------------+
                 (8 rows)
                 

@@ -312,9 +312,6 @@ public class TableParser {
                         // replace \\n with \n, otherwise we can't represent it
                         data = data.substring(1);
                         data = data.replace("\\n", "\n");
-                        DBSPTypeString type = fieldType.to(DBSPTypeString.class);
-                        if (!type.fixed)
-                            data = Utilities.trimRight(data);
                         yield new DBSPStringLiteral(CalciteObject.EMPTY, fieldType, data, StandardCharsets.UTF_8);
                     }
                 }

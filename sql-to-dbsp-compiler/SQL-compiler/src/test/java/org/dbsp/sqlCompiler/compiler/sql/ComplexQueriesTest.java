@@ -109,7 +109,7 @@ public class ComplexQueriesTest extends BaseSQLTests {
                  """
                  x29 | x31 | x51 | x55 | weight
                 ---------------------------------
-                 table t29 row 6 | table t31 row 9 | table t51 row 5 | table t55 row 4 | 1""");
+                 table t29 row 6| table t31 row 9| table t51 row 5| table t55 row 4| 1""");
         InnerVisitor typeWidth = new InnerVisitor(ccs.compiler) {
             @Override
             public void postorder(DBSPTypeTupleBase type) {

@@ -20,15 +20,15 @@ public class AggTests extends PostBaseTests {
                 SELECT ENAME, ENAME in ('Adam', 'Alice', 'Eve') FROM EMP;
                  ename | expr
                 --------------
-                 Adam  | true
-                 Alice | true
-                 Bob   | false
-                 Eric  | false
-                 Eve   | true
-                 Grace | false
-                 Jane  | false
-                 Susan | false
-                 Wilma | false
+                 Adam| true
+                 Alice| true
+                 Bob| false
+                 Eric| false
+                 Eve| true
+                 Grace| false
+                 Jane| false
+                 Susan| false
+                 Wilma| false
                 ---------------
                 (9 rows)""");
     }

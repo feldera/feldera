@@ -975,15 +975,12 @@ fn truncate(value: &str, size: usize) -> String {
 #[inline(always)]
 #[doc(hidden)]
 fn size_string(value: &str, size: i32) -> String {
-    if is_unlimited_size(size) {
-        value.trim_end().to_string()
-    } else {
-        let sz = size as usize;
-        match value.len().cmp(&sz) {
-            Ordering::Equal => value.to_string(),
-            Ordering::Greater => truncate(value, sz),
-            Ordering::Less => format!("{value:<sz$}"),
-        }
+    assert!(!is_unlimited_size(size));
+    let sz = size as usize;
+    match value.len().cmp(&sz) {
+        Ordering::Equal => value.to_string(),
+        Ordering::Greater => truncate(value, sz),
+        Ordering::Less => format!("{value:<sz$}"),
     }
 }
 
@@ -993,13 +990,12 @@ fn size_string(value: &str, size: i32) -> String {
 #[doc(hidden)]
 fn limit_string(value: &str, size: i32) -> String {
     if is_unlimited_size(size) {
-        value.trim_end().to_string()
+        value.to_string()
     } else {
         let sz = size as usize;
         if value.len() < sz {
             value.to_string()
         } else {
-            // TODO: this is legal only if all excess characters are spaces
             truncate(value, sz)
         }
     }

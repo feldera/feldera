@@ -249,16 +249,20 @@ public class Simplify extends ExpressionTranslator {
                 } else if (type.is(DBSPTypeString.class)) {
                     DBSPTypeString typeString = type.to(DBSPTypeString.class);
                     if (typeString.precision == DBSPTypeString.UNLIMITED_PRECISION) {
-                        String value = Utilities.trimRight(str.value);
-                        result = new DBSPStringLiteral(value, str.charset, type);
+                        result = new DBSPStringLiteral(str.value, str.charset, type);
                     } else {
-                        String value;
-                        if (!typeString.fixed) {
-                            value = Utilities.trimRight(str.value);
-                        } else if (str.value.length() < typeString.precision) {
-                            value = StringUtils.rightPad(str.value, typeString.precision);
+                        String value = str.value;
+                        if (typeString.fixed) {
+                            if (str.value.length() < typeString.precision) {
+                                value = StringUtils.rightPad(str.value, typeString.precision);
+                            } else {
+                                value = str.value.substring(0, typeString.precision);
+                            }
                         } else {
-                            value = str.value.substring(0, typeString.precision);
+                            // Not fixed, but limited precision; truncate if necessary
+                            if (str.value.length() > typeString.precision) {
+                                value = str.value.substring(0, typeString.precision);
+                            }
                         }
                         result = new DBSPStringLiteral(expression.getNode(), type, value, str.charset);
                     }
