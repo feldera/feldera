@@ -2195,9 +2195,16 @@ impl ControllerInit {
                         ));
                     };
 
-                    synchronizer
+                    if let Err(err) = synchronizer
                         .pull(storage.backend.clone(), sync.to_owned())
-                        .map_err(|e| ControllerError::checkpoint_fetch_error(e.to_string()))?;
+                        .map_err(|e| ControllerError::checkpoint_fetch_error(e.to_string()))
+                    {
+                        if sync.strict_start_from {
+                            return Err(err);
+                        } else {
+                            tracing::error!("{}", err.to_string())
+                        }
+                    }
                 }
             }
         }

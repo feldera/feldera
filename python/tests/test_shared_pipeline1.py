@@ -1,11 +1,11 @@
-import random
-from uuid import uuid4
-import time
-import os
-from typing import Optional
-from feldera.runtime_config import RuntimeConfig, Storage
-from tests import enterprise_only
 from tests.shared_test_pipeline import SharedTestPipeline
+from tests import enterprise_only
+from feldera.runtime_config import RuntimeConfig, Storage
+from typing import Optional
+import os
+import time
+from uuid import uuid4
+import random
 
 
 DEFAULT_ENDPOINT = os.environ.get(
@@ -19,6 +19,7 @@ SECRET_KEY = "miniopasswd"
 def storage_cfg(
     endpoint: Optional[str] = None,
     start_from_checkpoint: Optional[str] = None,
+    strict: bool = False,
     auth_err: bool = False,
 ) -> dict:
     return {
@@ -32,6 +33,7 @@ def storage_cfg(
                     "provider": "Minio",
                     "endpoint": endpoint or DEFAULT_ENDPOINT,
                     "start_from_checkpoint": start_from_checkpoint,
+                    "strict_start_from": strict,
                 }
             },
         }
@@ -46,6 +48,8 @@ class TestCheckpointSync(SharedTestPipeline):
         random_uuid: bool = False,
         clear_storage: bool = True,
         auth_err: bool = False,
+        strict: bool = False,
+        expect_empty: bool = False,
     ):
         """
         CREATE TABLE t0 (c0 INT, c1 VARCHAR);
@@ -75,11 +79,16 @@ class TestCheckpointSync(SharedTestPipeline):
 
         # Restart pipeline from checkpoint
         storage_config = storage_cfg(
-            start_from_checkpoint=uuid if from_uuid else "latest", auth_err=auth_err
+            start_from_checkpoint=uuid if from_uuid else "latest",
+            auth_err=auth_err,
+            strict=strict,
         )
         self.set_runtime_config(RuntimeConfig(storage=Storage(config=storage_config)))
         self.pipeline.start()
         got_after = list(self.pipeline.query("SELECT * FROM v0"))
+
+        if expect_empty:
+            got_before = []
 
         self.assertCountEqual(got_before, got_after)
 
@@ -89,19 +98,27 @@ class TestCheckpointSync(SharedTestPipeline):
             self.pipeline.clear_storage()
 
     @enterprise_only
-    def test_checkpoint_sync_from_uuid(self):
+    def test_from_uuid(self):
         self.test_checkpoint_sync(from_uuid=True)
 
     @enterprise_only
-    def test_checkpoint_sync_without_clearing_storage(self):
+    def test_without_clearing_storage(self):
         self.test_checkpoint_sync(clear_storage=False)
 
     @enterprise_only
-    def test_checkpoint_sync_err(self):
+    def test_autherr_fail(self):
         with self.assertRaisesRegex(RuntimeError, "SignatureDoesNotMatch"):
-            self.test_checkpoint_sync(auth_err=True)
+            self.test_checkpoint_sync(auth_err=True, strict=True)
 
     @enterprise_only
-    def test_checkpoint_sync_err_nonexistent_checkpoint(self):
+    def test_autherr(self):
+        self.test_checkpoint_sync(auth_err=True, strict=False, expect_empty=True)
+
+    @enterprise_only
+    def test_nonexistent_checkpoint_fail(self):
         with self.assertRaisesRegex(RuntimeError, "were not found in source"):
-            self.test_checkpoint_sync(random_uuid=True, from_uuid=True)
+            self.test_checkpoint_sync(random_uuid=True, from_uuid=True, strict=True)
+
+    @enterprise_only
+    def test_nonexistent_checkpoint(self):
+        self.test_checkpoint_sync(random_uuid=True, from_uuid=True, expect_empty=True)

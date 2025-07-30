@@ -26,6 +26,7 @@ Here is a sample configuration:
         "access_key": "ACCESS_KEY",
         "secret_key": "SECRET_KEY",
         "start_from_checkpoint": "latest",
+        "strict_start_from": false,
         "flags": ["--s3-server-side-encryption", "aws:kms"]
       }
     }
@@ -35,22 +36,24 @@ Here is a sample configuration:
 
 ### `sync` configuration fields
 
-| Field                   | Type            | Default     | Description                                                                                                                                                                          |
-|-------------------------|-----------------|-------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `endpoint`              | `string`        |             | The S3-compatible object store endpoint (e.g., `http://localhost:9000` for MinIO).                                                                                                   |
-| `bucket` \*             | `string`        |             | The bucket name and optional prefix to store checkpoints (e.g., `mybucket/checkpoints`).                                                                                             |
-| `region`                | `string`        | `us-east-1` | The region of the bucket. Leave empty for MinIO. If `provider` is AWS, and no region is specified, `us-east-1` is used.                                                              |
-| `provider` \*           | `string`        |             | The S3 provider identifier. Must match [rclone’s list](https://rclone.org/s3/#providers). Case-sensitive. Use `"Other"` if unsure.                                                   |
-| `access_key`            | `string`        |             | S3 access key. Not required if using environment-based auth (e.g., IRSA).                                                                                                            |
-| `secret_key`            | `string`        |             | S3 secret key. Not required if using environment-based auth.                                                                                                                         |
-| `start_from_checkpoint` | `string`        |             | Checkpoint UUID to resume from it, or `latest` to restore from the latest checkpoint. The provided UUID must exist in object store.                                                  |
-| `transfers`             | `integer (u8)`  | `20`        | Number of concurrent file transfers.                                                                                                                                                 |
-| `checkers`              | `integer (u8)`  | `20`        | Number of parallel checkers for verification.                                                                                                                                        |
-| `ignore_checksum`       | `boolean`       | `false`     | Skip checksum verification after transfer and only check the file size. Might improve throughput.                                                                                    |
-| `multi_thread_streams`  | `integer (u8)`  | `10`        | Number of streams for multi-threaded downloads.                                                                                                                                      |
-| `multi_thread_cutoff`   | `string`        | `100M`      | File size threshold to enable multi-threaded downloads (e.g., `100M`, `1G`). Supported suffixes: `k`, `M`, `G`, `T`.                                                                 |
-| `upload_concurrency`    | `integer (u8)`  | `10`        | Number of concurrent chunks to upload during multipart uploads.                                                                                                                      |
-| `flags`                 | `array[string]` |             | Extra flags to pass to `rclone`.<p> ⚠️ Incorrect or conflicting flags may break behavior. See [rclone flags](https://rclone.org/flags/) and [S3 flags](https://rclone.org/s3/). </p> |
+| Field                   | Type            | Default     | Description                                                                                                                                                                                                      |
+|-------------------------|-----------------|-------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `endpoint`              | `string`        |             | The S3-compatible object store endpoint (e.g., `http://localhost:9000` for MinIO).                                                                                                                               |
+| `bucket` \*             | `string`        |             | The bucket name and optional prefix to store checkpoints (e.g., `mybucket/checkpoints`).                                                                                                                         |
+| `region`                | `string`        | `us-east-1` | The region of the bucket. Leave empty for MinIO. If `provider` is AWS, and no region is specified, `us-east-1` is used.                                                                                          |
+| `provider` \*           | `string`        |             | The S3 provider identifier. Must match [rclone’s list](https://rclone.org/s3/#providers). Case-sensitive. Use `"Other"` if unsure.                                                                               |
+| `access_key`            | `string`        |             | S3 access key. Not required if using environment-based auth (e.g., IRSA).                                                                                                                                        |
+| `secret_key`            | `string`        |             | S3 secret key. Not required if using environment-based auth.                                                                                                                                                     |
+| `start_from_checkpoint` | `string`        |             | Checkpoint UUID to resume from, or `latest` to restore from the latest checkpoint.                                                                                                                               |
+| `strict_start_from`     | `boolean`       | `false`     | When `true` the pipeline will fail to initialize if fetching the specified checkpoint fails. <p> When `false`, the pipeline will start from scratch instead. Ignored if `start_from_checkpoint` is not set. </p> |
+| `transfers`             | `integer (u8)`  | `20`        | Number of concurrent file transfers.                                                                                                                                                                             |
+| `checkers`              | `integer (u8)`  | `20`        | Number of parallel checkers for verification.                                                                                                                                                                    |
+| `ignore_checksum`       | `boolean`       | `false`     | Skip checksum verification after transfer and only check the file size. Might improve throughput.                                                                                                                |
+| `multi_thread_streams`  | `integer (u8)`  | `10`        | Number of streams for multi-threaded downloads.                                                                                                                                                                  |
+| `multi_thread_cutoff`   | `string`        | `100M`      | File size threshold to enable multi-threaded downloads (e.g., `100M`, `1G`). Supported suffixes: `k`, `M`, `G`, `T`.                                                                                             |
+| `upload_concurrency`    | `integer (u8)`  | `10`        | Number of concurrent chunks to upload during multipart uploads.                                                                                                                                                  |
+| `flags`                 | `array[string]` |             | Extra flags to pass to `rclone`.<p> ⚠️ Incorrect or conflicting flags may break behavior. See [rclone flags](https://rclone.org/flags/) and [S3 flags](https://rclone.org/s3/). </p>                             |
+
 
 *Fields marked with an asterisk are required.
 
