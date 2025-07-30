@@ -14,13 +14,14 @@ use crate::db::types::program::{CompilationProfile, RuntimeSelector, RustCompila
 use crate::db::types::tenant::TenantId;
 use crate::db::types::utils::{validate_program_config, validate_program_info};
 use crate::db::types::version::Version;
+use crate::has_unstable_feature;
 use chrono::{DateTime, Utc};
 use indoc::formatdoc;
 use log::{debug, error, info, trace, warn};
 use openssl::sha;
 use openssl::sha::sha256;
 use std::collections::{BTreeMap, HashSet};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::{Instant, SystemTime};
 use std::{process::Stdio, sync::Arc};
 use tokio::{
@@ -387,7 +388,8 @@ pub async fn perform_rust_compilation(
                 Update the 'program_config' field of the pipeline to resolve this.
             "})
     })?;
-    let runtime_selector = program_config.runtime_version.unwrap_or_default();
+    let runtime_selector = program_config.runtime_version();
+    assert!(has_unstable_feature("runtime_version") || runtime_selector.is_platform());
     info!(
         "Rust compilation started: pipeline {} (program version: {}{})",
         pipeline_id,
@@ -461,6 +463,7 @@ pub async fn perform_rust_compilation(
         config,
         &source_checksum,
         &profile,
+        &runtime_selector,
     )
     .await?;
 
@@ -507,17 +510,22 @@ fn main() {
 "#;
 
 /// Checkout the requested runtime version.
-#[allow(unused)]
 async fn checkout_runtime_version(
-    dbsp_override_path: &str,
+    repo_location: &PathBuf,
     requested_runtime_version: &RuntimeSelector,
+    platform_sources: &Path,
 ) -> Result<(), RustCompilationError> {
+    assert!(
+        has_unstable_feature("runtime_version"),
+        "This code-path is only enabled with the `runtime_version` feature."
+    );
+
     async fn checkout(
-        dbsp_override_path: &str,
+        repo_location: &PathBuf,
         requested_runtime_version: &RuntimeSelector,
     ) -> Result<std::process::Output, std::io::Error> {
         Command::new("git")
-            .current_dir(dbsp_override_path)
+            .current_dir(repo_location)
             .args([
                 "checkout",
                 "--progress",
@@ -528,21 +536,12 @@ async fn checkout_runtime_version(
             .await
     }
 
-    async fn is_dirty(dbsp_override_path: &str) -> Result<bool, std::io::Error> {
-        let status = Command::new("git")
-            .current_dir(dbsp_override_path)
-            .args(["status", "--porcelain", "--untracked-files=no"])
-            .output()
-            .await?;
-        Ok(!status.stdout.is_empty())
-    }
-
     async fn fetch(
-        dbsp_override_path: &str,
+        repo_location: &PathBuf,
         requested_runtime_version: &RuntimeSelector,
     ) -> Result<std::process::Output, std::io::Error> {
         Command::new("git")
-            .current_dir(dbsp_override_path)
+            .current_dir(repo_location)
             .args([
                 "-c",
                 "protocol.version=2",
@@ -555,28 +554,113 @@ async fn checkout_runtime_version(
             .await
     }
 
-    if is_dirty(dbsp_override_path).await.map_err(|e| {
-        RustCompilationError::SystemError(format!(
-            "Unable to check if runtime source directory is dirty, can not switch to requested runtime version '{requested_runtime_version}': {e}",
-        ))
-    })? {
-            warn!(
-                r#"Dirty runtime directory detected, do not proceed switching rust sources to {requested_runtime_version} for compilation.
-This can happen when running the manager from source (using a source directory which contains uncommitted changes).
-You can either commit outstanding changes before running the manager or clone a fresh repository and pass it to the manager as a CLI argument (`--dbsp-override-path`) to avoid this issue."#
-            );
-            // This is most likely what we want to do here.
-            return Ok(());
+    async fn clone(repo_location: &Path) -> Result<std::process::Output, std::io::Error> {
+        Command::new("git")
+            .args([
+                "-c",
+                "protocol.version=2",
+                "clone",
+                "https://github.com/feldera/feldera.git",
+                &repo_location.to_string_lossy(),
+            ])
+            .output()
+            .await
+    }
+
+    async fn is_valid_git_repo(repo_location: &PathBuf) -> bool {
+        match Command::new("git")
+            .current_dir(repo_location)
+            .args(["rev-list", "--max-parents=0", "HEAD"])
+            .output()
+            .await
+        {
+            Ok(output) => {
+                output.status.success()
+                    && String::from_utf8_lossy(&output.stdout).trim()
+                        == "de8879fbda0c9e9392e3b94064c683a1b4bae216"
+            }
+            Err(_e) => false,
+        }
+    }
+
+    if repo_location.exists() && !is_valid_git_repo(repo_location).await {
+        debug!(
+            "Removing invalid git repository at {}",
+            repo_location.display()
+        );
+        let _r = tokio::fs::remove_dir_all(&repo_location).await;
+    }
+
+    if !repo_location.exists() {
+        match clone(repo_location).await {
+            Ok(output) => {
+                if !output.status.success() {
+                    return Err(RustCompilationError::SystemError(format!("Unable to clone latest runtime version for '{requested_runtime_version}' for compilation.\n`git clone` failed with exit code: {}\nstderr:\n{}\nstdout:\n{}",
+                        output.status.code().unwrap_or(-1),
+                        String::from_utf8_lossy(&output.stderr),
+                        String::from_utf8_lossy(&output.stdout))));
+                }
+            }
+            Err(e) => return Err(RustCompilationError::SystemError(format!(
+                "Unable to clone repo for runtime version override to '{requested_runtime_version}' for compilation, `git clone` failed: {e}",
+            ))),
+        }
+    }
+
+    // Link enterprise platform sources into the feldera-checkout repository.
+    //
+    // This is necessary because the crates depend on some crates within the runtime source tree,
+    // and so they can't use the platform crates for that otherwise cargo complains
+    // https://github.com/rust-lang/cargo/issues/8639
+    if cfg!(feature = "feldera-enterprise") {
+        // Helper function to remove directory if it exists, ignore NotFound errors
+        async fn remove_if_exists(path: &std::path::Path) -> Result<(), RustCompilationError> {
+            let _r = tokio::fs::remove_dir_all(path).await;
+            let _r = tokio::fs::remove_file(path).await;
+            Ok(())
+        }
+
+        pub async fn symlink_dir(
+            original: impl AsRef<Path>,
+            link: impl AsRef<Path>,
+        ) -> std::io::Result<()> {
+            let original = original.as_ref();
+            let link = link.as_ref();
+            #[cfg(windows)]
+            {
+                fs::symlink_dir(original, link).await
+            }
+            #[cfg(unix)]
+            {
+                fs::symlink(original, link).await
+            }
+            #[cfg(not(any(windows, unix)))]
+            {
+                compile_error!("Unsupported platform for symlinks")
+            }
+        }
+
+        for cr in ["dbsp-enterprise", "sync-checkpoint"] {
+            remove_if_exists(&repo_location.join("crates").join(cr)).await?;
+            symlink_dir(
+                platform_sources.join("crates").join(cr),
+                repo_location.join("crates").join(cr),
+            ).await.map_err(|e| {
+                RustCompilationError::SystemError(format!(
+                    "Unable to symlink {cr} crate in runtime version override to '{requested_runtime_version}' for compilation: {e}",
+                ))
+            })?;
+        }
     }
 
     // Try to checkout the requested runtime version, if it fails, try to sync with git repository and checkout again.
-    match checkout(dbsp_override_path, requested_runtime_version).await {
+    match checkout(repo_location, requested_runtime_version).await {
         Ok(output) => {
             if output.status.success() {
                 Ok(())
             } else {
                 debug!("Failed to checkout requested runtime, trying to sync with latest git repository.");
-                let fetch_result = fetch(dbsp_override_path, requested_runtime_version).await.map_err(|e| {
+                let fetch_result = fetch(repo_location, requested_runtime_version).await.map_err(|e| {
                     RustCompilationError::SystemError(format!("Unable to switch runtime version to '{requested_runtime_version}' for compilation, `git fetch` failed: {e}"))})?;
                 if !fetch_result.status.success() {
                     return Err(RustCompilationError::SystemError(format!("Unable to fetch latest runtime version for '{requested_runtime_version}' for compilation.\nGit command failed with exit code: {}\nstderr:\n{}\nstdout:\n{}",
@@ -585,7 +669,7 @@ You can either commit outstanding changes before running the manager or clone a 
                         String::from_utf8_lossy(&fetch_result.stdout))));
                 }
 
-                let output = checkout(dbsp_override_path, requested_runtime_version)
+                let output = checkout(repo_location, requested_runtime_version)
                         .await
                         .map_err(|e| {
                             RustCompilationError::SystemError(format!("Unable to switch runtime version to '{requested_runtime_version}' for compilation, `git checkout` failed after fetch: {e}"))})?;
@@ -611,7 +695,7 @@ You can either commit outstanding changes before running the manager or clone a 
 /// configuring the workspace itself (e.g., its Cargo.toml and Cargo.lock).
 async fn prepare_workspace(
     config: &CompilerConfig,
-    #[allow(unused)] requested_runtime_version: &RuntimeSelector,
+    requested_runtime_version: &RuntimeSelector,
     pipeline_id: PipelineId,
     main_rust: &str,
     udf_rust: &str,
@@ -820,6 +904,23 @@ extern crate sync_checkpoint;"#,
         }
     }
 
+    // Sources: config.compiler_working_directory
+    // ---------------------
+    // Make sure the runtime version is checked out.
+    let runtime_sources = if requested_runtime_version.is_platform() {
+        config.dbsp_override_path.clone()
+    } else {
+        let repo_location =
+            PathBuf::from(&config.compiler_working_directory).join("feldera-checkout");
+        checkout_runtime_version(
+            &repo_location,
+            requested_runtime_version,
+            &PathBuf::from(&config.dbsp_override_path),
+        )
+        .await?;
+        repo_location.to_string_lossy().to_string()
+    };
+
     // Workspace: Cargo.toml
     // ---------------------
     // Specifies the following:
@@ -854,16 +955,16 @@ extern crate sync_checkpoint;"#,
         rkyv = {{ version = "0.7.45", default-features = false, features = ["std", "size_64"] }}
         tikv-jemallocator = {{ version = "0.6.0", features = ["profiling", "unprefixed_malloc_on_supported_platforms"] }}
     "#,
-        config.dbsp_override_path, // Path: dbsp
-        config.dbsp_override_path, // Path: dbsp_adapters
+        runtime_sources, // Path: dbsp
+        runtime_sources, // Path: dbsp_adapters
         if cfg!(feature = "feldera-enterprise") {
              // Enterprise features for: dbsp_adapters
              ", features = [\"feldera-enterprise\"] ".to_string()
         } else {
             "".to_string()
         },
-        config.dbsp_override_path, // Path: feldera-types
-        config.dbsp_override_path, // Path: feldera-sqllib
+        runtime_sources, // Path: feldera-types
+        runtime_sources, // Path: feldera-sqllib
         if cfg!(feature = "feldera-enterprise") {
             // Enterprise crate: dbsp-enterprise, sync-checkpoint
             formatdoc! { r#"
@@ -871,8 +972,8 @@ extern crate sync_checkpoint;"#,
                 dbsp-enterprise = {{ path = "{}/crates/dbsp-enterprise" }}
                 sync-checkpoint = {{ path = "{}/crates/sync-checkpoint" }}
             "#,
-                config.dbsp_override_path,
-                config.dbsp_override_path
+                runtime_sources,
+                runtime_sources
             }
         } else {
             "".to_string()
@@ -881,19 +982,19 @@ extern crate sync_checkpoint;"#,
     let cargo_toml_file_path = workspace_dir.join("Cargo.toml");
     recreate_file_with_content(&cargo_toml_file_path, &cargo_toml).await?;
 
-    // Sources: config.dbsp_override_path
-    // ---------------------
-    // Make sure the runtime version is checked out.
-    #[cfg(feature = "runtime-version")]
-    checkout_runtime_version(&config.dbsp_override_path, requested_runtime_version).await?;
-
     // Workspace: Cargo.lock
     // ---------------------
     // Contains all the (indirect and direct) dependencies of the crates besides UDF.
     // The original is copied over each time such that the starting point is the same.
-    let cargo_lock_source_path = Path::new(&config.compilation_cargo_lock_path);
-    let cargo_lock_target_path = workspace_dir.join("Cargo.lock");
-    copy_file(cargo_lock_source_path, &cargo_lock_target_path).await?;
+    if requested_runtime_version.is_platform() {
+        let cargo_lock_source_path = Path::new(&config.compilation_cargo_lock_path);
+        let cargo_lock_target_path = workspace_dir.join("Cargo.lock");
+        copy_file(cargo_lock_source_path, &cargo_lock_target_path).await?;
+    } else if has_unstable_feature("runtime_version") && !requested_runtime_version.is_platform() {
+        let cargo_lock_source_path = Path::new(&runtime_sources).join("Cargo.lock");
+        let cargo_lock_target_path = workspace_dir.join("Cargo.lock");
+        copy_file(&cargo_lock_source_path, &cargo_lock_target_path).await?;
+    }
 
     // Remove temporary extraction directory
     fs::remove_dir_all(&extract_dir).await.map_err(|e| {
@@ -904,6 +1005,7 @@ extern crate sync_checkpoint;"#,
 }
 
 /// Calls the compiler on the project with the provided source checksum and using the compilation profile.
+#[allow(clippy::too_many_arguments)]
 async fn call_compiler(
     db: Option<Arc<Mutex<StoragePostgres>>>,
     tenant_id: TenantId,
@@ -912,6 +1014,7 @@ async fn call_compiler(
     config: &CompilerConfig,
     source_checksum: &str,
     profile: &CompilationProfile,
+    runtime_selector: &RuntimeSelector,
 ) -> Result<(RustCompilationInfo, String), RustCompilationError> {
     // Workspace directory
     let workspace_dir = config.working_dir().join("rust-compilation");
@@ -967,6 +1070,9 @@ async fn call_compiler(
     let mut command = Command::new("cargo");
     command.env_clear();
     command.env("PATH", env_path);
+    if !runtime_selector.is_platform() {
+        command.env("FELDERA_RUNTIME_OVERRIDE", runtime_selector.as_commitish());
+    }
     if let Some(env_rustflags) = optional_env_rustflags {
         command.env("RUSTFLAGS", env_rustflags);
     }

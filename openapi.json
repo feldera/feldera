@@ -4323,6 +4323,11 @@
             "type": "string",
             "description": "Telemetry key."
           },
+          "unstable_features": {
+            "type": "string",
+            "description": "List of unstable features that are enabled.",
+            "nullable": true
+          },
           "update_info": {
             "allOf": [
               {
@@ -6256,7 +6261,7 @@
           },
           "runtime_version": {
             "type": "string",
-            "description": "Override runtime version of the pipeline being executed.\n\nWarning: This option is experimental and may change in the future.\nShould only be used for CI/testing purposes, and requires network access.\n\nA runtime version can be specified in the form of a version\nor SHA taken from the `feldera/feldera` repository main branch.\n\nExamples: `v0.96.0` or `f4dcac0989ca0fda7d2eb93602a49d007cb3b0ae`\n\nA platform of version `0.x.y` may be capable of running future and past\nruntimes with versions `>=0.x.y` and `<=0.x.y` until breaking API changes happen,\nthe exact bounds for each platform version are unspecified until we reach a\nstable version. Compatibility is only guaranteed if platform and runtime version\nare exact matches.\n\nNote that any enterprise features are currently considered to be part of\nthe platform.\n\nIf not set (null), the runtime version will be the same as the platform version.",
+            "description": "Override runtime version of the pipeline being executed.\n\nWarning: This setting is experimental and may change in the future.\nRequires the platform to run with the unstable feature `runtime_version`\nenabled. Should only be used for testing purposes, and requires\nnetwork access.\n\nA runtime version can be specified in the form of a version\nor SHA taken from the `feldera/feldera` repository main branch.\n\nExamples: `v0.96.0` or `f4dcac0989ca0fda7d2eb93602a49d007cb3b0ae`\n\nA platform of version `0.x.y` may be capable of running future and past\nruntimes with versions `>=0.x.y` and `<=0.x.y` until breaking API changes happen,\nthe exact bounds for each platform version are unspecified until we reach a\nstable version. Compatibility is only guaranteed if platform and runtime version\nare exact matches.\n\nNote that any enterprise features are currently considered to be part of\nthe platform.\n\nIf not set (null), the runtime version will be the same as the platform version.",
             "default": null,
             "nullable": true
           }

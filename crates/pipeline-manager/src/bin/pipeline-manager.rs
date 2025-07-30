@@ -14,7 +14,7 @@ use pipeline_manager::config::{
 use pipeline_manager::db::storage_postgres::StoragePostgres;
 use pipeline_manager::runner::local_runner::LocalRunner;
 use pipeline_manager::runner::main::runner_main;
-use pipeline_manager::{ensure_default_crypto_provider, init_fd_limit};
+use pipeline_manager::{ensure_default_crypto_provider, init_fd_limit, platform_enable_unstable};
 use std::sync::Arc;
 use tokio::sync::{Mutex, RwLock};
 use utoipa::OpenApi;
@@ -40,6 +40,9 @@ async fn main() -> anyhow::Result<()> {
     let common_config = CommonConfig::from_arg_matches(&matches)
         .map_err(|err| err.exit())
         .unwrap();
+    if let Some(features) = &common_config.unstable_features {
+        platform_enable_unstable(features);
+    }
     #[cfg(feature = "postgresql_embedded")]
     let pg_embed_config = PgEmbedConfig::from_arg_matches(&matches)
         .map_err(|err| err.exit())

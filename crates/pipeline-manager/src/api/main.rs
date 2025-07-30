@@ -7,6 +7,7 @@ use crate::db::storage_postgres::StoragePostgres;
 use crate::error::ManagerError;
 use crate::license::LicenseCheck;
 use crate::runner::interaction::RunnerInteraction;
+use crate::unstable_features;
 use actix_http::body::BoxBody;
 use actix_http::StatusCode;
 use actix_web::body::MessageBody;
@@ -527,7 +528,7 @@ Web console URL: {}
 API server URL: {}
 Documentation: https://docs.feldera.com/
 Version: {} v{}{}
-        ",
+",
             url,
             url,
             if cfg!(feature = "feldera-enterprise") {
@@ -540,10 +541,16 @@ Version: {} v{}{}
                 "".to_string()
             } else {
                 format!(" ({})", env!("FELDERA_PLATFORM_VERSION_SUFFIX"))
-            }
+            },
         )
         .as_bytes(),
     );
+    if let Some(features) = unstable_features() {
+        println!(
+            "Unstable Features: {}",
+            features.iter().cloned().collect::<Vec<&str>>().join(", ")
+        );
+    }
     drop(out_lock);
     drop(err_lock);
 
