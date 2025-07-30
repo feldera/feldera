@@ -14,6 +14,8 @@ import org.apache.calcite.rel.rules.PruneEmptyRules;
 import org.apache.calcite.sql2rel.RelDecorrelator;
 import org.apache.calcite.tools.RelBuilder;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
+import org.dbsp.sqlCompiler.compiler.IErrorReporter;
+import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.util.IWritesLogs;
 import org.dbsp.util.Logger;
 
@@ -25,6 +27,7 @@ public class CalciteOptimizer implements IWritesLogs {
     final List<CalciteOptimizerStep> steps;
     final int level;
     final RelBuilder builder;
+    final IErrorReporter reporter;
 
     public static RelNode stripRecursively(RelNode node) {
         RelNode stripped = node.stripped();
@@ -111,10 +114,11 @@ public class CalciteOptimizer implements IWritesLogs {
         }
     }
 
-    public CalciteOptimizer(int level, RelBuilder builder) {
+    public CalciteOptimizer(int level, RelBuilder builder, IErrorReporter reporter) {
         this.builder = builder;
         this.steps = new ArrayList<>();
         this.level = level;
+        this.reporter = reporter;
         this.createOptimizer();
     }
 
@@ -122,17 +126,25 @@ public class CalciteOptimizer implements IWritesLogs {
         for (CalciteOptimizerStep step: this.steps) {
             if (step.getName().matches(options.ioOptions.skipCalciteOptimizations))
                 continue;
-            RelNode optimized = step.optimize(rel, this.level);
-            if (rel != optimized) {
-                Logger.INSTANCE.belowLevel(CalciteOptimizer.this, 1)
-                        .append("After ")
-                        .appendSupplier(step::getName)
-                        .increase()
-                        .appendSupplier(() -> SqlToRelCompiler.getPlan(optimized))
-                        .decrease()
-                        .newline();
+            RelNode optimized;
+            try {
+                optimized = step.optimize(rel, this.level);
+                if (rel != optimized) {
+                    Logger.INSTANCE.belowLevel(CalciteOptimizer.this, 1)
+                            .append("After ")
+                            .appendSupplier(step::getName)
+                            .increase()
+                            .appendSupplier(() -> SqlToRelCompiler.getPlan(optimized))
+                            .decrease()
+                            .newline();
+                }
+                rel = optimized;
+            } catch (Throwable ex) {
+                this.reporter.reportWarning(
+                        SourcePositionRange.INVALID, "Calcite optimizer exception caught",
+                        "Calcite optimizer failed during '" + step.getName() +
+                                "' with exception '" + ex.getMessage() + "'; skipping this optimization step.");
             }
-            rel = optimized;
         }
         return rel;
     }
