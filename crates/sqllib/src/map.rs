@@ -23,7 +23,7 @@ where
     K: Clone,
     V: Clone,
 {
-    (*data).clone()
+    Arc::unwrap_or_clone(data)
 }
 
 #[doc(hidden)]
@@ -230,7 +230,7 @@ pub fn cardinalityMap<I, T>(value: Map<I, T>) -> i32 {
 
 #[doc(hidden)]
 pub fn cardinalityMapN<I, T>(value: Option<Map<I, T>>) -> Option<i32> {
-    value.as_ref().map(|map| cardinalityMap(map.clone()))
+    value.map(|map| cardinalityMap(map))
 }
 
 #[doc(hidden)]
@@ -248,9 +248,7 @@ where
     I: Ord,
     T: Clone,
 {
-    value
-        .as_ref()
-        .map(|map| map_contains_key__(map.clone(), key))
+    value.map(|map| map_contains_key__(map, key))
 }
 
 #[doc(hidden)]
