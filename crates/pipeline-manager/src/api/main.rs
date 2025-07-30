@@ -300,6 +300,7 @@ fn api_scope() -> Scope {
         .service(endpoints::pipeline_interaction::get_pipeline_output_connector_status)
         .service(endpoints::pipeline_interaction::get_pipeline_stats)
         .service(endpoints::pipeline_interaction::get_pipeline_metrics)
+        .service(endpoints::pipeline_interaction::get_pipeline_time_series)
         .service(endpoints::pipeline_interaction::get_pipeline_circuit_profile)
         .service(endpoints::pipeline_interaction::get_pipeline_heap_profile)
         .service(endpoints::pipeline_interaction::pipeline_adhoc_sql)

@@ -10,6 +10,7 @@ use feldera_types::completion_token::{
     CompletionStatus, CompletionStatusResponse, CompletionTokenResponse,
 };
 use feldera_types::config::{ResourceConfig, RuntimeConfig, StorageOptions};
+use feldera_types::time_series::TimeSeries;
 use pipeline_manager::db::types::pipeline::PipelineStatus;
 use pipeline_manager::db::types::program::CompilationProfile;
 use pipeline_manager::db::types::program::ProgramConfig;
@@ -2609,6 +2610,18 @@ async fn pipeline_stats() {
             "transmitted_records": 0
         })
     );
+
+    // Check the output of `/time_series`
+    let mut response = client.get("/v0/pipelines/test/time_series").await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let value: TimeSeries = response.json().await.unwrap();
+    assert!(
+        value.samples.len() > 1,
+        "should have at least 2 samples (not {})",
+        value.samples.len()
+    );
+    let last_sample = value.samples.last().unwrap();
+    assert_eq!(last_sample.total_processed_records, 5);
 }
 
 /// Test suspend and resume functionality.
