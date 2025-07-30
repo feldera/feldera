@@ -68,6 +68,11 @@ impl ExponentialHistogram {
         }
     }
 
+    /// Returns the sum of the values in the histogram
+    pub fn sum(&self) -> u64 {
+        self.sum.load(Ordering::Relaxed)
+    }
+
     /// Calls `f` and records the amount of time that it takes to run, in
     /// microseconds, in the histogram.
     pub fn record_callback<F, T>(&self, f: F) -> T
@@ -240,6 +245,11 @@ impl SlidingHistogram {
             buckets: self.buckets,
             sum: self.sum,
         }
+    }
+
+    /// Returns the sum of the values in the histogram
+    pub fn sum(&self) -> u64 {
+        self.sum
     }
 
     /// Calls `f` and records the amount of time that it takes to run, in
