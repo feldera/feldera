@@ -9,7 +9,7 @@
 use crate::{
     circuit::{
         metadata::{MetaItem, OperatorMeta},
-        metrics::COMPACTION_STALL_TIME,
+        metrics::COMPACTION_STALL_TIME_NANOSECONDS,
     },
     dynamic::{DynVec, Factory, Weight},
     storage::buffer_cache::CacheStats,
@@ -440,7 +440,8 @@ where
             let start = Instant::now();
             let mut state = self.no_backpressure.wait(state).unwrap();
             state.spine_stats.backpressure_wait += start.elapsed();
-            COMPACTION_STALL_TIME.fetch_add(start.elapsed().as_nanos() as u64, Ordering::Relaxed);
+            COMPACTION_STALL_TIME_NANOSECONDS
+                .fetch_add(start.elapsed().as_nanos() as u64, Ordering::Relaxed);
         }
     }
 

@@ -8,7 +8,8 @@ use crate::circuit::metrics::{FILES_CREATED, FILES_DELETED};
 use crate::storage::{buffer_cache::FBuf, init};
 use crate::Runtime;
 use feldera_storage::metrics::{
-    READ_BLOCKS, READ_LATENCY, SYNC_LATENCY, WRITE_BLOCKS, WRITE_LATENCY,
+    READ_BLOCKS_BYTES, READ_LATENCY_MICROSECONDS, SYNC_LATENCY_MICROSECONDS, WRITE_BLOCKS_BYTES,
+    WRITE_LATENCY_MICROSECONDS,
 };
 use feldera_storage::tokio::TOKIO;
 use feldera_storage::{
@@ -98,8 +99,8 @@ impl FileReader for PosixReader {
     }
 
     fn read_block(&self, location: BlockLocation) -> Result<Arc<FBuf>, StorageError> {
-        READ_BLOCKS.record(location.size);
-        READ_LATENCY.record_callback(|| {
+        READ_BLOCKS_BYTES.record(location.size);
+        READ_LATENCY_MICROSECONDS.record_callback(|| {
             sleep(self.ioop_delay);
             let mut buffer = FBuf::with_capacity(location.size);
 
@@ -125,7 +126,7 @@ impl FileReader for PosixReader {
                 let blocks = blocks
                     .into_iter()
                     .map(|location| {
-                        READ_BLOCKS.record(location.size);
+                        READ_BLOCKS_BYTES.record(location.size);
                         let mut buffer = FBuf::with_capacity(location.size);
                         match buffer.read_exact_at(&file, location.offset, location.size) {
                             Ok(()) => Ok(Arc::new(buffer)),
@@ -133,7 +134,7 @@ impl FileReader for PosixReader {
                         }
                     })
                     .collect();
-                READ_LATENCY.record_elapsed(start);
+                READ_LATENCY_MICROSECONDS.record_elapsed(start);
                 callback(blocks);
             });
         } else {
@@ -221,7 +222,7 @@ impl FileWriter for PosixWriter {
             self.flush()?;
         }
 
-        SYNC_LATENCY.record_callback(|| {
+        SYNC_LATENCY_MICROSECONDS.record_callback(|| {
             self.file.sync_all()?;
 
             // Remove the .mut extension from the file.
@@ -264,7 +265,7 @@ impl PosixWriter {
     }
 
     fn flush(&mut self) -> Result<(), IoError> {
-        WRITE_LATENCY.record_callback(|| {
+        WRITE_LATENCY_MICROSECONDS.record_callback(|| {
             if let Some(storage_mb_max) = Runtime::with_dev_tweaks(|tweaks| tweaks.storage_mb_max) {
                 let usage_mb = (self.drop.usage.load(Ordering::Relaxed) / 1024 / 1024)
                     .max(0)
@@ -282,7 +283,7 @@ impl PosixWriter {
             let mut cursor = bufs.as_mut_slice();
             while !cursor.is_empty() {
                 let n = self.file.write_vectored(cursor)?;
-                WRITE_BLOCKS.record(n);
+                WRITE_BLOCKS_BYTES.record(n);
                 self.drop.size += n as u64;
                 self.drop.usage.fetch_add(n as i64, Ordering::Relaxed);
                 IoSlice::advance_slices(&mut cursor, n);

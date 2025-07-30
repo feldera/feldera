@@ -296,7 +296,7 @@ where
     ///
     /// The values have to be specified together in a callback because the
     /// [Prometheus exposition format] requires that all of the values for a
-    /// given metric be written together in one block.
+    /// given metric to be written together in one block.
     ///
     /// [Prometheus exposition format]: https://prometheus.io/docs/instrumenting/exposition_formats/
     /// [metric and label naming]: https://prometheus.io/docs/practices/naming/
@@ -316,9 +316,9 @@ where
     /// Adds a single `value` of type `value_type`, labeled with `labels`, with
     /// the given `name` and `help`.
     ///
-    /// This is a convenience function that is only correctly use for a metric
-    /// with a single value.  If the metric might have multiple values, use
-    /// [values](Self::values) instead.
+    /// This is a convenience function only for metrics with a single value.  If
+    /// the metric might have multiple values, use [values](Self::values)
+    /// instead.
     pub fn value(
         &mut self,
         name: &str,
@@ -340,7 +340,7 @@ where
     ///
     /// The values have to be specified together in a callback because the
     /// [Prometheus exposition format] requires that all of the values for a
-    /// given counter be written together in one block.
+    /// given counter to be written together in one block.
     ///
     /// [Prometheus exposition format]: https://prometheus.io/docs/instrumenting/exposition_formats/
     /// [metric and label naming]: https://prometheus.io/docs/practices/naming/
@@ -354,8 +354,8 @@ where
     /// Adds a single counter `value`, labeled with `labels`, with the given
     /// `name` and `help`.
     ///
-    /// This is a convenience function that is only correctly use for a counter
-    /// with a single value.  If the counter might have multiple values, use
+    /// This is a convenience function only for counters with a single value.
+    /// For counters that can have multiple values, use
     /// [counters](Self::counters) instead.
     pub fn counter(&mut self, name: &str, help: &str, labels: &LabelStack, value: impl Value) {
         self.value(name, help, labels, ValueType::Counter, value);
@@ -371,7 +371,7 @@ where
     ///
     /// The values have to be specified together in a callback because the
     /// [Prometheus exposition format] requires that all of the values for a
-    /// given gauge be written together in one block.
+    /// given gauge to be written together in one block.
     ///
     /// [Prometheus exposition format]: https://prometheus.io/docs/instrumenting/exposition_formats/
     /// [metric and label naming]: https://prometheus.io/docs/practices/naming/
@@ -385,9 +385,9 @@ where
     /// Adds a single gauge `value`, labeled with `labels`, with the given
     /// `name` and `help`.
     ///
-    /// This is a convenience function that is only correctly use for a gauge
-    /// with a single value.  If the gauge might have multiple values, use
-    /// [gauges](Self::gauges) instead.
+    /// This is a convenience function only for gauges with a single value.  For
+    /// gauges that can have multiple values, use [gauges](Self::gauges)
+    /// instead.
     pub fn gauge(&mut self, name: &str, help: &str, labels: &LabelStack, value: impl Value) {
         self.value(name, help, labels, ValueType::Gauge, value);
     }
@@ -422,7 +422,7 @@ where
     /// given `name` and `help`.
     ///
     /// This is a convenience function that is only correctly use for a
-    /// histogram with a single value.  If the histogram might have multiple
+    /// histogram with a single value.  For histograms that can have multiple
     /// values, use [histogram](Self::histograms) instead.
     pub fn histogram(
         &mut self,
@@ -759,6 +759,7 @@ pub struct HistogramDiv<H> {
 impl<H> HistogramDiv<H> {
     /// Constructs a a new [HistogramDiv].
     pub fn new(inner: H, divisor: f64) -> Self {
+        assert_ne!(divisor, 0.0);
         Self { inner, divisor }
     }
 }

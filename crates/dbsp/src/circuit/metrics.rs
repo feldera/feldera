@@ -17,7 +17,7 @@ pub static FILES_CREATED: AtomicU64 = AtomicU64::new(0);
 pub static FILES_DELETED: AtomicU64 = AtomicU64::new(0);
 
 /// Time in nanoseconds a worker was stalled waiting for more merges to complete.
-pub static COMPACTION_STALL_TIME: AtomicU64 = AtomicU64::new(0);
+pub static COMPACTION_STALL_TIME_NANOSECONDS: AtomicU64 = AtomicU64::new(0);
 
 /// Number of records dropped due to LATENESS annotations
 pub static TOTAL_LATE_RECORDS: AtomicU64 = AtomicU64::new(0);
@@ -26,8 +26,9 @@ pub static TOTAL_LATE_RECORDS: AtomicU64 = AtomicU64::new(0);
 pub static DBSP_STEP: AtomicU64 = AtomicU64::new(0);
 
 /// Latency of recent DBSP steps, in microseconds.
-pub static DBSP_STEP_LATENCY: Mutex<SlidingHistogram> =
+pub static DBSP_STEP_LATENCY_MICROSECONDS: Mutex<SlidingHistogram> =
     Mutex::new(SlidingHistogram::new(1000, Duration::from_secs(60)));
 
 /// Latency of individual operator commits, in microseconds.
-pub static DBSP_OPERATOR_COMMIT_LATENCY: ExponentialHistogram = ExponentialHistogram::new();
+pub static DBSP_OPERATOR_COMMIT_LATENCY_MICROSECONDS: ExponentialHistogram =
+    ExponentialHistogram::new();
