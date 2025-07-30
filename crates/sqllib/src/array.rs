@@ -21,7 +21,7 @@ pub fn to_vec<T>(data: Array<T>) -> Vec<T>
 where
     T: Clone,
 {
-    (*data).clone()
+    Arc::unwrap_or_clone(data)
 }
 
 #[doc(hidden)]
@@ -71,10 +71,8 @@ pub fn element__<T>(array: Array<T>) -> Option<T>
 where
     T: Clone,
 {
-    if array.is_empty() {
-        None
-    } else if array.len() == 1 {
-        Some(array[0].clone())
+    if array.len() <= 1 {
+        Arc::unwrap_or_clone(array).into_iter().next()
     } else {
         panic!("'ELEMENT()' called on array that does not have exactly 1 element");
     }
@@ -94,10 +92,8 @@ pub fn element_N<T>(array: Array<Option<T>>) -> Option<T>
 where
     T: Clone,
 {
-    if array.is_empty() {
-        None
-    } else if array.len() == 1 {
-        array[0].clone()
+    if array.len() <= 1 {
+        Arc::unwrap_or_clone(array).into_iter().next().flatten()
     } else {
         panic!("'ELEMENT()' called on array that does not have exactly 1 element");
     }
@@ -336,7 +332,9 @@ pub fn array_reverse_<T>(vector: Array<T>) -> Array<T>
 where
     T: Clone,
 {
-    (**vector).iter().rev().cloned().collect::<Vec<T>>().into()
+    let mut vector = Arc::unwrap_or_clone(vector);
+    vector.reverse();
+    Arc::new(vector)
 }
 
 #[doc(hidden)]
@@ -352,7 +350,7 @@ pub fn sort_array<T>(vector: Array<T>, ascending: bool) -> Array<T>
 where
     T: Ord + Clone,
 {
-    let mut data = (*vector).clone();
+    let mut data = Arc::unwrap_or_clone(vector);
     if ascending {
         data.sort()
     } else {
@@ -374,7 +372,7 @@ pub fn array_max__<T>(vector: Array<T>) -> Option<T>
 where
     T: Ord + Clone,
 {
-    (*vector).iter().cloned().max()
+    vector.iter().max().cloned()
 }
 
 #[doc(hidden)]
@@ -390,7 +388,7 @@ pub fn array_max_N<T>(vector: Array<Option<T>>) -> Option<T>
 where
     T: Ord + Clone,
 {
-    (*vector).iter().flatten().cloned().max()
+    vector.iter().flatten().max().cloned()
 }
 
 #[doc(hidden)]
@@ -406,7 +404,7 @@ pub fn array_min__<T>(vector: Array<T>) -> Option<T>
 where
     T: Ord + Clone,
 {
-    (*vector).iter().cloned().min()
+    vector.iter().min().cloned()
 }
 
 #[doc(hidden)]
@@ -422,7 +420,7 @@ pub fn array_min_N<T>(vector: Array<Option<T>>) -> Option<T>
 where
     T: Ord + Clone,
 {
-    (*vector).iter().flatten().cloned().min()
+    vector.iter().flatten().min().cloned()
 }
 
 #[doc(hidden)]
@@ -454,14 +452,31 @@ where
     Some(array_compact_(vector?))
 }
 
+fn array_insert<T>(vector: Array<T>, value: T, index: usize) -> Array<T>
+where
+    T: Clone,
+{
+    match Arc::try_unwrap(vector) {
+        Ok(mut data) => {
+            data.insert(index, value);
+            data.into()
+        }
+        Err(vector) => {
+            let mut copy = Vec::with_capacity(vector.capacity().max(vector.len() + 1));
+            copy.extend_from_slice(&vector[..index]);
+            copy.push(value);
+            copy.extend_from_slice(&vector[index..]);
+            copy.into()
+        }
+    }
+}
+
 #[doc(hidden)]
 pub fn array_prepend<T>(vector: Array<T>, value: T) -> Array<T>
 where
     T: Clone,
 {
-    let mut data = (*vector).clone();
-    data.insert(0, value);
-    data.into()
+    array_insert(vector, value, 0)
 }
 
 #[doc(hidden)]
@@ -487,15 +502,14 @@ pub fn array_distinct<T>(vector: Array<T>) -> Array<T>
 where
     T: Eq + Hash + Clone,
 {
-    let mut hset: HashSet<T> = HashSet::new();
+    let mut hset: HashSet<&T> = HashSet::new();
     let data = (*vector)
         .iter()
-        .filter(|v| hset.insert((*v).clone()))
+        .filter(|v| hset.insert(*v))
         .cloned()
         .collect::<Vec<T>>();
     data.into()
 }
-
 #[doc(hidden)]
 pub fn array_distinctN<T>(vector: Option<Array<T>>) -> Option<Array<T>>
 where
@@ -569,13 +583,13 @@ where
 {
     if weight < 0 {
         panic!("Negative weight {:?}", weight);
-    }
-    if distinct && keep {
-        accumulator.push(value.clone())
-    } else if keep {
-        for _i in 0..weight {
-            accumulator.push(value.clone())
+    } else if weight > 0 && keep {
+        if !distinct {
+            for _ in 1..weight {
+                accumulator.push(value.clone())
+            }
         }
+        accumulator.push(value)
     }
 }
 
@@ -631,10 +645,21 @@ pub fn array_concat__<T>(left: Array<T>, right: Array<T>) -> Array<T>
 where
     T: Clone,
 {
-    let mut result = Vec::with_capacity(left.len() + right.len());
-    result.extend((*left).clone());
-    result.extend((*right).clone());
-    result.into()
+    match Arc::try_unwrap(left) {
+        Ok(mut left) => {
+            match Arc::try_unwrap(right) {
+                Ok(ref mut right) => left.append(right),
+                Err(right) => left.extend(right.iter().cloned()),
+            };
+            left.into()
+        }
+        Err(left) => {
+            let mut result = Vec::with_capacity(left.len() + right.len());
+            result.extend(left.iter().cloned());
+            result.extend(right.iter().cloned());
+            result.into()
+        }
+    }
 }
 
 #[doc(hidden)]
@@ -665,11 +690,11 @@ where
     Some(array_concat__(left, right))
 }
 
-fn to_set<T>(v: &[T]) -> HashSet<T>
+fn to_set<T>(v: &[T]) -> HashSet<&T>
 where
     T: Eq + Clone + Hash + Ord,
 {
-    v.iter().cloned().collect()
+    v.iter().collect()
 }
 
 #[doc(hidden)]
@@ -680,7 +705,7 @@ where
     let left = to_set(&left);
     let right = to_set(&right);
     let result = left.difference(&right);
-    let mut result = result.cloned().collect::<Vec<T>>();
+    let mut result = result.copied().cloned().collect::<Vec<T>>();
     result.sort();
     result.into()
 }
@@ -721,7 +746,7 @@ where
     let left = to_set(&left);
     let right = to_set(&right);
     let result = left.union(&right);
-    let mut result = result.cloned().collect::<Vec<T>>();
+    let mut result = result.copied().cloned().collect::<Vec<T>>();
     result.sort();
     result.into()
 }
@@ -762,7 +787,7 @@ where
     let left = to_set(&left);
     let right = to_set(&right);
     let result = left.intersection(&right);
-    let mut result = result.cloned().collect::<Vec<T>>();
+    let mut result = result.copied().cloned().collect::<Vec<T>>();
     result.sort();
     result.into()
 }
@@ -861,13 +886,22 @@ where
             for _index in 0..(abs - len - 1) {
                 result.push(None);
             }
-            result.extend(array.iter().cloned());
+            result.extend_from_slice(array.as_slice());
             return result.into();
         }
     } else if abs > len {
         // extend the array and insert at end
-        let mut result = Vec::<Option<T>>::with_capacity(abs + 1);
-        result.extend(array.iter().cloned());
+        let mut result = match Arc::try_unwrap(array) {
+            Ok(mut vec) => {
+                vec.reserve(abs - len);
+                vec
+            }
+            Err(array) => {
+                let mut result = Vec::<Option<T>>::with_capacity(abs + 1);
+                result.extend_from_slice(array.as_slice());
+                result
+            }
+        };
         for _index in len..(abs - 1) {
             result.push(None);
         }
@@ -875,11 +909,7 @@ where
         return result.into();
     }
 
-    let mut result = Vec::<Option<T>>::with_capacity(len + 1);
-    result.extend_from_slice(&array[..(abs - 1)]);
-    result.push(value);
-    result.extend_from_slice(&array[(abs - 1)..len]);
-    result.into()
+    array_insert(array, value, abs - 1)
 }
 
 #[doc(hidden)]
