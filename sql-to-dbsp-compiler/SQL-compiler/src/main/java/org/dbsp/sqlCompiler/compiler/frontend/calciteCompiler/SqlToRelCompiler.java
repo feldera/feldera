@@ -740,7 +740,7 @@ public class SqlToRelCompiler implements IWritesLogs {
         RelBuilder relBuilder = this.converterConfig.getRelBuilderFactory().create(
                 cluster, null);
         CalciteOptimizer optimizer = new CalciteOptimizer(
-                this.options.languageOptions.optimizationLevel, relBuilder);
+                this.options.languageOptions.optimizationLevel, relBuilder, this.errorReporter);
         rel = optimizer.apply(rel, this.options);
         RelNode finalRel1 = rel;
         if (visible)
