@@ -24,6 +24,7 @@ use actix_web::{
     web::{self, Data as WebData, Payload, Query},
     App, Error as ActixError, HttpRequest, HttpResponse, HttpServer, Responder,
 };
+use chrono::Utc;
 use clap::Parser;
 use colored::{ColoredString, Colorize};
 use dbsp::{circuit::CircuitConfig, DBSPHandle};
@@ -38,6 +39,7 @@ use feldera_types::completion_token::{
 };
 use feldera_types::query_params::{MetricsFormat, MetricsParameters};
 use feldera_types::suspend::{SuspendError, SuspendableResponse};
+use feldera_types::time_series::TimeSeries;
 use feldera_types::{
     checkpoint::CheckpointMetadata,
     config::{default_max_batch_size, TransportConfig},
@@ -750,6 +752,7 @@ where
         .service(query)
         .service(stats)
         .service(metrics_handler)
+        .service(time_series)
         .service(metadata)
         .service(heap_profile)
         .service(dump_profile)
@@ -901,6 +904,28 @@ async fn metrics_handler(
                 .content_type(mime::APPLICATION_JSON)
                 .body(serialize_metrics::<JsonFormatter>(controller))),
         },
+        None => Err(missing_controller_error(&state)),
+    }
+}
+
+/// Retrieve time series for basic statistics.
+#[get("/time_series")]
+async fn time_series(state: WebData<ServerState>) -> impl Responder {
+    match &*state.controller.read().unwrap() {
+        Some(controller) => {
+            let time_series = TimeSeries {
+                now: Utc::now(),
+                samples: controller
+                    .status()
+                    .time_series
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .cloned()
+                    .collect(),
+            };
+            Ok(HttpResponse::Ok().json(time_series))
+        }
         None => Err(missing_controller_error(&state)),
     }
 }

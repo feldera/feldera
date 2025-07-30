@@ -50,6 +50,7 @@ use feldera_adapterlib::{
 use feldera_types::{
     config::{FtModel, PipelineConfig},
     suspend::SuspendError,
+    time_series::SampleStatistics,
 };
 use memory_stats::memory_stats;
 use serde::{Deserialize, Serialize, Serializer};
@@ -58,7 +59,7 @@ use std::{
     collections::{BTreeMap, BTreeSet, VecDeque},
     sync::{
         atomic::{AtomicBool, AtomicU64, Ordering},
-        Arc, Mutex,
+        Mutex,
     },
 };
 use tracing::{debug, error, info, warn};
@@ -149,10 +150,10 @@ pub struct GlobalControllerMetrics {
     pub incarnation_uuid: Uuid,
 
     /// Current storage usage in bytes.
-    pub storage_bytes: Arc<AtomicU64>,
+    pub storage_bytes: AtomicU64,
 
     /// Storage usage integrated over time, in megabytes * seconds.
-    pub storage_mb_secs: Arc<AtomicU64>,
+    pub storage_mb_secs: AtomicU64,
 
     /// Time elapsed while the pipeline is executing a step, multiplied by the
     /// number of foreground and background threads, in milliseconds.
@@ -223,8 +224,8 @@ impl GlobalControllerMetrics {
             uptime_msecs: AtomicU64::new(0),
             start_time: Utc::now(),
             incarnation_uuid: Uuid::now_v7(),
-            storage_bytes: Arc::new(AtomicU64::new(0)),
-            storage_mb_secs: Arc::new(AtomicU64::new(0)),
+            storage_bytes: AtomicU64::new(0),
+            storage_mb_secs: AtomicU64::new(0),
             runtime_elapsed_msecs: AtomicU64::new(0),
             buffered_input_records: AtomicU64::new(0),
             total_input_records: AtomicU64::new(processed_records),
@@ -343,6 +344,10 @@ pub struct ControllerStatus {
     /// Global controller metrics.
     pub global_metrics: GlobalControllerMetrics,
 
+    /// Statistics time series.
+    #[serde(skip_serializing)]
+    pub time_series: Mutex<VecDeque<SampleStatistics>>,
+
     /// If this is empty, the pipeline can be suspended or checkpointed.  If
     /// this is nonempty, it is the (permanent or temporary) reasons why not.
     // This field is computed on-demand by calling `ControllerStatus::update`.
@@ -362,6 +367,7 @@ impl ControllerStatus {
         Self {
             pipeline_config,
             global_metrics: GlobalControllerMetrics::new(processed_records),
+            time_series: Mutex::new(VecDeque::with_capacity(60)),
             suspend_error: Mutex::new(None),
             inputs: ShardedLock::new(BTreeMap::new()),
             outputs: ShardedLock::new(BTreeMap::new()),

@@ -37,6 +37,7 @@ use anyhow::{anyhow, Error as AnyError};
 use arrow::datatypes::Schema;
 use atomic::Atomic;
 use checkpoint::Checkpoint;
+use chrono::Utc;
 use crossbeam::{
     queue::SegQueue,
     sync::{Parker, ShardedLock, Unparker},
@@ -68,10 +69,12 @@ use feldera_types::checkpoint::CheckpointMetadata;
 use feldera_types::format::json::JsonLines;
 use feldera_types::secret_resolver::resolve_secret_references_in_connector_config;
 use feldera_types::suspend::{PermanentSuspendError, SuspendError, TemporarySuspendError};
+use feldera_types::time_series::SampleStatistics;
 use governor::DefaultDirectRateLimiter;
 use governor::Quota;
 use governor::RateLimiter;
 use journal::StepMetadata;
+use memory_stats::memory_stats;
 use nonzero_ext::nonzero;
 use rmpv::Value as RmpValue;
 use serde_json::Value as JsonValue;
@@ -82,7 +85,6 @@ use std::collections::HashSet;
 use std::io::ErrorKind;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::PathBuf;
-use std::sync::atomic::AtomicI64;
 use std::sync::mpsc::{channel, sync_channel, Receiver, SendError, Sender};
 use std::sync::LazyLock;
 use std::thread;
@@ -990,7 +992,7 @@ struct CircuitThread {
     circuit: DBSPHandle,
     command_receiver: Receiver<Command>,
     backpressure_thread: BackpressureThread,
-    _storage_thread: Option<StorageThread>,
+    _statistics_thread: StatisticsThread,
     ft: Option<FtState>,
     parker: Parker,
     last_checkpoint: Instant,
@@ -1140,21 +1142,13 @@ impl CircuitThread {
             }
         };
 
-        let storage_thread = storage.as_ref().map(|backend| {
-            StorageThread::new(
-                &**backend,
-                controller.status.global_metrics.storage_bytes.clone(),
-                controller.status.global_metrics.storage_mb_secs.clone(),
-            )
-        });
-
         Ok(Self {
+            _statistics_thread: StatisticsThread::new(controller.status.clone(), storage.clone()),
             controller,
             ft,
             circuit,
             command_receiver,
             backpressure_thread,
-            _storage_thread: storage_thread,
             storage,
             parker,
             last_checkpoint: Instant::now(),
@@ -2544,29 +2538,26 @@ impl Drop for BackpressureThread {
     }
 }
 
-/// Storage thread.
+/// Statistics thread.
 ///
-/// For now, this just wakes up once a second to update storage statistics in
-/// [GlobalControllerMetrics].
-struct StorageThread {
+/// This wakes up once a second to update time series and storage statistics.
+struct StatisticsThread {
     exit: Arc<AtomicBool>,
     join_handle: Option<JoinHandle<()>>,
 }
 
-impl StorageThread {
-    /// Starts a storage thread.
+impl StatisticsThread {
+    /// Starts a statistics thread.
     fn new(
-        storage_backend: &dyn StorageBackend,
-        storage_bytes: Arc<AtomicU64>,
-        storage_mb_secs: Arc<AtomicU64>,
+        controller_status: Arc<ControllerStatus>,
+        storage_backend: Option<Arc<dyn StorageBackend>>,
     ) -> Self {
         let exit = Arc::new(AtomicBool::new(false));
-        let usage = storage_backend.usage();
         let join_handle = thread::Builder::new()
             .name("dbsp-storage".into())
             .spawn({
                 let exit = exit.clone();
-                move || Self::storage_thread(usage, storage_bytes, storage_mb_secs, exit)
+                move || Self::statistics_thread(controller_status, storage_backend, exit)
             })
             .unwrap();
         Self {
@@ -2576,38 +2567,61 @@ impl StorageThread {
     }
 
     /// Thread function.
-    fn storage_thread(
-        usage: Arc<AtomicI64>,
-        storage_bytes: Arc<AtomicU64>,
-        storage_mb_secs: Arc<AtomicU64>,
+    fn statistics_thread(
+        controller_status: Arc<ControllerStatus>,
+        storage_backend: Option<Arc<dyn StorageBackend>>,
         exit: Arc<AtomicBool>,
     ) {
         let mut last = Instant::now();
         let mut storage_byte_msecs = 0;
         while !exit.load(Ordering::Acquire) {
-            // Measure.
-            let elapsed_msecs = last.elapsed().as_millis();
-            let usage_bytes = usage.load(Ordering::Relaxed).max(0) as u128;
-            last = Instant::now();
+            let storage_bytes = if let Some(storage_backend) = &storage_backend {
+                // Measure.
+                let elapsed_msecs = last.elapsed().as_millis();
+                let usage_bytes = storage_backend.usage().load(Ordering::Relaxed).max(0) as u128;
+                last = Instant::now();
 
-            // Update internal statistic.
-            storage_byte_msecs += usage_bytes * elapsed_msecs;
+                // Update internal statistic.
+                storage_byte_msecs += usage_bytes * elapsed_msecs;
 
-            // Update published statistics.
-            storage_bytes.store(usage_bytes as u64, Ordering::Relaxed);
-            storage_mb_secs.store(
-                (storage_byte_msecs / (1024 * 1024 * 1000))
-                    .try_into()
-                    .unwrap(),
-                Ordering::Relaxed,
-            );
+                // Update published statistics.
+                controller_status
+                    .global_metrics
+                    .storage_bytes
+                    .store(usage_bytes as u64, Ordering::Relaxed);
+                controller_status.global_metrics.storage_mb_secs.store(
+                    (storage_byte_msecs / (1024 * 1024 * 1000))
+                        .try_into()
+                        .unwrap(),
+                    Ordering::Relaxed,
+                );
+                usage_bytes as u64
+            } else {
+                0
+            };
+
+            // Update time series..
+            let sample = SampleStatistics {
+                time: Utc::now(),
+                total_processed_records: controller_status
+                    .global_metrics
+                    .num_total_processed_records(),
+                memory_bytes: memory_stats().map_or(0, |stats| stats.physical_mem as u64),
+                storage_bytes,
+            };
+            let mut time_series = controller_status.time_series.lock().unwrap();
+            if time_series.len() >= 60 {
+                time_series.pop_front();
+            }
+            time_series.push_back(sample);
+            drop(time_series);
 
             std::thread::park_timeout(Duration::from_secs(1));
         }
     }
 }
 
-impl Drop for StorageThread {
+impl Drop for StatisticsThread {
     fn drop(&mut self) {
         self.exit.store(true, Ordering::Release);
         if let Some(join_handle) = self.join_handle.take() {
