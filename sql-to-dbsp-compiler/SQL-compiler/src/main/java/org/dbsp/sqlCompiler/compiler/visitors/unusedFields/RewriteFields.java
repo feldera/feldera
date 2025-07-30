@@ -150,15 +150,21 @@ public class RewriteFields extends InnerRewriteVisitor {
 
     @Override
     public VisitDecision preorder(MinMaxAggregate aggregate) {
-        DBSPExpression aggregatedValue = this.transform(aggregate.aggregatedValue);
+        DBSPExpression aggregatedValue = this.transform(aggregate.comparedValue);
         this.parameterFullyUsed(aggregate.increment.parameters[0]);
         this.parameterFullyUsed(aggregate.increment.parameters[2]);
         DBSPClosureExpression increment = this.transform(aggregate.increment).to(DBSPClosureExpression.class);
+        DBSPClosureExpression postProcess = null;
+        if (aggregate.postProcess != null) {
+            this.parameterFullyUsed(aggregate.postProcess.parameters[0]);
+            postProcess = this.transform(aggregate.postProcess).to(DBSPClosureExpression.class);
+        }
         Utilities.enforce(aggregate.increment.getResultType().sameType(increment.getResultType()));
         MinMaxAggregate result = new MinMaxAggregate(aggregate.getNode(),
                 aggregate.zero, increment,
                 aggregate.emptySetResult, aggregate.semigroup,
-                aggregatedValue.to(DBSPClosureExpression.class), aggregate.isMin);
+                aggregatedValue.to(DBSPClosureExpression.class), postProcess,
+                aggregate.operation);
         this.map(aggregate, result);
         return VisitDecision.STOP;
     }

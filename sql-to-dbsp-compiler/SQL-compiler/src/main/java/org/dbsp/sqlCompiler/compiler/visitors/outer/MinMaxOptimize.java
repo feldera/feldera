@@ -6,23 +6,20 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
-import org.dbsp.sqlCompiler.ir.DBSPParameter;
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregateList;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPMinMax;
 import org.dbsp.sqlCompiler.ir.aggregate.MinMaxAggregate;
-import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPConditionalAggregateExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
 
@@ -72,12 +69,12 @@ public class MinMaxOptimize extends Passes {
         void standardMinMax(DBSPStreamAggregateOperator operator, MinMaxAggregate mm) {
             OutputPort i = this.mapped(operator.input());
 
-            if (!RemoveIdentityOperators.isIdentityFunction(mm.aggregatedValue)) {
+            if (!RemoveIdentityOperators.isIdentityFunction(mm.comparedValue)) {
                 // compute the aggregated value in a prior projection
                 var var = i.getOutputIndexedZSetType().getKVRefType().var();
                 var projection = new DBSPRawTupleExpression(
                         DBSPTupleExpression.flatten(var.field(0).deref()),
-                        new DBSPTupleExpression(mm.aggregatedValue.call(var.field(1))
+                        new DBSPTupleExpression(mm.comparedValue.call(var.field(1))
                                 .applyCloneIfNeeded()
                                 .reduce(this.compiler))
                 ).closure(var);
@@ -91,8 +88,20 @@ public class MinMaxOptimize extends Passes {
             // May need to apply a postProcessing step to convert the type to the one expected by Calcite
             DBSPType aggregatedValueType = i.getOutputIndexedZSetType().elementType;
             DBSPType aggregationType = operator.getOutputIndexedZSetType().elementType;
-            DBSPMinMax.Aggregation aggregation = mm.isMin ? DBSPMinMax.Aggregation.Min : DBSPMinMax.Aggregation.Max;
-            if (mm.isMin) {
+            boolean isMin;
+            switch (mm.operation) {
+                case Min:
+                    isMin = true;
+                    break;
+                case Max:
+                    isMin = false;
+                    break;
+                case ArgMin, ArgMax:
+                default:
+                    throw new InternalCompilerError("Unexpected operation " + mm.operation);
+            }
+            DBSPMinMax.Aggregation aggregation = isMin ? DBSPMinMax.Aggregation.Min : DBSPMinMax.Aggregation.Max;
+            if (isMin) {
                 DBSPTypeTuple tuple = aggregatedValueType.to(DBSPTypeTuple.class);
                 Utilities.enforce(tuple.size() == 1);
                 DBSPType field = tuple.tupFields[0];
@@ -131,92 +140,87 @@ public class MinMaxOptimize extends Passes {
             List<MinMaxAggregate> aggregates = Linq.map(aggregateList.aggregates, a -> a.to(MinMaxAggregate.class));
             if (!this.isAppendOnly.test(operator.input())) {
                 if (aggregates.size() == 1) {
-                    this.standardMinMax(operator, aggregates.get(0));
+                    MinMaxAggregate agg = aggregates.get(0);
+                    if (agg.operation == MinMaxAggregate.Operation.Max ||
+                            agg.operation == MinMaxAggregate.Operation.Min)
+                        this.standardMinMax(operator, aggregates.get(0));
+                    else
+                        // TODO: optimize isolated ARG_MIN, ARG_MAX too
+                        super.postorder(operator);
                 } else {
                     super.postorder(operator);
                 }
                 return;
             }
 
-            // Handle min/max for append-only streams, implemented using a ChainAggregate
-            DBSPMapIndexOperator index = i.node().as(DBSPMapIndexOperator.class);
-            if (index == null) {
-                super.postorder(operator);
-                return;
-            }
-            DBSPClosureExpression indexClosure = index.getClosureFunction();
-
-            List<DBSPType> aggregatedTypes = new ArrayList<>();
+            // Handle min/max/arg_min/arg_max for append-only streams.
+            // Multiple of them are implemented using a single DBSPChainAggregate
             List<DBSPType> accumulatorTypes = new ArrayList<>();
             for (MinMaxAggregate mmAggregate: aggregates) {
-                DBSPType resultType = mmAggregate.type;
-                accumulatorTypes.add(resultType);
-
-                DBSPExpression expr = mmAggregate.increment.body;
-                if (expr.is(DBSPCastExpression.class))
-                    expr = expr.to(DBSPCastExpression.class).source;
-                DBSPConditionalAggregateExpression ca = expr.to(DBSPConditionalAggregateExpression.class);
-                DBSPExpression aggregatedField = ca.right;
-                DBSPType aggregationInputType = aggregatedField.getType();
-                aggregatedTypes.add(aggregationInputType);
+                DBSPType accType = mmAggregate.getIncrementType();
+                accumulatorTypes.add(accType);
             }
 
-            List<DBSPExpression> indexExpressions = new ArrayList<>();
+            DBSPTypeIndexedZSet inputType = i.getOutputIndexedZSetType();
             List<DBSPExpression> inits = new ArrayList<>();
             List<DBSPExpression> comparisons = new ArrayList<>();
+            List<DBSPExpression> postProcessing = new ArrayList<>();
 
-            DBSPVariablePath acc = new DBSPTypeTuple(accumulatorTypes).var();
-            DBSPVariablePath inputVar = new DBSPTypeTuple(aggregatedTypes).ref().var();
+            DBSPType keyType = inputType.keyType;
+            DBSPTypeTuple accumulatorTuple = new DBSPTypeTuple(accumulatorTypes);
+            DBSPVariablePath acc = accumulatorTuple.var();
+            DBSPVariablePath inputVar = inputType.elementType.ref().var();
+            DBSPVariablePath postVar = new DBSPTypeRawTuple(
+                    keyType.ref(),
+                    accumulatorTuple.ref()).var();
             int ix = 0;
+            boolean needsPost = false;
             for (MinMaxAggregate mmAggregate: aggregates) {
-                DBSPOpcode code = mmAggregate.isMin ? DBSPOpcode.AGG_MIN : DBSPOpcode.AGG_MAX;
-                // The mmAggregate.increment function has the following shape:
-                // conditional_aggregate(accumulator, aggregatedValue, null).closure(accumulator, inputRow, weight)
-                DBSPClosureExpression increment = mmAggregate.increment;
-                DBSPParameter[] parameters = increment.parameters;
-                Utilities.enforce(parameters.length == 3);
-                DBSPType resultType = mmAggregate.type;
+                DBSPType accType = mmAggregate.getIncrementType();
+                DBSPClosureExpression postProcess = mmAggregate.postProcess;
+                if (postProcess == null) {
+                    postProcess = DBSPClosureExpression.id(accType);
+                } else {
+                    needsPost = true;
+                }
 
-                // Need to index by (Key, Value), where Value is the value that is being aggregated.
-                // If the function that extracts the aggregation field from the indexed row
-                // |value| -> aggregatedField...
-                // ... the index closure has the shape |row| -> (key(row), value(row))
-                indexExpressions.add(mmAggregate.aggregatedValue.call(
-                        indexClosure.body.field(1).borrow()).reduce(this.compiler()));
+                // The init function of the ChainAggregate takes the current data.
+                // We use increment(zero, row).
+                DBSPExpression zero = mmAggregate.increment.call(
+                        mmAggregate.zero, inputVar, this.weightVar).reduce(this.compiler);
+                inits.add(zero);
+                accumulatorTypes.add(accType);
 
-                DBSPExpression init = inputVar.deref().field(ix).applyCloneIfNeeded()
-                        .cast(CalciteObject.EMPTY, resultType, false);
-                inits.add(init);
-
-                accumulatorTypes.add(resultType);
-
-                DBSPExpression comparison =
-                        new DBSPBinaryExpression(operator.getNode(),
-                                resultType, code, acc.field(ix).applyCloneIfNeeded(),
-                                inputVar.deref().field(ix).applyCloneIfNeeded())
-                                .cast(CalciteObject.EMPTY, resultType, false);
+                DBSPExpression comparison = mmAggregate.increment.call(
+                        acc.field(ix), inputVar, this.weightVar).reduce(this.compiler);
                 comparisons.add(comparison);
+
+                DBSPExpression post = postProcess.call(
+                        postVar.field(1).deref().field(ix).applyCloneIfNeeded())
+                        .reduce(this.compiler);
+                postProcessing.add(post);
                 ix++;
             }
-            // Need to build the closure |row| -> (key(row), aggregatedField(value(row)))
-            DBSPClosureExpression newIndexClosure =
-                    new DBSPRawTupleExpression(
-                            indexClosure.body.field(0),
-                            new DBSPTupleExpression(indexExpressions, false))
-                            .closure(indexClosure.parameters);
-
-            OutputPort indexInput = index.input();
-            DBSPMapIndexOperator reIndex = new DBSPMapIndexOperator(
-                    index.getRelNode(), newIndexClosure, indexInput.simpleNode().outputPort());
-            this.addOperator(reIndex);
-
             DBSPClosureExpression init = new DBSPTupleExpression(inits, false)
                     .closure(inputVar, this.weightVar);
             DBSPClosureExpression comparison = new DBSPTupleExpression(comparisons, false)
                     .closure(acc, inputVar, this.weightVar);
 
             DBSPSimpleOperator chain = new DBSPChainAggregateOperator(operator.getRelNode(),
-                    init, comparison, operator.outputType, reIndex.outputPort());
+                    init, comparison,
+                    new DBSPTypeIndexedZSet(inputType.getNode(), inputType.keyType, acc.getType()), i);
+
+            if (needsPost) {
+                // If all operations are MIN or MAX no postprocessing is necessary.
+                this.addOperator(chain);
+                DBSPClosureExpression post = new DBSPRawTupleExpression(
+                        postVar.field(0).deref(),
+                        new DBSPTupleExpression(postProcessing, false))
+                        .closure(postVar);
+                chain = new DBSPMapIndexOperator(
+                        operator.getRelNode(), post, operator.getOutputIndexedZSetType(), chain.outputPort());
+            }
+
             this.map(operator, chain);
         }
     }

@@ -393,11 +393,12 @@ public class FindUnusedFields extends SymbolicInterpreter<FieldUseMap> {
     }
 
     AggregateUseMap computeUnusedFields(MinMaxAggregate aggregate) {
-        DBSPClosureExpression closure = this.findUnusedFields(aggregate.aggregatedValue);
+        DBSPClosureExpression closure = this.findUnusedFields(aggregate.comparedValue);
         return new AggregateUseMap(
                 new MinMaxAggregate(aggregate.getNode(), aggregate.zero,
                         aggregate.increment.deepCopy().to(DBSPClosureExpression.class),
-                        aggregate.emptySetResult, aggregate.semigroup, closure, aggregate.isMin),
+                        aggregate.emptySetResult, aggregate.semigroup, closure,
+                        aggregate.postProcess, aggregate.operation),
             this.parameterFieldMap.get(closure.parameters[0]));
     }
 

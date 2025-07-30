@@ -29,6 +29,7 @@ import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.ir.expression.*;
 import org.dbsp.sqlCompiler.ir.type.*;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.primitive.*;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.util.Utilities;
@@ -66,6 +67,8 @@ public class RustSqlRuntimeLibrary {
         this.universalFunctions.put(DBSPOpcode.AGG_GTE.toString(), DBSPOpcode.AGG_GTE);
         this.universalFunctions.put(DBSPOpcode.AGG_MIN.toString(), DBSPOpcode.AGG_MIN);
         this.universalFunctions.put(DBSPOpcode.AGG_MAX.toString(), DBSPOpcode.AGG_MAX);
+        this.universalFunctions.put(DBSPOpcode.AGG_MIN1.toString(), DBSPOpcode.AGG_MIN1);
+        this.universalFunctions.put(DBSPOpcode.AGG_MAX1.toString(), DBSPOpcode.AGG_MAX1);
 
         this.arithmeticFunctions.put("plus", DBSPOpcode.ADD);
         this.arithmeticFunctions.put("minus", DBSPOpcode.SUB);
@@ -174,6 +177,7 @@ public class RustSqlRuntimeLibrary {
             opcode == DBSPOpcode.MAX_IGNORE_NULLS || opcode == DBSPOpcode.MIN_IGNORE_NULLS ||
             opcode == DBSPOpcode.AGG_GTE || opcode == DBSPOpcode.AGG_LTE ||
             opcode == DBSPOpcode.AGG_MIN || opcode == DBSPOpcode.AGG_MAX ||
+            opcode == DBSPOpcode.AGG_MIN1 || opcode == DBSPOpcode.AGG_MAX1 ||
             opcode == DBSPOpcode.IS_DISTINCT) {
             map = this.universalFunctions;
         } else if (ltype.as(DBSPTypeBool.class) != null) {
@@ -209,10 +213,18 @@ public class RustSqlRuntimeLibrary {
         String tsuffixl;
         String tsuffixr;
         if (map == universalFunctions) {
+            Utilities.enforce(rtype != null);
             tsuffixl = "";
             tsuffixr = "";
+            if (opcode == DBSPOpcode.AGG_MIN1 || opcode == DBSPOpcode.AGG_MAX1) {
+                // The function has 2 two-tuple arguments of types (L, R).
+                // The name is generated based on the types of the L component only
+                Utilities.enforce(ltype.is(DBSPTypeRawTuple.class));
+                Utilities.enforce(rtype.is(DBSPTypeRawTuple.class));
+                ltype = ltype.to(DBSPTypeRawTuple.class).getFieldType(0);
+                rtype = rtype.to(DBSPTypeRawTuple.class).getFieldType(0);
+            }
             suffixl = ltype.nullableSuffix();
-            Utilities.enforce(rtype != null);
             suffixr = rtype.nullableSuffix();
         } else if (opcode == DBSPOpcode.CONTROLLED_FILTER_GTE) {
             tsuffixl = "";

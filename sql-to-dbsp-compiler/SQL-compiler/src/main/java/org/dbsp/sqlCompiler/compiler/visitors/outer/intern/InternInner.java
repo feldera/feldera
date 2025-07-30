@@ -186,10 +186,10 @@ public class InternInner extends ExpressionTranslator {
         // Make a new visitor just for the aggregated value; that one may not call
         // any functions on the aggregated values, so we force it to unintern it (uninternEverything = true)
         InternInner always = new InternInner(this.compiler, false, true, this.parameterTypes);
-        DBSPClosureExpression aggregatedValue = always.convert(aggregate.aggregatedValue);
+        DBSPClosureExpression aggregatedValue = always.convert(aggregate.comparedValue);
         MinMaxAggregate result = new MinMaxAggregate(aggregate.getNode(), aggregate.zero,
                 increment, aggregate.emptySetResult, aggregate.semigroup,
-                aggregatedValue, aggregate.isMin);
+                aggregatedValue, aggregate.postProcess, aggregate.operation);
         this.save(aggregate, result);
         return VisitDecision.STOP;
     }
@@ -379,7 +379,7 @@ public class InternInner extends ExpressionTranslator {
     public void postorder(DBSPBinaryExpression expression) {
         switch (expression.opcode) {
             case LT, GT, LTE, GTE, MAX, MIN, CONCAT, SQL_INDEX, MAP_INDEX, AGG_MAX,
-                 AGG_MIN, AGG_GTE, AGG_LTE, CONTROLLED_FILTER_GTE: {
+                 AGG_MIN, AGG_MAX1, AGG_MIN1, AGG_GTE, AGG_LTE, CONTROLLED_FILTER_GTE: {
                 DBSPExpression left = this.uninternIfNecessary(expression.left);
                 DBSPExpression right = this.uninternIfNecessary(expression.right);
                 DBSPExpression result = expression.replaceSources(left, right);

@@ -56,6 +56,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPConditionalAggregateExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPIfExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
+import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
@@ -64,6 +65,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.expression.DBSPArrayExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.IsNumericType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
@@ -387,41 +389,63 @@ public class AggregateCompiler implements ICompilerComponent {
             this.processArrayAgg(function);
             return;
         }
-        DBSPOpcode compareOpcode = switch (kind) {
-            case ARG_MAX -> DBSPOpcode.AGG_GTE;
-            case ARG_MIN -> DBSPOpcode.AGG_LTE;
-            default -> throw new UnimplementedException("Aggregate function not yet implemented", node);
-        };
-
-        DBSPTupleExpression tuple = Objects.requireNonNull(this.aggArgument).to(DBSPTupleExpression.class);
-        Utilities.enforce(tuple.fields != null && tuple.fields.length == 2, "Expected 2 arguments for " + kind);
-        DBSPType currentType = tuple.fields[1].getType().withMayBeNull(true);
-        DBSPType zeroType = new DBSPTypeTuple(this.resultType, currentType);
-        DBSPExpression zero = new DBSPTupleExpression(
-                this.resultType.defaultValue(),
-                currentType.nullValue());
-        DBSPVariablePath accumulator = zeroType.var();
-        DBSPExpression ge = new DBSPBinaryExpression(
-                node, DBSPTypeBool.create(false), compareOpcode,
-                ExpressionCompiler.expandTupleCast(this.node, tuple.fields[1], currentType),
-                accumulator.field(1).applyCloneIfNeeded());
-        if (this.filterArgument >= 0) {
-            ge = ExpressionCompiler.makeBinaryExpression(
-                    node, ge.getType(), DBSPOpcode.AND, ge, Objects.requireNonNull(this.filterArgument()));
+        MinMaxAggregate.Operation operation;
+        DBSPOpcode opcode;
+        String semigroupName;
+        switch (kind) {
+            case ARG_MAX:
+                opcode = DBSPOpcode.AGG_MAX1;
+                operation = MinMaxAggregate.Operation.ArgMax;
+                semigroupName = "MaxSemigroup";
+                break;
+            case ARG_MIN:
+                opcode = DBSPOpcode.AGG_MIN1;
+                operation = MinMaxAggregate.Operation.ArgMin;
+                semigroupName = "MinSemigroup";
+                break;
+            default:
+                throw new UnimplementedException("Aggregate function not yet implemented", node);
         }
-        DBSPTupleExpression aggArgCast = new DBSPTupleExpression(
-                ExpressionCompiler.expandTupleCast(this.node, tuple.fields[0], this.resultType),
-                ExpressionCompiler.expandTupleCast(this.node, tuple.fields[1], currentType));
-        DBSPExpression increment = new DBSPIfExpression(node, ge, aggArgCast, accumulator.applyCloneIfNeeded());
-        DBSPTypeUser semigroup = new DBSPTypeUser(this.node, SEMIGROUP, "UnimplementedSemigroup",
-                false, aggArgCast.getType());
-        DBSPExpression postBody = accumulator.field(0).applyCloneIfNeeded();
-        this.setResult(new NonLinearAggregate(
-                node, zero,
-                this.makeRowClosure(increment, accumulator),
-                postBody.closure(accumulator),
-                this.resultType.defaultValue(),
-                semigroup));
+
+        DBSPTupleExpression tuple = this.getAggregatedValue().to(DBSPTupleExpression.class);
+        Utilities.enforce(tuple.fields != null && tuple.fields.length == 2, "Expected 2 arguments for " + kind);
+        NonLinearAggregate aggregate;
+        // Must compare first on second field
+        DBSPTypeTuple dataType = tuple.getTypeAsTuple();
+        DBSPTypeRawTuple accumulatorType = new DBSPTypeRawTuple(
+                tuple.getNode(),
+                Linq.list(
+                        dataType.getFieldType(1).withMayBeNull(true),
+                        this.resultType));
+        DBSPExpression zero = new DBSPRawTupleExpression(
+                accumulatorType.tupFields[0].none(),
+                accumulatorType.tupFields[1].defaultValue());
+        DBSPExpression aggregatedValue =
+            new DBSPRawTupleExpression(
+                    ExpressionCompiler.expandTuple(node, tuple.fields[1]),
+                    ExpressionCompiler.expandTuple(node, tuple.fields[0]));
+        DBSPVariablePath accumulator = accumulatorType.var();
+        DBSPExpression increment = this.aggregateOperation(
+                node, opcode, accumulatorType, accumulator, aggregatedValue, this.filterArgument());
+        DBSPTypeUser semigroup = new DBSPTypeUser(node, SEMIGROUP, semigroupName, false, accumulatorType);
+        DBSPClosureExpression postProcessing = ExpressionCompiler.expandTuple(node, accumulator.field(1))
+                .closure(accumulator);
+
+        if (this.filterArgument >= 0) {
+            aggregate = new NonLinearAggregate(
+                    node, zero,
+                    this.makeRowClosure(increment, accumulator),
+                    postProcessing,
+                    this.resultType.defaultValue(),
+                    semigroup);
+        } else {
+            aggregate = new MinMaxAggregate(
+                    node, zero, this.makeRowClosure(increment, accumulator),
+                    this.resultType.defaultValue(), semigroup,
+                    aggregatedValue.closure(this.v), postProcessing, operation);
+        }
+
+        this.setResult(aggregate);
     }
 
     private DBSPExpression getAggregatedValue() {
@@ -461,25 +485,26 @@ public class AggregateCompiler implements ICompilerComponent {
     }
 
     void processMinMax(SqlMinMaxAggFunction function) {
-        DBSPExpression zero = DBSPLiteral.none(this.nullableResultType);
-        DBSPOpcode call;
-        boolean isMin = true;
+        DBSPOpcode opcode;
+        MinMaxAggregate.Operation operation;
         String semigroupName = switch (function.getKind()) {
             case MIN -> {
-                call = DBSPOpcode.AGG_MIN;
+                operation = MinMaxAggregate.Operation.Min;
+                opcode = DBSPOpcode.AGG_MIN;
                 yield "MinSemigroup";
             }
             case MAX -> {
-                call = DBSPOpcode.AGG_MAX;
-                isMin = false;
+                opcode = DBSPOpcode.AGG_MAX;
+                operation = MinMaxAggregate.Operation.Max;
                 yield "MaxSemigroup";
             }
             default -> throw new UnimplementedException("Aggregate function not yet implemented", node);
         };
+        DBSPExpression zero = DBSPLiteral.none(this.nullableResultType);
         DBSPExpression aggregatedValue = ExpressionCompiler.expandTuple(node, this.getAggregatedValue());
         DBSPVariablePath accumulator = this.nullableResultType.var();
         DBSPExpression increment = this.aggregateOperation(
-                node, call, this.nullableResultType, accumulator, aggregatedValue, this.filterArgument());
+                node, opcode, this.nullableResultType, accumulator, aggregatedValue, this.filterArgument());
         DBSPTypeUser semigroup = new DBSPTypeUser(node, SEMIGROUP, semigroupName, false, accumulator.getType());
         // If there is a filter, do not use a MinMaxAggregate
         NonLinearAggregate aggregate;
@@ -489,7 +514,7 @@ public class AggregateCompiler implements ICompilerComponent {
         else
             aggregate = new MinMaxAggregate(
                     node, zero, this.makeRowClosure(increment, accumulator),
-                    zero, semigroup, aggregatedValue.closure(this.v), isMin);
+                    zero, semigroup, aggregatedValue.closure(this.v), null, operation);
         this.setResult(aggregate);
     }
 

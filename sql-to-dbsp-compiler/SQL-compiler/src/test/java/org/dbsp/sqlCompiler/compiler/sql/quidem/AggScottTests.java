@@ -1402,32 +1402,32 @@ public class AggScottTests extends ScottBaseTests {
                 -- ARG_MIN, ARG_MAX without GROUP BY
                 select arg_min(ename, deptno) as mi, arg_max(ename, deptno) as ma
                 from emp;
-                +-------+-----+
-                | MI    | MA  |
-                +-------+-----+
-                | MILLER| WARD|
-                +-------+-----+
+                +------+-----+
+                | MI   | MA  |
+                +------+-----+
+                | CLARK| WARD|
+                +------+-----+
                 (1 row)
 
                 -- ARG_MIN, ARG_MAX with DISTINCT
                 select arg_min(distinct ename, deptno) as mi, arg_max(distinct ename, deptno) as ma
                 from emp;
-                +-------+-----+
-                | MI    | MA  |
-                +-------+-----+
-                | MILLER| WARD|
-                +-------+-----+
+                +------+-----+
+                | MI   | MA  |
+                +------+-----+
+                | CLARK| WARD|
+                +------+-----+
                 (1 row)
 
                 -- ARG_MIN, ARG_MAX function with WHERE.
                 select arg_min(ename, deptno) as mi, arg_max(ename, deptno) as ma
                 from emp
                 where deptno <= 20;
-                +-------+------+
-                | MI    | MA   |
-                +-------+------+
-                | MILLER| SMITH|
-                +-------+------+
+                +------+------+
+                | MI   | MA   |
+                +------+------+
+                | CLARK| SMITH|
+                +------+------+
                 (1 row)
 
                 -- ARG_MIN, ARG_MAX function with WHERE that removes all rows.
