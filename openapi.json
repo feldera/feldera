@@ -7489,6 +7489,11 @@
             ],
             "nullable": true
           },
+          "strict_start_from": {
+            "type": "boolean",
+            "description": "When true, the pipeline will fail to initialize if fetching the\nspecified checkpoint fails (missing, download error).\nWhen false, the pipeline will start from scratch instead.\n\nFalse by default.",
+            "default": false
+          },
           "transfers": {
             "type": "integer",
             "format": "int32",

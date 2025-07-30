@@ -394,13 +394,20 @@ pub struct SyncConfig {
     /// this can be left empty to allow automatic authentication via the pod's service account.
     pub secret_key: Option<String>,
 
-    /// When set, the pipeline will fetch the specified checkpoint from the
-    /// object store. If the checkpoint doesn't exist, the pipeline will fail
-    /// to initialize.
+    /// When set, the pipeline will try fetch the specified checkpoint from the
+    /// object store.
     ///
-    /// If the checkpoint doesn't exist in object store, the pipeline will
-    /// fail to initialize.
+    /// If `strict_start_from` is `true`, the pipeline will fail to initialize.
     pub start_from_checkpoint: Option<StartFromCheckpoint>,
+
+    /// When true, the pipeline will fail to initialize if fetching the
+    /// specified checkpoint fails (missing, download error).
+    /// When false, the pipeline will start from scratch instead.
+    ///
+    /// False by default.
+    #[schema(default = std::primitive::bool::default)]
+    #[serde(default)]
+    pub strict_start_from: bool,
 
     /// The number of file transfers to run in parallel.
     /// Default: 20
