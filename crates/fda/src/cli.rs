@@ -205,6 +205,7 @@ pub enum RuntimeConfigKey {
     Logging,
     HttpWorkers,
     IoWorkers,
+    DevTweaks,
 }
 
 #[derive(ValueEnum, Clone, Copy, Debug)]
@@ -531,6 +532,30 @@ pub enum PipelineAction {
         /// A token can be optained by running `fda completion-token`.
         /// Or when ingesting data over HTTP.
         token: String,
+    },
+    /// Start a new transaction.
+    #[clap(aliases = &["transaction-start"])]
+    StartTransaction {
+        /// The name of the pipeline.
+        #[arg(value_hint = ValueHint::Other, add = ArgValueCompleter::new(pipeline_names))]
+        name: String,
+    },
+    /// Commit the current transaction.
+    ///
+    /// Commits the currently active transaction for the specified pipeline.
+    /// Optionally waits for the commit to complete.
+    #[clap(aliases = &["commit", "transaction-commit"])]
+    CommitTransaction {
+        /// The name of the pipeline.
+        #[arg(value_hint = ValueHint::Other, add = ArgValueCompleter::new(pipeline_names))]
+        name: String,
+        /// The transaction ID to verify against the current active transaction.
+        /// If provided, the function verifies that the currently active transaction matches this ID.
+        #[arg(long = "tid", short = 't')]
+        transaction_id: Option<u64>,
+        /// Don't wait for the transaction to commit before returning.
+        #[arg(long, short = 'n', default_value_t = false)]
+        no_wait: bool,
     },
     /// Clear the storage resources of a pipeline.
     ///

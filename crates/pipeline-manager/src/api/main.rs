@@ -94,6 +94,8 @@ only the program-related core fields, and is used by the compiler to discern whe
         endpoints::pipeline_interaction::get_checkpoint_status,
         endpoints::pipeline_interaction::completion_token,
         endpoints::pipeline_interaction::completion_status,
+        endpoints::pipeline_interaction::start_transaction,
+        endpoints::pipeline_interaction::commit_transaction,
 
         // API keys
         endpoints::api_key::list_api_keys,
@@ -240,6 +242,7 @@ only the program-related core fields, and is used by the compiler to discern whe
         feldera_types::checkpoint::CheckpointStatus,
         feldera_types::checkpoint::CheckpointResponse,
         feldera_types::checkpoint::CheckpointFailure,
+        feldera_types::transaction::StartTransactionResponse,
     ),),
     tags(
         (name = "Pipeline management", description = "Create, retrieve, update, delete and deploy pipelines."),
@@ -302,6 +305,8 @@ fn api_scope() -> Scope {
         .service(endpoints::pipeline_interaction::pipeline_adhoc_sql)
         .service(endpoints::pipeline_interaction::completion_token)
         .service(endpoints::pipeline_interaction::completion_status)
+        .service(endpoints::pipeline_interaction::start_transaction)
+        .service(endpoints::pipeline_interaction::commit_transaction)
         // API keys endpoints
         .service(endpoints::api_key::list_api_keys)
         .service(endpoints::api_key::get_api_key)

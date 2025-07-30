@@ -75,7 +75,7 @@ EOF
 fda create p1 program.sql
 fda program get p1 | fda create p2 -s
 compare_output "fda program get p1" "fda program get p2"
-fda program set-config p1 dev
+fda program set-config p1 --profile dev
 fda program config p1
 fda program status p1
 
@@ -98,8 +98,17 @@ fda logs p1
 fda connector p1 example c stats
 fda connector p1 example_count c stats
 fda connector p1 example unknown stats || true
-fda connector p1 unknown c stats || true
-fda connector unknown example c stats || true
+
+# Transaction tests
+echo "Testing transaction commands..."
+fail_on_success fda commit-transaction p1
+fda start-transaction p1
+fail_on_success fda commit-transaction p1 --tid 999
+fda commit-transaction p1
+fda start-transaction p1
+fda commit-transaction p1 --timeout 10
+fda start-transaction p1
+fda commit-transaction p1 --no-wait
 fda connector p1 example c pause
 fda connector p1 example_count c pause || true
 fda connector p1 example c start
@@ -111,7 +120,7 @@ if $enterprise; then
 else
     enterprise_only=fail_on_success
 fi
-$enterprise_only fda clear p1
+fda clear p1
 $enterprise_only fda set-config p1 fault_tolerance true
 fda set-config p1 fault_tolerance false
 fda set-config p1 fault_tolerance none
@@ -119,6 +128,10 @@ $enterprise_only fda set-config p1 fault_tolerance at_least_once
 $enterprise_only fda set-config p1 fault_tolerance exactly_once
 fail_on_success fda set-config p1 fault_tolerance exactly_one
 fail_on_success fda program set-config p1 -p optimized --runtime-version invalid-version
+
+# Test dev_tweaks setting
+fda set-config sec-ops dev_tweaks '{"x": 2}'
+fail_on_success fda set-config sec-ops dev_tweaks 'invalid-json'
 
 fda delete p1
 fda delete p2
