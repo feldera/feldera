@@ -1726,7 +1726,18 @@ impl CircuitThread {
         //     transmit this data, otherwise it will be lost if we resume from the
         //     checkpoint.  In the meantime, we will not flush anything to the
         //     circuit unless required to advance past an input barrier.
-        let barriers_only = self.checkpoint_requested() && self.ft.is_none();
+        //
+        // Don't pause inputs during transactions: finishing a transaction may
+        // involve ingesting some inputs from connectors. By pausing those inputs
+        // we may prevent the transaction from ever completing.
+        //
+        // FIXME: the last point means that checkpoints can get delayed indefinitely
+        // if the user runs end-to-end transactions. One possible way to solve this
+        // in the future is to remove the notion of barriers altogether, making input
+        // connectors always checkpointable.
+        let barriers_only = self.checkpoint_requested()
+            && self.ft.is_none()
+            && self.controller.get_transaction_state() == TransactionState::None;
 
         // Collect the ids of the endpoints that we'll flush to the circuit.
         //
@@ -1754,7 +1765,15 @@ impl CircuitThread {
             } else {
                 if !self.replaying() {
                     if let Some(reader) = status.reader.as_ref() {
-                        reader.queue(self.checkpoint_requested())
+                        // Don't request a checkpoint if we're processing a transaction. The `checkpoint_requested`
+                        // flag requires the connector to get to a checkpointable state as fast as
+                        // possible, which may cause connector's performance to drop, e.g., some connectors may return 1 record
+                        // per step.
+                        reader.queue(
+                            self.checkpoint_requested()
+                                && self.controller.get_transaction_state()
+                                    == TransactionState::None,
+                        )
                     }
                 } else {
                     // We already started the input adapters replaying. The set of
