@@ -68,7 +68,7 @@ pub struct DeltaTableWriter {
 }
 
 /// Limit on the number of records buffered in memory in the encoder.
-static CHUNK_SIZE: usize = 1_000_000;
+static CHUNK_SIZE: usize = 100_000;
 
 /// Commands sent to the tokio runtime that performs the actual
 /// delta table operations.
