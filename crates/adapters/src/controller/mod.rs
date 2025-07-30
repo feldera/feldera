@@ -43,8 +43,8 @@ use crossbeam::{
 };
 use datafusion::prelude::*;
 use dbsp::circuit::metrics::{
-    COMPACTION_STALL_TIME, DBSP_OPERATOR_COMMIT_LATENCY, DBSP_STEP, DBSP_STEP_LATENCY,
-    FILES_CREATED, FILES_DELETED, TOTAL_LATE_RECORDS,
+    COMPACTION_STALL_TIME_NANOSECONDS, DBSP_OPERATOR_COMMIT_LATENCY_MICROSECONDS, DBSP_STEP,
+    DBSP_STEP_LATENCY_MICROSECONDS, FILES_CREATED, FILES_DELETED, TOTAL_LATE_RECORDS,
 };
 use dbsp::circuit::tokio::TOKIO;
 use dbsp::circuit::{CircuitStorageConfig, DevTweaks, Mode};
@@ -61,7 +61,8 @@ use feldera_ir::LirCircuit;
 use feldera_storage::checkpoint_synchronizer::CheckpointSynchronizer;
 use feldera_storage::histogram::ExponentialHistogram;
 use feldera_storage::metrics::{
-    READ_BLOCKS, READ_LATENCY, SYNC_LATENCY, WRITE_BLOCKS, WRITE_LATENCY,
+    READ_BLOCKS_BYTES, READ_LATENCY_MICROSECONDS, SYNC_LATENCY_MICROSECONDS, WRITE_BLOCKS_BYTES,
+    WRITE_LATENCY_MICROSECONDS,
 };
 use feldera_types::checkpoint::CheckpointMetadata;
 use feldera_types::format::json::JsonLines;
@@ -724,7 +725,7 @@ impl Controller {
             "compaction_stall_duration_seconds",
             "Time in seconds a worker was stalled waiting for more merges to complete.",
             labels,
-            COMPACTION_STALL_TIME.load(Ordering::Relaxed) as f64 / 1_000_000_000.0,
+            COMPACTION_STALL_TIME_NANOSECONDS.load(Ordering::Relaxed) as f64 / 1_000_000_000.0,
         );
         metrics.counter(
             "files_created_total",
@@ -748,12 +749,12 @@ impl Controller {
             "dbsp_step_latency_seconds",
             "Latency of DBSP steps over the last 60 seconds or 1000 steps, whichever is less, in seconds",
             labels,
-            &HistogramDiv::new(DBSP_STEP_LATENCY.lock().unwrap().snapshot(), 1_000_000.0));
+            &HistogramDiv::new(DBSP_STEP_LATENCY_MICROSECONDS.lock().unwrap().snapshot(), 1_000_000.0));
         metrics.histogram(
             "dbsp_operator_checkpoint_latency_seconds",
             "Latency of individual operator checkpoint operations in seconds. (Because checkpoints run in parallel across workers, these will not add to `feldera_checkpoint_latency_seconds`.)",
             labels,
-            &HistogramDiv::new(DBSP_OPERATOR_COMMIT_LATENCY.snapshot(), 1_000_000.0),
+            &HistogramDiv::new(DBSP_OPERATOR_COMMIT_LATENCY_MICROSECONDS.snapshot(), 1_000_000.0),
         );
 
         metrics.histogram(
@@ -779,32 +780,32 @@ impl Controller {
             "storage_read_latency_seconds",
             "Read latency for storage blocks in seconds",
             labels,
-            &HistogramDiv::new(READ_LATENCY.snapshot(), 1_000_000.0),
+            &HistogramDiv::new(READ_LATENCY_MICROSECONDS.snapshot(), 1_000_000.0),
         );
         metrics.histogram(
             "storage_write_latency_seconds",
             "Write latency for storage blocks in seconds",
             labels,
-            &HistogramDiv::new(WRITE_LATENCY.snapshot(), 1_000_000.0),
+            &HistogramDiv::new(WRITE_LATENCY_MICROSECONDS.snapshot(), 1_000_000.0),
         );
         metrics.histogram(
             "storage_sync_latency_seconds",
             "Sync latency in seconds",
             labels,
-            &HistogramDiv::new(SYNC_LATENCY.snapshot(), 1_000_000.0),
+            &HistogramDiv::new(SYNC_LATENCY_MICROSECONDS.snapshot(), 1_000_000.0),
         );
 
         metrics.histogram(
             "storage_read_block_bytes",
             "Sizes in bytes of blocks read from storage.",
             labels,
-            &READ_BLOCKS.snapshot(),
+            &READ_BLOCKS_BYTES.snapshot(),
         );
         metrics.histogram(
             "storage_write_block_bytes",
             "Sizes in bytes of blocks written to storage.",
             labels,
-            &WRITE_BLOCKS.snapshot(),
+            &WRITE_BLOCKS_BYTES.snapshot(),
         );
 
         fn write_input_metric<F, M>(
@@ -1348,7 +1349,7 @@ impl CircuitThread {
                 .status
                 .global_metrics
                 .num_total_processed_records();
-            let written_before = WRITE_BLOCKS.sum();
+            let written_before = WRITE_BLOCKS_BYTES.sum();
             let checkpoint = CHECKPOINT_LATENCY.record_callback(|| {
                 this.circuit
                     .commit_with_metadata(this.step, processed_records)
@@ -1377,7 +1378,7 @@ impl CircuitThread {
                             .map_err(Arc::new)
                     })
             })?;
-            let written_after = WRITE_BLOCKS.sum();
+            let written_after = WRITE_BLOCKS_BYTES.sum();
             CHECKPOINT_WRITTEN.record((written_after - written_before) / 1_000_000);
             CHECKPOINT_PROCESSED_RECORDS.store(processed_records, Ordering::Relaxed);
 

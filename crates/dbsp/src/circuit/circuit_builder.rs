@@ -34,7 +34,7 @@ use crate::{
         cache::{CircuitCache, CircuitStoreMarker},
         fingerprinter::Fingerprinter,
         metadata::OperatorMeta,
-        metrics::DBSP_OPERATOR_COMMIT_LATENCY,
+        metrics::DBSP_OPERATOR_COMMIT_LATENCY_MICROSECONDS,
         operator_traits::{
             BinaryOperator, BinarySinkOperator, Data, ImportOperator, NaryOperator,
             QuaternaryOperator, SinkOperator, SourceOperator, StrictUnaryOperator, TernaryOperator,
@@ -6085,7 +6085,7 @@ impl CircuitHandle {
 
         self.circuit
             .map_nodes_recursive_mut(&mut |node: &mut dyn Node| {
-                DBSP_OPERATOR_COMMIT_LATENCY.record_callback(|| node.commit(base))
+                DBSP_OPERATOR_COMMIT_LATENCY_MICROSECONDS.record_callback(|| node.commit(base))
             })
     }
 

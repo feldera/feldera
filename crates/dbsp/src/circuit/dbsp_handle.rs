@@ -1,5 +1,5 @@
 use crate::circuit::checkpointer::Checkpointer;
-use crate::circuit::metrics::{DBSP_STEP, DBSP_STEP_LATENCY};
+use crate::circuit::metrics::{DBSP_STEP, DBSP_STEP_LATENCY_MICROSECONDS};
 use crate::circuit::runtime::ThreadType;
 use crate::monitor::visual_graph::Graph;
 use crate::storage::backend::StorageError;
@@ -850,7 +850,10 @@ impl DBSPHandle {
         let span = Arc::new(Span::root("step", SpanContext::random()));
         let _guard = span.set_local_parent();
         let result = self.broadcast_command(Command::Step(span), |_, _| {});
-        DBSP_STEP_LATENCY.lock().unwrap().record_elapsed(start);
+        DBSP_STEP_LATENCY_MICROSECONDS
+            .lock()
+            .unwrap()
+            .record_elapsed(start);
         if let Some(handle) = self.runtime.as_ref() {
             self.runtime_elapsed +=
                 start.elapsed() * handle.runtime().layout().local_workers().len() as u32 * 2;
@@ -875,7 +878,10 @@ impl DBSPHandle {
             replay_complete.push(complete);
         });
 
-        DBSP_STEP_LATENCY.lock().unwrap().record_elapsed(start);
+        DBSP_STEP_LATENCY_MICROSECONDS
+            .lock()
+            .unwrap()
+            .record_elapsed(start);
         if let Some(handle) = self.runtime.as_ref() {
             self.runtime_elapsed +=
                 start.elapsed() * handle.runtime().layout().local_workers().len() as u32 * 2;
