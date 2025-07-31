@@ -13,7 +13,7 @@ use crate::{
         },
     },
     trace::{
-        cursor::{CursorFactory, CursorFactoryWrapper, Pending, PushCursor},
+        cursor::{CursorFactory, CursorFactoryWrapper, Pending, Position, PushCursor},
         merge_batches_by_reference,
         ord::{file::UnwrapStorage, merge_batcher::MergeBatcher},
         Batch, BatchFactories, BatchLocation, BatchReader, BatchReaderFactories, Builder, Cursor,
@@ -810,6 +810,13 @@ where
 
     fn fast_forward_vals(&mut self) {
         self.move_val(|val_cursor| val_cursor.move_last());
+    }
+
+    fn position(&self) -> Option<Position> {
+        Some(Position {
+            total: self.key_cursor.len(),
+            offset: self.key_cursor.absolute_position(),
+        })
     }
 }
 

@@ -15,7 +15,7 @@ use crate::{
         BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor,
         OrdIndexedWSetFactories, Spine, TupleBuilder,
     },
-    Circuit, DynZWeight, RootCircuit, Stream,
+    Circuit, DynZWeight, Position, RootCircuit, Stream,
 };
 use std::{borrow::Cow, cell::RefCell, marker::PhantomData, ops::Neg, rc::Rc};
 
@@ -414,7 +414,7 @@ where
         delta: Cow<'_, Option<Spine<B>>>,
         input_trace: Cow<'_, T>,
         output_trace: Cow<'_, OT>,
-    ) -> impl AsyncStream<Item = (OB, bool)> + 'static {
+    ) -> impl AsyncStream<Item = (OB, bool, Option<Position>)> + 'static {
         let delta = (*delta).as_ref().map(|b| b.ro_snapshot());
         let chunk_size = splitter_output_chunk_size();
 
@@ -432,7 +432,7 @@ where
 
         stream! {
             let Some(delta) = delta.as_ref() else {
-                yield (OB::dyn_empty(&self.output_factories), true);
+                yield (OB::dyn_empty(&self.output_factories), true, None);
                 return;
             };
 
@@ -557,7 +557,7 @@ where
                 buffer.clear();
 
                 if builder.num_tuples() >= chunk_size {
-                    yield (builder.done(), false);
+                    yield (builder.done(), false, delta_cursor.position());
                     builder = TupleBuilder::new(
                         &self.output_factories,
                         OB::Builder::with_capacity(&self.output_factories, delta.len()),
@@ -567,7 +567,7 @@ where
                 delta_cursor.step_key();
             }
 
-            yield (builder.done(), true)
+            yield (builder.done(), true, delta_cursor.position())
         }
     }
 }

@@ -13,7 +13,7 @@ use crate::{
         },
     },
     trace::{
-        cursor::{CursorFactoryWrapper, Pending, PushCursor},
+        cursor::{CursorFactoryWrapper, Pending, Position, PushCursor},
         merge_batches_by_reference,
         ord::{file::UnwrapStorage, merge_batcher::MergeBatcher},
         Batch, BatchFactories, BatchLocation, BatchReader, BatchReaderFactories, Builder, Cursor,
@@ -740,6 +740,13 @@ where
         if self.val_valid {
             logic(&(), self.diff.as_ref())
         }
+    }
+
+    fn position(&self) -> Option<Position> {
+        Some(Position {
+            total: self.cursor.len(),
+            offset: self.cursor.absolute_position(),
+        })
     }
 }
 

@@ -1317,6 +1317,10 @@ where
     L: Trie,
     O: OrdOffset,
 {
+    pub fn pos(&self) -> isize {
+        self.pos
+    }
+
     pub fn seek_with<P>(&mut self, predicate: P)
     where
         P: Fn(&K) -> bool,

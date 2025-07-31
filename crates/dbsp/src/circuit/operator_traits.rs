@@ -7,11 +7,14 @@
 
 use feldera_storage::StoragePath;
 
-use crate::circuit::{
-    metadata::{OperatorLocation, OperatorMeta},
-    OwnershipPreference, Scope,
-};
 use crate::Error;
+use crate::{
+    circuit::{
+        metadata::{OperatorLocation, OperatorMeta},
+        OwnershipPreference, Scope,
+    },
+    trace::cursor::Position,
+};
 use std::borrow::Cow;
 
 use super::GlobalNodeId;
@@ -265,6 +268,10 @@ pub trait Operator: 'static {
 
     fn is_flush_complete(&self) -> bool {
         true
+    }
+
+    fn flush_progress(&self) -> Option<Position> {
+        None
     }
 }
 

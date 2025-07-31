@@ -152,6 +152,8 @@ static CHECKPOINT_WRITTEN: ExponentialHistogram = ExponentialHistogram::new();
 /// checkpoint.
 static CHECKPOINT_PROCESSED_RECORDS: AtomicU64 = AtomicU64::new(0);
 
+static COMMIT_UPDATE_INTERVAL: Duration = Duration::from_secs(10);
+
 /// Controller that coordinates the creation, reconfiguration, teardown of
 /// input/output adapters, and implements runtime flow control.
 ///
@@ -1089,6 +1091,8 @@ struct CircuitThread {
     /// step 0 if there is going to be a journal, because to replay a journal
     /// record into an endpoint we first need to seek that endpoint.
     input_metadata: HashMap<String, Option<Resume>>,
+
+    last_commit_progress_update: Instant,
 }
 
 impl CircuitThread {
@@ -1224,6 +1228,7 @@ impl CircuitThread {
             sync_checkpoint_request: None,
             step,
             input_metadata: input_metadata.unwrap_or_default(),
+            last_commit_progress_update: Instant::now(),
         })
     }
 
@@ -1356,7 +1361,7 @@ impl CircuitThread {
     fn step_circuit(&mut self) {
         match self.controller.advance_transaction_state() {
             Some(TransactionState::Started(transaction_id)) => {
-                debug!("Starting transaction {transaction_id}");
+                info!("Starting transaction {transaction_id}");
                 self.circuit.start_transaction().unwrap_or_else(|e| {
                     self.controller.error(Arc::new(e.into()));
                     self.controller
@@ -1364,12 +1369,13 @@ impl CircuitThread {
                 });
             }
             Some(TransactionState::Committing(transaction_id)) => {
-                debug!("Committing transaction {transaction_id}");
+                info!("Committing transaction {transaction_id}");
                 self.circuit.start_commit_transaction().unwrap_or_else(|e| {
                     self.controller.error(Arc::new(e.into()));
                     self.controller
                         .set_transaction_state(TransactionState::Started(transaction_id));
                 });
+                self.last_commit_progress_update = Instant::now();
             }
             _ => {}
         }
@@ -1389,8 +1395,21 @@ impl CircuitThread {
             debug!("circuit thread: 'circuit.step' returned");
 
             if let TransactionState::Committing(transaction_id) = transaction_state {
+                // This is temporary until we have API/UI for progress reporting.
+                if self.last_commit_progress_update.elapsed() >= COMMIT_UPDATE_INTERVAL {
+                    self.last_commit_progress_update = Instant::now();
+                    match self.circuit.commit_progress() {
+                        Ok(progress) => {
+                            info!(
+                                "Transaction {transaction_id} commit progress: {}",
+                                progress.summary()
+                            )
+                        }
+                        Err(e) => error!("Error retrieving transaction commit progress: {e}"),
+                    }
+                }
                 if committed {
-                    debug!("Transaction {transaction_id} committed");
+                    info!("Transaction {transaction_id} committed");
                     self.controller
                         .set_transaction_state(TransactionState::None);
                 }

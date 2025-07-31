@@ -1,4 +1,5 @@
 use crate::storage::buffer_cache::CacheStats;
+use crate::trace::cursor::Position;
 use crate::trace::ord::file::UnwrapStorage;
 use crate::trace::BatchLocation;
 use crate::{
@@ -647,6 +648,13 @@ where
 
     fn fast_forward_vals(&mut self) {
         self.move_val(|val_cursor| val_cursor.move_last().unwrap_storage());
+    }
+
+    fn position(&self) -> Option<Position> {
+        Some(Position {
+            total: self.key_cursor.len(),
+            offset: self.key_cursor.absolute_position(),
+        })
     }
 }
 

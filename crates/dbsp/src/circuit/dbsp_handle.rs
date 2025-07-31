@@ -1,6 +1,7 @@
 use crate::circuit::checkpointer::Checkpointer;
 use crate::circuit::metrics::{DBSP_STEP, DBSP_STEP_LATENCY_MICROSECONDS};
 use crate::circuit::runtime::ThreadType;
+use crate::circuit::schedule::{FlushProgress, FlushProgressSummary};
 use crate::monitor::visual_graph::Graph;
 use crate::storage::backend::StorageError;
 use crate::trace::MergerType;
@@ -35,7 +36,7 @@ use std::{
     thread::Result as ThreadResult,
     time::Instant,
 };
-use tracing::info;
+use tracing::{debug, info};
 use uuid::Uuid;
 
 #[cfg(doc)]
@@ -563,6 +564,17 @@ impl Runtime {
                             return;
                         }
                     }
+                    Ok(Command::CommitProgress(span)) => {
+                        let _guard = span.set_local_parent();
+                        let _worker_span =
+                            LocalSpan::enter_with_local_parent("worker-commit_progress")
+                                .with_property(|| ("worker", worker_index_str));
+                        let status = Ok(Response::CommitProgress(circuit.flush_progress()));
+                        // Send response.
+                        if status_sender.send(status).is_err() {
+                            return;
+                        }
+                    }
                     Ok(Command::Microstep(span)) => {
                         let _guard = span.set_local_parent();
                         let _worker_span = LocalSpan::enter_with_local_parent("worker-microstep")
@@ -720,6 +732,7 @@ enum Command {
     StartStep(Arc<Span>),
     Microstep(Arc<Span>),
     Flush(Arc<Span>),
+    CommitProgress(Arc<Span>),
     Step(Arc<Span>),
     /// Execute a step in bootstrap mode.
     BootstrapStep(Arc<Span>),
@@ -742,6 +755,7 @@ impl Debug for Command {
             Command::StartStep(_span) => write!(f, "StartStep"),
             Command::Microstep(_span) => write!(f, "Microstep"),
             Command::Flush(_span) => write!(f, "Flush"),
+            Command::CommitProgress(_span) => write!(f, "CommitProgress"),
             Command::Step(_span) => write!(f, "Step"),
             Command::BootstrapStep(_span) => write!(f, "BootstrapStep"),
             Command::CompleteBootstrap => write!(f, "CompleteBootstrap"),
@@ -766,6 +780,7 @@ enum Response {
     Unit,
     FlushComplete(bool),
     BootstrapComplete(bool),
+    CommitProgress(FlushProgress),
     ProfileDump(Graph),
     Profile(WorkerProfile),
     CheckpointCreated,
@@ -800,6 +815,34 @@ pub struct DBSPHandle {
 
     /// Information about operators that participate in bootstrapping the new parts of the circuit.
     bootstrap_info: Option<BootstrapInfo>,
+}
+pub struct CommitProgress(BTreeMap<u16, FlushProgress>);
+
+impl Default for CommitProgress {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl CommitProgress {
+    pub fn new() -> Self {
+        CommitProgress(BTreeMap::new())
+    }
+
+    pub fn insert(&mut self, worker_id: u16, progress: FlushProgress) {
+        debug_assert!(!self.0.contains_key(&worker_id));
+        self.0.insert(worker_id, progress);
+    }
+
+    pub fn summary(&self) -> FlushProgressSummary {
+        let mut result = FlushProgressSummary::new();
+
+        for worker_progress in self.0.values() {
+            result.merge(&worker_progress.summary());
+        }
+
+        result
+    }
 }
 
 impl DBSPHandle {
@@ -963,7 +1006,7 @@ impl DBSPHandle {
         result?;
 
         if flush_complete.iter().all(|complete| *complete) {
-            info!("Flush complete");
+            debug!("Flush complete");
         }
 
         Ok(flush_complete.iter().all(|complete| *complete))
@@ -990,6 +1033,22 @@ impl DBSPHandle {
                 return Ok(());
             }
         }
+    }
+
+    pub fn commit_progress(&mut self) -> Result<CommitProgress, DbspError> {
+        let span = Arc::new(Span::root("commit_progress", SpanContext::random()));
+        let _guard = span.set_local_parent();
+
+        let mut progress = CommitProgress::new();
+
+        self.broadcast_command(Command::CommitProgress(span), |worker, response| {
+            let Response::CommitProgress(worker_progress) = response else {
+                panic!("Expected CommitProgress response, got {response:?}");
+            };
+            progress.insert(worker as u16, worker_progress);
+        })?;
+
+        Ok(progress)
     }
 
     pub fn set_replay_step_size(&mut self, step_size: usize) {

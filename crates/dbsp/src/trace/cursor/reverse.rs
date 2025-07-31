@@ -1,6 +1,9 @@
 use std::marker::PhantomData;
 
-use crate::dynamic::{Factory, WeightTrait};
+use crate::{
+    dynamic::{Factory, WeightTrait},
+    trace::cursor::Position,
+};
 
 use super::Cursor;
 
@@ -144,5 +147,14 @@ where
 
     fn fast_forward_vals(&mut self) {
         self.cursor.fast_forward_vals()
+    }
+
+    fn position(&self) -> Option<Position> {
+        let position = self.cursor.position().unwrap();
+
+        Some(Position {
+            total: position.total,
+            offset: position.total - position.offset,
+        })
     }
 }

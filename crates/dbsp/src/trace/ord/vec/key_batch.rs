@@ -4,8 +4,10 @@ use crate::{
         LeanVec, WeightTrait, WithFactory,
     },
     trace::{
+        cursor::Position,
         layers::{
-            Cursor as _, Layer, LayerCursor, LayerFactories, Leaf, LeafFactories, OrdOffset, Trie,
+            Cursor as TrieCursor, Layer, LayerCursor, LayerFactories, Leaf, LeafFactories,
+            OrdOffset, Trie,
         },
         Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor, Deserializer,
         Serializer, WeightedItem,
@@ -517,6 +519,13 @@ where
 
     fn fast_forward_vals(&mut self) {
         self.valid = true;
+    }
+
+    fn position(&self) -> Option<Position> {
+        Some(Position {
+            total: TrieCursor::keys(&self.cursor) as u64,
+            offset: self.cursor.pos() as u64,
+        })
     }
 }
 

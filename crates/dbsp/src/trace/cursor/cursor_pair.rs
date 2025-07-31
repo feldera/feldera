@@ -2,7 +2,10 @@
 
 use std::{any::TypeId, cmp::Ordering, marker::PhantomData};
 
-use crate::dynamic::{DataTrait, Factory, WeightTrait};
+use crate::{
+    dynamic::{DataTrait, Factory, WeightTrait},
+    trace::cursor::Position,
+};
 
 use super::{Cursor, Direction};
 
@@ -590,5 +593,15 @@ where
             self.update_val_order_reverse();
         }
         self.skip_zero_weight_vals_reverse();
+    }
+
+    fn position(&self) -> Option<super::Position> {
+        let position1 = self.cursor1.position().unwrap();
+        let position2 = self.cursor2.position().unwrap();
+
+        Some(Position {
+            total: position1.total + position2.total,
+            offset: position1.offset + position2.offset,
+        })
     }
 }

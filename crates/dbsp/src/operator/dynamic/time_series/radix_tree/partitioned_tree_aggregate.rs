@@ -22,7 +22,7 @@ use crate::{
         spine_async::WithSnapshot, BatchReader, BatchReaderFactories, Builder, Cursor, Spine,
     },
     utils::Tup2,
-    Circuit, DBData, DynZWeight, RootCircuit, Stream, ZWeight,
+    Circuit, DBData, DynZWeight, Position, RootCircuit, Stream, ZWeight,
 };
 use async_stream::stream;
 use dyn_clone::clone_box;
@@ -373,7 +373,7 @@ where
         delta: Cow<'_, Option<Spine<Z>>>,
         input_trace: Cow<'_, Spine<Z>>,
         output_trace: Cow<'_, Spine<O>>,
-    ) -> impl AsyncStream<Item = (O, bool)> + 'static {
+    ) -> impl AsyncStream<Item = (O, bool, Option<Position>)> + 'static {
         let chunk_size = splitter_output_chunk_size();
         let delta = delta.as_ref().as_ref().map(|b| b.ro_snapshot());
 
@@ -391,7 +391,7 @@ where
 
         stream! {
             let Some(delta) = delta.as_ref() else {
-                yield (O::dyn_empty(&self.factories.output_factories), true);
+                yield (O::dyn_empty(&self.factories.output_factories), true, None);
                 return;
             };
 
@@ -515,7 +515,7 @@ where
                     if builder.num_tuples() >= chunk_size && any_values {
                         builder.push_key(&*key);
                         let result = builder.done();
-                        yield (result, false);
+                        yield (result, false, delta_cursor.position());
                         builder =
                             O::Builder::with_capacity(&self.factories.output_factories, chunk_size + 1);
                         any_values = false;
@@ -530,7 +530,7 @@ where
 
             let result = builder.done();
 
-            yield (result, true)
+            yield (result, true, delta_cursor.position())
         }
     }
 }

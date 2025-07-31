@@ -9,8 +9,8 @@ use crate::{
         Factory, Vector, WeightTrait,
     },
     trace::{
-        Batch, BatchFactories, BatchReader, BatchReaderFactories, Batcher, Builder, Cursor, Filter,
-        Trace,
+        cursor::Position, Batch, BatchFactories, BatchReader, BatchReaderFactories, Batcher,
+        Builder, Cursor, Filter, Trace,
     },
     DBData, DBWeight, NumEntries, Timestamp,
 };
@@ -1126,6 +1126,10 @@ where
         }
 
         self.val_valid = true;
+    }
+
+    fn position(&self) -> Option<Position> {
+        None
     }
 }
 

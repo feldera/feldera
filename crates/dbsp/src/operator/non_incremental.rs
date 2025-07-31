@@ -3,7 +3,7 @@ use crate::{
         circuit_builder::{CircuitBase, NonIterativeCircuit},
         operator_traits::{ImportOperator, Operator},
         runtime::Consensus,
-        schedule::{DynamicScheduler, Executor, Scheduler},
+        schedule::{DynamicScheduler, Executor, FlushProgress, Scheduler},
         OwnershipPreference,
     },
     operator::Generator,
@@ -123,6 +123,10 @@ where
 
     fn is_flush_complete(&self) -> bool {
         !*self.flush.borrow()
+    }
+
+    fn flush_progress(&self) -> FlushProgress {
+        FlushProgress::new()
     }
 }
 

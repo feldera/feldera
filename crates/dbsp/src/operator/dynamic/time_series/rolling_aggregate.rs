@@ -29,7 +29,7 @@ use crate::{
         Builder, Cursor, Spine, SpineSnapshot,
     },
     utils::Tup2,
-    Circuit, DBData, DBWeight, DynZWeight, RootCircuit, Stream, ZWeight,
+    Circuit, DBData, DBWeight, DynZWeight, Position, RootCircuit, Stream, ZWeight,
 };
 use async_stream::stream;
 use dyn_clone::{clone_box, DynClone};
@@ -829,7 +829,7 @@ where
         input_trace: Cow<'_, Spine<T>>,
         radix_tree: Cow<'_, Spine<RT>>,
         output_trace: Cow<'_, Spine<OT>>,
-    ) -> impl AsyncStream<Item = (O, bool)> + 'static {
+    ) -> impl AsyncStream<Item = (O, bool, Option<Position>)> + 'static {
         let chunk_size = splitter_output_chunk_size();
 
         if let Some(input_delta) = input_delta.as_ref().as_ref() {
@@ -857,7 +857,7 @@ where
 
         stream! {
             if !*self.flush.borrow() {
-                yield (O::dyn_empty(&self.output_factories), true);
+                yield (O::dyn_empty(&self.output_factories), true, None);
                 return;
             }
 
@@ -908,7 +908,7 @@ where
 
                             if retraction_builder.num_tuples() >= chunk_size {
                                 retraction_builder.push_key(delta_cursor.key());
-                                yield (retraction_builder.done(), false);
+                                yield (retraction_builder.done(), false, delta_cursor.position());
                                 any_values = false;
                                 retraction_builder = O::Builder::with_capacity(&self.output_factories, chunk_size);
                             }
@@ -972,7 +972,7 @@ where
                                 if insertion_builder.num_tuples() >= chunk_size {
                                     insertion_builder.push_key(delta_cursor.key());
                                     any_values = false;
-                                    yield (insertion_builder.done(), false);
+                                    yield (insertion_builder.done(), false, delta_cursor.position());
                                     insertion_builder =
                                         O::Builder::with_capacity(&self.output_factories, chunk_size);
                                 }
@@ -997,7 +997,7 @@ where
             let retractions = retraction_builder.done();
             let insertions = insertion_builder.done();
 
-            yield (merge_batches(&insertions.factories(), [insertions,retractions], &None, &None), true);
+            yield (merge_batches(&insertions.factories(), [insertions,retractions], &None, &None), true, delta_cursor.position());
         }
     }
 }

@@ -46,23 +46,26 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use crate::circuit::{
-    runtime::{Consensus, Runtime},
-    schedule::{
-        util::{circuit_graph, ownership_constraints},
-        Error, Scheduler,
+use crate::{
+    circuit::{
+        runtime::{Consensus, Runtime},
+        schedule::{
+            util::{circuit_graph, ownership_constraints},
+            Error, FlushProgress, Scheduler,
+        },
+        trace::SchedulerEvent,
+        Circuit, GlobalNodeId, NodeId,
     },
-    trace::SchedulerEvent,
-    Circuit, GlobalNodeId, NodeId,
+    Position,
 };
 use petgraph::algo::toposort;
 use tokio::{select, sync::Notify, task::JoinSet};
 
-#[derive(PartialEq, Eq, Debug)]
+#[derive(Debug)]
 enum FlushState {
     UnflushedDependencies(usize),
-    Started,
-    Completed,
+    Started(Option<Position>),
+    Completed(Option<Position>),
 }
 
 /// A task is a unit of work scheduled by the dynamic scheduler.
@@ -143,7 +146,7 @@ struct Inner {
 
     /// Currently running tasks. Each task returns node id along with status,
     /// so that the scheduler can match it back to the circuit node.
-    handles: JoinSet<(NodeId, Result<(), Error>)>,
+    handles: JoinSet<(NodeId, Result<Option<Position>, Error>)>,
 
     /// True when the scheduler is waiting for at least one task to become ready.
     waiting: bool,
@@ -364,9 +367,9 @@ impl Inner {
 
         let circuit = circuit.clone();
 
-        if self.flush && task.flush_state == FlushState::UnflushedDependencies(0) {
+        if self.flush && matches!(task.flush_state, FlushState::UnflushedDependencies(0)) {
             circuit.flush_node(node_id);
-            task.flush_state = FlushState::Started;
+            task.flush_state = FlushState::Started(None);
         }
 
         self.handles.spawn_local(async move {
@@ -407,6 +410,24 @@ impl Inner {
 
     fn is_flush_complete(&self) -> bool {
         self.flush_complete
+    }
+
+    fn flush_progress(&self) -> FlushProgress {
+        let mut flush_progress = FlushProgress::new();
+
+        for (node_id, task) in self.tasks.iter() {
+            match &task.flush_state {
+                FlushState::UnflushedDependencies(_) => flush_progress.add_remaining(*node_id),
+                FlushState::Completed(progress) => {
+                    flush_progress.add_completed(*node_id, progress.clone())
+                }
+                FlushState::Started(progress) => {
+                    flush_progress.add_in_progress(*node_id, progress.clone())
+                }
+            }
+        }
+
+        flush_progress
     }
 
     async fn microstep<C>(&mut self, circuit: &C) -> Result<(), Error>
@@ -518,24 +539,30 @@ impl Inner {
                         self.tasks.get_mut(&node_id).unwrap().is_ready = false;
                     }
 
-                    if let Err(error) = task_result {
-                        self.abort().await;
-                        return Err(error);
-                    }
+                    let progress = match task_result {
+                        Ok(progress) => progress,
+                        Err(e) => {
+                            self.abort().await;
+                            return Err(e);
+                        }
+                    };
 
                     if Runtime::kill_in_progress() {
                         self.abort().await;
                         return Err(Error::Killed);
                     }
 
-                    let flush_complete = if self.tasks[&node_id].flush_state == FlushState::Started
-                        && circuit.is_flush_complete(node_id)
-                    {
-                        self.tasks.get_mut(&node_id).unwrap().flush_state = FlushState::Completed;
-                        self.unflushed_operators -= 1;
-                        true
-                    } else {
-                        false
+                    let flush_complete = match &mut self.tasks.get_mut(&node_id).unwrap().flush_state {
+                        flush_state@FlushState::Started(_) if circuit.is_flush_complete(node_id) => {
+                            *flush_state = FlushState::Completed(progress);
+                            self.unflushed_operators -= 1;
+                            true
+                        }
+                        FlushState::Started(prog) => {
+                            *prog = progress;
+                            false
+                        }
+                        _ => false
                     };
 
                     // Are we done?
@@ -642,6 +669,10 @@ impl Scheduler for DynamicScheduler {
 
     fn is_flush_complete(&self) -> bool {
         self.inner().is_flush_complete()
+    }
+
+    fn flush_progress(&self) -> super::FlushProgress {
+        self.inner().flush_progress()
     }
 
     // async fn finish_step<C>(&self, circuit: &C) -> Result<(), Error>

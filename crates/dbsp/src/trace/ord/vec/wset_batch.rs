@@ -6,6 +6,7 @@ use crate::{
         LeanVec, WeightTrait, WeightTraitTyped, WithFactory,
     },
     trace::{
+        cursor::Position,
         deserialize_wset,
         layers::{Cursor as _, Leaf, LeafCursor, LeafFactories, Trie},
         ord::merge_batcher::MergeBatcher,
@@ -525,6 +526,13 @@ impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> Cursor<K, DynUnit, (), R>
 
     fn fast_forward_vals(&mut self) {
         self.valid = true;
+    }
+
+    fn position(&self) -> Option<Position> {
+        Some(Position {
+            total: self.cursor.keys() as u64,
+            offset: self.cursor.position() as u64,
+        })
     }
 }
 
