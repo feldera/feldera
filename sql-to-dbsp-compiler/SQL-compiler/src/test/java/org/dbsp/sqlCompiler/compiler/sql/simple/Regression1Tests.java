@@ -688,6 +688,18 @@ public class Regression1Tests extends SqlIoTest {
     }
 
     @Test
+    public void issue4483() {
+        this.getCCS("""
+                CREATE TABLE row_tbl(
+                c1 INT NOT NULL,
+                c2 VARCHAR,
+                c3 VARCHAR)WITH ('append_only' = 'true');
+                CREATE MATERIALIZED VIEW row_max AS SELECT
+                MAX(ROW(c1, c2, c3)) AS c1
+                FROM row_tbl;""");
+    }
+
+    @Test
     public void issue4467b() {
         var ccs = this.getCCS("""
                 CREATE TABLE tbl(arr VARCHAR ARRAY, str VARCHAR);

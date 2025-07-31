@@ -189,6 +189,20 @@ public class MultiCrateTests extends BaseSQLTests {
     }
 
     @Test
+    public void issue4483() throws IOException, SQLException, InterruptedException {
+        String sql = """
+                CREATE TABLE row_tbl(
+                c1 INT NOT NULL,
+                c2 VARCHAR,
+                c3 VARCHAR)WITH ('append_only' = 'true');
+                CREATE MATERIALIZED VIEW row_max AS SELECT
+                MAX(ROW(c1, c2, c3)) AS c1
+                FROM row_tbl;""";
+        File file = createInputScript(sql);
+        this.compileToMultiCrate(file.getAbsolutePath(), true);
+    }
+
+    @Test
     public void testPackagedDemos() throws SQLException, IOException, InterruptedException {
         // Also tests issue 3903
         final String projectsDirectory = "../../demo/packaged/sql";

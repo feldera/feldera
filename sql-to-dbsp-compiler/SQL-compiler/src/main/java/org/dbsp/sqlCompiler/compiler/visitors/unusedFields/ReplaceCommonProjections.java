@@ -24,14 +24,11 @@ import java.util.Map;
 
 public class ReplaceCommonProjections extends CircuitCloneVisitor {
     final FindCommonProjections fcp;
-    /** For each operator which is replaced with a narrower one, the replacement.
-     * We cannot use the {@link CircuitCloneVisitor#map} function, because that one requires the same output type. */
-    final Map<DBSPOperator, OutputPort> narrowed;
 
     public ReplaceCommonProjections(DBSPCompiler compiler, FindCommonProjections fcp) {
         super(compiler, false);
         this.fcp = fcp;
-        this.narrowed = new HashMap<>();
+        this.preservesTypes = false;
     }
 
     public boolean process(DBSPSimpleOperator operator) {
@@ -52,8 +49,7 @@ public class ReplaceCommonProjections extends CircuitCloneVisitor {
                         CalciteEmptyRel.INSTANCE, projection, replace.outputPort())
                         .addAnnotation(new IsProjection(size), DBSPSimpleOperator.class);
             }
-            this.addOperator(result);
-            Utilities.putNew(this.narrowed, operator, result.outputPort());
+            this.map(operator, result);
             return true;
         }
         return false;
@@ -85,10 +81,10 @@ public class ReplaceCommonProjections extends CircuitCloneVisitor {
 
     @Override
     public void postorder(DBSPMapOperator operator) {
+        OutputPort source = this.mapped(operator.input());
         if (this.fcp.inputProjection.containsKey(operator) &&
-                // If we forgot to call process(input) the source won't be there
-            this.narrowed.containsKey(operator.input().node())) {
-            OutputPort source = Utilities.getExists(this.narrowed, operator.input().node());
+                // Source of this operator has been narrowed
+                !source.outputType().sameType(operator.input().outputType())) {
             DBSPClosureExpression projection = this.fcp.inputProjection.get(operator);
             int size = source.outputType().getToplevelFieldCount();
             DBSPSimpleOperator result = new DBSPMapOperator(
@@ -103,10 +99,10 @@ public class ReplaceCommonProjections extends CircuitCloneVisitor {
 
     @Override
     public void postorder(DBSPMapIndexOperator operator) {
+        OutputPort source = this.mapped(operator.input());
         if (this.fcp.inputProjection.containsKey(operator) &&
-                // If we forgot to call process(input) the source won't be there
-                this.narrowed.containsKey(operator.input().node())) {
-            OutputPort source = Utilities.getExists(this.narrowed, operator.input().node());
+                // Source of this operator has been narrowed
+                !source.outputType().sameType(operator.input().outputType())) {
             DBSPClosureExpression projection = this.fcp.inputProjection.get(operator);
             int size = source.outputType().getToplevelFieldCount();
             DBSPSimpleOperator result = new DBSPMapIndexOperator(

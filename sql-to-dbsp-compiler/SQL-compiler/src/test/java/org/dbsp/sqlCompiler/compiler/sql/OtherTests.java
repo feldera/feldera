@@ -78,6 +78,7 @@ import java.io.FileWriter;
 import java.io.FilenameFilter;
 import java.io.IOException;
 import java.io.PrintStream;
+import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.sql.DriverManager;
@@ -633,6 +634,17 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         JsonDecoder decoder = new JsonDecoder(cc.compiler.sqlToRelCompiler.typeFactory);
         DBSPCircuit decoded = decoder.decodeOuter(parsed, DBSPCircuit.class);
         Assert.assertNotNull(decoded);
+    }
+
+    @Test
+    public void compileAggregationTests() throws URISyntaxException, IOException {
+        List<String> tests = TestUtil.enumerateResourceFiles();
+        for (String sqlFile: tests) {
+            if (!sqlFile.endsWith("sql")) continue;
+            if (!sqlFile.startsWith("aggregation_tests")) continue;
+            String sql = TestUtil.readStringFromResourceFile(sqlFile);
+            this.getCC(sql);
+        }
     }
 
     @Test @Ignore("To be invoked manually every time a new function is added")
