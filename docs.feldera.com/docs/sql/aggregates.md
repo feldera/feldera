@@ -324,3 +324,96 @@ year | desks | tables | chairs
 2023 |     1 |     2  |
 (3 rows)
 ```
+
+## On the efficiency of aggregates computations
+
+Computing aggregates incrementally is very different from standard
+aggregate evaluation in typical SQL engines.  Some of the observations
+in this section pertain to the current state of the implementation,
+and may change in the future as the implementation improves.  Let us
+assume that the size of the collection aggregated is N, the size of
+the current change is D, the total number of groups is G, and the
+*total number of elements* in the modified groups is M.  Always N > D,
+and N > M > G.
+
+All aggregation functions need to store the result of the aggregation
+internally -- one value per group, so their space overhead is at least
+O(G), but it may be more.
+
+### Window aggregates
+
+Window aggregates (e.g., using `OVER`) are incrementally evaluated for
+each window which changes when a new change is ingested, but are
+otherwise insensitive to the choice of aggregation function or the
+data type.
+
+Window aggregation functions need to store the entire collection that
+is being aggregated -- the space overhead is thus O(N).  The work
+performed is expected to be O(D log N).
+
+### `DISTINCT`
+
+The `DISTINCT` operation can be used with an aggregation or in a
+`SELECT` statement; in both cases the cost of `DISTINCT` is O(N) in
+space and O(D log M) in work.
+
+### Linear aggregation functions
+
+A linear aggregation function can compute the change in an aggregate
+only by looking at the new change -- irrespective of the previous
+value of the aggregate.  Linear aggregation functions comprise:
+
+- `COUNT`
+- `SUM` for all integer, unsigned, and `DECIMAL` data types
+- `AVG` for all integer, unsigned, and `DECIMAL` data types
+- `STDDEV`, `STDDEV_SAMP`, `STDDEV_POP` for all integer, unsigned, and
+   `DECIMAL` data types (note: our current implementation of `STDDEV`
+   is not as efficient as possible)
+
+The space overhead for linear functions is O(G).  The work performed
+for each change is O(D).
+
+### Non-linear aggregation functions
+
+Using a `FILTER` with an aggregation function in general makes it
+non-linear, so using `WHERE` is preferred to using `FILTER`.
+Sometimes the compiler can automatically decompose such an aggregate
+into a filter followed by a standard aggregate.
+
+`COUNTIF` is the same as `COUNT ... FILTER`.
+
+The following functions are non-linear, and require O(N) space and
+O(M) work:
+
+- `BIT_OR`, `BIT_XOR`, `BIT_AND`
+
+Any of the functions listed above as linear are actually non-linear
+when applied to `DOUBLE` or `FLOAT` values.
+
+### Efficient aggregation functions
+
+The following aggregation functions require O(N) space but perform
+only O(D log M) work.
+
+- `MAX`, `MIN`, `ARG_MAX`, `ARG_MIN`
+- `LOGICAL_AND`, `BOOL_AND`, `LOGICAL_OR`, `BOOL_OR`, `EVERY`, `SOME`
+
+### Append only collections
+
+Some aggregates can have more efficient implementations when applied
+to append-only collections.  A table property can be used to indicate
+whether a table is [append-only](streaming.md#append-only-tables).
+Operations such as SELECT, WHERE, JOIN, UNNEST applied to append-only
+collections produce append-only results.  Note the results of
+aggregation are essentially never append-only.
+
+- `MAX`, `MIN`, `ARG_MAX`, `ARG_MIN` are significantly more efficient
+  for append-only collections.  They require O(G) space and O(D) work.
+
+### Expensive aggregation functions
+
+- `ARRAY_AGG` is very expensive, both in terms of space and time.
+  Space cost is O(N), while work performed is proportional O(M).
+
+- The two constructors `ARRAY` and `MAP` with subqueries as arguments
+  have similar costs.
