@@ -1,6 +1,7 @@
 //! A generic cursor implementation merging multiple cursors.
 
 use crate::dynamic::{DataTrait, Factory, WeightTrait};
+use crate::trace::cursor::Position;
 use dyn_clone::clone_box;
 use std::marker::PhantomData;
 use std::{any::TypeId, cmp::Ordering};
@@ -543,5 +544,20 @@ where
         self.set_val_direction(Direction::Backward);
         self.maximize_vals();
         self.skip_zero_weight_vals_reverse();
+    }
+
+    fn position(&self) -> Option<Position> {
+        let mut num_keys = 0;
+        let mut current_key = 0;
+
+        for cursor in self.cursors.iter() {
+            let position = cursor.position().unwrap();
+            num_keys += position.total;
+            current_key += position.offset;
+        }
+        Some(Position {
+            total: num_keys,
+            offset: current_key,
+        })
     }
 }

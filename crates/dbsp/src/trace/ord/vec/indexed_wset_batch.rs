@@ -6,6 +6,7 @@ use crate::{
         WeightTraitTyped, WithFactory,
     },
     trace::{
+        cursor::Position,
         deserialize_indexed_wset,
         layers::{
             Cursor as _, Layer, LayerCursor, LayerFactories, Leaf, LeafFactories, OrdOffset, Trie,
@@ -640,6 +641,13 @@ where
 
     fn fast_forward_vals(&mut self) {
         self.cursor.child.fast_forward();
+    }
+
+    fn position(&self) -> Option<Position> {
+        Some(Position {
+            total: self.cursor.keys() as u64,
+            offset: self.cursor.pos() as u64,
+        })
     }
 }
 

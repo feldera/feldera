@@ -26,7 +26,7 @@ use crate::{
     utils::Tup2,
     DBData, Runtime, Timestamp, ZWeight,
 };
-use crate::{NestedCircuit, RootCircuit};
+use crate::{NestedCircuit, Position, RootCircuit};
 use async_stream::stream;
 use futures::Stream as AsyncStream;
 use minitrace::trace;
@@ -435,7 +435,7 @@ impl<Z: IndexedZSet, I> DistinctIncrementalTotal<Z, I> {
         builder: &mut Z::Builder,
         delta_cursor: &mut SpineCursor<Z>,
         any_values: &mut bool,
-    ) -> Option<(Z, bool)> {
+    ) -> Option<(Z, bool, Option<Position>)> {
         if builder.num_tuples() >= self.chunk_size {
             if *any_values {
                 builder.push_key(delta_cursor.key());
@@ -450,7 +450,7 @@ impl<Z: IndexedZSet, I> DistinctIncrementalTotal<Z, I> {
             let result = builder.done();
             *self.num_outputs.borrow_mut() += result.len();
 
-            Some((result, false))
+            Some((result, false, delta_cursor.position()))
         } else {
             None
         }
@@ -492,7 +492,7 @@ where
         self: Rc<Self>,
         delta: &Option<Spine<Z>>,
         delayed_integral: &I,
-    ) -> impl AsyncStream<Item = (Z, bool)> + 'static {
+    ) -> impl AsyncStream<Item = (Z, bool, Option<Position>)> + 'static {
         let delta = delta.as_ref().map(|b| b.ro_snapshot());
 
         let delayed_integral = if delta.is_some() {
@@ -503,7 +503,7 @@ where
 
         stream! {
             let Some(delta) = delta else {
-                yield (Z::dyn_empty(&self.input_factories), true);
+                yield (Z::dyn_empty(&self.input_factories), true, None);
                 return
             };
 
@@ -583,7 +583,7 @@ where
             let result = builder.done();
             *self.num_outputs.borrow_mut() += result.len();
 
-            yield (result, true)
+            yield (result, true, delta_cursor.position())
         }
     }
 }
@@ -817,7 +817,14 @@ where
         }
     }
 
-    fn maybe_yield(&self, result_builder: &mut TupleBuilder<Z::Builder, Z>) -> Option<(Z, bool)> {
+    fn maybe_yield<C>(
+        &self,
+        delta_cursor: &C,
+        result_builder: &mut TupleBuilder<Z::Builder, Z>,
+    ) -> Option<(Z, bool, Option<Position>)>
+    where
+        C: Cursor<Z::Key, Z::Val, Z::Time, Z::R>,
+    {
         if result_builder.num_tuples() >= self.chunk_size {
             let builder = std::mem::replace(
                 result_builder,
@@ -831,7 +838,7 @@ where
             *self.empty_output.borrow_mut() &= result.is_empty();
             *self.num_outputs.borrow_mut() += result.len();
 
-            Some((result, false))
+            Some((result, false, delta_cursor.position()))
         } else {
             None
         }
@@ -953,7 +960,7 @@ where
         self: Rc<Self>,
         delta: &Option<Spine<Z>>,
         trace: &T,
-    ) -> impl AsyncStream<Item = (Z, bool)> + 'static {
+    ) -> impl AsyncStream<Item = (Z, bool, Option<Position>)> + 'static {
         let delta = delta.as_ref().map(|b| b.ro_snapshot());
 
         let trace = if delta.is_some() {
@@ -966,7 +973,7 @@ where
 
         stream! {
             let Some(delta) = delta else {
-                yield (Z::dyn_empty(&self.input_factories), true);
+                yield (Z::dyn_empty(&self.input_factories), true, None);
                 return;
             };
 
@@ -1015,7 +1022,7 @@ where
                                     &mut result_builder,
                                     &mut *item,
                                 );
-                                if let Some(output) = self.maybe_yield(&mut result_builder) {
+                                if let Some(output) = self.maybe_yield(&delta_cursor, &mut result_builder) {
                                     yield output;
                                 }
                                 delta_cursor.step_val();
@@ -1035,7 +1042,7 @@ where
                                     &mut result_builder,
                                     &mut *item,
                                 );
-                                if let Some(output) = self.maybe_yield(&mut result_builder) {
+                                if let Some(output) = self.maybe_yield(&delta_cursor, &mut result_builder) {
                                     yield output;
                                 }
                                 keys_of_interest_cursor.step_val();
@@ -1084,7 +1091,7 @@ where
                                         keys_of_interest_cursor.step_val();
                                     }
                                 }
-                                if let Some(output) = self.maybe_yield(&mut result_builder) {
+                                if let Some(output) = self.maybe_yield(&delta_cursor, &mut result_builder) {
                                     yield output;
                                 }
                             }
@@ -1098,7 +1105,7 @@ where
                                     &mut result_builder,
                                     &mut *item,
                                 );
-                                if let Some(output) = self.maybe_yield(&mut result_builder) {
+                                if let Some(output) = self.maybe_yield(&delta_cursor, &mut result_builder) {
                                     yield output;
                                 }
                                 delta_cursor.step_val();
@@ -1114,7 +1121,7 @@ where
                                     &mut result_builder,
                                     &mut *item,
                                 );
-                                if let Some(output) = self.maybe_yield(&mut result_builder) {
+                                if let Some(output) = self.maybe_yield(&delta_cursor, &mut result_builder) {
                                     yield output;
                                 }
                                 keys_of_interest_cursor.step_val();
@@ -1139,7 +1146,7 @@ where
                             &mut result_builder,
                             &mut *item,
                         );
-                        if let Some(output) = self.maybe_yield(&mut result_builder) {
+                        if let Some(output) = self.maybe_yield(&delta_cursor, &mut result_builder) {
                             yield output;
                         }
                         delta_cursor.step_val();
@@ -1160,7 +1167,7 @@ where
                             &mut result_builder,
                             &mut *item,
                         );
-                        if let Some(output) = self.maybe_yield(&mut result_builder) {
+                        if let Some(output) = self.maybe_yield(&delta_cursor, &mut result_builder) {
                             yield output;
                         }
                         keys_of_interest_cursor.step_val();
@@ -1172,7 +1179,7 @@ where
             let result = result_builder.done();
             *self.empty_output.borrow_mut() &= result.is_empty();
             *self.num_outputs.borrow_mut() += result.len();
-            yield (result, true);
+            yield (result, true, delta_cursor.position());
         }
     }
 }
