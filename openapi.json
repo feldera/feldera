@@ -6743,20 +6743,18 @@
         "type": "object",
         "properties": {
           "cpu_cores_max": {
-            "type": "integer",
-            "format": "int64",
+            "type": "number",
+            "format": "double",
             "description": "The maximum number of CPU cores to reserve\nfor an instance of this pipeline",
             "default": null,
-            "nullable": true,
-            "minimum": 0
+            "nullable": true
           },
           "cpu_cores_min": {
-            "type": "integer",
-            "format": "int64",
+            "type": "number",
+            "format": "double",
             "description": "The minimum number of CPU cores to reserve\nfor an instance of this pipeline",
             "default": null,
-            "nullable": true,
-            "minimum": 0
+            "nullable": true
           },
           "memory_mb_max": {
             "type": "integer",
