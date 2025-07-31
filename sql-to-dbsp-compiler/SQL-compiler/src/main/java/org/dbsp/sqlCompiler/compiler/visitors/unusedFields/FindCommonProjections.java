@@ -24,8 +24,7 @@ import java.util.Objects;
 
 /** Find operators that have multiple outputs that are all projections.
  * Compute for each such operator a projection that is the "largest", and use it
- * as a root of a tree of projections.
- */
+ * as a root of a tree of projections; that replacement is done in {@link ReplaceCommonProjections}. */
 public class FindCommonProjections extends CircuitWithGraphsVisitor {
     /** For each operator that has multiple projection successors, this is the "largest" projection */
     public final Map<DBSPOperator, DBSPClosureExpression> outputProjection;

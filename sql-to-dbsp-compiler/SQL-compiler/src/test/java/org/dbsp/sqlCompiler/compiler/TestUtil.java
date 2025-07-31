@@ -5,10 +5,15 @@ import org.dbsp.util.Utilities;
 import org.junit.Assert;
 
 import java.io.BufferedReader;
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.net.URISyntaxException;
+import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Objects;
 
 public class TestUtil {
@@ -29,6 +34,22 @@ public class TestUtil {
             }
         }
         return result.toString();
+    }
+
+    /** Enumerate all files in the test resources directory */
+    public static List<String> enumerateResourceFiles() throws URISyntaxException {
+        List<String> result = new ArrayList<>();
+        URL dirURL = Thread.currentThread().getContextClassLoader().getResource(".");
+        if (dirURL != null && dirURL.getProtocol().equals("file")) {
+            File folder = new File(dirURL.toURI());
+            File[] files = folder.listFiles();
+            if (files != null) {
+                for (File file : files) {
+                    result.add(file.getName());
+                }
+            }
+        }
+        return result;
     }
 
     /** Check that the messages contain the specified substring.
