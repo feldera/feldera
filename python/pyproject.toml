@@ -42,4 +42,5 @@ dev-dependencies = [
     "pytest>=8.3.5",
     "sphinx-rtd-theme==2.0.0",
     "sphinx==7.3.7",
+    "simplejson==3.20.1"
 ]
