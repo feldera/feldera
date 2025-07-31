@@ -67,7 +67,6 @@ being written to:
 - `GetObject`
 - `PutObject`
 - `PutObjectACL`
-- `CreateBucket`
 
 Example policy:
 
@@ -123,6 +122,20 @@ Example:
         "flags": ["--s3-server-side-encryption", "aws:kms"]
       }
 ```
+
+## Performance
+
+| Storage Type | Avg Upload Speed | Avg Download Speed | Avg Download Speed (Ignore Checksum) |
+|--------------|------------------|--------------------|--------------------------------------|
+| GP3          | 650 MiB/s        | 650 MiB/s          | 850 MiB/s                            |
+| GP2          | 125 MiB/s        | 125 MiB/s          | 250 MiB/s                            |
+| NVMe         | 1.5 GiB/s        | 2.2 GiB/s          | 2.3 GiB/s                            |
+
+- GP3 was configured with throughput of 1000 MB/s, and IOPS of 10,000.
+- GP2 has the max throughput of 250 MB/s.
+- Both GP2 and GP3 can briefly hit maximum download speeds of around 1 GiB/s, but performance quickly drops off.
+- NVMe speeds were tested on i4i.4xlarge instance type.
+- Performance may improve by tuning sync parameters such as `transfers`, `checkers`, `upload_concurrency` etc.
 
 ## Triggering a checkpoint sync
 
