@@ -290,20 +290,26 @@ impl DirectoryContent {
                         let path = entry.path();
                         let Some(name) = entry.file_name().to_str().map(|v| v.to_string()) else {
                             return Err(UtilError::InvalidDirEntry(format!(
-                                "Directory entry does not valid UTF-8 file name: '{}'",
+                                "Directory entry is not valid UTF-8 file name: '{}'",
                                 path.display()
                             )));
                         };
 
                         // Entry type
-                        if path.is_symlink() {
+                        let file_type = entry.file_type().await.map_err(|e| {
+                            UtilError::IoError(
+                                format!("obtain file type of: '{}'", path.display(),),
+                                e,
+                            )
+                        })?;
+                        if file_type.is_symlink() {
                             return Err(UtilError::InvalidDirEntry(format!(
                                 "Directory entry is a symlink, which is not allowed: '{}'",
                                 path.display()
                             )));
-                        } else if path.is_file() {
+                        } else if file_type.is_file() {
                             content.push((path, name.to_string(), true))
-                        } else if path.is_dir() {
+                        } else if file_type.is_dir() {
                             content.push((path, name.to_string(), false))
                         } else {
                             return Err(UtilError::InvalidDirEntry(format!(

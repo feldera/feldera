@@ -73,8 +73,7 @@ pub async fn rust_compiler_task(
         let mut unexpected_error = false;
 
         // Clean up
-        if last_cleanup.is_none() || last_cleanup.is_some_and(|ts| ts.elapsed() >= CLEANUP_INTERVAL)
-        {
+        if last_cleanup.is_none_or(|ts| ts.elapsed() >= CLEANUP_INTERVAL) {
             if let Err(e) = cleanup_rust_compilation(&config, db.clone()).await {
                 match e {
                     RustCompilationCleanupError::Database(e) => {
