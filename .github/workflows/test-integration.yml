@@ -187,7 +187,7 @@ jobs:
         run: uv run --locked pytest . --timeout=600
         working-directory: python
         env:
-          FELDERA_BASE_URL: http://localhost:8080
+          FELDERA_HOST: http://localhost:8080
           IN_CI: 1 # We use this flag to skip some kafka tests in the python code base
 
       - name: Run python tests
@@ -195,5 +195,5 @@ jobs:
         run: uv run --locked ./tests/run-all-tests.sh
         working-directory: python
         env:
-          FELDERA_BASE_URL: http://localhost:8080
+          FELDERA_HOST: http://localhost:8080
           PYTHONPATH: ${{ github.workspace }}/python

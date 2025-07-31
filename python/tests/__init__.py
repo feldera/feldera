@@ -3,7 +3,11 @@ import os
 import unittest
 
 API_KEY = os.environ.get("FELDERA_API_KEY")
-BASE_URL = os.environ.get("FELDERA_BASE_URL", "http://localhost:8080")
+BASE_URL = (
+    os.environ.get("FELDERA_BASE_URL")  # deprecated
+    or os.environ.get("FELDERA_HOST")
+    or "http://localhost:8080"
+)
 KAFKA_SERVER = os.environ.get("FELDERA_KAFKA_SERVER", "localhost:19092")
 PIPELINE_TO_KAFKA_SERVER = os.environ.get(
     "FELDERA_PIPELINE_TO_KAFKA_SERVER", "redpanda:9092"
