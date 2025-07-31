@@ -19,7 +19,7 @@ use crate::{
         spine_async::WithSnapshot, BatchFactories, BatchReader, BatchReaderFactories, Cursor,
         Spine, SpineSnapshot,
     },
-    Error, RootCircuit, Runtime,
+    Error, Position, RootCircuit, Runtime,
 };
 use async_stream::stream;
 use feldera_storage::StoragePath;
@@ -273,13 +273,14 @@ where
     // builder API to construct the output batch.  This requires processing
     // regions in order + extra care to iterate over `batch` and `trace` jointly
     // in region3.
+    // TODO: Accurate progress tracking. We currently just yield `None` every time.
     #[trace]
     fn eval(
         self: Rc<Self>,
         trace: Cow<'_, T>,
         delta: Cow<'_, Option<Spine<B>>>,
         bounds: Cow<'_, (Box<B::Key>, Box<B::Key>)>,
-    ) -> impl AsyncStream<Item = (B, bool)> + 'static {
+    ) -> impl AsyncStream<Item = (B, bool, Option<Position>)> + 'static {
         let chunk_size = splitter_output_chunk_size();
 
         if let Some(delta) = &*delta {
@@ -301,7 +302,7 @@ where
                 *self.flush.borrow_mut() = false;
                 self.delta.take().unwrap()
             } else {
-                yield (B::dyn_empty(&self.factories), true);
+                yield (B::dyn_empty(&self.factories), true, None);
                 return;
             };
 
@@ -348,7 +349,7 @@ where
                         tuples.push_val(&mut *tuple);
 
                         if tuples.len() >= chunk_size {
-                            yield (B::dyn_from_tuples(&self.factories, (), &mut tuples), false);
+                            yield (B::dyn_from_tuples(&self.factories, (), &mut tuples), false, None);
                             tuples = self.factories.weighted_items_factory().default_box();
                             tuples.reserve(chunk_size);
                         }
@@ -377,7 +378,7 @@ where
                             tuples.push_val(&mut *tuple);
 
                             if tuples.len() >= chunk_size {
-                                yield (B::dyn_from_tuples(&self.factories, (), &mut tuples), false);
+                                yield (B::dyn_from_tuples(&self.factories, (), &mut tuples), false, None);
                                 tuples = self.factories.weighted_items_factory().default_box();
                                 tuples.reserve(chunk_size);
                             }
@@ -407,7 +408,7 @@ where
                         tuples.push_val(&mut *tuple);
 
                         if tuples.len() >= chunk_size {
-                            yield (B::dyn_from_tuples(&self.factories, (), &mut tuples), false);
+                            yield (B::dyn_from_tuples(&self.factories, (), &mut tuples), false, None);
                             tuples = self.factories.weighted_items_factory().default_box();
                             tuples.reserve(chunk_size);
                         }
@@ -433,7 +434,7 @@ where
                     tuples.push_val(&mut *tuple);
 
                     if tuples.len() >= chunk_size {
-                        yield (B::dyn_from_tuples(&self.factories, (), &mut tuples), false);
+                        yield (B::dyn_from_tuples(&self.factories, (), &mut tuples), false, None);
                         tuples = self.factories.weighted_items_factory().default_box();
                         tuples.reserve(chunk_size);
                     }
@@ -444,7 +445,7 @@ where
             }
 
             *self.window.borrow_mut() = Some((start1, end1));
-            yield (B::dyn_from_tuples(&self.factories, (), &mut tuples), true);
+            yield (B::dyn_from_tuples(&self.factories, (), &mut tuples), true, None);
         }
     }
 }

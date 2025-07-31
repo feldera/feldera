@@ -3,12 +3,12 @@
 #![allow(async_fn_in_trait)]
 
 use super::{trace::SchedulerEvent, Circuit, GlobalNodeId, NodeId};
-use crate::DetailedError;
+use crate::{DetailedError, Position};
 use itertools::Itertools;
 use serde::Serialize;
 use std::{
     borrow::Cow,
-    collections::BTreeSet,
+    collections::{BTreeMap, BTreeSet},
     error::Error as StdError,
     fmt::{Display, Error as FmtError, Formatter},
     future::Future,
@@ -89,6 +89,118 @@ impl Display for Error {
 
 impl StdError for Error {}
 
+#[derive(Debug)]
+pub struct FlushProgress {
+    completed: BTreeMap<NodeId, Option<Position>>,
+    in_progress: BTreeMap<NodeId, Option<Position>>,
+    remaining: BTreeSet<NodeId>,
+}
+
+impl Default for FlushProgress {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl FlushProgress {
+    pub fn new() -> Self {
+        Self {
+            completed: BTreeMap::new(),
+            in_progress: BTreeMap::new(),
+            remaining: BTreeSet::new(),
+        }
+    }
+
+    pub fn add_remaining(&mut self, node_id: NodeId) {
+        self.remaining.insert(node_id);
+    }
+
+    pub fn add_completed(&mut self, node_id: NodeId, progress: Option<Position>) {
+        debug_assert!(!self.completed.contains_key(&node_id));
+        debug_assert!(!self.in_progress.contains_key(&node_id));
+        debug_assert!(!self.remaining.contains(&node_id));
+
+        self.completed.insert(node_id, progress);
+    }
+
+    pub fn add_in_progress(&mut self, node_id: NodeId, progress: Option<Position>) {
+        debug_assert!(!self.completed.contains_key(&node_id));
+        debug_assert!(!self.in_progress.contains_key(&node_id));
+        debug_assert!(!self.remaining.contains(&node_id));
+
+        self.in_progress.insert(node_id, progress);
+    }
+
+    pub fn summary(&self) -> FlushProgressSummary {
+        let completed = self.completed.len() as u64;
+        let in_progress = self.in_progress.len() as u64;
+        let remaining = self.remaining.len() as u64;
+        let in_progress_processed_records = self
+            .in_progress
+            .values()
+            .map(|progress| progress.as_ref().map(|p| p.offset).unwrap_or_default())
+            .sum();
+
+        let in_progress_total_records = self
+            .in_progress
+            .values()
+            .map(|progress| progress.as_ref().map(|p| p.total).unwrap_or_default())
+            .sum();
+
+        FlushProgressSummary {
+            completed,
+            in_progress,
+            remaining,
+            in_progress_processed_records,
+            in_progress_total_records,
+        }
+    }
+}
+
+pub struct FlushProgressSummary {
+    completed: u64,
+    in_progress: u64,
+    remaining: u64,
+    in_progress_processed_records: u64,
+    in_progress_total_records: u64,
+}
+
+impl Default for FlushProgressSummary {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl FlushProgressSummary {
+    pub fn new() -> Self {
+        Self {
+            completed: 0,
+            in_progress: 0,
+            remaining: 0,
+            in_progress_processed_records: 0,
+            in_progress_total_records: 0,
+        }
+    }
+
+    pub fn merge(&mut self, other: &FlushProgressSummary) {
+        self.completed += other.completed;
+        self.in_progress += other.in_progress;
+        self.remaining += other.remaining;
+        self.in_progress_processed_records += other.in_progress_processed_records;
+        self.in_progress_total_records += other.in_progress_total_records;
+    }
+}
+
+impl Display for FlushProgressSummary {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "completed: {} operators, evaluating: {} operators [{}/{} changes processed], remaining: {} operators",
+            self.completed, self.in_progress, self.in_progress_processed_records, self.in_progress_total_records, self.remaining
+        )
+    }
+}
+
 /// A scheduler defines the order in which nodes in a circuit are evaluated at
 /// runtime.
 ///
@@ -136,6 +248,8 @@ where
 
     fn is_flush_complete(&self) -> bool;
 
+    fn flush_progress(&self) -> FlushProgress;
+
     async fn microstep<C>(&self, circuit: &C) -> Result<(), Error>
     where
         C: Circuit;
@@ -178,6 +292,8 @@ pub trait Executor<C>: 'static {
     fn flush(&self) -> Result<(), Error>;
 
     fn is_flush_complete(&self) -> bool;
+
+    fn flush_progress(&self) -> FlushProgress;
 
     fn start_step<'a>(
         &'a self,
@@ -291,6 +407,10 @@ where
         Ok(())
     }
 
+    fn flush_progress(&self) -> FlushProgress {
+        FlushProgress::new()
+    }
+
     fn is_flush_complete(&self) -> bool {
         true
     }
@@ -354,6 +474,10 @@ where
 
     fn is_flush_complete(&self) -> bool {
         self.scheduler.is_flush_complete()
+    }
+
+    fn flush_progress(&self) -> FlushProgress {
+        self.scheduler.flush_progress()
     }
 }
 
