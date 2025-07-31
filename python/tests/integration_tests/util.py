@@ -9,8 +9,9 @@ from feldera.rest.feldera_client import FelderaClient
 from feldera.runtime_config import RuntimeConfig
 
 
+API_KEY = os.environ.get("FELDERA_API_KEY")
 BASE_URL = os.environ.get("FELDERA_BASE_URL", "http://localhost:8080")
-TEST_CLIENT = FelderaClient(BASE_URL)
+TEST_CLIENT = FelderaClient(BASE_URL, api_key=API_KEY)
 
 
 def datafusionize(query: str) -> str:
