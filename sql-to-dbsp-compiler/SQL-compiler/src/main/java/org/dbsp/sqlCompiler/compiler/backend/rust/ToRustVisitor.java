@@ -448,10 +448,10 @@ public class ToRustVisitor extends CircuitVisitor {
         return json;
     }
 
-    static class FindNestedStructs extends InnerVisitor {
+    public static class FindNestedStructs extends InnerVisitor {
         final List<DBSPTypeStruct> structs;
 
-        FindNestedStructs(DBSPCompiler compiler, List<DBSPTypeStruct> result) {
+        public FindNestedStructs(DBSPCompiler compiler, List<DBSPTypeStruct> result) {
             super(compiler);
             this.structs = result;
         }
