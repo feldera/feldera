@@ -31,6 +31,7 @@ erased-serde = { workspace = true }
 uuid = { workspace = true, features = ["v7"] }
 thiserror = { workspace = true }
 regex = { workspace = true }
+async-nats = { workspace = true }
 
 [dev-dependencies]
 csv = { workspace = true }

@@ -672,6 +672,7 @@ pub fn generate_program_info(
                 .expect("Origin value cannot be None if connectors is non-empty");
             match connector.config.transport {
                 TransportConfig::FileInput(_)
+                | TransportConfig::NatsInput(_)
                 | TransportConfig::KafkaInput(_)
                 | TransportConfig::PubSubInput(_)
                 | TransportConfig::UrlInput(_)
