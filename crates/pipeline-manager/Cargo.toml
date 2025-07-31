@@ -87,7 +87,7 @@ utoipa-swagger-ui = { workspace = true, features = ["actix-web"] }
 # The `rustls-0_23-native-roots` feature is such that when you create a default awc::Client (during auth workflow),
 # it can connect to HTTPS with the system root certificates.
 awc = { workspace = true, features = ["rustls-0_23", "rustls-0_23-native-roots"] }
-reqwest = { workspace = true, features = ["json"]}
+reqwest = { workspace = true, features = ["json", "rustls-tls-native-roots"] }
 cached = { workspace = true }
 crossbeam = { workspace = true }
 

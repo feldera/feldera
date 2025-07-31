@@ -34,9 +34,22 @@ jobs:
           name: feldera-test-binaries-${{ matrix.target }}
           path: build
 
+      - name: Download Compiler Binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: feldera-sql-compiler
+          path: build
+
       # Remove if https://github.com/actions/upload-artifact/issues/38 ever gets fixed
       - name: Make binaries executable
         run: chmod +x ./build/*
+
+        # Copy the sql2dbsp-jar-with-dependencies.jar to the target directory
+        # This is needed for (pipeline-manager) tests
+      - name: Copy feldera-sql-compiler JAR
+        run: |
+          mkdir -p sql-to-dbsp-compiler/SQL-compiler/target
+          cp build/sql2dbsp-jar-with-dependencies.jar sql-to-dbsp-compiler/SQL-compiler/target
 
       - name: feldera-types
         if: ${{ vars.CI_DRY_RUN != 'true' }}
@@ -78,3 +91,12 @@ jobs:
         working-directory: crates/nexmark
         env:
           NEXMARK_ARGS: "--max-events=1000000 --cpu-cores 8 --num-event-generators 8"
+
+      - name: Run all pipeline_manager-* binaries
+        if: ${{ vars.CI_DRY_RUN != 'true' }}
+        run: |
+          for bin in ../../build/pipeline_manager-*; do
+            echo "Running $bin"
+            "$bin"
+          done
+        working-directory: crates/pipeline-manager
