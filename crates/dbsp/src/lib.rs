@@ -105,7 +105,7 @@ pub use operator::{
     input::{IndexedZSetHandle, InputHandle, MapHandle, SetHandle, ZSetHandle},
     CmpFunc, OrdPartitionedIndexedZSet, OutputHandle,
 };
-pub use trace::{DBData, DBWeight};
+pub use trace::{cursor::Position, DBData, DBWeight};
 pub use typed_batch::{
     Batch, BatchReader, FallbackKeyBatch, FallbackValBatch, FallbackWSet, FallbackZSet,
     FileIndexedWSet, FileIndexedZSet, FileKeyBatch, FileValBatch, FileWSet, FileZSet, IndexedZSet,

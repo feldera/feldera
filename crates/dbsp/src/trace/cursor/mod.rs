@@ -28,6 +28,12 @@ enum Direction {
     Backward,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Position {
+    pub total: u64,
+    pub offset: u64,
+}
+
 /// A cursor for `(key, val, time, diff)` tuples.
 ///
 /// A cursor navigates an ordered collection of `(key, val, time, diff)` tuples
@@ -303,6 +309,8 @@ pub trait Cursor<K: ?Sized, V: ?Sized, T, R: ?Sized> {
             }
         }
     }
+
+    fn position(&self) -> Option<Position>;
 }
 
 /// An object that can produce a cursor bounded by its lifetime.
@@ -530,6 +538,10 @@ where
     {
         (**self).seek_keyval_reverse(key, val)
     }
+
+    fn position(&self) -> Option<Position> {
+        (**self).position()
+    }
 }
 
 /// A wrapper around a `dyn Cursor` to allow choice of implementations at runtime.
@@ -667,6 +679,10 @@ where
 
     fn fast_forward_vals(&mut self) {
         self.0.fast_forward_vals()
+    }
+
+    fn position(&self) -> Option<Position> {
+        self.0.position()
     }
 }
 

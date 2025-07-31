@@ -6,19 +6,24 @@ use crate::{
         operator_traits::{BinaryOperator, Operator, QuaternaryOperator, TernaryOperator},
         GlobalNodeId,
     },
-    Error, Scope,
+    Error, Position, Scope,
 };
 use feldera_storage::StoragePath;
 use futures::Stream as AsyncStream;
 use futures_util::StreamExt;
 
 pub trait StreamingBinaryOperator<I1, I2, O>: Operator {
-    fn eval(self: Rc<Self>, lhs: &I1, rhs: &I2) -> impl AsyncStream<Item = (O, bool)> + 'static;
+    fn eval(
+        self: Rc<Self>,
+        lhs: &I1,
+        rhs: &I2,
+    ) -> impl AsyncStream<Item = (O, bool, Option<Position>)> + 'static;
 }
 
 pub struct StreamingBinaryWrapper<I1, I2, O, Op> {
     operator: Rc<Op>,
-    stream: Option<Pin<Box<dyn AsyncStream<Item = (O, bool)>>>>,
+    stream: Option<Pin<Box<dyn AsyncStream<Item = (O, bool, Option<Position>)>>>>,
+    progress: Option<Position>,
     phantom: PhantomData<fn(&I1, &I2, &O)>,
 }
 
@@ -27,6 +32,7 @@ impl<I1, I2, O, Op> StreamingBinaryWrapper<I1, I2, O, Op> {
         Self {
             operator: Rc::new(operator),
             stream: None,
+            progress: None,
             phantom: PhantomData,
         }
     }
@@ -125,6 +131,10 @@ where
     fn is_flush_complete(&self) -> bool {
         self.stream.is_none()
     }
+
+    fn flush_progress(&self) -> Option<Position> {
+        self.progress.clone()
+    }
 }
 
 impl<I1, I2, O, Op> BinaryOperator<I1, I2, O> for StreamingBinaryWrapper<I1, I2, O, Op>
@@ -137,14 +147,16 @@ where
     async fn eval(&mut self, lhs: &I1, rhs: &I2) -> O {
         if self.stream.is_none() {
             self.stream = Some(Box::pin(self.operator.clone().eval(lhs, rhs))
-                as Pin<Box<dyn AsyncStream<Item = (O, bool)>>>);
+                as Pin<Box<dyn AsyncStream<Item = (O, bool, Option<Position>)>>>);
         }
 
         let stream = self.stream.as_mut().unwrap();
 
-        let Some((output, complete)) = stream.next().await else {
+        let Some((output, complete, progress)) = stream.next().await else {
             panic!("StreamingBinaryOperator unexpectedly reached end of stream");
         };
+
+        self.progress = progress;
 
         if complete {
             self.stream = None;
@@ -165,12 +177,13 @@ where
         i1: Cow<'_, I1>,
         i2: Cow<'_, I2>,
         i3: Cow<'_, I3>,
-    ) -> impl AsyncStream<Item = (O, bool)> + 'static;
+    ) -> impl AsyncStream<Item = (O, bool, Option<Position>)> + 'static;
 }
 
 pub struct StreamingTernaryWrapper<I1, I2, I3, O, Op> {
     operator: Rc<Op>,
-    stream: Option<Pin<Box<dyn AsyncStream<Item = (O, bool)>>>>,
+    stream: Option<Pin<Box<dyn AsyncStream<Item = (O, bool, Option<Position>)>>>>,
+    progress: Option<Position>,
     phantom: PhantomData<fn(&I1, &I2, &I3, &O)>,
 }
 
@@ -179,6 +192,7 @@ impl<I1, I2, I3, O, Op> StreamingTernaryWrapper<I1, I2, I3, O, Op> {
         Self {
             operator: Rc::new(operator),
             stream: None,
+            progress: None,
             phantom: PhantomData,
         }
     }
@@ -278,6 +292,10 @@ where
     fn is_flush_complete(&self) -> bool {
         self.stream.is_none()
     }
+
+    fn flush_progress(&self) -> Option<Position> {
+        self.progress.clone()
+    }
 }
 
 impl<I1, I2, I3, O, Op> TernaryOperator<I1, I2, I3, O>
@@ -292,14 +310,16 @@ where
     async fn eval(&mut self, i1: Cow<'_, I1>, i2: Cow<'_, I2>, i3: Cow<'_, I3>) -> O {
         if self.stream.is_none() {
             self.stream = Some(Box::pin(self.operator.clone().eval(i1, i2, i3))
-                as Pin<Box<dyn AsyncStream<Item = (O, bool)>>>);
+                as Pin<Box<dyn AsyncStream<Item = (O, bool, Option<Position>)>>>);
         }
 
         let stream = self.stream.as_mut().unwrap();
 
-        let Some((output, complete)) = stream.next().await else {
+        let Some((output, complete, progress)) = stream.next().await else {
             panic!("StreamingTernaryOperator unexpectedly reached end of stream");
         };
+
+        self.progress = progress;
 
         if complete {
             self.stream = None;
@@ -323,12 +343,13 @@ where
         i2: Cow<'_, I2>,
         i3: Cow<'_, I3>,
         i4: Cow<'_, I4>,
-    ) -> impl AsyncStream<Item = (O, bool)> + 'static;
+    ) -> impl AsyncStream<Item = (O, bool, Option<Position>)> + 'static;
 }
 
 pub struct StreamingQuaternaryWrapper<I1, I2, I3, I4, O, Op> {
     operator: Rc<Op>,
-    stream: Option<Pin<Box<dyn AsyncStream<Item = (O, bool)>>>>,
+    stream: Option<Pin<Box<dyn AsyncStream<Item = (O, bool, Option<Position>)>>>>,
+    progress: Option<Position>,
     phantom: PhantomData<fn(&I1, &I2, &I3, &I4, &O)>,
 }
 
@@ -337,6 +358,7 @@ impl<I1, I2, I3, I4, O, Op> StreamingQuaternaryWrapper<I1, I2, I3, I4, O, Op> {
         Self {
             operator: Rc::new(operator),
             stream: None,
+            progress: None,
             phantom: PhantomData,
         }
     }
@@ -437,6 +459,10 @@ where
     fn is_flush_complete(&self) -> bool {
         self.stream.is_none()
     }
+
+    fn flush_progress(&self) -> Option<Position> {
+        self.progress.clone()
+    }
 }
 
 impl<I1, I2, I3, I4, O, Op> QuaternaryOperator<I1, I2, I3, I4, O>
@@ -458,14 +484,16 @@ where
     ) -> O {
         if self.stream.is_none() {
             self.stream = Some(Box::pin(self.operator.clone().eval(i1, i2, i3, i4))
-                as Pin<Box<dyn AsyncStream<Item = (O, bool)>>>);
+                as Pin<Box<dyn AsyncStream<Item = (O, bool, Option<Position>)>>>);
         }
 
         let stream = self.stream.as_mut().unwrap();
 
-        let Some((output, complete)) = stream.next().await else {
+        let Some((output, complete, progress)) = stream.next().await else {
             panic!("StreamingQuaternaryOperator unexpectedly reached end of stream");
         };
+
+        self.progress = progress;
 
         if complete {
             self.stream = None;
