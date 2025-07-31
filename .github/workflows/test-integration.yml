@@ -55,6 +55,77 @@ jobs:
           docker rm -f pipeline-manager-no-internet || true
           docker network rm no-internet-net || true
 
+  manager-https:
+    if: ${{ !contains(vars.CI_SKIP_JOBS, 'manager-https') }}
+    name: Make sure manager runs with HTTPS
+    runs-on: ubuntu-latest-amd64
+    steps:
+      - name: Download Test Binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: feldera-test-binaries-x86_64-unknown-linux-gnu
+          path: build
+          run-id: ${{ github.event.inputs.run_id || github.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      # Remove if https://github.com/actions/upload-artifact/issues/38 ever gets fixed
+      - name: Make binaries executable
+        run: chmod +x ./build/*
+
+      - name: Login to GHCR with GITHUB_TOKEN
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      - name: Start pipeline-manager in background
+        run: |
+          mkdir test-tls
+          echo -e "[x509_v3]\nsubjectAltName = @alt_names\n\n[alt_names]\nDNS.1 = localhost\nIP.1 = 127.0.0.1\n" > test-tls/x509_v3_test.ext
+          openssl req -x509 -newkey rsa:4096 -nodes -keyout test-tls/tls_test.key -out test-tls/tls_test.crt -days 365 \
+            -subj '/CN=localhost' -config test-tls/x509_v3_test.ext -extensions x509_v3
+          chmod 644 test-tls/tls_test.key
+          docker run -d \
+            --pull missing \
+            --name pipeline-manager-https \
+            --health-cmd='curl --fail --silent --max-time 2 --cacert /home/ubuntu/test-tls/tls_test.crt https://localhost:8080/healthz || exit 1' \
+            --health-interval=10s \
+            --health-timeout=5s \
+            --health-retries=5 \
+            --mount type=bind,src=./test-tls,dst=/home/ubuntu/test-tls,readonly \
+            -p 8080:8080 \
+            ${{ vars.FELDERA_IMAGE_NAME }}:sha-${{ github.sha }} \
+            --enable-https \
+            --https-tls-cert-path /home/ubuntu/test-tls/tls_test.crt \
+            --https-tls-key-path /home/ubuntu/test-tls/tls_test.key
+      - name: Wait for container to become healthy (max 50s)
+        run: |
+          for i in {1..50}; do
+            status=$(docker inspect --format '{{json .State.Health}}' pipeline-manager-https | jq -r .Status 2>/dev/null || echo "starting")
+            echo "Health status: $status"
+            if [ "$status" == "healthy" ]; then
+              echo "pipeline-manager is healthy"
+              exit 0
+            elif [ "$status" == "unhealthy" ]; then
+              echo "pipeline-manager not healthy"
+              exit 1
+            fi
+            sleep 1
+          done
+          echo "Timed out waiting for pipeline-manager to become healthy"
+          exit 1
+      - name: Run manager integration tests
+        run: |
+          ./build/integration_test-*
+        env:
+          TEST_FELDERA_HTTPS_TLS_CERT_PATH: test-tls/tls_test.crt
+          TEST_FELDERA_URL: https://localhost:8080
+          RUST_BACKTRACE: 1
+      - name: Logs & Cleanup
+        if: always()
+        run: |
+          rm -rf test-tls
+          docker logs pipeline-manager-https || true
+          docker inspect pipeline-manager-https || true
+          docker rm -f pipeline-manager-https || true
+
   manager-tests:
     if: ${{ !contains(vars.CI_SKIP_JOBS, 'manager-tests') }}
     name: Integration Tests

@@ -636,6 +636,7 @@ mod test {
         },
         config::ApiServerConfig,
         db::storage::Storage,
+        ensure_default_crypto_provider,
     };
 
     async fn setup(claim: AwsCognitoClaim) -> (String, DecodingKey) {
@@ -800,6 +801,7 @@ mod test {
 
     #[actix_web::test]
     async fn invalid_url() {
+        ensure_default_crypto_provider();
         let url = "http://localhost/doesnotexist".to_owned();
         let res = fetch_jwk_aws_cognito_keys(&url).await;
         assert!(matches!(res.err().unwrap(), AuthError::JwkFetch(_)));

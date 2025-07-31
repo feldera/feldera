@@ -1725,6 +1725,7 @@ mod test {
                 runner_host: "127.0.0.1".to_string(),
                 runner_port: 8089,
                 http_workers: 1,
+                unstable_features: None,
                 enable_https: false,
                 https_tls_cert_path: None,
                 https_tls_key_path: None,
