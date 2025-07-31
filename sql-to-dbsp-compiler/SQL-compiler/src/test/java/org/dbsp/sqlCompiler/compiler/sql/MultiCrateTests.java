@@ -52,6 +52,17 @@ public class MultiCrateTests extends BaseSQLTests {
     }
 
     @Test
+    public void testJsonString() throws IOException, SQLException, InterruptedException {
+        String sql = """
+                CREATE TYPE T0 AS (n VARCHAR, u VARCHAR);
+                CREATE FUNCTION jsonstring_as_t0(line VARCHAR) RETURNS T0;
+                CREATE TABLE T(x VARCHAR);
+                CREATE VIEW V AS SELECT jsonstring_as_t0(x).n FROM T;""";
+        File file = createInputScript(sql);
+        this.compileToMultiCrate(file.getAbsolutePath(), true);
+    }
+
+    @Test
     public void testMultiCrate() throws IOException, SQLException, InterruptedException {
         String sql = """
                  CREATE TABLE T (C0 INT NOT NULL, C1 DOUBLE NOT NULL, C2 INT, C3 INT LATENESS 2, C4 INT, C5 INT);

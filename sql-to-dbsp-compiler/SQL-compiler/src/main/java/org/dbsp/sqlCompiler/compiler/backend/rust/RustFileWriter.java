@@ -5,8 +5,14 @@ import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.rust.multi.ProjectDeclarations;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
+import org.dbsp.sqlCompiler.ir.statement.DBSPStructItem;
+import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
 import org.dbsp.util.ProgramAndTester;
 import org.dbsp.util.Utilities;
+
+import java.util.ArrayList;
+import java.util.List;
 
 /** This class helps generate Rust code.
  * It is given a set of circuit and functions and generates a compilable Rust file. */
@@ -120,12 +126,33 @@ public class RustFileWriter extends RustWriter {
         for (IDBSPNode node : this.toWrite) {
             IDBSPInnerNode inner = node.as(IDBSPInnerNode.class);
             if (inner != null) {
-                ToRustInnerVisitor.toRustString(compiler, this.builder(), inner, null,  false);
+                if (inner.is(DBSPStructItem.class)) {
+                    var list = this.generateStructHelpers(compiler, inner.to(DBSPStructItem.class).type, declarationsDone);
+                    for (var e: list)
+                        ToRustInnerVisitor.toRustString(compiler, this.builder(), e, null, false);
+                } else {
+                    ToRustInnerVisitor.toRustString(compiler, this.builder(), inner, null, false);
+                }
             } else {
                 DBSPCircuit outer = node.to(DBSPCircuit.class);
                 ToRustVisitor.toRustString(compiler, this.builder(), outer, declarationsDone);
             }
             this.builder().newline();
         }
+    }
+
+    List<DBSPStructItem> generateStructHelpers(DBSPCompiler compiler, DBSPType struct, ProjectDeclarations done) {
+        List<DBSPTypeStruct> nested = new ArrayList<>();
+        List<DBSPStructItem> result = new ArrayList<>();
+        ToRustVisitor.FindNestedStructs fn = new ToRustVisitor.FindNestedStructs(compiler, nested);
+        fn.apply(struct);
+        for (DBSPTypeStruct s: nested) {
+            if (done.contains(s.name.name()))
+                continue;
+            DBSPStructItem item = new DBSPStructItem(s, null);
+            result.add(item);
+            done.declare(item.getName());
+        }
+        return result;
     }
 }
