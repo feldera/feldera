@@ -29,7 +29,7 @@ use crate::{
     utils::Tup2,
     DBData, ZWeight,
 };
-use crate::{NestedCircuit, Runtime};
+use crate::{NestedCircuit, Position, Runtime};
 use async_stream::stream;
 use minitrace::trace;
 use size_of::{Context, SizeOf};
@@ -1223,7 +1223,7 @@ where
         self: Rc<Self>,
         delta: &Option<Spine<I>>,
         trace: &T,
-    ) -> impl futures::Stream<Item = (Z, bool)> + 'static {
+    ) -> impl futures::Stream<Item = (Z, bool, Option<Position>)> + 'static {
         let chunk_size = splitter_output_chunk_size();
 
         let delta = delta.as_ref().map(|b| b.ro_snapshot());
@@ -1237,7 +1237,7 @@ where
         stream! {
             let Some(delta) = delta else {
                 // println!("yield empty");
-                yield(Z::dyn_empty(&self.output_factories), true);
+                yield(Z::dyn_empty(&self.output_factories), true, None);
                 return;
             };
             let trace = trace.unwrap();
@@ -1396,7 +1396,7 @@ where
                                         *self.empty_output.borrow_mut() = false;
                                     }
 
-                                    yield (batch, false);
+                                    yield (batch, false, delta_cursor.position());
 
                                     let mut output_tuples = self.timed_items_factory.default_box();
                                     output_tuples.reserve(chunk_size);
@@ -1428,7 +1428,7 @@ where
                 *self.empty_output.borrow_mut() = false;
             }
 
-            yield (batch, true)
+            yield (batch, true, delta_cursor.position())
         }
     }
 }

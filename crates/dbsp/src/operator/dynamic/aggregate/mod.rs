@@ -35,7 +35,7 @@ use crate::{
         Batch, BatchReader, BatchReaderFactories, Builder, Cursor, Filter, OrdWSet,
         OrdWSetFactories, Spine,
     },
-    DBData, DBWeight, DynZWeight, NestedCircuit, RootCircuit, ZWeight,
+    DBData, DBWeight, DynZWeight, NestedCircuit, Position, RootCircuit, ZWeight,
 };
 
 mod aggregator;
@@ -1027,8 +1027,10 @@ where
         self: Rc<Self>,
         delta: &Option<Spine<Z>>,
         input_trace: &IT,
-    ) -> impl AsyncStream<Item = (Box<DynPairs<Z::Key, DynOpt<Out>>>, bool)> + 'static {
+    ) -> impl AsyncStream<Item = (Box<DynPairs<Z::Key, DynOpt<Out>>>, bool, Option<Position>)> + 'static
+    {
         let chunk_size = splitter_output_chunk_size();
+
         // println!(
         //     "{}: AggregateIncremental::eval({delta:?})",
         //     Runtime::worker_index()
@@ -1044,7 +1046,7 @@ where
         stream! {
             let Some(delta) = delta else {
                 // println!("yield empty");
-                yield (self.output_pairs_factory.default_box(), true);
+                yield (self.output_pairs_factory.default_box(), true, None);
                 return;
             };
 
@@ -1124,7 +1126,7 @@ where
                     // println!("yield {:?}", result);
 
                     *self.empty_output.borrow_mut() &= result.is_empty();
-                    yield (result, !(delta_cursor.key_valid() || key_of_interest.is_some()));
+                    yield (result, !(delta_cursor.key_valid() || key_of_interest.is_some()), delta_cursor.position());
                     result = self.output_pairs_factory.default_box();
                     result.reserve(chunk_size);
                 }
@@ -1146,7 +1148,7 @@ where
                     // println!("yield {:?}", result);
 
                     *self.empty_output.borrow_mut() &= result.is_empty();
-                    yield (result, !(delta_cursor.key_valid() || key_of_interest.is_some()));
+                    yield (result, !(delta_cursor.key_valid() || key_of_interest.is_some()), delta_cursor.position());
                     result = self.output_pairs_factory.default_box();
                     result.reserve(chunk_size);
                 }
@@ -1168,14 +1170,14 @@ where
                     // println!("yield {:?}", result);
 
                     *self.empty_output.borrow_mut() &= result.is_empty();
-                    yield (result, !(delta_cursor.key_valid() || key_of_interest.is_some()));
+                    yield (result, !(delta_cursor.key_valid() || key_of_interest.is_some()), delta_cursor.position());
                     result = self.output_pairs_factory.default_box();
                     result.reserve(chunk_size);
                 }
             }
 
             // println!("yield final {:?}", result);
-            yield (result, true);
+            yield (result, true, delta_cursor.position());
         }
     }
 }

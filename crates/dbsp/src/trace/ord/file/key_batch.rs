@@ -1,3 +1,4 @@
+use crate::trace::cursor::Position;
 use crate::{
     dynamic::{
         DataTrait, DynDataTyped, DynOpt, DynPair, DynUnit, DynVec, DynWeightedPairs, Erase,
@@ -579,6 +580,13 @@ where
 
     fn fast_forward_vals(&mut self) {
         self.val_valid = true;
+    }
+
+    fn position(&self) -> Option<Position> {
+        Some(Position {
+            total: self.cursor.len(),
+            offset: self.cursor.absolute_position(),
+        })
     }
 }
 

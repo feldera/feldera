@@ -15,7 +15,7 @@ use crate::{
     storage::buffer_cache::CacheStats,
     time::Timestamp,
     trace::{
-        cursor::CursorList,
+        cursor::{CursorList, Position},
         merge_batches,
         ord::fallback::pick_merge_destination,
         spine_async::{
@@ -1266,6 +1266,10 @@ impl<B: Batch> Cursor<B::Key, B::Val, B::Time, B::R> for SpineCursor<B> {
 
     fn fast_forward_vals(&mut self) {
         self.with_cursor_mut(|cursor| cursor.fast_forward_vals());
+    }
+
+    fn position(&self) -> Option<Position> {
+        self.with_cursor(|cursor| cursor.position())
     }
 }
 

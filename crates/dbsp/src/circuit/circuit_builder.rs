@@ -42,15 +42,15 @@ use crate::{
         },
         runtime::Consensus,
         schedule::{
-            DynamicScheduler, Error as SchedulerError, Executor, IterativeExecutor, OnceExecutor,
-            Scheduler,
+            DynamicScheduler, Error as SchedulerError, Executor, FlushProgress, IterativeExecutor,
+            OnceExecutor, Scheduler,
         },
         trace::{CircuitEvent, SchedulerEvent},
     },
     circuit_cache_key,
     ir::LABEL_MIR_NODE_ID,
     time::{Timestamp, UnitTimestamp},
-    Error as DbspError, Runtime,
+    Error as DbspError, Position, Runtime,
 };
 use anyhow::Error as AnyError;
 use dyn_clone::{clone_box, DynClone};
@@ -990,7 +990,9 @@ pub trait Node: Any {
     /// Evaluate the operator.  Reads one value from each input stream
     /// and pushes a new value to the output stream (except for sink
     /// operators, which don't have an output stream).
-    fn eval<'a>(&'a mut self) -> Pin<Box<dyn Future<Output = Result<(), SchedulerError>> + 'a>>;
+    fn eval<'a>(
+        &'a mut self,
+    ) -> Pin<Box<dyn Future<Output = Result<Option<Position>, SchedulerError>> + 'a>>;
 
     fn import(&mut self) {}
 
@@ -1728,7 +1730,10 @@ pub trait Circuit: CircuitBase + Clone + WithClock {
     /// Evaluate operator with the given id.
     ///
     /// This method should only be used by schedulers.
-    fn eval_node(&self, id: NodeId) -> impl Future<Output = Result<(), SchedulerError>>;
+    fn eval_node(
+        &self,
+        id: NodeId,
+    ) -> impl Future<Output = Result<Option<Position>, SchedulerError>>;
 
     fn eval_import_node(&self, id: NodeId);
 
@@ -3248,7 +3253,7 @@ where
 
     // Justification: the scheduler must not call `eval()` on a node twice.
     #[allow(clippy::await_holding_refcell_ref)]
-    async fn eval_node(&self, id: NodeId) -> Result<(), SchedulerError> {
+    async fn eval_node(&self, id: NodeId) -> Result<Option<Position>, SchedulerError> {
         let circuit = self.inner();
         debug_assert!(id.0 < circuit.nodes.borrow().len());
 
@@ -3260,13 +3265,13 @@ where
             circuit.nodes.borrow()[id.0].borrow().as_ref(),
         ));
 
-        circuit.nodes.borrow()[id.0].borrow_mut().eval().await?;
+        let progress = circuit.nodes.borrow()[id.0].borrow_mut().eval().await?;
 
         circuit.log_scheduler_event(&SchedulerEvent::eval_end(
             circuit.nodes.borrow()[id.0].borrow().as_ref(),
         ));
 
-        Ok(())
+        Ok(progress)
     }
 
     // Justification: the scheduler must not call `eval()` on a node twice.
@@ -4059,10 +4064,12 @@ where
         self.operator.register_ready_callback(cb);
     }
 
-    fn eval<'a>(&'a mut self) -> Pin<Box<dyn Future<Output = Result<(), SchedulerError>> + 'a>> {
+    fn eval<'a>(
+        &'a mut self,
+    ) -> Pin<Box<dyn Future<Output = Result<Option<Position>, SchedulerError>> + 'a>> {
         Box::pin(async {
             self.output_stream.put(self.operator.eval().await);
-            Ok(())
+            Ok(self.operator.flush_progress())
         })
     }
 
@@ -4206,10 +4213,12 @@ where
         self.operator.register_ready_callback(cb);
     }
 
-    fn eval<'a>(&'a mut self) -> Pin<Box<dyn Future<Output = Result<(), SchedulerError>> + 'a>> {
+    fn eval<'a>(
+        &'a mut self,
+    ) -> Pin<Box<dyn Future<Output = Result<Option<Position>, SchedulerError>> + 'a>> {
         Box::pin(async {
             self.output_stream.put(self.operator.eval().await);
-            Ok(())
+            Ok(self.operator.flush_progress())
         })
     }
 
@@ -4347,7 +4356,9 @@ where
 
     // Justification: see StreamValue::take() comment.
     #[allow(clippy::await_holding_refcell_ref)]
-    fn eval<'a>(&'a mut self) -> Pin<Box<dyn Future<Output = Result<(), SchedulerError>> + 'a>> {
+    fn eval<'a>(
+        &'a mut self,
+    ) -> Pin<Box<dyn Future<Output = Result<Option<Position>, SchedulerError>> + 'a>> {
         Box::pin(async {
             self.output_stream
                 .put(match StreamValue::take(self.input_stream.val()) {
@@ -4359,7 +4370,7 @@ where
                     }
                 });
             StreamValue::consume_token(self.input_stream.val());
-            Ok(())
+            Ok(self.operator.flush_progress())
         })
     }
 
@@ -4490,7 +4501,9 @@ where
 
     // Justification: see StreamValue::take() comment.
     #[allow(clippy::await_holding_refcell_ref)]
-    fn eval<'a>(&'a mut self) -> Pin<Box<dyn Future<Output = Result<(), SchedulerError>> + 'a>> {
+    fn eval<'a>(
+        &'a mut self,
+    ) -> Pin<Box<dyn Future<Output = Result<Option<Position>, SchedulerError>> + 'a>> {
         Box::pin(async {
             match StreamValue::take(self.input_stream.val()) {
                 Some(v) => self.operator.eval_owned(v).await,
@@ -4502,7 +4515,7 @@ where
             };
             StreamValue::consume_token(self.input_stream.val());
 
-            Ok(())
+            Ok(self.operator.flush_progress())
         })
     }
 
@@ -4648,7 +4661,9 @@ where
 
     // Justification: see StreamValue::take() comment.
     #[allow(clippy::await_holding_refcell_ref)]
-    fn eval<'a>(&'a mut self) -> Pin<Box<dyn Future<Output = Result<(), SchedulerError>> + 'a>> {
+    fn eval<'a>(
+        &'a mut self,
+    ) -> Pin<Box<dyn Future<Output = Result<Option<Position>, SchedulerError>> + 'a>> {
         Box::pin(async {
             if self.is_alias {
                 {
@@ -4702,7 +4717,7 @@ where
                 StreamValue::consume_token(self.input_stream2.val());
             };
 
-            Ok(())
+            Ok(self.operator.flush_progress())
         })
     }
 
@@ -4853,7 +4868,9 @@ where
 
     // Justification: see StreamValue::take() comment.
     #[allow(clippy::await_holding_refcell_ref)]
-    fn eval<'a>(&'a mut self) -> Pin<Box<dyn Future<Output = Result<(), SchedulerError>> + 'a>> {
+    fn eval<'a>(
+        &'a mut self,
+    ) -> Pin<Box<dyn Future<Output = Result<Option<Position>, SchedulerError>> + 'a>> {
         Box::pin(async {
             // If the two input streams are aliases, we cannot remove the owned
             // value from `input_stream2`, as this will invalidate the borrow
@@ -4902,7 +4919,7 @@ where
                 StreamValue::consume_token(self.input_stream1.val());
                 StreamValue::consume_token(self.input_stream2.val());
             }
-            Ok(())
+            Ok(self.operator.flush_progress())
         })
     }
 
@@ -5058,7 +5075,9 @@ where
 
     // Justification: see StreamValue::take() comment.
     #[allow(clippy::await_holding_refcell_ref)]
-    fn eval<'a>(&'a mut self) -> Pin<Box<dyn Future<Output = Result<(), SchedulerError>> + 'a>> {
+    fn eval<'a>(
+        &'a mut self,
+    ) -> Pin<Box<dyn Future<Output = Result<Option<Position>, SchedulerError>> + 'a>> {
         Box::pin(async {
             {
                 self.output_stream.put(
@@ -5076,7 +5095,7 @@ where
             StreamValue::consume_token(self.input_stream2.val());
             StreamValue::consume_token(self.input_stream3.val());
 
-            Ok(())
+            Ok(self.operator.flush_progress())
         })
     }
 
@@ -5251,7 +5270,9 @@ where
 
     // Justification: see StreamValue::take() comment.
     #[allow(clippy::await_holding_refcell_ref)]
-    fn eval<'a>(&'a mut self) -> Pin<Box<dyn Future<Output = Result<(), SchedulerError>> + 'a>> {
+    fn eval<'a>(
+        &'a mut self,
+    ) -> Pin<Box<dyn Future<Output = Result<Option<Position>, SchedulerError>> + 'a>> {
         Box::pin(async {
             {
                 self.output_stream.put(
@@ -5271,7 +5292,7 @@ where
             StreamValue::consume_token(self.input_stream3.val());
             StreamValue::consume_token(self.input_stream4.val());
 
-            Ok(())
+            Ok(self.operator.flush_progress())
         })
     }
 
@@ -5432,7 +5453,9 @@ where
         self.operator.register_ready_callback(cb);
     }
 
-    fn eval<'a>(&'a mut self) -> Pin<Box<dyn Future<Output = Result<(), SchedulerError>> + 'a>> {
+    fn eval<'a>(
+        &'a mut self,
+    ) -> Pin<Box<dyn Future<Output = Result<Option<Position>, SchedulerError>> + 'a>> {
         Box::pin(async {
             let refs = self
                 .input_streams
@@ -5451,7 +5474,7 @@ where
             for i in self.input_streams.iter() {
                 StreamValue::consume_token(i.val());
             }
-            Ok(())
+            Ok(self.operator.flush_progress())
         })
     }
 
@@ -5608,11 +5631,13 @@ where
         self.operator.borrow_mut().register_ready_callback(cb);
     }
 
-    fn eval<'a>(&'a mut self) -> Pin<Box<dyn Future<Output = Result<(), SchedulerError>> + 'a>> {
+    fn eval<'a>(
+        &'a mut self,
+    ) -> Pin<Box<dyn Future<Output = Result<Option<Position>, SchedulerError>> + 'a>> {
         Box::pin(async {
             self.output_stream
                 .put(self.operator.borrow_mut().get_output());
-            Ok(())
+            Ok(None)
         })
     }
 
@@ -5758,7 +5783,9 @@ where
 
     // Justification: see StreamValue::take() comment.
     #[allow(clippy::await_holding_refcell_ref)]
-    fn eval<'a>(&'a mut self) -> Pin<Box<dyn Future<Output = Result<(), SchedulerError>> + 'a>> {
+    fn eval<'a>(
+        &'a mut self,
+    ) -> Pin<Box<dyn Future<Output = Result<Option<Position>, SchedulerError>> + 'a>> {
         Box::pin(async {
             match StreamValue::take(self.input_stream.val()) {
                 Some(v) => self.operator.borrow_mut().eval_strict_owned(v).await,
@@ -5772,7 +5799,7 @@ where
 
             StreamValue::consume_token(self.input_stream.val());
 
-            Ok(())
+            Ok(None)
         })
     }
 
@@ -5986,13 +6013,18 @@ where
         true
     }
 
-    fn eval<'a>(&'a mut self) -> Pin<Box<dyn Future<Output = Result<(), SchedulerError>> + 'a>> {
+    fn eval<'a>(
+        &'a mut self,
+    ) -> Pin<Box<dyn Future<Output = Result<Option<Position>, SchedulerError>> + 'a>> {
         // We may want to make the executor responsible for evaluating import nodes
         // if there is a need for customizing this behavior.
         for node_id in self.circuit.import_nodes() {
             self.circuit.eval_import_node(node_id)
         }
-        Box::pin(async { self.executor.step(&self.circuit).await })
+        Box::pin(async {
+            self.executor.step(&self.circuit).await?;
+            Ok(None)
+        })
     }
 
     fn flush(&mut self) {
@@ -6157,6 +6189,10 @@ impl CircuitHandle {
 
     pub fn is_flush_complete(&self) -> bool {
         self.executor.is_flush_complete()
+    }
+
+    pub fn flush_progress(&self) -> FlushProgress {
+        self.executor.flush_progress()
     }
 
     pub fn microstep(&self) -> Result<(), DbspError> {
