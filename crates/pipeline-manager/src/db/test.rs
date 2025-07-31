@@ -223,7 +223,7 @@ pub(crate) fn limited_uuid() -> impl Strategy<Value = Uuid> {
 type PipelineNamePropVal = u8;
 // This had to be a struct because there is a limit on the number
 // of tuple fields for the automatic implementation of Arbitrary.
-#[derive(Clone, Debug, PartialEq, Eq, Ord, PartialOrd)]
+#[derive(Clone, Debug, PartialEq, PartialOrd)]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 struct RuntimeConfigPropVal {
     invalid0: u8,
@@ -234,8 +234,8 @@ struct RuntimeConfigPropVal {
     val4: bool,
     val5: bool,
     val6: String,
-    val7: Option<u64>,
-    val8: Option<u64>,
+    val7: Option<f64>,
+    val8: Option<f64>,
     val9: Option<u64>,
     val10: Option<u64>,
     val11: Option<u64>,

@@ -67,7 +67,7 @@ fn remove_large_fields_from_program_info(
 
 /// Pipeline information.
 /// It both includes fields which are user-provided and system-generated.
-#[derive(Serialize, ToSchema, Eq, PartialEq, Debug, Clone)]
+#[derive(Serialize, ToSchema, PartialEq, Debug, Clone)]
 pub struct PipelineInfo {
     pub id: PipelineId,
     pub name: String,
@@ -160,7 +160,7 @@ impl PipelineInfoInternal {
 /// Pipeline information which has a selected subset of optional fields.
 /// It both includes fields which are user-provided and system-generated.
 /// If an optional field is not selected (i.e., is `None`), it will not be serialized.
-#[derive(Serialize, ToSchema, Eq, PartialEq, Debug, Clone)]
+#[derive(Serialize, ToSchema, PartialEq, Debug, Clone)]
 pub struct PipelineSelectedInfo {
     pub id: PipelineId,
     pub name: String,

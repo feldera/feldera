@@ -55,7 +55,7 @@ pub const DEFAULT_CLOCK_RESOLUTION_USECS: u64 = 1_000_000;
 /// (e.g., runtime configuration) and entries derived from the schema
 /// of the compiled program (e.g., connectors). Storage configuration,
 /// if applicable, is set by the runner.
-#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
 pub struct PipelineConfig {
     /// Global controller configuration.
     #[serde(flatten)]
@@ -538,7 +538,7 @@ pub struct FileBackendConfig {
 
 /// Global pipeline configuration settings. This is the publicly
 /// exposed type for users to configure pipelines.
-#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
 #[serde(default)]
 pub struct RuntimeConfig {
     /// Number of DBSP worker threads.
@@ -1365,16 +1365,16 @@ pub struct FormatConfig {
     pub config: YamlValue,
 }
 
-#[derive(Debug, Clone, Eq, PartialEq, Default, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, ToSchema)]
 #[serde(default)]
 pub struct ResourceConfig {
     /// The minimum number of CPU cores to reserve
     /// for an instance of this pipeline
-    pub cpu_cores_min: Option<u64>,
+    pub cpu_cores_min: Option<f64>,
 
     /// The maximum number of CPU cores to reserve
     /// for an instance of this pipeline
-    pub cpu_cores_max: Option<u64>,
+    pub cpu_cores_max: Option<f64>,
 
     /// The minimum memory in Megabytes to reserve
     /// for an instance of this pipeline
