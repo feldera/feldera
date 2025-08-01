@@ -7,7 +7,7 @@ import com.fasterxml.jackson.dataformat.csv.CsvMapper;
 import com.fasterxml.jackson.dataformat.csv.CsvSchema;
 import org.dbsp.simulator.collections.IndexedZSet;
 import org.dbsp.simulator.collections.ZSet;
-import org.dbsp.simulator.types.IntegerWeight;
+import org.dbsp.simulator.types.IntegerWeightType;
 import org.dbsp.simulator.types.StringSqlType;
 import org.dbsp.simulator.values.IntegerSqlValue;
 import org.dbsp.simulator.values.SqlTuple;
@@ -26,9 +26,9 @@ import java.util.Objects;
 public class SimulatorTests {
     @Test
     public void zsetTests() {
-        ZSet<SqlTuple, Integer> zero = new ZSet<>(IntegerWeight.INSTANCE);
+        ZSet<SqlTuple, Integer> zero = new ZSet<>(IntegerWeightType.INSTANCE);
         Assert.assertEquals(0, zero.entryCount());
-        ZSet<SqlTuple, Integer> some = new ZSet<>(IntegerWeight.INSTANCE);
+        ZSet<SqlTuple, Integer> some = new ZSet<>(IntegerWeightType.INSTANCE);
         SqlTuple tuple = new SqlTuple()
                 .add(new IntegerSqlValue(10))
                 .add(new StringSqlValue("string", new StringSqlType()));
@@ -137,7 +137,7 @@ public class SimulatorTests {
                     .readValues(data);
             List<T> collection = new ArrayList<>();
             it.readAll(collection);
-            return new ZSet<>(collection, IntegerWeight.INSTANCE);
+            return new ZSet<>(collection, IntegerWeightType.INSTANCE);
         } catch (IOException ex) {
             throw new RuntimeException(ex);
         }

@@ -1,14 +1,11 @@
 package org.dbsp.simulator.types;
 
-/**
- * Interface implemented by weights.
- */
-public interface WeightType<T> {
-    T add(T left, T right);
-    T negate(T value);
-    T zero();
-    T one();
-    boolean isZero(T left);
-    boolean greaterThanZero(T value);
-    T multiply(T left, T right);
+public interface WeightType {
+    Weight add(Weight left, Weight right);
+    Weight negate(Weight value);
+    Weight zero();
+    Weight one();
+    boolean isZero(Weight left);
+    boolean greaterThanZero(Weight value);
+    Weight multiply(Weight left, Weight right);
 }

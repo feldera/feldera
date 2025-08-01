@@ -3,13 +3,6 @@ package org.dbsp.simulator.types;
 /**
  * Interface implemented by Sql types.
  */
-public interface SqlType {
-    int INFINITE_PRECISION = -1;
-
+public interface SqlType extends DataType {
     SqlTypeName getTypeName();
-
-    /**
-     * Not all types have precision, but many do.
-     */
-    int getPrecision();
 }
