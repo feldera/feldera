@@ -13,7 +13,7 @@ fn pipeline_names(current: &std::ffi::OsStr) -> Vec<CompletionCandidate> {
     // using the `try_parse_from` method.
     let cli = Cli::try_parse_from(["fda", "pipelines"]);
     if let Ok(cli) = cli {
-        let client = make_client(cli.host, cli.auth, cli.timeout).unwrap();
+        let client = make_client(cli.host, cli.insecure, cli.auth, cli.timeout).unwrap();
 
         let r = futures::executor::block_on(async {
             client
@@ -66,6 +66,16 @@ pub struct Cli {
         default_value_t = String::from("https://try.feldera.com")
     )]
     pub host: String,
+    /// Accept invalid HTTPS certificates.
+    #[arg(
+        short = 'k',
+        long,
+        env = "FELDERA_TLS_INSECURE",
+        global = true,
+        default_value_t = false,
+        help_heading = "Global Options"
+    )]
+    pub insecure: bool,
     /// Which API key to use for authentication.
     ///
     /// The provided string should start with "apikey:" followed by the random characters.
