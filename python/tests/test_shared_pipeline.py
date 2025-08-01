@@ -20,7 +20,6 @@ class TestPipeline(SharedTestPipeline):
         pass
 
     def __test_push_to_pipeline(self, data, format, array):
-        self.pipeline.stop(force=True)
         self.pipeline.start()
         TEST_CLIENT.push_to_pipeline(
             pipeline_name=self.pipeline.name,
@@ -29,8 +28,6 @@ class TestPipeline(SharedTestPipeline):
             array=array,
             data=data,
         )
-        TEST_CLIENT.pause_pipeline(self.pipeline.name)
-        TEST_CLIENT.stop_pipeline(self.pipeline.name, force=True)
 
     def test_push_to_pipeline_json(self):
         data = [
@@ -64,8 +61,6 @@ class TestPipeline(SharedTestPipeline):
         assert stats.get("global_metrics") is not None
         assert stats.get("inputs") is not None
         assert stats.get("outputs") is not None
-        TEST_CLIENT.pause_pipeline(self.pipeline.name)
-        TEST_CLIENT.stop_pipeline(self.pipeline.name, force=True)
 
     def test_adhoc_query_text(self):
         data = "1\n2\n"
@@ -85,7 +80,6 @@ class TestPipeline(SharedTestPipeline):
 
         got = "\n".join(resp)
         assert got in expected
-        TEST_CLIENT.stop_pipeline(self.pipeline.name, force=True)
 
     def test_adhoc_query_parquet(self):
         data = "1\n2\n"
@@ -93,7 +87,6 @@ class TestPipeline(SharedTestPipeline):
         TEST_CLIENT.push_to_pipeline(self.pipeline.name, "tbl", "csv", data)
         file = self.pipeline.name.split("-")[0]
         TEST_CLIENT.query_as_parquet(self.pipeline.name, "SELECT * FROM tbl", file)
-        TEST_CLIENT.stop_pipeline(self.pipeline.name, force=True)
         path = pathlib.Path(file + ".parquet")
         assert path.stat().st_size > 0
         os.remove(path)
@@ -106,7 +99,6 @@ class TestPipeline(SharedTestPipeline):
         expected = [{"id": 2}, {"id": 1}]
         got = list(resp)
         self.assertCountEqual(got, expected)
-        TEST_CLIENT.stop_pipeline(self.pipeline.name, force=True)
 
     def test_local(self):
         """
@@ -278,7 +270,7 @@ class TestPipeline(SharedTestPipeline):
 
         self.pipeline.start()
         data = [{"id": 2147483647}]
-        self.pipeline.input_json("tbl", data)
+        self.pipeline.input_json("tbl", data, wait=False)
         while True:
             status = self.pipeline.status()
             expected = PipelineStatus.STOPPED
@@ -552,13 +544,10 @@ class TestPipeline(SharedTestPipeline):
         }
 
         resources = Resources(config)
-        self.set_runtime_config(RuntimeConfig(resources=resources))
+        self.pipeline.set_runtime_config(RuntimeConfig(resources=resources))
         self.pipeline.start()
         got = TEST_CLIENT.get_pipeline(self.pipeline.name).runtime_config["resources"]
-        self.pipeline.stop(force=True)
         assert got == config
-        self.reset_runtime_config()
-        self.pipeline.clear_storage()
 
 
 if __name__ == "__main__":
