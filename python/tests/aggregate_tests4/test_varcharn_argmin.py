@@ -57,7 +57,7 @@ class aggtst_varcharn_argmin_distinct_gby(TstView):
 class aggtst_varcharn_argmin_where(TstView):
     def __init__(self):
         # checked manually
-        self.data = [{"c1": "hello", "c2": "fred"}]
+        self.data = [{"c1": "hello", "c2": "examp"}]
         self.sql = """CREATE MATERIALIZED VIEW varcharn_argmin_where AS SELECT
                       ARG_MIN(f_c1, f_c2) FILTER(WHERE len(f_c1)>4) AS c1, ARG_MIN(f_c2, f_c1) FILTER(WHERE len(f_c1)>4) AS c2
                       FROM atbl_varcharn"""
