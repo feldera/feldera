@@ -1,0 +1,1 @@
+../aggregate_tests4/test_varchar_min.py
