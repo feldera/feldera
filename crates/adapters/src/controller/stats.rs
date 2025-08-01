@@ -38,7 +38,7 @@ use crate::{
 use anyhow::anyhow;
 use anyhow::Error as AnyError;
 use atomic::Atomic;
-use base64::{prelude::BASE64_URL_SAFE, Engine};
+use base64::{prelude::BASE64_URL_SAFE_NO_PAD, Engine};
 use bytemuck::NoUninit;
 use chrono::{DateTime, Utc};
 use cpu_time::ProcessTime;
@@ -101,12 +101,12 @@ impl CompletionToken {
     /// Encode token as a URL-safe based64 string.
     pub fn encode(&self) -> String {
         let json = serde_json::to_string(&self).unwrap();
-        BASE64_URL_SAFE.encode(json)
+        BASE64_URL_SAFE_NO_PAD.encode(json)
     }
 
     /// Decode token from a URL-safe base64 string.
     pub fn decode(token: &str) -> Result<Self, anyhow::Error> {
-        let json = BASE64_URL_SAFE
+        let json = BASE64_URL_SAFE_NO_PAD
             .decode(token)
             .map_err(|e| anyhow!("completion token is not a valid base64 string: {e}"))?;
         serde_json::from_slice::<Self>(&json)
