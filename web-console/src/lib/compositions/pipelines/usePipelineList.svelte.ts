@@ -13,6 +13,13 @@ export const useUpdatePipelineList = () => {
   return {
     updatePipelines(updater: (ps: PipelineThumb[]) => PipelineThumb[]) {
       pipelines = updater(pipelines ?? [])
+    },
+    updatePipeline(pipelineName: string, updater: (ps: PipelineThumb) => PipelineThumb) {
+      const idx = pipelines?.findIndex((p) => p.name === pipelineName) ?? -1
+      if (!pipelines || idx === -1) {
+        return
+      }
+      pipelines[idx] = updater(pipelines[idx])
     }
   }
 }

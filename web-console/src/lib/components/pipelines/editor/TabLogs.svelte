@@ -169,7 +169,7 @@
       getStreams = () => streams
     })
   }
-  const backoffDelaysMs = [5, 5, 15, 30, 60].map(s => s * 1000)
+  const backoffDelaysMs = [5, 5, 15, 30, 60].map((s) => s * 1000)
   const getDelayMs = (attempts: number) => backoffDelaysMs.at(attempts) ?? backoffDelaysMs.at(-1)!
   // Start stream unless it ended less than retryAllowedSinceDelayMs ago
   const tryRestartStream = (pipelineName: string, attempts: number) => {
