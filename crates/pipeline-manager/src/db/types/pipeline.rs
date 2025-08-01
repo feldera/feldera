@@ -450,7 +450,7 @@ pub struct PipelineDescr {
 
 /// Pipeline descriptor which besides the basic fields in direct regular control of the user
 /// also has all additional fields generated and maintained by the back-end.
-#[derive(Eq, PartialEq, Debug, Clone)]
+#[derive(Eq, PartialEq, Debug, Clone, Serialize, Deserialize)]
 pub struct ExtendedPipelineDescr {
     /// Assigned globally unique pipeline identifier.
     pub id: PipelineId,

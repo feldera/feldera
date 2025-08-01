@@ -23,6 +23,7 @@ pub enum ApiError {
     InvalidConnectorAction { action: String },
     UnableToConnect { reason: String },
     LockTimeout { value: String, timeout: Duration },
+    UnableToCreateSupportBundle { reason: String },
 }
 
 impl DetailedError for ApiError {
@@ -37,6 +38,7 @@ impl DetailedError for ApiError {
             Self::InvalidConnectorAction { .. } => Cow::from("InvalidConnectorAction"),
             Self::UnableToConnect { .. } => Cow::from("UnableToConnect"),
             Self::LockTimeout { .. } => Cow::from("LockTimeout"),
+            Self::UnableToCreateSupportBundle { .. } => Cow::from("UnableToCreateSupportBundle"),
         }
     }
 }
@@ -78,6 +80,9 @@ impl Display for ApiError {
                     timeout.as_secs_f64()
                 )
             }
+            Self::UnableToCreateSupportBundle { reason } => {
+                write!(f, "Unable to create support bundle: {reason}")
+            }
         }
     }
 }
@@ -102,6 +107,7 @@ impl ResponseError for ApiError {
             Self::InvalidConnectorAction { .. } => StatusCode::BAD_REQUEST,
             Self::UnableToConnect { .. } => StatusCode::BAD_REQUEST,
             Self::LockTimeout { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::UnableToCreateSupportBundle { .. } => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 

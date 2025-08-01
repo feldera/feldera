@@ -10,6 +10,7 @@ use crate::runner::error::RunnerError;
 use actix_web::{http::Method, web::Payload, HttpRequest, HttpResponse, HttpResponseBuilder};
 use actix_ws::{CloseCode, CloseReason};
 use awc::error::{ConnectError, SendRequestError};
+use awc::ClientResponse;
 use crossbeam::sync::ShardedLock;
 use feldera_types::query::MAX_WS_FRAME_SIZE;
 use log::error;
@@ -17,6 +18,11 @@ use std::fmt::Display;
 use std::{collections::HashMap, sync::Arc, time::Duration};
 use tokio::sync::Mutex;
 use tokio::time::Instant;
+
+use actix_http::encoding::Decoder;
+//use actix_web::web::Bytes;
+//use std::pin::Pin;
+//use futures_util::Stream;
 
 /// Max non-streaming HTTP response body returned by the pipeline.
 /// The awc default is 2MiB, which is not enough to, for example, retrieve
@@ -492,16 +498,12 @@ impl RunnerInteraction {
         Ok(builder.streaming(response))
     }
 
-    /// Retrieves the streaming logs of the pipeline through the runner.
-    ///
-    /// The pipeline identifier is retrieved from the database using the
-    /// provided tenant identifier and pipeline name.
-    pub(crate) async fn http_streaming_logs_from_pipeline_by_name(
+    pub(crate) async fn get_logs_from_pipeline(
         &self,
         client: &awc::Client,
         tenant_id: TenantId,
         pipeline_name: &str,
-    ) -> Result<HttpResponse, ManagerError> {
+    ) -> Result<ClientResponse<Decoder<actix_http::Payload>>, ManagerError> {
         // Retrieve pipeline
         let pipeline = self
             .db
@@ -540,6 +542,24 @@ impl RunnerInteraction {
                     error: format!("unable to send request due to: {e}"),
                 },
             })?;
+
+        Ok(response)
+    }
+
+    /// Retrieves the streaming logs of the pipeline through the runner.
+    ///
+    /// The pipeline identifier is retrieved from the database using the
+    /// provided tenant identifier and pipeline name.
+    pub(crate) async fn http_streaming_logs_from_pipeline_by_name(
+        &self,
+        client: &awc::Client,
+        tenant_id: TenantId,
+        pipeline_name: &str,
+    ) -> Result<HttpResponse, ManagerError> {
+        // Perform request to the runner
+        let response = self
+            .get_logs_from_pipeline(client, tenant_id, pipeline_name)
+            .await?;
 
         // Build the HTTP response with the same status, headers and streaming body
         let mut builder = HttpResponseBuilder::new(response.status());

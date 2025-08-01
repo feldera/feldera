@@ -3,10 +3,9 @@ use actix_web::{get, web::Data as WebData, HttpRequest, HttpResponse};
 use serde::Serialize;
 use utoipa::ToSchema;
 
-use crate::api::error::ApiError;
 use crate::api::main::ServerState;
 use crate::error::ManagerError;
-use crate::license::{DisplaySchedule, LicenseValidity, LICENSE_INFO_READ_LOCK_TIMEOUT};
+use crate::license::{DisplaySchedule, LicenseCheck, LicenseValidity};
 use crate::unstable_features;
 
 #[derive(Serialize, ToSchema)]
@@ -85,6 +84,43 @@ pub(crate) struct Configuration {
     pub build_info: BuildInformation,
 }
 
+impl Configuration {
+    pub(crate) async fn gather(state: &WebData<ServerState>) -> Self {
+        let version = env!("CARGO_PKG_VERSION").to_string();
+        let mut revision = env!("FELDERA_PLATFORM_VERSION_SUFFIX");
+        if revision.is_empty() {
+            // For local builds that don't set FELDERA_PLATFORM_VERSION_SUFFIX,
+            // we use the git SHA as the revision.
+            revision = env!("VERGEN_GIT_SHA");
+        }
+        let runtime_revision = env!("VERGEN_GIT_SHA");
+        let license_check = LicenseCheck::validate(state).await.unwrap_or_default();
+
+        Configuration {
+            telemetry: state._config.telemetry.clone(),
+            edition: if cfg!(feature = "feldera-enterprise") {
+                "Enterprise"
+            } else {
+                "Open source"
+            }
+            .to_string(),
+            version: version.clone(),
+            revision: revision.to_string(),
+            runtime_revision: runtime_revision.to_string(),
+            unstable_features: unstable_features()
+                .map(|features| features.iter().cloned().collect::<Vec<&str>>().join(",")),
+            changelog_url: if cfg!(feature = "feldera-enterprise") {
+                "https://docs.feldera.com/changelog/".to_string()
+            } else {
+                format!("https://github.com/feldera/feldera/releases/tag/v{version}")
+            },
+            license_validity: license_check.map(|v| v.check_outcome),
+            update_info: None,
+            build_info: BuildInformation::from_env(),
+        }
+    }
+}
+
 /// Retrieve general configuration.
 #[utoipa::path(
     context_path = "/v0",
@@ -105,59 +141,8 @@ pub(crate) async fn get_config(
     state: WebData<ServerState>,
     _req: HttpRequest,
 ) -> Result<HttpResponse, ManagerError> {
-    let version = env!("CARGO_PKG_VERSION").to_string();
-    // Acquire and read the license information check. The timeout prevents it from becoming
-    // unresponsive if it cannot acquire the lock, which generally should not happen.
-    let mut license_check = match tokio::time::timeout(
-        LICENSE_INFO_READ_LOCK_TIMEOUT,
-        state.license_check.read(),
-    )
-    .await
-    {
-        Ok(license_check) => license_check.clone(),
-        Err(_elapsed) => {
-            return Err(ManagerError::from(ApiError::LockTimeout {
-                value: "license validity".to_string(),
-                timeout: LICENSE_INFO_READ_LOCK_TIMEOUT,
-            }));
-        }
-    };
-    if let Some(license_check) = &mut license_check {
-        if let LicenseValidity::Exists(license_info) = &mut license_check.check_outcome {
-            license_info.current += license_check.checked_at.elapsed();
-        }
-    }
-
-    let mut revision = env!("FELDERA_PLATFORM_VERSION_SUFFIX");
-    if revision.is_empty() {
-        // For local builds that don't set FELDERA_PLATFORM_VERSION_SUFFIX,
-        // we use the git SHA as the revision.
-        revision = env!("VERGEN_GIT_SHA");
-    }
-    let runtime_revision = env!("VERGEN_GIT_SHA");
-
-    Ok(HttpResponse::Ok().json(Configuration {
-        telemetry: state._config.telemetry.clone(),
-        edition: if cfg!(feature = "feldera-enterprise") {
-            "Enterprise"
-        } else {
-            "Open source"
-        }
-        .to_string(),
-        version: version.clone(),
-        revision: revision.to_string(),
-        runtime_revision: runtime_revision.to_string(),
-        unstable_features: unstable_features()
-            .map(|features| features.iter().cloned().collect::<Vec<&str>>().join(",")),
-        changelog_url: if cfg!(feature = "feldera-enterprise") {
-            "https://docs.feldera.com/changelog/".to_string()
-        } else {
-            format!("https://github.com/feldera/feldera/releases/tag/v{version}")
-        },
-        license_validity: license_check.map(|v| v.check_outcome),
-        update_info: None,
-        build_info: BuildInformation::from_env(),
-    }))
+    let config = Configuration::gather(&state).await;
+    Ok(HttpResponse::Ok().json(config))
 }
 
 /// Retrieve authentication provider configuration.
