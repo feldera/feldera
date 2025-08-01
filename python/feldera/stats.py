@@ -16,7 +16,7 @@ class PipelineStatistics:
 
         self.global_metrics: GlobalPipelineMetrics = GlobalPipelineMetrics()
         self.suspend_error: Optional[Any] = None
-        self.inputs: Mapping[List[InputEndpointStatus()]] = {}
+        self.inputs: Mapping[List[InputEndpointStatus]] = {}
         self.outputs: Mapping[List[OutputEndpointStatus]] = {}
 
     @classmethod

@@ -39,6 +39,7 @@ Issues = "https://github.com/feldera/feldera/issues"
 dev-dependencies = [
     "kafka-python-ng==2.2.2",
     "pytest-timeout>=2.3.1",
+    "pytest-xdist>=3.8.0",
     "pytest>=8.3.5",
     "sphinx-rtd-theme==2.0.0",
     "sphinx==7.3.7",
