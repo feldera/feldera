@@ -442,18 +442,21 @@ impl InputGenerator {
             plan.fields = normalized_plan_names;
         }
 
-        let join_handle = std::thread::spawn(move || {
-            if let Err(error) = Self::datagen_thread(
-                command_receiver,
-                consumer.clone(),
-                parser,
-                config,
-                schema,
-                seek,
-            ) {
-                consumer.error(true, error);
-            }
-        });
+        let join_handle = std::thread::Builder::new()
+            .name("datagen".to_string())
+            .spawn(move || {
+                if let Err(error) = Self::datagen_thread(
+                    command_receiver,
+                    consumer.clone(),
+                    parser,
+                    config,
+                    schema,
+                    seek,
+                ) {
+                    consumer.error(true, error);
+                }
+            })
+            .expect("failed to spawn datagen thread");
         let datagen_thread = join_handle.thread().clone();
 
         Ok(Self {
