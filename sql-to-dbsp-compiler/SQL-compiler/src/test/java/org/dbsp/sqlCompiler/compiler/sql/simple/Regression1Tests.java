@@ -711,4 +711,33 @@ public class Regression1Tests extends SqlIoTest {
                 ---------------
                  true | 1""");
     }
+
+    @Test
+    public void t() {
+        var ccs = this.getCCS("""
+                CREATE TABLE int0_tbl(
+                id INT NOT NULL,
+                c1 TINYINT,
+                c2 TINYINT NOT NULL,
+                c3 INT2,
+                c4 INT2 NOT NULL,
+                c5 INT,
+                c6 INT NOT NULL,
+                c7 BIGINT,
+                c8 BIGINT NOT NULL);
+                CREATE MATERIALIZED VIEW int_arg_min_diff AS SELECT
+                ARG_MIN(c1, c2) AS c1, ARG_MIN(c2, c1) AS c2, ARG_MIN(c3, c4) AS c3, ARG_MIN(c4, c3) AS c4,
+                ARG_MIN(c5, c6) AS c5, ARG_MIN(c6, c5) AS c6, ARG_MIN(c7, c8) AS c7, ARG_MIN(c8, c7) AS c8
+                FROM int0_tbl;""");
+        ccs.step("""
+                INSERT INTO int0_tbl VALUES
+                -- id, c1,  c2, c3,  c4, c5, c6, c7, c8
+                   (0, 5,    2, NULL, 4, 5, 6, NULL, 8),
+                   (1, 4,    3, 4,    6, 2, 3, 4,    2),
+                   (0, NULL, 2, 3,    2, 3, 4, 3,    3),
+                   (1, NULL, 5, 6,    2, 2, 1, NULL, 5);""", """
+                 c1 | c2 | c3 | c4 | c5 | c6 | c7 | c8 | weight
+                ------------------------------------------------
+                    |  3 |  3 |  2 |  2 | 1  |  4 |  3 | 1""");
+    }
 }

@@ -57,7 +57,7 @@ class aggtst_timestamp_arg_min_distinct_gby(TstView):
 class aggtst_timestamp_arg_min_where(TstView):
     def __init__(self):
         # checked manually
-        self.data = [{"c1": "2024-12-05T09:15:00", "c2": "2023-02-26T18:00:00"}]
+        self.data = [{"c1": "2024-12-05T09:15:00", "c2": None}]
         self.sql = """CREATE MATERIALIZED VIEW timestamp_arg_min_where AS SELECT
                       ARG_MIN(c1, c2) FILTER(WHERE c1 > '2014-11-05 08:27:00') AS c1, ARG_MIN(c2, c1) FILTER(WHERE c1 > '2014-11-05 08:27:00') AS c2
                       FROM timestamp_tbl"""

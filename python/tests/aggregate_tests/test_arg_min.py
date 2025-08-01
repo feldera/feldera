@@ -16,7 +16,7 @@ class aggtst_int_arg_min_diff(TstView):
     def __init__(self):
         # checked manually
         self.data = [
-            {"c1": 5, "c2": 3, "c3": 6, "c4": 2, "c5": 2, "c6": 3, "c7": 4, "c8": 3}
+            {"c1": None, "c2": 3, "c3": 3, "c4": 2, "c5": 2, "c6": 1, "c7": 4, "c8": 3}
         ]
         self.sql = """CREATE MATERIALIZED VIEW int_arg_min_diff AS SELECT
                       ARG_MIN(c1, c2) AS c1, ARG_MIN(c2, c1) AS c2, ARG_MIN(c3, c4) AS c3, ARG_MIN(c4, c3) AS c4, ARG_MIN(c5, c6) AS c5, ARG_MIN(c6, c5) AS c6, ARG_MIN(c7, c8) AS c7, ARG_MIN(c8, c7) AS c8
@@ -27,7 +27,7 @@ class aggtst_int_arg_min_diff1(TstView):
     def __init__(self):
         # checked manually
         self.data = [
-            {"c1": 7, "c2": -1, "c3": 4, "c4": 2, "c5": 2, "c6": 0, "c7": 6, "c8": -2}
+            {"c1": 7, "c2": -3, "c3": 0, "c4": 2, "c5": 2, "c6": 0, "c7": 6, "c8": -2}
         ]
         self.sql = """CREATE MATERIALIZED VIEW int_arg_min_diff1 AS SELECT
                       ARG_MIN(c1+c2, c2-c1) AS c1, ARG_MIN(c2-c1, c1+c2) AS c2, ARG_MIN(c3%c4, c4%c3) AS c3, ARG_MIN(c4%c3, c3%c4) AS c4, ARG_MIN(c5*c6, c6/c5) AS c5, ARG_MIN(c6/c5, c5*c6) AS c6, ARG_MIN(c7+c8, c8-c7) AS c7, ARG_MIN(c8-c7, c7+c8) AS c8
@@ -73,7 +73,7 @@ class aggtst_int_arg_min_gby_diff(TstView):
         self.data = [
             {
                 "id": 0,
-                "c1": 5,
+                "c1": None,
                 "c2": 2,
                 "c3": 3,
                 "c4": 2,
@@ -89,7 +89,7 @@ class aggtst_int_arg_min_gby_diff(TstView):
                 "c3": 6,
                 "c4": 6,
                 "c5": 2,
-                "c6": 3,
+                "c6": 1,
                 "c7": 4,
                 "c8": 2,
             },
@@ -115,7 +115,7 @@ class aggtst_int_arg_min_distinct_diff(TstView):
     def __init__(self):
         # checked manually
         self.data = [
-            {"c1": 5, "c2": 3, "c3": 6, "c4": 2, "c5": 2, "c6": 3, "c7": 4, "c8": 3}
+            {"c1": None, "c2": 3, "c3": 3, "c4": 2, "c5": 2, "c6": 1, "c7": 4, "c8": 3}
         ]
         self.sql = """CREATE MATERIALIZED VIEW int_arg_min_distinct_diff AS SELECT
                       ARG_MIN(DISTINCT c1, c2) AS c1, ARG_MIN(DISTINCT c2, c1) AS c2, ARG_MIN(DISTINCT c3, c4) AS c3, ARG_MIN(DISTINCT c4, c3) AS c4, ARG_MIN(DISTINCT c5, c6) AS c5, ARG_MIN(DISTINCT c6, c5) AS c6, ARG_MIN(DISTINCT c7, c8) AS c7, ARG_MIN(DISTINCT c8, c7) AS c8
@@ -161,7 +161,7 @@ class aggtst_int_arg_min_distinct_diff_gby(TstView):
         self.data = [
             {
                 "id": 0,
-                "c1": 5,
+                "c1": None,
                 "c2": 2,
                 "c3": 3,
                 "c4": 2,
@@ -177,7 +177,7 @@ class aggtst_int_arg_min_distinct_diff_gby(TstView):
                 "c3": 6,
                 "c4": 6,
                 "c5": 2,
-                "c6": 3,
+                "c6": 1,
                 "c7": 4,
                 "c8": 2,
             },
@@ -213,9 +213,9 @@ class aggtst_int_arg_min_where_diff(TstView):
         # checked manually
         self.data = [
             {
-                "f_c1": 5,
+                "f_c1": None,
                 "f_c2": 2,
-                "f_c3": 6,
+                "f_c3": 3,
                 "f_c4": 2,
                 "f_c5": 2,
                 "f_c6": 1,
@@ -267,7 +267,7 @@ class aggtst_int_arg_min_where_gby_diff(TstView):
         self.data = [
             {
                 "id": 0,
-                "f_c1": 5,
+                "f_c1": None,
                 "f_c2": 2,
                 "f_c3": 3,
                 "f_c4": 2,
@@ -304,7 +304,7 @@ class aggtst_int_arg_min_where_gby_diff1(TstView):
                 "f_c2": -3,
                 "f_c3": 1,
                 "f_c4": 2,
-                "f_c5": 30,
+                "f_c5": 12,
                 "f_c6": 1,
                 "f_c7": 6,
                 "f_c8": 0,

@@ -48,7 +48,7 @@ class aggtst_varbinary_arg_min_distinct_gby(TstView):
 class aggtst_varbinary_arg_min_where(TstView):
     def __init__(self):
         # checked manually
-        self.data = [{"c1": "17382115", "c2": "63141f4d"}]
+        self.data = [{"c1": "17382115", "c2": "37424d58"}]
         self.sql = """CREATE MATERIALIZED VIEW varbinary_arg_min_where AS SELECT
                       ARG_MIN(c1, c2) FILTER(WHERE c1 < c2) AS c1, ARG_MIN(c2, c1) FILTER(WHERE c1 < c2) AS c2
                       FROM varbinary_tbl"""
