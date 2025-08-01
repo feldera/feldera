@@ -852,6 +852,7 @@ mod test {
 
     /// Tests the compilation of several of the most basic SQL programs succeeds.
     #[tokio::test]
+    #[ignore = "https://github.com/feldera/feldera/issues/4492"]
     async fn basics() {
         let test = CompilerTest::new().await;
         let tenant_id = TenantRecord::default().id;
