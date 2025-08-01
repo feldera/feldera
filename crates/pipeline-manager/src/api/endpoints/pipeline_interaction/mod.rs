@@ -20,6 +20,8 @@ use feldera_types::query_params::MetricsParameters;
 use log::{debug, info};
 use std::time::Duration;
 
+pub mod support_bundle;
+
 /// Push data to a SQL table.
 ///
 /// The client sends data encoded using the format specified in the `?format=`
