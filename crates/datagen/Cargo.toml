@@ -29,3 +29,4 @@ async-channel = { workspace = true }
 range-set = { workspace = true }
 xxhash-rust = { workspace = true, features = ["xxh3"] }
 uuid = { workspace = true, features = ["v4", "std"] }
+crossbeam = { workspace = true }
