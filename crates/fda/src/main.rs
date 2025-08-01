@@ -71,13 +71,15 @@ fn make_auth_headers(auth: &Option<String>) -> Result<HeaderMap, InvalidHeaderVa
     Ok(headers)
 }
 
-/// Create a client with the given host, auth, and timeout.
+/// Create a client with the given host, auth, and timeout.  If `insecure` is
+/// true, then the client won't verify TLS certificates.
 pub(crate) fn make_client(
     host: String,
+    insecure: bool,
     auth: Option<String>,
     timeout: Option<u64>,
 ) -> Result<Client, Box<dyn std::error::Error>> {
-    let mut client_builder = reqwest::ClientBuilder::new();
+    let mut client_builder = reqwest::ClientBuilder::new().danger_accept_invalid_certs(insecure);
 
     if let Some(timeout) = timeout {
         client_builder = client_builder.timeout(Duration::from_secs(timeout));
@@ -2024,7 +2026,7 @@ async fn main() {
     }
 
     let client = || {
-        make_client(cli.host, cli.auth, cli.timeout)
+        make_client(cli.host, cli.insecure, cli.auth, cli.timeout)
             .map_err(|e| {
                 eprintln!("Failed to create HTTP client: {}", e);
                 std::process::exit(1);
