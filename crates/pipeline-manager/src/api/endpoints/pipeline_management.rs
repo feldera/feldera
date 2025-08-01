@@ -553,45 +553,6 @@ pub(crate) async fn get_pipeline(
         .json(&returned_pipeline))
 }
 
-/// Retrieve the program info of a pipeline.
-#[utoipa::path(
-    context_path = "/v0",
-    security(("JSON web token (JWT) or API key" = [])),
-    params(
-        ("pipeline_name" = String, Path, description = "Unique pipeline name"),
-    ),
-    responses(
-        (status = OK
-            , description = "Pipeline retrieved successfully"
-            , body = ProgramInfo
-            , example = json!(examples::pipeline_1_selected_info())),
-        (status = NOT_FOUND
-            , description = "Pipeline with that name does not exist"
-            , body = ErrorResponse
-            , example = json!(examples::error_unknown_pipeline_name())),
-        (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
-    ),
-    tag = "Pipeline management"
-)]
-#[get("/pipelines/{pipeline_name}/program_info")]
-pub(crate) async fn get_program_info(
-    state: WebData<ServerState>,
-    tenant_id: ReqData<TenantId>,
-    path: web::Path<String>,
-) -> Result<HttpResponse, ManagerError> {
-    let pipeline_name = path.into_inner();
-    log::error!("pipeline_name {:?}", pipeline_name);
-    let pipeline = state
-        .db
-        .lock()
-        .await
-        .get_pipeline(*tenant_id, &pipeline_name)
-        .await?;
-    Ok(HttpResponse::Ok()
-        .insert_header(CacheControl(vec![CacheDirective::NoCache]))
-        .json(&pipeline.program_info))
-}
-
 /// Create a new pipeline.
 #[utoipa::path(
     context_path = "/v0",
