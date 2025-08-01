@@ -77,7 +77,6 @@ only the program-related core fields, and is used by the compiler to discern whe
         endpoints::pipeline_management::post_pipeline_stop,
         endpoints::pipeline_management::post_pipeline_clear,
         endpoints::pipeline_management::get_pipeline_logs,
-        endpoints::pipeline_management::get_program_info,
 
         // Pipeline interaction endpoints
         endpoints::pipeline_interaction::http_input,
@@ -287,7 +286,6 @@ fn api_scope() -> Scope {
         .service(endpoints::pipeline_management::post_pipeline_stop)
         .service(endpoints::pipeline_management::post_pipeline_clear)
         .service(endpoints::pipeline_management::get_pipeline_logs)
-        .service(endpoints::pipeline_management::get_program_info)
         // Pipeline interaction endpoints
         .service(endpoints::pipeline_interaction::http_input)
         .service(endpoints::pipeline_interaction::http_output)
