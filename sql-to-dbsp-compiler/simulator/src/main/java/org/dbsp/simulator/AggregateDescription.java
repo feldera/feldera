@@ -1,10 +1,11 @@
 package org.dbsp.simulator;
 
+import org.dbsp.simulator.types.Weight;
 import org.dbsp.simulator.util.TriFunction;
 
 import java.util.function.Function;
 
-public class AggregateDescription<Result, IntermediateResult, Data, Weight> {
+public class AggregateDescription<Result, IntermediateResult, Data> {
     public final IntermediateResult initialValue;
     public final TriFunction<IntermediateResult, Data, Weight, IntermediateResult> update;
     public final Function<IntermediateResult, Result> finalize;

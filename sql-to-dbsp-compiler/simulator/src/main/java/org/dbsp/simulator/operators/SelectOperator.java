@@ -2,18 +2,19 @@ package org.dbsp.simulator.operators;
 
 import org.dbsp.simulator.collections.BaseCollection;
 import org.dbsp.simulator.collections.ZSet;
+import org.dbsp.simulator.types.DataType;
 import org.dbsp.simulator.values.SqlTuple;
 import org.dbsp.simulator.types.WeightType;
 
 import java.util.function.Function;
 
-public class SelectOperator<Weight> extends UnaryOperator<Weight> {
+public class SelectOperator<Weight> extends UnaryOperator {
     final Function<SqlTuple, SqlTuple> tupleTransform;
 
-    public SelectOperator(WeightType<Weight> weightType,
+    public SelectOperator(DataType outputType,
                           Function<SqlTuple, SqlTuple> tupleTransform,
-                          BaseOperator<Weight> input) {
-        super(weightType, input);
+                          Stream input) {
+        super(outputType, input);
         this.tupleTransform = tupleTransform;
     }
 
