@@ -7,13 +7,14 @@ use std::hash::Hasher;
 use std::num::NonZeroU32;
 use std::ops::{Range, RangeInclusive};
 use std::sync::{Arc, LazyLock};
-use std::thread::{self, Thread};
+use std::thread;
 use std::time::Duration as StdDuration;
 
 use anyhow::{anyhow, bail, Result as AnyResult};
 use async_channel::Receiver as AsyncReceiver;
 use chrono::format::{Item, StrftimeItems};
 use chrono::{DateTime, Days, Duration, NaiveDate, NaiveTime, Timelike};
+use crossbeam::sync::{Parker, Unparker};
 use feldera_fxp::{pow10, DynamicDecimal, UniformDecimal};
 use feldera_types::config::FtModel;
 use governor::clock::DefaultClock;
@@ -409,7 +410,7 @@ impl TransportInputEndpoint for GeneratorEndpoint {
 
 struct InputGenerator {
     command_sender: UnboundedSender<InputReaderCommand>,
-    datagen_thread: Thread,
+    datagen_unparker: Unparker,
 }
 
 impl InputGenerator {
@@ -442,7 +443,10 @@ impl InputGenerator {
             plan.fields = normalized_plan_names;
         }
 
-        let join_handle = std::thread::Builder::new()
+        let datagen_parker = Parker::new();
+        let datagen_unparker = datagen_parker.unparker().clone();
+
+        thread::Builder::new()
             .name("datagen".to_string())
             .spawn(move || {
                 if let Err(error) = Self::datagen_thread(
@@ -452,16 +456,16 @@ impl InputGenerator {
                     config,
                     schema,
                     seek,
+                    datagen_parker,
                 ) {
                     consumer.error(true, error);
                 }
             })
             .expect("failed to spawn datagen thread");
-        let datagen_thread = join_handle.thread().clone();
 
         Ok(Self {
             command_sender,
-            datagen_thread,
+            datagen_unparker,
         })
     }
 
@@ -472,6 +476,7 @@ impl InputGenerator {
         config: DatagenInputConfig,
         schema: Relation,
         seek: Option<Value>,
+        parker: Parker,
     ) -> AnyResult<()> {
         let rate_limiters = Arc::new(
             config
@@ -517,7 +522,7 @@ impl InputGenerator {
                 consumer,
                 parser,
                 rate_limiters,
-                std::thread::current(),
+                parker.unparker().clone(),
             );
             if needs_blocking_tasks {
                 thread::Builder::new()
@@ -685,7 +690,7 @@ impl InputGenerator {
                     consumer.eoi();
                 }
             } else {
-                std::thread::park();
+                parker.park();
             }
         }
 
@@ -701,7 +706,7 @@ impl InputGenerator {
         consumer: Box<dyn InputConsumer>,
         mut parser: Box<dyn Parser>,
         rate_limiters: Arc<Vec<RateLimiter<NotKeyed, InMemoryState, DefaultClock, NoOpMiddleware>>>,
-        datagen_thread: Thread,
+        datagen_unparker: Unparker,
     ) {
         let mut buffer = Vec::new();
         let mut buffer_start = 0;
@@ -710,7 +715,7 @@ impl InputGenerator {
         static REC_DELIM: &[u8; 1] = b",";
 
         while let Ok(work) = work_receiver.recv().await {
-            datagen_thread.unpark();
+            datagen_unparker.unpark();
 
             let Work {
                 batch: Batch { plan_idx, rows },
@@ -759,7 +764,7 @@ impl InputGenerator {
                                 buffer,
                                 num_bytes,
                             });
-                            datagen_thread.unpark();
+                            datagen_unparker.unpark();
                             n_records = 0;
                             batch_creation_duration = TokioInstant::now();
                         }
@@ -789,7 +794,7 @@ impl InputGenerator {
                     buffer,
                     num_bytes,
                 });
-                datagen_thread.unpark();
+                datagen_unparker.unpark();
             }
         }
     }
@@ -897,7 +902,7 @@ fn assign_work(
 impl InputReader for InputGenerator {
     fn request(&self, command: InputReaderCommand) {
         let _ = self.command_sender.send(command);
-        self.datagen_thread.unpark();
+        self.datagen_unparker.unpark();
     }
 
     fn is_closed(&self) -> bool {
