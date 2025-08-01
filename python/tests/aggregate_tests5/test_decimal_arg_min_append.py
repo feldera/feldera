@@ -1,0 +1,1 @@
+../aggregate_tests/test_decimal_arg_min.py

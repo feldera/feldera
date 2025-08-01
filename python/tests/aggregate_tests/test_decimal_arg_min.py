@@ -1,4 +1,4 @@
-from .aggtst_base import TstView
+from tests.aggregate_tests.aggtst_base import TstView
 from decimal import Decimal
 
 
