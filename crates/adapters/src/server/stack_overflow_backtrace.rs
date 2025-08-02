@@ -1,4 +1,4 @@
-//! This implementation was copied from https://github.com/matklad/backtrace-on-stack-overflow.
+//! This implementation was copied from <https://github.com/matklad/backtrace-on-stack-overflow>.
 //!
 //! By default, Rust aborts on stackoverflow without printing a backtrace:
 //!

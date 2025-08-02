@@ -313,18 +313,13 @@ where
 
             for key in sample.dyn_iter_mut() {
                 cursor.seek_key(key);
-                debug_assert!(cursor.key_valid());
+                debug_assert!(cursor.key_valid() && cursor.val_valid());
                 debug_assert_eq!(cursor.key(), key);
 
-                while cursor.val_valid() {
-                    if !cursor.weight().is_zero() {
-                        item.from_refs(key, cursor.val());
-                        builder.push_val_diff(().erase(), ZWeight::one().erase());
-                        builder.push_key_mut(item.as_mut());
-                        break;
-                    }
-                    cursor.step_val();
-                }
+                debug_assert!(!cursor.weight().is_zero());
+                item.from_refs(key, cursor.val());
+                builder.push_val_diff(().erase(), ZWeight::one().erase());
+                builder.push_key_mut(item.as_mut());
             }
 
             builder.done()
@@ -472,7 +467,7 @@ mod test {
 
                 sample_size_handle.set_for_all(sample_size);
 
-                dbsp.step().unwrap();
+                dbsp.transaction().unwrap();
 
                 let output_sample = output_sample_handle.consolidate();
                 let output_quantile = output_quantile_handle.consolidate();
@@ -532,7 +527,7 @@ mod test {
 
                 sample_size_handle.set_for_all(sample_size);
 
-                dbsp.step().unwrap();
+                dbsp.transaction().unwrap();
 
                 let output_sample = output_sample_handle.consolidate();
                 let output_quantile = output_quantile_handle.consolidate();

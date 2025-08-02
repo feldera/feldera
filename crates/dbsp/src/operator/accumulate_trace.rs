@@ -26,11 +26,11 @@ where
     /// This operator labels each untimed batch in the stream with the current
     /// timestamp and adds it to a trace.
     #[track_caller]
-    pub fn trace(&self) -> Stream<C, TypedBatch<K, V, R, TimedSpine<B, C>>> {
+    pub fn accumulate_trace(&self) -> Stream<C, TypedBatch<K, V, R, TimedSpine<B, C>>> {
         let trace_factories = BatchReaderFactories::new::<K, V, R>();
         let batch_factories = BatchReaderFactories::new::<K, V, R>();
         self.inner()
-            .dyn_trace(&trace_factories, &batch_factories)
+            .dyn_accumulate_trace(&trace_factories, &batch_factories)
             .typed()
     }
 
@@ -48,7 +48,7 @@ where
     ///                      └───────┘
     /// ```
     #[track_caller]
-    pub fn trace_with_bound<T>(
+    pub fn accumulate_trace_with_bound<T>(
         &self,
         lower_key_bound: TraceBound<B::Key>,
         lower_val_bound: TraceBound<B::Val>,
@@ -57,7 +57,7 @@ where
         let batch_factories = BatchReaderFactories::new::<K, V, R>();
 
         self.inner()
-            .dyn_trace_with_bound(
+            .dyn_accumulate_trace_with_bound(
                 &trace_factories,
                 &batch_factories,
                 lower_key_bound,
@@ -170,7 +170,7 @@ where
     ///   `retain_key_func(ts2, k) = false`, i.e., once a key is rejected, it
     ///   will remain rejected as the bound increases.
     #[track_caller]
-    pub fn integrate_trace_retain_keys<TS, RK>(
+    pub fn accumulate_integrate_trace_retain_keys<TS, RK>(
         &self,
         bounds_stream: &Stream<C, TypedBox<TS, DynData>>,
         retain_key_func: RK,
@@ -178,7 +178,7 @@ where
         TS: DBData + Erase<DynData>,
         RK: Fn(&B::Key, &TS) -> bool + Clone + Send + Sync + 'static,
     {
-        self.inner().dyn_integrate_trace_retain_keys(
+        self.inner().dyn_accumulate_integrate_trace_retain_keys(
             &bounds_stream.inner_data(),
             Box::new(move |ts| {
                 let metadata = MetaItem::String(format!("{ts:?}"));
@@ -198,7 +198,7 @@ where
     /// [`integrate_trace_retain_keys`](`Self::integrate_trace_retain_keys`),
     /// but applies a retainment policy to values in the trace.
     #[track_caller]
-    pub fn integrate_trace_retain_values<TS, RV>(
+    pub fn accumulate_integrate_trace_retain_values<TS, RV>(
         &self,
         bounds_stream: &Stream<C, TypedBox<TS, DynData>>,
         retain_value_func: RV,
@@ -206,7 +206,7 @@ where
         TS: DBData + Erase<DynData>,
         RV: Fn(&B::Val, &TS) -> bool + Clone + Send + Sync + 'static,
     {
-        self.inner().dyn_integrate_trace_retain_values(
+        self.inner().dyn_accumulate_integrate_trace_retain_values(
             &bounds_stream.inner_data(),
             Box::new(move |ts: &DynData| {
                 let metadata = MetaItem::String(format!("{ts:?}"));
@@ -232,10 +232,12 @@ where
     ///
     /// The result batch is stored durably for fault tolerance.
     #[track_caller]
-    pub fn integrate_trace(&self) -> Stream<C, Spine<B>> {
+    pub fn accumulate_integrate_trace(&self) -> Stream<C, Spine<B>> {
         let factories = BatchReaderFactories::new::<B::Key, B::Val, B::R>();
 
-        self.inner().dyn_integrate_trace(&factories).typed()
+        self.inner()
+            .dyn_accumulate_integrate_trace(&factories)
+            .typed()
     }
 
     /// Constructs and returns a untimed trace of this stream.
@@ -248,7 +250,7 @@ where
     /// can still discard data.
     ///
     /// The result batch is stored durably for fault tolerance.
-    pub fn integrate_trace_with_bound(
+    pub fn accumulate_integrate_trace_with_bound(
         &self,
         lower_key_bound: TraceBound<<B::Inner as DynBatchReader>::Key>,
         lower_val_bound: TraceBound<<B::Inner as DynBatchReader>::Val>,
@@ -259,7 +261,7 @@ where
         let factories = BatchReaderFactories::new::<B::Key, B::Val, B::R>();
 
         self.inner()
-            .dyn_integrate_trace_with_bound(&factories, lower_key_bound, lower_val_bound)
+            .dyn_accumulate_integrate_trace_with_bound(&factories, lower_key_bound, lower_val_bound)
             .typed()
     }
 }

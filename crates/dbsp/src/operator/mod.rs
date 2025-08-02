@@ -11,9 +11,11 @@ pub(crate) mod apply;
 pub mod apply2;
 pub mod apply3;
 pub mod apply_n;
+mod async_stream_operators;
 pub mod communication;
 pub(crate) mod inspect;
 
+mod accumulator;
 mod condition;
 mod count;
 mod csv;
@@ -21,6 +23,7 @@ mod delta0;
 mod differentiate;
 mod generator;
 mod integrate;
+mod macrostep_z1;
 mod neg;
 mod output;
 mod plus;
@@ -28,6 +31,7 @@ mod stream_fold;
 mod sum;
 mod z1;
 
+mod accumulate_trace;
 mod aggregate;
 mod asof_join;
 mod average;
@@ -43,6 +47,7 @@ pub mod input;
 pub mod join;
 mod join_range;
 pub mod neighborhood;
+mod non_incremental;
 mod recursive;
 pub mod sample;
 mod semijoin;
@@ -61,7 +66,7 @@ pub use dynamic::aggregate::{
     Aggregator, Avg, Fold, Max, MaxSemigroup, Min, MinSemigroup, Postprocess,
 };
 pub use dynamic::neighborhood::DynNeighborhood;
-pub use generator::{Generator, GeneratorNested};
+pub use generator::{Generator, GeneratorNested, MacrostepGenerator};
 // // //pub use index::Index;
 pub use group::CmpFunc;
 use input::Mailbox;
@@ -73,6 +78,7 @@ pub use dynamic::join_range::StreamJoinRange;
 pub use dynamic::{neighborhood::NeighborhoodDescr, trace::TraceBound};
 #[cfg(not(feature = "backend-mode"))]
 pub use filter_map::FilterMap;
+pub use macrostep_z1::MacrostepZ1;
 pub use neighborhood::{NeighborhoodDescrBox, NeighborhoodDescrStream};
 pub use output::OutputHandle;
 pub use plus::{Minus, Plus};

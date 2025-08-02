@@ -1,12 +1,14 @@
 //! The scheduling framework controls the execution of a circuit at runtime.
 
+#![allow(async_fn_in_trait)]
+
 use super::{trace::SchedulerEvent, Circuit, GlobalNodeId, NodeId};
-use crate::DetailedError;
+use crate::{DetailedError, Position};
 use itertools::Itertools;
 use serde::Serialize;
 use std::{
     borrow::Cow,
-    collections::BTreeSet,
+    collections::{BTreeMap, BTreeSet},
     error::Error as StdError,
     fmt::{Display, Error as FmtError, Formatter},
     future::Future,
@@ -32,6 +34,8 @@ pub enum Error {
     CyclicCircuit {
         node_id: GlobalNodeId,
     },
+    FlushWithoutStep,
+    MicrostepWithoutStep,
     /// Execution of the circuit interrupted by the user (via
     /// [`RuntimeHandle::kill`](`crate::circuit::RuntimeHandle::kill`)).
     Killed,
@@ -53,6 +57,8 @@ impl DetailedError for Error {
         match self {
             Self::OwnershipConflict { .. } => Cow::from("OwnershipConflict"),
             Self::CyclicCircuit { .. } => Cow::from("CyclicCircuit"),
+            Self::FlushWithoutStep => Cow::from("FlushWithoutStep"),
+            Self::MicrostepWithoutStep => Cow::from("MicrostepWithoutStep"),
             Self::Killed => Cow::from("Killed"),
             Self::TokioError { .. } => Cow::from("TokioError"),
             Self::ReplayInfoConflict { .. } => Cow::from("ReplayInfoConflict"),
@@ -65,11 +71,13 @@ impl Display for Error {
         match self {
             Self::OwnershipConflict { origin, consumers } => {
                 write!(f, "ownership conflict: output of node '{origin}' is consumed by value by the following nodes: [{}]",
-                       consumers.iter().map(ToString::to_string).format(","))
+                               consumers.iter().map(ToString::to_string).format(","))
             }
             Self::CyclicCircuit { node_id } => {
                 write!(f, "unschedulable circuit due to a cyclic topology: cycle through node '{node_id}'")
             }
+            Error::FlushWithoutStep => f.write_str("commit invoked outside of a transaction"),
+            Error::MicrostepWithoutStep => f.write_str("microstep called outside of a transaction"),
             Self::Killed => f.write_str("circuit has been killed by the user"),
             Self::TokioError { error } => write!(f, "tokio error: {error}"),
             Self::ReplayInfoConflict { error } => {
@@ -80,6 +88,118 @@ impl Display for Error {
 }
 
 impl StdError for Error {}
+
+#[derive(Debug)]
+pub struct FlushProgress {
+    completed: BTreeMap<NodeId, Option<Position>>,
+    in_progress: BTreeMap<NodeId, Option<Position>>,
+    remaining: BTreeSet<NodeId>,
+}
+
+impl Default for FlushProgress {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl FlushProgress {
+    pub fn new() -> Self {
+        Self {
+            completed: BTreeMap::new(),
+            in_progress: BTreeMap::new(),
+            remaining: BTreeSet::new(),
+        }
+    }
+
+    pub fn add_remaining(&mut self, node_id: NodeId) {
+        self.remaining.insert(node_id);
+    }
+
+    pub fn add_completed(&mut self, node_id: NodeId, progress: Option<Position>) {
+        debug_assert!(!self.completed.contains_key(&node_id));
+        debug_assert!(!self.in_progress.contains_key(&node_id));
+        debug_assert!(!self.remaining.contains(&node_id));
+
+        self.completed.insert(node_id, progress);
+    }
+
+    pub fn add_in_progress(&mut self, node_id: NodeId, progress: Option<Position>) {
+        debug_assert!(!self.completed.contains_key(&node_id));
+        debug_assert!(!self.in_progress.contains_key(&node_id));
+        debug_assert!(!self.remaining.contains(&node_id));
+
+        self.in_progress.insert(node_id, progress);
+    }
+
+    pub fn summary(&self) -> FlushProgressSummary {
+        let completed = self.completed.len() as u64;
+        let in_progress = self.in_progress.len() as u64;
+        let remaining = self.remaining.len() as u64;
+        let in_progress_processed_records = self
+            .in_progress
+            .values()
+            .map(|progress| progress.as_ref().map(|p| p.offset).unwrap_or_default())
+            .sum();
+
+        let in_progress_total_records = self
+            .in_progress
+            .values()
+            .map(|progress| progress.as_ref().map(|p| p.total).unwrap_or_default())
+            .sum();
+
+        FlushProgressSummary {
+            completed,
+            in_progress,
+            remaining,
+            in_progress_processed_records,
+            in_progress_total_records,
+        }
+    }
+}
+
+pub struct FlushProgressSummary {
+    completed: u64,
+    in_progress: u64,
+    remaining: u64,
+    in_progress_processed_records: u64,
+    in_progress_total_records: u64,
+}
+
+impl Default for FlushProgressSummary {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl FlushProgressSummary {
+    pub fn new() -> Self {
+        Self {
+            completed: 0,
+            in_progress: 0,
+            remaining: 0,
+            in_progress_processed_records: 0,
+            in_progress_total_records: 0,
+        }
+    }
+
+    pub fn merge(&mut self, other: &FlushProgressSummary) {
+        self.completed += other.completed;
+        self.in_progress += other.in_progress;
+        self.remaining += other.remaining;
+        self.in_progress_processed_records += other.in_progress_processed_records;
+        self.in_progress_total_records += other.in_progress_total_records;
+    }
+}
+
+impl Display for FlushProgressSummary {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "completed: {} operators, evaluating: {} operators [{}/{} changes processed], remaining: {} operators",
+            self.completed, self.in_progress, self.in_progress_processed_records, self.in_progress_total_records, self.remaining
+        )
+    }
+}
 
 /// A scheduler defines the order in which nodes in a circuit are evaluated at
 /// runtime.
@@ -120,6 +240,24 @@ where
     where
         C: Circuit;
 
+    async fn start_step<C>(&self, circuit: &C) -> Result<(), Error>
+    where
+        C: Circuit;
+
+    fn flush(&self) -> Result<(), Error>;
+
+    fn is_flush_complete(&self) -> bool;
+
+    fn flush_progress(&self) -> FlushProgress;
+
+    async fn microstep<C>(&self, circuit: &C) -> Result<(), Error>
+    where
+        C: Circuit;
+
+    // async fn finish_step<C>(&self, circuit: &C) -> Result<(), Error>
+    // where
+    //     C: Circuit;
+
     /// Evaluate the circuit at runtime.
     ///
     /// Evaluates each node in the circuit exactly once in an order that
@@ -131,9 +269,18 @@ where
     ///
     /// * `circuit` - circuit to schedule, this must be the same circuit for
     ///   which the schedule was computed.
-    fn step<C>(&self, circuit: &C) -> impl Future<Output = Result<(), Error>>
+    async fn step<C>(&self, circuit: &C) -> Result<(), Error>
     where
-        C: Circuit;
+        C: Circuit,
+    {
+        self.start_step(circuit).await?;
+        self.flush()?;
+        while !self.is_flush_complete() {
+            self.microstep(circuit).await?;
+        }
+
+        Ok(())
+    }
 }
 
 /// An executor executes a circuit by evaluating all of its operators using a
@@ -142,7 +289,28 @@ where
 pub trait Executor<C>: 'static {
     fn prepare(&mut self, circuit: &C, nodes: Option<&BTreeSet<NodeId>>) -> Result<(), Error>;
 
-    fn run<'a>(&'a self, circuit: &'a C) -> Pin<Box<dyn Future<Output = Result<(), Error>> + 'a>>;
+    fn flush(&self) -> Result<(), Error>;
+
+    fn is_flush_complete(&self) -> bool;
+
+    fn flush_progress(&self) -> FlushProgress;
+
+    fn start_step<'a>(
+        &'a self,
+        circuit: &'a C,
+    ) -> Pin<Box<dyn Future<Output = Result<(), Error>> + 'a>>;
+
+    fn microstep<'a>(
+        &'a self,
+        circuit: &'a C,
+    ) -> Pin<Box<dyn Future<Output = Result<(), Error>> + 'a>>;
+
+    // fn finish_step<'a>(
+    //     &'a self,
+    //     circuit: &'a C,
+    // ) -> Pin<Box<dyn Future<Output = Result<(), Error>> + 'a>>;
+
+    fn step<'a>(&'a self, circuit: &'a C) -> Pin<Box<dyn Future<Output = Result<(), Error>> + 'a>>;
 }
 
 /// An iterative executor evaluates the circuit until the `termination_check`
@@ -173,7 +341,46 @@ where
     C: Circuit,
     S: Scheduler + 'static,
 {
-    fn run<'a>(&'a self, circuit: &C) -> Pin<Box<dyn Future<Output = Result<(), Error>> + 'a>> {
+    fn start_step<'a>(
+        &'a self,
+        circuit: &C,
+    ) -> Pin<Box<dyn Future<Output = Result<(), Error>> + 'a>> {
+        let circuit = circuit.clone();
+        Box::pin(async move {
+            circuit.log_scheduler_event(&SchedulerEvent::clock_start());
+            circuit.clock_start(0);
+
+            self.scheduler.start_step(&circuit).await
+        })
+    }
+
+    fn microstep<'a>(
+        &'a self,
+        circuit: &'a C,
+    ) -> Pin<Box<dyn Future<Output = Result<(), Error>> + 'a>> {
+        let circuit = circuit.clone();
+        Box::pin(async move { self.scheduler.microstep(&circuit).await })
+    }
+
+    // fn finish_step<'a>(
+    //     &'a self,
+    //     circuit: &C,
+    // ) -> Pin<Box<dyn Future<Output = Result<(), Error>> + 'a>> {
+    //     let circuit = circuit.clone();
+    //     Box::pin(async move {
+    //         self.scheduler.finish_step(&circuit).await?;
+
+    //         while (self.termination_check)().await? {
+    //             self.scheduler.step(&circuit).await?;
+    //         }
+
+    //         circuit.log_scheduler_event(&SchedulerEvent::clock_end());
+    //         circuit.clock_end(0);
+    //         Ok(())
+    //     })
+    // }
+
+    fn step<'a>(&'a self, circuit: &C) -> Pin<Box<dyn Future<Output = Result<(), Error>> + 'a>> {
         let circuit = circuit.clone();
         Box::pin(async move {
             circuit.log_scheduler_event(&SchedulerEvent::clock_start());
@@ -194,6 +401,18 @@ where
 
     fn prepare(&mut self, circuit: &C, nodes: Option<&BTreeSet<NodeId>>) -> Result<(), Error> {
         self.scheduler.prepare(circuit, nodes)
+    }
+
+    fn flush(&self) -> Result<(), Error> {
+        Ok(())
+    }
+
+    fn flush_progress(&self) -> FlushProgress {
+        FlushProgress::new()
+    }
+
+    fn is_flush_complete(&self) -> bool {
+        true
     }
 }
 
@@ -220,12 +439,45 @@ where
     C: Circuit,
     S: Scheduler + 'static,
 {
-    fn run<'a>(&'a self, circuit: &'a C) -> Pin<Box<dyn Future<Output = Result<(), Error>> + 'a>> {
+    fn start_step<'a>(
+        &'a self,
+        circuit: &'a C,
+    ) -> Pin<Box<dyn Future<Output = Result<(), Error>> + 'a>> {
+        Box::pin(async { self.scheduler.start_step(circuit).await })
+    }
+
+    fn microstep<'a>(
+        &'a self,
+        circuit: &'a C,
+    ) -> Pin<Box<dyn Future<Output = Result<(), Error>> + 'a>> {
+        Box::pin(async { self.scheduler.microstep(circuit).await })
+    }
+
+    // fn finish_step<'a>(
+    //     &'a self,
+    //     circuit: &'a C,
+    // ) -> Pin<Box<dyn Future<Output = Result<(), Error>> + 'a>> {
+    //     Box::pin(async { self.scheduler.finish_step(circuit).await })
+    // }
+
+    fn step<'a>(&'a self, circuit: &'a C) -> Pin<Box<dyn Future<Output = Result<(), Error>> + 'a>> {
         Box::pin(async { self.scheduler.step(circuit).await })
     }
 
     fn prepare(&mut self, circuit: &C, nodes: Option<&BTreeSet<NodeId>>) -> Result<(), Error> {
         self.scheduler.prepare(circuit, nodes)
+    }
+
+    fn flush(&self) -> Result<(), Error> {
+        self.scheduler.flush()
+    }
+
+    fn is_flush_complete(&self) -> bool {
+        self.scheduler.is_flush_complete()
+    }
+
+    fn flush_progress(&self) -> FlushProgress {
+        self.scheduler.flush_progress()
     }
 }
 

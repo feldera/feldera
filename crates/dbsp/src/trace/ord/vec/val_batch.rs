@@ -1,3 +1,5 @@
+use crate::trace::cursor::Position;
+use crate::trace::ord::merge_batcher::MergeBatcher;
 use crate::{
     algebra::Lattice,
     dynamic::{
@@ -6,7 +8,8 @@ use crate::{
     },
     trace::{
         layers::{
-            Cursor as _, Layer, LayerCursor, LayerFactories, Leaf, LeafFactories, OrdOffset, Trie,
+            Cursor as TrieCursor, Layer, LayerCursor, LayerFactories, Leaf, LeafFactories,
+            OrdOffset, Trie,
         },
         Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor, Deserializer,
         Serializer,
@@ -19,8 +22,6 @@ use rand::Rng;
 use rkyv::{Archive, Deserialize, Serialize};
 use size_of::SizeOf;
 use std::fmt::{self, Debug, Display, Formatter};
-
-use crate::trace::ord::merge_batcher::MergeBatcher;
 
 pub type VecValBatchLayer<K, V, T, R, O> = Layer<K, Layer<V, Leaf<DynDataTyped<T>, R>, O>, O>;
 
@@ -389,6 +390,7 @@ where
     T: Timestamp,
     O: OrdOffset,
 {
+    type Timed<T2: Timestamp> = VecValBatch<K, V, T2, R, O>;
     type Batcher = MergeBatcher<Self>;
     type Builder = VecValBuilder<K, V, T, R, O>;
 
@@ -563,6 +565,13 @@ where
     fn fast_forward_vals(&mut self) {
         self.cursor.child.fast_forward();
     }
+
+    fn position(&self) -> Option<Position> {
+        Some(Position {
+            total: TrieCursor::keys(&self.cursor) as u64,
+            offset: self.cursor.pos() as u64,
+        })
+    }
 }
 
 /// A builder for creating layers from unsorted update tuples.
@@ -703,6 +712,10 @@ where
             ),
             factories: self.factories,
         }
+    }
+
+    fn num_tuples(&self) -> usize {
+        self.diffs.len()
     }
 }
 

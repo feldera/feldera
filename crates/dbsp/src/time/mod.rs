@@ -46,15 +46,13 @@ mod product;
 
 use crate::{
     algebra::{Lattice, PartialOrder},
-    dynamic::{DataTrait, WeightTrait},
-    trace::{Batch, FallbackIndexedWSet, FallbackKeyBatch, FallbackValBatch, FallbackWSet},
+    trace::Batch,
     DBData, Scope,
 };
 use rkyv::{Archive, Deserialize, Serialize};
 use size_of::SizeOf;
 use std::{fmt::Debug, hash::Hash};
 
-use crate::dynamic::DynUnit;
 pub use antichain::{Antichain, AntichainRef};
 //pub use nested_ts32::NestedTimestamp32;
 pub use product::Product;
@@ -66,29 +64,18 @@ pub use product::Product;
 // TODO: Conversion to/from the most general time representation (`[usize]`).
 // TODO: Model overflow by having `advance` return Option<Self>.
 pub trait Timestamp: DBData + PartialOrder + Lattice {
+    /// Nesting depth of the circuit running this clock.
+    ///
+    /// 0 - for the top-level clock, 1 - first-level nested circuit, etc.
+    const NESTING_DEPTH: usize;
+
     type Nested: Timestamp;
 
-    /// A default `Batch` type for batches using this timestamp.
+    /// A version of a batch type `B` with `Self` used as a timestamp.
     ///
-    /// We sometimes need to instantiate a batch with the given key, value,
-    /// timestamp, and weight types to store the intermediate result of a
-    /// computation, and we don't want to bother the user with specifying the
-    /// concrete batch type to use.  A reasonable default is one of
-    /// `OrdValBatch` and `OrdIndexedZSet` depending on the timestamp type.
-    /// The former works for all timestamps, while the latter is more
-    /// compact and efficient, but is only applicable to batches with unit
-    /// timestamps `()`.
-    ///
-    /// We automate this choice by making it an associated type of
-    /// `trait Timestamp` -- not a very elegant solution, but I couldn't
-    /// think of a better one.
-    type ValBatch<K: DataTrait + ?Sized, V: DataTrait + ?Sized, R: WeightTrait + ?Sized>: Batch<Key = K, Val = V, Time = Self, R = R>
-        + SizeOf
-        + Send
-        + Sync;
-
-    type KeyBatch<K: DataTrait + ?Sized, R: WeightTrait + ?Sized>: Batch<Key = K, Val = DynUnit, Time = Self, R = R>
-        + SizeOf;
+    /// If `Self = ()`, then `TimedBatch<B>` is `B`.
+    /// Otherwise, `TimedBatch<B> = B::Timed<Self>`.
+    type TimedBatch<B: Batch<Time = ()>>: Batch<Key = B::Key, Val = B::Val, Time = Self, R = B::R>;
 
     fn minimum() -> Self;
 
@@ -187,11 +174,12 @@ impl Lattice for UnitTimestamp {
 }
 
 impl Timestamp for UnitTimestamp {
+    const NESTING_DEPTH: usize = 0;
+
     type Nested = ();
 
-    type ValBatch<K: DataTrait + ?Sized, V: DataTrait + ?Sized, R: WeightTrait + ?Sized> =
-        FallbackValBatch<K, V, Self, R>;
-    type KeyBatch<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> = FallbackKeyBatch<K, Self, R>;
+    type TimedBatch<B: Batch<Time = ()>> = B::Timed<Self>;
+
     fn minimum() -> Self {
         UnitTimestamp
     }
@@ -213,11 +201,11 @@ impl Timestamp for UnitTimestamp {
 }
 
 impl Timestamp for () {
-    type Nested = Product<u32, u32>;
+    const NESTING_DEPTH: usize = 0;
 
-    type ValBatch<K: DataTrait + ?Sized, V: DataTrait + ?Sized, R: WeightTrait + ?Sized> =
-        FallbackIndexedWSet<K, V, R>;
-    type KeyBatch<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> = FallbackWSet<K, R>;
+    type TimedBatch<B: Batch<Time = ()>> = B;
+
+    type Nested = Product<u32, u32>;
 
     fn minimum() -> Self {}
     fn advance(&self, _scope: Scope) -> Self {}
@@ -230,11 +218,11 @@ impl Timestamp for () {
 }
 
 impl Timestamp for u32 {
+    const NESTING_DEPTH: usize = 0;
+
     type Nested = Product<u32, u32>;
 
-    type ValBatch<K: DataTrait + ?Sized, V: DataTrait + ?Sized, R: WeightTrait + ?Sized> =
-        FallbackValBatch<K, V, Self, R>;
-    type KeyBatch<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> = FallbackKeyBatch<K, Self, R>;
+    type TimedBatch<B: Batch<Time = ()>> = B::Timed<Self>;
 
     fn minimum() -> Self {
         0

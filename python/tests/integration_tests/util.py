@@ -21,9 +21,9 @@ TEST_CLIENT = FelderaClient(BASE_URL, api_key=API_KEY)
 def datafusionize(query: str) -> str:
     sort_array_pattern = re.compile(re.escape("SORT_ARRAY"), re.IGNORECASE)
     truncate_pattern = re.compile(re.escape("TRUNCATE"), re.IGNORECASE)
-    result = sort_array_pattern.sub("array_sort", query)
-    result = truncate_pattern.sub("trunc", query)
-    return result
+    query = sort_array_pattern.sub("array_sort", query)
+    query = truncate_pattern.sub("trunc", query)
+    return query
 
 
 def validate_view(pipeline: Pipeline, view_name: str, view_query: str):

@@ -126,7 +126,12 @@ impl<T> ZTrace for T where T: Trace<R = DynZWeight> {}
 /// [`zset!`](`crate::zset!`), and
 /// [`zset_set!`](`crate::zset_set!`) macros may be useful for creating
 /// (indexed) Z-sets with specified elements.
-pub trait IndexedZSetReader: BatchReader<Time = (), R = DynZWeight> {}
+pub trait IndexedZSetReader: BatchReader<Time = (), R = DynZWeight> {
+    /// Returns an iterator over updates in the indexed Z-set.
+    fn iter(&self) -> IndexedZSetIterator<Self> {
+        IndexedZSetIterator::new(self.cursor())
+    }
+}
 
 impl<Z> IndexedZSetReader for Z where Z: BatchReader<Time = (), R = DynZWeight> {}
 
@@ -148,11 +153,6 @@ pub trait IndexedZSet:
     /// Like `distinct` but optimized to operate on an owned value.
     fn distinct_owned(self) -> Self {
         self.distinct()
-    }
-
-    /// Returns an iterator over updates in the indexed Z-set.
-    fn iter(&self) -> IndexedZSetIterator<Self> {
-        IndexedZSetIterator::new(self.cursor())
     }
 }
 
@@ -192,14 +192,14 @@ where
 
 pub struct IndexedZSetIterator<'a, Z>
 where
-    Z: IndexedZSet,
+    Z: IndexedZSetReader,
 {
     cursor: Z::Cursor<'a>,
 }
 
 impl<'a, Z> IndexedZSetIterator<'a, Z>
 where
-    Z: IndexedZSet,
+    Z: IndexedZSetReader,
 {
     /// Returns an iterator of `(key, value, weight)` over the items that
     /// `cursor` visits.
@@ -210,7 +210,7 @@ where
 
 impl<Z> Iterator for IndexedZSetIterator<'_, Z>
 where
-    Z: IndexedZSet,
+    Z: IndexedZSetReader,
 {
     type Item = (Box<Z::Key>, Box<Z::Val>, ZWeight);
 

@@ -6,11 +6,12 @@ use crate::{
         LeanVec, WeightTrait, WeightTraitTyped, WithFactory,
     },
     trace::{
+        cursor::Position,
         deserialize_wset,
         layers::{Cursor as _, Leaf, LeafCursor, LeafFactories, Trie},
         ord::merge_batcher::MergeBatcher,
         serialize_wset, Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor,
-        Deserializer, Filter, MergeCursor, Serializer, WeightedItem,
+        Deserializer, Filter, MergeCursor, Serializer, VecKeyBatch, WeightedItem,
     },
     utils::Tup2,
     DBData, DBWeight, NumEntries,
@@ -369,6 +370,7 @@ impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> BatchReader for VecWSet<K, 
 }
 
 impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> Batch for VecWSet<K, R> {
+    type Timed<T: crate::Timestamp> = VecKeyBatch<K, T, R>;
     type Batcher = MergeBatcher<Self>;
     type Builder = VecWSetBuilder<K, R>;
 
@@ -525,6 +527,13 @@ impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> Cursor<K, DynUnit, (), R>
     fn fast_forward_vals(&mut self) {
         self.valid = true;
     }
+
+    fn position(&self) -> Option<Position> {
+        Some(Position {
+            total: self.cursor.keys() as u64,
+            offset: self.cursor.position() as u64,
+        })
+    }
 }
 
 /// A builder for creating layers from unsorted update tuples.
@@ -674,6 +683,10 @@ where
             layer: Leaf::from_parts(&self.factories.layer_factories, self.keys, self.diffs),
             factories: self.factories,
         }
+    }
+
+    fn num_tuples(&self) -> usize {
+        self.diffs.len()
     }
 }
 

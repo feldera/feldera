@@ -1,6 +1,7 @@
 use crate::circuit::checkpointer::Checkpointer;
 use crate::circuit::metrics::{DBSP_STEP, DBSP_STEP_LATENCY_MICROSECONDS};
 use crate::circuit::runtime::ThreadType;
+use crate::circuit::schedule::{FlushProgress, FlushProgressSummary};
 use crate::monitor::visual_graph::Graph;
 use crate::storage::backend::StorageError;
 use crate::trace::MergerType;
@@ -35,7 +36,7 @@ use std::{
     thread::Result as ThreadResult,
     time::Instant,
 };
-use tracing::info;
+use tracing::{debug, info};
 use uuid::Uuid;
 
 #[cfg(doc)]
@@ -267,7 +268,6 @@ pub struct CircuitConfig {
 
 #[derive(Debug, Clone, Eq, PartialEq, Deserialize)]
 #[serde(default)]
-#[derive(Default)]
 pub struct DevTweaks {
     /// Whether to asynchronously fetch keys needed for the join operator from
     /// storage.  Asynchronous fetching should be faster for high-latency
@@ -303,6 +303,28 @@ pub struct DevTweaks {
     /// Enable backfill avoidance feature.
     // This flag is only used by the pipeline manager.
     pub backfill_avoidance: bool,
+
+    /// Controls the maximal number of records output by splitter operators
+    /// (joins, distinct, aggregation, rolling window and group operators) at
+    /// each step.
+    ///
+    /// The default value is 10,000 records.
+    // TODO: splitter_chunk_size_bytes, per-operator chunk size.
+    pub splitter_chunk_size_records: u64,
+}
+
+impl Default for DevTweaks {
+    fn default() -> Self {
+        Self {
+            fetch_join: false,
+            fetch_distinct: false,
+            merger: MergerType::default(),
+            storage_mb_max: None,
+            stack_overflow_backtrace: false,
+            backfill_avoidance: false,
+            splitter_chunk_size_records: 10_000,
+        }
+    }
 }
 
 impl DevTweaks {
@@ -318,6 +340,10 @@ impl DevTweaks {
         }
         tweaks
     }
+}
+
+pub fn splitter_output_chunk_size() -> usize {
+    Runtime::with_dev_tweaks(|d| d.splitter_chunk_size_records as usize)
 }
 
 /// Configuration for storage in a [Runtime]-hosted circuit.
@@ -388,6 +414,11 @@ impl CircuitConfig {
 
     pub fn with_storage(mut self, storage: CircuitStorageConfig) -> Self {
         self.storage = Some(storage);
+        self
+    }
+
+    pub fn with_splitter_chunk_size_records(mut self, records: u64) -> Self {
+        self.dev_tweaks.splitter_chunk_size_records = records;
         self
     }
 }
@@ -513,6 +544,59 @@ impl Runtime {
                             return;
                         }
                     }
+                    Ok(Command::StartStep(span)) => {
+                        let _guard = span.set_local_parent();
+                        let _worker_span = LocalSpan::enter_with_local_parent("worker-start-step")
+                            .with_property(|| ("worker", worker_index_str));
+                        let status = circuit.start_step().map(|_| Response::Unit);
+                        // Send response.
+                        if status_sender.send(status).is_err() {
+                            return;
+                        }
+                    }
+                    Ok(Command::Flush(span)) => {
+                        let _guard = span.set_local_parent();
+                        let _worker_span = LocalSpan::enter_with_local_parent("worker-flush")
+                            .with_property(|| ("worker", worker_index_str));
+                        let status = circuit.flush().map(|_| Response::Unit);
+                        // Send response.
+                        if status_sender.send(status).is_err() {
+                            return;
+                        }
+                    }
+                    Ok(Command::CommitProgress(span)) => {
+                        let _guard = span.set_local_parent();
+                        let _worker_span =
+                            LocalSpan::enter_with_local_parent("worker-commit_progress")
+                                .with_property(|| ("worker", worker_index_str));
+                        let status = Ok(Response::CommitProgress(circuit.flush_progress()));
+                        // Send response.
+                        if status_sender.send(status).is_err() {
+                            return;
+                        }
+                    }
+                    Ok(Command::Microstep(span)) => {
+                        let _guard = span.set_local_parent();
+                        let _worker_span = LocalSpan::enter_with_local_parent("worker-microstep")
+                            .with_property(|| ("worker", worker_index_str));
+                        let status = circuit
+                            .microstep()
+                            .map(|_| Response::FlushComplete(circuit.is_flush_complete()));
+                        // Send response.
+                        if status_sender.send(status).is_err() {
+                            return;
+                        }
+                    }
+                    // Ok(Command::FinishStep(span)) => {
+                    //     let _guard = span.set_local_parent();
+                    //     let _worker_span = LocalSpan::enter_with_local_parent("worker-finish-step")
+                    //         .with_property(|| ("worker", worker_index_str));
+                    //     let status = circuit.finish_step().map(|_| Response::Unit);
+                    //     // Send response.
+                    //     if status_sender.send(status).is_err() {
+                    //         return;
+                    //     }
+                    // }
                     Ok(Command::BootstrapStep(span)) => {
                         let _guard = span.set_local_parent();
                         let _worker_span = LocalSpan::enter_with_local_parent("worker-step")
@@ -645,6 +729,10 @@ impl Runtime {
 
 #[derive(Clone)]
 enum Command {
+    StartStep(Arc<Span>),
+    Microstep(Arc<Span>),
+    Flush(Arc<Span>),
+    CommitProgress(Arc<Span>),
     Step(Arc<Span>),
     /// Execute a step in bootstrap mode.
     BootstrapStep(Arc<Span>),
@@ -661,10 +749,38 @@ enum Command {
     Restore(StoragePath),
 }
 
+impl Debug for Command {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            Command::StartStep(_span) => write!(f, "StartStep"),
+            Command::Microstep(_span) => write!(f, "Microstep"),
+            Command::Flush(_span) => write!(f, "Flush"),
+            Command::CommitProgress(_span) => write!(f, "CommitProgress"),
+            Command::Step(_span) => write!(f, "Step"),
+            Command::BootstrapStep(_span) => write!(f, "BootstrapStep"),
+            Command::CompleteBootstrap => write!(f, "CompleteBootstrap"),
+            Command::EnableProfiler => write!(f, "EnableProfiler"),
+            Command::DumpProfile { runtime_elapsed } => f
+                .debug_struct("DumpProfile")
+                .field("runtime_elapsed", runtime_elapsed)
+                .finish(),
+            Command::RetrieveProfile { runtime_elapsed } => f
+                .debug_struct("RetrieveProfile")
+                .field("runtime_elapsed", runtime_elapsed)
+                .finish(),
+            Command::GetLir => write!(f, "GetLir"),
+            Command::Commit(path) => f.debug_tuple("Commit").field(path).finish(),
+            Command::Restore(path) => f.debug_tuple("Restore").field(path).finish(),
+        }
+    }
+}
+
 #[derive(Debug)]
 enum Response {
     Unit,
+    FlushComplete(bool),
     BootstrapComplete(bool),
+    CommitProgress(FlushProgress),
     ProfileDump(Graph),
     Profile(WorkerProfile),
     CheckpointCreated,
@@ -699,6 +815,34 @@ pub struct DBSPHandle {
 
     /// Information about operators that participate in bootstrapping the new parts of the circuit.
     bootstrap_info: Option<BootstrapInfo>,
+}
+pub struct CommitProgress(BTreeMap<u16, FlushProgress>);
+
+impl Default for CommitProgress {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl CommitProgress {
+    pub fn new() -> Self {
+        CommitProgress(BTreeMap::new())
+    }
+
+    pub fn insert(&mut self, worker_id: u16, progress: FlushProgress) {
+        debug_assert!(!self.0.contains_key(&worker_id));
+        self.0.insert(worker_id, progress);
+    }
+
+    pub fn summary(&self) -> FlushProgressSummary {
+        let mut result = FlushProgressSummary::new();
+
+        for worker_progress in self.0.values() {
+            result.merge(&worker_progress.summary());
+        }
+
+        result
+    }
 }
 
 impl DBSPHandle {
@@ -822,12 +966,89 @@ impl DBSPHandle {
     }
 
     /// Evaluate the circuit for one clock cycle.
-    pub fn step(&mut self) -> Result<(), DbspError> {
+    pub fn transaction(&mut self) -> Result<(), DbspError> {
         if self.bootstrap_in_progress() {
             self.step_bootstrap()
         } else {
             self.step_regular()
         }
+    }
+
+    pub fn start_transaction(&mut self) -> Result<(), DbspError> {
+        let start = Instant::now();
+        let span = Arc::new(Span::root("start_step", SpanContext::random()));
+        let _guard = span.set_local_parent();
+        let result = self.broadcast_command(Command::StartStep(span), |_, _| {});
+        if let Some(handle) = self.runtime.as_ref() {
+            self.runtime_elapsed +=
+                start.elapsed() * handle.runtime().layout().local_workers().len() as u32 * 2;
+        }
+        result
+    }
+
+    pub fn step(&mut self) -> Result<bool, DbspError> {
+        let start = Instant::now();
+        let span = Arc::new(Span::root("microstep", SpanContext::random()));
+        let _guard = span.set_local_parent();
+        let mut flush_complete = Vec::with_capacity(self.status_receivers.len());
+
+        let result = self.broadcast_command(Command::Microstep(span), |_worker, response| {
+            let Response::FlushComplete(complete) = response else {
+                panic!("Expected FlushComplete response, got {response:?}");
+            };
+            flush_complete.push(complete);
+        });
+        if let Some(handle) = self.runtime.as_ref() {
+            self.runtime_elapsed +=
+                start.elapsed() * handle.runtime().layout().local_workers().len() as u32 * 2;
+        }
+
+        result?;
+
+        if flush_complete.iter().all(|complete| *complete) {
+            debug!("Flush complete");
+        }
+
+        Ok(flush_complete.iter().all(|complete| *complete))
+    }
+
+    pub fn start_commit_transaction(&mut self) -> Result<(), DbspError> {
+        let start = Instant::now();
+        let span = Arc::new(Span::root("flush", SpanContext::random()));
+        let _guard = span.set_local_parent();
+        let result = self.broadcast_command(Command::Flush(span), |_, _| {});
+        if let Some(handle) = self.runtime.as_ref() {
+            self.runtime_elapsed +=
+                start.elapsed() * handle.runtime().layout().local_workers().len() as u32 * 2;
+        }
+        result
+    }
+
+    pub fn commit_transaction(&mut self) -> Result<(), DbspError> {
+        self.start_commit_transaction()?;
+
+        loop {
+            let flush_complete = self.step()?;
+            if flush_complete {
+                return Ok(());
+            }
+        }
+    }
+
+    pub fn commit_progress(&mut self) -> Result<CommitProgress, DbspError> {
+        let span = Arc::new(Span::root("commit_progress", SpanContext::random()));
+        let _guard = span.set_local_parent();
+
+        let mut progress = CommitProgress::new();
+
+        self.broadcast_command(Command::CommitProgress(span), |worker, response| {
+            let Response::CommitProgress(worker_progress) = response else {
+                panic!("Expected CommitProgress response, got {response:?}");
+            };
+            progress.insert(worker as u16, worker_progress);
+        })?;
+
+        Ok(progress)
     }
 
     pub fn set_replay_step_size(&mut self, step_size: usize) {
@@ -1149,9 +1370,8 @@ pub(crate) mod tests {
     use crate::trace::BatchReaderFactories;
     use crate::utils::Tup2;
     use crate::{
-        indexed_zset, zset, Circuit, DBSPHandle, Error as DbspError, IndexedZSetHandle,
-        InputHandle, OrdIndexedZSet, OrdZSet, OutputHandle, Runtime, RuntimeError, Stream,
-        TypedBox, ZSetHandle, ZWeight,
+        Circuit, DBSPHandle, Error as DbspError, IndexedZSetHandle, InputHandle, OrdZSet,
+        OutputHandle, Runtime, RuntimeError, ZSetHandle, ZWeight,
     };
     use anyhow::anyhow;
     use feldera_types::config::{StorageCacheConfig, StorageConfig, StorageOptions};
@@ -1215,7 +1435,7 @@ pub(crate) mod tests {
         })
         .unwrap();
 
-        if let DbspError::Runtime(err) = handle.step().unwrap_err() {
+        if let DbspError::Runtime(err) = handle.transaction().unwrap_err() {
             // println!("error: {err}");
             matches!(err, RuntimeError::WorkerPanic { .. });
         } else {
@@ -1237,7 +1457,7 @@ pub(crate) mod tests {
         })
         .unwrap();
 
-        if let DbspError::Runtime(err) = handle.step().unwrap_err() {
+        if let DbspError::Runtime(err) = handle.transaction().unwrap_err() {
             // println!("error: {err}");
             matches!(err, RuntimeError::WorkerPanic { .. });
         } else {
@@ -1264,7 +1484,7 @@ pub(crate) mod tests {
         .unwrap();
 
         handle.enable_cpu_profiler().unwrap();
-        handle.step().unwrap();
+        handle.transaction().unwrap();
         handle
             .dump_profile(std::env::temp_dir().join("test_kill"))
             .unwrap();
@@ -1289,7 +1509,7 @@ pub(crate) mod tests {
         })
         .unwrap();
 
-        handle.step().unwrap();
+        handle.transaction().unwrap();
     }
 
     #[test]
@@ -1446,7 +1666,7 @@ pub(crate) mod tests {
 
                 sample_size_handle.set_for_all(SAMPLE_SIZE);
                 input_handle.append(&mut batch);
-                dbsp.step().unwrap();
+                dbsp.transaction().unwrap();
 
                 let res = output_handle.take_from_all();
                 committed.push(res[0].clone());
@@ -1463,7 +1683,7 @@ pub(crate) mod tests {
                 mkcircuit(&cconf).unwrap();
             sample_size_handle.set_for_all(SAMPLE_SIZE);
             input_handle.append(&mut batches_to_insert[i]);
-            dbsp.step().unwrap();
+            dbsp.transaction().unwrap();
 
             let res = output_handle.take_from_all();
             let expected_zset = committed[i].clone();
@@ -1478,7 +1698,7 @@ pub(crate) mod tests {
         let (mut dbsp, (input_handle, _, _)) = mkcircuit(&cconf).unwrap();
         let mut batch = vec![Tup2(1, Tup2(2, 1))];
         input_handle.append(&mut batch);
-        dbsp.step().unwrap();
+        dbsp.transaction().unwrap();
         let cpm = dbsp.commit().expect("commit failed");
         let batchfiles = dbsp
             .checkpointer
@@ -1499,9 +1719,9 @@ pub(crate) mod tests {
             let (mut dbsp, (_input_handle, _output_handle, sample_size_handle)) =
                 mkcircuit(&cconf).unwrap();
             sample_size_handle.set_for_all(2);
-            dbsp.step().unwrap();
+            dbsp.transaction().unwrap();
             dbsp.commit_named("test-commit").expect("commit failed");
-            dbsp.step().unwrap();
+            dbsp.transaction().unwrap();
             dbsp.commit().expect("commit failed");
         }
 
@@ -1614,7 +1834,7 @@ pub(crate) mod tests {
         for chunk in batches.chunks_mut(2) {
             input_handle.append(&mut chunk[0]);
             input_handle.append(&mut chunk[1]);
-            dbsp.step().unwrap();
+            dbsp.transaction().unwrap();
             let _cpm = dbsp.commit().expect("commit failed");
         }
 
@@ -1780,79 +2000,10 @@ pub(crate) mod tests {
             let expected_waterlines: Vec<i32> = expected_waterlines[idx..].into();
             let (mut dbsp, input_handle) = mkcircuit(&cconf, expected_waterlines.into_iter());
             input_handle.append(&mut batch);
-            dbsp.step().unwrap();
+            dbsp.transaction().unwrap();
             let cpm = dbsp.commit().unwrap();
             cconf.storage.as_mut().unwrap().init_checkpoint = Some(cpm.uuid);
             dbsp.kill().unwrap();
-        }
-    }
-
-    /// This test exercises the checkpoint/restore path of the Window operator.
-    #[test]
-    fn window_checkpointing() {
-        type Time = u64;
-
-        let (_temp, mut cconf) = mkconfig();
-        for step_idx in 0..6 {
-            let (mut circuit, ()) = Runtime::init_circuit(&cconf, move |circuit| {
-                let input = vec![
-                    zset! {
-                    // old value before the first window, should never appear in the output.
-                    Tup2(800, "800".to_string()) => 1i64,
-                    Tup2(900, "900".to_string()) => 1,
-                    Tup2(950, "950".to_string()) => 1,
-                    Tup2(999, "999".to_string()) => 1,
-                    // will appear in the next window
-                    Tup2(1000, "1000".to_string()) => 1
-                },
-                    zset! {
-                    // old value before the first window
-                    Tup2(700, "700".to_string()) => 1,
-                    // too late, the window already moved forward
-                    Tup2(900, "900".to_string()) => 1,
-                    Tup2(901, "901".to_string()) => 1,
-                    Tup2(999, "999".to_string()) => 1,
-                    Tup2(1000, "1000".to_string()) => 1,
-                    Tup2(1001, "1001".to_string()) => 1, // will appear in the next window
-                    Tup2(1002, "1002".to_string()) => 1, // will appear two windows later
-                    Tup2(1003, "1003".to_string()) => 1, // will appear three windows later
-                },
-                    zset! { Tup2(1004, "1004".to_string()) => 1 }, // no new values in this window
-                    zset! {},
-                    zset! {},
-                    zset! {},
-                ];
-
-                let output = vec![
-                    indexed_zset! { 900 => {"900".to_string() => 1} , 950 => {"950".to_string() => 1} , 999 => {"999".to_string() => 1} },
-                    indexed_zset! { 900 => {"900".to_string() => -1} , 901 => {"901".to_string() => 1} , 999 => {"999".to_string() => 1} , 1000 => {"1000".to_string() => 2} },
-                    indexed_zset! { 901 => {"901".to_string() => -1} , 1001 => {"1001".to_string() => 1} },
-                    indexed_zset! { 1002 => {"1002".to_string() => 1} },
-                    indexed_zset! { 1003 => {"1003".to_string() => 1} },
-                    indexed_zset! { 1004 => {"1004".to_string() => 1} },
-                ];
-
-                let bounds: Stream<_, (TypedBox<Time, DynData>, TypedBox<Time, DynData>)> = circuit.add_source(Generator::new(move || {
-                    let clock = 1000 + step_idx as Time;
-
-                    (TypedBox::new(clock - 100), TypedBox::new(clock))
-                }));
-
-                let index1: Stream<_, OrdIndexedZSet<Time, String>> = circuit
-                    .add_source(Generator::new(move || input[step_idx].clone()))
-                    .map_index(|Tup2(k, v)| (*k, v.clone()));
-                index1
-                    .window((true, false), &bounds)
-                    .inspect(move |batch| assert_eq!(batch, &output[step_idx]));
-                Ok(())
-            })
-                .unwrap();
-
-            circuit.step().unwrap();
-
-            let cpm = circuit.commit().unwrap();
-            cconf.storage.as_mut().unwrap().init_checkpoint = Some(cpm.uuid);
-            circuit.kill().unwrap();
         }
     }
 }

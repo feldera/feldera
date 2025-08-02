@@ -1187,8 +1187,11 @@ where
 #[cfg(test)]
 mod test {
     use crate::{
-        indexed_zset, operator::Generator, typed_batch::OrdZSet, utils::Tup2, zset, Circuit,
-        RootCircuit,
+        indexed_zset,
+        operator::Generator,
+        typed_batch::{OrdZSet, SpineSnapshot},
+        utils::Tup2,
+        zset, Circuit, OrdIndexedZSet, RootCircuit,
     };
     use std::vec;
 
@@ -1367,7 +1370,7 @@ mod test {
             // The bug caused the following assertion to fail.
             assert!(!filtered.inner().is_distinct());
 
-            Ok((input_handle, filtered.distinct_count().output()))
+            Ok((input_handle, filtered.distinct_count().accumulate_output()))
         })
         .unwrap();
 
@@ -1380,11 +1383,11 @@ mod test {
             Tup2(4, ((), 4).into()),
         ]);
         circuit.step().unwrap();
-        let output = output_handle.consolidate();
+        let output =
+            SpineSnapshot::<OrdIndexedZSet<i32, i64>>::concat(&output_handle.take_from_all())
+                .iter()
+                .collect::<Vec<_>>();
         // The bug caused the weights below to be 1,2,3,4 instead of 1,1,1,1.
-        assert_eq!(
-            output,
-            indexed_zset! {1 => {1 => 1}, 2 => {1 => 1}, 3 => {1 => 1}, 4 => {1 => 1}}
-        );
+        assert_eq!(output, vec![(1, 1, 1), (2, 1, 1), (3, 1, 1), (4, 1, 1)]);
     }
 }

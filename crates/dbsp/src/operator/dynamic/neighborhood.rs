@@ -380,15 +380,14 @@ where
             };
             while cursor.keyval_valid() && offset <= descr.after() {
                 let w = **cursor.weight();
+                debug_assert!(w != 0);
 
-                if !cursor.weight().is_zero() {
-                    let (kv, weight) = item.split_mut();
-                    kv.from_refs(cursor.key(), cursor.val());
-                    **weight = w;
+                let (kv, weight) = item.split_mut();
+                kv.from_refs(cursor.key(), cursor.val());
+                **weight = w;
 
-                    after.push_val(item.as_mut());
-                    offset += 1;
-                }
+                after.push_val(item.as_mut());
+                offset += 1;
                 cursor.step_keyval();
             }
 
@@ -409,15 +408,14 @@ where
 
                 while cursor.keyval_valid() && offset <= descr.before() {
                     let w = **cursor.weight();
+                    debug_assert!(w != 0);
 
-                    if !cursor.weight().is_zero() {
-                        let (kv, weight) = item.split_mut();
-                        kv.from_refs(cursor.key(), cursor.val());
-                        **weight = w;
+                    let (kv, weight) = item.split_mut();
+                    kv.from_refs(cursor.key(), cursor.val());
+                    **weight = w;
 
-                        before.push_val(item.as_mut());
-                        offset += 1;
-                    }
+                    before.push_val(item.as_mut());
+                    offset += 1;
                     cursor.step_keyval_reverse();
                 }
             }
@@ -511,19 +509,18 @@ where
             }
             while cursor.keyval_valid() && offset <= descr.after() {
                 let w = **cursor.weight();
+                debug_assert!(w != 0);
 
-                if !cursor.weight().is_zero() {
-                    let (kv, weight) = item.split_mut();
-                    let (k, _unit) = kv.split_mut();
-                    let (idx, vals) = k.split_mut();
+                let (kv, weight) = item.split_mut();
+                let (k, _unit) = kv.split_mut();
+                let (idx, vals) = k.split_mut();
 
-                    **idx = offset as i64;
-                    vals.from_refs(cursor.key(), cursor.val());
-                    **weight = w;
+                **idx = offset as i64;
+                vals.from_refs(cursor.key(), cursor.val());
+                **weight = w;
 
-                    after.push_val(item.as_mut());
-                    offset += 1;
-                }
+                after.push_val(item.as_mut());
+                offset += 1;
                 cursor.step_keyval();
             }
 
@@ -543,19 +540,18 @@ where
 
                 while cursor.keyval_valid() && offset <= descr.before() {
                     let w = **cursor.weight();
+                    debug_assert!(w != 0);
 
-                    if !cursor.weight().is_zero() {
-                        let (kv, weight) = item.split_mut();
-                        let (k, _unit) = kv.split_mut();
-                        let (idx, vals) = k.split_mut();
+                    let (kv, weight) = item.split_mut();
+                    let (k, _unit) = kv.split_mut();
+                    let (idx, vals) = k.split_mut();
 
-                        **idx = -(offset as i64);
-                        vals.from_refs(cursor.key(), cursor.val());
-                        **weight = w;
+                    **idx = -(offset as i64);
+                    vals.from_refs(cursor.key(), cursor.val());
+                    **weight = w;
 
-                        before.push_val(item.as_mut());
-                        offset += 1;
-                    }
+                    before.push_val(item.as_mut());
+                    offset += 1;
                     cursor.step_keyval_reverse();
                 }
             }
@@ -697,13 +693,13 @@ mod test {
             5,
         ))));
 
-        dbsp.step().unwrap();
+        dbsp.transaction().unwrap();
 
         assert!(typed_batch_to_tuples(&output_handle.consolidate()).is_empty());
 
         descr_handle.set_for_all(Some(TypedBox::new(NeighborhoodDescr::new(None, 10, 3, 5))));
 
-        dbsp.step().unwrap();
+        dbsp.transaction().unwrap();
 
         assert!(typed_batch_to_tuples(&output_handle.consolidate()).is_empty());
 
@@ -715,7 +711,7 @@ mod test {
         ))));
         input_handle.push(9, (0, 1));
 
-        dbsp.step().unwrap();
+        dbsp.transaction().unwrap();
 
         assert_eq!(
             &typed_batch_to_tuples(&output_handle.consolidate()),
@@ -723,7 +719,7 @@ mod test {
         );
 
         descr_handle.set_for_all(Some(TypedBox::new(NeighborhoodDescr::new(None, 10, 3, 5))));
-        dbsp.step().unwrap();
+        dbsp.transaction().unwrap();
         assert_eq!(
             &typed_batch_to_tuples(&output_handle.consolidate()),
             &[((0, Tup2(9, 0), ()), 1)]
@@ -737,7 +733,7 @@ mod test {
         ))));
         input_handle.push(9, (1, 1));
 
-        dbsp.step().unwrap();
+        dbsp.transaction().unwrap();
 
         assert_eq!(
             &typed_batch_to_tuples(&output_handle.consolidate()),
@@ -752,7 +748,7 @@ mod test {
         ))));
         input_handle.push(8, (1, 1));
 
-        dbsp.step().unwrap();
+        dbsp.transaction().unwrap();
 
         assert_eq!(
             &typed_batch_to_tuples(&output_handle.consolidate()),
@@ -771,7 +767,7 @@ mod test {
         ))));
         input_handle.push(7, (1, 1));
 
-        dbsp.step().unwrap();
+        dbsp.transaction().unwrap();
 
         assert_eq!(
             &typed_batch_to_tuples(&output_handle.consolidate()),
@@ -790,7 +786,7 @@ mod test {
         ))));
         input_handle.push(10, (10, 1));
 
-        dbsp.step().unwrap();
+        dbsp.transaction().unwrap();
 
         assert_eq!(
             &typed_batch_to_tuples(&output_handle.consolidate()),
@@ -811,7 +807,7 @@ mod test {
         input_handle.push(10, (11, 1));
         input_handle.push(12, (0, 1));
 
-        dbsp.step().unwrap();
+        dbsp.transaction().unwrap();
 
         assert_eq!(
             &typed_batch_to_tuples(&output_handle.consolidate()),
@@ -833,7 +829,7 @@ mod test {
         ))));
         input_handle.push(10, (10, -1));
 
-        dbsp.step().unwrap();
+        dbsp.transaction().unwrap();
 
         assert_eq!(
             &typed_batch_to_tuples(&output_handle.consolidate()),
@@ -858,7 +854,7 @@ mod test {
         input_handle.push(14, (2, 1));
         input_handle.push(14, (3, 1));
 
-        dbsp.step().unwrap();
+        dbsp.transaction().unwrap();
 
         assert_eq!(
             &typed_batch_to_tuples(&output_handle.consolidate()),
@@ -877,7 +873,7 @@ mod test {
 
         descr_handle.set_for_all(Some(TypedBox::new(NeighborhoodDescr::new(None, 10, 3, 5))));
 
-        dbsp.step().unwrap();
+        dbsp.transaction().unwrap();
 
         assert_eq!(
             &typed_batch_to_tuples(&output_handle.consolidate()),
@@ -931,7 +927,7 @@ mod test {
                 let descr = NeighborhoodDescr::new(Some(start_key), start_val, before, after);
                 descr_handle.set_for_all(Some(TypedBox::new(descr.clone())));
 
-                dbsp.step().unwrap();
+                dbsp.transaction().unwrap();
 
                 let output = output_handle.consolidate();
                 let ref_output = ref_trace.neighborhood(&Some(descr));
@@ -941,7 +937,7 @@ mod test {
                 let descr = NeighborhoodDescr::new(None, start_val, before, after);
                 descr_handle.set_for_all(Some(TypedBox::new(descr.clone())));
 
-                dbsp.step().unwrap();
+                dbsp.transaction().unwrap();
 
                 let output = output_handle.consolidate();
                 let ref_output = ref_trace.neighborhood(&Some(descr));

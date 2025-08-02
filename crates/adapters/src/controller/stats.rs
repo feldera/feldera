@@ -51,6 +51,7 @@ use feldera_types::{
     config::{FtModel, PipelineConfig},
     suspend::SuspendError,
     time_series::SampleStatistics,
+    transaction::TransactionId,
 };
 use memory_stats::memory_stats;
 use serde::{Deserialize, Serialize, Serializer};
@@ -114,6 +115,17 @@ impl CompletionToken {
     }
 }
 
+#[derive(Debug, Default, Copy, PartialEq, Eq, Clone, Serialize, NoUninit)]
+#[repr(u8)]
+pub enum TransactionStatus {
+    #[default]
+    None,
+    TransactionStarting,
+    TransactionInProgress,
+    CommitRequested,
+    CommitInProgress,
+}
+
 #[derive(Default, Serialize)]
 pub struct GlobalControllerMetrics {
     /// State of the pipeline: running, paused, or terminating.
@@ -123,6 +135,12 @@ pub struct GlobalControllerMetrics {
     /// The pipeline has been resumed from a checkpoint and is currently bootstrapping
     /// new and modified views.
     bootstrap_in_progress: AtomicBool,
+
+    #[serde(serialize_with = "serialize_atomic")]
+    pub transaction_status: Atomic<TransactionStatus>,
+
+    #[serde(serialize_with = "serialize_atomic")]
+    pub transaction_id: Atomic<TransactionId>,
 
     /// Resident set size of the pipeline process, in bytes.
     // This field is computed on-demand by calling `ControllerStatus::update`.
@@ -219,6 +237,8 @@ impl GlobalControllerMetrics {
         Self {
             state: Atomic::new(PipelineState::Paused),
             bootstrap_in_progress: AtomicBool::new(false),
+            transaction_id: Atomic::new(0),
+            transaction_status: Atomic::new(TransactionStatus::None),
             rss_bytes: AtomicU64::new(0),
             cpu_msecs: AtomicU64::new(0),
             uptime_msecs: AtomicU64::new(0),
@@ -566,6 +586,13 @@ impl ControllerStatus {
     pub fn set_bootstrap_in_progress(&self, bootstrap_in_progress: bool) {
         self.global_metrics
             .set_bootstrap_in_progress(bootstrap_in_progress);
+    }
+
+    pub fn transaction_in_progress(&self) -> bool {
+        self.global_metrics
+            .transaction_status
+            .load(Ordering::Acquire)
+            != TransactionStatus::None
     }
 
     pub fn request_step(&self, circuit_thread_unparker: &Unparker) {

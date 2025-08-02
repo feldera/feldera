@@ -4,32 +4,35 @@ use super::{
 };
 use crate::{
     algebra::{HasOne, OrdIndexedZSet},
-    circuit::{
-        operator_traits::{Operator, TernaryOperator},
-        Scope,
-    },
+    circuit::{operator_traits::Operator, splitter_output_chunk_size, Scope},
     dynamic::{ClonableTrait, DataTrait, DynDataTyped, DynPair, Erase},
-    operator::dynamic::{
-        aggregate::DynAggregator,
-        time_series::{
-            PartitionCursor, PartitionedBatch, PartitionedBatchReader, PartitionedIndexedZSet,
+    operator::{
+        async_stream_operators::{StreamingTernaryOperator, StreamingTernaryWrapper},
+        dynamic::{
+            accumulate_trace::AccumulateTraceFeedback,
+            aggregate::DynAggregator,
+            time_series::{
+                PartitionCursor, PartitionedBatch, PartitionedBatchReader, PartitionedIndexedZSet,
+            },
+            trace::TraceBounds,
         },
-        trace::{TraceBounds, TraceFeedback},
     },
     trace::{
-        cursor::CursorEmpty, ord::fallback::indexed_wset::FallbackIndexedWSet, BatchReader,
-        BatchReaderFactories, Builder, Cursor, Spine,
+        cursor::CursorEmpty, ord::fallback::indexed_wset::FallbackIndexedWSet,
+        spine_async::WithSnapshot, BatchReader, BatchReaderFactories, Builder, Cursor, Spine,
     },
     utils::Tup2,
-    Circuit, DBData, DynZWeight, RootCircuit, Stream, ZWeight,
+    Circuit, DBData, DynZWeight, Position, RootCircuit, Stream, ZWeight,
 };
+use async_stream::stream;
 use dyn_clone::clone_box;
+use futures::Stream as AsyncStream;
 use minitrace::trace;
 use num::PrimInt;
 use size_of::SizeOf;
 use std::{
     borrow::Cow, cmp::Ordering, collections::BTreeMap, fmt, fmt::Write, marker::PhantomData,
-    ops::Neg,
+    ops::Neg, rc::Rc,
 };
 
 /// Partitioned radix tree batch.
@@ -45,6 +48,7 @@ impl<TS: DBData + PrimInt, A: DataTrait + ?Sized, B> PartitionedRadixTreeBatch<T
 {
 }
 
+#[allow(dead_code)]
 pub trait PartitionedRadixTreeReader<TS: DBData + PrimInt, A: DataTrait + ?Sized>:
     PartitionedBatchReader<DynPrefix<TS>, DynTreeNode<TS, A>, R = DynZWeight>
 {
@@ -269,7 +273,7 @@ where
                 // over a bounded range of keys.
                 let bounds = <TraceBounds<O::Key, O::Val>>::unbounded();
 
-                let feedback = circuit.add_integrate_trace_feedback::<Spine<O>>(
+                let feedback = circuit.add_accumulate_integrate_trace_feedback::<Spine<O>>(
                     persistent_id,
                     &factories.output_factories,
                     bounds,
@@ -277,14 +281,16 @@ where
 
                 let output = circuit
                     .add_ternary_operator(
-                        PartitionedRadixTreeAggregate::new(factories, aggregator),
-                        &stream,
-                        &stream.dyn_integrate_trace(&factories.stored_factories),
+                        StreamingTernaryWrapper::new(PartitionedRadixTreeAggregate::new(
+                            factories, aggregator,
+                        )),
+                        &stream.dyn_accumulate(&factories.input_factories),
+                        &stream.dyn_accumulate_integrate_trace(&factories.stored_factories),
                         &feedback.delayed_trace,
                     )
                     .mark_sharded();
 
-                feedback.connect(&output);
+                feedback.connect(&output, &factories.output_factories);
 
                 output
             })
@@ -300,7 +306,7 @@ where
 ///   data.
 /// * Input stream 3: trace containing the current contents of the partitioned
 ///   radix tree.
-struct PartitionedRadixTreeAggregate<TS, V, Z, IT, OT, Acc, Out, O>
+struct PartitionedRadixTreeAggregate<TS, V, Z, Acc, Out, O>
 where
     Z: PartitionedIndexedZSet<DynDataTyped<TS>, V>,
     O: PartitionedRadixTreeBatch<TS, Acc, Key = Z::Key>,
@@ -311,10 +317,9 @@ where
 {
     aggregator: Box<dyn DynAggregator<V, (), DynZWeight, Accumulator = Acc, Output = Out>>,
     factories: PartitionedTreeAggregateFactories<TS, V, Z, O, Acc>,
-    phantom: PhantomData<fn(&IT, &OT)>,
 }
 
-impl<TS, V, Z, IT, OT, Acc, Out, O> PartitionedRadixTreeAggregate<TS, V, Z, IT, OT, Acc, Out, O>
+impl<TS, V, Z, Acc, Out, O> PartitionedRadixTreeAggregate<TS, V, Z, Acc, Out, O>
 where
     Z: PartitionedIndexedZSet<DynDataTyped<TS>, V>,
     O: PartitionedRadixTreeBatch<TS, Acc, Key = Z::Key>,
@@ -330,13 +335,11 @@ where
         Self {
             aggregator: clone_box(aggregator),
             factories: factories.clone(),
-            phantom: PhantomData,
         }
     }
 }
 
-impl<TS, V, Z, IT, OT, Acc, Out, O> Operator
-    for PartitionedRadixTreeAggregate<TS, V, Z, IT, OT, Acc, Out, O>
+impl<TS, V, Z, Acc, Out, O> Operator for PartitionedRadixTreeAggregate<TS, V, Z, Acc, Out, O>
 where
     Z: PartitionedIndexedZSet<DynDataTyped<TS>, V>,
     O: PartitionedRadixTreeBatch<TS, Acc, Key = Z::Key>,
@@ -344,8 +347,6 @@ where
     Out: DataTrait + ?Sized,
     TS: DBData + PrimInt,
     V: DataTrait + ?Sized,
-    IT: 'static,
-    OT: 'static,
 {
     fn name(&self) -> Cow<'static, str> {
         Cow::from("PartitionedRadixTreeAggregate")
@@ -356,68 +357,108 @@ where
     }
 }
 
-impl<TS, V, Z, IT, OT, Acc, Out, O> TernaryOperator<Z, IT, OT, O>
-    for PartitionedRadixTreeAggregate<TS, V, Z, IT, OT, Acc, Out, O>
+impl<TS, V, Z, Acc, Out, O> StreamingTernaryOperator<Option<Spine<Z>>, Spine<Z>, Spine<O>, O>
+    for PartitionedRadixTreeAggregate<TS, V, Z, Acc, Out, O>
 where
     Z: PartitionedIndexedZSet<DynDataTyped<TS>, V>,
     Acc: DataTrait + ?Sized,
     Out: DataTrait + ?Sized,
     TS: DBData + PrimInt,
     V: DataTrait + ?Sized,
-    IT: PartitionedBatchReader<DynDataTyped<TS>, V, Key = Z::Key, R = Z::R> + Clone,
-    OT: PartitionedRadixTreeReader<TS, Acc, Key = Z::Key, R = O::R> + Clone,
     O: PartitionedRadixTreeBatch<TS, Acc, Key = Z::Key>,
 {
     #[trace]
-    async fn eval(
-        &mut self,
-        delta: Cow<'_, Z>,
-        input_trace: Cow<'_, IT>,
-        output_trace: Cow<'_, OT>,
-    ) -> O {
-        let mut builder =
-            O::Builder::with_capacity(&self.factories.output_factories, delta.len() * 2);
+    fn eval(
+        self: Rc<Self>,
+        delta: Cow<'_, Option<Spine<Z>>>,
+        input_trace: Cow<'_, Spine<Z>>,
+        output_trace: Cow<'_, Spine<O>>,
+    ) -> impl AsyncStream<Item = (O, bool, Option<Position>)> + 'static {
+        let chunk_size = splitter_output_chunk_size();
+        let delta = delta.as_ref().as_ref().map(|b| b.ro_snapshot());
 
-        let mut updates = self
-            .factories
-            .radix_tree_factories
-            .node_updates_factory
-            .default_box();
+        let input_trace = if delta.is_some() {
+            Some(input_trace.ro_snapshot())
+        } else {
+            None
+        };
 
-        let mut delta_cursor = delta.cursor();
-        let mut input_cursor = input_trace.cursor();
-        let mut output_cursor = output_trace.cursor();
+        let output_trace = if delta.is_some() {
+            Some(output_trace.ro_snapshot())
+        } else {
+            None
+        };
 
-        let mut pair = self.factories.output_factories.val_factory().default_box();
-        let mut key = self.factories.input_factories.key_factory().default_box();
+        stream! {
+            let Some(delta) = delta.as_ref() else {
+                yield (O::dyn_empty(&self.factories.output_factories), true, None);
+                return;
+            };
 
-        while delta_cursor.key_valid() {
-            // println!("partition: {:?}", delta_cursor.key());
+            let mut builder =
+                O::Builder::with_capacity(&self.factories.output_factories, chunk_size + 2);
 
-            delta_cursor.key().clone_to(&mut *key);
+            let mut updates = self
+                .factories
+                .radix_tree_factories
+                .node_updates_factory
+                .default_box();
 
-            let delta_partition_cursor = PartitionCursor::new(&mut delta_cursor);
+            let mut delta_cursor = delta.cursor();
+            let mut input_cursor = input_trace.unwrap().cursor();
+            let mut output_cursor = output_trace.unwrap().cursor();
 
-            let found_input = input_cursor.seek_key_exact(&key);
-            let found_output = output_cursor.seek_key_exact(&key);
+            let mut pair = self.factories.output_factories.val_factory().default_box();
+            let mut key = self.factories.input_factories.key_factory().default_box();
 
-            updates.clear();
+            while delta_cursor.key_valid() {
+                // println!("partition: {:?}", delta_cursor.key());
 
-            if found_input {
-                // println!("input partition exists");
-                /*while input_cursor.val_valid() {
-                    // println!("input val: {:x?}", input_cursor.val());
-                    input_cursor.step_val();
-                }*/
-                //input_cursor.rewind_vals();
+                delta_cursor.key().clone_to(&mut *key);
 
-                if found_output {
-                    // println!("tree partition exists");
+                let delta_partition_cursor = PartitionCursor::new(&mut delta_cursor);
 
+                let found_input = input_cursor.seek_key_exact(&key);
+                let found_output = output_cursor.seek_key_exact(&key);
+
+                updates.clear();
+
+                if found_input {
+                    // println!("input partition exists");
+                    /*while input_cursor.val_valid() {
+                        // println!("input val: {:x?}", input_cursor.val());
+                        input_cursor.step_val();
+                    }*/
+                    //input_cursor.rewind_vals();
+
+                    if found_output {
+                        // println!("tree partition exists");
+
+                        radix_tree_update::<TS, V, Acc, _, _, _, _>(
+                            &self.factories.radix_tree_factories,
+                            delta_partition_cursor,
+                            PartitionCursor::new(&mut input_cursor),
+                            PartitionCursor::new(&mut output_cursor),
+                            self.aggregator.as_ref(),
+                            &mut *updates,
+                        );
+                    } else {
+                        radix_tree_update::<TS, V, Acc, _, _, _, _>(
+                            &self.factories.radix_tree_factories,
+                            delta_partition_cursor,
+                            PartitionCursor::new(&mut input_cursor),
+                            <CursorEmpty<_, _, _, O::R>>::new(
+                                self.factories.output_factories.weight_factory(),
+                            ),
+                            self.aggregator.as_ref(),
+                            &mut *updates,
+                        );
+                    }
+                } else if found_output {
                     radix_tree_update::<TS, V, Acc, _, _, _, _>(
                         &self.factories.radix_tree_factories,
                         delta_partition_cursor,
-                        PartitionCursor::new(&mut input_cursor),
+                        CursorEmpty::new(self.factories.input_factories.weight_factory()),
                         PartitionCursor::new(&mut output_cursor),
                         self.aggregator.as_ref(),
                         &mut *updates,
@@ -426,7 +467,7 @@ where
                     radix_tree_update::<TS, V, Acc, _, _, _, _>(
                         &self.factories.radix_tree_factories,
                         delta_partition_cursor,
-                        PartitionCursor::new(&mut input_cursor),
+                        CursorEmpty::new(self.factories.input_factories.weight_factory()),
                         <CursorEmpty<_, _, _, O::R>>::new(
                             self.factories.output_factories.weight_factory(),
                         ),
@@ -434,72 +475,63 @@ where
                         &mut *updates,
                     );
                 }
-            } else if found_output {
-                radix_tree_update::<TS, V, Acc, _, _, _, _>(
-                    &self.factories.radix_tree_factories,
-                    delta_partition_cursor,
-                    CursorEmpty::new(self.factories.input_factories.weight_factory()),
-                    PartitionCursor::new(&mut output_cursor),
-                    self.aggregator.as_ref(),
-                    &mut *updates,
-                );
-            } else {
-                radix_tree_update::<TS, V, Acc, _, _, _, _>(
-                    &self.factories.radix_tree_factories,
-                    delta_partition_cursor,
-                    CursorEmpty::new(self.factories.input_factories.weight_factory()),
-                    <CursorEmpty<_, _, _, O::R>>::new(
-                        self.factories.output_factories.weight_factory(),
-                    ),
-                    self.aggregator.as_ref(),
-                    &mut *updates,
-                );
-            }
 
-            // `updates` are already ordered by prefix.  All that remains is to order
-            // insertion and deletion within each update.
-            let mut any_values = false;
-            for update in updates.dyn_iter_mut() {
-                match update.new().cmp(update.old()) {
-                    Ordering::Equal => {}
-                    Ordering::Less => {
-                        let mut prefix = update.prefix();
+                // `updates` are already ordered by prefix.  All that remains is to order
+                // insertion and deletion within each update.
+                let mut any_values = false;
+                for update in updates.dyn_iter_mut() {
+                    match update.new().cmp(update.old()) {
+                        Ordering::Equal => {}
+                        Ordering::Less => {
+                            let mut prefix = update.prefix();
 
-                        if let Some(new) = update.new_mut().get_mut() {
-                            pair.from_vals(prefix.clone().erase_mut(), new);
-                            builder.push_val_diff_mut(&mut *pair, ZWeight::one().erase_mut());
-                            any_values = true;
-                        };
-                        if let Some(old) = update.old_mut().get_mut() {
-                            pair.from_vals(prefix.erase_mut(), old);
-                            builder.push_val_diff_mut(&mut *pair, ZWeight::one().neg().erase_mut());
-                            any_values = true;
-                        };
+                            if let Some(new) = update.new_mut().get_mut() {
+                                pair.from_vals(prefix.clone().erase_mut(), new);
+                                builder.push_val_diff_mut(&mut *pair, ZWeight::one().erase_mut());
+                                any_values = true;
+                            };
+                            if let Some(old) = update.old_mut().get_mut() {
+                                pair.from_vals(prefix.erase_mut(), old);
+                                builder.push_val_diff_mut(&mut *pair, ZWeight::one().neg().erase_mut());
+                                any_values = true;
+                            };
+                        }
+                        Ordering::Greater => {
+                            let mut prefix = update.prefix();
+
+                            if let Some(old) = update.old_mut().get_mut() {
+                                pair.from_vals(prefix.clone().erase_mut(), old);
+                                builder.push_val_diff_mut(&mut *pair, ZWeight::one().neg().erase_mut());
+                                any_values = true;
+                            };
+                            if let Some(new) = update.new_mut().get_mut() {
+                                pair.from_vals(prefix.erase_mut(), new);
+                                builder.push_val_diff_mut(&mut *pair, ZWeight::one().erase_mut());
+                                any_values = true;
+                            };
+                        }
                     }
-                    Ordering::Greater => {
-                        let mut prefix = update.prefix();
 
-                        if let Some(old) = update.old_mut().get_mut() {
-                            pair.from_vals(prefix.clone().erase_mut(), old);
-                            builder.push_val_diff_mut(&mut *pair, ZWeight::one().neg().erase_mut());
-                            any_values = true;
-                        };
-                        if let Some(new) = update.new_mut().get_mut() {
-                            pair.from_vals(prefix.erase_mut(), new);
-                            builder.push_val_diff_mut(&mut *pair, ZWeight::one().erase_mut());
-                            any_values = true;
-                        };
+                    if builder.num_tuples() >= chunk_size && any_values {
+                        builder.push_key(&*key);
+                        let result = builder.done();
+                        yield (result, false, delta_cursor.position());
+                        builder =
+                            O::Builder::with_capacity(&self.factories.output_factories, chunk_size + 1);
+                        any_values = false;
                     }
                 }
-            }
-            if any_values {
-                builder.push_key(&*key);
+                if any_values {
+                    builder.push_key(&*key);
+                }
+
+                delta_cursor.step_key();
             }
 
-            delta_cursor.step_key();
+            let result = builder.done();
+
+            yield (result, true, delta_cursor.position())
         }
-
-        builder.done()
     }
 }
 
@@ -510,7 +542,7 @@ mod test {
         OrdPartitionedRadixTree, PartitionCursor, PartitionedRadixTreeCursor,
     };
     use crate::{
-        algebra::{AddAssignByRef, DefaultSemigroup, Semigroup},
+        algebra::{AddAssignByRef, DefaultSemigroup, OrdZSet, Semigroup},
         dynamic::{DowncastTrait, DynData, DynDataTyped, DynPair, Erase},
         operator::{
             dynamic::{
@@ -520,7 +552,8 @@ mod test {
             },
             Fold,
         },
-        trace::{BatchReader, BatchReaderFactories},
+        trace::BatchReader,
+        typed_batch::TypedBatch,
         utils::Tup2,
         DBData, DynZWeight, RootCircuit, Stream, ZWeight,
     };
@@ -615,9 +648,8 @@ mod test {
                     &DynAggregatorImpl::new(aggregator),
                 );
 
-            let factory = BatchReaderFactories::new::<u64, Tup2<Prefix<u64>, TreeNode<u64, u64>>, ZWeight>();
-            aggregate
-                .dyn_integrate_trace(&factory)
+            circuit.non_incremental(&aggregate.typed::<TypedBatch<u64, Tup2<Prefix<u64>, TreeNode<u64, u64>>, ZWeight, _>>(), |_child, aggregate| Ok(aggregate
+                .integrate_trace()
                 .apply(move |tree_trace| {
                     println!("Radix trees:");
                     let mut treestr = String::new();
@@ -625,14 +657,15 @@ mod test {
                     println!("{treestr}");
                     tree_trace
                         .cursor()
-                        .validate(&contents_clone.lock().unwrap(), &|acc, val| {
+                        .validate(&contents_clone.lock().unwrap(), &|acc: &mut DynData, val| {
                             acc.downcast_mut_checked::<u64>().add_assign_by_ref(val.downcast_checked::<u64>())
                         });
-                    test_partitioned_aggregate_range::</* u64, */u64, u64, _, DefaultSemigroup<_>>(
+                    test_partitioned_aggregate_range::<u64, u64, _, DefaultSemigroup<_>>(
                         &mut tree_trace.cursor(),
                         &contents_clone.lock().unwrap(),
                     );
-                });
+                    TypedBatch::<u64, (), ZWeight, OrdZSet<DynData>>::empty()
+                }))).unwrap();
 
             Ok(input_handle)
         })
@@ -661,6 +694,7 @@ mod test {
             0x0000_0000_0000_0001,
             (2, 1),
         );
+
         circuit.step().unwrap();
 
         update_key(
@@ -684,6 +718,7 @@ mod test {
             0x0000_0000_0000_0001,
             (2, -1),
         );
+
         circuit.step().unwrap();
 
         update_key(
@@ -714,6 +749,7 @@ mod test {
             0x0000_0000_f200_0000,
             (3, 1),
         );
+
         circuit.step().unwrap();
 
         update_key(

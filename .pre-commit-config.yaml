@@ -45,6 +45,15 @@ repos:
         language: system
         files: \.rs$
         pass_filenames: false
+      # The reason this runs after the openapi update is because the openapi
+      # generation adds documentation to e.g., the rest-api crate.
+      - id: cargo-doc
+        name: Cargo Documentation
+        description: Generate documentation with warnings treated as errors
+        entry: bash -c 'RUSTDOCFLAGS="-D warnings" cargo doc --no-deps'
+        language: rust
+        files: \.rs$
+        pass_filenames: false
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.9.10
     hooks:
