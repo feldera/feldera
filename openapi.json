@@ -232,6 +232,41 @@
         ]
       }
     },
+    "/v0/cluster_healthz": {
+      "get": {
+        "tags": [
+          "endpoints::cluster_healthz"
+        ],
+        "operationId": "get_health",
+        "responses": {
+          "200": {
+            "description": "All services healthy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthStatus"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "One or more services unhealthy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthStatus"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JSON web token (JWT) or API key": []
+          }
+        ]
+      }
+    },
     "/v0/config": {
       "get": {
         "tags": [
@@ -5195,6 +5230,21 @@
           }
         }
       },
+      "HealthStatus": {
+        "type": "object",
+        "required": [
+          "runner",
+          "compiler"
+        ],
+        "properties": {
+          "compiler": {
+            "$ref": "#/components/schemas/ServiceStatus"
+          },
+          "runner": {
+            "$ref": "#/components/schemas/ServiceStatus"
+          }
+        }
+      },
       "HttpInputConfig": {
         "type": "object",
         "description": "Configuration for reading data via HTTP.\n\nHTTP input adapters cannot be usefully configured as part of pipeline\nconfiguration.  Instead, instantiate them through the REST API as\n`/pipelines/{pipeline_name}/ingress/{table_name}`.",
@@ -7159,6 +7209,31 @@
           "region": {
             "type": "string",
             "description": "AWS region."
+          }
+        }
+      },
+      "ServiceStatus": {
+        "type": "object",
+        "required": [
+          "healthy",
+          "message",
+          "unchanged_since",
+          "checked_at"
+        ],
+        "properties": {
+          "checked_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "healthy": {
+            "type": "boolean"
+          },
+          "message": {
+            "type": "string"
+          },
+          "unchanged_since": {
+            "type": "string",
+            "format": "date-time"
           }
         }
       },
