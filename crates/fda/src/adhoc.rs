@@ -29,7 +29,7 @@ fn handle_ws_errors_fatal(
                 error!("Failed to establish a websocket connection to {server}.");
             }
             reqwest_websocket::Error::Reqwest(e) => {
-                eprintln!("{}: {e}", msg);
+                eprintln!("{}: {e}, source: {}", msg, source_error(&e));
             }
             reqwest_websocket::Error::Tungstenite(e) => {
                 eprintln!("{}: {e}", msg);
@@ -229,4 +229,12 @@ pub(crate) async fn handle_adhoc_query(
             println!("Query result saved to '{}'", path.display());
         }
     }
+}
+
+// helper method to get nested source error
+fn source_error(mut err: &dyn std::error::Error) -> &dyn std::error::Error {
+    while let Some(src) = err.source() {
+        err = src;
+    }
+    err
 }

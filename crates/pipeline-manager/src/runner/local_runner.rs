@@ -5,7 +5,7 @@ use crate::common_error::CommonError;
 use crate::config::{CommonConfig, LocalRunnerConfig};
 use crate::db::types::pipeline::PipelineId;
 use crate::db::types::version::Version;
-use crate::error::ManagerError;
+use crate::error::{source_error, ManagerError};
 use crate::runner::error::RunnerError;
 use crate::runner::pipeline_executor::PipelineExecutor;
 use crate::runner::pipeline_logs::{LogMessage, LogsSender};
@@ -221,7 +221,10 @@ impl LocalRunner {
                 Ok(())
             }
             Err(e) => Err(RunnerError::RunnerProvisionError {
-                error: format!("pipeline binary retrieval failed: unable to get response: {e}"),
+                error: format!(
+                    "pipeline binary retrieval failed: unable to get response: {e}, source: {}",
+                    source_error(&e)
+                ),
             }
             .into()),
         }
