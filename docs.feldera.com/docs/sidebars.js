@@ -285,6 +285,11 @@ const connectors = {
                     type: 'doc',
                     id: 'connectors/sources/datagen',
                     label: 'Data Generator'
+                },
+                {
+                    type: 'doc',
+                    id: 'connectors/sources/file',
+                    label: 'File'
                 }
             ]
         },
@@ -330,6 +335,11 @@ const connectors = {
                     type: 'doc',
                     id: 'connectors/sinks/snowflake',
                     label: 'Snowflake (experimental)'
+                },
+                {
+                    type: 'doc',
+                    id: 'connectors/sinks/file',
+                    label: 'File'
                 }
             ]
         }
