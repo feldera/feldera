@@ -1,0 +1,1 @@
+../aggregate_tests/test_min.py

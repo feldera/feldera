@@ -1,0 +1,1 @@
+../aggregate_tests3/test_binary_arg_min.py

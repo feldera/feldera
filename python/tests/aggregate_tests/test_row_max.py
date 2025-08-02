@@ -1,4 +1,4 @@
-from .aggtst_base import TstView
+from tests.aggregate_tests.aggtst_base import TstView
 
 
 class aggtst_row_max_value(TstView):

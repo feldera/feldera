@@ -1,0 +1,1 @@
+../aggregate_tests2/test_interval_min.py
