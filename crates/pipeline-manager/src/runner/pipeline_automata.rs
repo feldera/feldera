@@ -12,7 +12,7 @@ use crate::db::types::tenant::TenantId;
 use crate::db::types::utils::{
     validate_deployment_config, validate_program_info, validate_runtime_config,
 };
-use crate::error::ManagerError;
+use crate::error::{source_error, ManagerError};
 use crate::runner::error::RunnerError;
 use crate::runner::interaction::{format_pipeline_url, format_timeout_error_message};
 use crate::runner::pipeline_executor::PipelineExecutor;
@@ -660,7 +660,10 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                     }
                 } else {
                     RunnerError::PipelineInteractionUnreachable {
-                        error: format!("unable to send request due to: {e}"),
+                        error: format!(
+                            "unable to send request due to: {e}, source: {}",
+                            source_error(&e)
+                        ),
                     }
                 }
             })?;

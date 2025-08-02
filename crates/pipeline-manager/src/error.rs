@@ -143,3 +143,11 @@ impl DetailedError for ManagerError {
         }
     }
 }
+
+// helper method to get nested source error
+pub(crate) fn source_error(mut err: &dyn StdError) -> &dyn StdError {
+    while let Some(src) = err.source() {
+        err = src;
+    }
+    err
+}
