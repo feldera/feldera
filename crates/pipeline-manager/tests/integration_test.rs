@@ -473,7 +473,7 @@ async fn pipeline_runtime_config() {
             serde_json::to_value(RuntimeConfig {
                 workers: 100,
                 resources: ResourceConfig {
-                    cpu_cores_min: Some(5),
+                    cpu_cores_min: Some(5.0),
                     storage_mb_max: Some(2000),
                     storage_class: Some("normal".to_string()),
                     ..Default::default()
@@ -539,7 +539,7 @@ async fn pipeline_runtime_config() {
             workers: 100,
             storage: Some(StorageOptions::default()),
             resources: ResourceConfig {
-                cpu_cores_min: Some(2),
+                cpu_cores_min: Some(2.0),
                 storage_mb_max: Some(500),
                 storage_class: Some("fast".to_string()),
                 ..Default::default()

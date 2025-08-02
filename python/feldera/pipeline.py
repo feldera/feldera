@@ -142,6 +142,7 @@ class Pipeline:
         data: Dict | list,
         update_format: str = "raw",
         force: bool = False,
+        wait: bool = True,
     ):
         """
         Push this JSON data to the specified table of the pipeline.
@@ -155,6 +156,7 @@ class Pipeline:
         :param update_format: The update format of the JSON data to be pushed to the pipeline. Must be one of:
             "raw", "insert_delete". https://docs.feldera.com/formats/json#the-insertdelete-format
         :param force: `True` to push data even if the pipeline is paused. `False` by default.
+        :param wait: If True, blocks until this input has been processed by the pipeline
 
         :raises ValueError: If the update format is invalid.
         :raises FelderaAPIError: If the pipeline is not in a valid state to push data.
@@ -177,6 +179,7 @@ class Pipeline:
             update_format=update_format,
             array=array,
             force=force,
+            wait=wait,
         )
 
     def pause_connector(self, table_name: str, connector_name: str):
@@ -372,7 +375,7 @@ method or use `Pipeline.resume()` to resume a paused pipeline."""
             return
 
         self.client.pause_pipeline(
-            self.name, "Unable to START the pipeline.\n", timeout_s
+            self.name, "Unable to START the pipeline.\n", wait=wait, timeout_s=timeout_s
         )
         self.__setup_output_listeners()
         self.resume(timeout_s=timeout_s)
@@ -506,9 +509,11 @@ metrics"""
                     queue.put(_CallbackRunnerInstruction.RanToCompletion)
 
             if len(self.views_tx) > 0:
-                for view_name, queue in self.views_tx.pop().items():
-                    # block until the callback runner has been stopped
-                    queue.join()
+                while self.views_tx:
+                    view = self.views_tx.pop()
+                    for view_name, queue in view.items():
+                        # block until the callback runner has been stopped
+                        queue.join()
 
         time.sleep(3)
         self.client.stop_pipeline(

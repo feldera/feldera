@@ -1501,4 +1501,17 @@ public class MetadataTests extends BaseSQLTests {
                 See https://github.com/feldera/feldera/issues/4457 and
                 https://github.com/feldera/feldera/issues/2669""");
     }
+
+    @Test
+    public void issue4466() throws IOException, InterruptedException, SQLException {
+        File file = createInputScript("""
+                CREATE TABLE tbl(arr1 INT ARRAY);
+                CREATE MATERIALIZED VIEW v AS SELECT
+                ARRAY_EXISTS(arr1, x -> x > 0)  AS arr
+                FROM tbl;""");
+        File json = this.createTempJsonFile();
+        CompilerMain.execute("--plan", json.getPath(), "--noRust", file.getPath());
+        String jsonContents = Utilities.readFile(json.toPath());
+        Assert.assertNotNull(jsonContents);
+    }
 }

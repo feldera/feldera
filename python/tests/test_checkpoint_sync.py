@@ -3,6 +3,7 @@ from tests import enterprise_only
 from feldera.runtime_config import RuntimeConfig, Storage
 from typing import Optional
 import os
+import sys
 import time
 from uuid import uuid4
 import random
@@ -17,6 +18,7 @@ SECRET_KEY = "miniopasswd"
 
 
 def storage_cfg(
+    pipeline_name: str,
     endpoint: Optional[str] = None,
     start_from_checkpoint: Optional[str] = None,
     strict: bool = False,
@@ -27,7 +29,7 @@ def storage_cfg(
             "name": "file",
             "config": {
                 "sync": {
-                    "bucket": DEFAULT_BUCKET,
+                    "bucket": f"{DEFAULT_BUCKET}/{pipeline_name}",
                     "access_key": ACCESS_KEY,
                     "secret_key": SECRET_KEY if not auth_err else SECRET_KEY + "extra",
                     "provider": "Minio",
@@ -53,18 +55,44 @@ class TestCheckpointSync(SharedTestPipeline):
     ):
         """
         CREATE TABLE t0 (c0 INT, c1 VARCHAR);
-        CREATE MATERIALIZED VIEW v0 AS SELECT c0 FROM t0;
+        CREATE MATERIALIZED VIEW v0 AS SELECT * FROM t0;
         """
-        storage_config = storage_cfg()
 
-        self.set_runtime_config(RuntimeConfig(storage=Storage(config=storage_config)))
+        storage_config = storage_cfg(self.pipeline.name)
+
+        self.pipeline.set_runtime_config(
+            RuntimeConfig(storage=Storage(config=storage_config))
+        )
         self.pipeline.start()
 
         random.seed(time.time())
-        data = [{"c0": i, "c1": str(i)} for i in range(1, random.randint(10, 20))]
+        total = random.randint(10, 20)
+        data = [{"c0": i, "c1": str(i)} for i in range(1, total)]
         self.pipeline.input_json("t0", data)
-        self.pipeline.execute("INSERT INTO t0 VALUES (4, 'exists')")
+        self.pipeline.execute("INSERT INTO t0 VALUES (21, 'exists')")
+
+        start = time.time()
+        timeout = 5
+
+        while True:
+            processed = self.pipeline.stats().global_metrics.total_processed_records
+            if processed == total:
+                break
+
+            if time.time() - start > timeout:
+                raise TimeoutError(
+                    f"timed out while waiting for pipeline to process {total} records"
+                )
+
+            time.sleep(0.1)
+
         got_before = list(self.pipeline.query("SELECT * FROM v0"))
+        print(f"{self.pipeline.name}: records: {total}, {got_before}", file=sys.stderr)
+
+        if len(got_before) != processed:
+            raise RuntimeError(
+                f"adhoc query returned {len(got_before)} but {processed} records were processed: {got_before}"
+            )
 
         self.pipeline.checkpoint(wait=True)
         uuid = self.pipeline.sync_checkpoint(wait=True)
@@ -79,13 +107,21 @@ class TestCheckpointSync(SharedTestPipeline):
 
         # Restart pipeline from checkpoint
         storage_config = storage_cfg(
+            pipeline_name=self.pipeline.name,
             start_from_checkpoint=uuid if from_uuid else "latest",
             auth_err=auth_err,
             strict=strict,
         )
-        self.set_runtime_config(RuntimeConfig(storage=Storage(config=storage_config)))
+        self.pipeline.set_runtime_config(
+            RuntimeConfig(storage=Storage(config=storage_config))
+        )
         self.pipeline.start()
         got_after = list(self.pipeline.query("SELECT * FROM v0"))
+
+        print(
+            f"{self.pipeline.name}: after: {len(got_after)}, {got_after}",
+            file=sys.stderr,
+        )
 
         if expect_empty:
             got_before = []

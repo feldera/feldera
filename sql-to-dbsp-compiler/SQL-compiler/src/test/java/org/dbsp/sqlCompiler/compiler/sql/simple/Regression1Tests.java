@@ -501,7 +501,7 @@ public class Regression1Tests extends SqlIoTest {
                 CREATE TABLE tbl(str VARCHAR);
                 CREATE MATERIALIZED VIEW v AS SELECT
                 ARRAY_CONCAT(str, str)  AS str
-                FROM tbl;""", "Arguments of 'ARRAY_CONCAT' must have ARRAY types");
+                FROM tbl;""", "Cannot apply 'ARRAY_CONCAT' to arguments of type");
     }
 
     @Test

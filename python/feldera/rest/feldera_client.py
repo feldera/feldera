@@ -8,7 +8,7 @@ from typing import Generator, Mapping
 
 from feldera.rest.config import Config
 from feldera.rest.feldera_config import FelderaConfig
-from feldera.rest.errors import FelderaTimeoutError
+from feldera.rest.errors import FelderaTimeoutError, FelderaAPIError
 from feldera.rest.pipeline import Pipeline
 from feldera.rest._httprequests import HttpRequests
 from feldera.rest._helpers import client_version
@@ -67,7 +67,7 @@ class FelderaClient:
             config = self.get_config()
             version = client_version()
             if config.version != version:
-                logging.warn(
+                logging.warning(
                     f"Client is on version {version} while server is at "
                     f"{config.version}. There could be incompatibilities."
                 )
@@ -593,7 +593,9 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         update_format: str = "raw",
         json_flavor: Optional[str] = None,
         serialize: bool = True,
-    ):
+        wait: bool = True,
+        wait_timeout_s: Optional[float] = None,
+    ) -> str:
         """
         Insert data into a pipeline
 
@@ -610,6 +612,11 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             "debezium_mysql", "snowflake", "kafka_connect_json_converter", "pandas"
         :param data: The data to insert
         :param serialize: If True, the data will be serialized to JSON. True by default
+        :param wait: If True, blocks until this input has been processed by the pipeline
+        :param wait_timeout_s: The timeout in seconds to wait for this set of
+            inputs to be processed by the pipeline. None by default
+
+        :returns: The completion token to this input.
         """
 
         if format not in ["json", "csv"]:
@@ -671,13 +678,81 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             content_type = "text/csv"
             data = bytes(str(data), "utf-8")
 
-        self.http.post(
+        resp = self.http.post(
             path=f"/pipelines/{pipeline_name}/ingress/{table_name}",
             params=params,
             content_type=content_type,
             body=data,
             serialize=serialize,
         )
+
+        token = resp.get("token")
+        if token is None:
+            raise FelderaAPIError("response did not contain a completion token", resp)
+
+        if not wait:
+            return token
+
+        self.wait_for_token(pipeline_name, token, timeout_s=wait_timeout_s)
+
+        return token
+
+    def wait_for_token(
+        self, pipeline_name: str, token: str, timeout_s: Optional[float] = 600
+    ):
+        """
+        Blocks until all records represented by this completion token have
+        been processed.
+
+        :param pipeline_name: The name of the pipeline
+        :param token: The token to check for completion
+        :param timeout_s: The amount of time in seconds to wait for the pipeline
+            to process these records. Default 600s
+        """
+
+        params = {
+            "token": token,
+        }
+
+        start = time.monotonic()
+        end = start + timeout_s if timeout_s else None
+        initial_backoff = 0.1
+        max_backoff = 5
+        exponent = 1.2
+        retries = 0
+
+        while True:
+            if end:
+                if time.monotonic() > end:
+                    raise FelderaTimeoutError(
+                        f"timeout error: pipeline '{pipeline_name}' did not"
+                        f" process records represented by token {token} within"
+                        f" {timeout_s}"
+                    )
+
+            resp = self.http.get(
+                path=f"/pipelines/{pipeline_name}/completion_status", params=params
+            )
+
+            status: Optional[str] = resp.get("status")
+            if status is None:
+                raise FelderaAPIError(
+                    f"got empty status when checking for completion status for token: {token}",
+                    resp,
+                )
+
+            if status.lower() == "complete":
+                break
+
+            elapsed = time.monotonic() - start
+            logging.debug(
+                f"still waiting for inputs represented by {token} to be processed; elapsed: {elapsed}s"
+            )
+
+            retries += 1
+            backoff = min(max_backoff, initial_backoff * (exponent**retries))
+
+            time.sleep(backoff)
 
     def listen_to_pipeline(
         self,

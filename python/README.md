@@ -61,7 +61,7 @@ cd python && python3 -m pytest tests/
 - This will detect and run all test files that match the pattern `test_*.py` or
   `*_test.py`.
 - By default, the tests expect a running Feldera instance at `http://localhost:8080`.
-  To override the default endpoint, set the `FELDERA_BASE_URL` environment variable.
+  To override the default endpoint, set the `FELDERA_HOST` environment variable.
 
 To run tests from a specific file:
 
