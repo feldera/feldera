@@ -1348,6 +1348,56 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                 }
             }
         }
+        PipelineAction::SupportBundle { name, output } => {
+            let response = client
+                .get_pipeline_support_bundle()
+                .pipeline_name(&name)
+                .send()
+                .await
+                .map_err(handle_errors_fatal(
+                    client.baseurl().clone(),
+                    "Failed to obtain circuit profile",
+                    1,
+                ))
+                .unwrap();
+            let mut byte_stream = response.into_inner();
+            let mut buffer = Vec::new();
+            while let Some(chunk) = byte_stream.next().await {
+                match chunk {
+                    Ok(chunk) => buffer.extend_from_slice(&chunk),
+                    Err(e) => {
+                        eprintln!("ERROR: Unable to read server response: {}", e);
+                        std::process::exit(1);
+                    }
+                }
+            }
+
+            match output {
+                None => {
+                    let (path, mut file) =
+                        unique_file(format!("{name}-support-bundle").as_str(), "zip")
+                            .unwrap_or_else(|e| {
+                                eprintln!("ERROR: Failed to create circuit profile file: {e}");
+                                std::process::exit(1);
+                            });
+
+                    file.write_all(&buffer).unwrap_or_else(|e| {
+                        eprintln!("ERROR: Failed to create temporary file: {e}");
+                        std::process::exit(1);
+                    });
+                    println!("Circuit profile written to {}", path.display());
+                }
+                Some(filename) => {
+                    tokio::fs::write(&filename, buffer)
+                        .await
+                        .unwrap_or_else(|e| {
+                            eprintln!("ERROR: Failed to write {}: {e}", filename.display());
+                            std::process::exit(1);
+                        });
+                    println!("Support bundle written to {}", filename.display());
+                }
+            }
+        }
         PipelineAction::Shell { name, start } => {
             let client2 = client.clone();
             if start {
@@ -1938,40 +1988,6 @@ async fn program(format: OutputFormat, action: ProgramAction, client: Client) {
             } else {
                 // Already reported error in read_program_code or read_file.
                 std::process::exit(1);
-            }
-        }
-        ProgramAction::Info { name } => {
-            let response = client
-                .get_program_info()
-                .pipeline_name(name)
-                .send()
-                .await
-                .map_err(handle_errors_fatal(
-                    client.baseurl().clone(),
-                    "Failed to get program information",
-                    1,
-                ))
-                .unwrap();
-
-            match format {
-                OutputFormat::Text => {
-                    println!(
-                        "{}",
-                        serde_json::to_string_pretty(&response.into_inner())
-                            .expect("Failed to serialize program information")
-                    );
-                }
-                OutputFormat::Json => {
-                    println!(
-                        "{}",
-                        serde_json::to_string_pretty(&response.into_inner())
-                            .expect("Failed to serialize program information")
-                    );
-                }
-                _ => {
-                    eprintln!("Unsupported output format: {}", format);
-                    std::process::exit(1);
-                }
             }
         }
     }
