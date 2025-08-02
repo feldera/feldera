@@ -2910,140 +2910,6 @@
         ]
       }
     },
-    "/v0/pipelines/{pipeline_name}/program_info": {
-      "get": {
-        "tags": [
-          "Pipeline management"
-        ],
-        "summary": "Retrieve the program info of a pipeline.",
-        "operationId": "get_program_info",
-        "parameters": [
-          {
-            "name": "pipeline_name",
-            "in": "path",
-            "description": "Unique pipeline name",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Pipeline retrieved successfully",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ProgramInfo"
-                },
-                "example": {
-                  "id": "67e55044-10b1-426f-9247-bb680e5fe0c8",
-                  "name": "example1",
-                  "description": "Description of the pipeline example1",
-                  "created_at": "1970-01-01T00:00:00Z",
-                  "version": 4,
-                  "platform_version": "v0",
-                  "runtime_config": {
-                    "workers": 16,
-                    "storage": {
-                      "backend": {
-                        "name": "default"
-                      },
-                      "min_storage_bytes": null,
-                      "min_step_storage_bytes": null,
-                      "compression": "default",
-                      "cache_mib": null
-                    },
-                    "fault_tolerance": {
-                      "model": "none",
-                      "checkpoint_interval_secs": 60
-                    },
-                    "cpu_profiler": true,
-                    "tracing": false,
-                    "tracing_endpoint_jaeger": "",
-                    "min_batch_size_records": 0,
-                    "max_buffering_delay_usecs": 0,
-                    "resources": {
-                      "cpu_cores_min": null,
-                      "cpu_cores_max": null,
-                      "memory_mb_min": null,
-                      "memory_mb_max": null,
-                      "storage_mb_max": null,
-                      "storage_class": null
-                    },
-                    "clock_resolution_usecs": 1000000,
-                    "pin_cpus": [],
-                    "provisioning_timeout_secs": null,
-                    "max_parallel_connector_init": null,
-                    "init_containers": null,
-                    "checkpoint_during_suspend": true,
-                    "http_workers": null,
-                    "io_workers": null,
-                    "dev_tweaks": {},
-                    "logging": null
-                  },
-                  "program_code": "CREATE TABLE table1 ( col1 INT );",
-                  "udf_rust": "",
-                  "udf_toml": "",
-                  "program_config": {
-                    "profile": "optimized",
-                    "cache": true,
-                    "runtime_version": null
-                  },
-                  "program_version": 2,
-                  "program_status": "Pending",
-                  "program_status_since": "1970-01-01T00:00:00Z",
-                  "program_error": {
-                    "sql_compilation": null,
-                    "rust_compilation": null,
-                    "system_error": null
-                  },
-                  "program_info": null,
-                  "deployment_status": "Stopped",
-                  "deployment_status_since": "1970-01-01T00:00:00Z",
-                  "deployment_desired_status": "Stopped",
-                  "deployment_error": null,
-                  "refresh_version": 4,
-                  "storage_status": "Cleared"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Pipeline with that name does not exist",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                },
-                "example": {
-                  "message": "Unknown pipeline name 'non-existent-pipeline'",
-                  "error_code": "UnknownPipelineName",
-                  "details": {
-                    "pipeline_name": "non-existent-pipeline"
-                  }
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "JSON web token (JWT) or API key": []
-          }
-        ]
-      }
-    },
     "/v0/pipelines/{pipeline_name}/query": {
       "get": {
         "tags": [
@@ -3601,6 +3467,121 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JSON web token (JWT) or API key": []
+          }
+        ]
+      }
+    },
+    "/v0/pipelines/{pipeline_name}/support_bundle": {
+      "get": {
+        "tags": [
+          "Pipeline interaction"
+        ],
+        "summary": "Generate a support bundle containing diagnostic information from a pipeline.",
+        "description": "This endpoint collects various diagnostic data from the pipeline including\ncircuit profile, heap profile, metrics, logs, stats, and connector statistics,\nand packages them into a single ZIP file for support purposes.",
+        "operationId": "get_pipeline_support_bundle",
+        "parameters": [
+          {
+            "name": "pipeline_name",
+            "in": "path",
+            "description": "Unique pipeline name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Support bundle containing diagnostic information",
+            "content": {
+              "application/zip": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Pipeline with that name does not exist",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "Unknown pipeline name 'non-existent-pipeline'",
+                  "error_code": "UnknownPipelineName",
+                  "details": {
+                    "pipeline_name": "non-existent-pipeline"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "Disconnected during response": {
+                    "value": {
+                      "message": "Unable to reach pipeline to interact due to: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs.",
+                      "error_code": "PipelineInteractionUnreachable",
+                      "details": {
+                        "error": "the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs."
+                      }
+                    }
+                  },
+                  "Pipeline is currently unavailable": {
+                    "value": {
+                      "message": "Unable to reach pipeline to interact due to: deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again",
+                      "error_code": "PipelineInteractionUnreachable",
+                      "details": {
+                        "error": "deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again"
+                      }
+                    }
+                  },
+                  "Pipeline is not deployed": {
+                    "value": {
+                      "message": "Unable to interact with pipeline because the deployment status ('stopped') is not one of the deployed statuses ('running', 'paused' or 'unavailable') -- to resolve this: wait for the pipeline to become running or paused",
+                      "error_code": "PipelineInteractionNotDeployed",
+                      "details": {
+                        "status": "Stopped",
+                        "desired_status": "Running"
+                      }
+                    }
+                  },
+                  "Response timeout": {
+                    "value": {
+                      "message": "Unable to reach pipeline to interact due to: timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)",
+                      "error_code": "PipelineInteractionUnreachable",
+                      "details": {
+                        "error": "timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)"
+                      }
+                    }
+                  }
                 }
               }
             }

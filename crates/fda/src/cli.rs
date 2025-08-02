@@ -479,6 +479,15 @@ pub enum PipelineAction {
         #[arg(value_hint = ValueHint::FilePath, long, short = 'o')]
         output: Option<PathBuf>,
     },
+    /// Download a support bundle which contains debug information about the pipeline.
+    SupportBundle {
+        /// The name of the pipeline.
+        #[arg(value_hint = ValueHint::Other, add = ArgValueCompleter::new(pipeline_names))]
+        name: String,
+        /// The ZIP file to write the bundle to.
+        #[arg(value_hint = ValueHint::FilePath, long, short = 'o')]
+        output: Option<PathBuf>,
+    },
     /// Enter the ad-hoc SQL shell for a pipeline.
     Shell {
         /// The name of the pipeline.
@@ -765,12 +774,6 @@ pub enum ProgramAction {
     },
     /// Retrieve the compilation status of the program.
     Status {
-        /// The name of the pipeline.
-        #[arg(value_hint = ValueHint::Other, add = ArgValueCompleter::new(pipeline_names))]
-        name: String,
-    },
-    /// Return compile-time information about the program.
-    Info {
         /// The name of the pipeline.
         #[arg(value_hint = ValueHint::Other, add = ArgValueCompleter::new(pipeline_names))]
         name: String,
