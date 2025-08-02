@@ -123,6 +123,7 @@ tolerance.
 |[PostgreSQL]|☐|☐|☐|
 |[Pub/Sub]|☐|☐|☐|
 |[S3]|☑|☑|☑|
+|[File]|☑|☑|☑|
 
 [Datagen]: /connectors/sources/datagen.md
 [Debezium]: /connectors/sources/debezium.md
@@ -134,6 +135,7 @@ tolerance.
 [PostgreSQL]: /connectors/sources/postgresql.md
 [Pub/Sub]: /connectors/sources/pubsub.md
 [S3]: /connectors/sources/s3.md
+[File]: /connectors/sources/file.md
 
 ## Enabling suspend and resume and fault tolerance
 
