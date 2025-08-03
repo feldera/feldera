@@ -2,6 +2,7 @@ use crate::{
     algebra::{AddAssignByRef, HasOne, HasZero, IndexedZSet, PartialOrder, ZSet, ZTrace},
     circuit::{
         circuit_builder::register_replay_stream,
+        metadata::{BatchSizeStats, OperatorMeta, INPUT_BATCHES_LABEL, OUTPUT_BATCHES_LABEL},
         operator_traits::{BinaryOperator, Operator},
         OwnershipPreference, Scope, WithClock,
     },
@@ -310,6 +311,13 @@ where
     batch_factories: B::Factories,
     clock: C,
     bounds: TraceBounds<T::Key, T::Val>,
+
+    // Input batch sizes.
+    input_batch_stats: BatchSizeStats,
+
+    // Output batch sizes.
+    output_batch_stats: BatchSizeStats,
+
     phantom: PhantomData<B>,
 }
 
@@ -327,6 +335,8 @@ where
             batch_factories: batch_factories.clone(),
             clock,
             bounds,
+            input_batch_stats: BatchSizeStats::new(),
+            output_batch_stats: BatchSizeStats::new(),
             phantom: PhantomData,
         }
     }
@@ -341,6 +351,14 @@ where
     fn name(&self) -> Cow<'static, str> {
         Cow::from("Upsert")
     }
+
+    fn metadata(&self, meta: &mut OperatorMeta) {
+        meta.extend(metadata! {
+            INPUT_BATCHES_LABEL => self.input_batch_stats.metadata(),
+            OUTPUT_BATCHES_LABEL => self.output_batch_stats.metadata(),
+        });
+    }
+
     fn fixedpoint(&self, _scope: Scope) -> bool {
         true
     }
@@ -356,6 +374,7 @@ where
     async fn eval(&mut self, trace: &T, updates: &Box<DynPairs<T::Key, DynOpt<T::Val>>>) -> B {
         // Inputs must be sorted by key
         debug_assert!(updates.is_sorted_by(&|u1, u2| u1.fst().cmp(u2.fst())));
+        self.input_batch_stats.add_batch(updates.len());
 
         // ... and contain a single update per key.
         // TODO: implement this check.
@@ -430,7 +449,9 @@ where
             key_updates.clear();
         }
 
-        builder.done()
+        let result = builder.done();
+        self.output_batch_stats.add_batch(result.len());
+        result
     }
 
     fn input_preference(&self) -> (OwnershipPreference, OwnershipPreference) {

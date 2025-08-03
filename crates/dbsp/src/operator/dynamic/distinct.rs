@@ -2,6 +2,7 @@
 
 use crate::algebra::ZBatchReader;
 use crate::circuit::circuit_builder::StreamId;
+use crate::circuit::metadata::{BatchSizeStats, INPUT_BATCHES_LABEL, OUTPUT_BATCHES_LABEL};
 use crate::circuit::splitter_output_chunk_size;
 use crate::dynamic::{ClonableTrait, Data, DynData};
 use crate::operator::async_stream_operators::{StreamingBinaryOperator, StreamingBinaryWrapper};
@@ -14,8 +15,8 @@ use crate::{
     },
     circuit::{
         metadata::{
-            MetaItem, OperatorLocation, OperatorMeta, NUM_ENTRIES_LABEL, NUM_INPUTS, NUM_OUTPUTS,
-            SHARED_BYTES_LABEL, USED_BYTES_LABEL,
+            MetaItem, OperatorLocation, OperatorMeta, NUM_ENTRIES_LABEL, SHARED_BYTES_LABEL,
+            USED_BYTES_LABEL,
         },
         operator_traits::{Operator, UnaryOperator},
         Circuit, Scope, Stream, WithClock,
@@ -407,11 +408,11 @@ struct DistinctIncrementalTotal<Z: IndexedZSet, I> {
     input_factories: Z::Factories,
     location: &'static Location<'static>,
 
-    // Total number of input tuples processed by the operator.
-    num_inputs: RefCell<usize>,
+    // Input batch sizes.
+    input_batch_stats: RefCell<BatchSizeStats>,
 
-    // Total number of output tuples processed by the operator.
-    num_outputs: RefCell<usize>,
+    // Output batch sizes.
+    output_batch_stats: RefCell<BatchSizeStats>,
 
     chunk_size: usize,
 
@@ -423,8 +424,8 @@ impl<Z: IndexedZSet, I> DistinctIncrementalTotal<Z, I> {
         Self {
             input_factories: input_factories.clone(),
             location,
-            num_inputs: RefCell::new(0),
-            num_outputs: RefCell::new(0),
+            input_batch_stats: RefCell::new(BatchSizeStats::new()),
+            output_batch_stats: RefCell::new(BatchSizeStats::new()),
             chunk_size: splitter_output_chunk_size(),
             _type: PhantomData,
         }
@@ -448,7 +449,7 @@ impl<Z: IndexedZSet, I> DistinctIncrementalTotal<Z, I> {
             );
 
             let result = builder.done();
-            *self.num_outputs.borrow_mut() += result.len();
+            self.output_batch_stats.borrow_mut().add_batch(result.len());
 
             Some((result, false, delta_cursor.position()))
         } else {
@@ -472,8 +473,8 @@ where
 
     fn metadata(&self, meta: &mut OperatorMeta) {
         meta.extend(metadata! {
-            NUM_INPUTS => MetaItem::Count(*self.num_inputs.borrow()),
-            NUM_OUTPUTS => MetaItem::Count(*self.num_outputs.borrow()),
+            INPUT_BATCHES_LABEL => self.input_batch_stats.borrow().metadata(),
+            OUTPUT_BATCHES_LABEL => self.output_batch_stats.borrow().metadata(),
         });
     }
 
@@ -507,7 +508,7 @@ where
                 return
             };
 
-            *self.num_inputs.borrow_mut() += delta.len();
+            self.input_batch_stats.borrow_mut().add_batch(delta.len());
 
             let mut builder = Z::Builder::with_capacity(&self.input_factories, self.chunk_size);
             let mut delta_cursor = delta.cursor();
@@ -581,7 +582,7 @@ where
             }
 
             let result = builder.done();
-            *self.num_outputs.borrow_mut() += result.len();
+            self.output_batch_stats.borrow_mut().add_batch(result.len());
 
             yield (result, true, delta_cursor.position())
         }
@@ -620,11 +621,14 @@ where
     // Used in computing partial derivatives
     // (we keep it here to reuse allocations across `eval_keyval` calls).
     distinct_vals: RefCell<Vec<(Option<<T::Batch as BatchReader>::Time>, ZWeight)>>,
-    // Total number of input tuples processed by the operator.
-    num_inputs: RefCell<usize>,
 
-    // Total number of output tuples processed by the operator.
-    num_outputs: RefCell<usize>,
+    // Input batch sizes.
+    #[size_of(skip)]
+    input_batch_stats: RefCell<BatchSizeStats>,
+
+    // Output batch sizes.
+    #[size_of(skip)]
+    output_batch_stats: RefCell<BatchSizeStats>,
 
     chunk_size: usize,
 
@@ -655,8 +659,8 @@ where
             empty_input: RefCell::new(false),
             empty_output: RefCell::new(false),
             distinct_vals: RefCell::new(vec![(None, HasZero::zero()); 2 << depth]),
-            num_inputs: RefCell::new(0),
-            num_outputs: RefCell::new(0),
+            input_batch_stats: RefCell::new(BatchSizeStats::new()),
+            output_batch_stats: RefCell::new(BatchSizeStats::new()),
             chunk_size: splitter_output_chunk_size(),
             _type: PhantomData,
         }
@@ -836,7 +840,7 @@ where
 
             let result = builder.done();
             *self.empty_output.borrow_mut() &= result.is_empty();
-            *self.num_outputs.borrow_mut() += result.len();
+            self.output_batch_stats.borrow_mut().add_batch(result.len());
 
             Some((result, false, delta_cursor.position()))
         } else {
@@ -906,8 +910,8 @@ where
 
         meta.extend(metadata! {
             NUM_ENTRIES_LABEL => MetaItem::Count(size),
-            NUM_INPUTS => MetaItem::Count(*self.num_inputs.borrow()),
-            NUM_OUTPUTS => MetaItem::Count(*self.num_outputs.borrow()),
+            INPUT_BATCHES_LABEL => self.input_batch_stats.borrow().metadata(),
+            OUTPUT_BATCHES_LABEL => self.output_batch_stats.borrow().metadata(),
             USED_BYTES_LABEL => MetaItem::bytes(bytes.used_bytes()),
             "allocations" => MetaItem::Count(bytes.distinct_allocations()),
             SHARED_BYTES_LABEL => MetaItem::bytes(bytes.shared_bytes()),
@@ -978,7 +982,7 @@ where
             };
 
             let time = self.clock.time();
-            *self.num_inputs.borrow_mut() += delta.len();
+            self.input_batch_stats.borrow_mut().add_batch(delta.len());
 
             Self::init_distinct_vals(&mut self.distinct_vals.borrow_mut(), Some(time.clone()));
             *self.empty_input.borrow_mut() = delta.is_empty();
@@ -1178,7 +1182,7 @@ where
 
             let result = result_builder.done();
             *self.empty_output.borrow_mut() &= result.is_empty();
-            *self.num_outputs.borrow_mut() += result.len();
+            self.output_batch_stats.borrow_mut().add_batch(result.len());
             yield (result, true, delta_cursor.position());
         }
     }

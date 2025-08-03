@@ -1,6 +1,10 @@
 use crate::{
     algebra::{HasZero, IndexedZSet, UnsignedPrimInt, ZRingValue},
-    circuit::{operator_traits::Operator, splitter_output_chunk_size, Scope},
+    circuit::{
+        metadata::{BatchSizeStats, OperatorMeta, INPUT_BATCHES_LABEL, OUTPUT_BATCHES_LABEL},
+        operator_traits::Operator,
+        splitter_output_chunk_size, Scope,
+    },
     dynamic::{
         ClonableTrait, DataTrait, DowncastTrait, DynDataTyped, DynOpt, DynPair, DynUnit, Erase,
         Factory, WeightTrait, WithFactory,
@@ -735,6 +739,13 @@ struct PartitionedRollingAggregate<
     aggregator: Box<dyn DynAggregator<V, (), DynZWeight, Accumulator = Acc, Output = Out>>,
     flush: RefCell<bool>,
     input_delta: RefCell<Option<SpineSnapshot<B>>>,
+
+    // Input batch sizes.
+    input_batch_stats: RefCell<BatchSizeStats>,
+
+    // Output batch sizes.
+    output_batch_stats: RefCell<BatchSizeStats>,
+
     phantom: PhantomData<fn(&V, &O)>,
 }
 
@@ -758,6 +769,9 @@ where
             aggregator: clone_box(aggregator),
             flush: RefCell::new(false),
             input_delta: RefCell::new(None),
+            input_batch_stats: RefCell::new(BatchSizeStats::new()),
+            output_batch_stats: RefCell::new(BatchSizeStats::new()),
+
             phantom: PhantomData,
         }
     }
@@ -797,6 +811,13 @@ where
 {
     fn name(&self) -> Cow<'static, str> {
         Cow::from("PartitionedRollingAggregate")
+    }
+
+    fn metadata(&self, meta: &mut OperatorMeta) {
+        meta.extend(metadata! {
+            INPUT_BATCHES_LABEL => self.input_batch_stats.borrow().metadata(),
+            OUTPUT_BATCHES_LABEL => self.output_batch_stats.borrow().metadata(),
+        });
     }
 
     fn fixedpoint(&self, _scope: Scope) -> bool {
@@ -862,6 +883,7 @@ where
             }
 
             let input_delta = self.input_delta.borrow_mut().take().unwrap();
+            self.input_batch_stats.borrow_mut().add_batch(input_delta.len());
 
             let mut delta_cursor = input_delta.cursor();
             let mut output_trace_cursor = output_trace.unwrap().cursor();
@@ -908,7 +930,9 @@ where
 
                             if retraction_builder.num_tuples() >= chunk_size {
                                 retraction_builder.push_key(delta_cursor.key());
-                                yield (retraction_builder.done(), false, delta_cursor.position());
+                                let result = retraction_builder.done();
+                                self.output_batch_stats.borrow_mut().add_batch(result.len());
+                                yield (result, false, delta_cursor.position());
                                 any_values = false;
                                 retraction_builder = O::Builder::with_capacity(&self.output_factories, chunk_size);
                             }
@@ -972,7 +996,11 @@ where
                                 if insertion_builder.num_tuples() >= chunk_size {
                                     insertion_builder.push_key(delta_cursor.key());
                                     any_values = false;
-                                    yield (insertion_builder.done(), false, delta_cursor.position());
+
+                                    let result = insertion_builder.done();
+                                    self.output_batch_stats.borrow_mut().add_batch(result.len());
+
+                                    yield (result, false, delta_cursor.position());
                                     insertion_builder =
                                         O::Builder::with_capacity(&self.output_factories, chunk_size);
                                 }
@@ -997,7 +1025,9 @@ where
             let retractions = retraction_builder.done();
             let insertions = insertion_builder.done();
 
-            yield (merge_batches(&insertions.factories(), [insertions,retractions], &None, &None), true, delta_cursor.position());
+            let result = merge_batches(&insertions.factories(), [insertions,retractions], &None, &None);
+            self.output_batch_stats.borrow_mut().add_batch(result.len());
+            yield (result, true, delta_cursor.position());
         }
     }
 }

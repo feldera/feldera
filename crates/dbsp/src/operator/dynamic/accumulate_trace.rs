@@ -1,5 +1,5 @@
 use crate::circuit::circuit_builder::{register_replay_stream, StreamId};
-use crate::circuit::metadata::NUM_INPUTS;
+use crate::circuit::metadata::NUM_INPUTS_LABEL;
 use crate::dynamic::{Weight, WeightTrait};
 use crate::operator::dynamic::trace::TraceBounds;
 use crate::operator::{require_persistent_id, TraceBound};
@@ -488,7 +488,7 @@ where
 
     fn metadata(&self, meta: &mut OperatorMeta) {
         meta.extend(metadata! {
-            NUM_INPUTS => MetaItem::Count(self.num_inputs),
+            NUM_INPUTS_LABEL => MetaItem::Count(self.num_inputs),
         });
     }
 
@@ -575,7 +575,7 @@ where
 
     fn metadata(&self, meta: &mut OperatorMeta) {
         meta.extend(metadata! {
-            NUM_INPUTS => MetaItem::Count(self.num_inputs),
+            NUM_INPUTS_LABEL => MetaItem::Count(self.num_inputs),
         });
     }
 }

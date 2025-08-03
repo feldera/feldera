@@ -3,7 +3,11 @@
 
 use crate::{
     algebra::{HasZero, IndexedZSet, OrdIndexedZSet, ZCursor},
-    circuit::{operator_traits::Operator, splitter_output_chunk_size, Scope},
+    circuit::{
+        metadata::{BatchSizeStats, OperatorMeta, INPUT_BATCHES_LABEL, OUTPUT_BATCHES_LABEL},
+        operator_traits::Operator,
+        splitter_output_chunk_size, Scope,
+    },
     dynamic::{DataTrait, DynUnit, Factory},
     operator::{
         async_stream_operators::{StreamingTernaryOperator, StreamingTernaryWrapper},
@@ -362,6 +366,13 @@ where
 {
     output_factories: OB::Factories,
     transformer: RefCell<Box<dyn GroupTransformer<B::Val, OB::Val>>>,
+
+    // Input batch sizes.
+    input_batch_stats: RefCell<BatchSizeStats>,
+
+    // Output batch sizes.
+    output_batch_stats: RefCell<BatchSizeStats>,
+
     _phantom: PhantomData<(B, OB, T, OT)>,
 }
 
@@ -377,6 +388,8 @@ where
         Self {
             output_factories: output_factories.clone(),
             transformer: RefCell::new(transformer),
+            input_batch_stats: RefCell::new(BatchSizeStats::new()),
+            output_batch_stats: RefCell::new(BatchSizeStats::new()),
             _phantom: PhantomData,
         }
     }
@@ -395,6 +408,14 @@ where
             self.transformer.borrow().name()
         ))
     }
+
+    fn metadata(&self, meta: &mut OperatorMeta) {
+        meta.extend(metadata! {
+            INPUT_BATCHES_LABEL => self.input_batch_stats.borrow().metadata(),
+            OUTPUT_BATCHES_LABEL => self.output_batch_stats.borrow().metadata(),
+        });
+    }
+
     fn fixedpoint(&self, _scope: Scope) -> bool {
         true
     }
@@ -435,6 +456,8 @@ where
                 yield (OB::dyn_empty(&self.output_factories), true, None);
                 return;
             };
+
+            self.input_batch_stats.borrow_mut().add_batch(delta.len());
 
             let mut delta_cursor = delta.cursor();
             let mut input_trace_cursor = input_trace.unwrap().cursor();
@@ -557,7 +580,9 @@ where
                 buffer.clear();
 
                 if builder.num_tuples() >= chunk_size {
-                    yield (builder.done(), false, delta_cursor.position());
+                    let result = builder.done();
+                    self.output_batch_stats.borrow_mut().add_batch(result.len());
+                    yield (result, false, delta_cursor.position());
                     builder = TupleBuilder::new(
                         &self.output_factories,
                         OB::Builder::with_capacity(&self.output_factories, delta.len()),
@@ -567,7 +592,9 @@ where
                 delta_cursor.step_key();
             }
 
-            yield (builder.done(), true, delta_cursor.position())
+            let result = builder.done();
+            self.output_batch_stats.borrow_mut().add_batch(result.len());
+            yield (result, true, delta_cursor.position())
         }
     }
 }

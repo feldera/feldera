@@ -4,7 +4,11 @@ use super::{
 };
 use crate::{
     algebra::{HasOne, OrdIndexedZSet},
-    circuit::{operator_traits::Operator, splitter_output_chunk_size, Scope},
+    circuit::{
+        metadata::{BatchSizeStats, OperatorMeta, INPUT_BATCHES_LABEL, OUTPUT_BATCHES_LABEL},
+        operator_traits::Operator,
+        splitter_output_chunk_size, Scope,
+    },
     dynamic::{ClonableTrait, DataTrait, DynDataTyped, DynPair, Erase},
     operator::{
         async_stream_operators::{StreamingTernaryOperator, StreamingTernaryWrapper},
@@ -31,8 +35,14 @@ use minitrace::trace;
 use num::PrimInt;
 use size_of::SizeOf;
 use std::{
-    borrow::Cow, cmp::Ordering, collections::BTreeMap, fmt, fmt::Write, marker::PhantomData,
-    ops::Neg, rc::Rc,
+    borrow::Cow,
+    cell::RefCell,
+    cmp::Ordering,
+    collections::BTreeMap,
+    fmt::{self, Write},
+    marker::PhantomData,
+    ops::Neg,
+    rc::Rc,
 };
 
 /// Partitioned radix tree batch.
@@ -317,6 +327,12 @@ where
 {
     aggregator: Box<dyn DynAggregator<V, (), DynZWeight, Accumulator = Acc, Output = Out>>,
     factories: PartitionedTreeAggregateFactories<TS, V, Z, O, Acc>,
+
+    // Input batch sizes.
+    input_batch_stats: RefCell<BatchSizeStats>,
+
+    // Output batch sizes.
+    output_batch_stats: RefCell<BatchSizeStats>,
 }
 
 impl<TS, V, Z, Acc, Out, O> PartitionedRadixTreeAggregate<TS, V, Z, Acc, Out, O>
@@ -335,6 +351,8 @@ where
         Self {
             aggregator: clone_box(aggregator),
             factories: factories.clone(),
+            input_batch_stats: RefCell::new(BatchSizeStats::new()),
+            output_batch_stats: RefCell::new(BatchSizeStats::new()),
         }
     }
 }
@@ -350,6 +368,13 @@ where
 {
     fn name(&self) -> Cow<'static, str> {
         Cow::from("PartitionedRadixTreeAggregate")
+    }
+
+    fn metadata(&self, meta: &mut OperatorMeta) {
+        meta.extend(metadata! {
+            INPUT_BATCHES_LABEL => self.input_batch_stats.borrow().metadata(),
+            OUTPUT_BATCHES_LABEL => self.output_batch_stats.borrow().metadata(),
+        });
     }
 
     fn fixedpoint(&self, _scope: Scope) -> bool {
@@ -394,6 +419,8 @@ where
                 yield (O::dyn_empty(&self.factories.output_factories), true, None);
                 return;
             };
+
+            self.input_batch_stats.borrow_mut().add_batch(delta.len());
 
             let mut builder =
                 O::Builder::with_capacity(&self.factories.output_factories, chunk_size + 2);
@@ -515,6 +542,7 @@ where
                     if builder.num_tuples() >= chunk_size && any_values {
                         builder.push_key(&*key);
                         let result = builder.done();
+                        self.output_batch_stats.borrow_mut().add_batch(result.len());
                         yield (result, false, delta_cursor.position());
                         builder =
                             O::Builder::with_capacity(&self.factories.output_factories, chunk_size + 1);
@@ -529,7 +557,7 @@ where
             }
 
             let result = builder.done();
-
+            self.output_batch_stats.borrow_mut().add_batch(result.len());
             yield (result, true, delta_cursor.position())
         }
     }

@@ -17,6 +17,7 @@ use std::{
 use crate::{
     algebra::{HasOne, IndexedZSet, IndexedZSetReader, Lattice, OrdIndexedZSet, PartialOrder},
     circuit::{
+        metadata::{BatchSizeStats, OperatorMeta, INPUT_BATCHES_LABEL, OUTPUT_BATCHES_LABEL},
         operator_traits::{Operator, UnaryOperator},
         splitter_output_chunk_size, Circuit, Scope, Stream, WithClock,
     },
@@ -818,8 +819,13 @@ where
     empty_output: RefCell<bool>,
     // Keys that may need updating at future times.
     keys_of_interest: RefCell<BTreeMap<<IT::Batch as BatchReader>::Time, Box<DynSet<Z::Key>>>>,
-    // Buffer used in computing per-key outputs.
-    // Keep it here to reuse allocation across multiple operations.
+
+    // Input batch sizes.
+    input_batch_stats: RefCell<BatchSizeStats>,
+
+    // Output batch sizes.
+    output_batch_stats: RefCell<BatchSizeStats>,
+
     _type: PhantomData<fn(&Z, &IT)>,
 }
 
@@ -854,6 +860,8 @@ where
             empty_input: RefCell::new(false),
             empty_output: RefCell::new(false),
             keys_of_interest: RefCell::new(BTreeMap::new()),
+            input_batch_stats: RefCell::new(BatchSizeStats::new()),
+            output_batch_stats: RefCell::new(BatchSizeStats::new()),
             _type: PhantomData,
         }
     }
@@ -998,6 +1006,13 @@ where
         }));
     }
 
+    fn metadata(&self, meta: &mut OperatorMeta) {
+        meta.extend(metadata! {
+            INPUT_BATCHES_LABEL => self.input_batch_stats.borrow().metadata(),
+            OUTPUT_BATCHES_LABEL => self.output_batch_stats.borrow().metadata(),
+        });
+    }
+
     fn fixedpoint(&self, scope: Scope) -> bool {
         let epoch_end = self.clock.time().epoch_end(scope);
 
@@ -1049,6 +1064,8 @@ where
                 yield (self.output_pairs_factory.default_box(), true, None);
                 return;
             };
+
+            self.input_batch_stats.borrow_mut().add_batch(delta.len());
 
             // println!(
             //     "{}: AggregateIncremental::eval @{:?}\ndelta:{delta}",
@@ -1124,8 +1141,8 @@ where
 
                 if result.len() >= chunk_size {
                     // println!("yield {:?}", result);
-
                     *self.empty_output.borrow_mut() &= result.is_empty();
+                    self.output_batch_stats.borrow_mut().add_batch(result.len());
                     yield (result, !(delta_cursor.key_valid() || key_of_interest.is_some()), delta_cursor.position());
                     result = self.output_pairs_factory.default_box();
                     result.reserve(chunk_size);
@@ -1148,6 +1165,7 @@ where
                     // println!("yield {:?}", result);
 
                     *self.empty_output.borrow_mut() &= result.is_empty();
+                    self.output_batch_stats.borrow_mut().add_batch(result.len());
                     yield (result, !(delta_cursor.key_valid() || key_of_interest.is_some()), delta_cursor.position());
                     result = self.output_pairs_factory.default_box();
                     result.reserve(chunk_size);
@@ -1170,6 +1188,7 @@ where
                     // println!("yield {:?}", result);
 
                     *self.empty_output.borrow_mut() &= result.is_empty();
+                    self.output_batch_stats.borrow_mut().add_batch(result.len());
                     yield (result, !(delta_cursor.key_valid() || key_of_interest.is_some()), delta_cursor.position());
                     result = self.output_pairs_factory.default_box();
                     result.reserve(chunk_size);
@@ -1177,6 +1196,7 @@ where
             }
 
             // println!("yield final {:?}", result);
+            self.output_batch_stats.borrow_mut().add_batch(result.len());
             yield (result, true, delta_cursor.position());
         }
     }

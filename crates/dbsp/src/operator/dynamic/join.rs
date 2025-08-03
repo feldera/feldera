@@ -1,5 +1,6 @@
 use crate::algebra::{ZBatch, ZBatchReader};
 use crate::circuit::circuit_builder::StreamId;
+use crate::circuit::metadata::{BatchSizeStats, OUTPUT_BATCHES_LABEL};
 use crate::circuit::splitter_output_chunk_size;
 use crate::dynamic::DynData;
 use crate::operator::async_stream_operators::{StreamingBinaryOperator, StreamingBinaryWrapper};
@@ -1030,7 +1031,7 @@ struct JoinStats {
     lhs_tuples: usize,
     rhs_tuples: usize,
     output_tuples: usize,
-    produced_tuples: usize,
+    output_batch_stats: BatchSizeStats,
 }
 
 impl JoinStats {
@@ -1039,8 +1040,12 @@ impl JoinStats {
             lhs_tuples: 0,
             rhs_tuples: 0,
             output_tuples: 0,
-            produced_tuples: 0,
+            output_batch_stats: BatchSizeStats::new(),
         }
+    }
+
+    pub fn add_output_batch<Z: ZBatch>(&mut self, batch: &Z) {
+        self.output_batch_stats.add_batch(batch.len())
     }
 }
 
@@ -1177,7 +1182,7 @@ where
 
         // Find the percentage of consolidated outputs
         let output_redundancy = MetaItem::Percent {
-            numerator: (stats.output_tuples - stats.produced_tuples) as u64,
+            numerator: (stats.output_tuples - stats.output_batch_stats.total_size()) as u64,
             denominator: stats.output_tuples as u64,
         };
 
@@ -1190,7 +1195,7 @@ where
             "left inputs" => stats.lhs_tuples,
             "right inputs" => stats.rhs_tuples,
             "computed outputs" => stats.output_tuples,
-            "produced outputs" => stats.produced_tuples,
+            OUTPUT_BATCHES_LABEL => stats.output_batch_stats.metadata(),
             "output redundancy" => output_redundancy,
         });
     }
@@ -1390,11 +1395,12 @@ where
                                     self.stats.borrow_mut().output_tuples += output_tuples.len();
 
                                     let batch = Z::dyn_from_tuples(&self.output_factories, (), &mut output_tuples);
-                                    self.stats.borrow_mut().produced_tuples += batch.len();
 
                                     if !batch.is_empty() {
                                         *self.empty_output.borrow_mut() = false;
                                     }
+
+                                    self.stats.borrow_mut().add_output_batch(&batch);
 
                                     yield (batch, false, delta_cursor.position());
 
@@ -1412,6 +1418,7 @@ where
                     delta_cursor.step_key();
                 }
 
+                self.stats.borrow_mut().output_tuples += output_tuples.len();
                 Z::dyn_from_tuples(&self.output_factories, (), &mut output_tuples)
             };
 
@@ -1423,7 +1430,8 @@ where
             //     batch
             // );
 
-            self.stats.borrow_mut().produced_tuples += batch.len();
+            self.stats.borrow_mut().add_output_batch(&batch);
+
             if !batch.is_empty() {
                 *self.empty_output.borrow_mut() = false;
             }

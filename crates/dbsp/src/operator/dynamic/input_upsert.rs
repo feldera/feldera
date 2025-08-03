@@ -3,6 +3,7 @@ use crate::{
     circuit::{
         checkpointer::Checkpoint,
         circuit_builder::{register_replay_stream, CircuitBase, RefStreamValue},
+        metadata::{BatchSizeStats, OperatorMeta, INPUT_BATCHES_LABEL, OUTPUT_BATCHES_LABEL},
         operator_traits::{BinaryOperator, Operator, TernaryOperator},
         OwnershipPreference, Scope,
     },
@@ -469,6 +470,13 @@ where
     opt_val_factory: &'static dyn Factory<DynOpt<B::Val>>,
     time: T::Time,
     patch_func: PatchFunc<T::Val, U>,
+
+    // Input batch sizes.
+    input_batch_stats: BatchSizeStats,
+
+    // Output batch sizes.
+    output_batch_stats: BatchSizeStats,
+
     phantom: PhantomData<B>,
 }
 
@@ -490,6 +498,8 @@ where
             opt_val_factory,
             time: T::Time::clock_start(),
             patch_func,
+            input_batch_stats: BatchSizeStats::new(),
+            output_batch_stats: BatchSizeStats::new(),
             phantom: PhantomData,
         }
     }
@@ -504,9 +514,18 @@ where
     fn name(&self) -> Cow<'static, str> {
         Cow::from("InputUpsert")
     }
+
     fn clock_end(&mut self, scope: Scope) {
         self.time = self.time.advance(scope + 1);
     }
+
+    fn metadata(&self, meta: &mut OperatorMeta) {
+        meta.extend(metadata! {
+            INPUT_BATCHES_LABEL => self.input_batch_stats.metadata(),
+            OUTPUT_BATCHES_LABEL => self.output_batch_stats.metadata(),
+        });
+    }
+
     fn fixedpoint(&self, _scope: Scope) -> bool {
         true
     }
@@ -539,6 +558,8 @@ where
         debug_assert!(updates
             .iter()
             .all(|updates| updates.0.is_sorted_by(&|u1, u2| u1.fst().cmp(u2.fst()))));
+
+        self.input_batch_stats.add_batch(updates.len());
 
         let mut key_updates = self.batch_factories.weighted_vals_factory().default_box();
 
@@ -688,6 +709,13 @@ where
     filter_func: Box<dyn Fn(&W, &B::Key, &B::Val) -> bool>,
     report_func: Box<dyn Fn(&W, &B::Key, &B::Val, ZWeight, &mut E)>,
     error_stream_val: RefStreamValue<OrdZSet<E>>,
+
+    // Input batch sizes.
+    input_batch_stats: BatchSizeStats,
+
+    // Output batch sizes.
+    output_batch_stats: BatchSizeStats,
+
     phantom: PhantomData<B>,
 }
 
@@ -713,6 +741,8 @@ where
             filter_func,
             report_func,
             error_stream_val,
+            input_batch_stats: BatchSizeStats::new(),
+            output_batch_stats: BatchSizeStats::new(),
             phantom: PhantomData,
         }
     }
@@ -772,6 +802,8 @@ where
         debug_assert!(updates
             .iter()
             .all(|updates| updates.0.is_sorted_by(&|u1, u2| u1.fst().cmp(u2.fst()))));
+
+        self.input_batch_stats.add_batch(updates.len());
 
         let mut errors = self
             .factories
@@ -950,11 +982,12 @@ where
         }
 
         self.time = self.time.advance(0);
-
         let errors = <OrdZSet<E>>::dyn_from_tuples(&self.factories.errors_factory, (), &mut errors);
         self.error_stream_val.put(errors);
 
-        builder.done()
+        let result = builder.done();
+        self.output_batch_stats.add_batch(result.len());
+        result
     }
 
     fn input_preference(

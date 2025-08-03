@@ -2076,7 +2076,7 @@ mod test {
 
         for (step, mut vec) in inputs().into_iter().enumerate() {
             input_handle.append(&mut vec);
-            dbsp.step().unwrap();
+            dbsp.transaction().unwrap();
             let output = output_handle.consolidate();
             assert_eq!(
                 *waterline_handle.take_from_worker(0).unwrap(),
@@ -2207,7 +2207,7 @@ mod test {
 
         for (step, mut vec) in inputs().into_iter().enumerate() {
             input_handle.append(&mut vec);
-            dbsp.step().unwrap();
+            dbsp.transaction().unwrap();
             let output = output_handle.consolidate();
             assert_eq!(
                 *waterline_handle.take_from_worker(0).unwrap(),

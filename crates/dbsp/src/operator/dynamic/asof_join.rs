@@ -1,9 +1,9 @@
-use std::{borrow::Cow, cmp::Ordering, marker::PhantomData, panic::Location};
+use std::{borrow::Cow, cell::RefCell, cmp::Ordering, marker::PhantomData, panic::Location};
 
 use crate::{
     algebra::{IndexedZSet, IndexedZSetReader, OrdIndexedZSet, OrdZSet, ZBatchReader, ZCursor},
     circuit::{
-        metadata::OperatorLocation,
+        metadata::{BatchSizeStats, OperatorLocation, OperatorMeta, OUTPUT_BATCHES_LABEL},
         operator_traits::{Operator, QuaternaryOperator},
     },
     dynamic::{
@@ -222,6 +222,14 @@ where
     flush: bool,
     delta1: Option<SpineSnapshot<I1>>,
     delta2: Option<SpineSnapshot<I2>>,
+
+    // Input batch sizes.
+    delta1_batch_stats: RefCell<BatchSizeStats>,
+    delta2_batch_stats: RefCell<BatchSizeStats>,
+
+    // Output batch sizes.
+    output_batch_stats: RefCell<BatchSizeStats>,
+
     phantom: PhantomData<(I1, T1, I2, T2, Z)>,
 }
 
@@ -252,6 +260,9 @@ where
             flush: false,
             delta1: None,
             delta2: None,
+            delta1_batch_stats: RefCell::new(BatchSizeStats::new()),
+            delta2_batch_stats: RefCell::new(BatchSizeStats::new()),
+            output_batch_stats: RefCell::new(BatchSizeStats::new()),
             phantom: PhantomData,
         }
     }
@@ -548,31 +559,13 @@ where
         self.flush = true;
     }
 
-    /*fn metadata(&self, meta: &mut OperatorMeta) {
-        // Find the percentage of consolidated outputs
-        let mut output_redundancy = ((self.stats.output_tuples as f64
-            - self.stats.produced_tuples as f64)
-            / self.stats.output_tuples as f64)
-            * 100.0;
-        if output_redundancy.is_nan() {
-            output_redundancy = 0.0;
-        } else if output_redundancy.is_infinite() {
-            output_redundancy = 100.0;
-        }
-
+    fn metadata(&self, meta: &mut OperatorMeta) {
         meta.extend(metadata! {
-            NUM_ENTRIES_LABEL => total_size,
-            "batch sizes" => batch_sizes,
-            USED_BYTES_LABEL => MetaItem::bytes(bytes.used_bytes()),
-            "allocations" => bytes.distinct_allocations(),
-            SHARED_BYTES_LABEL => MetaItem::bytes(bytes.shared_bytes()),
-            "left inputs" => self.stats.lhs_tuples,
-            "right inputs" => self.stats.rhs_tuples,
-            "computed outputs" => self.stats.output_tuples,
-            "produced outputs" => self.stats.produced_tuples,
-            "output redundancy" => MetaItem::Percent(output_redundancy),
+            "left input batches" => self.delta1_batch_stats.borrow().metadata(),
+            "right input batches" => self.delta2_batch_stats.borrow().metadata(),
+            OUTPUT_BATCHES_LABEL => self.output_batch_stats.borrow().metadata(),
         });
-    }*/
+    }
 
     fn fixedpoint(&self, _scope: Scope) -> bool {
         true
@@ -612,6 +605,9 @@ where
 
         let delta1 = self.delta1.take().unwrap();
         let delta2 = self.delta2.take().unwrap();
+
+        self.delta1_batch_stats.borrow_mut().add_batch(delta1.len());
+        self.delta2_batch_stats.borrow_mut().add_batch(delta2.len());
 
         let mut delta1_cursor = delta1.cursor();
         let mut delta2_cursor = delta2.cursor();
@@ -712,7 +708,9 @@ where
             delta2_cursor.step_key();
         }
 
-        Z::dyn_from_tuples(&self.factories.output_factories, (), &mut output_tuples)
+        let result = Z::dyn_from_tuples(&self.factories.output_factories, (), &mut output_tuples);
+        self.output_batch_stats.borrow_mut().add_batch(result.len());
+        result
     }
 }
 
