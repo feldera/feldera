@@ -7,7 +7,10 @@
 
 use crate::{
     circuit::{
-        metadata::{MetaItem, OperatorLocation, OperatorMeta, NUM_INPUTS, NUM_OUTPUTS},
+        metadata::{
+            BatchSizeStats, OperatorLocation, OperatorMeta, INPUT_BATCHES_LABEL,
+            OUTPUT_BATCHES_LABEL,
+        },
         operator_traits::{Operator, SinkOperator, SourceOperator},
         tokio::TOKIO,
         Host, LocalStoreMarker, OwnershipPreference, Runtime, Scope,
@@ -807,8 +810,8 @@ where
     outputs: Vec<T>,
     exchange: Arc<Exchange<(T, bool)>>,
 
-    // Total number of input tuples processed by the operator.
-    num_inputs: usize,
+    // Input batch sizes.
+    input_batch_stats: BatchSizeStats,
 
     flushed: bool,
 
@@ -833,7 +836,7 @@ where
             partition,
             outputs: Vec::with_capacity(runtime.num_workers()),
             exchange: Exchange::with_runtime(runtime, exchange_id),
-            num_inputs: 0,
+            input_batch_stats: BatchSizeStats::new(),
             flushed: false,
             phantom: PhantomData,
         }
@@ -852,7 +855,7 @@ where
 
     fn metadata(&self, meta: &mut OperatorMeta) {
         meta.extend(metadata! {
-            NUM_INPUTS => MetaItem::Count(self.num_inputs),
+            INPUT_BATCHES_LABEL => self.input_batch_stats.metadata(),
         });
     }
 
@@ -899,7 +902,7 @@ where
     }
 
     async fn eval_owned(&mut self, input: D) {
-        self.num_inputs += input.num_entries_deep();
+        self.input_batch_stats.add_batch(input.num_entries_deep());
 
         debug_assert!(self.ready());
         self.outputs.clear();
@@ -944,8 +947,8 @@ where
     flush_count: usize,
     flush_complete: bool,
 
-    // Total number of input tuples processed by the operator.
-    num_outputs: usize,
+    // Output batch sizes.
+    output_batch_stats: BatchSizeStats,
 }
 
 impl<IF, T, L> ExchangeReceiver<IF, T, L>
@@ -970,7 +973,7 @@ where
             exchange: Exchange::with_runtime(runtime, exchange_id),
             flush_count: 0,
             flush_complete: false,
-            num_outputs: 0,
+            output_batch_stats: BatchSizeStats::new(),
         }
     }
 }
@@ -991,7 +994,7 @@ where
 
     fn metadata(&self, meta: &mut OperatorMeta) {
         meta.extend(metadata! {
-            NUM_OUTPUTS => MetaItem::Count(self.num_outputs),
+            OUTPUT_BATCHES_LABEL => self.output_batch_stats.metadata(),
         });
     }
 
@@ -1060,7 +1063,8 @@ where
 
         debug_assert!(res);
 
-        self.num_outputs += combined.num_entries_deep();
+        self.output_batch_stats
+            .add_batch(combined.num_entries_deep());
         combined
     }
 }

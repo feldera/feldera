@@ -3,7 +3,9 @@
 use crate::{
     algebra::{IndexedZSet, NegByRef},
     circuit::{
-        operator_traits::Operator, splitter_output_chunk_size, Circuit, GlobalNodeId, Scope, Stream,
+        metadata::{BatchSizeStats, OperatorMeta, INPUT_BATCHES_LABEL, OUTPUT_BATCHES_LABEL},
+        operator_traits::Operator,
+        splitter_output_chunk_size, Circuit, GlobalNodeId, Scope, Stream,
     },
     dynamic::{
         rkyv::{DeserializableDyn, SerializeDyn},
@@ -104,6 +106,13 @@ where
     window: RefCell<Option<(Box<B::Key>, Box<B::Key>)>>,
     delta: RefCell<Option<SpineSnapshot<B>>>,
     flush: RefCell<bool>,
+
+    // Input batch sizes.
+    input_batch_stats: RefCell<BatchSizeStats>,
+
+    // Output batch sizes.
+    output_batch_stats: RefCell<BatchSizeStats>,
+
     _phantom: PhantomData<(B, T)>,
 }
 
@@ -121,6 +130,9 @@ where
             window: RefCell::new(None),
             delta: RefCell::new(None),
             flush: RefCell::new(false),
+            input_batch_stats: RefCell::new(BatchSizeStats::new()),
+            output_batch_stats: RefCell::new(BatchSizeStats::new()),
+
             _phantom: PhantomData,
         }
     }
@@ -146,6 +158,13 @@ where
 
     fn clock_start(&mut self, _scope: Scope) {
         *self.window.borrow_mut() = None;
+    }
+
+    fn metadata(&self, meta: &mut OperatorMeta) {
+        meta.extend(metadata! {
+            INPUT_BATCHES_LABEL => self.input_batch_stats.borrow().metadata(),
+            OUTPUT_BATCHES_LABEL => self.output_batch_stats.borrow().metadata(),
+        });
     }
 
     fn fixedpoint(&self, _scope: Scope) -> bool {
@@ -306,6 +325,8 @@ where
                 return;
             };
 
+            self.input_batch_stats.borrow_mut().add_batch(delta.len());
+
             //           ┌────────────────────────────────────────┐
             //           │       previous window                  │
             //           │                                        │             e1
@@ -349,7 +370,9 @@ where
                         tuples.push_val(&mut *tuple);
 
                         if tuples.len() >= chunk_size {
-                            yield (B::dyn_from_tuples(&self.factories, (), &mut tuples), false, None);
+                            let result = B::dyn_from_tuples(&self.factories, (), &mut tuples);
+                            self.output_batch_stats.borrow_mut().add_batch(result.len());
+                            yield (result, false, None);
                             tuples = self.factories.weighted_items_factory().default_box();
                             tuples.reserve(chunk_size);
                         }
@@ -378,7 +401,9 @@ where
                             tuples.push_val(&mut *tuple);
 
                             if tuples.len() >= chunk_size {
-                                yield (B::dyn_from_tuples(&self.factories, (), &mut tuples), false, None);
+                                let result = B::dyn_from_tuples(&self.factories, (), &mut tuples);
+                                self.output_batch_stats.borrow_mut().add_batch(result.len());
+                                yield (result, false, None);
                                 tuples = self.factories.weighted_items_factory().default_box();
                                 tuples.reserve(chunk_size);
                             }
@@ -408,7 +433,9 @@ where
                         tuples.push_val(&mut *tuple);
 
                         if tuples.len() >= chunk_size {
-                            yield (B::dyn_from_tuples(&self.factories, (), &mut tuples), false, None);
+                            let result = B::dyn_from_tuples(&self.factories, (), &mut tuples);
+                            self.output_batch_stats.borrow_mut().add_batch(result.len());
+                            yield (result, false, None);
                             tuples = self.factories.weighted_items_factory().default_box();
                             tuples.reserve(chunk_size);
                         }
@@ -434,7 +461,9 @@ where
                     tuples.push_val(&mut *tuple);
 
                     if tuples.len() >= chunk_size {
-                        yield (B::dyn_from_tuples(&self.factories, (), &mut tuples), false, None);
+                        let result = B::dyn_from_tuples(&self.factories, (), &mut tuples);
+                        self.output_batch_stats.borrow_mut().add_batch(result.len());
+                        yield (result, false, None);
                         tuples = self.factories.weighted_items_factory().default_box();
                         tuples.reserve(chunk_size);
                     }
@@ -445,7 +474,10 @@ where
             }
 
             *self.window.borrow_mut() = Some((start1, end1));
-            yield (B::dyn_from_tuples(&self.factories, (), &mut tuples), true, None);
+
+            let result = B::dyn_from_tuples(&self.factories, (), &mut tuples);
+            self.output_batch_stats.borrow_mut().add_batch(result.len());
+            yield (result, true, None);
         }
     }
 }
