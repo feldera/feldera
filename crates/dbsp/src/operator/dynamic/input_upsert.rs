@@ -2,6 +2,7 @@ use crate::{
     algebra::{AddAssignByRef, HasOne, HasZero, IndexedZSet, PartialOrder, ZTrace},
     circuit::{
         circuit_builder::{register_replay_stream, CircuitBase},
+        metadata::{BatchSizeStats, OperatorMeta, INPUT_BATCHES_LABEL, OUTPUT_BATCHES_LABEL},
         operator_traits::{BinaryOperator, Operator},
         OwnershipPreference, Scope,
     },
@@ -279,6 +280,13 @@ where
     time: T::Time,
     patch_func: PatchFunc<T::Val, U>,
     bounds: TraceBounds<T::Key, T::Val>,
+
+    // Input batch sizes.
+    input_batch_stats: BatchSizeStats,
+
+    // Output batch sizes.
+    output_batch_stats: BatchSizeStats,
+
     phantom: PhantomData<B>,
 }
 
@@ -302,6 +310,8 @@ where
             time: T::Time::clock_start(),
             bounds,
             patch_func,
+            input_batch_stats: BatchSizeStats::new(),
+            output_batch_stats: BatchSizeStats::new(),
             phantom: PhantomData,
         }
     }
@@ -316,9 +326,18 @@ where
     fn name(&self) -> Cow<'static, str> {
         Cow::from("InputUpsert")
     }
+
     fn clock_end(&mut self, scope: Scope) {
         self.time = self.time.advance(scope + 1);
     }
+
+    fn metadata(&self, meta: &mut OperatorMeta) {
+        meta.extend(metadata! {
+            INPUT_BATCHES_LABEL => self.input_batch_stats.metadata(),
+            OUTPUT_BATCHES_LABEL => self.output_batch_stats.metadata(),
+        });
+    }
+
     fn fixedpoint(&self, _scope: Scope) -> bool {
         true
     }
@@ -347,6 +366,8 @@ where
     ) -> B {
         // Inputs must be sorted by key
         debug_assert!(updates.is_sorted_by(&|u1, u2| u1.fst().cmp(u2.fst())));
+
+        self.input_batch_stats.add_batch(updates.len());
 
         let mut key_updates = self.batch_factories.weighted_vals_factory().default_box();
 
@@ -488,7 +509,9 @@ where
         }
 
         self.time = self.time.advance(0);
-        builder.done()
+        let result = builder.done();
+        self.output_batch_stats.add_batch(result.len());
+        result
     }
 
     fn input_preference(&self) -> (OwnershipPreference, OwnershipPreference) {
