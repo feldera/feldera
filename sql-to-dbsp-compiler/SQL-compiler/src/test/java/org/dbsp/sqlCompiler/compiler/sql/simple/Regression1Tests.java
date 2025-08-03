@@ -713,7 +713,7 @@ public class Regression1Tests extends SqlIoTest {
     }
 
     @Test
-    public void t() {
+    public void argMin() {
         var ccs = this.getCCS("""
                 CREATE TABLE int0_tbl(
                 id INT NOT NULL,

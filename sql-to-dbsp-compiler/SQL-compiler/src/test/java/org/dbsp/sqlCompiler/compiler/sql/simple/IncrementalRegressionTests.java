@@ -790,4 +790,27 @@ public class IncrementalRegressionTests extends SqlIoTest {
             }
         }
     }
+
+    @Test
+    public void issue4503() {
+        this.getCC("""
+                CREATE TABLE T (
+                    id VARCHAR NOT NULL,
+                    h VARCHAR NOT NULL,
+                    b BIGINT NOT NULL LATENESS 2,
+                    r INTEGER
+                ) WITH ('append_only'='true');
+                
+                CREATE VIEW V AS
+                SELECT *
+                FROM (
+                    SELECT
+                        *,
+                        SUM(r) OVER (
+                            PARTITION BY id, h
+                            ORDER BY b
+                        ) AS rn
+                    FROM T
+                ) WHERE rn = 1;""");
+    }
 }

@@ -229,6 +229,7 @@ import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -3085,7 +3086,6 @@ public class CalciteToDBSPCompiler extends RelVisitor
 
             DBSPSimpleOperator windowAgg;
             DBSPTypeTuple aggResultType;
-            DBSPTypeIndexedZSet finalResultType;
             {
                 // Compute the window aggregate
 
@@ -3117,8 +3117,6 @@ public class CalciteToDBSPCompiler extends RelVisitor
                                 .closure(pr);
 
                 aggResultType = fd.getEmptySetResultType().to(DBSPTypeTuple.class);
-                finalResultType = makeIndexedZSet(
-                        new DBSPTypeTuple(partitionType, originalSortType), aggResultType);
                 // Prepare a type that will make the operator following the window aggregate happy
                 // (that operator is a map_index).  Currently, the compiler cannot represent
                 // exactly the output type of the WindowAggregateOperator, so it lies about the actual type.
@@ -3139,7 +3137,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             {
                 // Index the produced result
                 // map_index(|(key_ts_agg)| (
-                //         Tup2::new(key_to_agg.0.clone(),
+                //         Tup2::new(key_ts_agg.0.0,
                 //                   UnsignedWrapper::to_signed::<i32, i32, i64, u64>(key_ts_agg.1.0, true, true)),
                 //         key_ts_agg.1.1.unwrap_or_default() ))
                 DBSPVariablePath var = new DBSPVariablePath("key_ts_agg",
@@ -3149,23 +3147,26 @@ public class CalciteToDBSPCompiler extends RelVisitor
                                         unsignedSortType,  // not the sortType, but the wrapper type around it
                                         aggResultType.withMayBeNull(true)).ref()));
                 // new DBSPTypeOption(aggResultType)).ref()));
-                DBSPExpression ixKey = var.field(0).deref().applyCloneIfNeeded();
                 DBSPExpression ts = var.field(1).deref().field(0);
                 DBSPExpression agg = var.field(1).deref().field(1).applyCloneIfNeeded();
                 DBSPExpression unwrap = new DBSPUnsignedUnwrapExpression(
                         this.node, ts, sortType, ascending, nullsLast);
                 if (originalSortType.is(DBSPTypeDecimal.class)) {
-                    DBSPTypeDecimal dec = originalSortType.to(DBSPTypeDecimal.class);
                     // convert back to decimal and rescale
                     DBSPType i128 = DBSPTypeInteger.getType(this.node, INT128, originalSortType.mayBeNull);
                     unwrap = unwrap.cast(this.node, i128, false);
                     unwrap = new DBSPUnaryExpression(this.node, originalSortType,
                             DBSPOpcode.INTEGER_TO_DECIMAL, unwrap);
                 }
+
+                DBSPExpression ixKey = var.field(0).deref();
+                List<DBSPExpression> keyFields = new ArrayList<>(Arrays.asList(
+                        Objects.requireNonNull(DBSPTupleExpression.flatten(ixKey).fields)));
+                keyFields.add(unwrap);
                 DBSPExpression body = new DBSPRawTupleExpression(
-                        new DBSPTupleExpression(ixKey, unwrap),
+                        new DBSPTupleExpression(keyFields, false),
                         new DBSPApplyMethodExpression(this.node, "unwrap_or_default", aggResultType, agg));
-                index = new DBSPMapIndexOperator(this.node, body.closure(var), finalResultType, windowAgg.outputPort());
+                index = new DBSPMapIndexOperator(this.node, body.closure(var), windowAgg.outputPort());
                 this.compiler.getCircuit().addOperator(index);
             }
 
@@ -3181,11 +3182,10 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 DBSPVariablePath previousRowRefVar = lastTupleType.ref().var();
                 List<DBSPExpression> expressions = Linq.map(partitionKeys,
                         f -> previousRowRefVar.deref().field(f).applyCloneIfNeeded());
-                DBSPTupleExpression partition = new DBSPTupleExpression(this.node, expressions);
+
                 DBSPExpression originalOrderField = previousRowRefVar.deref().field(orderColumnIndex);
-                DBSPExpression partAndOrder = new DBSPTupleExpression(
-                        partition.applyCloneIfNeeded(),
-                        originalOrderField.applyCloneIfNeeded());
+                expressions.add(originalOrderField.applyCloneIfNeeded());
+                DBSPExpression partAndOrder = new DBSPTupleExpression(expressions, false);
                 lastPartAndOrderType = partAndOrder.getType();
                 // Copy all the fields from the previousRowRefVar except the partition fields.
                 List<DBSPExpression> fields = new ArrayList<>();
@@ -3221,15 +3221,14 @@ public class CalciteToDBSPCompiler extends RelVisitor
                         // If the field is in the index, use it from the index
                         allFields[i] = key
                                 .deref()
-                                .field(0) // partition part
                                 .field(keyIndex)
                                 .applyCloneIfNeeded();
                         indexField++;
                     } else if (orderColumnIndex == i) {
-                        // If the field is the order key, use it from the index too
+                        // If the field is the order key, use it from the index too; it's the last one
                         allFields[i] = key
                                 .deref()
-                                .field(1)
+                                .field(this.partitionKeys.size())
                                 .applyCloneIfNeeded();
                         indexField++;
                     } else {
@@ -3383,7 +3382,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
             index++;
         }
 
-        Utilities.enforce(lastOperator.getOutputZSetElementType().sameType(resultType));
+        Utilities.enforce(lastOperator.getOutputZSetElementType().sameType(resultType),
+                "WINDOW result has type " + lastOperator.getOutputZSetElementType() + " but expected " + resultType);
         this.assignOperator(window, lastOperator);
     }
 

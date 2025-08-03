@@ -61,7 +61,7 @@ public class Projection extends InnerVisitor {
     @Nullable
     List<Integer> shuffle;
 
-    /** A pair containing an input (paramter) number (0, 1, 2, etc)
+    /** A pair containing an input (parameter) number (0, 1, 2, etc.)
      * and an index field in the tuple of the corresponding input .*/
     public record InputAndFieldIndex(int inputIndex, int fieldIndex) {}
 
