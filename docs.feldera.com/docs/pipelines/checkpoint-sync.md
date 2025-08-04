@@ -125,6 +125,9 @@ Example:
 
 ## Performance
 
+Sync performance may vary based on configuration and environment. In our testing,
+we observed the following average speeds:
+
 | Storage Type | Avg Upload Speed | Avg Download Speed | Avg Download Speed (Ignore Checksum) |
 |--------------|------------------|--------------------|--------------------------------------|
 | GP3          | 650 MiB/s        | 650 MiB/s          | 850 MiB/s                            |
