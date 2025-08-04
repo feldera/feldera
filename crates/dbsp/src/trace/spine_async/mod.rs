@@ -1363,6 +1363,23 @@ where
 
     fn insert_arc(&mut self, batch: Arc<Self::Batch>) {
         if !batch.is_empty() {
+            let batch = if batch.location() == BatchLocation::Memory
+                && Spine::<B>::size_to_level(batch.len()) >= 2
+                && pick_merge_destination([&batch], None) == BatchLocation::Storage
+            {
+                let factories = batch.factories();
+                let builder =
+                    B::Builder::for_merge(&factories, [&batch], Some(BatchLocation::Storage));
+                let (key_filter, value_filter) = self.merger.state.lock().unwrap().get_filters();
+                Arc::new(ListMerger::merge(
+                    &factories,
+                    builder,
+                    vec![batch.merge_cursor(key_filter, value_filter)],
+                ))
+            } else {
+                batch
+            };
+
             self.dirty = true;
             self.merger.add_batch(batch);
         }
