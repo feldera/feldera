@@ -31,6 +31,12 @@ cd crates/fda
 cargo install --path .
 ```
 
+### Binary installation
+
+We supply pre-built binaries for `fda` as part of our release artifacts. You can find them in the
+`feldera-binaries` ZIP file in the [github release page](https://github.com/feldera/feldera/releases/latest).
+Note that currently only Linux binaries for amd64 and aarch64 architectures are provided.
+
 ### Optional: Shell completion
 
 Once the `fda` binary is installed, you can enable shell command completion for `fda`
@@ -146,10 +152,16 @@ Retrieve the stats for `p1`:
 fda stats p1
 ```
 
-Retrieve the latest logging statements for `p1`:
+Retrieve the latest log messages for `p1`:
 
 ```bash
 fda logs p1
+```
+
+Download the support bundle for `p1`:
+
+```bash
+fda support-bundle p1
 ```
 
 Shutdown and delete the pipeline `p1`:
