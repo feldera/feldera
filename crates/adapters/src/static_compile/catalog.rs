@@ -28,7 +28,7 @@ const INTERNED_STRING_RELATION_NAME: &str = "feldera_interned_strings";
 
 impl Catalog {
     fn parse_relation_schema(schema: &str) -> Result<Relation, ControllerError> {
-        serde_json::from_str(schema).map_err(|e| {
+        serde_json_path_to_error::from_str(schema).map_err(|e| {
             ControllerError::schema_parse_error(&format!(
                 "error parsing relation schema: '{e}'. Invalid schema: '{schema}'"
             ))

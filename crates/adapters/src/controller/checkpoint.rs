@@ -47,7 +47,7 @@ impl Checkpoint {
         let data = storage.read(path).map_err(|error| {
             ControllerError::storage_error(format!("{path}: failed to read checkpoint"), error)
         })?;
-        serde_json::from_slice::<Checkpoint>(&data).map_err(|e| {
+        serde_json_path_to_error::from_slice::<Checkpoint>(&data).map_err(|e| {
             ControllerError::CheckpointParseError {
                 error: e.to_string(),
             }

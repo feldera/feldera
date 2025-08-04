@@ -109,7 +109,7 @@ impl CompletionToken {
         let json = BASE64_URL_SAFE_NO_PAD
             .decode(token)
             .map_err(|e| anyhow!("completion token is not a valid base64 string: {e}"))?;
-        serde_json::from_slice::<Self>(&json)
+        serde_json_path_to_error::from_slice::<Self>(&json)
             .map_err(|e| anyhow!("error parsing completion token: {e}"))
     }
 }

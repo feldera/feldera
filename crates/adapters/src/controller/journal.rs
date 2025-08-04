@@ -155,7 +155,7 @@ mod as_json_string {
         D: Deserializer<'de>,
     {
         let s = String::deserialize(deserializer)?;
-        serde_json::from_str(&s).map_err(serde::de::Error::custom)
+        serde_json_path_to_error::from_str(&s).map_err(serde::de::Error::custom)
     }
 }
 

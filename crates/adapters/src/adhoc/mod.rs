@@ -190,16 +190,13 @@ pub async fn adhoc_websocket(
             match msg {
                 Ok(AggregatedMessage::Text(text)) => {
                     let sql_request = text.to_string();
-                    let maybe_args =
-                        serde_json::from_str::<AdhocQueryArgs>(&sql_request).map_err(|e| {
-                            PipelineError::AdHocQueryError {
-                                error: format!(
-                                    "Unable to parse adhoc query from the provided JSON: {}",
-                                    e
-                                ),
-                                df: None,
-                            }
-                        });
+                    let maybe_args = serde_json_path_to_error::from_str::<AdhocQueryArgs>(
+                        &sql_request,
+                    )
+                    .map_err(|e| PipelineError::AdHocQueryError {
+                        error: format!("Unable to parse adhoc query from the provided JSON: {}", e),
+                        df: None,
+                    });
 
                     match maybe_args {
                         Ok(args) => {

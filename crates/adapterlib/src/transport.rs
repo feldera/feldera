@@ -11,7 +11,7 @@ use feldera_types::program_schema::Relation;
 use rmpv::{ext::Error as RmpDecodeError, Value as RmpValue};
 use serde::de::DeserializeOwned;
 use serde::Deserialize;
-use serde_json::{Error as JsonError, Value as JsonValue};
+use serde_json::Value as JsonValue;
 use tokio::sync::mpsc::error::TryRecvError;
 use tokio::sync::mpsc::UnboundedReceiver;
 use xxhash_rust::xxh3::Xxh3Default;
@@ -683,7 +683,7 @@ pub fn parse_resume_info<M>(metadata: &JsonValue) -> AnyResult<M>
 where
     M: DeserializeOwned,
 {
-    serde_json::from_value::<M>(metadata.clone())
+    serde_json_path_to_error::from_value::<M>(metadata.clone())
             .map_err(|e| anyhow::anyhow!("unable to parse checkpointed connector state (checkpointed state: {metadata}; parse error: {e})"))
 }
 
@@ -792,7 +792,7 @@ pub struct InputCommandReceiver<M, D> {
 #[derive(Debug)]
 pub enum InputCommandReceiverError {
     Disconnected,
-    JsonDecodeError(JsonError),
+    JsonDecodeError(serde_json_path_to_error::Error),
     RmpDecodeError(RmpDecodeError),
 }
 
@@ -814,8 +814,8 @@ impl From<RmpDecodeError> for InputCommandReceiverError {
     }
 }
 
-impl From<JsonError> for InputCommandReceiverError {
-    fn from(value: JsonError) -> Self {
+impl From<serde_json_path_to_error::Error> for InputCommandReceiverError {
+    fn from(value: serde_json_path_to_error::Error) -> Self {
         Self::JsonDecodeError(value)
     }
 }
@@ -858,7 +858,7 @@ impl<M, D> InputCommandReceiver<M, D> {
     {
         match command {
             InputReaderCommand::Replay { metadata, data } => Ok(Some((
-                serde_json::from_value::<M>(metadata)?,
+                serde_json_path_to_error::from_value::<M>(metadata)?,
                 rmpv::ext::from_value::<D>(data)?,
             ))),
             other => {
