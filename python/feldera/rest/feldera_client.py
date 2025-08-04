@@ -951,3 +951,28 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         resp = self.http.get(path="/config")
 
         return FelderaConfig(resp)
+
+    def get_pipeline_support_bundle(self, pipeline_name: str) -> bytes:
+        """
+        Generate a support bundle containing diagnostic information from a pipeline.
+
+        This endpoint collects various diagnostic data from the pipeline including
+        circuit profile, heap profile, metrics, logs, stats, and connector statistics,
+        and packages them into a single ZIP file for support purposes.
+
+        :param pipeline_name: The name of the pipeline
+        :return: The support bundle as bytes (ZIP file)
+        :raises FelderaAPIError: If the pipeline does not exist or if there's an error
+        """
+
+        resp = self.http.get(
+            path=f"/pipelines/{pipeline_name}/support_bundle",
+            stream=True,
+        )
+
+        buffer = b""
+        for chunk in resp.iter_content(chunk_size=1024):
+            if chunk:
+                buffer += chunk
+
+        return buffer

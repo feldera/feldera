@@ -353,6 +353,73 @@ This example shows creating and running a pipeline with Feldera's internal data 
     # clear the storage and delete the pipeline
     pipeline.delete(True)
 
+Retrieve a support-bundle for a pipeline
+==================================
+
+This example shows how to download a support bundle for a pipeline using the Python SDK.
+
+.. code-block:: python
+
+    # Create a client (assuming Feldera is running on localhost:8080)
+    client = FelderaClient.localhost(port=8080)
+
+    # Define a simple SQL program
+    sql_program = """
+    CREATE TABLE users(id INT, name STRING);
+    CREATE MATERIALIZED VIEW user_count AS SELECT COUNT(*) as count FROM users;
+    """
+
+    # Create a pipeline
+    pipeline_name = "support-bundle-example"
+    pipeline = PipelineBuilder(
+        client,
+        pipeline_name,
+        sql_program
+    ).create_or_replace()
+
+    print(f"Created pipeline: {pipeline.name}")
+
+    # Start the pipeline
+    pipeline.start()
+    print("Pipeline started")
+
+    # Generate support bundle as bytes
+    print("Generating support bundle...")
+    support_bundle_bytes = pipeline.support_bundle()
+    print(f"Support bundle size: {len(support_bundle_bytes)} bytes")
+
+    # Verify it's a valid ZIP file
+    try:
+        with zipfile.ZipFile(io.BytesIO(support_bundle_bytes), 'r') as zip_file:
+            file_list = zip_file.namelist()
+            print(f"Support bundle contains {len(file_list)} files:")
+            for file_name in file_list[:5]:  # Show first 5 files
+                print(f"  - {file_name}")
+            if len(file_list) > 5:
+                print(f"  ... and {len(file_list) - 5} more files")
+    except zipfile.BadZipFile:
+        print("Warning: Support bundle is not a valid ZIP file")
+
+    # Save support bundle to a file
+    output_path = f"{pipeline_name}-support-bundle.zip"
+    pipeline.support_bundle(output_path=output_path)
+    print(f"Support bundle saved to: {output_path}")
+
+    # Verify the saved file
+    if os.path.exists(output_path):
+        file_size = os.path.getsize(output_path)
+        print(f"Saved file size: {file_size} bytes")
+
+        # Clean up
+        os.unlink(output_path)
+        print("Cleaned up saved file")
+
+    # Stop the pipeline
+    pipeline.stop(force=True)
+    pipeline.clear_storage()
+    pipeline.delete()
+    print("Pipeline stopped and deleted")
+
 Specifying Data Sources / Sinks
 ===============================
 

@@ -1,6 +1,7 @@
 import logging
 import time
 from datetime import datetime
+import pathlib
 
 import pandas
 from uuid import UUID
@@ -1059,3 +1060,33 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
         if derr:
             errors.append(derr)
         return errors
+
+    def support_bundle(self, output_path: Optional[str] = None) -> bytes:
+        """
+        Generate a support bundle containing diagnostic information from this pipeline.
+
+        This method collects various diagnostic data from the pipeline including
+        circuit profile, heap profile, metrics, logs, stats, and connector statistics,
+        and packages them into a single ZIP file for support purposes.
+
+        :param output_path: Optional path to save the support bundle file. If None,
+            the support bundle is only returned as bytes.
+        :return: The support bundle as bytes (ZIP file)
+        :raises FelderaAPIError: If the pipeline does not exist or if there's an error
+        """
+
+        support_bundle_bytes = self.client.get_pipeline_support_bundle(self.name)
+
+        if output_path is not None:
+            path = pathlib.Path(output_path)
+
+            # Ensure the file has .zip extension
+            if path.suffix != ".zip":
+                path = path.with_suffix(".zip")
+
+            with open(path, "wb") as f:
+                f.write(support_bundle_bytes)
+
+            print(f"Support bundle written to {path}")
+
+        return support_bundle_bytes

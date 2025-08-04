@@ -3,6 +3,9 @@ import pathlib
 import pandas as pd
 import time
 import unittest
+import io
+import tempfile
+import zipfile
 
 from tests.shared_test_pipeline import SharedTestPipeline
 from tests import TEST_CLIENT, enterprise_only
@@ -548,6 +551,41 @@ class TestPipeline(SharedTestPipeline):
         self.pipeline.start()
         got = TEST_CLIENT.get_pipeline(self.pipeline.name).runtime_config["resources"]
         assert got == config
+
+    def test_support_bundle(self):
+        self.pipeline.start()
+
+        # Test getting support bundle as bytes
+        support_bundle_bytes = self.pipeline.support_bundle()
+        assert isinstance(support_bundle_bytes, bytes)
+        assert len(support_bundle_bytes) > 0
+
+        # Test that it's a valid ZIP file
+        try:
+            with zipfile.ZipFile(io.BytesIO(support_bundle_bytes), "r") as zip_file:
+                # Check that the ZIP file contains some files
+                file_list = zip_file.namelist()
+                assert len(file_list) > 0
+        except zipfile.BadZipFile:
+            self.fail("Support bundle is not a valid ZIP file")
+
+        # Test saving to file
+        with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as temp_file:
+            temp_path = temp_file.name
+
+        try:
+            # Test saving with explicit path
+            self.pipeline.support_bundle(output_path=temp_path)
+
+            # Verify the file was created and is a valid ZIP
+            assert os.path.exists(temp_path)
+            with zipfile.ZipFile(temp_path, "r") as zip_file:
+                file_list = zip_file.namelist()
+                assert len(file_list) > 0
+        finally:
+            # Clean up
+            if os.path.exists(temp_path):
+                os.unlink(temp_path)
 
 
 if __name__ == "__main__":
