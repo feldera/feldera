@@ -93,10 +93,11 @@ public class MinMaxOptimize extends Passes {
                 case Min:
                     isMin = true;
                     break;
+                case ArgMax:
                 case Max:
                     isMin = false;
                     break;
-                case ArgMin, ArgMax:
+                case ArgMin:
                 default:
                     throw new InternalCompilerError("Unexpected operation " + mm.operation);
             }
@@ -110,8 +111,26 @@ public class MinMaxOptimize extends Passes {
                     aggregation = DBSPMinMax.Aggregation.MinSome1;
                     aggregatedValueType = new DBSPTypeTuple(field.withMayBeNull(true));
                 }
+            } else if (mm.operation == MinMaxAggregate.Operation.ArgMax) {
+                // mm.postProcess takes cast(comparedValue) as an argument,
+                // but the Max supplies Tup1<comparedValue> as argument.
+                Utilities.enforce(mm.postProcess != null);
+                Utilities.enforce(mm.postProcess.parameters.length == 1);
+                DBSPTypeRawTuple postProcessTuple = mm.postProcess.parameters[0].getType().to(DBSPTypeRawTuple.class);
+                // Value produced by Max
+                DBSPVariablePath var = aggregatedValueType.ref().var();
+                DBSPExpression comparedValue = var.deref().field(0);
+                DBSPTypeTuple aggregationTuple = aggregationType.to(DBSPTypeTuple.class);  // Tup1<T>; extract T
+                DBSPExpression pair = new DBSPRawTupleExpression(
+                        comparedValue.field(0).nullabilityCast(postProcessTuple.tupFields[0], false),
+                        comparedValue.field(1).cast(mm.getNode(), aggregationTuple.tupFields[0], false));
+                DBSPExpression body = mm.postProcess.call(pair).reduce(this.compiler);
+                // The result of postProcess must also be wrapped in a Tup1.
+                DBSPExpression tup1 = new DBSPTupleExpression(body);
+                postProcessing = tup1.closure(var);
             }
-            if (!aggregatedValueType.sameType(aggregationType)) {
+
+            if (!aggregatedValueType.sameType(aggregationType) && postProcessing == null) {
                 // This is important when computing the min of a ROW type;
                 // this may insert casts to match the type expected
                 postProcessing = aggregatedValueType.caster(aggregationType, false)
@@ -142,7 +161,8 @@ public class MinMaxOptimize extends Passes {
                 if (aggregates.size() == 1) {
                     MinMaxAggregate agg = aggregates.get(0);
                     if (agg.operation == MinMaxAggregate.Operation.Max ||
-                            agg.operation == MinMaxAggregate.Operation.Min)
+                            agg.operation == MinMaxAggregate.Operation.Min ||
+                            agg.operation == MinMaxAggregate.Operation.ArgMax)
                         this.standardMinMax(operator, aggregates.get(0));
                     else
                         // TODO: optimize isolated ARG_MIN, ARG_MAX too
