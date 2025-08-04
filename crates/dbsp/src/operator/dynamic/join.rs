@@ -26,7 +26,9 @@ use crate::{
     },
     operator::dynamic::{distinct::DistinctFactories, filter_map::DynFilterMap},
     time::Timestamp,
-    trace::{BatchFactories, BatchReader, BatchReaderFactories, Builder, Cursor, WeightedItem},
+    trace::{
+        BatchFactories, BatchReader, BatchReaderFactories, Batcher, Builder, Cursor, WeightedItem,
+    },
     utils::Tup2,
     DBData, ZWeight,
 };
@@ -1361,6 +1363,7 @@ where
             } else {
                 let mut output_tuples = self.output_factories.weighted_items_factory().default_box();
                 output_tuples.reserve(chunk_size);
+                let mut batcher = Z::Batcher::new_batcher(&self.output_factories, ());
 
                 let mut output_tuple = self.output_factories.weighted_item_factory().default_box();
 
@@ -1391,21 +1394,23 @@ where
                                         });
                                 });
 
-                                if output_tuples.len() >= chunk_size {
+                                // Push a sufficiently large chunk of update to the batcher. The batcher
+                                // will consolidate the updates and possibly merge them with previous updates.
+                                // Yield if the batcher has accumulated enough tuples. The divisor of 3 guarantees that
+                                // the output batch won't exceed `chunk_size` by more than 33%. Alternatively we could
+                                // push every individual output tuple to the batcher, but that's probably inefficient.
+                                if output_tuples.len() >= chunk_size / 3 {
                                     self.stats.borrow_mut().output_tuples += output_tuples.len();
+                                    batcher.push_batch(&mut output_tuples);
 
-                                    let batch = Z::dyn_from_tuples(&self.output_factories, (), &mut output_tuples);
-
-                                    if !batch.is_empty() {
+                                    if batcher.tuples() >= chunk_size {
                                         *self.empty_output.borrow_mut() = false;
+                                        let batch = batcher.seal();
+                                        self.stats.borrow_mut().add_output_batch(&batch);
+
+                                        yield (batch, false, delta_cursor.position());
+                                        batcher = Z::Batcher::new_batcher(&self.output_factories, ());
                                     }
-
-                                    self.stats.borrow_mut().add_output_batch(&batch);
-
-                                    yield (batch, false, delta_cursor.position());
-
-                                    let mut output_tuples = self.timed_items_factory.default_box();
-                                    output_tuples.reserve(chunk_size);
                                 }
 
                                 trace_cursor.step_val();
@@ -1419,7 +1424,8 @@ where
                 }
 
                 self.stats.borrow_mut().output_tuples += output_tuples.len();
-                Z::dyn_from_tuples(&self.output_factories, (), &mut output_tuples)
+                batcher.push_batch(&mut output_tuples);
+                batcher.seal()
             };
 
             // println!(
