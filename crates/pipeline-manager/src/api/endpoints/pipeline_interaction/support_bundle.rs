@@ -98,8 +98,8 @@ fn json_prettify(data: Vec<u8>) -> Vec<u8> {
     }
 }
 
-/// Convert and augment the HTTP response into a bundle result which
-/// has string based error reporting for embedding errors within the bundle.
+/// Convert the HTTP response from a pipeline to a bundle result or
+/// a string error message in case of an error.
 async fn response_to_bundle_result(
     response: Result<HttpResponse, ManagerError>,
 ) -> BundleResult<Vec<u8>> {
@@ -334,7 +334,7 @@ struct SupportBundleZip {
 }
 
 impl SupportBundleZip {
-    /// Create a ZIP file from support bundle data.
+    /// Create a ZIP archive from support bundle data.
     async fn create(
         pipeline: &ExtendedPipelineDescr,
         bundles: Vec<SupportBundleData>,

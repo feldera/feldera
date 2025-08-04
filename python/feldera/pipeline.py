@@ -1071,7 +1071,7 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
 
         :param output_path: Optional path to save the support bundle file. If None,
             the support bundle is only returned as bytes.
-        :return: The support bundle as bytes (ZIP file)
+        :return: The support bundle as bytes (ZIP archive)
         :raises FelderaAPIError: If the pipeline does not exist or if there's an error
         """
 
