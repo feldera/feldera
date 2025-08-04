@@ -58,6 +58,7 @@ const installation = {
                     ]
                 },
                 'get-started/enterprise/authentication',
+                'get-started/enterprise/https',
             ]
         }
     ]
