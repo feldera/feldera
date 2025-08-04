@@ -29,7 +29,8 @@ CREATE VIEW copy WITH (
       "config": {
         "path": "/tmp/output.txt"
       }
-    }
+    },
+    "format": { "name": "csv" }
   }]'
 )
 AS SELECT * FROM Stocks;

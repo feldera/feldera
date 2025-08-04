@@ -38,7 +38,8 @@ CREATE TABLE stocks (
       "config": {
         "path": "/tmp/input.txt"
       }
-    }
+    },
+    "format": { "name": "csv" }
   }]'
 );
 ```
