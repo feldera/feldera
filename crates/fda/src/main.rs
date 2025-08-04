@@ -1356,7 +1356,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                 .await
                 .map_err(handle_errors_fatal(
                     client.baseurl().clone(),
-                    "Failed to obtain circuit profile",
+                    "Failed to obtain support bundle",
                     1,
                 ))
                 .unwrap();

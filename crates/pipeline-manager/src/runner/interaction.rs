@@ -20,9 +20,6 @@ use tokio::sync::Mutex;
 use tokio::time::Instant;
 
 use actix_http::encoding::Decoder;
-//use actix_web::web::Bytes;
-//use std::pin::Pin;
-//use futures_util::Stream;
 
 /// Max non-streaming HTTP response body returned by the pipeline.
 /// The awc default is 2MiB, which is not enough to, for example, retrieve
