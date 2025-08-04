@@ -1057,7 +1057,7 @@ mod test {
     use proptest::{collection, prelude::*};
 
     fn do_distinct_inc_test_mt(workers: usize) {
-        let hruntime = Runtime::run(workers, || {
+        let hruntime = Runtime::run(workers, |_parker| {
             distinct_inc_test();
         })
         .expect("Runtime successful");

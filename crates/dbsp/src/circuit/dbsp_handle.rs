@@ -473,7 +473,7 @@ impl Runtime {
         let (status_senders, status_receivers): (Vec<_>, Vec<_>) =
             (0..nworkers).map(|_| bounded(1)).unzip();
 
-        let runtime = Self::run(&config, move || {
+        let runtime = Self::run(&config, move |parker| {
             let worker_index = Runtime::worker_index() - worker_ofs;
             let worker_index_str: &'static str = worker_index.to_string().leak();
 
@@ -581,7 +581,7 @@ impl Runtime {
                     }
                     // Nothing to do: do some housekeeping and relinquish the CPU if there's none
                     // left.
-                    Err(TryRecvError::Empty) => std::thread::park(),
+                    Err(TryRecvError::Empty) => parker.park(),
                     Err(_) => {
                         break;
                     }

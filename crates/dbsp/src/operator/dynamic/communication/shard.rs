@@ -274,7 +274,7 @@ mod tests {
     }
 
     fn do_test_shard(workers: usize) {
-        let hruntime = Runtime::run(workers, || {
+        let hruntime = Runtime::run(workers, |_parker| {
             let circuit = RootCircuit::build(move |circuit| {
                 let input = circuit.add_source(Generator::new(|| {
                     let worker_index = Runtime::worker_index();

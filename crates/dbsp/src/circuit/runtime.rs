@@ -447,8 +447,10 @@ fn default_panic_hook() -> &'static (dyn Fn(&PanicHookInfo<'_>) + 'static + Sync
 }
 
 impl Runtime {
-    /// Creates a new runtime with the specified `layout` and run user-provided
-    /// closure `f` in each thread, and returns a handle to the runtime.
+    /// Creates a new runtime with the specified `layout` and runs user-provided
+    /// closure `circuit` in each thread, and returns a handle to the runtime. The closure
+    /// takes an unparker.  The runtime will use this unparker to wake up the thread
+    /// when terminating the circuit.
     ///
     /// The `layout` may be specified as a number of worker threads or as a
     /// [`Layout`].
@@ -463,7 +465,7 @@ impl Runtime {
     /// use dbsp::circuit::{Circuit, RootCircuit, Runtime};
     ///
     /// // Create a runtime with 4 worker threads.
-    /// let hruntime = Runtime::run(4, || {
+    /// let hruntime = Runtime::run(4, |_parker| {
     ///     // This closure runs within each worker thread.
     ///     let root = RootCircuit::build(move |circuit| {
     ///         // Populate `circuit` with operators.
@@ -485,7 +487,7 @@ impl Runtime {
     /// ```
     pub fn run<F>(config: impl Into<CircuitConfig>, circuit: F) -> Result<RuntimeHandle, DbspError>
     where
-        F: FnOnce() + Clone + Send + 'static,
+        F: FnOnce(Parker) + Clone + Send + 'static,
     {
         let config: CircuitConfig = config.into();
 
@@ -503,7 +505,9 @@ impl Runtime {
             .map(|worker_index| {
                 let runtime = runtime.clone();
                 let build_circuit = circuit.clone();
-                Builder::new()
+                let parker = Parker::new();
+                let unparker = parker.unparker().clone();
+                let handle = Builder::new()
                     .name(format!("dbsp-worker-{worker_index}"))
                     .spawn(move || {
                         // Set the worker's runtime handle and index
@@ -513,11 +517,12 @@ impl Runtime {
                         RUNTIME.with(|rt| *rt.borrow_mut() = Some(runtime));
 
                         // Build the worker's circuit
-                        build_circuit();
+                        build_circuit(parker);
                     })
                     .unwrap_or_else(|error| {
                         panic!("failed to spawn worker thread {worker_index}: {error}");
-                    })
+                    });
+                (handle, unparker)
             })
             .collect::<Vec<_>>();
 
@@ -853,11 +858,11 @@ impl Runtime {
 #[derive(Debug)]
 pub struct RuntimeHandle {
     runtime: Runtime,
-    workers: Vec<JoinHandle<()>>,
+    workers: Vec<(JoinHandle<()>, Unparker)>,
 }
 
 impl RuntimeHandle {
-    fn new(runtime: Runtime, workers: Vec<JoinHandle<()>>) -> Self {
+    fn new(runtime: Runtime, workers: Vec<(JoinHandle<()>, Unparker)>) -> Self {
         Self { runtime, workers }
     }
 
@@ -867,7 +872,7 @@ impl RuntimeHandle {
     /// This method unparks a thread after sending a command to it or
     /// when killing a circuit.
     pub(super) fn unpark_worker(&self, worker: usize) {
-        self.workers[worker].thread().unpark();
+        self.workers[worker].1.unpark();
     }
 
     /// Returns reference to the runtime.
@@ -894,8 +899,8 @@ impl RuntimeHandle {
             .inner()
             .kill_signal
             .store(true, Ordering::SeqCst);
-        for worker in self.workers.iter() {
-            worker.thread().unpark();
+        for (_worker, unparker) in self.workers.iter() {
+            unparker.unpark();
         }
     }
 
@@ -905,7 +910,11 @@ impl RuntimeHandle {
     pub fn join(self) -> ThreadResult<()> {
         // Insist on joining all threads even if some of them fail.
         #[allow(clippy::needless_collect)]
-        let results: Vec<ThreadResult<()>> = self.workers.into_iter().map(|h| h.join()).collect();
+        let results: Vec<ThreadResult<()>> = self
+            .workers
+            .into_iter()
+            .map(|(h, _unparker)| h.join())
+            .collect();
 
         // Wait for the background threads. They will exit automatically without
         // explicit signaling from us because the worker threads removed all of
@@ -1002,7 +1011,7 @@ mod tests {
             dev_tweaks: DevTweaks::default(),
         };
 
-        let hruntime = Runtime::run(cconf, move || {
+        let hruntime = Runtime::run(cconf, move |_parker| {
             let runtime = Runtime::runtime().unwrap();
             assert_eq!(runtime.storage_path(), Some(path_clone.as_ref()));
         })
@@ -1015,7 +1024,7 @@ mod tests {
     where
         S: Scheduler + 'static,
     {
-        let hruntime = Runtime::run(4, || {
+        let hruntime = Runtime::run(4, |_parker| {
             let data = Rc::new(RefCell::new(vec![]));
             let data_clone = data.clone();
             let root = RootCircuit::build_with_scheduler::<_, _, S>(move |circuit| {
@@ -1051,7 +1060,7 @@ mod tests {
     where
         S: Scheduler + 'static,
     {
-        let hruntime = Runtime::run(16, || {
+        let hruntime = Runtime::run(16, |_parker| {
             // Create a nested circuit that iterates forever.
             let root = RootCircuit::build_with_scheduler::<_, _, S>(move |circuit| {
                 circuit

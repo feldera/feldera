@@ -745,7 +745,7 @@ where
 /// const WORKERS: usize = 16;
 /// const ROUNDS: usize = 10;
 ///
-/// let hruntime = Runtime::run(WORKERS, || {
+/// let hruntime = Runtime::run(WORKERS, |_parker| {
 ///     let circuit = RootCircuit::build(|circuit| {
 ///         // Create a data source that generates numbers 0, 1, 2, ...
 ///         let mut n: usize = 0;
@@ -1118,7 +1118,7 @@ mod tests {
     fn test_exchange() {
         const WORKERS: usize = 16;
 
-        let hruntime = Runtime::run(WORKERS, || {
+        let hruntime = Runtime::run(WORKERS, |_parker| {
             let exchange = Exchange::with_runtime(&Runtime::runtime().unwrap(), 0);
 
             for round in 0..ROUNDS {
@@ -1169,7 +1169,7 @@ mod tests {
         where
             S: Scheduler + 'static,
         {
-            let hruntime = Runtime::run(workers, move || {
+            let hruntime = Runtime::run(workers, move |_parker| {
                 let circuit = RootCircuit::build_with_scheduler::<_, _, S>(move |circuit| {
                     let mut n: usize = 0;
                     let source = circuit.add_source(Generator::new(move || {
