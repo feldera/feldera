@@ -229,7 +229,7 @@ impl FileInputReader {
                         consumer.extended(total, Some(resume));
                     }
                     Ok(InputReaderCommand::Replay { metadata, .. }) => {
-                        let Metadata { offsets } = serde_json::from_value(metadata)?;
+                        let Metadata { offsets } = serde_json_path_to_error::from_value(metadata)?;
                         file.seek(SeekFrom::Start(offsets.start))?;
                         splitter.seek(offsets.start);
                         let mut remainder = (offsets.end - offsets.start) as usize;

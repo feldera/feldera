@@ -297,7 +297,7 @@ impl UrlInputReader {
 
         let mut command_receiver = InputCommandReceiver::<Metadata, ()>::new(command_receiver);
         let offset = if let Some(metadata) = seek {
-            let metadata = serde_json::from_value::<Metadata>(metadata)
+            let metadata = serde_json_path_to_error::from_value::<Metadata>(metadata)
                 .map_err(|e| anyhow!("error deserializing checkpointed connector metadata: {e}"))?;
             metadata.offsets.end
         } else {
