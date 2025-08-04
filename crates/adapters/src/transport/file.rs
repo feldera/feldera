@@ -5,6 +5,7 @@ use super::{
 use crate::format::StreamSplitter;
 use crate::{InputBuffer, Parser};
 use anyhow::{bail, Error as AnyError, Result as AnyResult};
+use crossbeam::sync::{Parker, Unparker};
 use feldera_adapterlib::transport::{parse_resume_info, Resume};
 use feldera_types::config::FtModel;
 use feldera_types::program_schema::Relation;
@@ -15,7 +16,7 @@ use std::hash::Hasher;
 use std::io::{Seek, SeekFrom};
 use std::ops::Range;
 use std::path::PathBuf;
-use std::thread::{self, Thread};
+use std::thread;
 use std::{fs::File, io::Write, time::Duration};
 use tokio::sync::mpsc::error::TryRecvError;
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
@@ -83,7 +84,7 @@ impl TransportInputEndpoint for FileInputEndpoint {
 
 pub struct FileInputReader {
     sender: UnboundedSender<InputReaderCommand>,
-    thread: Thread,
+    unparker: Unparker,
 }
 
 fn parse_url(path: &str) -> Option<PathBuf> {
@@ -117,7 +118,9 @@ impl FileInputReader {
         })?;
 
         let (sender, receiver) = unbounded_channel();
-        let join_handle = thread::Builder::new()
+        let parker = Parker::new();
+        let unparker = parker.unparker().clone();
+        thread::Builder::new()
             .name("file-input".to_string())
             .spawn({
                 let follow = config.follow;
@@ -137,6 +140,7 @@ impl FileInputReader {
                         receiver,
                         follow,
                         resume_info,
+                        parker,
                     ) {
                         consumer.error(true, error);
                     }
@@ -144,10 +148,7 @@ impl FileInputReader {
             })
             .expect("failed to spawn file-input thread");
 
-        Ok(Self {
-            sender,
-            thread: join_handle.thread().clone(),
-        })
+        Ok(Self { sender, unparker })
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -160,6 +161,7 @@ impl FileInputReader {
         mut receiver: UnboundedReceiver<InputReaderCommand>,
         follow: bool,
         resume_info: Option<Metadata>,
+        parker: Parker,
     ) -> AnyResult<()> {
         let mut splitter = StreamSplitter::new(parser.splitter());
 
@@ -258,14 +260,14 @@ impl FileInputReader {
             }
 
             if !extending || eof {
-                thread::park();
+                parker.park();
                 continue;
             }
 
             let n = splitter.read(&mut file, buffer_size, usize::MAX)?;
             if n == 0 {
                 if follow {
-                    thread::park_timeout(SLEEP);
+                    parker.park_timeout(SLEEP);
                     continue;
                 }
                 eof = true;
@@ -296,7 +298,7 @@ impl FileInputReader {
 impl InputReader for FileInputReader {
     fn request(&self, command: super::InputReaderCommand) {
         let _ = self.sender.send(command);
-        self.thread.unpark();
+        self.unparker.unpark();
     }
 
     fn is_closed(&self) -> bool {
