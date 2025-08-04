@@ -68,7 +68,7 @@ be using `kubectl` port forwarding.
    by each of the Feldera component (API server, compiler, runner, pipelines) pods.
 
 2. Provide in the Helm installation the reference for the `httpsSecretRef` value.
-   
+
    - **Via file `values.yaml`:**
      ```
      httpsSecretRef: "feldera-https-config"
