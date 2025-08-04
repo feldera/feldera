@@ -7,7 +7,7 @@ use dbsp::{
 static ALLOC: MiMalloc = MiMalloc;
 
 fn main() {
-    let hruntime = Runtime::run(16, || {
+    let hruntime = Runtime::run(16, |_parker| {
         let circuit = RootCircuit::build(|circuit| {
             /*
             use dbsp::{

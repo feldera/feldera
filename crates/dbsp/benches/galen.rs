@@ -95,7 +95,7 @@ fn main() -> Result<()> {
 
     unpack_galen_data()?;
 
-    let hruntime = Runtime::run(args.workers, move || {
+    let hruntime = Runtime::run(args.workers, move |_parker| {
         let monitor = TraceMonitor::new_panic_on_error();
         let circuit = RootCircuit::build(|circuit| {
             /*
