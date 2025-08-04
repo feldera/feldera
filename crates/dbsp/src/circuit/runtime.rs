@@ -12,6 +12,7 @@ use crate::{
     DetailedError,
 };
 use core_affinity::{get_core_ids, CoreId};
+use crossbeam::sync::{Parker, Unparker};
 use enum_map::{enum_map, Enum, EnumMap};
 use feldera_types::config::{StorageCompression, StorageConfig, StorageOptions};
 use indexmap::IndexSet;
@@ -814,12 +815,14 @@ impl Runtime {
     /// Spawn a new thread using `builder` and `f`. If the current thread is
     /// associated with a runtime, then the new thread will also be associated
     /// with the same runtime and worker index.
-    pub(crate) fn spawn_background_thread<F>(builder: Builder, f: F) -> Thread
+    pub(crate) fn spawn_background_thread<F>(builder: Builder, f: F) -> (Thread, Unparker)
     where
-        F: FnOnce() + Send + 'static,
+        F: FnOnce(Parker) + Send + 'static,
     {
         let runtime = Self::runtime();
         let worker_index = Self::worker_index();
+        let parker = Parker::new();
+        let unparker = parker.unparker().clone();
         let join_handle = builder
             .spawn(move || {
                 WORKER_INDEX.set(worker_index);
@@ -828,7 +831,7 @@ impl Runtime {
                     runtime.inner().pin_cpu();
                     RUNTIME.with(|rt| *rt.borrow_mut() = Some(runtime));
                 }
-                f()
+                f(parker)
             })
             .unwrap_or_else(|error| {
                 panic!("failed to spawn background worker thread {worker_index}: {error}");
@@ -842,7 +845,7 @@ impl Runtime {
                 .unwrap()
                 .push(join_handle);
         }
-        thread
+        (thread, unparker)
     }
 }
 

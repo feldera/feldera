@@ -1,5 +1,7 @@
 //! A compactor thread that merges the batches for the spine-fueled trace.
 
+use crossbeam::sync::{Parker, Unparker};
+
 use crate::trace::spine_async::WorkerState;
 use crate::Runtime;
 use std::cell::RefCell;
@@ -24,7 +26,7 @@ pub enum WorkerStatus {
 struct Inner {
     new_workers: Vec<WorkerConstructorFn>,
     exiting: bool,
-    thread: Option<Thread>,
+    thread: Option<(Thread, Unparker)>,
 }
 pub struct BackgroundThread(Mutex<Inner>);
 
@@ -93,11 +95,11 @@ impl BackgroundThread {
         } else {
             String::from("dbsp-bg")
         };
-        let thread = Runtime::spawn_background_thread(Builder::new().name(name), {
+        let (thread, unparker) = Runtime::spawn_background_thread(Builder::new().name(name), {
             let bg = bg.clone();
-            move || bg.run()
+            move |parker| bg.run(parker)
         });
-        bg.0.lock().unwrap().thread = Some(thread);
+        bg.0.lock().unwrap().thread = Some((thread, unparker));
         Arc::downgrade(&bg)
     }
 
@@ -105,14 +107,14 @@ impl BackgroundThread {
         THREAD.with_borrow(|thread| {
             if let Some(thread) = thread.upgrade() {
                 let inner = thread.0.lock().unwrap();
-                if let Some(thread) = inner.thread.as_ref() {
-                    thread.unpark();
+                if let Some((_thread, unparker)) = inner.thread.as_ref() {
+                    unparker.unpark();
                 }
             }
         });
     }
 
-    fn run(self: Arc<Self>) {
+    fn run(self: Arc<Self>, parker: Parker) {
         let mut state = WorkerState::default();
         let mut workers = Vec::new();
         loop {
@@ -145,7 +147,7 @@ impl BackgroundThread {
             // exit (if we just exit immediately then that could drop a new
             // worker).
             if idle && !workers.is_empty() {
-                std::thread::park();
+                parker.park();
             }
         }
     }
