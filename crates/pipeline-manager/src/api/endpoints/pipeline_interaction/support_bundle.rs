@@ -1,6 +1,9 @@
-// API to read from tables/views and write into tables using HTTP
+//! Endpoint to retrieve a support bundles for pipeline.
 use actix_web::rt::time::timeout;
+use chrono::{DateTime, Utc};
+use feldera_types::error::ErrorResponse;
 use futures_util::StreamExt;
+
 use std::io::Write;
 use std::time::Duration;
 use zip::{CompressionMethod, ZipWriter};
@@ -9,6 +12,7 @@ use crate::api::endpoints::config::Configuration;
 use crate::api::error::ApiError;
 use crate::api::examples;
 use crate::api::main::ServerState;
+use crate::db::types::pipeline::ExtendedPipelineDescr;
 use crate::db::{storage::Storage, types::tenant::TenantId};
 use crate::error::ManagerError;
 use actix_web::{
@@ -17,7 +21,396 @@ use actix_web::{
     web::{self, Data as WebData, ReqData},
     HttpResponse,
 };
-use feldera_types::program_schema::SqlIdentifier;
+
+type BundleResult<T> = Result<T, String>;
+
+/// Fetch data from a pipeline endpoint
+async fn fetch_pipeline_data(
+    state: &ServerState,
+    client: &awc::Client,
+    tenant_id: TenantId,
+    pipeline_name: &str,
+    endpoint: &str,
+    timeout_duration: Option<Duration>,
+) -> Result<HttpResponse, ManagerError> {
+    state
+        .runner
+        .forward_http_request_to_pipeline_by_name(
+            client,
+            tenant_id,
+            pipeline_name,
+            Method::GET,
+            endpoint,
+            "",
+            timeout_duration,
+        )
+        .await
+}
+
+/// Stream logs from the pipeline with timeout-based termination
+async fn collect_pipeline_logs(
+    state: &ServerState,
+    client: &awc::Client,
+    tenant_id: TenantId,
+    pipeline_name: &str,
+) -> Result<String, ManagerError> {
+    let mut first_line = true;
+    let next_line_timeout = Duration::from_millis(250);
+    let mut logs = String::with_capacity(4096);
+
+    let response = state
+        .runner
+        .get_logs_from_pipeline(client, tenant_id, pipeline_name)
+        .await?;
+
+    let mut response = response;
+    while let Ok(Some(chunk)) = timeout(
+        if first_line {
+            Duration::from_secs(5)
+        } else {
+            next_line_timeout
+        },
+        response.next(),
+    )
+    .await
+    {
+        match chunk {
+            Ok(chunk) => {
+                let text = String::from_utf8_lossy(&chunk);
+                logs.push_str(&text);
+                first_line = false;
+            }
+            Err(e) => {
+                logs.push_str(&format!("ERROR: Unable to read server response: {}", e));
+            }
+        }
+    }
+
+    Ok(logs)
+}
+
+/// Prettify JSON data for better readability in support bundles.
+fn json_prettify(data: Vec<u8>) -> Vec<u8> {
+    if let Ok(json) = serde_json::from_slice::<serde_json::Value>(&data) {
+        serde_json::to_vec_pretty(&json).unwrap_or(data)
+    } else {
+        data
+    }
+}
+
+/// Convert and augment the HTTP response into a bundle result which
+/// has string based error reporting for embedding errors within the bundle.
+async fn response_to_bundle_result(
+    response: Result<HttpResponse, ManagerError>,
+) -> BundleResult<Vec<u8>> {
+    match response {
+        Ok(response) if response.status().is_success() => {
+            actix_web::body::to_bytes(response.into_body())
+                .await
+                .map(|bytes| bytes.to_vec())
+                .map_err(|e| e.to_string())
+        }
+        Ok(response) => {
+            let mut error_string = format!("HTTP {}", response.status());
+            let body = response.into_body();
+            let body_bytes = actix_web::body::to_bytes(body).await.unwrap_or_default();
+            if !body_bytes.is_empty() {
+                let body_str = String::from_utf8_lossy(&body_bytes);
+                if let Ok(error_response) = serde_json::from_str::<ErrorResponse>(&body_str) {
+                    error_string.push_str(&format!(
+                        ": {}",
+                        error_response.message.trim_end_matches('\n')
+                    ));
+                } else {
+                    error_string.push_str(&format!(": {}", body_str.trim_end_matches('\n')));
+                }
+            }
+            Err(error_string)
+        }
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+/// Support bundle data collected from various sources at a single point in time.
+#[derive(Debug)]
+pub struct SupportBundleData {
+    pub time: DateTime<Utc>,
+    pub circuit_profile: BundleResult<Vec<u8>>,
+    pub heap_profile: BundleResult<Vec<u8>>,
+    pub metrics: BundleResult<Vec<u8>>,
+    pub logs: BundleResult<String>,
+    pub stats: BundleResult<Vec<u8>>,
+    pub pipeline_config: BundleResult<Vec<u8>>,
+    pub system_config: BundleResult<Vec<u8>>,
+}
+
+impl SupportBundleData {
+    pub async fn collect(
+        state: &WebData<ServerState>,
+        client: &awc::Client,
+        tenant_id: TenantId,
+        pipeline_name: &str,
+    ) -> Result<Self, ManagerError> {
+        // Launch all primary data collection tasks in parallel
+        let (
+            circuit_profile_result,
+            heap_profile_result,
+            metrics_result,
+            logs_result,
+            stats_result,
+            pipeline_config_result,
+            system_config_result,
+        ) = tokio::join!(
+            fetch_pipeline_data(
+                state,
+                client,
+                tenant_id,
+                pipeline_name,
+                "dump_profile",
+                Some(Duration::from_secs(120))
+            ),
+            fetch_pipeline_data(
+                state,
+                client,
+                tenant_id,
+                pipeline_name,
+                "heap_profile",
+                None
+            ),
+            fetch_pipeline_data(state, client, tenant_id, pipeline_name, "metrics", None),
+            collect_pipeline_logs(state, client, tenant_id, pipeline_name),
+            fetch_pipeline_data(state, client, tenant_id, pipeline_name, "stats", None),
+            Self::get_pipeline_configuration(state, tenant_id, pipeline_name),
+            Self::get_system_configuration(state),
+        );
+
+        // Process results and extract data
+        let circuit_profile = response_to_bundle_result(circuit_profile_result).await;
+        let heap_profile = response_to_bundle_result(heap_profile_result).await;
+        let metrics = response_to_bundle_result(metrics_result).await;
+        let logs = logs_result.map_err(|e| e.to_string());
+        let stats = response_to_bundle_result(stats_result)
+            .await
+            .map(json_prettify);
+        let pipeline_config = pipeline_config_result.map_err(|e| e.to_string());
+        let system_config = system_config_result.map_err(|e| e.to_string());
+
+        Ok(SupportBundleData {
+            time: chrono::Utc::now(),
+            circuit_profile,
+            heap_profile,
+            metrics,
+            logs,
+            stats,
+            pipeline_config,
+            system_config,
+        })
+    }
+
+    #[allow(clippy::type_complexity)]
+    async fn push_to_zip(
+        &self,
+        add_to_zip: &mut dyn FnMut(&str, &[u8]) -> Result<(), Box<dyn std::error::Error>>,
+    ) -> Result<(Vec<String>, Vec<String>), Box<dyn std::error::Error>> {
+        let mut manifest_entries = Vec::new();
+        let mut error_entries = Vec::new();
+
+        // Add circuit profile
+        match &self.circuit_profile {
+            Ok(content) => {
+                let _ = add_to_zip("circuit_profile.zip", content);
+                manifest_entries.push("✓ circuit_profile.zip".to_string());
+            }
+            Err(e) => {
+                error_entries.push(format!("✗ circuit_profile.zip: {}", e));
+            }
+        }
+
+        // Add heap profile
+        match &self.heap_profile {
+            Ok(content) => {
+                let _ = add_to_zip("heap_profile.pb.gz", content);
+                manifest_entries.push("✓ heap_profile.pb.gz".to_string());
+            }
+            Err(e) => {
+                error_entries.push(format!("✗ heap_profile.pb.gz: {}", e));
+            }
+        }
+
+        // Add metrics
+        match &self.metrics {
+            Ok(content) => {
+                let _ = add_to_zip("metrics.txt", content);
+                manifest_entries.push("✓ metrics.txt".to_string());
+            }
+            Err(e) => {
+                error_entries.push(format!("✗ metrics.txt: {}", e));
+            }
+        }
+
+        // Add logs
+        match &self.logs {
+            Ok(content) => {
+                let _ = add_to_zip("logs.txt", content.as_bytes());
+                manifest_entries.push("✓ logs.txt".to_string());
+            }
+            Err(e) => {
+                error_entries.push(format!("✗ logs.txt: {}", e));
+            }
+        }
+
+        // Add stats
+        match &self.stats {
+            Ok(content) => {
+                let _ = add_to_zip("stats.json", content);
+                manifest_entries.push("✓ stats.json".to_string());
+            }
+            Err(e) => {
+                error_entries.push(format!("✗ stats.json: {}", e));
+            }
+        }
+
+        // Add pipeline config
+        match &self.pipeline_config {
+            Ok(content) => {
+                let _ = add_to_zip("pipeline_config.json", content);
+                manifest_entries.push("✓ pipeline_config.json".to_string());
+            }
+            Err(e) => {
+                error_entries.push(format!("✗ pipeline_config.json: {}", e));
+            }
+        }
+
+        // Add system config
+        match &self.system_config {
+            Ok(content) => {
+                let _ = add_to_zip("system_config.json", content);
+                manifest_entries.push("✓ system_config.json".to_string());
+            }
+            Err(e) => {
+                error_entries.push(format!("✗ system_config.json: {}", e));
+            }
+        }
+
+        Ok((manifest_entries, error_entries))
+    }
+
+    /// Get pipeline configuration from local database
+    async fn get_pipeline_configuration(
+        state: &ServerState,
+        tenant_id: TenantId,
+        pipeline_name: &str,
+    ) -> Result<Vec<u8>, ManagerError> {
+        let pipeline = state
+            .db
+            .lock()
+            .await
+            .get_pipeline(tenant_id, pipeline_name)
+            .await?;
+
+        serde_json::to_vec_pretty(&pipeline).map_err(|e| {
+            ManagerError::from(ApiError::UnableToCreateSupportBundle {
+                reason: format!("Failed to serialize pipeline config: {}", e),
+            })
+        })
+    }
+
+    /// Get system configuration
+    async fn get_system_configuration(
+        state: &WebData<ServerState>,
+    ) -> Result<Vec<u8>, ManagerError> {
+        let config = Configuration::gather(state).await;
+        serde_json::to_vec_pretty(&config).map_err(|e| {
+            ManagerError::from(ApiError::UnableToCreateSupportBundle {
+                reason: format!("Failed to serialize system config: {}", e),
+            })
+        })
+    }
+}
+
+/// A collection of support bundle data for a single pipeline gathered in a single ZIP file.
+struct SupportBundleZip {
+    buffer: Vec<u8>,
+}
+
+impl SupportBundleZip {
+    /// Create a ZIP file from support bundle data.
+    async fn create(
+        pipeline: &ExtendedPipelineDescr,
+        bundles: Vec<SupportBundleData>,
+    ) -> Result<SupportBundleZip, ManagerError> {
+        let mut zip_buffer = Vec::with_capacity(256 * 1024);
+        let mut zip = ZipWriter::new(std::io::Cursor::new(&mut zip_buffer));
+        let options =
+            zip::write::FileOptions::default().compression_method(CompressionMethod::Deflated);
+        let mut manifest = String::with_capacity(8 * 1024);
+        manifest.push_str(&format!(
+            "\n# Support Bundle Table of Contents\n\nRequested at: {}\nPipeline Status: {} (since {})\n",
+            chrono::Utc::now().to_rfc3339(),
+            pipeline.deployment_status,
+            pipeline.deployment_status_since.to_rfc3339(),
+        ));
+        if pipeline.deployment_status.to_string() != pipeline.deployment_desired_status.to_string()
+        {
+            manifest.push_str(&format!(
+                "Pipeline Desired Status: {}\n",
+                pipeline.deployment_desired_status
+            ));
+        }
+
+        for (idx, data) in bundles.iter().enumerate() {
+            let timestamp = data.time.to_rfc3339();
+            manifest.push_str(&format!("\n## Collection {idx} ({})\n", &timestamp));
+            let mut add_to_zip =
+                |filename: &str, content: &[u8]| -> Result<(), Box<dyn std::error::Error>> {
+                    let timestamped_filename = format!("{}_{}", timestamp, filename);
+                    zip.start_file(&timestamped_filename, options)?;
+                    zip.write_all(content)?;
+                    Ok(())
+                };
+
+            let (manifest_entries, error_entries) =
+                data.push_to_zip(&mut add_to_zip).await.map_err(|e| {
+                    ManagerError::from(ApiError::UnableToCreateSupportBundle {
+                        reason: format!("Failed to add data to zip: {}", e),
+                    })
+                })?;
+
+            if !manifest_entries.is_empty() {
+                manifest.push_str("\nSuccessfully Collected:\n");
+                for entry in manifest_entries {
+                    manifest.push_str(&format!("  {}\n", entry));
+                }
+            }
+
+            if !error_entries.is_empty() {
+                manifest.push_str("\nFailed To Collect:\n");
+                for entry in error_entries {
+                    manifest.push_str(&format!("  {}\n", entry));
+                }
+            }
+        }
+        zip.start_file("manifest.txt", options).map_err(|e| {
+            ManagerError::from(ApiError::UnableToCreateSupportBundle {
+                reason: format!("Failed to add manifest file into bundle: {}", e),
+            })
+        })?;
+        zip.write_all(&manifest.into_bytes()).map_err(|e| {
+            ManagerError::from(ApiError::UnableToCreateSupportBundle {
+                reason: format!("Failed to write manifest file into bundle: {}", e),
+            })
+        })?;
+
+        let _r: std::io::Cursor<&mut Vec<u8>> = zip.finish().map_err(|e| {
+            ManagerError::from(ApiError::UnableToCreateSupportBundle {
+                reason: format!("Failed to create support bundle: {}", e),
+            })
+        })?;
+        drop(zip);
+
+        Ok(SupportBundleZip { buffer: zip_buffer })
+    }
+}
 
 /// Generate a support bundle containing diagnostic information from a pipeline.
 ///
@@ -60,352 +453,23 @@ pub(crate) async fn get_pipeline_support_bundle(
     path: web::Path<String>,
 ) -> Result<HttpResponse, ManagerError> {
     let pipeline_name = path.into_inner();
-    let mut zip_buffer = Vec::new();
-    let mut zip = ZipWriter::new(std::io::Cursor::new(&mut zip_buffer));
-
-    // Helper function to fetch data from pipeline
-    let fetch_data = |endpoint: &str, timeout: Option<Duration>| {
-        let state = state.clone();
-        let client = client.clone();
-        let tenant_id = *tenant_id;
-        let pipeline_name = pipeline_name.clone();
-        let endpoint = endpoint.to_string();
-
-        async move {
-            state
-                .runner
-                .forward_http_request_to_pipeline_by_name(
-                    client.as_ref(),
-                    tenant_id,
-                    &pipeline_name,
-                    Method::GET,
-                    &endpoint,
-                    "",
-                    timeout,
-                )
-                .await
-        }
-    };
-
-    // Helper function to fetch data from pipeline
-    let stream_logs = || {
-        let state = state.clone();
-        let client = client.clone();
-        let tenant_id = *tenant_id;
-        let pipeline_name = pipeline_name.clone();
-
-        // The log endpoint is a stream that never ends. However, we want to be able for
-        // fda to exit after a certain amount of time without any new logs to emulate
-        // a log snapshot functionality.
-        let mut first_line = true;
-        let next_line_timeout = Duration::from_millis(250);
-        let mut logs = String::with_capacity(4096);
-        async move {
-            let response = state
-                .runner
-                .get_logs_from_pipeline(&client, tenant_id, &pipeline_name)
-                .await;
-            match response {
-                Ok(mut response) => {
-                    while let Ok(Some(chunk)) = timeout(
-                        if first_line {
-                            Duration::from_secs(5)
-                        } else {
-                            next_line_timeout
-                        },
-                        response.next(),
-                    )
-                    .await
-                    {
-                        match chunk {
-                            Ok(chunk) => {
-                                let text = String::from_utf8_lossy(&chunk);
-                                logs.push_str(&text);
-                                first_line = false;
-                            }
-                            Err(e) => {
-                                logs.push_str(&format!(
-                                    "ERROR: Unable to read server response: {}",
-                                    e
-                                ));
-                            }
-                        }
-                    }
-                    return Ok(logs);
-                }
-                Err(e) => return Err(e),
-            }
-        }
-    };
-
-    // Helper function to get local manager data
-    let get_pipeline_config = async {
-        state
-            .db
-            .lock()
-            .await
-            .get_pipeline(*tenant_id, &pipeline_name)
-            .await
-            .map(|pipeline| serde_json::to_vec_pretty(&pipeline))
-    };
-
-    let get_system_config = async {
-        let config = Configuration::gather(&state).await;
-        Ok::<_, serde_json::Error>(serde_json::to_vec_pretty(&config)?)
-    };
-
-    // Launch all data collection tasks in parallel (including local ones)
-    let (
-        circuit_profile_result,
-        heap_profile_result,
-        metrics_result,
-        logs_result,
-        stats_result,
-        pipeline_config_result,
-        system_config_result,
-    ) = tokio::join!(
-        fetch_data("dump_profile", Some(Duration::from_secs(120))),
-        fetch_data("heap_profile", None),
-        fetch_data("metrics", None),
-        stream_logs(),
-        fetch_data("stats", None),
-        get_pipeline_config,
-        get_system_config,
-    );
-
-    // Helper function to add content to zip
-    let mut add_to_zip =
-        |filename: &str, content: Vec<u8>| -> Result<(), Box<dyn std::error::Error>> {
-            let options =
-                zip::write::FileOptions::default().compression_method(CompressionMethod::Deflated);
-            zip.start_file(filename, options)?;
-            zip.write_all(&content)?;
-            Ok(())
-        };
-
-    // Process circuit profile result
-    match circuit_profile_result {
-        Ok(response) if response.status().is_success() => {
-            if let Ok(body) = actix_web::body::to_bytes(response.into_body()).await {
-                let _ = add_to_zip("circuit_profile.zip", body.to_vec());
-            }
-        }
-        _ => {
-            let _ = add_to_zip(
-                "circuit_profile_error.txt",
-                b"Failed to retrieve circuit profile".to_vec(),
-            );
-        }
-    }
-
-    // Process heap profile result
-    match heap_profile_result {
-        Ok(response) if response.status().is_success() => {
-            if let Ok(body) = actix_web::body::to_bytes(response.into_body()).await {
-                let _ = add_to_zip("heap_profile.pb.gz", body.to_vec());
-            }
-        }
-        _ => {
-            let _ = add_to_zip(
-                "heap_profile_error.txt",
-                b"Failed to retrieve heap profile".to_vec(),
-            );
-        }
-    }
-
-    // Process metrics result
-    match metrics_result {
-        Ok(response) if response.status().is_success() => {
-            if let Ok(body) = actix_web::body::to_bytes(response.into_body()).await {
-                let _ = add_to_zip("metrics.txt", body.to_vec());
-            }
-        }
-        _ => {
-            let _ = add_to_zip("metrics_error.txt", b"Failed to retrieve metrics".to_vec());
-        }
-    }
-
-    // Process logs result
-    match logs_result {
-        Ok(body) => {
-            let _ = add_to_zip("logs.txt", body.as_bytes().to_vec());
-        }
-        _ => {
-            let _ = add_to_zip("logs_error.txt", b"Failed to retrieve logs".to_vec());
-        }
-    }
-
-    // Process pipeline config result
-    match pipeline_config_result {
-        Ok(Ok(config_json)) => {
-            let _ = add_to_zip("pipeline_config.json", config_json);
-        }
-        _ => {
-            let _ = add_to_zip(
-                "pipeline_config_error.txt",
-                b"Failed to retrieve pipeline configuration".to_vec(),
-            );
-        }
-    }
-
-    // Process system config result
-    match system_config_result {
-        Ok(config_json) => {
-            let _ = add_to_zip("system_config.json", config_json);
-        }
-        Err(_) => {
-            let _ = add_to_zip(
-                "system_config_error.txt",
-                b"Failed to retrieve system configuration".to_vec(),
-            );
-        }
-    }
-
-    // Process stats result and use it to discover connectors
-    let stats_body = match stats_result {
-        Ok(response) if response.status().is_success() => {
-            match actix_web::body::to_bytes(response.into_body()).await {
-                Ok(body) => {
-                    let body_vec = body.to_vec();
-                    let _ = add_to_zip("stats.json", body_vec.clone());
-                    Some(body_vec)
-                }
-                Err(_) => {
-                    let _ = add_to_zip("stats_error.txt", b"Failed to retrieve stats".to_vec());
-                    None
-                }
-            }
-        }
-        _ => {
-            let _ = add_to_zip("stats_error.txt", b"Failed to retrieve stats".to_vec());
-            None
-        }
-    };
-
-    // Collect connector stats in parallel if we have stats data
-    if let Some(stats_body) = stats_body {
-        if let Ok(stats_str) = std::str::from_utf8(&stats_body) {
-            if let Ok(stats_json) = serde_json::from_str::<serde_json::Value>(stats_str) {
-                let mut connector_tasks = Vec::new();
-
-                // Collect input connector endpoints
-                if let Some(inputs) = stats_json.get("inputs").and_then(|v| v.as_object()) {
-                    for (table_connector, _) in inputs {
-                        if let Some((table_name, connector_name)) = table_connector.split_once('.')
-                        {
-                            let actual_table_name = SqlIdentifier::from(table_name).name();
-                            let endpoint_name = format!("{}.{}", actual_table_name, connector_name);
-                            let encoded_endpoint_name =
-                                urlencoding::encode(&endpoint_name).to_string();
-                            let endpoint =
-                                format!("input_endpoints/{}/stats", encoded_endpoint_name);
-                            let filename = format!(
-                                "connectors/input_{}_{}_stats.json",
-                                table_name, connector_name
-                            );
-                            let error_filename = format!(
-                                "connectors/input_{}_{}_stats_error.txt",
-                                table_name, connector_name
-                            );
-
-                            connector_tasks.push((
-                                fetch_data(&endpoint, None),
-                                filename,
-                                error_filename,
-                            ));
-                        }
-                    }
-                }
-
-                // Collect output connector endpoints
-                if let Some(outputs) = stats_json.get("outputs").and_then(|v| v.as_object()) {
-                    for (view_connector, _) in outputs {
-                        if let Some((view_name, connector_name)) = view_connector.split_once('.') {
-                            let actual_view_name = SqlIdentifier::from(view_name).name();
-                            let endpoint_name = format!("{}.{}", actual_view_name, connector_name);
-                            let encoded_endpoint_name =
-                                urlencoding::encode(&endpoint_name).to_string();
-                            let endpoint =
-                                format!("output_endpoints/{}/stats", encoded_endpoint_name);
-                            let filename = format!(
-                                "connectors/output_{}_{}_stats.json",
-                                view_name, connector_name
-                            );
-                            let error_filename = format!(
-                                "connectors/output_{}_{}_stats_error.txt",
-                                view_name, connector_name
-                            );
-
-                            connector_tasks.push((
-                                fetch_data(&endpoint, None),
-                                filename,
-                                error_filename,
-                            ));
-                        }
-                    }
-                }
-
-                // Execute all connector requests in parallel
-                let connector_results =
-                    futures_util::future::join_all(connector_tasks.into_iter().map(
-                        |(task, filename, error_filename)| async move {
-                            let result = task.await;
-                            (result, filename, error_filename)
-                        },
-                    ))
-                    .await;
-
-                // Process connector results
-                for (result, filename, error_filename) in connector_results {
-                    match result {
-                        Ok(response) if response.status().is_success() => {
-                            if let Ok(body) = actix_web::body::to_bytes(response.into_body()).await
-                            {
-                                let _ = add_to_zip(&filename, body.to_vec());
-                            } else {
-                                let _ = add_to_zip(
-                                    &error_filename,
-                                    b"Failed to read connector stats response".to_vec(),
-                                );
-                            }
-                        }
-                        _ => {
-                            let _ = add_to_zip(
-                                &error_filename,
-                                b"Failed to retrieve connector stats".to_vec(),
-                            );
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    // Add a manifest file with collection timestamp
-    let manifest = format!(
-        "Support Bundle for Pipeline: {}\nGenerated at: {}\nContents:\n- pipeline_config.json (SQL program and pipeline configuration)\n- system_config.json (Platform configuration and build info)\n- circuit_profile.zip\n- heap_profile.pb.gz\n- metrics.txt\n- logs.txt\n- stats.json\n- connectors/*/stats.json\n",
-        pipeline_name,
-        chrono::Utc::now().to_rfc3339()
-    );
-    let _ = add_to_zip("manifest.txt", manifest.into_bytes());
-
-    // Finalize the zip
-    if let Err(e) = zip.finish() {
-        return Err(ManagerError::from(ApiError::UnableToCreateSupportBundle {
-            reason: format!("Failed to create support bundle: {}", e),
-        }));
-    }
-
-    drop(zip);
+    let pipeline = state
+        .db
+        .lock()
+        .await
+        .get_pipeline(*tenant_id, &pipeline_name)
+        .await?;
+    let data = SupportBundleData::collect(&state, &client, *tenant_id, &pipeline_name).await?;
+    let bundle = SupportBundleZip::create(&pipeline, vec![data]).await?;
 
     Ok(HttpResponse::Ok()
         .content_type("application/zip")
         .insert_header((
             "Content-Disposition",
             format!(
-                "attachment; filename=\"{}_support_bundle.zip\"",
+                "attachment; filename=\"{}-support-bundle.zip\"",
                 pipeline_name
             ),
         ))
-        .body(zip_buffer))
+        .body(bundle.buffer))
 }
