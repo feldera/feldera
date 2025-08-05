@@ -308,7 +308,11 @@ async fn spawn_nats_reader(
                     _ = cancel_token_copy.cancelled() => {
                         break;
                     }
-                    Some(result) = nats_messages.next() => {
+                    result = nats_messages.next() => {
+                        let Some(result) = result else {
+                            consumer.error(false, anyhow!("Unexpected end of NATS stream"));
+                            return;
+                        };
                         match result {
                             Ok(message) => {
                                 let info = match message.info() {
