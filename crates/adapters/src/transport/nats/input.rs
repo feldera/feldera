@@ -1,5 +1,7 @@
 mod atomic_option;
 mod config_utils;
+#[cfg(test)]
+mod test;
 
 use crate::{
     transport::{InputQueue, InputReaderCommand},
