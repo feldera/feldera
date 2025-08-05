@@ -66,7 +66,7 @@ public class MinMaxOptimize extends Passes {
             return super.startVisit(circuit);
         }
 
-        void standardMinMax(DBSPStreamAggregateOperator operator, MinMaxAggregate mm) {
+        void generalCase(DBSPStreamAggregateOperator operator, MinMaxAggregate mm) {
             OutputPort i = this.mapped(operator.input());
 
             if (!RemoveIdentityOperators.isIdentityFunction(mm.comparedValue)) {
@@ -88,50 +88,64 @@ public class MinMaxOptimize extends Passes {
             // May need to apply a postProcessing step to convert the type to the one expected by Calcite
             DBSPType aggregatedValueType = i.getOutputIndexedZSetType().elementType;
             DBSPType aggregationType = operator.getOutputIndexedZSetType().elementType;
-            boolean isMin;
+            DBSPMinMax.Aggregation aggregation;
             switch (mm.operation) {
-                case Min:
-                    isMin = true;
+                case Max: {
+                    aggregation = DBSPMinMax.Aggregation.Max;
                     break;
-                case ArgMax:
-                case Max:
-                    isMin = false;
-                    break;
-                case ArgMin:
-                default:
-                    throw new InternalCompilerError("Unexpected operation " + mm.operation);
-            }
-            DBSPMinMax.Aggregation aggregation = isMin ? DBSPMinMax.Aggregation.Min : DBSPMinMax.Aggregation.Max;
-            if (isMin) {
-                DBSPTypeTuple tuple = aggregatedValueType.to(DBSPTypeTuple.class);
-                Utilities.enforce(tuple.size() == 1);
-                DBSPType field = tuple.tupFields[0];
-                if (field.mayBeNull) {
-                    // For already nullable values use MinSome1
-                    aggregation = DBSPMinMax.Aggregation.MinSome1;
-                    aggregatedValueType = new DBSPTypeTuple(field.withMayBeNull(true));
                 }
-            } else if (mm.operation == MinMaxAggregate.Operation.ArgMax) {
-                // mm.postProcess takes cast(comparedValue) as an argument,
-                // but the Max supplies Tup1<comparedValue> as argument.
-                Utilities.enforce(mm.postProcess != null);
-                Utilities.enforce(mm.postProcess.parameters.length == 1);
-                DBSPTypeRawTuple postProcessTuple = mm.postProcess.parameters[0].getType().to(DBSPTypeRawTuple.class);
-                // Value produced by Max
-                DBSPVariablePath var = aggregatedValueType.ref().var();
-                DBSPExpression comparedValue = var.deref().field(0);
-                DBSPTypeTuple aggregationTuple = aggregationType.to(DBSPTypeTuple.class);  // Tup1<T>; extract T
-                DBSPExpression pair = new DBSPRawTupleExpression(
-                        comparedValue.field(0).nullabilityCast(postProcessTuple.tupFields[0], false),
-                        comparedValue.field(1).cast(mm.getNode(), aggregationTuple.tupFields[0], false));
-                DBSPExpression body = mm.postProcess.call(pair).reduce(this.compiler);
-                // The result of postProcess must also be wrapped in a Tup1.
-                DBSPExpression tup1 = new DBSPTupleExpression(body);
-                postProcessing = tup1.closure(var);
+                case Min: {
+                    DBSPTypeTuple tuple = aggregatedValueType.to(DBSPTypeTuple.class);
+                    Utilities.enforce(tuple.size() == 1);
+                    DBSPType field = tuple.tupFields[0];
+                    aggregation = DBSPMinMax.Aggregation.Min;
+                    if (field.mayBeNull) {
+                        // For already nullable values use MinSome1
+                        aggregation = DBSPMinMax.Aggregation.MinSome1;
+                        aggregatedValueType = new DBSPTypeTuple(field.withMayBeNull(true));
+                    }
+                    break;
+                }
+                case ArgMax: {
+                    aggregation = DBSPMinMax.Aggregation.Max;
+                    // ArgMax is implemented as Max; use postprocessing to extract correct field
+                    postProcessing = this.refinePostProcessing(mm, aggregatedValueType, aggregationType);
+                    break;
+                }
+                case ArgMin: {
+                    // aggregatedValue is Tup1<(compared, result)>
+                    DBSPTypeTuple tuple = aggregatedValueType.to(DBSPTypeTuple.class);
+                    Utilities.enforce(tuple.size() == 1);
+                    DBSPTypeRawTuple fields = tuple.tupFields[0].to(DBSPTypeRawTuple.class);
+                    Utilities.enforce(fields.tupFields.length == 2);
+                    aggregation = DBSPMinMax.Aggregation.Min;
+                    if (fields.tupFields[0].mayBeNull) {
+                        aggregation = DBSPMinMax.Aggregation.ArgMinSome;
+                        DBSPType resultFieldType = fields.tupFields[1];
+                        if (!resultFieldType.mayBeNull) {
+                            // If ARG_MIN(a, b) has non-nullable b, we must convert the result
+                            // of ArgMinSome to nullable.  note that ArgMinSome produces Tup1<B>.
+                            DBSPVariablePath var = new DBSPTypeTuple(resultFieldType).ref().var();
+                            postProcessing =
+                                    new DBSPTupleExpression(
+                                            var.deref()
+                                                    .field(0)
+                                                    .nullabilityCast(resultFieldType.withMayBeNull(true), false)
+                                    ).closure(var);
+                        }
+                    } else {
+                        // ArgMin implemented as Min; use postProcessing to extract correct field
+                        postProcessing = this.refinePostProcessing(mm, aggregatedValueType, aggregationType);
+                    }
+                    break;
+                }
+                default:
+                    throw new InternalCompilerError("Unexpected aggregation operation " + mm.operation);
             }
 
-            if (!aggregatedValueType.sameType(aggregationType) && postProcessing == null) {
-                // This is important when computing the min of a ROW type;
+            if (!aggregatedValueType.sameType(aggregationType) &&
+                    (mm.operation == MinMaxAggregate.Operation.Max || mm.operation == MinMaxAggregate.Operation.Min)) {
+                // This is important when computing the min/max of a ROW type;
                 // this may insert casts to match the type expected
                 postProcessing = aggregatedValueType.caster(aggregationType, false)
                         .reduce(this.compiler)
@@ -142,6 +156,28 @@ public class MinMaxOptimize extends Passes {
             DBSPStreamAggregateOperator aggregate = new DBSPStreamAggregateOperator(operator.getRelNode(),
                     operator.getOutputIndexedZSetType(), aggregator, null, i);
             this.map(operator, aggregate);
+        }
+
+        private DBSPClosureExpression refinePostProcessing(
+                MinMaxAggregate mm, DBSPType aggregatedValueType, DBSPType aggregationType) {
+            // mm.postProcess takes cast(comparedValue) as an argument,
+            // but the Max supplies Tup1<comparedValue> as argument.
+            @Nullable DBSPClosureExpression postProcessing;
+            Utilities.enforce(mm.postProcess != null);
+            Utilities.enforce(mm.postProcess.parameters.length == 1);
+            DBSPTypeRawTuple postProcessTuple = mm.postProcess.parameters[0].getType().to(DBSPTypeRawTuple.class);
+            // Value produced by Max
+            DBSPVariablePath var = aggregatedValueType.ref().var();
+            DBSPExpression comparedValue = var.deref().field(0);
+            DBSPTypeTuple aggregationTuple = aggregationType.to(DBSPTypeTuple.class);  // Tup1<T>; extract T
+            DBSPExpression pair = new DBSPRawTupleExpression(
+                    comparedValue.field(0).nullabilityCast(postProcessTuple.tupFields[0], false),
+                    comparedValue.field(1).cast(mm.getNode(), aggregationTuple.tupFields[0], false));
+            DBSPExpression body = mm.postProcess.call(pair).reduce(this.compiler);
+            // The result of postProcess must also be wrapped in a Tup1.
+            DBSPExpression tup1 = new DBSPTupleExpression(body);
+            postProcessing = tup1.closure(var);
+            return postProcessing;
         }
 
         @Override
@@ -159,14 +195,7 @@ public class MinMaxOptimize extends Passes {
             List<MinMaxAggregate> aggregates = Linq.map(aggregateList.aggregates, a -> a.to(MinMaxAggregate.class));
             if (!this.isAppendOnly.test(operator.input())) {
                 if (aggregates.size() == 1) {
-                    MinMaxAggregate agg = aggregates.get(0);
-                    if (agg.operation == MinMaxAggregate.Operation.Max ||
-                            agg.operation == MinMaxAggregate.Operation.Min ||
-                            agg.operation == MinMaxAggregate.Operation.ArgMax)
-                        this.standardMinMax(operator, aggregates.get(0));
-                    else
-                        // TODO: optimize isolated ARG_MIN, ARG_MAX too
-                        super.postorder(operator);
+                    this.generalCase(operator, aggregates.get(0));
                 } else {
                     super.postorder(operator);
                 }

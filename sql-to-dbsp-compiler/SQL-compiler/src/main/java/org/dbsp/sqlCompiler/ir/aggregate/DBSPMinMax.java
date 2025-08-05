@@ -19,8 +19,13 @@ import javax.annotation.Nullable;
 public class DBSPMinMax extends DBSPAggregator {
     public enum Aggregation {
         Min,
+        Max,
+        // Special hand-crafted DBSP aggregator for Min(Option<T>).
+        // None values are ignored.
         MinSome1,
-        Max
+        // Special hand-crafted DBSP aggregator for ARG_MIN(V, Option<K>).
+        // None values in the second component are ignored.
+        ArgMinSome
     }
     public final Aggregation aggregation;
     @Nullable

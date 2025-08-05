@@ -5,6 +5,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAggregateOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
+import org.dbsp.sqlCompiler.ir.aggregate.DBSPMinMax;
 import org.junit.Assert;
 import org.junit.Test;
 
@@ -187,6 +188,44 @@ public class AggregateTests extends SqlIoTest {
                 ---
                  0
                 (1 row)""");
+
+        var cc = this.getCC("CREATE VIEW V AS SELECT ARG_MIN(V, B) FROM T;");
+        CircuitVisitor visitor = new CircuitVisitor(cc.compiler) {
+            boolean found = false;
+
+            @Override
+            public void postorder(DBSPStreamAggregateOperator operator) {
+                // Code generated uses DBSP ArgMinSome aggregator
+                Assert.assertSame(DBSPMinMax.Aggregation.ArgMinSome,
+                        operator.getFunction().to(DBSPMinMax.class).aggregation);
+                found = true;
+            }
+
+            @Override
+            public void endVisit() {
+                Assert.assertTrue(found);
+            }
+        };
+        cc.visit(visitor);
+
+        cc = this.getCC("CREATE VIEW V AS SELECT MIN(B) FROM T;");
+        visitor = new CircuitVisitor(cc.compiler) {
+            boolean found = false;
+
+            @Override
+            public void postorder(DBSPStreamAggregateOperator operator) {
+                // Code generated uses MinSome1 DBSP aggregator
+                Assert.assertSame(DBSPMinMax.Aggregation.MinSome1,
+                        operator.getFunction().to(DBSPMinMax.class).aggregation);
+                found = true;
+            }
+
+            @Override
+            public void endVisit() {
+                Assert.assertTrue(found);
+            }
+        };
+        cc.visit(visitor);
     }
 
     @Test

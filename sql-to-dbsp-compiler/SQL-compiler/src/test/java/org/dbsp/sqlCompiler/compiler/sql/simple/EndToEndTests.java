@@ -904,13 +904,16 @@ public class EndToEndTests extends BaseSQLTests {
 
     @Test
     public void minTest() {
-        String query = "SELECT MIN(T.COL1) FROM T";
+        String query = "SELECT MIN(T.COL1), MIN(T.COL5) FROM T";
         this.testAggregate(query,
                 new DBSPZSetExpression(
-                        new DBSPTupleExpression(new DBSPI32Literal(10, true))),
+                        new DBSPTupleExpression(
+                                new DBSPI32Literal(10, true),
+                                new DBSPI32Literal(1, true))),
                 new DBSPZSetExpression(
-                        new DBSPTupleExpression(DBSPLiteral.none(
-                                DBSPTypeInteger.getType(CalciteObject.EMPTY, DBSPTypeCode.INT32, true)))));
+                        new DBSPTupleExpression(
+                                DBSPLiteral.none(DBSPTypeInteger.getType(CalciteObject.EMPTY, DBSPTypeCode.INT32, true)),
+                                DBSPLiteral.none(DBSPTypeInteger.getType(CalciteObject.EMPTY, DBSPTypeCode.INT32, true)))));
     }
 
     @Test
