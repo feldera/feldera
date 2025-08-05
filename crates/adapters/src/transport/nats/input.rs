@@ -5,7 +5,11 @@ use crate::{
 use anyhow::{anyhow, Error as AnyError, Result as AnyResult};
 use async_nats::{self, jetstream};
 use dbsp::circuit::tokio::TOKIO;
-use feldera_types::{config::FtModel, program_schema::Relation, transport::nats::NatsInputConfig};
+use feldera_types::{
+    config::FtModel,
+    program_schema::Relation,
+    transport::nats::{self as cfg, NatsInputConfig},
+};
 use futures::StreamExt;
 use std::{num::NonZeroU64, sync::atomic::Ordering};
 use std::sync::Arc;
@@ -19,6 +23,8 @@ use tracing::{info_span, Instrument};
 
 mod atomic_option;
 use atomic_option::AtomicOptionNonZeroU64;
+mod config_utils;
+use config_utils::{translate_connect_options, translate_consumer_options};
 
 pub struct NatsInputEndpoint {
     config: Arc<NatsInputConfig>,
@@ -65,8 +71,8 @@ impl NatsReader {
     ) -> AnyResult<Self> {
         let span = info_span!("nats_input");
         let (command_sender, command_receiver) = unbounded_channel();
-        let nats_connection =
-            TOKIO.block_on(Self::connect_nats(&config).instrument(span.clone()))?;
+        let nats_connection = TOKIO
+            .block_on(Self::connect_nats(&config.connection_config).instrument(span.clone()))?;
 
         let consumer_clone = consumer.clone();
         TOKIO.spawn(async move {
@@ -85,13 +91,14 @@ impl NatsReader {
         Ok(Self { command_sender })
     }
 
-    async fn connect_nats(config: &NatsInputConfig) -> Result<async_nats::Client, AnyError> {
-        let mut connect_options = async_nats::ConnectOptions::new();
-        if let Some(credentials) = config.credentials.as_ref() {
-            connect_options = connect_options.credentials(credentials)?;
-        }
+    async fn connect_nats(
+        connection_config: &cfg::ConnectOptions,
+    ) -> Result<async_nats::Client, AnyError> {
+        let connect_options = translate_connect_options(&connection_config).await?;
 
-        let client = connect_options.connect(&config.server_url).await?;
+        let client = connect_options
+            .connect(&connection_config.server_url)
+            .await?;
 
         Ok(client)
     }
@@ -106,7 +113,7 @@ impl NatsReader {
         let mut cancel: Option<(CancellationToken, JoinHandle<()>)> = None;
         let queue = Arc::new(InputQueue::new(consumer.clone()));
         let next_stream_sequence = Arc::new(AtomicOptionNonZeroU64::new(None));
-        let mut nats_consumer_config = config.consumer_config.clone();
+        let mut nats_consumer_config = translate_consumer_options(&config.consumer_config);
 
         while let Some(command) = command_receiver.recv().await {
             match command {

@@ -33,6 +33,7 @@ thiserror = { workspace = true }
 regex = { workspace = true }
 chrono = { workspace = true, features = ["serde"] }
 async-nats = { workspace = true }
+time = { workspace = true }
 
 [dev-dependencies]
 csv = { workspace = true }
