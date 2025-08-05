@@ -3,7 +3,7 @@ use crate::{
     InputConsumer, InputEndpoint, InputReader, Parser, PipelineState, TransportInputEndpoint,
 };
 use anyhow::{anyhow, Error as AnyError, Result as AnyResult};
-use async_nats::{self, jetstream};
+use async_nats::{self, jetstream::{self, consumer as nats_consumer}};
 use dbsp::circuit::tokio::TOKIO;
 use feldera_types::{
     config::FtModel,
@@ -110,7 +110,7 @@ impl NatsReader {
         parser: Box<dyn Parser>,
         mut command_receiver: UnboundedReceiver<NonFtInputReaderCommand>,
     ) -> Result<(), AnyError> {
-        let mut cancel: Option<(CancellationToken, JoinHandle<()>)> = None;
+        let mut canceller: Option<Canceller> = None;
         let queue = Arc::new(InputQueue::new(consumer.clone()));
         let next_stream_sequence = Arc::new(AtomicOptionNonZeroU64::new(None));
         let mut nats_consumer_config = translate_consumer_options(&config.consumer_config);
@@ -120,13 +120,12 @@ impl NatsReader {
                 NonFtInputReaderCommand::Queue => queue.queue(),
                 NonFtInputReaderCommand::Transition(state) => match state {
                     PipelineState::Paused => {
-                        if let Some((cancel_token, handle)) = cancel.take() {
-                            cancel_token.cancel();
-                            let _ = handle.await;
+                        if let Some(canceller) = canceller.take() {
+                            canceller.cancel_and_join().await;
                         }
                     }
                     PipelineState::Running => {
-                        if cancel.is_none() {
+                        if canceller.is_none() {
                             // Update the consumer config's StartSequence if this
                             // InputEndpoint has previously received messages, in
                             // order to continue where we left off.
@@ -145,58 +144,87 @@ impl NatsReader {
                                 )
                                 .await?;
 
-                            let mut nats_messages = nats_consumer.messages().await?;
-
-                            let consumer = consumer.clone();
-                            let mut parser = parser.fork();
-
-                            let cancel_token = CancellationToken::new();
-                            let cancel_token_copy = cancel_token.clone();
-
-                            let handle = tokio::spawn({
-                                let queue = queue.clone();
-                                let next_stream_sequence = next_stream_sequence.clone();
-                                async move {
-                                    loop {
-                                        select! {
-                                            _ = cancel_token_copy.cancelled() => {
-                                                break;
-                                            }
-                                            Some(result) = nats_messages.next() => {
-                                                match result {
-                                                    Ok(message) => {
-                                                        let info = match message.info() {
-                                                            Ok(info) => info,
-                                                            Err(error) => {
-                                                                consumer.error(false, anyhow!("Failed to get NATS message info: {error}"));
-                                                                continue;
-                                                            }
-                                                        };
-                                                        next_stream_sequence.store(NonZeroU64::new(info.stream_sequence + 1), Ordering::Release);
-                                                        let data = &message.payload;
-                                                        queue.push(parser.parse(&data), data.len());
-                                                    }
-                                                    Err(error) => {
-                                                        consumer.error(false, anyhow!("NATS error: {error}"))
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            });
-                            cancel = Some((cancel_token, handle));
+                            canceller = Some(
+                                spawn_nats_reader(
+                                    nats_consumer,
+                                    next_stream_sequence.clone(),
+                                    queue.clone(),
+                                    consumer.clone(),
+                                    parser.fork(),
+                                )
+                                .await?,
+                            );
                         }
                     }
                     PipelineState::Terminated => break,
                 },
             }
         }
-        if let Some((cancel_token, handle)) = cancel.take() {
-            cancel_token.cancel();
-            let _ = handle.await;
+        if let Some(canceller) = canceller.take() {
+            canceller.cancel_and_join().await;
         }
         Ok(())
+    }
+}
+
+async fn spawn_nats_reader(
+    nats_consumer: nats_consumer::Consumer<nats_consumer::pull::OrderedConfig>,
+    read_sequence: Arc<AtomicOptionNonZeroU64>,
+    queue: Arc<InputQueue>,
+    consumer: Box<dyn InputConsumer>,
+    mut parser: Box<dyn Parser>,
+) -> AnyResult<Canceller> {
+    let mut nats_messages = nats_consumer.messages().await?;
+
+    let cancel_token = CancellationToken::new();
+    let join_handle = tokio::spawn({
+        let cancel_token_copy = cancel_token.clone();
+        async move {
+            loop {
+                select! {
+                    _ = cancel_token_copy.cancelled() => {
+                        break;
+                    }
+                    Some(result) = nats_messages.next() => {
+                        match result {
+                            Ok(message) => {
+                                let info = match message.info() {
+                                    Ok(info) => info,
+                                    Err(error) => {
+                                        consumer.error(false, anyhow!("Failed to get NATS message info: {error}"));
+                                        continue;
+                                    }
+                                };
+                                read_sequence.store(NonZeroU64::new(info.stream_sequence + 1), Ordering::Release);
+                                let data = &message.payload;
+                                queue.push(parser.parse(&data), data.len());
+                            }
+                            Err(error) => {
+                                consumer.error(false, anyhow!("NATS error: {error}"));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    Ok(Canceller {
+        cancel_token,
+        join_handle,
+    })
+}
+
+/// Used to instruct a task to shut down, and wait for it to end.
+struct Canceller {
+    cancel_token: CancellationToken,
+    join_handle: JoinHandle<()>,
+}
+
+impl Canceller {
+    async fn cancel_and_join(self) {
+        self.cancel_token.cancel();
+        let _ = self.join_handle.await;
     }
 }
 
