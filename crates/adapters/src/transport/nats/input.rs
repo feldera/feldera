@@ -8,7 +8,7 @@ use dbsp::circuit::tokio::TOKIO;
 use feldera_types::{config::FtModel, program_schema::Relation, transport::nats::NatsInputConfig};
 use futures::StreamExt;
 use std::{num::NonZeroU64, sync::atomic::Ordering};
-use std::{sync::Arc, thread};
+use std::sync::Arc;
 use tokio::{
     select,
     sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender},
@@ -67,22 +67,19 @@ impl NatsReader {
         let (state_sender, state_receiver) = unbounded_channel();
         let nats_connection =
             TOKIO.block_on(Self::connect_nats(&config).instrument(span.clone()))?;
-        thread::spawn({
-            move || {
-                let consumer_clone = consumer.clone();
-                TOKIO.block_on(async {
-                    Self::worker_task(
-                        config.clone(),
-                        jetstream::new(nats_connection),
-                        consumer_clone,
-                        parser,
-                        state_receiver,
-                    )
-                    .instrument(span)
-                    .await
-                    .unwrap_or_else(|e| consumer.error(true, e));
-                })
-            }
+
+        let consumer_clone = consumer.clone();
+        TOKIO.spawn(async move {
+            Self::worker_task(
+                config,
+                jetstream::new(nats_connection),
+                consumer_clone,
+                parser,
+                state_receiver,
+            )
+            .instrument(span)
+            .await
+            .unwrap_or_else(|e| consumer.error(true, e));
         });
 
         Ok(Self { state_sender })
