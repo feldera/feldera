@@ -1,3 +1,4 @@
+use chrono::{DateTime, TimeZone};
 use feldera_storage::histogram::ExponentialHistogramSnapshot;
 use itertools::Itertools;
 use std::{
@@ -492,7 +493,7 @@ where
         if let Some(start_time_seconds) = metrics.start_time_seconds {
             self.counter(
                 "process_start_time_seconds",
-                "Start time of the process since the Unix epoch in seconds.",
+                "Start time of the process in seconds since the Unix epoch.",
                 labels,
                 start_time_seconds,
             );
@@ -704,6 +705,17 @@ from_atomic!(AtomicI8);
 from_atomic!(AtomicI16);
 from_atomic!(AtomicI32);
 from_atomic!(AtomicI64);
+
+/// Represents `DateTime` in metrics as the number of seconds since the Unix
+/// epoch.
+impl<Tz> Value for DateTime<Tz>
+where
+    Tz: TimeZone,
+{
+    fn as_f64(&self) -> f64 {
+        (self.timestamp_micros() as f64) / 1_000_000.0
+    }
+}
 
 /// Passed to [MetricsWriter::histogram] callback.
 pub struct HistogramWriter<'a, F> {

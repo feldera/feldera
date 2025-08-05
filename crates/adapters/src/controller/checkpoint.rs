@@ -1,3 +1,4 @@
+use chrono::{DateTime, Utc};
 use dbsp::storage::{
     backend::{StorageBackend, StoragePath},
     buffer_cache::FBuf,
@@ -34,8 +35,20 @@ pub struct Checkpoint {
     /// Number of records processed.
     pub processed_records: u64,
 
+    /// Time at which the ultimate ancestor pipeline process of this
+    /// checkpoint started.
+    #[serde(with = "chrono::serde::ts_seconds", default = "unix_epoch")]
+    pub initial_start_time: DateTime<Utc>,
+
     /// Initial offsets for the input endpoints.
     pub input_metadata: CheckpointOffsets,
+}
+
+/// This is only used if the checkpoint lacks an initial start time, which will
+/// only happen if it is old enough that this feature did not exist when it was
+/// written.
+fn unix_epoch() -> DateTime<Utc> {
+    DateTime::UNIX_EPOCH
 }
 
 impl Checkpoint {
