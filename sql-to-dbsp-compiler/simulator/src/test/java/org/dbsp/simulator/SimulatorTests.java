@@ -5,13 +5,22 @@ import com.fasterxml.jackson.databind.MappingIterator;
 import com.fasterxml.jackson.databind.ObjectWriter;
 import com.fasterxml.jackson.dataformat.csv.CsvMapper;
 import com.fasterxml.jackson.dataformat.csv.CsvSchema;
+import org.apache.commons.math3.analysis.function.Add;
 import org.dbsp.simulator.collections.IndexedZSet;
 import org.dbsp.simulator.collections.ZSet;
+import org.dbsp.simulator.types.IntegerSqlType;
 import org.dbsp.simulator.types.IntegerWeightType;
+import org.dbsp.simulator.types.SqlType;
 import org.dbsp.simulator.types.StringSqlType;
+import org.dbsp.simulator.types.TupleSqlType;
+import org.dbsp.simulator.types.Weight;
+import org.dbsp.simulator.values.BooleanSqlValue;
+import org.dbsp.simulator.values.DynamicSqlValue;
 import org.dbsp.simulator.values.IntegerSqlValue;
+import org.dbsp.simulator.values.RuntimeFunction;
 import org.dbsp.simulator.values.SqlTuple;
 import org.dbsp.simulator.values.StringSqlValue;
+import org.jetbrains.annotations.NotNull;
 import org.junit.Assert;
 import org.junit.Test;
 
@@ -20,37 +29,38 @@ import java.io.IOException;
 import java.io.StringWriter;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
 
 public class SimulatorTests {
     @Test
     public void zsetTests() {
-        ZSet<SqlTuple, Integer> zero = new ZSet<>(IntegerWeightType.INSTANCE);
+        ZSet<SqlTuple> zero = new ZSet<>(IntegerWeightType.INSTANCE);
         Assert.assertEquals(0, zero.entryCount());
-        ZSet<SqlTuple, Integer> some = new ZSet<>(IntegerWeightType.INSTANCE);
-        SqlTuple tuple = new SqlTuple()
+        ZSet<SqlTuple> some = new ZSet<>(IntegerWeightType.INSTANCE);
+        SqlTuple tuple = new SqlTuple(new TupleSqlType(IntegerSqlType.INSTANCE, StringSqlType.INSTANCE))
                 .add(new IntegerSqlValue(10))
-                .add(new StringSqlValue("string", new StringSqlType()));
+                .add(new StringSqlValue("string"));
 
-        some.append(tuple, 2);
+        some.append(tuple, IntegerWeightType.create(2));
         Assert.assertEquals("{\n    [10, 'string'] => 2\n}", some.toString());
-        ZSet<SqlTuple, Integer> dbl = some.add(some);
+        ZSet<SqlTuple> dbl = some.add(some);
         Assert.assertEquals("{\n    [10, 'string'] => 4\n}", dbl.toString());
-        ZSet<SqlTuple, Integer> neg = dbl.negate();
+        ZSet<SqlTuple> neg = dbl.negate();
         Assert.assertEquals("{\n    [10, 'string'] => -4\n}", neg.toString());
-        ZSet<SqlTuple, Integer> z = dbl.add(neg);
+        ZSet<SqlTuple> z = dbl.add(neg);
         Assert.assertTrue(z.isEmpty());
-        ZSet<SqlTuple, Integer> one = dbl.distinct();
+        ZSet<SqlTuple> one = dbl.distinct();
         Assert.assertEquals("{\n    [10, 'string'] => 1\n}", one.toString());
-        ZSet<SqlTuple, Integer> four = dbl.positive(false);
+        ZSet<SqlTuple> four = dbl.positive(false);
         Assert.assertEquals("{\n    [10, 'string'] => 4\n}", four.toString());
-        ZSet<SqlTuple, Integer> none = neg.positive(false);
+        ZSet<SqlTuple> none = neg.positive(false);
         Assert.assertTrue(none.isEmpty());
     }
 
     @JsonPropertyOrder({"name", "age"})
-    public static class Person {
+    public static class Person implements DynamicSqlValue {
         @Nullable
         public String name;
         public int age;
@@ -88,10 +98,36 @@ public class SimulatorTests {
             result = 31 * result + age;
             return result;
         }
+
+        @Nullable
+        public String getName() {
+            return this.name;
+        }
+
+        @Override
+        public SqlType getType() {
+            return null;
+        }
+
+        @Override
+        public boolean isNull() {
+            return false;
+        }
+
+        @Override
+        public int compareTo(@NotNull DynamicSqlValue dynamicSqlValue) {
+            Person other = (Person) dynamicSqlValue;
+            return Comparator.comparing(
+                            Person::getName,
+                            Comparator.nullsFirst(String::compareTo))
+                    .thenComparing(x -> x.age,
+                            Comparator.nullsFirst(Integer::compare))
+                    .compare(this, other);
+        }
     }
 
     @SuppressWarnings("CanBeFinal")
-    public static class Age {
+    public static class Age implements DynamicSqlValue {
         public int age;
 
         // Needed for deserializer
@@ -125,10 +161,24 @@ public class SimulatorTests {
         public Age(int age) {
             this.age = age;
         }
+
+        @Override
+        public SqlType getType() {
+            return new TupleSqlType(IntegerSqlType.INSTANCE);
+        }
+
+        @Override
+        public boolean isNull() {
+            return false;
+        }
+
+        @Override
+        public int compareTo(@NotNull DynamicSqlValue dynamicSqlValue) {
+            return Integer.compare(this.age, dynamicSqlValue.to(Age.class).age);
+        }
     }
 
-    @SuppressWarnings("resource")
-    public static <T> ZSet<T, Integer> fromCSV(String data, Class<T> tclass) {
+    public static <T extends DynamicSqlValue> ZSet<T> fromCSV(String data, Class<T> tclass) {
         try {
             CsvMapper mapper = new CsvMapper();
             CsvSchema schema = CsvSchema.emptySchema().withHeader();
@@ -143,7 +193,7 @@ public class SimulatorTests {
         }
     }
 
-    public <T> String toCsv(ZSet<T, Integer> data, Class<T> tclass) {
+    public <T extends DynamicSqlValue> String toCsv(ZSet<T> data, Class<T> tclass) {
         try {
             Collection<T> values = data.toCollection();
             CsvMapper mapper = new CsvMapper();
@@ -157,7 +207,7 @@ public class SimulatorTests {
         }
     }
 
-    public static ZSet<Person, Integer> getPersons() {
+    public static ZSet<Person> getPersons() {
         String data = """
                 name,age
                 Billy,28
@@ -169,9 +219,9 @@ public class SimulatorTests {
 
     @Test
     public void testSelect() {
-        ZSet<Person, Integer> input = getPersons();
-        ZSet<Age, Integer> ages = input.map(p -> new Age(p.age));
-        ZSet<Age, Integer> expected = fromCSV("age\n28\n36\n12\n", Age.class);
+        ZSet<Person> input = getPersons();
+        ZSet<Age> ages = input.map(p -> new Age(p.age));
+        ZSet<Age> expected = fromCSV("age\n28\n36\n12\n", Age.class);
         Assert.assertTrue(expected.equals(ages));
 
         ages = input.map(p -> new Age(p.age / 20));
@@ -181,9 +231,11 @@ public class SimulatorTests {
 
     @Test
     public void testWhere() {
-        ZSet<Person, Integer> input = getPersons();
-        ZSet<Person, Integer> adults = input.filter(p -> p.age >= 18);
-        ZSet<Person, Integer> expected = fromCSV("""
+        ZSet<Person> input = getPersons();
+        ZSet<Person> adults = input.filter(
+                new RuntimeFunction<>(
+                        p -> new BooleanSqlValue(p.age >= 18)));
+        ZSet<Person> expected = fromCSV("""
                 name,age
                 Billy,28
                 Barbara,36
@@ -204,29 +256,29 @@ public class SimulatorTests {
 
     @Test
     public void testAggregate() {
-        ZSet<Person, Integer> input = getPersons();
+        ZSet<Person> input = getPersons();
 
-        AggregateDescription<Integer, Integer, Person, Integer> sum =
+        AggregateDescription<Integer, Integer, Person> sum =
                 new AggregateDescription<>(
-                0, (a, p, w) -> a + p.age * w, r -> r);
+                0, (a, p, w) -> a + p.age * w.asInteger(), r -> r);
         Integer ageSum = input.aggregate(sum);
         Assert.assertEquals(76, (int)ageSum);
 
-        AggregateDescription<Integer, Integer, Person, Integer> count =
-                new AggregateDescription<>(0, (a, p, w) -> a + w, r -> r);
+        AggregateDescription<Integer, Integer, Person> count =
+                new AggregateDescription<>(0, (a, p, w) -> a + w.asInteger(), r -> r);
         Integer personCount = input.aggregate(count);
         Assert.assertEquals(3, (int)personCount);
 
-        AggregateDescription<Integer, Integer, Person, Integer> max =
+        AggregateDescription<Integer, Integer, Person> max =
                 new AggregateDescription<>(
                         0, (a, p, w) -> Math.max(a, p.age), r -> r);
         Integer maxAge = input.aggregate(max);
         Assert.assertEquals(36, (int)maxAge);
 
-        AggregateDescription<Integer, AvgHelper, Person, Integer> avg =
+        AggregateDescription<Integer, AvgHelper, Person> avg =
                 new AggregateDescription<>(
                         new AvgHelper(0, 0),
-                        (a, p, w) -> new AvgHelper(a.count + w, a.sum + p.age * w),
+                        (a, p, w) -> new AvgHelper(a.count + w.asInteger(), a.sum + p.age * w.asInteger()),
                         r -> r.sum / r.count);
         Integer avgAge = input.aggregate(avg);
         Assert.assertEquals(25, (int)avgAge);
@@ -234,10 +286,11 @@ public class SimulatorTests {
 
     @Test
     public void testExcept() {
-        ZSet<Person, Integer> input = getPersons();
-        ZSet<Person, Integer> adults = input.filter(p -> p.age >= 18);
-        ZSet<Person, Integer> children = input.except(adults);
-        ZSet<Person, Integer> expected = fromCSV("""
+        ZSet<Person> input = getPersons();
+        ZSet<Person> adults = input.filter(new RuntimeFunction<>(
+                null, p -> new BooleanSqlValue(p.age >= 18)));
+        ZSet<Person> children = input.except(adults);
+        ZSet<Person> expected = fromCSV("""
                 name,age
                 John,12
                 """, Person.class);
@@ -245,7 +298,7 @@ public class SimulatorTests {
     }
 
     @JsonPropertyOrder({"name", "city"})
-    static class Address {
+    static class Address implements DynamicSqlValue {
         @Nullable
         public String name;
         @Nullable
@@ -276,9 +329,35 @@ public class SimulatorTests {
                     ", city='" + city + '\'' +
                     '}';
         }
+
+        @Override
+        public SqlType getType() {
+            return null;
+        }
+
+        @Override
+        public boolean isNull() {
+            return false;
+        }
+
+        @Nullable
+        public String getName() {
+            return this.name;
+        }
+
+        @Override
+        public int compareTo(@NotNull DynamicSqlValue dynamicSqlValue) {
+            Address other = (Address) dynamicSqlValue;
+            return Comparator.comparing(
+                            Address::getName,
+                            Comparator.nullsFirst(String::compareTo))
+                    .thenComparing(x -> x.city,
+                            Comparator.nullsFirst(String::compareTo))
+                    .compare(this, other);
+        }
     }
 
-    ZSet<Address, Integer> getAddress() {
+    ZSet<Address> getAddress() {
         return fromCSV("""
                 name,city
                 Billy,San Francisco
@@ -289,7 +368,7 @@ public class SimulatorTests {
     }
 
     @JsonPropertyOrder({"name", "address"})
-    static class NameAddress {
+    static class NameAddress implements DynamicSqlValue {
         @Nullable
         public String name;
         @Nullable
@@ -301,6 +380,11 @@ public class SimulatorTests {
         public NameAddress(@Nullable String name, @Nullable String address) {
             this.name = name;
             this.address = address;
+        }
+
+        @Nullable
+        public String getName() {
+            return this.name;
         }
 
         @Override
@@ -328,74 +412,102 @@ public class SimulatorTests {
                     ", address='" + address + '\'' +
                     '}';
         }
+
+        @Override
+        public SqlType getType() {
+            return null;
+        }
+
+        @Override
+        public boolean isNull() {
+            return false;
+        }
+
+        @Override
+        public int compareTo(@NotNull DynamicSqlValue dynamicSqlValue) {
+            NameAddress other = (NameAddress) dynamicSqlValue;
+            return Comparator.comparing(
+                            NameAddress::getName,
+                            Comparator.nullsFirst(String::compareTo))
+                    .thenComparing(x -> x.address,
+                            Comparator.nullsFirst(String::compareTo))
+                    .compare(this, other);
+        }
     }
 
     @Test
     public void testMultiply() {
-        ZSet<Person, Integer> input = getPersons();
-        ZSet<Address, Integer> address = getAddress();
-        ZSet<NameAddress, Integer> product = input.multiply(address, (p, a) -> new NameAddress(p.name, a.city));
+        ZSet<Person> input = getPersons();
+        ZSet<Address> address = getAddress();
+        ZSet<NameAddress> product = input.multiply(address, (p, a) -> new NameAddress(p.name, a.city));
         Assert.assertEquals(input.entryCount() * address.entryCount(), product.entryCount());
     }
 
     @Test
     public void testIndex() {
-        ZSet<Person, Integer> input = getPersons();
-        IndexedZSet<String, Person, Integer> index = input.index(p -> p.name != null ? p.name.substring(0, 1) : null);
+        ZSet<Person> input = getPersons();
+        IndexedZSet<StringSqlValue, Person> index = input.index(
+                new RuntimeFunction<Person, StringSqlValue>(p -> new StringSqlValue(p.name != null ? p.name.substring(0, 1) : null)));
         Assert.assertEquals(2, index.groupCount());
     }
 
     @Test
     public void testUnion() {
-        ZSet<Person, Integer> input = getPersons();
-        ZSet<Person, Integer> adults = input.filter(p -> p.age >= 18);
-        ZSet<Person, Integer> children = input.except(adults);
-        ZSet<Person, Integer> all = adults.union(children);
+        ZSet<Person> input = getPersons();
+        ZSet<Person> adults = input.filter(new RuntimeFunction<>(p -> new BooleanSqlValue(p.age >= 18)));
+        ZSet<Person> children = input.except(adults);
+        ZSet<Person> all = adults.union(children);
         Assert.assertTrue(input.equals(all));
     }
 
     @Test
     public void testUnionAll() {
-        ZSet<Person, Integer> input = getPersons();
-        ZSet<Person, Integer> adults = input.filter(p -> p.age >= 18);
-        ZSet<Person, Integer> all = input.union_all(adults);
-        Integer johnCount = all.getWeight(new Person("John", 12));
-        Assert.assertEquals(1, (int)johnCount);
-        Integer billyCount = all.getWeight(new Person("Billy", 28));
-        Assert.assertEquals(2, (int)billyCount);
-        Integer tomCount = all.getWeight(new Person("Tom", 28));
-        Assert.assertEquals(0, (int)tomCount);
+        ZSet<Person> input = getPersons();
+        ZSet<Person> adults = input.filter(new RuntimeFunction<>(p -> new BooleanSqlValue(p.age >= 18)));
+        ZSet<Person> all = input.union_all(adults);
+        Weight johnCount = all.getWeight(new Person("John", 12));
+        Assert.assertEquals(1, johnCount.asInteger());
+        Weight billyCount = all.getWeight(new Person("Billy", 28));
+        Assert.assertEquals(2, billyCount.asInteger());
+        Weight tomCount = all.getWeight(new Person("Tom", 28));
+        Assert.assertEquals(0, tomCount.asInteger());
     }
 
     @Test
     public void testGroupByAggregate() {
-        ZSet<Person, Integer> input = getPersons();
-        IndexedZSet<String, Person, Integer> index = input.index(p -> p.name != null ? p.name.substring(0, 1) : null);
-        AggregateDescription<Integer, Integer, Person, Integer> max =
-                new AggregateDescription<>(0, (a, p, w) -> Math.max(a, p.age), r -> r);
-        IndexedZSet<String, Integer, Integer> aggregate = index.aggregate(max);
-        ZSet<Person, Integer> keyAge = aggregate.flatten(Person::new);
-        ZSet<Person, Integer> expected = fromCSV("name,age\nB,36\nJ,12\n", Person.class);
+        ZSet<Person> input = getPersons();
+        IndexedZSet<StringSqlValue, Person> index = input.index(
+                new RuntimeFunction<>(p -> new StringSqlValue(p.name != null ? p.name.substring(0, 1) : null)));
+        AggregateDescription<IntegerSqlValue, Integer, Person> max =
+                new AggregateDescription<>(0, (a, p, w) -> Math.max(a, p.age), IntegerSqlValue::new);
+        IndexedZSet<StringSqlValue, IntegerSqlValue> aggregate = index.aggregate(max);
+        ZSet<Person> keyAge = aggregate.flatten((n, a) -> new Person(n.getValue(), a.getValue()));
+        ZSet<Person> expected = fromCSV("name,age\nB,36\nJ,12\n", Person.class);
         Assert.assertTrue(expected.equals(keyAge));
     }
 
     @Test
     public void testDeindex() {
-        ZSet<Person, Integer> input = getPersons();
-        IndexedZSet<String, Person, Integer> personIndex = input.index(p -> p.name);
-        ZSet<Person, Integer> flattened = personIndex.deindex();
+        ZSet<Person> input = getPersons();
+        IndexedZSet<StringSqlValue, Person> personIndex = input.index(
+                new RuntimeFunction<>(p -> new StringSqlValue(p.name)));
+        ZSet<Person> flattened = personIndex.deindex();
         Assert.assertTrue(input.equals(flattened));
     }
 
     @Test
     public void testJoin() {
-        ZSet<Person, Integer> input = getPersons();
-        ZSet<Address, Integer> address = getAddress();
-        IndexedZSet<String, Person, Integer> personIndex = input.filter(p -> p.name != null).index(p -> p.name);
-        IndexedZSet<String, Address, Integer> addressIndex = address.filter(a -> a.name != null).index(a -> a.name);
-        IndexedZSet<String, PersonAddressAge, Integer> join = personIndex.join(addressIndex, (p, a) -> new PersonAddressAge(p.name, p.age, a.city));
-        ZSet<PersonAddressAge, Integer> result = join.deindex();
-        ZSet<PersonAddressAge, Integer> expected = fromCSV("""
+        ZSet<Person> input = getPersons();
+        ZSet<Address> address = getAddress();
+        IndexedZSet<StringSqlValue, Person> personIndex = input
+                .filter(new RuntimeFunction<>(p -> new BooleanSqlValue(p.name != null)))
+                .index(new RuntimeFunction<>(p -> new StringSqlValue(p.name)));
+        IndexedZSet<StringSqlValue, Address> addressIndex = address
+                .filter(new RuntimeFunction<>(a -> new BooleanSqlValue(a.name != null)))
+                .index(new RuntimeFunction<>(a -> new StringSqlValue(a.name)));
+        IndexedZSet<StringSqlValue, PersonAddressAge> join = personIndex.join(addressIndex, (p, a) -> new PersonAddressAge(p.name, p.age, a.city));
+        ZSet<PersonAddressAge> result = join.deindex();
+        ZSet<PersonAddressAge> expected = fromCSV("""
                 name,age,city
                 Barbara,36,Seattle
                 Billy,28,"San Francisco"
@@ -404,13 +516,18 @@ public class SimulatorTests {
     }
 
     @JsonPropertyOrder({"name", "age", "city"})
-    public static class PersonAddressAge {
+    public static class PersonAddressAge implements DynamicSqlValue {
         @Nullable public String name;
         public int age;
         @Nullable public String city;
 
         @SuppressWarnings("unused")
         public PersonAddressAge() {}
+
+        @Nullable
+        public String getName() {
+            return this.name;
+        }
 
         public PersonAddressAge(@Nullable String name, int age, @Nullable String city) {
             this.name = name;
@@ -445,6 +562,29 @@ public class SimulatorTests {
                     ", age=" + age +
                     ", city='" + city + '\'' +
                     '}';
+        }
+
+        @Override
+        public SqlType getType() {
+            return null;
+        }
+
+        @Override
+        public boolean isNull() {
+            return false;
+        }
+
+        @Override
+        public int compareTo(@NotNull DynamicSqlValue dynamicSqlValue) {
+            PersonAddressAge other = (PersonAddressAge) dynamicSqlValue;
+            return Comparator.comparing(
+                            PersonAddressAge::getName,
+                            Comparator.nullsFirst(String::compareTo))
+                    .thenComparing(x -> x.age,
+                            Comparator.nullsFirst(Integer::compare))
+                    .thenComparing(x -> x.city,
+                            Comparator.nullsFirst(String::compareTo))
+                    .compare(this, other);
         }
     }
 }

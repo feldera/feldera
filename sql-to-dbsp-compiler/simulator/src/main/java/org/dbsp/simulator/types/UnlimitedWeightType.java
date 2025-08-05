@@ -6,7 +6,12 @@ import java.math.BigInteger;
  * Weights represented as unlimited precision integers.
  */
 public class UnlimitedWeightType implements WeightType {
-    static record UnlimitedWeight(BigInteger weight) implements Weight {}
+    record UnlimitedWeight(BigInteger weight) implements Weight {
+        @Override
+        public int asInteger() {
+            return weight.intValueExact();
+        }
+    }
 
     static BigInteger get(Weight w) {
         return w.to(UnlimitedWeight.class).weight();

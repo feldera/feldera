@@ -1,11 +1,10 @@
 package org.dbsp.simulator.operators;
 
-import org.dbsp.simulator.collections.BaseCollection;
-import org.dbsp.simulator.types.DataType;
-import org.dbsp.simulator.types.WeightType;
+import org.dbsp.simulator.types.CollectionType;
 
+/** Operator with one single input */
 public abstract class UnaryOperator extends BaseOperator {
-    UnaryOperator(DataType outputType, Stream input) {
+    UnaryOperator(CollectionType outputType, Stream input) {
         super(outputType, input);
     }
 

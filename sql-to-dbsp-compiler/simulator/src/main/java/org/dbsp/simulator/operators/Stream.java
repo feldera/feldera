@@ -1,19 +1,17 @@
 package org.dbsp.simulator.operators;
 
 import org.dbsp.simulator.collections.BaseCollection;
-import org.dbsp.simulator.types.DataType;
+import org.dbsp.simulator.types.CollectionType;
 
 import javax.annotation.Nullable;
 
 public class Stream {
-    final DataType dataType;
-    final BaseOperator source;
+    final CollectionType dataType;
     @Nullable
     BaseCollection currentValue;
 
-    Stream(DataType dataType, BaseOperator source) {
+    Stream(CollectionType dataType) {
         this.dataType = dataType;
-        this.source = source;
         this.currentValue = null;
     }
 
@@ -22,7 +20,12 @@ public class Stream {
     }
 
     public BaseCollection getCurrentValue() {
+        assert this.currentValue != null;
         return this.currentValue;
+    }
+
+    public CollectionType getType() {
+        return this.dataType;
     }
 
     public void clearValue() {

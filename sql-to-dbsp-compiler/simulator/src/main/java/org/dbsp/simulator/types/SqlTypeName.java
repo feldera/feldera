@@ -18,7 +18,10 @@ public enum SqlTypeName {
     TIMESTAMP("TIMESTAMP"),
     TIMESTAMP_TZ("TIMESTAMP WITH TIMEZONE"),
     SHORT_INTERVAL("INTERVAL"),
-    LONG_INTERVAL("INTERVAL");
+    LONG_INTERVAL("INTERVAL"),
+    TUPLE("TUPLE"),
+    ZSET("ZSET"),
+    INDEXED_ZSET("INDEXED ZSET");
 
     public final String text;
 
