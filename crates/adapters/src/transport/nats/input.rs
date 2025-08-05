@@ -50,6 +50,7 @@ impl TransportInputEndpoint for NatsInputEndpoint {
         consumer: Box<dyn InputConsumer>,
         parser: Box<dyn Parser>,
         _schema: Relation,
+        resume_info: Option<JsonValue>,
     ) -> AnyResult<Box<dyn InputReader>> {
         Ok(Box::new(NatsReader::new(
             self.config.clone(),
