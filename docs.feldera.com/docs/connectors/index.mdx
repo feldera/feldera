@@ -90,7 +90,8 @@ The following attributes are common to all connectors:
   unique among the connectors of the table or view. This is particularly
   useful to define when wanting to refer to it, for example to
   [start or pause it at runtime](/connectors/orchestration).
-  By default, this is randomly generated.
+  By default, it will be named `unnamed-{index}`, with the zero-based index
+  within the list of connectors of its table/view.
 
 * `paused` - If set to to true the connector will not fetch or push data to the pipeline when started
    unless [explicitly enabled through the API](/api/start-resume-or-pause-the-input-connector).

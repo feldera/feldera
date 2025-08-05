@@ -2921,3 +2921,108 @@ async fn pipeline_clear() {
         "Cleared"
     );
 }
+
+/// Tests the connector endpoint naming is based on either the given or generated
+/// `unnamed-{index}` connector name.
+#[actix_web::test]
+#[serial]
+async fn pipeline_connector_endpoint_naming() {
+    let config = TestClient::setup_and_full_cleanup().await;
+
+    // Create pipeline
+    let sql = r#"
+        CREATE TABLE t1 (i1 BIGINT) WITH (
+            'connectors' = '[
+                { "name": "abc", "transport": { "name": "datagen", "config": {} } },
+                { "transport": { "name": "datagen", "config": {} } },
+                { "name": "def", "transport": { "name": "datagen", "config": {} } },
+                { "transport": { "name": "datagen", "config": {} } }
+            ]'
+        );
+
+        CREATE TABLE t2 (i1 BIGINT) WITH (
+            'connectors' = '[
+                { "name": "c1", "transport": { "name": "datagen", "config": {} } }
+            ]'
+        );
+
+        CREATE TABLE t3 (i1 BIGINT) WITH (
+            'connectors' = '[
+                { "transport": { "name": "datagen", "config": {} } }
+            ]'
+        );
+
+        CREATE MATERIALIZED VIEW v1 WITH (
+            'connectors' = '[
+                { "transport": { "name": "kafka_output", "config": { "topic": "p1" } } },
+                { "name": "c1", "transport": { "name": "kafka_output", "config": { "topic": "p1" } } },
+                { "transport": { "name": "kafka_output", "config": { "topic": "p1" } } },
+                { "name": "c3", "transport": { "name": "kafka_output", "config": { "topic": "p1" } } }
+            ]'
+        ) AS ( SELECT  * FROM t1 );
+
+        CREATE MATERIALIZED VIEW v2 WITH (
+            'connectors' = '[
+                { "name": "c1", "transport": { "name": "kafka_output", "config": { "topic": "p1" } } }
+            ]'
+        ) AS ( SELECT  * FROM t2 );
+
+        CREATE MATERIALIZED VIEW v3 WITH (
+            'connectors' = '[
+                { "transport": { "name": "kafka_output", "config": { "topic": "p1" } } }
+            ]'
+        ) AS ( SELECT  * FROM t3 );
+    "#;
+    let (is_created, _) = config
+        .put_pipeline(
+            "test",
+            &json!({
+                "name": "test",
+                "program_code": sql,
+            }),
+        )
+        .await;
+    assert!(is_created);
+    config.wait_for_compiled_program("test", 1).await;
+
+    // Check the input_connectors and output_connectors of `program_info`
+    let value = config.get_pipeline("test").await;
+    let mut input_names: Vec<String> = value["program_info"]["input_connectors"]
+        .clone()
+        .as_object()
+        .unwrap()
+        .keys()
+        .cloned()
+        .collect();
+    input_names.sort();
+    assert_eq!(
+        input_names,
+        vec![
+            "t1.abc",
+            "t1.def",
+            "t1.unnamed-1",
+            "t1.unnamed-3",
+            "t2.c1",
+            "t3.unnamed-0",
+        ]
+    );
+    let mut output_names: Vec<String> = value["program_info"]["output_connectors"]
+        .clone()
+        .as_object()
+        .unwrap()
+        .keys()
+        .cloned()
+        .collect();
+    output_names.sort();
+    assert_eq!(
+        output_names,
+        vec![
+            "v1.c1",
+            "v1.c3",
+            "v1.unnamed-0",
+            "v1.unnamed-2",
+            "v2.c1",
+            "v3.unnamed-0",
+        ]
+    );
+}
