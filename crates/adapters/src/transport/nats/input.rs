@@ -54,7 +54,7 @@ impl TransportInputEndpoint for NatsInputEndpoint {
 }
 
 struct NatsReader {
-    state_sender: UnboundedSender<NonFtInputReaderCommand>,
+    command_sender: UnboundedSender<InputReaderCommand>,
 }
 
 impl NatsReader {
@@ -64,7 +64,7 @@ impl NatsReader {
         parser: Box<dyn Parser>,
     ) -> AnyResult<Self> {
         let span = info_span!("nats_input");
-        let (state_sender, state_receiver) = unbounded_channel();
+        let (command_sender, command_receiver) = unbounded_channel();
         let nats_connection =
             TOKIO.block_on(Self::connect_nats(&config).instrument(span.clone()))?;
 
@@ -75,14 +75,14 @@ impl NatsReader {
                 jetstream::new(nats_connection),
                 consumer_clone,
                 parser,
-                state_receiver,
+                command_receiver,
             )
             .instrument(span)
             .await
             .unwrap_or_else(|e| consumer.error(true, e));
         });
 
-        Ok(Self { state_sender })
+        Ok(Self { command_sender })
     }
 
     async fn connect_nats(config: &NatsInputConfig) -> Result<async_nats::Client, AnyError> {
@@ -101,14 +101,14 @@ impl NatsReader {
         jetstream: jetstream::Context,
         consumer: Box<dyn InputConsumer>,
         parser: Box<dyn Parser>,
-        mut state_receiver: UnboundedReceiver<NonFtInputReaderCommand>,
+        mut command_receiver: UnboundedReceiver<NonFtInputReaderCommand>,
     ) -> Result<(), AnyError> {
         let mut cancel: Option<(CancellationToken, JoinHandle<()>)> = None;
         let queue = Arc::new(InputQueue::new(consumer.clone()));
         let next_stream_sequence = Arc::new(AtomicOptionNonZeroU64::new(None));
         let mut nats_consumer_config = config.consumer_config.clone();
 
-        while let Some(command) = state_receiver.recv().await {
+        while let Some(command) = command_receiver.recv().await {
             match command {
                 NonFtInputReaderCommand::Queue => queue.queue(),
                 NonFtInputReaderCommand::Transition(state) => match state {
@@ -195,10 +195,10 @@ impl NatsReader {
 
 impl InputReader for NatsReader {
     fn request(&self, command: InputReaderCommand) {
-        let _ = self.state_sender.send(command.as_nonft().unwrap());
+        let _ = self.command_sender.send(command.as_nonft().unwrap());
     }
 
     fn is_closed(&self) -> bool {
-        self.state_sender.is_closed()
+        self.command_sender.is_closed()
     }
 }
