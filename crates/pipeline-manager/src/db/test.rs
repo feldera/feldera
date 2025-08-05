@@ -25,6 +25,7 @@ use chrono::{TimeZone, Utc};
 use feldera_types::config::{FtConfig, PipelineConfig, ResourceConfig, RuntimeConfig};
 use feldera_types::error::ErrorResponse;
 use feldera_types::program_schema::ProgramSchema;
+use log::info;
 use openssl::sha;
 use proptest::prelude::*;
 use proptest::test_runner::{Config, TestRunner};
@@ -33,8 +34,10 @@ use serde_json::json;
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::fmt::Debug;
+use std::time::Duration;
 use std::vec;
 use tokio::sync::Mutex;
+use tokio::time::sleep;
 use uuid::Uuid;
 
 struct DbHandle {
@@ -122,27 +125,37 @@ async fn test_setup() -> DbHandle {
 pub(crate) async fn setup_pg() -> (StoragePostgres, tempfile::TempDir) {
     use crate::config::DatabaseConfig;
     use std::net::TcpListener;
-    use std::sync::atomic::{AtomicU16, Ordering};
 
-    // Find a free port to use for running the test database.
-    let port = {
-        /// This is a fallback method counter for port selection in case binding
-        /// to port 0 on localhost fails (to select a random, open
-        /// port).
-        static DB_PORT_COUNTER: AtomicU16 = AtomicU16::new(5555);
+    // Install the test database in a temporary directory and bound to a free port
+    let mut attempt = 1;
+    let (_temp_dir, pg) = loop {
+        // Find a free port
+        let port = {
+            let listener = TcpListener::bind(("127.0.0.1", 0)).expect("Failed to bind to port 0");
+            listener
+                .local_addr()
+                .map(|l| l.port())
+                .expect("Unable to retrieve local socket address")
+        };
 
-        let listener = TcpListener::bind(("127.0.0.1", 0)).expect("Failed to bind to port 0");
-        listener
-            .local_addr()
-            .map(|l| l.port())
-            .unwrap_or(DB_PORT_COUNTER.fetch_add(1, Ordering::Relaxed))
+        // Wait a small amount of time for the port to be unbound again
+        sleep(Duration::from_millis(10)).await;
+
+        // Attempt Postgres installation on that port
+        let _temp_dir = tempfile::tempdir().unwrap();
+        let temp_path = _temp_dir.path();
+        match crate::db::pg_setup::install(temp_path.into(), false, Some(port)).await {
+            Ok(pg) => break (_temp_dir, pg),
+            Err(e) => {
+                info!("Unable to install test database on port {port} ({} attempts left) -- port might have become occupied in the meanwhile. Original error: {e}", 10 - attempt);
+                sleep(Duration::from_millis(100)).await;
+            }
+        }
+        if attempt >= 10 {
+            panic!("Unable to install test database: gave up after several attempts");
+        }
+        attempt += 1;
     };
-
-    let _temp_dir = tempfile::tempdir().unwrap();
-    let temp_path = _temp_dir.path();
-    let pg = crate::db::pg_setup::install(temp_path.into(), false, Some(port))
-        .await
-        .unwrap();
     let db_uri = pg.settings().url("postgres").clone();
     let db_config = DatabaseConfig::new(db_uri, None);
     let conn = StoragePostgres::initialize(&db_config, Some(pg))
