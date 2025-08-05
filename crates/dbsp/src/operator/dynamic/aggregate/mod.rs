@@ -48,7 +48,7 @@ pub use aggregator::{
 pub use average::{Avg, AvgFactories, DynAverage};
 pub use fold::Fold;
 pub use max::{Max, MaxSemigroup};
-pub use min::{Min, MinSemigroup, MinSome1, MinSome1Semigroup};
+pub use min::{ArgMinSome, Min, MinSemigroup, MinSome1, MinSome1Semigroup};
 
 use super::MonoIndexedZSet;
 
