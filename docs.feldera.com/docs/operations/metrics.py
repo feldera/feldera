@@ -10,7 +10,9 @@ metrics = {}
 for line in fileinput.input(encoding="utf-8"):
     comment, keyword, name, args = line.strip().split(maxsplit=3)
     if comment == "#" and keyword in ["TYPE", "HELP"]:
-        metrics.setdefault(name, {})[keyword] = args
+        metrics.setdefault(name, {})[keyword] = args.replace("\\n", "<br/>").replace(
+            "\\\\", "\\"
+        )
 
 # Read Markdown template from metrics.md.in, making some substitutions:
 #

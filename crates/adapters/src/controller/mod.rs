@@ -37,7 +37,7 @@ use anyhow::{anyhow, Error as AnyError};
 use arrow::datatypes::Schema;
 use atomic::Atomic;
 use checkpoint::Checkpoint;
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use crossbeam::{
     queue::SegQueue,
     sync::{Parker, ShardedLock, Unparker},
@@ -777,6 +777,12 @@ impl Controller {
             labels,
             &CHECKPOINT_PROCESSED_RECORDS,
         );
+        metrics.counter(
+            "pipeline_start_time_seconds",
+            "Start time of the pipeline in seconds since the Unix epoch.\n\nThis will be earlier than `process_start_time_seconds` if the pipeline resumed from a checkpoint.  This will be zero if the pipeline resumed from a checkpoint produced by a pipeline too old to record its start time.",
+            labels,
+            status.global_metrics.initial_start_time,
+        );
 
         metrics.histogram(
             "storage_read_latency_seconds",
@@ -1036,6 +1042,7 @@ impl CircuitThread {
             pipeline_config,
             circuit_config,
             processed_records,
+            initial_start_time,
             step,
             input_metadata,
         } = ControllerInit::new(config.clone())?;
@@ -1085,6 +1092,7 @@ impl CircuitThread {
             lir,
             error_cb,
             processed_records,
+            initial_start_time,
             &resume_info,
         )?;
 
@@ -1343,6 +1351,7 @@ impl CircuitThread {
                 .status
                 .global_metrics
                 .num_total_processed_records();
+            let initial_start_time = this.controller.status.global_metrics.initial_start_time;
             let written_before = WRITE_BLOCKS_BYTES.sum();
             let checkpoint = CHECKPOINT_LATENCY.record_callback(|| {
                 this.circuit
@@ -1355,6 +1364,7 @@ impl CircuitThread {
                             step: this.step,
                             config,
                             processed_records,
+                            initial_start_time,
                             input_metadata: CheckpointOffsets(input_metadata),
                         };
                         checkpoint
@@ -1914,6 +1924,7 @@ impl FtState {
             step: 0,
             config,
             processed_records: 0,
+            initial_start_time: controller.status.global_metrics.initial_start_time,
             input_metadata: CheckpointOffsets::default(),
         };
         checkpoint.write(&*backend, &StoragePath::from(STATE_FILE))?;
@@ -2271,6 +2282,9 @@ struct ControllerInit {
     /// Initial counter for `total_processed_records`.
     processed_records: u64,
 
+    /// Value for `initial_start_time`.
+    initial_start_time: Option<DateTime<Utc>>,
+
     /// The first step that the circuit will execute.
     step: Step,
 
@@ -2289,6 +2303,7 @@ impl ControllerInit {
             circuit_config: Self::circuit_config(&config, storage)?,
             pipeline_config: config,
             processed_records: 0,
+            initial_start_time: None,
             step: 0,
             input_metadata: None,
         })
@@ -2360,6 +2375,7 @@ impl ControllerInit {
             step,
             config: checkpoint_config,
             processed_records,
+            initial_start_time,
             input_metadata,
         } = checkpoint;
         info!("resuming from checkpoint made at step {step}");
@@ -2429,6 +2445,7 @@ impl ControllerInit {
             step,
             input_metadata: Some(input_metadata.0),
             processed_records,
+            initial_start_time: Some(initial_start_time),
         })
     }
 
@@ -2846,9 +2863,14 @@ impl ControllerInner {
         lir: LirCircuit,
         error_cb: Box<dyn Fn(Arc<ControllerError>) + Send + Sync>,
         processed_records: u64,
+        initial_start_time: Option<DateTime<Utc>>,
         resume_info: &HashMap<String, JsonValue>,
     ) -> Result<(Parker, BackpressureThread, Receiver<Command>, Arc<Self>), ControllerError> {
-        let status = Arc::new(ControllerStatus::new(config.clone(), processed_records));
+        let status = Arc::new(ControllerStatus::new(
+            config.clone(),
+            processed_records,
+            initial_start_time,
+        ));
         let circuit_thread_parker = Parker::new();
         let backpressure_thread_parker = Parker::new();
         let (command_sender, command_receiver) = channel();

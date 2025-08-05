@@ -149,6 +149,14 @@ pub struct GlobalControllerMetrics {
     /// time (modulo clock skew).
     pub incarnation_uuid: Uuid,
 
+    /// Time at which the pipeline process from which we resumed started, in
+    /// seconds since the epoch.
+    ///
+    /// If this pipeline process was not started from a checkpoint, this is the
+    /// same as `start_time`; otherwise, it is earlier.
+    #[serde(with = "chrono::serde::ts_seconds")]
+    pub initial_start_time: DateTime<Utc>,
+
     /// Current storage usage in bytes.
     pub storage_bytes: AtomicU64,
 
@@ -215,15 +223,18 @@ where
 }
 
 impl GlobalControllerMetrics {
-    fn new(processed_records: u64) -> Self {
+    fn new(processed_records: u64, initial_start_time: Option<DateTime<Utc>>) -> Self {
+        let start_time = Utc::now();
+        let initial_start_time = initial_start_time.unwrap_or(start_time);
         Self {
             state: Atomic::new(PipelineState::Paused),
             bootstrap_in_progress: AtomicBool::new(false),
             rss_bytes: AtomicU64::new(0),
             cpu_msecs: AtomicU64::new(0),
             uptime_msecs: AtomicU64::new(0),
-            start_time: Utc::now(),
+            start_time,
             incarnation_uuid: Uuid::now_v7(),
+            initial_start_time,
             storage_bytes: AtomicU64::new(0),
             storage_mb_secs: AtomicU64::new(0),
             runtime_elapsed_msecs: AtomicU64::new(0),
@@ -363,10 +374,14 @@ pub struct ControllerStatus {
 }
 
 impl ControllerStatus {
-    pub fn new(pipeline_config: PipelineConfig, processed_records: u64) -> Self {
+    pub fn new(
+        pipeline_config: PipelineConfig,
+        processed_records: u64,
+        initial_start_time: Option<DateTime<Utc>>,
+    ) -> Self {
         Self {
             pipeline_config,
-            global_metrics: GlobalControllerMetrics::new(processed_records),
+            global_metrics: GlobalControllerMetrics::new(processed_records, initial_start_time),
             time_series: Mutex::new(VecDeque::with_capacity(60)),
             suspend_error: Mutex::new(None),
             inputs: ShardedLock::new(BTreeMap::new()),
