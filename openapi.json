@@ -3449,7 +3449,7 @@
         "tags": [
           "Pipeline interaction"
         ],
-        "summary": "Generate a support bundle containing diagnostic information from a pipeline.",
+        "summary": "Generate a support bundle for a pipeline.",
         "description": "This endpoint collects various diagnostic data from the pipeline including\ncircuit profile, heap profile, metrics, logs, stats, and connector statistics,\nand packages them into a single ZIP file for support purposes.",
         "operationId": "get_pipeline_support_bundle",
         "parameters": [

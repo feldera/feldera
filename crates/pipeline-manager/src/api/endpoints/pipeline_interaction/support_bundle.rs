@@ -55,7 +55,7 @@ async fn collect_pipeline_logs(
     pipeline_name: &str,
 ) -> Result<String, ManagerError> {
     let mut first_line = true;
-    let next_line_timeout = Duration::from_millis(250);
+    let next_line_timeout = Duration::from_millis(500);
     let mut logs = String::with_capacity(4096);
 
     let response = state
@@ -66,7 +66,7 @@ async fn collect_pipeline_logs(
     let mut response = response;
     while let Ok(Some(chunk)) = timeout(
         if first_line {
-            Duration::from_secs(5)
+            Duration::from_secs(20)
         } else {
             next_line_timeout
         },
@@ -412,7 +412,7 @@ impl SupportBundleZip {
     }
 }
 
-/// Generate a support bundle containing diagnostic information from a pipeline.
+/// Generate a support bundle for a pipeline.
 ///
 /// This endpoint collects various diagnostic data from the pipeline including
 /// circuit profile, heap profile, metrics, logs, stats, and connector statistics,

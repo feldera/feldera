@@ -127,12 +127,25 @@ making them eviction candidates. To raise their priority:
 
 ## Diagnosing Performance Issues
 
-When investigating pipeline performance, Feldera support will typically request:
+When investigating pipeline performance, Feldera support will typically request a support-bundle.
+The bundle can be downloaded from your installation with the following [fda](/interface/cli) command:
 
-1. **Performance Tab**: screenshots of the `Performance` tab in the UI to see memory usage, record counts, and processing times
+```bash
+fda support-bundle affected-pipeline-name
+```
 
-2. **Pipeline Logs Tab**: for warnings and errors
+Note that a corresponding function, `support_bundle` is [available in the Python SDK](https://docs.feldera.com/python/examples.html#retrieve-a-support-bundle-for-a-pipeline).
 
-3. **Circuit Profile**: from the [circuit profile](https://docs.feldera.com/api/retrieve-the-circuit-performance-profile-of-a-running-or-paused-pipeline) API.
+The support bundle contains the following content:
 
-4. **Heap Profile**: from [heap usage](https://docs.feldera.com/api/retrieve-the-heap-profile-of-a-running-or-paused-pipeline) API.
+1. **Pipeline Logs**: for warnings and errors from the [logs](https://docs.feldera.com/api/retrieve-logs-of-a-pipeline-as-a-stream) endpoint.
+
+2. **Pipeline Configuration**: the [pipeline configuration](https://docs.feldera.com/api/retrieve-a-pipeline), including the SQL code and connector settings.
+
+3. **Pipeline Metrics**: from the [pipeline metrics](https://docs.feldera.com/api/retrieve-circuit-metrics-of-a-running-or-paused-pipeline) endpoint.
+
+3. **Endpoint Stats**: from the [stats](https://docs.feldera.com/api/retrieve-statistics-e-g-performance-counters-of-a-running-or-paused-pipeline) endpoint.
+
+4. **Circuit Profile**: from the [circuit profile](https://docs.feldera.com/api/retrieve-the-circuit-performance-profile-of-a-running-or-paused-pipeline) endpoint.
+
+5. **Heap Profile**: from [heap usage](https://docs.feldera.com/api/retrieve-the-heap-profile-of-a-running-or-paused-pipeline) endpoint.
