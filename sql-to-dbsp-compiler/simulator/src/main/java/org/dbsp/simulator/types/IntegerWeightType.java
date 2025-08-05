@@ -7,7 +7,17 @@ import org.dbsp.simulator.util.ICastable;
  * Throws on overflow.
  */
 public class IntegerWeightType implements WeightType {
-    record IntegerWeight(int weight) implements Weight { }
+    public record IntegerWeight(int weight) implements Weight {
+        @Override
+        public int asInteger() {
+            return this.weight;
+        }
+
+        @Override
+        public String toString() {
+            return Integer.toString(this.weight);
+        }
+    }
 
     private IntegerWeightType() {}
 
@@ -15,6 +25,10 @@ public class IntegerWeightType implements WeightType {
 
     static int get(Weight w) {
         return w.to(IntegerWeight.class).weight();
+    }
+
+    public static IntegerWeight create(int w) {
+        return new IntegerWeight(w);
     }
 
     @Override

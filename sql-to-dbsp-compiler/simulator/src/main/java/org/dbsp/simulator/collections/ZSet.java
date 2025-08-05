@@ -5,14 +5,17 @@ import org.dbsp.simulator.types.Weight;
 import org.dbsp.simulator.types.WeightType;
 import org.dbsp.simulator.util.IIndentStream;
 import org.dbsp.simulator.util.ToIndentableString;
+import org.dbsp.simulator.values.BooleanSqlValue;
+import org.dbsp.simulator.values.DynamicSqlValue;
+import org.dbsp.simulator.values.RuntimeFunction;
 
 import javax.annotation.Nullable;
 import java.util.*;
 import java.util.function.BiFunction;
 import java.util.function.Function;
-import java.util.function.Predicate;
 
-public class ZSet<Data> extends BaseCollection implements ToIndentableString {
+@SuppressWarnings("unchecked")
+public class ZSet<Data extends DynamicSqlValue> extends BaseCollection implements ToIndentableString {
     /** Maps values to weights.  Invariant: weights are never zero */
     final Map<Data, Weight> data;
 
@@ -42,6 +45,11 @@ public class ZSet<Data> extends BaseCollection implements ToIndentableString {
         this.data = new HashMap<>();
     }
 
+    @Override
+    public void append(BaseCollection other) {
+        this.append((ZSet<Data>) other);
+    }
+
     public ZSet(Collection<Data> data, WeightType weightType) {
         super(weightType);
         this.data = new HashMap<>();
@@ -58,7 +66,7 @@ public class ZSet<Data> extends BaseCollection implements ToIndentableString {
         return new ZSet<>(result, this.weightType);
     }
 
-    public static <Data, Weight> ZSet<Data> zero(WeightType weightType) {
+    public static <Data extends DynamicSqlValue> ZSet<Data> zero(WeightType weightType) {
         return new ZSet<>(weightType);
     }
 
@@ -78,7 +86,7 @@ public class ZSet<Data> extends BaseCollection implements ToIndentableString {
         return new ZSet<>(result, this.weightType);
     }
 
-    public <OtherData, Result> ZSet<Result> multiply(
+    public <OtherData extends DynamicSqlValue, Result extends DynamicSqlValue> ZSet<Result> multiply(
             ZSet<OtherData> other,
             BiFunction<Data, OtherData, Result> combiner) {
         ZSet<Result> result = new ZSet<>(this.weightType);
@@ -138,7 +146,7 @@ public class ZSet<Data> extends BaseCollection implements ToIndentableString {
         return this.positive(true);
     }
 
-    public <OData> ZSet<OData> map(Function<Data, OData> tupleTransform) {
+    public <OData extends DynamicSqlValue> ZSet<OData> map(Function<Data, OData> tupleTransform) {
         Map<OData, Weight> result = new HashMap<>();
         for (Map.Entry<Data, Weight> entry: this.data.entrySet()) {
             Weight weight = entry.getValue();
@@ -148,17 +156,17 @@ public class ZSet<Data> extends BaseCollection implements ToIndentableString {
         return new ZSet<>(result, this.weightType);
     }
 
-    public ZSet<Data> filter(Predicate<Data> keep) {
+    public ZSet<Data> filter(RuntimeFunction<Data, BooleanSqlValue> keep) {
         Map<Data, Weight> result = new HashMap<>();
         for (Map.Entry<Data, Weight> entry: this.data.entrySet()) {
             Weight weight = entry.getValue();
-            if (keep.test(entry.getKey()))
+            if (keep.apply(entry.getKey()).isTrue())
                 result.put(entry.getKey(), weight);
         }
         return new ZSet<>(result, this.weightType);
     }
 
-    public <Key> IndexedZSet<Key, Data> index(Function<Data, Key> key) {
+    public <Key extends DynamicSqlValue> IndexedZSet<Key, Data> index(RuntimeFunction<Data, Key> key) {
         IndexedZSet<Key, Data> result = new IndexedZSet<>(this.weightType);
         for (Map.Entry<Data, Weight> entry: this.data.entrySet()) {
             Weight weight = entry.getValue();
@@ -215,13 +223,17 @@ public class ZSet<Data> extends BaseCollection implements ToIndentableString {
     public IIndentStream toString(IIndentStream stream) {
         stream.append("{").increase();
         boolean first = true;
-        for (Map.Entry<Data, Weight> entry: this.data.entrySet()) {
+        List<Data> keys = new ArrayList<>(this.data.keySet());
+        keys.sort(Comparator.naturalOrder());
+
+        for (Data key: keys) {
+            Weight value = this.data.get(key);
             if (!first)
                 stream.append(",").newline();
             first = false;
-            stream.append(entry.getKey().toString())
+            stream.append(key.toString())
                     .append(" => ")
-                    .append(entry.getValue().toString());
+                    .append(value.toString());
         }
         return stream.decrease()
                 .newline()

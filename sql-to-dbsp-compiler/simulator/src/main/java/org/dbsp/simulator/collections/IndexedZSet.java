@@ -5,20 +5,26 @@ import org.dbsp.simulator.types.Weight;
 import org.dbsp.simulator.types.WeightType;
 import org.dbsp.simulator.util.IIndentStream;
 import org.dbsp.simulator.util.ToIndentableString;
-import org.dbsp.simulator.values.SqlTuple;
+import org.dbsp.simulator.values.DynamicSqlValue;
 
 import java.util.HashMap;
 import java.util.Map;
 import java.util.function.BiFunction;
-import java.util.function.Function;
-import java.util.function.Predicate;
 
-public class IndexedZSet<Key, Value> extends BaseCollection implements ToIndentableString {
+@SuppressWarnings("unchecked")
+public class IndexedZSet<Key extends DynamicSqlValue, Value extends DynamicSqlValue>
+        extends BaseCollection
+        implements ToIndentableString {
     final Map<Key, ZSet<Value>> index;
 
     public IndexedZSet(WeightType weightType) {
         super(weightType);
         index = new HashMap<>();
+    }
+
+    @Override
+    public void append(BaseCollection other) {
+        this.append((IndexedZSet<Key, Value>) other);
     }
 
     public void append(Key key, Value value, Weight weight) {
@@ -33,7 +39,25 @@ public class IndexedZSet<Key, Value> extends BaseCollection implements ToIndenta
             this.index.remove(key);
     }
 
-    public <Result, OtherValue> IndexedZSet<Key, Result> join(
+    public void append(Key key, ZSet<Value> value) {
+        if (!this.index.containsKey(key))
+            this.index.put(key, value);
+        else {
+            ZSet<Value> existing = this.index.get(key);
+            existing.append(value);
+            if (existing.isEmpty()) {
+                this.index.remove(key);
+            }
+        }
+    }
+
+    public void append(IndexedZSet<Key, Value> other) {
+        for (var entry: other.index.entrySet()) {
+            this.append(entry.getKey(), entry.getValue());
+        }
+    }
+
+    public <Result extends DynamicSqlValue, OtherValue extends DynamicSqlValue> IndexedZSet<Key, Result> join(
             IndexedZSet<Key, OtherValue> other,
             BiFunction<Value, OtherValue, Result> combiner) {
         IndexedZSet<Key, Result> result = new IndexedZSet<>(this.weightType);
@@ -48,7 +72,7 @@ public class IndexedZSet<Key, Value> extends BaseCollection implements ToIndenta
         return result;
     }
 
-    public <Result, IntermediateResult> IndexedZSet<Key, Result>
+    public <Result extends DynamicSqlValue, IntermediateResult> IndexedZSet<Key, Result>
     aggregate(AggregateDescription<Result, IntermediateResult, Value> aggregate) {
         IndexedZSet<Key, Result> result = new IndexedZSet<>(this.weightType);
         for (Key key: this.index.keySet()) {
@@ -63,7 +87,7 @@ public class IndexedZSet<Key, Value> extends BaseCollection implements ToIndenta
         return this.flatten((k, v) -> v);
     }
 
-    public <Result> ZSet<Result> flatten(BiFunction<Key, Value, Result> combine) {
+    public <Result extends DynamicSqlValue> ZSet<Result> flatten(BiFunction<Key, Value, Result> combine) {
         ZSet<Result> result = new ZSet<>(this.weightType);
         for (Key key: this.index.keySet()) {
             ZSet<Value> set = this.index.get(key);
