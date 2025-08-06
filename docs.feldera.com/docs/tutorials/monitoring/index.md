@@ -9,6 +9,11 @@ Metrics are helpful to check the health of your Feldera instance and to identify
 bottlenecks. Feldera exposes a metrics endpoint that can be scraped by Prometheus. Grafana
 is then used to visualize these metrics.
 
+See [Pipeline Metrics] for a reference to the Prometheus metrics that
+Feldera exports.
+
+[Pipeline Metrics]: /operations/metrics
+
 ### Setup
 
 1. **Prometheus:** You must have [Prometheus installed](https://prometheus.io).

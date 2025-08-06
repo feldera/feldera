@@ -1,0 +1,99 @@
+<!-- This is a template file for metrics documentation.
+
+To regenerate the metrics documentation, start a Feldera pipeline (any
+one will do) and obtain Prometheus metrics for it with, for example,
+`fda metrics --format=prometheus` or `curl https://server/v0/metrics`.
+Save them to a file named `metrics.txt`, then then run `metrics.py`
+from this directory, like so:
+
+metrics.py metrics.txt
+-->
+
+# Pipeline Metrics
+
+This reference lists all of the metrics that Feldera exports through
+its `/metrics` endpoint in [Prometheus exposition format].  It is
+automatically generated using the documentation embedded in Prometheus
+output.
+
+All of the metrics exported by a particular Feldera pipeline are
+labeled with the pipeline's UUID as `pipeline`.  Some metrics have
+additional labels, as documented below.
+
+See [Monitoring and Profiling] for a guide to setting up Prometheus
+and Grafana with Feldera.  The [Feldera template dashboard] is a
+sample Grafana dashboard for Feldera.
+
+[Prometheus exposition format]: https://prometheus.io/docs/instrumenting/exposition_formats
+[Monitoring and Profiling]: /tutorials/monitoring
+[Feldera template dashboard]: https://raw.githubusercontent.com/feldera/feldera/main/deploy/grafana_dashboard.json
+
+# Process Metrics
+
+These metrics report statistics for a running Feldera pipeline
+process.  When a pipeline process is killed and restarts from a
+checkpoint, the new process's metrics are for it alone, not cumulative
+with any previous instantiations.
+
+These metrics are intended to match the standard [Prometheus
+definitions].
+
+[Prometheus definitions]: https://prometheus.io/docs/instrumenting/writing_clientlibs/#process-metrics
+
+{{process_}}
+
+## Feldera metrics
+
+These metrics report statistics for Feldera operations.
+
+{{feldera_}}
+
+## DBSP metrics
+
+These metrics report statistics for [DBSP], the low-level mechanism on
+which Feldera is built.
+
+[DBSP]: https://docs.rs/dbsp/latest/dbsp/
+
+{{dbsp_|compaction_}}
+
+## Record Processing
+
+These metrics report overall counts of records as they pass through
+the pipeline.  They accumulate across checkpoint and resume.
+
+{{records_|output_buffered_}}
+
+## Storage Performance
+
+These metrics report the performance of storage, which allows Feldera
+to work with data larger than memory.
+
+{{storage_|files_}}
+
+## Pipeline Status
+
+These metrics report the status of the pipeline.
+
+{{pipeline_}}
+
+## Input Connectors
+
+These metrics are per-input connector, labeled with `endpoint` set to
+the name of the input connector, which is either the name assigned in
+the SQL program or automatically generated as `unnamed-<number>`,
+where `<number>` counts starting from 1 for the first connector for a
+given table.
+
+{{input_connector_}}
+
+## Output Connectors
+
+These metrics are per-output connector, labeled with `endpoint` set to
+the name of the output connector, which is either the name assigned in
+the SQL program or automatically generated as `unnamed-<number>`,
+where `<number>` counts starting from 1 for the first connector for a
+given view.
+
+{{output_connector_}}
+
