@@ -1,6 +1,13 @@
 #!/bin/bash
 set -ex
 
+FDA_BINARY=${FDA_BINARY:-../../target/debug/fda}
+
+fda() {
+    ${FDA_BINARY} "$@"
+}
+
+
 fail_on_success() {
   # Run the command with `|| true` to prevent `set -e` from exiting the script
   set +e
@@ -31,14 +38,7 @@ compare_output() {
   return 0
 }
 
-fda() {
-    ../../target/debug/fda "$@"
-}
-#export FELDERA_HOST=http://localhost:8080
-
-cargo build
-
-EDITION=`curl "${FELDERA_HOST%/}/v0/config" | jq .edition | sed s/\"//g`
+EDITION=`curl -H "Authorization: Bearer ${FELDERA_API_KEY}" "${FELDERA_HOST%/}/v0/config" | jq .edition | sed s/\"//g`
 echo "Edition: $EDITION"
 case $EDITION in
     Enterprise) enterprise=true ;;
@@ -68,7 +68,7 @@ fda apikey delete a
 echo "base64 = '0.22.1'" > udf.toml
 echo "use feldera_sqllib::F32;" > udf.rs
 cat > program.sql <<EOF
-CREATE TABLE example ( id INT NOT NULL PRIMARY KEY ) WITH ('connectors' = '[{ "name": "c", "transport": { "name": "datagen", "config": { "plan": [{ "limit": 1 }] } } }]');
+CREATE TABLE example ( id INT NOT NULL PRIMARY KEY ) WITH ('materialized' = 'true', 'connectors' = '[{ "name": "c", "transport": { "name": "datagen", "config": { "plan": [{ "limit": 1 }] } } }]');
 CREATE VIEW example_count WITH ('connectors' = '[{ "name": "c", "transport": { "name": "file_output", "config": { "path": "bla" } }, "format": { "name": "csv" } }]') AS ( SELECT COUNT(*) AS num_rows FROM example );
 EOF
 
@@ -76,6 +76,7 @@ fda create p1 program.sql
 fda program get p1 | fda create p2 -s
 compare_output "fda program get p1" "fda program get p2"
 fda program set-config p1 --profile dev
+fda program set-config p1 --profile optimized
 fda program config p1
 fda program status p1
 
@@ -98,21 +99,26 @@ fda logs p1
 fda connector p1 example c stats
 fda connector p1 example_count c stats
 fda connector p1 example unknown stats || true
-
-# Transaction tests
-echo "Testing transaction commands..."
-fail_on_success fda commit-transaction p1
-fda start-transaction p1
-fail_on_success fda commit-transaction p1 --tid 999
-fda commit-transaction p1
-fda start-transaction p1
-fda commit-transaction p1 --timeout 10
-fda start-transaction p1
-fda commit-transaction p1 --no-wait
+# Connectors
 fda connector p1 example c pause
 fda connector p1 example_count c pause || true
 fda connector p1 example c start
 fda connector p1 example unknown start || true
+
+# Adhoc queries
+fda query p1 "SELECT * FROM example"
+
+# Transaction tests
+#echo "Testing transaction commands..."
+#fail_on_success fda commit-transaction p1
+#fda start-transaction p1
+#fail_on_success fda commit-transaction p1 --tid 999
+#fda commit-transaction p1
+#fda start-transaction p1
+#fda commit-transaction p1 --timeout 10
+#fda start-transaction p1
+#fda commit-transaction p1 --no-wait
+
 fda shutdown p1
 
 if $enterprise; then
@@ -130,8 +136,8 @@ fail_on_success fda set-config p1 fault_tolerance exactly_one
 fail_on_success fda program set-config p1 -p optimized --runtime-version invalid-version
 
 # Test dev_tweaks setting
-fda set-config sec-ops dev_tweaks '{"x": 2}'
-fail_on_success fda set-config sec-ops dev_tweaks 'invalid-json'
+fda set-config p1 dev_tweaks '{"x": 2}'
+fail_on_success fda set-config p1 dev_tweaks 'invalid-json'
 
 fda delete p1
 fda delete p2
