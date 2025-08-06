@@ -403,6 +403,7 @@ const operations = {
     label: 'Feldera Operations',
     items: [
         'operations/guide',
+        'operations/metrics',
     ]
 };
 
