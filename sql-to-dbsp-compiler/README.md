@@ -147,9 +147,8 @@ running SqlLogicTest programs.  The framework parses SqlLogicTest
 files and creates an internal representation of these files.  The
 files are executed by "test executors".
 
-The tests are run by a standalone executable (the executable is
-invoked by the `run-tests.sh` script).  The executable supports the
-following command-line arguments:
+The tests are run by a standalone executable.  The executable supports
+the following command-line arguments:
 
 ```
 slt [options] files_or_directories_with_tests

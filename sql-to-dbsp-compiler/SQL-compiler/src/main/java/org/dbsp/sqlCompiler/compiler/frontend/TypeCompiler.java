@@ -97,6 +97,7 @@ public class TypeCompiler implements ICompilerComponent {
      * @param left       Left operand type.
      * @param right      Right operand type.
      * @param error      Extra message to show in case of error.
+     * @param acceptStrings  If true accept string types as left and/or right.
      * @return           Common type operands must be cast to.
      */
     public static DBSPType reduceType(CalciteObject node, DBSPType left, DBSPType right,
@@ -202,7 +203,18 @@ public class TypeCompiler implements ICompilerComponent {
                 // DECIMAL op FLOAT, convert to DOUBLE
                 return new DBSPTypeDouble(right.getNode(), anyNull);
             }
-            // DECIMAL op DECIMAL does not convert to a common type.
+
+            if (rd != null) {
+                int scale = Math.max(ld.scale, rd.scale);
+                int before = Math.max(ld.precision - ld.scale, rd.precision - rd.scale);
+                int precision = before + scale;
+                if (precision < DBSPTypeDecimal.MAX_PRECISION) {
+                    return new DBSPTypeDecimal(ld.getNode(), precision, scale, anyNull);
+                } else {
+                    throw new CompilationError(error + "Could not derive a common type between " +
+                            left.asSqlString() + " and " + right.asSqlString() + "; please use explicit casts", node);
+                }
+            }
         }
         throw new UnimplementedException("Cast from " + right + " to " + left, left.getNode());
     }

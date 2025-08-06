@@ -190,8 +190,13 @@ public class CustomFunctions {
         }
     }
 
-    static class ArrayRemoveFunction extends CalciteFunctionClone {
-        private ArrayRemoveFunction() { super(SqlLibraryOperators.ARRAY_REMOVE, "array#remove"); }
+    static class ArrayRemoveFunction extends NonOptimizedFunction {
+        private ArrayRemoveFunction() {
+            super("ARRAY_REMOVE",
+                ReturnTypes.ARG0,
+                ARRAY_ELEMENT_NONNULL,
+                SqlFunctionCategory.USER_DEFINED_FUNCTION,
+                "array#remove"); }
     }
 
     static class ArrayPositionFunction extends CalciteFunctionClone {

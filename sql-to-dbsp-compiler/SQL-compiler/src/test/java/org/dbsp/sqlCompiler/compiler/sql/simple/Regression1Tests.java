@@ -740,4 +740,15 @@ public class Regression1Tests extends SqlIoTest {
                 ------------------------------------------------
                     |  3 |  3 |  2 |  2 | 1  |  4 |  3 | 1""");
     }
+
+    @Test
+    public void containsTest() {
+        this.getCCS("""
+                CREATE TABLE T(x BIGINT, y VARCHAR, z INT ARRAY);
+                CREATE VIEW V0 AS SELECT ARRAY_CONTAINS(ARRAY[1], x) FROM T;
+                CREATE VIEW V1 AS SELECT ARRAY_CONTAINS(ARRAY['1', '2', NULL], y) FROM T;
+                CREATE VIEW V2 AS SELECT ARRAY_CONTAINS(z, x) FROM T;
+                CREATE VIEW V3 AS SELECT ARRAY_CONTAINS(z, 0) FROM T;
+                CREATE VIEW V4 AS SELECT ARRAY_CONTAINS(z, NULL) FROM T;""");
+    }
 }

@@ -204,7 +204,7 @@ public class ArrayFunctionsTests extends SqlIoTest {
                 SELECT array_position(ARRAY [2, 4, 6, 8, null], null);
                  array_position
                 ----------------
-                 NULL
+                 5
                 (1 row)
 
                 SELECT array_position(ARRAY [2, 4, 6, 8, null], 4);
@@ -234,13 +234,19 @@ public class ArrayFunctionsTests extends SqlIoTest {
                 SELECT array_position(ARRAY [2, 4, 6, 8], null);
                  array_position
                 ----------------
-                 NULL
+                 0
                 (1 row)
 
                 SELECT array_position(ARRAY [null], 1);
                  array_position
                 ----------------
                  0
+                (1 row)
+                
+                SELECT array_position(CAST(null AS INT ARRAY), 1);
+                 array_position
+                ----------------
+                 null
                 (1 row)
                 """
         );
@@ -277,13 +283,13 @@ public class ArrayFunctionsTests extends SqlIoTest {
             SELECT array_contains(ARRAY [2, 4, 6, 8], null);
              array_contains
             ---------------
-             NULL
+             false
             (1 row)
 
             SELECT array_contains(ARRAY [null, 2, 2, 6, 6, 8, 2], null);
              array_contains
             ----------------
-             NULL
+             true
             (1 row)
             """
         );
@@ -367,7 +373,7 @@ public class ArrayFunctionsTests extends SqlIoTest {
                 SELECT array_remove(ARRAY [1, 2, 3], null);
                  array_remove
                 --------------
-                 NULL
+                 {1, 2, 3}
                 (1 row)
 
                 SELECT array_remove(ARRAY [null, 2, 2, 6, 6, 8, 2], 2);
@@ -379,7 +385,7 @@ public class ArrayFunctionsTests extends SqlIoTest {
                 SELECT array_remove(ARRAY [null, 2, 2, 6, 6, 8, 2], null);
                  array_remove
                 --------------
-                 NULL
+                 {2, 2, 6, 6, 8, 2}
                 (1 row)
 
                 SELECT array_remove(ARRAY [2, 2, 6, 6, 8, 2], elem) FROM (SELECT elem FROM UNNEST(ARRAY [2, 6, 8]) as elem);
@@ -396,7 +402,7 @@ public class ArrayFunctionsTests extends SqlIoTest {
                  {6, 6, 8}
                  {2, 2, 8, 2}
                  {2, 2, 6, 6, 2}
-                 NULL
+                 {2, 2, 6, 6, 8, 2}
                 (4 rows)
 
                 SELECT array_remove(CAST(NULL AS INTEGER ARRAY), 1);

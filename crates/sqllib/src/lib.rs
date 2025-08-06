@@ -226,52 +226,6 @@ macro_rules! some_function2 {
 
 pub(crate) use some_function2;
 
-// Macro to create variants of a function with 2 arguments and
-// a generic trait bound
-// If there exists a function is f__<T: TraitBound>(x: X, y: S) -> U, this
-// creates three functions:
-// - f_N<T: TraitBound>(x: X, y: Option<S>) -> Option<U>
-// - fN_<T: TraitBound>(x: Option<X>, y: S) -> Option<U>
-// - fNN<T: TraitBound>(x: Option<X>, y: Option<S>) -> Option<U>
-// The resulting functions return Some only if all arguments are 'Some'.
-// The generic type may be a part of the type of both parameters, just one of
-// them or even the return type
-macro_rules! some_generic_function2 {
-    ($func_name:ident, $generic_type: ty, $arg_type0: ty, $arg_type1: ty, $bound: tt $(+ $bounds: tt)*, $ret_type: ty) => {
-        ::paste::paste! {
-            #[doc(hidden)]
-            pub fn [<$func_name NN>]<$generic_type>( arg0: Option<$arg_type0>, arg1: Option<$arg_type1> ) -> Option<$ret_type>
-            where
-                $generic_type: $bound $(+ $bounds)*,
-            {
-                let arg0 = arg0?;
-                let arg1 = arg1?;
-                Some([<$func_name __>](arg0, arg1))
-            }
-
-            #[doc(hidden)]
-            pub fn [<$func_name _N>]<$generic_type>( arg0: $arg_type0, arg1: Option<$arg_type1> ) -> Option<$ret_type>
-            where
-                $generic_type: $bound $(+ $bounds)*,
-            {
-                let arg1 = arg1?;
-                Some([<$func_name __>](arg0, arg1))
-            }
-
-            #[doc(hidden)]
-            pub fn [<$func_name N_>]<$generic_type>( arg0: Option<$arg_type0>, arg1: $arg_type1 ) -> Option<$ret_type>
-            where
-                $generic_type: $bound $(+ $bounds)*,
-            {
-                let arg0 = arg0?;
-                Some([<$func_name __>](arg0, arg1))
-            }
-        }
-    };
-}
-
-pub(crate) use some_generic_function2;
-
 // Macro to create variants of a polymorphic function with 2 arguments
 // that is also polymorphic in the return type
 // If there exists a function is f_type1_type2_result(x: T, y: S) -> U, this
