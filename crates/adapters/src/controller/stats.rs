@@ -1447,6 +1447,10 @@ impl InputEndpointStatus {
 
 #[derive(Default, Serialize)]
 pub struct OutputEndpointMetrics {
+    /// Records and bytes sent on the underlying transport (HTTP, Kafka, etc.)
+    /// to the endpoint.
+    ///
+    /// These only increase.
     pub transmitted_records: AtomicU64,
     pub transmitted_bytes: AtomicU64,
 
@@ -1455,6 +1459,10 @@ pub struct OutputEndpointMetrics {
     /// These are the records sent by the main circuit thread to the endpoint thread.
     /// Upon dequeuing the record, it gets buffered or sent directly to the output
     /// transport.
+    ///
+    /// These increase as records are queued.  They decrease as records are
+    /// dequeued either to be buffered (see
+    /// [buffered_records](Self::buffered_records)) or to be output directly.
     pub queued_records: AtomicU64,
     pub queued_batches: AtomicU64,
 
@@ -1463,6 +1471,9 @@ pub struct OutputEndpointMetrics {
     /// Note that this may not be equal to the current size of the
     /// buffer, since the buffer consolidates records, e.g., inserts
     /// and deletes can cancel out over time.
+    ///
+    /// These increase as records are moved from queues to buffers.  They then
+    /// fall abruptly to 0 because the buffers are always flushed as a whole.
     pub buffered_records: AtomicU64,
     pub buffered_batches: AtomicU64,
 
