@@ -13,7 +13,7 @@ import TabItem from '@theme/TabItem';
     <TabItem className="changelogItem" value="enterprise"
         label="Enterprise">
 
-        ## Unreleased
+        ## 0.105.0
 
         We switched the implementation of DECIMAL numbers to a new DECIMAL
         library that we have developed in house.  The library uses 3 times
