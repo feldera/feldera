@@ -11,6 +11,7 @@ use arrow::datatypes::Schema;
 use atomic::Atomic;
 use bytes::Bytes;
 use datafusion::execution::SendableRecordBatchStream;
+use feldera_adapterlib::format::BufferSize;
 use feldera_adapterlib::transport::Resume;
 use feldera_types::config::FtModel;
 use feldera_types::program_schema::Relation;
@@ -127,7 +128,7 @@ impl AdHocInputEndpoint {
     ) -> AnyResult<u64> {
         arrow_inserter.insert(&batch)?;
         let buffer = arrow_inserter.take_all();
-        let num_records = buffer.len();
+        let size = buffer.len();
         if !buffer.is_empty() {
             let mut aux = Vec::new();
             if self.fault_tolerance() == Some(FtModel::ExactlyOnce) {
@@ -147,10 +148,10 @@ impl AdHocInputEndpoint {
 
             let mut guard = self.inner.details.lock().unwrap();
             let details = guard.as_mut().unwrap();
-            details.queue.push_with_aux((buffer, Vec::new()), 0, aux);
+            details.queue.push_with_aux((buffer, Vec::new()), aux);
         }
 
-        Ok(num_records as u64)
+        Ok(size.records as u64)
     }
 
     fn error(&self, fatal: bool, error: AnyError) {
@@ -268,17 +269,17 @@ impl InputReader for AdHocInputEndpoint {
                 let Metadata { batches: chunks } = rmpv::ext::from_value(data).unwrap();
                 let mut guard = self.inner.details.lock().unwrap();
                 let details = guard.as_mut().unwrap();
-                let mut num_records = 0;
+                let mut total = BufferSize::empty();
                 let mut hasher = Xxh3Default::new();
                 for chunk in chunks {
                     let (mut buffer, errors) = details.parser.parse(&chunk);
-                    details.consumer.buffered(buffer.len(), chunk.len());
+                    details.consumer.buffered(buffer.len());
                     details.consumer.parse_errors(errors);
-                    num_records += buffer.len();
+                    total += buffer.len();
                     buffer.hash(&mut hasher);
                     buffer.flush();
                 }
-                details.consumer.replayed(num_records, hasher.finish());
+                details.consumer.replayed(total, hasher.finish());
             }
             InputReaderCommand::Extend => self.set_state(PipelineState::Running),
             InputReaderCommand::Pause => self.set_state(PipelineState::Paused),

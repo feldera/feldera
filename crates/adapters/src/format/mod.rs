@@ -78,8 +78,8 @@ impl InputBuffer for EmptyInputBuffer {
 
     fn hash(&self, _hasher: &mut dyn Hasher) {}
 
-    fn len(&self) -> usize {
-        0
+    fn len(&self) -> BufferSize {
+        BufferSize::empty()
     }
 
     fn take_some(&mut self, _n: usize) -> Option<Box<dyn InputBuffer>> {

@@ -165,7 +165,7 @@ impl PubSubReader {
                                         // None if the stream is cancelled
                                         while let Some(message) = stream.next().await {
                                             let data = message.message.data.as_slice();
-                                            queue.push(parser.parse(data), data.len());
+                                            queue.push(parser.parse(data));
                                             message.ack().await.unwrap_or_else(|e| {
                                                 consumer.error(false, anyhow!("gRPC error acknowledging Pub/Sub message: {e}"))
                                             });

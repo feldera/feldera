@@ -8,11 +8,12 @@ import sys
 # or on stdin, and save their types and descriptions into `metrics`.
 metrics = {}
 for line in fileinput.input(encoding="utf-8"):
-    comment, keyword, name, args = line.strip().split(maxsplit=3)
-    if comment == "#" and keyword in ["TYPE", "HELP"]:
-        metrics.setdefault(name, {})[keyword] = args.replace("\\n", "<br/>").replace(
-            "\\\\", "\\"
-        )
+    if line.startswith("#"):
+        comment, keyword, name, args = line.strip().split(maxsplit=3)
+        if comment == "#" and keyword in ["TYPE", "HELP"]:
+            metrics.setdefault(name, {})[keyword] = args.replace(
+                "\\n", "<br/>"
+            ).replace("\\\\", "\\")
 
 # Read Markdown template from metrics.md.in, making some substitutions:
 #

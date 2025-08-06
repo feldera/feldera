@@ -12,6 +12,7 @@ use anyhow::{anyhow, bail, Result as AnyResult};
 use awc::error::HeaderValue;
 use awc::{http::header::HeaderMap, Client, ClientResponse, Connector};
 use bytes::Bytes;
+use feldera_adapterlib::format::BufferSize;
 use feldera_adapterlib::transport::{InputCommandReceiver, Resume};
 use feldera_types::config::FtModel;
 use feldera_types::program_schema::Relation;
@@ -313,7 +314,7 @@ impl UrlInputReader {
             stream.seek(offsets.start);
             splitter.seek(offsets.start);
             let mut remainder = (offsets.end - offsets.start) as usize;
-            let mut num_records = 0;
+            let mut total = BufferSize::empty();
             let mut hasher = Xxh3Default::new();
             while remainder > 0 {
                 let bytes = stream.read(remainder).await?;
@@ -325,13 +326,13 @@ impl UrlInputReader {
                 while let Some(chunk) = splitter.next(remainder == 0) {
                     let (mut buffer, errors) = parser.parse(chunk);
                     consumer.parse_errors(errors);
-                    consumer.buffered(buffer.len(), chunk.len());
-                    num_records += buffer.len();
+                    consumer.buffered(buffer.len());
+                    total += buffer.len();
                     buffer.hash(&mut hasher);
                     buffer.flush();
                 }
             }
-            consumer.replayed(num_records, hasher.finish());
+            consumer.replayed(total, hasher.finish());
         }
 
         let mut queue = VecDeque::<(Range<u64>, Box<dyn InputBuffer>)>::new();
@@ -370,7 +371,7 @@ impl UrlInputReader {
                             extending = false;
                         }
                         InputReaderCommand::Queue{..} => {
-                            let mut total = 0;
+                            let mut total = BufferSize::empty();
                             let mut hasher = consumer.hasher();
                             let limit = consumer.max_batch_size();
                             let mut range: Option<Range<u64>> = None;
@@ -384,7 +385,7 @@ impl UrlInputReader {
                                     buffer.hash(hasher);
                                 }
                                 buffer.flush();
-                                if total >= limit {
+                                if total.records >= limit {
                                     break;
                                 }
                             }
@@ -410,7 +411,7 @@ impl UrlInputReader {
                             break;
                         };
                         let (buffer, errors) = parser.parse(chunk);
-                        consumer.buffered(buffer.len(), chunk.len());
+                        consumer.buffered(buffer.len());
                         consumer.parse_errors(errors);
 
                         if let Some(buffer) = buffer {

@@ -40,7 +40,7 @@ definitions].
 | `process_max_fds` |gauge | Maximum number of open file descriptors. |
 | `process_open_fds` |gauge | Number of open file descriptors. |
 | `process_resident_memory_bytes` |gauge | Resident set size in bytes. |
-| `process_start_time_seconds` |counter | Start time of the process since the Unix epoch in seconds. |
+| `process_start_time_seconds` |counter | Start time of the process in seconds since the Unix epoch. |
 | `process_threads` |gauge | Number of OS threads in the process. |
 | `process_virtual_memory_bytes` |gauge | Virtual memory size in bytes. |
 | `process_virtual_memory_max_bytes` |gauge | Maximum amount of virtual memory available in bytes. |
@@ -77,10 +77,13 @@ the pipeline.  They accumulate across checkpoint and resume.
 | Name | Type | Description |
 | :--- | :--- | :---------- |
 | `output_buffered_batches` |gauge | Number of batches of records currently buffered by the output connector. |
-| `records_input_buffered` |gauge | Total number of records currently buffered by all endpoints. |
-| `records_input_total` |counter | Total number of input records received from all connectors. |
+| `records_input_buffered` |gauge | Total amount of data currently buffered by all endpoints, in records. |
+| `records_input_buffered_bytes` |gauge | Total amount of data currently buffered by all endpoints, in bytes. |
+| `records_input_bytes_total` |counter | Total amount of data received from all connectors, in bytes. |
+| `records_input_total` |counter | Total amount of data received from all connectors, in records. |
 | `records_late_total` |counter | Number of records dropped due to LATENESS annotations. |
-| `records_processed_total` |counter | Total number of input records processed by the pipeline. |
+| `records_processed_bytes_total` |counter | Total amount of input processed by the pipeline, in bytes. |
+| `records_processed_total` |counter | Total amount of input processed by the pipeline, in records. |
 
 ## Storage Performance
 
@@ -104,6 +107,7 @@ These metrics report the status of the pipeline.
 | Name | Type | Description |
 | :--- | :--- | :---------- |
 | `pipeline_complete` |counter | Transitions from 0 to 1 when pipeline completes. |
+| `pipeline_start_time_seconds` |counter | Start time of the pipeline in seconds since the Unix epoch.<br/><br/>This will be earlier than `process_start_time_seconds` if the pipeline resumed from a checkpoint.  This will be zero if the pipeline resumed from a checkpoint produced by a pipeline too old to record its start time. |
 
 ## Input Connectors
 
@@ -113,9 +117,18 @@ the SQL program or automatically generated as `unnamed-<number>`,
 where `<number>` counts starting from 1 for the first connector for a
 given table.
 
+For byte counters, for some input connectors, such as columnar
+formats, bytes are difficult to attribute accurately to records, so
+Feldera approximates.  Feldera also approximately attributes byte
+counts to records when it processes only some of the records in a
+batch in a DBSP step.  This approximation is corrected when the
+remainder of the batch is processed in a subsequent step, so it is
+invisible to users unless a pause or checkpoint happens mid-batch.
+
 | Name | Type | Description |
 | :--- | :--- | :---------- |
-| `input_connector_buffered_records` |gauge | Number of records currently buffered by an input connector. |
+| `input_connector_buffered_records` |gauge | Amount of data currently buffered by an input connector, in records. |
+| `input_connector_buffered_records_bytes` |gauge | Amount of data currently buffered by an input connector, in bytes. |
 | `input_connector_bytes_total` |counter | Total number of bytes received by an input connector. |
 | `input_connector_errors_parse_total` |counter | Total number of errors encountered parsing records received by the input connector. |
 | `input_connector_errors_transport_total` |counter | Total number of errors encountered by the input connector at the transport layer. |

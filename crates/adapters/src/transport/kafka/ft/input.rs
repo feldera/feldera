@@ -13,6 +13,7 @@ use crate::{InputBuffer, Parser};
 use anyhow::{anyhow, bail, Error as AnyError, Result as AnyResult};
 use crossbeam::queue::ArrayQueue;
 use crossbeam::sync::{Parker, Unparker};
+use feldera_adapterlib::format::BufferSize;
 use feldera_adapterlib::transport::{parse_resume_info, InputEndpoint, InputReaderCommand, Resume};
 use feldera_types::config::FtModel;
 use feldera_types::program_schema::Relation;
@@ -342,14 +343,14 @@ impl KafkaFtInputReaderInner {
             for thread in &threads {
                 thread.unparker.unpark();
             }
-            let mut total_records = 0;
+            let mut total = BufferSize::empty();
             let mut hasher = KafkaFtHasher::new(&partitions);
             loop {
                 // Process messages for all partitions.
                 for (partition, receiver) in receivers.iter() {
                     let max = receiver.max_offset();
                     while let Some(mut msg) = receiver.read(max) {
-                        total_records += msg.buffer.len();
+                        total += msg.buffer.len();
                         hasher.add(partition, &msg.buffer);
                         msg.buffer.flush();
                         if msg.offset == max {
@@ -382,7 +383,7 @@ impl KafkaFtInputReaderInner {
 
                 thread::park_timeout(POLL_TIMEOUT);
             }
-            consumer.replayed(total_records, hasher.finish());
+            consumer.replayed(total, hasher.finish());
         }
 
         // We're done replaying.
@@ -399,7 +400,7 @@ impl KafkaFtInputReaderInner {
                     InputReaderCommand::Extend => running = true,
                     InputReaderCommand::Pause => running = false,
                     InputReaderCommand::Queue { .. } => {
-                        let mut total = 0;
+                        let mut total = BufferSize::empty();
                         let mut hasher = KafkaFtHasher::new(&partitions);
                         let mut offsets = receivers
                             .values()
@@ -408,7 +409,7 @@ impl KafkaFtInputReaderInner {
                                 next_offset..next_offset
                             })
                             .collect::<Vec<_>>();
-                        while total < consumer.max_batch_size() {
+                        while total.records < consumer.max_batch_size() {
                             let mut empty = true;
                             for ((partition, receiver), range) in
                                 receivers.iter().zip(offsets.iter_mut())
@@ -803,7 +804,7 @@ impl PartitionReceiver {
                     let (buffer, errors) = parser.parse(payload);
                     let len = buffer.len();
                     self.messages.lock().unwrap().insert(Msg { offset, buffer });
-                    consumer.buffered(len, payload.len());
+                    consumer.buffered(len);
                     consumer.parse_errors(errors);
                 } else {
                     tracing::error!(

@@ -1,5 +1,6 @@
 //! An input adapter that generates Nexmark event input data.
 
+use feldera_adapterlib::format::BufferSize;
 use feldera_adapterlib::transport::{parse_resume_info, InputReaderCommand, Resume};
 use feldera_types::config::FtModel;
 use std::cmp::min;
@@ -108,12 +109,12 @@ impl InputReader for InputGenerator {
                 let _ = self.inner.command_sender.send(command);
             }
             _ => match command {
-                InputReaderCommand::Replay { .. } => self.consumer.replayed(0, 0),
+                InputReaderCommand::Replay { .. } => self.consumer.replayed(BufferSize::empty(), 0),
                 InputReaderCommand::Extend => (),
                 InputReaderCommand::Pause => (),
                 InputReaderCommand::Queue { .. } => {
                     self.consumer.extended(
-                        0,
+                        BufferSize::empty(),
                         Some(Resume::Replay {
                             seek: serde_json::Value::Null,
                             replay: rmpv::Value::Nil,
@@ -326,7 +327,7 @@ fn worker_thread(
     while let Some((Metadata { event_ids }, ())) = command_receiver.blocking_recv_replay()? {
         let _ = bcast_sender.send(event_ids.clone());
         barrier.wait();
-        let mut total = 0;
+        let mut total = BufferSize::empty();
         let mut hasher = Xxh3Default::new();
         for (_events, mut buffer) in queue.lock().unwrap().drain(..) {
             total += buffer.len();
@@ -353,11 +354,11 @@ fn worker_thread(
             Some(InputReaderCommand::Extend) => running = true,
             Some(InputReaderCommand::Pause) => running = false,
             Some(InputReaderCommand::Queue { .. }) => {
-                let mut total = 0;
+                let mut total = BufferSize::empty();
                 let mut hasher = consumers[NexmarkTable::Bid].hasher();
                 let n = options.max_step_size_per_thread as usize * options.threads;
                 let mut events: Option<Range<u64>> = None;
-                while total < n {
+                while total.records < n {
                     let mut queue = queue.lock().unwrap();
                     if queue.is_empty() {
                         break;
@@ -455,7 +456,7 @@ fn generate_thread(
                 let data = writer.into_inner().unwrap().into_inner();
                 let parser = &mut parsers[table];
                 let (buffer, _errors) = parser.parse(data.as_slice());
-                consumer.buffered(buffer.len(), 0);
+                consumer.buffered(buffer.len());
                 buffer
             })
             .collect::<Vec<_>>();
