@@ -237,75 +237,53 @@ public class BaseSQLTests {
     public static void runAllTests() throws IOException, InterruptedException {
         if (testsToRun.isEmpty())
             return;
-        int testNumber = 0;
 
         List<TestCase> toRun = Linq.where(testsToRun, TestCase::hasData);
         List<TestCase> toCheck = Linq.where(testsToRun, testCase -> !testCase.hasData());
-        HashMap<Long, DBSPFunction> inputFunctions = new HashMap<>();
+        DBSPCompiler compiler = testsToRun.get(0).ccs.compiler;
 
-        if (!toRun.isEmpty()) {
-            PrintStream outputStream = new PrintStream(Files.newOutputStream(getTestFilePath()));
-            RustFileWriter writer = new RustFileWriter().withTest(true);
-            writer.setOutputBuilder(new IndentStream(outputStream));
-
-            createEmptyStubs();
-            // Use the compiler from the first test case.
-            DBSPCompiler firstCompiler = null;
-            // Map from Change id to function that generates the change
-            for (TestCase test : toRun) {
-                if (firstCompiler == null)
-                    firstCompiler = test.ccs.compiler;
-                if (!test.ccs.compiler.options.same(firstCompiler.options))
-                    throw new RuntimeException("Test " + Utilities.singleQuote(toRun.get(0).javaTestName) +
-                            " and " + Utilities.singleQuote(test.javaTestName) +
-                            " are not compiled with the same options: "
-                            + test.ccs.compiler.options.diff(firstCompiler.options));
-                test.ccs.circuit.setName("circuit" + testNumber);
-                List<DBSPFunction> testers = test.createTesterCode(testNumber, RUST_DIRECTORY, inputFunctions);
-                writer.add(test.ccs.circuit);
-                for (var tester: testers)
-                    if (acceptTest.test(test.ccs))
-                        writer.add(tester);
-                BaseSQLTests.testsExecuted++;
-                testNumber++;
-            }
-            Utilities.enforce(firstCompiler != null);
-            writer.write(firstCompiler);
-            outputStream.close();
-            if (!skipRust)
-                Utilities.compileAndTestRust(RUST_DIRECTORY, true);
-        }
-
-        if (!toCheck.isEmpty()) {
-            createEmptyStubs();
-            PrintStream outputStream = new PrintStream(Files.newOutputStream(getTestFilePath()));
-            RustFileWriter writer = new RustFileWriter().withTest(true);
-            writer.setOutputBuilder(new IndentStream(outputStream));
-            DBSPCompiler firstCompiler = null;
-            for (TestCase test : toCheck) {
-                if (firstCompiler == null)
-                    firstCompiler = test.ccs.compiler;
-                if (!test.ccs.compiler.options.same(firstCompiler.options))
-                    throw new RuntimeException("Test " + Utilities.singleQuote(toCheck.get(0).javaTestName) +
-                            " and " + Utilities.singleQuote(test.javaTestName) +
-                            " are not compiled with the same options: "
-                            + test.ccs.compiler.options.diff(firstCompiler.options));
-                test.ccs.circuit.setName("circuit" + testNumber);
-                List<DBSPFunction> testers = test.createTesterCode(testNumber, RUST_DIRECTORY, inputFunctions);
-                writer.add(test.ccs.circuit);
-                for (var tester: testers)
-                    if (acceptTest.test(test.ccs))
-                        writer.add(tester);
-                BaseSQLTests.testsChecked++;
-                testNumber++;
-            }
-            Utilities.enforce(firstCompiler != null);
-            writer.write(firstCompiler);
-            outputStream.close();
-            if (!skipRust)
-                Utilities.compileAndCheckRust(RUST_DIRECTORY, true);
-        }
+        int testNumber = runTests(toRun, 0, compiler, false);
+        runTests(toCheck, testNumber, compiler, true);
         testsToRun.clear();
+    }
+
+    static int runTests(List<TestCase> toRun, int testNumber, DBSPCompiler compiler, boolean check)
+            throws IOException, InterruptedException {
+        if (toRun.isEmpty())
+            return testNumber;
+
+        HashMap<Long, DBSPFunction> inputFunctions = new HashMap<>();
+        createEmptyStubs();
+
+        PrintStream outputStream = new PrintStream(Files.newOutputStream(getTestFilePath()));
+        RustFileWriter writer = new RustFileWriter().withTest(true);
+        writer.setOutputBuilder(new IndentStream(outputStream));
+
+        // Map from Change id to function that generates the change
+        for (TestCase test : toRun) {
+            if (!test.ccs.compiler.options.same(compiler.options))
+                throw new RuntimeException("Test " + Utilities.singleQuote(toRun.get(0).javaTestName) +
+                        " and " + Utilities.singleQuote(test.javaTestName) +
+                        " are not compiled with the same options: "
+                        + test.ccs.compiler.options.diff(compiler.options));
+            test.ccs.circuit.setName("circuit" + testNumber);
+            List<DBSPFunction> testers = test.createTesterCode(testNumber, RUST_DIRECTORY, inputFunctions);
+            writer.add(test.ccs.circuit);
+            for (var tester: testers)
+                if (acceptTest.test(test.ccs))
+                    writer.add(tester);
+            if (check)
+                BaseSQLTests.testsChecked++;
+            else
+                BaseSQLTests.testsExecuted++;
+            testNumber++;
+        }
+        writer.write(compiler);
+        outputStream.close();
+        if (!skipRust)
+            Utilities.compileAndTestRust(RUST_DIRECTORY, true);
+
+        return testNumber;
     }
 
     void addRustTestCase(CompilerCircuitStream ccs) {
@@ -329,6 +307,8 @@ public class BaseSQLTests {
 
     public CompilerOptions testOptions() {
         CompilerOptions options = new CompilerOptions();
+        // Set to compile to multiple crates
+        // options.ioOptions.crates = "x";
         options.languageOptions.throwOnError = true;
         options.languageOptions.generateInputForEveryTable = true;
         options.ioOptions.quiet = true;
