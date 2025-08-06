@@ -1,6 +1,6 @@
 // Array operations
 
-use crate::{some_function2, some_generic_function2, ConcatSemigroup, Semigroup, Weight};
+use crate::{some_function2, ConcatSemigroup, Semigroup, Weight};
 use itertools::Itertools;
 use std::{collections::HashSet, fmt::Debug, hash::Hash, sync::Arc};
 
@@ -265,8 +265,13 @@ where
     Some(array_repeat__(element, count?))
 }
 
+// 8 versions of array_remove, depending on
+// nullability of vector
+// nullability of vector element
+// nullability of index
+
 #[doc(hidden)]
-pub fn array_remove__<T>(vector: Array<T>, element: T) -> Array<T>
+pub fn array_remove___<T>(vector: Array<T>, element: T) -> Array<T>
 where
     T: Eq + Clone,
 {
@@ -275,10 +280,74 @@ where
     vec.into()
 }
 
-some_generic_function2!(array_remove, T, Array<T>, T, Eq + Clone, Array<T>);
+#[doc(hidden)]
+pub fn array_removeN__<T>(vector: Option<Array<T>>, element: T) -> Option<Array<T>>
+where
+    T: Eq + Clone,
+{
+    let vector = vector?;
+    Some(array_remove___(vector, element))
+}
 
 #[doc(hidden)]
-pub fn array_position__<T>(vector: Array<T>, element: T) -> i64
+pub fn array_remove_N_<T>(vector: Array<Option<T>>, element: T) -> Array<Option<T>>
+where
+    T: Eq + Clone,
+{
+    array_remove___(vector, Some(element))
+}
+
+#[doc(hidden)]
+pub fn array_removeNN_<T>(vector: Option<Array<Option<T>>>, element: T) -> Option<Array<Option<T>>>
+where
+    T: Eq + Clone,
+{
+    let vector = vector?;
+    Some(array_remove_N_(vector, element))
+}
+
+#[doc(hidden)]
+pub fn array_remove_NN<T>(vector: Array<Option<T>>, element: Option<T>) -> Array<Option<T>>
+where
+    T: Eq + Clone,
+{
+    array_remove___(vector, element)
+}
+
+#[doc(hidden)]
+pub fn array_removeNNN<T>(
+    vector: Option<Array<Option<T>>>,
+    element: Option<T>,
+) -> Option<Array<Option<T>>>
+where
+    T: Eq + Clone,
+{
+    let vector = vector?;
+    Some(array_remove___(vector, element))
+}
+
+#[doc(hidden)]
+pub fn array_remove__N<T>(vector: Array<T>, element: Option<T>) -> Array<T>
+where
+    T: Eq + Clone,
+{
+    match element {
+        None => vector,
+        Some(value) => array_remove___(vector, value),
+    }
+}
+
+#[doc(hidden)]
+pub fn array_removeN_N<T>(vector: Option<Array<T>>, element: Option<T>) -> Option<Array<T>>
+where
+    T: Eq + Clone,
+{
+    let vector = vector?;
+    Some(array_remove__N(vector, element))
+}
+
+#[doc(hidden)]
+pub fn array_position_<T>(vector: Array<T>, element: T) -> i64
 where
     T: Eq,
 {
@@ -289,7 +358,13 @@ where
         .unwrap_or(0) as i64
 }
 
-some_generic_function2!(array_position, T, Array<T>, T, Eq, i64);
+pub fn array_positionN<T>(vector: Option<Array<T>>, element: T) -> Option<i64>
+where
+    T: Eq,
+{
+    let vector = vector?;
+    Some(array_position_(vector, element))
+}
 
 #[doc(hidden)]
 pub fn array_reverse_<T>(vector: Array<T>) -> Array<T>
@@ -452,14 +527,21 @@ where
 }
 
 #[doc(hidden)]
-pub fn array_contains__<T>(vector: Array<T>, element: T) -> bool
+pub fn array_contains_<T>(vector: Array<T>, element: T) -> bool
 where
     T: Eq,
 {
     vector.contains(&element)
 }
 
-some_generic_function2!(array_contains, T, Array<T>, T, Eq, bool);
+#[doc(hidden)]
+pub fn array_containsN<T>(vector: Option<Array<T>>, element: T) -> Option<bool>
+where
+    T: Eq,
+{
+    let vector = vector?;
+    Some(array_contains_(vector, element))
+}
 
 #[doc(hidden)]
 pub fn array_distinct<T>(vector: Array<T>) -> Array<T>

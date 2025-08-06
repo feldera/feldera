@@ -15,6 +15,12 @@ import TabItem from '@theme/TabItem';
 
         ## 0.105.0
 
+        Changed the semantics of functions `ARRAY_CONTAINS`,
+        `ARRAY_REMOVE`, `ARRAY_POSITION` so that the right argument being
+        `NULL` does not cause the result being `NULL`.
+
+        ## 0.105.0
+
         We switched the implementation of DECIMAL numbers to a new DECIMAL
         library that we have developed in house.  The library uses 3 times
         less space and is up to 100 times faster than our prior

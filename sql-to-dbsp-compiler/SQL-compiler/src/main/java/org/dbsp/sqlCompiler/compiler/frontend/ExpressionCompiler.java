@@ -1425,6 +1425,32 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                                 ops.get(1).getType().nullableUnderlineSuffix();
                         return new DBSPApplyExpression(node, method, type, ops.get(0), ops.get(1));
                     }
+                    case "array_remove": {
+                        validateArgCount(node, operationName, call.operandCount(), 2);
+                        DBSPExpression arg0 = ops.get(0);
+                        DBSPExpression arg1 = ops.get(1);
+                        DBSPTypeArray vec = arg0.getType().to(DBSPTypeArray.class);
+                        DBSPType elemType = vec.getElementType();
+
+                        // If array is null for certain, return null
+                        if (arg0.type.is(DBSPTypeNull.class)) {
+                            String warningMessage =
+                                    node + ": always returns NULL";
+                            this.compiler.reportWarning(node.getPositionRange(), "unnecessary function call", warningMessage);
+                            return DBSPNullLiteral.none(type);
+                        }
+
+                        if (!elemType.sameTypeIgnoringNullability(arg1.type)) {
+                            arg1 = arg1.cast(node, elemType.withMayBeNull(arg1.type.mayBeNull), false);
+                        }
+
+                        String method = getCallName(call) +
+                                arg0.type.nullableUnderlineSuffix() +
+                                elemType.nullableUnderlineSuffix() +
+                                arg1.type.nullableUnderlineSuffix();
+                        DBSPExpression exp = new DBSPApplyExpression(node, method, type, arg0, arg1);
+                        return exp.cast(node, type, false);
+                    }
                     case "array_exists": {
                         validateArgCount(node, operationName, ops.size(), 2);
                         DBSPClosureExpression closure = ops.get(1).to(DBSPClosureExpression.class);
@@ -1694,7 +1720,6 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 return new DBSPApplyExpression(node, method, type, arg0);
             }
             case ARRAY_CONTAINS:
-            case ARRAY_REMOVE:
             case ARRAY_POSITION: {
                 validateArgCount(node, operationName, call.operandCount(), 2);
                 DBSPExpression arg0 = ops.get(0);
@@ -1702,34 +1727,34 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 DBSPTypeArray vec = arg0.getType().to(DBSPTypeArray.class);
                 DBSPType elemType = vec.getElementType();
 
-                // If argument is null for certain, return null
-                if (arg1.type.is(DBSPTypeNull.class)) {
+                // If array is null for certain, return null
+                if (arg0.type.is(DBSPTypeNull.class)) {
                     String warningMessage =
                             node + ": always returns NULL";
                     this.compiler.reportWarning(node.getPositionRange(), "unnecessary function call", warningMessage);
                     return DBSPNullLiteral.none(type);
                 }
 
-                String method = getArrayOrMapCallName(call, arg0, arg1);
-
-                // the rust code has signature: (Vec<T>, T)
-                // so if elements of the vector are nullable and T is an Option type
-                // therefore we need to wrap arg1 in Some
-                if (elemType.mayBeNull) {
-                    arg1 = new DBSPApplyExpression(arg1.getNode(), "Some", arg1.type.withMayBeNull(true), arg1);
+                if (elemType.mayBeNull && !arg1.type.mayBeNull) {
+                    arg1 = arg1.some();
                 }
 
                 if (!elemType.sameType(arg1.type)) {
-                    // edge case for elements of type null (like ARRAY [null])
-                    if (elemType.is(DBSPTypeNull.class)) {
-                        // cast to type of arg1
-                        arg0 = this.ensureArrayElementsOfType(node, arg0, arg1.type.withMayBeNull(true));
-                    } else if (!elemType.sameType(arg1.type.withMayBeNull(elemType.mayBeNull))) {
-                        arg1 = arg1.cast(node, elemType, false);
-                    }
+                    DBSPType commonType = TypeCompiler.reduceType(node, elemType, arg1.type,
+                            "Cannot find common type between value and array", true);
+                    arg1 = arg1.cast(node, commonType, false);
+                    arg0 = arg0.cast(node, new DBSPTypeArray(commonType, arg0.type.mayBeNull), false);
                 }
 
-                return new DBSPApplyExpression(node, method, type, arg0, arg1);
+                // Calcite's type inference returns nullable results if arg1 is nullable.
+                // We need to correct for that.
+                DBSPType resultType = type;
+                if (!arg0.getType().mayBeNull)
+                    resultType = resultType.withMayBeNull(false);
+
+                String method = getCallName(call) + arg0.type.nullableUnderlineSuffix();
+                DBSPExpression exp = new DBSPApplyExpression(node, method, resultType, arg0, arg1);
+                return exp.cast(node, type, false);
             }
             case MAP_CONTAINS_KEY: {
                 validateArgCount(node, operationName, call.operandCount(), 2);
