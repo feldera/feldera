@@ -436,6 +436,33 @@ pub struct SyncConfig {
     /// Default: 10
     pub upload_concurrency: Option<u8>,
 
+    /// When `true`, the pipeline starts in **standby** mode; processing doesn't
+    /// start until activation (`POST /activate`).
+    /// If this pipeline was previously activated and the storage has not been
+    /// cleared, the pipeline will auto activate, no newer checkpoints will be
+    /// fetched.
+    ///
+    /// Standby behavior depends on `start_from_checkpoint`:
+    /// - If `latest`, pipeline continuously fetches the latest available
+    ///   checkpoint until activated.
+    /// - If checkpoint UUID, pipeline fetches this checkpoint once and waits
+    ///   in standby until activated.
+    ///
+    /// Default: `false`
+    #[schema(default = std::primitive::bool::default)]
+    #[serde(default)]
+    pub standby: bool,
+
+    /// The interval (in seconds) between each attempt to fetch the latest
+    /// checkpoint from object store while in standby mode.
+    ///
+    /// Applies only when `start_from_checkpoint` is set to `latest`.
+    ///
+    /// Default: 10 seconds
+    #[schema(default = default_pull_interval)]
+    #[serde(default = "default_pull_interval")]
+    pub pull_interval: u64,
+
     /// Extra flags to pass to `rclone`.
     ///
     /// WARNING: Supplying incorrect or conflicting flags can break `rclone`.
@@ -445,6 +472,22 @@ pub struct SyncConfig {
     /// - [Global flags](https://rclone.org/flags/)
     /// - [S3 specific flags](https://rclone.org/s3/)
     pub flags: Option<Vec<String>>,
+}
+
+fn default_pull_interval() -> u64 {
+    10
+}
+
+impl SyncConfig {
+    pub fn validate(&self) -> Result<(), String> {
+        if self.standby && self.start_from_checkpoint.is_none() {
+            return Err(r#"invalid sync config: `standby` set to `true` but `start_from_checkpoint` not set.
+Standby mode requires `start_from_checkpoint` to be set.
+Consider setting `start_from_checkpoint` to `"latest"`."#.to_owned());
+        }
+
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, Default, Eq, PartialEq, Serialize, Deserialize, ToSchema)]

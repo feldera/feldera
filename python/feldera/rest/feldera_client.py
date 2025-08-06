@@ -268,6 +268,58 @@ class FelderaClient:
                 if chunk:
                     yield chunk.decode("utf-8")
 
+    def activate_pipeline(
+        self, pipeline_name: str, wait: bool = True, timeout_s: Optional[float] = 300
+    ):
+        """
+
+        :param pipeline_name: The name of the pipeline to activate
+        :param wait: Set True to wait for the pipeline to activate. True by default
+        :param timeout_s: The amount of time in seconds to wait for the pipeline
+            to activate. 300 seconds by default.
+        """
+
+        if timeout_s is None:
+            timeout_s = 300
+
+        self.http.post(
+            path=f"/pipelines/{pipeline_name}/activate",
+        )
+
+        if not wait:
+            return
+
+        start_time = time.monotonic()
+
+        while True:
+            if timeout_s is not None:
+                elapsed = time.monotonic() - start_time
+                if elapsed > timeout_s:
+                    raise TimeoutError(
+                        f"Timed out waiting for pipeline {pipeline_name} to activate"
+                    )
+
+            resp = self.get_pipeline(pipeline_name)
+            status = resp.deployment_status
+
+            if status == "Running":
+                break
+            elif (
+                status == "Stopped"
+                and len(resp.deployment_error or {}) > 0
+                and resp.deployment_desired_status == "Stopped"
+            ):
+                raise RuntimeError(
+                    f"""Unable to ACTIVATE the pipeline.
+Reason: The pipeline is in a STOPPED state due to the following error:
+{resp.deployment_error.get("message", "")}"""
+                )
+
+            logging.debug(
+                "still starting %s, waiting for 100 more milliseconds", pipeline_name
+            )
+            time.sleep(0.1)
+
     def start_pipeline(
         self, pipeline_name: str, wait: bool = True, timeout_s: Optional[float] = 300
     ):

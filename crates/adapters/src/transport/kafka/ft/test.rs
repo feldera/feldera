@@ -106,6 +106,7 @@ outputs:
             ))
         },
         &config,
+        std::sync::Weak::new(),
         Box::new(|e| panic!("error: {e}")),
     ) {
         Ok(_) => panic!("expected an error"),
@@ -946,6 +947,7 @@ outputs:
                 ))
             },
             &config,
+            std::sync::Weak::new(),
             Box::new(|e| panic!("error: {e}")),
         )
         .unwrap();
@@ -1379,6 +1381,7 @@ outputs:
     let controller = Controller::with_config(
         |workers| Ok(test_circuit::<TestStruct>(workers, &TestStruct::schema(), &[None])),
         &config,
+        std::sync::Weak::new(),
         Box::new(move |e| if running_clone.load(Ordering::Acquire) {
             panic!("{test_name_clone}: error: {e}")
         } else {
@@ -1959,6 +1962,7 @@ outputs:
     let controller = Controller::with_config(
         |workers| Ok(test_circuit::<TestStruct>(workers, &TestStruct::schema(), &[None])),
         &config,
+                std::sync::Weak::new(),
         Box::new(move |e| if running_clone.load(Ordering::Acquire) {
             panic!("buffer_test: error: {e}")
         } else {

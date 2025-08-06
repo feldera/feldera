@@ -958,6 +958,72 @@ pub(crate) async fn get_pipeline_heap_profile(
         .await
 }
 
+/// Activates the pipeline if it is currently in standby mode.
+///
+/// This endpoint is only applicable when the pipeline is configured to start
+/// from object store and launched in standby mode (`sync.standby: true`).
+#[utoipa::path(
+    context_path = "/v0",
+    security(("JSON web token (JWT) or API key" = [])),
+    params(
+        ("pipeline_name" = String, Path, description = "Unique pipeline name"),
+    ),
+    responses(
+        (status = ACCEPTED
+            , description = "Pipeline activation initiated"
+            , body = CheckpointResponse),
+        (status = NOT_FOUND
+            , description = "Pipeline with that name does not exist"
+            , body = ErrorResponse
+            , example = json!(examples::error_unknown_pipeline_name())),
+        (status = SERVICE_UNAVAILABLE
+            , body = ErrorResponse
+            , examples(
+                ("Pipeline is not deployed" = (value = json!(examples::error_pipeline_interaction_not_deployed()))),
+                ("Pipeline is currently unavailable" = (value = json!(examples::error_pipeline_interaction_currently_unavailable()))),
+                ("Disconnected during response" = (value = json!(examples::error_pipeline_interaction_disconnected()))),
+                ("Response timeout" = (value = json!(examples::error_pipeline_interaction_timeout())))
+            )
+        ),
+        (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
+    ),
+    tag = "Pipeline interaction"
+)]
+#[post("/pipelines/{pipeline_name}/activate")]
+pub(crate) async fn activate_pipeline(
+    state: WebData<ServerState>,
+    _client: WebData<awc::Client>,
+    tenant_id: ReqData<TenantId>,
+    path: web::Path<String>,
+    request: HttpRequest,
+) -> Result<HttpResponse, ManagerError> {
+    #[cfg(not(feature = "feldera-enterprise"))]
+    {
+        let _ = (state, tenant_id, path.into_inner(), request);
+        Err(CommonError::EnterpriseFeature {
+            feature: "start from object store (S3)".to_string(),
+        }
+        .into())
+    }
+
+    #[cfg(feature = "feldera-enterprise")]
+    {
+        let pipeline_name = path.into_inner();
+        state
+            .runner
+            .forward_http_request_to_pipeline_by_name(
+                _client.as_ref(),
+                *tenant_id,
+                &pipeline_name,
+                Method::POST,
+                "activate",
+                request.query_string(),
+                Some(Duration::from_secs(120)),
+            )
+            .await
+    }
+}
+
 /// Check if the request is a WebSocket upgrade request.
 fn request_is_websocket(request: &HttpRequest) -> bool {
     request

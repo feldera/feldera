@@ -474,6 +474,19 @@ metrics"""
                 raise RuntimeError(f"waiting for idle reached timeout ({timeout_s}s)")
             time.sleep(poll_interval_s)
 
+    def activate(self, wait: bool = True, timeout_s: Optional[float] = None):
+        """
+        Activates the pipeline when starting from STANDBY mode. Only applicable
+        when the pipeline is starting from a checkpoint in object store.
+
+        :param wait: Set True to wait for the pipeline to activate. True by
+            default
+        :param timeout_s: The maximum time (in seconds) to wait for the
+            pipeline to pause.
+        """
+
+        self.client.activate_pipeline(self.name, wait=wait, timeout_s=timeout_s)
+
     def pause(self, wait: bool = True, timeout_s: Optional[float] = None):
         """
         Pause the pipeline.
