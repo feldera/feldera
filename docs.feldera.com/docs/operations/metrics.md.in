@@ -85,6 +85,14 @@ the SQL program or automatically generated as `unnamed-<number>`,
 where `<number>` counts starting from 1 for the first connector for a
 given table.
 
+For byte counters, for some input connectors, such as columnar
+formats, bytes are difficult to attribute accurately to records, so
+Feldera approximates.  Feldera also approximately attributes byte
+counts to records when it processes only some of the records in a
+batch in a DBSP step.  This approximation is corrected when the
+remainder of the batch is processed in a subsequent step, so it is
+invisible to users unless a pause or checkpoint happens mid-batch.
+
 {{input_connector_}}
 
 ## Output Connectors

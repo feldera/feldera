@@ -296,7 +296,7 @@ impl JsonParser {
                 }
                 Ok(updates) => {
                     let mut error = false;
-                    let old_len = self.input_stream.len();
+                    let old_n_records = self.input_stream.len().records;
                     for update in updates {
                         if let Err(e) = update.apply(self) {
                             error = true;
@@ -305,7 +305,7 @@ impl JsonParser {
                         self.last_event_number += 1;
                     }
                     if error {
-                        self.input_stream.truncate(old_len);
+                        self.input_stream.truncate(old_n_records);
                     }
                 }
             };

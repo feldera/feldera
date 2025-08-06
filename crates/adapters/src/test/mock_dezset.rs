@@ -2,8 +2,8 @@ use crate::{
     catalog::{ArrowStream, AvroStream, DeCollectionStream, RecordFormat},
     format::{avro::from_avro_value, raw::raw_serde_config, InputBuffer},
     static_compile::deinput::{
-        CsvDeserializerFromBytes, DeserializerFromBytes, JsonDeserializerFromBytes,
-        RawDeserializerFromBytes,
+        fraction, fraction_take, CsvDeserializerFromBytes, DeserializerFromBytes,
+        JsonDeserializerFromBytes, RawDeserializerFromBytes,
     },
     ControllerError, DeCollectionHandle,
 };
@@ -13,6 +13,7 @@ use apache_avro::{types::Value as AvroValue, Schema as AvroSchema};
 use arrow::array::RecordBatch;
 use dbsp::DBData;
 use erased_serde::Deserializer as ErasedDeserializer;
+use feldera_adapterlib::format::BufferSize;
 use feldera_types::serde_with_context::{DeserializeWithContext, SqlSerdeConfig};
 use serde_arrow::Deserializer as ArrowDeserializer;
 use std::{
@@ -199,6 +200,7 @@ where
 #[derive(Clone)]
 struct MockDeZSetStreamBuffer<T, U> {
     updates: Vec<MockUpdate<T, U>>,
+    n_bytes: usize,
     handle: MockDeZSet<T, U>,
 }
 
@@ -206,6 +208,7 @@ impl<T, U> MockDeZSetStreamBuffer<T, U> {
     fn new(handle: MockDeZSet<T, U>) -> Self {
         Self {
             updates: Vec::new(),
+            n_bytes: 0,
             handle,
         }
     }
@@ -219,10 +222,14 @@ where
     fn flush(&mut self) {
         let mut state = self.handle.0.lock().unwrap();
         state.flushed.append(&mut self.updates);
+        self.n_bytes = 0;
     }
 
-    fn len(&self) -> usize {
-        self.updates.len()
+    fn len(&self) -> BufferSize {
+        BufferSize {
+            records: self.updates.len(),
+            bytes: self.n_bytes,
+        }
     }
 
     fn hash(&self, hasher: &mut dyn Hasher) {
@@ -235,9 +242,11 @@ where
 
     fn take_some(&mut self, n: usize) -> Option<Box<dyn InputBuffer>> {
         if !self.updates.is_empty() {
+            let n = self.updates.len().min(n);
             Some(Box::new(MockDeZSetStreamBuffer {
+                n_bytes: fraction_take(n, self.updates.len(), &mut self.n_bytes),
                 updates: {
-                    let mut some = self.updates.split_off(self.updates.len().min(n));
+                    let mut some = self.updates.split_off(n);
                     swap(&mut some, &mut self.updates);
                     some
                 },
@@ -286,25 +295,31 @@ where
     fn insert(&mut self, data: &[u8]) -> AnyResult<()> {
         let val = DeserializerFromBytes::deserialize::<T>(&mut self.deserializer, data)?;
         self.buffer.updates.push(MockUpdate::Insert(val));
+        self.buffer.n_bytes += data.len();
         Ok(())
     }
 
     fn delete(&mut self, data: &[u8]) -> AnyResult<()> {
         let val = DeserializerFromBytes::deserialize::<T>(&mut self.deserializer, data)?;
         self.buffer.updates.push(MockUpdate::Delete(val));
+        self.buffer.n_bytes += data.len();
         Ok(())
     }
 
     fn update(&mut self, data: &[u8]) -> AnyResult<()> {
         let val = DeserializerFromBytes::deserialize::<U>(&mut self.deserializer, data)?;
         self.buffer.updates.push(MockUpdate::Update(val));
+        self.buffer.n_bytes += data.len();
         Ok(())
     }
 
     fn reserve(&mut self, _reservation: usize) {}
 
     fn truncate(&mut self, len: usize) {
-        self.buffer.updates.truncate(len)
+        if len < self.buffer.updates.len() {
+            self.buffer.n_bytes = fraction(len, self.buffer.updates.len(), self.buffer.n_bytes);
+            self.buffer.updates.truncate(len);
+        }
     }
 
     fn fork(&self) -> Box<dyn DeCollectionStream> {
@@ -331,7 +346,7 @@ where
         self.buffer.hash(hasher)
     }
 
-    fn len(&self) -> usize {
+    fn len(&self) -> BufferSize {
         self.buffer.len()
     }
 }
@@ -378,7 +393,7 @@ where
         self.buffer.hash(hasher)
     }
 
-    fn len(&self) -> usize {
+    fn len(&self) -> BufferSize {
         self.buffer.len()
     }
 }
@@ -437,6 +452,7 @@ where
 #[derive(Clone)]
 pub struct MockAvroStream<T, U> {
     updates: Vec<MockUpdate<T, U>>,
+    n_bytes: usize,
     handle: MockDeZSet<T, U>,
 }
 
@@ -444,6 +460,7 @@ impl<T, U> MockAvroStream<T, U> {
     fn new(handle: MockDeZSet<T, U>) -> Self {
         Self {
             updates: Vec::new(),
+            n_bytes: 0,
             handle,
         }
     }
@@ -458,6 +475,7 @@ where
         let v: T = from_avro_value(data, schema)
             .map_err(|e| anyhow!("error deserializing Avro record: {e}"))?;
         self.updates.push(MockUpdate::Insert(v));
+        self.n_bytes += 1;
         Ok(())
     }
 
@@ -466,6 +484,7 @@ where
             .map_err(|e| anyhow!("error deserializing Avro record: {e}"))?;
 
         self.updates.push(MockUpdate::Delete(v));
+        self.n_bytes += 1;
         Ok(())
     }
 
@@ -486,9 +505,11 @@ where
 
     fn take_some(&mut self, n: usize) -> Option<Box<dyn InputBuffer>> {
         if !self.updates.is_empty() {
+            let n = self.updates.len().min(n);
             Some(Box::new(MockDeZSetStreamBuffer {
+                n_bytes: fraction_take(n, self.updates.len(), &mut self.n_bytes),
                 updates: {
-                    let mut some = self.updates.split_off(self.updates.len().min(n));
+                    let mut some = self.updates.split_off(n);
                     swap(&mut some, &mut self.updates);
                     some
                 },
@@ -499,8 +520,11 @@ where
         }
     }
 
-    fn len(&self) -> usize {
-        self.updates.len()
+    fn len(&self) -> BufferSize {
+        BufferSize {
+            records: self.updates.len(),
+            bytes: self.n_bytes,
+        }
     }
 
     fn hash(&self, hasher: &mut dyn Hasher) {

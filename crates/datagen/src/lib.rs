@@ -33,7 +33,7 @@ use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver};
 use tokio::{sync::mpsc::UnboundedSender, time::Instant as TokioInstant};
 
 use dbsp::circuit::tokio::TOKIO;
-use feldera_adapterlib::format::{InputBuffer, Parser};
+use feldera_adapterlib::format::{BufferSize, InputBuffer, Parser};
 use feldera_adapterlib::transport::{
     parse_resume_info, InputCommandReceiver, InputConsumer, InputEndpoint, InputReader,
     InputReaderCommand, Resume, TransportInputEndpoint,
@@ -565,7 +565,6 @@ impl InputGenerator {
             seed = metadata.seed;
             let mut rows = metadata.rows;
             unassigned = metadata.todo;
-            let mut num_records = 0;
             let mut hasher = Xxh3Default::new();
 
             fn complete_replay(
@@ -573,32 +572,30 @@ impl InputGenerator {
                 in_flight: &mut [RowRangeSet],
                 consumer: &dyn InputConsumer,
                 hasher: &mut Xxh3Default,
-            ) {
-                let Completion {
-                    batch,
-                    mut buffer,
-                    num_bytes,
-                } = completion;
+            ) -> BufferSize {
+                let Completion { batch, mut buffer } = completion;
                 in_flight[batch.plan_idx].remove_range(batch.rows.start..=batch.rows.end - 1);
-                consumer.buffered(buffer.len(), num_bytes);
+                let size = buffer.len();
+                consumer.buffered(size);
                 buffer.hash(hasher);
                 buffer.flush();
+                size
             }
 
+            let mut total = BufferSize::empty();
             while let Some(work) = assign_work(&mut rows, &mut in_flight, &config, seed, false) {
-                num_records += work.batch.rows.len();
                 let _ = work_sender.send_blocking(work);
                 while let Ok(completion) = completion_receiver.try_recv() {
-                    complete_replay(completion, &mut in_flight, &*consumer, &mut hasher);
+                    total += complete_replay(completion, &mut in_flight, &*consumer, &mut hasher);
                 }
             }
             while !in_flight.iter().all(|set| set.is_empty()) {
                 let Some(completion) = completion_receiver.blocking_recv() else {
                     unreachable!()
                 };
-                complete_replay(completion, &mut in_flight, &*consumer, &mut hasher);
+                total += complete_replay(completion, &mut in_flight, &*consumer, &mut hasher);
             }
-            consumer.replayed(num_records, hasher.finish());
+            consumer.replayed(total, hasher.finish());
         }
 
         let mut running = false;
@@ -612,37 +609,36 @@ impl InputGenerator {
                 Some(InputReaderCommand::Extend) => running = true,
                 Some(InputReaderCommand::Pause) => running = false,
                 Some(InputReaderCommand::Queue { .. }) => {
-                    let mut num_records = 0;
+                    let mut total = BufferSize::empty();
                     let mut hasher = consumer.hasher();
                     let n = consumer.max_batch_size();
                     let mut consumed = vec![RowRangeSet::new(); config.plan.len()];
-                    while num_records < n {
+                    while total.records < n {
                         let Some(Completion {
                             batch: Batch { plan_idx, rows },
                             mut buffer,
-                            num_bytes: _,
                         }) = completed.pop_front()
                         else {
                             break;
                         };
-                        let mut taken = buffer.take_some(n - num_records);
+                        let mut taken = buffer.take_some(n - total.records);
                         let flushed = taken.len();
-                        if flushed > 0 {
-                            num_records += flushed;
+                        if flushed.records > 0 {
+                            total += flushed;
                             if let Some(hasher) = hasher.as_mut() {
                                 taken.hash(hasher);
                             }
-                            consumed[plan_idx].insert_range(rows.start..=rows.start + flushed - 1);
+                            consumed[plan_idx]
+                                .insert_range(rows.start..=rows.start + flushed.records - 1);
                             taken.flush();
                         }
                         if !buffer.is_empty() {
                             completed.push_front(Completion {
                                 batch: Batch {
                                     plan_idx,
-                                    rows: rows.start + flushed..rows.end,
+                                    rows: rows.start + flushed.records..rows.end,
                                 },
                                 buffer,
-                                num_bytes: 0,
                             });
                             break;
                         }
@@ -666,7 +662,7 @@ impl InputGenerator {
                     .into();
                     let resume =
                         Resume::new_metadata_only(serde_json::to_value(metadata).unwrap(), hasher);
-                    consumer.extended(num_records, Some(resume));
+                    consumer.extended(total, Some(resume));
                 }
                 Some(InputReaderCommand::Disconnect) => break,
                 None => (),
@@ -675,7 +671,7 @@ impl InputGenerator {
             while let Ok(completion) = completion_receiver.try_recv() {
                 let batch = &completion.batch;
                 in_flight[batch.plan_idx].remove_range(batch.rows.start..=batch.rows.end - 1);
-                consumer.buffered(completion.buffer.len(), completion.num_bytes);
+                consumer.buffered(completion.buffer.len());
                 completed.push_back(completion);
             }
 
@@ -753,7 +749,6 @@ impl InputGenerator {
                             || batch_creation_duration.elapsed() > BATCH_CREATION_TIMEOUT
                         {
                             buffer.extend(END_ARR);
-                            let num_bytes = buffer.len();
                             let (buffer, errors) = parser.parse(&buffer);
                             consumer.parse_errors(errors);
                             let _ = completion_sender.send(Completion {
@@ -762,7 +757,6 @@ impl InputGenerator {
                                     rows: buffer_start..idx + 1,
                                 },
                                 buffer,
-                                num_bytes,
                             });
                             datagen_unparker.unpark();
                             n_records = 0;
@@ -783,7 +777,6 @@ impl InputGenerator {
             }
             if n_records > 0 {
                 buffer.extend(END_ARR);
-                let num_bytes = buffer.len();
                 let (buffer, errors) = parser.parse(&buffer);
                 consumer.parse_errors(errors);
                 let _ = completion_sender.send(Completion {
@@ -792,7 +785,6 @@ impl InputGenerator {
                         rows: buffer_start..rows.end,
                     },
                     buffer,
-                    num_bytes,
                 });
                 datagen_unparker.unpark();
             }
@@ -809,7 +801,6 @@ struct Work {
 struct Completion {
     batch: Batch,
     buffer: Option<Box<dyn InputBuffer>>,
-    num_bytes: usize,
 }
 
 struct Batch {

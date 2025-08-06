@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 use std::fmt::{Display, Error as FmtError, Formatter};
 use std::hash::Hasher;
+use std::ops::{Add, AddAssign};
 
 use actix_web::HttpRequest;
 use anyhow::Result as AnyResult;
@@ -68,8 +69,8 @@ pub trait InputBuffer: Send {
     /// those records.
     fn flush(&mut self);
 
-    /// Returns the number of buffered records.
-    fn len(&self) -> usize;
+    /// Returns the number of buffered records and bytes.
+    fn len(&self) -> BufferSize;
 
     /// Hashes the records in the input buffer into `hasher`, in order.  This is
     /// used to ensure that input data remains the same for replay, so, for
@@ -81,7 +82,7 @@ pub trait InputBuffer: Send {
     fn hash(&self, hasher: &mut dyn Hasher);
 
     fn is_empty(&self) -> bool {
-        self.len() == 0
+        self.len().is_empty()
     }
 
     /// Removes the first `n` records from this input buffer and returns a new
@@ -94,6 +95,15 @@ pub trait InputBuffer: Send {
     ///
     /// This is useful for extracting the records from one of several parser
     /// threads to send to a single common thread to be pushed later.
+    ///
+    /// # Byte accounting
+    ///
+    /// This function must not increase or decrease the total number of bytes.
+    /// That is, if the returned buffer is named `head`, `self.len().bytes`
+    /// before the call must equal `self.len().bytes + head.len().bytes`
+    /// following the call.  Violating this invariant will cause the number of
+    /// buffered bytes reported by a pipeline never to fall to zero (or to wrap
+    /// around to `u64::MAX`).
     fn take_some(&mut self, n: usize) -> Option<Box<dyn InputBuffer>>;
 
     fn take_all(&mut self) -> Option<Box<dyn InputBuffer>> {
@@ -101,9 +111,53 @@ pub trait InputBuffer: Send {
     }
 }
 
+/// The size of an [InputBuffer].
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
+pub struct BufferSize {
+    /// The exact number of records in the buffer.
+    pub records: usize,
+
+    /// The number of bytes attributable to the buffer.
+    ///
+    /// This need not be exact.  (When a buffer is split with
+    /// [InputBuffer::take_some], it will usually not be exact.)
+    pub bytes: usize,
+}
+
+impl BufferSize {
+    /// The size of an empty buffer.
+    pub fn empty() -> Self {
+        Self::default()
+    }
+
+    /// Returns true if this buffer is empty.
+    pub fn is_empty(&self) -> bool {
+        self.records == 0 && self.bytes == 0
+    }
+}
+
+impl Add for BufferSize {
+    type Output = Self;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        BufferSize {
+            records: self.records + rhs.records,
+            bytes: self.bytes + rhs.bytes,
+        }
+    }
+}
+
+impl AddAssign for BufferSize {
+    fn add_assign(&mut self, rhs: Self) {
+        self.records += rhs.records;
+        self.bytes += rhs.bytes;
+    }
+}
+
 impl InputBuffer for Option<Box<dyn InputBuffer>> {
-    fn len(&self) -> usize {
-        self.as_ref().map_or(0, |buffer| buffer.len())
+    fn len(&self) -> BufferSize {
+        self.as_ref()
+            .map_or(BufferSize::empty(), |buffer| buffer.len())
     }
 
     fn hash(&self, hasher: &mut dyn Hasher) {

@@ -17,7 +17,7 @@ use tokio::sync::mpsc::UnboundedReceiver;
 use xxhash_rust::xxh3::Xxh3Default;
 
 use crate::catalog::InputCollectionHandle;
-use crate::format::{InputBuffer, ParseError, Parser};
+use crate::format::{BufferSize, InputBuffer, ParseError, Parser};
 use crate::PipelineState;
 
 /// Step number for fault-tolerant circuits.
@@ -288,31 +288,28 @@ impl<A> InputQueue<A> {
         }
     }
 
-    /// Appends `buffer`, to the queue, and associates it with
-    /// `aux`.  Reports to the controller that `num_bytes` have been received
-    /// and at least partially parsed, and that `errors` have occurred during
-    /// parsing.
+    /// Appends `buffer`, to the queue, and associates it with `aux`.  Reports
+    /// to the controller that `errors` have occurred during parsing.
     ///
-    /// If `buffer` has no records, then this discards `aux`, even if `buffer`
-    /// is non-`None`.
+    /// If `buffer` is empty, then this discards `aux`, even if `buffer` is
+    /// non-`None`.
     pub fn push_with_aux(
         &self,
         (buffer, errors): (Option<Box<dyn InputBuffer>>, Vec<ParseError>),
-        num_bytes: usize,
         aux: A,
     ) {
         self.consumer.parse_errors(errors);
-        let num_records = buffer.len();
+        let len = buffer.len();
 
         let mut queue = self.queue.lock().unwrap();
         queue.push_back((buffer, aux));
-        self.consumer.buffered(num_records, num_bytes);
+        self.consumer.buffered(len);
 
         // The endpoint pushed an empty buffer. This likely indicates that the accompanying aux data
         // needs to be processed by the endpoint after preceding buffers have been flushed. However,
         // since we didn't report any buffered records, the controller may never perform another step,
         // so we nudge it to do it.
-        if num_records == 0 {
+        if len.records == 0 {
             self.consumer.request_step();
         }
     }
@@ -324,7 +321,7 @@ impl<A> InputQueue<A> {
     /// since auxiliary data is associated with a whole buffer rather than with
     /// individual records. If the auxiliary data type `A` is `()`, then
     /// [InputQueue<()>::flush] avoids that and so is a better choice.
-    pub fn flush_with_aux(&self) -> (usize, Option<Xxh3Default>, Vec<A>) {
+    pub fn flush_with_aux(&self) -> (BufferSize, Option<Xxh3Default>, Vec<A>) {
         self.flush_with_aux_until(&|_| false)
     }
 
@@ -342,15 +339,15 @@ impl<A> InputQueue<A> {
     pub fn flush_with_aux_until(
         &self,
         stop_at: &dyn Fn(&A) -> bool,
-    ) -> (usize, Option<Xxh3Default>, Vec<A>) {
-        let mut total = 0;
+    ) -> (BufferSize, Option<Xxh3Default>, Vec<A>) {
+        let mut total = BufferSize::empty();
         let mut hasher = self.consumer.hasher();
         let n = self.consumer.max_batch_size();
         let mut consumed_aux = Vec::new();
 
         let mut stop = false;
 
-        while !stop && total < n {
+        while !stop && total.records < n {
             let Some((buffer, aux)) = self.queue.lock().unwrap().pop_front() else {
                 break;
             };
@@ -392,14 +389,9 @@ impl<A> InputQueue<A> {
 
 impl InputQueue<()> {
     /// Appends `buffer`, if nonempty,` to the queue.  Reports to the controller
-    /// that `num_bytes` have been received and at least partially parsed, and
-    /// that `errors` have occurred during parsing.
-    pub fn push(
-        &self,
-        (buffer, errors): (Option<Box<dyn InputBuffer>>, Vec<ParseError>),
-        num_bytes: usize,
-    ) {
-        self.push_with_aux((buffer, errors), num_bytes, ())
+    /// that `errors` occurred during parsing.
+    pub fn push(&self, (buffer, errors): (Option<Box<dyn InputBuffer>>, Vec<ParseError>)) {
+        self.push_with_aux((buffer, errors), ())
     }
 
     /// Flushes a batch of records to the circuit and reports to the consumer
@@ -407,15 +399,15 @@ impl InputQueue<()> {
     ///
     /// Only non-fault-tolerant input adapters can use this.
     pub fn queue(&self) {
-        let mut total = 0;
+        let mut total = BufferSize::empty();
         let n = self.consumer.max_batch_size();
-        while total < n {
+        while total.records < n {
             let Some((buffer, ())) = self.queue.lock().unwrap().pop_front() else {
                 break;
             };
 
             if let Some(mut buffer) = buffer {
-                let mut taken = buffer.take_some(n - total);
+                let mut taken = buffer.take_some(n - total.records);
                 total += taken.len();
                 taken.flush();
                 drop(taken);
@@ -511,27 +503,27 @@ pub trait InputConsumer: Send + Sync + DynClone {
     /// Reports `errors` as parse errors.
     fn parse_errors(&self, errors: Vec<ParseError>);
 
-    /// Reports that the input adapter has internally buffered `num_records`
-    /// records comprising `num_bytes` bytes of input data.
+    /// Reports that the input adapter has internally buffered `amt` records and
+    /// bytes.
     ///
     /// Fault-tolerant input adapters should report buffered data during replay
     /// as well as in normal operation.
-    fn buffered(&self, num_records: usize, num_bytes: usize);
+    fn buffered(&self, amt: BufferSize);
 
-    /// Reports that the input adapter has completed flushing `num_records`
-    /// records to the circuit, that hash to `hash`, in response to an
+    /// Reports that the input adapter has completed flushing `amt` data to the
+    /// circuit, that hash to `hash`, in response to an
     /// [InputReaderCommand::Replay] request.
     ///
     /// Only a fault-tolerant input adapter will invoke this.
-    fn replayed(&self, num_records: usize, hash: u64);
+    fn replayed(&self, amt: BufferSize, hash: u64);
 
-    /// Reports that the input adapter has completed flushing `num_records`
-    /// records to the circuit, that hash to `hash`, in response to an
+    /// Reports that the input adapter has completed flushing `amt` data to the
+    /// circuit, that hash to `hash`, in response to an
     /// [InputReaderCommand::Queue] request.
     ///
     /// If the step is one that the input adapter can restart after, or replay,
     /// then it should supply that as `resume` (see [Resume] for details).
-    fn extended(&self, num_records: usize, resume: Option<Resume>);
+    fn extended(&self, amt: BufferSize, resume: Option<Resume>);
 
     /// Reports that the endpoint has reached end of input and that no more data
     /// will be received from the endpoint.
