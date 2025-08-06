@@ -748,6 +748,12 @@ impl TestClient {
 
         assert_eq!(expected_response, received);
     }
+
+    pub async fn check_cluster_health(&self) -> (StatusCode, serde_json::Value) {
+        let response = self.get("/v0/cluster_healthz").await;
+        let (status_code, value) = Self::parse_json_response(response).await;
+        (status_code, value)
+    }
 }
 
 /// Wait for a condition to be true by periodically checking it.
