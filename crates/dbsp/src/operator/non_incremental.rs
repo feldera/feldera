@@ -45,6 +45,20 @@ where
     }
 }
 
+impl<C, S> NonIncrementalInputStreams<C> for Vec<S>
+where
+    C: Circuit,
+    S: NonIncrementalInputStreams<C>,
+{
+    type Imported = Vec<S::Imported>;
+
+    fn import(&self, child_circuit: &mut NonIterativeCircuit<C>) -> Self::Imported {
+        self.iter()
+            .map(|x| x.import(child_circuit))
+            .collect::<Vec<_>>()
+    }
+}
+
 #[allow(clippy::unused_unit)]
 #[impl_for_tuples(12)]
 #[tuple_types_custom_trait_bound(NonIncrementalInputStreams<C>)]
