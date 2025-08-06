@@ -414,13 +414,13 @@ impl PostgresInputEndpointInner {
             }
             bytes += value.len();
             if bytes >= 1024 * 1024 * 2 {
-                self.queue.push((input_stream.take_all(), errors), bytes);
+                self.queue.push((input_stream.take_all(), errors));
                 bytes = 0;
                 errors = Vec::new();
             }
         }
 
-        self.queue.push((input_stream.take_all(), errors), bytes);
+        self.queue.push((input_stream.take_all(), errors));
         self.consumer.eoi();
     }
 

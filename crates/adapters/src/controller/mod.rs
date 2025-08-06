@@ -56,6 +56,7 @@ use dbsp::{
     DBSPHandle,
 };
 use enum_map::EnumMap;
+use feldera_adapterlib::format::BufferSize;
 use feldera_adapterlib::transport::Resume;
 use feldera_adapterlib::utils::datafusion::execute_query_text;
 use feldera_ir::LirCircuit;
@@ -695,21 +696,39 @@ impl Controller {
         metrics.process_metrics(labels);
         metrics.gauge(
             "records_input_buffered",
-            "Total number of records currently buffered by all endpoints.",
+            "Total amount of data currently buffered by all endpoints, in records.",
             labels,
             status.num_buffered_input_records(),
         );
+        metrics.gauge(
+            "records_input_buffered_bytes",
+            "Total amount of data currently buffered by all endpoints, in bytes.",
+            labels,
+            status.num_buffered_input_bytes(),
+        );
         metrics.counter(
             "records_input_total",
-            "Total number of input records received from all connectors.",
+            "Total amount of data received from all connectors, in records.",
             labels,
             status.num_total_input_records(),
         );
         metrics.counter(
+            "records_input_bytes_total",
+            "Total amount of data received from all connectors, in bytes.",
+            labels,
+            status.num_total_input_bytes(),
+        );
+        metrics.counter(
             "records_processed_total",
-            "Total number of input records processed by the pipeline.",
+            "Total amount of input processed by the pipeline, in records.",
             labels,
             status.num_total_processed_records(),
+        );
+        metrics.counter(
+            "records_processed_bytes_total",
+            "Total amount of input processed by the pipeline, in bytes.",
+            labels,
+            status.num_total_processed_bytes(),
         );
         metrics.counter(
             "pipeline_complete",
@@ -860,9 +879,18 @@ impl Controller {
             labels,
             status,
             "input_connector_buffered_records",
-            "Number of records currently buffered by an input connector.",
+            "Amount of data currently buffered by an input connector, in records.",
             ValueType::Gauge,
             |m| &m.buffered_records,
+        );
+        write_input_metric(
+            metrics,
+            labels,
+            status,
+            "input_connector_buffered_records_bytes",
+            "Amount of data currently buffered by an input connector, in bytes.",
+            ValueType::Gauge,
+            |m| &m.buffered_bytes,
         );
         write_input_metric(
             metrics,
@@ -1505,10 +1533,10 @@ impl CircuitThread {
     ///   adapters are still flushing data to the circuit) that can't be
     ///   recovered, so the pipeline process should exit as soon as it can.
     /// - `Err(error)` if there was an error.
-    fn input_step(&mut self) -> Result<Option<u64>, ControllerError> {
+    fn input_step(&mut self) -> Result<Option<BufferSize>, ControllerError> {
         // No ingestion during bootstrap.
         if self.controller.status.bootstrap_in_progress() {
-            return Ok(Some(0));
+            return Ok(Some(BufferSize::empty()));
         }
         let mut step_metadata = HashMap::new();
         if let Some(replay_step) = self.ft.as_ref().and_then(|ft| ft.replay_step.as_ref()) {
@@ -1529,7 +1557,10 @@ impl CircuitThread {
                                 replay: log.data.clone(),
                                 hash: log.checksums.hash,
                             }),
-                            num_records: log.checksums.num_records,
+                            amt: BufferSize {
+                                records: log.checksums.num_records as usize,
+                                bytes: 0, // XXX
+                            },
                         },
                     ),
                 );
@@ -1571,7 +1602,7 @@ impl CircuitThread {
                         (
                             status.endpoint_name.clone(),
                             StepResults {
-                                num_records: 0,
+                                amt: BufferSize::empty(),
                                 resume,
                             },
                         ),
@@ -1592,7 +1623,7 @@ impl CircuitThread {
         }
         drop(statuses);
 
-        let mut total_consumed = 0;
+        let mut total_consumed = BufferSize::empty();
 
         let mut long_op_warning = LongOperationWarning::new(Duration::from_secs(10));
         loop {
@@ -1629,7 +1660,7 @@ impl CircuitThread {
                 };
 
                 // Input received.
-                total_consumed += results.num_records;
+                total_consumed += results.amt;
                 step_metadata.insert(endpoint_id, (status.endpoint_name.clone(), results));
                 false
             });
@@ -1711,15 +1742,15 @@ impl CircuitThread {
         Ok(Some(total_consumed))
     }
 
-    /// Reports that `total_consumed` records have been consumed.
+    /// Reports that `total_consumed` has been consumed.
     ///
     /// Returns the total number of records processed.
-    fn processed_records(&mut self, total_consumed: u64) -> u64 {
+    fn processed_records(&mut self, total_consumed: BufferSize) -> u64 {
         let processed_records = self
             .controller
             .status
             .global_metrics
-            .processed_records(total_consumed);
+            .processed_data(total_consumed);
         self.controller.status.update_total_completed_records();
         processed_records
     }
@@ -3712,24 +3743,23 @@ impl ControllerInner {
     /// Update counters after receiving a new input batch.
     ///
     /// See [ControllerStatus::input_batch].
-    pub fn input_batch(&self, endpoint_id: Option<(EndpointId, usize)>, num_records: usize) {
+    pub fn input_batch(&self, endpoint_id: Option<EndpointId>, amt: BufferSize) {
         // We update the individual endpoint metrics, then the global metrics.
         // The order is important because global metrics updates can unpark the
         // circuit thread, and the circuit thread reads the endpoint metrics.
         // Updating in the wrong order can cause the circuit thread to park
         // itself indefinitely.
-        if let Some((endpoint_id, num_bytes)) = endpoint_id {
+        if let Some(endpoint_id) = endpoint_id {
             self.status.input_batch_from_endpoint(
                 endpoint_id,
-                num_bytes,
-                num_records,
+                amt,
                 &self.backpressure_thread_unparker,
             )
         }
 
-        if num_records > 0 {
+        if !amt.is_empty() {
             self.status
-                .input_batch_global(num_records, &self.circuit_thread_unparker);
+                .input_batch_global(amt, &self.circuit_thread_unparker);
         }
     }
 
@@ -3888,16 +3918,15 @@ impl InputConsumer for InputProbe {
         }
     }
 
-    fn buffered(&self, num_records: usize, num_bytes: usize) {
-        self.controller
-            .input_batch(Some((self.endpoint_id, num_bytes)), num_records);
+    fn buffered(&self, amt: BufferSize) {
+        self.controller.input_batch(Some(self.endpoint_id), amt);
     }
 
-    fn replayed(&self, num_records: usize, hash: u64) {
+    fn replayed(&self, amt: BufferSize, hash: u64) {
         self.controller.status.extended(
             self.endpoint_id,
             StepResults {
-                num_records: num_records as u64,
+                amt,
                 resume: Some(Resume::Replay {
                     // These values for `seek` and `replay` are bogus, but they
                     // will not be written to the journal (because they were
@@ -3912,7 +3941,7 @@ impl InputConsumer for InputProbe {
         self.controller.unpark_circuit();
     }
 
-    fn extended(&self, num_records: usize, resume: Option<Resume>) {
+    fn extended(&self, amt: BufferSize, resume: Option<Resume>) {
         #[cfg(debug_assertions)]
         {
             let resume_ft = resume.as_ref().map(Resume::fault_tolerance);
@@ -3921,10 +3950,7 @@ impl InputConsumer for InputProbe {
         }
         self.controller.status.extended(
             self.endpoint_id,
-            StepResults {
-                num_records: num_records as u64,
-                resume,
-            },
+            StepResults { amt, resume },
             &self.controller.backpressure_thread_unparker,
         );
         self.controller.unpark_circuit();
