@@ -386,6 +386,7 @@ CREATE TABLE {name} (
                     })
                 },
                 &config,
+                std::sync::Weak::new(),
                 Box::new(move |e| {
                     let msg = format!("postgres_output_test: error: {}", e);
                     println!("{msg}");
@@ -1255,6 +1256,7 @@ outputs:
             })
         },
         &config,
+        std::sync::Weak::new(),
         Box::new(move |e| {
             let msg = format!("postgres_output_test: error: {e}");
             println!("{msg}");

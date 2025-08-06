@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use feldera_types::config::SyncConfig;
+use feldera_types::{checkpoint::CheckpointMetadata, config::SyncConfig};
 
 use crate::StorageBackend;
 
@@ -16,7 +16,7 @@ pub trait CheckpointSynchronizer: Sync {
         &self,
         storage: Arc<dyn StorageBackend>,
         remote_config: SyncConfig,
-    ) -> anyhow::Result<()>;
+    ) -> anyhow::Result<CheckpointMetadata>;
 }
 
 inventory::collect!(&'static dyn CheckpointSynchronizer);

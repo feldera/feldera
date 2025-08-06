@@ -180,6 +180,7 @@ outputs:
     let controller = Controller::with_config(
         move |workers| Ok(test_circuit::<DeltaTestStruct>(workers, &schema, &[None])),
         &config,
+        std::sync::Weak::new(),
         Box::new(move |e| {
             let msg = format!("redis_output_test: error: {e}");
             println!("{msg}");
@@ -303,6 +304,7 @@ outputs:
     let Err(err) = Controller::with_config(
         move |workers| Ok(test_circuit::<TestStruct>(workers, &schema, &[None])),
         &config,
+        std::sync::Weak::new(),
         Box::new(move |e| {
             let msg = format!("redis_output_test: error: {e}");
             println!("{msg}");

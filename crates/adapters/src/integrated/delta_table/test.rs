@@ -301,6 +301,7 @@ inputs:
     Controller::with_config(
         move |workers| Ok(test_circuit::<T>(workers, &schema, &[None])),
         &config,
+        std::sync::Weak::new(),
         Box::new(move |e| panic!("delta_table_input_test: error: {e}")),
     )
     .unwrap()
@@ -380,6 +381,7 @@ outputs:
             ))
         },
         &config,
+        std::sync::Weak::new(),
         Box::new(move |e| panic!("delta_to_delta pipeline: error: {e}")),
     )
     .unwrap()
@@ -444,6 +446,7 @@ inputs:
             ))
         },
         &config,
+        std::sync::Weak::new(),
         Box::new(move |e| panic!("delta_read pipeline: error: {e}")),
     )
     .unwrap()
@@ -525,6 +528,7 @@ outputs:
             ))
         },
         &config,
+        std::sync::Weak::new(),
         Box::new(move |e| panic!("delta_write pipeline: error: {e}")),
     )
     .unwrap()
@@ -621,6 +625,7 @@ outputs:
             ))
         },
         &config,
+        std::sync::Weak::new(),
         Box::new(move |e| panic!("delta_table_output_test: error: {e}")),
     )
     .unwrap();

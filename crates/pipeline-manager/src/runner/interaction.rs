@@ -38,7 +38,7 @@ impl CachedPipelineDescr {
     /// status to be interacted with (i.e., running or paused).
     fn deployment_location_based_on_status(&self) -> Result<String, ManagerError> {
         match self.pipeline.deployment_status {
-            PipelineStatus::Running | PipelineStatus::Paused | PipelineStatus::Suspending => {}
+            PipelineStatus::Initializing | PipelineStatus::Running | PipelineStatus::Paused | PipelineStatus::Suspending => {}
             PipelineStatus::Unavailable => Err(RunnerError::PipelineInteractionUnreachable {
                 error: "deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again".to_string()
             })?,

@@ -55,6 +55,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::hash::{BuildHasherDefault, DefaultHasher};
 use std::path::PathBuf;
+use std::sync::atomic::AtomicBool;
 use std::{
     borrow::Cow,
     net::TcpListener,
@@ -195,12 +196,15 @@ impl CheckpointState {
     }
 }
 
-struct ServerState {
+pub(crate) struct ServerState {
     phase: Arc<RwLock<PipelinePhase>>,
     metadata: RwLock<String>,
     controller: RwLock<Option<Controller>>,
     checkpoint_state: Arc<Mutex<CheckpointState>>,
     sync_checkpoint_state: Arc<Mutex<CheckpointSyncState>>,
+    /// Indicates whether the pipeline has been activated from standby mode via
+    /// a call to the `/activate` endpoint.
+    activated: Arc<AtomicBool>,
     /// Channel used to send a `kill` command to
     /// the self-destruct task when shutting down
     /// the server.
@@ -215,8 +219,14 @@ impl ServerState {
             controller: RwLock::new(None),
             checkpoint_state: Arc::new(Mutex::new(CheckpointState::default())),
             sync_checkpoint_state: Arc::new(Mutex::new(CheckpointSyncState::default())),
+            activated: Arc::new(AtomicBool::new(false)),
             terminate_sender,
         }
+    }
+
+    #[allow(unused)]
+    pub(crate) fn activated(&self) -> bool {
+        self.activated.load(std::sync::atomic::Ordering::Relaxed)
     }
 }
 
@@ -712,6 +722,7 @@ fn do_bootstrap(
     let controller = Controller::with_config(
         circuit_factory,
         &config,
+        weak_state_ref.clone(),
         Box::new(move |e| error_handler(&weak_state_ref, e))
             as Box<dyn Fn(Arc<ControllerError>) + Send + Sync>,
     )?;
@@ -744,6 +755,7 @@ where
         .service(checkpoint_sync)
         .service(start)
         .service(pause)
+        .service(activate)
         .service(shutdown)
         .service(status)
         .service(suspendable)
@@ -789,6 +801,14 @@ async fn pause(state: WebData<ServerState>) -> impl Responder {
         }
         None => Err(missing_controller_error(&state)),
     }
+}
+
+#[post("/activate")]
+async fn activate(state: WebData<ServerState>) -> impl Responder {
+    state
+        .activated
+        .store(true, std::sync::atomic::Ordering::Relaxed);
+    HttpResponse::Accepted()
 }
 
 /// Retrieve pipeline status.
