@@ -4,6 +4,7 @@ use crate::circuit::metadata::{BatchSizeStats, OUTPUT_BATCHES_LABEL};
 use crate::circuit::splitter_output_chunk_size;
 use crate::dynamic::DynData;
 use crate::operator::async_stream_operators::{StreamingBinaryOperator, StreamingBinaryWrapper};
+use crate::operator::dynamic::concat::dyn_accumulate_concat;
 use crate::trace::spine_async::WithSnapshot;
 use crate::trace::{Spine, Trace};
 use crate::{
@@ -705,17 +706,23 @@ where
                             .output_factories
                             .val_factory()
                             .default_box();
-                        stream1
-                            .minus(&stream1.dyn_join_generic(
-                                &factories.join_factories,
-                                &stream2,
-                                TraceJoinFuncs::new(move |k: &I1::Key, v1: &I1::Val, _v2, cb| {
-                                    k.clone_to(&mut key);
-                                    v1.clone_to(&mut val);
-                                    cb(key.as_mut(), val.as_mut())
-                                }),
-                            ))
-                            .mark_sharded()
+
+                        let join_stream = stream1.dyn_join_generic(
+                            &factories.join_factories,
+                            &stream2,
+                            TraceJoinFuncs::new(move |k: &I1::Key, v1: &I1::Val, _v2, cb| {
+                                k.clone_to(&mut key);
+                                v1.clone_to(&mut val);
+                                cb(key.as_mut(), val.as_mut())
+                            }),
+                        );
+
+                        // stream1 - join_stream.
+                        dyn_accumulate_concat(
+                            &factories.join_factories.left_factories,
+                            [(stream1, true), (join_stream, false)],
+                        )
+                        .mark_sharded()
                     })
                 },
             )

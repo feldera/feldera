@@ -3,7 +3,9 @@ use std::{borrow::Cow, marker::PhantomData, pin::Pin, rc::Rc};
 use crate::{
     circuit::{
         metadata::{OperatorLocation, OperatorMeta},
-        operator_traits::{BinaryOperator, Operator, QuaternaryOperator, TernaryOperator},
+        operator_traits::{
+            BinaryOperator, NaryOperator, Operator, QuaternaryOperator, TernaryOperator,
+        },
         GlobalNodeId,
     },
     Error, Position, Scope,
@@ -166,6 +168,7 @@ where
         }
     }
 }
+
 pub trait StreamingTernaryOperator<I1, I2, I3, O>: Operator
 where
     I1: Clone,
@@ -491,6 +494,164 @@ where
 
         let Some((output, complete, progress)) = stream.next().await else {
             panic!("StreamingQuaternaryOperator unexpectedly reached end of stream");
+        };
+
+        self.progress = progress;
+
+        if complete {
+            self.stream = None;
+            output
+        } else {
+            output
+        }
+    }
+}
+
+pub trait StreamingNaryOperator<I, O>: Operator {
+    fn eval<'a, Iter>(
+        self: Rc<Self>,
+        inputs: Iter,
+    ) -> impl AsyncStream<Item = (O, bool, Option<Position>)> + 'static
+    where
+        I: Clone + 'static,
+        Iter: Iterator<Item = Cow<'a, I>>;
+}
+
+pub struct StreamingNaryWrapper<I, O, Op> {
+    operator: Rc<Op>,
+    stream: Option<Pin<Box<dyn AsyncStream<Item = (O, bool, Option<Position>)>>>>,
+    progress: Option<Position>,
+    phantom: PhantomData<fn(&I, &O)>,
+}
+
+impl<I, O, Op> StreamingNaryWrapper<I, O, Op> {
+    pub fn new(operator: Op) -> Self {
+        Self {
+            operator: Rc::new(operator),
+            stream: None,
+            progress: None,
+            phantom: PhantomData,
+        }
+    }
+}
+
+impl<I, O, Op> Operator for StreamingNaryWrapper<I, O, Op>
+where
+    I: 'static,
+    O: 'static,
+    Op: StreamingNaryOperator<I, O> + 'static,
+{
+    fn name(&self) -> Cow<'static, str> {
+        self.operator.name()
+    }
+
+    fn location(&self) -> OperatorLocation {
+        self.operator.location()
+    }
+
+    fn init(&mut self, global_id: &GlobalNodeId) {
+        Rc::get_mut(&mut self.operator).unwrap().init(global_id);
+    }
+
+    fn metadata(&self, meta: &mut OperatorMeta) {
+        self.operator.metadata(meta);
+    }
+
+    fn clock_start(&mut self, scope: Scope) {
+        Rc::get_mut(&mut self.operator).unwrap().clock_start(scope);
+    }
+
+    fn clock_end(&mut self, scope: Scope) {
+        Rc::get_mut(&mut self.operator).unwrap().clock_end(scope);
+    }
+
+    fn is_async(&self) -> bool {
+        self.operator.is_async()
+    }
+
+    fn is_input(&self) -> bool {
+        self.operator.is_input()
+    }
+
+    fn ready(&self) -> bool {
+        self.operator.ready()
+    }
+
+    fn register_ready_callback<F>(&mut self, cb: F)
+    where
+        F: Fn() + Send + Sync + 'static,
+    {
+        Rc::get_mut(&mut self.operator)
+            .unwrap()
+            .register_ready_callback(cb);
+    }
+
+    fn fixedpoint(&self, scope: Scope) -> bool {
+        self.operator.fixedpoint(scope)
+    }
+
+    #[allow(unused_variables)]
+    fn commit(&mut self, base: &StoragePath, persistent_id: Option<&str>) -> Result<(), Error> {
+        Rc::get_mut(&mut self.operator)
+            .unwrap()
+            .commit(base, persistent_id)
+    }
+
+    #[allow(unused_variables)]
+    fn restore(&mut self, base: &StoragePath, persistent_id: Option<&str>) -> Result<(), Error> {
+        Rc::get_mut(&mut self.operator)
+            .unwrap()
+            .restore(base, persistent_id)
+    }
+
+    fn clear_state(&mut self) -> Result<(), Error> {
+        Rc::get_mut(&mut self.operator).unwrap().clear_state()
+    }
+
+    fn start_replay(&mut self) -> Result<(), Error> {
+        Rc::get_mut(&mut self.operator).unwrap().start_replay()
+    }
+
+    fn is_replay_complete(&self) -> bool {
+        self.operator.is_replay_complete()
+    }
+
+    fn end_replay(&mut self) -> Result<(), Error> {
+        Rc::get_mut(&mut self.operator).unwrap().end_replay()
+    }
+
+    fn flush(&mut self) {
+        Rc::get_mut(&mut self.operator).unwrap().flush();
+    }
+
+    fn is_flush_complete(&self) -> bool {
+        self.stream.is_none()
+    }
+
+    fn flush_progress(&self) -> Option<Position> {
+        self.progress.clone()
+    }
+}
+
+impl<I, O, Op> NaryOperator<I, O> for StreamingNaryWrapper<I, O, Op>
+where
+    I: Clone + 'static,
+    O: 'static,
+    Op: StreamingNaryOperator<I, O> + 'static,
+{
+    async fn eval<'a, Iter>(&mut self, inputs: Iter) -> O
+    where
+        Iter: Iterator<Item = Cow<'a, I>>,
+    {
+        if self.stream.is_none() {
+            self.stream = Some(Box::pin(self.operator.clone().eval(inputs))
+                as Pin<Box<dyn AsyncStream<Item = (O, bool, Option<Position>)>>>);
+        }
+
+        let stream = self.stream.as_mut().unwrap();
+
+        let Some((output, complete, progress)) = stream.next().await else {
+            panic!("StreamingNaryOperator unexpectedly reached end of stream");
         };
 
         self.progress = progress;

@@ -1001,3 +1001,77 @@ where
             .typed()
     }
 }
+
+impl RootCircuit {
+    pub fn accumulate_concat_zsets<K>(
+        &self,
+        streams: &[(Stream<Self, OrdZSet<K>>, bool)],
+    ) -> Stream<Self, OrdZSet<K>>
+    where
+        K: DBData,
+    {
+        let factories = BatchReaderFactories::new::<K, (), ZWeight>();
+
+        let inner_streams = streams
+            .iter()
+            .map(|(stream, polarity)| (stream.inner(), *polarity))
+            .collect::<Vec<_>>();
+        self.dyn_accumulate_concat_zsets(&factories, &inner_streams)
+            .typed()
+    }
+
+    pub fn accumulate_concat_indexed_zsets<K, V>(
+        &self,
+        streams: &[(Stream<Self, OrdIndexedZSet<K, V>>, bool)],
+    ) -> Stream<Self, OrdIndexedZSet<K, V>>
+    where
+        K: DBData,
+        V: DBData,
+    {
+        let factories = BatchReaderFactories::new::<K, V, ZWeight>();
+
+        let inner_streams = streams
+            .iter()
+            .map(|(stream, polarity)| (stream.inner(), *polarity))
+            .collect::<Vec<_>>();
+        self.dyn_accumulate_concat_indexed_zsets(&factories, &inner_streams)
+            .typed()
+    }
+}
+
+impl NestedCircuit {
+    pub fn accumulate_concat_zsets<K>(
+        &self,
+        streams: &[(Stream<Self, OrdZSet<K>>, bool)],
+    ) -> Stream<Self, OrdZSet<K>>
+    where
+        K: DBData,
+    {
+        let factories = BatchReaderFactories::new::<K, (), ZWeight>();
+
+        let inner_streams = streams
+            .iter()
+            .map(|(stream, polarity)| (stream.inner(), *polarity))
+            .collect::<Vec<_>>();
+        self.dyn_accumulate_concat_zsets(&factories, &inner_streams)
+            .typed()
+    }
+
+    pub fn accumulate_concat_indexed_zsets<K, V>(
+        &self,
+        streams: &[(Stream<Self, OrdIndexedZSet<K, V>>, bool)],
+    ) -> Stream<Self, OrdIndexedZSet<K, V>>
+    where
+        K: DBData,
+        V: DBData,
+    {
+        let factories = BatchReaderFactories::new::<K, V, ZWeight>();
+
+        let inner_streams = streams
+            .iter()
+            .map(|(stream, polarity)| (stream.inner(), *polarity))
+            .collect::<Vec<_>>();
+        self.dyn_acumulate_concat_indexed_zsets(&factories, &inner_streams)
+            .typed()
+    }
+}
