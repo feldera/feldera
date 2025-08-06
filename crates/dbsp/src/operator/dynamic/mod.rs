@@ -8,6 +8,7 @@ pub mod accumulator;
 pub mod aggregate;
 pub mod asof_join;
 mod communication;
+pub mod concat;
 mod consolidate;
 pub mod controlled_filter;
 pub mod count;
