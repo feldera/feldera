@@ -18,7 +18,49 @@ use serde_json::{json, Value};
 use serial_test::serial;
 use std::time::{Duration, Instant};
 use tempfile::NamedTempFile;
-use tokio::time::sleep;
+use tokio::time::{interval, sleep};
+
+/// Tests the cluster health endpoint.
+#[actix_web::test]
+#[serial]
+async fn cluster_health_check() {
+    let config = TestClient::setup_and_full_cleanup().await;
+
+    let mut ticker = interval(Duration::from_secs(2)); // check every 2 seconds
+    let start = Instant::now();
+    let timeout = Duration::from_secs(300); // 5 minutes
+
+    loop {
+        ticker.tick().await;
+        let (status, health) = config.check_cluster_health().await;
+
+        // Safely extract and check "healthy" for both runner and compiler
+        let runner_healthy = match health.get("runner").and_then(|h| h.get("healthy")) {
+            Some(val) => val.as_bool().unwrap_or(false),
+            None => false,
+        };
+        let compiler_healthy = match health.get("compiler").and_then(|h| h.get("healthy")) {
+            Some(val) => val.as_bool().unwrap_or(false),
+            None => false,
+        };
+
+        if runner_healthy && compiler_healthy {
+            assert_eq!(StatusCode::OK, status);
+            // we can stop the test are both are healthy
+            break;
+        } else {
+            // if either of the service is unhealthy,
+            // status code must be 503
+            assert_eq!(StatusCode::SERVICE_UNAVAILABLE, status)
+        }
+
+        if start.elapsed() > timeout {
+            panic!(
+                "Timed out waiting for both runner and compiler to become healthy. Last health status: {health:#?}",
+            );
+        }
+    }
+}
 
 /// Tests the creation of pipelines using its POST endpoint.
 #[actix_web::test]
