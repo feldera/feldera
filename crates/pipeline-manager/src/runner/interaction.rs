@@ -343,8 +343,16 @@ impl RunnerInteraction {
         let mut client_rx = client_rx.max_frame_size(MAX_WS_FRAME_SIZE);
 
         // Connect to the pipeline
-        let server_url =
-            format_pipeline_url("ws", &location, endpoint, client_request.query_string());
+        let server_url = format_pipeline_url(
+            if self.common_config.enable_https {
+                "wss"
+            } else {
+                "ws"
+            },
+            &location,
+            endpoint,
+            client_request.query_string(),
+        );
         let (_response, pipeline_conn) = awc_client
             .ws(server_url)
             .max_frame_size(MAX_WS_FRAME_SIZE)
