@@ -20,7 +20,7 @@ import java.util.List;
 @NonCoreIR
 public final class DBSPDelayedIntegralOperator extends DBSPUnaryOperator {
     public DBSPDelayedIntegralOperator(CalciteRelNode node, OutputPort source) {
-        super(node, "delay_trace", null, source.outputType(), source.isMultiset(), source);
+        super(node, "accumulate_delay_trace", null, source.outputType(), source.isMultiset(), source);
     }
 
     @Override

@@ -12,8 +12,8 @@ use crate::{
             merge_batcher::MergeBatcher,
             vec::indexed_wset_batch::{VecIndexedWSet, VecIndexedWSetBuilder},
         },
-        serialize_indexed_wset, Batch, BatchLocation, BatchReader, Builder, FileIndexedWSet,
-        FileIndexedWSetFactories, Filter, MergeCursor,
+        serialize_indexed_wset, Batch, BatchLocation, BatchReader, Builder, FallbackValBatch,
+        FileIndexedWSet, FileIndexedWSetFactories, Filter, MergeCursor,
     },
     DBWeight, Error, NumEntries,
 };
@@ -329,6 +329,7 @@ where
     V: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
+    type Timed<T: crate::Timestamp> = FallbackValBatch<K, V, T, R>;
     type Batcher = MergeBatcher<Self>;
     type Builder = FallbackIndexedWSetBuilder<K, V, R>;
 
@@ -640,6 +641,14 @@ where
                     Inner::Vec(vec.done())
                 }
             },
+        }
+    }
+
+    fn num_tuples(&self) -> usize {
+        match &self.inner {
+            BuilderInner::Vec(vec) => vec.num_tuples(),
+            BuilderInner::File(file) => file.num_tuples(),
+            BuilderInner::Threshold { vec, .. } => vec.num_tuples(),
         }
     }
 }

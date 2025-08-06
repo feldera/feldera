@@ -50,6 +50,55 @@ where
     }
 }
 
+/// A version of Generator that passes a flag to the generator function when `flush` has been called.
+pub struct MacrostepGenerator<T, F> {
+    generator: F,
+    flush: bool,
+    _t: PhantomData<T>,
+}
+
+impl<T, F> MacrostepGenerator<T, F>
+where
+    T: Clone,
+{
+    /// Creates a generator
+    pub fn new(g: F) -> Self {
+        Self {
+            generator: g,
+            flush: false,
+            _t: Default::default(),
+        }
+    }
+}
+
+impl<T, F> Operator for MacrostepGenerator<T, F>
+where
+    T: Data,
+    F: 'static,
+{
+    fn name(&self) -> Cow<'static, str> {
+        Cow::from("Generator")
+    }
+    fn flush(&mut self) {
+        self.flush = true;
+    }
+    fn fixedpoint(&self, _scope: Scope) -> bool {
+        false
+    }
+}
+
+impl<T, F> SourceOperator<T> for MacrostepGenerator<T, F>
+where
+    F: FnMut(bool) -> T + 'static,
+    T: Data,
+{
+    async fn eval(&mut self) -> T {
+        let result = (self.generator)(self.flush);
+        self.flush = false;
+        result
+    }
+}
+
 /// Generator operator for nested circuits.
 ///
 /// At each parent clock tick, invokes a user-provided reset closure, which
@@ -57,6 +106,8 @@ where
 pub struct GeneratorNested<T> {
     reset: Box<dyn FnMut() -> Box<dyn FnMut() -> T>>,
     generator: Option<Box<dyn FnMut() -> T>>,
+    flush: bool,
+    empty: T,
 }
 
 impl<T> GeneratorNested<T>
@@ -64,10 +115,12 @@ where
     T: Clone,
 {
     /// Creates a nested generator with specified `reset` closure.
-    pub fn new(reset: Box<dyn FnMut() -> Box<dyn FnMut() -> T>>) -> Self {
+    pub fn new(reset: Box<dyn FnMut() -> Box<dyn FnMut() -> T>>, empty: T) -> Self {
         Self {
             reset,
             generator: None,
+            flush: false,
+            empty,
         }
     }
 }
@@ -94,6 +147,10 @@ where
         // can inform the circuit that it's reached a fixedpoint?
         false
     }
+
+    fn flush(&mut self) {
+        self.flush = true;
+    }
 }
 
 impl<T> SourceOperator<T> for GeneratorNested<T>
@@ -101,6 +158,11 @@ where
     T: Data,
 {
     async fn eval(&mut self) -> T {
-        (self.generator.as_mut().unwrap())()
+        if self.flush {
+            self.flush = false;
+            (self.generator.as_mut().unwrap())()
+        } else {
+            self.empty.clone()
+        }
     }
 }
