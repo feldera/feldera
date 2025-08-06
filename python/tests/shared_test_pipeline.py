@@ -45,3 +45,8 @@ class SharedTestPipeline(unittest.TestCase):
     @property
     def pipeline(self) -> Pipeline:
         return self.p
+
+    def new_pipeline_with_suffix(self, suffix: str) -> Pipeline:
+        return PipelineBuilder(
+            self.client, f"{self._testMethodName}_{suffix}", sql=self.ddl
+        ).create_or_replace()

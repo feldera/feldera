@@ -1,6 +1,7 @@
 from tests.shared_test_pipeline import SharedTestPipeline
 from tests import enterprise_only
 from feldera.runtime_config import RuntimeConfig, Storage
+from feldera.enums import PipelineStatus
 from typing import Optional
 import os
 import sys
@@ -23,6 +24,8 @@ def storage_cfg(
     start_from_checkpoint: Optional[str] = None,
     strict: bool = False,
     auth_err: bool = False,
+    standby: bool = False,
+    pull_interval: int = 2,
 ) -> dict:
     return {
         "backend": {
@@ -36,6 +39,8 @@ def storage_cfg(
                     "endpoint": endpoint or DEFAULT_ENDPOINT,
                     "start_from_checkpoint": start_from_checkpoint,
                     "fail_if_no_checkpoint": strict,
+                    "standby": standby,
+                    "pull_interval": pull_interval,
                 }
             },
         }
@@ -52,6 +57,7 @@ class TestCheckpointSync(SharedTestPipeline):
         auth_err: bool = False,
         strict: bool = False,
         expect_empty: bool = False,
+        standby: bool = False,
     ):
         """
         CREATE TABLE t0 (c0 INT, c1 VARCHAR);
@@ -111,11 +117,39 @@ class TestCheckpointSync(SharedTestPipeline):
             start_from_checkpoint=uuid if from_uuid else "latest",
             auth_err=auth_err,
             strict=strict,
+            standby=standby,
         )
         self.pipeline.set_runtime_config(
             RuntimeConfig(storage=Storage(config=storage_config))
         )
-        self.pipeline.start()
+
+        if not standby:
+            self.pipeline.start()
+        else:
+            self.pipeline.start(wait=False)
+
+            # wait for the pipeline to initialize
+            start = time.monotonic()
+            # wait for a maximum of 120 seconds for the pipeline to provison
+            end = start + 120
+
+            # wait for the pipeline to finish provisoning
+            for log in self.pipeline.logs():
+                if "checkpoint pulled successfully" in log:
+                    break
+
+                if time.monotonic() > end:
+                    raise TimeoutError(
+                        f"{self.pipeline.name} timedout waiting to pull checkpoint"
+                    )
+
+            if standby:
+                # wait for 8 seconds, this should be more than enough time
+                time.sleep(8)
+                assert self.pipeline.status() == PipelineStatus.INITIALIZING
+
+                self.pipeline.activate(timeout_s=10)
+
         got_after = list(self.pipeline.query("SELECT * FROM v0"))
 
         print(
@@ -158,3 +192,106 @@ class TestCheckpointSync(SharedTestPipeline):
     @enterprise_only
     def test_nonexistent_checkpoint(self):
         self.test_checkpoint_sync(random_uuid=True, from_uuid=True, expect_empty=True)
+
+    @enterprise_only
+    def test_standby_activation(self):
+        self.test_checkpoint_sync(standby=True)
+
+    @enterprise_only
+    def test_standby_activation_from_uuid(self):
+        self.test_checkpoint_sync(standby=True, from_uuid=True)
+
+    @enterprise_only
+    def test_standby_fallback(self, from_uuid: bool = False):
+        # Step 1: Start main pipeline
+        storage_config = storage_cfg(self.pipeline.name)
+        self.pipeline.set_runtime_config(
+            RuntimeConfig(storage=Storage(config=storage_config))
+        )
+        self.pipeline.start()
+
+        # Insert initial data
+        random.seed(time.time())
+        total_initial = random.randint(10, 20)
+        data_initial = [{"c0": i, "c1": str(i)} for i in range(1, total_initial)]
+        self.pipeline.input_json("t0", data_initial)
+        self.pipeline.execute("INSERT INTO t0 VALUES (21, 'exists')")
+        self.pipeline.wait_for_completion()
+
+        got_before = list(self.pipeline.query("select * from v0"))
+
+        # Step 2: Create checkpoint and sync
+        self.pipeline.checkpoint(wait=True)
+        uuid = self.pipeline.sync_checkpoint(wait=True)
+
+        # Step 3: Start standby pipeline
+        standby = self.new_pipeline_with_suffix("standby")
+        pull_interval = 1
+        standby.set_runtime_config(
+            RuntimeConfig(
+                storage=Storage(
+                    config=storage_cfg(
+                        self.pipeline.name,
+                        start_from_checkpoint=uuid if from_uuid else "latest",
+                        standby=True,
+                        pull_interval=pull_interval,
+                    )
+                )
+            )
+        )
+        standby.start(wait=False)
+
+        # Wait until standby pulls the first checkpoint
+        start = time.monotonic()
+        end = start + 120
+        for log in standby.logs():
+            if "checkpoint pulled successfully" in log:
+                break
+            if time.monotonic() > end:
+                raise TimeoutError(
+                    "Timed out waiting for standby pipeline to pull checkpoint"
+                )
+
+        # Step 4: Add more data and make 3-10 checkpoints
+        extra_ckpts = random.randint(3, 10)
+        total_additional = 0
+
+        for i in range(extra_ckpts):
+            new_val = 100 + i
+            new_data = [{"c0": new_val, "c1": f"extra_{new_val}"}]
+            self.pipeline.input_json("t0", new_data)
+            self.pipeline.wait_for_completion()
+            total_additional += 1
+            self.pipeline.checkpoint(wait=True)
+            self.pipeline.sync_checkpoint(wait=True)
+            time.sleep(0.2)
+
+        got_expected = (
+            got_before if from_uuid else list(self.pipeline.query("SELECT * FROM v0"))
+        )
+        print(
+            f"{self.pipeline.name}: final records before shutdown: {got_expected}",
+            file=sys.stderr,
+        )
+
+        # Step 5: Stop main and activate standby
+        self.pipeline.stop(force=True)
+
+        assert standby.status() == PipelineStatus.INITIALIZING
+        standby.activate(timeout_s=(pull_interval * extra_ckpts) + 60)
+
+        # Step 6: Validate standby has all expected records
+        got_after = list(standby.query("SELECT * FROM v0"))
+        print(
+            f"{standby.name}: final records after activation: {got_after}",
+            file=sys.stderr,
+        )
+        self.assertCountEqual(got_expected, got_after)
+
+        # Cleanup
+        standby.stop(force=True)
+        self.pipeline.clear_storage()
+
+    @enterprise_only
+    def test_standby_fallback_from_uuid(self):
+        self.test_standby_fallback(from_uuid=True)

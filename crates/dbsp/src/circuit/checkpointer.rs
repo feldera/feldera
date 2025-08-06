@@ -37,8 +37,6 @@ pub(crate) struct Checkpointer {
 impl Checkpointer {
     /// We keep at least this many checkpoints around.
     pub(super) const MIN_CHECKPOINT_THRESHOLD: usize = 2;
-    /// A slice of all file-extension the system can create.
-    const DBSP_FILE_EXTENSION: &'static [&'static str] = &["mut", "feldera"];
 
     /// Create a new checkpointer for directory `storage_path`, delete any unreferenced
     /// files in the directory.
@@ -129,45 +127,9 @@ impl Checkpointer {
     /// Remove unexpected/leftover files from a previous run in the storage
     /// directory.  Returns the amount of storage still in use.
     fn gc_startup(&self) -> Result<u64, Error> {
-        // Collect all directories and files still referenced by a checkpoint
-        let mut in_use_paths: HashSet<StoragePath> = HashSet::new();
-        in_use_paths.insert(CHECKPOINT_FILE_NAME.into());
-        in_use_paths.insert("steps.bin".into());
-        for cpm in self.checkpoint_list.iter() {
-            in_use_paths.insert(cpm.uuid.to_string().into());
-            let batches = self
-                .backend
-                .gather_batches_for_checkpoint(cpm)
-                .expect("Batches for a checkpoint should be discoverable");
-            for batch in batches {
-                in_use_paths.insert(batch);
-            }
-        }
-
-        /// True if `path` is a name that we might have created ourselves.
-        fn is_feldera_filename(path: &StoragePath) -> bool {
-            path.extension()
-                .is_some_and(|extension| Checkpointer::DBSP_FILE_EXTENSION.contains(&extension))
-        }
-
-        // Collect everything found in the storage directory
-        let mut usage = 0;
-        self.backend.list(&StoragePath::default(), &mut |path, file_type| {
-            if !in_use_paths.contains(path) && (is_feldera_filename(path) || file_type == StorageFileType::Directory) {
-                match self.backend.delete_recursive(path) {
-                    Ok(_) => {
-                        tracing::debug!("Removed unused {file_type:?} '{path}'");
-                    }
-                    Err(e) => {
-                        tracing::warn!("Unable to remove old-checkpoint file {path}: {e} (the pipeline will try to delete the file again on a restart)");
-                    }
-            }
-            } else if let StorageFileType::File { size } = file_type {
-                    usage += size;
-            }
-        })?;
-
-        Ok(usage)
+        self.backend
+            .gc_startup(&self.checkpoint_list)
+            .map_err(|e| e.into())
     }
 
     pub(super) fn checkpoint_dir(uuid: Uuid) -> StoragePath {

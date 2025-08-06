@@ -21,10 +21,14 @@ use crate::catalog::OutputCollectionHandles;
 use crate::controller::checkpoint::CheckpointOffsets;
 use crate::controller::journal::Journal;
 use crate::controller::stats::{InputEndpointMetrics, OutputEndpointMetrics};
+#[cfg(feature = "feldera-enterprise")]
+use crate::controller::sync::continuous_pull;
+use crate::controller::sync::SYNCHRONIZER;
 use crate::create_integrated_output_endpoint;
 use crate::server::metrics::{
     HistogramDiv, LabelStack, MetricsFormatter, MetricsWriter, ValueType,
 };
+use crate::server::ServerState;
 use crate::transport::clock::now_endpoint_config;
 use crate::transport::Step;
 use crate::transport::{input_transport_config_to_endpoint, output_transport_config_to_endpoint};
@@ -59,7 +63,6 @@ use enum_map::EnumMap;
 use feldera_adapterlib::transport::Resume;
 use feldera_adapterlib::utils::datafusion::execute_query_text;
 use feldera_ir::LirCircuit;
-use feldera_storage::checkpoint_synchronizer::CheckpointSynchronizer;
 use feldera_storage::histogram::ExponentialHistogram;
 use feldera_storage::metrics::{
     READ_BLOCKS_BYTES, READ_LATENCY_MICROSECONDS, SYNC_LATENCY_MICROSECONDS, WRITE_BLOCKS_BYTES,
@@ -86,7 +89,7 @@ use std::io::ErrorKind;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::PathBuf;
 use std::sync::mpsc::{channel, sync_channel, Receiver, SendError, Sender};
-use std::sync::LazyLock;
+use std::sync::{LazyLock, Weak};
 use std::thread;
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -107,6 +110,7 @@ mod checkpoint;
 mod error;
 mod journal;
 mod stats;
+mod sync;
 mod validate;
 
 use crate::adhoc::create_session_context;
@@ -309,9 +313,10 @@ impl Controller {
     ///   transport or data format.
     ///
     /// * One or more of the endpoints fails to initialize.
-    pub fn with_config<F>(
+    pub(crate) fn with_config<F>(
         circuit_factory: F,
         config: &PipelineConfig,
+        weak_state_ref: Weak<ServerState>,
         error_cb: Box<dyn Fn(Arc<ControllerError>) + Send + Sync>,
     ) -> Result<Self, ControllerError>
     where
@@ -334,7 +339,7 @@ impl Controller {
             let handle = thread::Builder::new()
                 .name("circuit-thread".to_string())
                 .spawn(move || {
-                    match CircuitThread::new(circuit_factory, config, error_cb) {
+                    match CircuitThread::new(circuit_factory, config, weak_state_ref, error_cb) {
                         Err(error) => {
                             let _ = init_status_sender.send(Err(error));
                             Ok(())
@@ -1026,6 +1031,7 @@ impl CircuitThread {
     fn new<F>(
         circuit_factory: F,
         config: PipelineConfig,
+        weak_state_ref: Weak<ServerState>,
         error_cb: Box<dyn Fn(Arc<ControllerError>) + Send + Sync>,
     ) -> Result<Self, ControllerError>
     where
@@ -1038,7 +1044,7 @@ impl CircuitThread {
             processed_records,
             step,
             input_metadata,
-        } = ControllerInit::new(config.clone())?;
+        } = ControllerInit::new(config.clone(), weak_state_ref)?;
         let storage = circuit_config
             .storage
             .as_ref()
@@ -1792,16 +1798,6 @@ impl CircuitThread {
             return;
         };
 
-        let Some(synchronizer) = inventory::iter::<&dyn CheckpointSynchronizer>
-            .into_iter()
-            .next()
-        else {
-            cb(Err(Arc::new(ControllerError::checkpoint_push_error(
-                "no checkpoint synchronizer found; are enterprise features enabled?".to_owned(),
-            ))));
-            return;
-        };
-
         let Some(ref storage) = self.storage else {
             tracing::error!("storage is set to None");
             cb(Err(Arc::new(ControllerError::checkpoint_push_error(
@@ -1816,7 +1812,7 @@ impl CircuitThread {
         thread::Builder::new()
             .name("s3-synchronizer".to_string())
             .spawn(move || {
-                if let Err(err) = synchronizer.push(uuid, storage.clone(), config.clone()) {
+                if let Err(err) = SYNCHRONIZER.push(uuid, storage.clone(), config.clone()) {
                     cb(Err(Arc::new(ControllerError::checkpoint_push_error(
                         err.to_string(),
                     ))));
@@ -2293,7 +2289,11 @@ impl ControllerInit {
             input_metadata: None,
         })
     }
-    fn new(config: PipelineConfig) -> Result<Self, ControllerError> {
+
+    fn new(
+        config: PipelineConfig,
+        _weak_state_ref: Weak<ServerState>,
+    ) -> Result<Self, ControllerError> {
         let Some((storage_config, storage_options)) = config.storage() else {
             if !config.global.fault_tolerance.is_enabled() {
                 info!("storage not configured, so suspend-and-resume and fault tolerance will not be available");
@@ -2311,39 +2311,7 @@ impl ControllerInit {
                 })?;
 
         #[cfg(feature = "feldera-enterprise")]
-        {
-            use feldera_storage::checkpoint_synchronizer::CheckpointSynchronizer;
-            use feldera_types::config::FileBackendConfig;
-
-            if let feldera_types::config::StorageBackendConfig::File(FileBackendConfig {
-                sync: Some(ref sync),
-                ..
-            }) = storage.options.backend
-            {
-                if sync.start_from_checkpoint.is_some() {
-                    let Some(synchronizer) = inventory::iter::<&dyn CheckpointSynchronizer>
-                        .into_iter()
-                        .next()
-                    else {
-                        return Err(ControllerError::checkpoint_fetch_error(
-                            "no checkpoint synchronizer found; are enterprise features enabled?"
-                                .to_owned(),
-                        ));
-                    };
-
-                    if let Err(err) = synchronizer
-                        .pull(storage.backend.clone(), sync.to_owned())
-                        .map_err(|e| ControllerError::checkpoint_fetch_error(e.to_string()))
-                    {
-                        if sync.fail_if_no_checkpoint {
-                            return Err(err);
-                        } else {
-                            tracing::error!("{}", err.to_string())
-                        }
-                    }
-                }
-            }
-        }
+        continuous_pull(&storage, _weak_state_ref)?;
 
         // Try to read a checkpoint.
         let checkpoint = match Checkpoint::read(&*storage.backend, &StoragePath::from(STATE_FILE)) {
