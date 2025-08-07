@@ -138,7 +138,17 @@ class FelderaClient:
                             err_msg += f"Code snippet:\n{sql_error['snippet']}"
                         raise RuntimeError(err_msg)
 
-                raise RuntimeError(f"The program failed to compile: {status}")
+                error_message = f"The program failed to compile: {status}\n"
+
+                rust_error = p.program_error.get("rust_compilation")
+                if rust_error is not None:
+                    error_message += f"Rust Error: {rust_error}\n"
+
+                system_error = p.program_error.get("system_error")
+                if system_error is not None:
+                    error_message += f"System Error: {system_error}"
+
+                raise RuntimeError(error_message)
 
             logging.debug("still compiling %s, waiting for 100 more milliseconds", name)
             time.sleep(0.1)
