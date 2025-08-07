@@ -6510,6 +6510,18 @@
           "table"
         ],
         "properties": {
+          "max_buffer_size_bytes": {
+            "type": "integer",
+            "description": "The maximum buffer size in for a single operation.\nNote that the buffers of `INSERT`, `UPDATE` and `DELETE` queries are\nseparate.\nDefault: 1 MiB",
+            "default": 1048576,
+            "minimum": 0
+          },
+          "max_records_in_buffer": {
+            "type": "integer",
+            "description": "The maximum number of records in a single buffer.",
+            "nullable": true,
+            "minimum": 0
+          },
           "ssl_ca_pem": {
             "type": "string",
             "description": "The CA certificate in PEM format.",
