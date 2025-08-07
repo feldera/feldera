@@ -2707,6 +2707,38 @@ impl RootCircuit {
         let mut executor = Box::new(<OnceExecutor<S>>::new()) as Box<dyn Executor<RootCircuit>>;
         executor.prepare(&circuit, None)?;
 
+        // if Runtime::worker_index() == 0 {
+        //     circuit.to_dot_file(
+        //         |node| {
+        //             Some(crate::utils::DotNodeAttributes::new().with_label(&format!(
+        //                 "{}-{}-{}",
+        //                 node.local_id(),
+        //                 node.name(),
+        //                 node.persistent_id().unwrap_or_default()
+        //             )))
+        //         },
+        //         |edge| {
+        //             let style = if edge.is_dependency() {
+        //                 Some("dotted".to_string())
+        //             } else {
+        //                 None
+        //             };
+        //             let label = if let Some(stream) = &edge.stream {
+        //                 Some(format!("consumers: {}", stream.num_consumers()))
+        //             } else {
+        //                 None
+        //             };
+        //             Some(
+        //                 crate::utils::DotEdgeAttributes::new(edge.stream_id())
+        //                     .with_style(style)
+        //                     .with_label(label),
+        //             )
+        //         },
+        //         "circuit.dot",
+        //     );
+        //     println!("circuit written to circuit.dot");
+        // }
+
         // Alternatively, `CircuitHandle` should expose `clock_start` and `clock_end`
         // APIs, so that the user can reset the circuit at runtime and start
         // evaluation from clean state without having to rebuild it from
