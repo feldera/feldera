@@ -1,5 +1,6 @@
 use crate::api::demo::{read_demos_from_directories, Demo};
 use crate::api::endpoints;
+use crate::api::support_data_collector::SupportDataCollector;
 use crate::auth::JwkCache;
 use crate::cluster_health::HealthStatus;
 use crate::config::{ApiServerConfig, CommonConfig};
@@ -30,6 +31,8 @@ use std::io::Write;
 use std::time::Duration;
 use std::{env, io, net::TcpListener, sync::Arc};
 use termbg::{theme, Theme};
+use tokio::signal;
+use tokio::sync::watch;
 use tokio::sync::{Mutex, RwLock};
 use utoipa::openapi::security::{HttpAuthScheme, HttpBuilder, SecurityScheme};
 use utoipa::{Modify, OpenApi};
@@ -361,7 +364,7 @@ pub(crate) struct ServerState {
     pub db: Arc<Mutex<StoragePostgres>>,
     pub runner: RunnerInteraction,
     pub common_config: CommonConfig,
-    pub _config: ApiServerConfig,
+    pub config: ApiServerConfig,
     pub jwk_cache: Arc<Mutex<JwkCache>>,
     probe: Arc<Mutex<DbProbe>>,
     pub demos: Vec<Demo>,
@@ -384,13 +387,30 @@ impl ServerState {
             db,
             runner,
             common_config,
-            _config: config,
+            config,
             jwk_cache: Arc::new(Mutex::new(JwkCache::new())),
             probe: DbProbe::new(db_copy).await,
             demos,
             license_check,
             health_check,
         })
+    }
+
+    #[cfg(test)]
+    pub(crate) async fn test_state(db: Arc<Mutex<StoragePostgres>>) -> Self {
+        let common_config = CommonConfig::test_config();
+        let api_config = ApiServerConfig::test_config();
+        let license_check = Arc::new(RwLock::new(None::<LicenseCheck>));
+        let health_check = Arc::new(RwLock::new(None));
+        Self::new(
+            common_config,
+            api_config,
+            db.clone(),
+            license_check,
+            health_check,
+        )
+        .await
+        .unwrap()
     }
 }
 
@@ -468,6 +488,8 @@ pub async fn run(
         // per thread (otherwise, it causes high resource pressure on both CPU and fds).
         Some(auth_configuration) => {
             let common_config_cloned = common_config.clone();
+            let api_config = api_config.clone();
+            let state = state.clone();
             let server = HttpServer::new(move || {
                 let auth_middleware = HttpAuthentication::with_fn(crate::auth::auth_validator);
                 let client = WebData::new(common_config_cloned.awc_client());
@@ -499,6 +521,8 @@ pub async fn run(
         }
         None => {
             let common_config_cloned = common_config.clone();
+            let api_config = api_config.clone();
+            let state = state.clone();
             let server = HttpServer::new(move || {
                 let client = WebData::new(common_config_cloned.awc_client());
                 App::new()
@@ -598,7 +622,71 @@ Version: {} v{}{}
     drop(out_lock);
     drop(err_lock);
 
-    server.await?;
+    // Create a shutdown channel for the support collector
+    let (shutdown_tx, shutdown_rx) = watch::channel(false);
+
+    // Spawn the support collector in a dedicated thread with its own runtime and HTTP client
+    let collector_handle = if api_config.support_data_collection_frequency > 0 {
+        Some(
+            std::thread::Builder::new()
+                .name("support-data-collector".to_string())
+                .spawn(move || {
+                    let rt = tokio::runtime::Builder::new_current_thread()
+                        .enable_all()
+                        .build()
+                        .unwrap();
+
+                    rt.block_on(async {
+                        let local = tokio::task::LocalSet::new();
+                        local
+                            .run_until(async move {
+                                let client = common_config.awc_client();
+                                let support_collector = SupportDataCollector::new(
+                                    state.clone().into_inner(),
+                                    client,
+                                    api_config.support_data_collection_frequency,
+                                    api_config.support_data_retention,
+                                    shutdown_rx,
+                                );
+                                support_collector.run().await;
+                            })
+                            .await;
+                    });
+                })
+                .unwrap(),
+        )
+    } else {
+        info!("Support data collection is disabled (collection frequency is 0)");
+        None
+    };
+
+    // Arrange for graceful shutdown on Ctrl+C and SIGTERM
+    let server_handle_ctrlc = server.handle();
+    tokio::spawn(async move {
+        if signal::ctrl_c().await.is_ok() {
+            info!("Ctrl+C received, stopping HTTP server...");
+            server_handle_ctrlc.stop(true).await;
+        }
+    });
+    #[cfg(unix)]
+    {
+        use tokio::signal::unix::{signal as unix_signal, SignalKind};
+        let mut term_stream = unix_signal(SignalKind::terminate()).expect("SIGTERM handler");
+        let server_handle_term = server.handle();
+        tokio::spawn(async move {
+            term_stream.recv().await;
+            info!("SIGTERM received, stopping HTTP server...");
+            server_handle_term.stop(true).await;
+        });
+    }
+
+    // Await HTTP server; when it returns, signal the collector to stop and join
+    let server_result = server.await;
+    if let Some(collector_handle) = collector_handle {
+        let _ = shutdown_tx.send(true);
+        let _ = collector_handle.join();
+    }
+    server_result?;
     Ok(())
 }
 

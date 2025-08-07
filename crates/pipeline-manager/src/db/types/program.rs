@@ -210,6 +210,16 @@ pub struct SqlCompilationInfo {
     pub messages: Vec<SqlCompilerMessage>,
 }
 
+impl SqlCompilationInfo {
+    #[cfg(test)]
+    pub(crate) fn success() -> Self {
+        Self {
+            exit_code: 0,
+            messages: vec![],
+        }
+    }
+}
+
 /// Rust compilation information.
 #[derive(Debug, Deserialize, Serialize, Eq, PartialEq, ToSchema, Clone)]
 pub struct RustCompilationInfo {
@@ -219,6 +229,17 @@ pub struct RustCompilationInfo {
     pub stdout: String,
     /// Output printed to stderr by the `cargo` compilation command.
     pub stderr: String,
+}
+
+impl RustCompilationInfo {
+    #[cfg(test)]
+    pub(crate) fn success() -> Self {
+        Self {
+            exit_code: 0,
+            stdout: "".to_string(),
+            stderr: "".to_string(),
+        }
+    }
 }
 
 impl Display for RustCompilationInfo {

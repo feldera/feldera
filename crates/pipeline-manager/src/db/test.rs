@@ -1,3 +1,4 @@
+use crate::api::support_data_collector::SupportBundleData;
 use crate::auth::{generate_api_key, TenantRecord};
 use crate::db::error::DBError;
 use crate::db::storage::{ExtendedPipelineDescrRunner, Storage};
@@ -3906,5 +3907,14 @@ impl Storage for Mutex<DbModel> {
             .collect();
         checksums.sort_by(|p1, p2| p1.0.cmp(&p2.0));
         Ok(checksums)
+    }
+
+    async fn get_support_bundle_data(
+        &self,
+        _tenant_id: TenantId,
+        _pipeline_name: &str,
+        _how_many: u64,
+    ) -> Result<(ExtendedPipelineDescrMonitoring, Vec<SupportBundleData>), DBError> {
+        unimplemented!()
     }
 }

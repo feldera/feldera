@@ -1,489 +1,20 @@
 //! Endpoint to retrieve a support bundles for pipeline.
-use actix_web::rt::time::timeout;
-use chrono::{DateTime, Utc};
-use feldera_types::error::ErrorResponse;
-use futures_util::StreamExt;
-use serde::Deserialize;
-use utoipa::{IntoParams, ToSchema};
 
 use std::io::Write;
-use std::time::Duration;
 use zip::{CompressionMethod, ZipWriter};
 
-use crate::api::endpoints::config::Configuration;
 use crate::api::error::ApiError;
 use crate::api::examples;
 use crate::api::main::ServerState;
-use crate::db::types::pipeline::ExtendedPipelineDescr;
+use crate::api::support_data_collector::{SupportBundleData, SupportBundleParameters};
+use crate::db::types::pipeline::ExtendedPipelineDescrMonitoring;
 use crate::db::{storage::Storage, types::tenant::TenantId};
 use crate::error::ManagerError;
 use actix_web::{
     get,
-    http::Method,
     web::{self, Data as WebData, ReqData},
     HttpResponse,
 };
-
-type BundleResult<T> = Result<T, String>;
-
-fn collect() -> bool {
-    true
-}
-
-/// Query parameters to control support bundle data collection.
-#[derive(Debug, Deserialize, IntoParams, ToSchema)]
-pub struct SupportBundleParameters {
-    /// Whether to collect circuit profile data (default: true)
-    #[serde(default = "collect")]
-    pub circuit_profile: bool,
-
-    /// Whether to collect heap profile data (default: true)
-    #[serde(default = "collect")]
-    pub heap_profile: bool,
-
-    /// Whether to collect metrics data (default: true)
-    #[serde(default = "collect")]
-    pub metrics: bool,
-
-    /// Whether to collect logs data (default: true)
-    #[serde(default = "collect")]
-    pub logs: bool,
-
-    /// Whether to collect stats data (default: true)
-    #[serde(default = "collect")]
-    pub stats: bool,
-
-    /// Whether to collect pipeline configuration data (default: true)
-    #[serde(default = "collect")]
-    pub pipeline_config: bool,
-
-    /// Whether to collect system configuration data (default: true)
-    #[serde(default = "collect")]
-    pub system_config: bool,
-}
-
-impl Default for SupportBundleParameters {
-    fn default() -> Self {
-        Self {
-            circuit_profile: true,
-            heap_profile: true,
-            metrics: true,
-            logs: true,
-            stats: true,
-            pipeline_config: true,
-            system_config: true,
-        }
-    }
-}
-
-/// Fetch data from a pipeline endpoint
-async fn fetch_pipeline_data(
-    state: &ServerState,
-    client: &awc::Client,
-    tenant_id: TenantId,
-    pipeline_name: &str,
-    endpoint: &str,
-    timeout_duration: Option<Duration>,
-) -> Result<HttpResponse, ManagerError> {
-    state
-        .runner
-        .forward_http_request_to_pipeline_by_name(
-            client,
-            tenant_id,
-            pipeline_name,
-            Method::GET,
-            endpoint,
-            "",
-            timeout_duration,
-        )
-        .await
-}
-
-/// Stream logs from the pipeline with timeout-based termination
-async fn collect_pipeline_logs(
-    state: &ServerState,
-    client: &awc::Client,
-    tenant_id: TenantId,
-    pipeline_name: &str,
-) -> Result<String, ManagerError> {
-    let mut first_line = true;
-    let next_line_timeout = Duration::from_millis(500);
-    let mut logs = String::with_capacity(4096);
-
-    let response = state
-        .runner
-        .get_logs_from_pipeline(client, tenant_id, pipeline_name)
-        .await?;
-
-    let mut response = response;
-    while let Ok(Some(chunk)) = timeout(
-        if first_line {
-            Duration::from_secs(20)
-        } else {
-            next_line_timeout
-        },
-        response.next(),
-    )
-    .await
-    {
-        match chunk {
-            Ok(chunk) => {
-                let text = String::from_utf8_lossy(&chunk);
-                logs.push_str(&text);
-                first_line = false;
-            }
-            Err(e) => {
-                logs.push_str(&format!("ERROR: Unable to read server response: {}", e));
-            }
-        }
-    }
-
-    Ok(logs)
-}
-
-/// Prettify JSON data for better readability in support bundles.
-fn json_prettify(data: Vec<u8>) -> Vec<u8> {
-    if let Ok(json) = serde_json::from_slice::<serde_json::Value>(&data) {
-        serde_json::to_vec_pretty(&json).unwrap_or(data)
-    } else {
-        data
-    }
-}
-
-/// Convert the HTTP response from a pipeline to a bundle result or
-/// a string error message in case of an error.
-async fn response_to_bundle_result(
-    response: Result<HttpResponse, ManagerError>,
-) -> BundleResult<Vec<u8>> {
-    match response {
-        Ok(response) if response.status().is_success() => {
-            actix_web::body::to_bytes(response.into_body())
-                .await
-                .map(|bytes| bytes.to_vec())
-                .map_err(|e| e.to_string())
-        }
-        Ok(response) => {
-            let mut error_string = format!("HTTP {}", response.status());
-            let body = response.into_body();
-            let body_bytes = actix_web::body::to_bytes(body).await.unwrap_or_default();
-            if !body_bytes.is_empty() {
-                let body_str = String::from_utf8_lossy(&body_bytes);
-                if let Ok(error_response) = serde_json::from_str::<ErrorResponse>(&body_str) {
-                    error_string.push_str(&format!(
-                        ": {}",
-                        error_response.message.trim_end_matches('\n')
-                    ));
-                } else {
-                    error_string.push_str(&format!(": {}", body_str.trim_end_matches('\n')));
-                }
-            }
-            Err(error_string)
-        }
-        Err(e) => Err(e.to_string()),
-    }
-}
-
-/// Support bundle data collected from various sources at a single point in time.
-#[derive(Debug)]
-pub struct SupportBundleData {
-    pub time: DateTime<Utc>,
-    pub circuit_profile: BundleResult<Vec<u8>>,
-    pub heap_profile: BundleResult<Vec<u8>>,
-    pub metrics: BundleResult<Vec<u8>>,
-    pub logs: BundleResult<String>,
-    pub stats: BundleResult<Vec<u8>>,
-    pub pipeline_config: BundleResult<Vec<u8>>,
-    pub system_config: BundleResult<Vec<u8>>,
-}
-
-impl SupportBundleData {
-    pub async fn collect(
-        state: &WebData<ServerState>,
-        client: &awc::Client,
-        tenant_id: TenantId,
-        pipeline_name: &str,
-        params: &SupportBundleParameters,
-    ) -> Result<Self, ManagerError> {
-        let (circuit_profile, heap_profile, metrics, logs, stats, pipeline_config, system_config) = tokio::join!(
-            Self::collect_circuit_profile(
-                state,
-                client,
-                tenant_id,
-                pipeline_name,
-                params.circuit_profile
-            ),
-            Self::collect_heap_profile(
-                state,
-                client,
-                tenant_id,
-                pipeline_name,
-                params.heap_profile
-            ),
-            Self::collect_metrics(state, client, tenant_id, pipeline_name, params.metrics),
-            Self::collect_logs(state, client, tenant_id, pipeline_name, params.logs),
-            Self::collect_stats(state, client, tenant_id, pipeline_name, params.stats),
-            Self::collect_pipeline_config(state, tenant_id, pipeline_name, params.pipeline_config),
-            Self::collect_system_config(state, params.system_config),
-        );
-
-        Ok(SupportBundleData {
-            time: chrono::Utc::now(),
-            circuit_profile,
-            heap_profile,
-            metrics,
-            logs,
-            stats,
-            pipeline_config,
-            system_config,
-        })
-    }
-
-    async fn collect_circuit_profile(
-        state: &WebData<ServerState>,
-        client: &awc::Client,
-        tenant_id: TenantId,
-        pipeline_name: &str,
-        enabled: bool,
-    ) -> BundleResult<Vec<u8>> {
-        if !enabled {
-            return Err("Circuit profile collection skipped due to user input".to_string());
-        }
-
-        let response = fetch_pipeline_data(
-            state,
-            client,
-            tenant_id,
-            pipeline_name,
-            "dump_profile",
-            Some(Duration::from_secs(120)),
-        )
-        .await;
-
-        response_to_bundle_result(response).await
-    }
-
-    async fn collect_heap_profile(
-        state: &WebData<ServerState>,
-        client: &awc::Client,
-        tenant_id: TenantId,
-        pipeline_name: &str,
-        enabled: bool,
-    ) -> BundleResult<Vec<u8>> {
-        if !enabled {
-            return Err("Heap profile collection skipped due to user input".to_string());
-        }
-
-        let response = fetch_pipeline_data(
-            state,
-            client,
-            tenant_id,
-            pipeline_name,
-            "heap_profile",
-            None,
-        )
-        .await;
-
-        response_to_bundle_result(response).await
-    }
-
-    async fn collect_metrics(
-        state: &WebData<ServerState>,
-        client: &awc::Client,
-        tenant_id: TenantId,
-        pipeline_name: &str,
-        enabled: bool,
-    ) -> BundleResult<Vec<u8>> {
-        if !enabled {
-            return Err("Metrics collection skipped due to user input".to_string());
-        }
-
-        let response =
-            fetch_pipeline_data(state, client, tenant_id, pipeline_name, "metrics", None).await;
-
-        response_to_bundle_result(response).await
-    }
-
-    async fn collect_logs(
-        state: &WebData<ServerState>,
-        client: &awc::Client,
-        tenant_id: TenantId,
-        pipeline_name: &str,
-        enabled: bool,
-    ) -> BundleResult<String> {
-        if !enabled {
-            return Err("Logs collection skipped due to user input".to_string());
-        }
-
-        collect_pipeline_logs(state, client, tenant_id, pipeline_name)
-            .await
-            .map_err(|e| e.to_string())
-    }
-
-    async fn collect_stats(
-        state: &WebData<ServerState>,
-        client: &awc::Client,
-        tenant_id: TenantId,
-        pipeline_name: &str,
-        enabled: bool,
-    ) -> BundleResult<Vec<u8>> {
-        if !enabled {
-            return Err("Stats collection skipped due to user input".to_string());
-        }
-
-        let response =
-            fetch_pipeline_data(state, client, tenant_id, pipeline_name, "stats", None).await;
-
-        response_to_bundle_result(response).await.map(json_prettify)
-    }
-
-    async fn collect_pipeline_config(
-        state: &WebData<ServerState>,
-        tenant_id: TenantId,
-        pipeline_name: &str,
-        enabled: bool,
-    ) -> BundleResult<Vec<u8>> {
-        if !enabled {
-            return Err("Pipeline config collection skipped due to user input".to_string());
-        }
-
-        Self::get_pipeline_configuration(state, tenant_id, pipeline_name)
-            .await
-            .map_err(|e| e.to_string())
-    }
-
-    async fn collect_system_config(
-        state: &WebData<ServerState>,
-        enabled: bool,
-    ) -> BundleResult<Vec<u8>> {
-        if !enabled {
-            return Err("System config collection skipped due to user input".to_string());
-        }
-
-        Self::get_system_configuration(state)
-            .await
-            .map_err(|e| e.to_string())
-    }
-
-    #[allow(clippy::type_complexity)]
-    async fn push_to_zip(
-        &self,
-        add_to_zip: &mut dyn FnMut(&str, &[u8]) -> Result<(), Box<dyn std::error::Error>>,
-    ) -> Result<(Vec<String>, Vec<String>), Box<dyn std::error::Error>> {
-        let mut manifest_entries = Vec::new();
-        let mut error_entries = Vec::new();
-
-        // Add circuit profile
-        match &self.circuit_profile {
-            Ok(content) => {
-                let _ = add_to_zip("circuit_profile.zip", content);
-                manifest_entries.push("✓ circuit_profile.zip".to_string());
-            }
-            Err(e) => {
-                error_entries.push(format!("✗ circuit_profile.zip: {}", e));
-            }
-        }
-
-        // Add heap profile
-        match &self.heap_profile {
-            Ok(content) => {
-                let _ = add_to_zip("heap_profile.pb.gz", content);
-                manifest_entries.push("✓ heap_profile.pb.gz".to_string());
-            }
-            Err(e) => {
-                error_entries.push(format!("✗ heap_profile.pb.gz: {}", e));
-            }
-        }
-
-        // Add metrics
-        match &self.metrics {
-            Ok(content) => {
-                let _ = add_to_zip("metrics.txt", content);
-                manifest_entries.push("✓ metrics.txt".to_string());
-            }
-            Err(e) => {
-                error_entries.push(format!("✗ metrics.txt: {}", e));
-            }
-        }
-
-        // Add logs
-        match &self.logs {
-            Ok(content) => {
-                let _ = add_to_zip("logs.txt", content.as_bytes());
-                manifest_entries.push("✓ logs.txt".to_string());
-            }
-            Err(e) => {
-                error_entries.push(format!("✗ logs.txt: {}", e));
-            }
-        }
-
-        // Add stats
-        match &self.stats {
-            Ok(content) => {
-                let _ = add_to_zip("stats.json", content);
-                manifest_entries.push("✓ stats.json".to_string());
-            }
-            Err(e) => {
-                error_entries.push(format!("✗ stats.json: {}", e));
-            }
-        }
-
-        // Add pipeline config
-        match &self.pipeline_config {
-            Ok(content) => {
-                let _ = add_to_zip("pipeline_config.json", content);
-                manifest_entries.push("✓ pipeline_config.json".to_string());
-            }
-            Err(e) => {
-                error_entries.push(format!("✗ pipeline_config.json: {}", e));
-            }
-        }
-
-        // Add system config
-        match &self.system_config {
-            Ok(content) => {
-                let _ = add_to_zip("system_config.json", content);
-                manifest_entries.push("✓ system_config.json".to_string());
-            }
-            Err(e) => {
-                error_entries.push(format!("✗ system_config.json: {}", e));
-            }
-        }
-
-        Ok((manifest_entries, error_entries))
-    }
-
-    /// Get pipeline configuration from local database
-    async fn get_pipeline_configuration(
-        state: &ServerState,
-        tenant_id: TenantId,
-        pipeline_name: &str,
-    ) -> Result<Vec<u8>, ManagerError> {
-        let pipeline = state
-            .db
-            .lock()
-            .await
-            .get_pipeline(tenant_id, pipeline_name)
-            .await?;
-
-        serde_json::to_vec_pretty(&pipeline).map_err(|e| {
-            ManagerError::from(ApiError::UnableToCreateSupportBundle {
-                reason: format!("Failed to serialize pipeline config: {}", e),
-            })
-        })
-    }
-
-    /// Get system configuration
-    async fn get_system_configuration(
-        state: &WebData<ServerState>,
-    ) -> Result<Vec<u8>, ManagerError> {
-        let config = Configuration::gather(state).await;
-        serde_json::to_vec_pretty(&config).map_err(|e| {
-            ManagerError::from(ApiError::UnableToCreateSupportBundle {
-                reason: format!("Failed to serialize system config: {}", e),
-            })
-        })
-    }
-}
 
 /// A collection of support bundle data for a single pipeline gathered in a single ZIP file.
 struct SupportBundleZip {
@@ -493,8 +24,9 @@ struct SupportBundleZip {
 impl SupportBundleZip {
     /// Create a ZIP archive from support bundle data.
     async fn create(
-        pipeline: &ExtendedPipelineDescr,
+        pipeline: &ExtendedPipelineDescrMonitoring,
         bundles: Vec<SupportBundleData>,
+        params: &SupportBundleParameters,
     ) -> Result<SupportBundleZip, ManagerError> {
         let mut zip_buffer = Vec::with_capacity(256 * 1024);
         let mut zip = ZipWriter::new(std::io::Cursor::new(&mut zip_buffer));
@@ -526,8 +58,10 @@ impl SupportBundleZip {
                     Ok(())
                 };
 
-            let (manifest_entries, error_entries) =
-                data.push_to_zip(&mut add_to_zip).await.map_err(|e| {
+            let (manifest_entries, error_entries) = data
+                .push_to_zip(&mut add_to_zip, params)
+                .await
+                .map_err(|e| {
                     ManagerError::from(ApiError::UnableToCreateSupportBundle {
                         reason: format!("Failed to add data to zip: {}", e),
                     })
@@ -593,8 +127,6 @@ impl SupportBundleZip {
         (status = SERVICE_UNAVAILABLE
             , body = ErrorResponse
             , examples(
-                ("Pipeline is not deployed" = (value = json!(examples::error_pipeline_interaction_not_deployed()))),
-                ("Pipeline is currently unavailable" = (value = json!(examples::error_pipeline_interaction_currently_unavailable()))),
                 ("Disconnected during response" = (value = json!(examples::error_pipeline_interaction_disconnected()))),
                 ("Response timeout" = (value = json!(examples::error_pipeline_interaction_timeout())))
             )
@@ -612,21 +144,22 @@ pub(crate) async fn get_pipeline_support_bundle(
     query: web::Query<SupportBundleParameters>,
 ) -> Result<HttpResponse, ManagerError> {
     let pipeline_name = path.into_inner();
-    let pipeline = state
+    let support_bundle_params = query.into_inner();
+    let (pipeline, mut bundles) = state
         .db
         .lock()
         .await
-        .get_pipeline(*tenant_id, &pipeline_name)
+        .get_support_bundle_data(
+            *tenant_id,
+            &pipeline_name,
+            state.config.support_data_retention,
+        )
         .await?;
-    let data = SupportBundleData::collect(
-        &state,
-        &client,
-        *tenant_id,
-        &pipeline_name,
-        &query.into_inner(),
-    )
-    .await?;
-    let bundle = SupportBundleZip::create(&pipeline, vec![data]).await?;
+    bundles.insert(
+        0,
+        SupportBundleData::collect(&state, &client, *tenant_id, &pipeline_name).await?,
+    );
+    let bundle = SupportBundleZip::create(&pipeline, bundles, &support_bundle_params).await?;
 
     Ok(HttpResponse::Ok()
         .content_type("application/zip")

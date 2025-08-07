@@ -17,8 +17,9 @@
 //!   compiled pipelines and for interacting with them at runtime.
 
 pub mod demo;
-mod endpoints;
+pub mod endpoints;
 pub mod error;
 mod examples;
 pub mod main;
+pub mod support_data_collector;
 pub mod util;

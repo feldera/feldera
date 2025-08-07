@@ -372,6 +372,24 @@ impl CommonConfig {
             reqwest::Client::new()
         }
     }
+
+    #[cfg(test)]
+    pub(crate) fn test_config() -> Self {
+        Self {
+            bind_address: "127.0.0.1".to_string(),
+            api_port: 8080,
+            compiler_host: "127.0.0.1".to_string(),
+            compiler_port: 8085,
+            runner_host: "127.0.0.1".to_string(),
+            runner_port: 8089,
+            platform_version: "v0".to_string(),
+            http_workers: 1,
+            unstable_features: None,
+            enable_https: false,
+            https_tls_cert_path: None,
+            https_tls_key_path: None,
+        }
+    }
 }
 
 /// Embedded Postgres configuration.
@@ -603,6 +621,28 @@ pub struct ApiServerConfig {
     /// and sent to our telemetry service.
     #[arg(long, default_value = "", env = "FELDERA_TELEMETRY")]
     pub telemetry: String,
+
+    /// Support data collection frequency (in seconds).
+    ///
+    /// This parameter determines how often data should be collected and stored
+    /// for support bundles, note that we only actively collect data for running pipelines.
+    ///
+    /// If set to 0, the continous collection is disabled.
+    #[arg(
+        long,
+        default_value_t = 10 * 60,
+        env = "FELDERA_SUPPORT_DATA_COLLECTION_FREQUENCY"
+    )]
+    pub support_data_collection_frequency: u64,
+
+    /// How many support data collections to keep per pipeline.
+    ///
+    /// Example: If `--support-data-collection-frequency` is 15 minutes and
+    /// `--support-data-retention` is 5, then the support bundle data will
+    /// be collected every 15 minutes and the oldest collection will be discarded when
+    /// the 6th collection is made.
+    #[arg(long, default_value_t = 3, env = "FELDERA_SUPPORT_DATA_RETENTION")]
+    pub support_data_retention: u64,
 }
 
 impl ApiServerConfig {
@@ -625,6 +665,20 @@ impl ApiServerConfig {
             cors.allowed_methods(vec!["GET", "POST", "PATCH", "PUT", "DELETE"])
                 .allowed_headers(vec![header::AUTHORIZATION, header::ACCEPT])
                 .supports_credentials()
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn test_config() -> Self {
+        Self {
+            support_data_collection_frequency: 1, // 1 second for testing
+            support_data_retention: 2,            // Keep 2 collections
+            auth_provider: crate::config::AuthProviderType::None,
+            dev_mode: false,
+            allowed_origins: None,
+            telemetry: "test".to_string(),
+            demos_dir: vec!["demos".to_string()],
+            dump_openapi: false,
         }
     }
 }
