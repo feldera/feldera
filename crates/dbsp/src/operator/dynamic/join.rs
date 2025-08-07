@@ -6,7 +6,7 @@ use crate::dynamic::DynData;
 use crate::operator::async_stream_operators::{StreamingBinaryOperator, StreamingBinaryWrapper};
 use crate::operator::dynamic::concat::dyn_accumulate_concat;
 use crate::trace::spine_async::WithSnapshot;
-use crate::trace::{Spine, Trace};
+use crate::trace::{Spine, SpineSnapshot, Trace};
 use crate::{
     algebra::{
         IndexedZSet, IndexedZSetReader, Lattice, MulByRef, OrdIndexedZSet, OrdZSet, PartialOrder,
@@ -1159,6 +1159,8 @@ where
         &'static dyn Factory<DynPairs<DynDataTyped<T::Time>, WeightedItem<Z::Key, Z::Val, Z::R>>>,
     join_func: RefCell<TraceJoinFunc<I::Key, I::Val, T::Val, Z::Key, Z::Val>>,
     location: &'static Location<'static>,
+    delta: RefCell<Option<SpineSnapshot<I>>>,
+    flush: RefCell<bool>,
     // Future updates computed ahead of time, indexed by time
     // when each set of updates should be output.
     future_outputs: RefCell<HashMap<T::Time, Spine<Z>>>,
@@ -1198,6 +1200,8 @@ where
             clock,
             join_func: RefCell::new(join_func),
             location,
+            delta: RefCell::new(None),
+            flush: RefCell::new(false),
             future_outputs: RefCell::new(HashMap::new()),
             empty_input: RefCell::new(false),
             empty_output: RefCell::new(false),
@@ -1294,6 +1298,10 @@ where
         });
     }
 
+    fn flush(&mut self) {
+        *self.flush.borrow_mut() = true;
+    }
+
     fn fixedpoint(&self, scope: Scope) -> bool {
         let epoch_end = self.clock.time().epoch_end(scope);
         // We're in a stable state if input and output at the current clock cycle are
@@ -1327,18 +1335,28 @@ where
 
         let delta = delta.as_ref().map(|b| b.ro_snapshot());
 
-        let trace = if delta.is_some() {
+        let trace = if *self.flush.borrow() {
             Some(trace.ro_snapshot())
         } else {
             None
         };
 
+        // Delta can arrive before flush: store it in `self` until we need to use it.
+        if let Some(delta) = delta {
+            *self.delta.borrow_mut() = Some(delta);
+        }
+
         stream! {
-            let Some(delta) = delta else {
+            if *self.flush.borrow() {
+                *self.flush.borrow_mut() = false;
+            } else {
                 // println!("yield empty");
                 yield(Z::dyn_empty(&self.output_factories), true, None);
                 return;
-            };
+            }
+
+            let delta = self.delta.borrow_mut().take().expect("no input delta provided before flush");
+
             let trace = trace.unwrap();
 
             *self.empty_input.borrow_mut() = delta.is_empty();
