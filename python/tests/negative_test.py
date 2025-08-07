@@ -29,6 +29,17 @@ Code snippet:
         pipeline = Pipeline.get("sql_error", TEST_CLIENT)
         pipeline.clear_storage()
 
+    def test_rust_error(self):
+        pipeline_name = "rust_error"
+        sql = ""
+
+        with self.assertRaises(Exception) as err:
+            PipelineBuilder(
+                TEST_CLIENT, name=pipeline_name, sql=sql, udf_rust="Davy Jones"
+            ).create_or_replace()
+
+        assert "Davy Jones" in err.exception.args[0].strip()
+
     def test_program_error0(self):
         sql = "create taabl;"
         name = "test_program_error0"
