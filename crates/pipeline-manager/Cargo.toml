@@ -50,6 +50,7 @@ chrono = { workspace = true, features = ["clock", "serde"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true, features = ["preserve_order"] }
 serde_yaml = { workspace = true }
+rmp-serde = { workspace = true }
 hex = { workspace = true }
 indoc = { workspace = true }
 openssl = { workspace = true }

@@ -603,6 +603,26 @@ pub struct ApiServerConfig {
     /// and sent to our telemetry service.
     #[arg(long, default_value = "", env = "FELDERA_TELEMETRY")]
     pub telemetry: String,
+
+    /// Support data collection frequency (in seconds).
+    ///
+    /// This parameter determines how often data should be collected and stored
+    /// for support bundles, note that we only actively collect data for running pipelines.
+    #[arg(
+        long,
+        default_value_t = 10 * 60,
+        env = "FELDERA_SUPPORT_DATA_COLLECTION_FREQUENCY"
+    )]
+    pub support_data_collection_frequency: u64,
+
+    /// How many support data collections to keep per pipeline.
+    ///
+    /// Example: If `--support-data-collection-frequency` is 15 minutes and
+    /// `--support-data-retention` is 5, then the support bundle data will
+    /// be collected every 15 minutes and the oldest collection will be discarded when
+    /// the 6th collection is made.
+    #[arg(long, default_value_t = 3, env = "FELDERA_SUPPORT_DATA_RETENTION")]
+    pub support_data_retention: u64,
 }
 
 impl ApiServerConfig {
