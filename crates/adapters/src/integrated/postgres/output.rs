@@ -12,8 +12,10 @@ use std::{
 };
 
 use crate::{
+    buffer_op,
     catalog::{CursorWithPolarity, RecordFormat, SerBatchReader, SerCursor},
     controller::{ControllerInner, EndpointId},
+    flush_op,
     format::{Encoder, OutputConsumer, MAX_DUPLICATES},
     transport::OutputEndpoint,
     util::{truncate_ellipse, IndexedOperationType},
@@ -440,96 +442,72 @@ impl PostgresOutputEndpoint {
     }
 
     fn flush_insert(&mut self) {
-        let val = self.insert_buf.drain(..).collect();
-
-        self.exec_statement(self.prepared_statements.insert.clone(), val, "insert");
-        self.inserts = 0;
-
-        self.insert_buf.push(b'[');
+        flush_op!(
+            self,
+            buf = insert_buf,
+            counter = inserts,
+            stmt = insert,
+            name = "insert"
+        );
     }
 
     /// Executes the insert statement within the transaction and resets the buffer.
     fn insert(&mut self, mut value: Vec<u8>) {
-        let max_buffer_size = self.config.max_buffer_size_bytes;
-        let max_records_in_buffer = self.config.max_records_in_buffer.unwrap_or(usize::MAX);
-
-        if self.insert_buf.is_empty() {
-            self.insert_buf.push(b'[');
-        }
-
-        if value.len() + self.insert_buf.len() + 1 >= max_buffer_size
-            || self.inserts >= max_records_in_buffer
-        {
-            self.flush_insert();
-        }
-
-        self.inserts += 1;
-        if self.insert_buf.last() != Some(&b'[') {
-            self.insert_buf.push(b',');
-        }
-        self.insert_buf.append(&mut value);
+        buffer_op!(
+            self,
+            buf = insert_buf,
+            counter = inserts,
+            stmt = insert,
+            flush_fn = flush_insert,
+            name = "insert",
+            value = value
+        );
     }
 
     fn flush_upsert(&mut self) {
-        let val = self.upsert_buf.drain(..).collect();
-
-        self.exec_statement(self.prepared_statements.upsert.clone(), val, "upsert");
-        self.upserts = 0;
-
-        self.upsert_buf.push(b'[');
+        flush_op!(
+            self,
+            buf = upsert_buf,
+            counter = upserts,
+            stmt = upsert,
+            name = "upsert"
+        );
     }
 
     /// Executes the upsert statement within the transaction and resets the buffer.
     fn upsert(&mut self, mut value: Vec<u8>) {
-        let max_buffer_size = self.config.max_buffer_size_bytes;
-        let max_records_in_buffer = self.config.max_records_in_buffer.unwrap_or(usize::MAX);
-
-        if self.upsert_buf.is_empty() {
-            self.upsert_buf.push(b'[');
-        }
-
-        if value.len() + self.upsert_buf.len() + 1 >= max_buffer_size
-            || self.inserts >= max_records_in_buffer
-        {
-            self.flush_upsert();
-        }
-
-        self.upserts += 1;
-        if self.upsert_buf.last() != Some(&b'[') {
-            self.upsert_buf.push(b',');
-        }
-        self.upsert_buf.append(&mut value);
+        buffer_op!(
+            self,
+            buf = upsert_buf,
+            counter = upserts,
+            stmt = upsert,
+            flush_fn = flush_upsert,
+            name = "upsert",
+            value = value
+        );
     }
 
     fn flush_delete(&mut self) {
-        let val = self.delete_buf.drain(..).collect();
-
-        self.exec_statement(self.prepared_statements.delete.clone(), val, "delete");
-        self.deletes = 0;
-
-        self.delete_buf.push(b'[');
+        flush_op!(
+            self,
+            buf = delete_buf,
+            counter = deletes,
+            stmt = delete,
+            name = "delete"
+        );
     }
 
     /// Executes the delete statement within the transaction and resets the buffer.
     fn delete(&mut self, mut value: Vec<u8>) {
-        let max_buffer_size = self.config.max_buffer_size_bytes;
-        let max_records_in_buffer = self.config.max_records_in_buffer.unwrap_or(usize::MAX);
-
-        if self.delete_buf.is_empty() {
-            self.delete_buf.push(b'[');
-        }
-
-        if value.len() + self.delete_buf.len() + 1 >= max_buffer_size
-            || self.inserts > max_records_in_buffer
-        {
-            self.flush_delete();
-        }
-
-        self.deletes += 1;
-        if self.delete_buf.last() != Some(&b'[') {
-            self.delete_buf.push(b',');
-        }
-        self.delete_buf.append(&mut value);
+        buffer_op!(
+            self,
+            buf = delete_buf,
+            counter = deletes,
+            stmt = delete,
+            flush_fn = flush_delete,
+            name = "delete",
+            value = value
+        );
     }
 
     fn flush(&mut self) {
