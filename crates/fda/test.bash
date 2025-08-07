@@ -144,6 +144,56 @@ fda delete p2
 fda delete pudf
 fda shell unknown || true
 
+# Test support bundle with all collections skipped
+echo "Testing support bundle with all collections skipped..."
+fda create p1 program.sql
+fda start p1
+sleep 2  # Give pipeline time to start
+
+# Test support bundle
+echo "Testing support bundle with all collections enabled..."
+fda support-bundle p1 -o test-support-bundle-full.zip
+# Verify the ZIP file exists
+if [ ! -f test-support-bundle-full.zip ]; then
+    echo "Support bundle file was not created"
+    exit 1
+fi
+# Count files in the ZIP and verify we have multiple files (manifest + data files)
+# this counts one more than what is in the archive
+file_count=$(unzip -l test-support-bundle-full.zip | grep -E "^\s*[0-9]+" | wc -l)
+if [ "$file_count" -lt 8 ]; then
+    echo "Expected at least 7 files in support bundle (manifest.txt + data files +/- the heap profile which doesnt work on macos), found $file_count"
+    unzip -l test-support-bundle-full.zip
+    exit 1
+fi
+
+# Create support bundle with all collections skipped
+fda support-bundle p1 \
+  --no-circuit-profile \
+  --no-heap-profile \
+  --no-metrics \
+  --no-logs \
+  --no-stats \
+  --no-pipeline-config \
+  --no-system-config \
+  -o test-support-bundle-none.zip
+
+# Verify the ZIP file exists and check its contents
+if [ ! -f test-support-bundle-none.zip ]; then
+    echo "Support bundle file was not created"
+    exit 1
+fi
+# Count files in the ZIP and verify only manifest.txt exists
+# this counts one more than what is in the archive
+file_count=$(unzip -l test-support-bundle-none.zip | grep -E "^\s*[0-9]+" | wc -l)
+if [ "$file_count" -ne 2 ]; then
+    echo "Expected 1 file in support bundle (manifest.txt), found $file_count"
+    unzip -l test-support-bundle-none.zip
+    exit 1
+fi
+
+fda shutdown p1
+
 # Verify argument conflicts, these invocations should fail
 fail_on_success fda create set punknown --stdin
 fail_on_success fda program set punknown file-path --stdin
@@ -154,3 +204,5 @@ fail_on_success fda program set p1 --udf-rs udf.toml --udf-toml udf.toml --stdin
 rm program.sql
 rm udf.toml
 rm udf.rs
+rm -f test-support-bundle-full.zip
+rm -f test-support-bundle-none.zip

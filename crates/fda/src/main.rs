@@ -1348,10 +1348,43 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                 }
             }
         }
-        PipelineAction::SupportBundle { name, output } => {
-            let response = client
-                .get_pipeline_support_bundle()
-                .pipeline_name(&name)
+        PipelineAction::SupportBundle {
+            name,
+            output,
+            no_circuit_profile,
+            no_heap_profile,
+            no_metrics,
+            no_logs,
+            no_stats,
+            no_pipeline_config,
+            no_system_config,
+        } => {
+            let mut request = client.get_pipeline_support_bundle().pipeline_name(&name);
+
+            // Add query parameters for disabled collections
+            if no_circuit_profile {
+                request = request.circuit_profile(false);
+            }
+            if no_heap_profile {
+                request = request.heap_profile(false);
+            }
+            if no_metrics {
+                request = request.metrics(false);
+            }
+            if no_logs {
+                request = request.logs(false);
+            }
+            if no_stats {
+                request = request.stats(false);
+            }
+            if no_pipeline_config {
+                request = request.pipeline_config(false);
+            }
+            if no_system_config {
+                request = request.system_config(false);
+            }
+
+            let response = request
                 .send()
                 .await
                 .map_err(handle_errors_fatal(

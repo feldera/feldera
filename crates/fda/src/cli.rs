@@ -487,6 +487,27 @@ pub enum PipelineAction {
         /// The ZIP file to write the bundle to.
         #[arg(value_hint = ValueHint::FilePath, long, short = 'o')]
         output: Option<PathBuf>,
+        /// Skip circuit profile collection.
+        #[arg(long)]
+        no_circuit_profile: bool,
+        /// Skip heap profile collection.
+        #[arg(long)]
+        no_heap_profile: bool,
+        /// Skip metrics collection.
+        #[arg(long)]
+        no_metrics: bool,
+        /// Skip logs collection.
+        #[arg(long)]
+        no_logs: bool,
+        /// Skip stats collection.
+        #[arg(long)]
+        no_stats: bool,
+        /// Skip pipeline configuration collection.
+        #[arg(long)]
+        no_pipeline_config: bool,
+        /// Skip system configuration collection.
+        #[arg(long)]
+        no_system_config: bool,
     },
     /// Enter the ad-hoc SQL shell for a pipeline.
     Shell {
