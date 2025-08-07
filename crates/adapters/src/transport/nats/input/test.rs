@@ -26,7 +26,7 @@ fn test_foo() -> AnyResult<()> {
     let stream_name = "str";
     let subject_name = "sub";
 
-    let (_nats_process_guard, nats_url) = util::start_nats_server();
+    let (_nats_process_guard, nats_url) = util::start_nats_and_get_address()?;
 
     let test_data = [
         TestStruct::new("foo".to_string(), true, 10),
@@ -107,9 +107,16 @@ format:
 }
 
 mod util {
+    use crate::test::wait;
+    use anyhow::{anyhow, Result as AnyResult};
     use async_nats::Client;
+    use serde::Deserialize;
+    use std::env;
+    use std::fs;
+    use std::path::Path;
     use std::process::{Child, Command, Stdio};
     use std::time::{Duration, Instant};
+
     pub struct ProcessKillGuard {
         process: Child,
     }
@@ -123,27 +130,8 @@ mod util {
     impl Drop for ProcessKillGuard {
         fn drop(&mut self) {
             let _ = self.process.kill();
-            let _ = self.process.wait(); // Reap the process
+            let _ = self.process.wait();
         }
-    }
-
-    pub fn start_nats_server() -> (ProcessKillGuard, String) {
-        let nats_addr = "127.0.0.1";
-        let nats_port = 42220;
-        let nats_url = format!("{}:{}", nats_addr, nats_port);
-
-        let child = Command::new("nats-server")
-            .arg("-a")
-            .arg(nats_addr)
-            .arg("-p")
-            .arg(nats_port.to_string())
-            .arg("--jetstream")
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .expect("Failed to start nats-server");
-
-        (ProcessKillGuard::new(child), nats_url)
     }
 
     pub async fn wait_for_nats_ready(addr: &str, timeout: Duration) -> anyhow::Result<Client> {
@@ -157,5 +145,53 @@ mod util {
                 Err(e) => return Err(anyhow::anyhow!("Timeout waiting for NATS: {e}")),
             }
         }
+    }
+
+    pub fn start_nats_and_get_address() -> AnyResult<(ProcessKillGuard, String)> {
+        let nats_ip_addr = "127.0.0.1";
+        const RANDOM_PORT: &str = "-1";
+
+        let temp_dir = env::temp_dir();
+        let port_file_dir = temp_dir.join("nats_ports");
+
+        fs::create_dir_all(&port_file_dir)?;
+
+        let child = Command::new("nats-server")
+            .arg("-a")
+            .arg(nats_ip_addr)
+            .arg("-p")
+            .arg(RANDOM_PORT)
+            .arg("--ports_file_dir")
+            .arg(port_file_dir.to_str().unwrap())
+            .arg("--jetstream")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()?;
+
+        let pid = child.id();
+        let port_file_path = port_file_dir.join(format!("nats-server_{}.ports", pid));
+
+        let child = ProcessKillGuard::new(child);
+
+        if wait(|| port_file_path.exists(), 1000).is_err() {
+            return Err(anyhow!("Port file was not created within timeout period"));
+        }
+
+        fn get_address_from_ports_file(file_path: &Path) -> AnyResult<String> {
+            #[derive(Deserialize)]
+            struct PortsData {
+                nats: Vec<String>,
+            }
+
+            let port_content = fs::read_to_string(&file_path)?;
+            let ports_data: PortsData = serde_json::from_str(&port_content)
+                .map_err(|_| anyhow!("Could not parse ports file"))?;
+
+            ports_data.nats.into_iter().next().ok_or(anyhow!("No NATS addresses found in port file"))
+        }
+
+        let nats_addr = get_address_from_ports_file(&port_file_path)?;
+
+        Ok((child, nats_addr))
     }
 }
