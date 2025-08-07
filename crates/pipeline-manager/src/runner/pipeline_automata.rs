@@ -23,6 +23,7 @@ use log::{debug, error, info, warn, Level};
 use reqwest::{Method, StatusCode};
 use serde_json::json;
 use std::sync::Arc;
+use thiserror::Error as ThisError;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
 use tokio::{sync::Mutex, time::Duration};
@@ -62,6 +63,19 @@ enum StatusCheckResult {
     Unavailable,
     /// The pipeline responded, but the response could not be parsed or was a runtime error.
     Error(ErrorResponse),
+}
+
+#[derive(ThisError, Debug)]
+enum InternalRequestError {
+    /// Unable to get a response because the timeout occurred before a response was returned.
+    #[error("{}", format_timeout_error_message(*timeout, error))]
+    Timeout { timeout: Duration, error: String },
+    /// Unable to get a response for a different reason than timeout (e.g., connection refused).
+    #[error("{error}")]
+    Unreachable { error: String },
+    /// The response body could not be parsed (e.g., incorrect format).
+    #[error("{error}")]
+    InvalidResponseBody { error: String },
 }
 
 impl<T: PipelineExecutor> Drop for PipelineAutomaton<T> {
@@ -147,7 +161,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
     const HTTP_REQUEST_ACTION_TIMEOUT: Duration = Duration::from_secs(5);
 
     /// Timeout for an HTTP request to the pipeline `/suspend`.
-    const HTTP_REQUEST_SUSPEND_TIMEOUT: Duration = Duration::from_secs(600);
+    const HTTP_REQUEST_SUSPEND_TIMEOUT: Duration = Duration::from_secs(5);
 
     /// Creates a new automaton for a given pipeline.
     #[allow(clippy::too_many_arguments)]
@@ -636,7 +650,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         location: &str,
         endpoint: &str,
         timeout: Duration,
-    ) -> Result<(StatusCode, serde_json::Value), ManagerError> {
+    ) -> Result<(StatusCode, serde_json::Value), InternalRequestError> {
         let url = format_pipeline_url(
             if self.common_config.enable_https {
                 "https"
@@ -655,11 +669,12 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             .await
             .map_err(|e| {
                 if e.is_timeout() {
-                    RunnerError::PipelineInteractionUnreachable {
-                        error: format_timeout_error_message(timeout, e),
+                    InternalRequestError::Timeout {
+                        timeout,
+                        error: e.to_string(),
                     }
                 } else {
-                    RunnerError::PipelineInteractionUnreachable {
+                    InternalRequestError::Unreachable {
                         error: format!(
                             "unable to send request due to: {e}, source: {}",
                             source_error(&e)
@@ -667,13 +682,13 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                     }
                 }
             })?;
-        let status = response.status();
-        let value = response.json::<serde_json::Value>().await.map_err(|e| {
-            RunnerError::PipelineInteractionInvalidResponse {
-                error: format!("unable to deserialize as JSON due to: {e}"),
-            }
-        })?;
-        Ok((status, value))
+        let status_code = response.status();
+        match response.json::<serde_json::Value>().await {
+            Ok(value) => Ok((status_code, value)),
+            Err(e) => Err(InternalRequestError::InvalidResponseBody {
+                error: format!("unable to deserialize response as JSON due to: {e}"),
+            }),
+        }
     }
 
     /// Parses `ErrorResponse` from JSON.
@@ -719,14 +734,14 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             )
             .await
         {
-            Ok((http_status, http_body)) => {
+            Ok((status_code, body)) => {
                 // Able to reach the pipeline HTTP(S) server and get a response
-                if http_status == StatusCode::OK {
+                if status_code == StatusCode::OK {
                     // Fatal error: cannot deserialize status
-                    let Some(pipeline_status) = http_body.as_str() else {
+                    let Some(pipeline_status) = body.as_str() else {
                         return StatusCheckResult::Error(ErrorResponse::from_error_nolog(
                             &RunnerError::PipelineInteractionInvalidResponse {
-                                error: format!("Body of /status response: {http_body}"),
+                                error: format!("Body of /status response: {body}"),
                             },
                         ));
                     };
@@ -746,9 +761,9 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                             },
                         ));
                     }
-                } else if http_status == StatusCode::SERVICE_UNAVAILABLE {
+                } else if status_code == StatusCode::SERVICE_UNAVAILABLE {
                     // Check if pipeline returned SERVICE_UNAVAILABLE because it is Initializing
-                    if http_body["error_code"]
+                    if body["error_code"]
                         .as_str()
                         .is_some_and(|s| s == "Initializing")
                     {
@@ -763,11 +778,11 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                 } else {
                     // All other status codes indicate a fatal error
                     // The HTTP server is still running, but the pipeline itself failed
-                    error!("Error response to status check for pipeline {pipeline_id}. Status code: {http_status}. Body: {http_body}");
+                    error!("Error response to status check for pipeline {pipeline_id}. Status code: {status_code}. Body: {body}");
                     StatusCheckResult::Error(Self::error_response_from_json(
                         pipeline_id,
-                        http_status,
-                        &http_body,
+                        status_code,
+                        &body,
                     ))
                 }
             }
@@ -1239,8 +1254,8 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             )
             .await
         {
-            Ok((status, body)) => {
-                match status {
+            Ok((status_code, body)) => {
+                match status_code {
                     StatusCode::OK if is_start => State::TransitionToRunning,
                     StatusCode::OK => State::TransitionToPaused,
                     // Check if pipeline returned SERVICE_UNAVAILABLE because it is Initializing
@@ -1259,11 +1274,11 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                         State::TransitionToUnavailable
                     }
                     _ => {
-                        error!("Error response to action '{action}' on pipeline {}. Status: {status}. Body: {body}", pipeline.id);
+                        error!("Error response to action '{action}' on pipeline {}. Status: {status_code}. Body: {body}", pipeline.id);
                         State::TransitionToStopping {
                             error: Some(Self::error_response_from_json(
                                 self.pipeline_id,
-                                status,
+                                status_code,
                                 &body,
                             )),
                             suspend_info: None,
@@ -1274,7 +1289,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             Err(e) => {
                 warn!(
                     "Unable to reach pipeline {} to perform action '{action}' due to: {e}",
-                    pipeline.id
+                    pipeline.id,
                 );
                 State::TransitionToUnavailable
             }
@@ -1385,8 +1400,8 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             )
             .await
         {
-            Ok((status, body)) => {
-                if status == StatusCode::OK {
+            Ok((status_code, body)) => {
+                if status_code == StatusCode::OK {
                     // Pipeline has responded its circuit has been suspended to storage,
                     // as such we can now transition to suspending the compute resources
                     // themselves (which will terminate the pipeline in its entirety)
@@ -1394,30 +1409,48 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                         error: None,
                         suspend_info: Some(json!({})),
                     }
-                } else if status == StatusCode::SERVICE_UNAVAILABLE {
+                } else if status_code == StatusCode::SERVICE_UNAVAILABLE {
                     // NOTE: we don't care about the error_code of response here,
                     // because we want to try it again irrespective of it.
                     warn!("Unable to suspend pipeline {} because pipeline indicated it is not (yet) ready", pipeline.id);
                     State::Unchanged
                 } else {
-                    error!("Suspend operation of pipeline {} returned an error. Status: {status}. Body: {body}", pipeline.id);
+                    error!("Suspend operation of pipeline {} returned an error. Status: {status_code}. Body: {body}", pipeline.id);
                     State::TransitionToStopping {
                         error: Some(Self::error_response_from_json(
                             self.pipeline_id,
-                            status,
+                            status_code,
                             &body,
                         )),
                         suspend_info: None,
                     }
                 }
             }
-            Err(e) => {
-                warn!(
-                    "Unable to suspend pipeline {} because it could not be reached due to: {e}",
-                    pipeline.id
-                );
-                State::Unchanged
-            }
+            Err(e) => match e {
+                InternalRequestError::Timeout { .. } => {
+                    self.logs_sender
+                        .send(LogMessage::new_from_control_plane(
+                            Level::Info,
+                            "Suspend request timed out: either the suspend is taking long (this is the case for large states) or the pipeline may be unresponsive...",
+                        ))
+                        .await;
+                    State::Unchanged
+                }
+                InternalRequestError::Unreachable { error } => {
+                    warn!(
+                        "Unable to suspend pipeline {} because it could not be reached due to: {error}",
+                        pipeline.id
+                    );
+                    State::Unchanged
+                }
+                InternalRequestError::InvalidResponseBody { error } => {
+                    warn!(
+                        "Unable to suspend pipeline {} because its response body was invalid: {error}",
+                        pipeline.id
+                    );
+                    State::Unchanged
+                }
+            },
         }
     }
 
