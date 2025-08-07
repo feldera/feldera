@@ -3,6 +3,8 @@ use actix_web::rt::time::timeout;
 use chrono::{DateTime, Utc};
 use feldera_types::error::ErrorResponse;
 use futures_util::StreamExt;
+use serde::Deserialize;
+use utoipa::{IntoParams, ToSchema};
 
 use std::io::Write;
 use std::time::Duration;
@@ -23,6 +25,56 @@ use actix_web::{
 };
 
 type BundleResult<T> = Result<T, String>;
+
+fn collect() -> bool {
+    true
+}
+
+/// Query parameters to control support bundle data collection.
+#[derive(Debug, Deserialize, IntoParams, ToSchema)]
+pub struct SupportBundleParameters {
+    /// Whether to collect circuit profile data (default: true)
+    #[serde(default = "collect")]
+    pub circuit_profile: bool,
+
+    /// Whether to collect heap profile data (default: true)
+    #[serde(default = "collect")]
+    pub heap_profile: bool,
+
+    /// Whether to collect metrics data (default: true)
+    #[serde(default = "collect")]
+    pub metrics: bool,
+
+    /// Whether to collect logs data (default: true)
+    #[serde(default = "collect")]
+    pub logs: bool,
+
+    /// Whether to collect stats data (default: true)
+    #[serde(default = "collect")]
+    pub stats: bool,
+
+    /// Whether to collect pipeline configuration data (default: true)
+    #[serde(default = "collect")]
+    pub pipeline_config: bool,
+
+    /// Whether to collect system configuration data (default: true)
+    #[serde(default = "collect")]
+    pub system_config: bool,
+}
+
+impl Default for SupportBundleParameters {
+    fn default() -> Self {
+        Self {
+            circuit_profile: true,
+            heap_profile: true,
+            metrics: true,
+            logs: true,
+            stats: true,
+            pipeline_config: true,
+            system_config: true,
+        }
+    }
+}
 
 /// Fetch data from a pipeline endpoint
 async fn fetch_pipeline_data(
@@ -150,50 +202,29 @@ impl SupportBundleData {
         client: &awc::Client,
         tenant_id: TenantId,
         pipeline_name: &str,
+        params: &SupportBundleParameters,
     ) -> Result<Self, ManagerError> {
-        // Launch all primary data collection tasks in parallel
-        let (
-            circuit_profile_result,
-            heap_profile_result,
-            metrics_result,
-            logs_result,
-            stats_result,
-            pipeline_config_result,
-            system_config_result,
-        ) = tokio::join!(
-            fetch_pipeline_data(
+        let (circuit_profile, heap_profile, metrics, logs, stats, pipeline_config, system_config) = tokio::join!(
+            Self::collect_circuit_profile(
                 state,
                 client,
                 tenant_id,
                 pipeline_name,
-                "dump_profile",
-                Some(Duration::from_secs(120))
+                params.circuit_profile
             ),
-            fetch_pipeline_data(
+            Self::collect_heap_profile(
                 state,
                 client,
                 tenant_id,
                 pipeline_name,
-                "heap_profile",
-                None
+                params.heap_profile
             ),
-            fetch_pipeline_data(state, client, tenant_id, pipeline_name, "metrics", None),
-            collect_pipeline_logs(state, client, tenant_id, pipeline_name),
-            fetch_pipeline_data(state, client, tenant_id, pipeline_name, "stats", None),
-            Self::get_pipeline_configuration(state, tenant_id, pipeline_name),
-            Self::get_system_configuration(state),
+            Self::collect_metrics(state, client, tenant_id, pipeline_name, params.metrics),
+            Self::collect_logs(state, client, tenant_id, pipeline_name, params.logs),
+            Self::collect_stats(state, client, tenant_id, pipeline_name, params.stats),
+            Self::collect_pipeline_config(state, tenant_id, pipeline_name, params.pipeline_config),
+            Self::collect_system_config(state, params.system_config),
         );
-
-        // Process results and extract data
-        let circuit_profile = response_to_bundle_result(circuit_profile_result).await;
-        let heap_profile = response_to_bundle_result(heap_profile_result).await;
-        let metrics = response_to_bundle_result(metrics_result).await;
-        let logs = logs_result.map_err(|e| e.to_string());
-        let stats = response_to_bundle_result(stats_result)
-            .await
-            .map(json_prettify);
-        let pipeline_config = pipeline_config_result.map_err(|e| e.to_string());
-        let system_config = system_config_result.map_err(|e| e.to_string());
 
         Ok(SupportBundleData {
             time: chrono::Utc::now(),
@@ -205,6 +236,132 @@ impl SupportBundleData {
             pipeline_config,
             system_config,
         })
+    }
+
+    async fn collect_circuit_profile(
+        state: &WebData<ServerState>,
+        client: &awc::Client,
+        tenant_id: TenantId,
+        pipeline_name: &str,
+        enabled: bool,
+    ) -> BundleResult<Vec<u8>> {
+        if !enabled {
+            return Err("Circuit profile collection skipped due to user input".to_string());
+        }
+
+        let response = fetch_pipeline_data(
+            state,
+            client,
+            tenant_id,
+            pipeline_name,
+            "dump_profile",
+            Some(Duration::from_secs(120)),
+        )
+        .await;
+
+        response_to_bundle_result(response).await
+    }
+
+    async fn collect_heap_profile(
+        state: &WebData<ServerState>,
+        client: &awc::Client,
+        tenant_id: TenantId,
+        pipeline_name: &str,
+        enabled: bool,
+    ) -> BundleResult<Vec<u8>> {
+        if !enabled {
+            return Err("Heap profile collection skipped due to user input".to_string());
+        }
+
+        let response = fetch_pipeline_data(
+            state,
+            client,
+            tenant_id,
+            pipeline_name,
+            "heap_profile",
+            None,
+        )
+        .await;
+
+        response_to_bundle_result(response).await
+    }
+
+    async fn collect_metrics(
+        state: &WebData<ServerState>,
+        client: &awc::Client,
+        tenant_id: TenantId,
+        pipeline_name: &str,
+        enabled: bool,
+    ) -> BundleResult<Vec<u8>> {
+        if !enabled {
+            return Err("Metrics collection skipped due to user input".to_string());
+        }
+
+        let response =
+            fetch_pipeline_data(state, client, tenant_id, pipeline_name, "metrics", None).await;
+
+        response_to_bundle_result(response).await
+    }
+
+    async fn collect_logs(
+        state: &WebData<ServerState>,
+        client: &awc::Client,
+        tenant_id: TenantId,
+        pipeline_name: &str,
+        enabled: bool,
+    ) -> BundleResult<String> {
+        if !enabled {
+            return Err("Logs collection skipped due to user input".to_string());
+        }
+
+        collect_pipeline_logs(state, client, tenant_id, pipeline_name)
+            .await
+            .map_err(|e| e.to_string())
+    }
+
+    async fn collect_stats(
+        state: &WebData<ServerState>,
+        client: &awc::Client,
+        tenant_id: TenantId,
+        pipeline_name: &str,
+        enabled: bool,
+    ) -> BundleResult<Vec<u8>> {
+        if !enabled {
+            return Err("Stats collection skipped due to user input".to_string());
+        }
+
+        let response =
+            fetch_pipeline_data(state, client, tenant_id, pipeline_name, "stats", None).await;
+
+        response_to_bundle_result(response).await.map(json_prettify)
+    }
+
+    async fn collect_pipeline_config(
+        state: &WebData<ServerState>,
+        tenant_id: TenantId,
+        pipeline_name: &str,
+        enabled: bool,
+    ) -> BundleResult<Vec<u8>> {
+        if !enabled {
+            return Err("Pipeline config collection skipped due to user input".to_string());
+        }
+
+        Self::get_pipeline_configuration(state, tenant_id, pipeline_name)
+            .await
+            .map_err(|e| e.to_string())
+    }
+
+    async fn collect_system_config(
+        state: &WebData<ServerState>,
+        enabled: bool,
+    ) -> BundleResult<Vec<u8>> {
+        if !enabled {
+            return Err("System config collection skipped due to user input".to_string());
+        }
+
+        Self::get_system_configuration(state)
+            .await
+            .map_err(|e| e.to_string())
     }
 
     #[allow(clippy::type_complexity)]
@@ -422,6 +579,7 @@ impl SupportBundleZip {
     security(("JSON web token (JWT) or API key" = [])),
     params(
         ("pipeline_name" = String, Path, description = "Unique pipeline name"),
+        SupportBundleParameters,
     ),
     responses(
         (status = OK
@@ -451,6 +609,7 @@ pub(crate) async fn get_pipeline_support_bundle(
     client: WebData<awc::Client>,
     tenant_id: ReqData<TenantId>,
     path: web::Path<String>,
+    query: web::Query<SupportBundleParameters>,
 ) -> Result<HttpResponse, ManagerError> {
     let pipeline_name = path.into_inner();
     let pipeline = state
@@ -459,7 +618,14 @@ pub(crate) async fn get_pipeline_support_bundle(
         .await
         .get_pipeline(*tenant_id, &pipeline_name)
         .await?;
-    let data = SupportBundleData::collect(&state, &client, *tenant_id, &pipeline_name).await?;
+    let data = SupportBundleData::collect(
+        &state,
+        &client,
+        *tenant_id,
+        &pipeline_name,
+        &query.into_inner(),
+    )
+    .await?;
     let bundle = SupportBundleZip::create(&pipeline, vec![data]).await?;
 
     Ok(HttpResponse::Ok()
