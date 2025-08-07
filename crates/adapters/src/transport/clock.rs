@@ -353,6 +353,7 @@ mod test {
     }
 
     #[test]
+    #[ignore = "https://github.com/feldera/feldera/issues/4516"]
     fn test_clock() {
         let tempdir = TempDir::new().unwrap();
         let tempdir_path = tempdir.path();

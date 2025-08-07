@@ -647,6 +647,43 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         }
     }
 
+    @Test
+    public void argMinDate() {
+        this.getCCS("""
+                CREATE TABLE date_tbl(
+                id INT,
+                c1 DATE NOT NULL,
+                c2 DATE);
+                
+                CREATE VIEW V0 AS SELECT
+                id, ARG_MIN(c1, c2) AS c1, ARG_MIN(c2, c1) AS c2
+                FROM date_tbl
+                GROUP BY id;
+                
+                CREATE VIEW V1 AS SELECT
+                ARG_MIN(c1, c2) AS c1, ARG_MIN(c2, c1) AS c2
+                FROM date_tbl;""");
+    }
+
+    @Test
+    public void argMinString() {
+        this.getCCS("""
+                CREATE TABLE varchar_tbl(
+                id INT,
+                c1 VARCHAR,
+                c2 VARCHAR NULL);
+                
+                CREATE VIEW atbl_charn AS SELECT
+                id,
+                CAST(c1 AS CHAR(7)) AS f_c1,
+                CAST(c2 AS CHAR(7)) AS f_c2
+                FROM varchar_tbl;
+                
+                CREATE VIEW V2 AS SELECT id, ARG_MIN(f_c1, f_c2) AS c1, ARG_MIN(f_c2, f_c1) AS c2
+                FROM atbl_charn
+                GROUP BY id;""");
+    }
+
     @Test @Ignore("To be invoked manually every time a new function is added")
     public void generateFunctionIndex() throws IOException {
         // When invoked it generates documentation for the supported functions and operators
