@@ -63,7 +63,7 @@ stream: test_input
 transport:
     name: nats_input
     config:
-        connecttion_config:
+        connection_config:
             server_url: {nats_url}
         stream_name: {stream_name}
         consumer_config:
