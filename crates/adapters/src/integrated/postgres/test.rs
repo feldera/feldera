@@ -445,13 +445,14 @@ CREATE TABLE {name} (
 
 #[test]
 #[serial]
-fn test_pg_insert() {
+fn test_pg_insert0() {
     let table_name = "test_pg_insert";
     let url = postgres_url();
+    let max_buffer_size_bytes = 1024;
 
     // On average 1 record is about 590 bytes, so 2000 records produce a buffer
     // of over 1 MiB
-    let mut data: Vec<PostgresTestStruct> = (0..2000).map(|_| rand::random()).collect();
+    let mut data: Vec<PostgresTestStruct> = (0..10000).map(|_| rand::random()).collect();
 
     let mut temp_file = NamedTempFile::new().unwrap();
 
@@ -477,6 +478,7 @@ inputs:
       name: file_input
       config:
         path: {}
+        byte_size_buffer: 2097152
     format:
       name: json
       config:
@@ -490,6 +492,7 @@ outputs:
       config:
         uri: {url}
         table: {table_name}
+        max_buffer_size_bytes: {max_buffer_size_bytes}
     index: idx
 "#,
         temp_file.path().display(),
@@ -516,18 +519,101 @@ outputs:
 
             data == got || !err_receiver.is_empty()
         },
-        10_000,
+        40_000,
+    )
+    .expect("timeout: failed to insert data into postgres");
+}
+
+
+#[test]
+#[serial]
+fn test_pg_insert() {
+    let table_name = "test_pg_insert";
+    let url = postgres_url();
+    let max_records_in_buffer = 1000;
+
+    // On average 1 record is about 590 bytes, so 2000 records produce a buffer
+    // of over 1 MiB
+    let mut data: Vec<PostgresTestStruct> = (0..10000).map(|_| rand::random()).collect();
+
+    let mut temp_file = NamedTempFile::new().unwrap();
+
+    for datum in data.iter() {
+        let buffer: Vec<u8> = Vec::new();
+        let mut serializer = serde_json::Serializer::new(buffer);
+        datum
+            .serialize_with_context(&mut serializer, &SqlSerdeConfig::default())
+            .unwrap();
+        let inner = &serializer.into_inner();
+        temp_file.as_file_mut().write_all(inner).unwrap();
+        temp_file.write_all(b"\n").unwrap();
+    }
+
+    let config_str = format!(
+        r#"
+name: test
+workers: 4
+inputs:
+  ins:
+    stream: test_input1
+    transport:
+      name: file_input
+      config:
+        path: {}
+        byte_size_buffer: 2097152
+    format:
+      name: json
+      config:
+        update_format: raw
+        array: false
+outputs:
+  test_output1:
+    stream: test_output1
+    transport:
+      name: postgres_output
+      config:
+        uri: {url}
+        table: {table_name}
+        max_records_in_buffer: {max_records_in_buffer}
+    index: idx
+"#,
+        temp_file.path().display(),
+    );
+
+    let mut table = PostgresTestStruct::create_table(table_name, url);
+
+    let config: PipelineConfig = serde_yaml::from_str(&config_str).unwrap();
+    let (controller, err_receiver) = PostgresTestStruct::test_circuit(config);
+
+    controller.start();
+
+    wait(
+        || {
+            let rows = table.query();
+
+            let mut got = rows
+                .into_iter()
+                .map(PostgresTestStruct::from)
+                .collect::<Vec<_>>();
+
+            got.sort();
+            data.sort();
+
+            data == got || !err_receiver.is_empty()
+        },
+        40_000,
     )
     .expect("timeout: failed to insert data into postgres");
 }
 
 #[test]
 #[serial]
-fn test_pg_upsert() {
+fn test_pg_upsert0() {
     let table_name = "test_pg_upsert";
     let url = postgres_url();
+    let max_buffer_size_bytes = 1024;
 
-    let mut data: Vec<PostgresTestStruct> = (0..2000).map(|_| rand::random()).collect();
+    let mut data: Vec<PostgresTestStruct> = (0..10000).map(|_| rand::random()).collect();
     let mut insert_file = NamedTempFile::new().unwrap();
 
     for datum in data.iter() {
@@ -622,6 +708,7 @@ outputs:
       config:
         uri: {url}
         table: {table_name}
+        max_buffer_size_bytes: {max_buffer_size_bytes}
     index: idx
 "#,
         insert_file.path().display(),
@@ -649,7 +736,7 @@ outputs:
 
             data == got || !err_receiver.is_empty()
         },
-        10_000,
+        40_000,
     )
     .expect("timeout: failed to insert data into postgres");
 
@@ -671,7 +758,165 @@ outputs:
 
             got == upsert_data || !err_receiver.is_empty()
         },
-        10_000,
+        40_000,
+    )
+    .expect("timeout: failed to update data into postgres");
+}
+
+
+#[test]
+#[serial]
+fn test_pg_upsert() {
+    let table_name = "test_pg_upsert";
+    let url = postgres_url();
+    let max_records_in_buffer = 1000;
+
+    let mut data: Vec<PostgresTestStruct> = (0..10000).map(|_| rand::random()).collect();
+    let mut insert_file = NamedTempFile::new().unwrap();
+
+    for datum in data.iter() {
+        let buffer: Vec<u8> = Vec::new();
+        let mut serializer = serde_json::Serializer::new(buffer);
+        datum
+            .serialize_with_context(&mut serializer, &SqlSerdeConfig::default())
+            .unwrap();
+        insert_file
+            .as_file_mut()
+            .write_all(&serializer.into_inner())
+            .unwrap();
+        insert_file.write_all(b"\n").unwrap();
+    }
+
+    let mut upsert_data = data
+        .clone()
+        .into_iter()
+        .map(|mut d| {
+            d.varchar_ = "updated".into();
+            d
+        })
+        .collect::<Vec<_>>();
+
+    let mut upsert_file = NamedTempFile::new().unwrap();
+
+    for old in data.iter() {
+        let buffer: Vec<u8> = Vec::new();
+        let mut serializer = serde_json::Serializer::new(buffer);
+        old.serialize_with_context(&mut serializer, &SqlSerdeConfig::default())
+            .unwrap();
+        upsert_file
+            .as_file_mut()
+            .write_all(br#"{"delete": "#)
+            .unwrap();
+        upsert_file
+            .as_file_mut()
+            .write_all(&serializer.into_inner())
+            .unwrap();
+        upsert_file.write_all(b"}\n").unwrap();
+    }
+
+    for new in upsert_data.iter() {
+        let buffer: Vec<u8> = Vec::new();
+        let mut serializer = serde_json::Serializer::new(buffer);
+        new.serialize_with_context(&mut serializer, &SqlSerdeConfig::default())
+            .unwrap();
+        upsert_file
+            .as_file_mut()
+            .write_all(br#"{"insert": "#)
+            .unwrap();
+        upsert_file
+            .as_file_mut()
+            .write_all(&serializer.into_inner())
+            .unwrap();
+        upsert_file.write_all(b"}\n").unwrap();
+    }
+
+    let config_str = format!(
+        r#"
+name: test
+workers: 4
+inputs:
+  ins:
+    stream: test_input1
+    transport:
+      name: file_input
+      config:
+        path: {}
+    format:
+      name: json
+      config:
+        update_format: raw
+        array: false
+  ups:
+    paused: true
+    stream: test_input1
+    transport:
+      name: file_input
+      config:
+        path: {}
+    format:
+      name: json
+      config:
+        update_format: insert_delete
+        array: false
+outputs:
+  test_output1:
+    stream: test_output1
+    transport:
+      name: postgres_output
+      config:
+        uri: {url}
+        table: {table_name}
+        max_records_in_buffer: {max_records_in_buffer}
+    index: idx
+"#,
+        insert_file.path().display(),
+        upsert_file.path().display(),
+    );
+
+    let mut table = PostgresTestStruct::create_table(table_name, url);
+
+    let config: PipelineConfig = serde_yaml::from_str(&config_str).unwrap();
+    let (controller, err_receiver) = PostgresTestStruct::test_circuit(config);
+
+    controller.start();
+
+    wait(
+        || {
+            let rows = table.query();
+
+            let mut got = rows
+                .into_iter()
+                .map(PostgresTestStruct::from)
+                .collect::<Vec<_>>();
+
+            got.sort();
+            data.sort();
+
+            data == got || !err_receiver.is_empty()
+        },
+        40_000,
+    )
+    .expect("timeout: failed to insert data into postgres");
+
+    controller
+        .start_input_endpoint("ups")
+        .expect("failed to start upsert input file connector");
+
+    wait(
+        || {
+            let rows = table.query();
+
+            let mut got = rows
+                .into_iter()
+                .map(PostgresTestStruct::from)
+                .collect::<Vec<_>>();
+
+            got.sort();
+            upsert_data.sort();
+
+            got == upsert_data || !err_receiver.is_empty()
+        },
+        40_000,
     )
     .expect("timeout: failed to update data into postgres");
 }
@@ -682,7 +927,7 @@ fn test_pg_delete() {
     let table_name = "test_pg_delete";
     let url = postgres_url();
 
-    let mut data: Vec<PostgresTestStruct> = (0..2000).map(|_| rand::random()).collect();
+    let mut data: Vec<PostgresTestStruct> = (0..10000).map(|_| rand::random()).collect();
     let mut insert_file = NamedTempFile::new().unwrap();
 
     for datum in data.iter() {
@@ -779,7 +1024,7 @@ outputs:
 
             data == got || !err_receiver.is_empty()
         },
-        10_000,
+        40_000,
     )
     .expect("timeout: failed to insert data into postgres");
 
@@ -798,7 +1043,7 @@ outputs:
 
             got.is_empty() || !err_receiver.is_empty()
         },
-        10_000,
+        40_000,
     )
     .expect("timeout: failed to delete data from postgres");
 }
