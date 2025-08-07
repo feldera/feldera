@@ -952,7 +952,9 @@ Reason: The pipeline is in a STOPPED state due to the following error:
 
         return FelderaConfig(resp)
 
-    def get_pipeline_support_bundle(self, pipeline_name: str) -> bytes:
+    def get_pipeline_support_bundle(
+        self, pipeline_name: str, params: Optional[Dict[str, Any]] = None
+    ) -> bytes:
         """
         Generate a support bundle containing diagnostic information from a pipeline.
 
@@ -961,12 +963,14 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         and packages them into a single ZIP file for support purposes.
 
         :param pipeline_name: The name of the pipeline
+        :param params: Optional query parameters to control data collection
         :return: The support bundle as bytes (ZIP file)
         :raises FelderaAPIError: If the pipeline does not exist or if there's an error
         """
 
         resp = self.http.get(
             path=f"/pipelines/{pipeline_name}/support_bundle",
+            params=params,
             stream=True,
         )
 
