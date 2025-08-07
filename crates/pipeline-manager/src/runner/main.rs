@@ -54,7 +54,7 @@ type PipelinesState = BTreeMap<PipelineId, (Arc<Notify>, Sender<Sender<String>>)
 /// The health check consults the continuous probe of database reachability.
 #[get("/healthz")]
 async fn get_healthz(data: web::Data<Arc<Mutex<DbProbe>>>) -> Result<impl Responder, ManagerError> {
-    data.lock().await.status_as_http_response()
+    Ok(data.lock().await.as_http_response())
 }
 
 /// Produces a continuous stream of logs which are received from the pipeline runner.

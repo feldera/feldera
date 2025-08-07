@@ -102,7 +102,7 @@ async fn get_binary(
 /// Health check which returns success if it is able to reach the database.
 #[get("/healthz")]
 async fn healthz(probe: web::Data<Arc<Mutex<DbProbe>>>) -> Result<impl Responder, ManagerError> {
-    probe.lock().await.status_as_http_response()
+    Ok(probe.lock().await.as_http_response())
 }
 
 /// Creates the compiler working directory if it does not exist.
