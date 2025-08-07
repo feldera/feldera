@@ -524,7 +524,6 @@ outputs:
     .expect("timeout: failed to insert data into postgres");
 }
 
-
 #[test]
 #[serial]
 fn test_pg_insert() {
@@ -762,7 +761,6 @@ outputs:
     )
     .expect("timeout: failed to update data into postgres");
 }
-
 
 #[test]
 #[serial]
