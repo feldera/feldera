@@ -103,6 +103,8 @@ format:
         assert_eq!(upd.unwrap_insert(), &test_data[i]);
     }
 
+    endpoint.disconnect();
+
     Ok(())
 }
 
