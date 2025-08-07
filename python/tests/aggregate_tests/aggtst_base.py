@@ -14,6 +14,7 @@ JSON: TypeAlias = dict[str, "JSON"] | list["JSON"] | str | int | float | bool | 
 # pylint: disable=too-many-function-args,missing-function-docstring,no-self-argument,no-self-use,invalid-name,line-too-long,too-few-public-methods,missing-class-docstring,super-init-not-called
 
 DEBUG = False
+APPEND_ONLY = False
 
 
 def beautify(sql: str) -> str:
@@ -65,6 +66,8 @@ class Table(SqlObject):
         return [{"insert": x} for x in data]
 
     def __init__(self, sql: str, data: JSON):
+        if APPEND_ONLY:
+            sql = beautify(sql) + " WITH ('append_only'='true')"
         super().__init__(SqlObject.extract_name(sql, True), sql, Table.add_insert(data))
         if DEBUG:
             print(self.as_sql_insert())

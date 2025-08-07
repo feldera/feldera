@@ -1,8 +1,12 @@
 ## Add here import statements for all files with tests
 
+import tests.aggregate_tests.aggtst_base as base  # noqa: F403
 from tests.aggregate_tests.aggtst_base import *  # noqa: F403
 from tests.aggregate_tests.atest_run import run  # noqa: F403
+
 from tests.aggregate_tests5.table import *  # noqa: F403
+from tests.aggregate_tests5.test_atbl_varcharn_append import *  # noqa: F403
+from tests.aggregate_tests5.test_atbl_charn_append import *  # noqa: F403
 from tests.aggregate_tests5.test_arg_max_append import *  # noqa: F403
 from tests.aggregate_tests5.test_arg_min_append import *  # noqa: F403
 from tests.aggregate_tests5.test_max_append import *  # noqa: F403
@@ -35,6 +39,8 @@ from tests.aggregate_tests5.test_varcharn_argmax_append import *  # noqa: F403
 from tests.aggregate_tests5.test_varcharn_argmin_append import *  # noqa: F403
 from tests.aggregate_tests5.test_varcharn_max_append import *  # noqa: F403
 from tests.aggregate_tests5.test_varcharn_min_append import *  # noqa: F403
+
+base.APPEND_ONLY = True
 
 
 def main():
