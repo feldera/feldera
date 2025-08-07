@@ -70,7 +70,7 @@ public class MinMaxOptimize extends Passes {
             OutputPort i = this.mapped(operator.input());
 
             if (!RemoveIdentityOperators.isIdentityFunction(mm.comparedValue)) {
-                // compute the aggregated value in a prior projection
+                // compute mm.comparedValue in a prior MapIndex projection
                 var var = i.getOutputIndexedZSetType().getKVRefType().var();
                 var projection = new DBSPRawTupleExpression(
                         DBSPTupleExpression.flatten(var.field(0).deref()),
@@ -78,8 +78,7 @@ public class MinMaxOptimize extends Passes {
                                 .applyCloneIfNeeded()
                                 .reduce(this.compiler))
                 ).closure(var);
-                DBSPMapIndexOperator reindex = new DBSPMapIndexOperator(operator.getRelNode(),
-                        projection, i);
+                DBSPMapIndexOperator reindex = new DBSPMapIndexOperator(operator.getRelNode(), projection, i);
                 this.addOperator(reindex);
                 i = reindex.outputPort();
             }
@@ -120,18 +119,20 @@ public class MinMaxOptimize extends Passes {
                     Utilities.enforce(fields.tupFields.length == 2);
                     aggregation = DBSPMinMax.Aggregation.Min;
                     if (fields.tupFields[0].mayBeNull) {
+                        // If the compared value is nullable, we cannot use Min, we need to use ArgMinSome, which
+                        // ignores nulls in the first component
                         aggregation = DBSPMinMax.Aggregation.ArgMinSome;
-                        DBSPType resultFieldType = fields.tupFields[1];
-                        if (!resultFieldType.mayBeNull) {
-                            // If ARG_MIN(a, b) has non-nullable b, we must convert the result
-                            // of ArgMinSome to nullable.  note that ArgMinSome produces Tup1<B>.
-                            DBSPVariablePath var = new DBSPTypeTuple(resultFieldType).ref().var();
-                            postProcessing =
-                                    new DBSPTupleExpression(
-                                            var.deref()
-                                                    .field(0)
-                                                    .nullabilityCast(resultFieldType.withMayBeNull(true), false)
-                                    ).closure(var);
+                        DBSPTypeTuple resultType = aggregationType.to(DBSPTypeTuple.class);
+                        Utilities.enforce(resultType.size() == 1);
+                        if (resultType.tupFields[0].mayBeNull) {
+                            // If ARG_MIN(a, b) has non-nullable b, we may need convert the result
+                            // of ArgMinSome to nullable.  Note that ArgMinSome produces Tup1<B>.
+                            DBSPVariablePath var = new DBSPTypeTuple(fields.tupFields[1]).ref().var();
+                            postProcessing = new DBSPTupleExpression(
+                                    var.deref().field(0)
+                                            .cast(mm.getNode(), resultType.tupFields[0], false)
+                                            .applyCloneIfNeeded()
+                            ).closure(var);
                         }
                     } else {
                         // ArgMin implemented as Min; use postProcessing to extract correct field
