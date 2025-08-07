@@ -1,7 +1,7 @@
 use crate::circuit::circuit_builder::{register_replay_stream, StreamId};
 use crate::circuit::metadata::NUM_INPUTS_LABEL;
 use crate::dynamic::{Weight, WeightTrait};
-use crate::operator::dynamic::trace::TraceBounds;
+use crate::operator::dynamic::trace::{DelayedTraceId, TraceBounds};
 use crate::operator::{require_persistent_id, TraceBound};
 use crate::trace::spine_async::WithSnapshot;
 use crate::trace::{BatchReaderFactories, Builder, MergeCursor};
@@ -112,10 +112,7 @@ where
 
                     register_replay_stream(circuit, self, &replay_stream);
 
-                    circuit.cache_insert(
-                        AccumulateDelayedTraceId::new(trace.stream_id()),
-                        delayed_trace,
-                    );
+                    circuit.cache_insert(DelayedTraceId::new(trace.stream_id()), delayed_trace);
                     trace
                 })
             })
@@ -296,10 +293,7 @@ where
 
                     register_replay_stream(circuit, self, &replay_stream);
 
-                    circuit.cache_insert(
-                        AccumulateDelayedTraceId::new(trace.stream_id()),
-                        delayed_trace,
-                    );
+                    circuit.cache_insert(DelayedTraceId::new(trace.stream_id()), delayed_trace);
                     circuit.cache_insert(ExportId::new(trace.stream_id()), export);
 
                     trace
@@ -358,7 +352,7 @@ where
         register_replay_stream(circuit, stream, &replay_stream);
 
         circuit.cache_insert(
-            AccumulateDelayedTraceId::new(trace.stream_id()),
+            DelayedTraceId::new(trace.stream_id()),
             self.delayed_trace.clone(),
         );
 
@@ -433,17 +427,21 @@ where
     B: Batch,
 {
     pub fn accumulate_delay_trace(&self) -> Stream<C, SpineSnapshot<B>> {
+        let circuit = self.circuit();
+
         // The delayed trace should be automatically created while the real trace is
         // created via `.trace()` or a similar function
         // FIXME: Create a trace if it doesn't exist
-        let delayed_trace = self
-            .circuit()
-            .cache_get_or_insert_with(AccumulateDelayedTraceId::new(self.stream_id()), || {
-                panic!("called `.accumulate_delay_trace()` on a stream without a previously created trace")
+
+        circuit.cache_get_or_insert_with(AccumulateDelayedTraceId::new(self.stream_id()), || {
+                let delayed_trace = circuit.cache_get_or_insert_with(DelayedTraceId::new(self.stream_id()), || {
+                    panic!("called `.accumulate_delay_trace()` on a stream without a previously created trace")
+                });
+
+                circuit.add_unary_operator(AccumulateDelayTrace::new(), delayed_trace.deref())
             })
             .deref()
-            .clone();
-        delayed_trace.apply(|spine: &Spine<B>| spine.ro_snapshot())
+            .clone()
     }
 }
 
@@ -967,6 +965,59 @@ where
 
     fn input_preference(&self) -> OwnershipPreference {
         OwnershipPreference::PREFER_OWNED
+    }
+}
+
+use crate::circuit::operator_traits::UnaryOperator;
+
+pub struct AccumulateDelayTrace<B>
+where
+    B: Batch,
+{
+    spine: Option<SpineSnapshot<B>>,
+    flush: bool,
+}
+
+impl<B> AccumulateDelayTrace<B>
+where
+    B: Batch,
+{
+    pub const fn new() -> Self {
+        Self {
+            spine: None,
+            flush: false,
+        }
+    }
+}
+
+impl<B> Operator for AccumulateDelayTrace<B>
+where
+    B: Batch,
+{
+    fn name(&self) -> Cow<'static, str> {
+        Cow::Borrowed("AccumulateDelayTrace")
+    }
+
+    fn fixedpoint(&self, _scope: Scope) -> bool {
+        true
+    }
+
+    fn flush(&mut self) {
+        self.flush = true;
+    }
+}
+
+impl<B> UnaryOperator<Spine<B>, SpineSnapshot<B>> for AccumulateDelayTrace<B>
+where
+    B: Batch,
+{
+    async fn eval(&mut self, spine: &Spine<B>) -> SpineSnapshot<B> {
+        if self.flush || self.spine.is_none() {
+            self.flush = false;
+            self.spine = Some(spine.ro_snapshot());
+        }
+
+        self.spine.as_ref().unwrap().clone()
     }
 }
 
