@@ -86,28 +86,29 @@ impl<K: ?Sized, V1: ?Sized, V2: ?Sized, OK: ?Sized, OV: ?Sized> TraceJoinFuncs<K
         }
     }
 }
-pub trait JoinFuncTrait<K: ?Sized, V1: ?Sized, V2: ?Sized, O: ?Sized>:
-    Fn(&K, &V1, &V2, &mut O)
+pub trait JoinFuncTrait<K: ?Sized, V1: ?Sized, V2: ?Sized, OK: ?Sized, OV: ?Sized>:
+    Fn(&K, &V1, &V2, &mut OK, &mut OV)
 {
-    fn fork(&self) -> JoinFunc<K, V1, V2, O>;
+    fn fork(&self) -> JoinFunc<K, V1, V2, OK, OV>;
 }
 
-impl<K: ?Sized, V1: ?Sized, V2: ?Sized, O: ?Sized, F> JoinFuncTrait<K, V1, V2, O> for F
+impl<K: ?Sized, V1: ?Sized, V2: ?Sized, OK: ?Sized, OV: ?Sized, F> JoinFuncTrait<K, V1, V2, OK, OV>
+    for F
 where
-    F: Fn(&K, &V1, &V2, &mut O) + Clone + 'static,
+    F: Fn(&K, &V1, &V2, &mut OK, &mut OV) + Clone + 'static,
 {
-    fn fork(&self) -> JoinFunc<K, V1, V2, O> {
+    fn fork(&self) -> JoinFunc<K, V1, V2, OK, OV> {
         Box::new(self.clone())
     }
 }
 
-pub type JoinFunc<K, V1, V2, O> = Box<dyn JoinFuncTrait<K, V1, V2, O>>;
+pub type JoinFunc<K, V1, V2, OK, OV> = Box<dyn JoinFuncTrait<K, V1, V2, OK, OV>>;
 
 pub struct StreamJoinFactories<I1, I2, O>
 where
     I1: IndexedZSetReader,
     I2: IndexedZSetReader,
-    O: ZSet,
+    O: IndexedZSet,
 {
     pub left_factories: I1::Factories,
     pub right_factories: I2::Factories,
@@ -118,19 +119,47 @@ impl<I1, I2, O> StreamJoinFactories<I1, I2, O>
 where
     I1: IndexedZSetReader,
     I2: IndexedZSetReader<Key = I1::Key>,
-    O: ZSet,
+    O: IndexedZSet,
 {
-    pub fn new<KType, V1Type, V2Type, VType>() -> Self
+    pub fn new<KType, V1Type, V2Type, OKType, OVType>() -> Self
     where
         KType: DBData + Erase<I1::Key>,
         V1Type: DBData + Erase<I1::Val>,
         V2Type: DBData + Erase<I2::Val>,
-        VType: DBData + Erase<O::Key>,
+        OKType: DBData + Erase<O::Key>,
+        OVType: DBData + Erase<O::Val>,
     {
         Self {
             left_factories: BatchReaderFactories::new::<KType, V1Type, ZWeight>(),
             right_factories: BatchReaderFactories::new::<KType, V2Type, ZWeight>(),
-            output_factories: BatchReaderFactories::new::<VType, (), ZWeight>(),
+            output_factories: BatchReaderFactories::new::<OKType, OVType, ZWeight>(),
+        }
+    }
+}
+
+pub struct StreamAntijoinFactories<I1, I2>
+where
+    I1: IndexedZSet,
+    I2: IndexedZSet,
+{
+    pub left_factories: I1::Factories,
+    pub right_factories: I2::Factories,
+}
+
+impl<I1, I2> StreamAntijoinFactories<I1, I2>
+where
+    I1: IndexedZSet,
+    I2: IndexedZSet<Key = I1::Key>,
+{
+    pub fn new<KType, V1Type, V2Type>() -> Self
+    where
+        KType: DBData + Erase<I1::Key>,
+        V1Type: DBData + Erase<I1::Val>,
+        V2Type: DBData + Erase<I2::Val>,
+    {
+        Self {
+            left_factories: BatchReaderFactories::new::<KType, V1Type, ZWeight>(),
+            right_factories: BatchReaderFactories::new::<KType, V2Type, ZWeight>(),
         }
     }
 }
@@ -315,7 +344,7 @@ where
         &self,
         factories: &StreamJoinFactories<I1, I2, OrdZSet<V>>,
         other: &Stream<C, I2>,
-        join: JoinFunc<I1::Key, I1::Val, I2::Val, V>,
+        join: JoinFunc<I1::Key, I1::Val, I2::Val, V, DynUnit>,
     ) -> Stream<C, OrdZSet<V>>
     where
         I1: IndexedZSet,
@@ -331,12 +360,12 @@ where
         &self,
         factories: &StreamJoinFactories<I1, I2, Z>,
         other: &Stream<C, I2>,
-        join: JoinFunc<I1::Key, I1::Val, I2::Val, Z::Key>,
+        join: JoinFunc<I1::Key, I1::Val, I2::Val, Z::Key, Z::Val>,
     ) -> Stream<C, Z>
     where
         I1: IndexedZSet,
         I2: IndexedZSet<Key = I1::Key>,
-        Z: ZSet,
+        Z: IndexedZSet,
     {
         self.circuit().add_binary_operator(
             Join::new(&factories.output_factories, join, Location::caller()),
@@ -351,7 +380,7 @@ where
         &self,
         factories: &StreamJoinFactories<I1, I2, Z>,
         other: &Stream<C, I2>,
-        join: JoinFunc<I1::Key, I1::Val, I2::Val, Z::Key>,
+        join: JoinFunc<I1::Key, I1::Val, I2::Val, Z::Key, DynUnit>,
     ) -> Stream<C, Z>
     where
         I1: IndexedZSet,
@@ -369,16 +398,66 @@ where
         &self,
         output_factories: &Z::Factories,
         other: &Stream<C, I2>,
-        join: JoinFunc<I1::Key, I1::Val, I2::Val, Z::Key>,
+        join: JoinFunc<I1::Key, I1::Val, I2::Val, Z::Key, Z::Val>,
         location: &'static Location<'static>,
     ) -> Stream<C, Z>
     where
         I1: IndexedZSetReader + Clone,
         I2: IndexedZSetReader<Key = I1::Key> + Clone,
-        Z: ZSet,
+        Z: IndexedZSet,
     {
         self.circuit()
             .add_binary_operator(Join::new(output_factories, join, location), self, other)
+    }
+
+    pub fn dyn_stream_antijoin<I2>(
+        &self,
+        factories: &StreamAntijoinFactories<I1, OrdZSet<I2::Key>>,
+        other: &Stream<C, I2>,
+    ) -> Self
+    where
+        I1: IndexedZSet,
+        I2: IndexedZSet<Key = I1::Key> + DynFilterMap,
+    {
+        self.circuit().region("stream_antijoin", || {
+            let stream1 = self.dyn_shard(&factories.left_factories);
+
+            // Project away values, leave keys only.
+            let other_keys = other.try_sharded_version().dyn_map(
+                &factories.right_factories,
+                Box::new(|item: <I2 as DynFilterMap>::DynItemRef<'_>, output| {
+                    <I2 as DynFilterMap>::item_ref_keyval(item)
+                        .0
+                        .clone_to(output.fst_mut())
+                }),
+            );
+
+            // `dyn_map` above preserves keys.
+            other_keys.mark_sharded_if(other);
+
+            let stream2 = other_keys
+                .dyn_stream_distinct(&factories.right_factories)
+                .dyn_shard(&factories.right_factories);
+
+            //map_func: Box<dyn Fn(B::DynItemRef<'_>, &mut DynPair<K, DynUnit>)>,
+
+            let join_factories = StreamJoinFactories {
+                left_factories: factories.left_factories.clone(),
+                right_factories: factories.right_factories.clone(),
+                output_factories: factories.left_factories.clone(),
+            };
+
+            let join_stream = stream1.dyn_stream_join_generic(
+                &join_factories,
+                &stream2,
+                Box::new(move |k: &I1::Key, v1: &I1::Val, _v2, ok, ov| {
+                    k.clone_to(ok);
+                    v1.clone_to(ov);
+                }),
+            );
+
+            stream1.minus(&join_stream).mark_sharded()
+        })
     }
 }
 
@@ -405,7 +484,7 @@ impl<I1> Stream<RootCircuit, I1> {
         other_factories: &I2::Factories,
         output_factories: &Z::Factories,
         other: &Stream<RootCircuit, I2>,
-        join_func: JoinFunc<I1::Key, I1::Val, I2::Val, Z::Key>,
+        join_func: JoinFunc<I1::Key, I1::Val, I2::Val, Z::Key, DynUnit>,
     ) -> Stream<RootCircuit, Z>
     where
         I1: IndexedZSet,
@@ -829,10 +908,10 @@ pub struct Join<I1, I2, Z>
 where
     I1: IndexedZSetReader,
     I2: IndexedZSetReader,
-    Z: ZSet,
+    Z: IndexedZSet,
 {
     output_factories: Z::Factories,
-    join_func: JoinFunc<I1::Key, I1::Val, I2::Val, Z::Key>,
+    join_func: JoinFunc<I1::Key, I1::Val, I2::Val, Z::Key, Z::Val>,
     location: &'static Location<'static>,
     _types: PhantomData<(I1, I2, Z)>,
 }
@@ -841,11 +920,11 @@ impl<I1, I2, Z> Join<I1, I2, Z>
 where
     I1: IndexedZSetReader,
     I2: IndexedZSetReader,
-    Z: ZSet,
+    Z: IndexedZSet,
 {
     pub fn new(
         output_factories: &Z::Factories,
-        join_func: JoinFunc<I1::Key, I1::Val, I2::Val, Z::Key>,
+        join_func: JoinFunc<I1::Key, I1::Val, I2::Val, Z::Key, Z::Val>,
         location: &'static Location<'static>,
     ) -> Self {
         Self {
@@ -861,7 +940,7 @@ impl<I1, I2, Z> Operator for Join<I1, I2, Z>
 where
     I1: IndexedZSetReader,
     I2: IndexedZSetReader,
-    Z: ZSet,
+    Z: IndexedZSet,
 {
     fn name(&self) -> Cow<'static, str> {
         Cow::Borrowed("Join")
@@ -880,7 +959,7 @@ impl<I1, I2, Z> BinaryOperator<I1, I2, Z> for Join<I1, I2, Z>
 where
     I1: IndexedZSetReader,
     I2: IndexedZSetReader<Key = I1::Key>,
-    Z: ZSet,
+    Z: IndexedZSet,
 {
     #[trace]
     async fn eval(&mut self, i1: &I1, i2: &I2) -> Z {
@@ -906,9 +985,9 @@ where
                             let v2 = cursor2.val();
 
                             let (kv, w) = output.split_mut();
-                            let (k, _v) = kv.split_mut();
+                            let (k, v) = kv.split_mut();
 
-                            (self.join_func)(cursor1.key(), v1, v2, k);
+                            (self.join_func)(cursor1.key(), v1, v2, k, v);
                             **w = w1.mul_by_ref(&w2);
 
                             batch.push_val(output.as_mut());
@@ -938,7 +1017,7 @@ where
     Z: ZSet,
 {
     output_factories: Z::Factories,
-    join_func: JoinFunc<I1::Key, I1::Val, I2::Val, Z::Key>,
+    join_func: JoinFunc<I1::Key, I1::Val, I2::Val, Z::Key, DynUnit>,
     location: &'static Location<'static>,
     _types: PhantomData<(I1, I2, Z)>,
 }
@@ -951,7 +1030,7 @@ where
 {
     pub fn new(
         output_factories: &Z::Factories,
-        join_func: JoinFunc<I1::Key, I1::Val, I2::Val, Z::Key>,
+        join_func: JoinFunc<I1::Key, I1::Val, I2::Val, Z::Key, DynUnit>,
         location: &'static Location<'static>,
     ) -> Self {
         Self {
@@ -1013,7 +1092,13 @@ where
                             let w2 = **cursor2.weight();
                             let v2 = cursor2.val();
 
-                            (self.join_func)(cursor1.key(), v1, v2, output.as_mut());
+                            (self.join_func)(
+                                cursor1.key(),
+                                v1,
+                                v2,
+                                output.as_mut(),
+                                ().erase_mut(),
+                            );
 
                             builder
                                 .push_val_diff_mut(().erase_mut(), w1.mul_by_ref(&w2).erase_mut());
@@ -1462,7 +1547,7 @@ mod test {
         operator::Generator,
         typed_batch::{OrdZSet, TypedBatch},
         utils::Tup2,
-        zset, Circuit, RootCircuit, Runtime, Stream,
+        zset, Circuit, DBData, RootCircuit, Runtime, Stream, ZWeight,
     };
     use std::vec;
 
@@ -1848,6 +1933,115 @@ mod test {
     #[test]
     fn antijoin_test_big_step() {
         antijoin_test(true);
+    }
+
+    use proptest::{collection::vec, prelude::*};
+
+    fn proptest_antijoin<K: DBData, V: DBData>(
+        mut left_inputs: Vec<Vec<Tup2<K, Tup2<V, ZWeight>>>>,
+        mut right_inputs: Vec<Vec<Tup2<K, Tup2<V, ZWeight>>>>,
+        transaction: bool,
+    ) {
+        let (mut dbsp, (left_handle, right_handle, output_handle, expected_output_handle)) =
+            Runtime::init_circuit(
+                CircuitConfig::from(4).with_splitter_chunk_size_records(2),
+                move |circuit| {
+                    let (left_input, left_handle) = circuit.add_input_indexed_zset::<K, V>();
+                    let (right_input, right_handle) = circuit.add_input_indexed_zset::<K, V>();
+
+                    let output_handle = left_input.antijoin(&right_input).accumulate_output();
+                    let expected_output_handle = circuit
+                        .non_incremental(&(left_input, right_input), |_child, (left, right)| {
+                            Ok(left
+                                .integrate()
+                                .stream_antijoin(&right.integrate())
+                                .differentiate())
+                        })
+                        .unwrap()
+                        .accumulate_output();
+
+                    Ok((
+                        left_handle,
+                        right_handle,
+                        output_handle,
+                        expected_output_handle,
+                    ))
+                },
+            )
+            .unwrap();
+
+        if transaction {
+            dbsp.start_transaction().unwrap();
+        }
+
+        for step in 0..left_inputs.len() {
+            left_handle.append(&mut left_inputs[step]);
+            right_handle.append(&mut right_inputs[step]);
+
+            if !transaction {
+                dbsp.transaction().unwrap();
+                let output = output_handle.concat().consolidate();
+
+                assert_eq!(output, expected_output_handle.concat().consolidate())
+            } else {
+                dbsp.step().unwrap();
+            }
+        }
+
+        if transaction {
+            dbsp.commit_transaction().unwrap();
+            let output = output_handle.concat().consolidate();
+
+            assert_eq!(output, expected_output_handle.concat().consolidate())
+        }
+    }
+
+    fn generate_test_indexed_zset(
+        max_key: i32,
+        max_val: i32,
+        max_weight: ZWeight,
+        max_tuples: usize,
+    ) -> BoxedStrategy<Vec<Tup2<i32, Tup2<i32, ZWeight>>>> {
+        vec(
+            (0..max_key, 0..max_val, -max_weight..max_weight)
+                .prop_map(|(x, y, z)| Tup2(x, Tup2(y, z))),
+            0..max_tuples,
+        )
+        .boxed()
+    }
+
+    fn generate_antijoin_test_data(
+        max_key: i32,
+        max_val: i32,
+        max_weight: ZWeight,
+        max_tuples: usize,
+    ) -> BoxedStrategy<(
+        Vec<Vec<Tup2<i32, Tup2<i32, ZWeight>>>>,
+        Vec<Vec<Tup2<i32, Tup2<i32, ZWeight>>>>,
+    )> {
+        (
+            vec(
+                generate_test_indexed_zset(max_key, max_val, max_weight, max_tuples),
+                10,
+            ),
+            vec(
+                generate_test_indexed_zset(max_key, max_val, max_weight, max_tuples),
+                10,
+            ),
+        )
+            .boxed()
+    }
+
+    proptest! {
+        #[test]
+        fn proptest_antijoin_big_step(inputs in generate_antijoin_test_data(10, 5, 3, 100)) {
+            proptest_antijoin(inputs.0, inputs.1, true);
+        }
+
+        #[test]
+        fn proptest_antijoin_small_step(inputs in generate_antijoin_test_data(10, 5, 3, 100)) {
+            proptest_antijoin(inputs.0, inputs.1, false);
+        }
     }
 }
 
