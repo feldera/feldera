@@ -1061,7 +1061,18 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
             errors.append(derr)
         return errors
 
-    def support_bundle(self, output_path: Optional[str] = None) -> bytes:
+    def support_bundle(
+        self,
+        output_path: Optional[str] = None,
+        *,
+        circuit_profile: bool = True,
+        heap_profile: bool = True,
+        metrics: bool = True,
+        logs: bool = True,
+        stats: bool = True,
+        pipeline_config: bool = True,
+        system_config: bool = True,
+    ) -> bytes:
         """
         Generate a support bundle containing diagnostic information from this pipeline.
 
@@ -1071,11 +1082,37 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
 
         :param output_path: Optional path to save the support bundle file. If None,
             the support bundle is only returned as bytes.
+        :param circuit_profile: Whether to collect circuit profile data (default: True)
+        :param heap_profile: Whether to collect heap profile data (default: True)
+        :param metrics: Whether to collect metrics data (default: True)
+        :param logs: Whether to collect logs data (default: True)
+        :param stats: Whether to collect stats data (default: True)
+        :param pipeline_config: Whether to collect pipeline configuration data (default: True)
+        :param system_config: Whether to collect system configuration data (default: True)
         :return: The support bundle as bytes (ZIP archive)
         :raises FelderaAPIError: If the pipeline does not exist or if there's an error
         """
 
-        support_bundle_bytes = self.client.get_pipeline_support_bundle(self.name)
+        # Build query parameters
+        params = {}
+        if not circuit_profile:
+            params["circuit_profile"] = "false"
+        if not heap_profile:
+            params["heap_profile"] = "false"
+        if not metrics:
+            params["metrics"] = "false"
+        if not logs:
+            params["logs"] = "false"
+        if not stats:
+            params["stats"] = "false"
+        if not pipeline_config:
+            params["pipeline_config"] = "false"
+        if not system_config:
+            params["system_config"] = "false"
+
+        support_bundle_bytes = self.client.get_pipeline_support_bundle(
+            self.name, params=params
+        )
 
         if output_path is not None:
             path = pathlib.Path(output_path)

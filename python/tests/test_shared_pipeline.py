@@ -555,7 +555,7 @@ class TestPipeline(SharedTestPipeline):
     def test_support_bundle(self):
         self.pipeline.start()
 
-        # Test getting support bundle as bytes
+        # Test getting support bundle as bytes (all collections enabled)
         support_bundle_bytes = self.pipeline.support_bundle()
         assert isinstance(support_bundle_bytes, bytes)
         assert len(support_bundle_bytes) > 0
@@ -586,6 +586,50 @@ class TestPipeline(SharedTestPipeline):
             # Clean up
             if os.path.exists(temp_path):
                 os.unlink(temp_path)
+
+    def test_support_bundle_with_selectors(self):
+        self.pipeline.start()
+
+        # Test with all collections disabled
+        support_bundle_bytes = self.pipeline.support_bundle(
+            circuit_profile=False,
+            heap_profile=False,
+            metrics=False,
+            logs=False,
+            stats=False,
+            pipeline_config=False,
+            system_config=False,
+        )
+
+        assert isinstance(support_bundle_bytes, bytes)
+        assert len(support_bundle_bytes) > 0
+
+        # Verify it's a valid ZIP file
+        with zipfile.ZipFile(io.BytesIO(support_bundle_bytes), "r") as zip_file:
+            file_list = zip_file.namelist()
+            # Should only contain manifest.txt when all collections are disabled
+            assert len(file_list) == 1
+            assert "manifest.txt" in file_list
+
+        # Test with partial collections enabled
+        support_bundle_bytes = self.pipeline.support_bundle(
+            circuit_profile=True,
+            heap_profile=False,
+            metrics=True,
+            logs=False,
+            stats=True,
+            pipeline_config=False,
+            system_config=True,
+        )
+
+        assert isinstance(support_bundle_bytes, bytes)
+        assert len(support_bundle_bytes) > 0
+
+        # Verify it's a valid ZIP file
+        with zipfile.ZipFile(io.BytesIO(support_bundle_bytes), "r") as zip_file:
+            file_list = zip_file.namelist()
+            assert len(file_list) >= 2
+            assert "manifest.txt" in file_list
 
 
 if __name__ == "__main__":
