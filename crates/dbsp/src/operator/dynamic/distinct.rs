@@ -496,6 +496,8 @@ where
     ) -> impl AsyncStream<Item = (Z, bool, Option<Position>)> + 'static {
         let delta = delta.as_ref().map(|b| b.ro_snapshot());
 
+        // We assume that delta.is_some() implies that the operator is being flushed:
+        // since delayed_integral is always flushed before delta.
         let delayed_integral = if delta.is_some() {
             Some(delayed_integral.ro_snapshot())
         } else {
@@ -967,6 +969,8 @@ where
     ) -> impl AsyncStream<Item = (Z, bool, Option<Position>)> + 'static {
         let delta = delta.as_ref().map(|b| b.ro_snapshot());
 
+        // We assume that delta.is_some() implies that the operator is being flushed:
+        // since the integral is always flushed in same microstep as delta.
         let trace = if delta.is_some() {
             Some(trace.ro_snapshot())
         } else {

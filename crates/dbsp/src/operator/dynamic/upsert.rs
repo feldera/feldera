@@ -9,8 +9,8 @@ use crate::{
     dynamic::{ClonableTrait, DataTrait, DynOpt, DynPairs, DynUnit, Erase},
     operator::dynamic::{
         accumulate_trace::{
-            AccumulateBoundsId, AccumulateDelayedTraceId, AccumulateTraceAppend, AccumulateTraceId,
-            AccumulateZ1Trace, TimedSpine,
+            AccumulateBoundsId, AccumulateTraceAppend, AccumulateTraceId, AccumulateZ1Trace,
+            TimedSpine,
         },
         trace::{DelayedTraceId, TraceAppend, TraceBounds, TraceId, Z1Trace},
     },
@@ -292,10 +292,7 @@ where
 
             register_replay_stream(circuit, &delta, &replay_stream);
 
-            circuit.cache_insert(
-                AccumulateDelayedTraceId::new(trace.stream_id()),
-                delayed_trace,
-            );
+            circuit.cache_insert(DelayedTraceId::new(trace.stream_id()), delayed_trace);
             circuit.cache_insert(AccumulateTraceId::new(delta.stream_id()), trace);
             circuit.cache_insert(AccumulateBoundsId::<B>::new(delta.stream_id()), bounds);
             delta
