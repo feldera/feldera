@@ -448,6 +448,25 @@ pub struct PipelineDescr {
     pub program_config: serde_json::Value,
 }
 
+impl PipelineDescr {
+    #[cfg(test)]
+    pub(crate) fn test_descr() -> Self {
+        use serde_json::json;
+        Self {
+            name: "test_pipeline".to_string(),
+            description: "Test pipeline".to_string(),
+            runtime_config: json!({}),
+            program_code: "CREATE TABLE test (col1 INT);".to_string(),
+            udf_rust: "".to_string(),
+            udf_toml: "".to_string(),
+            program_config: json!({
+                "profile": "unoptimized",
+                "cache": false
+            }),
+        }
+    }
+}
+
 /// Pipeline descriptor which besides the basic fields in direct regular control of the user
 /// also has all additional fields generated and maintained by the back-end.
 #[derive(Eq, PartialEq, Debug, Clone, Serialize, Deserialize)]

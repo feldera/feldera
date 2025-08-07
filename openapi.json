@@ -3617,25 +3617,6 @@
                       }
                     }
                   },
-                  "Pipeline is currently unavailable": {
-                    "value": {
-                      "message": "Unable to reach pipeline to interact due to: deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again",
-                      "error_code": "PipelineInteractionUnreachable",
-                      "details": {
-                        "error": "deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again"
-                      }
-                    }
-                  },
-                  "Pipeline is not deployed": {
-                    "value": {
-                      "message": "Unable to interact with pipeline because the deployment status ('stopped') is not one of the deployed statuses ('running', 'paused' or 'unavailable') -- to resolve this: wait for the pipeline to become running or paused",
-                      "error_code": "PipelineInteractionNotDeployed",
-                      "details": {
-                        "status": "Stopped",
-                        "desired_status": "Running"
-                      }
-                    }
-                  },
                   "Response timeout": {
                     "value": {
                       "message": "Unable to reach pipeline to interact due to: timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)",

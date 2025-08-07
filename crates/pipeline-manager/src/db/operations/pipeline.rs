@@ -1,3 +1,4 @@
+use crate::api::support_data_collector::SupportBundleData;
 use crate::db::error::DBError;
 use crate::db::operations::utils::{
     maybe_tenant_id_foreign_key_constraint_err, maybe_unique_violation,
@@ -20,7 +21,8 @@ use crate::db::types::utils::{
 use crate::db::types::version::Version;
 use deadpool_postgres::Transaction;
 use feldera_types::error::ErrorResponse;
-use log::error;
+use log::{error, warn};
+use rmp_serde::{from_slice, to_vec};
 use tokio_postgres::Row;
 use uuid::Uuid;
 
@@ -1355,6 +1357,102 @@ pub(crate) async fn list_pipeline_programs_across_all_tenants(
             )
         })
         .collect())
+}
+
+/// Store a support data collection entry
+pub(crate) async fn store_support_data_collection(
+    txn: &Transaction<'_>,
+    pipeline_id: PipelineId,
+    tenant_id: TenantId,
+    support_bundle: &SupportBundleData,
+) -> Result<(), DBError> {
+    let query = r#"
+        INSERT INTO support_data_collections
+        (pipeline_id, tenant_id, collected_at, support_bundle_data)
+        VALUES ($1, $2, $3, $4)
+    "#;
+
+    // Serialize the support bundle data using MessagePack
+    let serialized_data = to_vec(support_bundle).map_err(|e| DBError::InvalidJsonData {
+        data: "support_bundle_data".to_string(),
+        error: format!("Failed to serialize support bundle data: {}", e),
+    })?;
+
+    let stmt = txn.prepare_cached(query).await?;
+    txn.execute(
+        &stmt,
+        &[
+            &pipeline_id.0,
+            &tenant_id.0,
+            &support_bundle.time.naive_utc(),
+            &serialized_data,
+        ],
+    )
+    .await?;
+
+    Ok(())
+}
+
+/// Clean up old support data collections for a pipeline.
+///
+/// Returns the number of deleted collections.
+pub(crate) async fn cleanup_old_support_data_collections(
+    txn: &Transaction<'_>,
+    pipeline_id: PipelineId,
+    retention_count: i64,
+) -> Result<u64, DBError> {
+    let query = r#"
+        DELETE FROM support_data_collections
+        WHERE pipeline_id = $1
+        AND id NOT IN (
+            SELECT id FROM support_data_collections
+            WHERE pipeline_id = $1
+            ORDER BY collected_at DESC
+            LIMIT $2
+        )
+    "#;
+
+    let stmt = txn.prepare_cached(query).await?;
+    let r = txn
+        .execute(&stmt, &[&pipeline_id.0, &retention_count])
+        .await?;
+
+    Ok(r)
+}
+
+/// Get support bundle data for a pipeline.
+pub(crate) async fn get_support_bundle_data(
+    txn: &Transaction<'_>,
+    pipeline_id: PipelineId,
+    limit: u64,
+) -> Result<Vec<SupportBundleData>, DBError> {
+    let query = r#"
+        SELECT support_bundle_data
+        FROM support_data_collections
+        WHERE pipeline_id = $1
+        ORDER BY collected_at DESC
+        LIMIT $2
+    "#;
+
+    let limit = limit as i64;
+    let rows = txn.query(query, &[&pipeline_id.0, &limit]).await?;
+
+    let mut bundles = Vec::new();
+    for row in rows {
+        let data: Vec<u8> = row.get("support_bundle_data");
+        let bundle = from_slice(&data).map_err(|e| DBError::InvalidJsonData {
+            data: "<support_bundle_binary_data>".to_string(),
+            error: format!("Failed to deserialize bundle data: {}", e),
+        });
+        match bundle {
+            Ok(bundle) => bundles.push(bundle),
+            Err(e) => {
+                warn!("Skipped support bundle data for {pipeline_id}: {}", e);
+            }
+        }
+    }
+
+    Ok(bundles)
 }
 
 #[cfg(test)]

@@ -85,7 +85,7 @@ pub(crate) struct Configuration {
 }
 
 impl Configuration {
-    pub(crate) async fn gather(state: &WebData<ServerState>) -> Self {
+    pub(crate) async fn gather(state: &ServerState) -> Self {
         let version = env!("CARGO_PKG_VERSION").to_string();
         let mut revision = env!("FELDERA_PLATFORM_VERSION_SUFFIX");
         if revision.is_empty() {
@@ -97,7 +97,7 @@ impl Configuration {
         let license_check = LicenseCheck::validate(state).await.unwrap_or_default();
 
         Configuration {
-            telemetry: state._config.telemetry.clone(),
+            telemetry: state.config.telemetry.clone(),
             edition: if cfg!(feature = "feldera-enterprise") {
                 "Enterprise"
             } else {
@@ -165,7 +165,7 @@ pub(crate) async fn get_config_authentication(
     state: WebData<ServerState>,
     req: HttpRequest,
 ) -> Result<HttpResponse, ManagerError> {
-    if state._config.auth_provider == crate::config::AuthProviderType::None {
+    if state.config.auth_provider == crate::config::AuthProviderType::None {
         return Ok(HttpResponse::Ok().json(EmptyResponse {}));
     }
     let auth_config = req.app_data::<crate::auth::AuthConfiguration>().unwrap();
