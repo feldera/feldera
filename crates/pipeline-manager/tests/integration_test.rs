@@ -3026,3 +3026,39 @@ async fn pipeline_connector_endpoint_naming() {
         ]
     );
 }
+
+/// Tests the health check endpoint.
+#[actix_web::test]
+#[serial]
+async fn health_check() {
+    let config = TestClient::setup_and_full_cleanup().await;
+    let mut attempt = 0;
+    loop {
+        let (status_code, body) =
+            TestClient::parse_json_response(config.get("/healthz").await).await;
+        if status_code == StatusCode::OK
+            && body
+                == json!({
+                    "status": "healthy"
+                })
+        {
+            // Healthy
+            return;
+        } else if status_code == StatusCode::INTERNAL_SERVER_ERROR
+            && body
+                == json!({
+                    "status": "unhealthy: unable to reach database (see logs for further details)"
+                })
+        {
+            // Unhealthy
+            if attempt >= 30 {
+                panic!("Took too long for health check to return healthy")
+            }
+        } else {
+            // Unexpected response
+            panic!("Unexpected health check status code ({status_code}) and/or body ({body})");
+        }
+        attempt += 1;
+        sleep(Duration::from_secs(1)).await;
+    }
+}

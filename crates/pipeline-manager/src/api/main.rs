@@ -606,5 +606,5 @@ Version: {} v{}{}
 #[get("/healthz")]
 async fn healthz(state: WebData<ServerState>) -> Result<HttpResponse, ManagerError> {
     let probe = state.probe.lock().await;
-    probe.status_as_http_response()
+    Ok(probe.as_http_response())
 }
