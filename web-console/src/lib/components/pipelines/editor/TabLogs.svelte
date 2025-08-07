@@ -121,6 +121,9 @@
       }
     }
     api.pipelineLogsStream(pipelineName, { signal: abortController.signal }).then((result) => {
+      if (!streams[pipelineName]) {
+        return
+      }
       if (streams[pipelineName].stream && 'closed' in streams[pipelineName].stream) {
         // The stream was cancelled, so we shouldn't re-try it
         return
@@ -144,6 +147,9 @@
             streams[pipelineName].firstRowIndex += droppedNum
           },
           onParseEnded: (reason) => {
+            if (!streams[pipelineName]) {
+              return
+            }
             streams[pipelineName].stream = { closed: {} }
             if (reason === 'cancelled' || !areLogsExpected(pipelineStatusName)) {
               return
