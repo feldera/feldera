@@ -3496,6 +3496,69 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "circuit_profile",
+            "in": "query",
+            "description": "Whether to collect circuit profile data (default: true)",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "heap_profile",
+            "in": "query",
+            "description": "Whether to collect heap profile data (default: true)",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "metrics",
+            "in": "query",
+            "description": "Whether to collect metrics data (default: true)",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "logs",
+            "in": "query",
+            "description": "Whether to collect logs data (default: true)",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "stats",
+            "in": "query",
+            "description": "Whether to collect stats data (default: true)",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "pipeline_config",
+            "in": "query",
+            "description": "Whether to collect pipeline configuration data (default: true)",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "system_config",
+            "in": "query",
+            "description": "Whether to collect system configuration data (default: true)",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
           }
         ],
         "responses": {
