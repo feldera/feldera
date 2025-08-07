@@ -33,4 +33,19 @@ pub struct PostgresWriterConfig {
 
     /// True to enable hostname verification when using TLS. True by default.
     pub verify_hostname: Option<bool>,
+
+    /// The maximum number of records in a single buffer.
+    pub max_records_in_buffer: Option<usize>,
+
+    /// The maximum buffer size in for a single operation.
+    /// Note that the buffers of `INSERT`, `UPDATE` and `DELETE` queries are
+    /// separate.
+    /// Default: 1 MiB
+    #[schema(default = default_max_buffer_size)]
+    #[serde(default = "default_max_buffer_size")]
+    pub max_buffer_size_bytes: usize,
+}
+
+fn default_max_buffer_size() -> usize {
+    usize::pow(2, 20)
 }
