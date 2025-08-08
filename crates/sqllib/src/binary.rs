@@ -108,23 +108,17 @@ impl<'de> DeserializeWithContext<'de, SqlSerdeConfig> for ByteArray {
         D: Deserializer<'de>,
     {
         fn parse_hex_string(s: &str, prefix: &str) -> Option<CompactVec> {
-            let s = s.strip_prefix(prefix).unwrap_or(s);
-            if s.len() % 2 != 0 || !s.bytes().all(|b| b.is_ascii_hexdigit()) {
+            let s = s.strip_prefix(prefix).unwrap_or(s).as_bytes();
+            if s.len() % 2 != 0 || !s.iter().all(u8::is_ascii_hexdigit) {
                 None
             } else {
-                Some(
-                    s.as_bytes()
-                        .as_chunks()
-                        .0
-                        .iter()
-                        .copied()
-                        .map(|[a, b]| {
-                            let a = (a as char).to_digit(16).unwrap() as u8;
-                            let b = (b as char).to_digit(16).unwrap() as u8;
-                            a * 16 + b
-                        })
-                        .collect(),
-                )
+                let mut result = CompactVec::with_capacity(s.len() / 2);
+                for i in 0..s.len() / 2 {
+                    let a = (s[i * 2] as char).to_digit(16).unwrap() as u8;
+                    let b = (s[i * 2 + 1] as char).to_digit(16).unwrap() as u8;
+                    result.push(a * 16 + b);
+                }
+                Some(result)
             }
         }
 
