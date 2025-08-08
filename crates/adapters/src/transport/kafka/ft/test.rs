@@ -953,10 +953,9 @@ outputs:
 
         // Wait for the records that are not in the checkpoint to be
         // processed or replayed.
-        let expect_n = total_records - checkpointed_records;
         println!(
             "wait for {} records {checkpointed_records}..{total_records}",
-            expect_n
+            total_records - checkpointed_records
         );
         let mut last_n = 0;
         wait(
@@ -968,10 +967,10 @@ outputs:
                     .unwrap()
                     .transmitted_records() as usize;
                 if n > last_n {
-                    println!("received {n} records of {expect_n}");
+                    println!("received {n} records of {total_records}");
                     last_n = n;
                 }
-                n >= expect_n
+                n >= total_records
             },
             10_000,
         )
@@ -989,7 +988,7 @@ outputs:
                 .get(&0)
                 .unwrap()
                 .transmitted_records(),
-            expect_n as u64
+            total_records as u64
         );
 
         // Checkpoint, if requested.
@@ -1019,7 +1018,7 @@ outputs:
             .collect::<Vec<_>>();
         actual.sort();
 
-        assert_eq!(actual.len(), expect_n);
+        assert_eq!(actual.len(), total_records - checkpointed_records);
         for (record, expect_record) in actual
             .into_iter()
             .zip((checkpointed_records..).map(|id| TestStruct::for_id(id as u32)))

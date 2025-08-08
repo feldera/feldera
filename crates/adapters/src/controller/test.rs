@@ -375,6 +375,7 @@ fn collect_endpoint_records(controller: &Controller, n: usize) -> Vec<usize> {
 
 #[track_caller]
 fn wait_for_records(controller: &Controller, expect_n: &[usize]) {
+    println!("waiting for {expect_n:?} records...");
     let n = expect_n.len();
     let mut last_n = repeat_n(0, n).collect::<Vec<_>>();
     wait(
@@ -607,7 +608,7 @@ outputs:
             "wait for {} records {checkpointed_records}..{total_records}",
             expect_n
         );
-        wait_for_records(&controller, &[expect_n]);
+        wait_for_records(&controller, &[total_records]);
 
         if pause_afterward {
             controller.pause_input_endpoint("test_input1").unwrap();
@@ -1066,6 +1067,7 @@ outputs:
         // processed or replayed.
         wait_for_output(
             &controller,
+            checkpointed_records,
             &(checkpointed_records..total_records)
                 .map(|id| TestStruct::for_id(id as u32))
                 .collect::<Vec<_>>(),
@@ -1175,6 +1177,7 @@ outputs:
     .unwrap();
     controller.start();
 
+    let mut prev_output = 0;
     for (round, n_records) in rounds.iter().copied().enumerate() {
         println!("--- round {round}: add {n_records} records and suspend --- ");
 
@@ -1194,11 +1197,13 @@ outputs:
         // Wait for the new records to be processed.
         wait_for_output(
             &controller,
+            prev_output,
             &(0..total_records)
                 .map(|id| TestStruct::for_id(id as u32))
                 .collect::<Vec<_>>(),
             &output_path,
         );
+        prev_output += total_records;
 
         // Suspend.
         println!("suspend");
@@ -1226,6 +1231,7 @@ outputs:
         // Wait for the entire input to show up in the output stream.
         wait_for_output(
             &controller,
+            prev_output,
             &(0..total_records)
                 .map(|id| TestStruct::for_id(id as u32))
                 .collect::<Vec<_>>(),
@@ -1236,10 +1242,15 @@ outputs:
     }
 }
 
-fn wait_for_output(controller: &Controller, expected_output: &[TestStruct], csv_file_path: &Path) {
-    let expect_n = expected_output.len();
+fn wait_for_output(
+    controller: &Controller,
+    initial_n_records: usize,
+    expected_output: &[TestStruct],
+    csv_file_path: &Path,
+) {
+    let expect_n = initial_n_records + expected_output.len();
 
-    println!("wait for {expect_n} records");
+    println!("wait for records {initial_n_records}..{}", expect_n);
 
     let mut last_n = 0;
 
@@ -1294,7 +1305,7 @@ fn wait_for_output(controller: &Controller, expected_output: &[TestStruct], csv_
         .collect::<Vec<_>>();
     actual.sort();
 
-    assert_eq!(actual.len(), expect_n);
+    assert_eq!(actual.len(), expected_output.len());
     for (record, expect_record) in actual.into_iter().zip(expected_output.iter().cloned()) {
         assert_eq!(record, expect_record);
     }
@@ -1488,7 +1499,7 @@ fn suspend_barrier() {
     // Restart the controller.  It should output no records initially
     // because the checkpoint covered all of them.
     let controller = start_controller(&storage_dir, &[5000]);
-    wait_for_records(&controller, &[0]);
+    wait_for_records(&controller, &[5000]);
 
     println!("start suspend");
     let (sender, receiver) = mpsc::channel();
@@ -1505,8 +1516,8 @@ fn suspend_barrier() {
             writer.serialize(TestStruct::for_id(id as u32)).unwrap();
         }
         writer.flush().unwrap();
-        println!("waiting for {} records", (i + 1) * 1000);
-        wait_for_records(&controller, &[(i + 1) * 1000]);
+        println!("waiting for {end} records");
+        wait_for_records(&controller, &[end]);
         check_file_contents(&(output_path(&storage_dir, 0)), 5000..end);
 
         if let Some(sender) = sender.take() {
@@ -1647,12 +1658,7 @@ fn suspend_multiple_barriers(n_inputs: usize) {
     // Now restart the controller and wait for all the records that we wrote
     // beyond the barriers get copied to output (and nothing else).
     let controller = start_controller(&storage_dir, &barriers);
-    let remaining = expect
-        .iter()
-        .zip(written.iter())
-        .map(|(&expect, &written)| written - expect)
-        .collect::<Vec<_>>();
-    wait_for_records(&controller, &remaining);
+    wait_for_records(&controller, &written);
     for i in 0..n_inputs {
         check_file_contents(&output_path(&storage_dir, i), expect[i]..written[i]);
     }

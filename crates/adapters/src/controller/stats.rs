@@ -32,7 +32,10 @@
 
 use super::{EndpointId, InputEndpointConfig, OutputEndpointConfig};
 use crate::{
-    controller::journal::{InputChecksums, InputLog},
+    controller::{
+        checkpoint::{CheckpointInputEndpointMetrics, CheckpointOutputEndpointMetrics},
+        journal::{InputChecksums, InputLog},
+    },
     PipelineState,
 };
 use anyhow::anyhow;
@@ -583,6 +586,7 @@ impl ControllerStatus {
         endpoint_id: &EndpointId,
         endpoint_name: &str,
         config: &OutputEndpointConfig,
+        initial_statistics: Option<&CheckpointOutputEndpointMetrics>,
     ) {
         // Initialize the `total_processed_input_records` counter on the new endpoint to `total_processed_records`:
         // logically the new endpoint is up to speed with the outputs produced by the pipeline so far and only needs to
@@ -593,7 +597,12 @@ impl ControllerStatus {
             .load(Ordering::Acquire);
         self.outputs.write().unwrap().insert(
             *endpoint_id,
-            OutputEndpointStatus::new(endpoint_name, config, total_processed_records),
+            OutputEndpointStatus::new(
+                endpoint_name,
+                config,
+                total_processed_records,
+                initial_statistics,
+            ),
         );
     }
 
@@ -1350,6 +1359,7 @@ impl InputEndpointStatus {
         endpoint_name: &str,
         config: InputEndpointConfig,
         fault_tolerance: Option<FtModel>,
+        initial_statistics: Option<&CheckpointInputEndpointMetrics>,
     ) -> Self {
         let paused_by_user =
             config.connector_config.paused || config.connector_config.start_after.is_some();
@@ -1357,7 +1367,10 @@ impl InputEndpointStatus {
         Self {
             endpoint_name: endpoint_name.to_string(),
             config,
-            metrics: InputEndpointMetrics::default(),
+            metrics: initial_statistics
+                .map_or(InputEndpointMetrics::default(), |initial_statistics| {
+                    initial_statistics.into()
+                }),
             fatal_error: Mutex::new(None),
             progress: Mutex::new(None),
             paused: AtomicBool::new(paused_by_user),
@@ -1558,6 +1571,26 @@ pub struct OutputEndpointMetrics {
     pub total_processed_input_records: AtomicU64,
 }
 
+impl OutputEndpointMetrics {
+    fn new(
+        total_processed_input_records: u64,
+        initial_statistics: Option<&CheckpointOutputEndpointMetrics>,
+    ) -> Self {
+        let initial_statistics = initial_statistics.cloned().unwrap_or_default();
+        Self {
+            transmitted_records: AtomicU64::new(initial_statistics.transmitted_records),
+            transmitted_bytes: AtomicU64::new(initial_statistics.transmitted_bytes),
+            queued_records: AtomicU64::new(0),
+            queued_batches: AtomicU64::new(0),
+            buffered_records: AtomicU64::new(0),
+            buffered_batches: AtomicU64::new(0),
+            num_encode_errors: AtomicU64::new(initial_statistics.num_encode_errors),
+            num_transport_errors: AtomicU64::new(initial_statistics.num_transport_errors),
+            total_processed_input_records: AtomicU64::new(total_processed_input_records),
+        }
+    }
+}
+
 /// Output endpoint status information.
 #[derive(Serialize)]
 pub struct OutputEndpointStatus {
@@ -1607,14 +1640,12 @@ impl OutputEndpointStatus {
         endpoint_name: &str,
         config: &OutputEndpointConfig,
         total_processed_records: u64,
+        initial_statistics: Option<&CheckpointOutputEndpointMetrics>,
     ) -> Self {
         Self {
             endpoint_name: endpoint_name.to_string(),
             config: config.clone(),
-            metrics: OutputEndpointMetrics {
-                total_processed_input_records: AtomicU64::new(total_processed_records),
-                ..Default::default()
-            },
+            metrics: OutputEndpointMetrics::new(total_processed_records, initial_statistics),
             fatal_error: Mutex::new(None),
         }
     }
