@@ -18,7 +18,9 @@
 //! buffered via `InputConsumer::buffered`.
 
 use crate::catalog::OutputCollectionHandles;
-use crate::controller::checkpoint::CheckpointOffsets;
+use crate::controller::checkpoint::{
+    CheckpointInputEndpointMetrics, CheckpointOffsets, CheckpointOutputEndpointMetrics,
+};
 use crate::controller::journal::Journal;
 use crate::controller::stats::{InputEndpointMetrics, OutputEndpointMetrics};
 use crate::create_integrated_output_endpoint;
@@ -390,7 +392,7 @@ impl Controller {
         &self,
         endpoint_name: &str,
         config: &InputEndpointConfig,
-        resume_info: Option<JsonValue>,
+        resume_info: Option<(JsonValue, CheckpointInputEndpointMetrics)>,
     ) -> Result<EndpointId, ControllerError> {
         debug!("Connecting input endpoint '{endpoint_name}'; config: {config:?}");
         self.inner.fail_if_bootstrapping_or_restoring()?;
@@ -427,7 +429,7 @@ impl Controller {
         endpoint_name: &str,
         endpoint_config: InputEndpointConfig,
         endpoint: Box<dyn TransportInputEndpoint>,
-        resume_info: Option<JsonValue>,
+        resume_info: Option<(JsonValue, CheckpointInputEndpointMetrics)>,
     ) -> Result<EndpointId, ControllerError> {
         self.inner.fail_if_bootstrapping_or_restoring()?;
         self.inner
@@ -462,12 +464,17 @@ impl Controller {
         endpoint_name: &str,
         endpoint_config: &OutputEndpointConfig,
         endpoint: Box<dyn OutputEndpoint>,
+        initial_statistics: Option<&CheckpointOutputEndpointMetrics>,
     ) -> Result<EndpointId, ControllerError> {
         debug!("Adding output endpoint '{endpoint_name}'; config: {endpoint_config:?}");
         self.inner.fail_if_restoring()?;
 
-        self.inner
-            .add_output_endpoint(endpoint_name, endpoint_config, Some(endpoint))
+        self.inner.add_output_endpoint(
+            endpoint_name,
+            endpoint_config,
+            Some(endpoint),
+            initial_statistics,
+        )
     }
 
     /// Increment the number of active API connections.
@@ -1073,6 +1080,8 @@ impl CircuitThread {
             initial_start_time,
             step,
             input_metadata,
+            input_statistics,
+            output_statistics,
         } = ControllerInit::new(config.clone())?;
         let storage = circuit_config
             .storage
@@ -1107,7 +1116,12 @@ impl CircuitThread {
                     }
                 }
 
-                resume_info.insert(endpoint_name.clone(), seek.clone());
+                let initial_stats = input_statistics
+                    .get(endpoint_name)
+                    .cloned()
+                    .unwrap_or_default();
+
+                resume_info.insert(endpoint_name.clone(), (seek.clone(), initial_stats));
             }
             resume_info
         } else {
@@ -1122,6 +1136,7 @@ impl CircuitThread {
             processed_records,
             initial_start_time,
             &resume_info,
+            &output_statistics,
         )?;
 
         controller
@@ -1380,6 +1395,30 @@ impl CircuitThread {
                 .global_metrics
                 .num_total_processed_records();
             let initial_start_time = this.controller.status.global_metrics.initial_start_time;
+            let input_statistics = this
+                .controller
+                .status
+                .input_status()
+                .values()
+                .map(|endpoint| {
+                    (
+                        endpoint.endpoint_name.clone(),
+                        CheckpointInputEndpointMetrics::from(&endpoint.metrics),
+                    )
+                })
+                .collect();
+            let output_statistics = this
+                .controller
+                .status
+                .output_status()
+                .values()
+                .map(|endpoint| {
+                    (
+                        endpoint.endpoint_name.clone(),
+                        CheckpointOutputEndpointMetrics::from(&endpoint.metrics),
+                    )
+                })
+                .collect();
             let written_before = WRITE_BLOCKS_BYTES.sum();
             let checkpoint = CHECKPOINT_LATENCY.record_callback(|| {
                 this.circuit
@@ -1394,6 +1433,8 @@ impl CircuitThread {
                             processed_records,
                             initial_start_time,
                             input_metadata: CheckpointOffsets(input_metadata),
+                            input_statistics,
+                            output_statistics,
                         };
                         checkpoint
                             .write(
@@ -1957,6 +1998,8 @@ impl FtState {
             processed_records: 0,
             initial_start_time: controller.status.global_metrics.initial_start_time,
             input_metadata: CheckpointOffsets::default(),
+            input_statistics: HashMap::new(),
+            output_statistics: HashMap::new(),
         };
         checkpoint.write(&*backend, &StoragePath::from(STATE_FILE))?;
 
@@ -2323,6 +2366,18 @@ struct ControllerInit {
     ///
     /// This is `Some` iff we read a checkpoint.
     input_metadata: Option<HashMap<String, JsonValue>>,
+
+    /// Initials value for input endpoint statistics.
+    ///
+    /// These will ordinarily be supplied if `input_metadata.is_some()` but old
+    /// checkpoints don't have statistics.
+    input_statistics: HashMap<String, CheckpointInputEndpointMetrics>,
+
+    /// Initial values for input endpoint statistics.
+    ///
+    /// These will ordinarily be supplied if `input_metadata.is_some()` but old
+    /// checkpoints don't have statistics.
+    output_statistics: HashMap<String, CheckpointOutputEndpointMetrics>,
 }
 
 impl ControllerInit {
@@ -2337,6 +2392,8 @@ impl ControllerInit {
             initial_start_time: None,
             step: 0,
             input_metadata: None,
+            input_statistics: HashMap::new(),
+            output_statistics: HashMap::new(),
         })
     }
     fn new(config: PipelineConfig) -> Result<Self, ControllerError> {
@@ -2408,6 +2465,8 @@ impl ControllerInit {
             processed_records,
             initial_start_time,
             input_metadata,
+            input_statistics,
+            output_statistics,
         } = checkpoint;
         info!("resuming from checkpoint made at step {step}");
 
@@ -2475,6 +2534,8 @@ impl ControllerInit {
             pipeline_config: config,
             step,
             input_metadata: Some(input_metadata.0),
+            input_statistics,
+            output_statistics,
             processed_records,
             initial_start_time: Some(initial_start_time),
         })
@@ -2895,7 +2956,8 @@ impl ControllerInner {
         error_cb: Box<dyn Fn(Arc<ControllerError>) + Send + Sync>,
         processed_records: u64,
         initial_start_time: Option<DateTime<Utc>>,
-        resume_info: &HashMap<String, JsonValue>,
+        resume_info: &HashMap<String, (JsonValue, CheckpointInputEndpointMetrics)>,
+        output_statistics: &HashMap<String, CheckpointOutputEndpointMetrics>,
     ) -> Result<(Parker, BackpressureThread, Receiver<Command>, Arc<Self>), ControllerError> {
         let status = Arc::new(ControllerStatus::new(
             config.clone(),
@@ -2958,9 +3020,14 @@ impl ControllerInner {
                     let controller = controller.clone();
                     let output_name = output_name.clone();
                     let output_config = output_config.clone();
+                    let initial_statistics = output_statistics.get(&*output_name).cloned();
                     Box::new(move || {
                         catch_unwind(AssertUnwindSafe(|| {
-                            controller.connect_output(&output_name, &output_config)
+                            controller.connect_output(
+                                &output_name,
+                                &output_config,
+                                initial_statistics.as_ref(),
+                            )
                         }))
                         .unwrap_or_else(|_| Err(ControllerError::ControllerPanic))
                     }) as Box<dyn FnOnce() -> Result<_, ControllerError> + Send>
@@ -3030,7 +3097,7 @@ impl ControllerInner {
         self: &Arc<Self>,
         endpoint_name: &str,
         endpoint_config: &InputEndpointConfig,
-        resume_info: Option<JsonValue>,
+        resume_info: Option<(JsonValue, CheckpointInputEndpointMetrics)>,
     ) -> Result<EndpointId, ControllerError> {
         let endpoint = input_transport_config_to_endpoint(
             &endpoint_config.connector_config.transport,
@@ -3066,8 +3133,10 @@ impl ControllerInner {
         endpoint_name: &str,
         endpoint_config: InputEndpointConfig,
         endpoint: Option<Box<dyn TransportInputEndpoint>>,
-        resume_info: Option<JsonValue>,
+        resume_info: Option<(JsonValue, CheckpointInputEndpointMetrics)>,
     ) -> Result<EndpointId, ControllerError> {
+        let (seek, initial_statistics) = resume_info.unzip();
+
         debug!("Adding input endpoint '{endpoint_name}'; config: {endpoint_config:?}");
 
         // NOTE: We release the lock after the check below and then re-acquire it in the end of the function
@@ -3151,11 +3220,16 @@ impl ControllerInner {
                 // the eoi status is recorded and not dropped on the floor.
                 self.status.inputs.write().unwrap().insert(
                     endpoint_id,
-                    InputEndpointStatus::new(endpoint_name, endpoint_config, fault_tolerance),
+                    InputEndpointStatus::new(
+                        endpoint_name,
+                        endpoint_config,
+                        fault_tolerance,
+                        initial_statistics.as_ref(),
+                    ),
                 );
 
                 match endpoint
-                    .open(probe, parser, input_handle.schema.clone(), resume_info)
+                    .open(probe, parser, input_handle.schema.clone(), seek)
                     .map_err(|e| ControllerError::input_transport_error(endpoint_name, true, e))
                 {
                     Ok(reader) => {
@@ -3186,11 +3260,16 @@ impl ControllerInner {
 
                 self.status.inputs.write().unwrap().insert(
                     endpoint_id,
-                    InputEndpointStatus::new(endpoint_name, endpoint_config, fault_tolerance),
+                    InputEndpointStatus::new(
+                        endpoint_name,
+                        endpoint_config,
+                        fault_tolerance,
+                        initial_statistics.as_ref(),
+                    ),
                 );
 
                 match endpoint
-                    .open(input_handle, resume_info)
+                    .open(input_handle, seek)
                     .map_err(|e| ControllerError::input_transport_error(endpoint_name, true, e))
                 {
                     Ok(reader) => {
@@ -3263,6 +3342,7 @@ impl ControllerInner {
         self: &Arc<Self>,
         endpoint_name: &str,
         endpoint_config: &OutputEndpointConfig,
+        initial_statistics: Option<&CheckpointOutputEndpointMetrics>,
     ) -> Result<EndpointId, ControllerError> {
         let endpoint = output_transport_config_to_endpoint(
             &endpoint_config.connector_config.transport,
@@ -3274,7 +3354,7 @@ impl ControllerInner {
 
         // If `endpoint` is `None`, it means that the endpoint config specifies an integrated
         // output connector.  Such endpoints are instantiated inside `add_output_endpoint`.
-        self.add_output_endpoint(endpoint_name, endpoint_config, endpoint)
+        self.add_output_endpoint(endpoint_name, endpoint_config, endpoint, initial_statistics)
     }
 
     fn disconnect_output(&self, endpoint_id: &EndpointId) {
@@ -3294,6 +3374,7 @@ impl ControllerInner {
         endpoint_name: &str,
         endpoint_config: &OutputEndpointConfig,
         endpoint: Option<Box<dyn OutputEndpoint>>,
+        initial_statistics: Option<&CheckpointOutputEndpointMetrics>,
     ) -> Result<EndpointId, ControllerError> {
         // NOTE: We release the lock after the check below and then re-acquire it in the end of the function
         // to actually insert the new inpoint in the map. This means that this function is racey (a concurrent
@@ -3448,8 +3529,12 @@ impl ControllerInner {
             .clone();
 
         // Initialize endpoint stats.
-        self.status
-            .add_output(&endpoint_id, endpoint_name, endpoint_config);
+        self.status.add_output(
+            &endpoint_id,
+            endpoint_name,
+            endpoint_config,
+            initial_statistics,
+        );
 
         // Thread to run the output pipeline.
         thread::Builder::new()
