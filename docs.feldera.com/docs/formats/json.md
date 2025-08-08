@@ -27,7 +27,12 @@ consists of four parts:
    {"insert": {"part": 1, "vendor": 2, "price": 30000}}
    {"insert": {"part": 2, "vendor": 3, "price": 34000}}
    ```
-4. [Configuring JSON event streams](#configuring-json-event-streams).
+
+4. [Encoding JSON encoding variations](#configuring-json-flavors).
+   Describes Feldera support for some variations on "vanilla" JSON
+   encoding.
+
+5. [Configuring JSON event streams](#configuring-json-event-streams).
    Describes how the user can specify the JSON format for a stream of events
    when sending and receiving data via connectors or over HTTP.
 
@@ -241,6 +246,43 @@ to combine multiple events into JSON arrays of data change events:
 This format allows one to break up the event stream into transport
 messages so that each message contains a valid JSON document
 by encoding all events in the message as an array.
+
+## Configuring JSON flavors
+
+JSON itself largely exists in only one form, but the way that it is
+used to encode data can vary.  Feldera's JSON format offers
+`json_flavor` as a way to specify which variation of data encoding is
+in use.  Specify `"json_flavor"` as one of the following:
+
+* `"default"`: The default flavor, as documented elsewhere in this
+  page.
+
+* `"debezium_mysql"` or `"debezium_postgres"`: JSON produced by the
+  default configuration of the Debezium [Kafka Connect connector] for
+  MySQL or Postgres, respectively, with `decimal.handling.mode` set to
+  "string".  Used with the [Debezium input connector].
+
+* `"snowflake"`: JSON format accepted by Snowflake using default
+  settings.
+
+* `"kafka_connect_json_converter"`: JSON format accepted by the Kafka
+  Connect `JsonConverter` class.
+
+* `"pandas"`: JSON format used by [Pandas](https://pandas.pydata.org/).
+
+* `"blockchain"`: JSON format used to represent blockchain data.  In
+  particular, this JSON format expects data for SQL BINARY fields to
+  be expressed with [base-58
+  encoding](https://datatracker.ietf.org/doc/html/draft-msporny-base58-03).
+
+* `"c_hex"`: JSON format for hexadecimal binary data.  This JSON
+  format expects data in SQL BINARY fields to be expressed as
+  hexadecimal digits.  Both lowercase and uppercase letters are
+  accepted, and an optional `0x` prefix is allowed.  The output form
+  of SQL BINARY includes the `0x` prefix.
+
+[Debezium input connector]: /connectors/sources/debezium
+[Kafka Connect connector]: https://debezium.io/documentation/reference/stable/connectors/mysql.html#mysql-data-types
 
 ## Configuring JSON event streams
 

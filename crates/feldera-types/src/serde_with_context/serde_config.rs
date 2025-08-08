@@ -114,6 +114,8 @@ pub enum BinaryFormat {
     Bytes,
     /// Serialize as a hexadecimal-encoded string, beginning with `\x`.
     PgHex,
+    /// Serialize as a hexadecimal-encoded string, beginning with `0x`.
+    CHex,
 }
 
 impl Default for BinaryFormat {
@@ -253,6 +255,7 @@ impl From<JsonFlavor> for SqlSerdeConfig {
             JsonFlavor::Blockchain => {
                 SqlSerdeConfig::default().with_binary_format(BinaryFormat::Base58)
             }
+            JsonFlavor::CHex => SqlSerdeConfig::default().with_binary_format(BinaryFormat::CHex),
             JsonFlavor::ParquetConverter => Self {
                 time_format: TimeFormat::Nanos,
                 date_format: DateFormat::String("%Y-%m-%d"),
