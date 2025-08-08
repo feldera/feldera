@@ -76,7 +76,7 @@ impl MockInputConsumer {
 }
 
 impl InputConsumer for MockInputConsumer {
-    fn error(&self, fatal: bool, error: AnyError) {
+    fn error(&self, fatal: bool, error: AnyError, _tag: Option<String>) {
         let mut state = self.state();
 
         if let Some(error_cb) = &mut state.error_cb {

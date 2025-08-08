@@ -190,7 +190,7 @@ impl ClockReader {
                             RmpValue::Integer(int) => int.as_u64(),
                             _ => None,
                         }) else {
-                            consumer.error(true, anyhow!("Invalid timestamp in replay log: {data:?}"));
+                            consumer.error(true, anyhow!("Invalid timestamp in replay log: {data:?}"), None);
                             continue;
                         };
                         consumer.buffered(1, std::mem::size_of::<u64>());

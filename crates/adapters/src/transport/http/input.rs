@@ -24,6 +24,7 @@ use std::{
     time::Duration,
 };
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
+use tokio::time::sleep;
 use tokio::{sync::watch, time::timeout};
 use tracing::{debug, info_span};
 use xxhash_rust::xxh3::Xxh3Default;
@@ -193,7 +194,7 @@ impl HttpInputEndpoint {
         total_errors
     }
 
-    fn error(&self, fatal: bool, error: AnyError) {
+    fn error(&self, fatal: bool, error: AnyError, tag: Option<String>) {
         self.inner
             .details
             .lock()
@@ -201,7 +202,7 @@ impl HttpInputEndpoint {
             .as_mut()
             .unwrap()
             .consumer
-            .error(fatal, error);
+            .error(fatal, error, tag);
     }
 
     fn _queue_len(&self) -> usize {
@@ -231,6 +232,28 @@ impl HttpInputEndpoint {
         let mut num_errors = 0;
         let mut status_watch = self.inner.status_notifier.subscribe();
 
+        for i in 0..20 {
+            self.error(false, anyhow!(format!("my error {i}")), Some("yo".into()));
+        }
+
+        sleep(Duration::from_secs(3)).await;
+
+        for i in 0..20 {
+            self.error(
+                false,
+                anyhow!(format!("AFTER my error {i}")),
+                Some("yo".into()),
+            );
+        }
+        sleep(Duration::from_secs(18)).await;
+        for i in 0..20 {
+            self.error(
+                false,
+                anyhow!(format!("NEXT AFTER my error {i}")),
+                Some("yo".into()),
+            );
+        }
+
         loop {
             let pipeline_state = self.state();
 
@@ -256,7 +279,7 @@ impl HttpInputEndpoint {
                             num_errors += self.push(Some(&bytes), &mut errors);
                         }
                         Ok(Some(Err(e))) => {
-                            self.error(true, anyhow!(e.to_string()));
+                            self.error(true, anyhow!(e.to_string()), None);
                             Err(ControllerError::input_transport_error(
                                 self.name(),
                                 true,

@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -423,19 +424,78 @@ where
     Ok(())
 }
 
+/// A rate limiter with sampling capability that allows periodic requests through
+/// even when rate limited, for monitoring and observability purposes.
+///
+/// When requests are suppressed due to rate limiting, it tracks the suppression count.
+/// After sampling_threashold consecutive suppressions,
+/// the next request is allowed through for sampling,
+/// then the suppression counter resets and the cycle repeats.
+#[derive(Clone)]
+pub struct SamplingRateLimiter<K: Clone + Eq + std::hash::Hash> {
+    limiter: Arc<governor::DefaultKeyedRateLimiter<K>>,
+    // Track suppressed counts per key
+    suppressed_counts: Arc<std::sync::Mutex<HashMap<K, u32>>>,
+    // allow key once for every sampling_threshold rejects
+    sampling_threshold: u32,
+}
+
+impl<K: Clone + Eq + std::hash::Hash> SamplingRateLimiter<K> {
+    pub fn new(quota: governor::Quota, sampling_threshold: u32) -> Self {
+        let limiter = governor::RateLimiter::keyed(quota);
+
+        Self {
+            limiter: Arc::new(limiter),
+            suppressed_counts: Arc::new(std::sync::Mutex::new(HashMap::new())),
+            sampling_threshold,
+        }
+    }
+
+    /// Check if request should be allowed
+    /// Returns true if allowed, false if rate limited
+    pub fn check_key(&self, key: &K) -> bool {
+        if self.limiter.check_key(key).is_ok() {
+            // Request allowed by rate limiter, reset suppressed count
+            if let Ok(mut counts) = self.suppressed_counts.lock() {
+                counts.remove(key);
+            }
+            return true;
+        }
+
+        // Request was rate limited, increment suppressed count
+        if let Ok(mut counts) = self.suppressed_counts.lock() {
+            let count = counts.entry(key.clone()).or_insert(0);
+            *count += 1;
+
+            // Check if we've hit the sampling threshold
+            if *count > self.sampling_threshold {
+                // Allow this request for sampling and reset counter
+                counts.remove(key);
+                return true;
+            }
+        }
+
+        false
+    }
+}
+
 #[cfg(test)]
-#[cfg(feature = "with-deltalake")]
 mod test {
+    use std::time::Duration;
+
+    use governor::Quota;
+    use nonzero_ext::nonzero;
+
+    #[cfg(feature = "with-deltalake")]
     use std::sync::{Arc, Mutex};
 
-    use crate::util::JobQueue;
-
+    #[cfg(feature = "with-deltalake")]
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn test_job_queue() {
         let result = Arc::new(Mutex::new(Vec::new()));
         let result_clone = result.clone();
 
-        let job_queue = JobQueue::new(
+        let job_queue = super::JobQueue::new(
             6,
             || Box::new(|i: u32| Box::pin(async move { i })),
             move |i| result_clone.lock().unwrap().push(i),
@@ -450,5 +510,32 @@ mod test {
         let expected: Vec<u32> = (0..1000000).collect();
 
         assert_eq!(&*result.lock().unwrap(), &*expected);
+    }
+
+    #[test]
+    fn test_rate_limiting() {
+        // Create quota: 10 requests within 10 seconds
+        let quota = Quota::with_period(Duration::from_secs(10))
+            .unwrap()
+            .allow_burst(nonzero!(10u32));
+
+        let limiter = super::SamplingRateLimiter::new(quota, 50);
+        let key = "test_key";
+
+        // First 10 requests should be allowed (burst)
+        for _ in 0..10 {
+            assert!(limiter.check_key(&key));
+        }
+
+        // Next 50 should be rejected
+        for _ in 0..50 {
+            assert!(!limiter.check_key(&key));
+        }
+
+        // 51st rejection should actually be allowed (sampling)
+        assert!(limiter.check_key(&key));
+
+        // Counter should be reset, so next request should be rejected again
+        assert!(!limiter.check_key(&key));
     }
 }
