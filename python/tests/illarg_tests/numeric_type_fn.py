@@ -1219,3 +1219,67 @@ class illarg_sign_illegal(TstView):
 #                       IS_NAN(booll) AS booll
 #                       FROM illegal_tbl"""
 #         self.expected_error = "Cannot apply 'IS_NAN' to arguments of type"
+
+
+# Integer type functions
+# MOD function
+class illarg_mod_legal(TstView):
+    def __init__(self):
+        # Validated on Postgres
+        self.data = [{"intt": 2, "decimall": Decimal("-1.52")}]
+        self.sql = """CREATE MATERIALIZED VIEW mod_legal AS SELECT
+                      MOD(-intt, 5) AS intt,
+                      MOD(decimall, 3) AS decimall
+                      FROM illegal_tbl
+                      WHERE id = 0"""
+
+
+class illarg_mod_cast_legal(TstView):
+    def __init__(self):
+        # checked manually
+        self.data = [{"arr": 2}]
+        self.sql = """CREATE MATERIALIZED VIEW mod_cast_legal AS SELECT
+                      MOD(ARR[2], 3) AS arr
+                      FROM illegal_tbl
+                      WHERE id = 0"""
+
+
+# Negative Test
+class illarg_mod_illegal(TstView):
+    def __init__(self):
+        # checked manually
+        self.sql = """CREATE MATERIALIZED VIEW mod_illegal AS SELECT
+                      MOD(booll, 2) AS booll
+                      FROM illegal_tbl"""
+        self.expected_error = "Cannot apply 'MOD' to arguments of type"
+
+
+# SEQUENCE function
+class illarg_sequence_legal(TstView):
+    def __init__(self):
+        # Validated on Postgres
+        self.data = [{"intt": [12, 13, 14, 15, 16, 17, 18, 19, 20]}]
+        self.sql = """CREATE MATERIALIZED VIEW sequence_legal AS SELECT
+                      SEQUENCE(-intt, 20) AS intt
+                      FROM illegal_tbl
+                      WHERE id = 0"""
+
+
+class illarg_sequence_cast_legal(TstView):
+    def __init__(self):
+        # checked manually
+        self.data = [{"arr": [14, 15, 16]}]
+        self.sql = """CREATE MATERIALIZED VIEW sequence_cast_legal AS SELECT
+                      SEQUENCE(arr[2], 16) AS arr
+                      FROM illegal_tbl
+                      WHERE id = 0"""
+
+
+# Negative Test
+class illarg_sequence_illegal(TstView):
+    def __init__(self):
+        # checked manually
+        self.sql = """CREATE MATERIALIZED VIEW sequence_illegal AS SELECT
+                      SEQUENCE(booll, 2) AS booll
+                      FROM illegal_tbl"""
+        self.expected_error = "Cannot apply 'SEQUENCE' to arguments of type"

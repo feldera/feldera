@@ -16,7 +16,8 @@ class illarg_tbl(TstTable):
                       bin BINARY,
                       tmestmp TIMESTAMP,
                       uuidd UUID,
-                      arr VARCHAR ARRAY
+                      arr VARCHAR ARRAY,
+                      mapp MAP<VARCHAR, INT>
                       )"""
         self.data = [
             {
@@ -30,7 +31,8 @@ class illarg_tbl(TstTable):
                 "bin": [11, 22, 32],
                 "tmestmp": "2020-06-21 14:23:44",
                 "uuidd": "42b8fec7-c7a3-4531-9611-4bde80f9cb4c",
-                "arr": ["bye", "14", "See you!", "-0.52"],
+                "arr": ["bye", "14", "See you!", "-0.52", None, "14", "hello "],
+                "mapp": {"a": 12, "b": 17},
             },
             {
                 "id": 1,
@@ -44,5 +46,6 @@ class illarg_tbl(TstTable):
                 "tmestmp": "2020-06-21 14:23:44",
                 "uuidd": "42b8fec7-c7a3-4531-9611-4bde80f9cb4c",
                 "arr": ["-0.14", "friends", "See you!"],
+                "mapp": {"a": 15, "b": None},
             },
         ]
