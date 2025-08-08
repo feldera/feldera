@@ -68,6 +68,14 @@ public final class DBSPIntervalMillisLiteral
     }
 
     @Override
+    public int compare(IsNumericLiteral other) {
+        DBSPIntervalMillisLiteral oi = other.to(DBSPIntervalMillisLiteral.class);
+        Utilities.enforce(this.value != null);
+        Utilities.enforce(oi.value != null);
+        return this.value.compareTo(oi.value);
+    }
+
+    @Override
     public IsNumericLiteral negate() {
         if (this.value == null)
             return this;

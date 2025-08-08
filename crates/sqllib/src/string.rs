@@ -22,7 +22,7 @@ use rkyv::{
 use serde::{Deserialize, Serialize};
 use size_of::{Context, SizeOf};
 use std::{
-    cmp::{max, min},
+    cmp::max,
     fmt::{Display, Formatter},
     sync::Arc,
 };
@@ -135,15 +135,32 @@ some_polymorphic_function2!(concat, s, SqlString, s, SqlString, SqlString);
 
 #[doc(hidden)]
 pub fn substring3___(value: SqlString, left: i32, count: i32) -> SqlString {
-    if count < 0 {
+    if count <= 0 {
         SqlString::new()
     } else {
-        // character indexes in SQL start at 1
-        let start = if left < 1 { 0 } else { left - 1 } as usize;
-        let count = max(0, count) as usize;
-        let start = min(value.len(), start);
-        let end = min(value.len(), start + count);
-        SqlString::from_ref(&value.str()[start..end])
+        // indexes in SQL start at 1
+        let (start, count) = if left < 1 {
+            // count applies from the start, even if start is negative
+            (0_usize, max(count + left - 1, 0) as usize)
+        } else {
+            ((left - 1) as usize, count as usize)
+        };
+
+        let str = value.str();
+        let mut begin = str.len();
+        let mut end = str.len();
+
+        for (char_count, (i, _)) in str.char_indices().enumerate() {
+            if start == char_count {
+                begin = i;
+            }
+            if start + count == char_count {
+                end = i;
+                break;
+            }
+        }
+
+        SqlString::from_ref(&str[begin..end])
     }
 }
 
@@ -153,8 +170,17 @@ some_function3!(substring3, SqlString, i32, i32, SqlString);
 pub fn substring2__(value: SqlString, left: i32) -> SqlString {
     // character indexes in SQL start at 1
     let start = if left < 1 { 0 } else { left - 1 } as usize;
-    let start = min(start, value.len());
-    SqlString::from_ref(&value.str()[start..])
+
+    let str = value.str();
+    let mut begin = str.len();
+
+    for (char_count, (i, _)) in str.char_indices().enumerate() {
+        if start == char_count {
+            begin = i;
+            break;
+        }
+    }
+    SqlString::from_ref(&str[begin..])
 }
 
 some_function2!(substring2, SqlString, i32, SqlString);
@@ -317,7 +343,7 @@ pub fn overlay4____(
     } else if position > char_length_ref(source.str()) {
         concat_s_s(source, replacement)
     } else {
-        let mut result = substring3___(source.clone(), 0, position - 1).to_string();
+        let mut result = substring3___(source.clone(), 1, position - 1).to_string();
         result += replacement.str();
         result += substring2__(source, position + remove).str();
         SqlString::from(result)
@@ -402,24 +428,41 @@ pub fn replace___(haystack: SqlString, needle: SqlString, replacement: SqlString
 some_function3!(replace, SqlString, SqlString, SqlString, SqlString);
 
 #[doc(hidden)]
-pub fn left_s_i32(source: SqlString, size: i32) -> SqlString {
-    substring3___(source, 1, size)
+pub fn left_s_i32(value: SqlString, size: i32) -> SqlString {
+    if size <= 0 {
+        return SqlString::new();
+    }
+
+    let str = value.str();
+    for (char_count, (i, _)) in str.char_indices().enumerate() {
+        if size as usize == char_count {
+            return SqlString::from_ref(&str[..i]);
+        }
+    }
+    value
 }
 
 some_polymorphic_function2!(left, s, SqlString, i32, i32, SqlString);
 
 #[doc(hidden)]
-pub fn right_s_i32(source: SqlString, size: i32) -> SqlString {
+pub fn right_s_i32(value: SqlString, size: i32) -> SqlString {
     if size <= 0 {
         return SqlString::new();
     }
     let size = size as usize;
-    let start = if size >= source.len() {
-        1
-    } else {
-        source.len() - size + 1
-    };
-    substring3___(source, start as i32, size as i32)
+    let str = value.str();
+    let len = str.chars().count();
+    if size >= len {
+        return value;
+    }
+    let start_char = len - size;
+
+    for (char_count, (i, _)) in str.char_indices().enumerate() {
+        if start_char == char_count {
+            return SqlString::from_ref(&str[i..]);
+        }
+    }
+    panic!("Should be unreachable");
 }
 
 some_polymorphic_function2!(right, s, SqlString, i32, i32, SqlString);

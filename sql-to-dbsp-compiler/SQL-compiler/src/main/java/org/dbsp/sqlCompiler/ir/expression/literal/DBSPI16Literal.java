@@ -48,6 +48,14 @@ public final class DBSPI16Literal extends DBSPIntLiteral implements IsNumericLit
     }
 
     @Override
+    public int compare(IsNumericLiteral other) {
+        DBSPI16Literal oi = other.to(DBSPI16Literal.class);
+        Utilities.enforce(this.value != null);
+        Utilities.enforce(oi.value != null);
+        return this.value.compareTo(oi.value);
+    }
+
+    @Override
     public void accept(InnerVisitor visitor) {
         VisitDecision decision = visitor.preorder(this);
         if (decision.stop()) return;

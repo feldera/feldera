@@ -68,6 +68,14 @@ public final class DBSPIntervalMonthsLiteral
     }
 
     @Override
+    public int compare(IsNumericLiteral other) {
+        DBSPIntervalMonthsLiteral oi = other.to(DBSPIntervalMonthsLiteral.class);
+        Utilities.enforce(this.value != null);
+        Utilities.enforce(oi.value != null);
+        return this.value.compareTo(oi.value);
+    }
+
+    @Override
     public IsNumericLiteral negate() {
         if (this.value == null)
             return this;

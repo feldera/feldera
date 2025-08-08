@@ -294,6 +294,12 @@ public class PostgresStringTests extends SqlIoTest {
                 string
                --------
                 string
+               (1 row)
+               
+               SELECT SUBSTRING('string' FROM -10 FOR 5) AS "string";
+                string
+               --------
+               \s
                (1 row)""");
     }
 

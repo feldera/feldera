@@ -2,7 +2,10 @@ package org.dbsp.sqlCompiler.compiler.sql.functions;
 
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
+import org.dbsp.util.Utilities;
 import org.junit.Test;
+
+import java.util.function.Function;
 
 public class FunctionsTest extends SqlIoTest {
     @Override
@@ -170,6 +173,57 @@ public class FunctionsTest extends SqlIoTest {
                  2
                  3"""
         );
+    }
+
+    static final String UNICODE_STRING = "éhéllo";
+
+    void createSql(Function<String, String> function, Function<String, String> result) {
+        String sql = "SELECT " + function.apply(UNICODE_STRING) + ";\n";
+        sql += " result\n--------\n";
+        String expected = result.apply(UNICODE_STRING);
+        sql += " " + expected;
+        this.q(sql);
+    }
+
+    @Test
+    public void unicodeStringTests() {
+        int len = UNICODE_STRING.length();
+        for (int i = -2; i < UNICODE_STRING.length() + 2; i++) {
+            int finalI = i;
+
+            Function<String, String> left = s -> "LEFT(" + Utilities.singleQuote(s) + ", " + finalI + ")";
+            Function<String, String> result = s -> s.substring(0, Math.max(Math.min(finalI, len), 0));
+            this.createSql(left, result);
+
+            Function<String, String> right = s -> "RIGHT(" + Utilities.singleQuote(s) + ", " + finalI + ")";
+            Function<String, String> result1 = s -> s.substring(Math.min(s.length(), Math.max(s.length() - finalI, 0)));
+            this.createSql(right, result1);
+
+            Function<String, String> substring2 = s -> "SUBSTRING(" + Utilities.singleQuote(s) + " FROM " + finalI + ")";
+            Function<String, String> result2 = s -> s.substring(Math.max(finalI - 1, 0));
+            this.createSql(substring2, result2);
+
+            Function<String, String> substr2 = s -> "SUBSTR(" + Utilities.singleQuote(s) + ", " + finalI + ")";
+            Function<String, String> result3 = s -> finalI < 0 ?
+                    s.substring(Math.max(0, s.length() + finalI)) :
+                    s.substring(Math.max(finalI - 1, 0));
+            this.createSql(substr2, result3);
+            for (int j = 0; j < UNICODE_STRING.length() + 1; j++) {
+                int finalJ = j;
+
+                Function<String, String> substring3 = s -> "SUBSTRING(" + Utilities.singleQuote(s) + " FROM " + finalI + " FOR " + finalJ + ")";
+                Function<String, String> result4 = s -> s.substring(
+                        Math.max(finalI - 1, 0),
+                        Math.min(Math.max(finalJ + finalI - 1, 0), len));
+                this.createSql(substring3, result4);
+
+                Function<String, String> substr3 = s -> "SUBSTR(" + Utilities.singleQuote(s) + ", " + finalI + ", " + finalJ + ")";
+                Function<String, String> result5 = s -> finalI < 0 ?
+                        s.substring(Math.max(0, s.length() + finalI), Math.min(s.length(), Math.max(0, s.length() + finalI) + finalJ)) :
+                        s.substring(Math.max(finalI - 1, 0), Math.min(s.length(), Math.max(finalI - 1, 0) + finalJ));
+                this.createSql(substr3, result5);
+            }
+        }
     }
 
     @Test

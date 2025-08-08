@@ -2,13 +2,11 @@ package org.dbsp.simulator.operators;
 
 import org.dbsp.simulator.collections.ZSet;
 import org.dbsp.simulator.types.CollectionType;
-import org.dbsp.simulator.types.SqlType;
 import org.dbsp.simulator.values.BooleanSqlValue;
 import org.dbsp.simulator.values.DynamicSqlValue;
 import org.dbsp.simulator.values.RuntimeFunction;
-import org.dbsp.simulator.collections.BaseCollection;
-import org.dbsp.simulator.types.DataType;
 
+@SuppressWarnings("unchecked")
 public class FilterOperator extends UnaryOperator {
     final RuntimeFunction<DynamicSqlValue, BooleanSqlValue> keep;
 

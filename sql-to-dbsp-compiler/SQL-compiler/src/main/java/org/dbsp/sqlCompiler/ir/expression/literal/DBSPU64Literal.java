@@ -75,6 +75,14 @@ public final class DBSPU64Literal extends DBSPIntLiteral implements IsNumericLit
     }
 
     @Override
+    public int compare(IsNumericLiteral other) {
+        DBSPU64Literal oi = other.to(DBSPU64Literal.class);
+        Utilities.enforce(this.value != null);
+        Utilities.enforce(oi.value != null);
+        return this.value.compareTo(oi.value);
+    }
+
+    @Override
     public boolean sameValue(@Nullable ISameValue o) {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
