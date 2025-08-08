@@ -65,6 +65,14 @@ public final class DBSPRealLiteral extends DBSPFPLiteral implements IsNumericLit
     }
 
     @Override
+    public int compare(IsNumericLiteral other) {
+        DBSPRealLiteral oi = other.to(DBSPRealLiteral.class);
+        Utilities.enforce(this.value != null);
+        Utilities.enforce(oi.value != null);
+        return this.value.compareTo(oi.value);
+    }
+
+    @Override
     public boolean gt0() {
         Utilities.enforce(this.value != null);
         return this.value > 0;

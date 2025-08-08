@@ -21,7 +21,7 @@ use dbsp::algebra::{HasOne, HasZero, F32, F64};
 use num::{One, Zero};
 use num_traits::cast::NumCast;
 use regex::{Captures, Regex};
-use std::cmp::{min, Ordering};
+use std::cmp::Ordering;
 use std::error::Error;
 use std::str::FromStr;
 use std::string::String;
@@ -966,8 +966,21 @@ fn is_unlimited_size(size: i32) -> bool {
 #[inline(always)]
 #[doc(hidden)]
 fn truncate(value: &str, size: usize) -> String {
-    let size = min(size, value.len());
-    value[0..size].to_string()
+    let mut end = value.len();
+    if size >= end {
+        // Should be always safe, even for multibyte chars
+        return value.to_string();
+    }
+
+    // Find actual end
+    for (char_count, (i, _)) in value.char_indices().enumerate() {
+        if char_count == size {
+            end = i;
+            break;
+        }
+    }
+
+    value[..end].to_string()
 }
 
 /// Make sure the specified string has exactly the

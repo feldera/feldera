@@ -43,6 +43,14 @@ public final class DBSPI8Literal extends DBSPIntLiteral implements IsNumericLite
     }
 
     @Override
+    public int compare(IsNumericLiteral other) {
+        DBSPI8Literal oi = other.to(DBSPI8Literal.class);
+        Utilities.enforce(this.value != null);
+        Utilities.enforce(oi.value != null);
+        return this.value.compareTo(oi.value);
+    }
+
+    @Override
     public DBSPExpression deepCopy() {
         return new DBSPI8Literal(this.getNode(), this.type, this.value);
     }

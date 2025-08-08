@@ -13,6 +13,13 @@ import TabItem from '@theme/TabItem';
     <TabItem className="changelogItem" value="enterprise"
         label="Enterprise">
 
+        ## Unreleased
+
+        We have changed the documentation for the SUBSTR and SUBSTRING
+        function to specify correctly their behaviors when arguments are
+        negative.  Their behavior has not changed, but the documentation
+        was incorrect.
+
         ## 0.105.0
 
         Changed the semantics of functions `ARRAY_CONTAINS`,

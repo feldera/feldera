@@ -78,6 +78,14 @@ public final class DBSPDoubleLiteral extends DBSPFPLiteral implements IsNumericL
     }
 
     @Override
+    public int compare(IsNumericLiteral other) {
+        DBSPDoubleLiteral oi = other.to(DBSPDoubleLiteral.class);
+        Utilities.enforce(this.value != null);
+        Utilities.enforce(oi.value != null);
+        return this.value.compareTo(oi.value);
+    }
+
+    @Override
     public DBSPLiteral getWithNullable(boolean mayBeNull) {
         return new DBSPDoubleLiteral(this.checkIfNull(this.value, mayBeNull), mayBeNull);
     }

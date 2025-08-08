@@ -170,11 +170,11 @@ addition to the normal way of `''`.
         Calculates an MD5 128-bit checksum of string and returns it as a hex <code>VARCHAR</code> value.
         If the input is NULL, NULL is returned.
     </td>
-    <td><code>SELECT md5('Feldera')</code> => <code></code></td>
+    <td><code>SELECT md5('Feldera')</code> => <code>841afc2f65b5763600818ef42a56d7d1</code></td>
   </tr>
   <tr>
     <td><a id="overlay"></a><code>OVERLAY ( string PLACING newsubstring FROM start [ FOR remove ] )</code></td>
-    <td>Replaces the substring of string that starts at the start'th character and extends for remove characters with newsubstring. If count is omitted, it defaults to the length of newsubstring.  If 'start' is nott positive, the original string is unchanged.  If 'start' is bigger than the length of 'string', the result is the concatenation of the two strings.  If 'remove' is negative it is considered 0.</td>
+    <td>Replaces the substring of string that starts at the start'th character and extends for remove characters with newsubstring. If count is omitted, it defaults to the length of newsubstring.  If 'start' is not positive, the original string is unchanged.  If 'start' is bigger than the length of 'string', the result is the concatenation of the two strings.  If 'remove' is negative it is considered 0.</td>
     <td><code>overlay('Txxxxas' placing 'hom' from 2 for 4)</code> => <code>Thomas</code></td>
   </tr>
   <tr>
@@ -238,13 +238,13 @@ addition to the normal way of `''`.
   </tr>
   <tr>
     <td><a id="substr"></a><code>SUBSTR (</code> string, start, <code> [ ,</code> length <code>]</code></td>
-    <td>Extracts the substring of string starting at the "start"'th character if that is specified, and stopping after "length" characters if the value is specified. If "start" is negative, it is replaced with 1.  If "count" is negative the empty string is returned.  The index of the first character is 1.</td>
+    <td>Extracts the substring of string starting at the "start"'th character if that is specified, and stopping after "length" characters if the value is specified. If "start" is negative, the first character is chosen counting backwards from the end of the string.  If "count" is negative the empty string is returned.  The index of the first character is 1.</td>
     <td><code>SUBSTR('Thomas', 2, 3)</code> => <code>hom</code><br></br>
         <code>SUBSTR('Thomas', 3)</code> => <code>omas</code><br></br></td>
   </tr>
   <tr>
-    <td><a id="substring"></a><code>SUBSTRING (</code> string <code>FROM</code> position <code> [ FOR</code> count<code> ] )</code></td>
-    <td>Extracts the substring of string starting at the "start"'th character if that is specified, and stopping after "count" characters if the value is specified. At least one of "start" or "count" must be provided.  If "start" is negative, it is replaced with 1.  If "count" is negative the empty string is returned.  The index of the first character is 1.</td>
+    <td><a id="substring"></a><code>SUBSTRING (</code> string <code>FROM</code> start <code> [ FOR</code> count<code> ] )</code></td>
+    <td>Extracts the substring of string starting at the "start"'th character if that is specified, and stopping after "count" characters if the value is specified. If "start" is negative, only max(count + start - 1, 0) characters are returned.  If "count" is negative the empty string is returned.  The index of the first character is 1.</td>
     <td><code>SUBSTRING('Thomas' from 2 for 3)</code> => <code>hom</code><br></br>
         <code>SUBSTRING('Thomas' from 3)</code> => <code>omas</code><br></br></td>
   </tr>
