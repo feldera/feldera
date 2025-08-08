@@ -143,7 +143,7 @@ impl FileInputReader {
                         resume_info,
                         parker,
                     ) {
-                        consumer.error(true, error);
+                        consumer.error(true, error, None);
                     }
                 }
             })

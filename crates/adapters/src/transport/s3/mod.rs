@@ -456,11 +456,12 @@ impl S3InputReader {
                                 match e.downcast_ref::<ListObjectsV2Error>() {
                                     // We consider a missing bucket a fatal error
                                     Some(ListObjectsV2Error::NoSuchBucket(_)) => {
-                                        consumer_clone.error(true, e)
+                                        consumer_clone.error(true, e, None)
                                     }
                                     _ => consumer_clone.error(
                                         false,
                                         anyhow!("error retrieving object list: {e:?}"),
+                                        None,
                                     ),
                                 }
                                 break;
@@ -524,6 +525,7 @@ impl S3InputReader {
                                 consumer.error(
                                     true,
                                     anyhow!("internal error: invalid key index {key_index}"),
+                                    Some("s3-key"),
                                 );
                                 continue;
                             };
@@ -551,6 +553,7 @@ impl S3InputReader {
                                             "could not fetch object '{}': {e:?}",
                                             &partially_processed_key.key
                                         ),
+                                        Some("s3-obj-fetch"),
                                     );
                                     // Mark key as fully processed.
                                     partially_processed_keys.update(key_index, None).await;
@@ -573,6 +576,7 @@ impl S3InputReader {
                                             "error reading object '{}': {e:?}",
                                             &partially_processed_key.key
                                         ),
+                                        Some("s3-obj-read"),
                                     ),
                                     Some(Ok(bytes)) => splitter.append(&bytes),
                                     None => eoi = true,

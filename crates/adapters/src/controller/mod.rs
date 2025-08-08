@@ -34,7 +34,7 @@ use crate::server::ServerState;
 use crate::transport::clock::now_endpoint_config;
 use crate::transport::Step;
 use crate::transport::{input_transport_config_to_endpoint, output_transport_config_to_endpoint};
-use crate::util::run_on_thread_pool;
+use crate::util::{run_on_thread_pool, RateLimitCheckResult, TokenBucketRateLimiter};
 use crate::{
     catalog::SerBatch, CircuitCatalog, Encoder, InputConsumer, OutputConsumer, OutputEndpoint,
     ParseError, PipelineState, TransportInputEndpoint,
@@ -3939,6 +3939,8 @@ struct InputProbe {
     endpoint_name: String,
     controller: Arc<ControllerInner>,
     max_batch_size: usize,
+    // rate limiter based on tags
+    rate_limiter: TokenBucketRateLimiter<&'static str>,
 }
 
 impl InputProbe {
@@ -3948,11 +3950,15 @@ impl InputProbe {
         connector_config: &ConnectorConfig,
         controller: Arc<ControllerInner>,
     ) -> Self {
+        // Max 10 errors per minute
+        let rate_limiter = TokenBucketRateLimiter::new(10, Duration::from_secs(60));
+
         Self {
             endpoint_id,
             endpoint_name: endpoint_name.to_owned(),
             controller,
             max_batch_size: connector_config.max_batch_size as usize,
+            rate_limiter,
         }
     }
 }
@@ -4031,9 +4037,33 @@ impl InputConsumer for InputProbe {
         self.controller.request_step();
     }
 
-    fn error(&self, fatal: bool, error: AnyError) {
-        self.controller
-            .input_transport_error(self.endpoint_id, &self.endpoint_name, fatal, error);
+    fn error(&self, fatal: bool, error: AnyError, tag: Option<&'static str>) {
+        // do not rate limit errors without tag
+        let allow = tag.is_none_or(|k| match self.rate_limiter.check(k) {
+            RateLimitCheckResult::Suppressed => false,
+            RateLimitCheckResult::Allowed => true,
+            RateLimitCheckResult::AllowedAfterSuppression{   suppressed,
+                         first_suppression,
+                         last_suppression
+            }=> {
+                let now = self.rate_limiter.now_ms();
+                let first_suppressed_elapsed = (now - first_suppression) as f64 / 1000.0;
+                let last_suppressed_elapsed = (now - last_suppression) as f64 / 1000.0;
+                info!(
+                    "Suppressed {suppressed} errors in last {first_suppressed_elapsed:.2}s (most recently, {last_suppressed_elapsed:.2}s ago) due to excessive rate. ( tag={k} )"
+                );
+                true
+            }
+        });
+
+        if allow {
+            self.controller.input_transport_error(
+                self.endpoint_id,
+                &self.endpoint_name,
+                fatal,
+                error,
+            );
+        }
     }
 }
 

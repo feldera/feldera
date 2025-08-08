@@ -215,7 +215,7 @@ impl InnerInit {
                         resume_info,
                     ) {
                         for consumer in consumers.values() {
-                            consumer.error(true, anyhow!("{error}"));
+                            consumer.error(true, anyhow!("{error}"), None);
                         }
                     }
                 }
