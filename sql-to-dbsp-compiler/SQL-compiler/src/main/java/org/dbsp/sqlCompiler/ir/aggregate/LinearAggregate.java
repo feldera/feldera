@@ -113,7 +113,7 @@ public class LinearAggregate extends IAggregate {
     }
 
     @Override
-    public boolean compatible(IAggregate other, boolean appendOnlySources) {
+    public boolean compatible(IAggregate other) {
         return other.is(LinearAggregate.class);
     }
 

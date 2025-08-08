@@ -390,7 +390,7 @@ public class AggregateTests extends SqlIoTest {
 
     @Test
     public void testArgMinMin() {
-        var cc = this.getCC("CREATE VIEW V AS SELECT ARG_MIN(I, J), MIN(J) FROM NN;");
+        var cc = this.getCC("CREATE VIEW V AS SELECT ARG_MIN(I, J), MIN(J), MAX(J) FROM NN;");
         CircuitVisitor visitor = new CircuitVisitor(cc.compiler) {
             int chains = 0;
 
@@ -405,7 +405,28 @@ public class AggregateTests extends SqlIoTest {
 
             @Override
             public void endVisit() {
-                // Both MIN and ARG_MIN are combined in a single operator
+                // MIN, ARG_MIN, MAX are combined in a single operator
+                Assert.assertEquals(1, this.chains);
+            }
+        };
+        cc.visit(visitor);
+
+        cc = this.getCC("CREATE VIEW V AS SELECT K, ARG_MIN(I, J), MIN(J), MAX(J) FROM NN GROUP BY k;");
+        visitor = new CircuitVisitor(cc.compiler) {
+            int chains = 0;
+
+            @Override
+            public void postorder(DBSPChainAggregateOperator operator) {
+                this.chains++;
+            }
+
+            public void postorder(DBSPStreamAggregateOperator operator) {
+                Assert.fail("There should be no aggregate operators");
+            }
+
+            @Override
+            public void endVisit() {
+                // MIN, ARG_MIN, MAX are combined in a single operator
                 Assert.assertEquals(1, this.chains);
             }
         };

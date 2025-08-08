@@ -362,7 +362,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             for (List<Integer> group : groups) {
                 int index = Utilities.last(group);
                 IAggregate inGroup = aggregates.get(index);
-                if (inGroup.compatible(aggregate, this.dependsOnAppendOnlyTables)) {
+                if (inGroup.compatible(aggregate)) {
                     // This implicitly relies on the transitivity of compability
                     group.add(i);
                     added = true;
@@ -428,7 +428,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         for (IAggregate implementation: simple) {
             // A list of compatible aggregates
             if (!currentGroup.isEmpty() &&
-                    !Utilities.last(currentGroup).compatible(implementation, this.dependsOnAppendOnlyTables)) {
+                    !Utilities.last(currentGroup).compatible(implementation)) {
                 DBSPAggregateList aggregate = new DBSPAggregateList(obj, rowVar, currentGroup);
                 results.add(aggregate);
                 currentGroup = new ArrayList<>();
@@ -1048,7 +1048,6 @@ public class CalciteToDBSPCompiler extends RelVisitor
             // Or the input may have been created by a CREATE TABLE statement.
             Utilities.putNew(this.nodeOperator, scan, source);
             DBSPSourceTableOperator table = source.to(DBSPSourceTableOperator.class);
-            this.dependsOnAppendOnlyTables = this.dependsOnAppendOnlyTables || table.metadata.isAppendOnly();
             table.refer(scan);
         } else {
             // Try a view if no table with this name exists.
@@ -3599,12 +3598,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 metadata.isPrimaryKey, lateness, watermark, defaultValue, metadata.defaultValuePosition, metadata.interned);
     }
 
-    // We track whether any of the inputs of the current view are append-only tables.
-    // This is used to heuristically choose how min/max operators are compiled.
-    boolean dependsOnAppendOnlyTables = false;
-
     private DBSPNode compileCreateView(CreateViewStatement view) {
-        this.dependsOnAppendOnlyTables = false;
         RelNode rel = view.getRel();
         this.go(rel);
         DBSPSimpleOperator op = this.getOperator(rel);
