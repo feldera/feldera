@@ -542,7 +542,10 @@ pub trait InputConsumer: Send + Sync + DynClone {
     ///
     /// Reports that the endpoint failed and that it will not queue any more
     /// data.
-    fn error(&self, fatal: bool, error: AnyError);
+    ///
+    /// Optional tag that can be used for additional context
+    /// e.g. for rate limiting
+    fn error(&self, fatal: bool, error: AnyError, tag: Option<&'static str>);
 }
 
 /// Information needed to restart after or replay input.

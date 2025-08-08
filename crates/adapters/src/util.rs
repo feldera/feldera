@@ -1,11 +1,14 @@
 use std::borrow::Cow;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::hash::Hash;
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 #[cfg(feature = "with-deltalake")]
 use std::{error::Error, future::Future, pin::Pin};
 
 use anyhow::{bail, Result as AnyResult};
+use dashmap::DashMap;
 use feldera_adapterlib::catalog::SerCursor;
 use feldera_types::program_schema::SqlIdentifier;
 #[cfg(feature = "with-deltalake")]
@@ -423,19 +426,207 @@ where
     Ok(())
 }
 
+struct TokenBucket {
+    available: AtomicU32,
+    last_refill: AtomicU64,
+    suppressed: AtomicU64,
+    first_suppression: AtomicU64,
+    last_suppression: AtomicU64,
+    capacity: u32,
+    ticks_per_token: u64, // in ms
+}
+
+impl TokenBucket {
+    fn new(capacity: u32, refill_interval: Duration, now: u64) -> Self {
+        let refill_ms = refill_interval.as_millis() as u64;
+        let ticks_per_token = std::cmp::max(1, refill_ms / capacity as u64);
+        Self {
+            available: AtomicU32::new(capacity),
+            last_refill: AtomicU64::new(now),
+            suppressed: AtomicU64::new(0),
+            first_suppression: AtomicU64::new(0),
+            last_suppression: AtomicU64::new(0),
+            capacity,
+            ticks_per_token,
+        }
+    }
+
+    /// Attempt to consume a token, returning the rate limit result if successful.
+    ///
+    /// # Thread Safety
+    ///
+    /// This method is thread-safe and atomic: it uses atomic operations to ensure that
+    /// token consumption and suppression counters are updated correctly even when called
+    /// concurrently from multiple threads.
+    fn try_consume_token(&self) -> Option<RateLimitCheckResult> {
+        if self
+            .available
+            .fetch_update(Ordering::AcqRel, Ordering::Relaxed, |old| {
+                if old > 0 {
+                    Some(old - 1)
+                } else {
+                    None
+                }
+            })
+            .is_ok()
+        {
+            let suppressed_count = self.suppressed.swap(0, Ordering::AcqRel);
+            let check_result = if suppressed_count > 0 {
+                let first = self.first_suppression.swap(0, Ordering::AcqRel);
+                let last = self.last_suppression.swap(0, Ordering::AcqRel);
+                RateLimitCheckResult::AllowedAfterSuppression {
+                    suppressed: suppressed_count,
+                    first_suppression: first,
+                    last_suppression: last,
+                }
+            } else {
+                RateLimitCheckResult::Allowed
+            };
+            return Some(check_result);
+        }
+        None
+    }
+
+    /// Try refilling tokens based on elapsed time.
+    ///
+    /// This method atomically updates `last_refill` and `available` to ensure that
+    /// multiple threads do not over-refill tokens. The use of `compare_exchange` on
+    /// `last_refill` ensures only one thread performs the refill for a given time window,
+    /// while others will observe the updated timestamp and skip redundant refills.
+    /// There is a possible race where multiple threads may attempt to refill simultaneously,
+    /// but only one will succeed in updating `last_refill`, preventing double-counting tokens.
+    fn try_refill_tokens(&self, now_ms: u64) {
+        let last = self.last_refill.load(Ordering::Acquire);
+        if now_ms <= last {
+            return;
+        }
+
+        let elapsed = now_ms - last;
+        let tokens_to_add = (elapsed / self.ticks_per_token) as u32;
+        if tokens_to_add == 0 {
+            return;
+        }
+
+        let new_ts = last + tokens_to_add as u64 * self.ticks_per_token;
+        if self
+            .last_refill
+            .compare_exchange(last, new_ts, Ordering::AcqRel, Ordering::Relaxed)
+            .is_ok()
+        {
+            self.available
+                .fetch_update(Ordering::AcqRel, Ordering::Relaxed, |old| {
+                    Some((old.saturating_add(tokens_to_add)).min(self.capacity))
+                })
+                .ok();
+        }
+    }
+
+    /// Checks if a token can be consumed, refilling if needed.
+    ///
+    /// Returns:
+    /// - `RateLimitCheckResult::Allowed` if a token is available and consumed.
+    /// - `RateLimitCheckResult::Suppressed` if no tokens are available; increments suppression counters.
+    /// - `RateLimitCheckResult::AllowedAfterSuppression` if a token is consumed after previous suppressions,
+    ///   including the count and timing of suppressed attempts.
+    ///
+    /// Suppression logic: When tokens are exhausted, each failed attempt increments a suppression counter.
+    /// Upon the next successful token consumption, the suppression count and timing are reported and reset.
+    pub fn check(&self, now_ms: u64) -> RateLimitCheckResult {
+        // Fast path: try to consume immediately
+        if let Some(result) = self.try_consume_token() {
+            return result;
+        }
+
+        // Attempt refill if needed
+        self.try_refill_tokens(now_ms);
+
+        // Retry consume after potential refill
+        if let Some(result) = self.try_consume_token() {
+            return result;
+        }
+
+        // No tokens - record suppression and reject
+        let prev_count = self.suppressed.fetch_add(1, Ordering::AcqRel);
+        if prev_count == 0 {
+            self.first_suppression.store(now_ms, Ordering::Release);
+        }
+        self.last_suppression.store(now_ms, Ordering::Release);
+
+        RateLimitCheckResult::Suppressed
+    }
+}
+
+#[derive(Debug, Clone)]
+pub(crate) enum RateLimitCheckResult {
+    Allowed,
+    AllowedAfterSuppression {
+        suppressed: u64,
+        first_suppression: u64, // ms since start
+        last_suppression: u64,  // ms since start
+    },
+    Suppressed,
+}
+
+#[derive(Clone)]
+/// A rate limiter keyed by `K`.
+pub(crate) struct TokenBucketRateLimiter<K: Eq + Hash> {
+    /// Map of keys to their corresponding token buckets.
+    buckets: Arc<DashMap<K, TokenBucket>>,
+    /// Maximum number of tokens per bucket.
+    capacity: u32,
+    /// Interval at which tokens are refilled.
+    refill_interval: Duration,
+    /// Start time for measuring elapsed time.
+    start: Instant,
+}
+
+impl<K: Eq + Hash> TokenBucketRateLimiter<K> {
+    pub fn new(capacity: u32, refill_interval: Duration) -> Self {
+        Self {
+            buckets: Arc::new(DashMap::new()),
+            capacity,
+            refill_interval,
+            start: Instant::now(),
+        }
+    }
+
+    #[inline]
+    pub(crate) fn now_ms(&self) -> u64 {
+        self.start.elapsed().as_millis() as u64
+    }
+
+    pub fn check(&self, key: K) -> RateLimitCheckResult {
+        let now = self.now_ms();
+
+        // fast path: get read lock if key already exits
+        if let Some(bucket) = self.buckets.get(&key) {
+            return bucket.check(now);
+        }
+
+        // slower path: create entry of new bucket for key
+        let bucket = self
+            .buckets
+            .entry(key)
+            .or_insert_with(|| TokenBucket::new(self.capacity, self.refill_interval, now));
+        bucket.check(now)
+    }
+}
+
 #[cfg(test)]
-#[cfg(feature = "with-deltalake")]
 mod test {
+    #[cfg(feature = "with-deltalake")]
     use std::sync::{Arc, Mutex};
+    use std::{thread, time::Duration};
 
-    use crate::util::JobQueue;
+    use crate::util::{RateLimitCheckResult, TokenBucketRateLimiter};
 
+    #[cfg(feature = "with-deltalake")]
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn test_job_queue() {
         let result = Arc::new(Mutex::new(Vec::new()));
         let result_clone = result.clone();
 
-        let job_queue = JobQueue::new(
+        let job_queue = super::JobQueue::new(
             6,
             || Box::new(|i: u32| Box::pin(async move { i })),
             move |i| result_clone.lock().unwrap().push(i),
@@ -450,5 +641,208 @@ mod test {
         let expected: Vec<u32> = (0..1000000).collect();
 
         assert_eq!(&*result.lock().unwrap(), &*expected);
+    }
+
+    // -------- Basic single-thread tests -------- //
+
+    #[test]
+    fn test_basic_allowance_and_suppression() {
+        let limiter = TokenBucketRateLimiter::new(3, Duration::from_millis(300));
+        let key = "user1";
+
+        // First 3 allowed
+        for _ in 0..3 {
+            assert!(matches!(limiter.check(key), RateLimitCheckResult::Allowed));
+        }
+        // 4th suppressed
+        assert!(matches!(
+            limiter.check(key),
+            RateLimitCheckResult::Suppressed
+        ));
+    }
+
+    #[test]
+    fn test_suppression_and_refill_with_timing() {
+        let limiter = TokenBucketRateLimiter::new(2, Duration::from_millis(200));
+        let key = "user2";
+
+        // Burn tokens
+        assert!(matches!(limiter.check(key), RateLimitCheckResult::Allowed));
+        assert!(matches!(limiter.check(key), RateLimitCheckResult::Allowed));
+
+        // Now suppressed a few times
+        let _ = limiter.check(key); // suppressed
+        thread::sleep(Duration::from_millis(50));
+        let _ = limiter.check(key); // suppressed again
+        thread::sleep(Duration::from_millis(220)); // enough for 1 token
+
+        // This call should be allowed WITH suppression info
+        match limiter.check(key) {
+            RateLimitCheckResult::AllowedAfterSuppression {
+                suppressed,
+                first_suppression,
+                last_suppression,
+            } => {
+                assert!(
+                    suppressed >= 2,
+                    "Expected >=2 suppressed, got {}",
+                    suppressed
+                );
+                assert!(last_suppression >= first_suppression);
+                let now = limiter.now_ms();
+                let first_suppressed_elapsed = (now - first_suppression) as f64 / 1000.0;
+                let last_suppressed_elapsed = (now - last_suppression) as f64 / 1000.0;
+                println!(
+                    "Suppressed {suppressed} errors in last {first_suppressed_elapsed:.2}s (most recently {last_suppressed_elapsed:.2}s ago, tag={key}) due to excessive rate"
+                );
+            }
+            other => panic!("Expected AllowedWithSuppression, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_multiple_refills() {
+        let limiter = TokenBucketRateLimiter::new(2, Duration::from_millis(200));
+        let key = "user3";
+
+        limiter.check(key);
+        limiter.check(key);
+
+        thread::sleep(Duration::from_millis(450));
+
+        let mut allowed_count = 0;
+        for _ in 0..2 {
+            match limiter.check(key) {
+                RateLimitCheckResult::Allowed
+                | RateLimitCheckResult::AllowedAfterSuppression { .. } => {
+                    allowed_count += 1;
+                }
+                _ => {}
+            }
+        }
+        assert_eq!(allowed_count, 2);
+    }
+
+    #[test]
+    fn test_independent_keys() {
+        let limiter = TokenBucketRateLimiter::new(1, Duration::from_millis(300));
+        let key1 = "alice";
+        let key2 = "bob";
+
+        assert!(matches!(limiter.check(key1), RateLimitCheckResult::Allowed));
+        assert!(matches!(limiter.check(key2), RateLimitCheckResult::Allowed));
+
+        assert!(matches!(
+            limiter.check(key1),
+            RateLimitCheckResult::Suppressed
+        ));
+        assert!(matches!(
+            limiter.check(key2),
+            RateLimitCheckResult::Suppressed
+        ));
+    }
+
+    // -------- Concurrency tests -------- //
+
+    #[test]
+    fn test_concurrent_token_consumption() {
+        let limiter = Arc::new(TokenBucketRateLimiter::new(5, Duration::from_millis(500)));
+        let key = "concurrent";
+        let mut handles = vec![];
+
+        for _ in 0..10 {
+            let limiter = limiter.clone();
+            let key = key.to_string();
+            handles.push(thread::spawn(move || limiter.check(key)));
+        }
+
+        let results: Vec<_> = handles.into_iter().map(|h| h.join().unwrap()).collect();
+
+        let allowed = results
+            .iter()
+            .filter(|r| {
+                matches!(
+                    r,
+                    RateLimitCheckResult::Allowed
+                        | RateLimitCheckResult::AllowedAfterSuppression { .. }
+                )
+            })
+            .count();
+        let suppressed = results
+            .iter()
+            .filter(|r| matches!(r, RateLimitCheckResult::Suppressed))
+            .count();
+
+        assert_eq!(allowed, 5);
+        assert_eq!(suppressed, 5);
+    }
+
+    #[test]
+    fn test_suppressed_count_and_timing_across_threads() {
+        let limiter = Arc::new(TokenBucketRateLimiter::new(2, Duration::from_millis(200)));
+        let key = "threaded_suppress".to_string();
+
+        // Burn 2 tokens
+        assert!(matches!(
+            limiter.check(key.clone()),
+            RateLimitCheckResult::Allowed
+        ));
+        assert!(matches!(
+            limiter.check(key.clone()),
+            RateLimitCheckResult::Allowed
+        ));
+
+        // 5 threads, all suppressed
+        let mut handles = vec![];
+        for _ in 0..5 {
+            let limiter = limiter.clone();
+            let key = key.to_string();
+            handles.push(thread::spawn(move || limiter.check(key)));
+        }
+
+        for res in handles {
+            assert!(matches!(
+                res.join().unwrap(),
+                RateLimitCheckResult::Suppressed
+            ));
+        }
+
+        thread::sleep(Duration::from_millis(220)); // refill 1
+
+        // This call should flush suppressed info
+        match limiter.check(key.clone()) {
+            RateLimitCheckResult::AllowedAfterSuppression {
+                suppressed,
+                first_suppression,
+                last_suppression,
+            } => {
+                assert!(suppressed >= 5);
+                assert!(last_suppression >= first_suppression);
+                let now = limiter.now_ms();
+                let first_suppressed_elapsed = (now - first_suppression) as f64 / 1000.0;
+                let last_suppressed_elapsed = (now - last_suppression) as f64 / 1000.0;
+                println!(
+                    "Suppressed {suppressed} errors in last {first_suppressed_elapsed:.2}s (most recently {last_suppressed_elapsed:.2}s ago, tag={key}) due to excessive rate"
+                );
+            }
+            _ => panic!("Expected AllowedWithSuppression"),
+        }
+    }
+
+    #[test]
+    fn test_concurrent_independent_keys() {
+        let limiter = Arc::new(TokenBucketRateLimiter::new(1, Duration::from_millis(300)));
+
+        let mut handles = vec![];
+        for user in &["alice", "bob", "carol", "dave"] {
+            let limiter = limiter.clone();
+            let key = user.to_string();
+            handles.push(thread::spawn(move || limiter.check(key)));
+        }
+
+        let results: Vec<_> = handles.into_iter().map(|h| h.join().unwrap()).collect();
+        for r in results {
+            assert!(matches!(r, RateLimitCheckResult::Allowed));
+        }
     }
 }

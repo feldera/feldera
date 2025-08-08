@@ -86,7 +86,7 @@ impl PubSubReader {
                         Self::worker_task(subscription, consumer_clone, parser, state_receiver)
                             .instrument(span)
                             .await
-                            .unwrap_or_else(|e| consumer.error(true, e));
+                            .unwrap_or_else(|e| consumer.error(true, e, None));
                     })
                 }
             })
@@ -167,7 +167,7 @@ impl PubSubReader {
                                             let data = message.message.data.as_slice();
                                             queue.push(parser.parse(data));
                                             message.ack().await.unwrap_or_else(|e| {
-                                                consumer.error(false, anyhow!("gRPC error acknowledging Pub/Sub message: {e}"))
+                                                consumer.error(false, anyhow!("gRPC error acknowledging Pub/Sub message: {e}"), Some("pubsub"))
                                             });
                                         }
                                     }

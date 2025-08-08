@@ -15,12 +15,24 @@ rust-version = { workspace = true }
 
 
 [features]
-default = ["with-kafka", "with-deltalake", "with-iceberg", "with-avro", "with-nexmark", "with-pubsub", "with-redis"]
+default = [
+    "with-kafka",
+    "with-deltalake",
+    "with-iceberg",
+    "with-avro",
+    "with-nexmark",
+    "with-pubsub",
+    "with-redis",
+]
 with-kafka = ["rdkafka"]
 with-deltalake = ["deltalake"]
 with-iceberg = ["feldera-iceberg"]
 with-pubsub = ["google-cloud-pubsub", "google-cloud-gax"]
-with-avro = ["apache-avro", "schema_registry_converter", "feldera-adapterlib/with-avro"]
+with-avro = [
+    "apache-avro",
+    "schema_registry_converter",
+    "feldera-adapterlib/with-avro",
+]
 with-nexmark = ["dbsp_nexmark"]
 with-redis = ["redis", "r2d2"]
 # Run delta table tests against an S3 bucket.  Requires S3 authentication key
@@ -43,7 +55,12 @@ feldera-adapterlib = { workspace = true }
 feldera-datagen = { workspace = true }
 feldera-storage = { workspace = true }
 feldera-iceberg = { workspace = true, optional = true }
-awc = { workspace = true, features = ["compress-gzip", "compress-brotli", "cookies", "rustls-0_23-webpki-roots"] }
+awc = { workspace = true, features = [
+    "compress-gzip",
+    "compress-brotli",
+    "cookies",
+    "rustls-0_23-webpki-roots",
+] }
 aws-config = { workspace = true }
 async-stream = { workspace = true }
 anyhow = { workspace = true, features = ["backtrace"] }
@@ -59,11 +76,22 @@ serde_json = { workspace = true, features = ["raw_value"] }
 serde_urlencoded = { workspace = true }
 form_urlencoded = { workspace = true }
 csv = { workspace = true }
-rdkafka = { workspace = true, features = ["ssl-vendored", "gssapi-vendored", "zstd", "libz"], optional = true }
+rdkafka = { workspace = true, features = [
+    "ssl-vendored",
+    "gssapi-vendored",
+    "zstd",
+    "libz",
+], optional = true }
 aws-sdk-s3 = { workspace = true, features = ["behavior-version-latest"] }
 aws-types = { workspace = true }
 actix = { workspace = true }
-actix-web = { workspace = true, features = ["cookies", "macros", "compress-gzip", "compress-brotli", "rustls-0_23"] }
+actix-web = { workspace = true, features = [
+    "cookies",
+    "macros",
+    "compress-gzip",
+    "compress-brotli",
+    "rustls-0_23",
+] }
 actix-ws = { workspace = true }
 mime = { workspace = true }
 size-of = { workspace = true }
@@ -89,10 +117,20 @@ serde_arrow = { workspace = true }
 arrow-json = { workspace = true }
 bytes = { workspace = true }
 # `datafusion` must be enabled for the writer to implement the `Invariant` feature.
-deltalake = { workspace = true, features = ["datafusion", "s3", "gcs", "azure"], optional = true }
+deltalake = { workspace = true, features = [
+    "datafusion",
+    "s3",
+    "gcs",
+    "azure",
+], optional = true }
 apache-avro = { workspace = true, optional = true }
-schema_registry_converter = { workspace = true, features = ["avro", "blocking"], optional = true }
-rust_decimal = { package = "feldera_rust_decimal", version = "1.33.1-feldera.1", features = ["tokio-pg"] }
+schema_registry_converter = { workspace = true, features = [
+    "avro",
+    "blocking",
+], optional = true }
+rust_decimal = { package = "feldera_rust_decimal", version = "1.33.1-feldera.1", features = [
+    "tokio-pg",
+] }
 url = { workspace = true }
 ordered-float = { workspace = true }
 openssl = { workspace = true }
@@ -117,7 +155,11 @@ xxhash-rust = { workspace = true, features = ["xxh3"] }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
 comfy-table = { workspace = true }
-tokio-postgres = { workspace = true, features = ["with-serde_json-1", "with-uuid-1", "with-chrono-0_4"] }
+tokio-postgres = { workspace = true, features = [
+    "with-serde_json-1",
+    "with-uuid-1",
+    "with-chrono-0_4",
+] }
 num-bigint = { workspace = true }
 redis = { workspace = true, features = ["r2d2"], optional = true }
 r2d2 = { workspace = true, optional = true }
@@ -132,7 +174,7 @@ dyn-clone = { workspace = true }
 cpu-time = "1.0.0"
 memory-stats = { version = "1.2.0", features = ["always_use_statm"] }
 feldera-ir = { workspace = true }
-base64 = {workspace = true }
+base64 = { workspace = true }
 aws-msk-iam-sasl-signer = "1.0.0"
 aws-credential-types = "1.2.3"
 feldera-sqllib = { workspace = true }
@@ -141,6 +183,7 @@ backtrace = { workspace = true }
 itertools = { workspace = true }
 metrics-process = { version = "2.4.0", default-features = false }
 serde_json_path_to_error = { workspace = true }
+dashmap = "6.1.0"
 
 [package.metadata.cargo-machete]
 ignored = ["num-traits"]

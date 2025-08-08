@@ -3781,6 +3781,7 @@ dependencies = [
  "crossbeam",
  "csv",
  "csv-core",
+ "dashmap 6.1.0",
  "datafusion",
  "dbsp",
  "dbsp_nexmark",
