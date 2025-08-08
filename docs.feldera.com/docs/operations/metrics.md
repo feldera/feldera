@@ -117,6 +117,8 @@ the SQL program or automatically generated as `unnamed-<number>`,
 where `<number>` counts starting from 1 for the first connector for a
 given table.
 
+These metrics accumulate across checkpoint and resume.
+
 For byte counters, for some input connectors, such as columnar
 formats, bytes are difficult to attribute accurately to records, so
 Feldera approximates.  Feldera also approximately attributes byte
@@ -141,6 +143,8 @@ the name of the output connector, which is either the name assigned in
 the SQL program or automatically generated as `unnamed-<number>`,
 where `<number>` counts starting from 1 for the first connector for a
 given view.
+
+These metrics accumulate across checkpoint and resume.
 
 | Name | Type | Description |
 | :--- | :--- | :---------- |

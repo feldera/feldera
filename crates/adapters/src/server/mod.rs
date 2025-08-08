@@ -1402,6 +1402,7 @@ async fn output_endpoint(
                 &endpoint_name,
                 &config,
                 Box::new(endpoint.clone()) as Box<dyn OutputEndpoint>,
+                None,
             ) {
                 Ok(endpoint_id) => endpoint_id,
                 Err(e) => {
