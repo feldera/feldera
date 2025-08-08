@@ -115,6 +115,143 @@ class varnttst_variant_to_otherint(TstView):
                       FROM int_to_variant"""
 
 
+# UNSIGNED INTEGER
+class varnttst_un_int_tbl(TstTable):
+    """Define the table used by the integer tests"""
+
+    def __init__(self):
+        self.sql = """CREATE TABLE varnt_un_int_tbl(
+                      id INT,
+                      un_tiny_int TINYINT UNSIGNED,
+                      un_small_int SMALLINT UNSIGNED,
+                      un_int INT UNSIGNED,
+                      un_bigint BIGINT UNSIGNED)"""
+        self.data = [
+            {
+                "id": 0,
+                "un_tiny_int": 200,
+                "un_small_int": 245,
+                "un_int": 210,
+                "un_bigint": 230,
+            },
+            {
+                "id": 1,
+                "un_tiny_int": None,
+                "un_small_int": None,
+                "un_int": None,
+                "un_bigint": None,
+            },
+        ]
+
+
+class varnttst_un_int_to_variant(TstView):
+    def __init__(self):
+        # checked manually
+        self.data = [
+            {
+                "id": 0,
+                "un_tiny_int_varnt": "200",
+                "un_small_int_varnt": "245",
+                "un_int_varnt": "210",
+                "un_bigint_varnt": "230",
+            },
+            {
+                "id": 1,
+                "un_tiny_int_varnt": "null",
+                "un_small_int_varnt": "null",
+                "un_int_varnt": "null",
+                "un_bigint_varnt": "null",
+            },
+        ]
+        self.sql = """CREATE MATERIALIZED VIEW un_int_to_variant AS SELECT
+                      id,
+                      CAST(un_tiny_int AS VARIANT) AS un_tiny_int_varnt,
+                      CAST(un_small_int AS VARIANT) AS un_small_int_varnt,
+                      CAST(un_int AS VARIANT) AS un_int_varnt,
+                      CAST(un_bigint AS VARIANT) AS un_bigint_varnt
+                      FROM varnt_un_int_tbl"""
+
+
+class varnttst_variant_to_un_int(TstView):
+    def __init__(self):
+        # checked manually
+        self.data = [
+            {
+                "id": 0,
+                "un_tiny_int": 200,
+                "un_small_int": 245,
+                "un_int": 210,
+                "un_bigint": 230,
+            },
+            {
+                "id": 1,
+                "un_tiny_int": None,
+                "un_small_int": None,
+                "un_int": None,
+                "un_bigint": None,
+            },
+        ]
+        self.sql = """CREATE MATERIALIZED VIEW variant_to_un_int AS SELECT
+                      id,
+                      CAST(un_tiny_int_varnt AS TINYINT UNSIGNED) AS un_tiny_int,
+                      CAST(un_small_int_varnt AS SMALLINT UNSIGNED) AS un_small_int,
+                      CAST(un_int_varnt AS INT UNSIGNED) AS un_int,
+                      CAST(un_bigint_varnt AS BIGINT UNSIGNED) AS un_bigint
+                      FROM un_int_to_variant"""
+
+
+class varnttst_variant_to_other_un_int(TstView):
+    def __init__(self):
+        # checked manually
+        self.data = [
+            {
+                "id": 0,
+                "un_tint_to_un_sint": 200,
+                "un_tint_to_un_int": 200,
+                "un_tint_to_un_bint": 200,
+                "un_sint_to_un_tint": 245,
+                "un_sint_to_un_int": 245,
+                "un_sint_to_un_bint": 245,
+                "un_int_to_un_tint": 210,
+                "un_int_to_un_sint": 210,
+                "un_int_to_un_bint": 210,
+                "un_bint_to_un_tint": 230,
+                "un_bint_to_un_sint": 230,
+                "un_bint_to_un_int": 230,
+            },
+            {
+                "id": 1,
+                "un_tint_to_un_sint": None,
+                "un_tint_to_un_int": None,
+                "un_tint_to_un_bint": None,
+                "un_sint_to_un_tint": None,
+                "un_sint_to_un_int": None,
+                "un_sint_to_un_bint": None,
+                "un_int_to_un_tint": None,
+                "un_int_to_un_sint": None,
+                "un_int_to_un_bint": None,
+                "un_bint_to_un_tint": None,
+                "un_bint_to_un_sint": None,
+                "un_bint_to_un_int": None,
+            },
+        ]
+        self.sql = """CREATE MATERIALIZED VIEW variant_to_other_un_int AS SELECT
+                      id,
+                      CAST(un_tiny_int_varnt AS SMALLINT UNSIGNED) AS un_tint_to_un_sint,
+                      CAST(un_tiny_int_varnt AS INT UNSIGNED) AS un_tint_to_un_int,
+                      CAST(un_tiny_int_varnt AS BIGINT UNSIGNED) AS un_tint_to_un_bint,
+                      CAST(un_small_int_varnt AS TINYINT UNSIGNED) AS un_sint_to_un_tint,
+                      CAST(un_small_int_varnt AS INT UNSIGNED) AS un_sint_to_un_int,
+                      CAST(un_small_int_varnt AS BIGINT UNSIGNED) AS un_sint_to_un_bint,
+                      CAST(un_int_varnt AS TINYINT UNSIGNED) AS un_int_to_un_tint,
+                      CAST(un_int_varnt AS SMALLINT UNSIGNED) AS un_int_to_un_sint,
+                      CAST(un_int_varnt AS BIGINT UNSIGNED) AS un_int_to_un_bint,
+                      CAST(un_bigint_varnt AS TINYINT UNSIGNED) AS un_bint_to_un_tint,
+                      CAST(un_bigint_varnt AS SMALLINT UNSIGNED) AS un_bint_to_un_sint,
+                      CAST(un_bigint_varnt AS INT UNSIGNED) AS un_bint_to_un_int
+                      FROM un_int_to_variant"""
+
+
 # BOOLEAN
 class varnttst_bool_tbl(TstTable):
     """Define the table used by the bool tests"""
