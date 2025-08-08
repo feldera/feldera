@@ -7,7 +7,7 @@ use crate::{
     transport::{InputQueue, InputReaderCommand},
     InputConsumer, InputEndpoint, InputReader, Parser, TransportInputEndpoint,
 };
-use anyhow::{anyhow, Error as AnyError, Result as AnyResult};
+use anyhow::{anyhow, Context, Error as AnyError, Result as AnyResult};
 use async_nats::{
     self,
     jetstream::{self, consumer as nats_consumer},
@@ -24,6 +24,7 @@ use feldera_types::{
 use futures::StreamExt;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
+use std::cmp;
 use std::hash::Hasher;
 use std::sync::Arc;
 use std::{num::NonZeroU64, sync::atomic::Ordering};
@@ -161,19 +162,17 @@ impl NatsReader {
                     )
                     .await?;
 
-                let last_message_sequence = *sequence_number_range.end();
+                let last_message_offset = *sequence_number_range.end();
                 read_nats_messages_until(
                     nats_consumer,
-                    last_message_sequence,
+                    last_message_offset,
                     consumer.clone(),
                     parser.fork(),
                 )
-                .await?;
+                .await
+                .with_context(|| format!("While attempting to replay offsets {first_message_offset}..{last_message_offset}"))?;
 
-                read_sequence.store(
-                    NonZeroU64::new(last_message_sequence + 1),
-                    Ordering::Release,
-                );
+                read_sequence.store(NonZeroU64::new(last_message_offset + 1), Ordering::Release);
             } else {
                 consumer.replayed(0, Xxh3Default::new().finish());
             }
@@ -259,8 +258,7 @@ async fn read_nats_messages_until(
     let mut num_records = 0;
     loop {
         let Some(result) = nats_messages.next().await else {
-            consumer.error(false, anyhow!("Unexpected end of NATS stream"));
-            break;
+            return Err(anyhow!("Unexpected end of NATS stream"));
         };
         match result {
             Ok(message) => {
@@ -280,8 +278,12 @@ async fn read_nats_messages_until(
                 }
                 num_records += 1;
 
-                if info.stream_sequence == last_message_sequence {
-                    break;
+                match info.stream_sequence.cmp(&last_message_sequence) {
+                    cmp::Ordering::Less => (),     // Still more messages to consume
+                    cmp::Ordering::Equal => break, // This was the final message we wanted
+                    cmp::Ordering::Greater => {
+                        return Err(anyhow!("Received unexpected message with offset {}; maybe the requested messages have been deleted?", info.stream_sequence));
+                    }
                 }
             }
             Err(error) => consumer.error(false, anyhow!("NATS error: {error}")),
@@ -292,6 +294,7 @@ async fn read_nats_messages_until(
 
     Ok(())
 }
+
 async fn spawn_nats_reader(
     nats_consumer: nats_consumer::Consumer<nats_consumer::pull::OrderedConfig>,
     read_sequence: Arc<AtomicOptionNonZeroU64>,
@@ -312,7 +315,7 @@ async fn spawn_nats_reader(
                     }
                     result = nats_messages.next() => {
                         let Some(result) = result else {
-                            consumer.error(false, anyhow!("Unexpected end of NATS stream"));
+                            consumer.error(true, anyhow!("Unexpected end of NATS stream"));
                             return;
                         };
                         match result {
