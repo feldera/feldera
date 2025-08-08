@@ -589,6 +589,31 @@ pub enum Resume {
 
     /// The input adapter can replay this step exactly, or resume just after the
     /// step.
+    ///
+    /// Input adapters can use `seek` and `replay` in different combinations:
+    ///
+    /// - Some kinds of input adapters, for example the ones for files, or for
+    ///   Kafka, can reread the input data that they used before.  These will
+    ///   ordinarily just use `seek`, filling it with a pointer just past the
+    ///   end of the data to be read. (Ordinarily, it would already know where
+    ///   the start is from the previous step, so the start pointer isn't
+    ///   usually needed.)
+    ///
+    ///   These input adapters can just set `replay` to [RmpValue::Nil].
+    ///
+    /// - Other kinds of input connectors can't seek back and reread the input
+    ///   data that they used before. The best example is the HTTP input
+    ///   connector, because which can't ask whatever client connected before to
+    ///   repeat the same exact data that it input before.  These input
+    ///   connectors have to save all the input data for replay, by putting into
+    ///   the `replay` field.
+    ///
+    ///   These input adapters can just set `seek` to [JsonValue::Null].
+    ///
+    ///   (In theory, any input connector could substitute data for metadata,
+    ///   but if the data can simply be reread using the metadata, we usually
+    ///   consider that better because it saves time and space saving all the
+    ///   data when in most cases it will never be reread.)
     Replay {
         /// Metadata needed for the controller to restart the input adapter from
         /// just after this input step.
