@@ -133,13 +133,16 @@ pub fn concat_s_s(left: SqlString, right: SqlString) -> SqlString {
 
 some_polymorphic_function2!(concat, s, SqlString, s, SqlString, SqlString);
 
+/// Three-argument SUBSTRING in SQL.
+///
+/// (Calcite desugars SUBSTR into SUBSTRING.)
 #[doc(hidden)]
 pub fn substring3___(value: SqlString, left: i32, count: i32) -> SqlString {
     if count <= 0 {
         SqlString::new()
     } else {
         // indexes in SQL start at 1
-        let (start, count) = if left < 1 {
+        let (start_char, char_count) = if left < 1 {
             // count applies from the start, even if start is negative
             (0_usize, max(count + left - 1, 0) as usize)
         } else {
@@ -147,40 +150,54 @@ pub fn substring3___(value: SqlString, left: i32, count: i32) -> SqlString {
         };
 
         let str = value.str();
-        let mut begin = str.len();
-        let mut end = str.len();
-
-        for (char_count, (i, _)) in str.char_indices().enumerate() {
-            if start == char_count {
-                begin = i;
-            }
-            if start + count == char_count {
-                end = i;
-                break;
-            }
-        }
-
-        SqlString::from_ref(&str[begin..end])
+        let start_byte = byte_index(str, start_char);
+        let end_byte = byte_index(&str[start_byte..], char_count) + start_byte;
+        SqlString::from_ref(&str[start_byte..end_byte])
     }
 }
 
 some_function3!(substring3, SqlString, i32, i32, SqlString);
 
-#[doc(hidden)]
-pub fn substring2__(value: SqlString, left: i32) -> SqlString {
-    // character indexes in SQL start at 1
-    let start = if left < 1 { 0 } else { left - 1 } as usize;
-
-    let str = value.str();
-    let mut begin = str.len();
-
-    for (char_count, (i, _)) in str.char_indices().enumerate() {
-        if start == char_count {
-            begin = i;
-            break;
+/// Returns the bytewise index in `s` corresponding to characterwise index
+/// `char_index`.  If `char_index` is beyond the end of `s`, returns `s.len()`.
+pub(crate) fn byte_index(s: &str, char_index: usize) -> usize {
+    if char_index < s.len() {
+        for (char_count, (byte_index, _)) in s.char_indices().enumerate() {
+            if char_index == char_count {
+                return byte_index;
+            }
         }
     }
-    SqlString::from_ref(&str[begin..])
+    s.len()
+}
+
+/// Returns the bytewise index in `s` corresponding to characterwise index
+/// `char_index`, where character indexes count backward from the end of the
+/// string, such that zero designates the last character in `s`.  If
+/// `char_index` is greater than or equal to the number of characters in `s`,
+/// returns `0`.
+pub(crate) fn byte_index_rev(s: &str, char_index: usize) -> usize {
+    if char_index < s.len() {
+        for (char_count, (byte_index, _)) in s.char_indices().rev().enumerate() {
+            if char_index == char_count {
+                return byte_index;
+            }
+        }
+    }
+    0
+}
+
+/// Two-argument SUBSTRING in SQL.
+///
+/// (Calcite desugars SUBSTR into SUBSTRING.)
+#[doc(hidden)]
+pub fn substring2__(value: SqlString, left: i32) -> SqlString {
+    let s = value.str();
+
+    // character indexes in SQL start at 1
+    let char_index = left.max(1) - 1;
+    let byte_index = byte_index(s, char_index as usize);
+    SqlString::from_ref(&s[byte_index..])
 }
 
 some_function2!(substring2, SqlString, i32, SqlString);
@@ -428,41 +445,34 @@ pub fn replace___(haystack: SqlString, needle: SqlString, replacement: SqlString
 some_function3!(replace, SqlString, SqlString, SqlString, SqlString);
 
 #[doc(hidden)]
-pub fn left_s_i32(value: SqlString, size: i32) -> SqlString {
-    if size <= 0 {
+pub fn left_s_i32(value: SqlString, n_chars: i32) -> SqlString {
+    if n_chars <= 0 {
         return SqlString::new();
     }
 
     let str = value.str();
-    for (char_count, (i, _)) in str.char_indices().enumerate() {
-        if size as usize == char_count {
-            return SqlString::from_ref(&str[..i]);
-        }
+    let n_bytes = byte_index(str, n_chars as usize);
+    if n_bytes < str.len() {
+        SqlString::from_ref(&str[..n_bytes])
+    } else {
+        value
     }
-    value
 }
 
 some_polymorphic_function2!(left, s, SqlString, i32, i32, SqlString);
 
 #[doc(hidden)]
-pub fn right_s_i32(value: SqlString, size: i32) -> SqlString {
-    if size <= 0 {
+pub fn right_s_i32(value: SqlString, n_chars: i32) -> SqlString {
+    if n_chars <= 0 {
         return SqlString::new();
     }
-    let size = size as usize;
     let str = value.str();
-    let len = str.chars().count();
-    if size >= len {
-        return value;
+    let byte_index = byte_index_rev(str, (n_chars - 1) as usize);
+    if byte_index == 0 {
+        value
+    } else {
+        SqlString::from_ref(&str[byte_index..])
     }
-    let start_char = len - size;
-
-    for (char_count, (i, _)) in str.char_indices().enumerate() {
-        if start_char == char_count {
-            return SqlString::from_ref(&str[i..]);
-        }
-    }
-    panic!("Should be unreachable");
 }
 
 some_polymorphic_function2!(right, s, SqlString, i32, i32, SqlString);
@@ -794,7 +804,9 @@ pub fn concat_wsNNN(
 #[doc(hidden)]
 #[cfg(test)]
 mod tests {
-    use crate::SqlString;
+    use crate::{
+        byte_index, byte_index_rev, left_s_i32, right_s_i32, substring2__, substring3___, SqlString,
+    };
     use dbsp::storage::file::to_bytes;
     use rkyv::from_bytes;
     use size_of::SizeOf;
@@ -815,6 +827,50 @@ mod tests {
         // The exact size may depend on the architecture's pointer size.
         assert!(total_size.total_bytes() > 26);
         assert!(total_size.shared_bytes() >= 26);
+    }
+
+    #[test]
+    fn test_byte_index() {
+        for (s, byte_offsets) in [
+            // ASCII letters plus 2-byte e with acute accent.
+            ("abcdéfg", vec![0, 1, 2, 3, 4, 6, 7, 8]),
+            // Japanese katakana, 3 bytes each.
+            ("アイウエオ", vec![0, 3, 6, 9, 12, 15]),
+        ] {
+            for (char_offset, byte_offset) in byte_offsets.iter().copied().enumerate() {
+                assert_eq!(byte_index(s, char_offset), byte_offset);
+                assert_eq!(
+                    left_s_i32(SqlString::from_ref(s), char_offset as i32),
+                    SqlString::from_ref(&s[..byte_offset])
+                );
+                assert_eq!(
+                    substring2__(SqlString::from_ref(s), (char_offset + 1) as i32),
+                    SqlString::from_ref(&s[byte_offset..])
+                );
+                for (char_count, end_byte_offset) in
+                    byte_offsets[char_offset..].iter().copied().enumerate()
+                {
+                    assert_eq!(
+                        substring3___(
+                            SqlString::from_ref(s),
+                            (char_offset + 1) as i32,
+                            char_count as i32
+                        ),
+                        SqlString::from_ref(&s[byte_offset..end_byte_offset])
+                    );
+                }
+            }
+            for (char_offset, byte_offset) in byte_offsets.iter().copied().rev().skip(1).enumerate()
+            {
+                assert_eq!(byte_index_rev(s, char_offset), byte_offset);
+                assert_eq!(
+                    right_s_i32(SqlString::from_ref(s), (char_offset + 1) as i32),
+                    SqlString::from_ref(&s[byte_offset..])
+                )
+            }
+            assert_eq!(left_s_i32(SqlString::from_ref(s), 0), SqlString::new());
+            assert_eq!(right_s_i32(SqlString::from_ref(s), 0), SqlString::new());
+        }
     }
 }
 
