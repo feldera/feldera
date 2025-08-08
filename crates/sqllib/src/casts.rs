@@ -5,6 +5,7 @@
 use crate::{
     array::Array,
     binary::{to_hex_, ByteArray},
+    byte_index,
     error::{r2o, SqlResult, SqlRuntimeError},
     geopoint::*,
     interval::*,
@@ -965,22 +966,9 @@ fn is_unlimited_size(size: i32) -> bool {
 
 #[inline(always)]
 #[doc(hidden)]
-fn truncate(value: &str, size: usize) -> String {
-    let mut end = value.len();
-    if size >= end {
-        // Should be always safe, even for multibyte chars
-        return value.to_string();
-    }
-
-    // Find actual end
-    for (char_count, (i, _)) in value.char_indices().enumerate() {
-        if char_count == size {
-            end = i;
-            break;
-        }
-    }
-
-    value[..end].to_string()
+fn truncate(value: &str, n_chars: usize) -> String {
+    let n_bytes = byte_index(value, n_chars);
+    value[..n_bytes].to_string()
 }
 
 /// Make sure the specified string has exactly the
