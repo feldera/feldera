@@ -75,6 +75,9 @@ impl SerializeWithContext<SqlSerdeConfig> for ByteArray {
             BinaryFormat::PgHex => {
                 serializer.serialize_str(&format!("\\x{}", hex::encode(&self.data)))
             }
+            BinaryFormat::CHex => {
+                serializer.serialize_str(&format!("0x{}", hex::encode(&self.data)))
+            }
         }
     }
 }
@@ -104,6 +107,27 @@ impl<'de> DeserializeWithContext<'de, SqlSerdeConfig> for ByteArray {
     where
         D: Deserializer<'de>,
     {
+        fn parse_hex_string(s: &str, prefix: &str) -> Option<CompactVec> {
+            let s = s.strip_prefix(prefix).unwrap_or(s);
+            if s.len() % 2 != 0 || !s.bytes().all(|b| b.is_ascii_hexdigit()) {
+                None
+            } else {
+                Some(
+                    s.as_bytes()
+                        .as_chunks()
+                        .0
+                        .iter()
+                        .copied()
+                        .map(|[a, b]| {
+                            let a = (a as char).to_digit(16).unwrap() as u8;
+                            let b = (b as char).to_digit(16).unwrap() as u8;
+                            a * 16 + b
+                        })
+                        .collect(),
+                )
+            }
+        }
+
         match config.binary_format {
             BinaryFormat::Array => {
                 let data = CompactVec::deserialize(deserializer)?;
@@ -127,6 +151,15 @@ impl<'de> DeserializeWithContext<'de, SqlSerdeConfig> for ByteArray {
             BinaryFormat::PgHex => Err(D::Error::custom(
                 "binary format Postgres Hexadecimal is not supported for input",
             )),
+            BinaryFormat::CHex => {
+                let str: Cow<'de, str> = Deserialize::deserialize(deserializer)?;
+                match parse_hex_string(&str, "0x") {
+                    None => Err(D::Error::custom(format!(
+                        "Invalid C-style hex string: {str:?}"
+                    ))),
+                    Some(data) => Ok(Self { data }),
+                }
+            }
         }
     }
 }

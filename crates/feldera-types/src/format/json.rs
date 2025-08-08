@@ -209,6 +209,9 @@ pub enum JsonFlavor {
     /// Uses Base58 encoding for binary data such as Bitcoin addresses.
     #[serde(rename = "blockchain")]
     Blockchain,
+    /// JSON format with "0x"-prefixed hexadecimal encoding for binary data.
+    #[serde(rename = "c_hex")]
+    CHex,
     /// Parquet to-json format.
     /// (For internal use only)
     #[serde(skip)]
