@@ -458,7 +458,7 @@ impl InputGenerator {
                     seek,
                     datagen_parker,
                 ) {
-                    consumer.error(true, error);
+                    consumer.error(true, error, None);
                 }
             })
             .expect("failed to spawn datagen thread");
@@ -770,7 +770,7 @@ impl InputGenerator {
                         }
                     }
                     Err(e) => {
-                        consumer.error(true, e);
+                        consumer.error(true, e, None);
                         return;
                     }
                 }

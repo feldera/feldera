@@ -28,7 +28,7 @@ use crate::server::metrics::{
 use crate::transport::clock::now_endpoint_config;
 use crate::transport::Step;
 use crate::transport::{input_transport_config_to_endpoint, output_transport_config_to_endpoint};
-use crate::util::run_on_thread_pool;
+use crate::util::{run_on_thread_pool, SamplingRateLimiter};
 use crate::{
     catalog::SerBatch, CircuitCatalog, Encoder, InputConsumer, OutputConsumer, OutputEndpoint,
     ParseError, PipelineState, TransportInputEndpoint,
@@ -3820,6 +3820,8 @@ struct InputProbe {
     endpoint_name: String,
     controller: Arc<ControllerInner>,
     max_batch_size: usize,
+    // rate limiter based on tags
+    rate_limiter: SamplingRateLimiter<String>,
 }
 
 impl InputProbe {
@@ -3829,11 +3831,19 @@ impl InputProbe {
         connector_config: &ConnectorConfig,
         controller: Arc<ControllerInner>,
     ) -> Self {
+        // Create quota: 10 requests within 10 seconds
+        let quota = governor::Quota::with_period(Duration::from_secs(10))
+            .unwrap()
+            .allow_burst(nonzero_ext::nonzero!(10u32));
+
+        let rate_limiter = SamplingRateLimiter::new(quota, 5);
+
         Self {
             endpoint_id,
             endpoint_name: endpoint_name.to_owned(),
             controller,
             max_batch_size: connector_config.max_batch_size as usize,
+            rate_limiter,
         }
     }
 }
@@ -3916,9 +3926,21 @@ impl InputConsumer for InputProbe {
         self.controller.request_step();
     }
 
-    fn error(&self, fatal: bool, error: AnyError) {
-        self.controller
-            .input_transport_error(self.endpoint_id, &self.endpoint_name, fatal, error);
+    fn error(&self, fatal: bool, error: AnyError, tag: Option<String>) {
+        let allow = match tag {
+            // do not rate limit errors without tag
+            None => true,
+            Some(k) => self.rate_limiter.check_key(&k),
+        };
+
+        if allow {
+            self.controller.input_transport_error(
+                self.endpoint_id,
+                &self.endpoint_name,
+                fatal,
+                error,
+            );
+        }
     }
 }
 

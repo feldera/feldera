@@ -153,7 +153,7 @@ impl AdHocInputEndpoint {
         Ok(num_records as u64)
     }
 
-    fn error(&self, fatal: bool, error: AnyError) {
+    fn error(&self, fatal: bool, error: AnyError, tag: Option<String>) {
         self.inner
             .details
             .lock()
@@ -161,7 +161,7 @@ impl AdHocInputEndpoint {
             .as_mut()
             .unwrap()
             .consumer
-            .error(fatal, error);
+            .error(fatal, error, tag);
     }
 
     fn queue_len(&self) -> usize {
@@ -206,7 +206,7 @@ impl AdHocInputEndpoint {
                                 })?;
                         }
                         Ok(Some(Err(e))) => {
-                            self.error(true, anyhow!(e.to_string()));
+                            self.error(true, anyhow!(e.to_string()), None);
                             Err(ControllerError::input_transport_error(
                                 self.name(),
                                 true,
