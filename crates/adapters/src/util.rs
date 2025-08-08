@@ -1,6 +1,9 @@
 use std::borrow::Cow;
+use std::collections::HashMap;
+use std::hash::Hash;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
 #[cfg(feature = "with-deltalake")]
 use std::{error::Error, future::Future, pin::Pin};
@@ -423,19 +426,93 @@ where
     Ok(())
 }
 
+/// Suppression info: (count, first_suppressed, last_suppressed)
+type SuppressionInfo = (u32, Instant, Instant);
+/// Map from key to suppression info
+type SuppressionMap<K> = HashMap<K, SuppressionInfo>;
+
+/// A rate limiter which tracks count of suppressed requests.
+#[derive(Clone)]
+pub struct SamplingRateLimiter<K: Clone + Eq + Hash> {
+    limiter: Arc<governor::DefaultKeyedRateLimiter<K>>,
+    // Track suppressed counts and suppression window per key
+    // (count, first_suppressed, last_suppressed)
+    suppressed_counts: Arc<Mutex<SuppressionMap<K>>>,
+}
+
+/// Result of rate limiter check
+#[derive(Debug)]
+pub enum SamplingRateLimiterResult {
+    Allowed,
+    AllowedAfterSuppression {
+        suppressed_count: u32,
+        first_suppressed: Instant,
+        last_suppressed: Instant,
+    },
+    Suppressed,
+}
+
+impl<K: Clone + Eq + Hash> SamplingRateLimiter<K> {
+    pub fn new(quota: governor::Quota) -> Self {
+        let limiter = governor::RateLimiter::keyed(quota);
+
+        Self {
+            limiter: Arc::new(limiter),
+            suppressed_counts: Arc::new(Mutex::new(HashMap::new())),
+        }
+    }
+
+    /// Check if request should be allowed.
+    /// Returns SamplingRateLimiterResult:
+    /// - Allowed: request allowed by rate limiter (no prior suppressions)
+    /// - AllowedAfterSuppression: request allowed by rate limiter after previous suppressions
+    /// - Suppressed: request suppressed
+    pub fn check_key(&self, key: &K) -> SamplingRateLimiterResult {
+        if self.limiter.check_key(key).is_ok() {
+            // Request allowed by rate limiter, check if there were previous suppressions
+            if let Ok(mut counts) = self.suppressed_counts.lock() {
+                if let Some((suppressed_count, first_suppressed, last_suppressed)) =
+                    counts.remove(key)
+                {
+                    return SamplingRateLimiterResult::AllowedAfterSuppression {
+                        suppressed_count,
+                        first_suppressed,
+                        last_suppressed,
+                    };
+                }
+            }
+            return SamplingRateLimiterResult::Allowed;
+        }
+
+        // Request was rate limited, increment suppressed count
+        if let Ok(mut counts) = self.suppressed_counts.lock() {
+            let now = Instant::now();
+            let entry = counts.entry(key.clone()).or_insert_with(|| (0, now, now));
+            entry.0 += 1;
+            entry.2 = now; // update last_suppressed
+        }
+
+        SamplingRateLimiterResult::Suppressed
+    }
+}
+
 #[cfg(test)]
-#[cfg(feature = "with-deltalake")]
 mod test {
+    use std::time::Duration;
+
+    use governor::Quota;
+    use nonzero_ext::nonzero;
+
+    #[cfg(feature = "with-deltalake")]
     use std::sync::{Arc, Mutex};
 
-    use crate::util::JobQueue;
-
+    #[cfg(feature = "with-deltalake")]
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn test_job_queue() {
         let result = Arc::new(Mutex::new(Vec::new()));
         let result_clone = result.clone();
 
-        let job_queue = JobQueue::new(
+        let job_queue = super::JobQueue::new(
             6,
             || Box::new(|i: u32| Box::pin(async move { i })),
             move |i| result_clone.lock().unwrap().push(i),
@@ -450,5 +527,54 @@ mod test {
         let expected: Vec<u32> = (0..1000000).collect();
 
         assert_eq!(&*result.lock().unwrap(), &*expected);
+    }
+
+    #[test]
+    fn test_rate_limiting() {
+        // Create quota: Max 10 requests per second
+        let quota = Quota::per_second(nonzero!(10u32));
+
+        let limiter = super::SamplingRateLimiter::new(quota);
+        let key = "test_key";
+
+        // First 10 requests should be allowed (burst)
+        for _ in 0..10 {
+            assert!(matches!(
+                limiter.check_key(&key),
+                super::SamplingRateLimiterResult::Allowed
+            ));
+        }
+
+        // Next 50 should be suppressed
+        for i in 0..50 {
+            assert!(
+                matches!(
+                    limiter.check_key(&key),
+                    super::SamplingRateLimiterResult::Suppressed
+                ),
+                "Request {} should be suppressed",
+                i + 10
+            );
+        }
+
+        // Test normal allow after suppression - wait for rate limit to reset
+        std::thread::sleep(Duration::from_millis(1100)); // Wait for quota to refresh
+        match limiter.check_key(&key) {
+            super::SamplingRateLimiterResult::AllowedAfterSuppression {
+                suppressed_count,
+                first_suppressed,
+                last_suppressed,
+            } => {
+                assert_eq!(suppressed_count, 50);
+                assert!(last_suppressed >= first_suppressed);
+                assert!(first_suppressed.elapsed().as_millis() >= 1100);
+            }
+            _ => panic!("Expected AllowedAfterSuppression"),
+        }
+
+        assert!(matches!(
+            limiter.check_key(&key),
+            super::SamplingRateLimiterResult::Allowed
+        ));
     }
 }

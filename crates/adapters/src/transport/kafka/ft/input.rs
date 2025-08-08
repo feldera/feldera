@@ -304,7 +304,7 @@ impl KafkaFtInputReaderInner {
                 }
                 Err(e) => {
                     let (fatal, e) = self.refine_error(e);
-                    consumer.error(fatal, e);
+                    consumer.error(fatal, e, Some("kafka-poll"));
                     if fatal {
                         return Ok(());
                     }
@@ -366,7 +366,7 @@ impl KafkaFtInputReaderInner {
                 match self.kafka_consumer.poll(Duration::ZERO) {
                     Some(Err(e)) => {
                         let (fatal, e) = self.refine_error(e);
-                        consumer.error(fatal, e);
+                        consumer.error(fatal, e, Some("kafka-poll"));
                         if fatal {
                             return Ok(());
                         }
@@ -476,7 +476,7 @@ impl KafkaFtInputReaderInner {
                 None => (),
                 Some(Err(e)) => {
                     let (fatal, e) = self.refine_error(e);
-                    consumer.error(fatal, e);
+                    consumer.error(fatal, e, Some("kafka-poll"));
                     if fatal {
                         return Ok(());
                     }
@@ -490,7 +490,7 @@ impl KafkaFtInputReaderInner {
                 let (fatal, _e) = self.refine_error(error);
                 // `reason` contains a human-readable description of the
                 // error.
-                consumer.error(fatal, anyhow!(reason));
+                consumer.error(fatal, anyhow!(reason), None);
                 if fatal {
                     return Ok(());
                 }
@@ -604,7 +604,7 @@ impl KafkaFtInputReader {
                         command_receiver,
                         resume_info,
                     ) {
-                        consumer.error(true, e);
+                        consumer.error(true, e, None);
                     }
                     tracing::info!("kafka input complete")
                 }
@@ -789,7 +789,7 @@ impl PartitionReceiver {
             }
             Err(e) => {
                 let (fatal, e) = refine_kafka_error(base_consumer.client(), e);
-                consumer.error(fatal, e);
+                consumer.error(fatal, e, Some("kafka-msg"));
                 if fatal {
                     self.fatal_error.store(true, Ordering::Relaxed);
                 }

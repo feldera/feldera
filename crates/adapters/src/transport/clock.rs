@@ -194,7 +194,7 @@ impl ClockReader {
                             RmpValue::Integer(int) => int.as_u64(),
                             _ => None,
                         }) else {
-                            consumer.error(true, anyhow!("Invalid timestamp in replay log: {data:?}"));
+                            consumer.error(true, anyhow!("Invalid timestamp in replay log: {data:?}"), Some("clock"));
                             continue;
                         };
                         consumer.buffered(RECORD_SIZE);

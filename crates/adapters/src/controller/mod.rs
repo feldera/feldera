@@ -34,7 +34,7 @@ use crate::server::ServerState;
 use crate::transport::clock::now_endpoint_config;
 use crate::transport::Step;
 use crate::transport::{input_transport_config_to_endpoint, output_transport_config_to_endpoint};
-use crate::util::run_on_thread_pool;
+use crate::util::{run_on_thread_pool, SamplingRateLimiter, SamplingRateLimiterResult};
 use crate::{
     catalog::SerBatch, CircuitCatalog, Encoder, InputConsumer, OutputConsumer, OutputEndpoint,
     ParseError, PipelineState, TransportInputEndpoint,
@@ -3936,6 +3936,8 @@ struct InputProbe {
     endpoint_name: String,
     controller: Arc<ControllerInner>,
     max_batch_size: usize,
+    // rate limiter based on tags
+    rate_limiter: SamplingRateLimiter<&'static str>,
 }
 
 impl InputProbe {
@@ -3945,11 +3947,18 @@ impl InputProbe {
         connector_config: &ConnectorConfig,
         controller: Arc<ControllerInner>,
     ) -> Self {
+        // Create quota: Max 10 errors per minute
+        let quota = governor::Quota::per_minute(nonzero_ext::nonzero!(10u32));
+
+        // sample every 100th suppressed error
+        let rate_limiter = SamplingRateLimiter::new(quota);
+
         Self {
             endpoint_id,
             endpoint_name: endpoint_name.to_owned(),
             controller,
             max_batch_size: connector_config.max_batch_size as usize,
+            rate_limiter,
         }
     }
 }
@@ -4028,9 +4037,33 @@ impl InputConsumer for InputProbe {
         self.controller.request_step();
     }
 
-    fn error(&self, fatal: bool, error: AnyError) {
-        self.controller
-            .input_transport_error(self.endpoint_id, &self.endpoint_name, fatal, error);
+    fn error(&self, fatal: bool, error: AnyError, tag: Option<&'static str>) {
+        // do not rate limit errors without tag
+        let allow = tag.is_none_or(|k| match self.rate_limiter.check_key(&k) {
+            SamplingRateLimiterResult::Suppressed => false,
+            SamplingRateLimiterResult::Allowed => true,
+            // Allow the error but log info about suppression
+            SamplingRateLimiterResult::AllowedAfterSuppression {
+                suppressed_count,
+                first_suppressed,
+                last_suppressed,
+            } => {
+                info!(
+                    "Suppressed {suppressed_count} errors in last {} seconds (most recently, {} seconds ago) due to excessive rate. ( tag: {k} )",
+                    first_suppressed.elapsed().as_secs(), last_suppressed.elapsed().as_secs()
+                );
+                true
+            }
+        });
+
+        if allow {
+            self.controller.input_transport_error(
+                self.endpoint_id,
+                &self.endpoint_name,
+                fatal,
+                error,
+            );
+        }
     }
 }
 
