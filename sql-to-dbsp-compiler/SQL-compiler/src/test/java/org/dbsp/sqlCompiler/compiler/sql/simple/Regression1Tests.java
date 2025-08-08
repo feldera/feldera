@@ -38,24 +38,29 @@ public class Regression1Tests extends SqlIoTest {
                  MAX(t1),
                  MAX(t0 + t1)
                 FROM tbl;""");
-        int[] streamAggregates = { 0 };
-        int[] linearAggregates = { 0 };
         CircuitVisitor visitor = new CircuitVisitor(cc.compiler) {
+            int streamAggregates = 0;
+            int linearAggregates = 0;
+
             @Override
             public void postorder(DBSPStreamAggregateOperator operator) {
-                streamAggregates[0]++;
+                this.streamAggregates++;
             }
 
             @Override
             public void postorder(DBSPAggregateLinearPostprocessOperator operator) {
-                linearAggregates[0]++;
+                this.linearAggregates++;
+            }
+
+            @Override
+            public void endVisit() {
+                // 1 combined max
+                Assert.assertEquals(1, this.streamAggregates);
+                // 1 for the two sums
+                Assert.assertEquals(1, this.linearAggregates);
             }
         };
         cc.visit(visitor);
-        // 3 max
-        Assert.assertEquals(3, streamAggregates[0]);
-        // 1 for the two sums
-        Assert.assertEquals(1, linearAggregates[0]);
     }
 
     @Test

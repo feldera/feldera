@@ -100,7 +100,7 @@ public class NonLinearAggregate extends IAggregate {
     }
 
     @Override
-    public boolean compatible(IAggregate other, boolean appendOnlySources) {
+    public boolean compatible(IAggregate other) {
         return other.is(NonLinearAggregate.class) &&
                 !other.is(MinMaxAggregate.class);
     }
