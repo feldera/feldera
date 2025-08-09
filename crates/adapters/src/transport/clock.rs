@@ -412,6 +412,10 @@ inputs:
 
         sleep(Duration::from_secs(5));
 
+        // Pause the controller first to prevent more ticks from being generated
+        // before we count them and stop the pipeline
+        controller.pause();
+        
         let old_ticks = ticks;
         let ticks_after_checkpoint = test_stats.ticks() - old_ticks;
 
@@ -438,12 +442,7 @@ inputs:
 
         let ticks = test_stats.ticks();
         println!("{ticks} ticks replayed after restart");
-        // Allow for small timing variations in checkpoint/replay due to race conditions.
-        // The key assertion is that we replay approximately the same number of ticks,
-        // not necessarily the exact same count due to timing races.
-        assert!((ticks_after_checkpoint.saturating_sub(2)..=ticks_after_checkpoint + 2).contains(&ticks),
-            "Expected replayed ticks ({}) to be within 2 of checkpointed ticks ({})", 
-            ticks, ticks_after_checkpoint);
+        assert_eq!(ticks, ticks_after_checkpoint);
 
         controller.stop().unwrap();
         println!("Clock test is finished");
