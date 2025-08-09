@@ -13,6 +13,8 @@ import java.util.Objects;
 public abstract class BaseRustCodeGenerator implements ICodeGenerator {
     static int crdId = 0;
     final int id;
+    /** List of nodes containing test code */
+    protected final List<IDBSPNode> testNodes;
     /** List of nodes to generate code for */
     protected final List<IDBSPNode> toWrite;
     /** List of crate names that are dependencies for this one */
@@ -28,6 +30,7 @@ public abstract class BaseRustCodeGenerator implements ICodeGenerator {
     protected BaseRustCodeGenerator() {
         this.id = crdId++;
         this.toWrite = new ArrayList<>();
+        this.testNodes = new ArrayList<>();
         this.dependencies = new ArrayList<>();
     }
 
@@ -68,6 +71,9 @@ public abstract class BaseRustCodeGenerator implements ICodeGenerator {
     public void add(IDBSPNode node) {
         this.toWrite.add(node);
     }
+
+    @Override
+    public void addTest(IDBSPNode node) { this.testNodes.add(node); }
 
     @Override
     public void addDependency(String crate) {
@@ -148,5 +154,4 @@ public abstract class BaseRustCodeGenerator implements ICodeGenerator {
             use std::sync::OnceLock;
             """ +
             "use " + DBSPLazyExpression.RUST_CRATE + ";\n";
-            //"use " + DBSPStaticExpression.RUST_CRATE + ";\n";
 }

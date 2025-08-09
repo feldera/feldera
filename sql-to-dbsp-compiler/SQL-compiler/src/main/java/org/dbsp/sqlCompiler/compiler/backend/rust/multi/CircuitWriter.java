@@ -5,16 +5,25 @@ import org.dbsp.sqlCompiler.circuit.annotation.OperatorHash;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceBaseOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceTableOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewBaseOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.rust.BaseRustCodeGenerator;
 import org.dbsp.sqlCompiler.compiler.backend.rust.SourcePositionResource;
+import org.dbsp.sqlCompiler.compiler.backend.rust.ToRustInnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CollectSourcePositions;
+import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeUser;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 import org.dbsp.util.HashString;
+import org.dbsp.util.IndentStream;
+import org.dbsp.util.IndentStreamBuilder;
 import org.dbsp.util.Linq;
-import org.dbsp.util.Utilities;
 
 import java.util.HashSet;
 import java.util.List;
@@ -25,28 +34,30 @@ import java.util.Set;
 public final class CircuitWriter extends BaseRustCodeGenerator {
     public static final String SOURCE_MAP_VARIABLE_NAME = "sourceMap";
 
-    private void processChild(DBSPOperator node) {
+    private void processChild(DBSPOperator node, boolean useHandles) {
         DBSPOperator op = node.to(DBSPOperator.class);
         String name = op.getNodeName(false);
         String hash = op.getNodeName(true);
         HashString merkle = OperatorHash.getHash(node, true);
-        if (!node.is(DBSPViewBaseOperator.class)) {
-            this.builder().append("let ");
-            if (node.is(DBSPSimpleOperator.class)) {
-                this.builder().append(name);
-            } else {
+        this.builder().append("let ");
+        if (node.is(DBSPSimpleOperator.class)) {
+            if (node.is(DBSPSourceBaseOperator.class) && useHandles)
                 this.builder().append("(");
-                for (int i = 0; i < node.outputCount(); i++) {
-                    if (node.hasOutput(i)) {
-                        String portName = node.getOutput(i).getName(false);
-                        this.builder().append(portName)
-                                .append(",");
-                    }
+            this.builder().append(name);
+            if (node.is(DBSPSourceBaseOperator.class) && useHandles)
+                this.builder().append(", handle_").append(name).append(")");
+        } else {
+            this.builder().append("(");
+            for (int i = 0; i < node.outputCount(); i++) {
+                if (node.hasOutput(i)) {
+                    String portName = node.getOutput(i).getName(false);
+                    this.builder().append(portName)
+                            .append(",");
                 }
-                this.builder().append(")");
             }
-            this.builder().append(" = ");
+            this.builder().append(")");
         }
+        this.builder().append(" = ");
         this.builder().append("create_")
                 .append(hash)
                 .append("(&circuit, ");
@@ -59,9 +70,9 @@ public final class CircuitWriter extends BaseRustCodeGenerator {
                 this.builder().append("None, ");
             }
         }
-        this.builder().append("&")
-                .append(SOURCE_MAP_VARIABLE_NAME)
-                .append(", &mut catalog, ");
+        this.builder().append("&").append(SOURCE_MAP_VARIABLE_NAME).append(", ");
+        if (!useHandles)
+            this.builder().append("&mut catalog, ");
         for (var input: op.inputs) {
             name = input.getName(false);
             this.builder().append("&")
@@ -69,6 +80,103 @@ public final class CircuitWriter extends BaseRustCodeGenerator {
                     .append(",");
         }
         this.builder().append(");").newline();
+    }
+
+    void writeCircuit(DBSPCompiler compiler, DBSPCircuit circuit) {
+        boolean useHandles = compiler.options.ioOptions.emitHandles;
+        IndentStream signature = new IndentStreamBuilder();
+        ToRustInnerVisitor inner = new ToRustInnerVisitor(compiler, signature, null, false);
+
+        if (!useHandles) {
+            signature.append("Catalog");
+        } else {
+            signature.append("(").increase();
+            for (DBSPSimpleOperator input: circuit.sourceOperators.values()) {
+                DBSPType type;
+                DBSPTypeZSet zset = input.outputType.as(DBSPTypeZSet.class);
+                if (zset != null) {
+                    type = new DBSPTypeUser(
+                            zset.getNode(), DBSPTypeCode.USER, "ZSetHandle", false,
+                            zset.elementType);
+                } else {
+                    DBSPTypeIndexedZSet ix = input.outputType.to(DBSPTypeIndexedZSet.class);
+                    type = new DBSPTypeUser(
+                            ix.getNode(), DBSPTypeCode.USER, "SetHandle", false,
+                            ix.elementType);
+                }
+                type.accept(inner);
+                signature.append(",").newline();
+            }
+            for (DBSPViewBaseOperator output: circuit.sinkOperators.values()) {
+                DBSPType outputType = output.input().outputType();
+                signature.append("OutputHandle<");
+                outputType.accept(inner);
+                signature.append(">,").newline();
+            }
+            signature.decrease().append(")");
+        }
+
+        this.builder().append("pub fn ")
+                .append(circuit.getName());
+
+        this.builder()
+                .append("(cconf: CircuitConfig) -> Result<(DBSPHandle, ")
+                .append(signature.toString())
+                .append("), Error> {")
+                .increase()
+                .newline()
+                .append("let (circuit, streams) = ");
+        if (!useHandles)
+            this.builder().append("dbsp_adapters::server::init_circuit(cconf, Box::new(");
+        else
+            this.builder().append("Runtime::init_circuit(cconf, ");
+        this.builder().append("|circuit| {")
+                .increase();
+        if (!useHandles)
+            this.builder().append("let mut catalog = Catalog::new();").newline();
+
+        SourcePositionResource sourcePositionResource = new SourcePositionResource();
+        CircuitVisitor collector = new CollectSourcePositions(compiler, sourcePositionResource)
+                .getCircuitVisitor(true);
+        collector.apply(circuit);
+        sourcePositionResource.generateInitializer(this.builder());
+        SourcePositionResource.generateReference(this.builder(), CircuitWriter.SOURCE_MAP_VARIABLE_NAME);
+
+        // Process sources first
+        for (DBSPOperator node : circuit.getAllOperators())
+            if (node.is(DBSPSourceBaseOperator.class))
+                this.processChild(node, useHandles);
+
+        for (DBSPOperator node : circuit.getAllOperators())
+            if (!node.is(DBSPSourceBaseOperator.class))
+                this.processChild(node, useHandles);
+
+        if (!useHandles) {
+            this.builder().append("Ok(catalog)");
+        } else {
+            this.builder().append("Ok((");
+            for (DBSPSourceTableOperator operator: circuit.sourceOperators.values()) {
+                String name = operator.getNodeName(false);
+                this.builder().append("handle_").append(name).append(", ");
+            }
+            for (DBSPSinkOperator operator: circuit.sinkOperators.values()) {
+                String name = operator.getNodeName(false);
+                this.builder().append(name).append(", ");
+            }
+            this.builder().append("))");
+        }
+        this.builder().newline()
+                .decrease()
+                .append("})")
+                .append(!useHandles ? ")" : "")
+                .append("?;")
+                .newline();
+        this.builder()
+                .append("Ok((circuit, streams))")
+                .newline()
+                .decrease()
+                .append("}")
+                .newline();
     }
 
     @Override
@@ -84,45 +192,8 @@ public final class CircuitWriter extends BaseRustCodeGenerator {
                     .append(dep)
                     .append("::*;")
                     .newline();
-        Utilities.enforce(this.toWrite.size() == 1, "Found " + this.toWrite.size() + " operators");
-        DBSPCircuit circuit = this.toWrite.get(0).to(DBSPCircuit.class);
-        this.builder().append("pub fn ")
-                .append(circuit.getName());
-
-        this.builder()
-                .append("(cconf: CircuitConfig) -> Result<(DBSPHandle, Catalog), Error> {")
-                .increase()
-                .newline()
-                .append("let (circuit, streams) = dbsp_adapters::server::init_circuit(cconf, Box::new(|circuit| {")
-                .increase();
-        this.builder().append("let mut catalog = Catalog::new();").newline();
-
-        SourcePositionResource sourcePositionResource = new SourcePositionResource();
-        CircuitVisitor collector = new CollectSourcePositions(compiler, sourcePositionResource)
-                .getCircuitVisitor(true);
-        collector.apply(circuit);
-        sourcePositionResource.generateInitializer(this.builder());
-        SourcePositionResource.generateReference(this.builder(), CircuitWriter.SOURCE_MAP_VARIABLE_NAME);
-
-        // Process sources first
-        for (DBSPOperator node : circuit.getAllOperators())
-            if (node.is(DBSPSourceBaseOperator.class))
-                this.processChild(node);
-
-        for (DBSPOperator node : circuit.getAllOperators())
-            if (!node.is(DBSPSourceBaseOperator.class))
-                this.processChild(node);
-
-        this.builder().append("Ok(catalog)");
-        this.builder().newline()
-                .decrease()
-                .append("}))?;")
-                .newline();
-        this.builder()
-                .append("Ok((circuit, streams))")
-                .newline()
-                .decrease()
-                .append("}")
-                .newline();
+        for (var node: this.toWrite) {
+            this.writeCircuit(compiler, node.to(DBSPCircuit.class));
+        }
     }
 }

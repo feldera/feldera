@@ -31,7 +31,6 @@ import org.apache.calcite.jdbc.CalciteConnection;
 import org.apache.calcite.schema.SchemaPlus;
 import org.apache.calcite.util.Pair;
 import org.apache.commons.io.output.NullPrintStream;
-import org.codehaus.janino.Compiler;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
@@ -50,7 +49,6 @@ import org.dbsp.util.Utilities;
 import javax.annotation.Nullable;
 import javax.sql.DataSource;
 import java.io.File;
-import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -247,29 +245,23 @@ public class CompilerMain {
             return compiler.messages;
         }
 
-        try {
-            // Generate stubs.rs file
-            String outputFile = this.options.ioOptions.outputFile;
-            if (!outputFile.isEmpty() && !this.options.ioOptions.noRust) {
-                Path stubs;
-                Path outputPath = Paths.get(new File(outputFile).getAbsolutePath());
-                if (options.ioOptions.multiCrates()) {
-                    // Generate globals/src/stubs.rs
-                    Utilities.enforce(multiWriter != null);
-                    String globals = multiWriter.getGlobalsName();
-                    stubs = outputPath.resolve(globals).resolve("src").resolve(DBSPCompiler.STUBS_FILE_NAME);
-                } else {
-                    // Generate stubs.rs in the same directory
-                    stubs = outputPath.getParent().resolve(DBSPCompiler.STUBS_FILE_NAME);
-                }
-                StubsWriter writer = new StubsWriter(stubs);
-                writer.add(circuit);
-                writer.write(compiler);
+        // Generate stubs.rs file
+        String outputFile = this.options.ioOptions.outputFile;
+        if (!outputFile.isEmpty() && !this.options.ioOptions.noRust) {
+            Path stubs;
+            Path outputPath = Paths.get(new File(outputFile).getAbsolutePath());
+            if (options.ioOptions.multiCrates()) {
+                // Generate globals/src/stubs.rs
+                Utilities.enforce(multiWriter != null);
+                String globals = multiWriter.getGlobalsName();
+                stubs = outputPath.resolve(globals).resolve("src").resolve(DBSPCompiler.STUBS_FILE_NAME);
+            } else {
+                // Generate stubs.rs in the same directory
+                stubs = outputPath.getParent().resolve(DBSPCompiler.STUBS_FILE_NAME);
             }
-        } catch (IOException e) {
-            compiler.reportError(SourcePositionRange.INVALID,
-                    "Error writing to proto.rs file", e.getMessage());
-            return compiler.messages;
+            StubsWriter writer = new StubsWriter(stubs);
+            writer.add(circuit);
+            writer.write(compiler);
         }
 
         return compiler.messages;
