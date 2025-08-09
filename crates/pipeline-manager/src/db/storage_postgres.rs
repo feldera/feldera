@@ -1,3 +1,4 @@
+use crate::api::support_data_collector::SupportBundleData;
 #[cfg(feature = "postgresql_embedded")]
 use crate::config::PgEmbedConfig;
 use crate::db::error::DBError;
@@ -1093,6 +1094,23 @@ impl Storage for StoragePostgres {
             operations::pipeline::list_pipeline_programs_across_all_tenants(&txn).await?;
         txn.commit().await?;
         Ok(pipeline_programs)
+    }
+
+    async fn get_support_bundle_data(
+        &self,
+        tenant_id: TenantId,
+        pipeline_name: &str,
+        how_many: u64,
+    ) -> Result<(ExtendedPipelineDescrMonitoring, Vec<SupportBundleData>), DBError> {
+        let mut client = self.pool.get().await?;
+        let txn = client.transaction().await?;
+        let pipeline =
+            operations::pipeline::get_pipeline_for_monitoring(&txn, tenant_id, pipeline_name)
+                .await?;
+        let bundle_data =
+            operations::pipeline::get_support_bundle_data(&txn, pipeline.id, how_many).await?;
+        txn.commit().await?;
+        Ok((pipeline, bundle_data))
     }
 }
 

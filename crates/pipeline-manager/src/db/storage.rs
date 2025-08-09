@@ -1,3 +1,4 @@
+use crate::api::support_data_collector::SupportBundleData;
 use crate::db::error::DBError;
 use crate::db::types::api_key::{ApiKeyDescr, ApiPermission};
 use crate::db::types::pipeline::{
@@ -411,4 +412,11 @@ pub(crate) trait Storage {
     async fn list_pipeline_programs_across_all_tenants(
         &self,
     ) -> Result<Vec<(PipelineId, Version, String, String)>, DBError>;
+
+    async fn get_support_bundle_data(
+        &self,
+        tenant_id: TenantId,
+        pipeline_name: &str,
+        how_many: u64,
+    ) -> Result<(ExtendedPipelineDescrMonitoring, Vec<SupportBundleData>), DBError>;
 }

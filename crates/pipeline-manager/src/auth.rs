@@ -735,6 +735,8 @@ mod test {
             allowed_origins: None,
             demos_dir: vec![],
             telemetry: "".to_owned(),
+            support_data_collection_frequency: 15,
+            support_data_retention: 3,
         };
 
         let (conn, _temp) = crate::db::test::setup_pg().await;

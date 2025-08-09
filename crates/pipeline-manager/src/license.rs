@@ -1,4 +1,3 @@
-use actix_web::web::Data as WebData;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::time::{Duration, Instant};
@@ -59,9 +58,7 @@ pub struct LicenseCheck {
 }
 
 impl LicenseCheck {
-    pub(crate) async fn validate(
-        state: &WebData<ServerState>,
-    ) -> Result<Option<Self>, ManagerError> {
+    pub(crate) async fn validate(state: &ServerState) -> Result<Option<Self>, ManagerError> {
         // Acquire and read the license information check. The timeout prevents it from becoming
         // unresponsive if it cannot acquire the lock, which generally should not happen.
         let mut license_check =
