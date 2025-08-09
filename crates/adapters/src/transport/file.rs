@@ -6,6 +6,7 @@ use crate::format::StreamSplitter;
 use crate::{InputBuffer, Parser};
 use anyhow::{bail, Error as AnyError, Result as AnyResult};
 use crossbeam::sync::{Parker, Unparker};
+use feldera_adapterlib::format::BufferSize;
 use feldera_adapterlib::transport::{parse_resume_info, Resume};
 use feldera_types::config::FtModel;
 use feldera_types::program_schema::Relation;
@@ -186,7 +187,7 @@ impl FileInputReader {
                         extending = false;
                     }
                     Ok(InputReaderCommand::Queue { .. }) => {
-                        let mut total = 0;
+                        let mut total = BufferSize::empty();
                         let mut hasher = consumer.hasher();
                         let limit = consumer.max_batch_size();
                         let mut range: Option<Range<u64>> = None;
@@ -200,7 +201,7 @@ impl FileInputReader {
                                 buffer.hash(hasher);
                             }
                             buffer.flush();
-                            if total >= limit {
+                            if total.records >= limit {
                                 break;
                             }
                         }
@@ -217,7 +218,7 @@ impl FileInputReader {
                         let resume = match get_barrier(&path) {
                             None => Resume::new_metadata_only(seek, hasher),
                             Some(barrier) => {
-                                num_records += total;
+                                num_records += total.records;
                                 if num_records < barrier {
                                     Resume::Barrier
                                 } else {
@@ -233,7 +234,7 @@ impl FileInputReader {
                         file.seek(SeekFrom::Start(offsets.start))?;
                         splitter.seek(offsets.start);
                         let mut remainder = (offsets.end - offsets.start) as usize;
-                        let mut num_records = 0;
+                        let mut total = BufferSize::empty();
                         let mut hasher = Xxh3Default::new();
                         while remainder > 0 {
                             let n = splitter.read(&mut file, buffer_size, remainder)?;
@@ -245,13 +246,13 @@ impl FileInputReader {
                             while let Some(chunk) = splitter.next(remainder == 0) {
                                 let (mut buffer, errors) = parser.parse(chunk);
                                 consumer.parse_errors(errors);
-                                consumer.buffered(buffer.len(), chunk.len());
-                                num_records += buffer.len();
+                                consumer.buffered(buffer.len());
+                                total += buffer.len();
                                 buffer.hash(&mut hasher);
                                 buffer.flush();
                             }
                         }
-                        consumer.replayed(num_records, hasher.finish());
+                        consumer.replayed(total, hasher.finish());
                     }
                     Ok(InputReaderCommand::Disconnect) => return Ok(()),
                     Err(TryRecvError::Empty) => break,
@@ -278,14 +279,13 @@ impl FileInputReader {
                     break;
                 };
                 let (buffer, errors) = parser.parse(chunk);
-                let num_records = buffer.len();
-                let num_bytes = chunk.len();
+                let amt = buffer.len();
                 consumer.parse_errors(errors);
 
                 if let Some(buffer) = buffer {
                     let end = splitter.position();
                     queue.push_back((start..end, buffer));
-                    consumer.buffered(num_records, num_bytes);
+                    consumer.buffered(amt);
                 }
             }
             if n == 0 && !follow {

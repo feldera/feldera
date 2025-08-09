@@ -11,6 +11,7 @@ use anyhow::{anyhow, Error as AnyError, Result as AnyResult};
 use atomic::Atomic;
 use circular_queue::CircularQueue;
 use dbsp::circuit::tokio::TOKIO;
+use feldera_adapterlib::format::BufferSize;
 use feldera_adapterlib::transport::Resume;
 use feldera_types::config::FtModel;
 use feldera_types::program_schema::Relation;
@@ -98,17 +99,17 @@ impl HttpInputEndpointInner {
                     let Data { chunks } = rmpv::ext::from_value(data).unwrap();
                     let mut guard = self.details.lock().unwrap();
                     let details = guard.as_mut().unwrap();
-                    let mut num_records = 0;
+                    let mut total = BufferSize::empty();
                     let mut hasher = Xxh3Default::new();
                     for chunk in chunks {
                         let (mut buffer, errors) = details.parser.parse(&chunk);
-                        details.consumer.buffered(buffer.len(), chunk.len());
+                        details.consumer.buffered(buffer.len());
                         details.consumer.parse_errors(errors);
-                        num_records += buffer.len();
+                        total += buffer.len();
                         buffer.hash(&mut hasher);
                         buffer.flush();
                     }
-                    details.consumer.replayed(num_records, hasher.finish());
+                    details.consumer.replayed(total, hasher.finish());
                 }
                 InputReaderCommand::Extend => self.set_state(PipelineState::Running),
                 InputReaderCommand::Pause => self.set_state(PipelineState::Paused),
@@ -182,7 +183,7 @@ impl HttpInputEndpoint {
             };
             details
                 .queue
-                .push_with_aux((buffer, new_errors.clone()), chunk.len(), aux);
+                .push_with_aux((buffer, new_errors.clone()), aux);
             total_errors += new_errors.len();
             for error in new_errors {
                 errors.push(error);

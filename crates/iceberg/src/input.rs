@@ -836,7 +836,6 @@ impl IcebergInputEndpointInner {
             };
             // info!("schema: {}", batch.schema());
             num_batches += 1;
-            let bytes = batch.get_array_memory_size();
             let result = if polarity {
                 input_stream.insert(&batch)
             } else {
@@ -852,7 +851,7 @@ impl IcebergInputEndpointInner {
                 },
                 |()| Vec::new(),
             );
-            self.queue.push((input_stream.take_all(), errors), bytes);
+            self.queue.push((input_stream.take_all(), errors));
         }
     }
 }

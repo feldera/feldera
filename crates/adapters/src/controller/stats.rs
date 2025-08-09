@@ -32,7 +32,10 @@
 
 use super::{EndpointId, InputEndpointConfig, OutputEndpointConfig};
 use crate::{
-    controller::journal::{InputChecksums, InputLog},
+    controller::{
+        checkpoint::{CheckpointInputEndpointMetrics, CheckpointOutputEndpointMetrics},
+        journal::{InputChecksums, InputLog},
+    },
     PipelineState,
 };
 use anyhow::anyhow;
@@ -45,6 +48,7 @@ use cpu_time::ProcessTime;
 use crossbeam::sync::{ShardedLock, ShardedLockReadGuard, Unparker};
 use feldera_adapterlib::{
     errors::journal::ControllerError,
+    format::BufferSize,
     transport::{InputReader, Resume},
 };
 use feldera_types::{
@@ -149,6 +153,14 @@ pub struct GlobalControllerMetrics {
     /// time (modulo clock skew).
     pub incarnation_uuid: Uuid,
 
+    /// Time at which the pipeline process from which we resumed started, in
+    /// seconds since the epoch.
+    ///
+    /// If this pipeline process was not started from a checkpoint, this is the
+    /// same as `start_time`; otherwise, it is earlier.
+    #[serde(with = "chrono::serde::ts_seconds")]
+    pub initial_start_time: DateTime<Utc>,
+
     /// Current storage usage in bytes.
     pub storage_bytes: AtomicU64,
 
@@ -162,8 +174,14 @@ pub struct GlobalControllerMetrics {
     /// Total number of records currently buffered by all endpoints.
     pub buffered_input_records: AtomicU64,
 
+    /// Total number of bytes currently buffered by all endpoints.
+    pub buffered_input_bytes: AtomicU64,
+
     /// Total number of records received from all endpoints.
     pub total_input_records: AtomicU64,
+
+    /// Total number of bytes received from all endpoints.
+    pub total_input_bytes: AtomicU64,
 
     /// Total number of records pushed to the circuit.
     ///
@@ -175,12 +193,24 @@ pub struct GlobalControllerMetrics {
     #[serde(skip)]
     pub total_circuit_input_records: AtomicU64,
 
+    /// Total number of bytes pushed to the circuit.
+    ///
+    /// Equal to `total_input_bytes - buffered_input_bytes` in steady state.
+    #[serde(skip)]
+    pub total_circuit_input_bytes: AtomicU64,
+
     /// Total number of input records processed by the DBSP engine.
     ///
     /// Note that some of the outputs produced for these input records
     /// may still be buffered by output connectors.
     /// Use `total_completed_records` for end-to-end progress tracking.
     pub total_processed_records: AtomicU64,
+
+    /// Total bytes of input records processed by the DBSP engine.
+    ///
+    /// Note that some of the outputs produced for these input records
+    /// may still be buffered by output connectors.
+    pub total_processed_bytes: AtomicU64,
 
     /// Total number of input records processed to completion.
     ///
@@ -215,22 +245,29 @@ where
 }
 
 impl GlobalControllerMetrics {
-    fn new(processed_records: u64) -> Self {
+    fn new(processed_records: u64, initial_start_time: Option<DateTime<Utc>>) -> Self {
+        let start_time = Utc::now();
+        let initial_start_time = initial_start_time.unwrap_or(start_time);
         Self {
             state: Atomic::new(PipelineState::Paused),
             bootstrap_in_progress: AtomicBool::new(false),
             rss_bytes: AtomicU64::new(0),
             cpu_msecs: AtomicU64::new(0),
             uptime_msecs: AtomicU64::new(0),
-            start_time: Utc::now(),
+            start_time,
             incarnation_uuid: Uuid::now_v7(),
+            initial_start_time,
             storage_bytes: AtomicU64::new(0),
             storage_mb_secs: AtomicU64::new(0),
             runtime_elapsed_msecs: AtomicU64::new(0),
             buffered_input_records: AtomicU64::new(0),
+            buffered_input_bytes: AtomicU64::new(0),
             total_input_records: AtomicU64::new(processed_records),
+            total_input_bytes: AtomicU64::new(0),
             total_circuit_input_records: AtomicU64::new(processed_records),
+            total_circuit_input_bytes: AtomicU64::new(0),
             total_processed_records: AtomicU64::new(processed_records),
+            total_processed_bytes: AtomicU64::new(0),
             total_completed_records: AtomicU64::new(processed_records),
             pipeline_complete: AtomicBool::new(false),
             step_requested: AtomicBool::new(false),
@@ -241,26 +278,36 @@ impl GlobalControllerMetrics {
         self.state.load(Ordering::Acquire)
     }
 
-    fn input_batch(&self, num_records: u64) -> u64 {
+    fn input_batch(&self, amt: BufferSize) -> u64 {
+        self.total_input_bytes
+            .fetch_add(amt.bytes as u64, Ordering::Relaxed);
+        self.buffered_input_bytes
+            .fetch_add(amt.bytes as u64, Ordering::Relaxed);
         self.total_input_records
-            .fetch_add(num_records, Ordering::AcqRel);
+            .fetch_add(amt.records as u64, Ordering::AcqRel);
         self.buffered_input_records
-            .fetch_add(num_records, Ordering::AcqRel)
+            .fetch_add(amt.records as u64, Ordering::AcqRel)
     }
 
-    /// `num_records`` records have been pushed to the circuit
-    /// (but not yet processed, i.e., the circuit hasn't performed a step yet).
-    pub(crate) fn consume_buffered_inputs(&self, num_records: u64) {
+    /// `amt` have been pushed to the circuit (but not yet processed, i.e., the
+    /// circuit hasn't performed a step yet).
+    pub(crate) fn consume_buffered_inputs(&self, amt: BufferSize) {
         self.buffered_input_records
-            .fetch_sub(num_records, Ordering::Release);
+            .fetch_sub(amt.records as u64, Ordering::Release);
         self.total_circuit_input_records
-            .fetch_add(num_records, Ordering::AcqRel);
+            .fetch_add(amt.records as u64, Ordering::AcqRel);
+        self.buffered_input_bytes
+            .fetch_sub(amt.bytes as u64, Ordering::Relaxed);
+        self.total_circuit_input_bytes
+            .fetch_add(amt.bytes as u64, Ordering::Relaxed);
     }
 
-    pub(crate) fn processed_records(&self, num_records: u64) -> u64 {
+    pub(crate) fn processed_data(&self, amt: BufferSize) -> u64 {
+        self.total_processed_bytes
+            .fetch_add(amt.bytes as u64, Ordering::AcqRel);
         self.total_processed_records
-            .fetch_add(num_records, Ordering::AcqRel)
-            + num_records
+            .fetch_add(amt.records as u64, Ordering::AcqRel)
+            + amt.records as u64
     }
 
     pub fn rss_bytes(&self) -> u64 {
@@ -275,8 +322,16 @@ impl GlobalControllerMetrics {
         self.buffered_input_records.load(Ordering::Acquire)
     }
 
+    pub fn num_buffered_input_bytes(&self) -> u64 {
+        self.buffered_input_bytes.load(Ordering::Acquire)
+    }
+
     pub fn num_total_input_records(&self) -> u64 {
         self.total_input_records.load(Ordering::Acquire)
+    }
+
+    pub fn num_total_input_bytes(&self) -> u64 {
+        self.total_input_bytes.load(Ordering::Acquire)
     }
 
     pub fn num_total_circuit_input_records(&self) -> u64 {
@@ -285,6 +340,10 @@ impl GlobalControllerMetrics {
 
     pub fn num_total_processed_records(&self) -> u64 {
         self.total_processed_records.load(Ordering::Acquire)
+    }
+
+    pub fn num_total_processed_bytes(&self) -> u64 {
+        self.total_processed_bytes.load(Ordering::Acquire)
     }
 
     fn unset_step_requested(&self) -> bool {
@@ -363,10 +422,14 @@ pub struct ControllerStatus {
 }
 
 impl ControllerStatus {
-    pub fn new(pipeline_config: PipelineConfig, processed_records: u64) -> Self {
+    pub fn new(
+        pipeline_config: PipelineConfig,
+        processed_records: u64,
+        initial_start_time: Option<DateTime<Utc>>,
+    ) -> Self {
         Self {
             pipeline_config,
-            global_metrics: GlobalControllerMetrics::new(processed_records),
+            global_metrics: GlobalControllerMetrics::new(processed_records, initial_start_time),
             time_series: Mutex::new(VecDeque::with_capacity(60)),
             suspend_error: Mutex::new(None),
             inputs: ShardedLock::new(BTreeMap::new()),
@@ -523,6 +586,7 @@ impl ControllerStatus {
         endpoint_id: &EndpointId,
         endpoint_name: &str,
         config: &OutputEndpointConfig,
+        initial_statistics: Option<&CheckpointOutputEndpointMetrics>,
     ) {
         // Initialize the `total_processed_input_records` counter on the new endpoint to `total_processed_records`:
         // logically the new endpoint is up to speed with the outputs produced by the pipeline so far and only needs to
@@ -533,7 +597,12 @@ impl ControllerStatus {
             .load(Ordering::Acquire);
         self.outputs.write().unwrap().insert(
             *endpoint_id,
-            OutputEndpointStatus::new(endpoint_name, config, total_processed_records),
+            OutputEndpointStatus::new(
+                endpoint_name,
+                config,
+                total_processed_records,
+                initial_statistics,
+            ),
         );
     }
 
@@ -542,9 +611,19 @@ impl ControllerStatus {
         self.global_metrics.num_buffered_input_records()
     }
 
+    /// Total number of bytes currently buffered by all input endpoints.
+    pub fn num_buffered_input_bytes(&self) -> u64 {
+        self.global_metrics.num_buffered_input_bytes()
+    }
+
     /// Total number of records received from all input endpoints.
     pub fn num_total_input_records(&self) -> u64 {
         self.global_metrics.num_total_input_records()
+    }
+
+    /// Total number of bytes received from all input endpoints.
+    pub fn num_total_input_bytes(&self) -> u64 {
+        self.global_metrics.num_total_input_bytes()
     }
 
     pub fn num_total_circuit_input_records(&self) -> u64 {
@@ -553,6 +632,10 @@ impl ControllerStatus {
 
     pub fn num_total_processed_records(&self) -> u64 {
         self.global_metrics.num_total_processed_records()
+    }
+
+    pub fn num_total_processed_bytes(&self) -> u64 {
+        self.global_metrics.num_total_processed_bytes()
     }
 
     pub fn unset_step_requested(&self) -> bool {
@@ -680,15 +763,11 @@ impl ControllerStatus {
     ///
     /// This method is used for inserts that don't belong to an endpoint, e.g.,
     /// happen by executing an ad-hoc INSERT query.
-    pub(super) fn input_batch_global(
-        &self,
-        num_records: usize,
-        circuit_thread_unparker: &Unparker,
-    ) {
-        let num_records = num_records as u64;
+    pub(super) fn input_batch_global(&self, amt: BufferSize, circuit_thread_unparker: &Unparker) {
+        let num_records = amt.records as u64;
         // Increment buffered_records; unpark circuit thread once
         // `min_batch_size_records` is exceeded.
-        let old = self.global_metrics.input_batch(num_records);
+        let old = self.global_metrics.input_batch(amt);
 
         if old == 0
             || (old <= self.pipeline_config.global.min_batch_size_records
@@ -714,18 +793,17 @@ impl ControllerStatus {
     pub(super) fn input_batch_from_endpoint(
         &self,
         endpoint_id: EndpointId,
-        num_bytes: usize,
-        num_records: usize,
+        amt: BufferSize,
         backpressure_thread_unparker: &Unparker,
     ) {
         // There is a potential race condition if the endpoint is currently
         // being removed. In this case, it's safe to ignore this operation.
-        if num_bytes > 0 || num_records > 0 {
+        if !amt.is_empty() {
             let inputs = self.inputs.read().unwrap();
             if let Some(endpoint_stats) = inputs.get(&endpoint_id) {
-                let old = endpoint_stats.add_buffered(num_bytes as u64, num_records as u64);
+                let old = endpoint_stats.add_buffered(amt);
                 let threshold = endpoint_stats.config.connector_config.max_queued_records;
-                if old < threshold && old + num_records as u64 >= threshold {
+                if old < threshold && old + amt.records as u64 >= threshold {
                     backpressure_thread_unparker.unpark();
                 }
             }
@@ -782,7 +860,7 @@ impl ControllerStatus {
     ) {
         let inputs = self.inputs.read().unwrap();
         self.global_metrics
-            .consume_buffered_inputs(step_results.num_records);
+            .consume_buffered_inputs(step_results.amt);
 
         let mut finished = false;
 
@@ -967,11 +1045,21 @@ pub struct InputEndpointMetrics {
     /// (not yet consumed by the circuit).
     pub buffered_records: AtomicU64,
 
+    /// Number of bytes currently buffered by the endpoint
+    /// (not yet consumed by the circuit).
+    pub buffered_bytes: AtomicU64,
+
     /// Number of records pushed from the endpoint's queue to the circuit.
     ///
     /// Equal to `total_records - buffered_records` in steady state.
     #[serde(skip)]
     pub circuit_input_records: AtomicU64,
+
+    /// Number of bytes pushed from the endpoint's queue to the circuit.
+    ///
+    /// Equal to `total_bytes - buffered_bytes` in steady state.
+    #[serde(skip)]
+    pub circuit_input_bytes: AtomicU64,
 
     pub num_transport_errors: AtomicU64,
 
@@ -981,7 +1069,7 @@ pub struct InputEndpointMetrics {
 }
 
 pub struct StepResults {
-    pub num_records: u64,
+    pub amt: BufferSize,
     pub resume: Option<Resume>,
 }
 
@@ -997,7 +1085,7 @@ impl TryFrom<StepResults> for InputLog {
                 data: replay,
                 metadata: seek,
                 checksums: InputChecksums {
-                    num_records: results.num_records,
+                    num_records: results.amt.records as u64,
                     hash,
                 },
             }),
@@ -1011,7 +1099,7 @@ impl StepResults {
         match self.resume {
             Some(Resume::Replay { hash, .. }) => Some(InputChecksums {
                 hash,
-                num_records: self.num_records,
+                num_records: self.amt.records as u64,
             }),
             _ => None,
         }
@@ -1272,6 +1360,7 @@ impl InputEndpointStatus {
         endpoint_name: &str,
         config: InputEndpointConfig,
         fault_tolerance: Option<FtModel>,
+        initial_statistics: Option<&CheckpointInputEndpointMetrics>,
     ) -> Self {
         let paused_by_user =
             config.connector_config.paused || config.connector_config.start_after.is_some();
@@ -1279,7 +1368,10 @@ impl InputEndpointStatus {
         Self {
             endpoint_name: endpoint_name.to_string(),
             config,
-            metrics: Default::default(),
+            metrics: initial_statistics
+                .map_or(InputEndpointMetrics::default(), |initial_statistics| {
+                    initial_statistics.into()
+                }),
             fatal_error: Mutex::new(None),
             progress: Mutex::new(None),
             paused: AtomicBool::new(paused_by_user),
@@ -1292,21 +1384,21 @@ impl InputEndpointStatus {
 
     /// Increment the number of buffered bytes and records; return
     /// the previous number of buffered records.
-    fn add_buffered(&self, num_bytes: u64, num_records: u64) -> u64 {
-        if num_bytes > 0 {
-            // We are only updating statistics here, so no need to pay for
-            // strong consistency.
-            self.metrics
-                .total_bytes
-                .fetch_add(num_bytes, Ordering::Relaxed);
-        }
-
+    fn add_buffered(&self, amt: BufferSize) -> u64 {
+        // We are only updating statistics here, so no need to pay for
+        // strong consistency.
+        self.metrics
+            .total_bytes
+            .fetch_add(amt.bytes as u64, Ordering::Relaxed);
         self.metrics
             .total_records
-            .fetch_add(num_records, Ordering::Relaxed);
+            .fetch_add(amt.records as u64, Ordering::Relaxed);
+        self.metrics
+            .buffered_bytes
+            .fetch_add(amt.bytes as u64, Ordering::Relaxed);
         self.metrics
             .buffered_records
-            .fetch_add(num_records, Ordering::AcqRel)
+            .fetch_add(amt.records as u64, Ordering::AcqRel)
     }
 
     fn eoi(&self) {
@@ -1373,11 +1465,18 @@ impl InputEndpointStatus {
         total_circuit_input_records: u64,
         total_completed_records: u64,
     ) {
-        let num_records = step_results.num_records;
+        let num_records = step_results.amt.records as u64;
+        let num_bytes = step_results.amt.bytes as u64;
         *self.progress.lock().unwrap() = Some(step_results);
         self.metrics
             .buffered_records
             .fetch_sub(num_records, Ordering::Relaxed);
+        self.metrics
+            .buffered_bytes
+            .fetch_sub(num_bytes, Ordering::Relaxed);
+        self.metrics
+            .circuit_input_bytes
+            .fetch_add(num_bytes, Ordering::Relaxed);
         let old_circuit_input_records = self
             .metrics
             .circuit_input_records
@@ -1432,6 +1531,10 @@ impl InputEndpointStatus {
 
 #[derive(Default, Serialize)]
 pub struct OutputEndpointMetrics {
+    /// Records and bytes sent on the underlying transport (HTTP, Kafka, etc.)
+    /// to the endpoint.
+    ///
+    /// These only increase.
     pub transmitted_records: AtomicU64,
     pub transmitted_bytes: AtomicU64,
 
@@ -1440,6 +1543,10 @@ pub struct OutputEndpointMetrics {
     /// These are the records sent by the main circuit thread to the endpoint thread.
     /// Upon dequeuing the record, it gets buffered or sent directly to the output
     /// transport.
+    ///
+    /// These increase as records are queued.  They decrease as records are
+    /// dequeued either to be buffered (see
+    /// [buffered_records](Self::buffered_records)) or to be output directly.
     pub queued_records: AtomicU64,
     pub queued_batches: AtomicU64,
 
@@ -1448,6 +1555,9 @@ pub struct OutputEndpointMetrics {
     /// Note that this may not be equal to the current size of the
     /// buffer, since the buffer consolidates records, e.g., inserts
     /// and deletes can cancel out over time.
+    ///
+    /// These increase as records are moved from queues to buffers.  They then
+    /// fall abruptly to 0 because the buffers are always flushed as a whole.
     pub buffered_records: AtomicU64,
     pub buffered_batches: AtomicU64,
 
@@ -1460,6 +1570,26 @@ pub struct OutputEndpointMetrics {
     /// of this endpoint is equal to the output of the circuit after
     /// processing `total_processed_input_records` records.
     pub total_processed_input_records: AtomicU64,
+}
+
+impl OutputEndpointMetrics {
+    fn new(
+        total_processed_input_records: u64,
+        initial_statistics: Option<&CheckpointOutputEndpointMetrics>,
+    ) -> Self {
+        let initial_statistics = initial_statistics.cloned().unwrap_or_default();
+        Self {
+            transmitted_records: AtomicU64::new(initial_statistics.transmitted_records),
+            transmitted_bytes: AtomicU64::new(initial_statistics.transmitted_bytes),
+            queued_records: AtomicU64::new(0),
+            queued_batches: AtomicU64::new(0),
+            buffered_records: AtomicU64::new(0),
+            buffered_batches: AtomicU64::new(0),
+            num_encode_errors: AtomicU64::new(initial_statistics.num_encode_errors),
+            num_transport_errors: AtomicU64::new(initial_statistics.num_transport_errors),
+            total_processed_input_records: AtomicU64::new(total_processed_input_records),
+        }
+    }
 }
 
 /// Output endpoint status information.
@@ -1504,14 +1634,12 @@ impl OutputEndpointStatus {
         endpoint_name: &str,
         config: &OutputEndpointConfig,
         total_processed_records: u64,
+        initial_statistics: Option<&CheckpointOutputEndpointMetrics>,
     ) -> Self {
         Self {
             endpoint_name: endpoint_name.to_string(),
             config: config.clone(),
-            metrics: OutputEndpointMetrics {
-                total_processed_input_records: AtomicU64::new(total_processed_records),
-                ..Default::default()
-            },
+            metrics: OutputEndpointMetrics::new(total_processed_records, initial_statistics),
             fatal_error: Mutex::new(None),
         }
     }

@@ -17,7 +17,7 @@
 use anyhow::{anyhow, Result as AnyResult};
 use dbsp::circuit::tokio::TOKIO;
 use feldera_adapterlib::{
-    format::Parser,
+    format::{BufferSize, Parser},
     transport::{
         InputConsumer, InputEndpoint, InputReader, InputReaderCommand, Resume,
         TransportInputEndpoint,
@@ -168,6 +168,10 @@ impl ClockReader {
         consumer: Box<dyn InputConsumer>,
         mut receiver: UnboundedReceiver<InputReaderCommand>,
     ) {
+        const RECORD_SIZE: BufferSize = BufferSize {
+            records: 1,
+            bytes: std::mem::size_of::<u64>(),
+        };
         let mut next_tick: Option<Instant> = None;
         let mut pipeline_state = PipelineState::Paused;
         loop {
@@ -193,10 +197,10 @@ impl ClockReader {
                             consumer.error(true, anyhow!("Invalid timestamp in replay log: {data:?}"));
                             continue;
                         };
-                        consumer.buffered(1, std::mem::size_of::<u64>());
+                        consumer.buffered(RECORD_SIZE);
                         let mut buffer = parser.parse(Self::timestamp_to_record(ts_millis).as_bytes()).0.unwrap();
                         buffer.flush();
-                        consumer.replayed(1, 0);
+                        consumer.replayed(RECORD_SIZE, 0);
                     }
                     Some(InputReaderCommand::Extend) => {
                         pipeline_state = PipelineState::Running;
@@ -210,11 +214,11 @@ impl ClockReader {
                     }
                     Some(InputReaderCommand::Queue { .. }) => {
                         // Push current time;
-                        consumer.buffered(1, std::mem::size_of::<u64>());
+                        consumer.buffered(RECORD_SIZE);
                         let now = Self::current_time(&config);
                         let mut buffer = parser.parse(Self::timestamp_to_record(now).as_bytes()).0.unwrap();
                         buffer.flush();
-                        consumer.extended(1, Some(Resume::Replay {
+                        consumer.extended(RECORD_SIZE, Some(Resume::Replay {
                              seek: serde_json::Value::Null,
                              replay: RmpValue::from(now),
                              hash: 0

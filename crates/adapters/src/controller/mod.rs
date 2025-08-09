@@ -18,7 +18,9 @@
 //! buffered via `InputConsumer::buffered`.
 
 use crate::catalog::OutputCollectionHandles;
-use crate::controller::checkpoint::CheckpointOffsets;
+use crate::controller::checkpoint::{
+    CheckpointInputEndpointMetrics, CheckpointOffsets, CheckpointOutputEndpointMetrics,
+};
 use crate::controller::journal::Journal;
 use crate::controller::stats::{InputEndpointMetrics, OutputEndpointMetrics};
 use crate::create_integrated_output_endpoint;
@@ -37,7 +39,7 @@ use anyhow::{anyhow, Error as AnyError};
 use arrow::datatypes::Schema;
 use atomic::Atomic;
 use checkpoint::Checkpoint;
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use crossbeam::{
     queue::SegQueue,
     sync::{Parker, ShardedLock, Unparker},
@@ -56,6 +58,7 @@ use dbsp::{
     DBSPHandle,
 };
 use enum_map::EnumMap;
+use feldera_adapterlib::format::BufferSize;
 use feldera_adapterlib::transport::Resume;
 use feldera_adapterlib::utils::datafusion::execute_query_text;
 use feldera_ir::LirCircuit;
@@ -389,7 +392,7 @@ impl Controller {
         &self,
         endpoint_name: &str,
         config: &InputEndpointConfig,
-        resume_info: Option<JsonValue>,
+        resume_info: Option<(JsonValue, CheckpointInputEndpointMetrics)>,
     ) -> Result<EndpointId, ControllerError> {
         debug!("Connecting input endpoint '{endpoint_name}'; config: {config:?}");
         self.inner.fail_if_bootstrapping_or_restoring()?;
@@ -426,7 +429,7 @@ impl Controller {
         endpoint_name: &str,
         endpoint_config: InputEndpointConfig,
         endpoint: Box<dyn TransportInputEndpoint>,
-        resume_info: Option<JsonValue>,
+        resume_info: Option<(JsonValue, CheckpointInputEndpointMetrics)>,
     ) -> Result<EndpointId, ControllerError> {
         self.inner.fail_if_bootstrapping_or_restoring()?;
         self.inner
@@ -461,12 +464,17 @@ impl Controller {
         endpoint_name: &str,
         endpoint_config: &OutputEndpointConfig,
         endpoint: Box<dyn OutputEndpoint>,
+        initial_statistics: Option<&CheckpointOutputEndpointMetrics>,
     ) -> Result<EndpointId, ControllerError> {
         debug!("Adding output endpoint '{endpoint_name}'; config: {endpoint_config:?}");
         self.inner.fail_if_restoring()?;
 
-        self.inner
-            .add_output_endpoint(endpoint_name, endpoint_config, Some(endpoint))
+        self.inner.add_output_endpoint(
+            endpoint_name,
+            endpoint_config,
+            Some(endpoint),
+            initial_statistics,
+        )
     }
 
     /// Increment the number of active API connections.
@@ -695,21 +703,39 @@ impl Controller {
         metrics.process_metrics(labels);
         metrics.gauge(
             "records_input_buffered",
-            "Total number of records currently buffered by all endpoints.",
+            "Total amount of data currently buffered by all endpoints, in records.",
             labels,
             status.num_buffered_input_records(),
         );
+        metrics.gauge(
+            "records_input_buffered_bytes",
+            "Total amount of data currently buffered by all endpoints, in bytes.",
+            labels,
+            status.num_buffered_input_bytes(),
+        );
         metrics.counter(
             "records_input_total",
-            "Total number of input records received from all connectors.",
+            "Total amount of data received from all connectors, in records.",
             labels,
             status.num_total_input_records(),
         );
         metrics.counter(
+            "records_input_bytes_total",
+            "Total amount of data received from all connectors, in bytes.",
+            labels,
+            status.num_total_input_bytes(),
+        );
+        metrics.counter(
             "records_processed_total",
-            "Total number of input records processed by the pipeline.",
+            "Total amount of input processed by the pipeline, in records.",
             labels,
             status.num_total_processed_records(),
+        );
+        metrics.counter(
+            "records_processed_bytes_total",
+            "Total amount of input processed by the pipeline, in bytes.",
+            labels,
+            status.num_total_processed_bytes(),
         );
         metrics.counter(
             "pipeline_complete",
@@ -776,6 +802,12 @@ impl Controller {
             "Total number of records that had processed when the most recent checkpoint successfully committed.",
             labels,
             &CHECKPOINT_PROCESSED_RECORDS,
+        );
+        metrics.counter(
+            "pipeline_start_time_seconds",
+            "Start time of the pipeline in seconds since the Unix epoch.\n\nThis will be earlier than `process_start_time_seconds` if the pipeline resumed from a checkpoint.  This will be zero if the pipeline resumed from a checkpoint produced by a pipeline too old to record its start time.",
+            labels,
+            status.global_metrics.initial_start_time,
         );
 
         metrics.histogram(
@@ -854,9 +886,18 @@ impl Controller {
             labels,
             status,
             "input_connector_buffered_records",
-            "Number of records currently buffered by an input connector.",
+            "Amount of data currently buffered by an input connector, in records.",
             ValueType::Gauge,
             |m| &m.buffered_records,
+        );
+        write_input_metric(
+            metrics,
+            labels,
+            status,
+            "input_connector_buffered_records_bytes",
+            "Amount of data currently buffered by an input connector, in bytes.",
+            ValueType::Gauge,
+            |m| &m.buffered_bytes,
         );
         write_input_metric(
             metrics,
@@ -1036,8 +1077,11 @@ impl CircuitThread {
             pipeline_config,
             circuit_config,
             processed_records,
+            initial_start_time,
             step,
             input_metadata,
+            input_statistics,
+            output_statistics,
         } = ControllerInit::new(config.clone())?;
         let storage = circuit_config
             .storage
@@ -1072,7 +1116,12 @@ impl CircuitThread {
                     }
                 }
 
-                resume_info.insert(endpoint_name.clone(), seek.clone());
+                let initial_stats = input_statistics
+                    .get(endpoint_name)
+                    .cloned()
+                    .unwrap_or_default();
+
+                resume_info.insert(endpoint_name.clone(), (seek.clone(), initial_stats));
             }
             resume_info
         } else {
@@ -1085,7 +1134,9 @@ impl CircuitThread {
             lir,
             error_cb,
             processed_records,
+            initial_start_time,
             &resume_info,
+            &output_statistics,
         )?;
 
         controller
@@ -1343,6 +1394,31 @@ impl CircuitThread {
                 .status
                 .global_metrics
                 .num_total_processed_records();
+            let initial_start_time = this.controller.status.global_metrics.initial_start_time;
+            let input_statistics = this
+                .controller
+                .status
+                .input_status()
+                .values()
+                .map(|endpoint| {
+                    (
+                        endpoint.endpoint_name.clone(),
+                        CheckpointInputEndpointMetrics::from(&endpoint.metrics),
+                    )
+                })
+                .collect();
+            let output_statistics = this
+                .controller
+                .status
+                .output_status()
+                .values()
+                .map(|endpoint| {
+                    (
+                        endpoint.endpoint_name.clone(),
+                        CheckpointOutputEndpointMetrics::from(&endpoint.metrics),
+                    )
+                })
+                .collect();
             let written_before = WRITE_BLOCKS_BYTES.sum();
             let checkpoint = CHECKPOINT_LATENCY.record_callback(|| {
                 this.circuit
@@ -1355,7 +1431,10 @@ impl CircuitThread {
                             step: this.step,
                             config,
                             processed_records,
+                            initial_start_time,
                             input_metadata: CheckpointOffsets(input_metadata),
+                            input_statistics,
+                            output_statistics,
                         };
                         checkpoint
                             .write(
@@ -1495,10 +1574,10 @@ impl CircuitThread {
     ///   adapters are still flushing data to the circuit) that can't be
     ///   recovered, so the pipeline process should exit as soon as it can.
     /// - `Err(error)` if there was an error.
-    fn input_step(&mut self) -> Result<Option<u64>, ControllerError> {
+    fn input_step(&mut self) -> Result<Option<BufferSize>, ControllerError> {
         // No ingestion during bootstrap.
         if self.controller.status.bootstrap_in_progress() {
-            return Ok(Some(0));
+            return Ok(Some(BufferSize::empty()));
         }
         let mut step_metadata = HashMap::new();
         if let Some(replay_step) = self.ft.as_ref().and_then(|ft| ft.replay_step.as_ref()) {
@@ -1519,7 +1598,10 @@ impl CircuitThread {
                                 replay: log.data.clone(),
                                 hash: log.checksums.hash,
                             }),
-                            num_records: log.checksums.num_records,
+                            amt: BufferSize {
+                                records: log.checksums.num_records as usize,
+                                bytes: 0, // XXX
+                            },
                         },
                     ),
                 );
@@ -1561,7 +1643,7 @@ impl CircuitThread {
                         (
                             status.endpoint_name.clone(),
                             StepResults {
-                                num_records: 0,
+                                amt: BufferSize::empty(),
                                 resume,
                             },
                         ),
@@ -1582,7 +1664,7 @@ impl CircuitThread {
         }
         drop(statuses);
 
-        let mut total_consumed = 0;
+        let mut total_consumed = BufferSize::empty();
 
         let mut long_op_warning = LongOperationWarning::new(Duration::from_secs(10));
         loop {
@@ -1619,7 +1701,7 @@ impl CircuitThread {
                 };
 
                 // Input received.
-                total_consumed += results.num_records;
+                total_consumed += results.amt;
                 step_metadata.insert(endpoint_id, (status.endpoint_name.clone(), results));
                 false
             });
@@ -1701,15 +1783,15 @@ impl CircuitThread {
         Ok(Some(total_consumed))
     }
 
-    /// Reports that `total_consumed` records have been consumed.
+    /// Reports that `total_consumed` has been consumed.
     ///
     /// Returns the total number of records processed.
-    fn processed_records(&mut self, total_consumed: u64) -> u64 {
+    fn processed_records(&mut self, total_consumed: BufferSize) -> u64 {
         let processed_records = self
             .controller
             .status
             .global_metrics
-            .processed_records(total_consumed);
+            .processed_data(total_consumed);
         self.controller.status.update_total_completed_records();
         processed_records
     }
@@ -1914,7 +1996,10 @@ impl FtState {
             step: 0,
             config,
             processed_records: 0,
+            initial_start_time: controller.status.global_metrics.initial_start_time,
             input_metadata: CheckpointOffsets::default(),
+            input_statistics: HashMap::new(),
+            output_statistics: HashMap::new(),
         };
         checkpoint.write(&*backend, &StoragePath::from(STATE_FILE))?;
 
@@ -2271,6 +2356,9 @@ struct ControllerInit {
     /// Initial counter for `total_processed_records`.
     processed_records: u64,
 
+    /// Value for `initial_start_time`.
+    initial_start_time: Option<DateTime<Utc>>,
+
     /// The first step that the circuit will execute.
     step: Step,
 
@@ -2278,6 +2366,18 @@ struct ControllerInit {
     ///
     /// This is `Some` iff we read a checkpoint.
     input_metadata: Option<HashMap<String, JsonValue>>,
+
+    /// Initials value for input endpoint statistics.
+    ///
+    /// These will ordinarily be supplied if `input_metadata.is_some()` but old
+    /// checkpoints don't have statistics.
+    input_statistics: HashMap<String, CheckpointInputEndpointMetrics>,
+
+    /// Initial values for input endpoint statistics.
+    ///
+    /// These will ordinarily be supplied if `input_metadata.is_some()` but old
+    /// checkpoints don't have statistics.
+    output_statistics: HashMap<String, CheckpointOutputEndpointMetrics>,
 }
 
 impl ControllerInit {
@@ -2289,8 +2389,11 @@ impl ControllerInit {
             circuit_config: Self::circuit_config(&config, storage)?,
             pipeline_config: config,
             processed_records: 0,
+            initial_start_time: None,
             step: 0,
             input_metadata: None,
+            input_statistics: HashMap::new(),
+            output_statistics: HashMap::new(),
         })
     }
     fn new(config: PipelineConfig) -> Result<Self, ControllerError> {
@@ -2360,7 +2463,10 @@ impl ControllerInit {
             step,
             config: checkpoint_config,
             processed_records,
+            initial_start_time,
             input_metadata,
+            input_statistics,
+            output_statistics,
         } = checkpoint;
         info!("resuming from checkpoint made at step {step}");
 
@@ -2428,7 +2534,10 @@ impl ControllerInit {
             pipeline_config: config,
             step,
             input_metadata: Some(input_metadata.0),
+            input_statistics,
+            output_statistics,
             processed_records,
+            initial_start_time: Some(initial_start_time),
         })
     }
 
@@ -2846,9 +2955,15 @@ impl ControllerInner {
         lir: LirCircuit,
         error_cb: Box<dyn Fn(Arc<ControllerError>) + Send + Sync>,
         processed_records: u64,
-        resume_info: &HashMap<String, JsonValue>,
+        initial_start_time: Option<DateTime<Utc>>,
+        resume_info: &HashMap<String, (JsonValue, CheckpointInputEndpointMetrics)>,
+        output_statistics: &HashMap<String, CheckpointOutputEndpointMetrics>,
     ) -> Result<(Parker, BackpressureThread, Receiver<Command>, Arc<Self>), ControllerError> {
-        let status = Arc::new(ControllerStatus::new(config.clone(), processed_records));
+        let status = Arc::new(ControllerStatus::new(
+            config.clone(),
+            processed_records,
+            initial_start_time,
+        ));
         let circuit_thread_parker = Parker::new();
         let backpressure_thread_parker = Parker::new();
         let (command_sender, command_receiver) = channel();
@@ -2905,9 +3020,14 @@ impl ControllerInner {
                     let controller = controller.clone();
                     let output_name = output_name.clone();
                     let output_config = output_config.clone();
+                    let initial_statistics = output_statistics.get(&*output_name).cloned();
                     Box::new(move || {
                         catch_unwind(AssertUnwindSafe(|| {
-                            controller.connect_output(&output_name, &output_config)
+                            controller.connect_output(
+                                &output_name,
+                                &output_config,
+                                initial_statistics.as_ref(),
+                            )
                         }))
                         .unwrap_or_else(|_| Err(ControllerError::ControllerPanic))
                     }) as Box<dyn FnOnce() -> Result<_, ControllerError> + Send>
@@ -2977,7 +3097,7 @@ impl ControllerInner {
         self: &Arc<Self>,
         endpoint_name: &str,
         endpoint_config: &InputEndpointConfig,
-        resume_info: Option<JsonValue>,
+        resume_info: Option<(JsonValue, CheckpointInputEndpointMetrics)>,
     ) -> Result<EndpointId, ControllerError> {
         let endpoint = input_transport_config_to_endpoint(
             &endpoint_config.connector_config.transport,
@@ -3013,8 +3133,10 @@ impl ControllerInner {
         endpoint_name: &str,
         endpoint_config: InputEndpointConfig,
         endpoint: Option<Box<dyn TransportInputEndpoint>>,
-        resume_info: Option<JsonValue>,
+        resume_info: Option<(JsonValue, CheckpointInputEndpointMetrics)>,
     ) -> Result<EndpointId, ControllerError> {
+        let (seek, initial_statistics) = resume_info.unzip();
+
         debug!("Adding input endpoint '{endpoint_name}'; config: {endpoint_config:?}");
 
         // NOTE: We release the lock after the check below and then re-acquire it in the end of the function
@@ -3098,11 +3220,16 @@ impl ControllerInner {
                 // the eoi status is recorded and not dropped on the floor.
                 self.status.inputs.write().unwrap().insert(
                     endpoint_id,
-                    InputEndpointStatus::new(endpoint_name, endpoint_config, fault_tolerance),
+                    InputEndpointStatus::new(
+                        endpoint_name,
+                        endpoint_config,
+                        fault_tolerance,
+                        initial_statistics.as_ref(),
+                    ),
                 );
 
                 match endpoint
-                    .open(probe, parser, input_handle.schema.clone(), resume_info)
+                    .open(probe, parser, input_handle.schema.clone(), seek)
                     .map_err(|e| ControllerError::input_transport_error(endpoint_name, true, e))
                 {
                     Ok(reader) => {
@@ -3133,11 +3260,16 @@ impl ControllerInner {
 
                 self.status.inputs.write().unwrap().insert(
                     endpoint_id,
-                    InputEndpointStatus::new(endpoint_name, endpoint_config, fault_tolerance),
+                    InputEndpointStatus::new(
+                        endpoint_name,
+                        endpoint_config,
+                        fault_tolerance,
+                        initial_statistics.as_ref(),
+                    ),
                 );
 
                 match endpoint
-                    .open(input_handle, resume_info)
+                    .open(input_handle, seek)
                     .map_err(|e| ControllerError::input_transport_error(endpoint_name, true, e))
                 {
                     Ok(reader) => {
@@ -3210,6 +3342,7 @@ impl ControllerInner {
         self: &Arc<Self>,
         endpoint_name: &str,
         endpoint_config: &OutputEndpointConfig,
+        initial_statistics: Option<&CheckpointOutputEndpointMetrics>,
     ) -> Result<EndpointId, ControllerError> {
         let endpoint = output_transport_config_to_endpoint(
             &endpoint_config.connector_config.transport,
@@ -3221,7 +3354,7 @@ impl ControllerInner {
 
         // If `endpoint` is `None`, it means that the endpoint config specifies an integrated
         // output connector.  Such endpoints are instantiated inside `add_output_endpoint`.
-        self.add_output_endpoint(endpoint_name, endpoint_config, endpoint)
+        self.add_output_endpoint(endpoint_name, endpoint_config, endpoint, initial_statistics)
     }
 
     fn disconnect_output(&self, endpoint_id: &EndpointId) {
@@ -3241,6 +3374,7 @@ impl ControllerInner {
         endpoint_name: &str,
         endpoint_config: &OutputEndpointConfig,
         endpoint: Option<Box<dyn OutputEndpoint>>,
+        initial_statistics: Option<&CheckpointOutputEndpointMetrics>,
     ) -> Result<EndpointId, ControllerError> {
         // NOTE: We release the lock after the check below and then re-acquire it in the end of the function
         // to actually insert the new inpoint in the map. This means that this function is racey (a concurrent
@@ -3395,8 +3529,12 @@ impl ControllerInner {
             .clone();
 
         // Initialize endpoint stats.
-        self.status
-            .add_output(&endpoint_id, endpoint_name, endpoint_config);
+        self.status.add_output(
+            &endpoint_id,
+            endpoint_name,
+            endpoint_config,
+            initial_statistics,
+        );
 
         // Thread to run the output pipeline.
         thread::Builder::new()
@@ -3690,24 +3828,23 @@ impl ControllerInner {
     /// Update counters after receiving a new input batch.
     ///
     /// See [ControllerStatus::input_batch].
-    pub fn input_batch(&self, endpoint_id: Option<(EndpointId, usize)>, num_records: usize) {
+    pub fn input_batch(&self, endpoint_id: Option<EndpointId>, amt: BufferSize) {
         // We update the individual endpoint metrics, then the global metrics.
         // The order is important because global metrics updates can unpark the
         // circuit thread, and the circuit thread reads the endpoint metrics.
         // Updating in the wrong order can cause the circuit thread to park
         // itself indefinitely.
-        if let Some((endpoint_id, num_bytes)) = endpoint_id {
+        if let Some(endpoint_id) = endpoint_id {
             self.status.input_batch_from_endpoint(
                 endpoint_id,
-                num_bytes,
-                num_records,
+                amt,
                 &self.backpressure_thread_unparker,
             )
         }
 
-        if num_records > 0 {
+        if !amt.is_empty() {
             self.status
-                .input_batch_global(num_records, &self.circuit_thread_unparker);
+                .input_batch_global(amt, &self.circuit_thread_unparker);
         }
     }
 
@@ -3866,16 +4003,15 @@ impl InputConsumer for InputProbe {
         }
     }
 
-    fn buffered(&self, num_records: usize, num_bytes: usize) {
-        self.controller
-            .input_batch(Some((self.endpoint_id, num_bytes)), num_records);
+    fn buffered(&self, amt: BufferSize) {
+        self.controller.input_batch(Some(self.endpoint_id), amt);
     }
 
-    fn replayed(&self, num_records: usize, hash: u64) {
+    fn replayed(&self, amt: BufferSize, hash: u64) {
         self.controller.status.extended(
             self.endpoint_id,
             StepResults {
-                num_records: num_records as u64,
+                amt,
                 resume: Some(Resume::Replay {
                     // These values for `seek` and `replay` are bogus, but they
                     // will not be written to the journal (because they were
@@ -3890,7 +4026,7 @@ impl InputConsumer for InputProbe {
         self.controller.unpark_circuit();
     }
 
-    fn extended(&self, num_records: usize, resume: Option<Resume>) {
+    fn extended(&self, amt: BufferSize, resume: Option<Resume>) {
         #[cfg(debug_assertions)]
         {
             let resume_ft = resume.as_ref().map(Resume::fault_tolerance);
@@ -3899,10 +4035,7 @@ impl InputConsumer for InputProbe {
         }
         self.controller.status.extended(
             self.endpoint_id,
-            StepResults {
-                num_records: num_records as u64,
-                resume,
-            },
+            StepResults { amt, resume },
             &self.controller.backpressure_thread_unparker,
         );
         self.controller.unpark_circuit();

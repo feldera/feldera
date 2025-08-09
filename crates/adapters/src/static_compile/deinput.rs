@@ -20,6 +20,7 @@ use dbsp::{
     ZSetHandle, ZWeight,
 };
 use erased_serde::Deserializer as ErasedDeserializer;
+use feldera_adapterlib::format::BufferSize;
 use feldera_types::format::csv::CsvParserConfig;
 use feldera_types::serde_with_context::{DeserializeWithContext, SqlSerdeConfig};
 use serde_arrow::Deserializer as ArrowDeserializer;
@@ -426,6 +427,7 @@ struct DeZSetStreamBuffer<K> {
     // VecDeque is preferable to Vec here as it allows splitting off a small
     // prefix of a large buffer efficiently (see take_some).
     updates: VecDeque<Tup2<K, ZWeight>>,
+    n_bytes: usize,
     handle: ZSetHandle<K>,
 }
 
@@ -433,6 +435,7 @@ impl<K> DeZSetStreamBuffer<K> {
     fn new(handle: ZSetHandle<K>) -> Self {
         Self {
             updates: VecDeque::new(),
+            n_bytes: 0,
             handle,
         }
     }
@@ -445,6 +448,7 @@ where
     fn flush(&mut self) {
         let updates = std::mem::take(&mut self.updates);
         self.handle.append(&mut updates.into());
+        self.n_bytes = 0;
     }
 
     fn hash(&self, hasher: &mut dyn Hasher) {
@@ -453,16 +457,21 @@ where
         }
     }
 
-    fn len(&self) -> usize {
-        self.updates.len()
+    fn len(&self) -> BufferSize {
+        BufferSize {
+            records: self.updates.len(),
+            bytes: self.n_bytes,
+        }
     }
 
     fn take_some(&mut self, n: usize) -> Option<Box<dyn InputBuffer>> {
         if !self.updates.is_empty() {
+            let n = self.updates.len().min(n);
             Some(Box::new(Self {
+                n_bytes: fraction_take(n, self.updates.len(), &mut self.n_bytes),
                 // Draining a small prefix of a VecDeque is efficient as it doesn't require
                 // shifting the rest of the vector.
-                updates: self.updates.drain(0..self.updates.len().min(n)).collect(),
+                updates: self.updates.drain(0..n).collect(),
                 handle: self.handle.clone(),
             }))
         } else {
@@ -512,8 +521,8 @@ where
 {
     fn insert(&mut self, data: &[u8]) -> AnyResult<()> {
         let key = <K as From<D>>::from(self.deserializer.deserialize::<D>(data)?);
-
         self.buffer.updates.push_back(Tup2(key, ZWeight::one()));
+        self.buffer.n_bytes += data.len();
         Ok(())
     }
 
@@ -523,6 +532,7 @@ where
         self.buffer
             .updates
             .push_back(Tup2(key, ZWeight::one().neg()));
+        self.buffer.n_bytes += data.len();
         Ok(())
     }
 
@@ -539,8 +549,25 @@ where
     }
 
     fn truncate(&mut self, len: usize) {
-        self.buffer.updates.truncate(len)
+        if len < self.buffer.updates.len() {
+            self.buffer.n_bytes = fraction(len, self.buffer.updates.len(), self.buffer.n_bytes);
+            self.buffer.updates.truncate(len);
+        }
     }
+}
+
+pub fn fraction(num: usize, denom: usize, mul: usize) -> usize {
+    if denom != 0 {
+        (num / denom) * mul
+    } else {
+        0
+    }
+}
+
+pub fn fraction_take(num: usize, denom: usize, mul: &mut usize) -> usize {
+    let head = fraction(num, denom, *mul);
+    *mul -= head;
+    head
 }
 
 impl<De, K, D, C> InputBuffer for DeZSetStream<De, K, D, C>
@@ -554,7 +581,7 @@ where
         self.buffer.flush()
     }
 
-    fn len(&self) -> usize {
+    fn len(&self) -> BufferSize {
         self.buffer.len()
     }
 
@@ -649,7 +676,7 @@ where
         self.buffer.take_some(n)
     }
 
-    fn len(&self) -> usize {
+    fn len(&self) -> BufferSize {
         self.buffer.len()
     }
 
@@ -726,7 +753,7 @@ where
         self.buffer.take_some(n)
     }
 
-    fn len(&self) -> usize {
+    fn len(&self) -> BufferSize {
         self.buffer.len()
     }
 
@@ -819,6 +846,7 @@ where
 
 struct DeSetStreamBuffer<K> {
     updates: VecDeque<Tup2<K, bool>>,
+    n_bytes: usize,
     handle: SetHandle<K>,
 }
 
@@ -826,6 +854,7 @@ impl<K> DeSetStreamBuffer<K> {
     fn new(handle: SetHandle<K>) -> Self {
         Self {
             updates: VecDeque::new(),
+            n_bytes: 0,
             handle,
         }
     }
@@ -838,10 +867,14 @@ where
     fn flush(&mut self) {
         let updates = std::mem::take(&mut self.updates);
         self.handle.append(&mut updates.into());
+        self.n_bytes = 0;
     }
 
-    fn len(&self) -> usize {
-        self.updates.len()
+    fn len(&self) -> BufferSize {
+        BufferSize {
+            records: self.updates.len(),
+            bytes: self.n_bytes,
+        }
     }
 
     fn hash(&self, hasher: &mut dyn Hasher) {
@@ -852,8 +885,10 @@ where
 
     fn take_some(&mut self, n: usize) -> Option<Box<dyn InputBuffer>> {
         if !self.updates.is_empty() {
+            let n = self.updates.len().min(n);
             Some(Box::new(DeSetStreamBuffer {
-                updates: self.updates.drain(0..self.updates.len().min(n)).collect(),
+                n_bytes: fraction_take(n, self.updates.len(), &mut self.n_bytes),
+                updates: self.updates.drain(0..n).collect(),
                 handle: self.handle.clone(),
             }))
         } else {
@@ -929,7 +964,10 @@ where
     }
 
     fn truncate(&mut self, len: usize) {
-        self.buffer.updates.truncate(len)
+        if len < self.buffer.updates.len() {
+            self.buffer.n_bytes = fraction(len, self.buffer.updates.len(), self.buffer.n_bytes);
+            self.buffer.updates.truncate(len);
+        }
     }
 }
 
@@ -944,7 +982,7 @@ where
         self.buffer.flush()
     }
 
-    fn len(&self) -> usize {
+    fn len(&self) -> BufferSize {
         self.buffer.len()
     }
 
@@ -1041,7 +1079,7 @@ where
         self.buffer.hash(hasher)
     }
 
-    fn len(&self) -> usize {
+    fn len(&self) -> BufferSize {
         self.buffer.len()
     }
 }
@@ -1118,7 +1156,7 @@ where
         self.buffer.hash(hasher)
     }
 
-    fn len(&self) -> usize {
+    fn len(&self) -> BufferSize {
         self.buffer.len()
     }
 }
@@ -1275,6 +1313,7 @@ where
     U: DBData,
 {
     updates: VecDeque<Tup2<K, Update<V, U>>>,
+    n_bytes: usize,
     handle: MapHandle<K, V, U>,
 }
 
@@ -1287,6 +1326,7 @@ where
     fn new(handle: MapHandle<K, V, U>) -> Self {
         Self {
             updates: VecDeque::new(),
+            n_bytes: 0,
             handle,
         }
     }
@@ -1301,10 +1341,14 @@ where
     fn flush(&mut self) {
         let updates = std::mem::take(&mut self.updates);
         self.handle.append(&mut updates.into());
+        self.n_bytes = 0;
     }
 
-    fn len(&self) -> usize {
-        self.updates.len()
+    fn len(&self) -> BufferSize {
+        BufferSize {
+            records: self.updates.len(),
+            bytes: self.n_bytes,
+        }
     }
 
     fn hash(&self, hasher: &mut dyn Hasher) {
@@ -1315,8 +1359,10 @@ where
 
     fn take_some(&mut self, n: usize) -> Option<Box<dyn InputBuffer>> {
         if !self.updates.is_empty() {
+            let n = self.updates.len().min(n);
             Some(Box::new(DeMapStreamBuffer {
-                updates: self.updates.drain(0..self.updates.len().min(n)).collect(),
+                n_bytes: fraction_take(n, self.updates.len(), &mut self.n_bytes),
+                updates: self.updates.drain(0..n).collect(),
                 handle: self.handle.clone(),
             }))
         } else {
@@ -1431,7 +1477,10 @@ where
     }
 
     fn truncate(&mut self, len: usize) {
-        self.buffer.updates.truncate(len)
+        if len < self.buffer.updates.len() {
+            self.buffer.n_bytes = fraction(len, self.buffer.updates.len(), self.buffer.n_bytes);
+            self.buffer.updates.truncate(len);
+        }
     }
 }
 
@@ -1453,7 +1502,7 @@ where
         self.buffer.flush()
     }
 
-    fn len(&self) -> usize {
+    fn len(&self) -> BufferSize {
         self.buffer.len()
     }
 
@@ -1587,7 +1636,7 @@ where
         self.buffer.hash(hasher)
     }
 
-    fn len(&self) -> usize {
+    fn len(&self) -> BufferSize {
         self.buffer.len()
     }
 }
@@ -1692,7 +1741,7 @@ where
         self.buffer.take_some(n)
     }
 
-    fn len(&self) -> usize {
+    fn len(&self) -> BufferSize {
         self.buffer.len()
     }
 

@@ -17,6 +17,7 @@ use crate::{InputBuffer, InputReader, Parser, TransportInputEndpoint};
 use anyhow::Error as AnyError;
 use crossbeam::sync::{Parker, Unparker};
 use csv::ReaderBuilder as CsvReaderBuilder;
+use feldera_adapterlib::format::BufferSize;
 use feldera_adapterlib::transport::Resume;
 use feldera_types::config::{
     default_max_batch_size, default_max_queued_records, ConnectorConfig, FormatConfig, FtModel,
@@ -283,10 +284,7 @@ fn test_input(topic: &str, batch_sizes: &[u32]) {
 #[derive(Debug, PartialEq)]
 enum ConsumerCall {
     ParseErrors,
-    Buffered {
-        num_records: usize,
-        num_bytes: usize,
-    },
+    Buffered(BufferSize),
     Replayed {
         num_records: usize,
     },
@@ -339,8 +337,13 @@ impl InputBuffer for DummyInputBuffer {
         }
     }
 
-    fn len(&self) -> usize {
-        self.data.as_ref().map_or(0, |_| 1)
+    fn len(&self) -> BufferSize {
+        self.data
+            .as_ref()
+            .map_or(BufferSize::empty(), |_| BufferSize {
+                records: 1,
+                bytes: 0,
+            })
     }
 
     fn hash(&self, _hasher: &mut dyn Hasher) {}
@@ -411,12 +414,9 @@ impl DummyInputReceiver {
             let mut current = self.inner.calls.lock().unwrap();
             for call in current.drain(..) {
                 match call {
-                    ConsumerCall::Buffered {
-                        num_records,
-                        num_bytes: _,
-                    } => {
-                        assert!(received + num_records <= n);
-                        received += num_records;
+                    ConsumerCall::Buffered(BufferSize { records, bytes: _ }) => {
+                        assert!(received + records <= n);
+                        received += records;
                         if received == n {
                             return;
                         }
@@ -509,11 +509,8 @@ impl InputConsumer for DummyInputConsumer {
         }
     }
 
-    fn buffered(&self, num_records: usize, num_bytes: usize) {
-        let call = ConsumerCall::Buffered {
-            num_records,
-            num_bytes,
-        };
+    fn buffered(&self, amt: BufferSize) {
+        let call = ConsumerCall::Buffered(amt);
         info!("{call:?}");
         if !self.0.drop_buffered.load(Ordering::Acquire) {
             self.0.calls.lock().unwrap().push(call);
@@ -523,13 +520,15 @@ impl InputConsumer for DummyInputConsumer {
         }
     }
 
-    fn replayed(&self, num_records: usize, _hash: u64) {
-        self.called(ConsumerCall::Replayed { num_records });
+    fn replayed(&self, amt: BufferSize, _hash: u64) {
+        self.called(ConsumerCall::Replayed {
+            num_records: amt.records,
+        });
     }
 
-    fn extended(&self, num_records: usize, resume: Option<Resume>) {
+    fn extended(&self, amt: BufferSize, resume: Option<Resume>) {
         self.called(ConsumerCall::Extended {
-            num_records,
+            num_records: amt.records,
             metadata: resume
                 .map(|resume| resume.into_seek().unwrap())
                 .unwrap_or_default(),

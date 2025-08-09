@@ -555,7 +555,6 @@ impl DeltaTableInputEndpointInner {
         // Empty buffer to indicate checkpointable state.
         self.queue.push_with_aux(
             (None, Vec::new()),
-            0,
             Some(DeltaResumeInfo::new(
                 Some(table.version()),
                 !self.config.follow(),
@@ -584,7 +583,6 @@ impl DeltaTableInputEndpointInner {
         // Empty buffer to indicate checkpointable state.
         self.queue.push_with_aux(
             (None, Vec::new()),
-            0,
             Some(DeltaResumeInfo::new(
                 Some(table.version()),
                 !self.config.follow(),
@@ -788,7 +786,6 @@ impl DeltaTableInputEndpointInner {
                         // Empty buffer to indicate eoi.
                         self.queue.push_with_aux(
                             (None, Vec::new()),
-                            0,
                             Some(DeltaResumeInfo::new(Some(new_version), true)),
                         );
 
@@ -1229,7 +1226,7 @@ impl DeltaTableInputEndpointInner {
                         })
                     })
                 },
-                move |(buffer, errors, bytes)| queue.push_with_aux((buffer, errors), bytes, None),
+                move |(buffer, errors, bytes)| queue.push_with_aux((buffer, errors), None),
             );
 
         while let Some(batch) = stream.next().await {
@@ -1335,7 +1332,6 @@ impl DeltaTableInputEndpointInner {
         // Empty buffer to indicate checkpointable state.
         self.queue.push_with_aux(
             (None, Vec::new()),
-            0,
             Some(DeltaResumeInfo::new(Some(new_version), false)),
         );
     }

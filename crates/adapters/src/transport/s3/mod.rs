@@ -15,6 +15,7 @@ use async_channel::{bounded, unbounded, Receiver, SendError, Sender};
 use aws_sdk_s3::operation::{get_object::GetObjectOutput, list_objects_v2::ListObjectsV2Error};
 use dbsp::circuit::tokio::TOKIO;
 use feldera_adapterlib::{
+    format::BufferSize,
     transport::{parse_resume_info, Resume},
     PipelineState,
 };
@@ -582,7 +583,7 @@ impl S3InputReader {
                                         break;
                                     };
                                     let (buffer, errors) = parser.parse(chunk);
-                                    consumer.buffered(buffer.len(), chunk.len());
+                                    consumer.buffered(buffer.len());
                                     let end_offset = splitter.position();
 
                                     consumer.parse_errors(errors);
@@ -640,9 +641,9 @@ impl S3InputReader {
                 Some(InputReaderCommand::Queue {
                     checkpoint_requested,
                 }) => {
-                    let mut total = 0;
+                    let mut total = BufferSize::empty();
                     let mut hasher = consumer.hasher();
-                    while total < consumer.max_batch_size() {
+                    while total.records < consumer.max_batch_size() {
                         let Some(QueuedBuffer {
                             key_index,
                             key,
@@ -654,7 +655,8 @@ impl S3InputReader {
                             break;
                         };
 
-                        let Some(mut prefix) = buffer.take_some(consumer.max_batch_size() - total)
+                        let Some(mut prefix) =
+                            buffer.take_some(consumer.max_batch_size() - total.records)
                         else {
                             partially_processed_keys.update(key_index, end_offset).await;
                             continue;

@@ -2,6 +2,7 @@ use crate::catalog::InputCollectionHandle;
 use crate::format::{get_input_format, InputBuffer, Splitter};
 use crate::{controller::FormatConfig, InputConsumer, ParseError, Parser};
 use anyhow::{anyhow, Error as AnyError};
+use feldera_adapterlib::format::BufferSize;
 use feldera_adapterlib::transport::Resume;
 use feldera_types::config::FtModel;
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -105,13 +106,13 @@ impl InputConsumer for MockInputConsumer {
 
     fn parse_errors(&self, _errors: Vec<ParseError>) {}
 
-    fn buffered(&self, _num_records: usize, _num_bytes: usize) {}
+    fn buffered(&self, _amt: BufferSize) {}
 
-    fn replayed(&self, _num_records: usize, _hash: u64) {}
+    fn replayed(&self, _num_records: BufferSize, _hash: u64) {}
 
     fn request_step(&self) {}
 
-    fn extended(&self, _num_records: usize, _resume: Option<Resume>) {
+    fn extended(&self, _amt: BufferSize, _resume: Option<Resume>) {
         self.state().n_extended += 1;
     }
 }
