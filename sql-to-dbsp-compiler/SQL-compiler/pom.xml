@@ -323,10 +323,5 @@
             <version>2.7.2</version>
             <classifier>jdk8</classifier>
         </dependency>
-        <dependency>
-            <groupId>io.confluent</groupId>
-            <artifactId>kafka-schema-registry-client</artifactId>
-            <version>7.9.0</version>
-        </dependency>
     </dependencies>
 </project>

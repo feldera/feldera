@@ -19,10 +19,8 @@ import org.dbsp.sqlCompiler.compiler.frontend.statements.DeclareViewStatement;
 import org.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
-import org.dbsp.util.HSQDBManager;
 import org.dbsp.util.NameGen;
 import org.dbsp.util.Utilities;
-import org.hsqldb.server.ServerAcl;
 import org.junit.Assert;
 import org.junit.Ignore;
 import org.junit.Test;
@@ -579,32 +577,6 @@ public class MetadataTests extends BaseSQLTests {
         ObjectNode node = compiler.getIOMetadataAsJson();
         String json = node.toPrettyString();
         Assert.assertTrue(json.contains("MYTABLE"));
-    }
-
-    // Test that a schema for a table can be retrieved from a JDBC data source
-    // in a separate process using a JDBC connection.
-    @Test @Ignore("Does not find system table")
-    public void jdbcSchemaTest2() throws SQLException, IOException, InterruptedException,
-            ServerAcl.AclFormatException, ClassNotFoundException {
-        HSQDBManager manager = new HSQDBManager(BaseSQLTests.RUST_DIRECTORY);
-        manager.start();
-        Connection connection = manager.getConnection();
-        try (Statement s = connection.createStatement()) {
-            s.execute("DROP TABLE mytable IF EXISTS");
-            s.execute("""
-                    create table mytable(
-                    id integer not null primary key,
-                    strcol varchar(25))
-                    """);
-        }
-
-        File script = createInputScript("CREATE VIEW V AS SELECT * FROM mytable");
-        CompilerMessages messages = CompilerMain.execute(
-                "--jdbcSource", manager.getConnectionString(), "-o", BaseSQLTests.TEST_FILE_PATH, script.getPath());
-        manager.stop();
-        if (messages.errorCount() > 0)
-            throw new RuntimeException(messages.toString());
-        Utilities.compileAndTestRust(BaseSQLTests.RUST_DIRECTORY, false);
     }
 
     @Test

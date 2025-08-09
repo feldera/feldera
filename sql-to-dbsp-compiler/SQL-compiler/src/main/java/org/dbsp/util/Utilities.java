@@ -35,7 +35,6 @@ import org.apache.calcite.sql.SqlIdentifier;
 import org.apache.calcite.sql.parser.SqlParserPos;
 import org.apache.calcite.util.TimeString;
 import org.apache.calcite.util.TimestampString;
-import org.apache.commons.io.IOUtils;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.jetbrains.annotations.Contract;
@@ -247,12 +246,6 @@ public class Utilities {
 
     public static String readFile(String filename) throws IOException {
         return readFile(Paths.get(filename));
-    }
-
-    @SuppressWarnings("unused")
-    public static String readFileFromUrl(String url) throws IOException {
-        URL path = new URL(url);
-        return IOUtils.toString(path, StandardCharsets.UTF_8);
     }
 
     public static String readFile(Path filename) throws IOException {

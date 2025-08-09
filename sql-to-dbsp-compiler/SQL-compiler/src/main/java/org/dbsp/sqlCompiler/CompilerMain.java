@@ -30,8 +30,6 @@ import org.apache.calcite.adapter.jdbc.JdbcSchema;
 import org.apache.calcite.jdbc.CalciteConnection;
 import org.apache.calcite.schema.SchemaPlus;
 import org.apache.calcite.util.Pair;
-import org.apache.commons.io.output.NullPrintStream;
-import org.codehaus.janino.Compiler;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
@@ -45,6 +43,7 @@ import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.IndentStream;
 import org.dbsp.util.Logger;
+import org.dbsp.util.NullPrintStream;
 import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
