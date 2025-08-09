@@ -9,6 +9,7 @@ import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.statement.DBSPFunctionItem;
+import org.dbsp.util.IIndentStream;
 import org.dbsp.util.IndentStream;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
@@ -24,15 +25,28 @@ import java.util.List;
 /** Generates the stubs.rs file with declarations for the Rust user-defined functions */
 public class StubsWriter extends BaseRustCodeGenerator {
     final Path path;
-    final PrintStream stream;
+    @Nullable
+    PrintStream stream = null;
     @Nullable
     DBSPCircuit circuit;
 
-    public StubsWriter(Path path) throws IOException {
-        this.stream = new PrintStream(Files.newOutputStream(path));
-        this.setOutputBuilder(new IndentStream(this.stream));
+    public StubsWriter(Path path) {
         this.path = path;
         this.circuit = null;
+    }
+
+    public IIndentStream builder() {
+        try {
+            // Allocate lazily; by that time the directory should be created.
+            if (this.outputBuilder == null) {
+                if (this.stream == null)
+                    this.stream = new PrintStream(Files.newOutputStream(path));
+                this.setOutputBuilder(new IndentStream(this.stream));
+            }
+            return this.outputBuilder;
+        } catch (IOException ex) {
+            throw new RuntimeException(ex);
+        }
     }
 
     // For a function prototype like f(s: i32) -> i32;
@@ -54,8 +68,6 @@ public class StubsWriter extends BaseRustCodeGenerator {
 
     @Override
     public void write(DBSPCompiler compiler) {
-        if (compiler.options.ioOptions.verbosity > 0)
-            System.out.println("Writing UDF stubs to file " + this.path);
         this.builder().append("""
 // Compiler-generated file.
 // This file contains stubs for user-defined functions declared in the SQL program.
@@ -69,23 +81,24 @@ use feldera_sqllib::*;
 use crate::*;
 """);
         List<DBSPFunction> extern = new ArrayList<>();
-        Utilities.enforce(this.circuit != null);
-        for (DBSPDeclaration decl: this.circuit.declarations) {
-            DBSPFunctionItem item = decl.item.as(DBSPFunctionItem.class);
-            if (item == null)
-                continue;
-            // Functions with a body do not need to be in stubs
-            if (item.function.body != null)
-                continue;
-            extern.add(item.function);
-        }
+        if (this.circuit != null) {
+            for (DBSPDeclaration decl : this.circuit.declarations) {
+                DBSPFunctionItem item = decl.item.as(DBSPFunctionItem.class);
+                if (item == null)
+                    continue;
+                // Functions with a body do not need to be in stubs
+                if (item.function.body != null)
+                    continue;
+                extern.add(item.function);
+            }
 
-        for (DBSPFunction function : extern) {
-            function = this.generateStubBody(function);
-            ToRustInnerVisitor.toRustString(compiler, this.builder(), function, null, false);
-            this.builder().newline();
+            for (DBSPFunction function : extern) {
+                function = this.generateStubBody(function);
+                ToRustInnerVisitor.toRustString(compiler, this.builder(), function, null, false);
+                this.builder().newline();
+            }
         }
-
+        Utilities.enforce(this.stream != null);
         this.stream.close();
     }
 }

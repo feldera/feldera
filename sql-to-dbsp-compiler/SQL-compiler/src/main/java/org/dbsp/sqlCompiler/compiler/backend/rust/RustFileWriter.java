@@ -88,7 +88,13 @@ public class RustFileWriter extends RustWriter {
     public void add(ProgramAndTester pt) {
         if (pt.program() != null)
             this.add(pt.program());
-        this.add(pt.tester());
+        this.addTest(pt.tester());
+    }
+
+    @Override
+    public void addTest(IDBSPNode node) {
+        // Do NOT add to the testNodes list
+        this.toWrite.add(node);
     }
 
     public RustFileWriter setUsed(StructuresUsed used) {

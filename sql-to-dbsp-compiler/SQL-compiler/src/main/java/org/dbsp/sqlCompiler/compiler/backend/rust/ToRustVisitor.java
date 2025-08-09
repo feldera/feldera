@@ -140,7 +140,7 @@ public class ToRustVisitor extends CircuitVisitor {
     final Set<String> perCircuitDeclarations;
     final SourcePositionResource sourcePositionResource;
 
-    /* Example output generated when 'generateCatalog' is true:
+    /* Example output generated when 'useHandles' is false:
      * pub fn circuit0(workers: usize) -> (DBSPHandle, Catalog) {
      *     let (circuit, catalog) = Runtime::init_circuit(workers, |circuit| {
      *         let mut catalog = Catalog::new();
@@ -234,8 +234,10 @@ public class ToRustVisitor extends CircuitVisitor {
     }
 
     String handleName(DBSPSimpleOperator operator) {
+        if (this.compiler.options.ioOptions.multiCrates())
+            return "handle";
         String compactName = operator.getCompactName();
-        return "handle" + compactName;
+        return "handle_" + compactName;
     }
 
     @Override

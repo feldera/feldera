@@ -111,7 +111,7 @@ public class PostgresStringTests extends SqlIoTest {
     public void testCharN() {
         this.q("""
                 SELECT CAST(f1 AS text) AS "text(char)", 1 FROM CHAR_TBL;
-                 text(char) | 1 
+                 text(char) | 1
                 ----------------
                  a   | 1
                  ab  | 1

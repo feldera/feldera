@@ -6,6 +6,8 @@ import org.dbsp.sqlCompiler.circuit.ICircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceBaseOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPViewBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewDeclarationOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.rust.BaseRustCodeGenerator;
@@ -193,12 +195,15 @@ public class MultiCrates {
     }
 
     void addNodes(List<IDBSPNode> nodes) {
+        RustWriter.StructuresUsed locallyUsed = new RustWriter.StructuresUsed();
+        RustWriter.FindResources finder = new RustWriter.FindResources(compiler, locallyUsed);
+
         for (IDBSPNode node: nodes) {
             if (node.is(IDBSPInnerNode.class))
                 this.globals.add(node);
             else {
                 DBSPCircuit circuit = node.to(DBSPCircuit.class);
-                this.main.add(node);
+                this.main.add(circuit);
                 for (DBSPDeclaration decl: circuit.declarations) {
                     this.globals.add(decl.item);
                 }
@@ -224,9 +229,20 @@ public class MultiCrates {
                         op = this.createOperatorCrate(circuit, operator, circuit, this.enterprise());
                     }
 
+                    if (this.compiler.options.ioOptions.emitHandles &&
+                            (operator.is(DBSPSourceBaseOperator.class) || operator.is(DBSPViewBaseOperator.class))) {
+                        finder.apply(operator.outputType(0));
+                    }
+
                     this.addDependencies(op, operator);
                     this.operators.add(op);
                 }
+            }
+
+            for (int i : locallyUsed.tupleSizesUsed) {
+                if (locallyUsed.isPredefined(i)) continue;
+                CrateGenerator gen = this.tupleCrate(i);
+                this.main.addDependency(gen);
             }
         }
 

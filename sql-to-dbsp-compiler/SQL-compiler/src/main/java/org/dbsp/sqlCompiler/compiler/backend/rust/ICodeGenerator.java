@@ -15,6 +15,8 @@ public interface ICodeGenerator extends ICastable {
     void addDependency(String crate);
     /** The specified node will produce code */
     void add(IDBSPNode node);
+    /** The specified node will produce test code */
+    void addTest(IDBSPNode node);
     /** Generate code for the nodes added in the current output stream */
     void write(DBSPCompiler compiler) throws IOException;
 }

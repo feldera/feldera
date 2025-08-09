@@ -345,6 +345,13 @@ public class ToJsonInnerVisitor extends InnerVisitor {
     }
 
     @Override
+    public void postorder(DBSPStaticExpression node) {
+        this.property("name");
+        this.stream.append(node.name);
+        super.postorder(node);
+    }
+
+    @Override
     public void postorder(DBSPLetStatement node) {
         this.property("mutable");
         this.stream.append(node.mutable);

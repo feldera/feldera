@@ -807,7 +807,8 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
         // We lie again that ok returns an unchanged type.  These two lies cancel out.
         DBSPExpression init = user.constructor("new", lit.toStr());
         init = init.applyMethod("ok", init.getType());
-        return new DBSPStaticExpression(lit.getNode(), init).borrow();
+        String name = DBSPStaticExpression.generateName(init, this.compiler);
+        return new DBSPStaticExpression(lit.getNode(), init, name).borrow();
     }
 
     /** Check for polymorphic strict functions: if any operand is the NULL literal, replace with NULL */

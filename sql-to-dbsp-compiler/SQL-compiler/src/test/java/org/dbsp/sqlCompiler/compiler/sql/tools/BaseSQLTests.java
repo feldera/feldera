@@ -27,6 +27,9 @@ import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.rust.RustFileWriter;
+import org.dbsp.sqlCompiler.compiler.backend.rust.RustWriter;
+import org.dbsp.sqlCompiler.compiler.backend.rust.StubsWriter;
+import org.dbsp.sqlCompiler.compiler.backend.rust.multi.MultiCratesWriter;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.SqlToRelCompiler;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.LowerCircuitVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity.MonotoneAnalyzer;
@@ -252,12 +255,30 @@ public class BaseSQLTests {
         if (toRun.isEmpty())
             return testNumber;
 
+        boolean multiCrates = compiler.options.ioOptions.multiCrates();
         HashMap<Long, DBSPFunction> inputFunctions = new HashMap<>();
-        createEmptyStubs();
+        PrintStream outputStream = null;
+        RustWriter writer;
+        String directory;
+        Path stubsDir;
+        String testCrate = "";
 
-        PrintStream outputStream = new PrintStream(Files.newOutputStream(getTestFilePath()));
-        RustFileWriter writer = new RustFileWriter().withTest(true);
-        writer.setOutputBuilder(new IndentStream(outputStream));
+        if (!multiCrates) {
+            outputStream = new PrintStream(Files.newOutputStream(getTestFilePath()));
+            writer = new RustFileWriter().withTest(true);
+            writer.setOutputBuilder(new IndentStream(outputStream));
+            directory = RUST_DIRECTORY;
+            stubsDir = Paths.get(directory);
+            createEmptyStubs();
+        } else {
+            directory = RUST_CRATES_DIRECTORY;
+            MultiCratesWriter multiWriter = new MultiCratesWriter(directory, "x", true);
+            testCrate = multiWriter.getTestName();
+            String globals = multiWriter.getGlobalsName();
+            writer = multiWriter;
+            stubsDir = Paths.get(directory).resolve(globals).resolve("src");
+        }
+        StubsWriter stubsWriter = new StubsWriter(stubsDir.resolve(DBSPCompiler.STUBS_FILE_NAME));
 
         // Map from Change id to function that generates the change
         for (TestCase test : toRun) {
@@ -269,9 +290,12 @@ public class BaseSQLTests {
             test.ccs.circuit.setName("circuit" + testNumber);
             List<DBSPFunction> testers = test.createTesterCode(testNumber, RUST_DIRECTORY, inputFunctions);
             writer.add(test.ccs.circuit);
+            if (multiCrates) {
+                stubsWriter.add(test.ccs.circuit);
+            }
             for (var tester: testers)
                 if (acceptTest.test(test.ccs))
-                    writer.add(tester);
+                    writer.addTest(tester);
             if (check)
                 BaseSQLTests.testsChecked++;
             else
@@ -279,9 +303,24 @@ public class BaseSQLTests {
             testNumber++;
         }
         writer.write(compiler);
-        outputStream.close();
-        if (!skipRust)
-            Utilities.compileAndTestRust(RUST_DIRECTORY, true);
+        if (outputStream !=null)
+            outputStream.close();
+        stubsWriter.write(compiler);
+        if (!skipRust) {
+            if (check) {
+                Utilities.compileAndCheckRust(directory, true, testCrate);
+            } else {
+                String[] extraArgs;
+                if (testCrate.isEmpty())
+                    extraArgs = new String[] {};
+                else {
+                    extraArgs = new String[2];
+                    extraArgs[0] = "--package";
+                    extraArgs[1] = testCrate;
+                }
+                Utilities.compileAndTestRust(directory, true, extraArgs);
+            }
+        }
 
         return testNumber;
     }
@@ -307,13 +346,16 @@ public class BaseSQLTests {
 
     public CompilerOptions testOptions() {
         CompilerOptions options = new CompilerOptions();
-        // Set to compile to multiple crates
-        // options.ioOptions.crates = "x";
+        if (System.getenv("CI") != null)
+            // Set to compile to multiple crates
+            options.ioOptions.crates = "x";
         options.languageOptions.throwOnError = true;
         options.languageOptions.generateInputForEveryTable = true;
         options.ioOptions.quiet = true;
         options.ioOptions.emitHandles = true;
-        options.ioOptions.verbosity = 2;
+        if (!options.ioOptions.multiCrates())
+            // Comments can interfere with multi-crates, generating hash collisions
+            options.ioOptions.verbosity = 2;
         options.languageOptions.incrementalize = false;
         options.languageOptions.unrestrictedIOTypes = true;
         options.languageOptions.optimizationLevel = 2;

@@ -8,6 +8,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPInternOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSumOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.GCOperator;
@@ -68,6 +69,7 @@ public final class SingleOperatorWriter extends BaseRustCodeGenerator {
 
     @Override
     public void write(DBSPCompiler compiler) {
+        boolean useHandles = compiler.options.ioOptions.emitHandles;
         this.builder()
                 .append(RustWriter.COMMON_PREAMBLE)
                 .append(RustWriter.STANDARD_PREAMBLE);
@@ -79,7 +81,7 @@ public final class SingleOperatorWriter extends BaseRustCodeGenerator {
         for (String dep: this.dependencies)
             this.builder().append("use ").append(dep).append("::*;").newline();
 
-        boolean hasOutput = !operator.is(DBSPViewBaseOperator.class) &&
+        boolean hasOutput = (!operator.is(DBSPViewBaseOperator.class) || useHandles) &&
                 !operator.is(GCOperator.class) &&
                 !operator.is(DBSPInternOperator.class);
         this.builder().append("pub fn create_")
@@ -89,7 +91,7 @@ public final class SingleOperatorWriter extends BaseRustCodeGenerator {
                 .append(", hash: Option<&'static str>, ")
                 .append(CircuitWriter.SOURCE_MAP_VARIABLE_NAME)
                 .append(": &'static SourceMap, ");
-        if (this.topLevel)
+        if (this.topLevel && !useHandles)
             this.builder().append("catalog: &mut Catalog,");
         this.builder().increase();
         int input = 0;
@@ -106,9 +108,22 @@ public final class SingleOperatorWriter extends BaseRustCodeGenerator {
         this.builder().decrease().append(")");
         if (hasOutput) {
             this.builder().append(" -> ");
-            if (operator.is(DBSPSimpleOperator.class)) {
+            if (operator.is(DBSPViewBaseOperator.class)) {
+                DBSPType outputType = operator.outputType(0);
+                this.builder().append("OutputHandle<");
+                outputType.accept(visitor.innerVisitor);
+                this.builder().append(">").newline();
+            } else if (operator.is(DBSPSimpleOperator.class)) {
+                if (operator.is(DBSPSourceBaseOperator.class) && useHandles) {
+                    this.builder().append("(");
+                }
                 DBSPType streamType = operator.outputStreamType(0, this.topLevel);
                 streamType.accept(visitor.innerVisitor);
+                if (operator.is(DBSPSourceBaseOperator.class) && useHandles) {
+                    this.builder().append(", ZSetHandle<");
+                    operator.to(DBSPSourceBaseOperator.class).getOutputZSetElementType().accept(visitor.innerVisitor);
+                    this.builder().append(">)");
+                }
             } else {
                 this.builder().append("(");
                 for (int i = 0; i < operator.outputCount(); i++) {
@@ -176,6 +191,16 @@ public final class SingleOperatorWriter extends BaseRustCodeGenerator {
                     this.builder().append(", ");
                 }
                 this.builder().append(")");
+            } else if (operator.is(DBSPSourceBaseOperator.class)) {
+                if (useHandles)
+                    this.builder().append("(");
+                this.builder().append(name);
+                if (useHandles)
+                    this.builder()
+                        .append(", handle")
+                        .append(")");
+            } else if (operator.is(DBSPViewBaseOperator.class)) {
+                this.builder().append("handle");
             } else {
                 this.builder().append(name);
             }
