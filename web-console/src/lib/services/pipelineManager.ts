@@ -386,7 +386,13 @@ export const getApiKeys = () => mapResponse(listApiKeys(), (v) => v)
 export const postApiKey = (name: string) => mapResponse(_postApiKey({ body: { name } }), (v) => v)
 
 export const deleteApiKey = (name: string) =>
-  mapResponse(_deleteApiKey({ path: { api_key_name: name } }), (v) => v)
+  mapResponse(
+    _deleteApiKey({ path: { api_key_name: name } }),
+    (v) => v,
+    () => {
+      throw new Error(`Failed to delete ${name} API key`)
+    }
+  )
 
 const getAuthenticatedFetch = () => {
   try {
