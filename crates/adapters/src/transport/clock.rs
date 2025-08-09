@@ -353,7 +353,6 @@ mod test {
     }
 
     #[test]
-    #[ignore = "https://github.com/feldera/feldera/issues/4516"]
     fn test_clock() {
         let tempdir = TempDir::new().unwrap();
         let tempdir_path = tempdir.path();
@@ -413,6 +412,10 @@ inputs:
 
         sleep(Duration::from_secs(5));
 
+        // Pause the controller first to prevent more ticks from being generated
+        // before we count them and stop the pipeline
+        controller.pause();
+        
         let old_ticks = ticks;
         let ticks_after_checkpoint = test_stats.ticks() - old_ticks;
 
