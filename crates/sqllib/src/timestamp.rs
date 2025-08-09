@@ -689,14 +689,6 @@ some_operator!(eq, Timestamp, Timestamp, bool);
 some_operator!(neq, Timestamp, Timestamp, bool);
 some_operator!(gte, Timestamp, Timestamp, bool);
 some_operator!(lte, Timestamp, Timestamp, bool);
-/*
-some_operator!(lt, Timestamp, &Timestamp, bool);
-some_operator!(gt, Timestamp, &Timestamp, bool);
-some_operator!(eq, Timestamp, &Timestamp, bool);
-some_operator!(neq, Timestamp, &Timestamp, bool);
-some_operator!(gte, Timestamp, &Timestamp, bool);
-some_operator!(lte, Timestamp, &Timestamp, bool);
-*/
 
 #[doc(hidden)]
 pub fn floor_week_Timestamp(value: Timestamp) -> Timestamp {
@@ -1064,14 +1056,6 @@ some_operator!(eq, Date, Date, bool);
 some_operator!(neq, Date, Date, bool);
 some_operator!(gte, Date, Date, bool);
 some_operator!(lte, Date, Date, bool);
-/*
-some_operator!(lt, Date, &Date, bool);
-some_operator!(gt, Date, &Date, bool);
-some_operator!(eq, Date, &Date, bool);
-some_operator!(neq, Date, &Date, bool);
-some_operator!(gte, Date, &Date, bool);
-some_operator!(lte, Date, &Date, bool);
-*/
 
 // right - left
 #[doc(hidden)]
@@ -1688,14 +1672,6 @@ some_operator!(eq, Time, Time, bool);
 some_operator!(neq, Time, Time, bool);
 some_operator!(gte, Time, Time, bool);
 some_operator!(lte, Time, Time, bool);
-/*
-some_operator!(lt, Time, &Time, bool);
-some_operator!(gt, Time, &Time, bool);
-some_operator!(eq, Time, &Time, bool);
-some_operator!(neq, Time, &Time, bool);
-some_operator!(gte, Time, &Time, bool);
-some_operator!(lte, Time, &Time, bool);
-*/
 
 #[doc(hidden)]
 pub fn extract_millisecond_Time(value: Time) -> i64 {

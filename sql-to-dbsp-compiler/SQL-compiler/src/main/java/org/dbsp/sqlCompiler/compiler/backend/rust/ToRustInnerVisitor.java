@@ -2217,10 +2217,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
                     this.builder.append("x.");
                 }
                 this.builder.append(expression.fieldNo);
-                if (fieldTypeIsNullable &&
-                        expression.getType().mayBeNull &&
-                        !expression.getType().hasCopy() &&
-                        !avoidRef) {
+                if (fieldTypeIsNullable && !expression.getType().hasCopy() && !avoidRef) {
                     this.builder.append(".as_ref()");
                 }
                 this.builder.append(")").decrease();

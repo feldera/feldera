@@ -630,14 +630,6 @@ impl Neg for LongInterval {
     }
 }
 
-/*
-some_operator!(lt, LongInterval, &LongInterval, bool);
-some_operator!(gt, LongInterval, &LongInterval, bool);
-some_operator!(eq, LongInterval, &LongInterval, bool);
-some_operator!(neq, LongInterval, &LongInterval, bool);
-some_operator!(gte, LongInterval, &LongInterval, bool);
-some_operator!(lte, LongInterval, &LongInterval, bool);
-*/
 some_operator!(lt, LongInterval, LongInterval, bool);
 some_operator!(gt, LongInterval, LongInterval, bool);
 some_operator!(eq, LongInterval, LongInterval, bool);
