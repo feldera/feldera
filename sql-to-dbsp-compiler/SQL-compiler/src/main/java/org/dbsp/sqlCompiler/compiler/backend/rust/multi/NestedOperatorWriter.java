@@ -86,6 +86,7 @@ public final class NestedOperatorWriter extends BaseRustCodeGenerator {
 
     @Override
     public void write(DBSPCompiler compiler) {
+        boolean useHandles = compiler.options.ioOptions.emitHandles;
         this.builder()
                 .append(RustWriter.COMMON_PREAMBLE)
                 .append(RustWriter.STANDARD_PREAMBLE);
@@ -103,9 +104,10 @@ public final class NestedOperatorWriter extends BaseRustCodeGenerator {
                 .append(this.dbspCircuit(true))
                 .append(", ")
                 .append(CircuitWriter.SOURCE_MAP_VARIABLE_NAME)
-                .append(": &'static SourceMap")
-                .append(", catalog: &mut Catalog,")
-                .increase();
+                .append(": &'static SourceMap, ");
+        if (!useHandles)
+            this.builder().append("catalog: &mut Catalog,");
+        this.builder().increase();
         int input = 0;
         for (var port : this.operator.inputs) {
             String n = this.inputName(input);

@@ -97,8 +97,13 @@ public class MerkleOuter extends CircuitVisitor {
         for (var operator : nested.getAllOperators()) {
             HashString hash = Utilities.getExists(
                     MerkleOuter.this.operatorHash, operator.getId());
-            builder.append(hash);
-            builder.append(",");
+            builder.append(operator.getCompactName())
+                    .append(" = ")
+                    .append(hash)
+                    .append("(")
+                    .append(OperatorHash.getHash(operator, true))
+                    .append(");")
+                    .append("\n");
         }
 
         String string = builder.toString();

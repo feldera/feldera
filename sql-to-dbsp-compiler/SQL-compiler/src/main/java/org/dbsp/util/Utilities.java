@@ -387,6 +387,15 @@ public class Utilities {
         runProcess(directory, args.toArray(new String[0]));
     }
 
+    static void addExtraArgs(List<String> args, String... packages) {
+        for (String pack: packages) {
+            if (pack.isEmpty())
+                continue;
+            args.add("--package");
+            args.add(pack);
+        }
+    }
+
     static final boolean retry = false;
     /** Compile the rust code generated and run it using 'cargo test' */
     public static void compileAndTestRust(String directory, boolean quiet, String... extraArgs)
@@ -403,7 +412,7 @@ public class Utilities {
     }
 
     /** Compile the rust code generated and check it using 'cargo check' */
-    public static void compileAndCheckRust(String directory, boolean quiet)
+    public static void compileAndCheckRust(String directory, boolean quiet, String... packages)
             throws IOException, InterruptedException {
         List<String> args = new ArrayList<>();
         args.add("cargo");
@@ -414,6 +423,7 @@ public class Utilities {
         }
         if (quiet)
             args.add("--quiet");
+        addExtraArgs(args, packages);
         runProcess(directory, args.toArray(new String[0]));
     }
 

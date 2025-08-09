@@ -245,29 +245,23 @@ public class CompilerMain {
             return compiler.messages;
         }
 
-        try {
-            // Generate stubs.rs file
-            String outputFile = this.options.ioOptions.outputFile;
-            if (!outputFile.isEmpty() && !this.options.ioOptions.noRust) {
-                Path stubs;
-                Path outputPath = Paths.get(new File(outputFile).getAbsolutePath());
-                if (options.ioOptions.multiCrates()) {
-                    // Generate globals/src/stubs.rs
-                    Utilities.enforce(multiWriter != null);
-                    String globals = multiWriter.getGlobalsName();
-                    stubs = outputPath.resolve(globals).resolve("src").resolve(DBSPCompiler.STUBS_FILE_NAME);
-                } else {
-                    // Generate stubs.rs in the same directory
-                    stubs = outputPath.getParent().resolve(DBSPCompiler.STUBS_FILE_NAME);
-                }
-                StubsWriter writer = new StubsWriter(stubs);
-                writer.add(circuit);
-                writer.write(compiler);
+        // Generate stubs.rs file
+        String outputFile = this.options.ioOptions.outputFile;
+        if (!outputFile.isEmpty() && !this.options.ioOptions.noRust) {
+            Path stubs;
+            Path outputPath = Paths.get(new File(outputFile).getAbsolutePath());
+            if (options.ioOptions.multiCrates()) {
+                // Generate globals/src/stubs.rs
+                Utilities.enforce(multiWriter != null);
+                String globals = multiWriter.getGlobalsName();
+                stubs = outputPath.resolve(globals).resolve("src").resolve(DBSPCompiler.STUBS_FILE_NAME);
+            } else {
+                // Generate stubs.rs in the same directory
+                stubs = outputPath.getParent().resolve(DBSPCompiler.STUBS_FILE_NAME);
             }
-        } catch (IOException e) {
-            compiler.reportError(SourcePositionRange.INVALID,
-                    "Error writing to proto.rs file", e.getMessage());
-            return compiler.messages;
+            StubsWriter writer = new StubsWriter(stubs);
+            writer.add(circuit);
+            writer.write(compiler);
         }
 
         return compiler.messages;

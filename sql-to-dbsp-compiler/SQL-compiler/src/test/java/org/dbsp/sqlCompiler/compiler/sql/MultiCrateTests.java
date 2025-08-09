@@ -23,6 +23,7 @@ import java.util.Arrays;
 public class MultiCrateTests extends BaseSQLTests {
     void compileToMultiCrate(String file, boolean check, boolean noUdfs) throws SQLException, IOException, InterruptedException {
         if (noUdfs) {
+            // Make sure there is no stray udf.rs file from a previous test
             Path path = Paths.get(BaseSQLTests.RUST_CRATES_DIRECTORY,
                     MultiCrates.FILE_PREFIX + "x_globals", "src", "udf.rs");
             File udfFile = path.toFile();
