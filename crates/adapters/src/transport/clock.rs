@@ -415,7 +415,7 @@ inputs:
         // Pause the controller first to prevent more ticks from being generated
         // before we count them and stop the pipeline
         controller.pause();
-        
+
         let old_ticks = ticks;
         let ticks_after_checkpoint = test_stats.ticks() - old_ticks;
 
