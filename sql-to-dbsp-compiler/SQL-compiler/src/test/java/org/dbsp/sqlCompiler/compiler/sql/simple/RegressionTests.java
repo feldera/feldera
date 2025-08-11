@@ -3,6 +3,7 @@ package org.dbsp.sqlCompiler.compiler.sql.simple;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFilterOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapIndexOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPIndexedTopKOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinFilterMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
@@ -2115,6 +2116,22 @@ public class RegressionTests extends SqlIoTest {
                 CREATE MATERIALIZED VIEW row_of_map_idx_outbound AS SELECT
                 c1[3] AS c13_val
                 FROM row_of_map_tbl;""", "ROW type does not have a field with index 3; legal range is 1 to 2");
+    }
+
+    @Test
+    public void testAggregateLimit() {
+        var cc = this.getCC("""
+               CREATE TABLE T(id INT);
+               CREATE TABLE S(s INT, id INT);
+               CREATE VIEW V0 AS SELECT coalesce(
+                      (select sum(s) from S where S.id = T.id limit 1), 0) FROM T;""");
+        CircuitVisitor visitor = new CircuitVisitor(cc.compiler) {
+            @Override
+            public void postorder(DBSPIndexedTopKOperator node) {
+                Assert.fail("Should not have TopK operators");
+            }
+        };
+        cc.visit(visitor);
     }
 
     @Test

@@ -206,6 +206,10 @@ public class CalciteOptimizer implements IWritesLogs {
                 CoreRules.MINUS_FILTER_TO_FILTER,
                 CoreRules.UNION_FILTER_TO_FILTER
         ));
+        this.addStep(new SimpleOptimizerStep("Useless sort removal", 0,
+                CoreRules.SORT_REMOVE,
+                CoreRules.SORT_REMOVE_REDUNDANT,
+                CoreRules.SORT_REMOVE_CONSTANT_KEYS));
         this.addStep(new SimpleOptimizerStep("Decorrelate inner queries 1", 2,
                 new InnerDecorrelator(InnerDecorrelator.Config.DEFAULT)));
         this.addStep(new SimpleOptimizerStep("Correlate/Union", 2,
