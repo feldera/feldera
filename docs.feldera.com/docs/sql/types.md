@@ -168,8 +168,8 @@ typeName:
   |   ROW ( columnDecl [, columnDecl ]* )
 
 sqlTypeName:
-      char [ precision ] [ charSet ]
-  |   varchar [ precision ] [ charSet ]
+      char [ precision ]
+  |   varchar [ precision ]
   |   DATE
   |   time
   |   timestamp
@@ -212,9 +212,6 @@ time:
 
 timestamp:
       TIMESTAMP [ precision ] [ timeZone ]
-
-charSet:
-      CHARACTER SET charSetName
 
 timeZone:
       WITHOUT TIME ZONE

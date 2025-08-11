@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler;
 
+import com.google.common.base.Charsets;
 import org.apache.calcite.avatica.util.Casing;
 import org.apache.calcite.config.CalciteConnectionConfig;
 import org.apache.calcite.config.CalciteConnectionConfigImpl;
@@ -165,6 +166,7 @@ import org.dbsp.util.Properties;
 import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
+import java.nio.charset.Charset;
 import java.util.AbstractList;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -367,6 +369,11 @@ public class SqlToRelCompiler implements IWritesLogs {
 
         public RelStruct createRelStruct(SqlIdentifier name, List<RelDataTypeField> fields, boolean nullable) {
             return new RelStruct(this.id, name, fields, nullable);
+        }
+
+        @Override
+        public Charset getDefaultCharset() {
+            return Charsets.UTF_8;
         }
 
         @Override

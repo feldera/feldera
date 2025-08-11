@@ -383,13 +383,11 @@ public class RegressionTests extends SqlIoTest {
 
     @Test
     public void issue3071() {
-        this.statementsFailingInCompilation("""
+        this.getCC("""
                 CREATE TABLE t0(c0 char) with ('materialized' = 'true');
-                CREATE MATERIALIZED VIEW v100_optimized AS (SELECT * FROM t0 WHERE (t0.c0) NOT BETWEEN ('Y') AND ('䤈'));""",
-                "Failed to encode");
-        this.statementsFailingInCompilation("""
-                CREATE MATERIALIZED VIEW v73_optimized AS SELECT 'a'>'헊';""",
-                "Failed to encode");
+                CREATE MATERIALIZED VIEW v100_optimized AS (SELECT * FROM t0 WHERE (t0.c0) NOT BETWEEN ('Y') AND ('䤈'));""");
+        this.getCC("""
+                CREATE MATERIALIZED VIEW v73_optimized AS SELECT 'a'>'헊';""");
     }
 
     @Test
@@ -651,9 +649,11 @@ public class RegressionTests extends SqlIoTest {
 
     @Test
     public void issue2942() {
-        this.statementsFailingInCompilation(
-                "CREATE VIEW v1(c0) AS (SELECT '9,\uE8C7voz[*');",
-                "Failed to encode");
+        var ccs = this.getCCS("CREATE VIEW v1(c0) AS SELECT '9,\uE8C7voz[*'");
+        ccs.step("", """
+         c0 | weight
+        -------------
+         9,voz[*|1""");
     }
 
     @Test

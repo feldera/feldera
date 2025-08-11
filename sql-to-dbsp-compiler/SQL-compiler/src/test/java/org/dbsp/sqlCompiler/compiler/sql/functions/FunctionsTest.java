@@ -2269,4 +2269,30 @@ public class FunctionsTest extends SqlIoTest {
                  Ggj12341jhg12341=-012341asdf
                 (1 row)""");
     }
+
+    @Test
+    public void issue4559() {
+        var ccs = this.getCCS("""
+                CREATE TABLE str_tbl(id INT, str VARCHAR);
+                
+                CREATE MATERIALIZED VIEW trim_legal AS SELECT
+                TRIM(trailing 'い' from str)
+                FROM str_tbl;""");
+        ccs.step("""
+                INSERT INTO str_tbl VALUES(0, '🐍🐍'), (1, 'かわいい'), (2, '¯\\(ツ)/¯'), (3, 'h@pP√ ');
+                """, """
+                 str | weight
+                --------------
+                 🐍🐍|1
+                 ¯\\(ツ)/¯|1
+                 h@pP√ |1
+                 かわ| 1""");
+        this.getCC("""
+                CREATE TABLE str_tbl(id INT, str VARCHAR);
+                CREATE VIEW V0 AS SELECT POSITION('🐍' in str), POSITION('い' in str), POSITION('√ ' in str) FROM str_tbl;
+                CREATE VIEW V1 AS SELECT REGEXP_REPLACE(str, '([🐍い]|/¯|√\s*)+$', 'i') FROM str_tbl;
+                CREATE VIEW V2 AS SELECT RLIKE(str, '🐍.'), RLIKE(str, '..い.'), RLIKE(str, '....√ ') FROM str_tbl;
+                CREATE VIEW V3 AS SELECT SPLIT(str, '🐍.'), SPLIT(str, '..い.'), SPLIT(str, '....√ ') FROM str_tbl;
+                CREATE VIEW V4 AS SELECT SPLIT_PART(str, '🐍.', 2), SPLIT_PART(str, '..い.', 2), SPLIT_PART(str, '....√ ', 2) FROM str_tbl""");
+    }
 }
