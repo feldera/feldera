@@ -906,10 +906,9 @@ impl ControllerStatus {
             let old = endpoint_stats.output_batch(total_processed_records, num_records);
             self.update_total_completed_records();
 
-            if old - (num_records as u64)
-                <= endpoint_stats.config.connector_config.max_queued_records
-                && old >= endpoint_stats.config.connector_config.max_queued_records
-            {
+            let new = old - (num_records as u64);
+            let threshold = endpoint_stats.config.connector_config.max_queued_records;
+            if (old >= threshold && new <= threshold) || new == 0 {
                 circuit_thread_unparker.unpark();
             }
         };
@@ -1573,6 +1572,13 @@ pub struct OutputEndpointStatus {
 
     /// The first fatal error that occurred at the endpoint.
     pub fatal_error: Mutex<Option<String>>,
+}
+
+impl OutputEndpointStatus {
+    pub fn is_busy(&self) -> bool {
+        self.metrics.buffered_records.load(Ordering::Relaxed) != 0
+            || self.metrics.queued_records.load(Ordering::Relaxed) != 0
+    }
 }
 
 /// Serialize only `config.stream`, omitting other fields.
