@@ -1576,13 +1576,20 @@ impl CircuitThread {
         //   complete before we can write the checkpoint
         //   ([TemporarySuspendError::Replaying]).  No special action is needed.
         //
-        // - If exactly once fault tolerance is not enabled, then some input
-        //   endpoint is presenting a checkpoint barrier because it is between
-        //   possible checkpoint steps
-        //   ([TemporarySuspendError::InputEndpointBarrier]).  In that case, we
-        //   will only flush input for the barrier endpoints (otherwise, it's
-        //   possible non-barrier endpoints will become barriers and we
-        //   definitely don't want that).
+        // - If exactly once fault tolerance is not enabled, then the delay is
+        //   due to one or both of these issues:
+        //
+        //   * [TemporarySuspendError::InputEndpointBarrier]: An input endpoint
+        //     is between possible checkpoint steps.  We will only flush input
+        //     for the barrier endpoints (otherwise, it's possible non-barrier
+        //     endpoints will become barriers and we definitely don't want
+        //     that).
+        //
+        //   * [TemporarySuspendError::OutputEndpointTx]: Some output endpoint
+        //     has buffered or queued data.  We have to wait for the endpoint to
+        //     transmit this data, otherwise it will be lost if we resume from the
+        //     checkpoint.  In the meantime, we will not flush anything to the
+        //     circuit unless required to advance past an input barrier.
         let barriers_only = self.checkpoint_requested() && self.ft.is_none();
 
         // Collect the ids of the endpoints that we'll flush to the circuit.
@@ -3530,6 +3537,7 @@ impl ControllerInner {
                 controller
                     .status
                     .output_buffered_batches(endpoint_id, output_buffer.buffered_processed_records);
+                controller.circuit_thread_unparker.unpark()
             } else if let Some((step, data, processed_records)) = queue.pop() {
                 // Dequeue the next output batch. If output buffering is enabled, push it to the
                 // buffer; we will check if the buffer needs to be flushed at the next iteration of
@@ -3853,6 +3861,13 @@ impl ControllerInner {
         for endpoint_stats in self.status.input_status().values() {
             if endpoint_stats.is_barrier() {
                 temporary.push(TemporarySuspendError::InputEndpointBarrier(
+                    endpoint_stats.endpoint_name.clone(),
+                ));
+            }
+        }
+        for endpoint_stats in self.status.output_status().values() {
+            if endpoint_stats.is_busy() {
+                temporary.push(TemporarySuspendError::OutputEndpointTx(
                     endpoint_stats.endpoint_name.clone(),
                 ));
             }
