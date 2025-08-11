@@ -3017,6 +3017,14 @@ impl OutputBuffer {
         }
     }
 
+    fn len(&self) -> usize {
+        self.buffer.as_ref().map_or(0, |b| b.len())
+    }
+
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     /// Insert `batch` into the buffer.
     fn insert(&mut self, batch: Arc<dyn SyncSerBatchReader>, step: Step, processed_records: u64) {
         if let Some(buffer) = &mut self.buffer {
@@ -3821,6 +3829,15 @@ impl ControllerInner {
                         num_records,
                         &controller.circuit_thread_unparker,
                     );
+
+                    // If the buffer is empty, report it as flushed to update processed record count
+                    // on the endpoint without actually flushing it.
+                    if output_buffer.is_empty() {
+                        controller.status.output_buffered_batches(
+                            endpoint_id,
+                            output_buffer.buffered_processed_records,
+                        );
+                    }
                 } else {
                     Self::push_batch_to_encoder(
                         data.as_ref(),
