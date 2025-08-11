@@ -362,6 +362,11 @@ public class SqlToRelCompiler implements IWritesLogs {
             this.id = currentId++;
         }
 
+        @Override
+        public Charset getDefaultCharset() {
+            return Charsets.UTF_8;
+        }
+
         private RelDataType copyRelStruct(RelDataType type, boolean nullable) {
             RelStruct strct = (RelStruct) type;
             return new RelStruct(strct.id, strct.typeName, type.getFieldList(), nullable);
@@ -369,11 +374,6 @@ public class SqlToRelCompiler implements IWritesLogs {
 
         public RelStruct createRelStruct(SqlIdentifier name, List<RelDataTypeField> fields, boolean nullable) {
             return new RelStruct(this.id, name, fields, nullable);
-        }
-
-        @Override
-        public Charset getDefaultCharset() {
-            return Charsets.UTF_8;
         }
 
         @Override

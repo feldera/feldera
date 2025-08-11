@@ -278,10 +278,11 @@ some_function2!(ilike2, SqlString, SqlString, bool);
 
 #[doc(hidden)]
 pub fn position__(needle: SqlString, haystack: SqlString) -> i32 {
-    let pos = haystack.str().find(needle.str());
+    let s = haystack.str();
+    let pos = s.find(needle.str());
     match pos {
         None => 0,
-        Some(i) => (i + 1) as i32,
+        Some(i) => (s[..i].chars().count() + 1) as i32,
     }
 }
 
