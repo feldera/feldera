@@ -111,13 +111,14 @@ jobs:
           done
           echo "Timed out waiting for pipeline-manager to become healthy"
           exit 1
-      - name: Run manager integration tests
+      - name: Run platform integration tests (Python, converted from Rust)
         run: |
-          ./build/integration_test-*
+          uv run --locked pytest tests/platform_tests/ --timeout=600
+        working-directory: python
         env:
-          TEST_FELDERA_HTTPS_TLS_CERT_PATH: test-tls/tls_test.crt
-          TEST_FELDERA_URL: https://localhost:8080
-          RUST_BACKTRACE: 1
+          FELDERA_HOST: https://localhost:8080
+          FELDERA_HTTPS_TLS_CERT_PATH: test-tls/tls_test.crt
+          IN_CI: 1
       - name: Logs & Cleanup
         if: always()
         run: |
@@ -175,14 +176,7 @@ jobs:
         env:
           PYTHONPATH: ${{ github.workspace }}/python
 
-      - name: Run manager tests
-        if: ${{ vars.CI_DRY_RUN != 'true' }}
-        run: ./build/integration_test-*
-        env:
-          TEST_FELDERA_URL: http://localhost:8080
-          RUST_BACKTRACE: 1
-
-      - name: Run python tests
+      - name: Run python tests  
         if: ${{ vars.CI_DRY_RUN != 'true' }}
         run: uv run --locked pytest -n auto . --timeout=600
         working-directory: python
@@ -190,7 +184,7 @@ jobs:
           FELDERA_HOST: http://localhost:8080
           IN_CI: 1 # We use this flag to skip some kafka tests in the python code base
 
-      - name: Run python tests
+      - name: Run python aggregate tests
         if: ${{ vars.CI_DRY_RUN != 'true' }}
         run: uv run --locked ./tests/run-all-tests.sh
         working-directory: python
