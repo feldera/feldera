@@ -1712,7 +1712,10 @@ impl OutputEndpointStatus {
         self.metrics
             .buffered_records
             .fetch_add(num_records as u64, Ordering::AcqRel);
-        self.metrics.buffered_batches.fetch_add(1, Ordering::AcqRel);
+        // Don't count empty baches.
+        if num_records > 0 {
+            self.metrics.buffered_batches.fetch_add(1, Ordering::AcqRel);
+        }
 
         let old = self
             .metrics
