@@ -44,6 +44,7 @@ import org.dbsp.sqlCompiler.compiler.errors.BaseCompilerException;
 import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
 import org.dbsp.sqlCompiler.compiler.errors.SourceFileContents;
+import org.dbsp.sqlCompiler.compiler.errors.SourcePosition;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.TypeCompiler;
@@ -89,6 +90,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Pattern;
 
 /**
  * This class compiles SQL statements into DBSP circuits.
@@ -635,8 +637,9 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
                 circuit = this.optimize(circuit);
             return circuit;
         } catch (CalciteContextException e) {
-            this.messages.reportError(e);
-            this.rethrow(e);
+            CompilationError e0 = this.improveErrorMessage(e);
+            this.messages.reportError(e0);
+            this.rethrow(e0);
         } catch (CalciteException e) {
             this.messages.reportError(e);
             this.rethrow(e);
@@ -665,6 +668,28 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
             this.rethrow(new RuntimeException(e));
         }
         return null;
+    }
+
+    static final Pattern ITEM_ERROR = Pattern.compile("Cannot apply 'ITEM' to arguments of type 'ITEM\\(([^,]+), ([^']+)\\)'(.*)", Pattern.DOTALL);
+
+    /** Rewrite the error message for some Calcite errors which are confusing */
+    private CompilationError improveErrorMessage(CalciteContextException e) {
+        String message = e.getMessage();
+        if (message != null && !message.isEmpty()) {
+            var matcher = ITEM_ERROR.matcher(message);
+            if (matcher.find()) {
+                String source = matcher.group(1);
+                String index = matcher.group(2);
+                String tail = matcher.group(3);
+                String newMessage = "Cannot apply indexing to arguments of type " + source + "[" + index + "]" + tail;
+                return new CompilationError(
+                        newMessage,
+                        new SourcePositionRange(
+                                new SourcePosition(e.getPosLine(), e.getPosColumn()),
+                                new SourcePosition(e.getEndPosLine(), e.getEndPosColumn())));
+            }
+        }
+        return new CompilationError(e);
     }
 
     void rethrow(RuntimeException e) {

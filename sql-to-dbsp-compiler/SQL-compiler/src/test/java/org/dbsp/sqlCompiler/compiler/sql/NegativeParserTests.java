@@ -170,7 +170,7 @@ public class NegativeParserTests extends BaseSQLTests {
         Assert.assertEquals(1, messages.errorCount());
         msg = messages.getMessage(0);
         Assert.assertFalse(msg.warning);
-        Assert.assertEquals("Object 't' not found", msg.message);
+        TestUtil.assertMessagesContain(messages, "Object 't' not found");
 
         file = createInputScript("CREATE VIEW V AS SELECT ST_MAKELINE(ST_POINT(0,0), ST_POINT(0, 0));");
         messages = CompilerMain.execute("--noRust", file.getPath());

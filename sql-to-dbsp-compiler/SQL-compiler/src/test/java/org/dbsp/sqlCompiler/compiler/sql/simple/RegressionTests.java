@@ -35,7 +35,7 @@ public class RegressionTests extends SqlIoTest {
     @Test
     public void issue3653() {
         this.statementsFailingInCompilation("CREATE TYPE t AS (related t ARRAY);",
-                "error: Error in SQL statement: Unknown identifier 't'");
+                "error: Compilation error: At line 1, column 27: Unknown identifier 't'");
     }
 
     @Test

@@ -1098,22 +1098,22 @@ public class TrigonometryTests extends SqlIoTest {
     public void invalidInputs() {
         this.queryFailingInCompilation(
                 "SELECT sin(CAST('2023-12-14' AS DATE))",
-                "Error in SQL statement: Cannot apply 'SIN' to arguments of type 'SIN(<DATE>)'. " +
+                "Cannot apply 'SIN' to arguments of type 'SIN(<DATE>)'. " +
                         "Supported form(s): 'SIN(<NUMERIC>)'"
         );
 
         this.queryFailingInCompilation("SELECT sin(true)",
-                "Error in SQL statement: Cannot apply 'SIN' to arguments of type 'SIN(<BOOLEAN>)'. " +
+                "Cannot apply 'SIN' to arguments of type 'SIN(<BOOLEAN>)'. " +
                         "Supported form(s): 'SIN(<NUMERIC>)'"
         );
 
         this.queryFailingInCompilation("SELECT sin(CAST('101' AS BINARY(3)))",
-                "Error in SQL statement: Cannot apply 'SIN' to arguments of type 'SIN(<BINARY(3)>)'. " +
+                "Cannot apply 'SIN' to arguments of type 'SIN(<BINARY(3)>)'. " +
                         "Supported form(s): 'SIN(<NUMERIC>)'"
         );
 
         this.queryFailingInCompilation("SELECT sin(CAST('15:06:51.06731' AS TIME))",
-                "Error in SQL statement: Cannot apply 'SIN' to arguments of type 'SIN(<TIME(0)>)'. " +
+                "Cannot apply 'SIN' to arguments of type 'SIN(<TIME(0)>)'. " +
                         "Supported form(s): 'SIN(<NUMERIC>)'"
         );
     }

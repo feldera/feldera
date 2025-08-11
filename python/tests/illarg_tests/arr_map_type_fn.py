@@ -20,7 +20,7 @@ class illarg_index_illegal(TstView):
         self.sql = """CREATE MATERIALIZED VIEW index_illegal AS SELECT
                       bin[2] AS bin
                       FROM illegal_tbl"""
-        self.expected_error = "Cannot apply 'ITEM' to arguments of type"
+        self.expected_error = "Cannot apply indexing to arguments of type"
 
 
 # ARRAY() function
@@ -638,7 +638,7 @@ class illarg_map_item_illegal(TstView):
         self.sql = """CREATE MATERIALIZED VIEW map_item_illegal AS SELECT
                       bin['a']  AS str
                       FROM illegal_tbl"""
-        self.expected_error = "Cannot apply 'ITEM' to arguments of type"
+        self.expected_error = "Cannot apply indexing to arguments of type"
 
 
 # CARDINALITY function
