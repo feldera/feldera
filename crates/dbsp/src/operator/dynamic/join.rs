@@ -2014,6 +2014,72 @@ mod test {
         }
     }
 
+    fn proptest_join<K: DBData, V: DBData>(
+        mut left_inputs: Vec<Vec<Tup2<K, Tup2<V, ZWeight>>>>,
+        mut right_inputs: Vec<Vec<Tup2<K, Tup2<V, ZWeight>>>>,
+        f: impl Fn(&K, &V, &V) -> V + Clone + Send + 'static,
+        transaction: bool,
+    ) {
+        let (mut dbsp, (left_handle, right_handle, output_handle, expected_output_handle)) =
+            Runtime::init_circuit(
+                CircuitConfig::from(4).with_splitter_chunk_size_records(2),
+                move |circuit| {
+                    let (left_input, left_handle) = circuit.add_input_indexed_zset::<K, V>();
+                    let (right_input, right_handle) = circuit.add_input_indexed_zset::<K, V>();
+
+                    let output_handle =
+                        left_input.join(&right_input, f.clone()).accumulate_output();
+
+                    let f = f.clone();
+                    let expected_output_handle = circuit
+                        .non_incremental(
+                            &(left_input, right_input),
+                            move |_child, (left, right)| {
+                                Ok(left
+                                    .integrate()
+                                    .stream_join(&right.integrate(), f)
+                                    .differentiate())
+                            },
+                        )
+                        .unwrap()
+                        .accumulate_output();
+
+                    Ok((
+                        left_handle,
+                        right_handle,
+                        output_handle,
+                        expected_output_handle,
+                    ))
+                },
+            )
+            .unwrap();
+
+        if transaction {
+            dbsp.start_transaction().unwrap();
+        }
+
+        for step in 0..left_inputs.len() {
+            left_handle.append(&mut left_inputs[step]);
+            right_handle.append(&mut right_inputs[step]);
+
+            if !transaction {
+                dbsp.transaction().unwrap();
+                let output = output_handle.concat().consolidate();
+
+                assert_eq!(output, expected_output_handle.concat().consolidate())
+            } else {
+                dbsp.step().unwrap();
+            }
+        }
+
+        if transaction {
+            dbsp.commit_transaction().unwrap();
+            let output = output_handle.concat().consolidate();
+
+            assert_eq!(output, expected_output_handle.concat().consolidate())
+        }
+    }
+
     fn generate_test_indexed_zset(
         max_key: i32,
         max_val: i32,
@@ -2050,6 +2116,28 @@ mod test {
             .boxed()
     }
 
+    fn generate_join_test_data(
+        max_key: i32,
+        max_val: i32,
+        max_weight: ZWeight,
+        max_tuples: usize,
+    ) -> BoxedStrategy<(
+        Vec<Vec<Tup2<i32, Tup2<i32, ZWeight>>>>,
+        Vec<Vec<Tup2<i32, Tup2<i32, ZWeight>>>>,
+    )> {
+        (
+            vec(
+                generate_test_indexed_zset(max_key, max_val, max_weight, max_tuples),
+                10,
+            ),
+            vec(
+                generate_test_indexed_zset(max_key, max_val, max_weight, max_tuples),
+                10,
+            ),
+        )
+            .boxed()
+    }
+
     proptest! {
         #[test]
         fn proptest_antijoin_big_step(inputs in generate_antijoin_test_data(10, 5, 3, 100)) {
@@ -2059,6 +2147,16 @@ mod test {
         #[test]
         fn proptest_antijoin_small_step(inputs in generate_antijoin_test_data(10, 5, 3, 100)) {
             proptest_antijoin(inputs.0, inputs.1, false);
+        }
+
+        #[test]
+        fn proptest_join_big_step(inputs in generate_join_test_data(10, 5, 3, 50)) {
+            proptest_join(inputs.0, inputs.1, |_k, v1, v2| v1 + v2, true);
+        }
+
+        #[test]
+        fn proptest_join_small_step(inputs in generate_join_test_data(10, 5, 3, 50)) {
+            proptest_join(inputs.0, inputs.1, |_k, v1, v2| v1 + v2, false);
         }
     }
 }
