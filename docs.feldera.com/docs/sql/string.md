@@ -177,7 +177,7 @@ addition to the normal way of `''`.
   </tr>
   <tr>
     <td><a id="position"></a><code>POSITION(substring IN string)</code></td>
-    <td>Returns first starting index of the specified substring within string, or zero if it's not present.  First character has index 1.</td>
+    <td>Returns the first Unicode character index of the specified substring within string, or zero if it's not present.  First character has index 1.</td>
     <td><code>position('om' in 'Thomas')</code> => <code>3</code></td>
   </tr>
   <tr>

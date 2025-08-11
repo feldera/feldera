@@ -2154,4 +2154,13 @@ public class RegressionTests extends SqlIoTest {
         this.statementsFailingInCompilation("CREATE FUNCTION F(x INT) RETURNS BIGINT AS YEAR(NOW()) + x;",
                 "Non-deterministic UDF");
     }
+
+    @Test
+    public void issue4562() {
+        this.q("""
+                SELECT POSITION('い' in 'かわいい');
+                 pos
+                -----
+                 3""");
+    }
 }
