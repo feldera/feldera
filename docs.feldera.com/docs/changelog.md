@@ -20,6 +20,11 @@ import TabItem from '@theme/TabItem';
         negative.  Their behavior has not changed, but the documentation
         was incorrect.
 
+        Changed the default character set from ISO-8859-1 to UTF-8.
+        Removed from the documentation the ability to specify a different
+        charater set for strings.  Removed mentions of trailing space
+        trimming from strings.
+
         ## 0.105.0
 
         Changed the semantics of functions `ARRAY_CONTAINS`,

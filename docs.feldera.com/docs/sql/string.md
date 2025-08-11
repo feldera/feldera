@@ -1,5 +1,8 @@
 # String Operations
 
+The default character set for all strings is
+[UTF-8](https://en.wikipedia.org/wiki/UTF-8).
+
 SQL defines two primary character types: `character varying(n)` and
 `character(n)`, where n is a positive integer.  Both of these types
 can store strings up to n characters (not bytes) in length. An attempt
@@ -13,11 +16,6 @@ simply store the shorter string.
 
 In addition, we provide the `text`, or `varchar` type, which stores
 strings of any length.
-
-Trailing spaces are removed when converting a character value to one
-of the other string types.  Note that trailing spaces are semantically
-significant in character varying and text values, and when using
-pattern matching (e.g., LIKE  and regular expressions).
 
 ## String constants (literals)
 
