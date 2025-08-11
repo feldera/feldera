@@ -6,7 +6,7 @@ public class SourcePosition {
     public final int line;    // Numbered from 1
     public final int column;  // Numbered from 1
 
-    SourcePosition(int line, int column) {
+    public SourcePosition(int line, int column) {
         this.line = line;
         this.column = column;
     }

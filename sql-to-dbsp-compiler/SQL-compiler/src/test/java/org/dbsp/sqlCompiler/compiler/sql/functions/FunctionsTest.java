@@ -881,7 +881,6 @@ public class FunctionsTest extends SqlIoTest {
                  4.0000000000000000
                 (1 row)
 
-
                 SELECT power(2, 2.0);
                  power
                 -------
@@ -1169,7 +1168,6 @@ public class FunctionsTest extends SqlIoTest {
                 ------------
                  -20
                 (1 row)
-
 
                 select round(15.1);
                  round(15.1)
@@ -1590,7 +1588,6 @@ public class FunctionsTest extends SqlIoTest {
                 -----
                 5678.1
                 (1 row)
-
 
                 select truncate(5678.123451);
                 truncate(5678.123451)
@@ -2295,4 +2292,24 @@ public class FunctionsTest extends SqlIoTest {
                 CREATE VIEW V3 AS SELECT SPLIT(str, '🐍.'), SPLIT(str, '..い.'), SPLIT(str, '....√ ') FROM str_tbl;
                 CREATE VIEW V4 AS SELECT SPLIT_PART(str, '🐍.', 2), SPLIT_PART(str, '..い.', 2), SPLIT_PART(str, '....√ ', 2) FROM str_tbl""");
     }
+
+    @Test
+    public void issue4539() {
+        this.statementsFailingInCompilation("""
+               CREATE TABLE illegal_tbl(bin BINARY);
+               CREATE VIEW index_illegal AS SELECT
+               bin[2] AS bin
+               FROM illegal_tbl;""", """
+               Cannot apply indexing to arguments of type <BINARY(1)>[<INTEGER>]. Supported form(s): <ARRAY>[<INTEGER>]
+               <MAP>[<ANY>]
+               <ROW>[<CHARACTER>|<INTEGER>]
+               <VARIANT>[<ANY>]""");
+        this.statementsFailingInCompilation(
+                "CREATE VIEW map_item_illegal AS SELECT x''['a'];", """
+               Cannot apply indexing to arguments of type <BINARY(0)>[<CHAR(1)>]. Supported form(s): <ARRAY>[<INTEGER>]
+               <MAP>[<ANY>]
+               <ROW>[<CHARACTER>|<INTEGER>]
+               <VARIANT>[<ANY>]""");
+    }
 }
+
