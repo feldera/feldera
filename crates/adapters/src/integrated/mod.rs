@@ -5,14 +5,11 @@
 
 use crate::controller::{ControllerInner, EndpointId};
 use crate::transport::IntegratedInputEndpoint;
-use crate::{ControllerError, Encoder, InputConsumer, OutputEndpoint, TransportInputEndpoint};
-use feldera_types::config::{
-    ConnectorConfig, InputEndpointConfig, OutputEndpointConfig, TransportConfig,
-};
+use crate::{ControllerError, Encoder, InputConsumer, OutputEndpoint};
+use feldera_types::config::{ConnectorConfig, TransportConfig};
 use feldera_types::program_schema::Relation;
 use postgres::PostgresOutputEndpoint;
 use std::sync::Weak;
-use utoipa::openapi::PathItemType::Post;
 
 #[cfg(feature = "with-deltalake")]
 mod delta_table;

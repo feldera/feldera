@@ -1,7 +1,6 @@
 use crate::catalog::{CursorWithPolarity, SerBatchReader};
 use crate::controller::{ControllerInner, EndpointId};
 use crate::format::parquet::relation_to_arrow_fields;
-use crate::format::relation_to_parquet_schema;
 use crate::format::MAX_DUPLICATES;
 use crate::integrated::delta_table::register_storage_handlers;
 use crate::transport::Step;
@@ -16,7 +15,7 @@ use arrow::datatypes::{DataType as ArrowDataType, Field as ArrowField, Schema as
 use chrono::Utc;
 use dbsp::circuit::tokio::TOKIO;
 use deltalake::kernel::transaction::{CommitBuilder, TableReference};
-use deltalake::kernel::{transaction, Action, DataType, StructField};
+use deltalake::kernel::{Action, DataType, StructField};
 use deltalake::operations::create::CreateBuilder;
 use deltalake::operations::write::writer::{DeltaWriter, WriterConfig};
 use deltalake::protocol::{DeltaOperation, SaveMode};
@@ -35,7 +34,7 @@ use std::cmp::min;
 use std::sync::{Arc, Weak};
 use std::thread;
 use tokio::sync::mpsc::{channel, Receiver, Sender};
-use tracing::{debug, error, info, trace};
+use tracing::{info, trace};
 
 /// Arrow serde config for reading/writing Delta tables.
 pub const fn delta_arrow_serde_config() -> &'static SqlSerdeConfig {
