@@ -1,71 +1,54 @@
-use crate::catalog::InputCollectionHandle;
-use crate::format::avro::{input, output};
 use crate::format::parquet::relation_to_arrow_fields;
 use crate::format::parquet::test::load_parquet_file;
-use crate::format::relation_to_parquet_schema;
-use crate::integrated::delta_table::{delta_input_serde_config, register_storage_handlers};
+use crate::integrated::delta_table::delta_input_serde_config;
 use crate::test::data::DeltaTestKey;
 use crate::test::{
     file_to_zset, list_files_recursive, test_circuit, test_circuit_with_index, wait,
-    DatabricksPeople, DeltaTestStruct, MockDeZSet, MockUpdate,
+    DeltaTestStruct,
 };
-use crate::{Controller, ControllerError, InputFormat};
-use anyhow::anyhow;
-use arrow::array::{BooleanArray, RecordBatch};
-use arrow::datatypes::{DataType as ArrowDataType, Field as ArrowField, Schema as ArrowSchema};
-use chrono::{DateTime, NaiveDate};
+use crate::Controller;
+use arrow::datatypes::Schema as ArrowSchema;
+use chrono::NaiveDate;
 #[cfg(feature = "delta-s3-test")]
 use dbsp::typed_batch::DynBatchReader;
-use dbsp::typed_batch::TypedBatch;
 use dbsp::utils::Tup2;
-use dbsp::{storage, BatchReader, DBData, OrdZSet, ZSet};
-use deltalake::datafusion::dataframe::DataFrameWriteOptions;
-use deltalake::datafusion::logical_expr::Literal;
-use deltalake::datafusion::prelude::{col, SessionContext};
-use deltalake::datafusion::sql::sqlparser::test_utils::table;
+use dbsp::{DBData, OrdZSet};
+use deltalake::datafusion::prelude::SessionContext;
 use deltalake::kernel::{DataType, StructField};
 use deltalake::operations::create::CreateBuilder;
 use deltalake::protocol::SaveMode;
 use deltalake::{DeltaOps, DeltaTable, DeltaTableBuilder};
-use feldera_adapterlib::catalog::{OutputCollectionHandles, RecordFormat};
-use feldera_adapterlib::utils::datafusion::{execute_query_collect, execute_singleton_query};
+use feldera_adapterlib::utils::datafusion::execute_query_collect;
 use feldera_types::config::PipelineConfig;
 use feldera_types::format::json::JsonFlavor;
-use feldera_types::program_schema::{ColumnType, Field, Relation, SqlIdentifier};
+use feldera_types::program_schema::{Field, SqlIdentifier};
 use feldera_types::serde_with_context::serde_config::DecimalFormat;
 use feldera_types::serde_with_context::serialize::SerializeWithContextWrapper;
 use feldera_types::serde_with_context::{
-    DateFormat, DeserializeWithContext, SerializeWithContext, SqlSerdeConfig, TimeFormat,
-    TimestampFormat,
+    DateFormat, DeserializeWithContext, SerializeWithContext, SqlSerdeConfig, TimestampFormat,
 };
-use feldera_types::transport::delta_table::DeltaTableIngestMode;
-use futures::io::repeat;
-use parquet::file::reader::Length;
 use proptest::collection::vec;
 use proptest::prelude::{Arbitrary, ProptestConfig, Strategy};
+use proptest::proptest;
 use proptest::strategy::ValueTree;
 use proptest::test_runner::TestRunner;
-use proptest::{proptest, test_runner};
-use serde_arrow::schema::SerdeArrowSchema;
 use std::cmp::min;
 use std::collections::HashMap;
 use std::ffi::OsStr;
-use std::fmt::Debug;
 use std::fs::File;
-use std::io::{Read, Write};
+use std::io::Write;
 use std::mem::forget;
 use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tempfile::{tempdir, NamedTempFile, TempDir};
+use tempfile::{NamedTempFile, TempDir};
 use tokio::sync::mpsc;
 use tokio::time::{sleep, timeout};
-use tracing::{debug, info, trace};
+use tracing::info;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::EnvFilter;
-use uuid::Uuid;
 
 fn delta_output_serde_config() -> SqlSerdeConfig {
     SqlSerdeConfig::default()
@@ -1041,7 +1024,7 @@ where
 /// __feldera_op and __feldera_ts fields output by pipelines 1.
 #[allow(clippy::too_many_arguments)]
 async fn test_cdc(
-    schema: &[Field],
+    _schema: &[Field],
     table_uri: &str,
     storage_options: &HashMap<String, String>,
     data: Vec<DeltaTestStruct>,
@@ -1053,13 +1036,7 @@ async fn test_cdc(
     let mut input_file = NamedTempFile::new().unwrap();
     let input_file_path = input_file.path().display().to_string();
 
-    let datafusion = SessionContext::new();
     let table_uri_clone = table_uri.to_string();
-
-    let storage_opions = storage_options
-        .iter()
-        .map(|(k, v)| (k.clone(), format!("\"{v}\"")))
-        .collect::<HashMap<_, _>>();
 
     // Build pipeline 1.
     let mut output_config = storage_options.clone();
@@ -1306,9 +1283,6 @@ async fn delta_table_cdc_file_test() {
     let input_table_dir = TempDir::new().unwrap();
     let input_table_uri = input_table_dir.path().display().to_string();
 
-    let output_table_dir: TempDir = TempDir::new().unwrap();
-    let output_table_uri = output_table_dir.path().display().to_string();
-
     test_cdc(
         &relation_schema,
         &input_table_uri,
@@ -1331,9 +1305,6 @@ async fn delta_table_cdc_file_indexed_test() {
 
     let input_table_dir = TempDir::new().unwrap();
     let input_table_uri = input_table_dir.path().display().to_string();
-
-    let output_table_dir: TempDir = TempDir::new().unwrap();
-    let output_table_uri = output_table_dir.path().display().to_string();
 
     test_cdc(
         &relation_schema,
@@ -1358,9 +1329,6 @@ async fn delta_table_cdc_file_suspend_test() {
 
     let input_table_dir = TempDir::new().unwrap();
     let input_table_uri = input_table_dir.path().display().to_string();
-
-    let output_table_dir: TempDir = TempDir::new().unwrap();
-    let output_table_uri = output_table_dir.path().display().to_string();
 
     test_cdc(
         &relation_schema,

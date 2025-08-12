@@ -1,38 +1,27 @@
-use std::io::Write as _;
-use std::{
-    collections::HashSet,
-    io::Write,
-    marker::PhantomPinned,
-    mem::take,
-    path::PathBuf,
-    pin::{pin, Pin},
-    str::FromStr,
-    sync::Weak,
-    time::{Duration, Instant},
-};
+use std::{io::Write, marker::PhantomPinned, str::FromStr, sync::Weak, time::Duration};
 
 use crate::{
     buffer_op,
-    catalog::{CursorWithPolarity, RecordFormat, SerBatchReader, SerCursor},
+    catalog::{RecordFormat, SerBatchReader},
     controller::{ControllerInner, EndpointId},
     flush_op,
-    format::{Encoder, OutputConsumer, MAX_DUPLICATES},
+    format::{Encoder, OutputConsumer},
     transport::OutputEndpoint,
-    util::{truncate_ellipse, IndexedOperationType},
+    util::IndexedOperationType,
 };
 use crate::{util::indexed_operation_type, ControllerError};
-use anyhow::{anyhow, bail, Context, Result as AnyResult};
+use anyhow::{anyhow, Context, Result as AnyResult};
 use feldera_adapterlib::transport::{AsyncErrorCallback, Step};
 use feldera_types::{
-    format::{csv::CsvParserConfig, json::JsonFlavor},
+    format::json::JsonFlavor,
     program_schema::{Relation, SqlIdentifier},
     transport::postgres::PostgresWriterConfig,
 };
 use openssl::{
     pkey::PKey,
     rsa::Rsa,
-    ssl::{SslConnector, SslConnectorBuilder, SslFiletype, SslMethod},
-    x509::{store::X509StoreBuilder, X509},
+    ssl::{SslConnector, SslConnectorBuilder, SslMethod},
+    x509::X509,
 };
 use postgres::{Client, NoTls, Statement};
 use postgres_openssl::MakeTlsConnector;
@@ -112,11 +101,7 @@ struct PreparedStatements {
 }
 
 impl PreparedStatements {
-    fn new(
-        raw_queries: &RawQueries,
-        client: &mut postgres::Client,
-        endpoint_name: &str,
-    ) -> Result<Self, BackoffError> {
+    fn new(raw_queries: &RawQueries, client: &mut postgres::Client) -> Result<Self, BackoffError> {
         let err_msg = "\nPlease ensure all field names that are quoted in PostgreSQL are quoted correctly in Feldera as well";
 
         let insert = client
@@ -195,7 +180,6 @@ fn set_certs(builder: &mut SslConnectorBuilder, config: &PostgresWriterConfig) -
     let ca_cert_path = {
         let mut file =
             NamedTempFile::new().context("failed to create tempfile to write CA certificate to")?;
-        let path = file.path().to_owned();
 
         file.write_all(ca_cert.as_bytes())
             .context("failed to write CA certificate to tempfile")?;
@@ -230,13 +214,11 @@ fn set_certs(builder: &mut SslConnectorBuilder, config: &PostgresWriterConfig) -
 }
 
 fn connect(config: &PostgresWriterConfig, endpoint_name: &str) -> Result<Client, BackoffError> {
-    let connector_config = config.clone();
-
     let pgcnf = postgres::Config::from_str(&config.uri).map_err(|e| {
         BackoffError::Permanent(anyhow!("error parsing postgres connection string: {e}"))
     })?;
 
-    let client = if let Some(ca_cert) = &config.ssl_ca_pem {
+    let client = if config.ssl_ca_pem.is_some() {
         let mut builder = SslConnector::builder(SslMethod::tls())
             .map_err(|e| BackoffError::Permanent(anyhow!("failed to build SSL connection: {e}")))?;
 
@@ -338,7 +320,7 @@ impl PostgresOutputEndpoint {
                 new_fields.join(", ")
             );
         }
-        let prepared_statements = PreparedStatements::new(&raw_queries, &mut client, endpoint_name)
+        let prepared_statements = PreparedStatements::new(&raw_queries, &mut client)
             .map_err(|e| ControllerError::output_transport_error(endpoint_name, true, e.inner()))?;
 
         let out = Self {
@@ -528,28 +510,25 @@ impl PostgresOutputEndpoint {
     }
 
     fn retry_connecting(&mut self) -> Result<(), BackoffError> {
-        let valid = self.client.is_valid(PG_CONNECTION_VALIDITY_TIMEOUT);
-        let Some(controller) = self.controller.upgrade() else {
+        if self.controller.upgrade().is_none() {
             tracing::warn!("controller is shutting down: aborting");
             return Ok(());
         };
-
-        let Err(e) = valid else {
+        if self.client.is_valid(PG_CONNECTION_VALIDITY_TIMEOUT).is_ok() {
             return Ok(());
         };
 
         self.transaction = None;
         self.client = connect(&self.config, &self.endpoint_name)?;
 
-        self.prepared_statements =
-            PreparedStatements::new(&self.raw_queries, &mut self.client, &self.endpoint_name)
-                .map_err(|e| {
-                    e.context(format!(
-                        "postgres: error preparing statements after reconnecting to postgres
+        self.prepared_statements = PreparedStatements::new(&self.raw_queries, &mut self.client)
+            .map_err(|e| {
+                e.context(format!(
+                    "postgres: error preparing statements after reconnecting to postgres
 These statements were successfully prepared before reconnecting. Does the table {} still exist?",
-                        self.table
-                    ))
-                })?;
+                    self.table
+                ))
+            })?;
 
         tracing::info!("postgres: successfully reconnected to postgres");
 
@@ -591,10 +570,10 @@ These statements were successfully prepared before reconnecting. Does the table 
     }
 
     fn batch_start_inner(&mut self) -> Result<(), BackoffError> {
-        let Some(controller) = self.controller.upgrade() else {
+        if self.controller.upgrade().is_none() {
             tracing::warn!("controller is shutting down: aborting");
             return Ok(());
-        };
+        }
 
         let txn = self.client.transaction()?;
 
@@ -680,7 +659,7 @@ impl OutputConsumer for PostgresOutputEndpoint {
         _: Option<&[u8]>,
         _: Option<&[u8]>,
         _: &[(&str, Option<&[u8]>)],
-        num_records: usize,
+        _num_records: usize,
     ) {
         unreachable!()
     }
@@ -717,9 +696,6 @@ impl Encoder for PostgresOutputEndpoint {
     }
 
     fn encode(&mut self, batch: &dyn SerBatchReader) -> anyhow::Result<()> {
-        let max_buffer_size = OutputConsumer::max_buffer_size_bytes(self);
-        let max_records_in_buffer = self.config.max_records_in_buffer.unwrap_or(usize::MAX);
-
         let mut cursor = batch.cursor(RecordFormat::Json(JsonFlavor::Postgres))?;
 
         while cursor.key_valid() {
@@ -768,15 +744,15 @@ impl OutputEndpoint for PostgresOutputEndpoint {
         todo!()
     }
 
-    fn push_buffer(&mut self, buffer: &[u8]) -> anyhow::Result<()> {
+    fn push_buffer(&mut self, _buffer: &[u8]) -> anyhow::Result<()> {
         unreachable!()
     }
 
     fn push_key(
         &mut self,
-        key: Option<&[u8]>,
-        val: Option<&[u8]>,
-        headers: &[(&str, Option<&[u8]>)],
+        _key: Option<&[u8]>,
+        _val: Option<&[u8]>,
+        _headers: &[(&str, Option<&[u8]>)],
     ) -> anyhow::Result<()> {
         unreachable!()
     }

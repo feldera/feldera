@@ -1,89 +1,54 @@
 use crate::catalog::{ArrowStream, InputCollectionHandle};
-use crate::controller::{ControllerInner, EndpointId};
 use crate::format::InputBuffer;
 use crate::integrated::delta_table::{delta_input_serde_config, register_storage_handlers};
-use crate::transport::{
-    InputEndpoint, InputQueue, InputReaderCommand, IntegratedInputEndpoint, NonFtInputReaderCommand,
-};
+use crate::transport::{InputEndpoint, InputQueue, InputReaderCommand, IntegratedInputEndpoint};
 use crate::util::{root_cause, JobQueue};
-use crate::{
-    ControllerError, InputConsumer, InputReader, PipelineState, RecordFormat,
-    TransportInputEndpoint,
-};
-use actix_web::web::Data;
+use crate::{ControllerError, InputConsumer, InputReader, PipelineState};
 use anyhow::{anyhow, bail, Error as AnyError, Result as AnyResult};
 use arrow::array::BooleanArray;
 use arrow::datatypes::Schema;
 use arrow::error::ArrowError;
-use datafusion::catalog::TableProvider;
 use datafusion::common::arrow::array::{AsArray, RecordBatch};
 use datafusion::datasource::file_format::parquet::ParquetFormat;
 use datafusion::datasource::listing::{
     ListingOptions, ListingTable, ListingTableConfig, ListingTableUrl,
 };
-use datafusion::datasource::MemTable;
 use datafusion::error::DataFusionError;
-use datafusion::execution::context::ExecutionProps;
-use datafusion::logical_expr::sqlparser::parser::ParserError;
-use datafusion::logical_expr::{Filter, LogicalPlan, Projection};
+use datafusion::logical_expr::LogicalPlan;
 use datafusion::physical_plan::PhysicalExpr;
 use datafusion::physical_planner::{DefaultPhysicalPlanner, PhysicalPlanner};
 use datafusion::prelude::SessionConfig;
-use datafusion::scalar::ScalarValue;
 use dbsp::circuit::tokio::TOKIO;
-use dbsp::operator::input;
-use dbsp::InputHandle;
-use deltalake::datafusion::common::Column;
 use deltalake::datafusion::dataframe::DataFrame;
 use deltalake::datafusion::execution::context::SQLOptions;
-use deltalake::datafusion::prelude::{Expr, ParquetReadOptions, SessionContext};
-use deltalake::datafusion::sql::sqlparser::dialect::GenericDialect;
-use deltalake::datafusion::sql::sqlparser::keywords::Keyword::SQL;
-use deltalake::datafusion::sql::sqlparser::parser::Parser;
-use deltalake::datafusion::sql::sqlparser::test_utils::table;
-use deltalake::delta_datafusion::cdf::FileAction;
-use deltalake::delta_datafusion::logical;
+use deltalake::datafusion::prelude::SessionContext;
 use deltalake::kernel::Action;
-use deltalake::kernel::Error::Parse;
-use deltalake::operations::create::CreateBuilder;
-use deltalake::protocol::SaveMode;
 use deltalake::table::builder::ensure_table_uri;
 use deltalake::table::PeekCommit;
-use deltalake::{datafusion, DeltaTable, DeltaTableBuilder, Path};
+use deltalake::{datafusion, DeltaTable, DeltaTableBuilder};
 use feldera_adapterlib::format::ParseError;
 use feldera_adapterlib::transport::{parse_resume_info, Resume};
 use feldera_adapterlib::utils::datafusion::{
     execute_query_collect, execute_singleton_query, timestamp_to_sql_expression,
     validate_sql_expression, validate_timestamp_column,
 };
-use feldera_types::config::{FtModel, InputEndpointConfig};
-use feldera_types::format::json::JsonFlavor;
-use feldera_types::program_schema::{ColumnType, Field, Relation, SqlType};
-use feldera_types::transport::delta_table::{DeltaTableIngestMode, DeltaTableReaderConfig};
-use feldera_types::transport::s3::S3InputConfig;
-use futures::TryFutureExt;
+use feldera_types::config::FtModel;
+use feldera_types::program_schema::Relation;
+use feldera_types::transport::delta_table::DeltaTableReaderConfig;
 use futures_util::StreamExt;
-use rkyv::with::Atomic;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
-use std::collections::{BTreeSet, HashMap, VecDeque};
-use std::error::Error;
-use std::fmt::format;
-use std::future::Future;
-use std::str::FromStr;
+use std::collections::BTreeSet;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, Weak};
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 use tokio::select;
 use tokio::sync::watch::{channel, Receiver, Sender};
 use tokio::sync::{mpsc, Semaphore};
 use tokio::time::sleep;
-use tokio_util::time;
-use tracing::{debug, error, info, trace};
-use tracing_subscriber::fmt::fmt;
+use tracing::{debug, info, trace};
 use url::Url;
-use utoipa::ToSchema;
 
 /// Polling interval when following a delta table.
 const POLL_INTERVAL: Duration = Duration::from_millis(1000);
@@ -305,7 +270,7 @@ impl DeltaTableInputReader {
 impl InputReader for DeltaTableInputReader {
     fn request(&self, command: InputReaderCommand) {
         match command {
-            InputReaderCommand::Replay { metadata, data } => panic!(
+            InputReaderCommand::Replay { .. } => panic!(
                 "replay command is not supported by DeltaTableInputReader; this is a bug, please report it to developers"),
             InputReaderCommand::Extend => {
                 let _ = self.sender.send_replace(PipelineState::Running);
@@ -417,7 +382,7 @@ impl DeltaTableInputEndpointInner {
 
     fn validate_cdc_config(&self) -> Result<(), ControllerError> {
         if self.config.is_cdc() {
-            let Some(cdc_order_by) = &self.config.cdc_order_by else {
+            if self.config.cdc_order_by.is_none() {
                 return Err(ControllerError::invalid_transport_configuration(
                     &self.endpoint_name,
                     "the DeltaLake connector is configured in 'cdc' mode, but the 'cdc_order_by' property is not set",
@@ -775,7 +740,7 @@ impl DeltaTableInputEndpointInner {
                         )
                         .await;
                     }
-                    Ok(PeekCommit::New(new_version, actions)) => {
+                    Ok(PeekCommit::New(new_version, _actions)) => {
                         info!(
                             "delta_table {}: reached table version {new_version}, which is greater or equal than the 'end_version' {} specified in connector config: stopping the connector",
                             &self.endpoint_name,
@@ -827,12 +792,10 @@ impl DeltaTableInputEndpointInner {
             })?
             .with_storage_options(self.config.object_store_config.clone());
 
-        let table_builder = if let Some(
-            resume_info @ DeltaResumeInfo {
-                version: Some(version),
-                ..
-            },
-        ) = self.last_resume_status.lock().unwrap().clone()
+        let table_builder = if let Some(DeltaResumeInfo {
+            version: Some(version),
+            ..
+        }) = self.last_resume_status.lock().unwrap().clone()
         {
             // If we are resuming from a checkpoint, use the version specified in the checkpoint.
             table_builder.with_version(version)
@@ -1047,7 +1010,7 @@ impl DeltaTableInputEndpointInner {
             .datafusion
             .table("snapshot")
             .await
-            .map_err(|e| {
+            .map_err(|_e| {
                 ControllerError::invalid_transport_configuration(&self.endpoint_name, &format!("internal error when compiling the 'cdc_delete_filter' expression '{delete_filter}'; {REPORT_ERROR}: table 'snapshot' not found"))
             })?
             .schema()
@@ -1182,7 +1145,7 @@ impl DeltaTableInputEndpointInner {
         wait_running(receiver).await;
 
         // Limit the number of connectors simultaneously reading from Delta Lake.
-        let token = DELTA_READER_SEMAPHORE.acquire().await.unwrap();
+        let _token = DELTA_READER_SEMAPHORE.acquire().await.unwrap();
 
         let mut stream = match dataframe.execute_stream().await {
             Err(e) => {
@@ -1443,9 +1406,6 @@ impl DeltaTableInputEndpointInner {
         };
 
         let schema: Schema = schema.try_into().map_err(|e| anyhow!("internal error processing {description}; {REPORT_ERROR}; error converting Delta schema {schema:?} to arrow schema: {e}"))?;
-
-        let listing_options =
-            ListingOptions::new(Arc::new(ParquetFormat::default())).with_file_extension(".parquet");
 
         let mut urls = Vec::with_capacity(files.len());
         for file in files.iter() {

@@ -1,47 +1,29 @@
-use crate::controller::{ControllerInner, EndpointId};
-use crate::format::InputBuffer;
 use crate::transport::{
     InputEndpoint, InputQueue, InputReaderCommand, IntegratedInputEndpoint, NonFtInputReaderCommand,
 };
-use crate::{
-    ControllerError, InputConsumer, InputReader, PipelineState, RecordFormat,
-    TransportInputEndpoint,
-};
-use anyhow::{anyhow, Error as AnyError, Result as AnyResult};
+use crate::{ControllerError, InputConsumer, InputReader, PipelineState, RecordFormat};
+use anyhow::{anyhow, Result as AnyResult};
 use dbsp::circuit::tokio::TOKIO;
-use dbsp::InputHandle;
 
 use feldera_adapterlib::catalog::{DeCollectionStream, InputCollectionHandle};
 use feldera_adapterlib::format::ParseError;
-use feldera_types::config::{FtModel, InputEndpointConfig};
+use feldera_types::config::FtModel;
 use feldera_types::format::json::JsonFlavor;
-use feldera_types::program_schema::{ColumnType, Field, Relation, SqlType};
+use feldera_types::program_schema::Relation;
 use feldera_types::transport::postgres::PostgresReaderConfig;
 
 use chrono::{TimeZone, Utc};
-use futures::{pin_mut, TryFutureExt};
-use futures_util::{StreamExt, TryStreamExt};
 use rust_decimal::Decimal;
-use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::collections::{HashMap, VecDeque};
-use std::fmt::format;
-use std::str::FromStr;
-use std::sync::{Arc, Mutex, Weak};
+use std::sync::Arc;
 use std::thread;
-use std::time::Duration;
 use tokio::select;
 use tokio::sync::mpsc;
 use tokio::sync::watch::{channel, Receiver, Sender};
-use tokio::time::sleep;
 use tokio_postgres::tls::NoTlsStream;
-use tokio_postgres::types::{FromSql, Type};
+use tokio_postgres::types::Type;
 use tokio_postgres::{Client, Connection, NoTls, Socket};
-use tokio_util::time;
-use tracing::{debug, error, info, trace};
-use tracing_subscriber::fmt::fmt;
-use url::Url;
-use utoipa::ToSchema;
+use tracing::{debug, error, info};
 use uuid::Uuid;
 
 /// Integrated input connector that reads from a delta table.

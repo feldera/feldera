@@ -1,28 +1,20 @@
-use chrono::{NaiveDate, NaiveTime};
-use dbsp::{
-    circuit::CircuitConfig,
-    utils::{Tup1, Tup4},
-    DBSPHandle, Runtime,
-};
-use feldera_adapterlib::catalog::CircuitCatalog;
-use feldera_sqllib::{ByteArray, SqlString, F32, F64};
+use dbsp::{utils::Tup1, Runtime};
 use feldera_types::{
     config::PipelineConfig,
     deserialize_table_record,
-    format::json::JsonFlavor,
-    program_schema::{ColumnType, Field, Relation, SqlIdentifier},
-    serde_with_context::{DeserializeWithContext, SerializeWithContext, SqlSerdeConfig},
+    program_schema::{Relation, SqlIdentifier},
+    serde_with_context::{SerializeWithContext, SqlSerdeConfig},
     serialize_table_record,
 };
 use pg::PostgresTestStruct;
 use postgres::NoTls;
-use serde_json::{json, Value};
+use serde_json::json;
 use serial_test::serial;
-use std::{collections::BTreeMap, io::Write, str::FromStr};
+use std::{collections::BTreeMap, io::Write};
 use tempfile::NamedTempFile;
 
 use crate::{
-    test::{test_circuit, wait, TestStruct},
+    test::{wait, TestStruct},
     Catalog, Controller,
 };
 
@@ -35,15 +27,14 @@ mod pg {
     use std::collections::BTreeMap;
 
     use chrono::SubsecRound;
-    use dbsp::{circuit::CircuitConfig, typed_batch::TypedBatch, utils::Tup1, DBSPHandle, Runtime};
+    use dbsp::{utils::Tup1, Runtime};
     use feldera_sqllib::{SqlDecimal, SqlString, F32, F64};
     use feldera_types::{
         config::PipelineConfig,
-        deserialize_table_record, deserialize_without_context,
+        deserialize_table_record,
         program_schema::{ColumnType, Field, Relation, SqlIdentifier},
-        serialize_struct, serialize_table_record,
+        serialize_table_record,
     };
-    use num_traits::FromPrimitive;
     use postgres::{NoTls, Row};
     use rand::{distributions::Standard, prelude::Distribution, Rng};
 
