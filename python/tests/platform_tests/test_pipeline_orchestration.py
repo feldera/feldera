@@ -2,11 +2,11 @@
 import unittest
 import json
 import time
-from tests.shared_test_pipeline import SharedTestPipeline
+import requests
 from tests import TEST_CLIENT, enterprise_only
 
 
-class TestPipelineOrchestration(SharedTestPipeline):
+class TestPipelineOrchestration(unittest.TestCase):
     """Test pipeline lifecycle operations: start, stop, pause, clear."""
 
     def test_basic_table(self):
@@ -22,7 +22,7 @@ class TestPipelineOrchestration(SharedTestPipeline):
         
         # Clean up any existing pipeline
         try:
-            TEST_CLIENT.delete(f"/v0/pipelines/{pipeline_name}")
+            TEST_CLIENT.http.delete(f"/v0/pipelines/{pipeline_name}")
         except:
             pass
         
@@ -34,11 +34,11 @@ class TestPipelineOrchestration(SharedTestPipeline):
             "program_code": "CREATE TABLE t1(c1 INTEGER);",
             "program_config": {}
         }
-        response = TEST_CLIENT.post("/v0/pipelines", json=pipeline_data)
+        response = requests.post(TEST_CLIENT.config.url + "/v0/pipelines", json=pipeline_data, headers={"Content-Type": "application/json", **TEST_CLIENT.http.headers})
         self.assertEqual(response.status_code, 201)
         
         # Get pipeline to verify creation
-        response = TEST_CLIENT.get(f"/v0/pipelines/{pipeline_name}")
+        response = requests.get(TEST_CLIENT.config.url + f"/v0/pipelines/{pipeline_name}", headers={"Content-Type": "application/json", **TEST_CLIENT.http.headers})
         self.assertEqual(response.status_code, 200)
         
         # Wait for compilation (up to 10 minutes)
@@ -46,7 +46,7 @@ class TestPipelineOrchestration(SharedTestPipeline):
         start_time = time.time()
         
         while time.time() - start_time < timeout:
-            response = TEST_CLIENT.get(f"/v0/pipelines/{pipeline_name}")
+            response = TEST_CLIENT.http.get(f"/v0/pipelines/{pipeline_name}")
             pipeline = response.json()
             
             if pipeline.get("program_status") == "Success":
@@ -60,11 +60,11 @@ class TestPipelineOrchestration(SharedTestPipeline):
             self.fail("Timed out waiting for program compilation")
         
         # Delete pipeline
-        response = TEST_CLIENT.delete(f"/v0/pipelines/{pipeline_name}")
+        response = requests.delete(TEST_CLIENT.config.url + f"/v0/pipelines/{pipeline_name}", headers={"Content-Type": "application/json", **TEST_CLIENT.http.headers})
         self.assertEqual(response.status_code, 200)
         
         # Verify deletion
-        response = TEST_CLIENT.get(f"/v0/pipelines/{pipeline_name}")
+        response = requests.get(TEST_CLIENT.config.url + f"/v0/pipelines/{pipeline_name}", headers={"Content-Type": "application/json", **TEST_CLIENT.http.headers})
         self.assertEqual(response.status_code, 404)
 
     def test_deploy_pipeline(self):
@@ -73,7 +73,7 @@ class TestPipelineOrchestration(SharedTestPipeline):
         
         # Clean up any existing pipeline
         try:
-            TEST_CLIENT.delete(f"/v0/pipelines/{pipeline_name}")
+            TEST_CLIENT.http.delete(f"/v0/pipelines/{pipeline_name}")
         except:
             pass
         
@@ -82,14 +82,14 @@ class TestPipelineOrchestration(SharedTestPipeline):
             "name": pipeline_name,
             "program_code": "CREATE TABLE t1(c1 INTEGER) with ('materialized' = 'true'); CREATE MATERIALIZED VIEW v1 AS SELECT * FROM t1;",
         }
-        response = TEST_CLIENT.post("/v0/pipelines", json=pipeline_data)
+        response = requests.post(TEST_CLIENT.config.url + "/v0/pipelines", json=pipeline_data, headers={"Content-Type": "application/json", **TEST_CLIENT.http.headers})
         self.assertEqual(response.status_code, 201)
         
         # Wait for compilation
         self._wait_for_compilation(pipeline_name)
         
         # Start pipeline
-        response = TEST_CLIENT.post(f"/v0/pipelines/{pipeline_name}/start")
+        response = requests.post(TEST_CLIENT.config.url + f"/v0/pipelines/{pipeline_name}/start", headers={"Content-Type": "application/json", **TEST_CLIENT.http.headers})
         self.assertEqual(response.status_code, 202)
         
         # Wait for running status
@@ -97,16 +97,16 @@ class TestPipelineOrchestration(SharedTestPipeline):
         
         # Push some data
         data = "1\n2\n3\n"
-        response = TEST_CLIENT.post(f"/v0/pipelines/{pipeline_name}/ingress/t1", data=data)
+        response = requests.post(TEST_CLIENT.config.url + f"/v0/pipelines/{pipeline_name}/ingress/t1", data=data, headers={"Content-Type": "application/json", **TEST_CLIENT.http.headers})
         self.assertTrue(response.status_code < 300)
         
         # Push more data with Windows-style newlines
         data = "4\r\n5\r\n6"
-        response = TEST_CLIENT.post(f"/v0/pipelines/{pipeline_name}/ingress/t1", data=data)
+        response = requests.post(TEST_CLIENT.config.url + f"/v0/pipelines/{pipeline_name}/ingress/t1", data=data, headers={"Content-Type": "application/json", **TEST_CLIENT.http.headers})
         self.assertTrue(response.status_code < 300)
         
         # Pause pipeline
-        response = TEST_CLIENT.post(f"/v0/pipelines/{pipeline_name}/pause")
+        response = requests.post(TEST_CLIENT.config.url + f"/v0/pipelines/{pipeline_name}/pause", headers={"Content-Type": "application/json", **TEST_CLIENT.http.headers})
         self.assertEqual(response.status_code, 202)
         
         # Wait for paused status
@@ -114,21 +114,21 @@ class TestPipelineOrchestration(SharedTestPipeline):
         
         # Query data in paused state
         query = "select * from t1 order by c1;"
-        response = TEST_CLIENT.get(f"/v0/pipelines/{pipeline_name}/query?sql={query}")
+        response = requests.get(TEST_CLIENT.config.url + f"/v0/pipelines/{pipeline_name}/query?sql={query}", headers={"Content-Type": "application/json", **TEST_CLIENT.http.headers})
         self.assertEqual(response.status_code, 200)
         result = response.json()
         expected = [{"c1": 1}, {"c1": 2}, {"c1": 3}, {"c1": 4}, {"c1": 5}, {"c1": 6}]
         self.assertEqual(result, expected)
         
         # Start pipeline again
-        response = TEST_CLIENT.post(f"/v0/pipelines/{pipeline_name}/start")
+        response = requests.post(TEST_CLIENT.config.url + f"/v0/pipelines/{pipeline_name}/start", headers={"Content-Type": "application/json", **TEST_CLIENT.http.headers})
         self.assertEqual(response.status_code, 202)
         
         # Wait for running status
         self._wait_for_status(pipeline_name, "Running")
         
         # Query data in running state
-        response = TEST_CLIENT.get(f"/v0/pipelines/{pipeline_name}/query?sql={query}")
+        response = requests.get(TEST_CLIENT.config.url + f"/v0/pipelines/{pipeline_name}/query?sql={query}", headers={"Content-Type": "application/json", **TEST_CLIENT.http.headers})
         self.assertEqual(response.status_code, 200)
         result = response.json()
         self.assertEqual(result, expected)
@@ -137,7 +137,7 @@ class TestPipelineOrchestration(SharedTestPipeline):
         self._stop_force_and_clear(pipeline_name)
         
         # Clean up
-        TEST_CLIENT.delete(f"/v0/pipelines/{pipeline_name}")
+        TEST_CLIENT.http.delete(f"/v0/pipelines/{pipeline_name}")
 
     def test_pipeline_panic_handling(self):
         """Test that pipeline panics are correctly reported."""
@@ -145,7 +145,7 @@ class TestPipelineOrchestration(SharedTestPipeline):
         
         # Clean up any existing pipeline
         try:
-            TEST_CLIENT.delete(f"/v0/pipelines/{pipeline_name}")
+            TEST_CLIENT.http.delete(f"/v0/pipelines/{pipeline_name}")
         except:
             pass
         
@@ -154,14 +154,14 @@ class TestPipelineOrchestration(SharedTestPipeline):
             "name": pipeline_name,
             "program_code": "CREATE TABLE t1(c1 INTEGER); CREATE VIEW v1 AS SELECT ELEMENT(ARRAY [2, 3]) FROM t1;",
         }
-        response = TEST_CLIENT.post("/v0/pipelines", json=pipeline_data)
+        response = requests.post(TEST_CLIENT.config.url + "/v0/pipelines", json=pipeline_data, headers={"Content-Type": "application/json", **TEST_CLIENT.http.headers})
         self.assertEqual(response.status_code, 201)
         
         # Wait for compilation
         self._wait_for_compilation(pipeline_name)
         
         # Start pipeline
-        response = TEST_CLIENT.post(f"/v0/pipelines/{pipeline_name}/start")
+        response = requests.post(TEST_CLIENT.config.url + f"/v0/pipelines/{pipeline_name}/start", headers={"Content-Type": "application/json", **TEST_CLIENT.http.headers})
         self.assertEqual(response.status_code, 202)
         
         # Wait for running status
@@ -169,14 +169,14 @@ class TestPipelineOrchestration(SharedTestPipeline):
         
         # Push data that should cause panic
         data = "1\n2\n3\n"
-        response = TEST_CLIENT.post(f"/v0/pipelines/{pipeline_name}/ingress/t1", data=data)
+        response = TEST_CLIENT.http.post(f"/v0/pipelines/{pipeline_name}/ingress/t1", data=data)
         
         # Wait for error status
         timeout = 60
         start_time = time.time()
         
         while time.time() - start_time < timeout:
-            response = TEST_CLIENT.get(f"/v0/pipelines/{pipeline_name}")
+            response = TEST_CLIENT.http.get(f"/v0/pipelines/{pipeline_name}")
             pipeline = response.json()
             
             if pipeline.get("deployment_status") == "Failed":
@@ -190,7 +190,7 @@ class TestPipelineOrchestration(SharedTestPipeline):
         
         # Clean up
         self._stop_force_and_clear(pipeline_name)
-        TEST_CLIENT.delete(f"/v0/pipelines/{pipeline_name}")
+        TEST_CLIENT.http.delete(f"/v0/pipelines/{pipeline_name}")
 
     def test_pipeline_restart(self):
         """Test starting, stopping, starting and stopping again."""
@@ -198,7 +198,7 @@ class TestPipelineOrchestration(SharedTestPipeline):
         
         # Clean up any existing pipeline
         try:
-            TEST_CLIENT.delete(f"/v0/pipelines/{pipeline_name}")
+            TEST_CLIENT.http.delete(f"/v0/pipelines/{pipeline_name}")
         except:
             pass
         
@@ -207,32 +207,32 @@ class TestPipelineOrchestration(SharedTestPipeline):
             "name": pipeline_name,
             "program_code": "CREATE TABLE t1(c1 INTEGER); CREATE VIEW v1 AS SELECT * FROM t1;",
         }
-        response = TEST_CLIENT.post("/v0/pipelines", json=pipeline_data)
+        response = requests.post(TEST_CLIENT.config.url + "/v0/pipelines", json=pipeline_data, headers={"Content-Type": "application/json", **TEST_CLIENT.http.headers})
         self.assertEqual(response.status_code, 201)
         
         # Wait for compilation
         self._wait_for_compilation(pipeline_name)
         
         # Start -> Stop -> Start -> Stop
-        response = TEST_CLIENT.post(f"/v0/pipelines/{pipeline_name}/start")
+        response = requests.post(TEST_CLIENT.config.url + f"/v0/pipelines/{pipeline_name}/start", headers={"Content-Type": "application/json", **TEST_CLIENT.http.headers})
         self.assertEqual(response.status_code, 202)
         self._wait_for_status(pipeline_name, "Running")
         
-        response = TEST_CLIENT.post(f"/v0/pipelines/{pipeline_name}/stop?force=true")
+        response = requests.post(TEST_CLIENT.config.url + f"/v0/pipelines/{pipeline_name}/stop?force=true", headers={"Content-Type": "application/json", **TEST_CLIENT.http.headers})
         self.assertEqual(response.status_code, 202)
         self._wait_for_status(pipeline_name, "Stopped")
         
-        response = TEST_CLIENT.post(f"/v0/pipelines/{pipeline_name}/start")
+        response = requests.post(TEST_CLIENT.config.url + f"/v0/pipelines/{pipeline_name}/start", headers={"Content-Type": "application/json", **TEST_CLIENT.http.headers})
         self.assertEqual(response.status_code, 202)
         self._wait_for_status(pipeline_name, "Running")
         
-        response = TEST_CLIENT.post(f"/v0/pipelines/{pipeline_name}/stop?force=true")
+        response = requests.post(TEST_CLIENT.config.url + f"/v0/pipelines/{pipeline_name}/stop?force=true", headers={"Content-Type": "application/json", **TEST_CLIENT.http.headers})
         self.assertEqual(response.status_code, 202)
         self._wait_for_status(pipeline_name, "Stopped")
         
         # Clean up
         self._stop_force_and_clear(pipeline_name)
-        TEST_CLIENT.delete(f"/v0/pipelines/{pipeline_name}")
+        TEST_CLIENT.http.delete(f"/v0/pipelines/{pipeline_name}")
 
     def test_pipeline_stop_force_after_start(self):
         """Test stopping pipeline at various stages after starting."""
@@ -240,7 +240,7 @@ class TestPipelineOrchestration(SharedTestPipeline):
         
         # Clean up any existing pipeline
         try:
-            TEST_CLIENT.delete(f"/v0/pipelines/{pipeline_name}")
+            TEST_CLIENT.http.delete(f"/v0/pipelines/{pipeline_name}")
         except:
             pass
         
@@ -249,7 +249,7 @@ class TestPipelineOrchestration(SharedTestPipeline):
             "name": pipeline_name,
             "program_code": "CREATE TABLE t1(c1 INTEGER);",
         }
-        response = TEST_CLIENT.post("/v0/pipelines", json=pipeline_data)
+        response = requests.post(TEST_CLIENT.config.url + "/v0/pipelines", json=pipeline_data, headers={"Content-Type": "application/json", **TEST_CLIENT.http.headers})
         self.assertEqual(response.status_code, 201)
         
         # Wait for compilation
@@ -258,7 +258,7 @@ class TestPipelineOrchestration(SharedTestPipeline):
         # Test various durations before stopping
         for duration_ms in [0, 50, 100, 250, 500]:
             # Start pipeline
-            response = TEST_CLIENT.post(f"/v0/pipelines/{pipeline_name}/start")
+            response = requests.post(TEST_CLIENT.config.url + f"/v0/pipelines/{pipeline_name}/start", headers={"Content-Type": "application/json", **TEST_CLIENT.http.headers})
             self.assertEqual(response.status_code, 202)
             
             # Wait specified duration
@@ -266,19 +266,19 @@ class TestPipelineOrchestration(SharedTestPipeline):
                 time.sleep(duration_ms / 1000.0)
             
             # Stop forcefully
-            response = TEST_CLIENT.post(f"/v0/pipelines/{pipeline_name}/stop?force=true")
+            response = requests.post(TEST_CLIENT.config.url + f"/v0/pipelines/{pipeline_name}/stop?force=true", headers={"Content-Type": "application/json", **TEST_CLIENT.http.headers})
             self.assertEqual(response.status_code, 202)
             
             # Wait for stopped status
             self._wait_for_status(pipeline_name, "Stopped")
             
             # Clear for next iteration
-            response = TEST_CLIENT.post(f"/v0/pipelines/{pipeline_name}/clear")
+            response = requests.post(TEST_CLIENT.config.url + f"/v0/pipelines/{pipeline_name}/clear", headers={"Content-Type": "application/json", **TEST_CLIENT.http.headers})
             if response.status_code == 202:
                 self._wait_for_storage_status(pipeline_name, "Cleared")
         
         # Clean up
-        TEST_CLIENT.delete(f"/v0/pipelines/{pipeline_name}")
+        TEST_CLIENT.http.delete(f"/v0/pipelines/{pipeline_name}")
 
     @enterprise_only
     def test_pipeline_stop_without_force(self):
@@ -287,7 +287,7 @@ class TestPipelineOrchestration(SharedTestPipeline):
         
         # Clean up any existing pipeline
         try:
-            TEST_CLIENT.delete(f"/v0/pipelines/{pipeline_name}")
+            TEST_CLIENT.http.delete(f"/v0/pipelines/{pipeline_name}")
         except:
             pass
         
@@ -296,24 +296,24 @@ class TestPipelineOrchestration(SharedTestPipeline):
             "name": pipeline_name,
             "program_code": "CREATE TABLE t1(c1 INTEGER);",
         }
-        response = TEST_CLIENT.post("/v0/pipelines", json=pipeline_data)
+        response = requests.post(TEST_CLIENT.config.url + "/v0/pipelines", json=pipeline_data, headers={"Content-Type": "application/json", **TEST_CLIENT.http.headers})
         self.assertEqual(response.status_code, 201)
         
         # Wait for compilation
         self._wait_for_compilation(pipeline_name)
         
         # Start pipeline
-        response = TEST_CLIENT.post(f"/v0/pipelines/{pipeline_name}/start")
+        response = requests.post(TEST_CLIENT.config.url + f"/v0/pipelines/{pipeline_name}/start", headers={"Content-Type": "application/json", **TEST_CLIENT.http.headers})
         self.assertEqual(response.status_code, 202)
         self._wait_for_status(pipeline_name, "Running")
         
         # Stop without force
-        response = TEST_CLIENT.post(f"/v0/pipelines/{pipeline_name}/stop?force=false")
+        response = requests.post(TEST_CLIENT.config.url + f"/v0/pipelines/{pipeline_name}/stop?force=false", headers={"Content-Type": "application/json", **TEST_CLIENT.http.headers})
         self.assertEqual(response.status_code, 202)
         self._wait_for_status(pipeline_name, "Stopped")
         
         # Clean up
-        TEST_CLIENT.delete(f"/v0/pipelines/{pipeline_name}")
+        TEST_CLIENT.http.delete(f"/v0/pipelines/{pipeline_name}")
 
     def test_pipeline_clear(self):
         """Test clearing pipeline storage."""
@@ -321,7 +321,7 @@ class TestPipelineOrchestration(SharedTestPipeline):
         
         # Clean up any existing pipeline
         try:
-            TEST_CLIENT.delete(f"/v0/pipelines/{pipeline_name}")
+            TEST_CLIENT.http.delete(f"/v0/pipelines/{pipeline_name}")
         except:
             pass
         
@@ -330,11 +330,11 @@ class TestPipelineOrchestration(SharedTestPipeline):
             "name": pipeline_name,
             "program_code": "CREATE TABLE t1(c1 INTEGER);",
         }
-        response = TEST_CLIENT.post("/v0/pipelines", json=pipeline_data)
+        response = requests.post(TEST_CLIENT.config.url + "/v0/pipelines", json=pipeline_data, headers={"Content-Type": "application/json", **TEST_CLIENT.http.headers})
         self.assertEqual(response.status_code, 201)
         
         # Initially should be Cleared
-        response = TEST_CLIENT.get(f"/v0/pipelines/{pipeline_name}")
+        response = TEST_CLIENT.http.get(f"/v0/pipelines/{pipeline_name}")
         pipeline = response.json()
         self.assertEqual(pipeline["storage_status"], "Cleared")
         
@@ -342,34 +342,34 @@ class TestPipelineOrchestration(SharedTestPipeline):
         self._wait_for_compilation(pipeline_name)
         
         # Start pipeline - storage becomes InUse
-        response = TEST_CLIENT.post(f"/v0/pipelines/{pipeline_name}/start")
+        response = requests.post(TEST_CLIENT.config.url + f"/v0/pipelines/{pipeline_name}/start", headers={"Content-Type": "application/json", **TEST_CLIENT.http.headers})
         self.assertEqual(response.status_code, 202)
         self._wait_for_status(pipeline_name, "Running")
         
-        response = TEST_CLIENT.get(f"/v0/pipelines/{pipeline_name}")
+        response = TEST_CLIENT.http.get(f"/v0/pipelines/{pipeline_name}")
         pipeline = response.json()
         self.assertEqual(pipeline["storage_status"], "InUse")
         
         # Cannot clear while running
-        response = TEST_CLIENT.post(f"/v0/pipelines/{pipeline_name}/clear")
+        response = requests.post(TEST_CLIENT.config.url + f"/v0/pipelines/{pipeline_name}/clear", headers={"Content-Type": "application/json", **TEST_CLIENT.http.headers})
         self.assertEqual(response.status_code, 400)
         
         # Stop pipeline - storage remains InUse
-        response = TEST_CLIENT.post(f"/v0/pipelines/{pipeline_name}/stop?force=true")
+        response = requests.post(TEST_CLIENT.config.url + f"/v0/pipelines/{pipeline_name}/stop?force=true", headers={"Content-Type": "application/json", **TEST_CLIENT.http.headers})
         self.assertEqual(response.status_code, 202)
         self._wait_for_status(pipeline_name, "Stopped")
         
-        response = TEST_CLIENT.get(f"/v0/pipelines/{pipeline_name}")
+        response = TEST_CLIENT.http.get(f"/v0/pipelines/{pipeline_name}")
         pipeline = response.json()
         self.assertEqual(pipeline["storage_status"], "InUse")
         
         # Now can clear
-        response = TEST_CLIENT.post(f"/v0/pipelines/{pipeline_name}/clear")
+        response = requests.post(TEST_CLIENT.config.url + f"/v0/pipelines/{pipeline_name}/clear", headers={"Content-Type": "application/json", **TEST_CLIENT.http.headers})
         self.assertEqual(response.status_code, 202)
         self._wait_for_storage_status(pipeline_name, "Cleared")
         
         # Clean up
-        TEST_CLIENT.delete(f"/v0/pipelines/{pipeline_name}")
+        TEST_CLIENT.http.delete(f"/v0/pipelines/{pipeline_name}")
 
     # Helper methods
     def _wait_for_compilation(self, pipeline_name, timeout=600):
@@ -377,7 +377,7 @@ class TestPipelineOrchestration(SharedTestPipeline):
         start_time = time.time()
         
         while time.time() - start_time < timeout:
-            response = TEST_CLIENT.get(f"/v0/pipelines/{pipeline_name}")
+            response = TEST_CLIENT.http.get(f"/v0/pipelines/{pipeline_name}")
             pipeline = response.json()
             
             if pipeline.get("program_status") == "Success":
@@ -395,7 +395,7 @@ class TestPipelineOrchestration(SharedTestPipeline):
         start_time = time.time()
         
         while time.time() - start_time < timeout:
-            response = TEST_CLIENT.get(f"/v0/pipelines/{pipeline_name}")
+            response = TEST_CLIENT.http.get(f"/v0/pipelines/{pipeline_name}")
             pipeline = response.json()
             
             if pipeline.get("deployment_status") == expected_status:
@@ -410,7 +410,7 @@ class TestPipelineOrchestration(SharedTestPipeline):
         start_time = time.time()
         
         while time.time() - start_time < timeout:
-            response = TEST_CLIENT.get(f"/v0/pipelines/{pipeline_name}")
+            response = TEST_CLIENT.http.get(f"/v0/pipelines/{pipeline_name}")
             pipeline = response.json()
             
             if pipeline.get("storage_status") == expected_status:
@@ -422,11 +422,11 @@ class TestPipelineOrchestration(SharedTestPipeline):
 
     def _stop_force_and_clear(self, pipeline_name):
         """Stop pipeline forcefully and clear storage."""
-        response = TEST_CLIENT.post(f"/v0/pipelines/{pipeline_name}/stop?force=true")
+        response = requests.post(TEST_CLIENT.config.url + f"/v0/pipelines/{pipeline_name}/stop?force=true", headers={"Content-Type": "application/json", **TEST_CLIENT.http.headers})
         if response.status_code == 202:
             self._wait_for_status(pipeline_name, "Stopped")
         
-        response = TEST_CLIENT.post(f"/v0/pipelines/{pipeline_name}/clear")
+        response = requests.post(TEST_CLIENT.config.url + f"/v0/pipelines/{pipeline_name}/clear", headers={"Content-Type": "application/json", **TEST_CLIENT.http.headers})
         if response.status_code == 202:
             self._wait_for_storage_status(pipeline_name, "Cleared")
 
