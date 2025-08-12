@@ -33,11 +33,13 @@ bun run test-ct-ui    # Component tests with UI
 bun run build-openapi     # Generate new openapi.json from Rust backend
 bun run generate-openapi  # Generate TypeScript client from openapi.json
 
-# Icon font generation
+# Icon packs webfont generation
 bun run build-icons
 ```
 
 ## Architecture Overview
+
+Web Console is a dasboard UI app deployed as a static website that is served by the pipeline-manager service in a Feldera deployment. The app is self-contained and does not need an internet connection to function properly.
 
 ### Technology Stack
 
@@ -55,22 +57,22 @@ bun run build-icons
 #### Core Directories
 
 - `src/lib/components/` - Reusable Svelte components organized by feature
-- `src/lib/compositions/` - Stateful functions for app state management (Svelte runes-based)
-- `src/lib/functions/` - Pure functions and utilities
+- `src/lib/compositions/` - Stateful functions for app state management (Svelte runes-based), organized by feature family where applicable
+- `src/lib/functions/` - Pure functions and utilities, organized by application
 - `src/lib/services/` - API services and side effects (networking, storage)
 - `src/lib/types/` - TypeScript type definitions
 - `src/routes/` - File-based routing (SvelteKit pages)
 
 #### Key Service Layer
 
-- **Pipeline Manager API**: Main backend communication via `src/lib/services/pipelineManager.ts`
+- **Pipeline Manager API**: Main backend communication via `src/lib/services/pipelineManager.ts` which wraps the auto-generated API client
 - **Auto-generated API client**: Located in `src/lib/services/manager/` (generated from OpenAPI spec)
 - **HTTP Client Setup**: Global client configuration in `src/lib/compositions/setupHttpClient.ts`
 
 #### Architecture Patterns
 
 - **State Management**: Uses Svelte 5 runes (`$state`, `$derived`) via composition functions
-- **Error Handling**: Centralized error reporting through toast notifications
+- **Error Handling**: Centralized request error and occasional client error reporting through toast notifications
 - **Authentication**: OIDC integration with token-based API authentication
 - **Real-time Features**: WebSocket/streaming connections for pipeline logs and data egress
 

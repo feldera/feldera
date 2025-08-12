@@ -68,7 +68,7 @@ ENV PATH="$HOME/.cargo/bin:$PATH"
 ## Install Bun.js
 RUN curl -fsSL https://bun.sh/install | bash -s "bun-v1.2.2"
 ENV PATH="$HOME/.bun/bin:$PATH"
-RUN $HOME/.bun/bin/bun install --global @hey-api/openapi-ts
+RUN $HOME/.bun/bin/bun install --global @hey-api/openapi-ts @anthropic-ai/claude-code
 
 RUN \
    rustup install $RUST_VERSION && \
