@@ -1123,23 +1123,7 @@ impl CircuitThread {
 
                 Some(ft)
             }
-            Some(FtModel::AtLeastOnce) => None,
-            None => {
-                if let Some(backend) = &storage {
-                    // We're not fault-tolerant (not even at-least-once), so
-                    // it's not a good idea to resume from the same checkpoint
-                    // twice.  Delete it.
-                    backend
-                        .delete_if_exists(&StoragePath::from(STATE_FILE))
-                        .map_err(|error| {
-                            ControllerError::storage_error(
-                                "delete non-FT checkpoint following resume",
-                                error,
-                            )
-                        })?;
-                }
-                None
-            }
+            Some(FtModel::AtLeastOnce) | None => None,
         };
 
         Ok(Self {

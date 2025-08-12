@@ -20,13 +20,17 @@ later restart it from the same point:
 
   Suspending a pipeline allows it to resume gracefully on a different
   host or with a modified configuration.  With Feldera deployed in
-  Kubernetes, suspending a pipeline temrinates its current pod while
+  Kubernetes, suspending a pipeline terminates its current pod while
   keeping its state in EBS or S3.  The pipeline can then resume in a
   new pod which can have more or fewer resources than the original
   pod.
 
-  The "suspend" API suspends a pipeline, and the "start" API (or ▶️ in
-  the web UI) resumes it.
+  The checkpoint created by suspend remains after resume.  This means
+  that, if the pipeline crashes and restarts, it will resume a second
+  time from the same point.
+
+  In the web UI, the ⏹️ Stop button suspends a pipeline and ▶️ resumes
+  it.
 
   Suspend and resume is in the Feldera enterprise edition only.  For a
   pipeline to support suspend and resume, a pipeline must use
