@@ -1,8 +1,3 @@
-// Feature gating causes warnings
-#![allow(unused_imports)]
-#![allow(unused_variables)]
-#![allow(unreachable_code)]
-
 use crate::controller::{ControllerInner, EndpointId};
 use crate::transport::IntegratedInputEndpoint;
 use crate::{ControllerError, Encoder, InputConsumer, OutputEndpoint};
@@ -15,16 +10,7 @@ use std::sync::Weak;
 mod delta_table;
 mod postgres;
 
-#[cfg(feature = "with-deltalake")]
-pub use delta_table::{DeltaTableInputEndpoint, DeltaTableWriter};
-
-#[cfg(feature = "with-deltalake")]
-use feldera_types::config::TransportConfig::DeltaTableInput;
-
 use crate::integrated::postgres::PostgresInputEndpoint;
-#[cfg(feature = "with-iceberg")]
-use feldera_types::config::TransportConfig::IcebergInput;
-use feldera_types::config::TransportConfig::PostgresInput;
 
 /// An integrated output connector implements both transport endpoint
 /// (`OutputEndpoint`) and `Encoder` traits.  It is used to implement
@@ -60,7 +46,7 @@ pub fn create_integrated_output_endpoint(
 ) -> Result<Box<dyn IntegratedOutputEndpoint>, ControllerError> {
     let ep: Box<dyn IntegratedOutputEndpoint> = match &connector_config.transport {
         #[cfg(feature = "with-deltalake")]
-        TransportConfig::DeltaTableOutput(config) => Box::new(DeltaTableWriter::new(
+        TransportConfig::DeltaTableOutput(config) => Box::new(delta_table::DeltaTableWriter::new(
             endpoint_id,
             endpoint_name,
             config,
@@ -104,18 +90,14 @@ pub fn create_integrated_input_endpoint(
 ) -> Result<Box<dyn IntegratedInputEndpoint>, ControllerError> {
     let ep: Box<dyn IntegratedInputEndpoint> = match &config.transport {
         #[cfg(feature = "with-deltalake")]
-        DeltaTableInput(config) => Box::new(DeltaTableInputEndpoint::new(
-            endpoint_name,
-            config,
-            consumer,
-        )),
+        TransportConfig::DeltaTableInput(config) => Box::new(
+            delta_table::DeltaTableInputEndpoint::new(endpoint_name, config, consumer),
+        ),
         #[cfg(feature = "with-iceberg")]
-        IcebergInput(config) => Box::new(feldera_iceberg::IcebergInputEndpoint::new(
-            endpoint_name,
-            config,
-            consumer,
-        )),
-        PostgresInput(config) => {
+        TransportConfig::IcebergInput(config) => Box::new(
+            feldera_iceberg::IcebergInputEndpoint::new(endpoint_name, config, consumer),
+        ),
+        TransportConfig::PostgresInput(config) => {
             Box::new(PostgresInputEndpoint::new(endpoint_name, config, consumer))
         }
         transport => {
