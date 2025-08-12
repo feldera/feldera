@@ -207,7 +207,7 @@ class TestPipelineCrud(unittest.TestCase):
 
         # Clean up
         for name in [pipeline1_name, pipeline2_name]:
-            requests.delete(TEST_CLIENT.config.url + f"/v0/pipelines/{pipeline_name}", headers={"Content-Type": "application/json", **TEST_CLIENT.http.headers})
+            requests.delete(TEST_CLIENT.config.url + f"/v0/pipelines/{name}", headers={"Content-Type": "application/json", **TEST_CLIENT.http.headers})
 
     def test_pipeline_name_conflict(self):
         """Test that duplicate pipeline names are rejected."""
