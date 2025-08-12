@@ -63,3 +63,4 @@ jobs:
       - name: Print sccache stats
         run: |
           sccache --show-stats
+        if: ${{ vars.CI_DRY_RUN != 'true' }}
