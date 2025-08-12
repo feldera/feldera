@@ -22,7 +22,7 @@ class TestPipelineOrchestration(unittest.TestCase):
         
         # Clean up any existing pipeline
         try:
-            TEST_CLIENT.http.delete(f"/v0/pipelines/{pipeline_name}")
+            requests.delete(TEST_CLIENT.config.url + f"/v0/pipelines/{pipeline_name}", headers={"Content-Type": "application/json", **TEST_CLIENT.http.headers})
         except:
             pass
         
@@ -46,8 +46,7 @@ class TestPipelineOrchestration(unittest.TestCase):
         start_time = time.time()
         
         while time.time() - start_time < timeout:
-            response = TEST_CLIENT.http.get(f"/v0/pipelines/{pipeline_name}")
-            pipeline = response.json()
+            pipeline = TEST_CLIENT.http.get(f"/pipelines/{pipeline_name}")
             
             if pipeline.get("program_status") == "Success":
                 break
@@ -73,7 +72,7 @@ class TestPipelineOrchestration(unittest.TestCase):
         
         # Clean up any existing pipeline
         try:
-            TEST_CLIENT.http.delete(f"/v0/pipelines/{pipeline_name}")
+            requests.delete(TEST_CLIENT.config.url + f"/v0/pipelines/{pipeline_name}", headers={"Content-Type": "application/json", **TEST_CLIENT.http.headers})
         except:
             pass
         
@@ -137,7 +136,7 @@ class TestPipelineOrchestration(unittest.TestCase):
         self._stop_force_and_clear(pipeline_name)
         
         # Clean up
-        TEST_CLIENT.http.delete(f"/v0/pipelines/{pipeline_name}")
+        requests.delete(TEST_CLIENT.config.url + f"/v0/pipelines/{pipeline_name}", headers={"Content-Type": "application/json", **TEST_CLIENT.http.headers})
 
     def test_pipeline_panic_handling(self):
         """Test that pipeline panics are correctly reported."""
@@ -145,7 +144,7 @@ class TestPipelineOrchestration(unittest.TestCase):
         
         # Clean up any existing pipeline
         try:
-            TEST_CLIENT.http.delete(f"/v0/pipelines/{pipeline_name}")
+            requests.delete(TEST_CLIENT.config.url + f"/v0/pipelines/{pipeline_name}", headers={"Content-Type": "application/json", **TEST_CLIENT.http.headers})
         except:
             pass
         
@@ -176,8 +175,7 @@ class TestPipelineOrchestration(unittest.TestCase):
         start_time = time.time()
         
         while time.time() - start_time < timeout:
-            response = TEST_CLIENT.http.get(f"/v0/pipelines/{pipeline_name}")
-            pipeline = response.json()
+            pipeline = TEST_CLIENT.http.get(f"/pipelines/{pipeline_name}")
             
             if pipeline.get("deployment_status") == "Failed":
                 error = pipeline.get("deployment_error", {})
@@ -190,7 +188,7 @@ class TestPipelineOrchestration(unittest.TestCase):
         
         # Clean up
         self._stop_force_and_clear(pipeline_name)
-        TEST_CLIENT.http.delete(f"/v0/pipelines/{pipeline_name}")
+        requests.delete(TEST_CLIENT.config.url + f"/v0/pipelines/{pipeline_name}", headers={"Content-Type": "application/json", **TEST_CLIENT.http.headers})
 
     def test_pipeline_restart(self):
         """Test starting, stopping, starting and stopping again."""
@@ -198,7 +196,7 @@ class TestPipelineOrchestration(unittest.TestCase):
         
         # Clean up any existing pipeline
         try:
-            TEST_CLIENT.http.delete(f"/v0/pipelines/{pipeline_name}")
+            requests.delete(TEST_CLIENT.config.url + f"/v0/pipelines/{pipeline_name}", headers={"Content-Type": "application/json", **TEST_CLIENT.http.headers})
         except:
             pass
         
@@ -232,7 +230,7 @@ class TestPipelineOrchestration(unittest.TestCase):
         
         # Clean up
         self._stop_force_and_clear(pipeline_name)
-        TEST_CLIENT.http.delete(f"/v0/pipelines/{pipeline_name}")
+        requests.delete(TEST_CLIENT.config.url + f"/v0/pipelines/{pipeline_name}", headers={"Content-Type": "application/json", **TEST_CLIENT.http.headers})
 
     def test_pipeline_stop_force_after_start(self):
         """Test stopping pipeline at various stages after starting."""
@@ -240,7 +238,7 @@ class TestPipelineOrchestration(unittest.TestCase):
         
         # Clean up any existing pipeline
         try:
-            TEST_CLIENT.http.delete(f"/v0/pipelines/{pipeline_name}")
+            requests.delete(TEST_CLIENT.config.url + f"/v0/pipelines/{pipeline_name}", headers={"Content-Type": "application/json", **TEST_CLIENT.http.headers})
         except:
             pass
         
@@ -278,7 +276,7 @@ class TestPipelineOrchestration(unittest.TestCase):
                 self._wait_for_storage_status(pipeline_name, "Cleared")
         
         # Clean up
-        TEST_CLIENT.http.delete(f"/v0/pipelines/{pipeline_name}")
+        requests.delete(TEST_CLIENT.config.url + f"/v0/pipelines/{pipeline_name}", headers={"Content-Type": "application/json", **TEST_CLIENT.http.headers})
 
     @enterprise_only
     def test_pipeline_stop_without_force(self):
@@ -287,7 +285,7 @@ class TestPipelineOrchestration(unittest.TestCase):
         
         # Clean up any existing pipeline
         try:
-            TEST_CLIENT.http.delete(f"/v0/pipelines/{pipeline_name}")
+            requests.delete(TEST_CLIENT.config.url + f"/v0/pipelines/{pipeline_name}", headers={"Content-Type": "application/json", **TEST_CLIENT.http.headers})
         except:
             pass
         
@@ -313,7 +311,7 @@ class TestPipelineOrchestration(unittest.TestCase):
         self._wait_for_status(pipeline_name, "Stopped")
         
         # Clean up
-        TEST_CLIENT.http.delete(f"/v0/pipelines/{pipeline_name}")
+        requests.delete(TEST_CLIENT.config.url + f"/v0/pipelines/{pipeline_name}", headers={"Content-Type": "application/json", **TEST_CLIENT.http.headers})
 
     def test_pipeline_clear(self):
         """Test clearing pipeline storage."""
@@ -321,7 +319,7 @@ class TestPipelineOrchestration(unittest.TestCase):
         
         # Clean up any existing pipeline
         try:
-            TEST_CLIENT.http.delete(f"/v0/pipelines/{pipeline_name}")
+            requests.delete(TEST_CLIENT.config.url + f"/v0/pipelines/{pipeline_name}", headers={"Content-Type": "application/json", **TEST_CLIENT.http.headers})
         except:
             pass
         
@@ -334,8 +332,7 @@ class TestPipelineOrchestration(unittest.TestCase):
         self.assertEqual(response.status_code, 201)
         
         # Initially should be Cleared
-        response = TEST_CLIENT.http.get(f"/v0/pipelines/{pipeline_name}")
-        pipeline = response.json()
+        pipeline = TEST_CLIENT.http.get(f"/pipelines/{pipeline_name}")
         self.assertEqual(pipeline["storage_status"], "Cleared")
         
         # Wait for compilation
@@ -346,8 +343,7 @@ class TestPipelineOrchestration(unittest.TestCase):
         self.assertEqual(response.status_code, 202)
         self._wait_for_status(pipeline_name, "Running")
         
-        response = TEST_CLIENT.http.get(f"/v0/pipelines/{pipeline_name}")
-        pipeline = response.json()
+        pipeline = TEST_CLIENT.http.get(f"/pipelines/{pipeline_name}")
         self.assertEqual(pipeline["storage_status"], "InUse")
         
         # Cannot clear while running
@@ -359,8 +355,7 @@ class TestPipelineOrchestration(unittest.TestCase):
         self.assertEqual(response.status_code, 202)
         self._wait_for_status(pipeline_name, "Stopped")
         
-        response = TEST_CLIENT.http.get(f"/v0/pipelines/{pipeline_name}")
-        pipeline = response.json()
+        pipeline = TEST_CLIENT.http.get(f"/pipelines/{pipeline_name}")
         self.assertEqual(pipeline["storage_status"], "InUse")
         
         # Now can clear
@@ -369,7 +364,7 @@ class TestPipelineOrchestration(unittest.TestCase):
         self._wait_for_storage_status(pipeline_name, "Cleared")
         
         # Clean up
-        TEST_CLIENT.http.delete(f"/v0/pipelines/{pipeline_name}")
+        requests.delete(TEST_CLIENT.config.url + f"/v0/pipelines/{pipeline_name}", headers={"Content-Type": "application/json", **TEST_CLIENT.http.headers})
 
     # Helper methods
     def _wait_for_compilation(self, pipeline_name, timeout=600):
@@ -377,8 +372,7 @@ class TestPipelineOrchestration(unittest.TestCase):
         start_time = time.time()
         
         while time.time() - start_time < timeout:
-            response = TEST_CLIENT.http.get(f"/v0/pipelines/{pipeline_name}")
-            pipeline = response.json()
+            pipeline = TEST_CLIENT.http.get(f"/pipelines/{pipeline_name}")
             
             if pipeline.get("program_status") == "Success":
                 return
@@ -395,8 +389,7 @@ class TestPipelineOrchestration(unittest.TestCase):
         start_time = time.time()
         
         while time.time() - start_time < timeout:
-            response = TEST_CLIENT.http.get(f"/v0/pipelines/{pipeline_name}")
-            pipeline = response.json()
+            pipeline = TEST_CLIENT.http.get(f"/pipelines/{pipeline_name}")
             
             if pipeline.get("deployment_status") == expected_status:
                 return
@@ -410,8 +403,7 @@ class TestPipelineOrchestration(unittest.TestCase):
         start_time = time.time()
         
         while time.time() - start_time < timeout:
-            response = TEST_CLIENT.http.get(f"/v0/pipelines/{pipeline_name}")
-            pipeline = response.json()
+            pipeline = TEST_CLIENT.http.get(f"/pipelines/{pipeline_name}")
             
             if pipeline.get("storage_status") == expected_status:
                 return

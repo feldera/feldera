@@ -95,7 +95,7 @@ class TestConnectorOrchestrationAndConfig(unittest.TestCase):
         
         # Clean up any existing pipeline
         try:
-            TEST_CLIENT.http.delete(f"/v0/pipelines/{pipeline_name}")
+            requests.delete(TEST_CLIENT.config.url + f"/v0/pipelines/{pipeline_name}", headers={"Content-Type": "application/json", **TEST_CLIENT.http.headers})
         except:
             pass
         
@@ -167,7 +167,7 @@ class TestConnectorOrchestrationAndConfig(unittest.TestCase):
                 )
         
         # Clean up
-        TEST_CLIENT.http.delete(f"/v0/pipelines/{pipeline_name}")
+        requests.delete(TEST_CLIENT.config.url + f"/v0/pipelines/{pipeline_name}", headers={"Content-Type": "application/json", **TEST_CLIENT.http.headers})
 
     def test_pipeline_runtime_config_validation(self):
         """Test pipeline runtime configuration validation."""
@@ -175,14 +175,18 @@ class TestConnectorOrchestrationAndConfig(unittest.TestCase):
         
         # Clean up any existing pipeline
         try:
-            TEST_CLIENT.http.delete(f"/v0/pipelines/{pipeline_name}")
+            requests.delete(TEST_CLIENT.config.url + f"/v0/pipelines/{pipeline_name}", headers={"Content-Type": "application/json", **TEST_CLIENT.http.headers})
+        except:
+            pass
+        try:
+            requests.delete(TEST_CLIENT.config.url + f"/v0/pipelines/{pipeline_name}-patch", headers={"Content-Type": "application/json", **TEST_CLIENT.http.headers})
         except:
             pass
         
         # Test valid runtime configs
         valid_configs = [
-            (None, {"workers": 1}),  # Default config
-            ({}, {"workers": 1}),    # Empty config
+            (None, {"workers": 8}),  # Default config (system default is 8)
+            ({}, {"workers": 8}),    # Empty config
             ({"workers": 12}, {"workers": 12}),
             ({
                 "workers": 100,
@@ -255,7 +259,7 @@ class TestConnectorOrchestrationAndConfig(unittest.TestCase):
             }
         }
         
-        response = TEST_CLIENT.patch(f"/v0/pipelines/{pipeline_name}-patch", json=patch_body)
+        response = requests.patch(TEST_CLIENT.config.url + f"/v0/pipelines/{pipeline_name}-patch", json=patch_body, headers={"Content-Type": "application/json", **TEST_CLIENT.http.headers})
         self.assertEqual(response.status_code, 200)
         
         pipeline = response.json()
@@ -263,8 +267,8 @@ class TestConnectorOrchestrationAndConfig(unittest.TestCase):
         self.assertEqual(pipeline["runtime_config"]["resources"]["storage_mb_max"], 123)
         
         # Clean up
-        TEST_CLIENT.http.delete(f"/v0/pipelines/{pipeline_name}")
-        TEST_CLIENT.http.delete(f"/v0/pipelines/{pipeline_name}-patch")
+        requests.delete(TEST_CLIENT.config.url + f"/v0/pipelines/{pipeline_name}", headers={"Content-Type": "application/json", **TEST_CLIENT.http.headers})
+        requests.delete(TEST_CLIENT.config.url + f"/v0/pipelines/{pipeline_name}-patch", headers={"Content-Type": "application/json", **TEST_CLIENT.http.headers})
 
     def test_pipeline_program_config_validation(self):
         """Test pipeline program configuration validation."""
@@ -272,7 +276,7 @@ class TestConnectorOrchestrationAndConfig(unittest.TestCase):
         
         # Clean up any existing pipeline
         try:
-            TEST_CLIENT.http.delete(f"/v0/pipelines/{pipeline_name}")
+            requests.delete(TEST_CLIENT.config.url + f"/v0/pipelines/{pipeline_name}", headers={"Content-Type": "application/json", **TEST_CLIENT.http.headers})
         except:
             pass
         
@@ -322,7 +326,7 @@ class TestConnectorOrchestrationAndConfig(unittest.TestCase):
             self.assertEqual(error_data["error_code"], "InvalidProgramConfig")
         
         # Clean up
-        TEST_CLIENT.http.delete(f"/v0/pipelines/{pipeline_name}")
+        requests.delete(TEST_CLIENT.config.url + f"/v0/pipelines/{pipeline_name}", headers={"Content-Type": "application/json", **TEST_CLIENT.http.headers})
 
     def test_connector_orchestration_basic(self):
         """Test basic connector orchestration."""
