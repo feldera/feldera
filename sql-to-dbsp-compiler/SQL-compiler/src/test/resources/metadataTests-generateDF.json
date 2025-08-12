@@ -111,7 +111,7 @@
       "positions": [],
       "persistent_id": "20e32f4b3b66b72a630fe9dfde075dbf6f5685dc5a61574bd7a2ee844174b882"
     }, "s4": {
-      "operation": "differentiate",
+      "operation": "accumulate_differentiate",
       "inputs": [
         { "node": "s3", "output": 0 }
       ],

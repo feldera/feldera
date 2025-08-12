@@ -55,7 +55,7 @@ public abstract class BaseRustCodeGenerator implements ICodeGenerator {
     }
 
     protected String dbspCircuit(boolean topLevel) {
-        return topLevel ? "RootCircuit" : "ChildCircuit<RootCircuit>";
+        return topLevel ? "RootCircuit" : "NestedCircuit";
     }
 
     @Override
@@ -108,10 +108,10 @@ public abstract class BaseRustCodeGenerator implements ICodeGenerator {
                      UnimplementedSemigroup, DefaultSemigroup, HasOne, HasZero, AddByRef, NegByRef,
                      AddAssignByRef,
                 },
-                circuit::{checkpointer::Checkpoint, ChildCircuit, Circuit, CircuitConfig, RootCircuit, Stream},
+                circuit::{checkpointer::Checkpoint, Circuit, CircuitConfig, NestedCircuit, RootCircuit, Stream},
                 operator::{
                     dynamic::aggregate::{ArgMinSome, Max, Min, MinSome1, Postprocess},
-                    Generator,
+                    MacrostepGenerator,
                     Fold,
                     group::WithCustomOrd,
                     time_series::{RelRange, RelOffset, OrdPartitionedIndexedZSet, OrdPartitionedOverStream},

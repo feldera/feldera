@@ -277,7 +277,6 @@ fn count_tuples() {
             DynData, /* <u64> */
             u32,
             DynWeight, /* <i64> */
-            u64,
         >,
     > = MergeBatcher {
         batch_factories: BatchReaderFactories::new::<u64, (), i64>(),

@@ -20,7 +20,7 @@
 use crate::catalog::OutputCollectionHandles;
 use crate::controller::checkpoint::CheckpointOffsets;
 use crate::controller::journal::Journal;
-use crate::controller::stats::{InputEndpointMetrics, OutputEndpointMetrics};
+use crate::controller::stats::{InputEndpointMetrics, OutputEndpointMetrics, TransactionStatus};
 use crate::create_integrated_output_endpoint;
 use crate::server::metrics::{
     HistogramDiv, LabelStack, MetricsFormatter, MetricsWriter, ValueType,
@@ -30,8 +30,8 @@ use crate::transport::Step;
 use crate::transport::{input_transport_config_to_endpoint, output_transport_config_to_endpoint};
 use crate::util::run_on_thread_pool;
 use crate::{
-    catalog::SerBatch, CircuitCatalog, Encoder, InputConsumer, OutputConsumer, OutputEndpoint,
-    ParseError, PipelineState, TransportInputEndpoint,
+    CircuitCatalog, Encoder, InputConsumer, OutputConsumer, OutputEndpoint, ParseError,
+    PipelineState, TransportInputEndpoint,
 };
 use anyhow::{anyhow, Error as AnyError};
 use arrow::datatypes::Schema;
@@ -70,6 +70,7 @@ use feldera_types::format::json::JsonLines;
 use feldera_types::secret_resolver::resolve_secret_references_in_connector_config;
 use feldera_types::suspend::{PermanentSuspendError, SuspendError, TemporarySuspendError};
 use feldera_types::time_series::SampleStatistics;
+use feldera_types::transaction::{StartTransactionResponse, TransactionId};
 use governor::DefaultDirectRateLimiter;
 use governor::Quota;
 use governor::RateLimiter;
@@ -86,7 +87,7 @@ use std::io::ErrorKind;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::PathBuf;
 use std::sync::mpsc::{channel, sync_channel, Receiver, SendError, Sender};
-use std::sync::LazyLock;
+use std::sync::{LazyLock, Mutex};
 use std::thread;
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -142,6 +143,8 @@ static CHECKPOINT_WRITTEN: ExponentialHistogram = ExponentialHistogram::new();
 /// Number of records successfully processed at the time of the last successful
 /// checkpoint.
 static CHECKPOINT_PROCESSED_RECORDS: AtomicU64 = AtomicU64::new(0);
+
+static COMMIT_UPDATE_INTERVAL: Duration = Duration::from_secs(10);
 
 /// Controller that coordinates the creation, reconfiguration, teardown of
 /// input/output adapters, and implements runtime flow control.
@@ -667,6 +670,19 @@ impl Controller {
         Ok(())
     }
 
+    pub fn start_transaction(&self) -> Result<StartTransactionResponse, ControllerError> {
+        self.inner.fail_if_bootstrapping_or_restoring()?;
+
+        let transaction_id = self.inner.start_transaction()?;
+        Ok(StartTransactionResponse::new(transaction_id))
+    }
+
+    pub fn start_commit_transaction(&self) -> Result<(), ControllerError> {
+        self.inner.fail_if_bootstrapping_or_restoring()?;
+
+        self.inner.start_commit_transaction()
+    }
+
     /// Check whether the pipeline has processed all input data to completion.
     ///
     /// Returns `true` when the following conditions are satisfied:
@@ -1017,6 +1033,8 @@ struct CircuitThread {
     /// step 0 if there is going to be a journal, because to replay a journal
     /// record into an endpoint we first need to seek that endpoint.
     input_metadata: HashMap<String, Option<Resume>>,
+
+    last_commit_progress_update: Instant,
 }
 
 impl CircuitThread {
@@ -1157,6 +1175,7 @@ impl CircuitThread {
             sync_checkpoint_request: None,
             step,
             input_metadata: input_metadata.unwrap_or_default(),
+            last_commit_progress_update: Instant::now(),
         })
     }
 
@@ -1240,11 +1259,8 @@ impl CircuitThread {
         // Wake up the backpressure thread to unpause endpoints blocked due to
         // backpressure.
         self.controller.unpark_backpressure();
-        debug!("circuit thread: calling 'circuit.step'");
-        self.circuit
-            .step()
-            .unwrap_or_else(|e| self.controller.error(Arc::new(e.into())));
-        debug!("circuit thread: 'circuit.step' returned");
+
+        self.step_circuit();
 
         // If bootstrapping has completed, update the status flag.
         self.controller
@@ -1284,6 +1300,69 @@ impl CircuitThread {
             );
 
         Ok(true)
+    }
+
+    fn step_circuit(&mut self) {
+        match self.controller.advance_transaction_state() {
+            Some(TransactionState::Started(transaction_id)) => {
+                info!("Starting transaction {transaction_id}");
+                self.circuit.start_transaction().unwrap_or_else(|e| {
+                    self.controller.error(Arc::new(e.into()));
+                    self.controller
+                        .set_transaction_state(TransactionState::None);
+                });
+            }
+            Some(TransactionState::Committing(transaction_id)) => {
+                info!("Committing transaction {transaction_id}");
+                self.circuit.start_commit_transaction().unwrap_or_else(|e| {
+                    self.controller.error(Arc::new(e.into()));
+                    self.controller
+                        .set_transaction_state(TransactionState::Started(transaction_id));
+                });
+                self.last_commit_progress_update = Instant::now();
+            }
+            _ => {}
+        }
+
+        let transaction_state = self.controller.get_transaction_state();
+
+        if transaction_state != TransactionState::None {
+            debug!("circuit thread: calling 'circuit.step'");
+
+            let committed = self.circuit.step().unwrap_or_else(|e| {
+                self.controller.error(Arc::new(e.into()));
+                false
+            });
+            debug!("circuit thread: 'circuit.step' returned");
+
+            if let TransactionState::Committing(transaction_id) = transaction_state {
+                // This is temporary until we have API/UI for progress reporting.
+                if self.last_commit_progress_update.elapsed() >= COMMIT_UPDATE_INTERVAL {
+                    self.last_commit_progress_update = Instant::now();
+                    match self.circuit.commit_progress() {
+                        Ok(progress) => {
+                            info!(
+                                "Transaction {transaction_id} commit progress: {}",
+                                progress.summary()
+                            )
+                        }
+                        Err(e) => error!("Error retrieving transaction commit progress: {e}"),
+                    }
+                }
+                if committed {
+                    info!("Transaction {transaction_id} committed");
+                    self.controller
+                        .set_transaction_state(TransactionState::None);
+                }
+            }
+        } else {
+            debug!("circuit thread: calling 'circuit.transaction'");
+
+            self.circuit
+                .transaction()
+                .unwrap_or_else(|e| self.controller.error(Arc::new(e.into())));
+            debug!("circuit thread: 'circuit.transaction' returned");
+        }
     }
 
     // Update `trace_snapshot` to the latest traces.
@@ -1497,7 +1576,9 @@ impl CircuitThread {
     /// - `Err(error)` if there was an error.
     fn input_step(&mut self) -> Result<Option<u64>, ControllerError> {
         // No ingestion during bootstrap.
-        if self.controller.status.bootstrap_in_progress() {
+        if self.controller.status.bootstrap_in_progress()
+            || self.controller.transaction_commit_in_progress()
+        {
             return Ok(Some(0));
         }
         let mut step_metadata = HashMap::new();
@@ -1542,7 +1623,17 @@ impl CircuitThread {
         //   will only flush input for the barrier endpoints (otherwise, it's
         //   possible non-barrier endpoints will become barriers and we
         //   definitely don't want that).
-        let barriers_only = self.checkpoint_requested() && self.ft.is_none();
+        // - Don't pause inputs during transactions: finishing a transaction may
+        //   involve ingesting some inputs from connectors. By pausing those inputs
+        //   we may prevent the transaction from ever completing.
+        //
+        // FIXME: the last point means that checkpoints can get delayed indefinitely
+        // if the user runs end-to-end transactions. One possible way to solve this
+        // in the future is to remove the notion of barriers altogether, making input
+        // connectors always checkpointable.
+        let barriers_only = self.checkpoint_requested()
+            && self.ft.is_none()
+            && self.controller.get_transaction_state() == TransactionState::None;
 
         // Collect the ids of the endpoints that we'll flush to the circuit.
         //
@@ -1570,7 +1661,15 @@ impl CircuitThread {
             } else {
                 if !self.replaying() {
                     if let Some(reader) = status.reader.as_ref() {
-                        reader.queue(self.checkpoint_requested())
+                        // Don't request a checkpoint if we're processing a transaction. The `checkpoint_requested`
+                        // flag requires the connector to get to a checkpointable state as fast as
+                        // possible, which may cause connector's performance to drop, e.g., some connectors may return 1 record
+                        // per step.
+                        reader.queue(
+                            self.checkpoint_requested()
+                                && self.controller.get_transaction_state()
+                                    == TransactionState::None,
+                        )
                     }
                 } else {
                     // We already started the input adapters replaying. The set of
@@ -1721,8 +1820,8 @@ impl CircuitThread {
     fn push_output(&mut self, processed_records: u64) {
         let outputs = self.controller.outputs.read().unwrap();
         for (_stream, (output_handles, endpoints)) in outputs.iter_by_stream() {
-            let delta_batch = output_handles.delta_handle.as_ref().take_from_all();
-            let num_delta_records = delta_batch.iter().map(|b| b.len()).sum();
+            let delta_batch = output_handles.delta_handle.as_ref().concat();
+            let num_delta_records = delta_batch.len();
 
             let mut delta_batch = Some(delta_batch);
 
@@ -2207,6 +2306,9 @@ impl StepTrigger {
             .checkpoint_interval
             .map(|interval| last_checkpoint + interval);
 
+        // Used to force a step regardless of input
+        let committing = self.controller.transaction_commit_requested();
+
         fn step(trigger: &mut StepTrigger) -> Action {
             trigger.needs_first_step = false;
             trigger.buffer_timeout = None;
@@ -2219,7 +2321,7 @@ impl StepTrigger {
         // operation and makes sure that the circuit performs an extra step in the normal
         // mode in order to initialize output table snapshots of output relations that
         // did not participate in bootstrapping.
-        let result = if replaying || bootstrapping || self.bootstrapping {
+        let result = if replaying || committing || bootstrapping || self.bootstrapping {
             step(self)
         } else if checkpoint.is_some_and(|t| now >= t) && !checkpoint_requested {
             Action::Checkpoint
@@ -2636,7 +2738,7 @@ impl Drop for StatisticsThread {
 /// that is equal to the number of input records fully processed by
 /// DBSP before emitting this batch of outputs.  The label increases
 /// monotonically over time.
-type BatchQueue = SegQueue<(Step, Vec<Arc<dyn SerBatch>>, u64)>;
+type BatchQueue = SegQueue<(Step, Arc<dyn SyncSerBatchReader>, u64)>;
 
 /// State tracked by the controller for each output endpoint.
 struct OutputEndpointDescr {
@@ -2764,12 +2866,28 @@ impl OutputBuffer {
         }
     }
 
+    fn len(&self) -> usize {
+        self.buffer.as_ref().map_or(0, |b| b.len())
+    }
+
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     /// Insert `batch` into the buffer.
-    fn insert(&mut self, batch: Arc<dyn SerBatch>, step: Step, processed_records: u64) {
+    fn insert(&mut self, batch: Arc<dyn SyncSerBatchReader>, step: Step, processed_records: u64) {
         if let Some(buffer) = &mut self.buffer {
-            buffer.insert(batch);
+            for batch in batch.batches() {
+                buffer.insert(batch);
+            }
         } else {
-            self.buffer = Some(batch.into_trace());
+            for batch in batch.batches() {
+                if let Some(buffer) = self.buffer.as_mut() {
+                    buffer.insert(batch);
+                } else {
+                    self.buffer = Some(batch.into_trace());
+                };
+            }
             self.buffer_since = Instant::now();
         }
         self.buffered_step = step;
@@ -2813,6 +2931,43 @@ impl OutputBuffer {
 pub type ConsistentSnapshots =
     Arc<TokioMutex<BTreeMap<SqlIdentifier, Vec<Arc<dyn SyncSerBatchReader>>>>>;
 
+/// Current state of transaction processing.
+#[derive(Default, Debug, Clone, PartialEq, Eq, Copy)]
+pub enum TransactionState {
+    /// No transaction in progress.
+    #[default]
+    None,
+    /// A transaction is running. New inputs ingested in this state become part of the transaction.
+    /// No outputs are produced until the state changes to committing.
+    Started(TransactionId),
+    /// A transaction is committing. In this state the pipeline doesn't accept new inputs from
+    /// connectors and computes all outputs for the inputs received in the Started state.
+    Committing(TransactionId),
+}
+
+#[derive(Default, Clone)]
+struct TransactionInfo {
+    /// Used to assign the next transaction id.
+    last_transaction_id: TransactionId,
+    /// Desired state of the transaction. Set to Some() to start a new transaction.
+    /// Set to None to commit the current transaction.
+    ///
+    /// This field is modified by the REST API.
+    transaction_requested: Option<TransactionId>,
+    /// Actual pipeline state, set by the circuit thread.
+    transaction_state: TransactionState,
+}
+
+impl TransactionInfo {
+    fn new() -> Self {
+        TransactionInfo {
+            last_transaction_id: 0,
+            transaction_requested: None,
+            transaction_state: TransactionState::None,
+        }
+    }
+}
+
 /// Controller state sharable across threads.
 ///
 /// A reference to this struct is held by each input probe and by both
@@ -2834,6 +2989,9 @@ pub struct ControllerInner {
     error_cb: Box<dyn Fn(Arc<ControllerError>) + Send + Sync>,
     session_ctxt: SessionContext,
     fault_tolerance: Option<FtModel>,
+    // The mutex is acquired from async context by actix and
+    // from the sync context by the circuit thread.
+    transaction_info: Mutex<TransactionInfo>,
 
     /// Is the circuit thread still restoring from a checkpoint (this includes the journal replay phase)?
     restoring: AtomicBool,
@@ -2869,6 +3027,7 @@ impl ControllerInner {
             error_cb,
             session_ctxt,
             fault_tolerance: config.global.fault_tolerance.model,
+            transaction_info: Mutex::new(TransactionInfo::new()),
             restoring: AtomicBool::new(config.global.fault_tolerance.is_enabled()),
         });
         controller.initialize_adhoc_queries();
@@ -3418,12 +3577,6 @@ impl ControllerInner {
         Ok(endpoint_id)
     }
 
-    fn merge_batches(mut data: Vec<Arc<dyn SerBatch>>) -> Arc<dyn SerBatch> {
-        let last = data.pop().unwrap();
-
-        last.merge(data)
-    }
-
     fn push_batch_to_encoder(
         batch: &dyn SerBatchReader,
         endpoint_id: EndpointId,
@@ -3482,22 +3635,30 @@ impl ControllerInner {
                 // buffer; we will check if the buffer needs to be flushed at the next iteration of
                 // the loop.  If buffering is disabled, push the buffer directly to the encoder.
 
-                let num_records = data.iter().map(|b| b.len()).sum();
-                let consolidated = Self::merge_batches(data);
+                let num_records = data.len();
 
                 // trace!("Pushing {num_records} records to output endpoint {endpoint_name}");
 
                 // Buffer the new output if buffering is enabled.
                 if output_buffer_config.enable_output_buffer {
-                    output_buffer.insert(consolidated, step, processed_records);
+                    output_buffer.insert(data, step, processed_records);
                     controller.status.buffer_batch(
                         endpoint_id,
                         num_records,
                         &controller.circuit_thread_unparker,
                     );
+
+                    // If the buffer is empty, report it as flushed to update processed record count
+                    // on the endpoint without actually flushing it.
+                    if output_buffer.is_empty() {
+                        controller.status.output_buffered_batches(
+                            endpoint_id,
+                            output_buffer.buffered_processed_records,
+                        );
+                    }
                 } else {
                     Self::push_batch_to_encoder(
-                        consolidated.as_batch_reader(),
+                        data.as_ref(),
                         endpoint_id,
                         &endpoint_name,
                         encoder.as_mut(),
@@ -3798,6 +3959,9 @@ impl ControllerInner {
         if self.status.bootstrap_in_progress() {
             temporary.push(TemporarySuspendError::Bootstrapping);
         }
+        if self.status.transaction_in_progress() {
+            temporary.push(TemporarySuspendError::TransactionInProgress);
+        }
         for endpoint_stats in self.status.input_status().values() {
             if endpoint_stats.is_barrier() {
                 temporary.push(TemporarySuspendError::InputEndpointBarrier(
@@ -3810,6 +3974,183 @@ impl ControllerInner {
         } else {
             Ok(())
         }
+    }
+
+    /// Update transaction status in GlobalControllerMetrics given the current value of TransactionInfo.
+    fn update_transaction_status(&self, transaction_info: &TransactionInfo) {
+        match (
+            transaction_info.transaction_state,
+            transaction_info.transaction_requested,
+        ) {
+            (TransactionState::None, None) => {
+                self.status
+                    .global_metrics
+                    .transaction_id
+                    .store(0, Ordering::Release);
+                self.status
+                    .global_metrics
+                    .transaction_status
+                    .store(TransactionStatus::None, Ordering::Release);
+            }
+            (TransactionState::Started(tid), None) => {
+                assert_ne!(tid, 0);
+
+                self.status
+                    .global_metrics
+                    .transaction_id
+                    .store(tid, Ordering::Release);
+                self.status
+                    .global_metrics
+                    .transaction_status
+                    .store(TransactionStatus::CommitRequested, Ordering::Release);
+            }
+            (TransactionState::Committing(tid), None) => {
+                assert_ne!(tid, 0);
+
+                self.status
+                    .global_metrics
+                    .transaction_id
+                    .store(tid, Ordering::Release);
+                self.status
+                    .global_metrics
+                    .transaction_status
+                    .store(TransactionStatus::CommitInProgress, Ordering::Release);
+            }
+            (TransactionState::None, Some(tid)) => {
+                assert_ne!(tid, 0);
+
+                self.status
+                    .global_metrics
+                    .transaction_id
+                    .store(tid, Ordering::Release);
+                self.status
+                    .global_metrics
+                    .transaction_status
+                    .store(TransactionStatus::TransactionStarting, Ordering::Release);
+            }
+            (TransactionState::Started(tid), Some(tid2)) => {
+                assert_ne!(tid, 0);
+                assert_eq!(tid, tid2);
+
+                self.status
+                    .global_metrics
+                    .transaction_id
+                    .store(tid, Ordering::Release);
+                self.status
+                    .global_metrics
+                    .transaction_status
+                    .store(TransactionStatus::TransactionInProgress, Ordering::Release);
+            }
+            (TransactionState::Committing(_), Some(_)) => {
+                error!(
+                    "Invalid transaction state: actual state: {:?}; desired state {:?}",
+                    transaction_info.transaction_state, transaction_info.transaction_requested
+                )
+            }
+        }
+    }
+
+    /// Initiate a new transaction.
+    ///
+    /// Fails if there is already a transaction in progress.
+    ///
+    /// Returns new transaction id on success.
+    pub fn start_transaction(&self) -> Result<TransactionId, ControllerError> {
+        let transaction_info = &mut *self.transaction_info.lock().unwrap();
+
+        if transaction_info.transaction_requested.is_some()
+            || transaction_info.transaction_state != TransactionState::None
+        {
+            return Err(ControllerError::TransactionInProgress);
+        }
+
+        transaction_info.last_transaction_id += 1;
+        transaction_info.transaction_requested = Some(transaction_info.last_transaction_id);
+        self.update_transaction_status(transaction_info);
+
+        Ok(transaction_info.last_transaction_id)
+    }
+
+    /// Start committing the current transaction by setting desired state to None.
+    ///
+    /// Fails if transaction_requested is already None, i.e., there is no transaction in
+    /// progress or commit has already been initiated for the current transaction.
+    pub fn start_commit_transaction(&self) -> Result<(), ControllerError> {
+        let transaction_info = &mut *self.transaction_info.lock().unwrap();
+
+        if transaction_info.transaction_requested.is_none() {
+            Err(ControllerError::NoTransactionInProgress)
+        } else {
+            transaction_info.transaction_requested = None;
+            self.update_transaction_status(transaction_info);
+
+            self.unpark_circuit();
+
+            Ok(())
+        }
+    }
+
+    /// Update transaction_info.transaction_state.
+    pub fn set_transaction_state(&self, transaction_state: TransactionState) {
+        let transaction_info = &mut *self.transaction_info.lock().unwrap();
+
+        transaction_info.transaction_state = transaction_state;
+        self.update_transaction_status(transaction_info);
+    }
+
+    /// Read the current value of transaction_info.transaction_state.
+    pub fn get_transaction_state(&self) -> TransactionState {
+        self.transaction_info.lock().unwrap().transaction_state
+    }
+
+    /// Returns true if there is a transaction in progress (transaction_state != None)
+    /// and the client requested to commit the transaction (transaction_requested = None).
+    ///
+    /// Used to decide whether the circuit needs to perform a step in order to advance
+    /// commit processing.
+    pub fn transaction_commit_requested(&self) -> bool {
+        let TransactionInfo {
+            transaction_requested,
+            transaction_state,
+            ..
+        } = &mut *self.transaction_info.lock().unwrap();
+
+        *transaction_state != TransactionState::None && transaction_requested.is_none()
+    }
+
+    /// Returns true if (transaction_state == Committing).
+    ///
+    /// Used to prevent the pipeline from ingesting new inputs while committing a transaction.
+    pub fn transaction_commit_in_progress(&self) -> bool {
+        let TransactionInfo {
+            transaction_state, ..
+        } = &mut *self.transaction_info.lock().unwrap();
+
+        matches!(transaction_state, TransactionState::Committing(_))
+    }
+
+    /// Advance transaction state from None to Started or from Started to committing in response
+    /// to desired state changes.
+    pub fn advance_transaction_state(&self) -> Option<TransactionState> {
+        let transaction_info = &mut *self.transaction_info.lock().unwrap();
+
+        let result = match (
+            transaction_info.transaction_requested,
+            transaction_info.transaction_state,
+        ) {
+            (Some(transaction_id), TransactionState::None) => {
+                transaction_info.transaction_state = TransactionState::Started(transaction_id);
+                Some(transaction_info.transaction_state)
+            }
+            (None, TransactionState::Started(transaction_id)) => {
+                transaction_info.transaction_state = TransactionState::Committing(transaction_id);
+                Some(transaction_info.transaction_state)
+            }
+            _ => None,
+        };
+
+        self.update_transaction_status(transaction_info);
+        result
     }
 }
 

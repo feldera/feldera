@@ -1,7 +1,8 @@
 use crate::circuit::circuit_builder::{register_replay_stream, StreamId};
-use crate::circuit::metadata::NUM_INPUTS;
+use crate::circuit::metadata::NUM_INPUTS_LABEL;
 use crate::dynamic::{Weight, WeightTrait};
 use crate::operator::require_persistent_id;
+use crate::trace::spine_async::WithSnapshot;
 use crate::trace::{BatchReaderFactories, Builder, MergeCursor};
 use crate::Runtime;
 use crate::{
@@ -40,7 +41,6 @@ use std::{
 circuit_cache_key!(TraceId<C, D: BatchReader>(StreamId => Stream<C, D>));
 circuit_cache_key!(BoundsId<D: BatchReader>(StreamId => TraceBounds<<D as BatchReader>::Key, <D as BatchReader>::Val>));
 circuit_cache_key!(DelayedTraceId<C, D>(StreamId => Stream<C, D>));
-circuit_cache_key!(SpillId<C, D>(StreamId => Stream<C, D>));
 
 /// Lower bound on keys or values in a trace.
 ///
@@ -278,21 +278,7 @@ impl<K: Debug + ?Sized + 'static, V: Debug + ?Sized + 'static> TraceBoundsInner<
     }
 }
 
-/// An on-storage, key-only [`Spine`] of `C`'s default batch type, with key and
-/// weight types taken from `B`.
-pub type KeySpine<B, C> = Spine<
-    <<C as WithClock>::Time as Timestamp>::KeyBatch<<B as BatchReader>::Key, <B as BatchReader>::R>,
->;
-
-/// An on-storage [`Spine`] of `C`'s default batch type, with key, value, and
-/// weight types taken from `B`.
-pub type ValSpine<B, C> = Spine<
-    <<C as WithClock>::Time as Timestamp>::ValBatch<
-        <B as BatchReader>::Key,
-        <B as BatchReader>::Val,
-        <B as BatchReader>::R,
-    >,
->;
+pub type TimedSpine<B, C> = Spine<<<C as WithClock>::Time as Timestamp>::TimedBatch<B>>;
 
 impl<C, B> Stream<C, B>
 where
@@ -302,9 +288,9 @@ where
     /// See [`Stream::trace`].
     pub fn dyn_trace(
         &self,
-        output_factories: &<ValSpine<B, C> as BatchReader>::Factories,
+        output_factories: &<TimedSpine<B, C> as BatchReader>::Factories,
         batch_factories: &B::Factories,
-    ) -> Stream<C, ValSpine<B, C>>
+    ) -> Stream<C, TimedSpine<B, C>>
     where
         B: Batch<Time = ()>,
     {
@@ -319,11 +305,11 @@ where
     /// See [`Stream::trace_with_bound`].
     pub fn dyn_trace_with_bound(
         &self,
-        output_factories: &<ValSpine<B, C> as BatchReader>::Factories,
+        output_factories: &<TimedSpine<B, C> as BatchReader>::Factories,
         batch_factories: &B::Factories,
         lower_key_bound: TraceBound<B::Key>,
         lower_val_bound: TraceBound<B::Val>,
-    ) -> Stream<C, ValSpine<B, C>>
+    ) -> Stream<C, TimedSpine<B, C>>
     where
         B: Batch<Time = ()>,
     {
@@ -352,7 +338,10 @@ where
                     let replay_stream = z1feedback.operator_mut().prepare_replay_stream(self);
 
                     let trace = circuit.add_binary_operator_with_preference(
-                        <TraceAppend<ValSpine<B, C>, B, C>>::new(output_factories, circuit.clone()),
+                        <TraceAppend<TimedSpine<B, C>, B, C>>::new(
+                            output_factories,
+                            circuit.clone(),
+                        ),
                         (&delayed_trace, OwnershipPreference::STRONGLY_PREFER_OWNED),
                         (self, OwnershipPreference::PREFER_OWNED),
                     );
@@ -728,7 +717,7 @@ where
 
     fn metadata(&self, meta: &mut OperatorMeta) {
         meta.extend(metadata! {
-            NUM_INPUTS => MetaItem::Count(self.num_inputs),
+            NUM_INPUTS_LABEL => MetaItem::Count(self.num_inputs),
         });
     }
 
@@ -812,7 +801,7 @@ where
 
     fn metadata(&self, meta: &mut OperatorMeta) {
         meta.extend(metadata! {
-            NUM_INPUTS => MetaItem::Count(self.num_inputs),
+            NUM_INPUTS_LABEL => MetaItem::Count(self.num_inputs),
         });
     }
 }
@@ -1289,7 +1278,7 @@ mod test {
             for batch in batches {
                 let mut tuples = batch.into_iter().map(|((k, v), r)| Tup2(k, Tup2(v, r))).collect::<Vec<_>>();
                 input_handle.append(&mut tuples);
-                dbsp.step().unwrap();
+                dbsp.transaction().unwrap();
             }
         }
     }

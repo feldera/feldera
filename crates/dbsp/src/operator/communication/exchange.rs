@@ -7,7 +7,10 @@
 
 use crate::{
     circuit::{
-        metadata::{MetaItem, OperatorLocation, OperatorMeta, NUM_INPUTS, NUM_OUTPUTS},
+        metadata::{
+            BatchSizeStats, OperatorLocation, OperatorMeta, INPUT_BATCHES_LABEL,
+            OUTPUT_BATCHES_LABEL,
+        },
         operator_traits::{Operator, SinkOperator, SourceOperator},
         tokio::TOKIO,
         Host, LocalStoreMarker, OwnershipPreference, Runtime, Scope,
@@ -805,10 +808,12 @@ where
     location: OperatorLocation,
     partition: L,
     outputs: Vec<T>,
-    exchange: Arc<Exchange<T>>,
+    exchange: Arc<Exchange<(T, bool)>>,
 
-    // Total number of input tuples processed by the operator.
-    num_inputs: usize,
+    // Input batch sizes.
+    input_batch_stats: BatchSizeStats,
+
+    flushed: bool,
 
     phantom: PhantomData<D>,
 }
@@ -831,7 +836,8 @@ where
             partition,
             outputs: Vec::with_capacity(runtime.num_workers()),
             exchange: Exchange::with_runtime(runtime, exchange_id),
-            num_inputs: 0,
+            input_batch_stats: BatchSizeStats::new(),
+            flushed: false,
             phantom: PhantomData,
         }
     }
@@ -849,7 +855,7 @@ where
 
     fn metadata(&self, meta: &mut OperatorMeta) {
         meta.extend(metadata! {
-            NUM_INPUTS => MetaItem::Count(self.num_inputs),
+            INPUT_BATCHES_LABEL => self.input_batch_stats.metadata(),
         });
     }
 
@@ -879,6 +885,10 @@ where
     fn fixedpoint(&self, _scope: Scope) -> bool {
         true
     }
+
+    fn flush(&mut self) {
+        self.flushed = true;
+    }
 }
 
 impl<D, T, L> SinkOperator<D> for ExchangeSender<D, T, L>
@@ -892,14 +902,16 @@ where
     }
 
     async fn eval_owned(&mut self, input: D) {
-        self.num_inputs += input.num_entries_deep();
+        self.input_batch_stats.add_batch(input.num_entries_deep());
 
         debug_assert!(self.ready());
         self.outputs.clear();
         (self.partition)(input, &mut self.outputs);
-        let res = self
-            .exchange
-            .try_send_all(self.worker_index, &mut self.outputs.drain(..));
+        let res = self.exchange.try_send_all(
+            self.worker_index,
+            &mut self.outputs.drain(..).map(|x| (x, self.flushed)),
+        );
+        self.flushed = false;
         debug_assert!(res);
     }
 
@@ -931,10 +943,12 @@ where
     location: OperatorLocation,
     init: IF,
     combine: L,
-    exchange: Arc<Exchange<T>>,
+    exchange: Arc<Exchange<(T, bool)>>,
+    flush_count: usize,
+    flush_complete: bool,
 
-    // Total number of input tuples processed by the operator.
-    num_outputs: usize,
+    // Output batch sizes.
+    output_batch_stats: BatchSizeStats,
 }
 
 impl<IF, T, L> ExchangeReceiver<IF, T, L>
@@ -957,7 +971,9 @@ where
             init,
             combine,
             exchange: Exchange::with_runtime(runtime, exchange_id),
-            num_outputs: 0,
+            flush_count: 0,
+            flush_complete: false,
+            output_batch_stats: BatchSizeStats::new(),
         }
     }
 }
@@ -978,7 +994,7 @@ where
 
     fn metadata(&self, meta: &mut OperatorMeta) {
         meta.extend(metadata! {
-            NUM_OUTPUTS => MetaItem::Count(self.num_outputs),
+            OUTPUT_BATCHES_LABEL => self.output_batch_stats.metadata(),
         });
     }
 
@@ -1001,6 +1017,20 @@ where
     fn fixedpoint(&self, _scope: Scope) -> bool {
         true
     }
+
+    fn flush(&mut self) {
+        // println!("{} exchange_receiver::flush", Runtime::worker_index());
+        self.flush_complete = false;
+    }
+
+    fn is_flush_complete(&self) -> bool {
+        // println!(
+        //     "{} exchange_receiver::is_flush_complete (flush_complete = {})",
+        //     Runtime::worker_index(),
+        //     self.flush_complete
+        // );
+        self.flush_complete
+    }
 }
 
 impl<D, IF, T, L> SourceOperator<D> for ExchangeReceiver<IF, T, L>
@@ -1015,11 +1045,26 @@ where
         let mut combined = (self.init)();
         let res = self
             .exchange
-            .try_receive_all(self.worker_index, |x| (self.combine)(&mut combined, x));
+            .try_receive_all(self.worker_index, |(x, flushed)| {
+                // println!(
+                //     "{} exchange_receiver::eval received input with flushed={:?}",
+                //     Runtime::worker_index(),
+                //     flushed
+                // );
+                if flushed {
+                    self.flush_count += 1;
+                }
+                (self.combine)(&mut combined, x)
+            });
+        if self.flush_count == Runtime::runtime().unwrap().num_workers() {
+            self.flush_complete = true;
+            self.flush_count = 0;
+        }
 
         debug_assert!(res);
 
-        self.num_outputs += combined.num_entries_deep();
+        self.output_batch_stats
+            .add_batch(combined.num_entries_deep());
         combined
     }
 }

@@ -6,12 +6,13 @@ use crate::{
         WeightTraitTyped, WithFactory,
     },
     trace::{
+        cursor::Position,
         deserialize_indexed_wset,
         layers::{
             Cursor as _, Layer, LayerCursor, LayerFactories, Leaf, LeafFactories, OrdOffset, Trie,
         },
         serialize_indexed_wset, Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder,
-        Cursor, Deserializer, Filter, MergeCursor, Serializer, WeightedItem,
+        Cursor, Deserializer, Filter, MergeCursor, Serializer, VecValBatch, WeightedItem,
     },
     utils::Tup2,
     DBData, DBWeight, Error, NumEntries,
@@ -466,6 +467,7 @@ where
     R: WeightTrait + ?Sized,
     O: OrdOffset,
 {
+    type Timed<T: crate::Timestamp> = VecValBatch<K, V, T, R, O>;
     type Batcher = MergeBatcher<Self>;
     type Builder = VecIndexedWSetBuilder<K, V, R, O>;
 }
@@ -639,6 +641,13 @@ where
 
     fn fast_forward_vals(&mut self) {
         self.cursor.child.fast_forward();
+    }
+
+    fn position(&self) -> Option<Position> {
+        Some(Position {
+            total: self.cursor.keys() as u64,
+            offset: self.cursor.pos() as u64,
+        })
     }
 }
 
@@ -837,6 +846,10 @@ where
 
     fn done(self) -> VecIndexedWSet<K, V, R, O> {
         VecIndexedWSet::from_parts(self.factories, self.keys, self.offs, self.vals, self.diffs)
+    }
+
+    fn num_tuples(&self) -> usize {
+        self.diffs.len()
     }
 }
 
