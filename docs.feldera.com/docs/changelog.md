@@ -25,6 +25,16 @@ import TabItem from '@theme/TabItem';
         charater set for strings.  Removed mentions of trailing space
         trimming from strings.
 
+        Until now, when fault tolerance was not enabled, resuming from a
+        checkpoint would delete the checkpoint, so that it could only be resumed
+        once.  This was intended to avoid the surprise of resuming from a very
+        old checkpoint.  However, some users expect to be able to resume from a
+        given checkpoint more than once.  This release changes the semantics, so
+        that resume does not delete the checkpoint, and thus now it may be
+        resumed more than once.  (This does not change behavior when fault
+        tolerance is enabled, because multiple resumes from a given checkpoint
+        were always allowed in that case.)
+
         ## 0.105.0
 
         Changed the semantics of functions `ARRAY_CONTAINS`,
