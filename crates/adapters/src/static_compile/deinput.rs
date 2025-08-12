@@ -637,6 +637,7 @@ where
         self.buffer
             .updates
             .extend(records.into_iter().map(|r| Tup2(K::from(r), 1)));
+        self.buffer.n_bytes += data.get_array_memory_size();
 
         Ok(())
     }
@@ -648,6 +649,7 @@ where
         self.buffer
             .updates
             .extend(records.into_iter().map(|r| Tup2(K::from(r), -1)));
+        self.buffer.n_bytes += data.get_array_memory_size();
 
         Ok(())
     }
@@ -667,6 +669,7 @@ where
             zip(records, polarities)
                 .map(|(record, polarity)| Tup2(K::from(record), if *polarity { 1 } else { -1 })),
         );
+        self.buffer.n_bytes += data.get_array_memory_size();
 
         Ok(())
     }

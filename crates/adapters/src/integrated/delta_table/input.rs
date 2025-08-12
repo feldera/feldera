@@ -1164,7 +1164,7 @@ impl DeltaTableInputEndpointInner {
 
         // Create a job queue to efficiently parse record batches retrieved by the query.
         let job_queue =
-            JobQueue::<RecordBatch, (Option<Box<dyn InputBuffer>>, Vec<ParseError>, usize)>::new(
+            JobQueue::<RecordBatch, (Option<Box<dyn InputBuffer>>, Vec<ParseError>)>::new(
                 num_parsers,
                 move || {
                     let cdc_delete_filter: Option<Arc<dyn PhysicalExpr>> =
@@ -1189,7 +1189,7 @@ impl DeltaTableInputEndpointInner {
                         })
                     })
                 },
-                move |(buffer, errors, bytes)| queue.push_with_aux((buffer, errors), None),
+                move |(buffer, errors)| queue.push_with_aux((buffer, errors), None),
             );
 
         while let Some(batch) = stream.next().await {
@@ -1224,8 +1224,7 @@ impl DeltaTableInputEndpointInner {
         polarity: bool,
         cdc_delete_filter: &Option<Arc<dyn PhysicalExpr>>,
         input_stream: &mut dyn ArrowStream,
-    ) -> (Option<Box<dyn InputBuffer>>, Vec<ParseError>, usize) {
-        let bytes = batch.get_array_memory_size();
+    ) -> (Option<Box<dyn InputBuffer>>, Vec<ParseError>) {
         let result = if polarity {
             if let Some(delete_filter_expr) = cdc_delete_filter {
                 let polarities =
@@ -1235,7 +1234,6 @@ impl DeltaTableInputEndpointInner {
                             return (
                                 None,
                                 vec![ParseError::bin_envelope_error(e.to_string(), &[], None)],
-                                bytes,
                             );
                         }
                     };
@@ -1262,7 +1260,7 @@ impl DeltaTableInputEndpointInner {
             |()| Vec::new(),
         );
 
-        (input_stream.take_all(), errors, bytes)
+        (input_stream.take_all(), errors)
     }
 
     /// Apply actions from a transaction log entry.
