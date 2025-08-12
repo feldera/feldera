@@ -34,7 +34,7 @@ use tokio::{
     task::JoinHandle,
 };
 use tokio_util::sync::CancellationToken;
-use tracing::{info_span, Instrument};
+use tracing::{info, info_span, Instrument};
 use xxhash_rust::xxh3::Xxh3Default;
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -70,6 +70,7 @@ impl TransportInputEndpoint for NatsInputEndpoint {
     ) -> AnyResult<Box<dyn InputReader>> {
         let seek_metadata: Option<SeekMetadata> =
             resume_info.map(serde_json::from_value).transpose()?;
+        info!("Resume info: {:?}", seek_metadata);
         let initial_read_sequence = seek_metadata.and_then(|meta| {
             meta.sequence_number_range
                 .and_then(|range| NonZeroU64::new(range.end() + 1))
@@ -147,6 +148,7 @@ impl NatsReader {
 
         // Handle replay commands
         while let Some((seek_metadata, ())) = command_receiver.recv_replay().await? {
+            info!("Attempt to replay: {:?}", seek_metadata);
             if let Some(sequence_number_range) = seek_metadata.sequence_number_range {
                 let first_message_offset = sequence_number_range.start();
                 nats_consumer_config.deliver_policy =
@@ -190,6 +192,7 @@ impl NatsReader {
                         (Some(first), Some(last)) => Some(*first..=*last),
                         _ => None,
                     };
+                    info!("Queued {} records ({sequence_number_range:?})", num_records);
                     let seek_metadata = SeekMetadata {
                         sequence_number_range,
                     };
@@ -205,6 +208,7 @@ impl NatsReader {
                     }
                 }
                 InputReaderCommand::Extend => {
+                    info!("Extend from {:?}", read_sequence.load(Ordering::Acquire));
                     if canceller.is_none() {
                         // Update the consumer config's StartSequence if this
                         // InputEndpoint has previously received messages, in
@@ -277,6 +281,7 @@ async fn read_nats_messages_until(
                     buffer.flush();
                 }
                 num_records += 1;
+                info!("Got message #{}", info.stream_sequence);
 
                 match info.stream_sequence.cmp(&last_message_sequence) {
                     cmp::Ordering::Less => (),     // Still more messages to consume
@@ -327,6 +332,7 @@ async fn spawn_nats_reader(
                                         continue;
                                     }
                                 };
+                                info!("Got message #{}", info.stream_sequence);
                                 read_sequence.store(NonZeroU64::new(info.stream_sequence + 1), Ordering::Release);
                                 let data = &message.payload;
                                 queue.push_with_aux(parser.parse(&data), data.len(), info.stream_sequence);
