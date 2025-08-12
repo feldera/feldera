@@ -2603,6 +2603,7 @@ async fn pipeline_stats() {
 
     // Check global_metrics
     assert_eq!(value["global_metrics"]["state"], json!("Running"));
+    assert_eq!(value["global_metrics"]["buffered_input_bytes"], json!(0));
     assert_eq!(value["global_metrics"]["buffered_input_records"], json!(0));
     assert_eq!(value["global_metrics"]["pipeline_complete"], json!(true));
     assert_eq!(value["global_metrics"]["total_input_records"], json!(5));
@@ -2620,11 +2621,12 @@ async fn pipeline_stats() {
     assert_eq!(
         value["inputs"][0]["metrics"],
         json!({
+            "buffered_bytes": 0,
             "buffered_records": 0,
             "end_of_input": true,
             "num_parse_errors": 0,
             "num_transport_errors": 0,
-            "total_bytes": 46,
+            "total_bytes": 40,
             "total_records": 5
         })
     );
