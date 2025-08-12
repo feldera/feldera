@@ -3,6 +3,15 @@ name: Test Java Sources
 on:
   workflow_call:
 
+env:
+  RUSTC_WRAPPER: sccache
+  SCCACHE_CACHE_SIZE: ${{ vars.SCCACHE_CACHE_SIZE }}
+  SCCACHE_BUCKET: ${{ vars.SCCACHE_BUCKET }}
+  SCCACHE_ENDPOINT: ${{ vars.SCCACHE_ENDPOINT }}
+  SCCACHE_REGION: ${{ vars.SCCACHE_REGION }}
+  AWS_ACCESS_KEY_ID: "${{ secrets.CI_K8S_MINIO_ACCESS_KEY_ID }}"
+  AWS_SECRET_ACCESS_KEY: "${{ secrets.CI_K8S_MINIO_SECRET_ACCESS_KEY }}"
+
 jobs:
   java-tests:
     if: ${{ !contains(vars.CI_SKIP_JOBS, 'java-tests') }}
@@ -50,3 +59,7 @@ jobs:
         env:
           RUSTFLAGS: ""
         if: ${{ vars.CI_DRY_RUN != 'true' }}
+
+      - name: Print sccache stats
+        run: |
+          sccache --show-stats
