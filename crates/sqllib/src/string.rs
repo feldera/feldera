@@ -12,6 +12,7 @@ use crate::{
 
 use core::fmt::Error;
 use feldera_types::{deserialize_without_context, serialize_without_context};
+use itertools::Itertools;
 use like::{Escape, Like};
 use md5::{Digest, Md5};
 use regex::Regex;
@@ -24,6 +25,7 @@ use size_of::{Context, SizeOf};
 use std::{
     cmp::max,
     fmt::{Display, Formatter},
+    mem::{transmute, MaybeUninit},
     sync::Arc,
 };
 
@@ -45,6 +47,58 @@ impl SqlString {
 
     pub fn from_ref(value: &str) -> Self {
         SqlString(StringRef::from(value.to_string()))
+    }
+
+    /// Constructs a `SqlString` that contains `value`.
+    ///
+    /// If `candidate` is the same as `value`, then reuses it instead of
+    /// allocating a new string and copying into it.
+    pub fn maybe_reuse(value: &str, candidate: &SqlString) -> Self {
+        if value.as_ptr() == candidate.str().as_ptr() && value.len() == candidate.len() {
+            candidate.clone()
+        } else {
+            SqlString(StringRef::from(value.to_string()))
+        }
+    }
+
+    /// Constructs a `SqlString` that contains all of `strings` concatenated.
+    ///
+    /// This is more efficient than concatenating into a `String` and then
+    /// converting it to a `SqlString` because `ArcStr::from` always allocates
+    /// and copies.
+    pub fn from_concat(strings: &[&str]) -> Self {
+        Self::from_concat_iterator(strings.iter().copied())
+    }
+
+    /// Constructs a `SqlString` that contains the concatenation of the strings
+    /// produced by the iterator.
+    ///
+    /// The iterator gets iterated twice and must produce the same total length
+    /// (normally, the same strings) each time.
+    pub fn from_concat_iterator<'a, I>(strings: I) -> Self
+    where
+        I: IntoIterator<Item = &'a str>,
+        I::IntoIter: Clone,
+    {
+        fn copy_bytes_uninit(dst: &mut [MaybeUninit<u8>], src: &[u8]) {
+            // SAFETY: &[T] and &[MaybeUninit<T>] have the same layout.
+            let src: &[MaybeUninit<u8>] = unsafe { transmute(src) };
+            dst.copy_from_slice(src);
+        }
+
+        let strings = strings.into_iter();
+        let len = strings.clone().map(|s| s.len()).sum::<usize>();
+        Self(unsafe {
+            ArcStr::init_with_unchecked(len, |buf| {
+                let mut offset = 0;
+                for s in strings {
+                    let end = offset + s.len();
+                    copy_bytes_uninit(&mut buf[offset..end], s.as_bytes());
+                    offset = end;
+                }
+                debug_assert_eq!(offset, len);
+            })
+        })
     }
 
     pub fn str(&self) -> &str {
@@ -83,7 +137,8 @@ impl From<String> for SqlString {
 
 impl From<char> for SqlString {
     fn from(value: char) -> Self {
-        SqlString(StringRef::from(String::from(value)))
+        // This avoids allocating and destroying a `String`.
+        SqlString(StringRef::from(value.encode_utf8(&mut [0; 4])))
     }
 }
 
@@ -131,21 +186,15 @@ where
 
 #[doc(hidden)]
 pub fn concat_s_s(left: SqlString, right: SqlString) -> SqlString {
-    let mut result = String::with_capacity(left.len() + right.len());
-    result.push_str(left.str());
-    result.push_str(right.str());
-    SqlString::from(result)
+    SqlString::from_concat(&[left.str(), right.str()])
 }
 
 some_polymorphic_function2!(concat, s, SqlString, s, SqlString, SqlString);
 
-/// Three-argument SUBSTRING in SQL.
-///
-/// (Calcite desugars SUBSTR into SUBSTRING.)
 #[doc(hidden)]
-pub fn substring3___(value: SqlString, left: i32, count: i32) -> SqlString {
+fn substring3_impl(s: &str, left: i32, count: i32) -> &str {
     if count <= 0 {
-        SqlString::new()
+        ""
     } else {
         // indexes in SQL start at 1
         let (start_char, char_count) = if left < 1 {
@@ -155,11 +204,18 @@ pub fn substring3___(value: SqlString, left: i32, count: i32) -> SqlString {
             ((left - 1) as usize, count as usize)
         };
 
-        let str = value.str();
-        let start_byte = byte_index(str, start_char);
-        let end_byte = byte_index(&str[start_byte..], char_count) + start_byte;
-        SqlString::from_ref(&str[start_byte..end_byte])
+        let start_byte = byte_index(s, start_char);
+        let end_byte = byte_index(&s[start_byte..], char_count) + start_byte;
+        &s[start_byte..end_byte]
     }
+}
+
+/// Three-argument SUBSTRING in SQL.
+///
+/// (Calcite desugars SUBSTR into SUBSTRING.)
+#[doc(hidden)]
+pub fn substring3___(value: SqlString, left: i32, count: i32) -> SqlString {
+    SqlString::maybe_reuse(substring3_impl(value.str(), left, count), &value)
 }
 
 some_function3!(substring3, SqlString, i32, i32, SqlString);
@@ -193,6 +249,13 @@ pub(crate) fn byte_index_rev(s: &str, char_index: usize) -> usize {
     0
 }
 
+fn substring2_impl(s: &str, left: i32) -> &str {
+    // character indexes in SQL start at 1
+    let char_index = left.max(1) - 1;
+    let byte_index = byte_index(s, char_index as usize);
+    &s[byte_index..]
+}
+
 /// Two-argument SUBSTRING in SQL.
 ///
 /// (Calcite desugars SUBSTR into SUBSTRING.)
@@ -203,28 +266,37 @@ pub fn substring2__(value: SqlString, left: i32) -> SqlString {
     // character indexes in SQL start at 1
     let char_index = left.max(1) - 1;
     let byte_index = byte_index(s, char_index as usize);
-    SqlString::from_ref(&s[byte_index..])
+    SqlString::maybe_reuse(&s[byte_index..], &value)
 }
 
 some_function2!(substring2, SqlString, i32, SqlString);
 
 #[doc(hidden)]
 pub fn trim_both_s_s(remove: SqlString, value: SqlString) -> SqlString {
-    SqlString::from(value.str().trim_matches(|c| remove.str().contains(c)))
+    SqlString::maybe_reuse(
+        value.str().trim_matches(|c| remove.str().contains(c)),
+        &value,
+    )
 }
 
 some_polymorphic_function2!(trim_both, s, SqlString, s, SqlString, SqlString);
 
 #[doc(hidden)]
 pub fn trim_leading_s_s(remove: SqlString, value: SqlString) -> SqlString {
-    SqlString::from(value.str().trim_start_matches(|c| remove.str().contains(c)))
+    SqlString::maybe_reuse(
+        value.str().trim_start_matches(|c| remove.str().contains(c)),
+        &value,
+    )
 }
 
 some_polymorphic_function2!(trim_leading, s, SqlString, s, SqlString, SqlString);
 
 #[doc(hidden)]
 pub fn trim_trailing_s_s(remove: SqlString, value: SqlString) -> SqlString {
-    SqlString::from(value.str().trim_end_matches(|c| remove.str().contains(c)))
+    SqlString::maybe_reuse(
+        value.str().trim_end_matches(|c| remove.str().contains(c)),
+        &value,
+    )
 }
 
 some_polymorphic_function2!(trim_trailing, s, SqlString, s, SqlString, SqlString);
@@ -337,7 +409,7 @@ pub fn repeat__(value: SqlString, count: i32) -> SqlString {
     if count <= 0 {
         SqlString::default()
     } else {
-        SqlString::from(value.str().repeat(count as usize))
+        SqlString(ArcStr::repeat(value.str(), count as usize))
     }
 }
 
@@ -367,10 +439,10 @@ pub fn overlay4____(
     } else if position > char_length_ref(source.str()) {
         concat_s_s(source, replacement)
     } else {
-        let mut result = substring3___(source.clone(), 1, position - 1).to_string();
-        result += replacement.str();
-        result += substring2__(source, position + remove).str();
-        SqlString::from(result)
+        let start = substring3_impl(source.str(), 1, position - 1);
+        let middle = replacement.str();
+        let end = substring2_impl(source.str(), position + remove);
+        SqlString::from_concat(&[start, middle, end])
     }
 }
 
@@ -504,7 +576,7 @@ some_function2!(split2, SqlString, SqlString, Array<SqlString>);
 
 #[doc(hidden)]
 pub fn split1_(source: SqlString) -> Array<SqlString> {
-    split2__(source, SqlString::from_ref(","))
+    split2__(source, SqlString(arcstr::literal!(",")))
 }
 
 some_function1!(split1, SqlString, Array<SqlString>);
@@ -528,38 +600,20 @@ some_function3!(split_part, SqlString, SqlString, i32, SqlString);
 
 #[doc(hidden)]
 pub fn array_to_string2_vec__(value: Array<SqlString>, separator: SqlString) -> SqlString {
-    (*value)
-        .iter()
-        .map(|x| x.str())
-        .collect::<Vec<&str>>()
-        .join(separator.str())
-        .into()
+    SqlString::from_concat_iterator(Itertools::intersperse(
+        value.iter().map(|s| s.str()),
+        separator.str(),
+    ))
 }
 
 some_function2!(array_to_string2_vec, Array<SqlString>, SqlString, SqlString);
 
 #[doc(hidden)]
 pub fn array_to_string2Nvec__(value: Array<Option<SqlString>>, separator: SqlString) -> SqlString {
-    let capacity = value
-        .iter()
-        .map(|s| s.as_ref().map_or(0, |s| s.str().len()))
-        .sum();
-    let mut result = String::with_capacity(capacity);
-    let mut first = true;
-    for word in &*value {
-        let append = match word.as_ref() {
-            None => {
-                continue;
-            }
-            Some(r) => r.str(),
-        };
-        if !first {
-            result.push_str(separator.str())
-        }
-        first = false;
-        result.push_str(append);
-    }
-    SqlString::from(result)
+    SqlString::from_concat_iterator(Itertools::intersperse(
+        value.iter().flatten().map(|s| s.str()),
+        separator.str(),
+    ))
 }
 
 some_function2!(
@@ -592,25 +646,12 @@ pub fn array_to_string3Nvec___(
     separator: SqlString,
     null_value: SqlString,
 ) -> SqlString {
-    let null_size = null_value.str().len();
-    let capacity = value
-        .iter()
-        .map(|s| s.as_ref().map_or(null_size, |s| s.str().len()))
-        .sum();
-    let mut result = String::with_capacity(capacity);
-    let mut first = true;
-    for word in &*value {
-        let append = match word.as_ref() {
-            None => null_value.str(),
-            Some(r) => r.str(),
-        };
-        if !first {
-            result.push_str(separator.str())
-        }
-        first = false;
-        result.push_str(append);
-    }
-    SqlString::from(result)
+    SqlString::from_concat_iterator(Itertools::intersperse(
+        value
+            .iter()
+            .map(|s| s.as_ref().unwrap_or(&null_value).str()),
+        separator.str(),
+    ))
 }
 
 some_function3!(
@@ -683,7 +724,7 @@ some_function2!(regexp_replace2, SqlString, SqlString, SqlString);
 pub fn regexp_replaceC3___(str: SqlString, re: &Option<Regex>, repl: SqlString) -> SqlString {
     match re {
         None => str,
-        Some(re) => SqlString::from_ref(re.replace_all(str.str(), repl.str()).as_ref()),
+        Some(re) => SqlString::maybe_reuse(re.replace_all(str.str(), repl.str()).as_ref(), &str),
     }
 }
 
@@ -731,11 +772,7 @@ pub fn regexp_replaceC2N_(str: Option<SqlString>, re: &Option<Regex>) -> Option<
 
 #[doc(hidden)]
 pub fn concat_ws___(sep: SqlString, left: SqlString, right: SqlString) -> SqlString {
-    let mut result = String::with_capacity(left.len() + right.len() + sep.len());
-    result.push_str(left.str());
-    result.push_str(sep.str());
-    result.push_str(right.str());
-    SqlString::from(result)
+    SqlString::from_concat(&[left.str(), sep.str(), right.str()])
 }
 
 #[doc(hidden)]
@@ -811,8 +848,11 @@ pub fn concat_wsNNN(
 #[doc(hidden)]
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use crate::{
-        byte_index, byte_index_rev, left_s_i32, right_s_i32, substring2__, substring3___, SqlString,
+        array_to_string2Nvec__, array_to_string2_vec__, array_to_string3Nvec___, byte_index,
+        byte_index_rev, left_s_i32, right_s_i32, substring2__, substring3___, SqlString,
     };
     use dbsp::storage::file::to_bytes;
     use rkyv::from_bytes;
@@ -878,6 +918,58 @@ mod tests {
             assert_eq!(left_s_i32(SqlString::from_ref(s), 0), SqlString::new());
             assert_eq!(right_s_i32(SqlString::from_ref(s), 0), SqlString::new());
         }
+    }
+
+    #[test]
+    fn concat() {
+        assert_eq!(
+            SqlString::from_concat(&["a", "xyzzy", "", "c", "plop"]),
+            SqlString::from("axyzzycplop")
+        );
+    }
+
+    #[test]
+    fn array_to_string_vec() {
+        assert_eq!(
+            array_to_string2_vec__(
+                Arc::new(vec![
+                    SqlString::from("xyzzy"),
+                    SqlString::from("quux"),
+                    SqlString::from("foo"),
+                ]),
+                SqlString::from("_"),
+            ),
+            SqlString::from("xyzzy_quux_foo")
+        );
+        assert_eq!(
+            array_to_string2Nvec__(
+                Arc::new(vec![
+                    None,
+                    Some(SqlString::from("xyzzy")),
+                    Some(SqlString::from("quux")),
+                    None,
+                    Some(SqlString::from("foo")),
+                    None,
+                ]),
+                SqlString::from("_"),
+            ),
+            SqlString::from("xyzzy_quux_foo")
+        );
+        assert_eq!(
+            array_to_string3Nvec___(
+                Arc::new(vec![
+                    None,
+                    Some(SqlString::from("xyzzy")),
+                    Some(SqlString::from("quux")),
+                    None,
+                    Some(SqlString::from("foo")),
+                    None,
+                ]),
+                SqlString::from("_"),
+                SqlString::from("#"),
+            ),
+            SqlString::from("#_xyzzy_quux_#_foo_#")
+        );
     }
 }
 
