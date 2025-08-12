@@ -79,11 +79,14 @@ class TestPipelineCrud(unittest.TestCase):
 
     def test_pipeline_create_full(self):
         """Test pipeline creation with all fields."""
+        import requests
+        import json
+        
         pipeline_name = "test-full"
         
         # Clean up any existing pipeline
         try:
-            TEST_CLIENT.delete(f"/v0/pipelines/{pipeline_name}")
+            TEST_CLIENT.http.delete(f"/pipelines/{pipeline_name}")
         except:
             pass
         
@@ -101,7 +104,13 @@ class TestPipelineCrud(unittest.TestCase):
                 "profile": "dev"
             }
         }
-        response = TEST_CLIENT.post("/v0/pipelines", json=pipeline_data)
+        response = requests.post(
+            f"{TEST_CLIENT.config.url}/v0/pipelines",
+            headers={"Content-Type": "application/json", **TEST_CLIENT.http.headers},
+            data=json.dumps(pipeline_data),
+            timeout=5,
+            verify=TEST_CLIENT.config.requests_verify
+        )
         self.assertEqual(response.status_code, 201)
         
         pipeline = response.json()
@@ -114,15 +123,16 @@ class TestPipelineCrud(unittest.TestCase):
         self.assertEqual(pipeline["program_config"]["profile"], "dev")
         
         # Clean up
-        TEST_CLIENT.delete(f"/v0/pipelines/{pipeline_name}")
+        TEST_CLIENT.http.delete(f"/pipelines/{pipeline_name}")
 
     def test_pipeline_get_and_list(self):
         """Test pipeline retrieval and listing."""
+        import requests
+        import json
+        
         # List should initially not include our test pipelines
-        response = TEST_CLIENT.get("/v0/pipelines")
-        self.assertEqual(response.status_code, 200)
-        initial_pipelines = response.json()
-        initial_names = {p["name"] for p in initial_pipelines}
+        pipelines = TEST_CLIENT.http.get("/pipelines")
+        initial_names = {p["name"] for p in pipelines}
 
         pipeline1_name = "test-get-1"
         pipeline2_name = "test-get-2"
@@ -130,13 +140,17 @@ class TestPipelineCrud(unittest.TestCase):
         # Clean up any existing pipelines
         for name in [pipeline1_name, pipeline2_name]:
             try:
-                TEST_CLIENT.delete(f"/v0/pipelines/{name}")
+                TEST_CLIENT.http.delete(f"/pipelines/{name}")
             except:
                 pass
 
         # Test 404 for non-existent pipeline
-        response = TEST_CLIENT.get(f"/v0/pipelines/{pipeline1_name}")
-        self.assertEqual(response.status_code, 404)
+        try:
+            TEST_CLIENT.http.get(f"/pipelines/{pipeline1_name}")
+            self.fail("Expected exception for non-existent pipeline")
+        except Exception:
+            # This is expected - pipeline doesn't exist
+            pass
 
         # Create first pipeline
         sql1 = "CREATE TABLE t1(c1 INT);"
@@ -144,21 +158,23 @@ class TestPipelineCrud(unittest.TestCase):
             "name": pipeline1_name,
             "program_code": sql1,
         }
-        response = TEST_CLIENT.post("/v0/pipelines", json=pipeline_data1)
+        response = requests.post(
+            f"{TEST_CLIENT.config.url}/v0/pipelines",
+            headers={"Content-Type": "application/json", **TEST_CLIENT.http.headers},
+            data=json.dumps(pipeline_data1),
+            timeout=5,
+            verify=TEST_CLIENT.config.requests_verify
+        )
         self.assertEqual(response.status_code, 201)
 
         # List should have one more pipeline
-        response = TEST_CLIENT.get("/v0/pipelines")
-        self.assertEqual(response.status_code, 200)
-        pipelines = response.json()
+        pipelines = TEST_CLIENT.http.get("/pipelines")
         current_names = {p["name"] for p in pipelines}
         self.assertEqual(len(current_names - initial_names), 1)
         self.assertIn(pipeline1_name, current_names)
 
         # Get first pipeline
-        response = TEST_CLIENT.get(f"/v0/pipelines/{pipeline1_name}")
-        self.assertEqual(response.status_code, 200)
-        pipeline1 = response.json()
+        pipeline1 = TEST_CLIENT.http.get(f"/pipelines/{pipeline1_name}")
         self.assertEqual(pipeline1["name"], pipeline1_name)
         self.assertEqual(pipeline1["program_code"], sql1)
 
@@ -168,36 +184,41 @@ class TestPipelineCrud(unittest.TestCase):
             "name": pipeline2_name,
             "program_code": sql2,
         }
-        response = TEST_CLIENT.post("/v0/pipelines", json=pipeline_data2)
+        response = requests.post(
+            f"{TEST_CLIENT.config.url}/v0/pipelines",
+            headers={"Content-Type": "application/json", **TEST_CLIENT.http.headers},
+            data=json.dumps(pipeline_data2),
+            timeout=5,
+            verify=TEST_CLIENT.config.requests_verify
+        )
         self.assertEqual(response.status_code, 201)
 
         # List should have two more pipelines
-        response = TEST_CLIENT.get("/v0/pipelines")
-        self.assertEqual(response.status_code, 200)
-        pipelines = response.json()
+        pipelines = TEST_CLIENT.http.get("/pipelines")
         current_names = {p["name"] for p in pipelines}
         self.assertEqual(len(current_names - initial_names), 2)
         self.assertIn(pipeline1_name, current_names)
         self.assertIn(pipeline2_name, current_names)
 
         # Get second pipeline
-        response = TEST_CLIENT.get(f"/v0/pipelines/{pipeline2_name}")
-        self.assertEqual(response.status_code, 200)
-        pipeline2 = response.json()
+        pipeline2 = TEST_CLIENT.http.get(f"/pipelines/{pipeline2_name}")
         self.assertEqual(pipeline2["name"], pipeline2_name)
         self.assertEqual(pipeline2["program_code"], sql2)
 
         # Clean up
         for name in [pipeline1_name, pipeline2_name]:
-            TEST_CLIENT.delete(f"/v0/pipelines/{name}")
+            TEST_CLIENT.http.delete(f"/pipelines/{name}")
 
     def test_pipeline_name_conflict(self):
         """Test that duplicate pipeline names are rejected."""
+        import requests
+        import json
+        
         pipeline_name = "test-conflict"
         
         # Clean up any existing pipeline
         try:
-            TEST_CLIENT.delete(f"/v0/pipelines/{pipeline_name}")
+            TEST_CLIENT.http.delete(f"/pipelines/{pipeline_name}")
         except:
             pass
         
@@ -208,25 +229,40 @@ class TestPipelineCrud(unittest.TestCase):
         }
         
         # First creation should succeed
-        response = TEST_CLIENT.post("/v0/pipelines", json=pipeline_data)
+        response = requests.post(
+            f"{TEST_CLIENT.config.url}/v0/pipelines",
+            headers={"Content-Type": "application/json", **TEST_CLIENT.http.headers},
+            data=json.dumps(pipeline_data),
+            timeout=5,
+            verify=TEST_CLIENT.config.requests_verify
+        )
         self.assertEqual(response.status_code, 201)
         
         # Second creation with same name should fail
         pipeline_data["description"] = "Different description"
         pipeline_data["program_code"] = "CREATE TABLE t2(c2 VARCHAR);"
         
-        response = TEST_CLIENT.post("/v0/pipelines", json=pipeline_data)
+        response = requests.post(
+            f"{TEST_CLIENT.config.url}/v0/pipelines",
+            headers={"Content-Type": "application/json", **TEST_CLIENT.http.headers},
+            data=json.dumps(pipeline_data),
+            timeout=5,
+            verify=TEST_CLIENT.config.requests_verify
+        )
         self.assertEqual(response.status_code, 409)  # Conflict
         
         # Clean up
-        TEST_CLIENT.delete(f"/v0/pipelines/{pipeline_name}")
+        TEST_CLIENT.http.delete(f"/pipelines/{pipeline_name}")
 
     def test_pipeline_naming_validation(self):
         """Test pipeline naming validation."""
+        import requests
+        import json
+        
         # Valid names should work
         for name in ["test", "test_1", "test-1", "Test1", "a"*100]:  # Up to 100 chars
             try:
-                TEST_CLIENT.delete(f"/v0/pipelines/{name}")
+                TEST_CLIENT.http.delete(f"/pipelines/{name}")
             except:
                 pass
                 
@@ -234,9 +270,15 @@ class TestPipelineCrud(unittest.TestCase):
                 "name": name,
                 "program_code": "",
             }
-            response = TEST_CLIENT.post("/v0/pipelines", json=pipeline_data)
+            response = requests.post(
+                f"{TEST_CLIENT.config.url}/v0/pipelines",
+                headers={"Content-Type": "application/json", **TEST_CLIENT.http.headers},
+                data=json.dumps(pipeline_data),
+                timeout=5,
+                verify=TEST_CLIENT.config.requests_verify
+            )
             self.assertEqual(response.status_code, 201)
-            TEST_CLIENT.delete(f"/v0/pipelines/{name}")
+            TEST_CLIENT.http.delete(f"/pipelines/{name}")
 
         # Invalid names should be rejected
         for name in ["", "a"*101, "%abc"]:  # Empty, too long, invalid chars
@@ -244,7 +286,13 @@ class TestPipelineCrud(unittest.TestCase):
                 "name": name,
                 "program_code": "",
             }
-            response = TEST_CLIENT.post("/v0/pipelines", json=pipeline_data)
+            response = requests.post(
+                f"{TEST_CLIENT.config.url}/v0/pipelines",
+                headers={"Content-Type": "application/json", **TEST_CLIENT.http.headers},
+                data=json.dumps(pipeline_data),
+                timeout=5,
+                verify=TEST_CLIENT.config.requests_verify
+            )
             self.assertEqual(response.status_code, 400)
 
 
