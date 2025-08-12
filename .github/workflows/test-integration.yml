@@ -188,6 +188,7 @@ jobs:
         working-directory: python
         env:
           FELDERA_HOST: http://localhost:8080
+          TEST_FELDERA_HTTPS_TLS_CERT_PATH: test-tls/tls_test.crt
           IN_CI: 1 # We use this flag to skip some kafka tests in the python code base
 
       - name: Run python tests
@@ -197,3 +198,4 @@ jobs:
         env:
           FELDERA_HOST: http://localhost:8080
           PYTHONPATH: ${{ github.workspace }}/python
+          TEST_FELDERA_HTTPS_TLS_CERT_PATH: test-tls/tls_test.crt
