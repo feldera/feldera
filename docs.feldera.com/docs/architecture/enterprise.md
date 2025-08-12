@@ -27,7 +27,7 @@ Feldera Enterprise brings all the power of our incremental compute platform into
 ### Fault-tolerance
   Pipelines can checkpoint their connector and operator state to a PersistentVolume or S3. If a node running a Pipeline goes down or the Pipeline Pod gets evicted, Feldera restarts the computation automatically which resumes from where it left off. The control plane itself is resilient and recovers seamlessly from cluster failures.
 
-### Suspend, Resume and Dynamic Resizing
+### Checkpoint, Resume and Dynamic Resizing
   Dynamically reconfigure pipelines to use different resource reservations for different phases. For example, reserve higher CPU and memory resources for the historical backfill, and fewer resources for processing a lower rate of live-traffic in steady state.
 
 ### Custom Sidecar Extensions
