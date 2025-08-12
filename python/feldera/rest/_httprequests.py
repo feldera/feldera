@@ -26,7 +26,7 @@ class HttpRequests:
         self.headers = {"User-Agent": "feldera-python-sdk/v1"}
         self.requests_verify = config.requests_verify
 
-        if not self.requests_verify:
+        if isinstance(self.requests_verify, bool) and not self.requests_verify:
             urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
         if self.config.api_key:

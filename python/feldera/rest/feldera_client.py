@@ -47,7 +47,7 @@ class FelderaClient:
         api_key: Optional[str] = None,
         timeout: Optional[float] = None,
         connection_timeout: Optional[float] = None,
-        requests_verify: bool = True,
+        requests_verify: bool | str = True,
     ) -> None:
         """
         :param url: The url to Feldera API (ex: https://try.feldera.com)
@@ -57,7 +57,8 @@ class FelderaClient:
         :param connection_timeout: (optional) The amount of time in seconds that
             the client will wait to establish connection before timing out.
         :param requests_verify: The `verify` parameter passed to the requests
-            library. `True` by default.
+            library. `True` by default. To use a self signed certificate, set
+            it to the path to the certificate.
         """
 
         self.config = Config(
