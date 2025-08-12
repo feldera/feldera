@@ -33,6 +33,18 @@ Connecting to Feldera on localhost
 
     pipeline = PipelineBuilder(client, name, sql).create()
 
+TLS with Self Signed Certificates
+=================================
+
+To use TLS with self signed certificates, set to the path of the CA bundle or
+the directory that contains the CA certificates.
+
+.. code-block:: python
+
+   from feldera import FelderaClient
+
+   client = FelderaClient('https://cluster.feldera.com', verify='path/to/cert')
+
 Setting HTTP Connection Timeouts
 ================================
 
@@ -354,7 +366,7 @@ This example shows creating and running a pipeline with Feldera's internal data 
     pipeline.delete(True)
 
 Retrieve a support-bundle for a pipeline
-==================================
+========================================
 
 This example shows how to download a support bundle for a pipeline using the Python SDK.
 

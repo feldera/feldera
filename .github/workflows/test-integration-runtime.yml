@@ -39,6 +39,7 @@ jobs:
         working-directory: python
         env:
           PYTHONPATH: ${{ github.workspace }}/python
+          FELDERA_HTTPS_TLS_CERT: test-tls/tls_test.crt
 
       - name: Python runtime_aggtest test
         if: ${{ vars.CI_DRY_RUN != 'true' }}
@@ -46,6 +47,7 @@ jobs:
         working-directory: python
         env:
           PYTHONPATH: ${{ github.workspace }}/python
+          FELDERA_HTTPS_TLS_CERT: test-tls/tls_test.crt
 
       - name: Python workload tests
         if: ${{ vars.CI_DRY_RUN != 'true' }}
@@ -53,3 +55,4 @@ jobs:
         working-directory: python
         env:
           PYTHONPATH: ${{ github.workspace }}/python
+          FELDERA_HTTPS_TLS_CERT: test-tls/tls_test.crt

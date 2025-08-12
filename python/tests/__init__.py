@@ -7,6 +7,7 @@ from feldera.testutils import (
     PIPELINE_TO_KAFKA_SERVER,
     KAFKA_SERVER,
     FELDERA_TLS_INSECURE,
+    FELDERA_HTTPS_TLS_CERT
 )
 
 __all__ = [
@@ -18,4 +19,5 @@ __all__ = [
     "PIPELINE_TO_KAFKA_SERVER",
     "KAFKA_SERVER",
     "FELDERA_TLS_INSECURE",
+    "FELDERA_HTTPS_TLS_CERT",
 ]

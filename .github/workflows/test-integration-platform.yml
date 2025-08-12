@@ -159,6 +159,7 @@ jobs:
           uv run demo/all-packaged/run.py --api-url http://localhost:8080
         env:
           PYTHONPATH: ${{ github.workspace }}/python
+          FELDERA_HTTPS_TLS_CERT: test-tls/tls_test.crt
 
       - name: Run platform tests
         if: ${{ vars.CI_DRY_RUN != 'true' }}
@@ -168,3 +169,4 @@ jobs:
           FELDERA_HOST: http://localhost:8080
           PYTHONPATH: ${{ github.workspace }}/python
           IN_CI: 1 # We use this flag to skip some kafka tests in the python code base
+          FELDERA_HTTPS_TLS_CERT: test-tls/tls_test.crt
