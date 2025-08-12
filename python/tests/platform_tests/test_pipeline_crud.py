@@ -86,7 +86,7 @@ class TestPipelineCrud(unittest.TestCase):
         
         # Clean up any existing pipeline
         try:
-            TEST_CLIENT.http.delete(f"/pipelines/{pipeline_name}")
+            requests.delete(TEST_CLIENT.config.url + f"/v0/pipelines/{pipeline_name}", headers={"Content-Type": "application/json", **TEST_CLIENT.http.headers})
         except:
             pass
         
@@ -123,7 +123,7 @@ class TestPipelineCrud(unittest.TestCase):
         self.assertEqual(pipeline["program_config"]["profile"], "dev")
         
         # Clean up
-        TEST_CLIENT.http.delete(f"/pipelines/{pipeline_name}")
+        requests.delete(TEST_CLIENT.config.url + f"/v0/pipelines/{pipeline_name}", headers={"Content-Type": "application/json", **TEST_CLIENT.http.headers})
 
     def test_pipeline_get_and_list(self):
         """Test pipeline retrieval and listing."""
@@ -140,7 +140,7 @@ class TestPipelineCrud(unittest.TestCase):
         # Clean up any existing pipelines
         for name in [pipeline1_name, pipeline2_name]:
             try:
-                TEST_CLIENT.http.delete(f"/pipelines/{name}")
+                requests.delete(TEST_CLIENT.config.url + f"/v0/pipelines/{pipeline_name}", headers={"Content-Type": "application/json", **TEST_CLIENT.http.headers})
             except:
                 pass
 
@@ -207,7 +207,7 @@ class TestPipelineCrud(unittest.TestCase):
 
         # Clean up
         for name in [pipeline1_name, pipeline2_name]:
-            TEST_CLIENT.http.delete(f"/pipelines/{name}")
+            requests.delete(TEST_CLIENT.config.url + f"/v0/pipelines/{pipeline_name}", headers={"Content-Type": "application/json", **TEST_CLIENT.http.headers})
 
     def test_pipeline_name_conflict(self):
         """Test that duplicate pipeline names are rejected."""
@@ -218,7 +218,7 @@ class TestPipelineCrud(unittest.TestCase):
         
         # Clean up any existing pipeline
         try:
-            TEST_CLIENT.http.delete(f"/pipelines/{pipeline_name}")
+            requests.delete(TEST_CLIENT.config.url + f"/v0/pipelines/{pipeline_name}", headers={"Content-Type": "application/json", **TEST_CLIENT.http.headers})
         except:
             pass
         
@@ -252,7 +252,7 @@ class TestPipelineCrud(unittest.TestCase):
         self.assertEqual(response.status_code, 409)  # Conflict
         
         # Clean up
-        TEST_CLIENT.http.delete(f"/pipelines/{pipeline_name}")
+        requests.delete(TEST_CLIENT.config.url + f"/v0/pipelines/{pipeline_name}", headers={"Content-Type": "application/json", **TEST_CLIENT.http.headers})
 
     def test_pipeline_naming_validation(self):
         """Test pipeline naming validation."""
@@ -262,7 +262,7 @@ class TestPipelineCrud(unittest.TestCase):
         # Valid names should work
         for name in ["test", "test_1", "test-1", "Test1", "a"*100]:  # Up to 100 chars
             try:
-                TEST_CLIENT.http.delete(f"/pipelines/{name}")
+                requests.delete(TEST_CLIENT.config.url + f"/v0/pipelines/{pipeline_name}", headers={"Content-Type": "application/json", **TEST_CLIENT.http.headers})
             except:
                 pass
                 
@@ -278,7 +278,7 @@ class TestPipelineCrud(unittest.TestCase):
                 verify=TEST_CLIENT.config.requests_verify
             )
             self.assertEqual(response.status_code, 201)
-            TEST_CLIENT.http.delete(f"/pipelines/{name}")
+            requests.delete(TEST_CLIENT.config.url + f"/v0/pipelines/{pipeline_name}", headers={"Content-Type": "application/json", **TEST_CLIENT.http.headers})
 
         # Invalid names should be rejected
         for name in ["", "a"*101, "%abc"]:  # Empty, too long, invalid chars

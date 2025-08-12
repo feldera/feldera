@@ -168,7 +168,7 @@ class TestPipelineOrchestration(unittest.TestCase):
         
         # Push data that should cause panic
         data = "1\n2\n3\n"
-        response = TEST_CLIENT.http.post(f"/v0/pipelines/{pipeline_name}/ingress/t1", data=data)
+        response = TEST_CLIENT.http.post(f"/pipelines/{pipeline_name}/ingress/t1", data=data)
         
         # Wait for error status
         timeout = 60

@@ -80,7 +80,7 @@ class TestQueryingAndStats(unittest.TestCase):
         
         # Clean up any existing pipeline
         try:
-            TEST_CLIENT.http.delete(f"/v0/pipelines/{pipeline_name}")
+            requests.delete(TEST_CLIENT.config.url + f"/v0/pipelines/{pipeline_name}", headers={"Content-Type": "application/json", **TEST_CLIENT.http.headers})
         except:
             pass
         
@@ -119,8 +119,7 @@ class TestQueryingAndStats(unittest.TestCase):
         self._wait_for_compilation(pipeline_name)
         
         # Check program_info for connector names
-        response = TEST_CLIENT.http.get(f"/v0/pipelines/{pipeline_name}")
-        pipeline = response.json()
+        pipeline = TEST_CLIENT.http.get(f"/pipelines/{pipeline_name}")
         
         input_connectors = pipeline["program_info"]["input_connectors"]
         input_names = sorted(input_connectors.keys())
@@ -137,7 +136,7 @@ class TestQueryingAndStats(unittest.TestCase):
         self.assertEqual(input_names, expected_names)
         
         # Clean up
-        TEST_CLIENT.http.delete(f"/v0/pipelines/{pipeline_name}")
+        requests.delete(TEST_CLIENT.config.url + f"/v0/pipelines/{pipeline_name}", headers={"Content-Type": "application/json", **TEST_CLIENT.http.headers})
 
     def test_pipeline_start_without_compilation(self):
         """Test starting pipeline before compilation completes."""
@@ -145,7 +144,7 @@ class TestQueryingAndStats(unittest.TestCase):
         
         # Clean up any existing pipeline
         try:
-            TEST_CLIENT.http.delete(f"/v0/pipelines/{pipeline_name}")
+            requests.delete(TEST_CLIENT.config.url + f"/v0/pipelines/{pipeline_name}", headers={"Content-Type": "application/json", **TEST_CLIENT.http.headers})
         except:
             pass
         
@@ -164,8 +163,7 @@ class TestQueryingAndStats(unittest.TestCase):
         start_time = time.time()
         
         while time.time() - start_time < timeout:
-            response = TEST_CLIENT.http.get(f"/v0/pipelines/{pipeline_name}")
-            pipeline = response.json()
+            pipeline = TEST_CLIENT.http.get(f"/pipelines/{pipeline_name}")
             status = pipeline.get("program_status")
             
             if status not in ["Pending", "CompilingSql"]:
@@ -189,7 +187,7 @@ class TestQueryingAndStats(unittest.TestCase):
         if response.status_code == 202:
             self._wait_for_storage_status(pipeline_name, "Cleared")
             
-        TEST_CLIENT.http.delete(f"/v0/pipelines/{pipeline_name}")
+        requests.delete(TEST_CLIENT.config.url + f"/v0/pipelines/{pipeline_name}", headers={"Content-Type": "application/json", **TEST_CLIENT.http.headers})
 
     # Helper methods
     def _wait_for_compilation(self, pipeline_name, timeout=600):
@@ -197,8 +195,7 @@ class TestQueryingAndStats(unittest.TestCase):
         start_time = time.time()
         
         while time.time() - start_time < timeout:
-            response = TEST_CLIENT.http.get(f"/v0/pipelines/{pipeline_name}")
-            pipeline = response.json()
+            pipeline = TEST_CLIENT.http.get(f"/pipelines/{pipeline_name}")
             
             if pipeline.get("program_status") == "Success":
                 return
@@ -215,8 +212,7 @@ class TestQueryingAndStats(unittest.TestCase):
         start_time = time.time()
         
         while time.time() - start_time < timeout:
-            response = TEST_CLIENT.http.get(f"/v0/pipelines/{pipeline_name}")
-            pipeline = response.json()
+            pipeline = TEST_CLIENT.http.get(f"/pipelines/{pipeline_name}")
             
             if pipeline.get("deployment_status") == expected_status:
                 return
@@ -230,8 +226,7 @@ class TestQueryingAndStats(unittest.TestCase):
         start_time = time.time()
         
         while time.time() - start_time < timeout:
-            response = TEST_CLIENT.http.get(f"/v0/pipelines/{pipeline_name}")
-            pipeline = response.json()
+            pipeline = TEST_CLIENT.http.get(f"/pipelines/{pipeline_name}")
             
             if pipeline.get("storage_status") == expected_status:
                 return
