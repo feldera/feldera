@@ -2374,7 +2374,7 @@ struct ControllerInit {
     /// This is `Some` iff we read a checkpoint.
     input_metadata: Option<HashMap<String, JsonValue>>,
 
-    /// Initials value for input endpoint statistics.
+    /// Initial values for input endpoint statistics.
     ///
     /// These will ordinarily be supplied if `input_metadata.is_some()` but old
     /// checkpoints don't have statistics.
