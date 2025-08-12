@@ -1,4 +1,4 @@
-# Fault tolerance and suspend/resume
+# Fault tolerance and checkpoint/resume
 
 Feldera supports the following ways to gracefully stop a pipeline and
 later restart it from the same point:
@@ -13,29 +13,27 @@ later restart it from the same point:
 
   Every Feldera pipeline supports pause and resume.
 
-* Suspend and resume.  When the user suspends a pipeline, it writes a
+* Checkpoint and resume.  The ⏹️ Stop button in the UI writes a
   checkpoint to storage and then exits.  When the user resumes the
-  pipeline, it uses the checkpoint to resume from the exact point
-  where it left off, without dropping or duplicating input or output.
+  pipeline with ▶️ Start, it uses the checkpoint to resume from the
+  exact point where it left off, without dropping or duplicating input
+  or output.
 
-  Suspending a pipeline allows it to resume gracefully on a different
-  host or with a modified configuration.  With Feldera deployed in
-  Kubernetes, suspending a pipeline terminates its current pod while
-  keeping its state in EBS or S3.  The pipeline can then resume in a
-  new pod which can have more or fewer resources than the original
-  pod.
+  Checkpointing a pipeline allows it to resume gracefully on a
+  different host or with a modified configuration.  With Feldera
+  deployed in Kubernetes, when a pipeline exit, it terminates its
+  current pod while keeping its state in EBS or S3.  The pipeline can
+  then resume in a new pod which can have more or fewer resources than
+  the original pod.
 
-  The checkpoint created by suspend remains after resume.  This means
-  that, if the pipeline crashes and restarts, it will resume a second
-  time from the same point.
+  Resume does not delete the checkpoint that it uses.  This means
+  that, if the pipeline crashes or if it is stopped abruptly with ⏹️
+  Force Stop, and then later restarts, it will resume a second time
+  from the same point.
 
-  In the web UI, the ⏹️ Stop button suspends a pipeline and ▶️ resumes
-  it.
-
-  Suspend and resume is in the Feldera enterprise edition only.  For a
-  pipeline to support suspend and resume, a pipeline must use
-  [fault-tolerant connectors](#fault-tolerant-connectors) and have
-  storage configured.
+  Checkpoint support is in the Feldera enterprise edition only.  For a
+  pipeline to support checkpoints, a pipeline must use [fault-tolerant
+  connectors](#fault-tolerant-connectors) and have storage configured.
 
 * At-least-once fault tolerance.  The pipeline regularly (by default,
   every minute) writes a checkpoint to storage.  If the pipeline
@@ -46,12 +44,12 @@ later restart it from the same point:
   once.
 
   At-least-once fault tolerance is in the Feldera enterprise edition
-  only, with the same configuration requirements as suspend and
+  only, with the same configuration requirements as checkpoint and
   resume.  Writing checkpoints has some performance cost so, in
   addition, it must be enabled explicitly on a pipeline.
 
-  An at-least-once fault tolerant pipeline can also be suspended and
-  resumed.
+  An at-least-once fault tolerant pipeline can also be checkpointed
+  and resumed.
 
 * Exactly once fault tolerance.  This extends at-least-once fault
   tolerance with input and output journaling so that the pipeline
@@ -61,12 +59,12 @@ later restart it from the same point:
   is produced exactly once.
 
   Exactly once fault tolerance is in the Feldera enterprise edition
-  only, with the same configuration requirements as suspend and
+  only, with the same configuration requirements as checkpoint and
   resume.  Journaling adds some performance cost to periodic
   checkpointing so, in addition, it must be enabled explicitly on a
   pipeline.
 
-  A fault-tolerant pipeline can also be suspended and resumed.
+  A fault-tolerant pipeline can also be checkpointed and resumed.
 
 > ⚠️ Feldera resolves [secrets](../connectors/secret-references.md)
 > each time a pipeline starts or resumes, without saving resolved
@@ -96,7 +94,7 @@ continues with new input that has not previously been processed.
 
 ## Fault-tolerant connectors
 
-For Feldera to suspend and resume, or to enable fault-tolerance, all
+For Feldera to checkpoint and resume, or to enable fault-tolerance, all
 of the pipeline's input connectors must support fault tolerance.  Some
 input adapters do not yet support fault tolerance and therefore may
 not be part of a pipeline that supports these features.  Input
@@ -109,13 +107,13 @@ now.  If a fault-tolerant pipeline includes non-fault-tolerant output
 connectors, then in the event of a crash and restart, Feldera may send
 duplicate output to those connectors, but it will not drop output.
 
-Feldera does not yet support fault tolerance or suspend and resume in
+Feldera does not yet support fault tolerance or checkpoint and resume in
 pipelines that use the SQL `NOW` function.
 
 The following table documents input connector support for fault
 tolerance.
 
-|Input connector|Suspend and resume|At-least-once FT|Exactly once FT|
+|Input connector|Checkpoint and resume|At-least-once FT|Exactly once FT|
 |--------------:|:----------------:|---------------:|--------------:|
 |[Datagen]|☑|☑|☑|
 |[Debezium]|☑|☑|☑|
@@ -141,9 +139,9 @@ tolerance.
 [S3]: /connectors/sources/s3.md
 [File]: /connectors/sources/file.md
 
-## Enabling suspend and resume and fault tolerance
+## Enabling checkpoint and resume and fault tolerance
 
-To enable suspend and resume or fault tolerance in an enterprise
+To enable checkpoint and resume or fault tolerance in an enterprise
 Feldera pipeline:
 
 1. Ensure that all of the pipeline's connectors support fault tolerance, as
@@ -204,7 +202,7 @@ Feldera pipeline:
 When fault tolerance is enabled as described, by default Feldera
 automatically writes a checkpoint every 60 seconds.  This interval can
 be changed to another value, or disabled entirely, as described
-[above](#enabling-suspend-and-resume-and-fault-tolerance).
+[above](#enabling-checkpoint-and-resume-and-fault-tolerance).
 
 Feldera also has an HTTP API, `/checkpoint`, that allows the user to
 request writing a checkpoint immediately.  If automatic checkpoints
