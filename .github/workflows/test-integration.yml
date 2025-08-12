@@ -176,6 +176,14 @@ jobs:
         env:
           PYTHONPATH: ${{ github.workspace }}/python
 
+      - name: Run platform integration tests (Python, converted from Rust)
+        if: ${{ vars.CI_DRY_RUN != 'true' }}
+        run: uv run --locked pytest tests/platform_tests/ --timeout=600
+        working-directory: python
+        env:
+          FELDERA_HOST: http://localhost:8080
+          IN_CI: 1
+
       - name: Run python tests  
         if: ${{ vars.CI_DRY_RUN != 'true' }}
         run: uv run --locked pytest -n auto . --timeout=600
