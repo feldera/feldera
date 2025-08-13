@@ -69,6 +69,12 @@ impl Display for SqlString {
     }
 }
 
+impl From<ArcStr> for SqlString {
+    fn from(value: ArcStr) -> Self {
+        SqlString(StringRef::from(value.to_string()))
+    }
+}
+
 impl From<String> for SqlString {
     fn from(value: String) -> Self {
         SqlString(StringRef::from(value))

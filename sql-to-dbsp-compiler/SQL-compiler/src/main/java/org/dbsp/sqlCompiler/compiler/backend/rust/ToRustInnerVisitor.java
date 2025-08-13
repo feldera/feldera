@@ -1212,7 +1212,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
         String decoded = new String(bytes, literal.charset);
         decoded = Utilities.doubleQuote(decoded);
         this.builder.append(literal.wrapSome(
-        DBSPTypeCode.STRING.rustName + "::from_ref(" + decoded + ")"));
+        DBSPTypeCode.STRING.rustName + "::from(arcstr::literal!(" + decoded + "))"));
         this.pop(literal);
         return VisitDecision.STOP;
     }

@@ -69,6 +69,7 @@ public final class MultiCratesWriter extends RustWriter {
 
         String deps = """
                 [workspace.dependencies]
+                arcstr = { version = "1.2.0" }
                 paste = { version = "1.0.12" }
                 derive_more = { version = "0.99.17", features = ["add", "not", "from"] }
                 dbsp = { path = "$ROOT/crates/dbsp", features = ["backend-mode"] }
