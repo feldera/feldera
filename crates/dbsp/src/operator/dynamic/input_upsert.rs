@@ -1,15 +1,22 @@
 use crate::{
-    algebra::{AddAssignByRef, HasOne, HasZero, IndexedZSet, PartialOrder, ZTrace},
+    algebra::{AddAssignByRef, HasOne, HasZero, IndexedZSet, OrdZSet, PartialOrder, ZTrace},
     circuit::{
-        circuit_builder::{register_replay_stream, CircuitBase},
-        operator_traits::{BinaryOperator, Operator},
+        checkpointer::Checkpoint,
+        circuit_builder::{register_replay_stream, CircuitBase, RefStreamValue},
+        operator_traits::{BinaryOperator, Operator, TernaryOperator},
         OwnershipPreference, Scope,
     },
     declare_trait_object,
     dynamic::{ClonableTrait, Data, DataTrait, DynOpt, DynPairs, Erase, Factory, WithFactory},
-    operator::dynamic::trace::{DelayedTraceId, TraceBounds, TraceId, UntimedTraceAppend, Z1Trace},
+    operator::{
+        dynamic::{
+            time_series::LeastUpperBoundFunc,
+            trace::{DelayedTraceId, TraceBounds, TraceId, UntimedTraceAppend, Z1Trace},
+        },
+        Z1,
+    },
     trace::{
-        cursor::Cursor, Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Filter,
+        cursor::Cursor, Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Rkyv,
         Spine,
     },
     Circuit, DBData, NumEntries, RootCircuit, Stream, Timestamp, ZWeight,
@@ -17,7 +24,12 @@ use crate::{
 use minitrace::trace;
 use rkyv::{Archive, Deserialize, Serialize};
 use size_of::SizeOf;
-use std::{borrow::Cow, marker::PhantomData, mem::take, ops::Neg};
+use std::{
+    borrow::Cow,
+    marker::PhantomData,
+    mem::take,
+    ops::{Deref, Neg},
+};
 
 use super::trace::BoundsId;
 
@@ -148,6 +160,47 @@ where
     }
 }
 
+pub struct InputUpsertWithWaterlineFactories<B: IndexedZSet, E: DataTrait + ?Sized> {
+    pub batch_factories: B::Factories,
+    pub opt_key_factory: &'static dyn Factory<DynOpt<B::Key>>,
+    pub opt_val_factory: &'static dyn Factory<DynOpt<B::Val>>,
+    pub val_factory: &'static dyn Factory<B::Val>,
+    errors_factory: <OrdZSet<E> as BatchReader>::Factories,
+}
+
+impl<B: IndexedZSet, E: DataTrait + ?Sized> Clone for InputUpsertWithWaterlineFactories<B, E> {
+    fn clone(&self) -> Self {
+        Self {
+            batch_factories: self.batch_factories.clone(),
+            opt_key_factory: self.opt_key_factory,
+            opt_val_factory: self.opt_val_factory,
+            val_factory: self.val_factory,
+            errors_factory: self.errors_factory.clone(),
+        }
+    }
+}
+
+impl<B, E> InputUpsertWithWaterlineFactories<B, E>
+where
+    B: Batch + IndexedZSet,
+    E: DataTrait + ?Sized,
+{
+    pub fn new<KType, VType, EType>() -> Self
+    where
+        KType: DBData + Erase<B::Key>,
+        VType: DBData + Erase<B::Val>,
+        EType: DBData + Erase<E>,
+    {
+        Self {
+            batch_factories: BatchReaderFactories::new::<KType, VType, ZWeight>(),
+            opt_key_factory: WithFactory::<Option<KType>>::FACTORY,
+            opt_val_factory: WithFactory::<Option<VType>>::FACTORY,
+            val_factory: WithFactory::<VType>::FACTORY,
+            errors_factory: BatchReaderFactories::new::<EType, (), ZWeight>(),
+        }
+    }
+}
+
 impl<K, V, U> Stream<RootCircuit, Box<DynPairs<K, DynUpdate<V, U>>>>
 where
     K: DataTrait + ?Sized,
@@ -238,7 +291,6 @@ where
                         factories.batch_factories.clone(),
                         factories.opt_key_factory,
                         factories.opt_val_factory,
-                        bounds.clone(),
                         patch_func,
                     ),
                     &delayed_trace,
@@ -265,6 +317,145 @@ where
             delta
         })
     }
+
+    // Like `input_upsert`, but additionally tracks a waterline of the input collection and
+    // rejects inputs that are below the waterline.  An input is rejected if the input record
+    // itself is below the waterline or if the existing record it replaces is below the waterline.
+    #[allow(clippy::too_many_arguments)]
+    pub fn input_upsert_with_waterline<B, W, E>(
+        &self,
+        persistent_id: Option<&str>,
+        factories: &InputUpsertWithWaterlineFactories<B, E>,
+        patch_func: PatchFunc<V, U>,
+        init_waterline: Box<dyn Fn() -> Box<W>>,
+        extract_ts: Box<dyn Fn(&B::Key, &B::Val, &mut W)>,
+        least_upper_bound: LeastUpperBoundFunc<W>,
+        filter_func: Box<dyn Fn(&W, &B::Key, &B::Val) -> bool>,
+        report_func: Box<dyn Fn(&W, &B::Key, &B::Val, ZWeight, &mut E)>,
+    ) -> (
+        Stream<RootCircuit, B>,
+        Stream<RootCircuit, OrdZSet<E>>,
+        Stream<RootCircuit, Box<W>>,
+    )
+    where
+        B: IndexedZSet<Key = K, Val = V>,
+        W: DataTrait + Checkpoint + ?Sized,
+        E: DataTrait + ?Sized,
+        Box<W>: Checkpoint + Clone + NumEntries + Rkyv,
+    {
+        let circuit = self.circuit();
+
+        assert!(
+            self.is_sharded(),
+            "input_upsert_with_waterline operator applied to a non-sharded collection"
+        );
+
+        // ```text
+        //                   ┌─────────────────────────────────────────────►
+        //                   │ waterline
+        //             ┌─────┴─────┐
+        //             │ waterline │◄─────────┬────────────────────────────►
+        //             └──────┬────┘          │
+        //                    │ waterline     │
+        //                   Z1               │
+        //  delayed_waterline │               │
+        //                    ▼               │
+        //         ┌─────────────────────┐    │        ┌──────────────────┐  trace
+        // ───────►│InputUpsertWaterline ├────┴───────►│UntimedTraceAppend├────┐
+        //         └──────┬──────────────┘   delta     └──────────────────┘    │
+        //                │          ▲                  ▲                      │
+        //                │          │                  │                      │
+        //                │          │                  │   ┌───────┐          │
+        //                │          └──────────────────┴───┤Z1Trace│◄─────────┘
+        //                │             delayed_trace       └───────┘
+        //                │
+        //                │error stream
+        //                └────────────────────────────────────────────────►
+        // ```
+
+        circuit.region("input_upsert_waterline", || {
+            let bounds = <TraceBounds<K, V>>::unbounded();
+
+            let z1 = Z1Trace::new(
+                &factories.batch_factories,
+                &factories.batch_factories,
+                false,
+                circuit.root_scope(),
+                bounds.clone(),
+            );
+
+            let (delayed_trace, z1feedback) = circuit.add_feedback_persistent(
+                persistent_id
+                    .map(|name| format!("{name}.integral"))
+                    .as_deref(),
+                z1,
+            );
+
+            delayed_trace.mark_sharded();
+
+            let waterline_z1 = Z1::new((init_waterline)());
+
+            let (delayed_waterline, waterline_feedback) = circuit.add_feedback_persistent(
+                persistent_id
+                    .map(|name| format!("{name}.delayed_waterline"))
+                    .as_deref(),
+                waterline_z1,
+            );
+
+            let error_stream_val = RefStreamValue::empty();
+
+            let delta = circuit
+                .add_ternary_operator(
+                    <InputUpsertWithWaterline<Spine<B>, U, B, W, E>>::new(
+                        factories.clone(),
+                        patch_func,
+                        filter_func,
+                        report_func,
+                        error_stream_val.clone(),
+                    ),
+                    &delayed_trace,
+                    self,
+                    &delayed_waterline,
+                )
+                .mark_distinct();
+            delta.mark_sharded();
+            let replay_stream = z1feedback.operator_mut().prepare_replay_stream(&delta);
+
+            let waterline_id = persistent_id.map(|name| format!("{name}.input_waterline"));
+
+            let waterline = delta.dyn_waterline(
+                waterline_id.as_deref(),
+                init_waterline,
+                extract_ts,
+                least_upper_bound,
+            );
+
+            waterline_feedback.connect(&waterline);
+
+            let trace = circuit.add_binary_operator_with_preference(
+                UntimedTraceAppend::<Spine<B>>::new(),
+                (&delayed_trace, OwnershipPreference::STRONGLY_PREFER_OWNED),
+                (&delta, OwnershipPreference::PREFER_OWNED),
+            );
+            trace.mark_sharded();
+
+            z1feedback.connect_with_preference(&trace, OwnershipPreference::STRONGLY_PREFER_OWNED);
+
+            register_replay_stream(circuit, &delta, &replay_stream);
+
+            let error_stream = Stream::with_value(
+                self.circuit().clone(),
+                delta.local_node_id(),
+                error_stream_val,
+            );
+
+            circuit.cache_insert(DelayedTraceId::new(trace.stream_id()), delayed_trace);
+            circuit.cache_insert(TraceId::new(delta.stream_id()), trace);
+            circuit.cache_insert(BoundsId::<B>::new(delta.stream_id()), bounds);
+
+            (delta, error_stream, waterline)
+        })
+    }
 }
 
 pub struct InputUpsert<T, U, B>
@@ -278,7 +469,6 @@ where
     opt_val_factory: &'static dyn Factory<DynOpt<B::Val>>,
     time: T::Time,
     patch_func: PatchFunc<T::Val, U>,
-    bounds: TraceBounds<T::Key, T::Val>,
     phantom: PhantomData<B>,
 }
 
@@ -292,7 +482,6 @@ where
         batch_factories: B::Factories,
         opt_key_factory: &'static dyn Factory<DynOpt<B::Key>>,
         opt_val_factory: &'static dyn Factory<DynOpt<B::Val>>,
-        bounds: TraceBounds<T::Key, T::Val>,
         patch_func: PatchFunc<T::Val, U>,
     ) -> Self {
         Self {
@@ -300,7 +489,6 @@ where
             opt_key_factory,
             opt_val_factory,
             time: T::Time::clock_start(),
-            bounds,
             patch_func,
             phantom: PhantomData,
         }
@@ -320,14 +508,6 @@ where
         self.time = self.time.advance(scope + 1);
     }
     fn fixedpoint(&self, _scope: Scope) -> bool {
-        true
-    }
-}
-
-fn passes_filter<T: ?Sized>(filter: &Option<Filter<T>>, val: &T) -> bool {
-    if let Some(filter) = filter {
-        (filter.filter_func())(val)
-    } else {
         true
     }
 }
@@ -354,15 +534,235 @@ where
 
         let mut builder = B::Builder::with_capacity(&self.batch_factories, updates.len() * 2);
 
-        let val_filter = self.bounds.effective_val_filter();
-        let key_filter = self.bounds.effective_key_filter();
-
         // Current key for which we are processing updates.
         let mut cur_key: Box<DynOpt<T::Key>> = self.opt_key_factory.default_box();
 
         // Current value associated with the key after applying all processed updates
         // to it.
         let mut cur_val: Box<DynOpt<T::Val>> = self.opt_val_factory.default_box();
+
+        for key_upd in updates.dyn_iter() {
+            let (key, upd) = key_upd.split();
+
+            // We finished processing updates for the previous key. Push them to the
+            // builder and generate a retraction for the new key.
+            if cur_key.get() != Some(key) {
+                // Push updates for the previous key to the builder.
+                if let Some(cur_key) = cur_key.get_mut() {
+                    if let Some(val) = cur_val.get_mut() {
+                        key_updates.push_with(&mut |item| {
+                            let (v, w) = item.split_mut();
+
+                            val.move_to(v);
+                            **w = HasOne::one();
+                        });
+                    }
+                    key_updates.consolidate();
+                    if !key_updates.is_empty() {
+                        for pair in key_updates.dyn_iter_mut() {
+                            let (v, d) = pair.split_mut();
+                            builder.push_val_diff_mut(v, d);
+                        }
+                        builder.push_key(cur_key);
+                    }
+                    key_updates.clear();
+                }
+
+                cur_key.from_ref(key);
+                cur_val.set_none();
+
+                // Generate retraction if `key` is present in the trace.
+                if trace_cursor.seek_key_exact(key) {
+                    // println!("{}: found key in trace_cursor", Runtime::worker_index());
+                    while trace_cursor.val_valid() {
+                        let mut weight = ZWeight::zero();
+                        trace_cursor.map_times(&mut |t, w| {
+                            if t.less_equal(&self.time) {
+                                weight.add_assign_by_ref(w);
+                            };
+                        });
+
+                        if !weight.is_zero() {
+                            let val = trace_cursor.val();
+
+                            key_updates.push_with(&mut |item| {
+                                let (v, w) = item.split_mut();
+
+                                val.clone_to(v);
+                                **w = weight.neg()
+                            });
+                            cur_val.from_ref(val);
+                        }
+
+                        trace_cursor.step_val();
+                    }
+                }
+            }
+
+            match upd.get() {
+                UpdateRef::Delete => {
+                    // TODO: if cur_val.is_none(), report missing key.
+                    cur_val.set_none();
+                }
+                UpdateRef::Insert(val) => {
+                    cur_val.from_ref(val);
+                }
+                UpdateRef::Update(upd) => {
+                    if let Some(val) = cur_val.get_mut() {
+                        (self.patch_func)(val, upd);
+                    } else {
+                        // TODO: report missing key.
+                    }
+                }
+            }
+        }
+
+        // Push updates for the last key.
+        if let Some(cur_key) = cur_key.get_mut() {
+            if let Some(val) = cur_val.get_mut() {
+                key_updates.push_with(&mut |item| {
+                    let (v, w) = item.split_mut();
+
+                    val.move_to(v);
+                    **w = HasOne::one();
+                });
+            }
+
+            key_updates.consolidate();
+            if !key_updates.is_empty() {
+                for pair in key_updates.dyn_iter_mut() {
+                    let (v, d) = pair.split_mut();
+                    builder.push_val_diff_mut(v, d);
+                }
+                builder.push_key(cur_key);
+            }
+            key_updates.clear();
+        }
+
+        self.time = self.time.advance(0);
+        builder.done()
+    }
+
+    fn input_preference(&self) -> (OwnershipPreference, OwnershipPreference) {
+        (
+            OwnershipPreference::PREFER_OWNED,
+            OwnershipPreference::PREFER_OWNED,
+        )
+    }
+}
+
+pub struct InputUpsertWithWaterline<T, U, B, W, E>
+where
+    T: BatchReader,
+    B: IndexedZSet,
+    U: DataTrait + ?Sized,
+    W: DataTrait + ?Sized,
+    E: DataTrait + ?Sized,
+{
+    factories: InputUpsertWithWaterlineFactories<B, E>,
+    time: T::Time,
+    patch_func: PatchFunc<T::Val, U>,
+    filter_func: Box<dyn Fn(&W, &B::Key, &B::Val) -> bool>,
+    report_func: Box<dyn Fn(&W, &B::Key, &B::Val, ZWeight, &mut E)>,
+    error_stream_val: RefStreamValue<OrdZSet<E>>,
+    phantom: PhantomData<B>,
+}
+
+impl<T, U, B, W, E> InputUpsertWithWaterline<T, U, B, W, E>
+where
+    T: BatchReader,
+    B: IndexedZSet,
+    U: DataTrait + ?Sized,
+    W: DataTrait + ?Sized,
+    E: DataTrait + ?Sized,
+{
+    pub fn new(
+        factories: InputUpsertWithWaterlineFactories<B, E>,
+        patch_func: PatchFunc<T::Val, U>,
+        filter_func: Box<dyn Fn(&W, &B::Key, &B::Val) -> bool>,
+        report_func: Box<dyn Fn(&W, &B::Key, &B::Val, ZWeight, &mut E)>,
+        error_stream_val: RefStreamValue<OrdZSet<E>>,
+    ) -> Self {
+        Self {
+            factories,
+            time: T::Time::clock_start(),
+            patch_func,
+            filter_func,
+            report_func,
+            error_stream_val,
+            phantom: PhantomData,
+        }
+    }
+
+    fn passes_filter(&self, waterline: &W, key: &B::Key, val: &B::Val) -> bool {
+        (self.filter_func)(waterline, key, val)
+    }
+}
+
+impl<T, U, B, W, E> Operator for InputUpsertWithWaterline<T, U, B, W, E>
+where
+    T: BatchReader,
+    U: DataTrait + ?Sized,
+    B: IndexedZSet,
+    W: DataTrait + ?Sized,
+    E: DataTrait + ?Sized,
+{
+    fn name(&self) -> Cow<'static, str> {
+        Cow::from("InputUpsertWithWaterline")
+    }
+    fn clock_end(&mut self, scope: Scope) {
+        self.time = self.time.advance(scope + 1);
+    }
+    fn fixedpoint(&self, _scope: Scope) -> bool {
+        true
+    }
+}
+
+impl<T, U, B, W, E> TernaryOperator<T, Box<DynPairs<T::Key, DynUpdate<T::Val, U>>>, Box<W>, B>
+    for InputUpsertWithWaterline<T, U, B, W, E>
+where
+    T: ZTrace + Clone,
+    U: DataTrait + ?Sized,
+    B: IndexedZSet<Key = T::Key, Val = T::Val>,
+    W: DataTrait + ?Sized,
+    Box<W>: Clone,
+    E: DataTrait + ?Sized,
+{
+    #[trace]
+    async fn eval(
+        &mut self,
+        trace: Cow<'_, T>,
+        updates: Cow<'_, Box<DynPairs<T::Key, DynUpdate<T::Val, U>>>>,
+        waterline: Cow<'_, Box<W>>,
+    ) -> B {
+        // Inputs must be sorted by key
+        debug_assert!(updates.is_sorted_by(&|u1, u2| u1.fst().cmp(u2.fst())));
+
+        let mut errors = self
+            .factories
+            .errors_factory
+            .weighted_items_factory()
+            .default_box();
+
+        let waterline = waterline.deref();
+        let mut key_updates = self
+            .factories
+            .batch_factories
+            .weighted_vals_factory()
+            .default_box();
+
+        let mut trace_cursor = trace.deref().cursor();
+
+        let mut builder =
+            B::Builder::with_capacity(&self.factories.batch_factories, updates.len() * 2);
+
+        // Current key for which we are processing updates.
+        let mut cur_key: Box<DynOpt<T::Key>> = self.factories.opt_key_factory.default_box();
+
+        // Current value associated with the key after applying all processed updates
+        // to it.
+        let mut cur_val: Box<DynOpt<T::Val>> = self.factories.opt_val_factory.default_box();
+        let mut tmp_val: Box<T::Val> = self.factories.val_factory.default_box();
 
         // Set to true when the value associated with the current key doesn't
         // satisfy `val_filter`, hence refuse to remove this value and process
@@ -371,11 +771,6 @@ where
 
         for key_upd in updates.dyn_iter() {
             let (key, upd) = key_upd.split();
-
-            if !passes_filter(&key_filter, key) {
-                // TODO: report lateness violation.
-                continue;
-            }
 
             // We finished processing updates for the previous key. Push them to the
             // builder and generate a retraction for the new key.
@@ -419,7 +814,7 @@ where
                         if !weight.is_zero() {
                             let val = trace_cursor.val();
 
-                            if passes_filter(&val_filter, val) {
+                            if self.passes_filter(waterline, key, val) {
                                 key_updates.push_with(&mut |item| {
                                     let (v, w) = item.split_mut();
 
@@ -429,7 +824,17 @@ where
                                 cur_val.from_ref(val);
                             } else {
                                 skip_key = true;
-                                // TODO: report lateness violation.
+                                errors.push_with(&mut |item| {
+                                    let (kv, err_weight) = item.split_mut();
+                                    **err_weight = HasOne::one();
+                                    (self.report_func)(
+                                        waterline,
+                                        key,
+                                        val,
+                                        weight.neg(),
+                                        kv.fst_mut(),
+                                    );
+                                });
                             }
                         }
 
@@ -445,17 +850,28 @@ where
                         cur_val.set_none();
                     }
                     UpdateRef::Insert(val) => {
-                        if passes_filter(&val_filter, val) {
+                        if self.passes_filter(waterline, key, val) {
                             cur_val.from_ref(val);
                         } else {
-                            // TODO: report lateness violation.
+                            errors.push_with(&mut |item| {
+                                let (kv, err_weight) = item.split_mut();
+                                **err_weight = HasOne::one();
+                                (self.report_func)(waterline, key, val, 1, kv.fst_mut());
+                            });
                         }
                     }
                     UpdateRef::Update(upd) => {
                         if let Some(val) = cur_val.get_mut() {
-                            (self.patch_func)(val, upd);
-                            if !passes_filter(&val_filter, val) {
-                                // TODO: report lateness violation.
+                            val.clone_to(&mut tmp_val);
+                            (self.patch_func)(&mut tmp_val, upd);
+                            if !self.passes_filter(waterline, key, &tmp_val) {
+                                errors.push_with(&mut |item| {
+                                    let (kv, err_weight) = item.split_mut();
+                                    **err_weight = HasOne::one();
+                                    (self.report_func)(waterline, key, &tmp_val, 1, kv.fst_mut());
+                                });
+                            } else {
+                                tmp_val.clone_to(val);
                             }
                         } else {
                             // TODO: report missing key.
@@ -488,13 +904,24 @@ where
         }
 
         self.time = self.time.advance(0);
+
+        let errors = <OrdZSet<E>>::dyn_from_tuples(&self.factories.errors_factory, (), &mut errors);
+        self.error_stream_val.put(errors);
+
         builder.done()
     }
 
-    fn input_preference(&self) -> (OwnershipPreference, OwnershipPreference) {
+    fn input_preference(
+        &self,
+    ) -> (
+        OwnershipPreference,
+        OwnershipPreference,
+        OwnershipPreference,
+    ) {
         (
             OwnershipPreference::PREFER_OWNED,
             OwnershipPreference::PREFER_OWNED,
+            OwnershipPreference::INDIFFERENT,
         )
     }
 }
