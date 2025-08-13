@@ -22,8 +22,9 @@ jobs:
           restore-keys: |
             sql2dbsp-java-cache-${{ runner.os }}-
 
-      - name: gradle version
+      - name: Check environment
         run: |
+          echo "RUSTFLAGS=$RUSTFLAGS"
           gradle --version
 
       - name: Build sql2dbsp JARs
