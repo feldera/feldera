@@ -154,6 +154,12 @@ impl From<&str> for SqlString {
     }
 }
 
+impl AsRef<ArcStr> for SqlString {
+    fn as_ref(&self) -> &ArcStr {
+        &self.0
+    }
+}
+
 impl SizeOf for SqlString {
     fn size_of_children(&self, context: &mut Context) {
         self.0.size_of_children(context);
