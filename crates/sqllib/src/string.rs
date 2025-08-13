@@ -923,8 +923,8 @@ mod tests {
     #[test]
     fn concat() {
         assert_eq!(
-            SqlString::from_concat(&["a", "xyzzy", "", "c", "plop"]),
-            SqlString::from("axyzzycplop")
+            SqlString::from_concat(&["a", "xyzzy", "✨", "", "c", "plop"]),
+            SqlString::from("axyzzy✨cplop")
         );
     }
 
@@ -935,11 +935,12 @@ mod tests {
                 Arc::new(vec![
                     SqlString::from("xyzzy"),
                     SqlString::from("quux"),
+                    SqlString::from("カキクケコ"),
                     SqlString::from("foo"),
                 ]),
                 SqlString::from("_"),
             ),
-            SqlString::from("xyzzy_quux_foo")
+            SqlString::from("xyzzy_quux_カキクケコ_foo")
         );
         assert_eq!(
             array_to_string2Nvec__(
@@ -959,7 +960,7 @@ mod tests {
             array_to_string3Nvec___(
                 Arc::new(vec![
                     None,
-                    Some(SqlString::from("xyzzy")),
+                    Some(SqlString::from("Tokyo(東京)")),
                     Some(SqlString::from("quux")),
                     None,
                     Some(SqlString::from("foo")),
@@ -968,7 +969,7 @@ mod tests {
                 SqlString::from("_"),
                 SqlString::from("#"),
             ),
-            SqlString::from("#_xyzzy_quux_#_foo_#")
+            SqlString::from("#_Tokyo(東京)_quux_#_foo_#")
         );
     }
 }
