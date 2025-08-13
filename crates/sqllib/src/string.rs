@@ -88,17 +88,23 @@ impl SqlString {
 
         let strings = strings.into_iter();
         let len = strings.clone().map(|s| s.len()).sum::<usize>();
-        Self(unsafe {
-            ArcStr::init_with_unchecked(len, |buf| {
-                let mut offset = 0;
-                for s in strings {
-                    let end = offset + s.len();
-                    copy_bytes_uninit(&mut buf[offset..end], s.as_bytes());
-                    offset = end;
-                }
-                debug_assert_eq!(offset, len);
+        if len > 0 {
+            Self(unsafe {
+                ArcStr::init_with_unchecked(len, |buf| {
+                    let mut offset = 0;
+                    for s in strings {
+                        let end = offset + s.len();
+                        copy_bytes_uninit(&mut buf[offset..end], s.as_bytes());
+                        offset = end;
+                    }
+                    debug_assert_eq!(offset, len);
+                })
             })
-        })
+        } else {
+            // `ArcStr::init_with_unchecked()` panics for zero-length output
+            // (see https://github.com/thomcc/arcstr/issues/67).
+            Self(ArcStr::new())
+        }
     }
 
     pub fn str(&self) -> &str {
@@ -854,6 +860,7 @@ mod tests {
         array_to_string2Nvec__, array_to_string2_vec__, array_to_string3Nvec___, byte_index,
         byte_index_rev, left_s_i32, right_s_i32, substring2__, substring3___, SqlString,
     };
+
     use dbsp::storage::file::to_bytes;
     use rkyv::from_bytes;
     use size_of::SizeOf;
@@ -918,6 +925,14 @@ mod tests {
             assert_eq!(left_s_i32(SqlString::from_ref(s), 0), SqlString::new());
             assert_eq!(right_s_i32(SqlString::from_ref(s), 0), SqlString::new());
         }
+    }
+
+    #[test]
+    fn empty() {
+        assert_eq!(
+            SqlString::from_concat(&["", "", "", ""]),
+            SqlString::from("")
+        );
     }
 
     #[test]
