@@ -16,3 +16,4 @@ pub use rolling_aggregate::{
     PartitionedRollingAggregateLinearFactories, PartitionedRollingAggregateWithWaterlineFactories,
     PartitionedRollingAverageFactories,
 };
+pub use waterline::LeastUpperBoundFunc;
