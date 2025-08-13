@@ -49,6 +49,7 @@ import static org.apache.calcite.util.Static.RESOURCE;
 public class CustomFunctions {
     private final List<NonOptimizedFunction> functions;
     private final HashMap<ProgramIdentifier, ExternalFunction> udf;
+    private final HashMap<ProgramIdentifier, SqlUserDefinedAggregationFunction> aggregates;
 
     public CustomFunctions() {
         this.functions = new ArrayList<>();
@@ -80,12 +81,14 @@ public class CustomFunctions {
         this.functions.add(new LeastNonNullsFunction());
         this.functions.add(new BroundFunction());
         this.udf = new HashMap<>();
+        this.aggregates = new HashMap<>();
     }
 
     /** Make a copy of the other object */
     public CustomFunctions(CustomFunctions other) {
         this.functions = new ArrayList<>(other.functions);
         this.udf = new HashMap<>(other.udf);
+        this.aggregates = new HashMap<>(other.aggregates);
     }
 
     public Collection<? extends FunctionDocumentation.FunctionDescription> getDescriptions() {
@@ -565,8 +568,9 @@ public class CustomFunctions {
      * @param body       Optional body of the function.  If missing,
      *                   the function is defined in Rust.
      */
-    public ExternalFunction createUDF(CalciteObject node, SqlIdentifier name,
-                                      RelDataType signature, RelDataType returnType, @Nullable RexNode body) {
+    public ExternalFunction createUDF(
+            CalciteObject node, SqlIdentifier name,
+            RelDataType signature, RelDataType returnType, @Nullable RexNode body) {
         List<RelDataTypeField> parameterList = signature.getFieldList();
         ProgramIdentifier functionName = Utilities.toIdentifier(name);
         boolean generated = functionName.name().toLowerCase(Locale.ENGLISH).startsWith("jsonstring_as_") || body != null;
@@ -579,9 +583,36 @@ public class CustomFunctions {
         return result;
     }
 
+    /**
+     * Create a new user-defined aggregate function.
+     * @param node         Calcite node.
+     * @param name         Function name.
+     * @param linear       True if this is a linear aggregate.
+     * @param signature    Description of arguments as a struct.
+     * @param returnType   Return type.
+     */
+    public SqlUserDefinedAggregationFunction createAggregate(
+            CalciteObject node, SqlIdentifier name, boolean linear,
+            RelDataType signature, RelDataType returnType) {
+        ProgramIdentifier functionName = Utilities.toIdentifier(name);
+        AggregateFunctionDescription description = new AggregateFunctionDescription(name, returnType, signature.getFieldList(), linear);
+        if (this.aggregates.containsKey(functionName)) {
+            throw new CompilationError("Aggregate with name " +
+                    functionName.singleQuote() + " already exists", node);
+        }
+        var result = new SqlUserDefinedAggregationFunction(description);
+        Utilities.putNew(this.aggregates, functionName, result);
+        return result;
+    }
+
     @Nullable
-    public ExternalFunction getSignature(ProgramIdentifier function) {
+    public ExternalFunction getUDF(ProgramIdentifier function) {
         return this.udf.get(function);
+    }
+
+    @Nullable
+    public SqlUserDefinedAggregationFunction getAggregate(ProgramIdentifier function) {
+        return this.aggregates.get(function);
     }
 
     /** Return the list custom functions we added to the library. */
