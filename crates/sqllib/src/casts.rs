@@ -1301,15 +1301,18 @@ pub fn cast_to_s_LongInterval_YEARS(
     size: i32,
     fixed: bool,
 ) -> SqlResult<SqlString> {
-    let years = interval.years();
-    let negative = years < 0;
-    let result = sign(negative) + &num::abs(years).to_string();
+    let mut result = SmallString::<[u8; 16]>::new();
+    write!(&mut result, "{:+}", interval.years()).unwrap();
     limit_or_size_string(&result, size, fixed)
 }
 
 #[doc(hidden)]
-fn sign(negative: bool) -> String {
-    (if negative { "-" } else { "+" }).to_string()
+const fn sign(negative: bool) -> &'static str {
+    if negative {
+        "-"
+    } else {
+        "+"
+    }
 }
 
 #[doc(hidden)]
@@ -1319,13 +1322,7 @@ pub fn cast_to_s_LongInterval_MONTHS(
     size: i32,
     fixed: bool,
 ) -> SqlResult<SqlString> {
-    let months = interval.months();
-    let (months, negate) = if months < 0 {
-        (-months, true)
-    } else {
-        (months, false)
-    };
-    let result: String = sign(negate) + &months.to_string();
+    let result = format_args!("{:+}", interval.months()).to_small_string::<16>();
     limit_or_size_string(&result, size, fixed)
 }
 
@@ -1337,15 +1334,21 @@ pub fn cast_to_s_LongInterval_YEARS_TO_MONTHS(
     fixed: bool,
 ) -> SqlResult<SqlString> {
     let months = interval.months();
-    let (months, negate) = if months < 0 {
-        (-months, true)
-    } else {
-        (months, false)
-    };
-    let years = months / 12;
-    let months = months % 12;
-    let result: String = sign(negate) + &years.to_string() + "-" + &months.to_string();
+    let sign = sign(months < 0);
+    let years = months.unsigned_abs() / 12;
+    let months = months.unsigned_abs() % 12;
+    let result = format_args!("{sign}{years}-{months}").to_small_string::<32>();
     limit_or_size_string(&result, size, fixed)
+}
+
+impl ShortInterval {
+    fn into_sign_and_magnitude(self) -> (&'static str, Self) {
+        if self.milliseconds() < 0 {
+            ("-", Self::new(-self.milliseconds()))
+        } else {
+            ("+", self)
+        }
+    }
 }
 
 #[doc(hidden)]
@@ -1355,14 +1358,9 @@ pub fn cast_to_s_ShortInterval_DAYS(
     size: i32,
     fixed: bool,
 ) -> SqlResult<SqlString> {
-    let negative = interval.milliseconds() < 0;
-    let interval = if negative {
-        ShortInterval::new(-interval.milliseconds())
-    } else {
-        interval
-    };
+    let (sign, interval) = interval.into_sign_and_magnitude();
     let days = extract_day_ShortInterval(interval);
-    let result = format!("{}{}", sign(negative), days);
+    let result = format_args!("{sign}{days}").to_small_string::<32>();
     limit_or_size_string(&result, size, fixed)
 }
 
@@ -1373,15 +1371,10 @@ pub fn cast_to_s_ShortInterval_HOURS(
     size: i32,
     fixed: bool,
 ) -> SqlResult<SqlString> {
-    let negative = interval.milliseconds() < 0;
-    let interval = if negative {
-        ShortInterval::new(-interval.milliseconds())
-    } else {
-        interval
-    };
+    let (sign, interval) = interval.into_sign_and_magnitude();
     let days = extract_day_ShortInterval(interval);
     let hours = extract_hour_ShortInterval(interval);
-    let result = format!("{}{}", sign(negative), 24 * days + hours);
+    let result = format_args!("{sign}{}", 24 * days + hours).to_small_string::<32>();
     limit_or_size_string(&result, size, fixed)
 }
 
@@ -1392,15 +1385,10 @@ pub fn cast_to_s_ShortInterval_DAYS_TO_HOURS(
     size: i32,
     fixed: bool,
 ) -> SqlResult<SqlString> {
-    let negative = interval.milliseconds() < 0;
-    let interval = if negative {
-        ShortInterval::new(-interval.milliseconds())
-    } else {
-        interval
-    };
+    let (sign, interval) = interval.into_sign_and_magnitude();
     let days = extract_day_ShortInterval(interval);
     let hours = extract_hour_ShortInterval(interval);
-    let result = format!("{}{} {:02}", sign(negative), days, hours);
+    let result = format_args!("{sign}{} {:02}", days, hours).to_small_string::<32>();
     limit_or_size_string(&result, size, fixed)
 }
 
@@ -1411,16 +1399,8 @@ pub fn cast_to_s_ShortInterval_MINUTES(
     size: i32,
     fixed: bool,
 ) -> SqlResult<SqlString> {
-    let negative = interval.milliseconds() < 0;
-    let interval = if negative {
-        ShortInterval::new(-interval.milliseconds())
-    } else {
-        interval
-    };
-    let days = extract_day_ShortInterval(interval);
-    let hours = extract_hour_ShortInterval(interval);
-    let minutes = extract_minute_ShortInterval(interval);
-    let result = format!("{}{}", sign(negative), (days * 24 + hours) * 60 + minutes);
+    let minutes = interval.milliseconds() / 60_000;
+    let result = format_args!("{minutes:+}").to_small_string::<32>();
     limit_or_size_string(&result, size, fixed)
 }
 
@@ -1431,16 +1411,11 @@ pub fn cast_to_s_ShortInterval_DAYS_TO_MINUTES(
     size: i32,
     fixed: bool,
 ) -> SqlResult<SqlString> {
-    let negative = interval.milliseconds() < 0;
-    let interval = if negative {
-        ShortInterval::new(-interval.milliseconds())
-    } else {
-        interval
-    };
+    let (sign, interval) = interval.into_sign_and_magnitude();
     let days = extract_day_ShortInterval(interval);
     let hours = extract_hour_ShortInterval(interval);
     let minutes = extract_minute_ShortInterval(interval);
-    let result = format!("{}{} {:02}:{:02}", sign(negative), days, hours, minutes);
+    let result = format_args!("{sign}{} {:02}:{:02}", days, hours, minutes).to_small_string::<32>();
     limit_or_size_string(&result, size, fixed)
 }
 
@@ -1451,16 +1426,11 @@ pub fn cast_to_s_ShortInterval_HOURS_TO_MINUTES(
     size: i32,
     fixed: bool,
 ) -> SqlResult<SqlString> {
-    let negative = interval.milliseconds() < 0;
-    let interval = if negative {
-        ShortInterval::new(-interval.milliseconds())
-    } else {
-        interval
-    };
+    let (sign, interval) = interval.into_sign_and_magnitude();
     let days = extract_day_ShortInterval(interval);
     let hours = extract_hour_ShortInterval(interval);
     let minutes = extract_minute_ShortInterval(interval);
-    let result = format!("{}{}:{:02}", sign(negative), days * 24 + hours, minutes);
+    let result = format_args!("{sign}{}:{:02}", days * 24 + hours, minutes).to_small_string::<32>();
     limit_or_size_string(&result, size, fixed)
 }
 
@@ -1471,22 +1441,8 @@ pub fn cast_to_s_ShortInterval_SECONDS(
     size: i32,
     fixed: bool,
 ) -> SqlResult<SqlString> {
-    let negative = interval.milliseconds() < 0;
-    let interval = if negative {
-        ShortInterval::new(-interval.milliseconds())
-    } else {
-        interval
-    };
-    let days = extract_day_ShortInterval(interval);
-    let hours = extract_hour_ShortInterval(interval);
-    let minutes = extract_minute_ShortInterval(interval);
-    let seconds = extract_second_ShortInterval(interval);
-    let result = format!(
-        "{}{}.{:06}",
-        sign(negative),
-        ((days * 24 + hours) * 60 + minutes) * 60 + seconds,
-        0
-    );
+    let seconds = interval.milliseconds() / 1000;
+    let result = format_args!("{seconds:+}.{:06}", 0).to_small_string::<32>();
     limit_or_size_string(&result, size, fixed)
 }
 
@@ -1497,25 +1453,16 @@ pub fn cast_to_s_ShortInterval_DAYS_TO_SECONDS(
     size: i32,
     fixed: bool,
 ) -> SqlResult<SqlString> {
-    let negative = interval.milliseconds() < 0;
-    let interval = if negative {
-        ShortInterval::new(-interval.milliseconds())
-    } else {
-        interval
-    };
+    let (sign, interval) = interval.into_sign_and_magnitude();
     let days = extract_day_ShortInterval(interval);
     let hours = extract_hour_ShortInterval(interval);
     let minutes = extract_minute_ShortInterval(interval);
     let seconds = extract_second_ShortInterval(interval);
-    let result = format!(
-        "{}{} {:02}:{:02}:{:02}.{:06}",
-        sign(negative),
-        days,
-        hours,
-        minutes,
-        seconds,
-        0
-    );
+    let result = format_args!(
+        "{sign}{} {:02}:{:02}:{:02}.{:06}",
+        days, hours, minutes, seconds, 0
+    )
+    .to_small_string::<32>();
     limit_or_size_string(&result, size, fixed)
 }
 
@@ -1526,24 +1473,19 @@ pub fn cast_to_s_ShortInterval_HOURS_TO_SECONDS(
     size: i32,
     fixed: bool,
 ) -> SqlResult<SqlString> {
-    let negative = interval.milliseconds() < 0;
-    let interval = if negative {
-        ShortInterval::new(-interval.milliseconds())
-    } else {
-        interval
-    };
+    let (sign, interval) = interval.into_sign_and_magnitude();
     let days = extract_day_ShortInterval(interval);
     let hours = extract_hour_ShortInterval(interval);
     let minutes = extract_minute_ShortInterval(interval);
     let seconds = extract_second_ShortInterval(interval);
-    let result = format!(
-        "{}{}:{:02}:{:02}.{:06}",
-        sign(negative),
+    let result = format_args!(
+        "{sign}{}:{:02}:{:02}.{:06}",
         days * 24 + hours,
         minutes,
         seconds,
         0
-    );
+    )
+    .to_small_string::<32>();
     limit_or_size_string(&result, size, fixed)
 }
 
@@ -1554,23 +1496,18 @@ pub fn cast_to_s_ShortInterval_MINUTES_TO_SECONDS(
     size: i32,
     fixed: bool,
 ) -> SqlResult<SqlString> {
-    let negative = interval.milliseconds() < 0;
-    let interval = if negative {
-        ShortInterval::new(-interval.milliseconds())
-    } else {
-        interval
-    };
+    let (sign, interval) = interval.into_sign_and_magnitude();
     let days = extract_day_ShortInterval(interval);
     let hours = extract_hour_ShortInterval(interval);
     let minutes = extract_minute_ShortInterval(interval);
     let seconds = extract_second_ShortInterval(interval);
-    let result = format!(
-        "{}{:02}:{:02}.{:06}",
-        sign(negative),
+    let result = format_args!(
+        "{sign}{:02}:{:02}.{:06}",
         (days * 24 + hours) * 60 + minutes,
         seconds,
         0
-    );
+    )
+    .to_small_string::<32>();
     limit_or_size_string(&result, size, fixed)
 }
 
@@ -3863,9 +3800,18 @@ cast_function!(Uuid, Uuid, bytes, ByteArray);
 #[cfg(test)]
 mod tests {
     use crate::{
-        cast_to_s_SqlDecimal, cast_to_s_Uuid, cast_to_s_i, cast_to_s_i16, cast_to_s_i32,
-        cast_to_s_i64, cast_to_s_i8, cast_to_s_u, cast_to_s_u16, cast_to_s_u32, cast_to_s_u64,
-        cast_to_s_u8, decimal::SqlDecimal, SqlString, Uuid,
+        cast_to_s_LongInterval_MONTHS, cast_to_s_LongInterval_YEARS,
+        cast_to_s_LongInterval_YEARS_TO_MONTHS, cast_to_s_ShortInterval_DAYS,
+        cast_to_s_ShortInterval_DAYS_TO_HOURS, cast_to_s_ShortInterval_DAYS_TO_MINUTES,
+        cast_to_s_ShortInterval_DAYS_TO_SECONDS, cast_to_s_ShortInterval_HOURS,
+        cast_to_s_ShortInterval_HOURS_TO_MINUTES, cast_to_s_ShortInterval_HOURS_TO_SECONDS,
+        cast_to_s_ShortInterval_MINUTES, cast_to_s_ShortInterval_MINUTES_TO_SECONDS,
+        cast_to_s_ShortInterval_SECONDS, cast_to_s_SqlDecimal, cast_to_s_Uuid, cast_to_s_i,
+        cast_to_s_i16, cast_to_s_i32, cast_to_s_i64, cast_to_s_i8, cast_to_s_u, cast_to_s_u16,
+        cast_to_s_u32, cast_to_s_u64, cast_to_s_u8,
+        decimal::SqlDecimal,
+        interval::{LongInterval, ShortInterval},
+        SqlString, Uuid,
     };
 
     #[test]
@@ -3923,6 +3869,130 @@ mod tests {
             )
             .unwrap(),
             SqlString::from_ref("6bc89d6d-5e0d-4c1b-9b57-787bfde2c30d")
+        );
+    }
+
+    #[test]
+    fn long_interval_to_string() {
+        assert_eq!(
+            cast_to_s_LongInterval_YEARS(LongInterval::new(123), -1, false).unwrap(),
+            SqlString::from_ref("+10")
+        );
+        assert_eq!(
+            cast_to_s_LongInterval_YEARS(LongInterval::new(-123), -1, false).unwrap(),
+            SqlString::from_ref("-10")
+        );
+        assert_eq!(
+            cast_to_s_LongInterval_MONTHS(LongInterval::new(123), -1, false).unwrap(),
+            SqlString::from_ref("+123")
+        );
+        assert_eq!(
+            cast_to_s_LongInterval_MONTHS(LongInterval::new(-123), -1, false).unwrap(),
+            SqlString::from_ref("-123")
+        );
+        assert_eq!(
+            cast_to_s_LongInterval_YEARS_TO_MONTHS(LongInterval::new(123), -1, false).unwrap(),
+            SqlString::from_ref("+10-3")
+        );
+        assert_eq!(
+            cast_to_s_LongInterval_YEARS_TO_MONTHS(LongInterval::new(-123), -1, false).unwrap(),
+            SqlString::from_ref("-10-3")
+        );
+    }
+
+    #[test]
+    fn short_interval_to_string() {
+        assert_eq!(
+            cast_to_s_ShortInterval_DAYS(ShortInterval::new(123456789), -1, false).unwrap(),
+            SqlString::from_ref("+1")
+        );
+        assert_eq!(
+            cast_to_s_ShortInterval_DAYS(ShortInterval::new(-123456789), -1, false).unwrap(),
+            SqlString::from_ref("-1")
+        );
+        assert_eq!(
+            cast_to_s_ShortInterval_HOURS(ShortInterval::new(123456789), -1, false).unwrap(),
+            SqlString::from_ref("+34")
+        );
+        assert_eq!(
+            cast_to_s_ShortInterval_HOURS(ShortInterval::new(-123456789), -1, false).unwrap(),
+            SqlString::from_ref("-34")
+        );
+        assert_eq!(
+            cast_to_s_ShortInterval_DAYS_TO_HOURS(ShortInterval::new(123456789), -1, false)
+                .unwrap(),
+            SqlString::from_ref("+1 10")
+        );
+        assert_eq!(
+            cast_to_s_ShortInterval_DAYS_TO_HOURS(ShortInterval::new(-123456789), -1, false)
+                .unwrap(),
+            SqlString::from_ref("-1 10")
+        );
+        assert_eq!(
+            cast_to_s_ShortInterval_MINUTES(ShortInterval::new(123456789), -1, false).unwrap(),
+            SqlString::from_ref("+2057")
+        );
+        assert_eq!(
+            cast_to_s_ShortInterval_MINUTES(ShortInterval::new(-123456789), -1, false).unwrap(),
+            SqlString::from_ref("-2057")
+        );
+        assert_eq!(
+            cast_to_s_ShortInterval_DAYS_TO_MINUTES(ShortInterval::new(123456789), -1, false)
+                .unwrap(),
+            SqlString::from_ref("+1 10:17")
+        );
+        assert_eq!(
+            cast_to_s_ShortInterval_DAYS_TO_MINUTES(ShortInterval::new(-123456789), -1, false)
+                .unwrap(),
+            SqlString::from_ref("-1 10:17")
+        );
+        assert_eq!(
+            cast_to_s_ShortInterval_HOURS_TO_MINUTES(ShortInterval::new(123456789), -1, false)
+                .unwrap(),
+            SqlString::from_ref("+34:17")
+        );
+        assert_eq!(
+            cast_to_s_ShortInterval_HOURS_TO_MINUTES(ShortInterval::new(-123456789), -1, false)
+                .unwrap(),
+            SqlString::from_ref("-34:17")
+        );
+        assert_eq!(
+            cast_to_s_ShortInterval_SECONDS(ShortInterval::new(123456789), -1, false).unwrap(),
+            SqlString::from_ref("+123456.000000")
+        );
+        assert_eq!(
+            cast_to_s_ShortInterval_SECONDS(ShortInterval::new(-123456789), -1, false).unwrap(),
+            SqlString::from_ref("-123456.000000")
+        );
+        assert_eq!(
+            cast_to_s_ShortInterval_DAYS_TO_SECONDS(ShortInterval::new(123456789), -1, false)
+                .unwrap(),
+            SqlString::from_ref("+1 10:17:36.000000")
+        );
+        assert_eq!(
+            cast_to_s_ShortInterval_DAYS_TO_SECONDS(ShortInterval::new(-123456789), -1, false)
+                .unwrap(),
+            SqlString::from_ref("-1 10:17:36.000000")
+        );
+        assert_eq!(
+            cast_to_s_ShortInterval_HOURS_TO_SECONDS(ShortInterval::new(123456789), -1, false)
+                .unwrap(),
+            SqlString::from_ref("+34:17:36.000000")
+        );
+        assert_eq!(
+            cast_to_s_ShortInterval_HOURS_TO_SECONDS(ShortInterval::new(-123456789), -1, false)
+                .unwrap(),
+            SqlString::from_ref("-34:17:36.000000")
+        );
+        assert_eq!(
+            cast_to_s_ShortInterval_MINUTES_TO_SECONDS(ShortInterval::new(123456789), -1, false)
+                .unwrap(),
+            SqlString::from_ref("+2057:36.000000")
+        );
+        assert_eq!(
+            cast_to_s_ShortInterval_MINUTES_TO_SECONDS(ShortInterval::new(-123456789), -1, false)
+                .unwrap(),
+            SqlString::from_ref("-2057:36.000000")
         );
     }
 }
