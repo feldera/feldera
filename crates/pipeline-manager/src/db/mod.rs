@@ -1,5 +1,5 @@
 pub mod error;
-pub mod notifier;
+pub mod listen_table;
 pub mod operations;
 #[cfg(feature = "postgresql_embedded")]
 mod pg_setup;

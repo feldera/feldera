@@ -12,7 +12,7 @@ use crate::db::types::tenant::TenantId;
 use crate::db::types::utils::{
     validate_deployment_config, validate_program_info, validate_runtime_config,
 };
-use crate::error::{source_error, ManagerError};
+use crate::error::source_error;
 use crate::runner::error::RunnerError;
 use crate::runner::interaction::{format_pipeline_url, format_timeout_error_message};
 use crate::runner::pipeline_executor::PipelineExecutor;
@@ -202,7 +202,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
     }
 
     /// Runs until the pipeline is deleted or an unexpected error occurs.
-    pub async fn run(mut self) -> Result<(), ManagerError> {
+    pub async fn run(mut self) {
         let pipeline_id = self.pipeline_id;
         debug!("Automaton started: pipeline {pipeline_id}");
         let mut poll_timeout = Duration::from_secs(0);
@@ -238,7 +238,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                             // By leaving the run loop, the automaton will consume itself.
                             // As such, the pipeline_handle it owns will be dropped,
                             // which in turn will terminate itself as a consequence.
-                            return Err(ManagerError::from(e));
+                            return;
                         }
                         e => {
                             let backoff_timeout = match self.database_error_counter {

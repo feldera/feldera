@@ -100,8 +100,7 @@ async fn main() -> anyhow::Result<()> {
     let common_config_clone = common_config.clone();
     let _local_runner = tokio::spawn(async move {
         runner_main::<LocalRunner>(db_clone, common_config_clone, local_runner_config.clone())
-            .await
-            .expect("Local runner main failed");
+            .await;
     });
 
     let health_check = Arc::new(RwLock::new(None));
