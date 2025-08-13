@@ -2,12 +2,13 @@
 use anyhow::Context;
 use std::sync::{Arc, LazyLock, Weak};
 
-use dbsp::circuit::CircuitStorageConfig;
+use dbsp::circuit::{checkpointer::Checkpointer, CircuitStorageConfig};
 use feldera_adapterlib::errors::journal::ControllerError;
 use feldera_storage::{
     checkpoint_synchronizer::CheckpointSynchronizer, StorageBackend, StoragePath,
 };
 use feldera_types::{
+    checkpoint::CheckpointMetadata,
     config::{FileBackendConfig, StorageBackendConfig, SyncConfig},
     constants::ACTIVATION_MARKER_FILE,
 };
@@ -41,25 +42,25 @@ fn upgrade_state(weak: Weak<ServerState>) -> Result<Arc<ServerState>, Controller
 /// Pulls the checkpoint specified by the sync config and garbage collects all
 /// older checkpoints.
 #[cfg(feature = "feldera-enterprise")]
-fn pull_and_gc(storage: Arc<dyn StorageBackend>, sync: &SyncConfig) -> Result<(), ControllerError> {
+fn pull_and_gc(
+    storage: Arc<dyn StorageBackend>,
+    sync: &SyncConfig,
+) -> Result<CheckpointMetadata, ControllerError> {
     match SYNCHRONIZER
         .pull(storage.clone(), sync.to_owned())
         .map_err(|e| ControllerError::checkpoint_fetch_error(format!("{e:?}")))
     {
         Err(err) => {
             tracing::error!("{:?}", err.to_string());
-            if sync.fail_if_no_checkpoint {
-                return Err(err);
-            }
+            return Err(err);
         }
         Ok(cpm) => {
-            _ = storage
-                .gc_startup(&vec![cpm].into())
-                .map_err(|e| ControllerError::dbsp_error(e.into()))?;
+            let checkpointer = Checkpointer::new(storage.clone(), 0, false)?;
+            checkpointer.gc_startup()?;
+
+            Ok(cpm)
         }
     }
-
-    Ok(())
 }
 
 #[cfg(feature = "feldera-enterprise")]
@@ -83,18 +84,37 @@ pub fn continuous_pull(
     }
 
     let state = upgrade_state(weak)?;
-    while !state.activated() {
-        let previously_activated = storage
+    let mut cpm = None;
+    let activation_file = StoragePath::from(ACTIVATION_MARKER_FILE);
+    let previously_activated = storage.backend.exists(&activation_file).unwrap_or(false);
+
+    if previously_activated {
+        let previous_activation = storage
             .backend
-            .exists(&StoragePath::default().child(ACTIVATION_MARKER_FILE))
-            .unwrap_or(false);
+            .read_json::<Option<CheckpointMetadata>>(&activation_file)
+            .ok()
+            .flatten();
 
-        if previously_activated {
-            tracing::info!("time pipeline was previously activated, skipping standby mode");
-            return Ok(());
-        }
+        tracing::info!(
+            "this pipeline was previously activated from {}, skipping standby mode",
+            previous_activation
+                .map(|p| format!("checkpoint '{}'", p.uuid))
+                .unwrap_or_else(|| "scratch".to_owned())
+        );
+        return Ok(());
+    }
 
-        pull_and_gc(storage.backend.clone(), sync)?;
+    while !state.activated() {
+        match pull_and_gc(storage.backend.clone(), sync) {
+            Err(err) => {
+                if sync.fail_if_no_checkpoint {
+                    return Err(err);
+                }
+            }
+            Ok(c) => {
+                cpm = Some(c);
+            }
+        };
 
         if !sync.standby {
             return Ok(());
@@ -103,22 +123,22 @@ pub fn continuous_pull(
         std::thread::sleep(std::time::Duration::from_secs(sync.pull_interval));
     }
 
-    if state.activated() {
-        if let Err(marker_err) = storage
-            .backend
-            .write_json(&StoragePath::default().child(ACTIVATION_MARKER_FILE), &"")
-            .context("failed to write activation marker file")
-        {
-            tracing::error!("{marker_err:?}");
-            if sync.fail_if_no_checkpoint {
-                return Err(ControllerError::checkpoint_fetch_error(format!(
-                    "{marker_err:?}"
-                )));
-            }
-        }
+    tracing::debug!("creating activation marker file: {}", activation_file);
 
-        tracing::info!("pipeline activated");
+    if let Err(marker_err) = storage
+        .backend
+        .write_json(&activation_file, &cpm)
+        .context("failed to write activation marker file")
+    {
+        tracing::error!("{marker_err:?}");
+        if sync.fail_if_no_checkpoint {
+            return Err(ControllerError::checkpoint_fetch_error(format!(
+                "{marker_err:?}"
+            )));
+        }
     }
+
+    tracing::info!("pipeline activated");
 
     Ok(())
 }

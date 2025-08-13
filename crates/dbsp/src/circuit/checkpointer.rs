@@ -3,7 +3,9 @@
 use crate::dynamic::{self, data::DataTyped};
 use crate::{Error, TypedBox};
 use feldera_types::checkpoint::CheckpointMetadata;
-use feldera_types::constants::{CHECKPOINT_DEPENDENCIES, CHECKPOINT_FILE_NAME};
+use feldera_types::constants::{
+    ACTIVATION_MARKER_FILE, ADHOC_TEMP_DIR, CHECKPOINT_DEPENDENCIES, CHECKPOINT_FILE_NAME, DBSP_FILE_EXTENSION, STATE_FILE, STEPS_FILE
+};
 use itertools::Itertools;
 
 use std::io::ErrorKind;
@@ -27,7 +29,7 @@ use super::RuntimeError;
 /// It handles list of available checkpoints, and the files associated
 /// with each checkpoint.
 #[derive(derive_more::Debug, Clone)]
-pub(crate) struct Checkpointer {
+pub struct Checkpointer {
     #[debug(skip)]
     backend: Arc<dyn StorageBackend>,
     checkpoint_list: VecDeque<CheckpointMetadata>,
@@ -126,10 +128,48 @@ impl Checkpointer {
 
     /// Remove unexpected/leftover files from a previous run in the storage
     /// directory.  Returns the amount of storage still in use.
-    fn gc_startup(&self) -> Result<u64, Error> {
-        self.backend
-            .gc_startup(&self.checkpoint_list)
-            .map_err(|e| e.into())
+    pub fn gc_startup(&self) -> Result<u64, Error> {
+        // Collect all directories and files still referenced by a checkpoint
+        let mut in_use_paths: HashSet<StoragePath> = HashSet::new();
+        in_use_paths.insert(CHECKPOINT_FILE_NAME.into());
+        in_use_paths.insert(STEPS_FILE.into());
+        in_use_paths.insert(STATE_FILE.into());
+        in_use_paths.insert(ADHOC_TEMP_DIR.into());
+        in_use_paths.insert(ACTIVATION_MARKER_FILE.into());
+        for cpm in self.checkpoint_list.iter() {
+            in_use_paths.insert(cpm.uuid.to_string().into());
+            let batches = self
+                .gather_batches_for_checkpoint(cpm)
+                .expect("Batches for a checkpoint should be discoverable");
+            for batch in batches {
+                in_use_paths.insert(batch);
+            }
+        }
+
+        /// True if `path` is a name that we might have created ourselves.
+        fn is_feldera_filename(path: &StoragePath) -> bool {
+            path.extension()
+                .is_some_and(|extension| DBSP_FILE_EXTENSION.contains(&extension))
+        }
+
+        // Collect everything found in the storage directory
+        let mut usage = 0;
+        self.backend.list(&StoragePath::default(), &mut |path, file_type| {
+            if !in_use_paths.contains(path) && (is_feldera_filename(path) || file_type == StorageFileType::Directory) {
+                match self.backend.delete_recursive(path) {
+                    Ok(_) => {
+                        tracing::debug!("Removed unused {file_type:?} '{path}'");
+                    }
+                    Err(e) => {
+                        tracing::warn!("Unable to remove old-checkpoint file {path}: {e} (the pipeline will try to delete the file again on a restart)");
+                    }
+            }
+            } else if let StorageFileType::File { size } = file_type {
+                    usage += size;
+            }
+        })?;
+
+        Ok(usage)
     }
 
     pub(super) fn checkpoint_dir(uuid: Uuid) -> StoragePath {

@@ -1,7 +1,7 @@
 from tests.shared_test_pipeline import SharedTestPipeline
 from tests import enterprise_only
 from feldera.runtime_config import RuntimeConfig, Storage
-from feldera.enums import PipelineStatus
+from feldera.enums import PipelineStatus, FaultToleranceModel
 from typing import Optional
 import os
 import sys
@@ -65,9 +65,12 @@ class TestCheckpointSync(SharedTestPipeline):
         """
 
         storage_config = storage_cfg(self.pipeline.name)
+        ft = FaultToleranceModel.AtLeastOnce
 
         self.pipeline.set_runtime_config(
-            RuntimeConfig(storage=Storage(config=storage_config))
+            RuntimeConfig(
+                fault_tolerance_model=ft, storage=Storage(config=storage_config)
+            )
         )
         self.pipeline.start()
 
@@ -120,7 +123,7 @@ class TestCheckpointSync(SharedTestPipeline):
             standby=standby,
         )
         self.pipeline.set_runtime_config(
-            RuntimeConfig(storage=Storage(config=storage_config))
+            RuntimeConfig(fault_tolerance_model=ft, storage=Storage(config=storage_config))
         )
 
         if not standby:
@@ -205,8 +208,9 @@ class TestCheckpointSync(SharedTestPipeline):
     def test_standby_fallback(self, from_uuid: bool = False):
         # Step 1: Start main pipeline
         storage_config = storage_cfg(self.pipeline.name)
+        ft = FaultToleranceModel.AtLeastOnce
         self.pipeline.set_runtime_config(
-            RuntimeConfig(storage=Storage(config=storage_config))
+            RuntimeConfig(fault_tolerance_model=ft, storage=Storage(config=storage_config))
         )
         self.pipeline.start()
 
@@ -229,6 +233,7 @@ class TestCheckpointSync(SharedTestPipeline):
         pull_interval = 1
         standby.set_runtime_config(
             RuntimeConfig(
+                fault_tolerance_model=ft,
                 storage=Storage(
                     config=storage_cfg(
                         self.pipeline.name,
@@ -280,6 +285,12 @@ class TestCheckpointSync(SharedTestPipeline):
         assert standby.status() == PipelineStatus.INITIALIZING
         standby.activate(timeout_s=(pull_interval * extra_ckpts) + 60)
 
+        for log in standby.logs():
+            if "activated" in log:
+                break
+            if time.monotonic() > end:
+                raise TimeoutError("Timed out waiting for standby pipeline to activate")
+
         # Step 6: Validate standby has all expected records
         got_after = list(standby.query("SELECT * FROM v0"))
         print(
@@ -290,6 +301,13 @@ class TestCheckpointSync(SharedTestPipeline):
 
         # Cleanup
         standby.stop(force=True)
+
+        standby.start()
+        got_final = list(standby.query("SELECT * FROM v0"))
+        standby.stop(force=True)
+
+        self.assertCountEqual(got_after, got_final)
+
         self.pipeline.clear_storage()
 
     @enterprise_only
