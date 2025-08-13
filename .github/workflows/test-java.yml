@@ -56,8 +56,6 @@ jobs:
       - name: Run mvn test
         run: mvn test --no-transfer-progress -q -B -pl SQL-compiler -Dsurefire.failIfNoSpecifiedTests=false
         working-directory: ./sql-to-dbsp-compiler
-        env:
-          RUSTFLAGS: ""
         if: ${{ vars.CI_DRY_RUN != 'true' }}
 
       - name: Print sccache stats
