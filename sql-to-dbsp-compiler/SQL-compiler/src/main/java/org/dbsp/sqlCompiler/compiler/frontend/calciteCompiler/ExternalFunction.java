@@ -4,14 +4,11 @@ import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rel.type.RelDataTypeField;
 import org.apache.calcite.rex.RexInputRef;
 import org.apache.calcite.rex.RexNode;
-import org.apache.calcite.sql.SqlCallBinding;
 import org.apache.calcite.sql.SqlFunction;
 import org.apache.calcite.sql.SqlFunctionCategory;
 import org.apache.calcite.sql.SqlIdentifier;
 import org.apache.calcite.sql.SqlKind;
-import org.apache.calcite.sql.SqlNode;
 import org.apache.calcite.sql.SqlOperandCountRange;
-import org.apache.calcite.sql.SqlOperator;
 import org.apache.calcite.sql.type.InferTypes;
 import org.apache.calcite.sql.type.OperandTypes;
 import org.apache.calcite.sql.type.ReturnTypes;
@@ -47,29 +44,8 @@ import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.List;
 
-import static java.util.Objects.requireNonNull;
-
 /** Represents a function that is implemented by the user in Rust */
 public class ExternalFunction extends SqlFunction {
-    /** A variant of OperandTypes.TypeNameChecker which does not extend the interface
-     * ImplicitCastOperandTypeChecker.  We do not want to allow implicit casts for these operands. */
-    private record ExactTypeNameChecker(SqlTypeName typeName) implements SqlSingleOperandTypeChecker {
-        private ExactTypeNameChecker(SqlTypeName typeName) {
-            this.typeName = requireNonNull(typeName, "typeName");
-        }
-         @Override
-        public boolean checkSingleOperandType(SqlCallBinding callBinding,
-                                              SqlNode operand, int iFormalOperand, boolean throwOnFailure) {
-            final RelDataType operandType =
-                    callBinding.getValidator().getValidatedNodeType(operand);
-            return operandType.getSqlTypeName() == typeName;
-        }
-         @Override
-        public String getAllowedSignatures(SqlOperator op, String opName) {
-            return opName + "(" + typeName.getSpaceName() + ")";
-        }
-    }
-
     public final CalciteObject node;
     public final RelDataType returnType;
     public final List<RelDataTypeField> parameterList;
@@ -82,7 +58,7 @@ public class ExternalFunction extends SqlFunction {
     @Nullable
     public final RexNode body;
 
-    static SqlOperandTypeChecker createTypeChecker(String function, List<RelDataTypeField> parameters) {
+    public static SqlOperandTypeChecker createTypeChecker(String function, List<RelDataTypeField> parameters) {
         if (parameters.isEmpty())
             return OperandTypes.NILADIC;
         SqlSingleOperandTypeChecker[] checkers = new SqlSingleOperandTypeChecker[parameters.size()];
@@ -113,14 +89,14 @@ public class ExternalFunction extends SqlFunction {
         return this.body != null;
     }
 
-    static SqlOperandTypeInference createTypeinference(List<RelDataTypeField> parameters) {
+    static SqlOperandTypeInference createTypeInference(List<RelDataTypeField> parameters) {
         return InferTypes.explicit(Linq.map(parameters, RelDataTypeField::getType));
     }
 
     public ExternalFunction(SqlIdentifier name, RelDataType returnType,
                             List<RelDataTypeField> parameters, @Nullable RexNode body, boolean generated) {
         super(name.getSimple(), SqlKind.OTHER_FUNCTION, ReturnTypes.explicit(returnType),
-                createTypeinference(parameters), createTypeChecker(name.getSimple(), parameters),
+                createTypeInference(parameters), createTypeChecker(name.getSimple(), parameters),
                 SqlFunctionCategory.USER_DEFINED_FUNCTION);
         this.node = CalciteObject.create(name);
         this.position = new SourcePositionRange(name.getParserPosition());

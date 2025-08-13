@@ -574,7 +574,7 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
         return this.preorder((DBSPExpression) node);
     }
 
-    public VisitDecision preorder(DBSPConditionalAggregateExpression node) {
+    public VisitDecision preorder(DBSPConditionalIncrementExpression node) {
         return this.preorder((DBSPExpression) node);
     }
 
@@ -1208,7 +1208,7 @@ public abstract class InnerVisitor implements IRTransform, IWritesLogs, IHasId, 
         this.postorder((DBSPExpression) node);
     }
 
-    public void postorder(DBSPConditionalAggregateExpression node) {
+    public void postorder(DBSPConditionalIncrementExpression node) {
         this.postorder((DBSPExpression) node);
     }
 

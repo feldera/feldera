@@ -134,6 +134,7 @@ import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.PropertyList;
+import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateAggregate;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateFunctionDeclaration;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateIndex;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateTable;
@@ -147,6 +148,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlFragmentIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlLateness;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlRemove;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlViewColumnDeclaration;
+import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateAggregateStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateFunctionStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateIndexStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateTableStatement;
@@ -1781,6 +1783,26 @@ public class SqlToRelCompiler implements IWritesLogs {
         return table;
     }
 
+    public CreateAggregateStatement compileCreateAggregate(ParsedStatement node, SourceFileContents sources) {
+        SqlCreateAggregate decl = (SqlCreateAggregate) node.statement();
+        List<Map.Entry<String, RelDataType>> parameters = Linq.map(
+                decl.getParameters(), param -> {
+                    SqlAttributeDefinition attr = (SqlAttributeDefinition) param;
+                    String name = attr.name.getSimple();
+                    RelDataType type = this.specToRel(attr.dataType, false);
+                    return new MapEntry<>(name, type);
+                });
+        RelDataType structType = this.typeFactory.createStructType(parameters);
+        SqlDataTypeSpec retType = decl.getReturnType();
+        RelDataType returnType = this.specToRel(retType, false);
+        Boolean nullableResult = retType.getNullable();
+        if (nullableResult != null && nullableResult)
+            returnType = this.createNullableType(returnType);
+        SqlUserDefinedAggregationFunction function = this.customFunctions.createAggregate(
+                CalciteObject.create(node), decl.getName(), decl.isLinear(), structType, returnType);
+        return new CreateAggregateStatement(node, function);
+    }
+
     public CreateFunctionStatement compileCreateFunction(ParsedStatement node, SourceFileContents sources) {
         SqlCreateFunctionDeclaration decl = (SqlCreateFunctionDeclaration) node.statement();
         List<Map.Entry<String, RelDataType>> parameters = Linq.map(
@@ -2001,6 +2023,9 @@ public class SqlToRelCompiler implements IWritesLogs {
             case OTHER:
                 if (node.statement() instanceof SqlDeclareView)
                     return this.compileDeclareView(node);
+                else if (node.statement() instanceof SqlCreateAggregate)
+                    // Already handled elsewhere
+                    return null;
                 break;
             default:
                 break;
