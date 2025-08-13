@@ -26,6 +26,8 @@ use crate::db::types::pipeline::{PipelineId, PipelineStatus};
 use crate::db::types::tenant::TenantId;
 use crate::error::ManagerError;
 
+const COLLECTION_TIMEOUT: Duration = Duration::from_secs(120);
+
 type BundleResult<T> = Result<T, String>;
 
 fn collect() -> bool {
@@ -120,7 +122,7 @@ async fn collect_pipeline_logs(
     let mut response = response;
     while let Ok(Some(chunk)) = timeout(
         if first_line {
-            Duration::from_secs(20)
+            COLLECTION_TIMEOUT
         } else {
             next_line_timeout
         },
@@ -312,7 +314,7 @@ impl SupportBundleData {
             tenant_id,
             pipeline_name,
             "dump_profile",
-            Some(Duration::from_secs(120)),
+            Some(COLLECTION_TIMEOUT),
         )
         .await;
 
@@ -331,7 +333,7 @@ impl SupportBundleData {
             tenant_id,
             pipeline_name,
             "heap_profile",
-            None,
+            Some(COLLECTION_TIMEOUT),
         )
         .await;
 
@@ -344,8 +346,15 @@ impl SupportBundleData {
         tenant_id: TenantId,
         pipeline_name: &str,
     ) -> BundleResult<Vec<u8>> {
-        let response =
-            fetch_pipeline_data(state, client, tenant_id, pipeline_name, "metrics", None).await;
+        let response = fetch_pipeline_data(
+            state,
+            client,
+            tenant_id,
+            pipeline_name,
+            "metrics",
+            Some(COLLECTION_TIMEOUT),
+        )
+        .await;
 
         response_to_bundle_result(response).await
     }
@@ -367,8 +376,15 @@ impl SupportBundleData {
         tenant_id: TenantId,
         pipeline_name: &str,
     ) -> BundleResult<Vec<u8>> {
-        let response =
-            fetch_pipeline_data(state, client, tenant_id, pipeline_name, "stats", None).await;
+        let response = fetch_pipeline_data(
+            state,
+            client,
+            tenant_id,
+            pipeline_name,
+            "stats",
+            Some(COLLECTION_TIMEOUT),
+        )
+        .await;
 
         response_to_bundle_result(response).await.map(json_prettify)
     }
