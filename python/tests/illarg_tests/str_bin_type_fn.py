@@ -422,9 +422,15 @@ class illarg_split_part_cast_legal(TstView):
 class illarg_md5_legal(TstView):
     def __init__(self):
         # Validated on Postgres
-        self.data = [{"str": "f814893777bcc2295fff05f00e508da6"}]
+        self.data = [
+            {
+                "str": "f814893777bcc2295fff05f00e508da6",
+                "bin": "e0309b5efe8eb13b4cb57f371b254591",
+            }
+        ]
         self.sql = """CREATE MATERIALIZED VIEW md5_legal AS SELECT
-                      MD5(str) AS str
+                      MD5(str) AS str,
+                      MD5(bin) AS bin
                       FROM illegal_tbl
                       WHERE id = 0"""
 
@@ -443,3 +449,225 @@ class illarg_md5_cast_legal(TstView):
                       MD5(arr[3]) AS arr
                       FROM illegal_tbl
                       WHERE id = 0"""
+
+
+# BINARY specific functions
+# ||(concatenation operator) => (successful for all arguments)
+class illarg_bin_concat_legal(TstView):
+    def __init__(self):
+        # checked manually
+        self.data = [{"bin": "0b16200b1620", "str": "hello hello "}]
+        self.sql = """CREATE MATERIALIZED VIEW bin_concat_legal AS SELECT
+                      bin || bin AS bin,
+                      str || str AS str
+                      FROM illegal_tbl
+                      WHERE id = 0"""
+
+
+class illarg_bin_concat_cast_legal(TstView):
+    def __init__(self):
+        # checked manually
+        self.data = [{"intt": "-12-12"}]
+        self.sql = """CREATE MATERIALIZED VIEW bin_concat_cast_legal AS SELECT
+                      intt || intt AS intt
+                      FROM illegal_tbl
+                      WHERE id = 0"""
+
+
+# GUNZIP(succcesful only for BINARY type in GZIP format)
+class illarg_bin_gunzip_legal(TstView):
+    def __init__(self):
+        # checked manually
+        self.data = [{"bin": "feldera"}]
+        self.sql = """CREATE MATERIALIZED VIEW bin_gunzip_legal AS SELECT
+                      GUNZIP(bin) AS bin
+                      FROM illegal_tbl
+                      WHERE id = 1"""
+
+
+# OCTET_LENGTH
+class illarg_bin_octet_length_legal(TstView):
+    def __init__(self):
+        # checked manually
+        self.data = [{"bin": 3}]
+        self.sql = """CREATE MATERIALIZED VIEW bin_octet_length_legal AS SELECT
+                      OCTET_LENGTH(bin) AS bin
+                      FROM illegal_tbl
+                      WHERE id = 0"""
+
+
+class illarg_bin_octet_length_cast_legal(TstView):
+    def __init__(self):
+        # checked manually
+        self.data = [{"str": 6, "arr": 3}]
+        self.sql = """CREATE MATERIALIZED VIEW bin_octet_length_cast_legal AS SELECT
+                      OCTET_LENGTH(str) AS str,
+                      OCTET_LENGTH(arr[1]) AS arr
+                      FROM illegal_tbl
+                      WHERE id = 0"""
+
+
+# Negative Test
+class illarg_octet_length_illegal(TstView):
+    def __init__(self):
+        # checked manually
+        self.sql = """CREATE MATERIALIZED VIEW octet_length_illegal AS SELECT
+                      OCTET_LENGTH(reall) AS reall
+                      FROM illegal_tbl
+                      WHERE id = 0"""
+        self.expected_error = "Cannot apply 'OCTET_LENGTH' to arguments of type"
+
+
+# OVERLAY(successful for all arguments)
+class illarg_bin_overlay_legal(TstView):
+    def __init__(self):
+        # checked manually
+        self.data = [{"bin": "0b0203"}]
+        self.sql = """CREATE MATERIALIZED VIEW bin_overlay_legal AS SELECT
+                      OVERLAY(bin placing x'0203' from 2 for 3) AS bin
+                      FROM illegal_tbl
+                      WHERE id = 0"""
+
+
+class illarg_bin_overlay_cast_legal(TstView):
+    def __init__(self):
+        # checked manually
+        self.data = [{"str": "hbyeo ", "arr": "bhello"}]
+        self.sql = """CREATE MATERIALIZED VIEW bin_overlay_cast_legal AS SELECT
+                      OVERLAY(str placing 'bye' from 2 for 3) AS str,
+                      OVERLAY(arr[1] placing 'hello' from 2 for 3) AS arr
+                      FROM illegal_tbl
+                      WHERE id = 0"""
+
+
+# POSITION(succesful for all arguments)
+class illarg_bin_position_legal(TstView):
+    def __init__(self):
+        # checked manually
+        self.data = [{"bin": 1}]
+        self.sql = """CREATE MATERIALIZED VIEW bin_position_legal AS SELECT
+                      POSITION(x'0b' in bin) AS bin
+                      FROM illegal_tbl
+                      WHERE id = 0"""
+
+
+class illarg_bin_position_cast_legal(TstView):
+    def __init__(self):
+        # checked manually
+        self.data = [{"str": 2, "arr": 1}]
+        self.sql = """CREATE MATERIALIZED VIEW bin_position_cast_legal AS SELECT
+                      POSITION('e' in str) AS str,
+                      POSITION('b' in arr[1]) AS arr
+                      FROM illegal_tbl
+                      WHERE id = 0"""
+
+
+# SUBSTRING(binary FROM integer)(successful for all arguments)
+class illarg_bin_substring_legal(TstView):
+    def __init__(self):
+        # checked manually
+        self.data = [{"bin": "20"}]
+        self.sql = """CREATE MATERIALIZED VIEW bin_substring_legal AS SELECT
+                      SUBSTRING(bin, 3) AS bin
+                      FROM illegal_tbl
+                      WHERE id = 0"""
+
+
+class illarg_bin_substring_cast_legal(TstView):
+    def __init__(self):
+        # checked manually
+        self.data = [{"str": "llo ", "arr": "e"}]
+        self.sql = """CREATE MATERIALIZED VIEW bin_substring_cast_legal AS SELECT
+                      SUBSTRING(str, 3) AS str,
+                      SUBSTRING(arr[1], 3) AS arr
+                      FROM illegal_tbl
+                      WHERE id = 0"""
+
+
+# SUBSTRING(binary FROM integer1 FOR integer2)(successful for all arguments)
+class illarg_bin_substring1_legal(TstView):
+    def __init__(self):
+        # checked manually
+        self.data = [{"bin": "0b16"}]
+        self.sql = """CREATE MATERIALIZED VIEW bin_substring1_legal AS SELECT
+                      SUBSTRING(bin FROM 1 FOR 2) AS bin
+                      FROM illegal_tbl
+                      WHERE id = 0"""
+
+
+class illarg_bin_substring1_cast_legal(TstView):
+    def __init__(self):
+        # checked manually
+        self.data = [{"str": "ll", "arr": "e"}]
+        self.sql = """CREATE MATERIALIZED VIEW bin_substring1_cast_legal AS SELECT
+                      SUBSTRING(str FROM 3 FOR 2) AS str,
+                      SUBSTRING(arr[1] FROM 3 FOR 2) AS arr
+                      FROM illegal_tbl
+                      WHERE id = 0"""
+
+
+# TO_HEX
+class illarg_bin_to_hex_legal(TstView):
+    def __init__(self):
+        # Validated on Postgres
+        self.data = [{"bin": "0b1620"}]
+        self.sql = """CREATE MATERIALIZED VIEW bin_to_hex_legal AS SELECT
+                      TO_HEX(bin) AS bin
+                      FROM illegal_tbl
+                      WHERE id = 0"""
+
+
+class illarg_bin_to_hex_cast_legal(TstView):
+    def __init__(self):
+        # checked manually
+        self.data = [{"str": "68656c6c6f20", "arr": "627965"}]
+        self.sql = """CREATE MATERIALIZED VIEW bin_to_hex_cast_legal AS SELECT
+                      TO_HEX(str) AS str,
+                      TO_HEX(arr[1]) AS arr
+                      FROM illegal_tbl
+                      WHERE id = 0"""
+
+
+# SELECT
+# ENCODE('\x0b1620'::BYTEA, 'hex'),
+# ENCODE('bye'::BYTEA, 'hex'),
+# ENCODE('hello '::BYTEA, 'hex');
+
+
+# Negative Test(ignore)
+class illarg_bin_to_hex_illegal(TstView):
+    def __init__(self):
+        # checked manually
+        self.sql = """CREATE MATERIALIZED VIEW bin_to_hex_illegal AS SELECT
+                      TO_HEX(uuidd) AS uuidd
+                      FROM illegal_tbl
+                      WHERE id = 0"""
+        self.expected_error = "Cannot apply 'TO_HEX' to arguments of type"
+
+
+# TO_INT
+class illarg_bin_to_int_legal(TstView):
+    def __init__(self):
+        # Validated on Postgres
+        self.data = [{"bin": 726560}]
+        self.sql = """CREATE MATERIALIZED VIEW bin_to_int_legal AS SELECT
+                      TO_INT(bin) AS bin
+                      FROM illegal_tbl
+                      WHERE id = 0"""
+
+
+class illarg_bin_to_int_cast_legal(TstView):
+    def __init__(self):
+        # Validated on Postgres
+        self.data = [{"str": 1751477356, "arr": 6453605}]
+        self.sql = """CREATE MATERIALIZED VIEW bin_to_int_cast_legal AS SELECT
+                      TO_INT(str) AS str,
+                      TO_INT(arr[1]) AS arr
+                      FROM illegal_tbl
+                      WHERE id = 0"""
+
+
+# SELECT
+# ('x' || '0b1620')::bit(24)::int,
+# ('x' || '627965'::bit(24)::int,
+# ('x' || '68656c6c6f20'::bit(32)::int;
