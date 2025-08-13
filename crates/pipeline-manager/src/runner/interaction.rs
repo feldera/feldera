@@ -1,6 +1,5 @@
 use crate::api::error::ApiError;
 use crate::config::CommonConfig;
-use crate::db::notifier::DbNotification;
 use crate::db::storage::Storage;
 use crate::db::storage_postgres::StoragePostgres;
 use crate::db::types::pipeline::{ExtendedPipelineDescrMonitoring, PipelineStatus};
@@ -19,6 +18,7 @@ use std::{collections::HashMap, sync::Arc, time::Duration};
 use tokio::sync::Mutex;
 use tokio::time::Instant;
 
+use crate::db::listen_table::PIPELINE_NOTIFY_CHANNEL_CAPACITY;
 use actix_http::encoding::Decoder;
 
 /// Max non-streaming HTTP response body returned by the pipeline.
@@ -133,13 +133,11 @@ impl RunnerInteraction {
     pub fn new(common_config: CommonConfig, db: Arc<Mutex<StoragePostgres>>) -> Self {
         let endpoint_cache = Arc::new(ShardedLock::new(HashMap::new()));
         {
-            let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-            tokio::spawn(crate::db::notifier::listen(db.clone(), tx));
+            let (tx, mut rx) = tokio::sync::mpsc::channel(PIPELINE_NOTIFY_CHANNEL_CAPACITY);
+            tokio::spawn(crate::db::listen_table::listen_table(db.clone(), tx));
             let endpoint_cache = endpoint_cache.clone();
             tokio::spawn(async move {
-                while let Some(DbNotification::Pipeline(_op, _tenant, _pipeline_id)) =
-                    rx.recv().await
-                {
+                while rx.recv().await.is_some() {
                     let mut cache = endpoint_cache.write().unwrap();
                     cache.clear();
                 }

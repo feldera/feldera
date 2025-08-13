@@ -1950,10 +1950,24 @@ async fn pipeline_logs() {
             "program_code": "CREATE TABLE t1(c1 INTEGER) with ('materialized' = 'true');"
         }))
         .await;
-    assert_eq!(
-        config.get("/v0/pipelines/test/logs").await.status(),
-        StatusCode::OK
-    );
+
+    // Logs should eventually become available
+    let mut i = 0;
+    loop {
+        let status = config.get("/v0/pipelines/test/logs").await.status();
+        if status == StatusCode::OK {
+            break;
+        } else if status == StatusCode::NOT_FOUND {
+            if i >= 50 {
+                panic!("Took too long for the logs to become available (still {status})")
+            }
+        } else {
+            panic!("Unexpected status (not OK or NOT_FOUND): {status}");
+        }
+        sleep(Duration::from_millis(100)).await;
+        i += 1;
+    }
+
     config.wait_for_compiled_program("test", 1).await;
     config.pause_pipeline("test", true).await;
     assert_eq!(
@@ -1976,10 +1990,23 @@ async fn pipeline_logs() {
         StatusCode::OK
     );
     config.delete_pipeline("test").await;
-    assert_eq!(
-        config.get("/v0/pipelines/test/logs").await.status(),
-        StatusCode::NOT_FOUND
-    );
+
+    // Logs should eventually become unavailable
+    let mut i = 0;
+    loop {
+        let status = config.get("/v0/pipelines/test/logs").await.status();
+        if status == StatusCode::OK {
+            if i >= 50 {
+                panic!("Took too long for the logs to become unavailable (still {status})")
+            }
+        } else if status == StatusCode::NOT_FOUND {
+            break;
+        } else {
+            panic!("Unexpected status (not OK or NOT_FOUND): {status}");
+        }
+        sleep(Duration::from_millis(100)).await;
+        i += 1;
+    }
 }
 
 /// The compiler needs to handle and continue to function when the pipeline is deleted
