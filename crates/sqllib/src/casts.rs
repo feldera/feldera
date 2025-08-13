@@ -1062,8 +1062,16 @@ macro_rules! cast_to_string {
 #[inline]
 pub fn cast_to_s_b(value: bool, size: i32, fixed: bool) -> SqlResult<SqlString> {
     // Calcite generates uppercase for boolean casts to string
-    let result = value.to_string().to_uppercase();
-    limit_or_size_string(&result, size, fixed)
+    if !fixed && !(0..=4).contains(&size) {
+        if value {
+            Ok(arcstr::literal!("TRUE").into())
+        } else {
+            Ok(arcstr::literal!("FALSE").into())
+        }
+    } else {
+        let result = if value { "TRUE" } else { "FALSE" };
+        limit_or_size_string(&result, size, fixed)
+    }
 }
 
 #[doc(hidden)]
@@ -3799,6 +3807,8 @@ cast_function!(Uuid, Uuid, bytes, ByteArray);
 
 #[cfg(test)]
 mod tests {
+    use arcstr::ArcStr;
+
     use crate::{
         cast_to_s_LongInterval_MONTHS, cast_to_s_LongInterval_YEARS,
         cast_to_s_LongInterval_YEARS_TO_MONTHS, cast_to_s_ShortInterval_DAYS,
@@ -3806,9 +3816,9 @@ mod tests {
         cast_to_s_ShortInterval_DAYS_TO_SECONDS, cast_to_s_ShortInterval_HOURS,
         cast_to_s_ShortInterval_HOURS_TO_MINUTES, cast_to_s_ShortInterval_HOURS_TO_SECONDS,
         cast_to_s_ShortInterval_MINUTES, cast_to_s_ShortInterval_MINUTES_TO_SECONDS,
-        cast_to_s_ShortInterval_SECONDS, cast_to_s_SqlDecimal, cast_to_s_Uuid, cast_to_s_i,
-        cast_to_s_i16, cast_to_s_i32, cast_to_s_i64, cast_to_s_i8, cast_to_s_u, cast_to_s_u16,
-        cast_to_s_u32, cast_to_s_u64, cast_to_s_u8,
+        cast_to_s_ShortInterval_SECONDS, cast_to_s_SqlDecimal, cast_to_s_Uuid, cast_to_s_b,
+        cast_to_s_i, cast_to_s_i16, cast_to_s_i32, cast_to_s_i64, cast_to_s_i8, cast_to_s_u,
+        cast_to_s_u16, cast_to_s_u32, cast_to_s_u64, cast_to_s_u8,
         decimal::SqlDecimal,
         interval::{LongInterval, ShortInterval},
         SqlString, Uuid,
@@ -3994,5 +4004,25 @@ mod tests {
                 .unwrap(),
             SqlString::from_ref("-2057:36.000000")
         );
+    }
+
+    #[test]
+    fn bool_to_string() {
+        assert_eq!(
+            cast_to_s_b(true, -1, false).unwrap(),
+            SqlString::from_ref("TRUE")
+        );
+        assert_eq!(
+            cast_to_s_b(false, -1, false).unwrap(),
+            SqlString::from_ref("FALSE")
+        );
+
+        // Make sure we really get the static literals.
+        assert!(ArcStr::is_static(
+            cast_to_s_b(true, -1, false).unwrap().as_ref()
+        ));
+        assert!(ArcStr::is_static(
+            cast_to_s_b(false, -1, false).unwrap().as_ref()
+        ));
     }
 }
