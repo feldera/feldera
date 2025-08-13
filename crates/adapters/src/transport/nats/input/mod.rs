@@ -37,6 +37,9 @@ use tokio_util::sync::CancellationToken;
 use tracing::{info, info_span, Instrument};
 use xxhash_rust::xxh3::Xxh3Default;
 
+type NatsConsumerConfig = nats_consumer::pull::OrderedConfig;
+type NatsConsumer = nats_consumer::Consumer<NatsConsumerConfig>;
+
 #[derive(Debug, Serialize, Deserialize)]
 struct SeekMetadata {
     sequence_number_range: Option<std::ops::RangeInclusive<u64>>,
@@ -142,7 +145,7 @@ impl NatsReader {
         let mut canceller: Option<Canceller> = None;
         let queue = Arc::new(InputQueue::<u64>::new(consumer.clone()));
         let read_sequence = Arc::new(AtomicOptionNonZeroU64::new(initial_read_sequence));
-        let mut nats_consumer_config = translate_consumer_options(&config.consumer_config);
+        let nats_consumer_config = translate_consumer_options(&config.consumer_config);
 
         let mut command_receiver = InputCommandReceiver::<SeekMetadata, ()>::new(command_receiver);
 
@@ -151,18 +154,14 @@ impl NatsReader {
             info!("Attempt to replay: {:?}", seek_metadata);
             if let Some(sequence_number_range) = seek_metadata.sequence_number_range {
                 let first_message_offset = sequence_number_range.start();
-                nats_consumer_config.deliver_policy =
-                    jetstream::consumer::DeliverPolicy::ByStartSequence {
-                        start_sequence: *first_message_offset,
-                    };
 
-                let nats_stream_name = &config.stream_name;
-                let nats_consumer = jetstream
-                    .create_consumer_strict_on_stream(
-                        nats_consumer_config.clone(),
-                        nats_stream_name,
-                    )
-                    .await?;
+                let nats_consumer = create_nats_consumer(
+                    &jetstream,
+                    &nats_consumer_config,
+                    &config.stream_name,
+                    NonZeroU64::new(*first_message_offset),
+                )
+                .await?;
 
                 let last_message_offset = *sequence_number_range.end();
                 read_nats_messages_until(
@@ -210,23 +209,13 @@ impl NatsReader {
                 InputReaderCommand::Extend => {
                     info!("Extend from {:?}", read_sequence.load(Ordering::Acquire));
                     if canceller.is_none() {
-                        // Update the consumer config's StartSequence if this
-                        // InputEndpoint has previously received messages, in
-                        // order to continue where we left off.
-                        if let Some(nss) = read_sequence.load(Ordering::Acquire) {
-                            nats_consumer_config.deliver_policy =
-                                jetstream::consumer::DeliverPolicy::ByStartSequence {
-                                    start_sequence: nss.get(),
-                                };
-                        }
-
-                        let nats_stream_name = &config.stream_name;
-                        let nats_consumer = jetstream
-                            .create_consumer_strict_on_stream(
-                                nats_consumer_config.clone(),
-                                nats_stream_name,
-                            )
-                            .await?;
+                        let nats_consumer = create_nats_consumer(
+                            &jetstream,
+                            &nats_consumer_config,
+                            &config.stream_name,
+                            read_sequence.load(Ordering::Acquire),
+                        )
+                        .await?;
 
                         canceller = Some(
                             spawn_nats_reader(
@@ -250,8 +239,27 @@ impl NatsReader {
     }
 }
 
+async fn create_nats_consumer(
+    jetstream: &jetstream::Context,
+    consumer_config: &NatsConsumerConfig,
+    stream_name: &str,
+    message_start_sequence: Option<NonZeroU64>,
+) -> AnyResult<NatsConsumer> {
+    let mut consumer_config = consumer_config.clone();
+
+    if let Some(start_sequence) = message_start_sequence {
+        consumer_config.deliver_policy = jetstream::consumer::DeliverPolicy::ByStartSequence {
+            start_sequence: start_sequence.get(),
+        };
+    }
+
+    Ok(jetstream
+        .create_consumer_strict_on_stream(consumer_config, stream_name)
+        .await?)
+}
+
 async fn read_nats_messages_until(
-    nats_consumer: nats_consumer::Consumer<nats_consumer::pull::OrderedConfig>,
+    nats_consumer: NatsConsumer,
     last_message_sequence: u64,
     consumer: Box<dyn InputConsumer>,
     mut parser: Box<dyn Parser>,
@@ -301,7 +309,7 @@ async fn read_nats_messages_until(
 }
 
 async fn spawn_nats_reader(
-    nats_consumer: nats_consumer::Consumer<nats_consumer::pull::OrderedConfig>,
+    nats_consumer: NatsConsumer,
     read_sequence: Arc<AtomicOptionNonZeroU64>,
     queue: Arc<InputQueue<u64>>,
     consumer: Box<dyn InputConsumer>,
