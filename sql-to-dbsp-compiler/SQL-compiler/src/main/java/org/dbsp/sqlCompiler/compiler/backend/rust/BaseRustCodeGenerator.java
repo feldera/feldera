@@ -152,6 +152,7 @@ public abstract class BaseRustCodeGenerator implements ICodeGenerator {
             use core::cmp::Ordering;
             use feldera_sqllib::*;
             use std::sync::OnceLock;
+            use arcstr::ArcStr;
             """ +
             "use " + DBSPLazyExpression.RUST_CRATE + ";\n";
 }

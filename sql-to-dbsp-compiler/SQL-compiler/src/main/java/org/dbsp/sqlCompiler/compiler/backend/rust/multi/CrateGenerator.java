@@ -82,6 +82,7 @@ public final class CrateGenerator {
                 doctest = false
 
                 [dependencies]
+                arcstr = { workspace = true }
                 paste = { workspace = true }
                 derive_more = { workspace = true }
                 dbsp = { workspace = true }
