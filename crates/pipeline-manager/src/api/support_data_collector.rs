@@ -9,6 +9,7 @@ use log::{debug, error, info};
 use serde::Deserialize;
 use std::cmp::min;
 use std::collections::BTreeMap;
+use std::io::Write;
 use std::sync::Arc;
 use tokio::sync::watch;
 use tokio::time::{sleep, Duration, Instant};
@@ -154,6 +155,13 @@ fn json_prettify(data: Vec<u8>) -> Vec<u8> {
     }
 }
 
+/// Compress data to .gz
+fn gz_compress(data: Vec<u8>) -> Result<Vec<u8>, String> {
+    let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+    encoder.write_all(&data).map_err(|e| e.to_string())?;
+    encoder.finish().map_err(|e| e.to_string())
+}
+
 /// Convert the HTTP response from a pipeline to a bundle result or
 /// a string error message in case of an error.
 async fn response_to_bundle_result(
@@ -206,13 +214,13 @@ pub struct SupportBundleData {
 impl SupportBundleData {
     /// Current version of the support bundle data format
     pub const fn current_version() -> u32 {
-        1
+        2
     }
 
     #[cfg(test)]
     pub(crate) fn test_data() -> Self {
         Self {
-            version: 1,
+            version: 2,
             time: chrono::Utc::now(),
             circuit_profile: Ok(vec![1, 2, 3]),
             heap_profile: Ok(vec![4, 5, 6]),
@@ -397,6 +405,7 @@ impl SupportBundleData {
         Self::get_pipeline_configuration(state, tenant_id, pipeline_name)
             .await
             .map_err(|e| e.to_string())
+            .and_then(gz_compress)
     }
 
     async fn collect_system_config(state: &ServerState) -> BundleResult<Vec<u8>> {
@@ -493,11 +502,20 @@ impl SupportBundleData {
         if params.pipeline_config {
             match &self.pipeline_config {
                 Ok(content) => {
-                    let _ = add_to_zip("pipeline_config.json", content);
-                    manifest_entries.push("✓ pipeline_config.json".to_string());
+                    if self.version == 1 {
+                        let _ = add_to_zip("pipeline_config.json", content);
+                        manifest_entries.push("✓ pipeline_config.json".to_string());
+                    } else {
+                        let _ = add_to_zip("pipeline_config.json.gz", content);
+                        manifest_entries.push("✓ pipeline_config.json.gz".to_string());
+                    }
                 }
                 Err(e) => {
-                    error_entries.push(format!("✗ pipeline_config.json: {}", e));
+                    if self.version == 1 {
+                        error_entries.push(format!("✗ pipeline_config.json: {}", e));
+                    } else {
+                        error_entries.push(format!("✗ pipeline_config.json.gz: {}", e));
+                    }
                 }
             }
         } else {
