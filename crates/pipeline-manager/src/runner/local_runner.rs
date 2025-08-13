@@ -21,7 +21,14 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStderr, ChildStdout, Command};
 use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
+use tokio::time::sleep;
 use tokio::{fs, fs::create_dir_all, select, spawn};
+
+/// How many times to attempt to retrieve the pipeline binary.
+const BINARY_RETRIEVAL_ATTEMPTS: u64 = 5;
+
+/// Interval between binary retrieval attempts.
+const BINARY_RETRIEVAL_RETRY_INTERVAL: Duration = Duration::from_millis(500);
 
 /// A runner handle to run a pipeline using a local process.
 /// During provisioning, it spawns a process, retrieves its location (port)
@@ -139,7 +146,10 @@ impl LocalRunner {
     /// Retrieves the binary executable of the pipeline from the compiler server using the
     /// `binary_url` and stores it in the local runner working directory for that pipeline
     /// located at `target_file_path`.
-    pub async fn retrieve_pipeline_binary(
+    ///
+    /// Attempts to retrieve several times. Attempts are only made again if a sending error
+    /// occurred, not when a response was returned.
+    async fn retrieve_pipeline_binary(
         &self,
         binary_url: &str,
         target_file_path: &Path,
@@ -147,7 +157,9 @@ impl LocalRunner {
         // URL validation
         let parsed = url::Url::parse(binary_url).map_err(|e| {
             ManagerError::from(RunnerError::RunnerProvisionError {
-                error: format!("pipeline binary retrieval failed: invalid URL due to: {e}"),
+                error: format!(
+                    "pipeline binary retrieval failed: invalid URL '{binary_url}' due to: {e}"
+                ),
             })
         })?;
 
@@ -155,78 +167,86 @@ impl LocalRunner {
         let scheme = parsed.scheme();
         if !self.common_config.enable_https && scheme != "http" {
             return Err(RunnerError::RunnerProvisionError {
-                error: format!("pipeline binary retrieval failed: URL has scheme '{scheme}' whereas 'http' is expected"),
+                error: format!("pipeline binary retrieval failed: URL '{binary_url}' has scheme '{scheme}' whereas 'http' is expected"),
             }.into());
         }
         if self.common_config.enable_https && parsed.scheme() != "https" {
             return Err(RunnerError::RunnerProvisionError {
-                error: format!("pipeline binary retrieval failed: URL has scheme '{scheme}' whereas 'https' is expected"),
+                error: format!("pipeline binary retrieval failed: URL '{binary_url}' has scheme '{scheme}' whereas 'https' is expected"),
             }.into());
         }
 
         // Perform request
-        match self.client.get(binary_url).send().await {
-            Ok(response) => {
-                // Check status code
-                if response.status() != StatusCode::OK {
-                    return Err(RunnerError::RunnerProvisionError {
-                        error: format!(
-                            "pipeline binary retrieval failed: expected response status code {} but got {}",
-                            StatusCode::OK, response.status(),
-                        ),
-                    }.into());
-                }
+        let mut attempt = 1;
+        loop {
+            match self.client.get(binary_url).send().await {
+                Ok(response) => {
+                    // Check status code
+                    if response.status() != StatusCode::OK {
+                        return Err(RunnerError::RunnerProvisionError {
+                            error: format!(
+                                "pipeline binary retrieval failed: GET '{binary_url}': expected response status code {} but got {}",
+                                StatusCode::OK, response.status(),
+                            ),
+                        }.into());
+                    }
 
-                // Parse response as bytes
-                let body = response.bytes().await.map_err(|_e| {
-                    ManagerError::from(RunnerError::RunnerProvisionError {
-                        error: "pipeline binary retrieval failed: could not convert response body into bytes".to_string(),
-                    })
-                })?;
+                    // Parse response as bytes
+                    let body = response.bytes().await.map_err(|_e| {
+                        ManagerError::from(RunnerError::RunnerProvisionError {
+                            error: format!("pipeline binary retrieval failed: GET '{binary_url}': could not convert response body into bytes")
+                        })
+                    })?;
 
-                // Create, open, write and flush file
-                let mut file = fs::File::options()
-                    .create(true)
-                    .truncate(true)
-                    .write(true)
-                    .read(true)
-                    .mode(0o760) // User: rwx, Group: rw, Others: /
-                    .open(target_file_path)
-                    .await
-                    .map_err(|e| {
+                    // Create, open, write and flush file
+                    let mut file = fs::File::options()
+                        .create(true)
+                        .truncate(true)
+                        .write(true)
+                        .read(true)
+                        .mode(0o760) // User: rwx, Group: rw, Others: /
+                        .open(target_file_path)
+                        .await
+                        .map_err(|e| {
+                            ManagerError::from(RunnerError::RunnerProvisionError {
+                                error: format!(
+                                    "pipeline binary retrieval failed: unable to create file '{}': {e}",
+                                    target_file_path.display()
+                                ),
+                            })
+                        })?;
+                    file.write_all(&body).await.map_err(|e| {
                         ManagerError::from(RunnerError::RunnerProvisionError {
                             error: format!(
-                                "pipeline binary retrieval failed: unable to create file '{}': {e}",
+                                "pipeline binary retrieval failed: unable to write file '{}': {e}",
                                 target_file_path.display()
                             ),
                         })
                     })?;
-                file.write_all(&body).await.map_err(|e| {
-                    ManagerError::from(RunnerError::RunnerProvisionError {
-                        error: format!(
-                            "pipeline binary retrieval failed: unable to write file '{}': {e}",
-                            target_file_path.display()
-                        ),
-                    })
-                })?;
-                file.flush().await.map_err(|e| {
-                    ManagerError::from(RunnerError::RunnerProvisionError {
-                        error: format!(
-                            "pipeline binary retrieval failed: unable to flush file '{}': {e}",
-                            target_file_path.display()
-                        ),
-                    })
-                })?;
+                    file.flush().await.map_err(|e| {
+                        ManagerError::from(RunnerError::RunnerProvisionError {
+                            error: format!(
+                                "pipeline binary retrieval failed: unable to flush file '{}': {e}",
+                                target_file_path.display()
+                            ),
+                        })
+                    })?;
 
-                Ok(())
+                    return Ok(());
+                }
+                Err(e) => {
+                    let error = format!(
+                        "pipeline binary retrieval failed (attempt {attempt} / {BINARY_RETRIEVAL_ATTEMPTS}): GET '{binary_url}': unable to get response: {e}, source: {}",
+                        source_error(&e)
+                    );
+                    error!("{error}");
+                    if attempt >= BINARY_RETRIEVAL_ATTEMPTS {
+                        return Err(RunnerError::RunnerProvisionError { error }.into());
+                    }
+                }
             }
-            Err(e) => Err(RunnerError::RunnerProvisionError {
-                error: format!(
-                    "pipeline binary retrieval failed: unable to get response: {e}, source: {}",
-                    source_error(&e)
-                ),
-            }
-            .into()),
+            sleep(BINARY_RETRIEVAL_RETRY_INTERVAL).await;
+            attempt += 1;
         }
     }
 
