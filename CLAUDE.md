@@ -4,7 +4,7 @@
 <!-- SECTION:CLAUDE.md START -->
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with the Feldera repository as a whole.
+This and any nested CLAUDE.md files provide guidance to Claude Code (claude.ai/code) when working with the Feldera repository.
 
 ## Repository Overview
 
@@ -302,9 +302,6 @@ Follow these governing principles when documenting the repository in CLAUDE.md f
 
 ## Context: .github/workflows/CLAUDE.md
 <!-- SECTION:.github/workflows/CLAUDE.md START -->
-# CLAUDE.md
-
-This file provides guidance to Claude Code (claude.ai/code) when working with GitHub Actions workflows in this repository.
 
 ## Overview
 
@@ -816,9 +813,6 @@ This documentation will be expanded with additional workflow descriptions as the
 
 ## Context: benchmark/CLAUDE.md
 <!-- SECTION:benchmark/CLAUDE.md START -->
-# CLAUDE.md
-
-This file provides guidance to Claude Code (claude.ai/code) when working with the benchmark directory in this repository.
 
 ## Overview
 
@@ -1044,9 +1038,8 @@ This benchmarking infrastructure provides comprehensive tools for validating Fel
 
 ## Context: crates/adapterlib/CLAUDE.md
 <!-- SECTION:crates/adapterlib/CLAUDE.md START -->
-# CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with the Adapter Library crate.
+## Overview
 
 ## Key Development Commands
 
@@ -1313,9 +1306,8 @@ This crate provides the foundational abstractions that make it easy to implement
 
 ## Context: crates/adapters/CLAUDE.md
 <!-- SECTION:crates/adapters/CLAUDE.md START -->
-# CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with the Adapters crate.
+## Overview
 
 ## Key Development Commands
 
@@ -1605,9 +1597,8 @@ The test suite requires external services:
 
 ## Context: crates/adapters/src/adhoc/CLAUDE.md
 <!-- SECTION:crates/adapters/src/adhoc/CLAUDE.md START -->
-# CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with the Ad-hoc Query module in the Adapters crate.
+## Overview
 
 ## Key Development Commands
 
@@ -2001,9 +1992,6 @@ This module bridges the gap between Feldera's incremental streaming processing a
 
 ## Context: crates/adapters/src/format/CLAUDE.md
 <!-- SECTION:crates/adapters/src/format/CLAUDE.md START -->
-# CLAUDE.md
-
-This file provides guidance to Claude Code (claude.ai/code) when working with the format module in the adapters crate.
 
 ## Overview
 
@@ -2538,9 +2526,8 @@ This format module represents a sophisticated, production-ready data processing 
 
 ## Context: crates/adapters/src/integrated/CLAUDE.md
 <!-- SECTION:crates/adapters/src/integrated/CLAUDE.md START -->
-# CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with the Integrated Connectors module in the Adapters crate.
+## Overview
 
 ## Key Development Commands
 
@@ -2999,9 +2986,6 @@ This module enables Feldera to integrate seamlessly with external data systems w
 
 ## Context: crates/adapters/src/transport/CLAUDE.md
 <!-- SECTION:crates/adapters/src/transport/CLAUDE.md START -->
-# CLAUDE.md
-
-This file provides guidance to Claude Code (claude.ai/code) when working with the transport module in the adapters crate.
 
 ## Overview
 
@@ -3476,9 +3460,6 @@ This transport layer provides Feldera with a robust, high-performance, and exten
 
 ## Context: crates/CLAUDE.md
 <!-- SECTION:crates/CLAUDE.md START -->
-# CLAUDE.md
-
-This file provides guidance to Claude Code (claude.ai/code) when working with the crates directory in this repository.
 
 ## Overview
 
@@ -3604,9 +3585,8 @@ This workspace architecture enables modular development while maintaining consis
 
 ## Context: crates/datagen/CLAUDE.md
 <!-- SECTION:crates/datagen/CLAUDE.md START -->
-# CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with the Data Generation crate.
+## Overview
 
 ## Key Development Commands
 
@@ -3865,9 +3845,8 @@ This crate provides essential data generation capabilities that support testing,
 
 ## Context: crates/dbsp/CLAUDE.md
 <!-- SECTION:crates/dbsp/CLAUDE.md START -->
-# CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with the DBSP (Database Stream Processor) crate.
+## Overview
 
 ## Key Development Commands
 
@@ -4091,13 +4070,10 @@ circuit.step()?;
 
 ## Context: crates/dbsp/src/CLAUDE.md
 <!-- SECTION:crates/dbsp/src/CLAUDE.md START -->
-# CLAUDE.md
-
-This file provides guidance to Claude Code (claude.ai/code) when working with the DBSP source code.
 
 ## Overview
 
-The `src/` directory contains the core implementation of DBSP (Database Stream Processor), a computational engine for incremental computation on changing datasets. DBSP enables processing changes in time proportional to the size of changes rather than the entire dataset, making it ideal for continuous analysis of large, frequently-changing data.
+The `crates/dbsp/src/` directory contains the core implementation of DBSP (Database Stream Processor), a computational engine for incremental computation on changing datasets. DBSP enables processing changes in time proportional to the size of changes rather than the entire dataset, making it ideal for continuous analysis of large, frequently-changing data.
 
 ## Architecture Overview
 
@@ -4528,9 +4504,8 @@ This DBSP source code represents a sophisticated computational engine that succe
 
 ## Context: crates/fda/CLAUDE.md
 <!-- SECTION:crates/fda/CLAUDE.md START -->
-# CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with the FDA (Feldera Development Assistant) crate.
+## Overview
 
 ## Key Development Commands
 
@@ -4839,9 +4814,8 @@ This crate serves as the development companion tool, providing essential utiliti
 
 ## Context: crates/feldera-types/CLAUDE.md
 <!-- SECTION:crates/feldera-types/CLAUDE.md START -->
-# CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with the Feldera Types crate.
+## Overview
 
 ## Key Development Commands
 
@@ -5129,9 +5103,8 @@ This crate is foundational to the Feldera platform, providing the type system ba
 
 ## Context: crates/fxp/CLAUDE.md
 <!-- SECTION:crates/fxp/CLAUDE.md START -->
-# CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with the Fixed Point (FXP) crate.
+## Overview
 
 ## Key Development Commands
 
@@ -5430,9 +5403,8 @@ This crate provides the mathematical foundation for precise decimal arithmetic i
 
 ## Context: crates/iceberg/CLAUDE.md
 <!-- SECTION:crates/iceberg/CLAUDE.md START -->
-# CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with the Iceberg crate.
+## Overview
 
 ## Key Development Commands
 
@@ -5717,9 +5689,8 @@ This crate enables Feldera to work with modern data lake architectures using the
 
 ## Context: crates/ir/CLAUDE.md
 <!-- SECTION:crates/ir/CLAUDE.md START -->
-# CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with the Intermediate Representation (IR) crate.
+## Overview
 
 ## Key Development Commands
 
@@ -6068,9 +6039,8 @@ This crate provides the compiler infrastructure that enables sophisticated analy
 
 ## Context: crates/nexmark/CLAUDE.md
 <!-- SECTION:crates/nexmark/CLAUDE.md START -->
-# CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with the NEXMark crate.
+## Overview
 
 ## Key Development Commands
 
@@ -6339,9 +6309,8 @@ This crate provides industry-standard benchmarking for streaming systems, enabli
 
 ## Context: crates/pipeline-manager/CLAUDE.md
 <!-- SECTION:crates/pipeline-manager/CLAUDE.md START -->
-# CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with the Pipeline Manager crate.
+## Overview
 
 ## Key Development Commands
 
@@ -6591,9 +6560,8 @@ The service supports multiple configuration sources:
 
 ## Context: crates/rest-api/CLAUDE.md
 <!-- SECTION:crates/rest-api/CLAUDE.md START -->
-# CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with the REST API crate.
+## Overview
 
 ## Key Development Commands
 
@@ -6833,9 +6801,8 @@ This crate provides the foundational API types and specifications that enable co
 
 ## Context: crates/sqllib/CLAUDE.md
 <!-- SECTION:crates/sqllib/CLAUDE.md START -->
-# CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with the SQL Library crate.
+## Overview
 
 ## Key Development Commands
 
@@ -7150,9 +7117,8 @@ This crate is essential for SQL compatibility, providing the runtime functions t
 
 ## Context: crates/storage/CLAUDE.md
 <!-- SECTION:crates/storage/CLAUDE.md START -->
-# CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with the Storage crate.
+## Overview
 
 ## Key Development Commands
 
@@ -7432,9 +7398,6 @@ This crate provides the storage foundation that enables DBSP to persist state an
 
 ## Context: deploy/CLAUDE.md
 <!-- SECTION:deploy/CLAUDE.md START -->
-# CLAUDE.md
-
-This file provides guidance to Claude Code (claude.ai/code) when working with the deploy directory and its role in Feldera's release process and CI/CD workflows.
 
 ## Overview
 
@@ -7783,9 +7746,8 @@ This deployment architecture provides Feldera with a robust, scalable, and maint
 
 ## Context: docs.feldera.com/CLAUDE.md
 <!-- SECTION:docs.feldera.com/CLAUDE.md START -->
-# CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with the Feldera documentation website.
+## Overview
 
 ## Key Development Commands
 
@@ -7956,9 +7918,8 @@ This documentation site serves as the primary resource for Feldera users, provid
 
 ## Context: python/CLAUDE.md
 <!-- SECTION:python/CLAUDE.md START -->
-# CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with the Feldera Python SDK in this repository.
+## Overview
 
 ## Key Development Commands
 
@@ -8168,9 +8129,6 @@ pipeline = client.create_pipeline("my_pipeline")
 
 ## Context: scripts/CLAUDE.md
 <!-- SECTION:scripts/CLAUDE.md START -->
-# CLAUDE.md
-
-This file provides guidance to Claude Code (claude.ai/code) when working with the crates directory in this repository.
 
 ## Overview
 
@@ -8213,9 +8171,8 @@ The comment markers ensure that:
 
 ## Context: sql-to-dbsp-compiler/CLAUDE.md
 <!-- SECTION:sql-to-dbsp-compiler/CLAUDE.md START -->
-# CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with the SQL-to-DBSP compiler in this repository.
+## Overview
 
 ## Key Development Commands
 
@@ -8413,9 +8370,6 @@ The compiler generates Rust code that:
 
 ## Context: sql-to-dbsp-compiler/SQL-compiler/CLAUDE.md
 <!-- SECTION:sql-to-dbsp-compiler/SQL-compiler/CLAUDE.md START -->
-# CLAUDE.md
-
-This file provides guidance to Claude Code (claude.ai/code) when working with the SQL-compiler directory in the sql-to-dbsp-compiler project.
 
 ## Overview
 
@@ -8730,9 +8684,6 @@ This SQL-to-DBSP compiler represents a sophisticated piece of compiler engineeri
 
 ## Context: web-console/CLAUDE.md
 <!-- SECTION:web-console/CLAUDE.md START -->
-# CLAUDE.md
-
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Key Development Commands
 
