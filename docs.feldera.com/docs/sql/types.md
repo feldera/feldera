@@ -16,9 +16,9 @@ The compiler supports the following SQL data types:
 | `DECIMAL(precision, scale)` | A high precision fixed-point type, with a precision (total number of decimal digits) and a scale (number of decimal digits after period).                          | `DEC`, `NUMERIC`, `NUMBER` |
 | `REAL`                      | IEEE 32-bit floating point number                                                                                                                                  | `FLOAT4`, `FLOAT32`        |
 | `DOUBLE`                    | IEEE 64-bit floating point number                                                                                                                                  | `FLOAT8`, `FLOAT64`        |
-| `VARCHAR(n)`                | A string value with maximum fixed width. Trailing spaces are removed when converting a value to this type.                                                         | `CHARACTER VARYING(n)`     |
-| `CHAR(n)`                   | A string value with a fixed width. Values are truncated if longer, or padded with spaces if shorter, to be brought to the specified size. We recommend against using CHAR(n) columns; see [below](#charn-types)  | `CHARACTER(n)`             |
-| `VARCHAR`                   | A string of unlimited length. Trailing spaces are removed when converting a `CHAR(n)` value to this type.                                                          | `STRING`, `TEXT`           |
+| `VARCHAR`                   | A string of unlimited length. Trailing spaces are removed when converting a `CHAR(n)` value to this type. This is the preferred string type.                       | `STRING`, `TEXT`           |
+| `VARCHAR(n)`                | A string that holds at most `n` Unicode characters. Trailing spaces are removed when converting a `CHAR(n)` value to this type.                                    | `CHARACTER VARYING(n)`     |
+| `CHAR(n)`                   | A string value that holds exactly `n` Unicode characters. Values are truncated if longer, or padded with spaces if shorter, to be brought to the specified size. We recommend against using CHAR(n) columns; see [below](#string-types)  | `CHARACTER(n)`             |
 | `BINARY(n)`                 | A byte string with a fixed width; n is the number of bytes.                                                                                                        |                            |
 | `VARBINARY`                 | A byte string with an unlimited width.                                                                                                                             | `BYTEA`                    |
 | `NULL`                      | A type comprising only the `NULL` value.                                                                                                                           |                            |
@@ -75,15 +75,26 @@ follows the SQL standard in this respect. Most operations (e.g.,
 `+`), when applied a `NULL` operand will produce a `NULL`
 value.
 
-## `CHAR(N)` types
+## String types
 
-The behavior of `CHAR(N)` types may be unintuitive; values with such
-types are padded with spaces to the specified length.  Comparing such
-values with values having different types (e.g., `CHAR` with a
-different length) or even string literals of different lengths may
-provide surprising results.  We strongly suggest avoiding such types
-in SQL programs; they are supported for legacy reasons.  The runtime
-also expects data sources to provide correctly padded data.
+The `n` in `VARCHAR(n)` and `CHAR(n)` is measured in Unicode
+characters, not in bytes.  Thus, `"🎉"` fits in a `VARCHAR(1)` or
+`CHAR(1)` string, even though it requires 4 bytes in the UTF-8
+encoding that Feldera uses internally.
+
+The preferred type for string data is `VARCHAR`, omitting a maximum
+length, because operations on `VARCHAR(n)` strings can require extra
+work to count Unicode characters so that extra ones can be trimmed
+off.
+
+We strongly suggest avoiding `CHAR(n)` entirely.  It suffers from the
+same performance problems as `VARCHAR(n)`, but worse, because Feldera
+has to count Unicode characters in many more cases.  It also behaves
+unintuitively by padding strings with spaces to length `n`.  Comparing
+such values with values having different types (e.g., `CHAR(k)` for `k
+≠ n`) or even string literals of different lengths may provide
+surprising results.  It is supported only for legacy reasons.  The
+runtime also expects data sources to provide correctly padded data.
 
 ## User-defined types
 
