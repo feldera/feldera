@@ -62,15 +62,15 @@ const IGNORE_DIRS = new Set([
 const sectionStart = (relPath) => `<!-- SECTION:${relPath} START -->`;
 const sectionEnd = (relPath) => `<!-- SECTION:${relPath} END -->`;
 const formatSection = (relPath, content) =>
-`## Context: ${relPath}
+  `## Context: ${relPath}
 ${sectionStart(relPath)}
 ${content.trimEnd()}
 ${sectionEnd(relPath)}
 
 ---
-`
+`;
 const mergedFileHeader =
-'> Important! When `SECTION:some/path/CLAUDE.md START` HTML comment tag is encountered in this file, it means that the content within this tag applies to `some/path/` directory.\n'
+  "> Important! When `SECTION:some/path/CLAUDE.md START` HTML comment tag is encountered in this file, it means that the content within this tag applies to `some/path/` directory.\n";
 
 /**
  * @param {string} dir
@@ -82,7 +82,6 @@ async function listClaudeFiles(dir) {
   for (const entry of entries) {
     if (entry.isDirectory()) {
       if (IGNORE_DIRS.has(entry.name)) continue;
-      // if (entry.name.startsWith(".") && entry.name !== ".") continue;
       out.push(...(await listClaudeFiles(path.join(dir, entry.name))));
       continue;
     }
@@ -99,7 +98,7 @@ async function listClaudeFiles(dir) {
 /** @param {string} p */
 function toRel(p) {
   return path.posix.normalize(
-    path.relative(REPO_ROOT, p).split(path.sep).join("/")
+    path.relative(REPO_ROOT, p).split(path.sep).join("/"),
   );
 }
 
@@ -143,7 +142,7 @@ async function mergeAll() {
 
   await fs.writeFile(TARGET_COMBINED, sections.join("\n"), "utf8");
   console.log(
-    `Merged ${files.length} CLAUDE.md file(s) into ${toRel(TARGET_COMBINED)} using root ${REPO_ROOT}.`
+    `Merged ${files.length} CLAUDE.md file(s) into ${toRel(TARGET_COMBINED)} using root ${REPO_ROOT}.`,
   );
 
   // Delete merged files (keep only the root combined file)
@@ -164,14 +163,17 @@ async function splitAll() {
     combined = await fs.readFile(TARGET_COMBINED, "utf8");
   } catch (err) {
     if (/** @type {any} */ (err).code === "ENOENT") {
-      console.error(`No ${toRel(TARGET_COMBINED)} found. Run "merge" first or set --root correctly.`);
+      console.error(
+        `No ${toRel(TARGET_COMBINED)} found. Run "merge" first or set --root correctly.`,
+      );
       process.exit(1);
     }
     throw err;
   }
 
   // Extract all sections (including optional root section with relPath === "CLAUDE.md")
-  const re = /<!-- SECTION:(.*?) START -->\s*([\s\S]*?)\s*<!-- SECTION:\1 END -->/g;
+  const re =
+    /<!-- SECTION:(.*?) START -->\s*([\s\S]*?)\s*<!-- SECTION:\1 END -->/g;
 
   /** @type {RegExpExecArray | null} */
   let match;
@@ -206,10 +208,12 @@ async function splitAll() {
   }
 
   if (count === 0) {
-    console.warn("No sections found to split. Are the markers intact and --root correct?");
+    console.warn(
+      "No sections found to split. Are the markers intact and --root correct?",
+    );
   } else {
     console.log(
-      `Restored ${count} CLAUDE.md file(s) from ${toRel(TARGET_COMBINED)} using root ${REPO_ROOT}.`
+      `Restored ${count} CLAUDE.md file(s) from ${toRel(TARGET_COMBINED)} using root ${REPO_ROOT}.`,
     );
   }
 }
