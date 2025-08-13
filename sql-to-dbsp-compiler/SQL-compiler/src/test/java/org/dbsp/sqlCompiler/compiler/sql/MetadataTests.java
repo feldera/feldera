@@ -37,6 +37,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
@@ -593,6 +594,214 @@ public class MetadataTests extends BaseSQLTests {
     }
 
     @Test
+    public void testUDA() throws IOException, InterruptedException, SQLException {
+        File file = createInputScript("""
+                CREATE LINEAR AGGREGATE I8_AVG(s TINYINT) RETURNS TINYINT;
+                CREATE TABLE T(x TINYINT);
+                CREATE VIEW V AS SELECT I8_AVG(x) FROM T;""");
+
+        File udf = Paths.get(RUST_DIRECTORY, "udf.rs").toFile();
+        PrintWriter script = new PrintWriter(udf, StandardCharsets.UTF_8);
+        script.println("""
+                use feldera_sqllib::*;
+                use crate::Tup2;
+                
+                pub type i8_avg_accumulator_type = Tup2<i32, i32>;
+                
+                pub fn i8_avg_map(val: Option<i8>) -> i8_avg_accumulator_type {
+                    match (val) {
+                        None => Tup2::new(0, 1),
+                        Some(x) => Tup2::new(x as i32, 1),
+                    }
+                }
+                
+                pub fn i8_avg_post(val: i8_avg_accumulator_type) -> Option<i8> {
+                    Some((val.0 / val.1).try_into().unwrap())
+                }
+                """);
+        script.close();
+        CompilerMessages messages = CompilerMain.execute("-o", BaseSQLTests.TEST_FILE_PATH, file.getPath());
+        if (messages.errorCount() > 0)
+            throw new RuntimeException(messages.toString());
+        Utilities.compileAndTestRust(BaseSQLTests.RUST_DIRECTORY, false);
+
+        // Truncate file to 0 bytes
+        FileWriter writer = new FileWriter(udf);
+        writer.close();
+    }
+
+    @Test
+    public void testUDA2() throws IOException, InterruptedException, SQLException {
+        File file = createInputScript("""
+                CREATE LINEAR AGGREGATE I128_SUM(s BINARY(16)) RETURNS BINARY(16);
+                CREATE TABLE T(x BINARY(16));
+                CREATE MATERIALIZED VIEW V AS SELECT I128_SUM(x) AS S FROM T;""");
+
+        // Save a copy of cargo.toml
+        Path cargo = Paths.get(RUST_DIRECTORY, "..", "Cargo.toml");
+        Path cargoBackup = Paths.get(RUST_DIRECTORY, "..", "Cargo.toml.bak");
+        try {
+            Files.copy(cargo, cargoBackup, StandardCopyOption.REPLACE_EXISTING);
+            String cargoContents = Utilities.readFile(cargo);
+            cargoContents = cargoContents.replace("[dependencies]",
+                    """
+                            [dependencies]
+                            i256 = { version = "0.2.2", features = ["num-traits"] }
+                            num-traits = "0.2.19"
+                            """);
+            PrintWriter p = new PrintWriter(cargo.toFile(), StandardCharsets.UTF_8);
+            p.write(cargoContents);
+            p.close();
+
+            File udf = Paths.get(RUST_DIRECTORY, "udf.rs").toFile();
+            PrintWriter script = new PrintWriter(udf, StandardCharsets.UTF_8);
+            script.println("""
+                    use i256::I256;
+                    use feldera_sqllib::*;
+                    use crate::{AddAssignByRef, AddByRef, HasZero, MulByRef, SizeOf, Tup3};
+                    use derive_more::Add;
+                    use num_traits::Zero;
+                    use rkyv::Fallible;
+                    use std::ops::{Add, AddAssign};
+                    
+                    #[derive(Add, Clone, Debug, Default, PartialOrd, Ord, Eq, PartialEq, Hash)]
+                    pub struct I256Wrapper {
+                        pub data: I256,
+                    }
+                    
+                    impl SizeOf for I256Wrapper {
+                        fn size_of_children(&self, context: &mut size_of::Context) {}
+                    }
+                    
+                    impl From<[u8; 32]> for I256Wrapper {
+                        fn from(value: [u8; 32]) -> Self {
+                            Self { data: I256::from_be_bytes(value) }
+                        }
+                    }
+                    
+                    impl From<&[u8]> for I256Wrapper {
+                        fn from(value: &[u8]) -> Self {
+                            let mut padded = [0u8; 32];
+                            // If original value is negative, pad with sign
+                            if value[0] & 0x80 != 0 {
+                                padded.fill(0xff);
+                            }
+                            let len = value.len();
+                            if len > 32 {
+                                panic!("Slice larger than target");
+                            }
+                            padded[32-len..].copy_from_slice(&value[..len]);
+                            Self { data: I256::from_be_bytes(padded) }
+                        }
+                    }
+                    
+                    impl MulByRef<Weight> for I256Wrapper {
+                        type Output = Self;
+                    
+                        fn mul_by_ref(&self, other: &Weight) -> Self::Output {
+                            println!("Mul {:?} by {}", self, other);
+                            Self {
+                                data: self.data.checked_mul_i64(*other)
+                                    .expect("Overflow during multiplication"),
+                            }
+                        }
+                    }
+                    
+                    impl HasZero for I256Wrapper {
+                        fn zero() -> Self {
+                            Self { data: I256::zero() }
+                        }
+                    
+                        fn is_zero(&self) -> bool {
+                            self.data.is_zero()
+                        }
+                    }
+                    
+                    impl AddByRef for I256Wrapper {
+                        fn add_by_ref(&self, other: &Self) -> Self {
+                            Self { data: self.data.add(other.data) }
+                        }
+                    }
+                    
+                    impl AddAssignByRef<Self> for I256Wrapper {
+                        fn add_assign_by_ref(&mut self, other: &Self) {
+                            self.data += other.data
+                        }
+                    }
+                    
+                    #[repr(C)]
+                    #[derive(Debug, Copy, Clone, PartialOrd, Ord, Eq, PartialEq)]
+                    pub struct ArchivedI256Wrapper {
+                        pub bytes: [u8; 32],
+                    }
+                    
+                    impl rkyv::Archive for I256Wrapper {
+                        type Archived = ArchivedI256Wrapper;
+                        type Resolver = ();
+                    
+                        #[inline]
+                        unsafe fn resolve(&self, pos: usize, _: Self::Resolver, out: *mut Self::Archived) {
+                            out.write(ArchivedI256Wrapper {
+                                bytes: self.data.to_be_bytes(),
+                            });
+                        }
+                    }
+                    
+                    impl<S: Fallible + ?Sized> rkyv::Serialize<S> for I256Wrapper {
+                        #[inline]
+                        fn serialize(&self, serializer: &mut S) -> Result<Self::Resolver, S::Error> {
+                            Ok(())
+                        }
+                    }
+                    
+                    impl<D: Fallible + ?Sized> rkyv::Deserialize<I256Wrapper, D> for ArchivedI256Wrapper {
+                        #[inline]
+                        fn deserialize(&self, _: &mut D) -> Result<I256Wrapper, D::Error> {
+                            Ok(I256Wrapper::from(self.bytes))
+                        }
+                    }
+                    
+                    pub type i128_sum_accumulator_type = Tup3<I256Wrapper, i64, i64>;
+                    
+                    pub fn i128_sum_map(val: Option<ByteArray>) -> i128_sum_accumulator_type {
+                        match val {
+                            None => Tup3::new(I256Wrapper::zero(), 0, 1),
+                            Some(val) => Tup3::new(
+                               I256Wrapper::from(val.as_slice()),
+                               1,
+                               1,
+                            ),
+                        }
+                    }
+                    
+                    pub fn i128_sum_post(val: i128_sum_accumulator_type) -> Option<ByteArray> {
+                        if val.1 == 0 {
+                           None
+                        } else {
+                           // Check for overflow
+                           if val.0.data < I256::from(i128::MIN) || val.0.data > I256::from(i128::MAX) {
+                               panic!("Result of aggregation {} does not fit in 128 bits", val.0.data);
+                           }
+                           Some(ByteArray::new(&val.0.data.to_be_bytes()[16..]))
+                        }
+                    }
+                    """);
+            script.close();
+            CompilerMessages messages = CompilerMain.execute("-o", BaseSQLTests.TEST_FILE_PATH, file.getPath());
+            if (messages.errorCount() > 0)
+                throw new RuntimeException(messages.toString());
+            Utilities.compileAndTestRust(BaseSQLTests.RUST_DIRECTORY, false);
+            // Truncate udf file to 0 bytes
+            FileWriter writer = new FileWriter(udf);
+            writer.close();
+        } finally {
+            // Restore cargo.toml
+            Files.copy(cargoBackup, cargo, StandardCopyOption.REPLACE_EXISTING);
+            Utilities.deleteFile(cargoBackup.toFile(), true);
+        }
+    }
+
+    @Test
     public void testUDF() throws IOException, InterruptedException, SQLException {
         File file = createInputScript("""
                 CREATE FUNCTION contains_number(str VARCHAR NOT NULL, value DECIMAL(2, 0)) RETURNS BOOLEAN NOT NULL;
@@ -641,8 +850,7 @@ public class MetadataTests extends BaseSQLTests {
                 pub fn EMPTY() -> Result<Option<SqlString>, Box<dyn std::error::Error>> {
                     udf::EMPTY()
                 }""", String.join(System.lineSeparator(), str));
-        boolean success = protos.toFile().delete();
-        Assert.assertTrue(success);
+        Utilities.deleteFile(protos.toFile(), true);
 
         // Truncate file to 0 bytes
         FileWriter writer = new FileWriter(udf);

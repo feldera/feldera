@@ -46,8 +46,10 @@ public final class DBSPAggregateList extends DBSPNode
             Utilities.enforce(b.isLinear() == this.isLinear);
             List<DBSPParameter> params = b.getRowVariableReferences();
             for (DBSPParameter p: params) {
-                Utilities.enforce(this.rowVar.getType().sameType(p.getType()), "Row var type does not match");
-                Utilities.enforce(this.rowVar.variable.equals(p.name), "Row var name does not match");
+                Utilities.enforce(this.rowVar.getType().sameType(p.getType()),
+                        "Row var type does not match: " + this.rowVar.getType() + " vs " + p.getType());
+                Utilities.enforce(this.rowVar.variable.equals(p.name),
+                        "Row var name does not match: " + this.rowVar.variable + " vs " + p.name);
             }
         }
     }
@@ -88,19 +90,20 @@ public final class DBSPAggregateList extends DBSPNode
             return this.asFold(compiler);
     }
 
+    IAggregate combine(DBSPCompiler compiler) {
+        Utilities.enforce(!this.aggregates.isEmpty());
+        return this.aggregates.get(0).combine(this.getNode(), compiler, this.rowVar, this.aggregates);
+    }
+
     public DBSPFold asFold(DBSPCompiler compiler) {
         Utilities.enforce(!this.isLinear());
-        NonLinearAggregate combined = NonLinearAggregate.combine(
-                this.getNode(), compiler, this.rowVar,
-                Linq.map(this.aggregates, a -> a.to(NonLinearAggregate.class)));
+        NonLinearAggregate combined = this.combine(compiler).to(NonLinearAggregate.class);
         return combined.asFold();
     }
 
     public LinearAggregate asLinear(DBSPCompiler compiler) {
         Utilities.enforce(this.isLinear());
-        return LinearAggregate.combine(
-                this.getNode(), compiler, this.rowVar,
-                Linq.map(this.aggregates, a -> a.to(LinearAggregate.class)));
+        return this.combine(compiler).to(LinearAggregate.class);
     }
 
     public int size() {

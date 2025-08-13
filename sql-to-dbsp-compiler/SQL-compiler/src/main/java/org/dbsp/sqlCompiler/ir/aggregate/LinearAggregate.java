@@ -16,12 +16,15 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeUser;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
 
 import java.util.ArrayList;
 import java.util.List;
+
+import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.USER;
 
 /**
  * A linear aggregate is compiled as two functions and a constant
@@ -61,12 +64,14 @@ public class LinearAggregate extends IAggregate {
         Utilities.enforce(mapType.sameType(postProcess.parameters[0].getType()));
     }
 
-    /** Given an DBSPAggregate where all Implementation objects have a linearFunction
-     * component, combine these linear functions into a single one. */
-    public static LinearAggregate combine(
+    /** Given an DBSPAggregate where all Implementation objects have a (compatible) linearFunction
+     * component, combine these linear functions into a single one.  Note: 'this' is not
+     * used in the result; it is expected it is the first in the list. */
+    @Override
+    public IAggregate combine(
             CalciteObject node, DBSPCompiler compiler,
-            DBSPVariablePath rowVar, List<LinearAggregate> aggregates) {
-        // Essentially runs all the aggregates in the list in parallel
+            DBSPVariablePath rowVar, List<IAggregate> list) {
+        List<LinearAggregate> aggregates = Linq.map(list, l -> l.to(LinearAggregate.class));
         DBSPParameter parameter = rowVar.asParameter();
         List<DBSPExpression> bodies = Linq.map(aggregates, c -> c.map.body);
         boolean many = aggregates.size() > 1;
@@ -193,6 +198,22 @@ public class LinearAggregate extends IAggregate {
     @Override
     public boolean equivalent(EquivalenceContext context, DBSPExpression other) {
         return false;
+    }
+
+    /** The accumulator type generated for a linear user-defined aggregate function */
+    public static DBSPTypeUser accumulatorType(CalciteObject node, String aggregateFunctionName) {
+        String accumulatorTypeName = aggregateFunctionName + "_accumulator_type";
+        return new DBSPTypeUser(node, USER, accumulatorTypeName, false);
+    }
+
+    /** The name of the map function generated for a linear user-defined aggregate function */
+    public static String userDefinedMapFunctionName(String aggregateFunctionName) {
+        return aggregateFunctionName + "_map";
+    }
+
+    /** The name of the postprocessing function generated for a linear user-defined aggregate function */
+    public static String userDefinedPostFunctionName(String aggregateFunctionName) {
+        return aggregateFunctionName + "_post";
     }
 
     @SuppressWarnings("unused")

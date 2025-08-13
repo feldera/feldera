@@ -332,9 +332,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
         if (files == null)
             return;
         for (File file: files) {
-            boolean deleted = file.delete();
-            if (!deleted)
-                throw new RuntimeException("Cannot delete file " + file);
+            Utilities.deleteFile(file, true);
         }
     }
 

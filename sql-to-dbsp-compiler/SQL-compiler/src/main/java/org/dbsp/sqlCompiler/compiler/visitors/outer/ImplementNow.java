@@ -45,7 +45,7 @@ import org.dbsp.sqlCompiler.circuit.annotation.AlwaysMonotone;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPConditionalAggregateExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPConditionalIncrementExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
@@ -896,7 +896,7 @@ public class ImplementNow extends Passes {
 
                 DBSPVariablePath acc = new DBSPTypeTuple(timestamp).var();
                 DBSPClosureExpression function = new DBSPTupleExpression(
-                        new DBSPConditionalAggregateExpression(
+                        new DBSPConditionalIncrementExpression(
                                 node, DBSPOpcode.AGG_MAX, timestamp,
                                 acc.field(0), timestampVar.deref().field(0), null))
                         .closure(acc, timestampVar, weightVar);

@@ -370,7 +370,7 @@ Import this crate to your Feldera pipeline via the `udf.toml` file,
 including only wrapper functions that call the API of this crate in
 `udf.rs`.
 
-## Limitations
+### Limitations
 
 * Currently only limited implicit casts are inserted by the compiler for the
   function arguments and function result in the SQL program.  For
@@ -387,3 +387,278 @@ including only wrapper functions that call the API of this crate in
 * Polymorphic functions are not supported.  For example, in SQL the
   addition operation operates on any numeric types; such an operation
   cannot be implemented as a single user-defined function.
+
+## User-defined aggregates
+
+:::warning Experimental feature
+
+Rust UDA support is currently experimental and may undergo significant
+changes, including non-backward-compatible modifications, in future
+releases of Feldera.
+
+:::
+
+The SQL statement `CREATE AGGREGATE` can be used to extend the set of
+aggregate functions supported by Feldera SQL with user-defined
+aggregation functions.  Such functions need to be implemented in Rust.
+The argument and result of `CREATE AGGREGATE` must be nullable.
+
+### Creating user-defined linear aggregate functions
+
+In general, a function A is linear if it has the following property:
+A(C1 UNION C2) = A(C1) + A(C2), where C1 and C2 are arbitrary
+collections.  The type of the result produced by the function is
+expected to have a + operation, and it must be commutative and
+associative.
+
+To implement a user-defined linear aggregate function the user has to
+define 3 Rust objects:
+
+- a type for the accumulator; the type name is obtained from the
+  aggregate function name with the suffix `_accumulator_type`.
+
+  The actual arithmetic is performed using values of this type.  The
+  accumulator type is thus required to implement several traits
+  defined in the DBSP core library:
+
+  - [`DBWeight`](https://docs.rs/dbsp/latest/dbsp/trace/trait.DBWeight.html)
+    which is a combination of
+    [`DBData`](https://docs.rs/dbsp/latest/dbsp/trace/trait.DBData.html)
+    and
+    [`MonoidValue`](https://docs.rs/dbsp/latest/dbsp/algebra/trait.MonoidValue.html).
+    `DBData` allows accumulators to be stored in relations which may be
+    spilled to disk; amond other traits, it requires `Ord` and
+    `ArchivedDBData`.  `MonoidValue` essentially requires the traits
+    `Zero`, `HasZero`, `Add` (and variants such as `AddByRef`).
+
+  - [`MulByRef`](https://docs.rs/dbsp/latest/dbsp/algebra/trait.MulByRef.html)
+    which allows accumulator values to be multiplied by integer
+    (signed and unsigned) weights.  Negative weights are used when
+    elements are removed from collections; weights larger than 1 are used
+    when multiple copies of an element are updated in one operation.
+    Currently the `Weight` type is `i64`.
+
+- a function which converts a collection value into an accumulator
+  value.  The function's name is obtained from the aggregate function
+  name with the suffix `_map`.
+
+- a function to perform additional post-processing on the aggregation
+  result, returning the expected result.  The function's name is
+  obtained from the aggregate function name with the suffix `_post`.
+
+This use of the post-processing function enables linear
+implementations for aggregates such as "average", where the
+aggregation produces a sum and a count, while the post-processing step
+produces the actual result by computing sum/count.
+
+If the `Add` operation for the accumulator type is not linear, the
+results produced by the program are undefined.  This requirement can
+be subtle; for example, floating point addition is not associative,
+and thus an computing an aggregate like `SUM` on floating-point values
+using standard floating point arithmetic will produce incorrect
+results or runtime crashes.
+
+#### Example user-defined aggregate
+
+We show an example building a user-defined linear aggregate for
+computing sum of 128-bit values.  We use the SQL type `BINARY(16)` to
+represent 128-bit numbers.  The first step requires declaring the
+user-defined aggregate function in SQL:
+
+```sql
+CREATE LINEAR AGGREGATE i128_sum(value BINARY(16)) RETURNS BINARY(16);
+```
+
+Notice that the type of the argument and result are both nullable.  We
+can then use the user-defined aggregate in a SQL program:
+
+```sql
+CREATE TABLE T(value BINARY(16));
+
+CREATE MATERIALIZED VIEW V0 AS SELECT i128_sum(value) FROM T;
+```
+
+In SQL the `SUM` function is polymorphic, since it works for any
+numeric SQL type.  Currently user-defined aggregate functions cannot
+be polymorphic, so one needs to define a new user-defined aggregate
+function for each type of values; moreover, the `SUM` function name
+cannot be used for a user-defined aggregate.
+
+The user needs to add the following 2 dependencies to the `udf.toml`
+file:
+
+```
+i256 = { version = "0.2.2", features = ["num-traits"] }
+num-traits = "0.2.19"
+```
+
+We will use the [I256](https://docs.rs/i256/latest/i256/index.html)
+Rust crate for 256-bit arithmetic.  In our implementation we wrap this
+type into the type `I256Wrapper`, for which we implement the required
+traits.  Most of the code is devoted for this task, and is relatively
+straightforward.
+
+For our example the accumulator type that the user has to define is
+named `i128_sum_accumulator_type`.  In our implementation the
+accumulator is a tuple with 3 fields:
+
+- the partial sum computed, stored in an I256 value
+
+- the count of non-null elements in the collection encountered
+
+- the total count of elements in the collection
+
+The user would add the following implementation to the `udf.rs` file:
+
+```rust
+use i256::I256;
+use feldera_sqllib::*;
+use crate::{AddAssignByRef, AddByRef, HasZero, MulByRef, SizeOf, Tup3};
+use derive_more::Add;
+use num_traits::Zero;
+use rkyv::Fallible;
+use std::ops::{Add, AddAssign};
+
+#[derive(Add, Clone, Debug, Default, PartialOrd, Ord, Eq, PartialEq, Hash)]
+pub struct I256Wrapper {
+    pub data: I256,
+}
+
+impl SizeOf for I256Wrapper {
+    fn size_of_children(&self, context: &mut size_of::Context) {}
+}
+
+impl From<[u8; 32]> for I256Wrapper {
+    fn from(value: [u8; 32]) -> Self {
+        Self { data: I256::from_be_bytes(value) }
+    }
+}
+
+impl From<&[u8]> for I256Wrapper {
+    fn from(value: &[u8]) -> Self {
+        let mut padded = [0u8; 32];
+        // If original value is negative, pad with sign
+        if value[0] & 0x80 != 0 {
+            padded.fill(0xff);
+        }
+        let len = value.len();
+        if len > 32 {
+            panic!("Slice larger than target");
+        }
+        padded[32-len..].copy_from_slice(&value[..len]);
+        Self { data: I256::from_be_bytes(padded) }
+    }
+}
+
+impl MulByRef<Weight> for I256Wrapper {
+    type Output = Self;
+
+    fn mul_by_ref(&self, other: &Weight) -> Self::Output {
+        println!("Mul {:?} by {}", self, other);
+        Self {
+            data: self.data.checked_mul_i64(*other)
+                .expect("Overflow during multiplication"),
+        }
+    }
+}
+
+impl HasZero for I256Wrapper {
+    fn zero() -> Self {
+        Self { data: I256::zero() }
+    }
+
+    fn is_zero(&self) -> bool {
+        self.data.is_zero()
+    }
+}
+
+impl AddByRef for I256Wrapper {
+    fn add_by_ref(&self, other: &Self) -> Self {
+        Self { data: self.data.add(other.data) }
+    }
+}
+
+impl AddAssignByRef<Self> for I256Wrapper {
+    fn add_assign_by_ref(&mut self, other: &Self) {
+        self.data += other.data
+    }
+}
+
+#[repr(C)]
+#[derive(Debug, Copy, Clone, PartialOrd, Ord, Eq, PartialEq)]
+pub struct ArchivedI256Wrapper {
+    pub bytes: [u8; 32],
+}
+
+impl rkyv::Archive for I256Wrapper {
+    type Archived = ArchivedI256Wrapper;
+    type Resolver = ();
+
+    #[inline]
+    unsafe fn resolve(&self, pos: usize, _: Self::Resolver, out: *mut Self::Archived) {
+        out.write(ArchivedI256Wrapper {
+            bytes: self.data.to_be_bytes(),
+        });
+    }
+}
+
+impl<S: Fallible + ?Sized> rkyv::Serialize<S> for I256Wrapper {
+    #[inline]
+    fn serialize(&self, serializer: &mut S) -> Result<Self::Resolver, S::Error> {
+        Ok(())
+    }
+}
+
+impl<D: Fallible + ?Sized> rkyv::Deserialize<I256Wrapper, D> for ArchivedI256Wrapper {
+    #[inline]
+    fn deserialize(&self, _: &mut D) -> Result<I256Wrapper, D::Error> {
+        Ok(I256Wrapper::from(self.bytes))
+    }
+}
+
+pub type i128_sum_accumulator_type = Tup3<I256Wrapper, i64, i64>;
+
+pub fn i128_sum_map(val: Option<ByteArray>) -> i128_sum_accumulator_type {
+    match val {
+        None => Tup3::new(I256Wrapper::zero(), 0, 1),
+        Some(val) => Tup3::new(
+           I256Wrapper::from(val.as_slice()),
+           1,
+           1,
+        ),
+    }
+}
+
+pub fn i128_sum_post(val: i128_sum_accumulator_type) -> Option<ByteArray> {
+    if val.1 == 0 {
+       None
+    } else {
+       // Check for overflow
+       if val.0.data < I256::from(i128::MIN) || val.0.data > I256::from(i128::MAX) {
+           panic!("Result of aggregation {} does not fit in 128 bits", val.0.data);
+       }
+       Some(ByteArray::new(&val.0.data.to_be_bytes()[16..]))
+    }
+}
+```
+
+The two functions needed to implement the aggregation are
+`i128_sum_map`, and `i128_sum_post`.
+
+`i128_sum_map` converts a `BINARY(16)` value into an accumulator
+value.  Notice that in the SQL runtime library `BINARY(16)` is
+implemented as a `ByteArray`.
+
+`i128_sum_post` converts the accumulator value into the expected
+result type `BINARY(16)`.
+
+We use the `Tup3` type from our SQL runtime library.  This type
+implements `Add` and other required operations if all fields do.
+The addition of `Tup3` values is done field-wise, and the `Zero` trait
+for `Tup3` is a tuple with all fields zero.
+
+### Creating user-defined non-linear aggregate functions
+
+Currently user-defined non-linear aggregation functions are not
+supported.  These may be added in the future.
+

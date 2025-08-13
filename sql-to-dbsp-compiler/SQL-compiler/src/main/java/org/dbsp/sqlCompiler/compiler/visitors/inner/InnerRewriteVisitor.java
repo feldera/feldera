@@ -1107,14 +1107,14 @@ public abstract class InnerRewriteVisitor
     }
 
     @Override
-    public VisitDecision preorder(DBSPConditionalAggregateExpression expression) {
+    public VisitDecision preorder(DBSPConditionalIncrementExpression expression) {
         this.push(expression);
         DBSPType type = this.transform(expression.type);
         DBSPExpression left = this.transform(expression.left);
         DBSPExpression right = this.transform(expression.right);
         DBSPExpression cond = this.transformN(expression.condition);
         this.pop(expression);
-        DBSPExpression result = new DBSPConditionalAggregateExpression(
+        DBSPExpression result = new DBSPConditionalIncrementExpression(
                 expression.getNode(), expression.opcode, type, left, right, cond);
         this.map(expression, result);
         return VisitDecision.STOP;

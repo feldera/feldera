@@ -162,11 +162,11 @@ public class ExpressionTranslator extends TranslateVisitor<IDBSPInnerNode> {
     }
 
     @Override
-    public void postorder(DBSPConditionalAggregateExpression node) {
+    public void postorder(DBSPConditionalIncrementExpression node) {
         DBSPExpression left = this.getE(node.left);
         DBSPExpression right = this.getE(node.right);
         DBSPExpression condition = this.getEN(node.condition);
-        this.map(node, new DBSPConditionalAggregateExpression(
+        this.map(node, new DBSPConditionalIncrementExpression(
                 node.getNode(), node.opcode, node.getType(), left, right, condition));
     }
 

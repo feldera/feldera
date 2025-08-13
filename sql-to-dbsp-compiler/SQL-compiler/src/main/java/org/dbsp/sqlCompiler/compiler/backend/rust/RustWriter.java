@@ -209,16 +209,23 @@ public abstract class RustWriter extends BaseRustCodeGenerator {
 
     void generateUdfInclude() {
         String stubs = Utilities.getBaseName(DBSPCompiler.STUBS_FILE_NAME);
+        String udf = Utilities.getBaseName(DBSPCompiler.UDF_FILE_NAME);
         this.builder().append("pub mod ")
                 .append(stubs)
                 .append(";")
                 .newline()
                 .append("pub mod ")
-                .append(Utilities.getBaseName(DBSPCompiler.UDF_FILE_NAME))
+                .append(udf)
                 .append(";")
                 .newline()
+                /*
                 .append("pub use crate::")
                 .append(stubs)
+                .append("::*;")
+                .newline()
+                 */
+                .append("pub use crate::")
+                .append(udf)
                 .append("::*;")
                 .newline();
     }
