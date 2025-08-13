@@ -1976,8 +1976,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
             return new DBSPTupleExpression(node, type.to(DBSPTypeTuple.class), ops);
         }
 
-        ExternalFunction ef = this.compiler.getCustomFunctions()
-                .getSignature(function);
+        ExternalFunction ef = this.compiler.getCustomFunctions().getUDF(function);
         if (ef == null)
             throw new CompilationError("Function " + function.singleQuote() + " is unknown", node);
         List<DBSPType> operandTypes = Linq.map(ef.parameterList,

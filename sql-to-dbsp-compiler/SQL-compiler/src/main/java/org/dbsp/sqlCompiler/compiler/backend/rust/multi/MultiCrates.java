@@ -20,6 +20,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPPathExpression;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPComparatorType;
 import org.dbsp.util.Utilities;
 
@@ -137,7 +138,8 @@ public class MultiCrates {
             String string = expression.path.asString();
             if (this.declarations.containsKey(string)) {
                 DBSPDeclaration decl = this.declarations.get(string);
-                if (decl.item.getType().sameType(expression.getType()))
+                if (expression.getType().code == DBSPTypeCode.ANY ||
+                        decl.item.getType().sameType(expression.getType()))
                     this.found = true;
             }
             return VisitDecision.STOP;

@@ -179,6 +179,19 @@ public class ParserTests {
     }
 
     @Test
+    public void createAggregateTEst() throws SqlParseException {
+        SqlToRelCompiler calcite = this.getCompiler();
+        String ddl = """
+                CREATE AGGREGATE x(data VARCHAR) RETURNS VARBINARY;
+                CREATE TYPE I128 AS (a BIGINT, b BIGINT);
+                CREATE LINEAR AGGREGATE yx(arg I128) RETURNS I128;
+                """;
+        List<ParsedStatement> list = calcite.parseStatements(ddl);
+        Assert.assertNotNull(list);
+        Assert.assertEquals(3, list.size());
+    }
+
+    @Test
     public void createFunctionBodyTest() throws SqlParseException {
         SqlToRelCompiler calcite = this.getCompiler();
         String ddl = """

@@ -298,6 +298,37 @@ public class MultiCrateTests extends BaseSQLTests {
     }
 
     @Test
+    public void testMultiUDA() throws IOException, InterruptedException, SQLException {
+        File file = createInputScript("""
+                CREATE LINEAR AGGREGATE I8_AVG(s TINYINT) RETURNS TINYINT;
+                CREATE TABLE T(x TINYINT);
+                CREATE VIEW V AS SELECT I8_AVG(x) FROM T;""");
+
+        File udf = this.createUdfFile("""
+                use feldera_sqllib::*;
+                use crate::Tup2;
+                
+                pub type i8_avg_accumulator_type = Tup2<i32, i32>;
+                
+                pub fn i8_avg_map(val: Option<i8>) -> Tup2<i32, i32> {
+                    match (val) {
+                        None => Tup2::new(0, 1),
+                        Some(x) => Tup2::new(x as i32, 1),
+                    }
+                }
+                
+                pub fn i8_avg_post(val: Tup2<i32, i32>) -> Option<i8> {
+                    Some((val.0 / val.1).try_into().unwrap())
+                }
+                """);
+        this.compileToMultiCrate(file.getAbsolutePath(), true, false);
+        //noinspection ResultOfMethodCallIgnored
+        udf.delete();
+        // If we interrupt the test
+        udf.deleteOnExit();
+    }
+
+    @Test
     public void testMultiUdf() throws IOException, InterruptedException, SQLException {
         File file = createInputScript("""
                 CREATE FUNCTION contains_number(str VARCHAR NOT NULL, value INTEGER) RETURNS BOOLEAN NOT NULL;
