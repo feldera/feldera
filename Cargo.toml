@@ -221,6 +221,7 @@ size-of = { version = "0.1.6", features = [
 ], package = "feldera-size-of" }
 sltsqlvalue = { path = "sql-to-dbsp-compiler/lib/sltsqlvalue" }
 smallvec = { version = "1.15.0", features = ["serde", "write"] }
+smallstr = "0.3.0"
 snap = "1.1.1"
 static-files = "0.2.3"
 static_assertions = "1.1.0"

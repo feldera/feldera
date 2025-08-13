@@ -6,7 +6,7 @@ use feldera_types::serde_with_context::{
 };
 use serde::{de, de::Error as _, Deserializer, Serializer};
 use size_of::{Context, SizeOf};
-use std::fmt::{self, Debug};
+use std::fmt::{self, Debug, Display};
 
 /// A type for storing universally unique identifiers.
 #[derive(
@@ -155,13 +155,6 @@ impl Uuid {
         self.value.as_bytes()
     }
 
-    /// Convert Uuid to string representation
-    #[doc(hidden)]
-    #[allow(clippy::inherent_to_string)]
-    pub fn to_string(self) -> String {
-        self.value.to_string()
-    }
-
     /// Parse a string into a Uuid
     #[doc(hidden)]
     pub fn from_string(value: &String) -> Self {
@@ -178,5 +171,11 @@ impl Uuid {
             value: uuid::Uuid::parse_str(value)
                 .unwrap_or_else(|_| panic!("Cannot parse {value} into a UUID")),
         }
+    }
+}
+
+impl Display for Uuid {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        Display::fmt(&self.value, f)
     }
 }

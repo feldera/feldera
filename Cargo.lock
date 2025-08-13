@@ -4856,6 +4856,7 @@ dependencies = [
  "ryu",
  "serde",
  "serde_json",
+ "smallstr",
  "smallvec",
  "tempfile",
  "thiserror 2.0.12",

@@ -22,11 +22,27 @@ use dbsp::algebra::{HasOne, HasZero, F32, F64};
 use num::{One, Zero};
 use num_traits::cast::NumCast;
 use regex::{Captures, Regex};
-use std::cmp::Ordering;
+use smallstr::SmallString;
 use std::error::Error;
-use std::str::FromStr;
 use std::string::String;
 use std::sync::LazyLock;
+use std::{cmp::Ordering, fmt::Display};
+use std::{fmt::Write, str::FromStr};
+
+trait ToSmallString: Display {
+    fn to_small_string<const N: usize>(&self) -> SmallString<[u8; N]>;
+}
+
+impl<T> ToSmallString for T
+where
+    T: Display,
+{
+    fn to_small_string<const N: usize>(&self) -> SmallString<[u8; N]> {
+        let mut output = SmallString::new();
+        write!(&mut output, "{}", self).unwrap();
+        output
+    }
+}
 
 /// Maps a short type name to a SQL type name.
 /// Maybe we should not have short type names at all...
@@ -1057,7 +1073,7 @@ pub fn cast_to_s_SqlDecimal<const P: usize, const S: usize>(
     size: i32,
     fixed: bool,
 ) -> SqlResult<SqlString> {
-    let result = value.to_string();
+    let result = value.to_small_string::<64>();
     limit_or_size_string(&result, size, fixed)
 }
 
@@ -1131,70 +1147,70 @@ pub fn cast_to_s_Time(value: Time, size: i32, fixed: bool) -> SqlResult<SqlStrin
 #[doc(hidden)]
 #[inline]
 pub fn cast_to_s_i(value: isize, size: i32, fixed: bool) -> SqlResult<SqlString> {
-    let result = value.to_string();
+    let result = value.to_small_string::<32>();
     limit_or_size_string(&result, size, fixed)
 }
 
 #[doc(hidden)]
 #[inline]
 pub fn cast_to_s_i8(value: i8, size: i32, fixed: bool) -> SqlResult<SqlString> {
-    let result = value.to_string();
+    let result = value.to_small_string::<8>();
     limit_or_size_string(&result, size, fixed)
 }
 
 #[doc(hidden)]
 #[inline]
 pub fn cast_to_s_i16(value: i16, size: i32, fixed: bool) -> SqlResult<SqlString> {
-    let result = value.to_string();
+    let result = value.to_small_string::<8>();
     limit_or_size_string(&result, size, fixed)
 }
 
 #[doc(hidden)]
 #[inline]
 pub fn cast_to_s_i32(value: i32, size: i32, fixed: bool) -> SqlResult<SqlString> {
-    let result = value.to_string();
+    let result = value.to_small_string::<16>();
     limit_or_size_string(&result, size, fixed)
 }
 
 #[doc(hidden)]
 #[inline]
 pub fn cast_to_s_i64(value: i64, size: i32, fixed: bool) -> SqlResult<SqlString> {
-    let result = value.to_string();
+    let result = value.to_small_string::<32>();
     limit_or_size_string(&result, size, fixed)
 }
 
 #[doc(hidden)]
 #[inline]
 pub fn cast_to_s_u(value: usize, size: i32, fixed: bool) -> SqlResult<SqlString> {
-    let result = value.to_string();
+    let result = value.to_small_string::<32>();
     limit_or_size_string(&result, size, fixed)
 }
 
 #[doc(hidden)]
 #[inline]
 pub fn cast_to_s_u8(value: u8, size: i32, fixed: bool) -> SqlResult<SqlString> {
-    let result = value.to_string();
+    let result = value.to_small_string::<8>();
     limit_or_size_string(&result, size, fixed)
 }
 
 #[doc(hidden)]
 #[inline]
 pub fn cast_to_s_u16(value: u16, size: i32, fixed: bool) -> SqlResult<SqlString> {
-    let result = value.to_string();
+    let result = value.to_small_string::<8>();
     limit_or_size_string(&result, size, fixed)
 }
 
 #[doc(hidden)]
 #[inline]
 pub fn cast_to_s_u32(value: u32, size: i32, fixed: bool) -> SqlResult<SqlString> {
-    let result = value.to_string();
+    let result = value.to_small_string::<16>();
     limit_or_size_string(&result, size, fixed)
 }
 
 #[doc(hidden)]
 #[inline]
 pub fn cast_to_s_u64(value: u64, size: i32, fixed: bool) -> SqlResult<SqlString> {
-    let result = value.to_string();
+    let result = value.to_small_string::<32>();
     limit_or_size_string(&result, size, fixed)
 }
 
@@ -1560,7 +1576,7 @@ pub fn cast_to_s_ShortInterval_MINUTES_TO_SECONDS(
 
 #[doc(hidden)]
 pub fn cast_to_s_Uuid(value: Uuid, size: i32, fixed: bool) -> SqlResult<SqlString> {
-    let result: String = value.to_string();
+    let result = value.to_small_string::<40>();
     limit_or_size_string(&result, size, fixed)
 }
 
@@ -3843,3 +3859,70 @@ pub fn cast_to_Uuid_bytes(value: ByteArray) -> SqlResult<Uuid> {
 }
 
 cast_function!(Uuid, Uuid, bytes, ByteArray);
+
+#[cfg(test)]
+mod tests {
+    use crate::{
+        cast_to_s_SqlDecimal, cast_to_s_Uuid, cast_to_s_i, cast_to_s_i16, cast_to_s_i32,
+        cast_to_s_i64, cast_to_s_i8, cast_to_s_u, cast_to_s_u16, cast_to_s_u32, cast_to_s_u64,
+        cast_to_s_u8, decimal::SqlDecimal, SqlString, Uuid,
+    };
+
+    #[test]
+    fn string_casts() {
+        assert_eq!(
+            cast_to_s_SqlDecimal(SqlDecimal::<38, 5>::new(123456789, 5).unwrap(), -1, false)
+                .unwrap(),
+            SqlString::from_ref("1234.56789")
+        );
+        assert_eq!(
+            cast_to_s_i(12345, -1, false).unwrap(),
+            SqlString::from_ref("12345")
+        );
+        assert_eq!(
+            cast_to_s_i8(-123, -1, false).unwrap(),
+            SqlString::from_ref("-123")
+        );
+        assert_eq!(
+            cast_to_s_i16(12345, -1, false).unwrap(),
+            SqlString::from_ref("12345")
+        );
+        assert_eq!(
+            cast_to_s_i32(1048576, -1, false).unwrap(),
+            SqlString::from_ref("1048576")
+        );
+        assert_eq!(
+            cast_to_s_i64(4503599627370496, -1, false).unwrap(),
+            SqlString::from_ref("4503599627370496")
+        );
+        assert_eq!(
+            cast_to_s_u(12345, -1, false).unwrap(),
+            SqlString::from_ref("12345")
+        );
+        assert_eq!(
+            cast_to_s_u8(123, -1, false).unwrap(),
+            SqlString::from_ref("123")
+        );
+        assert_eq!(
+            cast_to_s_u16(12345, -1, false).unwrap(),
+            SqlString::from_ref("12345")
+        );
+        assert_eq!(
+            cast_to_s_u32(1048576, -1, false).unwrap(),
+            SqlString::from_ref("1048576")
+        );
+        assert_eq!(
+            cast_to_s_u64(4503599627370496, -1, false).unwrap(),
+            SqlString::from_ref("4503599627370496")
+        );
+        assert_eq!(
+            cast_to_s_Uuid(
+                Uuid::from_string(&String::from("6bc89d6d-5e0d-4c1b-9b57-787bfde2c30d")),
+                -1,
+                false
+            )
+            .unwrap(),
+            SqlString::from_ref("6bc89d6d-5e0d-4c1b-9b57-787bfde2c30d")
+        );
+    }
+}

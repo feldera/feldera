@@ -22,7 +22,7 @@ size_of = ["dep:size-of"]
 [dependencies]
 num-traits = { workspace = true }
 serde = { workspace = true, optional = true }
-smallstr = "0.3.0"
+smallstr = { workspace = true }
 smallvec = { workspace = true }
 size-of = { workspace = true, optional = true }
 rkyv = { workspace = true, features = ["size_64"], optional = true }
