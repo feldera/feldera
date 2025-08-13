@@ -238,7 +238,7 @@ pub enum StorageBackendConfig {
     /// Use the local file system.
     ///
     /// This uses ordinary system file operations.
-    File(FileBackendConfig),
+    File(Box<FileBackendConfig>),
 
     /// Object storage.
     Object(ObjectStorageConfig),

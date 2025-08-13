@@ -1857,13 +1857,24 @@ impl CircuitThread {
             return;
         };
 
-        let feldera_types::config::StorageBackendConfig::File(FileBackendConfig {
-            sync: Some(ref sync),
-            ..
-        }) = options.backend
+        let feldera_types::config::StorageBackendConfig::File(ref file_cfg) = options.backend
         else {
             cb(Err(Arc::new(ControllerError::storage_error(
                 "syncing checkpoint is only supported with file backend".to_owned(),
+                dbsp::storage::backend::StorageError::BackendNotSupported(Box::new(
+                    options.backend.clone(),
+                )),
+            ))));
+            return;
+        };
+
+        let FileBackendConfig {
+            sync: Some(ref sync),
+            ..
+        } = **file_cfg
+        else {
+            cb(Err(Arc::new(ControllerError::storage_error(
+                "sync config is not set; cannot push checkpoints".to_owned(),
                 dbsp::storage::backend::StorageError::BackendNotSupported(Box::new(
                     options.backend.clone(),
                 )),

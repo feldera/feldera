@@ -4,7 +4,8 @@ use crate::dynamic::{self, data::DataTyped};
 use crate::{Error, TypedBox};
 use feldera_types::checkpoint::CheckpointMetadata;
 use feldera_types::constants::{
-    ACTIVATION_MARKER_FILE, ADHOC_TEMP_DIR, CHECKPOINT_DEPENDENCIES, CHECKPOINT_FILE_NAME, DBSP_FILE_EXTENSION, STATE_FILE, STEPS_FILE
+    ACTIVATION_MARKER_FILE, ADHOC_TEMP_DIR, CHECKPOINT_DEPENDENCIES, CHECKPOINT_FILE_NAME,
+    DBSP_FILE_EXTENSION, STATE_FILE, STEPS_FILE,
 };
 use itertools::Itertools;
 

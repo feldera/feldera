@@ -541,7 +541,7 @@ impl StorageBackendFactory for FileBackendFactory {
         Ok(Arc::new(PosixBackend::new(
             storage_config.path(),
             storage_config.cache,
-            config,
+            &**config,
         )))
     }
 }
