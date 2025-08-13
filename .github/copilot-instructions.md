@@ -239,4 +239,43 @@ cargo fmt --all && cargo clippy --no-deps -- -D warnings
 - **Full CI pipeline**: ~45-60 minutes
 - **Container build**: ~20 minutes
 
+## CLAUDE.md Context Awareness
+
+Always read and use the `CLAUDE.md` file in the repository root **and** any `CLAUDE.md` in relevant subdirectories as primary knowledge sources for understanding and generating code in this repo. Copilot **must** treat all `CLAUDE.md` files in this repository as authoritative documentation for understanding the repository’s structure, architecture, conventions, domain rules, and workflows; Copilot must retrieve them before making suggestions and ensure all completions are consistent with their content.
+
+### Priority Rules
+1. Always read the `CLAUDE.md` file in the **repository root** first.
+2. When working in or reasoning about a specific directory, also read that directory’s `CLAUDE.md` file (if present).
+3. If there are multiple nested `CLAUDE.md` files, prefer the closest one to the code being edited for local details, but **never ignore** the root `CLAUDE.md` for global context.
+
+### Context Retrieval Paths
+When locating `CLAUDE.md` files, use these glob patterns to ensure no relevant context is missed:
+
+```
+/CLAUDE.md
+./CLAUDE.md
+**/CLAUDE.md
+```
+
+### Context Usage
+- Before suggesting code, tests, refactors, or documentation, analyze relevant details from:
+  - The root `CLAUDE.md`
+  - Any `CLAUDE.md` in the current working directory
+  - Any `CLAUDE.md` in parent directories up to the repo root
+- Use this information to ensure consistency with:
+  - Project architecture and module responsibilities
+  - Coding style, naming conventions, and design patterns
+  - Domain-specific rules and known constraints
+
+### Behavioral Requirements
+- Do **not** make assumptions that contradict any `CLAUDE.md` content.
+- If `CLAUDE.md` files describe non-obvious utilities, helper functions, or workflows, prefer to reference them rather than reimplement them.
+- When multiple `CLAUDE.md` files cover overlapping topics, merge their insights to produce coherent, repository-aligned output.
+
+### Retrieval Reminders
+- Actively search for relevant `CLAUDE.md` files before responding to prompts that involve repository-specific logic or structure.
+- If a `CLAUDE.md` file is missing for a directory, fall back to parent directories’ `CLAUDE.md` content.
+
+---
+
 **Trust these instructions** - they are comprehensive and tested. Only explore further if you encounter issues not covered above or if the instructions appear outdated.
