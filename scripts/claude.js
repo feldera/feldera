@@ -69,6 +69,8 @@ ${sectionEnd(relPath)}
 
 ---
 `
+const mergedFileHeader =
+'> Important! When `SECTION:some/path/CLAUDE.md START` HTML comment tag is encountered in this file, it means that the content within this tag applies to `some/path/` directory.\n'
 
 /**
  * @param {string} dir
@@ -122,7 +124,7 @@ async function mergeAll() {
   const files = await listClaudeFiles(REPO_ROOT);
   files.sort((a, b) => toRel(a).localeCompare(toRel(b)));
 
-  const sections = [];
+  const sections = [mergedFileHeader];
 
   // If a pre-merge root existed, include it as an (optional) root section
   if (preMergeRoot !== null) {
