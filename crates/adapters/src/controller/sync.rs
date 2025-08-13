@@ -68,10 +68,14 @@ pub fn continuous_pull(
     storage: &CircuitStorageConfig,
     weak: Weak<ServerState>,
 ) -> Result<(), ControllerError> {
-    let StorageBackendConfig::File(FileBackendConfig {
+    let StorageBackendConfig::File(ref file_cfg) = storage.options.backend else {
+        return Ok(());
+    };
+
+    let FileBackendConfig {
         sync: Some(ref sync),
         ..
-    }) = storage.options.backend
+    } = **file_cfg
     else {
         return Ok(());
     };

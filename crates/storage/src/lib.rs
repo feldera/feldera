@@ -1,6 +1,6 @@
 //! Common Types and Trait Definition for Storage in Feldera.
 
-use std::collections::{HashSet, VecDeque};
+use std::collections::HashSet;
 use std::io::{Cursor, ErrorKind};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicI64;
@@ -8,9 +8,7 @@ use std::sync::Arc;
 
 use feldera_types::checkpoint::{CheckpointMetadata, PSpineBatches};
 use feldera_types::config::{StorageBackendConfig, StorageConfig, StorageOptions};
-use feldera_types::constants::{
-    ADHOC_TEMP_DIR, CHECKPOINT_FILE_NAME, CREATE_FILE_EXTENSION, DBSP_FILE_EXTENSION, STEPS_FILE,
-};
+use feldera_types::constants::CREATE_FILE_EXTENSION;
 use serde::de::DeserializeOwned;
 use tracing::warn;
 use uuid::Uuid;
