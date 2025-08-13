@@ -23,11 +23,9 @@ use num::{One, Zero};
 use num_traits::cast::NumCast;
 use regex::{Captures, Regex};
 use smallstr::SmallString;
-use std::error::Error;
-use std::string::String;
-use std::sync::LazyLock;
-use std::{cmp::Ordering, fmt::Display};
+use std::{error::Error, fmt::Display, iter::once};
 use std::{fmt::Write, str::FromStr};
+use std::{marker::PhantomData, sync::LazyLock};
 
 trait ToSmallString: Display {
     fn to_small_string<const N: usize>(&self) -> SmallString<[u8; N]>;
@@ -974,58 +972,126 @@ cast_function!(geopoint, GeoPoint, geopoint, GeoPoint);
 
 /////////// cast to SqlString
 
-// True if the size means "unlimited"
-#[doc(hidden)]
-fn is_unlimited_size(size: i32) -> bool {
-    size < 0
+/// Constraints on string length.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+enum CharacterCount {
+    /// Exact number of characters.
+    Exact(usize),
+
+    /// Maximum number of characters.
+    Limit(usize),
 }
 
-#[inline(always)]
-#[doc(hidden)]
-fn truncate(value: &str, n_chars: usize) -> String {
-    let n_bytes = byte_index(value, n_chars);
-    value[..n_bytes].to_string()
-}
-
-/// Make sure the specified string has exactly the
-/// specified size.
-#[inline(always)]
-#[doc(hidden)]
-fn size_string(value: &str, size: i32) -> String {
-    assert!(!is_unlimited_size(size));
-    let sz = size as usize;
-    match value.len().cmp(&sz) {
-        Ordering::Equal => value.to_string(),
-        Ordering::Greater => truncate(value, sz),
-        Ordering::Less => format!("{value:<sz$}"),
+impl CharacterCount {
+    /// Constructs a set of constraints on the length of a string based on
+    /// `n_chars` and `fixed`:
+    ///
+    /// - If `fixed` is true, then the string must have exactly `n_chars`
+    ///   characters.  `n_chars` must not be negative.
+    ///
+    /// - If `fixed` is false, and `n_chars` is non-negative, then the string
+    ///   must have no more than `n_chars` characters.
+    ///
+    /// - If `fixed` is false, and `n_chars` is negative, then the string's
+    ///   length is unconstrained.
+    fn new(n_chars: i32, fixed: bool) -> Option<Self> {
+        let n_chars: Option<usize> = n_chars.try_into().ok();
+        if fixed {
+            Some(Self::Exact(n_chars.unwrap()))
+        } else {
+            n_chars.map(Self::Limit)
+        }
     }
 }
 
-/// Make sure that the specified string does not exceed
-/// the specified size.
-#[inline(always)]
-#[doc(hidden)]
-fn limit_string(value: &str, size: i32) -> String {
-    if is_unlimited_size(size) {
-        value.to_string()
-    } else {
-        let sz = size as usize;
-        if value.len() < sz {
-            value.to_string()
+/// Describes how to construct a string, as a prefix followed by some number of
+/// spaces (often 0).
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct SizedStringSpec<'a> {
+    /// The prefix string.
+    head: &'a str,
+
+    /// The number of spaces following the prefix.
+    n_spaces: usize,
+}
+
+impl<'a> SizedStringSpec<'a> {
+    /// Constructs a string spec from `value` using constraints `n_chars` and
+    /// `fixed`, which are interpreted as described in [SizeConstraints::new].
+    pub fn for_character_count(value: &str, n_chars: i32, fixed: bool) -> SizedStringSpec {
+        match CharacterCount::new(n_chars, fixed) {
+            None => SizedStringSpec::new(value),
+            Some(CharacterCount::Exact(n_chars)) => {
+                let mut char_count = 0;
+                for (byte_index, _) in value.char_indices() {
+                    char_count += 1;
+                    if char_count > n_chars {
+                        return SizedStringSpec::new(&value[..byte_index]);
+                    }
+                }
+                SizedStringSpec::new(value).with_spaces(n_chars - char_count)
+            }
+            Some(CharacterCount::Limit(max)) => {
+                if value.len() <= max {
+                    SizedStringSpec::new(value)
+                } else {
+                    SizedStringSpec::new(&value[..byte_index(value, max)])
+                }
+            }
+        }
+    }
+
+    pub fn into_sql_string(self) -> SqlString {
+        match self.n_spaces {
+            0 => SqlString::from_ref(self.head),
+            n => SqlString::from_concat_iterator(once(self.head).chain(Spaces::new(n))),
+        }
+    }
+
+    fn new(head: &'a str) -> Self {
+        Self { head, n_spaces: 0 }
+    }
+    fn with_spaces(self, n_spaces: usize) -> Self {
+        Self { n_spaces, ..self }
+    }
+}
+
+/// An iterator that yields strings that total `n` spaces.
+#[derive(Clone)]
+struct Spaces<'a> {
+    n: usize,
+    _phantom: PhantomData<&'a ()>,
+}
+
+impl<'a> Spaces<'a> {
+    fn new(n: usize) -> Self {
+        Self {
+            n,
+            _phantom: PhantomData,
+        }
+    }
+}
+
+impl<'a> Iterator for Spaces<'a> {
+    type Item = &'a str;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        static SPACES: &str = "                                                                ";
+
+        let chunk = self.n.min(SPACES.len());
+        if chunk > 0 {
+            self.n -= chunk;
+            Some(&SPACES[..chunk])
         } else {
-            truncate(value, sz)
+            None
         }
     }
 }
 
 #[inline(always)]
 #[doc(hidden)]
-pub fn limit_or_size_string(value: &str, size: i32, fixed: bool) -> SqlResult<SqlString> {
-    if fixed {
-        Ok(SqlString::from(size_string(value, size)))
-    } else {
-        Ok(SqlString::from(limit_string(value, size)))
-    }
+pub fn limit_or_size_string(value: &str, n_chars: i32, fixed: bool) -> SqlResult<SqlString> {
+    Ok(SizedStringSpec::for_character_count(value, n_chars, fixed).into_sql_string())
 }
 
 macro_rules! cast_to_string {
@@ -1070,7 +1136,7 @@ pub fn cast_to_s_b(value: bool, size: i32, fixed: bool) -> SqlResult<SqlString> 
         }
     } else {
         let result = if value { "TRUE" } else { "FALSE" };
-        limit_or_size_string(&result, size, fixed)
+        limit_or_size_string(result, size, fixed)
     }
 }
 
@@ -1112,8 +1178,13 @@ pub fn cast_to_s_f(value: F32, size: i32, fixed: bool) -> SqlResult<SqlString> {
 
 #[doc(hidden)]
 #[inline]
-pub fn cast_to_s_s(value: SqlString, size: i32, fixed: bool) -> SqlResult<SqlString> {
-    limit_or_size_string(value.str(), size, fixed)
+pub fn cast_to_s_s(value: SqlString, n_chars: i32, fixed: bool) -> SqlResult<SqlString> {
+    let spec = SizedStringSpec::for_character_count(value.str(), n_chars, fixed);
+    if spec.head.len() == value.len() && spec.n_spaces == 0 {
+        Ok(value)
+    } else {
+        Ok(spec.into_sql_string())
+    }
 }
 
 #[doc(hidden)]
@@ -3817,11 +3888,12 @@ mod tests {
         cast_to_s_ShortInterval_HOURS_TO_MINUTES, cast_to_s_ShortInterval_HOURS_TO_SECONDS,
         cast_to_s_ShortInterval_MINUTES, cast_to_s_ShortInterval_MINUTES_TO_SECONDS,
         cast_to_s_ShortInterval_SECONDS, cast_to_s_SqlDecimal, cast_to_s_Uuid, cast_to_s_b,
-        cast_to_s_i, cast_to_s_i16, cast_to_s_i32, cast_to_s_i64, cast_to_s_i8, cast_to_s_u,
-        cast_to_s_u16, cast_to_s_u32, cast_to_s_u64, cast_to_s_u8,
+        cast_to_s_i, cast_to_s_i16, cast_to_s_i32, cast_to_s_i64, cast_to_s_i8, cast_to_s_s,
+        cast_to_s_u, cast_to_s_u16, cast_to_s_u32, cast_to_s_u64, cast_to_s_u8,
+        casts::{CharacterCount, SizedStringSpec},
         decimal::SqlDecimal,
         interval::{LongInterval, ShortInterval},
-        SqlString, Uuid,
+        limit_or_size_string, SqlString, Uuid,
     };
 
     #[test]
@@ -4024,5 +4096,97 @@ mod tests {
         assert!(ArcStr::is_static(
             cast_to_s_b(false, -1, false).unwrap().as_ref()
         ));
+    }
+
+    #[test]
+    fn character_count() {
+        assert_eq!(
+            CharacterCount::new(10, true),
+            Some(CharacterCount::Exact(10))
+        );
+        assert_eq!(
+            CharacterCount::new(10, false),
+            Some(CharacterCount::Limit(10))
+        );
+        assert_eq!(CharacterCount::new(-1, false), None);
+    }
+
+    #[test]
+    #[should_panic]
+    fn invalid_character_count() {
+        CharacterCount::new(-1, true);
+    }
+
+    #[test]
+    fn sized_string_spec() {
+        // Fixed-width case.
+        for (size, expected, n_spaces) in [
+            (0, "", 0),
+            (1, "a", 0),
+            (2, "ab", 0),
+            (3, "ab🥳", 0),
+            (4, "ab🥳c", 0),
+            (5, "ab🥳cd", 0),
+            (6, "ab🥳cd", 1),
+            (7, "ab🥳cd", 2),
+            (8, "ab🥳cd", 3),
+        ] {
+            assert_eq!(
+                SizedStringSpec::for_character_count("ab🥳cd", size, true),
+                SizedStringSpec::new(expected).with_spaces(n_spaces)
+            );
+        }
+
+        // Limited-width case.
+        for (size, expected) in [
+            (-1, "ab🥳cd"),
+            (0, ""),
+            (1, "a"),
+            (2, "ab"),
+            (3, "ab🥳"),
+            (4, "ab🥳c"),
+            (5, "ab🥳cd"),
+            (6, "ab🥳cd"),
+            (7, "ab🥳cd"),
+            (8, "ab🥳cd"),
+        ] {
+            assert_eq!(
+                SizedStringSpec::for_character_count("ab🥳cd", size, false),
+                SizedStringSpec::new(expected),
+                "size={size}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_limit_or_size_string() {
+        for (size, fixed, expected) in [
+            (0, true, ""),
+            (1, true, "a"),
+            (2, true, "ab"),
+            (3, true, "ab🥳"),
+            (4, true, "ab🥳c"),
+            (5, true, "ab🥳cd"),
+            (6, true, "ab🥳cd "),
+            (7, true, "ab🥳cd  "),
+            (-1, false, "ab🥳cd"),
+            (0, false, ""),
+            (1, false, "a"),
+            (2, false, "ab"),
+            (3, false, "ab🥳"),
+            (4, false, "ab🥳c"),
+            (5, false, "ab🥳cd"),
+            (6, false, "ab🥳cd"),
+            (7, false, "ab🥳cd"),
+        ] {
+            assert_eq!(
+                limit_or_size_string("ab🥳cd", size, fixed).unwrap(),
+                SqlString::from_ref(expected)
+            );
+            assert_eq!(
+                cast_to_s_s(SqlString::from_ref("ab🥳cd"), size, fixed).unwrap(),
+                SqlString::from_ref(expected)
+            );
+        }
     }
 }
