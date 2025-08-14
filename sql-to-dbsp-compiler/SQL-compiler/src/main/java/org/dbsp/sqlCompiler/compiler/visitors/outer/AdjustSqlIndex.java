@@ -24,6 +24,10 @@ public class AdjustSqlIndex extends ExpressionTranslator {
             super.postorder(expression);
             return;
         }
+        if (this.maybeGet(expression) != null) {
+            // Already translated
+            return;
+        }
 
         DBSPExpression left = this.getE(expression.left);
         DBSPExpression right = this.getE(expression.right);

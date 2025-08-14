@@ -7,6 +7,7 @@ import org.dbsp.sqlCompiler.compiler.sql.tools.CompilerCircuitStream;
 import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
+import org.dbsp.sqlCompiler.ir.expression.DBSPCloneExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStaticItem;
 import org.dbsp.util.Linq;
@@ -755,5 +756,21 @@ public class Regression1Tests extends SqlIoTest {
                 CREATE VIEW V2 AS SELECT ARRAY_CONTAINS(z, x) FROM T;
                 CREATE VIEW V3 AS SELECT ARRAY_CONTAINS(z, 0) FROM T;
                 CREATE VIEW V4 AS SELECT ARRAY_CONTAINS(z, NULL) FROM T;""");
+    }
+
+    @Test
+    public void issue4577() {
+        var ccs = this.getCCS("""
+                CREATE TABLE T(X VARCHAR);
+                CREATE VIEW V AS SELECT NULLIF(INITCAP(REPLACE(x, '_', ' ')), '') FROM T;""");
+        int[] cloneCount = new int[1];
+        InnerVisitor cloneCounter = new InnerVisitor(ccs.compiler) {
+            @Override
+            public void postorder(DBSPCloneExpression expression) {
+                cloneCount[0]++;
+            }
+        };
+        ccs.visit(cloneCounter.getCircuitVisitor(false));
+        Assert.assertEquals(7, cloneCount[0]);
     }
 }

@@ -116,6 +116,8 @@ public class Logger {
     }
 
     public <T> int getLoggingLevel(Class<T> clazz) {
+        if (this.loggingLevel.isEmpty())
+            return 0;
         for (var e: this.loggingLevel.entrySet()) {
             Class<?> c = e.getKey();
             if (c.isAssignableFrom(clazz))

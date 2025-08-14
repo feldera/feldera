@@ -88,6 +88,11 @@ public class LowerAsof implements CircuitTransform {
         return "LowerAsof";
     }
 
+    @Override
+    public String toString() {
+        return this.getName();
+    }
+
     /** Move the integrate trace operator to the new join */
     static class MoveGC extends CircuitCloneVisitor {
         final Map<DBSPIntegrateTraceRetainValuesOperator, DBSPConcreteAsofJoinOperator> gces;

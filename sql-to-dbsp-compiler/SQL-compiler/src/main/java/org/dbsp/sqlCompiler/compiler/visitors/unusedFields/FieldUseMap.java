@@ -125,7 +125,8 @@ public class FieldUseMap {
 
         @Override
         public FieldInfo project(int depth) {
-            return new Ref(this.type, this.field.project(depth));
+            var proj = this.field.project(depth);
+            return new Ref(this.type, proj);
         }
 
         @Override
@@ -340,7 +341,7 @@ public class FieldUseMap {
         @Override
         public FieldInfo project(int depth) {
             if (depth == 0) {
-                if (this.size() > 1 && this.anyUsed())
+                if (this.anyUsed())
                     return FieldInfo.create(this.type, true);
                 return this;
             }

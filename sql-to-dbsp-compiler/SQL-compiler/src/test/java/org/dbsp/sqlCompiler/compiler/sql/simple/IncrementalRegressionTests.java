@@ -9,9 +9,11 @@ import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.sql.tools.CompilerCircuitStream;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.Passes;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
+import org.dbsp.util.Logger;
 import org.dbsp.util.Utilities;
 import org.junit.Assert;
 import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
@@ -20,6 +22,7 @@ import org.junit.Test;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -773,12 +776,14 @@ public class IncrementalRegressionTests extends SqlIoTest {
     // Tests that are not in the repository; run manually
     @Test @Ignore
     public void extraTests() throws IOException {
+        Logger.INSTANCE.setLoggingLevel(Passes.class, 1);
         String dir = "../extra";
         File file = new File(dir);
         if (file.exists()) {
             File[] toCompile = file.listFiles();
             if (toCompile == null)
                 return;
+            Arrays.sort(toCompile);
             for (File c: toCompile) {
                 if (!c.getName().contains("grouped_orders.sql")) continue;
                 if (c.getName().contains("sql")) {

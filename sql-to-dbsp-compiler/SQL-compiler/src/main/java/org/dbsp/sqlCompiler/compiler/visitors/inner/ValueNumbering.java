@@ -8,6 +8,7 @@ import org.dbsp.sqlCompiler.ir.expression.*;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Logger;
@@ -222,7 +223,9 @@ public class ValueNumbering extends InnerVisitor {
     @Override public void postorder(DBSPCastExpression expression) {
         Representation repr = new Representation("(" + expression.type + "," + expression.safe + ")", false)
                 .add(this.getId(expression.source, expression, 0));
-        this.checkRepresentation(expression, repr, false);
+        boolean expensive = expression.type.is(DBSPTypeString.class)
+                || expression.source.type.is(DBSPTypeString.class);
+        this.checkRepresentation(expression, repr, expensive);
     }
 
     @Override public void postorder(DBSPCloneExpression expression) {
