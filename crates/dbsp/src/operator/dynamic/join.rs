@@ -1868,7 +1868,7 @@ mod test {
 
         for _ in 0..8 {
             //eprintln!("{}", i);
-            circuit.step().unwrap();
+            circuit.transaction().unwrap();
         }
     }
 

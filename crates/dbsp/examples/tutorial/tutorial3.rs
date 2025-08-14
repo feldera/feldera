@@ -59,7 +59,7 @@ fn main() -> Result<()> {
     input_handle.append(&mut input_records);
 
     // Execute circuit.
-    circuit.step()?;
+    circuit.transaction()?;
 
     // Read output from circuit.
     println!("{}", output_handle.consolidate().weighted_count());

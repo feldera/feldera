@@ -51,7 +51,7 @@ use crate::{
         runtime::{Consensus, Runtime},
         schedule::{
             util::{circuit_graph, ownership_constraints},
-            Error, FlushProgress, Scheduler,
+            CommitProgress, Error, Scheduler,
         },
         trace::SchedulerEvent,
         Circuit, GlobalNodeId, NodeId,
@@ -63,13 +63,17 @@ use tokio::{select, sync::Notify, task::JoinSet};
 
 #[derive(Debug)]
 enum FlushState {
+    /// The operator is waiting for all predecessors to be flushed.
     UnflushedDependencies(usize),
+    /// `flush` has been called, but `flush_complete` hasn't yet returned
+    /// `true`.
     Started(Option<Position>),
+    /// Flush has been completed for the current transaction.
     Completed(Option<Position>),
 }
 
 /// A task is a unit of work scheduled by the dynamic scheduler.
-/// It contains a reference to a node in the circuit and associted metadata.
+/// It contains a reference to a node in the circuit and associated metadata.
 struct Task {
     // Immutable fields (initialized once when preparing the scheduler).
     /// Circuit node to be scheduled.
@@ -86,7 +90,7 @@ struct Task {
     /// ready state.
     is_async: bool,
 
-    // Mutable fields reset on each microstep.
+    // Mutable fields reset on each step.
     /// Number of predecessors not yet evaluated.  Set to `num_predecessors`
     /// at the start of each step.
     unsatisfied_dependencies: usize,
@@ -99,7 +103,7 @@ struct Task {
     /// cycle.
     scheduled: bool,
 
-    // Mutable fields reset on each macrostep.
+    // Mutable fields reset on each transaction.
     flush_state: FlushState,
 }
 
@@ -151,16 +155,18 @@ struct Inner {
     /// True when the scheduler is waiting for at least one task to become ready.
     waiting: bool,
 
-    step_in_progress: bool,
+    transaction_in_progress: bool,
 
-    flush: bool,
+    committing: bool,
 
-    flush_complete: bool,
+    /// This scheduler, and all parallel workers have finished flushing
+    /// all operators in the circuit.
+    commit_complete: bool,
 
-    // Reset on each macrostep
+    // Reset on each transaction.
     unflushed_operators: usize,
 
-    global_flush_consensus: Consensus,
+    global_commit_consensus: Consensus,
 }
 
 impl Inner {
@@ -321,11 +327,11 @@ impl Inner {
             notifications: Notifications::new(num_async_nodes),
             handles: JoinSet::new(),
             waiting: false,
-            step_in_progress: false,
-            flush: false,
-            flush_complete: false,
+            transaction_in_progress: false,
+            committing: false,
+            commit_complete: false,
             unflushed_operators: nodes.len(),
-            global_flush_consensus: Consensus::new(),
+            global_commit_consensus: Consensus::new(),
         };
 
         // Setup scheduler callbacks.
@@ -367,7 +373,7 @@ impl Inner {
 
         let circuit = circuit.clone();
 
-        if self.flush && matches!(task.flush_state, FlushState::UnflushedDependencies(0)) {
+        if self.committing && matches!(task.flush_state, FlushState::UnflushedDependencies(0)) {
             circuit.flush_node(node_id);
             task.flush_state = FlushState::Started(None);
         }
@@ -387,103 +393,73 @@ impl Inner {
         }
     }
 
-    fn start_step(&mut self) {
+    fn start_transaction(&mut self) {
         self.unflushed_operators = self.tasks.len();
 
         // Reset unsatisfied dependencies, initialize runnable queue.
         for task in self.tasks.values_mut() {
             task.flush_state = FlushState::UnflushedDependencies(task.num_predecessors);
         }
-        self.step_in_progress = true;
-        self.flush = false;
-        self.flush_complete = false;
+        self.transaction_in_progress = true;
+        self.committing = false;
+        self.commit_complete = false;
     }
 
-    fn flush(&mut self) -> Result<(), Error> {
-        if !self.step_in_progress {
-            return Err(Error::FlushWithoutStep);
+    fn start_commit_transaction(&mut self) -> Result<(), Error> {
+        if !self.transaction_in_progress {
+            return Err(Error::CommitWithoutTransaction);
         }
-        self.flush = true;
+        self.committing = true;
 
         Ok(())
     }
 
-    fn is_flush_complete(&self) -> bool {
-        self.flush_complete
+    fn is_commit_complete(&self) -> bool {
+        self.commit_complete
     }
 
-    fn flush_progress(&self) -> FlushProgress {
-        let mut flush_progress = FlushProgress::new();
+    fn commit_progress(&self) -> CommitProgress {
+        let mut commit_progress = CommitProgress::new();
 
         for (node_id, task) in self.tasks.iter() {
             match &task.flush_state {
-                FlushState::UnflushedDependencies(_) => flush_progress.add_remaining(*node_id),
+                FlushState::UnflushedDependencies(_) => commit_progress.add_remaining(*node_id),
                 FlushState::Completed(progress) => {
-                    flush_progress.add_completed(*node_id, progress.clone())
+                    commit_progress.add_completed(*node_id, progress.clone())
                 }
                 FlushState::Started(progress) => {
-                    flush_progress.add_in_progress(*node_id, progress.clone())
+                    commit_progress.add_in_progress(*node_id, progress.clone())
                 }
             }
         }
 
-        flush_progress
+        commit_progress
     }
 
-    async fn microstep<C>(&mut self, circuit: &C) -> Result<(), Error>
+    async fn step<C>(&mut self, circuit: &C) -> Result<(), Error>
     where
         C: Circuit,
     {
-        if !self.step_in_progress {
-            return Err(Error::MicrostepWithoutStep);
+        if !self.transaction_in_progress {
+            return Err(Error::StepWithoutTransaction);
         }
 
         circuit.log_scheduler_event(&SchedulerEvent::step_start(circuit.global_id()));
         let result = self.do_microstep(circuit).await;
-        if self.flush {
-            self.flush_complete = self
-                .global_flush_consensus
+        if self.committing {
+            self.commit_complete = self
+                .global_commit_consensus
                 .check(self.unflushed_operators == 0)
                 .await?;
         }
 
         circuit.log_scheduler_event(&SchedulerEvent::step_end(circuit.global_id()));
-        if self.flush_complete {
-            self.step_in_progress = false;
+        if self.commit_complete {
+            self.transaction_in_progress = false;
             circuit.tick();
         }
         result
     }
-
-    // async fn finish_step<C>(&mut self, circuit: &C) -> Result<(), Error>
-    // where
-    //     C: Circuit,
-    // {
-    //     self.flush = true;
-    //     // All workers must agree on whether they are ready to finish the step.
-    //     while !self
-    //         .global_flush_consensus
-    //         .check(self.unflushed_operators == 0)
-    //         .await?
-    //     {
-    //         self.microstep(circuit).await?;
-    //     }
-
-    //     Ok(())
-    // }
-
-    // async fn step<C>(&mut self, circuit: &C) -> Result<(), Error>
-    // where
-    //     C: Circuit,
-    // {
-    //     self.start_step();
-    //     self.flush();
-    //     while !self.flush_complete {
-    //         self.microstep(circuit).await?;
-    //     }
-
-    //     Ok(())
-    // }
 
     async fn do_microstep<C>(&mut self, circuit: &C) -> Result<(), Error>
     where
@@ -620,65 +596,36 @@ impl Scheduler for DynamicScheduler {
         Ok(())
     }
 
-    async fn start_step<C>(&self, _circuit: &C) -> Result<(), Error>
+    async fn start_transaction<C>(&self, _circuit: &C) -> Result<(), Error>
     where
         C: Circuit,
     {
         let inner = &mut *self.inner_mut();
 
-        inner.start_step();
+        inner.start_transaction();
 
         Ok(())
     }
 
     #[allow(clippy::await_holding_refcell_ref)]
-    async fn microstep<C>(&self, circuit: &C) -> Result<(), Error>
+    async fn step<C>(&self, circuit: &C) -> Result<(), Error>
     where
         C: Circuit,
     {
         let inner = &mut *self.inner_mut();
 
-        inner.microstep(circuit).await
+        inner.step(circuit).await
     }
 
-    // #[allow(clippy::await_holding_refcell_ref)]
-    // async fn finish_step<C>(&self, circuit: &C) -> Result<(), Error>
-    // where
-    //     C: Circuit,
-    // {
-    //     let inner = &mut *self.inner_mut();
-
-    //     inner.finish_step(circuit).await
-    // }
-
-    // #[allow(clippy::await_holding_refcell_ref)]
-    // async fn step<C>(&self, circuit: &C) -> Result<(), Error>
-    // where
-    //     C: Circuit,
-    // {
-    //     let inner = &mut *self.inner_mut();
-
-    //     let result = inner.step(circuit).await;
-    //     circuit.tick();
-    //     result
-    // }
-
-    fn flush(&self) -> Result<(), Error> {
-        self.inner_mut().flush()
+    fn start_commit_transaction(&self) -> Result<(), Error> {
+        self.inner_mut().start_commit_transaction()
     }
 
-    fn is_flush_complete(&self) -> bool {
-        self.inner().is_flush_complete()
+    fn is_commit_complete(&self) -> bool {
+        self.inner().is_commit_complete()
     }
 
-    fn flush_progress(&self) -> super::FlushProgress {
-        self.inner().flush_progress()
+    fn commit_progress(&self) -> super::CommitProgress {
+        self.inner().commit_progress()
     }
-
-    // async fn finish_step<C>(&self, circuit: &C) -> Result<(), Error>
-    // where
-    //     C: Circuit,
-    // {
-    //     todo!()
-    // }
 }

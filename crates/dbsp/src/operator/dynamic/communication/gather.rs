@@ -232,6 +232,8 @@ unsafe impl<T: Send> Sync for GatherData<T> {}
 struct GatherProducer<T> {
     gather: Arc<GatherData<(T, bool)>>,
     worker: usize,
+
+    // Used to notify the consumer that the current worker has been flushed.
     flushed: bool,
 }
 
@@ -297,7 +299,11 @@ where
 struct GatherConsumer<T: Batch> {
     factories: T::Factories,
     gather: Arc<GatherData<(T, bool)>>,
+
+    /// The number of workers that have flushed their outputs during the current clock cycle.
     flush_count: usize,
+
+    /// Set after flush_count has reached the number of workers and `flush` was called.
     flush_complete: bool,
 }
 

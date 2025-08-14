@@ -40,6 +40,8 @@ use std::{
 
 circuit_cache_key!(TraceId<C, D: BatchReader>(StreamId => Stream<C, D>));
 circuit_cache_key!(BoundsId<D: BatchReader>(StreamId => TraceBounds<<D as BatchReader>::Key, <D as BatchReader>::Val>));
+
+// Trace of a collection delayed by one step.
 circuit_cache_key!(DelayedTraceId<C, D>(StreamId => Stream<C, D>));
 
 /// Lower bound on keys or values in a trace.
@@ -901,6 +903,7 @@ pub struct Z1Trace<C: Circuit, B: Batch, T: Trace> {
     batch_factories: B::Factories,
     // Stream whose integral this Z1 operator stores, if any.
     delta_stream: Option<Stream<C, B>>,
+    flush: bool,
 }
 
 impl<C, B, T> Z1Trace<C, B, T>
@@ -929,6 +932,7 @@ where
             reset_on_clock_start,
             bounds,
             delta_stream: None,
+            flush: false,
         }
     }
 
@@ -1031,7 +1035,7 @@ where
         !self.dirty[scope as usize] && self.replay_state.is_none()
     }
 
-    fn commit(&mut self, base: &StoragePath, pid: Option<&str>) -> Result<(), Error> {
+    fn checkpoint(&mut self, base: &StoragePath, pid: Option<&str>) -> Result<(), Error> {
         let pid = require_persistent_id(pid, &self.global_id)?;
         self.trace
             .as_mut()
@@ -1088,6 +1092,10 @@ where
         self.replay_state = None;
 
         Ok(())
+    }
+
+    fn flush(&mut self) {
+        self.flush = true;
     }
 }
 
@@ -1178,7 +1186,10 @@ where
     async fn eval_strict_owned(&mut self, mut i: T) {
         // println!("Z1-{}::eval_strict_owned", &self.global_id);
 
-        self.time = self.time.advance(0);
+        if self.flush {
+            self.time = self.time.advance(0);
+            self.flush = false;
+        }
 
         let dirty = i.dirty();
 

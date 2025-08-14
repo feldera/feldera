@@ -71,7 +71,7 @@ where
     /// .0;
     ///
     /// for _ in 0..5 {
-    ///     circuit.step().unwrap();
+    ///     circuit.transaction().unwrap();
     /// }
     /// ```
     ///
@@ -185,6 +185,7 @@ where
     R: DBWeight + Erase<B::R>,
     B: DynIndexedZSet + Checkpoint,
 {
+    /// Integrate the input stream, updating the output once per clock tick.
     pub fn accumulate_integrate(&self) -> Stream<ChildCircuit<C, T>, TypedBatch<K, V, R, B>> {
         self.circuit()
             .non_incremental(self, |_child_circuit, stream| Ok(stream.integrate()))
@@ -218,7 +219,7 @@ mod test {
         .0;
 
         for _ in 0..100 {
-            circuit.step().unwrap();
+            circuit.transaction().unwrap();
         }
     }
 
@@ -259,7 +260,7 @@ mod test {
         .0;
 
         for _ in 0..100 {
-            circuit.step().unwrap();
+            circuit.transaction().unwrap();
         }
     }
 
@@ -316,7 +317,7 @@ mod test {
         .0;
 
         for _ in 0..4 {
-            circuit.step().unwrap();
+            circuit.transaction().unwrap();
         }
     }
 }

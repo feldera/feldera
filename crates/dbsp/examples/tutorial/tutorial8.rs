@@ -97,7 +97,7 @@ fn main() -> Result<()> {
     ];
     pop_handle.append(&mut pop_records);
 
-    circuit.step()?;
+    circuit.transaction()?;
 
     output_handle
         .consolidate()

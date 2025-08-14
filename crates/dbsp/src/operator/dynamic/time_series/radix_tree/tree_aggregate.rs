@@ -425,7 +425,7 @@ mod test {
         })
         .unwrap();
 
-        circuit.step().unwrap();
+        circuit.transaction().unwrap();
 
         update_key(
             &input,
@@ -433,7 +433,7 @@ mod test {
             0x1000_0000_0000_0001,
             Tup2(1, 1),
         );
-        circuit.step().unwrap();
+        circuit.transaction().unwrap();
 
         update_key(
             &input,
@@ -441,7 +441,7 @@ mod test {
             0x1000_0000_0000_0002,
             Tup2(2, 1),
         );
-        circuit.step().unwrap();
+        circuit.transaction().unwrap();
 
         update_key(
             &input,
@@ -449,7 +449,7 @@ mod test {
             0x1000_1000_0000_0000,
             Tup2(3, 1),
         );
-        circuit.step().unwrap();
+        circuit.transaction().unwrap();
 
         update_key(
             &input,
@@ -457,7 +457,7 @@ mod test {
             0x1000_0000_0000_0002,
             Tup2(2, -1),
         );
-        circuit.step().unwrap();
+        circuit.transaction().unwrap();
 
         update_key(
             &input,
@@ -507,7 +507,7 @@ mod test {
             0xf300_1000_1100_1001,
             Tup2(10, -1),
         );
-        circuit.step().unwrap();
+        circuit.transaction().unwrap();
 
         update_key(
             &input,
@@ -521,7 +521,7 @@ mod test {
             0xf300_1000_0000_0001,
             Tup2(7, -1),
         );
-        circuit.step().unwrap();
+        circuit.transaction().unwrap();
 
         update_key(
             &input,
@@ -547,7 +547,7 @@ mod test {
             0xf200_0000_0000_0001,
             Tup2(5, -1),
         );
-        circuit.step().unwrap();
+        circuit.transaction().unwrap();
 
         update_key(
             &input,
@@ -567,7 +567,7 @@ mod test {
             0xf300_1000_1000_1001,
             Tup2(9, -1),
         );
-        circuit.step().unwrap();
+        circuit.transaction().unwrap();
 
         update_key(
             &input,
@@ -575,7 +575,7 @@ mod test {
             0xf400_1000_1100_1001,
             Tup2(11, -1),
         );
-        circuit.step().unwrap();
+        circuit.transaction().unwrap();
 
         update_key(
             &input,
@@ -613,6 +613,6 @@ mod test {
             0xf300_1000_1000_0001,
             Tup2(11, 1),
         );
-        circuit.step().unwrap();
+        circuit.transaction().unwrap();
     }
 }

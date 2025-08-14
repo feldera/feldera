@@ -486,12 +486,12 @@ where
         // for details.
         //
         // ```
-        //          ┌────────────────────────────────────────┐
-        //          │                                        │
-        //          │                                        ▼
-        //  stream  │     ┌─────┐  stream.trace()  ┌────────────────────┐      ┌──────┐
-        // ─────────┴─────┤trace├─────────────────►│AggregateIncremental├─────►│upsert├──────►
-        //                └─────┘                  └────────────────────┘      └──────┘
+        //                        ┌────────────────────────────────────────┐
+        //                        │                                        │
+        //                        │                                        ▼
+        // stream ┌────────────┐  │     ┌─────┐  stream.trace()  ┌────────────────────┐      ┌──────┐
+        // ──────►│accumulate  ├──┴────►┤trace├─────────────────►│AggregateIncremental├─────►│upsert├──────►
+        //        └────────────┘        └─────┘                  └────────────────────┘      └──────┘
         // ```
 
         circuit
@@ -1053,7 +1053,7 @@ where
         let delta = delta.as_ref().map(|b| b.ro_snapshot());
 
         // We assume that delta.is_some() implies that the operator is being flushed,
-        // since the integral is always flushed in same microstep as delta.
+        // since the integral is always flushed in same step as delta.
         let input_trace = if delta.is_some() {
             Some(input_trace.ro_snapshot())
         } else {
@@ -1145,7 +1145,7 @@ where
                     // println!("yield {:?}", result);
                     *self.empty_output.borrow_mut() &= result.is_empty();
                     self.output_batch_stats.borrow_mut().add_batch(result.len());
-                    yield (result, !(delta_cursor.key_valid() || key_of_interest.is_some()), delta_cursor.position());
+                    yield (result, false, delta_cursor.position());
                     result = self.output_pairs_factory.default_box();
                     result.reserve(chunk_size);
                 }
@@ -1168,7 +1168,7 @@ where
 
                     *self.empty_output.borrow_mut() &= result.is_empty();
                     self.output_batch_stats.borrow_mut().add_batch(result.len());
-                    yield (result, !(delta_cursor.key_valid() || key_of_interest.is_some()), delta_cursor.position());
+                    yield (result, false, delta_cursor.position());
                     result = self.output_pairs_factory.default_box();
                     result.reserve(chunk_size);
                 }
@@ -1390,7 +1390,7 @@ pub mod test {
             let circuit = RootCircuit::build(|circuit| aggregate_test_circuit(circuit, inputs)).unwrap().0;
 
             for _ in 0..iterations {
-                circuit.step().unwrap();
+                circuit.transaction().unwrap();
             }
         }
 

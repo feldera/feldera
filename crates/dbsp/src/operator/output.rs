@@ -77,6 +77,7 @@ impl<B> Stream<RootCircuit, B>
 where
     B: Batch + Send,
 {
+    /// Output operator that produces a single accumulated output per clock cycle.
     #[track_caller]
     pub fn accumulate_output(&self) -> OutputHandle<SpineSnapshot<B>> {
         self.accumulate_output_persistent(None)
@@ -324,6 +325,7 @@ where
     T: BatchReader<Time = ()> + Send + Clone,
     T::Inner: Send,
 {
+    /// Concatenate outputs produced by all worker threads.
     pub fn concat(&self) -> TypedBatch<T::Key, T::Val, T::R, DynSpineSnapshot<T::IntoBatch>> {
         TypedBatch::new(DynSpineSnapshot::concat(
             <T::IntoBatch as DynBatchReader>::Factories::new::<T::Key, T::Val, T::R>(),
@@ -376,7 +378,7 @@ where
         self.global_id = global_id.clone();
     }
 
-    fn commit(&mut self, base: &StoragePath, pid: Option<&str>) -> Result<(), Error> {
+    fn checkpoint(&mut self, base: &StoragePath, pid: Option<&str>) -> Result<(), Error> {
         let pid = require_persistent_id(pid, &self.global_id)?;
         let as_bytes = to_bytes(&()).expect("Serializing () should work.");
 
@@ -459,7 +461,7 @@ where
         self.global_id = global_id.clone();
     }
 
-    fn commit(&mut self, base: &StoragePath, pid: Option<&str>) -> Result<(), Error> {
+    fn checkpoint(&mut self, base: &StoragePath, pid: Option<&str>) -> Result<(), Error> {
         let pid = require_persistent_id(pid, &self.global_id)?;
         let as_bytes = to_bytes(&()).expect("Serializing () should work.");
 
