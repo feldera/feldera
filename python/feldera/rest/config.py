@@ -12,7 +12,7 @@ class Config:
         api_key: Optional[str] = None,
         version: Optional[str] = None,
         timeout: Optional[float] = None,
-        requests_verify: bool = True,
+        requests_verify: bool | str = True,
     ) -> None:
         """
         :param url: The url to the Feldera API (ex: https://try.feldera.com)
@@ -27,4 +27,4 @@ class Config:
         self.api_key: Optional[str] = api_key
         self.version: Optional[str] = version or "v0"
         self.timeout: Optional[float] = timeout
-        self.requests_verify: bool = requests_verify
+        self.requests_verify: bool | str = requests_verify
