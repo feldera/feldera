@@ -41,6 +41,8 @@ from tests.aggregate_tests.test_row_some import *  # noqa: F403
 from tests.aggregate_tests.test_row_every import *  # noqa: F403
 from tests.aggregate_tests.test_row_tbl import *  # noqa: F403
 from tests.aggregate_tests.test_empty_set import *  # noqa: F403
+from tests.aggregate_tests.test_float_arg_max import *  # noqa: F403
+from tests.aggregate_tests.test_float_arg_min import *  # noqa: F403
 from tests.aggregate_tests.test_float_max import *  # noqa: F403
 from tests.aggregate_tests.test_float_min import *  # noqa: F403
 from tests.aggregate_tests.test_float_tbl import *  # noqa: F403
