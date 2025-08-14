@@ -38,6 +38,13 @@
 //! scans the ready set marking operators ready and moving them to the runnable
 //! queue when necessary. If the runnable queue is still empty, the scheduler
 //! thread parks itself waiting for the next ready notification.
+//!
+//! ## Transactions
+//!
+//! As commit time, the scheduler tracks the number of unflushed predecessors for
+//! each operator and flushes the operator when the number reaches zero. Once all
+//! operators have been flushed, the scheduler waits for all parallel workers to
+//! complete flushing their circuit before declaring the transaction committed.
 
 use std::{
     cell::{Ref, RefCell, RefMut},
@@ -138,6 +145,22 @@ impl Notifications {
     }
 }
 
+enum TransactionPhase {
+    /// Not started
+    Idle,
+
+    /// Started, but not yet committing.
+    Started,
+
+    /// Committing, but not yet complete.
+    /// The value is the number of unflushed operators.
+    Committing(usize),
+
+    /// This scheduler, and all parallel workers have finished flushing
+    /// all operators in the circuit.
+    CommitComplete,
+}
+
 /// Dynamic scheduler internals.
 struct Inner {
     // Immutable fields (initialized once when preparing the scheduler).
@@ -155,17 +178,9 @@ struct Inner {
     /// True when the scheduler is waiting for at least one task to become ready.
     waiting: bool,
 
-    transaction_in_progress: bool,
+    transaction_phase: TransactionPhase,
 
-    committing: bool,
-
-    /// This scheduler, and all parallel workers have finished flushing
-    /// all operators in the circuit.
-    commit_complete: bool,
-
-    // Reset on each transaction.
-    unflushed_operators: usize,
-
+    /// Used to synchronize commit completion across all workers.
     global_commit_consensus: Consensus,
 }
 
@@ -327,10 +342,7 @@ impl Inner {
             notifications: Notifications::new(num_async_nodes),
             handles: JoinSet::new(),
             waiting: false,
-            transaction_in_progress: false,
-            committing: false,
-            commit_complete: false,
-            unflushed_operators: nodes.len(),
+            transaction_phase: TransactionPhase::Idle,
             global_commit_consensus: Consensus::new(),
         };
 
@@ -354,6 +366,21 @@ impl Inner {
         Ok(scheduler)
     }
 
+    fn commit_complete(&self) -> bool {
+        matches!(self.transaction_phase, TransactionPhase::CommitComplete)
+    }
+
+    fn transaction_started(&self) -> bool {
+        matches!(self.transaction_phase, TransactionPhase::Started)
+    }
+
+    fn transaction_in_progress(&self) -> bool {
+        matches!(
+            self.transaction_phase,
+            TransactionPhase::Started | TransactionPhase::Committing(_)
+        )
+    }
+
     /// Spawn a tokio task to evaluate `node_id`.
     fn spawn_task<C>(&mut self, circuit: &C, node_id: NodeId)
     where
@@ -373,7 +400,9 @@ impl Inner {
 
         let circuit = circuit.clone();
 
-        if self.committing && matches!(task.flush_state, FlushState::UnflushedDependencies(0)) {
+        let committing = matches!(self.transaction_phase, TransactionPhase::Committing(_));
+
+        if committing && matches!(task.flush_state, FlushState::UnflushedDependencies(0)) {
             circuit.flush_node(node_id);
             task.flush_state = FlushState::Started(None);
         }
@@ -394,28 +423,24 @@ impl Inner {
     }
 
     fn start_transaction(&mut self) {
-        self.unflushed_operators = self.tasks.len();
-
         // Reset unsatisfied dependencies, initialize runnable queue.
         for task in self.tasks.values_mut() {
             task.flush_state = FlushState::UnflushedDependencies(task.num_predecessors);
         }
-        self.transaction_in_progress = true;
-        self.committing = false;
-        self.commit_complete = false;
+        self.transaction_phase = TransactionPhase::Started;
     }
 
     fn start_commit_transaction(&mut self) -> Result<(), Error> {
-        if !self.transaction_in_progress {
+        if !self.transaction_started() {
             return Err(Error::CommitWithoutTransaction);
         }
-        self.committing = true;
+        self.transaction_phase = TransactionPhase::Committing(self.tasks.len());
 
         Ok(())
     }
 
     fn is_commit_complete(&self) -> bool {
-        self.commit_complete
+        self.commit_complete()
     }
 
     fn commit_progress(&self) -> CommitProgress {
@@ -440,28 +465,31 @@ impl Inner {
     where
         C: Circuit,
     {
-        if !self.transaction_in_progress {
+        if !self.transaction_in_progress() {
             return Err(Error::StepWithoutTransaction);
         }
 
         circuit.log_scheduler_event(&SchedulerEvent::step_start(circuit.global_id()));
-        let result = self.do_microstep(circuit).await;
-        if self.committing {
-            self.commit_complete = self
+        let result = self.do_step(circuit).await;
+        if let TransactionPhase::Committing(unflushed_operators) = &self.transaction_phase {
+            let commit_complete = self
                 .global_commit_consensus
-                .check(self.unflushed_operators == 0)
+                .check(*unflushed_operators == 0)
                 .await?;
+
+            if commit_complete {
+                self.transaction_phase = TransactionPhase::CommitComplete;
+            }
         }
 
         circuit.log_scheduler_event(&SchedulerEvent::step_end(circuit.global_id()));
-        if self.commit_complete {
-            self.transaction_in_progress = false;
+        if self.commit_complete() {
             circuit.tick();
         }
         result
     }
 
-    async fn do_microstep<C>(&mut self, circuit: &C) -> Result<(), Error>
+    async fn do_step<C>(&mut self, circuit: &C) -> Result<(), Error>
     where
         C: Circuit,
     {
@@ -531,7 +559,10 @@ impl Inner {
                     let flush_complete = match &mut self.tasks.get_mut(&node_id).unwrap().flush_state {
                         flush_state@FlushState::Started(_) if circuit.is_flush_complete(node_id) => {
                             *flush_state = FlushState::Completed(progress);
-                            self.unflushed_operators -= 1;
+                            let TransactionPhase::Committing(ref mut unflushed_operators) = self.transaction_phase else {
+                                panic!("Internal scheduler error: flush called while not committing");
+                            };
+                            *unflushed_operators -= 1;
                             true
                         }
                         FlushState::Started(prog) => {
