@@ -131,7 +131,7 @@ impl Display for SqlString {
 
 impl From<ArcStr> for SqlString {
     fn from(value: ArcStr) -> Self {
-        SqlString(StringRef::from(value.to_string()))
+        SqlString(value)
     }
 }
 
