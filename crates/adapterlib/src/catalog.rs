@@ -210,6 +210,10 @@ pub trait SerBatchReader: 'static {
         record_format: RecordFormat,
     ) -> Result<Box<dyn SerCursor + Send + 'a>, ControllerError>;
 
+    /// Returns all batches in this reader.
+    ///
+    /// A reader can wrap a single batch or a spine or a spine snapshot. This method extracts
+    /// all batches from the reader.
     fn batches(&self) -> Vec<Arc<dyn SerBatch>>;
 }
 
@@ -399,6 +403,7 @@ pub trait SerBatchReaderHandle: Send + Sync + DynClone {
     /// but returns output batches as [`SyncSerBatchReader`] trait objects.
     fn take_from_all(&self) -> Vec<Arc<dyn SyncSerBatchReader>>;
 
+    /// Concatenate outputs from all workers into a single batch reader.
     fn concat(&self) -> Arc<dyn SyncSerBatchReader>;
 }
 

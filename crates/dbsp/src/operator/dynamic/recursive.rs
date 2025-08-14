@@ -250,7 +250,7 @@ mod test {
         .unwrap().0;
 
         for _ in 0..8 {
-            root.step().unwrap();
+            root.transaction().unwrap();
         }
     }
 
@@ -345,10 +345,10 @@ mod test {
 
         for _ in 0..10 {
             edges_handle.append(&mut insert_edges.clone());
-            root.step().unwrap();
+            root.transaction().unwrap();
 
             edges_handle.append(&mut delete_edges.clone());
-            root.step().unwrap();
+            root.transaction().unwrap();
 
             let paths = paths_handle.consolidate();
             assert!(paths.is_empty());
@@ -425,7 +425,7 @@ mod test {
         .unwrap().0;
 
         for _ in 0..8 {
-            root.step().unwrap();
+            root.transaction().unwrap();
         }
     }
 }

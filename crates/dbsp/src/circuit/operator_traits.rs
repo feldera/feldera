@@ -225,7 +225,7 @@ pub trait Operator: 'static {
     /// Fails if the operator is stateful, i.e., expects a checkpoint, by
     /// `persistent_id` is `None`
     #[allow(unused_variables)]
-    fn commit(&mut self, base: &StoragePath, persistent_id: Option<&str>) -> Result<(), Error> {
+    fn checkpoint(&mut self, base: &StoragePath, persistent_id: Option<&str>) -> Result<(), Error> {
         Ok(())
     }
 
@@ -264,12 +264,29 @@ pub trait Operator: 'static {
         panic!("end_replay() is not implemented for this operator")
     }
 
+    /// Notifies the operator that all of its predecessors have produced
+    /// all outputs for the current transaction.
+    ///
+    /// Operators that wait for all inputs to arrive before producing
+    /// outputs (e.g., join, aggregate, etc.) can use this notification to
+    /// start processing inputs the next time `eval` is invoked.
     fn flush(&mut self) {}
 
+    /// Invoked after `flush` after each `eval` call to check if all outputs
+    /// have been produced.
+    ///
+    /// Once this method returns `true`, its downstream operators can be flushed.
     fn is_flush_complete(&self) -> bool {
         true
     }
 
+    /// Returns the current progress of the operator in processing the current transaction.
+    ///
+    /// Returns a best-effort estimate of the amount of work done by the operator
+    /// toward processing inputs accumulated before `flush` was called.
+    ///
+    /// Can return `None` if the operator is not in flush mode (i.e., between
+    /// `flush` was called and `is_flush_complete` returns `true`).
     fn flush_progress(&self) -> Option<Position> {
         None
     }

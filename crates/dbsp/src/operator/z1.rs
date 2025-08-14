@@ -303,7 +303,7 @@ where
         }
     }
 
-    fn commit(&mut self, base: &StoragePath, persistent_id: Option<&str>) -> Result<(), Error> {
+    fn checkpoint(&mut self, base: &StoragePath, persistent_id: Option<&str>) -> Result<(), Error> {
         let persistent_id = require_persistent_id(persistent_id, &self.global_id)?;
 
         let committed: CommittedZ1 = (self as &Self).try_into()?;

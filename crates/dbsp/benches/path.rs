@@ -126,7 +126,7 @@ fn main() {
         //let graph = monitor.visualize_circuit();
         //fs::write("path.dot", graph.to_dot()).unwrap();
 
-        circuit.step().unwrap();
+        circuit.transaction().unwrap();
     })
     .expect("runtime initialization should succeed");
 

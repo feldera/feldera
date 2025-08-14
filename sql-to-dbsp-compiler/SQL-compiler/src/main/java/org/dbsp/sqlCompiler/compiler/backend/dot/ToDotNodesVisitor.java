@@ -202,7 +202,7 @@ public class ToDotNodesVisitor extends CircuitVisitor {
                  "join", "join_flatmap", "asof_join", "join_index", "antijoin",
                  "stream_join", "stream_join_index", "stream_antijoin",
                  // delays contain state, but not that much
-                 "accumulate_delay_trace", // "macrostep_delay", "accumulate_differentiate",
+                 "accumulate_delay_trace", // "transaction_delay", "accumulate_differentiate",
                  // group operators
                  "topK", "lag_custom_order", "upsert",
                  "integrate" -> " style=filled fillcolor=orangered";

@@ -103,7 +103,7 @@ mod test {
             .0;
 
         for _ in 0..100 {
-            circuit.step().unwrap();
+            circuit.transaction().unwrap();
         }
     }
 }

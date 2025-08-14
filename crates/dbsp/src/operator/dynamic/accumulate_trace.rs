@@ -27,8 +27,12 @@ use ouroboros::self_referencing;
 use size_of::SizeOf;
 use std::{borrow::Cow, marker::PhantomData, ops::Deref};
 
+// Trace of a collection updated once per clock cycle.
 circuit_cache_key!(AccumulateTraceId<C, D: BatchReader>(StreamId => Stream<C, D>));
+
 circuit_cache_key!(AccumulateBoundsId<D: BatchReader>(StreamId => TraceBounds<<D as BatchReader>::Key, <D as BatchReader>::Val>));
+
+// Trace of a collection delayed by one clock cycle.
 circuit_cache_key!(AccumulateDelayedTraceId<C, D>(StreamId => Stream<C, D>));
 
 pub type TimedSpine<B, C> = Spine<<<C as WithClock>::Time as Timestamp>::TimedBatch<B>>;
@@ -38,7 +42,7 @@ where
     C: Circuit,
     B: Clone + Send + Sync + 'static,
 {
-    /// See [`Stream::trace`].
+    /// See [`Stream::accumulate_trace`].
     pub fn dyn_accumulate_trace(
         &self,
         output_factories: &<TimedSpine<B, C> as BatchReader>::Factories,
@@ -55,7 +59,7 @@ where
         )
     }
 
-    /// See [`Stream::trace_with_bound`].
+    /// See [`Stream::accumulate_trace_with_bound`].
     pub fn dyn_accumulate_trace_with_bound(
         &self,
         output_factories: &<TimedSpine<B, C> as BatchReader>::Factories,
@@ -119,7 +123,7 @@ where
             .clone()
     }
 
-    /// See [`Stream::integrate_trace_retain_keys`].
+    /// See [`Stream::accumulate_integrate_trace_retain_keys`].
     #[track_caller]
     pub fn dyn_accumulate_integrate_trace_retain_keys<TS>(
         &self,
@@ -138,7 +142,7 @@ where
         });
     }
 
-    /// See [`Stream::integrate_trace_retain_values`].
+    /// See [`Stream::accumulate_integrate_trace_retain_values`].
     #[track_caller]
     pub fn dyn_accumulate_integrate_trace_retain_values<TS>(
         &self,
@@ -167,18 +171,14 @@ where
     ///
     /// * For a sharded version of some source stream, we use the source stream.
     ///
-    /// * For a spilled version of some source stream, we use the source stream.
-    ///
-    /// Using the source stream is a safer choice than using the sharded (or
-    /// spilled) version, because it always exists, whereas the sharded version
+    /// Using the source stream is a safer choice than using the sharded version,
+    /// because it always exists, whereas the sharded version
     /// might be created only *after* we get the trace bounds for the source
     /// stream.
     fn accumulate_trace_bounds(&self) -> TraceBounds<B::Key, B::Val>
     where
         B: BatchReader,
     {
-        // We handle moving from the sharded to unsharded stream directly here.
-        // Moving from spilled to unspilled is handled by `spill()`.
         let stream_id = self.try_unsharded_version().stream_id();
 
         self.circuit()
@@ -426,11 +426,12 @@ where
     C: Circuit,
     B: Batch,
 {
+    /// Returns the trace of `self` delayed by one clock cycle.
     pub fn accumulate_delay_trace(&self) -> Stream<C, SpineSnapshot<B>> {
         let circuit = self.circuit();
 
         // The delayed trace should be automatically created while the real trace is
-        // created via `.trace()` or a similar function
+        // created via `.accumulate_trace()` or a similar function
         // FIXME: Create a trace if it doesn't exist
 
         circuit.cache_get_or_insert_with(AccumulateDelayedTraceId::new(self.stream_id()), || {
@@ -445,6 +446,9 @@ where
     }
 }
 
+// TODO: This operator converts `Spine` to `SpineSnapshot` and then adds it to the trace batch by batch. The
+// original spine gets discarded along with any ongoing merges. This wastes work performed by partial merges. To fix
+// this, we need a way to merge spines along with ongoing merges.
 pub struct AccumulateUntimedTraceAppend<T>
 where
     T: Trace,
@@ -662,6 +666,7 @@ pub struct AccumulateZ1Trace<C: Circuit, B: Batch, T: Trace> {
     batch_factories: B::Factories,
     // Stream whose integral this Z1 operator stores, if any.
     delta_stream: Option<Stream<C, B>>,
+    flush: bool,
 }
 
 impl<C, B, T> AccumulateZ1Trace<C, B, T>
@@ -690,6 +695,7 @@ where
             reset_on_clock_start,
             bounds,
             delta_stream: None,
+            flush: false,
         }
     }
 
@@ -792,7 +798,7 @@ where
         !self.dirty[scope as usize] && self.replay_state.is_none()
     }
 
-    fn commit(&mut self, base: &StoragePath, pid: Option<&str>) -> Result<(), Error> {
+    fn checkpoint(&mut self, base: &StoragePath, pid: Option<&str>) -> Result<(), Error> {
         let pid = require_persistent_id(pid, &self.global_id)?;
         self.trace
             .as_mut()
@@ -853,6 +859,10 @@ where
         self.replay_state = None;
 
         Ok(())
+    }
+
+    fn flush(&mut self) {
+        self.flush = true;
     }
 }
 
@@ -943,7 +953,10 @@ where
     async fn eval_strict_owned(&mut self, mut i: T) {
         // println!("Z1-{}::eval_strict_owned", &self.global_id);
 
-        self.time = self.time.advance(0);
+        if self.flush {
+            self.flush = false;
+            self.time = self.time.advance(0);
+        }
 
         let dirty = i.dirty();
 

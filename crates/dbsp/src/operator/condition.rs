@@ -254,7 +254,7 @@ mod test {
         .0;
 
         for _ in 0..3 {
-            circuit.step().unwrap();
+            circuit.transaction().unwrap();
         }
     }
 }

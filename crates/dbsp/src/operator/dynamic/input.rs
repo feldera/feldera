@@ -1464,17 +1464,17 @@ mod test {
 
         for batch in input_batches().into_iter() {
             input_handle.set_for_worker(0, batch);
-            circuit.step().unwrap();
+            circuit.transaction().unwrap();
         }
 
         for batch in input_batches().into_iter() {
             input_handle.update_for_worker(0, |b| *b = batch);
-            circuit.step().unwrap();
+            circuit.transaction().unwrap();
         }
 
         for batch in input_batches().into_iter() {
             input_handle.set_for_all(batch);
-            circuit.step().unwrap();
+            circuit.transaction().unwrap();
         }
     }
 
@@ -1534,7 +1534,7 @@ mod test {
 
         for mut vec in input_vecs().into_iter() {
             input_handle.append(&mut vec);
-            circuit.step().unwrap();
+            circuit.transaction().unwrap();
         }
 
         for vec in input_vecs().into_iter() {
@@ -1543,14 +1543,14 @@ mod test {
             }
             input_handle.push(5, 1);
             input_handle.push(5, -1);
-            circuit.step().unwrap();
+            circuit.transaction().unwrap();
         }
 
         for mut vec in input_vecs().into_iter() {
             input_handle.append(&mut vec);
         }
         input_handle.clear_input();
-        circuit.step().unwrap();
+        circuit.transaction().unwrap();
     }
 
     fn zset_test_mt(workers: usize) {
@@ -1645,7 +1645,7 @@ mod test {
 
         for mut vec in input_indexed_vecs().into_iter() {
             input_handle.append(&mut vec);
-            circuit.step().unwrap();
+            circuit.transaction().unwrap();
         }
 
         for vec in input_indexed_vecs().into_iter() {
@@ -1654,7 +1654,7 @@ mod test {
             }
             input_handle.push(5, (7, 1));
             input_handle.push(5, (7, -1));
-            circuit.step().unwrap();
+            circuit.transaction().unwrap();
         }
     }
 
@@ -1736,7 +1736,7 @@ mod test {
 
         for mut vec in input_set_updates().into_iter() {
             input_handle.append(&mut vec);
-            circuit.step().unwrap();
+            circuit.transaction().unwrap();
         }
 
         let (circuit, input_handle) =
@@ -1746,7 +1746,7 @@ mod test {
             for Tup2(k, b) in vec.into_iter() {
                 input_handle.push(k, b);
             }
-            circuit.step().unwrap();
+            circuit.transaction().unwrap();
         }
     }
 
@@ -1965,7 +1965,7 @@ mod test {
 
         for mut vec in input_map_updates1().into_iter() {
             input_handle.append(&mut vec);
-            circuit.step().unwrap();
+            circuit.transaction().unwrap();
         }
 
         let (circuit, input_handle) =
@@ -1976,7 +1976,7 @@ mod test {
             for Tup2(k, v) in vec.into_iter() {
                 input_handle.push(k, v);
             }
-            circuit.step().unwrap();
+            circuit.transaction().unwrap();
         }
     }
 

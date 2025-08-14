@@ -1515,7 +1515,7 @@ public class ToRustVisitor extends CircuitVisitor {
         this.builder.append(" = ")
                 .append("circuit.add_source(")
                 .increase()
-                .append("MacrostepGenerator::new(|flush| ");
+                .append("TransactionGenerator::new(|flush| ");
         this.builder.append("if Runtime::worker_index() == 0 && flush {");
         operator.function.accept(this.innerVisitor);
         this.builder.append("} else {");

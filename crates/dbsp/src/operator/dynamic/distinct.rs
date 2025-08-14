@@ -328,12 +328,12 @@ where
             )
         } else {
             // ```
-            //          ┌────────────────────────────────────┐
-            //          │                                    │
-            //          │                                    ▼
-            //  stream  │     ┌─────┐  stream.trace()  ┌───────────────────┐
-            // ─────────┴─────┤trace├─────────────────►│DistinctIncremental├─────►
-            //                └─────┘                  └───────────────────┘
+            //                               ┌───────────────────────────────────────────────────────┐
+            //                               │                                                       │
+            //                               │                                                       ▼
+            // stream  ┌───────────┐         │     ┌─────┐  stream.trace()  ┌─────┐        ┌───────────────────┐
+            //  ──────►│accumulate ├─────────┴────►┤trace├─────────────────►│delay├───────►│DistinctIncremental├─────►
+            //         └───────────┘               └─────┘                  └─────┘        └───────────────────┘
             // ```
             circuit.add_binary_operator(
                 StreamingBinaryWrapper::new(DistinctIncremental::new(
@@ -970,7 +970,7 @@ where
         let delta = delta.as_ref().map(|b| b.ro_snapshot());
 
         // We assume that delta.is_some() implies that the operator is being flushed:
-        // since the integral is always flushed in same microstep as delta.
+        // since the integral is always flushed in same step as delta.
         let trace = if delta.is_some() {
             Some(trace.ro_snapshot())
         } else {
@@ -1294,7 +1294,7 @@ mod test {
         .0;
 
         for _ in 0..3 {
-            circuit.step().unwrap();
+            circuit.transaction().unwrap();
         }
     }
 

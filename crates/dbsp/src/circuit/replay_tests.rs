@@ -279,7 +279,7 @@ fn test_replay<I1, I2, I3, O1, O2, O3>(
         }
 
         // Checkpoint.
-        let checkpoint = circuit.commit().unwrap();
+        let checkpoint = circuit.checkpoint().unwrap();
         circuit.kill().unwrap();
         checkpoint
     };

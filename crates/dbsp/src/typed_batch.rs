@@ -55,6 +55,12 @@ pub trait BatchReader: 'static {
         R = Self::DynR,
     >;
 
+    /// Any batch reader can be decomposed into a list of batches.  This type represents the
+    /// type of the batches:
+    ///
+    /// * If the reader wraps an individual batch, then `IntoBatch` is the same as `Inner`.
+    /// * If the reader wraps a spine or a spine snapshot, then `IntoBatch` is the type of the batch
+    ///   in the spine.
     type IntoBatch: DynBatch<Time = Self::Time, Key = Self::DynK, Val = Self::DynV, R = Self::DynR>;
 
     /// Concrete key type.
@@ -107,14 +113,19 @@ pub trait BatchReader: 'static {
     where
         Self: Sized;
 
+    /// Consume `self` and returns the list of dynamically typed batches comprising it.
     fn into_dyn_batches(self) -> Vec<Arc<Self::IntoBatch>>;
 
+    /// Consume `self` and returns the list of statically typed batches comprising it.
     fn into_batches(self) -> Vec<Arc<TypedBatch<Self::Key, Self::Val, Self::R, Self::IntoBatch>>>;
 
+    /// Returns the list of dynamically typed batches comprising `self`.
     fn dyn_batches(&self) -> Vec<Arc<Self::IntoBatch>>;
 
+    /// Returns the list of statically typed batches comprising `self`.
     fn batches(&self) -> Vec<Arc<TypedBatch<Self::Key, Self::Val, Self::R, Self::IntoBatch>>>;
 
+    /// Convert `self` into a spine snapshot.
     fn into_dyn_snapshot(self) -> DynSpineSnapshot<Self::IntoBatch>;
 }
 
@@ -578,6 +589,7 @@ where
     V: DBData + Erase<B::Val>,
     R: DBWeight + Erase<B::R>,
 {
+    /// Concatenate a list of snapshots into a single snapshot.
     pub fn concat<'a, I>(snapshots: I) -> TypedBatch<K, V, R, DynSpineSnapshot<B>>
     where
         I: IntoIterator<Item = &'a Self>,
@@ -588,6 +600,7 @@ where
         ))
     }
 
+    /// Consolidate the batches in the snapshot.
     pub fn consolidate(&self) -> TypedBatch<K, V, R, B> {
         TypedBatch::new(self.inner.consolidate())
     }
@@ -600,6 +613,7 @@ where
     V: DBData + Erase<B::Val>,
     R: DBWeight + Erase<B::R>,
 {
+    /// Consolidate the batches in the trace.
     pub fn consolidate(self) -> TypedBatch<K, V, R, B::Batch> {
         TypedBatch::new(
             self.inner

@@ -1249,7 +1249,7 @@ mod tests {
                 .0;
 
                 for _ in 1..ROUNDS {
-                    circuit.step().unwrap();
+                    circuit.transaction().unwrap();
                 }
             })
             .expect("failed to start runtime");

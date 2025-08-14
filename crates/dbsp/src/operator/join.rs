@@ -331,6 +331,7 @@ where
             .typed()
     }
 
+    /// Non-incremental antijoin operator.
     #[track_caller]
     pub fn stream_antijoin<I2>(&self, other: &Stream<C, I2>) -> Stream<C, I1>
     where

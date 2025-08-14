@@ -22,6 +22,7 @@ use async_stream::stream;
 use std::{borrow::Cow, cell::RefCell, marker::PhantomData};
 
 impl RootCircuit {
+    /// See [`RootCircuit::accumulate_concat_indexed_zsets`].
     pub fn dyn_accumulate_concat_indexed_zsets(
         &self,
         factories: &MonoIndexedZSetFactories,
@@ -30,6 +31,7 @@ impl RootCircuit {
         dyn_accumulate_concat(factories, streams.iter().cloned())
     }
 
+    /// See [`RootCircuit::accumulate_concat_zsets`].
     pub fn dyn_accumulate_concat_zsets(
         &self,
         factories: &MonoZSetFactories,
@@ -40,6 +42,7 @@ impl RootCircuit {
 }
 
 impl NestedCircuit {
+    /// See [`NestedCircuit::accumulate_concat_indexed_zsets`].
     pub fn dyn_acumulate_concat_indexed_zsets(
         &self,
         factories: &MonoIndexedZSetFactories,
@@ -48,6 +51,7 @@ impl NestedCircuit {
         dyn_accumulate_concat(factories, streams.iter().cloned())
     }
 
+    /// See [`NestedCircuit::accumulate_concat_zsets`].
     pub fn dyn_accumulate_concat_zsets(
         &self,
         factories: &MonoZSetFactories,
@@ -161,6 +165,7 @@ impl<Z: IndexedZSet> StreamingNaryOperator<Option<Spine<Z>>, Z> for AccumulateCo
 
         snapshots.resize(inputs.len(), None);
 
+        // Latch final output of each input stream.
         for (i, input) in inputs.iter().enumerate() {
             let snapshot = input.as_ref().as_ref().map(|spine| spine.ro_snapshot());
 

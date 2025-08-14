@@ -360,7 +360,7 @@ mod test {
         .0;
 
         for _ in 0..5 {
-            circuit.step().unwrap();
+            circuit.transaction().unwrap();
         }
     }
 }

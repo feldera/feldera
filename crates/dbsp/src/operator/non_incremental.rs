@@ -3,7 +3,7 @@ use crate::{
         circuit_builder::{CircuitBase, NonIterativeCircuit},
         operator_traits::{ImportOperator, Operator},
         runtime::Consensus,
-        schedule::{DynamicScheduler, Executor, FlushProgress, Scheduler},
+        schedule::{CommitProgress, DynamicScheduler, Executor, Scheduler},
         OwnershipPreference,
     },
     operator::Generator,
@@ -16,6 +16,9 @@ use crate::{
 use impl_trait_for_tuples::impl_for_tuples;
 use std::{borrow::Cow, cell::RefCell, collections::BTreeSet, future::Future, pin::Pin, rc::Rc};
 
+/// A trait for a collection of streams that can be imported into a non-incremental circuit.
+///
+/// Each stream is accumulated and consolidated into a single batch.
 pub trait NonIncrementalInputStreams<C>
 where
     C: Circuit,
@@ -73,6 +76,8 @@ where
     }
 }
 
+/// An executor that evaluates a circuit once per clock cycle after receiving a flush command
+/// from the parent circuit.
 struct NonIterativeExecutor {
     scheduler: DynamicScheduler,
     flush: RefCell<bool>,
@@ -101,21 +106,21 @@ where
         self.scheduler.prepare(circuit, nodes)
     }
 
-    fn start_step<'a>(
+    fn start_transaction<'a>(
         &'a self,
         circuit: &'a C,
     ) -> Pin<Box<dyn Future<Output = Result<(), SchedulerError>> + 'a>> {
-        Box::pin(async { self.scheduler.start_step(circuit).await })
+        Box::pin(async { self.scheduler.start_transaction(circuit).await })
     }
 
-    fn microstep<'a>(
+    fn step<'a>(
         &'a self,
         _circuit: &'a C,
     ) -> Pin<Box<dyn Future<Output = Result<(), SchedulerError>> + 'a>> {
         todo!()
     }
 
-    fn step<'a>(
+    fn transaction<'a>(
         &'a self,
         circuit: &'a C,
     ) -> Pin<Box<dyn Future<Output = Result<(), SchedulerError>> + 'a>> {
@@ -124,26 +129,27 @@ where
             let local = *self.flush.borrow();
             if self.flush_consensus.check(local).await? {
                 *self.flush.borrow_mut() = false;
-                self.scheduler.step(&circuit).await?;
+                self.scheduler.transaction(&circuit).await?;
             }
             Ok(())
         })
     }
 
-    fn flush(&self) -> Result<(), SchedulerError> {
+    fn start_commit_transaction(&self) -> Result<(), SchedulerError> {
         *self.flush.borrow_mut() = true;
         Ok(())
     }
 
-    fn is_flush_complete(&self) -> bool {
+    fn is_commit_complete(&self) -> bool {
         !*self.flush.borrow()
     }
 
-    fn flush_progress(&self) -> FlushProgress {
-        FlushProgress::new()
+    fn commit_progress(&self) -> CommitProgress {
+        CommitProgress::new()
     }
 }
 
+/// Similar to `Accumulator`, but accumulate changes produced by the parent circuit.
 struct ImportAccumulator<B>
 where
     B: DynBatch,
@@ -202,6 +208,18 @@ where
     T: Timestamp,
     Self: Circuit,
 {
+    /// Operator that allows evaluating circuits that don't support incremental evaluation inside
+    /// incremental circuit.
+    ///
+    /// WARNING: This operator is inefficient and is intended for use in testing and debugging.
+    ///
+    /// Since the introduction of transactions, we cannot safely mix incremental and non-incremental
+    /// logic in the same circuit.  Incremental operators can split the processing of a single input
+    /// across multiple steps. Non-incremental operators expect the entire input to arrive in a single
+    /// step. This operator allows us to run non-incremental logic in a separate sub-circuit.
+    ///
+    /// Inputs to this subcircuit are accumulated and consolidated into a single batch. The subcircuit
+    /// is triggered once per clock cycle when all its inputs are complete.
     #[track_caller]
     pub fn non_incremental<F, I, O>(
         &self,

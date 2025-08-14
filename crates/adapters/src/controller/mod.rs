@@ -1358,6 +1358,14 @@ impl CircuitThread {
         Ok(true)
     }
 
+    /// Evaluate the circuit for a single step or a single transaction.
+    ///
+    /// When processing a transaction, perform a single step within the transaction.
+    /// Call `start_transaction` if this is the first step; check transaction commit
+    /// status if a commit is in progress.
+    ///
+    /// When not processing a transaction, call `circuit.transaction` to start and
+    /// instantly commit a transaction.
     fn step_circuit(&mut self) {
         match self.controller.advance_transaction_state() {
             Some(TransactionState::Started(transaction_id)) => {
@@ -1395,6 +1403,7 @@ impl CircuitThread {
             debug!("circuit thread: 'circuit.step' returned");
 
             if let TransactionState::Committing(transaction_id) = transaction_state {
+                // Print transaction commit progress every COMMIT_UPDATE_INTERVAL.
                 // This is temporary until we have API/UI for progress reporting.
                 if self.last_commit_progress_update.elapsed() >= COMMIT_UPDATE_INTERVAL {
                     self.last_commit_progress_update = Instant::now();
@@ -1529,7 +1538,7 @@ impl CircuitThread {
             let written_before = WRITE_BLOCKS_BYTES.sum();
             let checkpoint = CHECKPOINT_LATENCY.record_callback(|| {
                 this.circuit
-                    .commit_with_metadata(this.step, processed_records)
+                    .checkpoint_with_metadata(this.step, processed_records)
                     .map_err(|e| Arc::new(ControllerError::from(e)))
                     .and_then(|circuit| {
                         let uuid = circuit.uuid.to_string();

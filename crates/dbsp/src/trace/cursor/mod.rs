@@ -31,6 +31,7 @@ enum Direction {
     Backward,
 }
 
+/// Represents approximate position of a cursor as an offset and total.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Position {
     pub total: u64,

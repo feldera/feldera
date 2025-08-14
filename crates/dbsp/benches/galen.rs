@@ -265,7 +265,7 @@ fn main() -> Result<()> {
         fs::write(GALEN_GRAPH, graph.to_dot()).unwrap();
 
         let start = Instant::now();
-        circuit.step().unwrap();
+        circuit.transaction().unwrap();
 
         if Runtime::worker_index() == 0 {
             let elapsed = start.elapsed();

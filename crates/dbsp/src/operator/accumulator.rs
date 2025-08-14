@@ -15,6 +15,17 @@ where
     C: Circuit,
     B: Batch,
 {
+    /// Accumulate changes within a clock cycle in a spine.
+    ///
+    /// Outputs a spine containing all input changes accumulated since the previous flush once per clock cycle,
+    /// during flush, and `None` otherwise.
+    ///
+    /// This operator is a key part of efficient processing of long transactions.  It is used in conjunction with
+    /// stateful operators like join, aggregate, distinct, etc., to supply all inputs comprising a transaction at
+    /// once, avoiding computing mutually canceling changes.
+    ///
+    /// Using `Spine` to accumulate changes ensures that during a long transaction changes
+    /// are pushed to storage and get compacted by background workers.
     #[track_caller]
     pub fn accumulate(&self) -> Stream<C, Option<Spine<B>>> {
         let factories = BatchReaderFactories::new::<B::Key, B::Val, B::R>();
@@ -61,7 +72,7 @@ where
     input1: Option<TypedBatch<B1::Key, B1::Val, B1::R, SpineSnapshot<B1::Inner>>>,
     input2: Option<TypedBatch<B2::Key, B2::Val, B2::R, SpineSnapshot<B2::Inner>>>,
     flush: bool,
-    phantom: PhantomData<fn(&B1, B2)>,
+    phantom: PhantomData<fn(&B1, &B2)>,
 }
 
 impl<B1, B2, F> AccumulateApply2<B1, B2, F>

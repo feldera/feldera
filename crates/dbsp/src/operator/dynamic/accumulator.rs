@@ -23,6 +23,7 @@ where
     C: Circuit,
     B: Batch,
 {
+    /// See [`Stream::accumulate`].
     pub fn dyn_accumulate(&self, factories: &B::Factories) -> Stream<C, Option<Spine<B>>> {
         self.circuit()
             .cache_get_or_insert_with(AccumulatorId::new(self.stream_id()), || {

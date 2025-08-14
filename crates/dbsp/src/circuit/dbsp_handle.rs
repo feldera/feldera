@@ -1,7 +1,7 @@
 use crate::circuit::checkpointer::Checkpointer;
 use crate::circuit::metrics::{DBSP_STEP, DBSP_STEP_LATENCY_MICROSECONDS};
 use crate::circuit::runtime::ThreadType;
-use crate::circuit::schedule::{FlushProgress, FlushProgressSummary};
+use crate::circuit::schedule::{CommitProgress, CommitProgressSummary};
 use crate::monitor::visual_graph::Graph;
 use crate::storage::backend::StorageError;
 use crate::trace::MergerType;
@@ -342,6 +342,10 @@ impl DevTweaks {
     }
 }
 
+/// Returns the chunk size for splitter operators, in records.
+///
+/// Operators that split their output into multiple chunks, such as joins, distinct, and aggregation,
+/// should attempt to limit their output to this chunk size.
 pub fn splitter_output_chunk_size() -> usize {
     Runtime::with_dev_tweaks(|d| d.splitter_chunk_size_records as usize)
 }
@@ -534,31 +538,33 @@ impl Runtime {
             while !Runtime::kill_in_progress() {
                 // Wait for command.
                 match command_receiver.try_recv() {
-                    Ok(Command::Step(span)) => {
+                    Ok(Command::Transaction(span)) => {
                         let _guard = span.set_local_parent();
-                        let _worker_span = LocalSpan::enter_with_local_parent("worker-step")
+                        let _worker_span = LocalSpan::enter_with_local_parent("worker-transaction")
                             .with_property(|| ("worker", worker_index_str));
-                        let status = circuit.step().map(|_| Response::Unit);
+                        let status = circuit.transaction().map(|_| Response::Unit);
                         // Send response.
                         if status_sender.send(status).is_err() {
                             return;
                         }
                     }
-                    Ok(Command::StartStep(span)) => {
+                    Ok(Command::StartTransaction(span)) => {
                         let _guard = span.set_local_parent();
-                        let _worker_span = LocalSpan::enter_with_local_parent("worker-start-step")
-                            .with_property(|| ("worker", worker_index_str));
-                        let status = circuit.start_step().map(|_| Response::Unit);
+                        let _worker_span =
+                            LocalSpan::enter_with_local_parent("worker-start-transaction")
+                                .with_property(|| ("worker", worker_index_str));
+                        let status = circuit.start_transaction().map(|_| Response::Unit);
                         // Send response.
                         if status_sender.send(status).is_err() {
                             return;
                         }
                     }
-                    Ok(Command::Flush(span)) => {
+                    Ok(Command::CommitTransaction(span)) => {
                         let _guard = span.set_local_parent();
-                        let _worker_span = LocalSpan::enter_with_local_parent("worker-flush")
-                            .with_property(|| ("worker", worker_index_str));
-                        let status = circuit.flush().map(|_| Response::Unit);
+                        let _worker_span =
+                            LocalSpan::enter_with_local_parent("worker-commit-transaction")
+                                .with_property(|| ("worker", worker_index_str));
+                        let status = circuit.start_commit_transaction().map(|_| Response::Unit);
                         // Send response.
                         if status_sender.send(status).is_err() {
                             return;
@@ -569,39 +575,30 @@ impl Runtime {
                         let _worker_span =
                             LocalSpan::enter_with_local_parent("worker-commit_progress")
                                 .with_property(|| ("worker", worker_index_str));
-                        let status = Ok(Response::CommitProgress(circuit.flush_progress()));
+                        let status = Ok(Response::CommitProgress(circuit.commit_progress()));
                         // Send response.
                         if status_sender.send(status).is_err() {
                             return;
                         }
                     }
-                    Ok(Command::Microstep(span)) => {
-                        let _guard = span.set_local_parent();
-                        let _worker_span = LocalSpan::enter_with_local_parent("worker-microstep")
-                            .with_property(|| ("worker", worker_index_str));
-                        let status = circuit
-                            .microstep()
-                            .map(|_| Response::FlushComplete(circuit.is_flush_complete()));
-                        // Send response.
-                        if status_sender.send(status).is_err() {
-                            return;
-                        }
-                    }
-                    // Ok(Command::FinishStep(span)) => {
-                    //     let _guard = span.set_local_parent();
-                    //     let _worker_span = LocalSpan::enter_with_local_parent("worker-finish-step")
-                    //         .with_property(|| ("worker", worker_index_str));
-                    //     let status = circuit.finish_step().map(|_| Response::Unit);
-                    //     // Send response.
-                    //     if status_sender.send(status).is_err() {
-                    //         return;
-                    //     }
-                    // }
-                    Ok(Command::BootstrapStep(span)) => {
+                    Ok(Command::Step(span)) => {
                         let _guard = span.set_local_parent();
                         let _worker_span = LocalSpan::enter_with_local_parent("worker-step")
                             .with_property(|| ("worker", worker_index_str));
-                        if let Err(e) = circuit.step() {
+                        let status = circuit
+                            .step()
+                            .map(|_| Response::CommitComplete(circuit.is_commit_complete()));
+                        // Send response.
+                        if status_sender.send(status).is_err() {
+                            return;
+                        }
+                    }
+                    Ok(Command::BootstrapStep(span)) => {
+                        let _guard = span.set_local_parent();
+                        let _worker_span =
+                            LocalSpan::enter_with_local_parent("worker-bootstrap-step")
+                                .with_property(|| ("worker", worker_index_str));
+                        if let Err(e) = circuit.transaction() {
                             if status_sender.send(Err(e)).is_err() {
                                 return;
                             }
@@ -645,8 +642,10 @@ impl Runtime {
                             return;
                         }
                     }
-                    Ok(Command::Commit(base)) => {
-                        let response = circuit.commit(&base).map(|_| Response::CheckpointCreated);
+                    Ok(Command::Checkpoint(base)) => {
+                        let response = circuit
+                            .checkpoint(&base)
+                            .map(|_| Response::CheckpointCreated);
                         if status_sender.send(response).is_err() {
                             return;
                         }
@@ -729,11 +728,11 @@ impl Runtime {
 
 #[derive(Clone)]
 enum Command {
-    StartStep(Arc<Span>),
-    Microstep(Arc<Span>),
-    Flush(Arc<Span>),
-    CommitProgress(Arc<Span>),
+    StartTransaction(Arc<Span>),
     Step(Arc<Span>),
+    CommitTransaction(Arc<Span>),
+    CommitProgress(Arc<Span>),
+    Transaction(Arc<Span>),
     /// Execute a step in bootstrap mode.
     BootstrapStep(Arc<Span>),
     CompleteBootstrap,
@@ -745,18 +744,18 @@ enum Command {
         runtime_elapsed: Duration,
     },
     GetLir,
-    Commit(StoragePath),
+    Checkpoint(StoragePath),
     Restore(StoragePath),
 }
 
 impl Debug for Command {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
-            Command::StartStep(_span) => write!(f, "StartStep"),
-            Command::Microstep(_span) => write!(f, "Microstep"),
-            Command::Flush(_span) => write!(f, "Flush"),
-            Command::CommitProgress(_span) => write!(f, "CommitProgress"),
+            Command::StartTransaction(_span) => write!(f, "StartTransaction"),
             Command::Step(_span) => write!(f, "Step"),
+            Command::CommitTransaction(_span) => write!(f, "CommitTransaction"),
+            Command::CommitProgress(_span) => write!(f, "CommitProgress"),
+            Command::Transaction(_span) => write!(f, "Transaction"),
             Command::BootstrapStep(_span) => write!(f, "BootstrapStep"),
             Command::CompleteBootstrap => write!(f, "CompleteBootstrap"),
             Command::EnableProfiler => write!(f, "EnableProfiler"),
@@ -769,7 +768,7 @@ impl Debug for Command {
                 .field("runtime_elapsed", runtime_elapsed)
                 .finish(),
             Command::GetLir => write!(f, "GetLir"),
-            Command::Commit(path) => f.debug_tuple("Commit").field(path).finish(),
+            Command::Checkpoint(path) => f.debug_tuple("Checkpoint").field(path).finish(),
             Command::Restore(path) => f.debug_tuple("Restore").field(path).finish(),
         }
     }
@@ -778,9 +777,9 @@ impl Debug for Command {
 #[derive(Debug)]
 enum Response {
     Unit,
-    FlushComplete(bool),
+    CommitComplete(bool),
     BootstrapComplete(bool),
-    CommitProgress(FlushProgress),
+    CommitProgress(CommitProgress),
     ProfileDump(Graph),
     Profile(WorkerProfile),
     CheckpointCreated,
@@ -816,26 +815,26 @@ pub struct DBSPHandle {
     /// Information about operators that participate in bootstrapping the new parts of the circuit.
     bootstrap_info: Option<BootstrapInfo>,
 }
-pub struct CommitProgress(BTreeMap<u16, FlushProgress>);
+pub struct WorkersCommitProgress(BTreeMap<u16, CommitProgress>);
 
-impl Default for CommitProgress {
+impl Default for WorkersCommitProgress {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl CommitProgress {
+impl WorkersCommitProgress {
     pub fn new() -> Self {
-        CommitProgress(BTreeMap::new())
+        WorkersCommitProgress(BTreeMap::new())
     }
 
-    pub fn insert(&mut self, worker_id: u16, progress: FlushProgress) {
+    pub fn insert(&mut self, worker_id: u16, progress: CommitProgress) {
         debug_assert!(!self.0.contains_key(&worker_id));
         self.0.insert(worker_id, progress);
     }
 
-    pub fn summary(&self) -> FlushProgressSummary {
-        let mut result = FlushProgressSummary::new();
+    pub fn summary(&self) -> CommitProgressSummary {
+        let mut result = CommitProgressSummary::new();
 
         for worker_progress in self.0.values() {
             result.merge(&worker_progress.summary());
@@ -965,20 +964,41 @@ impl DBSPHandle {
         Ok(())
     }
 
-    /// Evaluate the circuit for one clock cycle.
+    /// Start and instantly commit a transaction, waiting for the commit to complete.
     pub fn transaction(&mut self) -> Result<(), DbspError> {
         if self.bootstrap_in_progress() {
             self.step_bootstrap()
         } else {
-            self.step_regular()
+            self.transaction_regular()
         }
     }
 
+    /// Start a transaction.
+    ///
+    /// A transaction consists of a sequence of steps that evaluate a set of inputs for a single logical
+    /// clock tick.
+    ///
+    /// Transaction lifecycle:
+    ///
+    /// ```text
+    ///                              is_commit_complete() = true
+    ///    ┌────────────────────────────────────────────────────────────────────────────────────┐
+    ///    ▼                                                                                    │
+    /// ┌───────┐      start_transaction()      ┌───────────┐ start_commit_transaction()  ┌─────┴────┐
+    /// │ idle  ├──────────────────────────────►│in progress├────────────────────────────►│committing│
+    /// └───────┘                               └────────┬──┘                             └─────────┬┘
+    ///                                           ▲      │                                    ▲     │
+    ///                                           └──────┘                                    └─────┘
+    ///                                            step()                                      step()
+    /// ```
+    ///
+    /// The value of the circuit's logical clock remains unchanged during the transaction.
+    /// The clock advances between transactions.
     pub fn start_transaction(&mut self) -> Result<(), DbspError> {
         let start = Instant::now();
-        let span = Arc::new(Span::root("start_step", SpanContext::random()));
+        let span = Arc::new(Span::root("start_transaction", SpanContext::random()));
         let _guard = span.set_local_parent();
-        let result = self.broadcast_command(Command::StartStep(span), |_, _| {});
+        let result = self.broadcast_command(Command::StartTransaction(span), |_, _| {});
         if let Some(handle) = self.runtime.as_ref() {
             self.runtime_elapsed +=
                 start.elapsed() * handle.runtime().layout().local_workers().len() as u32 * 2;
@@ -986,17 +1006,23 @@ impl DBSPHandle {
         result
     }
 
+    /// Evaluate the circuit for a single step.
+    ///
+    /// In the `in progress` state of the transaction, this method always returns `false`.
+    ///
+    /// In the `committing` state, this method returns `true` when the commit is complete and
+    /// the circuit has produced all outputs for the inputs received during the transaction.
     pub fn step(&mut self) -> Result<bool, DbspError> {
         let start = Instant::now();
-        let span = Arc::new(Span::root("microstep", SpanContext::random()));
+        let span = Arc::new(Span::root("step", SpanContext::random()));
         let _guard = span.set_local_parent();
-        let mut flush_complete = Vec::with_capacity(self.status_receivers.len());
+        let mut commit_complete = Vec::with_capacity(self.status_receivers.len());
 
-        let result = self.broadcast_command(Command::Microstep(span), |_worker, response| {
-            let Response::FlushComplete(complete) = response else {
-                panic!("Expected FlushComplete response, got {response:?}");
+        let result = self.broadcast_command(Command::Step(span), |_worker, response| {
+            let Response::CommitComplete(complete) = response else {
+                panic!("Expected CommitComplete response, got {response:?}");
             };
-            flush_complete.push(complete);
+            commit_complete.push(complete);
         });
         if let Some(handle) = self.runtime.as_ref() {
             self.runtime_elapsed +=
@@ -1005,18 +1031,27 @@ impl DBSPHandle {
 
         result?;
 
-        if flush_complete.iter().all(|complete| *complete) {
-            debug!("Flush complete");
+        let commit_complete = commit_complete.iter().any(|complete| *complete);
+
+        if commit_complete {
+            debug!("Commit complete");
         }
 
-        Ok(flush_complete.iter().all(|complete| *complete))
+        Ok(commit_complete)
     }
 
+    /// Start committing the current transaction by forcing all operators to process
+    /// their inputs to completion.
+    ///
+    /// The caller must invoke `step` repeatedly until the commit is complete.
     pub fn start_commit_transaction(&mut self) -> Result<(), DbspError> {
         let start = Instant::now();
-        let span = Arc::new(Span::root("flush", SpanContext::random()));
+        let span = Arc::new(Span::root(
+            "start_commit_transaction",
+            SpanContext::random(),
+        ));
         let _guard = span.set_local_parent();
-        let result = self.broadcast_command(Command::Flush(span), |_, _| {});
+        let result = self.broadcast_command(Command::CommitTransaction(span), |_, _| {});
         if let Some(handle) = self.runtime.as_ref() {
             self.runtime_elapsed +=
                 start.elapsed() * handle.runtime().layout().local_workers().len() as u32 * 2;
@@ -1024,22 +1059,25 @@ impl DBSPHandle {
         result
     }
 
+    /// Convenience method that calls `start_commit_transaction` and then repeatedly calls `step`
+    /// until the commit is complete.
     pub fn commit_transaction(&mut self) -> Result<(), DbspError> {
         self.start_commit_transaction()?;
 
         loop {
-            let flush_complete = self.step()?;
-            if flush_complete {
+            let commit_complete = self.step()?;
+            if commit_complete {
                 return Ok(());
             }
         }
     }
 
-    pub fn commit_progress(&mut self) -> Result<CommitProgress, DbspError> {
+    /// Estimated commit progress.
+    pub fn commit_progress(&mut self) -> Result<WorkersCommitProgress, DbspError> {
         let span = Arc::new(Span::root("commit_progress", SpanContext::random()));
         let _guard = span.set_local_parent();
 
-        let mut progress = CommitProgress::new();
+        let mut progress = WorkersCommitProgress::new();
 
         self.broadcast_command(Command::CommitProgress(span), |worker, response| {
             let Response::CommitProgress(worker_progress) = response else {
@@ -1065,12 +1103,12 @@ impl DBSPHandle {
         }
     }
 
-    fn step_regular(&mut self) -> Result<(), DbspError> {
+    fn transaction_regular(&mut self) -> Result<(), DbspError> {
         DBSP_STEP.fetch_add(1, Ordering::Relaxed);
         let start = Instant::now();
-        let span = Arc::new(Span::root("step", SpanContext::random()));
+        let span = Arc::new(Span::root("transaction", SpanContext::random()));
         let _guard = span.set_local_parent();
-        let result = self.broadcast_command(Command::Step(span), |_, _| {});
+        let result = self.broadcast_command(Command::Transaction(span), |_, _| {});
         DBSP_STEP_LATENCY_MICROSECONDS
             .lock()
             .unwrap()
@@ -1146,29 +1184,29 @@ impl DBSPHandle {
 
     /// Create a new checkpoint by taking consistent snapshot of the state in
     /// dbsp.
-    pub fn commit_with_metadata(
+    pub fn checkpoint_with_metadata(
         &mut self,
         steps: u64,
         processed_records: u64,
     ) -> Result<CheckpointMetadata, DbspError> {
-        self.commit_as(Uuid::now_v7(), None, Some(steps), Some(processed_records))
+        self.checkpoint_as(Uuid::now_v7(), None, Some(steps), Some(processed_records))
     }
 
     /// TODO: take params steps and processed_records
     /// Create a new checkpoint by taking consistent snapshot of the state in
     /// dbsp.
-    pub fn commit(&mut self) -> Result<CheckpointMetadata, DbspError> {
-        self.commit_as(Uuid::now_v7(), None, None, None)
+    pub fn checkpoint(&mut self) -> Result<CheckpointMetadata, DbspError> {
+        self.checkpoint_as(Uuid::now_v7(), None, None, None)
     }
 
     /// TODO: take params steps and processed_records
     /// Create a new named checkpoint by taking consistent snapshot of the state
     /// in dbsp.
-    pub fn commit_named<S: Into<String> + AsRef<str>>(
+    pub fn checkpoint_named<S: Into<String> + AsRef<str>>(
         &mut self,
         name: S,
     ) -> Result<CheckpointMetadata, DbspError> {
-        self.commit_as(Uuid::now_v7(), Some(name.into()), None, None)
+        self.checkpoint_as(Uuid::now_v7(), Some(name.into()), None, None)
     }
 
     /// Reset circuit state to the point of the given Commit.
@@ -1224,7 +1262,7 @@ impl DBSPHandle {
             .ok_or(DbspError::Storage(StorageError::StorageDisabled))
     }
 
-    fn commit_as(
+    fn checkpoint_as(
         &mut self,
         uuid: Uuid,
         identifier: Option<String>,
@@ -1232,7 +1270,7 @@ impl DBSPHandle {
         processed_records: Option<u64>,
     ) -> Result<CheckpointMetadata, DbspError> {
         let checkpoint_dir = Checkpointer::checkpoint_dir(uuid);
-        self.broadcast_command(Command::Commit(checkpoint_dir), |_, _| {})?;
+        self.broadcast_command(Command::Checkpoint(checkpoint_dir), |_, _| {})?;
         self.checkpointer()
             .unwrap()
             .commit(uuid, identifier, steps, processed_records)
@@ -1661,7 +1699,7 @@ pub(crate) mod tests {
             let (mut dbsp, (input_handle, output_handle, sample_size_handle)) =
                 circuit_fun(&cconf).unwrap();
             for mut batch in input.clone() {
-                let cpm = dbsp.commit().expect("commit shouldn't fail");
+                let cpm = dbsp.checkpoint().expect("commit shouldn't fail");
                 checkpoints.push(cpm);
 
                 sample_size_handle.set_for_all(SAMPLE_SIZE);
@@ -1699,7 +1737,7 @@ pub(crate) mod tests {
         let mut batch = vec![Tup2(1, Tup2(2, 1))];
         input_handle.append(&mut batch);
         dbsp.transaction().unwrap();
-        let cpm = dbsp.commit().expect("commit failed");
+        let cpm = dbsp.checkpoint().expect("commit failed");
         let batchfiles = dbsp
             .checkpointer
             .as_ref()
@@ -1720,9 +1758,9 @@ pub(crate) mod tests {
                 mkcircuit(&cconf).unwrap();
             sample_size_handle.set_for_all(2);
             dbsp.transaction().unwrap();
-            dbsp.commit_named("test-commit").expect("commit failed");
+            dbsp.checkpoint_named("test-commit").expect("commit failed");
             dbsp.transaction().unwrap();
-            dbsp.commit().expect("commit failed");
+            dbsp.checkpoint().expect("commit failed");
         }
 
         {
@@ -1820,7 +1858,7 @@ pub(crate) mod tests {
 
         let (mut dbsp, (input_handle, _, _)) = mkcircuit(&cconf).unwrap();
 
-        let _cpm = dbsp.commit().expect("commit failed");
+        let _cpm = dbsp.checkpoint().expect("commit failed");
         let mut batches: Vec<Vec<Tup2<i32, Tup2<i32, i64>>>> = vec![
             vec![Tup2(1, Tup2(2, 1))],
             vec![Tup2(2, Tup2(3, 1))],
@@ -1835,7 +1873,7 @@ pub(crate) mod tests {
             input_handle.append(&mut chunk[0]);
             input_handle.append(&mut chunk[1]);
             dbsp.transaction().unwrap();
-            let _cpm = dbsp.commit().expect("commit failed");
+            let _cpm = dbsp.checkpoint().expect("commit failed");
         }
 
         let mut prev_count = count_directory_entries(temp.path()).unwrap();
@@ -1860,7 +1898,7 @@ pub(crate) mod tests {
 
         let mut batch: Vec<Tup2<i32, Tup2<i32, i64>>> = vec![Tup2(1, Tup2(2, 1))];
         input_handle.append(&mut batch);
-        dbsp.commit().expect("commit shouldn't fail");
+        dbsp.checkpoint().expect("commit shouldn't fail");
         drop(dbsp);
 
         let incomplete_batch_path = temp.path().join("incomplete_batch.mut");
@@ -1949,7 +1987,7 @@ pub(crate) mod tests {
         let (mut dbsp, (input_handle, _, _)) = mkcircuit(&cconf).unwrap();
         let mut batch: Vec<Tup2<i32, Tup2<i32, i64>>> = vec![Tup2(1, Tup2(2, 1))];
         input_handle.append(&mut batch);
-        let cpi = dbsp.commit().expect("commit shouldn't fail");
+        let cpi = dbsp.checkpoint().expect("commit shouldn't fail");
         drop(dbsp);
 
         cconf.storage.as_mut().unwrap().init_checkpoint = Some(cpi.uuid);
@@ -2001,7 +2039,7 @@ pub(crate) mod tests {
             let (mut dbsp, input_handle) = mkcircuit(&cconf, expected_waterlines.into_iter());
             input_handle.append(&mut batch);
             dbsp.transaction().unwrap();
-            let cpm = dbsp.commit().unwrap();
+            let cpm = dbsp.checkpoint().unwrap();
             cconf.storage.as_mut().unwrap().init_checkpoint = Some(cpm.uuid);
             dbsp.kill().unwrap();
         }

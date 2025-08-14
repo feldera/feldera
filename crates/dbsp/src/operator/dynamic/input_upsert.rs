@@ -1,5 +1,5 @@
 use crate::{
-    algebra::{AddAssignByRef, HasOne, HasZero, IndexedZSet, OrdZSet, PartialOrder, ZTrace},
+    algebra::{HasOne, HasZero, IndexedZSet, OrdZSet, ZTrace},
     circuit::{
         checkpointer::Checkpoint,
         circuit_builder::{register_replay_stream, CircuitBase, RefStreamValue},
@@ -20,7 +20,7 @@ use crate::{
         cursor::Cursor, Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Rkyv,
         Spine,
     },
-    Circuit, DBData, NumEntries, RootCircuit, Stream, Timestamp, ZWeight,
+    Circuit, DBData, NumEntries, RootCircuit, Stream, ZWeight,
 };
 use minitrace::trace;
 use rkyv::{Archive, Deserialize, Serialize};
@@ -468,7 +468,6 @@ where
     batch_factories: B::Factories,
     opt_key_factory: &'static dyn Factory<DynOpt<B::Key>>,
     opt_val_factory: &'static dyn Factory<DynOpt<B::Val>>,
-    time: T::Time,
     patch_func: PatchFunc<T::Val, U>,
 
     // Input batch sizes.
@@ -496,7 +495,6 @@ where
             batch_factories,
             opt_key_factory,
             opt_val_factory,
-            time: T::Time::clock_start(),
             patch_func,
             input_batch_stats: BatchSizeStats::new(),
             output_batch_stats: BatchSizeStats::new(),
@@ -515,10 +513,6 @@ where
         Cow::from("InputUpsert")
     }
 
-    fn clock_end(&mut self, scope: Scope) {
-        self.time = self.time.advance(scope + 1);
-    }
-
     fn metadata(&self, meta: &mut OperatorMeta) {
         meta.extend(metadata! {
             INPUT_BATCHES_LABEL => self.input_batch_stats.metadata(),
@@ -534,7 +528,7 @@ where
 impl<T, U, B> BinaryOperator<T, Vec<Box<DynPairs<T::Key, DynUpdate<T::Val, U>>>>, B>
     for InputUpsert<T, U, B>
 where
-    T: ZTrace,
+    T: ZTrace<Time = ()>,
     U: DataTrait + ?Sized,
     B: IndexedZSet<Key = T::Key, Val = T::Val>,
 {
@@ -619,12 +613,7 @@ where
                 if trace_cursor.seek_key_exact(key) {
                     // println!("{}: found key in trace_cursor", Runtime::worker_index());
                     while trace_cursor.val_valid() {
-                        let mut weight = ZWeight::zero();
-                        trace_cursor.map_times(&mut |t, w| {
-                            if t.less_equal(&self.time) {
-                                weight.add_assign_by_ref(w);
-                            };
-                        });
+                        let weight = **trace_cursor.weight();
 
                         if !weight.is_zero() {
                             let val = trace_cursor.val();
@@ -683,7 +672,6 @@ where
             key_updates.clear();
         }
 
-        self.time = self.time.advance(0);
         builder.done()
     }
 
@@ -704,7 +692,6 @@ where
     E: DataTrait + ?Sized,
 {
     factories: InputUpsertWithWaterlineFactories<B, E>,
-    time: T::Time,
     patch_func: PatchFunc<T::Val, U>,
     filter_func: Box<dyn Fn(&W, &B::Key, &B::Val) -> bool>,
     report_func: Box<dyn Fn(&W, &B::Key, &B::Val, ZWeight, &mut E)>,
@@ -736,7 +723,6 @@ where
     ) -> Self {
         Self {
             factories,
-            time: T::Time::clock_start(),
             patch_func,
             filter_func,
             report_func,
@@ -763,9 +749,14 @@ where
     fn name(&self) -> Cow<'static, str> {
         Cow::from("InputUpsertWithWaterline")
     }
-    fn clock_end(&mut self, scope: Scope) {
-        self.time = self.time.advance(scope + 1);
+
+    fn metadata(&self, meta: &mut OperatorMeta) {
+        meta.extend(metadata! {
+            INPUT_BATCHES_LABEL => self.input_batch_stats.metadata(),
+            OUTPUT_BATCHES_LABEL => self.output_batch_stats.metadata(),
+        });
     }
+
     fn fixedpoint(&self, _scope: Scope) -> bool {
         true
     }
@@ -774,7 +765,7 @@ where
 impl<T, U, B, W, E> TernaryOperator<T, Vec<Box<DynPairs<T::Key, DynUpdate<T::Val, U>>>>, Box<W>, B>
     for InputUpsertWithWaterline<T, U, B, W, E>
 where
-    T: ZTrace + Clone,
+    T: ZTrace<Time = ()> + Clone,
     U: DataTrait + ?Sized,
     B: IndexedZSet<Key = T::Key, Val = T::Val>,
     W: DataTrait + ?Sized,
@@ -882,12 +873,7 @@ where
                 if trace_cursor.seek_key_exact(key) {
                     // println!("{}: found key in trace_cursor", Runtime::worker_index());
                     while trace_cursor.val_valid() {
-                        let mut weight = ZWeight::zero();
-                        trace_cursor.map_times(&mut |t, w| {
-                            if t.less_equal(&self.time) {
-                                weight.add_assign_by_ref(w);
-                            };
-                        });
+                        let weight = **trace_cursor.weight();
 
                         if !weight.is_zero() {
                             let val = trace_cursor.val();
@@ -981,7 +967,6 @@ where
             key_updates.clear();
         }
 
-        self.time = self.time.advance(0);
         let errors = <OrdZSet<E>>::dyn_from_tuples(&self.factories.errors_factory, (), &mut errors);
         self.error_stream_val.put(errors);
 

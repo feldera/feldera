@@ -42,7 +42,7 @@ use crate::{
         },
         runtime::Consensus,
         schedule::{
-            DynamicScheduler, Error as SchedulerError, Executor, FlushProgress, IterativeExecutor,
+            CommitProgress, DynamicScheduler, Error as SchedulerError, Executor, IterativeExecutor,
             OnceExecutor, Scheduler,
         },
         trace::{CircuitEvent, SchedulerEvent},
@@ -996,8 +996,10 @@ pub trait Node: Any {
 
     fn import(&mut self) {}
 
+    /// Call `Operator::flush` on the operator.
     fn flush(&mut self);
 
+    /// Call `Operator::flush_complete` on the operator.
     fn is_flush_complete(&self) -> bool;
 
     /// Notify the node about start of a clock epoch.
@@ -1046,7 +1048,7 @@ pub trait Node: Any {
 
     /// Instructs the node to commit the state of its inner operator to
     /// persistent storage within directory `base`.
-    fn commit(&mut self, base: &StoragePath) -> Result<(), DbspError>;
+    fn checkpoint(&mut self, base: &StoragePath) -> Result<(), DbspError>;
 
     /// Instructs the node to restore the state of its inner operator to
     /// the given checkpoint in directory `base`.
@@ -1735,6 +1737,7 @@ pub trait Circuit: CircuitBase + Clone + WithClock {
         id: NodeId,
     ) -> impl Future<Output = Result<Option<Position>, SchedulerError>>;
 
+    /// Evaluate import node to pull inputs from the parent circuit.
     fn eval_import_node(&self, id: NodeId);
 
     fn flush_node(&self, id: NodeId);
@@ -2133,7 +2136,9 @@ pub trait Circuit: CircuitBase + Clone + WithClock {
         O: Data,
         Op: StrictUnaryOperator<I, O>;
 
-    /// Add a child circuit.
+    /// Add an iterative child circuit.
+    ///
+    /// Creates a child circuit with a nested logical clock.
     ///
     /// Creates an empty circuit with `self` as parent and invokes
     /// `child_constructor` to populate the circuit.  `child_constructor`
@@ -2149,6 +2154,8 @@ pub trait Circuit: CircuitBase + Clone + WithClock {
         F: FnOnce(&mut IterativeCircuit<Self>) -> Result<(T, E), SchedulerError>,
         E: Executor<IterativeCircuit<Self>>;
 
+    /// Like `iterative_subcircuit`, but creates a child circuit that runs on the same
+    /// clock as the parent.
     fn non_iterative_subcircuit<F, T, E>(&self, child_constructor: F) -> Result<T, SchedulerError>
     where
         F: FnOnce(&mut NonIterativeCircuit<Self>) -> Result<(T, E), SchedulerError>,
@@ -2215,7 +2222,7 @@ pub trait Circuit: CircuitBase + Clone + WithClock {
     /// let factorial = |n: usize| (1..=n).product::<usize>();
     /// const ITERATIONS: usize = 10;
     /// for i in 0..ITERATIONS {
-    ///     circuit_handle.step()?;
+    ///     circuit_handle.transaction()?;
     ///     let result = output_handle.take_from_all();
     ///     let result = result.first().unwrap();
     ///     println!("Iteration {:3}: {:3}! = {}", i + 1, i, result);
@@ -2602,8 +2609,10 @@ pub type RootCircuit = ChildCircuit<(), ()>;
 
 pub type NestedCircuit = ChildCircuit<RootCircuit, <() as Timestamp>::Nested>;
 
+/// A child circuit with a nested clock.
 pub type IterativeCircuit<P> = ChildCircuit<P, <<P as WithClock>::Time as Timestamp>::Nested>;
 
+/// A child circuit that runs on the same clock as the parent.
 pub type NonIterativeCircuit<P> = ChildCircuit<P, <P as WithClock>::Time>;
 
 impl<P, T> Clone for ChildCircuit<P, T>
@@ -4144,8 +4153,9 @@ where
         self.operator.fixedpoint(scope)
     }
 
-    fn commit(&mut self, base: &StoragePath) -> Result<(), DbspError> {
-        self.operator.commit(base, self.persistent_id().as_deref())
+    fn checkpoint(&mut self, base: &StoragePath) -> Result<(), DbspError> {
+        self.operator
+            .checkpoint(base, self.persistent_id().as_deref())
     }
 
     fn restore(&mut self, base: &StoragePath) -> Result<(), DbspError> {
@@ -4282,8 +4292,9 @@ where
         self.operator.fixedpoint(scope)
     }
 
-    fn commit(&mut self, base: &StoragePath) -> Result<(), DbspError> {
-        self.operator.commit(base, self.persistent_id().as_deref())
+    fn checkpoint(&mut self, base: &StoragePath) -> Result<(), DbspError> {
+        self.operator
+            .checkpoint(base, self.persistent_id().as_deref())
     }
 
     fn restore(&mut self, base: &StoragePath) -> Result<(), DbspError> {
@@ -4434,8 +4445,9 @@ where
         self.operator.fixedpoint(scope)
     }
 
-    fn commit(&mut self, base: &StoragePath) -> Result<(), DbspError> {
-        self.operator.commit(base, self.persistent_id().as_deref())
+    fn checkpoint(&mut self, base: &StoragePath) -> Result<(), DbspError> {
+        self.operator
+            .checkpoint(base, self.persistent_id().as_deref())
     }
 
     fn restore(&mut self, base: &StoragePath) -> Result<(), DbspError> {
@@ -4579,8 +4591,9 @@ where
         self.operator.fixedpoint(scope)
     }
 
-    fn commit(&mut self, base: &StoragePath) -> Result<(), DbspError> {
-        self.operator.commit(base, self.persistent_id().as_deref())
+    fn checkpoint(&mut self, base: &StoragePath) -> Result<(), DbspError> {
+        self.operator
+            .checkpoint(base, self.persistent_id().as_deref())
     }
 
     fn restore(&mut self, base: &StoragePath) -> Result<(), DbspError> {
@@ -4781,8 +4794,9 @@ where
         self.operator.fixedpoint(scope)
     }
 
-    fn commit(&mut self, base: &StoragePath) -> Result<(), DbspError> {
-        self.operator.commit(base, self.persistent_id().as_deref())
+    fn checkpoint(&mut self, base: &StoragePath) -> Result<(), DbspError> {
+        self.operator
+            .checkpoint(base, self.persistent_id().as_deref())
     }
 
     fn restore(&mut self, base: &StoragePath) -> Result<(), DbspError> {
@@ -4983,8 +4997,9 @@ where
         self.operator.fixedpoint(scope)
     }
 
-    fn commit(&mut self, base: &StoragePath) -> Result<(), DbspError> {
-        self.operator.commit(base, self.persistent_id().as_deref())
+    fn checkpoint(&mut self, base: &StoragePath) -> Result<(), DbspError> {
+        self.operator
+            .checkpoint(base, self.persistent_id().as_deref())
     }
 
     fn restore(&mut self, base: &StoragePath) -> Result<(), DbspError> {
@@ -5159,8 +5174,9 @@ where
         self.operator.fixedpoint(scope)
     }
 
-    fn commit(&mut self, base: &StoragePath) -> Result<(), DbspError> {
-        self.operator.commit(base, self.persistent_id().as_deref())
+    fn checkpoint(&mut self, base: &StoragePath) -> Result<(), DbspError> {
+        self.operator
+            .checkpoint(base, self.persistent_id().as_deref())
     }
 
     fn restore(&mut self, base: &StoragePath) -> Result<(), DbspError> {
@@ -5356,8 +5372,9 @@ where
         self.operator.fixedpoint(scope)
     }
 
-    fn commit(&mut self, base: &StoragePath) -> Result<(), DbspError> {
-        self.operator.commit(base, self.persistent_id().as_deref())
+    fn checkpoint(&mut self, base: &StoragePath) -> Result<(), DbspError> {
+        self.operator
+            .checkpoint(base, self.persistent_id().as_deref())
     }
 
     fn restore(&mut self, base: &StoragePath) -> Result<(), DbspError> {
@@ -5538,8 +5555,9 @@ where
         self.operator.fixedpoint(scope)
     }
 
-    fn commit(&mut self, base: &StoragePath) -> Result<(), DbspError> {
-        self.operator.commit(base, self.persistent_id().as_deref())
+    fn checkpoint(&mut self, base: &StoragePath) -> Result<(), DbspError> {
+        self.operator
+            .checkpoint(base, self.persistent_id().as_deref())
     }
 
     fn restore(&mut self, base: &StoragePath) -> Result<(), DbspError> {
@@ -5707,10 +5725,10 @@ where
         self.operator.borrow().fixedpoint(scope)
     }
 
-    fn commit(&mut self, base: &StoragePath) -> Result<(), DbspError> {
+    fn checkpoint(&mut self, base: &StoragePath) -> Result<(), DbspError> {
         self.operator
             .borrow_mut()
-            .commit(base, self.persistent_id().as_deref())
+            .checkpoint(base, self.persistent_id().as_deref())
     }
 
     fn restore(&mut self, base: &StoragePath) -> Result<(), DbspError> {
@@ -5861,7 +5879,7 @@ where
         self.operator.borrow().fixedpoint(scope)
     }
 
-    fn commit(&mut self, _base: &StoragePath) -> Result<(), DbspError> {
+    fn checkpoint(&mut self, _base: &StoragePath) -> Result<(), DbspError> {
         // The Z-1 operator consists of two logical parts.
         // The first part gets invoked at the start of a clock cycle to retrieve the
         // state stored at the previous clock tick. The second one gets invoked
@@ -6054,17 +6072,17 @@ where
             self.circuit.eval_import_node(node_id)
         }
         Box::pin(async {
-            self.executor.step(&self.circuit).await?;
+            self.executor.transaction(&self.circuit).await?;
             Ok(None)
         })
     }
 
     fn flush(&mut self) {
-        self.executor.flush().unwrap();
+        self.executor.start_commit_transaction().unwrap();
     }
 
     fn is_flush_complete(&self) -> bool {
-        self.executor.is_flush_complete()
+        self.executor.is_commit_complete()
     }
 
     fn clock_start(&mut self, scope: Scope) {
@@ -6088,7 +6106,7 @@ where
         self.circuit.map_nodes_recursive(f)
     }
 
-    fn commit(&mut self, _base: &StoragePath) -> Result<(), DbspError> {
+    fn checkpoint(&mut self, _base: &StoragePath) -> Result<(), DbspError> {
         Ok(())
     }
 
@@ -6145,7 +6163,7 @@ where
 /// Top-level circuit with executor.
 ///
 /// This is the interface to a circuit created with [`RootCircuit::build`].
-/// Call [`CircuitHandle::step`] to run the circuit in the context of the
+/// Call [`CircuitHandle::transaction`] to run the circuit in the context of the
 /// current thread.
 pub struct CircuitHandle {
     circuit: RootCircuit,
@@ -6186,13 +6204,52 @@ pub struct BootstrapInfo {
 }
 
 impl CircuitHandle {
-    /// Function that drives the execution of the circuit.
+    /// Start and instantly commit a transaction, waiting for the commit to complete.
+    pub fn transaction(&self) -> Result<(), DbspError> {
+        self.tokio_runtime
+            .block_on(async {
+                let local_set = LocalSet::new();
+                local_set
+                    .run_until(async { self.executor.transaction(&self.circuit).await })
+                    .await
+            })
+            .map_err(DbspError::Scheduler)
+    }
+
+    /// Start a transaction.
     ///
-    /// Every call to `step()` corresponds to one tick of the global logical
-    /// clock and evaluates each operator in the circuit once.  Before calling,
-    /// store the desired input value in each input stream using its input
-    /// handle.  Each call stores a value in each output stream so, after
-    /// calling, the client may obtain these values using their output handles.
+    /// A transaction consists of a sequence of steps that evaluate a set of inputs for a single logical
+    /// clock tick.
+    pub fn start_transaction(&self) -> Result<(), DbspError> {
+        self.tokio_runtime
+            .block_on(async {
+                let local_set = LocalSet::new();
+                local_set
+                    .run_until(async { self.executor.start_transaction(&self.circuit).await })
+                    .await
+            })
+            .map_err(DbspError::Scheduler)
+    }
+
+    /// Start committing the current transaction by forcing all operators to process
+    /// their inputs to completion.
+    ///
+    /// The caller must invoke `step` repeatedly until the commit is complete.
+    pub fn start_commit_transaction(&self) -> Result<(), DbspError> {
+        self.executor
+            .start_commit_transaction()
+            .map_err(DbspError::Scheduler)
+    }
+
+    pub fn is_commit_complete(&self) -> bool {
+        self.executor.is_commit_complete()
+    }
+
+    pub fn commit_progress(&self) -> CommitProgress {
+        self.executor.commit_progress()
+    }
+
+    /// Evaluate the circuit for a single step.
     pub fn step(&self) -> Result<(), DbspError> {
         self.tokio_runtime
             .block_on(async {
@@ -6204,52 +6261,7 @@ impl CircuitHandle {
             .map_err(DbspError::Scheduler)
     }
 
-    pub fn start_step(&self) -> Result<(), DbspError> {
-        self.tokio_runtime
-            .block_on(async {
-                let local_set = LocalSet::new();
-                local_set
-                    .run_until(async { self.executor.start_step(&self.circuit).await })
-                    .await
-            })
-            .map_err(DbspError::Scheduler)
-    }
-
-    pub fn flush(&self) -> Result<(), DbspError> {
-        self.executor.flush().map_err(DbspError::Scheduler)
-    }
-
-    pub fn is_flush_complete(&self) -> bool {
-        self.executor.is_flush_complete()
-    }
-
-    pub fn flush_progress(&self) -> FlushProgress {
-        self.executor.flush_progress()
-    }
-
-    pub fn microstep(&self) -> Result<(), DbspError> {
-        self.tokio_runtime
-            .block_on(async {
-                let local_set = LocalSet::new();
-                local_set
-                    .run_until(async { self.executor.microstep(&self.circuit).await })
-                    .await
-            })
-            .map_err(DbspError::Scheduler)
-    }
-
-    // pub fn finish_step(&self) -> Result<(), DbspError> {
-    //     self.tokio_runtime
-    //         .block_on(async {
-    //             let local_set = LocalSet::new();
-    //             local_set
-    //                 .run_until(async { self.executor.finish_step(&self.circuit).await })
-    //                 .await
-    //         })
-    //         .map_err(DbspError::Scheduler)
-    // }
-
-    pub fn commit(&mut self, base: &StoragePath) -> Result<(), DbspError> {
+    pub fn checkpoint(&mut self, base: &StoragePath) -> Result<(), DbspError> {
         // if Runtime::worker_index() == 0 {
         //     self.circuit.to_dot_file(
         //         |node| {
@@ -6284,7 +6296,7 @@ impl CircuitHandle {
 
         self.circuit
             .map_nodes_recursive_mut(&mut |node: &mut dyn Node| {
-                DBSP_OPERATOR_COMMIT_LATENCY_MICROSECONDS.record_callback(|| node.commit(base))
+                DBSP_OPERATOR_COMMIT_LATENCY_MICROSECONDS.record_callback(|| node.checkpoint(base))
             })
     }
 
@@ -6714,7 +6726,7 @@ mod tests {
         .0;
 
         for _ in 0..100 {
-            circuit.step().unwrap();
+            circuit.transaction().unwrap();
         }
 
         let mut sum = 0;
@@ -6758,7 +6770,7 @@ mod tests {
         .0;
 
         for _ in 0..100 {
-            circuit.step().unwrap();
+            circuit.transaction().unwrap();
         }
 
         let mut sum = 0;
@@ -6819,7 +6831,7 @@ mod tests {
         .0;
 
         for _ in 1..10 {
-            circuit.step().unwrap();
+            circuit.transaction().unwrap();
         }
 
         let mut expected_output: Vec<usize> = Vec::with_capacity(10);

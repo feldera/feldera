@@ -1,3 +1,21 @@
+//! This module contains several wrappers that make it easier to implement splitter operators
+//! that produce outputs over multiple steps. Such operators generally need to be able to stop
+//! generating outputs at any point and preserve their state until the next step. This can be
+//! highly error prone (this is known as the stack ripping problem).
+//!
+//! It's much easier to implement such operators as streaming operators using `async_stream`
+//! crate's `stream!` macro, which allows to yield outputs at any point in the code.
+//!
+//! We define traits for such operators whose eval method returns `futures::Stream` and
+//! implement wrappers that allow using them as regular binary, ternary, quaternary,
+//! and n-ary operators.
+//!
+//! # Assumptions
+//!
+//! These wrappers assume that the inner operator's `eval` method can only produce multiple inputs
+//! after a `flush` call; otherwise, if `flush` is invoked while the output stream is active, it will
+//! cause ownership conflict and panic.
+
 use std::{borrow::Cow, marker::PhantomData, pin::Pin, rc::Rc};
 
 use crate::{
@@ -97,10 +115,10 @@ where
     }
 
     #[allow(unused_variables)]
-    fn commit(&mut self, base: &StoragePath, persistent_id: Option<&str>) -> Result<(), Error> {
+    fn checkpoint(&mut self, base: &StoragePath, persistent_id: Option<&str>) -> Result<(), Error> {
         Rc::get_mut(&mut self.operator)
             .unwrap()
-            .commit(base, persistent_id)
+            .checkpoint(base, persistent_id)
     }
 
     #[allow(unused_variables)]
@@ -127,6 +145,7 @@ where
     }
 
     fn flush(&mut self) {
+        assert!(self.stream.is_none(), "flush called while stream is active");
         Rc::get_mut(&mut self.operator).unwrap().flush();
     }
 
@@ -259,10 +278,10 @@ where
     }
 
     #[allow(unused_variables)]
-    fn commit(&mut self, base: &StoragePath, persistent_id: Option<&str>) -> Result<(), Error> {
+    fn checkpoint(&mut self, base: &StoragePath, persistent_id: Option<&str>) -> Result<(), Error> {
         Rc::get_mut(&mut self.operator)
             .unwrap()
-            .commit(base, persistent_id)
+            .checkpoint(base, persistent_id)
     }
 
     #[allow(unused_variables)]
@@ -289,6 +308,7 @@ where
     }
 
     fn flush(&mut self) {
+        assert!(self.stream.is_none(), "flush called while stream is active");
         Rc::get_mut(&mut self.operator).unwrap().flush();
     }
 
@@ -426,10 +446,10 @@ where
     }
 
     #[allow(unused_variables)]
-    fn commit(&mut self, base: &StoragePath, persistent_id: Option<&str>) -> Result<(), Error> {
+    fn checkpoint(&mut self, base: &StoragePath, persistent_id: Option<&str>) -> Result<(), Error> {
         Rc::get_mut(&mut self.operator)
             .unwrap()
-            .commit(base, persistent_id)
+            .checkpoint(base, persistent_id)
     }
 
     #[allow(unused_variables)]
@@ -456,6 +476,7 @@ where
     }
 
     fn flush(&mut self) {
+        assert!(self.stream.is_none(), "flush called while stream is active");
         Rc::get_mut(&mut self.operator).unwrap().flush();
     }
 
@@ -591,10 +612,10 @@ where
     }
 
     #[allow(unused_variables)]
-    fn commit(&mut self, base: &StoragePath, persistent_id: Option<&str>) -> Result<(), Error> {
+    fn checkpoint(&mut self, base: &StoragePath, persistent_id: Option<&str>) -> Result<(), Error> {
         Rc::get_mut(&mut self.operator)
             .unwrap()
-            .commit(base, persistent_id)
+            .checkpoint(base, persistent_id)
     }
 
     #[allow(unused_variables)]
@@ -621,6 +642,7 @@ where
     }
 
     fn flush(&mut self) {
+        assert!(self.stream.is_none(), "flush called while stream is active");
         Rc::get_mut(&mut self.operator).unwrap().flush();
     }
 

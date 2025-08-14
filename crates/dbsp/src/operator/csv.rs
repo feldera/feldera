@@ -128,6 +128,6 @@ mod test {
         .unwrap()
         .0;
 
-        circuit.step().unwrap();
+        circuit.transaction().unwrap();
     }
 }

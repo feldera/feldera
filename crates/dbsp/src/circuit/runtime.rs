@@ -480,7 +480,7 @@ impl Runtime {
     ///
     ///     // Run circuit for 100 clock cycles.
     ///     for _ in 0..100 {
-    ///         root.step().unwrap();
+    ///         root.transaction().unwrap();
     ///     }
     /// })
     /// .unwrap();
@@ -858,6 +858,8 @@ impl Runtime {
     }
 }
 
+/// A synchronization primitive that allows multiple threads within a runtime to agree
+/// when a condition is satisfied.
 pub(crate) enum Consensus {
     SingleThreaded,
     MultiThreaded {
@@ -898,6 +900,11 @@ impl Consensus {
         }
     }
 
+    /// Returns `true` if all workers vote `true`.
+    ///
+    /// # Arguments
+    ///
+    /// * `local` - Local vote by the current worker.
     pub async fn check(&self, local: bool) -> Result<bool, SchedulerError> {
         match self {
             Self::SingleThreaded => Ok(local),
@@ -1114,7 +1121,7 @@ mod tests {
             .0;
 
             for _ in 0..100 {
-                root.step().unwrap();
+                root.transaction().unwrap();
             }
 
             assert_eq!(&*data.borrow(), &(1..101).collect::<Vec<usize>>());
@@ -1156,7 +1163,7 @@ mod tests {
             .0;
 
             loop {
-                if root.step().is_err() {
+                if root.transaction().is_err() {
                     return;
                 }
             }

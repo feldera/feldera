@@ -173,7 +173,7 @@ where
         panic!("'Window' operator used in fixedpoint iteration")
     }
 
-    fn commit(&mut self, base: &StoragePath, persistent_id: Option<&str>) -> Result<(), Error> {
+    fn checkpoint(&mut self, base: &StoragePath, persistent_id: Option<&str>) -> Result<(), Error> {
         let persistent_id = require_persistent_id(persistent_id, &self.global_id)?;
         let window_path = Self::checkpoint_file(base, persistent_id);
 
@@ -671,7 +671,7 @@ mod test {
 
             index1_handle.append(&mut input.next().unwrap());
 
-            circuit.step().unwrap();
+            circuit.transaction().unwrap();
 
             let output = SpineSnapshot::<OrdIndexedZSet<u64, String>>::concat(
                 &output_handle.take_from_all(),
@@ -742,7 +742,7 @@ mod test {
 
             index1_handle.append(&mut input.next().unwrap());
 
-            circuit.step().unwrap();
+            circuit.transaction().unwrap();
 
             let output = SpineSnapshot::<OrdIndexedZSet<u64, String>>::concat(
                 &output_handle.take_from_all(),
@@ -825,7 +825,7 @@ mod test {
 
             index1_handle.append(&mut input.next().unwrap());
 
-            circuit.step().unwrap();
+            circuit.transaction().unwrap();
 
             let output = SpineSnapshot::<OrdIndexedZSet<u64, String>>::concat(
                 &output_handle.take_from_all(),
@@ -1035,7 +1035,7 @@ mod test {
                 expected_outputs.next().unwrap().iter().collect::<Vec<_>>()
             );
 
-            let cpm = circuit.commit().unwrap();
+            let cpm = circuit.checkpoint().unwrap();
             cconf.storage.as_mut().unwrap().init_checkpoint = Some(cpm.uuid);
             circuit.kill().unwrap();
         }

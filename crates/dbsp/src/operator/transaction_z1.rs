@@ -18,23 +18,23 @@ impl<C, D> Stream<C, D>
 where
     C: Circuit,
 {
-    /// Applies [`MacrostepZ1`] operator to `self`.
+    /// Applies [`TransactionZ1`] operator to `self`.
     #[track_caller]
-    pub fn macrostep_delay_with_initial_value(&self, initial: D) -> Stream<C, D>
+    pub fn transaction_delay_with_initial_value(&self, initial: D) -> Stream<C, D>
     where
         D: Checkpoint + Eq + SizeOf + NumEntries + Clone + 'static,
     {
         let delay_pid = self
             .get_persistent_id()
-            .map(|pid| format!("{pid}.macro_delay"));
+            .map(|pid| format!("{pid}.transaction_delay"));
 
         self.circuit()
-            .add_unary_operator(MacrostepZ1::new(initial.clone()), self)
+            .add_unary_operator(TransactionZ1::new(initial.clone()), self)
             .set_persistent_id(delay_pid.as_deref())
     }
 }
 
-pub struct MacrostepZ1<T> {
+pub struct TransactionZ1<T> {
     zero: T,
     // For error reporting,
     global_id: GlobalNodeId,
@@ -45,26 +45,26 @@ pub struct MacrostepZ1<T> {
 }
 
 #[derive(rkyv::Serialize, rkyv::Deserialize, rkyv::Archive)]
-pub struct CommittedMacroZ1 {
+pub struct CommittedTransactionZ1 {
     old_value: Vec<u8>,
     new_value: Vec<u8>,
 }
 
-impl<T> TryFrom<&MacrostepZ1<T>> for CommittedMacroZ1
+impl<T> TryFrom<&TransactionZ1<T>> for CommittedTransactionZ1
 where
     T: Checkpoint,
 {
     type Error = Error;
 
-    fn try_from(z1: &MacrostepZ1<T>) -> Result<CommittedMacroZ1, Error> {
-        Ok(CommittedMacroZ1 {
+    fn try_from(z1: &TransactionZ1<T>) -> Result<CommittedTransactionZ1, Error> {
+        Ok(CommittedTransactionZ1 {
             old_value: z1.old_value.checkpoint()?,
             new_value: z1.new_value.checkpoint()?,
         })
     }
 }
 
-impl<T> MacrostepZ1<T>
+impl<T> TransactionZ1<T>
 where
     T: Checkpoint + Clone,
 {
@@ -86,16 +86,16 @@ where
     /// - `persistent_id`: The persistent id that identifies the spine within
     ///   the circuit for a given checkpoint.
     fn checkpoint_file<P: AsRef<str>>(base: &StoragePath, persistent_id: P) -> StoragePath {
-        base.child(format!("macro-z1-{}.dat", persistent_id.as_ref()))
+        base.child(format!("transaction-z1-{}.dat", persistent_id.as_ref()))
     }
 }
 
-impl<T> Operator for MacrostepZ1<T>
+impl<T> Operator for TransactionZ1<T>
 where
     T: Checkpoint + Eq + SizeOf + NumEntries + Clone + 'static,
 {
     fn name(&self) -> Cow<'static, str> {
-        Cow::from("Macro Z^-1")
+        Cow::from("Transaction Z^-1")
     }
 
     fn clock_start(&mut self, _scope: Scope) {}
@@ -119,11 +119,12 @@ where
         }
     }
 
-    fn commit(&mut self, base: &StoragePath, persistent_id: Option<&str>) -> Result<(), Error> {
+    fn checkpoint(&mut self, base: &StoragePath, persistent_id: Option<&str>) -> Result<(), Error> {
         let persistent_id = require_persistent_id(persistent_id, &self.global_id)?;
 
-        let committed: CommittedMacroZ1 = (self as &Self).try_into()?;
-        let as_bytes = to_bytes(&committed).expect("Serializing CommittedMacroZ1 should work.");
+        let committed: CommittedTransactionZ1 = (self as &Self).try_into()?;
+        let as_bytes =
+            to_bytes(&committed).expect("Serializing CommittedTransactionZ1 should work.");
         Runtime::storage_backend()
             .unwrap()
             .write(&Self::checkpoint_file(base, persistent_id), as_bytes)?;
@@ -135,7 +136,7 @@ where
 
         let z1_path = Self::checkpoint_file(base, persistent_id);
         let content = Runtime::storage_backend().unwrap().read(&z1_path)?;
-        let committed = unsafe { rkyv::archived_root::<CommittedMacroZ1>(&content) };
+        let committed = unsafe { rkyv::archived_root::<CommittedTransactionZ1>(&content) };
 
         let mut old_value = self.zero.clone();
         let mut new_value = self.zero.clone();
@@ -159,7 +160,7 @@ where
     }
 }
 
-impl<T> UnaryOperator<T, T> for MacrostepZ1<T>
+impl<T> UnaryOperator<T, T> for TransactionZ1<T>
 where
     T: Checkpoint + Eq + SizeOf + NumEntries + Clone + 'static,
 {
@@ -182,12 +183,12 @@ where
 mod test {
     use crate::{
         circuit::operator_traits::{Operator, UnaryOperator},
-        operator::MacrostepZ1,
+        operator::TransactionZ1,
     };
 
     #[tokio::test]
-    async fn macrostep_z1_test() {
-        let mut z1 = MacrostepZ1::new(0);
+    async fn transaction_z1_test() {
+        let mut z1 = TransactionZ1::new(0);
 
         z1.clock_start(0);
         assert_eq!(z1.eval(&1).await, 0);
