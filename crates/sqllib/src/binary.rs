@@ -75,6 +75,9 @@ impl SerializeWithContext<SqlSerdeConfig> for ByteArray {
             BinaryFormat::PgHex => {
                 serializer.serialize_str(&format!("\\x{}", hex::encode(&self.data)))
             }
+            BinaryFormat::CHex => {
+                serializer.serialize_str(&format!("0x{}", hex::encode(&self.data)))
+            }
         }
     }
 }
@@ -104,6 +107,21 @@ impl<'de> DeserializeWithContext<'de, SqlSerdeConfig> for ByteArray {
     where
         D: Deserializer<'de>,
     {
+        fn parse_hex_string(s: &str, prefix: &str) -> Option<CompactVec> {
+            let s = s.strip_prefix(prefix).unwrap_or(s).as_bytes();
+            if s.len() % 2 != 0 || !s.iter().all(u8::is_ascii_hexdigit) {
+                None
+            } else {
+                let mut result = CompactVec::with_capacity(s.len() / 2);
+                for i in 0..s.len() / 2 {
+                    let a = (s[i * 2] as char).to_digit(16).unwrap() as u8;
+                    let b = (s[i * 2 + 1] as char).to_digit(16).unwrap() as u8;
+                    result.push(a * 16 + b);
+                }
+                Some(result)
+            }
+        }
+
         match config.binary_format {
             BinaryFormat::Array => {
                 let data = CompactVec::deserialize(deserializer)?;
@@ -127,6 +145,15 @@ impl<'de> DeserializeWithContext<'de, SqlSerdeConfig> for ByteArray {
             BinaryFormat::PgHex => Err(D::Error::custom(
                 "binary format Postgres Hexadecimal is not supported for input",
             )),
+            BinaryFormat::CHex => {
+                let str: Cow<'de, str> = Deserialize::deserialize(deserializer)?;
+                match parse_hex_string(&str, "0x") {
+                    None => Err(D::Error::custom(format!(
+                        "Invalid C-style hex string: {str:?}"
+                    ))),
+                    Some(data) => Ok(Self { data }),
+                }
+            }
         }
     }
 }
