@@ -1348,7 +1348,7 @@ mod test {
         .unwrap().0;
 
         for _ in 0..1 {
-            circuit.step().unwrap();
+            circuit.transaction().unwrap();
         }
     }
 
@@ -1384,7 +1384,7 @@ mod test {
             Tup2(3, ((), 3).into()),
             Tup2(4, ((), 4).into()),
         ]);
-        circuit.step().unwrap();
+        circuit.transaction().unwrap();
         let output =
             SpineSnapshot::<OrdIndexedZSet<i32, i64>>::concat(&output_handle.take_from_all())
                 .iter()

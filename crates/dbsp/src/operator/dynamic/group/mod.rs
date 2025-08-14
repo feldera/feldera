@@ -440,7 +440,7 @@ where
         let chunk_size = splitter_output_chunk_size();
 
         // We assume that delta.is_some() implies that the operator is being flushed,
-        // since the input integral is always flushed in the same microstep as delta and the
+        // since the input integral is always flushed in the same step as delta and the
         // delayed output integral is always flushed earlier.
         let input_trace = if delta.is_some() {
             Some(input_trace.ro_snapshot())

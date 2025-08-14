@@ -19,12 +19,12 @@ where
     V: DBData + Erase<B::Val>,
     R: DBWeight + Erase<B::R>,
 {
-    // TODO: derive timestamp type from the parent circuit.
-
     /// Record batches in `self` in a trace.
     ///
     /// This operator labels each untimed batch in the stream with the current
     /// timestamp and adds it to a trace.
+    ///
+    /// It updates the output trace once per transaction, on `flush`.
     #[track_caller]
     pub fn accumulate_trace(&self) -> Stream<C, TypedBatch<K, V, R, TimedSpine<B, C>>> {
         let trace_factories = BatchReaderFactories::new::<K, V, R>();
@@ -38,14 +38,14 @@ where
     /// `lower_val_bound`.
     ///
     /// ```text
-    ///          ┌─────────────┐ trace
-    /// self ───►│ TraceAppend ├─────────┐───► output
-    ///          └─────────────┘         │
-    ///            ▲                     │
-    ///            │                     │
-    ///            │ local   ┌───────┐   │z1feedback
-    ///            └─────────┤Z1Trace│◄──┘
-    ///                      └───────┘
+    ///            ┌──────────┐    ┌────────────────────────┐ trace
+    /// self ─────►│accumulate├───►│ AccumulateTraceAppend  │───────────────┬────► output
+    ///            └──────────┘    └────────────────────────┘               │
+    ///                              ▲                                      │
+    ///                              │                                      │
+    ///                              │              ┌─────────────────┐     │ z1feedback
+    ///                              └──────────────┤AccumulateZ1Trace├◄────┘
+    ///                               delayed_trace └─────────────────┘
     /// ```
     #[track_caller]
     pub fn accumulate_trace_with_bound<T>(
@@ -72,7 +72,7 @@ where
     C: Circuit,
     B: Batch<Time = ()>,
 {
-    /// Like `integrate_trace`, but additionally applies a retainment policy to
+    /// Like `accumulate_integrate_trace`, but additionally applies a retainment policy to
     /// keys in the trace.
     ///
     /// ## Background
@@ -90,7 +90,7 @@ where
     /// records.
     ///
     /// The first mechanism, exposed via the
-    /// [`integrate_trace_with_bound`](`Self::integrate_trace_with_bound`)
+    /// [`accumulate_integrate_trace_with_bound`](`Self::accumulate_integrate_trace_with_bound`)
     /// method, is only applicable when keys and/or values in the collection
     /// are ordered by time.  It allows _each_ consumer of the trace to specify
     /// a lower bound on the keys and values it is interested in.  The
@@ -98,7 +98,7 @@ where
     /// consumers.
     ///
     /// The second mechanism, implemented by this method and the
-    /// [`integrate_trace_retain_values`](`Self::integrate_trace_retain_values`)
+    /// [`accumulate_integrate_trace_retain_values`](`Self::accumulate_integrate_trace_retain_values`)
     /// method, is more general and allows the caller to specify an
     /// arbitrary condition on keys and values in the trace respectively.
     /// Keys or values that don't satisfy the condition are eventually
@@ -195,7 +195,7 @@ where
     }
 
     /// Similar to
-    /// [`integrate_trace_retain_keys`](`Self::integrate_trace_retain_keys`),
+    /// [`accumulate_integrate_trace_retain_keys`](`Self::accumulate_integrate_trace_retain_keys`),
     /// but applies a retainment policy to values in the trace.
     #[track_caller]
     pub fn accumulate_integrate_trace_retain_values<TS, RV>(
@@ -226,8 +226,8 @@ where
     ///
     /// The trace is unbounded, meaning that data will not be discarded because
     /// it has a low key or value.  Filter functions set with
-    /// [`integrate_trace_retain_keys`](Self::integrate_trace_retain_keys) or
-    /// [`integrate_trace_retain_values`](Self::integrate_trace_retain_values)
+    /// [`accumulate_integrate_trace_retain_keys`](Self::accumulate_integrate_trace_retain_keys) or
+    /// [`accumulate_integrate_trace_retain_values`](Self::accumulate_integrate_trace_retain_values)
     /// can still discard data.
     ///
     /// The result batch is stored durably for fault tolerance.
@@ -245,11 +245,13 @@ where
     /// Data in the trace with a key less than `lower_key_bound` or value less
     /// than `lower_val_bound` can be discarded, although these bounds can be
     /// lowered later (discarding less data).  Filter functions set with
-    /// [`integrate_trace_retain_keys`](Self::integrate_trace_retain_keys) or
-    /// [`integrate_trace_retain_values`](Self::integrate_trace_retain_values)
+    /// [`accumulate_integrate_trace_retain_keys`](Self::accumulate_integrate_trace_retain_keys) or
+    /// [`accumulate_integrate_trace_retain_values`](Self::accumulate_integrate_trace_retain_values)
     /// can still discard data.
     ///
     /// The result batch is stored durably for fault tolerance.
+    ///
+    /// Updates the output trace once per transaction, on `flush`.
     pub fn accumulate_integrate_trace_with_bound(
         &self,
         lower_key_bound: TraceBound<<B::Inner as DynBatchReader>::Key>,

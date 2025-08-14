@@ -50,14 +50,15 @@ where
     }
 }
 
-/// A version of Generator that passes a flag to the generator function when `flush` has been called.
-pub struct MacrostepGenerator<T, F> {
+/// A version of Generator that passes a flag to the generator function when `flush` has been called, giving it a chance
+/// to produce one output per transaction.
+pub struct TransactionGenerator<T, F> {
     generator: F,
     flush: bool,
     _t: PhantomData<T>,
 }
 
-impl<T, F> MacrostepGenerator<T, F>
+impl<T, F> TransactionGenerator<T, F>
 where
     T: Clone,
 {
@@ -71,7 +72,7 @@ where
     }
 }
 
-impl<T, F> Operator for MacrostepGenerator<T, F>
+impl<T, F> Operator for TransactionGenerator<T, F>
 where
     T: Data,
     F: 'static,
@@ -87,7 +88,7 @@ where
     }
 }
 
-impl<T, F> SourceOperator<T> for MacrostepGenerator<T, F>
+impl<T, F> SourceOperator<T> for TransactionGenerator<T, F>
 where
     F: FnMut(bool) -> T + 'static,
     T: Data,

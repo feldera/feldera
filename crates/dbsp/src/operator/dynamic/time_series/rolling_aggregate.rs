@@ -1209,7 +1209,7 @@ mod test {
 
                 let waterline: Stream<_, TypedBox<u64, DynDataTyped<u64>>> = input_by_time
                     .waterline_monotonic(|| 0, move |ts| ts.saturating_sub(lateness))
-                    .macrostep_delay_with_initial_value(TypedBox::new(0))
+                    .transaction_delay_with_initial_value(TypedBox::new(0))
                     .inspect(|w| println!("waterline: {w:?}"));
 
                 let aggregator = <Fold<i64, i64, DefaultSemigroup<_>, _, _>>::new(
@@ -1580,7 +1580,7 @@ mod test {
             ])
             .erase_box(),
         );
-        circuit.step().unwrap();
+        circuit.transaction().unwrap();
     }
 
     #[test]
@@ -1607,7 +1607,7 @@ mod test {
         })
         .unwrap();
 
-        circuit.step().unwrap();
+        circuit.transaction().unwrap();
 
         input.append(&mut vec![
             Tup2(0u64, Tup2(Tup2(10u64, 10i64), 1)),
@@ -1628,7 +1628,7 @@ mod test {
             ])
             .erase_box(),
         );
-        circuit.step().unwrap();
+        circuit.transaction().unwrap();
     }
 
     #[test]
@@ -1670,7 +1670,7 @@ mod test {
             Tup2(1, Tup2(Tup2(5, 100000), 1)),
             Tup2(1, Tup2(Tup2(9, 123456), 1)),
         ]);
-        circuit.step().unwrap();
+        circuit.transaction().unwrap();
     }
 
     type InputTuple = Tup2<u64, Tup2<Tup2<u64, i64>, ZWeight>>;

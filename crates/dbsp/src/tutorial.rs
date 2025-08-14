@@ -273,7 +273,7 @@
 //!    input_handle.append(&mut input_records);
 //!
 //! #   // Execute circuit.
-//! #   circuit.step()?;
+//! #   circuit.transaction()?;
 //! #
 //! #   // ...read output from circuit...
 //! #   Ok(())
@@ -379,7 +379,7 @@
 //! #     input_handle.append(&mut input_records);
 //! #
 //!      // Execute circuit.
-//!      circuit.step()?;
+//!      circuit.transaction()?;
 //! #
 //! #     // ...read output from circuit...
 //! #     Ok(())
@@ -466,7 +466,7 @@
 //! #     input_handle.append(&mut input_records);
 //! #
 //! #     // Execute circuit.
-//! #     circuit.step()?;
+//! #     circuit.transaction()?;
 //! #
 //! #     // Read output from circuit.
 //! #     println!("{}", output_handle.consolidate().weighted_count());
@@ -543,7 +543,7 @@
 //! #     input_handle.append(&mut input_records);
 //! #
 //! #     // Execute circuit.
-//! #     circuit.step()?;
+//! #     circuit.transaction()?;
 //! #
 //! #     // Read output from circuit.
 //! #     println!("{}", output_handle.consolidate().weighted_count());
@@ -623,7 +623,7 @@
 //! #     input_handle.append(&mut input_records);
 //! #
 //! #     // Execute circuit.
-//! #     circuit.step()?;
+//! #     circuit.transaction()?;
 //! #
 //!     // ...unchanged code to feed data into circuit and execute circuit...
 //!
@@ -765,7 +765,7 @@
 //! #         .collect::<Result<Vec<Tup2<Record, i64>>, _>>()?;
 //! #     input_handle.append(&mut input_records);
 //! #
-//! #     circuit.step()?;
+//! #     circuit.transaction()?;
 //! #
 //!     // ...
 //!     output_handle
@@ -930,7 +930,7 @@
 //! #         .collect::<Result<Vec<Tup2<Record, i64>>, _>>()?;
 //! #     input_handle.append(&mut input_records);
 //! #
-//! #     circuit.step()?;
+//! #     circuit.transaction()?;
 //! #
 //! #     output_handle
 //! #         .consolidate()
@@ -1091,7 +1091,7 @@
 //! #         .collect::<Result<Vec<Tup2<Record, i64>>, _>>()?;
 //! #     input_handle.append(&mut input_records);
 //! #
-//! #     circuit.step()?;
+//! #     circuit.transaction()?;
 //! #
 //!     output_handle
 //!         .consolidate()
@@ -1291,7 +1291,7 @@
 //! #         .collect::<Result<Vec<Tup2<Record, i64>>, _>>()?;
 //! #     input_handle.append(&mut input_records);
 //! #
-//! #     circuit.step()?;
+//! #     circuit.transaction()?;
 //! #
 //!     // ...
 //!     output_handle
@@ -1441,7 +1441,7 @@
 //! #     ];
 //! #     pop_handle.append(&mut pop_records);
 //! #
-//! #     circuit.step()?;
+//! #     circuit.transaction()?;
 //! #
 //! #     output_handle
 //! #         .consolidate()
@@ -1558,7 +1558,7 @@
 //!     pop_handle.append(&mut pop_records);
 //!     // ...
 //! #
-//! #     circuit.step()?;
+//! #     circuit.transaction()?;
 //! #
 //! #     output_handle
 //! #         .consolidate()
@@ -1756,7 +1756,7 @@
 //! #     ];
 //! #     pop_handle.append(&mut pop_records);
 //! #
-//! #     circuit.step()?;
+//! #     circuit.transaction()?;
 //! #
 //!     output_handle
 //!         .consolidate()
@@ -1913,7 +1913,7 @@
 //!         println!("Input {} records:", batch.len());
 //!         input_handle.append(&mut batch);
 //!
-//!         circuit.step()?;
+//!         circuit.transaction()?;
 //!
 //!         output_handle
 //!             .consolidate()
@@ -2083,7 +2083,7 @@
 //!     for i in 0..STEPS {
 //!         let iteration = i + 1;
 //!         println!("Iteration {} starts...", iteration);
-//!         circuit_handle.step()?;
+//!         circuit_handle.transaction()?;
 //!         output_handle.consolidate().iter().for_each(
 //!             |(Tup4(start, end, cum_weight, hopcnt), _, z_weight)| {
 //!                 println!(
@@ -2225,7 +2225,7 @@
 //! #     })?;
 //! #
 //! #     for i in 0..STEPS {
-//! #         circuit_handle.step()?;
+//! #         circuit_handle.transaction()?;
 //! #     }
 //! #
 //! #     Ok(())

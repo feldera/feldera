@@ -220,7 +220,7 @@ where
     /// })?;
     ///
     /// for _ in 0..STEPS {
-    ///     circuit_handle.step().unwrap();
+    ///     circuit_handle.transaction().unwrap();
     /// }
     ///
     /// Ok::<(), DbspError>(())

@@ -49,7 +49,7 @@ where
     /// .0;
     ///
     /// # for _ in 0..5 {
-    /// #     circuit.step().unwrap();
+    /// #     circuit.transaction().unwrap();
     /// # }
     /// ```
     #[track_caller]
@@ -263,7 +263,7 @@ mod test {
         .0;
 
         for _ in 0..100 {
-            circuit.step().unwrap();
+            circuit.transaction().unwrap();
         }
     }
 
@@ -317,7 +317,7 @@ mod test {
         .0;
 
         for _ in 0..100 {
-            circuit.step().unwrap();
+            circuit.transaction().unwrap();
         }
 
         // Only consume source2 by value.
@@ -340,7 +340,7 @@ mod test {
         .0;
 
         for _ in 0..100 {
-            circuit.step().unwrap();
+            circuit.transaction().unwrap();
         }
 
         // Only consume source1 by value.
@@ -364,7 +364,7 @@ mod test {
         .0;
 
         for _ in 0..100 {
-            circuit.step().unwrap();
+            circuit.transaction().unwrap();
         }
 
         // Consume both streams by reference.
@@ -398,7 +398,7 @@ mod test {
         .0;
 
         for _ in 0..100 {
-            circuit.step().unwrap();
+            circuit.transaction().unwrap();
         }
     }
 }

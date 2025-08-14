@@ -60,6 +60,7 @@ where
     K: DBData,
     V: DBData,
 {
+    /// Accumulates changes within a clock cycle and differentiates accumulated changes across clock cycles.
     pub fn accumulate_differentiate(&self) -> Stream<ChildCircuit<C, T>, OrdIndexedZSet<K, V>> {
         self.circuit()
             .non_incremental(self, |_child_circuit, stream| Ok(stream.differentiate()))
@@ -73,6 +74,7 @@ where
     T: Timestamp,
     K: DBData,
 {
+    /// Accumulates changes within a clock cycle and differentiates accumulated changes across clock cycles.
     pub fn accumulate_differentiate(&self) -> Stream<ChildCircuit<C, T>, OrdZSet<K>> {
         self.circuit()
             .non_incremental(self, |_child_circuit, stream| Ok(stream.differentiate()))

@@ -119,6 +119,7 @@ where
             self.minimize_vals();
         }
     }
+
     fn skip_zero_weight_vals_reverse(&mut self) {
         self.assert_val_direction(Direction::Backward);
 
@@ -129,6 +130,7 @@ where
             self.maximize_vals();
         }
     }
+
     fn skip_zero_weight_keys_forward(&mut self) {
         while self.key_valid() {
             self.skip_zero_weight_vals_forward();
@@ -142,6 +144,7 @@ where
             self.minimize_keys();
         }
     }
+
     fn skip_zero_weight_keys_reverse(&mut self) {
         while self.key_valid() {
             self.skip_zero_weight_vals_forward();

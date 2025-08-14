@@ -403,7 +403,7 @@ where
         let delta = delta.as_ref().as_ref().map(|b| b.ro_snapshot());
 
         // We assume that delta.is_some() implies that the operator is being flushed,
-        // since the input integral is always flushed in the same microstep as delta and the
+        // since the input integral is always flushed in the same step as delta and the
         // delayed output integral is always flushed earlier.
         let input_trace = if delta.is_some() {
             Some(input_trace.ro_snapshot())
@@ -702,7 +702,7 @@ mod test {
         })
         .unwrap();
 
-        circuit.step().unwrap();
+        circuit.transaction().unwrap();
 
         update_key(
             &input,
@@ -726,7 +726,7 @@ mod test {
             (2, 1),
         );
 
-        circuit.step().unwrap();
+        circuit.transaction().unwrap();
 
         update_key(
             &input,
@@ -750,7 +750,7 @@ mod test {
             (2, -1),
         );
 
-        circuit.step().unwrap();
+        circuit.transaction().unwrap();
 
         update_key(
             &input,
@@ -781,7 +781,7 @@ mod test {
             (3, 1),
         );
 
-        circuit.step().unwrap();
+        circuit.transaction().unwrap();
 
         update_key(
             &input,
@@ -790,7 +790,7 @@ mod test {
             0x1000_0000_0000_0002,
             (2, -1),
         );
-        circuit.step().unwrap();
+        circuit.transaction().unwrap();
 
         update_key(
             &input,
@@ -855,7 +855,7 @@ mod test {
             0x0000_0000_f200_0000,
             (4, 1),
         );
-        circuit.step().unwrap();
+        circuit.transaction().unwrap();
 
         update_key(
             &input,
@@ -871,7 +871,7 @@ mod test {
             0xf300_1000_0000_0001,
             (7, -1),
         );
-        circuit.step().unwrap();
+        circuit.transaction().unwrap();
 
         update_key(
             &input,
@@ -915,7 +915,7 @@ mod test {
             0x0000_0000_f0f0_0000,
             (5, 1),
         );
-        circuit.step().unwrap();
+        circuit.transaction().unwrap();
 
         update_key(
             &input,
@@ -938,7 +938,7 @@ mod test {
             0xf300_1000_1000_1001,
             (9, -1),
         );
-        circuit.step().unwrap();
+        circuit.transaction().unwrap();
 
         update_key(
             &input,
@@ -947,7 +947,7 @@ mod test {
             0xf400_1000_1100_1001,
             (11, -1),
         );
-        circuit.step().unwrap();
+        circuit.transaction().unwrap();
 
         update_key(
             &input,
@@ -991,6 +991,6 @@ mod test {
             0xf300_1000_1000_0001,
             (11, 1),
         );
-        circuit.step().unwrap();
+        circuit.transaction().unwrap();
     }
 }

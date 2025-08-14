@@ -109,7 +109,7 @@ mod tests {
 
         for mut vec in input_vecs.into_iter() {
             input_handle.append(&mut vec);
-            circuit.step().unwrap();
+            circuit.transaction().unwrap();
         }
     }
 }
