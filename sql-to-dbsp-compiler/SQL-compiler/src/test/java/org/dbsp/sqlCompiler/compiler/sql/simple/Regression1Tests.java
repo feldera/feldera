@@ -794,4 +794,11 @@ public class Regression1Tests extends SqlIoTest {
         ccs.visit(cloneCounter.getCircuitVisitor(false));
         Assert.assertEquals(7, cloneCount[0]);
     }
+
+    @Test
+    public void issue4585() {
+        this.getCCS("""
+                CREATE TABLE T(x TIME);
+                CREATE VIEW V AS SELECT HOUR(x) FROM T;""");
+    }
 }
