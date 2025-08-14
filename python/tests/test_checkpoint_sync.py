@@ -123,7 +123,9 @@ class TestCheckpointSync(SharedTestPipeline):
             standby=standby,
         )
         self.pipeline.set_runtime_config(
-            RuntimeConfig(fault_tolerance_model=ft, storage=Storage(config=storage_config))
+            RuntimeConfig(
+                fault_tolerance_model=ft, storage=Storage(config=storage_config)
+            )
         )
 
         if not standby:
@@ -210,7 +212,9 @@ class TestCheckpointSync(SharedTestPipeline):
         storage_config = storage_cfg(self.pipeline.name)
         ft = FaultToleranceModel.AtLeastOnce
         self.pipeline.set_runtime_config(
-            RuntimeConfig(fault_tolerance_model=ft, storage=Storage(config=storage_config))
+            RuntimeConfig(
+                fault_tolerance_model=ft, storage=Storage(config=storage_config)
+            )
         )
         self.pipeline.start()
 
@@ -241,7 +245,7 @@ class TestCheckpointSync(SharedTestPipeline):
                         standby=True,
                         pull_interval=pull_interval,
                     )
-                )
+                ),
             )
         )
         standby.start(wait=False)
