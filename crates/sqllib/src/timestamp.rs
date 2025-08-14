@@ -2372,6 +2372,12 @@ pub fn extract_hour_Time(value: Time) -> i64 {
     time.hour().into()
 }
 
+some_polymorphic_function1!(extract_millisecond, Time, Time, i64);
+some_polymorphic_function1!(extract_microsecond, Time, Time, i64);
+some_polymorphic_function1!(extract_second, Time, Time, i64);
+some_polymorphic_function1!(extract_minute, Time, Time, i64);
+some_polymorphic_function1!(extract_hour, Time, Time, i64);
+
 #[doc(hidden)]
 pub fn parse_time__(format: SqlString, st: SqlString) -> Option<Time> {
     let nt = NaiveTime::parse_from_str(st.str(), format.str());
