@@ -124,8 +124,7 @@ public class DBSPTypeMonthsInterval
                     default -> "";
                 } +
                 switch (this.units) {
-                    case YEARS_TO_MONTHS -> "M";
-                    case MONTHS -> "Y";
+                    case YEARS_TO_MONTHS, MONTHS -> "M";
                     default -> "";
                 } +
                 ")";

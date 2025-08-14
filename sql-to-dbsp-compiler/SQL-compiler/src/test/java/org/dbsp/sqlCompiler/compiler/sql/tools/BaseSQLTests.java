@@ -273,7 +273,7 @@ public class BaseSQLTests {
         } else {
             directory = RUST_CRATES_DIRECTORY;
             MultiCratesWriter multiWriter = new MultiCratesWriter(directory, "x", true);
-            testCrate = multiWriter.getTestName();
+            testCrate = MultiCratesWriter.getTestName();
             String globals = multiWriter.getGlobalsName();
             writer = multiWriter;
             stubsDir = Paths.get(directory).resolve(globals).resolve("src");

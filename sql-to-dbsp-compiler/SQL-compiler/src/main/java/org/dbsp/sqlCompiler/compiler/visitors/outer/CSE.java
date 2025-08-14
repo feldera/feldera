@@ -20,7 +20,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-/** Common-subexpression elimination */
+/** Common-subexpression elimination at the level of circuit operators */
 public class CSE extends Repeat {
     public CSE(DBSPCompiler compiler) {
         super(compiler, new OneCSEPass(compiler));

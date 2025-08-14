@@ -205,7 +205,7 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
                 .reduce(this.compiler)
                 .to(DBSPClosureExpression.class);
 
-        int size = projection.getType().getToplevelFieldCount();
+        int size = operator.getType().getToplevelFieldCount();
         DBSPMapIndexOperator adjust = new DBSPMapIndexOperator(operator.getRelNode(), projection, source)
                 .addAnnotation(new IsProjection(size), DBSPMapIndexOperator.class);
         this.addOperator(adjust);

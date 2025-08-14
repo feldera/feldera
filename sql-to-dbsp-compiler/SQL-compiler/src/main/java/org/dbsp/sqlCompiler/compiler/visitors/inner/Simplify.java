@@ -36,6 +36,7 @@ import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.IsIntervalLiteral;
 import org.dbsp.sqlCompiler.ir.IsNumericLiteral;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPApplyMethodExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBaseTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBlockExpression;
@@ -170,7 +171,12 @@ public class Simplify extends ExpressionTranslator {
     public void postorder(DBSPCloneExpression expression) {
         DBSPExpression source = this.getE(expression.expression);
         DBSPExpression result = source.applyCloneIfNeeded();
-        if (source.is(DBSPCloneExpression.class)) {
+        if (source.is(DBSPCloneExpression.class) ||
+            source.is(DBSPApplyMethodExpression.class) ||
+            source.is(DBSPApplyExpression.class) ||
+            source.is(DBSPIfExpression.class) ||
+            source.is(DBSPCastExpression.class)
+        ) {
             result = source;
         }
         this.map(expression, result);

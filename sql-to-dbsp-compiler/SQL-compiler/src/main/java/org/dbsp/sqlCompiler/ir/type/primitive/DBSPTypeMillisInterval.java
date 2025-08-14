@@ -76,6 +76,11 @@ public class DBSPTypeMillisInterval
     }
 
     @Override
+    public String toString() {
+        return super.toString() + "(" + this.units + ")";
+    }
+
+    @Override
     public DBSPExpression getMinValue() {
         return new DBSPIntervalMillisLiteral(this.units, Long.MIN_VALUE, this.mayBeNull);
     }

@@ -64,14 +64,14 @@ public class Passes implements IWritesLogs, CircuitTransform, ICompilerComponent
 
     @Override
     public DBSPCircuit apply(DBSPCircuit circuit) {
-        int details = this.getDebugLevel();
+        int details = Math.max(0, this.getDebugLevel() - 2);
         if (this.getDebugLevel() >= 3) {
             String name = String.format("%02d-", dumped++) + "before" +
                     this.toString().replace(" ", "_") + ".png";
             ToDot.dump(this.compiler, name, details, "png", circuit);
         }
         long begin = System.currentTimeMillis();
-        Logger.INSTANCE.belowLevel(this, 2)
+        Logger.INSTANCE.belowLevel(this, 1)
                 .append(this.toString())
                 .append(" starting ")
                 .append(this.passes.size())

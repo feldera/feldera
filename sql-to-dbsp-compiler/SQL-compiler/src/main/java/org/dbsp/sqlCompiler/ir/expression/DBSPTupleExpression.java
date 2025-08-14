@@ -49,7 +49,8 @@ public final class DBSPTupleExpression extends DBSPBaseTupleExpression {
         Utilities.enforce(type.size() == expressions.length, "Tuple expression has size " + expressions.length +
                 " but the declared type is " + type);
         for (int i = 0; i < type.size(); i++) {
-            Utilities.enforce(type.tupFields[i].sameType(expressions[i].getType()), "Tuple field " + expressions[i] + " has type " + expressions[i].getType() +
+            Utilities.enforce(type.tupFields[i].sameType(expressions[i].getType()),
+                    "Tuple field " + expressions[i] + " has type " + expressions[i].getType() +
                     " that does not match the declared field type " + type.tupFields[i]);
         }
     }
