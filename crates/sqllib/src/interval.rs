@@ -59,6 +59,11 @@ impl ShortInterval {
         Self { milliseconds }
     }
 
+    /// Create a ShortInterval with a length specified in seconds.
+    pub const fn from_seconds(seconds: i64) -> Self {
+        Self::new(seconds * 1000)
+    }
+
     /// Extract the length of the interval in milliseconds.  The
     /// result can be negative.
     pub fn milliseconds(&self) -> i64 {

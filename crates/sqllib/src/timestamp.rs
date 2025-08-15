@@ -691,25 +691,270 @@ some_operator!(gte, Timestamp, Timestamp, bool);
 some_operator!(lte, Timestamp, Timestamp, bool);
 
 #[doc(hidden)]
+pub fn floor_millennium_Timestamp(value: Timestamp) -> Timestamp {
+    let ts = value.to_dateTime();
+    let naive = NaiveDate::from_ymd_opt((ts.year() / 1000) * 1000, 1, 1).unwrap();
+    Timestamp::from_naiveDate(naive)
+}
+
+some_polymorphic_function1!(floor_millennium, Timestamp, Timestamp, Timestamp);
+
+#[doc(hidden)]
+pub fn floor_century_Timestamp(value: Timestamp) -> Timestamp {
+    let ts = value.to_dateTime();
+    let naive = NaiveDate::from_ymd_opt((ts.year() / 100) * 100, 1, 1).unwrap();
+    Timestamp::from_naiveDate(naive)
+}
+
+some_polymorphic_function1!(floor_century, Timestamp, Timestamp, Timestamp);
+
+#[doc(hidden)]
+pub fn floor_decade_Timestamp(value: Timestamp) -> Timestamp {
+    let ts = value.to_dateTime();
+    let naive = NaiveDate::from_ymd_opt((ts.year() / 10) * 10, 1, 1).unwrap();
+    Timestamp::from_naiveDate(naive)
+}
+
+some_polymorphic_function1!(floor_decade, Timestamp, Timestamp, Timestamp);
+
+#[doc(hidden)]
+pub fn floor_year_Timestamp(value: Timestamp) -> Timestamp {
+    let ts = value.to_dateTime();
+    let naive = NaiveDate::from_ymd_opt(ts.year(), 1, 1).unwrap();
+    Timestamp::from_naiveDate(naive)
+}
+
+some_polymorphic_function1!(floor_year, Timestamp, Timestamp, Timestamp);
+
+#[doc(hidden)]
+pub fn floor_quarter_Timestamp(value: Timestamp) -> Timestamp {
+    let ts = value.to_dateTime();
+    let naive = NaiveDate::from_ymd_opt(ts.year(), (((ts.month() - 1) / 3) * 3) + 1, 1).unwrap();
+    Timestamp::from_naiveDate(naive)
+}
+
+some_polymorphic_function1!(floor_quarter, Timestamp, Timestamp, Timestamp);
+
+#[doc(hidden)]
+pub fn floor_month_Timestamp(value: Timestamp) -> Timestamp {
+    let ts = value.to_dateTime();
+    let naive = NaiveDate::from_ymd_opt(ts.year(), ts.month(), 1).unwrap();
+    Timestamp::from_naiveDate(naive)
+}
+
+some_polymorphic_function1!(floor_month, Timestamp, Timestamp, Timestamp);
+
+#[doc(hidden)]
 pub fn floor_week_Timestamp(value: Timestamp) -> Timestamp {
     let wd = extract_dow_Timestamp(value) - Date::first_day_of_week();
-    let ts = value.to_dateTime();
-    let notime = ts
-        .with_hour(0)
-        .unwrap_or_else(|| panic!("Cannot clear hour of timestamp '{:?}'", value))
-        .with_minute(0)
-        .unwrap_or_else(|| panic!("Cannot clear minute of timestamp '{:?}'", value))
-        .with_second(0)
-        .unwrap_or_else(|| panic!("Cannot clear second of timestamp '{:?}'", value))
-        .with_nanosecond(0)
-        .unwrap_or_else(|| panic!("Cannot clear nanosecond of timestamp '{:?}'", value));
-    let notimeTs = Timestamp::from_dateTime(notime);
-    let interval = ShortInterval::new(wd * 86400 * 1000);
-
+    let notimeTs = floor_day_Timestamp(value);
+    let interval = ShortInterval::from_seconds(wd * 86400);
     minus_Timestamp_ShortInterval_Timestamp(notimeTs, interval)
 }
 
 some_polymorphic_function1!(floor_week, Timestamp, Timestamp, Timestamp);
+
+#[doc(hidden)]
+pub fn floor_day_Timestamp(value: Timestamp) -> Timestamp {
+    let ts = value.to_dateTime();
+    let naive = NaiveDate::from_ymd_opt(ts.year(), ts.month(), ts.day()).unwrap();
+    Timestamp::from_naiveDate(naive)
+}
+
+some_polymorphic_function1!(floor_day, Timestamp, Timestamp, Timestamp);
+
+#[doc(hidden)]
+pub fn floor_hour_Timestamp(value: Timestamp) -> Timestamp {
+    let ts = value.to_naiveDateTime();
+    let naive = NaiveDate::from_ymd_opt(ts.year(), ts.month(), ts.day())
+        .unwrap()
+        .and_hms_opt(ts.hour(), 0, 0)
+        .unwrap();
+    Timestamp::from_naiveDateTime(naive)
+}
+
+some_polymorphic_function1!(floor_hour, Timestamp, Timestamp, Timestamp);
+
+#[doc(hidden)]
+pub fn floor_minute_Timestamp(value: Timestamp) -> Timestamp {
+    let ts = value.to_naiveDateTime();
+    let naive = NaiveDate::from_ymd_opt(ts.year(), ts.month(), ts.day())
+        .unwrap()
+        .and_hms_opt(ts.hour(), ts.minute(), 0)
+        .unwrap();
+    Timestamp::from_naiveDateTime(naive)
+}
+
+some_polymorphic_function1!(floor_minute, Timestamp, Timestamp, Timestamp);
+
+#[doc(hidden)]
+pub fn floor_second_Timestamp(value: Timestamp) -> Timestamp {
+    let ts = value.to_naiveDateTime();
+    let naive = NaiveDate::from_ymd_opt(ts.year(), ts.month(), ts.day())
+        .unwrap()
+        .and_hms_opt(ts.hour(), ts.minute(), ts.second())
+        .unwrap();
+    Timestamp::from_naiveDateTime(naive)
+}
+
+some_polymorphic_function1!(floor_second, Timestamp, Timestamp, Timestamp);
+
+#[doc(hidden)]
+fn is_midnight(value: DateTime<Utc>) -> bool {
+    value.hour() == 0 && value.minute() == 0 && value.second() == 0 && value.nanosecond() == 0
+}
+
+#[doc(hidden)]
+pub fn ceil_millennium_Timestamp(value: Timestamp) -> Timestamp {
+    let ts = value.to_dateTime();
+    if ts.year() % 1000 == 0 && ts.month() == 1 && ts.day() == 1 && is_midnight(ts) {
+        return value;
+    }
+    let naive = NaiveDate::from_ymd_opt((ts.year() / 1000 + 1) * 1000, 1, 1).unwrap();
+    Timestamp::from_naiveDate(naive)
+}
+
+some_polymorphic_function1!(ceil_millennium, Timestamp, Timestamp, Timestamp);
+
+#[doc(hidden)]
+pub fn ceil_century_Timestamp(value: Timestamp) -> Timestamp {
+    let ts = value.to_dateTime();
+    if ts.year() % 100 == 0 && ts.month() == 1 && ts.day() == 1 && is_midnight(ts) {
+        return value;
+    }
+    let naive = NaiveDate::from_ymd_opt((ts.year() / 100 + 1) * 100, 1, 1).unwrap();
+    Timestamp::from_naiveDate(naive)
+}
+
+some_polymorphic_function1!(ceil_century, Timestamp, Timestamp, Timestamp);
+
+#[doc(hidden)]
+pub fn ceil_decade_Timestamp(value: Timestamp) -> Timestamp {
+    let ts = value.to_dateTime();
+    if ts.year() % 10 == 0 && ts.month() == 1 && ts.day() == 1 && is_midnight(ts) {
+        return value;
+    }
+    let naive = NaiveDate::from_ymd_opt((ts.year() / 10 + 1) * 10, 1, 1).unwrap();
+    Timestamp::from_naiveDate(naive)
+}
+
+some_polymorphic_function1!(ceil_decade, Timestamp, Timestamp, Timestamp);
+
+#[doc(hidden)]
+pub fn ceil_year_Timestamp(value: Timestamp) -> Timestamp {
+    let ts = value.to_dateTime();
+    if ts.month() == 1 && ts.day() == 1 && is_midnight(ts) {
+        return value;
+    }
+    let naive = NaiveDate::from_ymd_opt(ts.year() + 1, 1, 1).unwrap();
+    Timestamp::from_naiveDate(naive)
+}
+
+some_polymorphic_function1!(ceil_year, Timestamp, Timestamp, Timestamp);
+
+#[doc(hidden)]
+pub fn ceil_quarter_Timestamp(value: Timestamp) -> Timestamp {
+    let ts = value.to_dateTime();
+    if (ts.month() - 1) % 3 == 0 && ts.day() == 1 && is_midnight(ts) {
+        return value;
+    }
+    let next_quarter_month = match ts.month() {
+        1..=3 => 4,
+        4..=6 => 7,
+        7..=9 => 10,
+        10..=12 => 1,
+        _ => unreachable!(),
+    };
+    let year = if next_quarter_month == 1 {
+        ts.year() + 1
+    } else {
+        ts.year()
+    };
+    let naive = NaiveDate::from_ymd_opt(year, next_quarter_month, 1).unwrap();
+    Timestamp::from_naiveDate(naive)
+}
+
+some_polymorphic_function1!(ceil_quarter, Timestamp, Timestamp, Timestamp);
+
+#[doc(hidden)]
+pub fn ceil_month_Timestamp(value: Timestamp) -> Timestamp {
+    let ts = value.to_dateTime();
+    if ts.day() == 1 && is_midnight(ts) {
+        return value;
+    }
+    let month = if ts.month() == 12 { 1 } else { ts.month() + 1 };
+    let year = if month == 1 { ts.year() + 1 } else { ts.year() };
+    let naive = NaiveDate::from_ymd_opt(year, month, 1).unwrap();
+    Timestamp::from_naiveDate(naive)
+}
+
+some_polymorphic_function1!(ceil_month, Timestamp, Timestamp, Timestamp);
+
+#[doc(hidden)]
+pub fn ceil_week_Timestamp(value: Timestamp) -> Timestamp {
+    let wd = extract_dow_Timestamp(value) - Date::first_day_of_week();
+    let ts = value.to_dateTime();
+    if wd == 0 && is_midnight(ts) {
+        return value;
+    }
+    let notimeTs = floor_day_Timestamp(value);
+    let interval = ShortInterval::from_seconds((7 - wd) * 86400);
+    plus_Timestamp_ShortInterval_Timestamp(notimeTs, interval)
+}
+
+some_polymorphic_function1!(ceil_week, Timestamp, Timestamp, Timestamp);
+
+#[doc(hidden)]
+pub fn ceil_day_Timestamp(value: Timestamp) -> Timestamp {
+    let ts = value.to_dateTime();
+    if is_midnight(ts) {
+        return value;
+    }
+    let notimeTs = floor_day_Timestamp(value);
+    let day = ShortInterval::from_seconds(86400);
+    plus_Timestamp_ShortInterval_Timestamp(notimeTs, day)
+}
+
+some_polymorphic_function1!(ceil_day, Timestamp, Timestamp, Timestamp);
+
+#[doc(hidden)]
+pub fn ceil_hour_Timestamp(value: Timestamp) -> Timestamp {
+    let ts = value.to_naiveDateTime();
+    if ts.minute() == 0 && ts.second() == 0 && ts.nanosecond() == 0 {
+        return value;
+    }
+    let floored = floor_hour_Timestamp(value);
+    let hour = ShortInterval::from_seconds(3600);
+    plus_Timestamp_ShortInterval_Timestamp(floored, hour)
+}
+
+some_polymorphic_function1!(ceil_hour, Timestamp, Timestamp, Timestamp);
+
+#[doc(hidden)]
+pub fn ceil_minute_Timestamp(value: Timestamp) -> Timestamp {
+    let ts = value.to_naiveDateTime();
+    if ts.second() == 0 && ts.nanosecond() == 0 {
+        return value;
+    }
+    let floored = floor_minute_Timestamp(value);
+    let minute = ShortInterval::from_seconds(60);
+    plus_Timestamp_ShortInterval_Timestamp(floored, minute)
+}
+
+some_polymorphic_function1!(ceil_minute, Timestamp, Timestamp, Timestamp);
+
+#[doc(hidden)]
+pub fn ceil_second_Timestamp(value: Timestamp) -> Timestamp {
+    let ts = value.to_naiveDateTime();
+    if ts.nanosecond() == 0 {
+        return value;
+    }
+    let floored = floor_second_Timestamp(value);
+    let second = ShortInterval::from_seconds(1);
+    plus_Timestamp_ShortInterval_Timestamp(floored, second)
+}
+
+some_polymorphic_function1!(ceil_second, Timestamp, Timestamp, Timestamp);
 
 #[doc(hidden)]
 pub fn tumble_Timestamp_ShortInterval(ts: Timestamp, i: ShortInterval) -> Timestamp {
@@ -1057,6 +1302,227 @@ some_operator!(neq, Date, Date, bool);
 some_operator!(gte, Date, Date, bool);
 some_operator!(lte, Date, Date, bool);
 
+#[doc(hidden)]
+pub fn floor_millennium_Date(value: Date) -> Date {
+    let d = value.to_date();
+    let naive = NaiveDate::from_ymd_opt((d.year() / 1000) * 1000, 1, 1).unwrap();
+    Date::from_date(naive)
+}
+
+some_polymorphic_function1!(floor_millennium, Date, Date, Date);
+
+#[doc(hidden)]
+pub fn floor_century_Date(value: Date) -> Date {
+    let d = value.to_date();
+    let naive = NaiveDate::from_ymd_opt((d.year() / 100) * 100, 1, 1).unwrap();
+    Date::from_date(naive)
+}
+
+some_polymorphic_function1!(floor_century, Date, Date, Date);
+
+#[doc(hidden)]
+pub fn floor_decade_Date(value: Date) -> Date {
+    let d = value.to_date();
+    let naive = NaiveDate::from_ymd_opt((d.year() / 10) * 10, 1, 1).unwrap();
+    Date::from_date(naive)
+}
+
+some_polymorphic_function1!(floor_decade, Date, Date, Date);
+
+#[doc(hidden)]
+pub fn floor_year_Date(value: Date) -> Date {
+    let d = value.to_date();
+    let naive = NaiveDate::from_ymd_opt(d.year(), 1, 1).unwrap();
+    Date::from_date(naive)
+}
+
+some_polymorphic_function1!(floor_year, Date, Date, Date);
+
+#[doc(hidden)]
+pub fn floor_quarter_Date(value: Date) -> Date {
+    let d = value.to_date();
+    let naive = NaiveDate::from_ymd_opt(d.year(), ((d.month() - 1) / 3) * 3 + 1, 1).unwrap();
+    Date::from_date(naive)
+}
+
+some_polymorphic_function1!(floor_quarter, Date, Date, Date);
+
+#[doc(hidden)]
+pub fn floor_month_Date(value: Date) -> Date {
+    let d = value.to_date();
+    let naive = NaiveDate::from_ymd_opt(d.year(), d.month(), 1).unwrap();
+    Date::from_date(naive)
+}
+
+some_polymorphic_function1!(floor_month, Date, Date, Date);
+
+#[doc(hidden)]
+pub fn floor_week_Date(value: Date) -> Date {
+    let wd = extract_dow_Date(value) - Date::first_day_of_week();
+    let interval = ShortInterval::from_seconds(wd * 86400);
+    minus_Date_ShortInterval_Date(value, interval)
+}
+
+some_polymorphic_function1!(floor_week, Date, Date, Date);
+
+#[doc(hidden)]
+pub fn floor_day_Date(value: Date) -> Date {
+    value
+}
+
+some_polymorphic_function1!(floor_day, Date, Date, Date);
+
+#[doc(hidden)]
+pub fn floor_hour_Date(value: Date) -> Date {
+    value
+}
+
+some_polymorphic_function1!(floor_hour, Date, Date, Date);
+
+#[doc(hidden)]
+pub fn floor_minute_Date(value: Date) -> Date {
+    value
+}
+
+some_polymorphic_function1!(floor_minute, Date, Date, Date);
+
+#[doc(hidden)]
+pub fn floor_second_Date(value: Date) -> Date {
+    value
+}
+
+some_polymorphic_function1!(floor_second, Date, Date, Date);
+
+#[doc(hidden)]
+pub fn ceil_millennium_Date(value: Date) -> Date {
+    let d = value.to_date();
+    if d.year() % 1000 == 0 && d.month() == 1 && d.day() == 1 {
+        return value;
+    }
+    let naive = NaiveDate::from_ymd_opt((d.year() / 1000 + 1) * 1000, 1, 1).unwrap();
+    Date::from_date(naive)
+}
+
+some_polymorphic_function1!(ceil_millennium, Date, Date, Date);
+
+#[doc(hidden)]
+pub fn ceil_century_Date(value: Date) -> Date {
+    let d = value.to_date();
+    if d.year() % 100 == 0 && d.month() == 1 && d.day() == 1 {
+        return value;
+    }
+    let naive = NaiveDate::from_ymd_opt((d.year() / 100 + 1) * 100, 1, 1).unwrap();
+    Date::from_date(naive)
+}
+
+some_polymorphic_function1!(ceil_century, Date, Date, Date);
+
+#[doc(hidden)]
+pub fn ceil_decade_Date(value: Date) -> Date {
+    let d = value.to_date();
+    if d.year() % 10 == 0 && d.month() == 1 && d.day() == 1 {
+        return value;
+    }
+    let naive = NaiveDate::from_ymd_opt((d.year() / 10 + 1) * 10, 1, 1).unwrap();
+    Date::from_date(naive)
+}
+
+some_polymorphic_function1!(ceil_decade, Date, Date, Date);
+
+#[doc(hidden)]
+pub fn ceil_year_Date(value: Date) -> Date {
+    let d = value.to_date();
+    if d.month() == 1 && d.day() == 1 {
+        return value;
+    }
+    let naive = NaiveDate::from_ymd_opt(d.year() + 1, 1, 1).unwrap();
+    Date::from_date(naive)
+}
+
+some_polymorphic_function1!(ceil_year, Date, Date, Date);
+
+#[doc(hidden)]
+pub fn ceil_quarter_Date(value: Date) -> Date {
+    let d = value.to_date();
+    if ((d.month() - 1) % 3) == 0 && d.day() == 1 {
+        return value;
+    }
+    let next_quarter_month = match d.month() {
+        1..=3 => 4,
+        4..=6 => 7,
+        7..=9 => 10,
+        10..=12 => 1,
+        _ => unreachable!(),
+    };
+    let year = if next_quarter_month == 1 {
+        d.year() + 1
+    } else {
+        d.year()
+    };
+    let naive = NaiveDate::from_ymd_opt(year, next_quarter_month, 1).unwrap();
+    Date::from_date(naive)
+}
+
+some_polymorphic_function1!(ceil_quarter, Date, Date, Date);
+
+#[doc(hidden)]
+pub fn ceil_month_Date(value: Date) -> Date {
+    let d = value.to_date();
+    if d.day() == 1 {
+        return value;
+    }
+    let next_month = if d.month() == 12 { 1 } else { d.month() + 1 };
+    let next_year = if next_month == 1 {
+        d.year() + 1
+    } else {
+        d.year()
+    };
+    let naive = NaiveDate::from_ymd_opt(next_year, next_month, 1).unwrap();
+    Date::from_date(naive)
+}
+
+some_polymorphic_function1!(ceil_month, Date, Date, Date);
+
+#[doc(hidden)]
+pub fn ceil_week_Date(value: Date) -> Date {
+    let wd = extract_dow_Date(value) - Date::first_day_of_week();
+    if wd == 0 {
+        return value;
+    }
+    let interval = ShortInterval::from_seconds((7 - wd) * 86400);
+    plus_Date_ShortInterval_Date(value, interval)
+}
+
+some_polymorphic_function1!(ceil_week, Date, Date, Date);
+
+#[doc(hidden)]
+pub fn ceil_day_Date(value: Date) -> Date {
+    value
+}
+
+some_polymorphic_function1!(ceil_day, Date, Date, Date);
+
+#[doc(hidden)]
+pub fn ceil_hour_Date(value: Date) -> Date {
+    value
+}
+
+some_polymorphic_function1!(ceil_hour, Date, Date, Date);
+
+#[doc(hidden)]
+pub fn ceil_minute_Date(value: Date) -> Date {
+    value
+}
+
+some_polymorphic_function1!(ceil_minute, Date, Date, Date);
+
+#[doc(hidden)]
+pub fn ceil_second_Date(value: Date) -> Date {
+    value
+}
+
+some_polymorphic_function1!(ceil_second, Date, Date, Date);
+
 // right - left
 #[doc(hidden)]
 pub fn minus_Date_Date_LongInterval(left: Date, right: Date) -> LongInterval {
@@ -1099,7 +1565,7 @@ polymorphic_return_function2!(minus, Date, Date, Date, Date, LongInterval, LongI
 pub fn minus_Date_Date_ShortInterval(left: Date, right: Date) -> ShortInterval {
     let ld = left.days() as i64;
     let rd = right.days() as i64;
-    ShortInterval::new((ld - rd) * 86400 * 1000)
+    ShortInterval::from_seconds((ld - rd) * 86400)
 }
 
 polymorphic_return_function2!(minus, Date, Date, Date, Date, ShortInterval, ShortInterval);
@@ -1672,6 +2138,208 @@ some_operator!(eq, Time, Time, bool);
 some_operator!(neq, Time, Time, bool);
 some_operator!(gte, Time, Time, bool);
 some_operator!(lte, Time, Time, bool);
+
+#[doc(hidden)]
+pub fn floor_millennium_Time(value: Time) -> Time {
+    // This makes no sense, but this is the result from Calcite
+    value
+}
+
+some_polymorphic_function1!(floor_millennium, Time, Time, Time);
+
+#[doc(hidden)]
+pub fn floor_century_Time(value: Time) -> Time {
+    // This makes no sense, but this is the result from Calcite
+    value
+}
+
+some_polymorphic_function1!(floor_century, Time, Time, Time);
+
+#[doc(hidden)]
+pub fn floor_decade_Time(value: Time) -> Time {
+    // This makes no sense, but this is the result from Calcite
+    value
+}
+
+some_polymorphic_function1!(floor_decade, Time, Time, Time);
+
+#[doc(hidden)]
+pub fn floor_year_Time(value: Time) -> Time {
+    // This makes no sense, but this is the result from Calcite
+    value
+}
+
+some_polymorphic_function1!(floor_year, Time, Time, Time);
+
+#[doc(hidden)]
+pub fn floor_quarter_Time(value: Time) -> Time {
+    // This makes no sense, but this is the result from Calcite
+    value
+}
+
+some_polymorphic_function1!(floor_quarter, Time, Time, Time);
+
+#[doc(hidden)]
+pub fn floor_month_Time(value: Time) -> Time {
+    // This makes no sense, but this is the result from Calcite
+    value
+}
+
+some_polymorphic_function1!(floor_month, Time, Time, Time);
+
+#[doc(hidden)]
+pub fn floor_week_Time(value: Time) -> Time {
+    // This makes no sense, but this is the result from Calcite
+    value
+}
+
+some_polymorphic_function1!(floor_week, Time, Time, Time);
+
+#[doc(hidden)]
+pub fn floor_day_Time(value: Time) -> Time {
+    // This makes no sense, but this is the result from Calcite
+    value
+}
+
+some_polymorphic_function1!(floor_day, Time, Time, Time);
+
+#[doc(hidden)]
+pub fn floor_hour_Time(value: Time) -> Time {
+    time_trunc_hour_Time(value)
+}
+
+some_polymorphic_function1!(floor_hour, Time, Time, Time);
+
+#[doc(hidden)]
+pub fn floor_minute_Time(value: Time) -> Time {
+    time_trunc_minute_Time(value)
+}
+
+some_polymorphic_function1!(floor_minute, Time, Time, Time);
+
+#[doc(hidden)]
+pub fn floor_second_Time(value: Time) -> Time {
+    time_trunc_second_Time(value)
+}
+
+some_polymorphic_function1!(floor_second, Time, Time, Time);
+
+#[doc(hidden)]
+pub fn ceil_millennium_Time(value: Time) -> Time {
+    // This makes no sense, but this is the result from Calcite
+    value
+}
+
+some_polymorphic_function1!(ceil_millennium, Time, Time, Time);
+
+#[doc(hidden)]
+pub fn ceil_century_Time(value: Time) -> Time {
+    // This makes no sense, but this is the result from Calcite
+    value
+}
+
+some_polymorphic_function1!(ceil_century, Time, Time, Time);
+
+#[doc(hidden)]
+pub fn ceil_decade_Time(value: Time) -> Time {
+    // This makes no sense, but this is the result from Calcite
+    value
+}
+
+some_polymorphic_function1!(ceil_decade, Time, Time, Time);
+
+#[doc(hidden)]
+pub fn ceil_year_Time(value: Time) -> Time {
+    // This makes no sense, but this is the result from Calcite
+    value
+}
+
+some_polymorphic_function1!(ceil_year, Time, Time, Time);
+
+#[doc(hidden)]
+pub fn ceil_quarter_Time(value: Time) -> Time {
+    // This makes no sense, but this is the result from Calcite
+    value
+}
+
+some_polymorphic_function1!(ceil_quarter, Time, Time, Time);
+
+#[doc(hidden)]
+pub fn ceil_month_Time(value: Time) -> Time {
+    // This makes no sense, but this is the result from Calcite
+    value
+}
+
+some_polymorphic_function1!(ceil_month, Time, Time, Time);
+
+#[doc(hidden)]
+pub fn ceil_week_Time(value: Time) -> Time {
+    // This makes no sense, but this is the result from Calcite
+    value
+}
+
+some_polymorphic_function1!(ceil_week, Time, Time, Time);
+
+#[doc(hidden)]
+pub fn ceil_day_Time(value: Time) -> Time {
+    // This makes no sense, but this is the result from Calcite
+    value
+}
+
+some_polymorphic_function1!(ceil_day, Time, Time, Time);
+
+#[doc(hidden)]
+pub fn ceil_hour_Time(value: Time) -> Time {
+    let t = value.to_time();
+    if t.minute() == 0 && t.second() == 0 && t.nanosecond() == 0 {
+        return value;
+    }
+    let result = NaiveTime::from_hms_opt((t.hour() + 1) % 24, 0, 0).unwrap();
+    Time::from_time(result)
+}
+
+some_polymorphic_function1!(ceil_hour, Time, Time, Time);
+
+#[doc(hidden)]
+pub fn ceil_minute_Time(value: Time) -> Time {
+    let t = value.to_time();
+    if t.second() == 0 && t.nanosecond() == 0 {
+        return value;
+    }
+    let min = (t.minute() + 1) % 60;
+    let hour = if min == 0 {
+        (t.hour() + 1) % 24
+    } else {
+        t.hour()
+    };
+    let result = NaiveTime::from_hms_opt(hour, min, 0).unwrap();
+    Time::from_time(result)
+}
+
+some_polymorphic_function1!(ceil_minute, Time, Time, Time);
+
+#[doc(hidden)]
+pub fn ceil_second_Time(value: Time) -> Time {
+    let t = value.to_time();
+    if t.nanosecond() == 0 {
+        return value;
+    }
+    let sec = (t.second() + 1) % 60;
+    let min = if sec == 0 {
+        (t.minute() + 1) % 60
+    } else {
+        t.minute()
+    };
+    let hour = if sec == 0 && min == 0 {
+        (t.hour() + 1) % 24
+    } else {
+        t.hour()
+    };
+    let result = NaiveTime::from_hms_opt(hour, min, sec).unwrap();
+    Time::from_time(result)
+}
+
+some_polymorphic_function1!(ceil_second, Time, Time, Time);
 
 #[doc(hidden)]
 pub fn extract_millisecond_Time(value: Time) -> i64 {
