@@ -18,6 +18,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPDistinctOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFilterOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPHopOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPInputMapWithWaterlineOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinBaseOperator;
@@ -45,9 +46,8 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPWaterlineOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.IColumnMetadata;
 import org.dbsp.sqlCompiler.compiler.IHasColumnsMetadata;
-import org.dbsp.sqlCompiler.compiler.IHasLateness;
-import org.dbsp.sqlCompiler.compiler.IHasWatermark;
 import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
@@ -65,6 +65,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.monotone.NonMonotoneType;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.PartiallyMonotoneTuple;
 import org.dbsp.sqlCompiler.compiler.visitors.monotone.ScalarMonotoneType;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitCloneVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.IndexedInputs;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.AggregateExpansion;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.CommonJoinExpansion;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.DistinctExpansion;
@@ -122,6 +123,8 @@ import java.util.Set;
  * - {@link DBSPPartitionedRollingAggregateWithWaterlineOperator} operators
  * - {@link DBSPIntegrateTraceRetainValuesOperator} to prune data from integral operators
  * This also inserts WINDOWS before views that have "emit_final" annotations.
+ * It also converts {@link DBSPSourceMultisetOperator} into {@link DBSPInputMapWithWaterlineOperator}
+ * when appropriate.
  *
  * <P>This visitor is tricky because it operates on a circuit, but takes the information
  * required to rewrite the graph from a different circuit, the expandedCircuit and
@@ -417,7 +420,9 @@ public class InsertLimiters extends CircuitCloneVisitor {
             return;
         }
 
-        DBSPSimpleOperator filteredAggregator = aggregator.withInputs(Linq.list(source), false);
+        DBSPSimpleOperator filteredAggregator = aggregator
+                .withInputs(Linq.list(source), false)
+                .to(DBSPSimpleOperator.class);
         OutputPort limiter2 = this.addBounds(aggregator, ae.replacement, 0);
         if (limiter2 == null) {
             this.map(aggregator, filteredAggregator);
@@ -464,7 +469,9 @@ public class InsertLimiters extends CircuitCloneVisitor {
             return;
         }
 
-        DBSPSimpleOperator filteredAggregator = aggregator.withInputs(Linq.list(source), false);
+        DBSPSimpleOperator filteredAggregator = aggregator
+                .withInputs(Linq.list(source), false)
+                .to(DBSPSimpleOperator.class);
         OutputPort limiter2 = this.addBounds(aggregator, ae.replacement, 0);
         if (limiter2 == null) {
             this.map(aggregator, filteredAggregator);
@@ -503,7 +510,9 @@ public class InsertLimiters extends CircuitCloneVisitor {
             return;
         }
 
-        DBSPSimpleOperator filteredAggregator = aggregator.withInputs(Linq.list(source), false);
+        DBSPSimpleOperator filteredAggregator = aggregator
+                .withInputs(Linq.list(source), false)
+                .to(DBSPSimpleOperator.class);
         // We use the input 0; input 1 comes from the integrator
         OutputPort limiter2 = this.addBounds(null, ae.aggregator, 0);
         if (limiter2 == null) {
@@ -564,7 +573,9 @@ public class InsertLimiters extends CircuitCloneVisitor {
             return;
         }
 
-        DBSPSimpleOperator filteredAggregator = aggregator.withInputs(Linq.list(source), false);
+        DBSPSimpleOperator filteredAggregator = aggregator
+                .withInputs(Linq.list(source), false)
+                .to(DBSPSimpleOperator.class);
         this.addOperator(filteredAggregator);
         this.createRetainKeys(aggregator.getRelNode(), filteredAggregator.outputPort(), projection2, aggLimiter);
         this.map(aggregator, filteredAggregator, false);
@@ -715,7 +726,8 @@ public class InsertLimiters extends CircuitCloneVisitor {
             return;
         }
 
-        DBSPSimpleOperator result = operator.withInputs(Linq.list(source), false);
+        DBSPSimpleOperator result = operator.withInputs(Linq.list(source), false)
+                .to(DBSPSimpleOperator.class);
         MonotoneExpression sourceMonotone = this.expansionMonotoneValues.get(expansion.distinct.right());
         IMaybeMonotoneType projection = Monotonicity.getBodyType(Objects.requireNonNull(sourceMonotone));
         this.createRetainKeys(operator.getRelNode(), source, projection, sourceLimiter);
@@ -1297,7 +1309,12 @@ public class InsertLimiters extends CircuitCloneVisitor {
 
     /** Process LATENESS annotations.
      * @return Return the original operator if there aren't any annotations, or
-     * the operator that produces the result of the input filtered otherwise. */
+     * the operator that produces the result of the input filtered otherwise.
+     * The replacement depends on whether there are primary keys:
+     * - for no primary keys, we insert a chain {@link DBSPWaterlineOperator}, {@link DBSPDelayOperator},
+     * {@link DBSPControlledKeyFilterOperator}.
+     * - for primary keys we use a single operator which does all of these in one shot:
+     * {@link DBSPInputMapWithWaterlineOperator}*/
     DBSPOperator processLateness(
             ProgramIdentifier viewOrTable, DBSPSimpleOperator operator, DBSPSimpleOperator expansion) {
         MonotoneExpression expression = this.expansionMonotoneValues.get(expansion);
@@ -1305,10 +1322,15 @@ public class InsertLimiters extends CircuitCloneVisitor {
             this.nonMonotone(expansion);
             return operator;
         }
+        DBSPSourceMultisetOperator multisetInput = operator.as(DBSPSourceMultisetOperator.class);
+        DBSPTypeIndexedZSet indexedOutputType = null;
+        if (multisetInput != null)
+            indexedOutputType = IndexedInputs.getIndexedType(multisetInput);
+
         List<DBSPExpression> timestamps = new ArrayList<>();
         int index = 0;
         DBSPVariablePath t = operator.getOutputZSetType().elementType.ref().var();
-        for (IHasLateness column: operator.to(IHasColumnsMetadata.class).getLateness()) {
+        for (IColumnMetadata column: operator.to(IHasColumnsMetadata.class).getColumnsMetadata()) {
             DBSPExpression lateness = column.getLateness();
             if (lateness != null) {
                 DBSPExpression field = t.deref().field(index);
@@ -1324,10 +1346,15 @@ public class InsertLimiters extends CircuitCloneVisitor {
             return operator;
         }
 
+        boolean replaceIndexedInput = indexedOutputType != null
+                && !this.compiler.options.ioOptions.emitHandles;
+
         List<OutputPort> sources = Linq.map(operator.inputs, this::mapped);
-        DBSPSimpleOperator replacement = operator.withInputs(sources, this.force);
+        DBSPSimpleOperator replacement = operator.withInputs(sources, this.force)
+                .to(DBSPSimpleOperator.class);
         replacement.setDerivedFrom(operator.derivedFrom);
-        this.addOperator(replacement);
+        if (!replaceIndexedInput)
+            this.addOperator(replacement);
 
         // The waterline operator will compute the *minimum legal value* of all the
         // inputs that have a lateness attached.  The output signature contains only
@@ -1341,31 +1368,68 @@ public class InsertLimiters extends CircuitCloneVisitor {
                 // second parameter unused for timestamp
                 timestamp.closure(t, new DBSPTypeRawTuple().ref().var()),
                 max, replacement.outputPort());
-        this.addOperator(waterline);
+        OutputPort waterlineOutputPort = waterline.outputPort();
+        if (!replaceIndexedInput)
+            this.addOperator(waterline);
 
         // Waterline fed through a delay
         DBSPDelayOperator delay = new DBSPDelayOperator(operator.getRelNode(), min, waterline.outputPort());
-        this.addOperator(delay);
+        if (!replaceIndexedInput)
+            this.addOperator(delay);
+
+        DBSPControlledKeyFilterOperator filter = this.createControlledKeyFilter(
+                operator.getRelNode(), viewOrTable, replacement.outputPort(),
+                Monotonicity.getBodyType(expression), delay.outputPort());
+        DBSPOperator result = filter;
+
+        if (replaceIndexedInput) {
+            List<Integer> keyFields = IndexedInputs.getKeyFields(multisetInput);
+            // Many of these functions take the key as a parameter, although
+            // it is a subset of the value fields...
+            DBSPVariablePath k = indexedOutputType.keyType.ref().var();
+            Utilities.enforce(filter.function.parameters.length == 2);
+            DBSPClosureExpression ff = filter.function.body.closure(
+                    filter.function.parameters[0], k.asParameter(), filter.function.parameters[1]);
+            Utilities.enforce(filter.error.parameters.length == 4);
+            DBSPClosureExpression error = filter.error.body.closure(
+                    filter.error.parameters[0], k.asParameter(), filter.error.parameters[1], filter.error.parameters[3]);
+            result = new DBSPInputMapWithWaterlineOperator(
+                    multisetInput.getRelNode(), multisetInput.sourceName, keyFields,
+                    indexedOutputType, multisetInput.originalRowType, multisetInput.metadata, multisetInput.tableName,
+                    min.closure(), timestamp.closure(k, t), max, ff, error);
+            this.errorStreams.add(result.getOutput(1));
+            waterlineOutputPort = result.getOutput(2);
+            this.addOperator(result);
+
+            result = new DBSPDeindexOperator(multisetInput.getRelNode(), result.getOutput(0));
+        } else {
+            OutputPort errorPort = result.getOutput(1);
+            if (!this.reachableFromError.contains(result.inputs.get(0).operator)) {
+                // This would create a cycle, so skip.
+                this.errorStreams.add(errorPort);
+                // TODO: connect through a delay.
+            }
+        }
 
         // An apply operator to add a Boolean bit to the waterline.
         // This bit is 'true' when the waterline produces a value
         // that is not 'minimum'.
-        DBSPVariablePath var = timestamp.getType().ref().var();
-        DBSPExpression eq = eq(min, var.deref());
+        DBSPVariablePath var = waterlineOutputPort.outputType().ref().var();
+        // If the v is &TypedBox<T>, v.deref().deref() has type T
+        DBSPExpression unwrapped = replaceIndexedInput ? var.deref().deref() : var.deref();
+        DBSPExpression eq = eq(min, unwrapped);
         DBSPSimpleOperator extend = new DBSPApplyOperator(operator.getRelNode(),
                 new DBSPTupleExpression(
                         eq.not(),
-                        var.deref().applyClone()).closure(var),
-                waterline.outputPort(), null);
+                        unwrapped.applyClone()).closure(var),
+                waterlineOutputPort, null);
         extend.addAnnotation(Waterline.INSTANCE, DBSPSimpleOperator.class);
         this.addOperator(extend);
-
         this.markBound(operator.outputPort(), extend.outputPort());
         if (operator != expansion)
             this.markBound(expansion.outputPort(), extend.outputPort());
-        return this.createControlledKeyFilter(
-                operator.getRelNode(), viewOrTable, replacement.outputPort(),
-                Monotonicity.getBodyType(expression), delay.outputPort());
+
+        return result;
     }
 
     DBSPControlledKeyFilterOperator createControlledKeyFilter(
@@ -1399,16 +1463,8 @@ public class InsertLimiters extends CircuitCloneVisitor {
                         new DBSPStrLiteral("{:?}"),
                         dataVar0).applyMethod("into", DBSPTypeString.varchar(false)))
                 .closure(controlArg, dataVar0, valArg, weightArg);
-        DBSPControlledKeyFilterOperator result = new DBSPControlledKeyFilterOperator(
+        return new DBSPControlledKeyFilterOperator(
                 node, closure, error, data, control);
-
-        OutputPort errorPort = result.getOutput(1);
-        if (!this.reachableFromError.contains(data.operator)) {
-            // This would create a cycle, so skip.
-            this.errorStreams.add(errorPort);
-            // TODO: connect through a delay.
-        }
-        return result;
     }
 
     @Override
@@ -1423,7 +1479,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
         List<DBSPExpression> fields = new ArrayList<>();
         List<DBSPExpression> timestamps = new ArrayList<>();
         List<DBSPExpression> minimums = new ArrayList<>();
-        for (IHasWatermark column: operator.to(IHasColumnsMetadata.class).getWatermarks()) {
+        for (IColumnMetadata column: operator.to(IHasColumnsMetadata.class).getColumnsMetadata()) {
             DBSPExpression watermark = column.getWatermark();
             if (watermark != null) {
                 DBSPExpression field = t.deref().field(index);
@@ -1661,7 +1717,8 @@ public class InsertLimiters extends CircuitCloneVisitor {
             } else {
                 collected = this.errorStreams.get(0);
             }
-            DBSPSimpleOperator newView = operator.withInputs(Linq.list(collected), false);
+            DBSPSimpleOperator newView = operator.withInputs(Linq.list(collected), false)
+                    .to(DBSPSimpleOperator.class);
             this.map(operator, newView);
             // No lateness to propagate for error view
             return;
@@ -1769,7 +1826,8 @@ public class InsertLimiters extends CircuitCloneVisitor {
 
                     DBSPSimpleOperator deindex = new DBSPDeindexOperator(operator.getRelNode(), window.outputPort());
                     this.addOperator(deindex);
-                    DBSPSimpleOperator sink = operator.withInputs(Linq.list(deindex.outputPort()), false);
+                    DBSPSimpleOperator sink = operator.withInputs(Linq.list(deindex.outputPort()), false)
+                            .to(DBSPSimpleOperator.class);
                     this.map(operator, sink);
                     return;
                 }

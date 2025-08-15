@@ -9,7 +9,6 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.ir.DBSPNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
-import org.dbsp.sqlCompiler.ir.type.IHasType;
 import org.dbsp.util.IJson;
 import org.dbsp.util.Utilities;
 
@@ -18,7 +17,7 @@ import java.util.Objects;
 
 /** Metadata for a column belonging to a view */
 public class ViewColumnMetadata
-        implements IHasLateness, IHasSourcePositionRange, IHasType, IJson {
+        implements IColumnMetadata, IJson {
     public final ProgramIdentifier viewName;
     /** Initially the column type is unknown, but it is filled in later */
     @Nullable
@@ -37,12 +36,38 @@ public class ViewColumnMetadata
         this.lateness = lateness;
     }
 
+    @Override
     public CalciteObject getNode() { return this.node; }
+
+    @Nullable @Override
+    public DBSPExpression getLateness() {
+        return this.lateness;
+    }
+
+    @Nullable @Override
+    public DBSPExpression getWatermark() {
+        return null;
+    }
 
     @Nullable
     @Override
-    public DBSPExpression getLateness() {
-        return this.lateness;
+    public DBSPExpression getDefaultValue() {
+        return null;
+    }
+
+    @Override
+    public ProgramIdentifier getColumnName() {
+        return this.columnName;
+    }
+
+    @Override
+    public boolean isPrimaryKey() {
+        return false;
+    }
+
+    @Override
+    public boolean isInterned() {
+        return false;
     }
 
     public ProgramIdentifier getName() {

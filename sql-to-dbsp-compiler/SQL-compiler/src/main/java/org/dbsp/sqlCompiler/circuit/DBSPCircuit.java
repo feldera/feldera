@@ -26,9 +26,11 @@ package org.dbsp.sqlCompiler.circuit;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceTableOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewDeclarationOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewOperator;
+import org.dbsp.sqlCompiler.circuit.operator.IInputOperator;
 import org.dbsp.sqlCompiler.compiler.ProgramMetadata;
 import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
@@ -63,7 +65,7 @@ public final class DBSPCircuit extends DBSPNode
         implements IDBSPOuterNode, IWritesLogs, ICircuit, DiGraph<DBSPOperator> {
     public final List<DBSPDeclaration> declarations;
     public final Map<String, DBSPDeclaration> declarationMap = new HashMap<>();
-    public final LinkedHashMap<ProgramIdentifier, DBSPSourceTableOperator> sourceOperators = new LinkedHashMap<>();
+    public final LinkedHashMap<ProgramIdentifier, IInputOperator> sourceOperators = new LinkedHashMap<>();
     public final LinkedHashMap<ProgramIdentifier, DBSPViewOperator> viewOperators = new LinkedHashMap<>();
     public final LinkedHashMap<ProgramIdentifier, DBSPSinkOperator> sinkOperators = new LinkedHashMap<>();
     // Should always be in topological order
@@ -101,12 +103,12 @@ public final class DBSPCircuit extends DBSPNode
     public void resort(CircuitGraph graph) {
         this.allOperators.clear();
         DBSPOperator previous = null;
-        for (DBSPSourceTableOperator source: this.sourceOperators.values()) {
+        for (IInputOperator source: this.sourceOperators.values()) {
             if (previous != null) {
                 // Preserve the input order
-                graph.addEdge(previous, source, 0);
+                graph.addEdge(previous, source.asOperator(), 0);
             }
-            previous = source;
+            previous = source.asOperator();
         }
 
         previous = null;
@@ -168,9 +170,9 @@ public final class DBSPCircuit extends DBSPNode
         Utilities.enforce(!this.operators.contains(operator),
                 "Operator " + operator + " already inserted");
         this.operators.add(operator);
-        DBSPSourceTableOperator source = operator.as(DBSPSourceTableOperator.class);
+        IInputOperator source = operator.as(IInputOperator.class);
         if (source != null)
-            Utilities.putNew(this.sourceOperators, source.tableName, source);
+            Utilities.putNew(this.sourceOperators, source.getTableName(), source);
         DBSPViewOperator view = operator.as(DBSPViewOperator.class);
         if (view != null)
             Utilities.putNew(this.viewOperators, view.viewName, view);
@@ -206,7 +208,7 @@ public final class DBSPCircuit extends DBSPNode
     /** Get the table with the specified name.
      * @param tableName must use the proper casing */
     @Nullable
-    public DBSPSourceTableOperator getInput(ProgramIdentifier tableName) {
+    public IInputOperator getInput(ProgramIdentifier tableName) {
         return this.sourceOperators.get(tableName);
     }
 

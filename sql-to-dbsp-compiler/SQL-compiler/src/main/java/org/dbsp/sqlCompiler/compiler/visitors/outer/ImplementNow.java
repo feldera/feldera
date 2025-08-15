@@ -16,6 +16,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPUnaryOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWaterlineOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
+import org.dbsp.sqlCompiler.circuit.operator.IInputOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
@@ -868,10 +869,11 @@ public class ImplementNow extends Passes {
             } else {
                 // A table followed by a differentiator.
                 ProgramIdentifier tableName = DBSPCompiler.NOW_TABLE_NAME;
-                now = circuit.getInput(tableName);
-                if (now == null) {
+                IInputOperator nowInput = circuit.getInput(tableName);
+                if (nowInput == null) {
                     throw new CompilationError("Declaration for table 'NOW' not found in program");
                 }
+                now = nowInput.asOperator().to(DBSPSimpleOperator.class);
                 // Prevent processing it again by this visitor
                 this.visited.add(now);
                 this.addOperator(now);

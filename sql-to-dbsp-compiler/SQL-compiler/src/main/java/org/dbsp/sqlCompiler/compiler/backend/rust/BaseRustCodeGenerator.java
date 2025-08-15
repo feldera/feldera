@@ -130,7 +130,7 @@ public abstract class BaseRustCodeGenerator implements ICodeGenerator {
                 Error,
                 Runtime,
                 NumEntries,
-                MapHandle, ZSetHandle, OutputHandle,
+                MapHandle, SetHandle, ZSetHandle, OutputHandle,
                 dynamic::{DynData,DynDataTyped},
             };
             use dbsp_adapters::Catalog;

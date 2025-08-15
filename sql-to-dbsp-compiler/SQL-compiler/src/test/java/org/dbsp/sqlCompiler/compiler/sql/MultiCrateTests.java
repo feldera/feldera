@@ -1,5 +1,7 @@
 package org.dbsp.sqlCompiler.compiler.sql;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.dbsp.sqlCompiler.CompilerMain;
 import org.dbsp.sqlCompiler.compiler.backend.rust.multi.MultiCrates;
 import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
@@ -33,13 +35,21 @@ public class MultiCrateTests extends BaseSQLTests {
             }
         }
 
+        String jsonFile = PROJECT_DIRECTORY + "/x.json";
         CompilerMessages messages = CompilerMain.execute(
                 "-i", "--alltables", "-q", "--ignoreOrder", "--crates", "x",
-                "-o", BaseSQLTests.RUST_CRATES_DIRECTORY, file);
+                "-o", BaseSQLTests.RUST_CRATES_DIRECTORY, file, "--dataflow", jsonFile);
         if (messages.errorCount() > 0) {
             messages.print();
             throw new RuntimeException("Error during compilation");
         }
+        File json = new File(jsonFile);
+        Assert.assertTrue(json.exists());
+        ObjectMapper mapper = Utilities.deterministicObjectMapper();
+        JsonNode parsed = mapper.readTree(json);
+        Assert.assertNotNull(parsed);
+        //noinspection ResultOfMethodCallIgnored
+        json.delete();
         if (check && !BaseSQLTests.skipRust)
             Utilities.compileAndCheckRust(BaseSQLTests.RUST_CRATES_DIRECTORY, true);
     }
@@ -73,6 +83,19 @@ public class MultiCrateTests extends BaseSQLTests {
                 CREATE FUNCTION jsonstring_as_t0(line VARCHAR) RETURNS T0;
                 CREATE TABLE T(x VARCHAR);
                 CREATE VIEW V AS SELECT jsonstring_as_t0(x).n FROM T;""";
+        File file = createInputScript(sql);
+        this.compileToMultiCrate(file.getAbsolutePath(), true);
+    }
+
+    @Test
+    public void issue4457() throws IOException, SQLException, InterruptedException {
+        String sql = """
+                CREATE TABLE test_events (
+                    id VARCHAR NOT NULL PRIMARY KEY,
+                    a VARCHAR,
+                    t TIMESTAMP NOT NULL LATENESS INTERVAL 1 MINUTE
+                );
+                CREATE VIEW V AS SELECT * FROM test_events;""";
         File file = createInputScript(sql);
         this.compileToMultiCrate(file.getAbsolutePath(), true);
     }

@@ -181,7 +181,8 @@ public class RewriteInternedFields extends CircuitCloneVisitor {
                     "Output type not preserved for " + operator + " during interning:\n" +
             outputType + ", expected\n" + operator.outputType);
         DBSPSimpleOperator replacement = operator.with(
-                function, outputType, Linq.list(input), false);
+                function, outputType, Linq.list(input), false)
+                .to(DBSPSimpleOperator.class);
         this.allStringLiterals.addAll(interner.globalStrings);
         this.map(operator, replacement);
     }
@@ -286,7 +287,8 @@ public class RewriteInternedFields extends CircuitCloneVisitor {
         DBSPType originalValueType = operator.getOutputIndexedZSetType().elementType;
         DBSPType outputType = new DBSPTypeIndexedZSet(zSet.getNode(), zSet.keyType, originalValueType);
         DBSPSimpleOperator result = operator.with(operator.getFunction(), outputType,
-                Linq.list(reindex.outputPort()), false);
+                Linq.list(reindex.outputPort()), false)
+                .to(DBSPSimpleOperator.class);
         this.map(operator, result);
     }
 
@@ -370,7 +372,8 @@ public class RewriteInternedFields extends CircuitCloneVisitor {
             }
         }
         DBSPType outputType = new DBSPTypeZSet(new DBSPTypeTuple(fields));
-        DBSPSimpleOperator result = operator.withFunction(null, outputType);
+        DBSPSimpleOperator result = operator.withFunction(null, outputType)
+                .to(DBSPSimpleOperator.class);
         this.map(operator, result);
     }
 
@@ -417,7 +420,8 @@ public class RewriteInternedFields extends CircuitCloneVisitor {
     void uninternAllInputs(DBSPSimpleOperator operator) {
         List<OutputPort> inputs = Linq.map(
                 operator.inputs, i -> this.uninternStream(operator.getRelNode(), i));
-        DBSPSimpleOperator result = operator.withInputs(inputs, false);
+        DBSPSimpleOperator result = operator.withInputs(inputs, false)
+                .to(DBSPSimpleOperator.class);
         this.map(operator, result);
     }
 
@@ -559,7 +563,8 @@ public class RewriteInternedFields extends CircuitCloneVisitor {
         DBSPClosureExpression function = interner.apply(operator.getFunction()).to(DBSPClosureExpression.class);
         DBSPSimpleOperator replacement = operator.with(function,
                 function.getResultType().to(DBSPTypeTupleBase.class).intoCollectionType(),
-                Linq.list(left, right), false);
+                Linq.list(left, right), false)
+                .to(DBSPSimpleOperator.class);
         this.map(operator, replacement);
     }
 
@@ -757,7 +762,9 @@ public class RewriteInternedFields extends CircuitCloneVisitor {
         this.addOperator(map);
 
         Utilities.enforce(operator.outputType.sameType(map.outputType));
-        DBSPSimpleOperator result = operator.withInputs(Linq.list(map.outputPort()), false);
+        DBSPSimpleOperator result = operator
+                .withInputs(Linq.list(map.outputPort()), false)
+                .to(DBSPSimpleOperator.class);
         this.map(operator, result);
     }
 

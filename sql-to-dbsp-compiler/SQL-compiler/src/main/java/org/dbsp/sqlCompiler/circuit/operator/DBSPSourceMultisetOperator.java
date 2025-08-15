@@ -53,7 +53,7 @@ public final class DBSPSourceMultisetOperator
     }
 
     @Override
-    public DBSPSimpleOperator with(
+    public DBSPOperator with(
             @Nullable DBSPExpression function, DBSPType outputType,
             List<OutputPort> newInputs, boolean force) {
         if (this.mustReplace(force, function, newInputs, outputType)) {
@@ -77,12 +77,13 @@ public final class DBSPSourceMultisetOperator
 
     @SuppressWarnings("unused")
     public static DBSPSourceMultisetOperator fromJson(JsonNode node, JsonDecoder decoder) {
-        DBSPType originalRowType = DBSPNode.fromJsonInner(node, "originalRowType", decoder, DBSPType.class);
+        DBSPTypeStruct originalRowType = DBSPNode.fromJsonInner(
+                node, "originalRowType", decoder, DBSPTypeStruct.class);
         CommonInfo info = DBSPSimpleOperator.commonInfoFromJson(node, decoder);
         ProgramIdentifier name = ProgramIdentifier.fromJson(Utilities.getProperty(node, "tableName"));
         TableMetadata metadata = TableMetadata.fromJson(Utilities.getProperty(node, "metadata"), decoder);
         return new DBSPSourceMultisetOperator(CalciteEmptyRel.INSTANCE, CalciteObject.EMPTY,
-                info.getZsetType(), originalRowType.to(DBSPTypeStruct.class), metadata, name, null)
+                info.getZsetType(), originalRowType, metadata, name, null)
                 .addAnnotations(info.annotations(), DBSPSourceMultisetOperator.class);
     }
 }

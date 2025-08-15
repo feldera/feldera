@@ -67,7 +67,9 @@ public class OptimizeIncrementalVisitor extends CircuitCloneVisitor {
     public void linear(DBSPUnaryOperator operator) {
         OutputPort source = this.mapped(operator.input());
         if (source.node().is(DBSPIntegrateOperator.class)) {
-            DBSPSimpleOperator replace = operator.withInputs(source.node().inputs, true);
+            DBSPSimpleOperator replace = operator
+                    .withInputs(source.node().inputs, true)
+                    .to(DBSPSimpleOperator.class);
             this.addOperator(replace);
             DBSPIntegrateOperator integral = new DBSPIntegrateOperator(
                     operator.getRelNode(), replace.outputPort());
@@ -234,7 +236,8 @@ public class OptimizeIncrementalVisitor extends CircuitCloneVisitor {
             OutputPort source = this.mapped(operator.input());
             Utilities.enforce(source.node().is(DBSPIntegrateOperator.class));
             DBSPSimpleOperator result = operator.withInputs(
-                    Linq.list(source.node().to(DBSPUnaryOperator.class).input()), true);
+                    Linq.list(source.node().to(DBSPUnaryOperator.class).input()), true)
+                    .to(DBSPSimpleOperator.class);
             this.map(operator, result);
             return;
         }

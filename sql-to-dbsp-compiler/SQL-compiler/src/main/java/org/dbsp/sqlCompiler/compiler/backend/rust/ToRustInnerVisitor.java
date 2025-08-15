@@ -155,6 +155,7 @@ import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeOption;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeStream;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeUser;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeArray;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeWeight;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.IndentStream;
 import org.dbsp.util.IndentStreamBuilder;
@@ -708,7 +709,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
         for (Map.Entry<DBSPExpression, Long> e : entries) {
             e.getKey().accept(this);
             this.builder.append(" => ")
-                    .append(e.getValue());
+                    .append(DBSPTypeWeight.makeWeight(e.getValue()));
             if (large)
                 this.builder.append(",\n");
         }

@@ -107,7 +107,7 @@ public final class DBSPControlledKeyFilterOperator extends DBSPOperatorWithError
     }
 
     @Override
-    public DBSPOperatorWithError withInputs(List<OutputPort> newInputs, boolean force) {
+    public DBSPOperator withInputs(List<OutputPort> newInputs, boolean force) {
         Utilities.enforce(newInputs.size() == 2, "Expected 2 inputs, got " + newInputs.size());
         if (force || this.inputsDiffer(newInputs))
             return new DBSPControlledKeyFilterOperator(

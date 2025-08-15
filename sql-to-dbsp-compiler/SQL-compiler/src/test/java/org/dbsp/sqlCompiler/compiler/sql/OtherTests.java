@@ -28,10 +28,10 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.dbsp.sqlCompiler.CompilerMain;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamDistinctOperator;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
+import org.dbsp.sqlCompiler.circuit.operator.IInputOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.TestUtil;
 import org.dbsp.util.HashString;
@@ -367,9 +367,9 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
         DBSPCircuit circuit = compiler.getFinalCircuit(false);
         Assert.assertNotNull(circuit);
         DBSPTypeZSet outputType = circuit.getSingleOutputType().to(DBSPTypeZSet.class);
-        DBSPSimpleOperator source = circuit.getInput(compiler.canonicalName("T", false));
+        IInputOperator source = circuit.getInput(compiler.canonicalName("T", false));
         Assert.assertNotNull(source);
-        DBSPTypeZSet inputType = source.getType().to(DBSPTypeZSet.class);
+        DBSPTypeZSet inputType = source.getDataOutputType().to(DBSPTypeZSet.class);
         Assert.assertTrue(inputType.sameType(outputType));
         TestUtil.assertMessagesContain(compiler.messages, """
              ORDER BY clause is currently ignored
@@ -580,9 +580,9 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
                 REMOVE FROM T VALUES(3, 'Z');""").simplify(compiler);
         String set = change.getSet(0).toString();
         Assert.assertEquals("""
-                zset!(Tup2::new(Some(1), "x", ) => 1,
-                Tup2::new(Some(2), "Y", ) => -1,
-                Tup2::new(Some(3), "Z", ) => -1,)""", set);
+                zset!(Tup2::new(Some(1), "x", ) => 1i64,
+                Tup2::new(Some(2), "Y", ) => -1i64,
+                Tup2::new(Some(3), "Z", ) => -1i64,)""", set);
     }
 
     @Test

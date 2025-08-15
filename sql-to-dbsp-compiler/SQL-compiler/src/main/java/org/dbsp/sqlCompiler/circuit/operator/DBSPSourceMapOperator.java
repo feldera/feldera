@@ -1,6 +1,7 @@
 package org.dbsp.sqlCompiler.circuit.operator;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import org.dbsp.sqlCompiler.circuit.IInputMapOperator;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.TableMetadata;
 import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
@@ -12,21 +13,19 @@ import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.DBSPNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
-import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeOption;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
-import java.util.ArrayList;
 import java.util.List;
 
 /** This operator produces an IndexedZSet as a result, indexed on the table keys. */
-public final class DBSPSourceMapOperator extends DBSPSourceTableOperator {
+public final class DBSPSourceMapOperator
+        extends DBSPSourceTableOperator
+        implements IInputMapOperator {
     public final List<Integer> keyFields;
 
     /**
@@ -61,6 +60,11 @@ public final class DBSPSourceMapOperator extends DBSPSourceTableOperator {
     }
 
     @Override
+    public int getDataOutputIndex() {
+        return 0;
+    }
+
+    @Override
     public DBSPSimpleOperator with(
             @Nullable DBSPExpression function, DBSPType outputType,
             List<OutputPort> newInputs, boolean force) {
@@ -73,69 +77,24 @@ public final class DBSPSourceMapOperator extends DBSPSourceTableOperator {
         return this;
     }
 
-    /** Return a struct that contains only the key fields from the
-     * originalRowType. */
-    public DBSPTypeStruct getKeyStructType(ProgramIdentifier name) {
-        List<DBSPTypeStruct.Field> fields = new ArrayList<>();
-        int current = 0;
-        int keyIndexes = 0;
-        for (DBSPTypeStruct.Field field: this.originalRowType.fields.values()) {
-            if (current == this.keyFields.get(keyIndexes)) {
-                fields.add(field);
-                keyIndexes++;
-                if (keyIndexes == this.keyFields.size())
-                    break;
-            }
-            current++;
-        }
-        return new DBSPTypeStruct(this.originalRowType.getNode(), name, name.name(), fields, false);
+    @Override
+    public TableMetadata getMetadata() {
+        return this.metadata;
     }
 
-    /** Return a struct that is similar with the originalRowType, but where
-     * each non-key field is wrapped in an additional Option type. */
-    public DBSPTypeStruct getStructUpsertType(ProgramIdentifier name) {
-        List<DBSPTypeStruct.Field> fields = new ArrayList<>();
-        int current = 0;
-        int keyIndexes = 0;
-        for (DBSPTypeStruct.Field field: this.originalRowType.fields.values()) {
-            if (keyIndexes < this.keyFields.size() && current == this.keyFields.get(keyIndexes)) {
-                fields.add(field);
-                keyIndexes++;
-            } else {
-                DBSPType fieldType = field.type;
-                // We need here an explicit Option type, because
-                // fieldType may be nullable.  The resulting Rust type will
-                // actually be Option<Option<Type>>.
-                DBSPType some = new DBSPTypeOption(fieldType);
-                fields.add(new DBSPTypeStruct.Field(field.getNode(), field.name, current, some));
-            }
-            current++;
-        }
-        return new DBSPTypeStruct(this.originalRowType.getNode(), name, name.name(), fields, false);
+    @Override
+    public List<Integer> getKeyFields() {
+        return this.keyFields;
     }
 
-    /** Return a closure that describes the key function. */
-    public DBSPExpression getKeyFunc() {
-        DBSPVariablePath var = new DBSPVariablePath(this.getOutputIndexedZSetType().elementType.ref());
-        DBSPExpression[] fields = new DBSPExpression[this.keyFields.size()];
-        int insertAt = 0;
-        for (int index: this.keyFields) {
-            fields[insertAt++] = var.deref().field(index).applyCloneIfNeeded();
-        }
-        DBSPExpression tuple = new DBSPTupleExpression(fields);
-        return tuple.closure(var);
+    @Override
+    public DBSPTypeStruct getOriginalRowType() {
+        return this.originalRowType;
     }
 
-    /** Return a closure that describes the key function when applied to upsertStructType.toTuple(). */
-    public DBSPExpression getUpdateKeyFunc(DBSPTypeStruct upsertStructType) {
-        DBSPVariablePath var = new DBSPVariablePath(upsertStructType.toTupleDeep().ref());
-        DBSPExpression[] fields = new DBSPExpression[this.keyFields.size()];
-        int insertAt = 0;
-        for (int index: this.keyFields) {
-            fields[insertAt++] = var.deref().field(index).applyCloneIfNeeded();
-        }
-        DBSPExpression tuple = new DBSPTupleExpression(fields);
-        return tuple.closure(var);
+    @Override
+    public DBSPOperator asOperator() {
+        return this;
     }
 
     // equivalent inherited from base class
@@ -144,12 +103,13 @@ public final class DBSPSourceMapOperator extends DBSPSourceTableOperator {
     public static DBSPSourceMapOperator fromJson(JsonNode node, JsonDecoder decoder) {
         CommonInfo info = DBSPSimpleOperator.commonInfoFromJson(node, decoder);
         ProgramIdentifier name = ProgramIdentifier.fromJson(Utilities.getProperty(node, "tableName"));
-        DBSPType originalRowType = DBSPNode.fromJsonInner(node, "originalRowType", decoder, DBSPType.class);
+        DBSPTypeStruct originalRowType = DBSPNode.fromJsonInner(
+                node, "originalRowType", decoder, DBSPTypeStruct.class);
         TableMetadata metadata = TableMetadata.fromJson(Utilities.getProperty(node, "metadata"), decoder);
         List<Integer> keyFields = Linq.list(Linq.map(
                 Utilities.getProperty(node, "keyFields").elements(), JsonNode::asInt));
         return new DBSPSourceMapOperator(CalciteEmptyRel.INSTANCE, CalciteObject.EMPTY, keyFields,
-                info.getIndexedZsetType(), originalRowType.to(DBSPTypeStruct.class), metadata, name, null)
+                info.getIndexedZsetType(), originalRowType, metadata, name, null)
                 .addAnnotations(info.annotations(), DBSPSourceMapOperator.class);
     }
 }

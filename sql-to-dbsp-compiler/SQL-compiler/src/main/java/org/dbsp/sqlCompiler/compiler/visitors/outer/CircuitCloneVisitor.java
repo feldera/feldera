@@ -26,6 +26,7 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer;
 import org.dbsp.sqlCompiler.circuit.DBSPDeclaration;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.ICircuit;
+import org.dbsp.sqlCompiler.circuit.IMultiOutput;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.ICompilerComponent;
@@ -104,9 +105,13 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs, 
         this.map(old.outputPort(), newOp.outputPort(), add);
     }
 
-    protected void map(DBSPOperatorWithError old, DBSPOperatorWithError newOp, boolean add) {
-        this.map(old.getOutput(0), newOp.getOutput(0), add);
-        this.map(old.getOutput(1), newOp.getOutput(1), false);
+    protected void map(IMultiOutput old, IMultiOutput newOp, boolean add) {
+        Utilities.enforce(old.outputCount() == newOp.outputCount());
+        for (int i = 0; i < old.outputCount(); i++) {
+            // Only add for the last port
+            boolean toAdd = i == old.outputCount() - 1 && add;
+            this.map(old.getOutput(i), newOp.getOutput(i), toAdd);
+        }
     }
 
     protected void map(OutputPort old, OutputPort newOp) {
@@ -179,38 +184,41 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs, 
                     .newline()
                     .decrease();
         }
-        DBSPSimpleOperator result = operator.withInputs(sources, this.force);
-        this.map(operator, result);
+        DBSPOperator result = operator.withInputs(sources, this.force);
+        this.map(operator, result.to(DBSPSimpleOperator.class));
     }
 
     /**
      * Replace the specified operator with an equivalent one
      * by replacing all the inputs with their replacements from the 'mapped' map.
      * @param operator  Operator to replace. */
-    public void replace(DBSPOperatorWithError operator) {
-        if (this.visited.contains(operator))
+    public void replaceMultiOutput(IMultiOutput operator) {
+        DBSPOperator op = operator.asOperator();
+        if (this.visited.contains(op))
             // Graph can be a DAG
             return;
-        this.visited.add(operator);
-        List<OutputPort> sources = Linq.map(operator.inputs, this::mapped);
-        if (!Linq.same(sources, operator.inputs)) {
+        this.visited.add(op);
+        List<OutputPort> sources = Linq.map(op.inputs, this::mapped);
+        if (!Linq.same(sources, op.inputs)) {
             Logger.INSTANCE.belowLevel(this, 2)
                     .append(this.toString())
                     .append(" replacing inputs of ")
                     .increase()
                     .append(operator.toString())
                     .append(":")
-                    .joinSupplier(", ", () -> Linq.map(operator.inputs, OutputPort::toString))
+                    .joinSupplier(", ", () -> Linq.map(op.inputs, OutputPort::toString))
                     .newline()
                     .append("with:")
                     .joinSupplier(", ", () -> Linq.map(sources, OutputPort::toString))
                     .newline()
                     .decrease();
         }
-        DBSPOperatorWithError result = operator.withInputs(sources, this.force);
-        result.setDerivedFrom(operator.derivedFrom);
-        this.map(operator.getOutput(0), result.getOutput(0), true);
-        this.map(operator.getOutput(1), result.getOutput(1), false);
+        DBSPOperator result = operator.asOperator().withInputs(sources, this.force);
+        result.setDerivedFrom(op.derivedFrom);
+        for (int i = 0; i < operator.outputCount(); i++) {
+            boolean add = i == operator.outputCount() - 1;
+            this.map(operator.getOutput(i), result.getOutput(i), add);
+        }
     }
 
     @Override
@@ -465,10 +473,13 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs, 
     public void postorder(DBSPWaterlineOperator operator) { this.replace(operator); }
 
     @Override
-    public void postorder(DBSPControlledKeyFilterOperator operator) { this.replace(operator); }
+    public void postorder(DBSPControlledKeyFilterOperator operator) { this.replaceMultiOutput(operator); }
 
     @Override
-    public void postorder(DBSPOperatorWithError operator) { this.replace(operator); }
+    public void postorder(DBSPOperatorWithError operator) { this.replaceMultiOutput(operator); }
+
+    @Override
+    public void postorder(DBSPInputMapWithWaterlineOperator operator) { this.replaceMultiOutput(operator); }
 
     public DBSPCircuit getUnderConstructionCircuit() {
         return this.underConstruction.get(0).to(DBSPCircuit.class);

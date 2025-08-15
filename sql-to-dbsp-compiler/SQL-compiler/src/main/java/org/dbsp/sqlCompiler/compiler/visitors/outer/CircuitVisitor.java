@@ -145,11 +145,11 @@ public abstract class CircuitVisitor
     }
 
     public VisitDecision preorder(DBSPSimpleOperator node) {
-        return this.preorder(node.to(DBSPOperator.class));
+        return this.preorder((DBSPOperator) node);
     }
 
     public VisitDecision preorder(DBSPOperatorWithError node) {
-        return this.preorder(node.to(DBSPOperator.class));
+        return this.preorder((DBSPOperator) node);
     }
 
     public void setCircuit(DBSPCircuit circuit) {
@@ -167,75 +167,75 @@ public abstract class CircuitVisitor
     public VisitDecision preorder(IDBSPOuterNode ignoredNode) { return VisitDecision.CONTINUE; }
 
     public VisitDecision preorder(DBSPUnaryOperator node) {
-        return this.preorder(node.to(DBSPSimpleOperator.class));
+        return this.preorder((DBSPSimpleOperator) node);
     }
 
     public VisitDecision preorder(DBSPIndexedTopKOperator node) {
-        return this.preorder(node.to(DBSPUnaryOperator.class));
+        return this.preorder((DBSPUnaryOperator) node);
     }
 
     public VisitDecision preorder(DBSPLagOperator node) {
-        return this.preorder(node.to(DBSPUnaryOperator.class));
+        return this.preorder((DBSPUnaryOperator) node);
     }
 
     public VisitDecision preorder(DBSPNoopOperator node) {
-        return this.preorder(node.to(DBSPUnaryOperator.class));
+        return this.preorder((DBSPUnaryOperator) node);
     }
 
     public VisitDecision preorder(DBSPInternOperator node) {
-        return this.preorder(node.to(DBSPUnaryOperator.class));
+        return this.preorder((DBSPUnaryOperator) node);
     }
 
     public VisitDecision preorder(DBSPDeltaOperator node) {
-        return this.preorder(node.to(DBSPUnaryOperator.class));
+        return this.preorder((DBSPUnaryOperator) node);
     }
 
     public VisitDecision preorder(DBSPWeighOperator node) {
-        return this.preorder(node.to(DBSPUnaryOperator.class));
+        return this.preorder((DBSPUnaryOperator) node);
     }
 
     public VisitDecision preorder(DBSPDeindexOperator node)  {
-        return this.preorder(node.to(DBSPUnaryOperator.class));
+        return this.preorder((DBSPUnaryOperator) node);
     }
 
     public VisitDecision preorder(DBSPSubtractOperator node) {
-        return this.preorder(node.to(DBSPBinaryOperator.class));
+        return this.preorder((DBSPBinaryOperator) node);
     }
 
     public VisitDecision preorder(DBSPNestedOperator node) {
-        return this.preorder(node.to(DBSPOperator.class));
+        return this.preorder((DBSPOperator) node);
     }
 
     public VisitDecision preorder(DBSPSumOperator node) {
-        return this.preorder(node.to(DBSPSimpleOperator.class));
+        return this.preorder((DBSPSimpleOperator) node);
     }
 
     public VisitDecision preorder(DBSPJoinBaseOperator node) {
-        return this.preorder(node.to(DBSPBinaryOperator.class));
+        return this.preorder((DBSPBinaryOperator) node);
     }
 
     public VisitDecision preorder(DBSPStreamJoinOperator node) {
-        return this.preorder(node.to(DBSPJoinBaseOperator.class));
+        return this.preorder((DBSPJoinBaseOperator) node);
     }
 
     public VisitDecision preorder(DBSPStreamAntiJoinOperator node) {
-        return this.preorder(node.to(DBSPBinaryOperator.class));
+        return this.preorder((DBSPBinaryOperator) node);
     }
 
     public VisitDecision preorder(DBSPAntiJoinOperator node) {
-        return this.preorder(node.to(DBSPBinaryOperator.class));
+        return this.preorder((DBSPBinaryOperator) node);
     }
 
     public VisitDecision preorder(DBSPAggregateOperatorBase node) {
-        return this.preorder(node.to(DBSPUnaryOperator.class));
+        return this.preorder((DBSPUnaryOperator) node);
     }
 
     public VisitDecision preorder(DBSPChainAggregateOperator node) {
-        return this.preorder(node.to(DBSPUnaryOperator.class));
+        return this.preorder((DBSPUnaryOperator) node);
     }
 
     public VisitDecision preorder(DBSPAggregateZeroOperator node) {
-        return this.preorder(node.to(DBSPUnaryOperator.class));
+        return this.preorder((DBSPUnaryOperator) node);
     }
 
     public VisitDecision preorder(DBSPStreamAggregateOperator node) {
@@ -263,163 +263,167 @@ public abstract class CircuitVisitor
     }
 
     public VisitDecision preorder(DBSPConstantOperator node) {
-        return this.preorder(node.to(DBSPSimpleOperator.class));
+        return this.preorder((DBSPSimpleOperator) node);
     }
 
     public VisitDecision preorder(DBSPNowOperator node) {
-        return this.preorder(node.to(DBSPSimpleOperator.class));
+        return this.preorder((DBSPSimpleOperator) node);
     }
 
     public VisitDecision preorder(DBSPMapOperator node) {
-        return this.preorder(node.to(DBSPUnaryOperator.class));
+        return this.preorder((DBSPUnaryOperator) node);
     }
 
     public VisitDecision preorder(DBSPChainOperator node) {
-        return this.preorder(node.to(DBSPUnaryOperator.class));
+        return this.preorder((DBSPUnaryOperator) node);
     }
 
     public VisitDecision preorder(DBSPMapIndexOperator node) {
-        return this.preorder(node.to(DBSPUnaryOperator.class));
+        return this.preorder((DBSPUnaryOperator) node);
     }
 
     public VisitDecision preorder(DBSPDifferentiateOperator node) {
-        return this.preorder(node.to(DBSPUnaryOperator.class));
+        return this.preorder((DBSPUnaryOperator) node);
     }
 
     public VisitDecision preorder(DBSPIntegrateOperator node) {
-        return this.preorder(node.to(DBSPUnaryOperator.class));
+        return this.preorder((DBSPUnaryOperator) node);
     }
 
     public VisitDecision preorder(DBSPUpsertFeedbackOperator node) {
-        return this.preorder(node.to(DBSPUnaryOperator.class));
+        return this.preorder((DBSPUnaryOperator) node);
     }
 
     public VisitDecision preorder(DBSPDelayedIntegralOperator node) {
-        return this.preorder(node.to(DBSPUnaryOperator.class));
+        return this.preorder((DBSPUnaryOperator) node);
     }
 
     public VisitDecision preorder(DBSPNegateOperator node) {
-        return this.preorder(node.to(DBSPUnaryOperator.class));
+        return this.preorder((DBSPUnaryOperator) node);
     }
 
     public VisitDecision preorder(DBSPDelayOperator node) {
-        return this.preorder(node.to(DBSPUnaryOperator.class));
+        return this.preorder((DBSPUnaryOperator) node);
     }
 
     public VisitDecision preorder(DBSPFlatMapOperator node) {
-        return this.preorder(node.to(DBSPUnaryOperator.class));
+        return this.preorder((DBSPUnaryOperator) node);
     }
 
     public VisitDecision preorder(DBSPFlatMapIndexOperator node) {
-        return this.preorder(node.to(DBSPUnaryOperator.class));
+        return this.preorder((DBSPUnaryOperator) node);
     }
 
     public VisitDecision preorder(DBSPHopOperator node) {
-        return this.preorder(node.to(DBSPUnaryOperator.class));
+        return this.preorder((DBSPUnaryOperator) node);
     }
 
     public VisitDecision preorder(DBSPFilterOperator node) {
-        return this.preorder(node.to(DBSPUnaryOperator.class));
+        return this.preorder((DBSPUnaryOperator) node);
     }
 
     public VisitDecision preorder(DBSPStreamDistinctOperator node) {
-        return this.preorder(node.to(DBSPUnaryOperator.class));
+        return this.preorder((DBSPUnaryOperator) node);
     }
 
     public VisitDecision preorder(DBSPDistinctOperator node) {
-        return this.preorder(node.to(DBSPUnaryOperator.class));
+        return this.preorder((DBSPUnaryOperator) node);
     }
 
     public VisitDecision preorder(DBSPDistinctIncrementalOperator node) {
-        return this.preorder(node.to(DBSPBinaryOperator.class));
+        return this.preorder((DBSPBinaryOperator) node);
     }
 
     public VisitDecision preorder(DBSPViewBaseOperator node) {
-        return this.preorder(node.to(DBSPUnaryOperator.class));
+        return this.preorder((DBSPUnaryOperator) node);
     }
 
     public VisitDecision preorder(DBSPSinkOperator node) {
-        return this.preorder(node.to(DBSPViewBaseOperator.class));
+        return this.preorder((DBSPViewBaseOperator) node);
     }
 
     public VisitDecision preorder(DBSPViewOperator node) {
-        return this.preorder(node.to(DBSPViewBaseOperator.class));
+        return this.preorder((DBSPViewBaseOperator) node);
     }
 
     public VisitDecision preorder(DBSPSourceBaseOperator node) {
-        return this.preorder(node.to(DBSPSimpleOperator.class));
+        return this.preorder((DBSPSimpleOperator) node);
     }
 
     public VisitDecision preorder(DBSPSourceTableOperator node) {
-        return this.preorder(node.to(DBSPSourceBaseOperator.class));
+        return this.preorder((DBSPSourceBaseOperator) node);
     }
 
     public VisitDecision preorder(DBSPSourceMultisetOperator node) {
-        return this.preorder(node.to(DBSPSourceTableOperator.class));
+        return this.preorder((DBSPSourceTableOperator) node);
     }
 
     public VisitDecision preorder(DBSPViewDeclarationOperator node) {
-        return this.preorder(node.to(DBSPSourceTableOperator.class));
+        return this.preorder((DBSPSourceTableOperator) node);
     }
 
     public VisitDecision preorder(DBSPSourceMapOperator node) {
-        return this.preorder(node.to(DBSPSourceTableOperator.class));
+        return this.preorder((DBSPSourceTableOperator) node);
     }
 
     public VisitDecision preorder(DBSPJoinOperator node) {
-        return this.preorder(node.to(DBSPJoinBaseOperator.class));
+        return this.preorder((DBSPJoinBaseOperator) node);
     }
 
     public VisitDecision preorder(DBSPStreamJoinIndexOperator node) {
-        return this.preorder(node.to(DBSPJoinBaseOperator.class));
+        return this.preorder((DBSPJoinBaseOperator) node);
     }
 
     public VisitDecision preorder(DBSPJoinIndexOperator node) {
-        return this.preorder(node.to(DBSPJoinBaseOperator.class));
+        return this.preorder((DBSPJoinBaseOperator) node);
     }
 
     public VisitDecision preorder(DBSPConcreteAsofJoinOperator node) {
-        return this.preorder(node.to(DBSPJoinBaseOperator.class));
+        return this.preorder((DBSPJoinBaseOperator) node);
     }
 
     public VisitDecision preorder(DBSPAsofJoinOperator node) {
-        return this.preorder(node.to(DBSPJoinBaseOperator.class));
+        return this.preorder((DBSPJoinBaseOperator) node);
     }
 
     public VisitDecision preorder(DBSPJoinFilterMapOperator node) {
-        return this.preorder(node.to(DBSPJoinBaseOperator.class));
+        return this.preorder((DBSPJoinBaseOperator) node);
     }
 
     public VisitDecision preorder(DBSPPrimitiveAggregateOperator node) {
-        return this.preorder(node.to(DBSPBinaryOperator.class));
+        return this.preorder((DBSPBinaryOperator) node);
     }
 
     public VisitDecision preorder(DBSPApplyOperator node) {
-        return this.preorder(node.to(DBSPUnaryOperator.class));
+        return this.preorder((DBSPUnaryOperator) node);
     }
 
     public VisitDecision preorder(DBSPApply2Operator node) {
-        return this.preorder(node.to(DBSPBinaryOperator.class));
+        return this.preorder((DBSPBinaryOperator) node);
     }
 
     public VisitDecision preorder(DBSPWindowOperator node) {
-        return this.preorder(node.to(DBSPBinaryOperator.class));
+        return this.preorder((DBSPBinaryOperator) node);
     }
 
     public VisitDecision preorder(DBSPControlledKeyFilterOperator node) {
-        return this.preorder(node.to(DBSPOperatorWithError.class));
+        return this.preorder((DBSPOperatorWithError) node);
     }
 
     public VisitDecision preorder(DBSPIntegrateTraceRetainKeysOperator node) {
-        return this.preorder(node.to(DBSPBinaryOperator.class));
+        return this.preorder((DBSPBinaryOperator) node);
     }
 
     public VisitDecision preorder(DBSPIntegrateTraceRetainValuesOperator node) {
-        return this.preorder(node.to(DBSPBinaryOperator.class));
+        return this.preorder((DBSPBinaryOperator) node);
     }
 
     public VisitDecision preorder(DBSPWaterlineOperator node) {
-        return this.preorder(node.to(DBSPUnaryOperator.class));
+        return this.preorder((DBSPUnaryOperator) node);
+    }
+
+    public VisitDecision preorder(DBSPInputMapWithWaterlineOperator node) {
+        return this.preorder((DBSPOperator) node);
     }
 
     ////////////////////////////////////
@@ -432,85 +436,85 @@ public abstract class CircuitVisitor
     public void postorder(DBSPOperator ignored) {}
 
     public void postorder(DBSPNestedOperator node) {
-        this.postorder(node.to(DBSPOperator.class));
+        this.postorder((DBSPOperator) node);
     }
 
-    public void postorder(DBSPSimpleOperator node) { this.postorder(node.to(DBSPOperator.class)); }
+    public void postorder(DBSPSimpleOperator node) { this.postorder((DBSPOperator) node); }
 
-    public void postorder(DBSPOperatorWithError node) { this.postorder(node.to(DBSPOperator.class)); }
+    public void postorder(DBSPOperatorWithError node) { this.postorder((DBSPOperator) node); }
 
     public void postorder(DBSPDeclaration ignored) {}
 
     public void postorder(DBSPUnaryOperator node) {
-        this.postorder(node.to(DBSPSimpleOperator.class));
+        this.postorder((DBSPSimpleOperator) node);
     }
 
     public void postorder(DBSPIndexedTopKOperator node) {
-        this.postorder(node.to(DBSPUnaryOperator.class));
+        this.postorder((DBSPUnaryOperator) node);
     }
 
     public void postorder(DBSPLagOperator node) {
-        this.postorder(node.to(DBSPUnaryOperator.class));
+        this.postorder((DBSPUnaryOperator) node);
     }
 
     public void postorder(DBSPSubtractOperator node) {
-        this.postorder(node.to(DBSPBinaryOperator.class));
+        this.postorder((DBSPBinaryOperator) node);
     }
 
     public void postorder(DBSPSumOperator node) {
-        this.postorder(node.to(DBSPSimpleOperator.class));
+        this.postorder((DBSPSimpleOperator) node);
     }
 
     public void postorder(DBSPJoinBaseOperator node) {
-        this.postorder(node.to(DBSPBinaryOperator.class));
+        this.postorder((DBSPBinaryOperator) node);
     }
 
     public void postorder(DBSPStreamJoinOperator node) {
-        this.postorder(node.to(DBSPJoinBaseOperator.class));
+        this.postorder((DBSPJoinBaseOperator) node);
     }
 
     public void postorder(DBSPStreamAntiJoinOperator node) {
-        this.postorder(node.to(DBSPBinaryOperator.class));
+        this.postorder((DBSPBinaryOperator) node);
     }
 
     public void postorder(DBSPAntiJoinOperator node) {
-        this.postorder(node.to(DBSPBinaryOperator.class));
+        this.postorder((DBSPBinaryOperator) node);
     }
 
     public void postorder(DBSPJoinOperator node) {
-        this.postorder(node.to(DBSPJoinBaseOperator.class));
+        this.postorder((DBSPJoinBaseOperator) node);
     }
 
     public void postorder(DBSPStreamJoinIndexOperator node) {
-        this.postorder(node.to(DBSPJoinBaseOperator.class));
+        this.postorder((DBSPJoinBaseOperator) node);
     }
 
     public void postorder(DBSPJoinIndexOperator node) {
-        this.postorder(node.to(DBSPJoinBaseOperator.class));
+        this.postorder((DBSPJoinBaseOperator) node);
     }
 
     public void postorder(DBSPConcreteAsofJoinOperator node) {
-        this.postorder(node.to(DBSPJoinBaseOperator.class));
+        this.postorder((DBSPJoinBaseOperator) node);
     }
 
     public void postorder(DBSPAsofJoinOperator node) {
-        this.postorder(node.to(DBSPJoinBaseOperator.class));
+        this.postorder((DBSPJoinBaseOperator) node);
     }
 
     public void postorder(DBSPJoinFilterMapOperator node) {
-        this.postorder(node.to(DBSPJoinBaseOperator.class));
+        this.postorder((DBSPJoinBaseOperator) node);
     }
 
     public void postorder(DBSPAggregateOperatorBase node) {
-        this.postorder(node.to(DBSPUnaryOperator.class));
+        this.postorder((DBSPUnaryOperator) node);
     }
 
     public void postorder(DBSPChainAggregateOperator node) {
-        this.postorder(node.to(DBSPUnaryOperator.class));
+        this.postorder((DBSPUnaryOperator) node);
     }
 
     public void postorder(DBSPAggregateZeroOperator node) {
-        this.postorder(node.to(DBSPUnaryOperator.class));
+        this.postorder((DBSPUnaryOperator) node);
     }
 
     public void postorder(DBSPStreamAggregateOperator node) {
@@ -538,160 +542,162 @@ public abstract class CircuitVisitor
     }
 
     public void postorder(DBSPConstantOperator node) {
-        this.postorder(node.to(DBSPSimpleOperator.class));
+        this.postorder((DBSPSimpleOperator) node);
     }
 
     public void postorder(DBSPNowOperator node) {
-        this.postorder(node.to(DBSPSimpleOperator.class));
+        this.postorder((DBSPSimpleOperator) node);
     }
 
     public void postorder(DBSPMapOperator node) {
-        this.postorder(node.to(DBSPUnaryOperator.class));
+        this.postorder((DBSPUnaryOperator) node);
     }
 
     public void postorder(DBSPChainOperator node) {
-        this.postorder(node.to(DBSPUnaryOperator.class));
+        this.postorder((DBSPUnaryOperator) node);
     }
 
     public void postorder(DBSPMapIndexOperator node) {
-        this.postorder(node.to(DBSPUnaryOperator.class));
+        this.postorder((DBSPUnaryOperator) node);
     }
 
     public void postorder(DBSPDifferentiateOperator node) {
-        this.postorder(node.to(DBSPUnaryOperator.class));
+        this.postorder((DBSPUnaryOperator) node);
     }
 
     public void postorder(DBSPNoopOperator node) {
-        this.postorder(node.to(DBSPUnaryOperator.class));
+        this.postorder((DBSPUnaryOperator) node);
     }
 
     public void postorder(DBSPInternOperator node) {
-        this.postorder(node.to(DBSPUnaryOperator.class));
+        this.postorder((DBSPUnaryOperator) node);
     }
 
     public void postorder(DBSPDeltaOperator node) {
-        this.postorder(node.to(DBSPUnaryOperator.class));
+        this.postorder((DBSPUnaryOperator) node);
     }
 
     public void postorder(DBSPWeighOperator node) {
-        this.postorder(node.to(DBSPUnaryOperator.class));
+        this.postorder((DBSPUnaryOperator) node);
     }
 
     public void postorder(DBSPDeindexOperator node) {
-        this.postorder(node.to(DBSPUnaryOperator.class));
+        this.postorder((DBSPUnaryOperator) node);
     }
 
     public void postorder(DBSPIntegrateOperator node) {
-        this.postorder(node.to(DBSPUnaryOperator.class));
+        this.postorder((DBSPUnaryOperator) node);
     }
 
     public void postorder(DBSPUpsertFeedbackOperator node) {
-        this.postorder(node.to(DBSPUnaryOperator.class));
+        this.postorder((DBSPUnaryOperator) node);
     }
 
     public void postorder(DBSPDelayedIntegralOperator node) {
-        this.postorder(node.to(DBSPUnaryOperator.class));
+        this.postorder((DBSPUnaryOperator) node);
     }
 
     public void postorder(DBSPNegateOperator node) {
-        this.postorder(node.to(DBSPUnaryOperator.class));
+        this.postorder((DBSPUnaryOperator) node);
     }
 
     public void postorder(DBSPDelayOperator node) {
-        this.postorder(node.to(DBSPUnaryOperator.class));
+        this.postorder((DBSPUnaryOperator) node);
     }
 
     public void postorder(DBSPFlatMapOperator node) {
-        this.postorder(node.to(DBSPUnaryOperator.class));
+        this.postorder((DBSPUnaryOperator) node);
     }
 
     public void postorder(DBSPFlatMapIndexOperator node) {
-        this.postorder(node.to(DBSPUnaryOperator.class));
+        this.postorder((DBSPUnaryOperator) node);
     }
 
     public void postorder(DBSPHopOperator node) {
-        this.postorder(node.to(DBSPUnaryOperator.class));
+        this.postorder((DBSPUnaryOperator) node);
     }
 
     public void postorder(DBSPFilterOperator node) {
-        this.postorder(node.to(DBSPUnaryOperator.class));
+        this.postorder((DBSPUnaryOperator) node);
     }
 
     public void postorder(DBSPStreamDistinctOperator node) {
-        this.postorder(node.to(DBSPUnaryOperator.class));
+        this.postorder((DBSPUnaryOperator) node);
     }
 
     public void postorder(DBSPDistinctOperator node) {
-        this.postorder(node.to(DBSPUnaryOperator.class));
+        this.postorder((DBSPUnaryOperator) node);
     }
 
     public void postorder(DBSPDistinctIncrementalOperator node) {
-        this.postorder(node.to(DBSPBinaryOperator.class));
+        this.postorder((DBSPBinaryOperator) node);
     }
 
     public void postorder(DBSPViewBaseOperator node) {
-        this.postorder(node.to(DBSPUnaryOperator.class));
+        this.postorder((DBSPUnaryOperator) node);
     }
 
     public void postorder(DBSPSinkOperator node) {
-        this.postorder(node.to(DBSPViewBaseOperator.class));
+        this.postorder((DBSPViewBaseOperator) node);
     }
 
     public void postorder(DBSPViewOperator node) {
-        this.postorder(node.to(DBSPViewBaseOperator.class));
+        this.postorder((DBSPViewBaseOperator) node);
     }
 
     public void postorder(DBSPSourceBaseOperator node) {
-        this.postorder(node.to(DBSPSimpleOperator.class));
+        this.postorder((DBSPSimpleOperator) node);
     }
 
     public void postorder(DBSPSourceTableOperator node) {
-        this.postorder(node.to(DBSPSourceBaseOperator.class));
+        this.postorder((DBSPSourceBaseOperator) node);
     }
 
     public void postorder(DBSPSourceMultisetOperator node) {
-        this.postorder(node.to(DBSPSourceTableOperator.class));
+        this.postorder((DBSPSourceTableOperator) node);
     }
 
     public void postorder(DBSPViewDeclarationOperator node) {
-        this.postorder(node.to(DBSPSourceTableOperator.class));
+        this.postorder((DBSPSourceTableOperator) node);
     }
 
     public void postorder(DBSPSourceMapOperator node) {
-        this.postorder(node.to(DBSPSourceTableOperator.class));
+        this.postorder((DBSPSourceTableOperator) node);
     }
 
     public void postorder(DBSPPrimitiveAggregateOperator node) {
-        this.postorder(node.to(DBSPBinaryOperator.class));
+        this.postorder((DBSPBinaryOperator) node);
     }
 
     public void postorder(DBSPApplyOperator node) {
-        this.postorder(node.to(DBSPUnaryOperator.class));
+        this.postorder((DBSPUnaryOperator) node);
     }
 
     public void postorder(DBSPApply2Operator node) {
-        this.postorder(node.to(DBSPBinaryOperator.class));
+        this.postorder((DBSPBinaryOperator) node);
     }
 
     public void postorder(DBSPWindowOperator node) {
-        this.postorder(node.to(DBSPBinaryOperator.class));
+        this.postorder((DBSPBinaryOperator) node);
     }
 
     public void postorder(DBSPControlledKeyFilterOperator node) {
-        this.postorder(node.to(DBSPOperatorWithError.class));
+        this.postorder((DBSPOperatorWithError) node);
     }
 
     public void postorder(DBSPIntegrateTraceRetainKeysOperator node) {
-        this.postorder(node.to(DBSPBinaryOperator.class));
+        this.postorder((DBSPBinaryOperator) node);
     }
 
     public void postorder(DBSPIntegrateTraceRetainValuesOperator node) {
-        this.postorder(node.to(DBSPBinaryOperator.class));
+        this.postorder((DBSPBinaryOperator) node);
     }
 
     public void postorder(DBSPWaterlineOperator node) {
-        this.postorder(node.to(DBSPUnaryOperator.class));
+        this.postorder((DBSPUnaryOperator) node);
     }
+
+    public void postorder(DBSPInputMapWithWaterlineOperator node) { this.postorder((DBSPOperator) node);}
 
     @Override
     public String toString() {

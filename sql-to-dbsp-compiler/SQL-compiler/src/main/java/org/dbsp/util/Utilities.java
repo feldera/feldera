@@ -44,8 +44,6 @@ import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.PrintStream;
-import java.net.URL;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -475,10 +473,6 @@ public class Utilities {
         }
         time = time * 1_000_000_000 + ns;
         return time;
-    }
-
-    public static String trimRight(String value) {
-        return value.replaceAll("[ ]*$", "");
     }
 
     static void toDepth(JsonNode node, int depth, IIndentStream stream) {
