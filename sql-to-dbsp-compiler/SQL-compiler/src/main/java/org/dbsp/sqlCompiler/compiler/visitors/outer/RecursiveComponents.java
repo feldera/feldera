@@ -216,7 +216,9 @@ public class RecursiveComponents extends Passes {
                         }
                         newSources.add(newPort);
                     }
-                    DBSPSimpleOperator result = simple.withInputs(newSources, false);
+                    DBSPSimpleOperator result = simple
+                            .withInputs(newSources, false)
+                            .to(DBSPSimpleOperator.class);
                     if (result.is(DBSPViewOperator.class)) {
                         DBSPViewOperator view = result.to(DBSPViewOperator.class);
                         if (operators.size() > 1 &&
@@ -348,7 +350,8 @@ public class RecursiveComponents extends Passes {
                 }
             }
 
-            DBSPSimpleOperator result = operator.withInputs(sources, this.force);
+            DBSPSimpleOperator result = operator.withInputs(sources, this.force)
+                    .to(DBSPSimpleOperator.class);
             result.setDerivedFrom(operator.derivedFrom);
             block.addOperator(result);
             DBSPViewOperator view = result.as(DBSPViewOperator.class);

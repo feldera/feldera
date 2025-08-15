@@ -22,6 +22,10 @@ public final class DBSPTypeWeight extends DBSPTypeUser {
         super(CalciteObject.EMPTY, DBSPTypeCode.USER, "Weight", false);
     }
 
+    public static String makeWeight(long value) {
+        return value + "i64";
+    }
+
     // sameType and hashCode inherited from TypeUser.
 
     @SuppressWarnings("unused")

@@ -31,10 +31,10 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperatorWithError;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
+import org.dbsp.sqlCompiler.circuit.operator.IInputOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
@@ -138,10 +138,10 @@ public class FindDeadCode extends CircuitVisitor implements IWritesLogs {
 
     @Override
     public void endVisit() {
-        for (DBSPSourceBaseOperator source: this.getCircuit().sourceOperators.values()) {
-            if (!this.reachable.contains(source) && this.warn && !this.keepAllSources)
+        for (IInputOperator source: this.getCircuit().sourceOperators.values()) {
+            if (!this.reachable.contains(source.asOperator()) && this.warn && !this.keepAllSources)
                 this.compiler.reportWarning(source.getSourcePosition(),
-                        "Unused", "Table " + source.tableName.singleQuote() +
+                        "Unused", "Table " + source.getTableName().singleQuote() +
                                 " is not used");
         }
         super.endVisit();

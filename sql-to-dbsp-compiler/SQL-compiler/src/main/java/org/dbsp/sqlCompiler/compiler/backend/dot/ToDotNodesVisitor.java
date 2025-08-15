@@ -4,6 +4,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperatorBase;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIndexedTopKOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPInputMapWithWaterlineOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPInternOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinFilterMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
@@ -285,6 +286,20 @@ public class ToDotNodesVisitor extends CircuitVisitor {
                 .replace(">", "\\>")
                 .replace("{", "\\{")
                 .replace("}", "\\}");
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPInputMapWithWaterlineOperator node) {
+        String name = node.getNodeName(false) + " " + node.operation + " " + node.tableName;
+        this.stream.append(node.getNodeName(false))
+                .append(" [ shape=record")
+                .append(" label=\"<p0>")
+                .append(name)
+                .append("|<p1> E")
+                .append("|<p2> W");
+        this.stream.append("\" ]")
+                .newline();
+        return VisitDecision.STOP;
     }
 
     @Override

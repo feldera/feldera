@@ -51,7 +51,9 @@ public class OptimizeProjectionVisitor extends CircuitCloneWithGraphsVisitor {
             if (source.node().is(DBSPConstantOperator.class)) {
                 DBSPExpression newConstant = projection.applyAfter(
                         source.node().to(DBSPConstantOperator.class).getFunction().to(DBSPZSetExpression.class));
-                DBSPSimpleOperator result = source.simpleNode().withFunction(newConstant, operator.outputType);
+                DBSPSimpleOperator result = source.simpleNode()
+                        .withFunction(newConstant, operator.outputType)
+                        .to(DBSPSimpleOperator.class);
                 this.map(operator, result);
                 return;
             } else if (source.node().is(DBSPFlatMapOperator.class)) {
@@ -63,7 +65,9 @@ public class OptimizeProjectionVisitor extends CircuitCloneWithGraphsVisitor {
                             operator.getRelNode(), sourceFunction.inputRowType,
                             sourceFunction.collectionExpression, sourceFunction.leftInputIndexes,
                             sourceFunction.rightProjections, sourceFunction.ordinalityIndexType, shuffle);
-                    DBSPSimpleOperator result = source.simpleNode().withFunction(newFunction, operator.outputType);
+                    DBSPSimpleOperator result = source.simpleNode()
+                            .withFunction(newFunction, operator.outputType)
+                            .to(DBSPSimpleOperator.class);;
                     this.map(operator, result);
                     return;
                 }

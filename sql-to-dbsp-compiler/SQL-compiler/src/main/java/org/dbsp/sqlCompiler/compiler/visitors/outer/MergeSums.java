@@ -32,7 +32,8 @@ public class MergeSums extends CircuitCloneVisitor {
                 newSources.add(source);
             }
         }
-        DBSPSimpleOperator result = operator.withInputs(newSources, false);
+        DBSPSimpleOperator result = operator.withInputs(newSources, false)
+                .to(DBSPSimpleOperator.class);
         this.map(operator, result);
     }
 }

@@ -1,6 +1,6 @@
 package org.dbsp.sqlCompiler.circuit.operator;
 
-import org.dbsp.sqlCompiler.circuit.OutputPort;
+import org.dbsp.sqlCompiler.circuit.IMultiOutput;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
@@ -12,15 +12,18 @@ import java.util.List;
 
 /** These operators have *two* outputs: a regular stream output
  * and an error output */
-public abstract class DBSPOperatorWithError extends DBSPOperator {
+public abstract class DBSPOperatorWithError
+        extends DBSPOperator
+        implements IMultiOutput {
     public final String operation;
     protected final DBSPType outputType;
     protected final DBSPType errorType;
     public final DBSPClosureExpression function;
     public final DBSPClosureExpression error;
 
-    protected DBSPOperatorWithError(CalciteRelNode node, String operation, DBSPType outputType, DBSPType errorType,
-                                    DBSPClosureExpression function, DBSPClosureExpression error) {
+    protected DBSPOperatorWithError(
+            CalciteRelNode node, String operation, DBSPType outputType, DBSPType errorType,
+            DBSPClosureExpression function, DBSPClosureExpression error) {
         super(node);
         this.operation = operation;
         this.outputType = outputType;
@@ -79,5 +82,7 @@ public abstract class DBSPOperatorWithError extends DBSPOperator {
         return 2;
     }
 
-    public abstract DBSPOperatorWithError withInputs(List<OutputPort> sources, boolean force);
+    public DBSPOperator asOperator() {
+        return this;
+    }
 }

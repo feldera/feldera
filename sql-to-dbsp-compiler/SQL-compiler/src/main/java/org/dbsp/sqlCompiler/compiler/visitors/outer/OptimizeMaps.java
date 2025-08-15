@@ -124,11 +124,15 @@ public class OptimizeMaps extends CircuitCloneWithGraphsVisitor {
             // For all such operators we can swap them with the mapindex
             List<OutputPort> newSources = new ArrayList<>();
             for (OutputPort sourceSource: source.node().inputs) {
-                DBSPSimpleOperator newProjection = operator.withInputs(Linq.list(sourceSource), true);
+                DBSPSimpleOperator newProjection = operator
+                        .withInputs(Linq.list(sourceSource), true)
+                        .to(DBSPSimpleOperator.class);
                 newSources.add(newProjection.outputPort());
                 this.addOperator(newProjection);
             }
-            DBSPSimpleOperator result = source.simpleNode().withInputs(newSources, true);
+            DBSPSimpleOperator result = source.simpleNode()
+                    .withInputs(newSources, true)
+                    .to(DBSPSimpleOperator.class);
             this.map(operator, result, operator != result);
             return;
         } else {
@@ -180,7 +184,9 @@ public class OptimizeMaps extends CircuitCloneWithGraphsVisitor {
                     rightPort = rightIndex.outputPort();
                 }
 
-                DBSPSimpleOperator newJoin = join.withInputs(Linq.list(leftPort, rightPort), false);
+                DBSPSimpleOperator newJoin = join
+                        .withInputs(Linq.list(leftPort, rightPort), false)
+                        .to(DBSPSimpleOperator.class);;
                 if (newJoin.outputType.sameType(join.outputType)) {
                     super.postorder(operator);
                     return;
@@ -363,7 +369,9 @@ public class OptimizeMaps extends CircuitCloneWithGraphsVisitor {
             DBSPClosureExpression expression = source.simpleNode().getClosureFunction();
             DBSPClosureExpression newFunction = operator.getClosureFunction()
                     .applyAfter(this.compiler(), expression, Maybe.MAYBE);
-            DBSPSimpleOperator result = source.simpleNode().withFunction(newFunction, operator.outputType);
+            DBSPSimpleOperator result = source.simpleNode()
+                    .withFunction(newFunction, operator.outputType)
+                    .to(DBSPSimpleOperator.class);
             this.map(operator, result);
             return;
         } else if (source.node().is(DBSPDeindexOperator.class) && inputFanout == 1) {
@@ -396,11 +404,15 @@ public class OptimizeMaps extends CircuitCloneWithGraphsVisitor {
             // For all such operators we can swap them with the map
             List<OutputPort> newSources = new ArrayList<>();
             for (OutputPort sourceSource: source.node().inputs) {
-                DBSPSimpleOperator newProjection = operator.withInputs(Linq.list(sourceSource), true);
+                DBSPSimpleOperator newProjection = operator
+                        .withInputs(Linq.list(sourceSource), true)
+                        .to(DBSPSimpleOperator.class);
                 newSources.add(newProjection.outputPort());
                 this.addOperator(newProjection);
             }
-            DBSPSimpleOperator result = source.simpleNode().withInputs(newSources, true);
+            DBSPSimpleOperator result = source.simpleNode()
+                    .withInputs(newSources, true)
+                    .to(DBSPSimpleOperator.class);
             this.map(operator, result, operator != result);
             return;
         }
@@ -440,7 +452,8 @@ public class OptimizeMaps extends CircuitCloneWithGraphsVisitor {
                     rightPort = rightIndex.outputPort();
                 }
 
-                DBSPSimpleOperator newJoin = join.withInputs(Linq.list(leftPort, rightPort), false);
+                DBSPSimpleOperator newJoin = join.withInputs(Linq.list(leftPort, rightPort), false)
+                        .to(DBSPSimpleOperator.class);
                 if (newJoin.outputType.sameType(join.outputType)) {
                     super.postorder(operator);
                     return;

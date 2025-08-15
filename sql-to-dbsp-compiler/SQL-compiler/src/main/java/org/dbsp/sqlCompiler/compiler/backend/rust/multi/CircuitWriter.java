@@ -9,6 +9,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceTableOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewBaseOperator;
+import org.dbsp.sqlCompiler.circuit.operator.IInputOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.rust.BaseRustCodeGenerator;
 import org.dbsp.sqlCompiler.compiler.backend.rust.SourcePositionResource;
@@ -91,15 +92,15 @@ public final class CircuitWriter extends BaseRustCodeGenerator {
             signature.append("Catalog");
         } else {
             signature.append("(").increase();
-            for (DBSPSimpleOperator input: circuit.sourceOperators.values()) {
+            for (IInputOperator input: circuit.sourceOperators.values()) {
                 DBSPType type;
-                DBSPTypeZSet zset = input.outputType.as(DBSPTypeZSet.class);
+                DBSPTypeZSet zset = input.getDataOutputType().as(DBSPTypeZSet.class);
                 if (zset != null) {
                     type = new DBSPTypeUser(
                             zset.getNode(), DBSPTypeCode.USER, "ZSetHandle", false,
                             zset.elementType);
                 } else {
-                    DBSPTypeIndexedZSet ix = input.outputType.to(DBSPTypeIndexedZSet.class);
+                    DBSPTypeIndexedZSet ix = input.getDataOutputType().to(DBSPTypeIndexedZSet.class);
                     type = new DBSPTypeUser(
                             ix.getNode(), DBSPTypeCode.USER, "SetHandle", false,
                             ix.elementType);
@@ -155,8 +156,8 @@ public final class CircuitWriter extends BaseRustCodeGenerator {
             this.builder().append("Ok(catalog)");
         } else {
             this.builder().append("Ok((");
-            for (DBSPSourceTableOperator operator: circuit.sourceOperators.values()) {
-                String name = operator.getNodeName(false);
+            for (IInputOperator operator: circuit.sourceOperators.values()) {
+                String name = operator.asOperator().getNodeName(false);
                 this.builder().append("handle_").append(name).append(", ");
             }
             for (DBSPSinkOperator operator: circuit.sinkOperators.values()) {

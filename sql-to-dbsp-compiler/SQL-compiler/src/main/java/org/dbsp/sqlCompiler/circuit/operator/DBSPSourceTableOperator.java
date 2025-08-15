@@ -1,9 +1,8 @@
 package org.dbsp.sqlCompiler.circuit.operator;
 
 import org.apache.calcite.rel.RelNode;
+import org.dbsp.sqlCompiler.compiler.IColumnMetadata;
 import org.dbsp.sqlCompiler.compiler.IHasColumnsMetadata;
-import org.dbsp.sqlCompiler.compiler.IHasLateness;
-import org.dbsp.sqlCompiler.compiler.IHasWatermark;
 import org.dbsp.sqlCompiler.compiler.TableMetadata;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
@@ -26,9 +25,6 @@ public abstract class DBSPSourceTableOperator
     /** Original output row type, as a struct (not a tuple), i.e., with named columns. */
     public final DBSPTypeStruct originalRowType;
     public final CalciteObject sourceName;
-    // Note: the metadata is not transformed after being set.
-    // In particular, types are not rewritten.
-    public final TableMetadata metadata;
 
     /**
      * Create a DBSP operator that is a source to the dataflow graph.
@@ -45,17 +41,21 @@ public abstract class DBSPSourceTableOperator
             CalciteRelNode node, String operation, CalciteObject sourceName,
             DBSPType outputType, DBSPTypeStruct originalRowType, boolean isMultiset,
             TableMetadata metadata, ProgramIdentifier name, @Nullable String comment) {
-        super(node, operation, outputType, isMultiset, name, comment);
+        super(node, operation, outputType, isMultiset, name, metadata, comment);
         Utilities.enforce(node.is(RelAnd.class) || node.is(CalciteEmptyRel.class));
         this.originalRowType = originalRowType;
         this.sourceName = sourceName;
-        this.metadata = metadata;
     }
 
     /** Mark the fact that a RelNode refers to this table */
     public void refer(RelNode node) {
         // Only mutating operation, used during circuit construction.
         this.getRelNode().to(RelAnd.class).add(new LastRel(node));
+    }
+
+    @Override
+    public Iterable<? extends IColumnMetadata> getColumnsMetadata() {
+        return this.metadata.getColumns();
     }
 
     @Override
@@ -70,15 +70,5 @@ public abstract class DBSPSourceTableOperator
         visitor.property("originalRowType");
         this.originalRowType.accept(visitor);
         super.accept(visitor);
-    }
-
-    @Override
-    public Iterable<? extends IHasLateness> getLateness() {
-        return this.metadata.getColumns();
-    }
-
-    @Override
-    public Iterable<? extends IHasWatermark> getWatermarks() {
-        return this.metadata.getColumns();
     }
 }

@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.circuit.operator;
 
+import org.dbsp.sqlCompiler.compiler.TableMetadata;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -31,8 +32,13 @@ import org.dbsp.util.IIndentStream;
 import javax.annotation.Nullable;
 
 /** Base class for source operators. */
-public abstract class DBSPSourceBaseOperator extends DBSPSimpleOperator {
+public abstract class DBSPSourceBaseOperator
+        extends DBSPSimpleOperator
+        implements IInputOperator {
     public final ProgramIdentifier tableName;
+    // Note: the metadata is not transformed after being set.
+    // In particular, types are not rewritten.
+    public final TableMetadata metadata;
 
     /** Create a DBSP operator that is a source to the dataflow graph.
      *
@@ -45,10 +51,24 @@ public abstract class DBSPSourceBaseOperator extends DBSPSimpleOperator {
      * @param comment    A comment describing the operator. */
     protected DBSPSourceBaseOperator(
             CalciteRelNode node, String operation, DBSPType outputType, boolean isMultiset,
-            ProgramIdentifier tableName, @Nullable String comment) {
+            ProgramIdentifier tableName, TableMetadata metadata, @Nullable String comment) {
         super(node, operation, null, outputType, isMultiset, comment, false);
         this.tableName = tableName;
+        this.metadata = metadata;
     }
+
+    @Override
+    public DBSPOperator asOperator() {
+        return this;
+    }
+
+    @Override
+    public DBSPType getDataOutputType() {
+        return this.outputType;
+    }
+
+    @Override
+    public TableMetadata getMetadata() { return this.metadata; }
 
     public ProgramIdentifier getTableName() {
         return this.tableName;

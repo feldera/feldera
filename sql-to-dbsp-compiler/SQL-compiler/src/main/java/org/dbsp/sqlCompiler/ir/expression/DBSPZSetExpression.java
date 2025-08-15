@@ -17,6 +17,7 @@ import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeMap;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeArray;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeWeight;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
@@ -286,7 +287,7 @@ public final class DBSPZSetExpression extends DBSPExpression
             first = false;
             builder.append(e.getKey());
             builder.append(" => ")
-                    .append(e.getValue())
+                    .append(DBSPTypeWeight.makeWeight(e.getValue()))
                     .append(",");
         }
         return builder.append(")");

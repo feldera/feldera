@@ -3,6 +3,7 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.ICircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDeltaOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPInputMapWithWaterlineOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperatorWithError;
@@ -59,6 +60,11 @@ public class Graph extends CircuitVisitor {
 
     @Override
     public void postorder(DBSPSimpleOperator operator) {
+        this.addOperator(operator);
+    }
+
+    @Override
+    public void postorder(DBSPInputMapWithWaterlineOperator operator) {
         this.addOperator(operator);
     }
 

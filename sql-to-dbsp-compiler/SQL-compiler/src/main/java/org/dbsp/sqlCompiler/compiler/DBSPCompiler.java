@@ -37,7 +37,7 @@ import org.apache.calcite.sql.SqlOperatorTable;
 import org.apache.calcite.sql.parser.SqlParseException;
 import org.apache.calcite.sql.util.SqlOperatorTables;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceTableOperator;
+import org.dbsp.sqlCompiler.circuit.operator.IInputOperator;
 import org.dbsp.sqlCompiler.compiler.backend.MerkleInner;
 import org.dbsp.sqlCompiler.compiler.backend.dot.ToDot;
 import org.dbsp.sqlCompiler.compiler.errors.BaseCompilerException;
@@ -358,7 +358,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
 
             // Check that the referred columns exist and have proper types
             ProgramIdentifier otherTableName = other.tableName.toIdentifier();
-            DBSPSourceTableOperator otherTable = circuit.getInput(otherTableName);
+            IInputOperator otherTable = circuit.getInput(otherTableName);
             if (otherTable == null) {
                 this.reportWarning(other.tableName.getSourcePosition(),
                         "Table not found",
@@ -368,10 +368,10 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
                 continue;
             }
 
-            DBSPSourceTableOperator thisTable = circuit.getInput(thisTableName);
+            IInputOperator thisTable = circuit.getInput(thisTableName);
             Utilities.enforce(thisTable != null);
 
-            List<InputColumnMetadata> otherKeys = otherTable.metadata.getPrimaryKeys();
+            List<InputColumnMetadata> otherKeys = otherTable.getMetadata().getPrimaryKeys();
             if (otherKeys.size() != self.columnNames.size()) {
                 this.reportError(self.listPos,
                         "PRIMARY KEY does not match",
@@ -385,7 +385,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
                 SqlFragmentIdentifier otherColumn = other.columnNames.get(i);
                 ProgramIdentifier selfColumnName = selfColumn.toIdentifier();
                 ProgramIdentifier otherColumnName = otherColumn.toIdentifier();
-                InputColumnMetadata selfMeta = thisTable.metadata.getColumnMetadata(selfColumnName);
+                InputColumnMetadata selfMeta = thisTable.getMetadata().getColumnMetadata(selfColumnName);
                 if (selfMeta == null) {
                     this.reportError(selfColumn.getSourcePosition(),
                             "Column not found",
@@ -393,7 +393,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
                                     " does not have a column named " + selfColumnName.singleQuote());
                     continue;
                 }
-                InputColumnMetadata otherMeta = otherTable.metadata.getColumnMetadata(otherColumnName);
+                InputColumnMetadata otherMeta = otherTable.getMetadata().getColumnMetadata(otherColumnName);
                 if (otherMeta == null) {
                     this.reportError(otherColumn.getSourcePosition(),
                             "Column not found",

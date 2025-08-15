@@ -3,6 +3,7 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.circuit.operator.IInputOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.dot.ToDotEdgesVisitor;
 import org.dbsp.sqlCompiler.compiler.backend.dot.ToDot;
@@ -29,7 +30,8 @@ import java.util.Set;
 import java.util.function.Function;
 
 /** Implements a dataflow analysis for detecting values that change monotonically,
- * and inserts nodes that prune the internal circuit state where possible. */
+ * and inserts nodes that prune the internal circuit state where possible.
+ * It also hooks up all operators that produce lateness errors to the error view. */
 public class MonotoneAnalyzer implements CircuitTransform, IWritesLogs {
     final DBSPCompiler compiler;
 
@@ -68,9 +70,9 @@ public class MonotoneAnalyzer implements CircuitTransform, IWritesLogs {
      * indirectly from the ERROR_TABLE_NAME (which only feeds the error view at this point). */
     private Set<DBSPOperator> reachableFromError(DBSPCircuit circuit, CircuitGraph graph) {
         LinkedList<DBSPOperator> queue = new LinkedList<>();
-        DBSPOperator errorTable = circuit.getInput(DBSPCompiler.ERROR_TABLE_NAME);
+        IInputOperator errorTable = circuit.getInput(DBSPCompiler.ERROR_TABLE_NAME);
         if (errorTable != null)
-            queue.add(errorTable);
+            queue.add(errorTable.asOperator());
 
         Set<DBSPOperator> result = new HashSet<>();
         while (!queue.isEmpty()) {

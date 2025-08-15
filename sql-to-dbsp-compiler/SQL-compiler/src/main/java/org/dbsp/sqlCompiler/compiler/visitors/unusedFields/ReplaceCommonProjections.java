@@ -35,7 +35,9 @@ public class ReplaceCommonProjections extends CircuitCloneVisitor {
         if (this.fcp.outputProjection.containsKey(operator)) {
             List<OutputPort> sources = Linq.map(operator.inputs, this::mapped);
             DBSPClosureExpression projection = this.fcp.outputProjection.get(operator);
-            DBSPSimpleOperator replace = operator.withInputs(sources, false);
+            DBSPSimpleOperator replace = operator
+                    .withInputs(sources, false)
+                    .to(DBSPSimpleOperator.class);
             this.addOperator(replace);
             int size = operator.outputType().getToplevelFieldCount();
             boolean isRaw = projection.getResultType().is(DBSPTypeRawTuple.class);

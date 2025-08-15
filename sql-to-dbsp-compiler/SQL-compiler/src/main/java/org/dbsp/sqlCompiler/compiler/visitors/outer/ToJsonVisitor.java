@@ -4,6 +4,7 @@ import org.apache.calcite.rel.RelNode;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.circuit.annotation.OperatorHash;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPInputMapWithWaterlineOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperatorWithError;
@@ -196,6 +197,53 @@ public class ToJsonVisitor extends CircuitDispatcher {
         this.builder.decrease().append("}");
     }
 
+    void processInputMapWithWaterline(DBSPInputMapWithWaterlineOperator operator) {
+        String name = operator.getCompactName();
+        this.builder.appendJsonLabelAndColon(name)
+                .append("{").increase();
+        this.builder.appendJsonLabelAndColon("operation")
+                .append("\"").append(operator.operation).append("\",").newline();
+        this.builder.appendJsonLabelAndColon("inputs")
+                .append("[");
+
+        List<OutputPort> inputs = new ArrayList<>(operator.inputs);
+        boolean first = true;
+        if (!inputs.isEmpty()) {
+            this.builder.increase();
+            for (var port : inputs) {
+                if (!first)
+                    this.builder.append(",").newline();
+                first = false;
+                this.emitPort(port);
+            }
+            this.builder.decrease().newline();
+        }
+        this.builder.append("],").newline();
+
+        this.builder.appendJsonLabelAndColon("calcite");
+        CalciteRelNode node = operator.getNode().to(CalciteRelNode.class);
+        node.asJson(this.builder, this.relId);
+        this.builder.append(",").newline();
+        this.builder.appendJsonLabelAndColon("positions")
+                .append("[");
+        var list = Linq.list(this.getPositions());
+        List<String> strings = Linq.map(list, p -> p.asJson().toString());
+        if (!strings.isEmpty()) {
+            this.builder
+                    .increase()
+                    .join("," + System.lineSeparator(), strings)
+                    .decrease()
+                    .newline();
+        }
+        this.builder.append("],").newline();
+        HashString hash = OperatorHash.getHash(operator, true);
+        if (hash != null) {
+            this.builder.appendJsonLabelAndColon("persistent_id");
+            this.builder.append(Utilities.doubleQuote(hash.toString())).newline();
+        }
+        this.builder.decrease().append("}");
+    }
+
     void processNested(DBSPNestedOperator nested) {
         super.preorder(nested);
         this.push(nested);
@@ -252,8 +300,10 @@ public class ToJsonVisitor extends CircuitDispatcher {
                 this.process(op.to(DBSPSimpleOperator.class));
             } else if (op.is(DBSPNestedOperator.class)) {
                 this.processNested(op.to(DBSPNestedOperator.class));
-            } else {
+            } else if (op.is(DBSPOperatorWithError.class)) {
                 this.processWithError(op.to(DBSPOperatorWithError.class));
+            } else if (op.is(DBSPInputMapWithWaterlineOperator.class)) {
+                this.processInputMapWithWaterline(op.to(DBSPInputMapWithWaterlineOperator.class));
             }
         }
         this.builder.newline();

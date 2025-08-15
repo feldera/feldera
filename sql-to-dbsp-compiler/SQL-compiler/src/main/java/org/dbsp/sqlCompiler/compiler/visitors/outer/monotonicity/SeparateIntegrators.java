@@ -108,7 +108,8 @@ public class SeparateIntegrators extends CircuitCloneWithGraphsVisitor {
             }
         }
 
-        DBSPSimpleOperator result = operator.withInputs(sources, this.force);
+        DBSPSimpleOperator result = operator.withInputs(sources, this.force)
+                .to(DBSPSimpleOperator.class);
         result.setDerivedFrom(operator.derivedFrom);
         this.map(operator, result);
     }

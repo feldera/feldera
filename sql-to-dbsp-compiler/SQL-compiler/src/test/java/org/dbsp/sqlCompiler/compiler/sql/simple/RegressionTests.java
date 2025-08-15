@@ -9,7 +9,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateWithWaterlineOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceTableOperator;
+import org.dbsp.sqlCompiler.circuit.operator.IInputOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.TestUtil;
 import org.dbsp.sqlCompiler.compiler.backend.rust.ToRustVisitor;
@@ -2044,7 +2044,7 @@ public class RegressionTests extends SqlIoTest {
                    CREATE TABLE Y(x INT, y INT);
                    CREATE VIEW V AS SELECT X.x, Y.y FROM X JOIN Y ON X.x = Y.x WHERE Y.y = 23;""");
         var circuit = ccs.getCircuit();
-        DBSPSourceTableOperator y = circuit.getInput(new ProgramIdentifier("Y", false));
+        IInputOperator y = circuit.getInput(new ProgramIdentifier("Y", false));
         // Check that 23 is pulled right after the Y input table, before the join.
         for (DBSPOperator op: circuit.allOperators) {
             if (!op.inputs.isEmpty() && op.inputs.get(0).node() == y) {

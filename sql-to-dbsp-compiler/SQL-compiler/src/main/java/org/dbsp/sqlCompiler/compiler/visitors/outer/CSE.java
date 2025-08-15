@@ -1,6 +1,7 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
 import org.dbsp.sqlCompiler.circuit.ICircuit;
+import org.dbsp.sqlCompiler.circuit.IMultiOutput;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDeltaOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperator;
@@ -151,14 +152,14 @@ public class CSE extends Repeat {
         }
 
         @Override
-        public void replace(DBSPOperatorWithError operator) {
-            DBSPOperator replacement = this.canonical.get(operator);
+        public void replaceMultiOutput(IMultiOutput operator) {
+            DBSPOperator replacement = this.canonical.get(operator.asOperator());
             if (replacement == null) {
-                super.replace(operator);
+                super.replaceMultiOutput(operator);
                 return;
             }
 
-            DBSPOperatorWithError we = replacement.to(DBSPOperatorWithError.class);
+            IMultiOutput we = replacement.to(IMultiOutput.class);
             this.map(operator, we, true);
         }
     }

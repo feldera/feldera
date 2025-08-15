@@ -36,16 +36,16 @@ public class UnusedFieldsTest {
         Assert.assertEquals("None::<Array<SqlString>>",
                 ToRustInnerVisitor.toRustString(compiler, none, null, false));
         DBSPZSetExpression zset = new DBSPZSetExpression(none);
-        Assert.assertEquals("zset!((Array<s>?)null => 1,)", zset.toString());
-        Assert.assertEquals("zset!(None::<Array<SqlString>> => 1)",
+        Assert.assertEquals("zset!((Array<s>?)null => 1i64,)", zset.toString());
+        Assert.assertEquals("zset!(None::<Array<SqlString>> => 1i64)",
                 ToRustInnerVisitor.toRustString(compiler, zset, null, false));
         DBSPTupleExpression tup = new DBSPTupleExpression(none);
         Assert.assertEquals("Tup1::new((Array<s>?)null, )", tup.toString());
         Assert.assertEquals("Tup1::new(None::<Array<SqlString>>)",
                 ToRustInnerVisitor.toRustString(compiler, tup, null, false));
         DBSPZSetExpression zset1 = new DBSPZSetExpression(tup);
-        Assert.assertEquals("zset!(Tup1::new((Array<s>?)null, ) => 1,)", zset1.toString());
-        Assert.assertEquals("zset!(Tup1::new(None::<Array<SqlString>>) => 1)",
+        Assert.assertEquals("zset!(Tup1::new((Array<s>?)null, ) => 1i64,)", zset1.toString());
+        Assert.assertEquals("zset!(Tup1::new(None::<Array<SqlString>>) => 1i64)",
                 ToRustInnerVisitor.toRustString(compiler, zset1, null, false));
     }
 

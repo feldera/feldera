@@ -58,7 +58,7 @@ public class RemoveOperators extends CircuitCloneVisitor {
     @Override
     public VisitDecision preorder(DBSPOperatorWithError node) {
         if (this.keep.contains(node)) {
-            this.replace(node);
+            this.replaceMultiOutput(node);
         } else {
             Logger.INSTANCE.belowLevel(this, 2)
                     .append("Removing ")

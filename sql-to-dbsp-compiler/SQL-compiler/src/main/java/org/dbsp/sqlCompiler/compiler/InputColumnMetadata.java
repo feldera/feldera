@@ -17,7 +17,7 @@ import javax.annotation.Nullable;
 
 /** Metadata describing an input table column. */
 public class InputColumnMetadata
-        implements IHasLateness, IHasWatermark, IHasSourcePositionRange, IHasType, IJson {
+        implements IColumnMetadata, IJson {
     public final CalciteObject node;
     /** Column name. */
     public final ProgramIdentifier name;
@@ -36,7 +36,6 @@ public class InputColumnMetadata
     public final DBSPExpression defaultValue;
     @Nullable
     public final SourcePositionRange defaultValuePosition;
-    @Nullable
     public final boolean interned;
 
     public InputColumnMetadata(CalciteObject node, ProgramIdentifier name, DBSPType type, boolean isPrimaryKey,
@@ -66,8 +65,7 @@ public class InputColumnMetadata
 
     public CalciteObject getNode() { return this.node; }
 
-    @Nullable
-    @Override
+    @Override @Nullable
     public DBSPExpression getLateness() {
         return this.lateness;
     }
@@ -77,10 +75,28 @@ public class InputColumnMetadata
         return this.getNode().getPositionRange();
     }
 
-    @Nullable
-    @Override
+    @Override @Nullable
     public DBSPExpression getWatermark() {
         return this.watermark;
+    }
+
+    @Nullable @Override
+    public DBSPExpression getDefaultValue() {
+        return this.defaultValue;
+    }
+
+    @Override public ProgramIdentifier getColumnName() {
+        return this.name;
+    }
+
+    @Override
+    public boolean isPrimaryKey() {
+        return this.isPrimaryKey;
+    }
+
+    @Override
+    public boolean isInterned() {
+        return this.interned;
     }
 
     @Override

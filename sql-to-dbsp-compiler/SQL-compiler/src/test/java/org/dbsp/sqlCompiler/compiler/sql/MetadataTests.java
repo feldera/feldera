@@ -9,7 +9,7 @@ import org.apache.calcite.jdbc.CalciteConnection;
 import org.apache.calcite.schema.SchemaPlus;
 import org.dbsp.sqlCompiler.CompilerMain;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceTableOperator;
+import org.dbsp.sqlCompiler.circuit.operator.IInputOperator;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.TestUtil;
@@ -19,6 +19,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.statements.DeclareViewStatement;
 import org.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 import org.dbsp.util.NameGen;
 import org.dbsp.util.Utilities;
 import org.junit.Assert;
@@ -460,15 +461,15 @@ public class MetadataTests extends BaseSQLTests {
                 CREATE VIEW V AS SELECT used FROM ((SELECT * FROM T) UNION ALL (SELECT * FROM T1));""");
         DBSPCircuit circuit = compiler.getFinalCircuit(false);
         Assert.assertNotNull(circuit);
-        DBSPSourceTableOperator input = circuit.getInput(new ProgramIdentifier("t", false));
+        IInputOperator input = circuit.getInput(new ProgramIdentifier("t", false));
         Assert.assertNotNull(input);
-        DBSPTypeTuple tuple = input.getOutputZSetElementType().to(DBSPTypeTuple.class);
+        DBSPTypeTuple tuple = input.getDataOutputType().to(DBSPTypeZSet.class).elementType.to(DBSPTypeTuple.class);
         // Field 'unused' has been dropped
         Assert.assertEquals(1, tuple.size());
 
         input = circuit.getInput(new ProgramIdentifier("t1", false));
         Assert.assertNotNull(input);
-        tuple = input.getOutputZSetElementType().to(DBSPTypeTuple.class);
+        tuple = input.getDataOutputType().to(DBSPTypeZSet.class).elementType.to(DBSPTypeTuple.class);
         // Field 'unused' is not dropped from materialized tables
         Assert.assertEquals(2, tuple.size());
     }
@@ -523,9 +524,9 @@ public class MetadataTests extends BaseSQLTests {
         compiler.submitStatementsForCompilation(ddl);
         DBSPCircuit circuit = getCircuit(compiler);
         TestUtil.assertMessagesContain(compiler, "PRIMARY KEY cannot be nullable");
-        DBSPSourceTableOperator t = circuit.getInput(new ProgramIdentifier("t", false));
+        IInputOperator t = circuit.getInput(new ProgramIdentifier("t", false));
         Assert.assertNotNull(t);
-        DBSPType ix = t.getOutputZSetElementType();
+        DBSPType ix = t.getDataOutputType().to(DBSPTypeZSet.class).elementType;
         Assert.assertTrue(ix.is(DBSPTypeTuple.class));
         DBSPTypeTuple tuple = ix.to(DBSPTypeTuple.class);
         // The type should not be nullable despite the declaration
@@ -1453,25 +1454,6 @@ public class MetadataTests extends BaseSQLTests {
                 );""",
                 "FOREIGN KEY column 't.a' has type INT which does " +
                         "not match the type VARCHAR of the referenced column 's.a'");
-    }
-
-    @Test
-    public void issue4457() {
-        DBSPCompiler compiler = this.testCompiler();
-        compiler.options.ioOptions.quiet = false;
-        compiler.submitStatementsForCompilation("""
-                CREATE TABLE test_events (
-                    id VARCHAR NOT NULL PRIMARY KEY,
-                    a VARCHAR,
-                    t TIMESTAMP NOT NULL LATENESS INTERVAL 1 MINUTE
-                );
-                CREATE MATERIALIZED VIEW test_events_mv AS SELECT * FROM test_events;""");
-        TestUtil.assertMessagesContain(compiler, """
-                (no input file): Lateness together with PRIMARY KEY
-                (no input file):1:1: warning: Lateness together with PRIMARY KEY: The runtime behavior of tables with PRIMARY KEYs and
-                LATENESS annotations is only correct if the data never violates the LATENESS constraints.
-                See https://github.com/feldera/feldera/issues/4457 and
-                https://github.com/feldera/feldera/issues/2669""");
     }
 
     @Test

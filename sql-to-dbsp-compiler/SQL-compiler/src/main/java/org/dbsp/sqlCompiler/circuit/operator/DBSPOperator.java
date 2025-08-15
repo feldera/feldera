@@ -52,12 +52,19 @@ public abstract class DBSPOperator extends DBSPNode implements IDBSPOuterNode {
     public final Annotations annotations;
     /** id of the operator this one is derived from. */
     public long derivedFrom;
+    @Nullable
+    public final String comment;
 
-    protected DBSPOperator(CalciteRelNode node) {
+    protected DBSPOperator(CalciteRelNode node, @Nullable String comment) {
         super(node);
         this.inputs = new ArrayList<>();
         this.annotations = new Annotations();
         this.derivedFrom = this.id;
+        this.comment = comment;
+    }
+
+    protected DBSPOperator(CalciteRelNode node) {
+        this(node, null);
     }
 
     /** True if the operator has a port with such an output number.
@@ -178,6 +185,13 @@ public abstract class DBSPOperator extends DBSPNode implements IDBSPOuterNode {
             name = Long.toString(this.getId());
         return name;
     }
+
+    /** Return a version of this operator with the inputs replaced.
+     * @param newInputs  Inputs to use instead of the old ones.
+     * @param force      If true always return a new operator.
+     *                   If false and the inputs are the same this may return this.
+     */
+    public abstract DBSPOperator withInputs(List<OutputPort> newInputs, boolean force);
 
     public DBSPType outputStreamType(int outputNo, boolean outerCircuit) {
         return new DBSPTypeStream(this.outputType(outputNo), outerCircuit);

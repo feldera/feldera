@@ -24,7 +24,7 @@ public class ToDotEdgesVisitor extends CircuitVisitor implements IWritesLogs {
     protected final IndentStream stream;
     // A higher value -> more details
     protected final int details;
-    protected final Set<DBSPOperator> edgesLabeled;
+    protected final Set<OutputPort> edgesLabeled;
 
     public ToDotEdgesVisitor(DBSPCompiler compiler, IndentStream stream, int details) {
         super(compiler);
@@ -36,6 +36,8 @@ public class ToDotEdgesVisitor extends CircuitVisitor implements IWritesLogs {
     public String getEdgeLabel(OutputPort source) {
         DBSPType type = source.getOutputRowType();
         String name = source.node().getCompactName();
+        if (source.port() != 0)
+            name += " " + source.port();
         return name + " " +
                 ToRustInnerVisitor.toRustString(this.compiler(), type, null, this.details < 3);
     }
@@ -58,12 +60,12 @@ public class ToDotEdgesVisitor extends CircuitVisitor implements IWritesLogs {
             this.stream.append(this.getPortName(i))
                     .append(" -> ")
                     .append(node.getNodeName(false));
-            if (this.details >= 2 && !this.edgesLabeled.contains(input)) {
+            if (this.details >= 2 && !this.edgesLabeled.contains(i)) {
                 String label = this.getEdgeLabel(i);
                 this.stream.append(" [xlabel=")
                         .append(Utilities.doubleQuote(label))
                         .append("]");
-                this.edgesLabeled.add(input);
+                this.edgesLabeled.add(i);
             }
             this.stream.append(";")
                     .newline();
@@ -78,12 +80,12 @@ public class ToDotEdgesVisitor extends CircuitVisitor implements IWritesLogs {
             this.stream.append(this.getPortName(i))
                     .append(" -> ")
                     .append(node.getOutputName());
-            if (this.details >= 2 && !this.edgesLabeled.contains(input)) {
+            if (this.details >= 2 && !this.edgesLabeled.contains(i)) {
                 String label = this.getEdgeLabel(i);
                 this.stream.append(" [xlabel=")
                         .append(Utilities.doubleQuote(label))
                         .append("]");
-                this.edgesLabeled.add(input);
+                this.edgesLabeled.add(i);
             }
             this.stream.append(";")
                     .newline();

@@ -48,8 +48,6 @@ public abstract class DBSPSimpleOperator extends DBSPOperator
     /** True if the output of the operator is a multiset.  Conservative approximation;
      * if this is 'false', it is surely false.  It if is true, the output may still be a set. */
     public final boolean isMultiset;
-    @Nullable
-    public final String comment;
     /** True if the operator contains an integrator */
     public final boolean containsIntegrator;
 
@@ -57,12 +55,11 @@ public abstract class DBSPSimpleOperator extends DBSPOperator
                                  @Nullable DBSPExpression function, DBSPType outputType,
                                  boolean isMultiset, @Nullable String comment,
                                  boolean containsIntegrator) {
-        super(node);
+        super(node, comment);
         this.operation = operation;
         this.function = function;
         this.outputType = outputType;
         this.isMultiset = isMultiset;
-        this.comment = comment;
         this.containsIntegrator = containsIntegrator;
         if (!operation.startsWith("waterline") &&
                 !operation.startsWith("apply") &&
@@ -128,14 +125,15 @@ public abstract class DBSPSimpleOperator extends DBSPOperator
      * @param inputs      New inputs.
      * @param force       If false and all fields are the same, return original. */
     @CheckReturnValue
-    public abstract DBSPSimpleOperator with(
+    public abstract DBSPOperator with(
             @Nullable DBSPExpression function,
             DBSPType outputType,
             List<OutputPort> inputs,
             boolean force);
 
     @CheckReturnValue
-    public DBSPSimpleOperator withFunction(@Nullable DBSPExpression function, DBSPType outputType) {
+    public DBSPOperator withFunction(
+            @Nullable DBSPExpression function, DBSPType outputType) {
         return this.with(function, outputType, this.inputs, false);
     }
 
@@ -205,7 +203,8 @@ public abstract class DBSPSimpleOperator extends DBSPOperator
      * @param force      If true always return a new operator.
      *                   If false and the inputs are the same this may return this.
      */
-    public final DBSPSimpleOperator withInputs(List<OutputPort> newInputs, boolean force) {
+    @Override
+    public final DBSPOperator withInputs(List<OutputPort> newInputs, boolean force) {
         return this.with(this.function, this.outputType, newInputs, force);
     }
 

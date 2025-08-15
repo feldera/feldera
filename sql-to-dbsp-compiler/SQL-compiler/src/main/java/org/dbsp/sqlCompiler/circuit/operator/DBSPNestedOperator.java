@@ -5,6 +5,7 @@ import org.dbsp.sqlCompiler.circuit.ICircuit;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.circuit.annotation.Annotations;
 import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteEmptyRel;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
@@ -187,6 +188,11 @@ public class DBSPNestedOperator extends DBSPOperator implements ICircuit {
     @Override
     public int outputCount() {
         return this.internalOutputs.size();
+    }
+
+    @Override
+    public DBSPOperator withInputs(List<OutputPort> newInputs, boolean force) {
+        throw new InternalCompilerError("Should not be called");
     }
 
     @SuppressWarnings("unused")

@@ -94,6 +94,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPLagOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNegateOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
@@ -108,6 +109,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSumOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewOperator;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
+import org.dbsp.sqlCompiler.circuit.operator.IInputOperator;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.ICompilerComponent;
@@ -286,7 +288,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         return Objects.requireNonNull(this.circuit);
     }
 
-    private void addOperator(DBSPSimpleOperator operator) {
+    private void addOperator(DBSPOperator operator) {
         this.getCircuit().addOperator(operator);
     }
 
@@ -1041,19 +1043,19 @@ public class CalciteToDBSPCompiler extends RelVisitor
             tableName = Utilities.toIdentifier(tbl.getQualifiedName());
         }
         @Nullable
-        DBSPSimpleOperator source = this.getCircuit().getInput(tableName);
+        IInputOperator source = this.getCircuit().getInput(tableName);
         // The inputs should have been created while parsing the CREATE TABLE statements.
         if (source != null) {
             // Multiple queries can share an input.
             // Or the input may have been created by a CREATE TABLE statement.
-            Utilities.putNew(this.nodeOperator, scan, source);
-            DBSPSourceTableOperator table = source.to(DBSPSourceTableOperator.class);
+            DBSPSourceTableOperator table = source.asOperator().to(DBSPSourceTableOperator.class);
+            Utilities.putNew(this.nodeOperator, scan, table);
             table.refer(scan);
         } else {
             // Try a view if no table with this name exists.
-            source = this.getCircuit().getView(tableName);
-            if (source != null) {
-                Utilities.putNew(this.nodeOperator, scan, source);
+            DBSPViewOperator sourceView = this.getCircuit().getView(tableName);
+            if (sourceView != null) {
+                Utilities.putNew(this.nodeOperator, scan, sourceView);
             } else {
                 if (!create)
                     throw new InternalCompilerError("Could not find operator for table " + tableName, node);
@@ -1070,12 +1072,12 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 TableMetadata tableMeta = new TableMetadata(
                         tableName, Linq.map(withSchema.getColumns(), this::convertMetadata), Linq.list(),
                         false, false);
-                source = new DBSPSourceMultisetOperator(
+                DBSPSourceMultisetOperator sourceMulti = new DBSPSourceMultisetOperator(
                         node, CalciteObject.EMPTY,
                         this.makeZSet(rowType), originalRowType,
                         tableMeta, tableName, null);
-                this.addOperator(source);
-                Utilities.putNew(this.nodeOperator, scan, source);
+                this.addOperator(sourceMulti);
+                Utilities.putNew(this.nodeOperator, scan, sourceMulti);
             }
         }
     }
@@ -3831,15 +3833,6 @@ public class CalciteToDBSPCompiler extends RelVisitor
             identifier = CalciteObject.create(sct.name);
         }
         List<InputColumnMetadata> metadata = Linq.map(create.columns, this::convertMetadata);
-        boolean hasPrimaryKey = Linq.any(metadata, m -> m.isPrimaryKey);
-        boolean hasLateness = Linq.any(metadata, m -> m.lateness != null);
-        if (hasLateness && hasPrimaryKey) {
-            this.compiler.reportWarning(create.getPosition(), "Lateness together with PRIMARY KEY", """
-                            The runtime behavior of tables with PRIMARY KEYs and 
-                            LATENESS annotations is only correct if the data never violates the LATENESS constraints.
-                            See https://github.com/feldera/feldera/issues/4457 and
-                            https://github.com/feldera/feldera/issues/2669""");
-        }
         boolean materialized = create.isMaterialized();
         boolean appendOnly = create.isAppendOnly() ||
                 options.languageOptions.streaming;

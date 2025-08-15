@@ -52,9 +52,13 @@ public class OptimizeDistinctVisitor extends CircuitCloneVisitor {
             if (allDistinct) {
                 // distinct(map(distinct)) = distinct(map)
                 List<OutputPort> newInputs = Linq.map(input.node().inputs, i -> i.node().inputs.get(0));
-                DBSPSimpleOperator newInput = input.simpleNode().withInputs(newInputs, false);
+                DBSPSimpleOperator newInput = input.simpleNode()
+                        .withInputs(newInputs, false)
+                        .to(DBSPSimpleOperator.class);
                 this.addOperator(newInput);
-                DBSPSimpleOperator newDistinct = distinct.withInputs(Linq.list(newInput.outputPort()), false);
+                DBSPSimpleOperator newDistinct = distinct
+                        .withInputs(Linq.list(newInput.outputPort()), false)
+                        .to(DBSPSimpleOperator.class);
                 this.map(distinct, newDistinct);
                 return;
             }
@@ -79,9 +83,13 @@ public class OptimizeDistinctVisitor extends CircuitCloneVisitor {
             if (allDistinct) {
                 // distinct(map(distinct)) = distinct(map)
                 List<OutputPort> newInputs = Linq.map(input.node().inputs, i -> i.node().inputs.get(0));
-                DBSPSimpleOperator newInput = input.simpleNode().withInputs(newInputs, false);
+                DBSPSimpleOperator newInput = input.simpleNode()
+                        .withInputs(newInputs, false)
+                        .to(DBSPSimpleOperator.class);
                 this.addOperator(newInput);
-                DBSPSimpleOperator newDistinct = distinct.withInputs(Linq.list(newInput.outputPort()), false);
+                DBSPSimpleOperator newDistinct = distinct
+                        .withInputs(Linq.list(newInput.outputPort()), false)
+                        .to(DBSPSimpleOperator.class);
                 this.map(distinct, newDistinct);
                 return;
             }
@@ -93,9 +101,13 @@ public class OptimizeDistinctVisitor extends CircuitCloneVisitor {
         OutputPort input = this.mapped(filter.input());
         if (input.node().is(DBSPStreamDistinctOperator.class)) {
             // swap distinct after filter
-            DBSPSimpleOperator newFilter = filter.withInputs(input.node().inputs, false);
+            DBSPSimpleOperator newFilter = filter
+                    .withInputs(input.node().inputs, false)
+                    .to(DBSPSimpleOperator.class);
             this.addOperator(newFilter);
-            DBSPSimpleOperator result = input.simpleNode().withInputs(Linq.list(newFilter.outputPort()), false);
+            DBSPSimpleOperator result = input.simpleNode()
+                    .withInputs(Linq.list(newFilter.outputPort()), false)
+                    .to(DBSPSimpleOperator.class);
             this.map(filter, result);
         } else {
             super.postorder(filter);
@@ -110,7 +122,8 @@ public class OptimizeDistinctVisitor extends CircuitCloneVisitor {
             right.node().is(DBSPStreamDistinctOperator.class)) {
             OutputPort newLeft = left.node().inputs.get(0);
             OutputPort newRight = right.node().inputs.get(0);
-            DBSPSimpleOperator result = join.withInputs(Linq.list(newLeft, newRight), false);
+            DBSPSimpleOperator result = join.withInputs(Linq.list(newLeft, newRight), false)
+                    .to(DBSPSimpleOperator.class);
             this.addOperator(result);
             DBSPSimpleOperator distinct = new DBSPStreamDistinctOperator(join.getRelNode(), result.outputPort());
             this.map(join, distinct);

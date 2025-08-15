@@ -18,6 +18,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamDistinctOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPUnaryOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewOperator;
+import org.dbsp.sqlCompiler.circuit.operator.IInputOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.InputColumnMetadata;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ForeignKey;
@@ -405,17 +406,19 @@ public class KeyPropagation extends CircuitVisitor {
         }
         for (ForeignKey fk: operator.metadata.getForeignKeys()) {
             Utilities.enforce(fk.thisTable.tableName.toIdentifier().equals(operator.tableName));
-            DBSPSourceTableOperator other = this.getCircuit().getInput(fk.otherTable.tableName.toIdentifier());
+            IInputOperator other = this.getCircuit()
+                    .getInput(fk.otherTable.tableName.toIdentifier());
             if (other == null)
                 // This can happen for foreign keys that refer to tables that are not in the program.
                 // This is a warning, but still a legal SQL program.
                 continue;
+            DBSPSourceTableOperator table = other.asOperator().to(DBSPSourceTableOperator.class);
             for (int i = 0; i < fk.thisTable.columnNames.size(); i++) {
                 ProgramIdentifier thisColumn = fk.thisTable.columnNames.get(i).toIdentifier();
                 ProgramIdentifier otherColumn = fk.otherTable.columnNames.get(i).toIdentifier();
                 int thisColumnIndex = operator.metadata.getColumnIndex(thisColumn);
-                int otherColumnIndex = other.metadata.getColumnIndex(otherColumn);
-                ForeignKeyField fkf = new ForeignKeyField(other, otherColumnIndex, operator, thisColumnIndex);
+                int otherColumnIndex = table.metadata.getColumnIndex(otherColumn);
+                ForeignKeyField fkf = new ForeignKeyField(table, otherColumnIndex, operator, thisColumnIndex);
                 description.get(thisColumnIndex).addForeignKey(fkf);
                 found = true;
             }

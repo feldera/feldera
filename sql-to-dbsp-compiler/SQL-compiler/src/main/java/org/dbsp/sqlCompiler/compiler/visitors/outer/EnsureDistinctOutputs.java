@@ -24,7 +24,9 @@ public class EnsureDistinctOutputs extends CircuitCloneVisitor {
             DBSPStreamDistinctOperator distinct = new DBSPStreamDistinctOperator(
                     operator.getRelNode().intermediate(), input);
             this.addOperator(distinct);
-            DBSPSimpleOperator result = operator.withInputs(Linq.list(distinct.outputPort()), true);
+            DBSPSimpleOperator result = operator
+                    .withInputs(Linq.list(distinct.outputPort()), true)
+                    .to(DBSPSimpleOperator.class);
             this.map(operator, result);
         } else {
             super.postorder(operator);
