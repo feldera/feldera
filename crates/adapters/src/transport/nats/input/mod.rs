@@ -164,7 +164,7 @@ impl NatsReader {
                 .await?;
 
                 let last_message_offset = *sequence_number_range.end();
-                read_nats_messages_until(
+                let (hasher, num_records) = consume_nats_messages_until(
                     nats_consumer,
                     last_message_offset,
                     consumer.clone(),
@@ -173,7 +173,10 @@ impl NatsReader {
                 .await
                 .with_context(|| format!("While attempting to replay offsets {first_message_offset}..{last_message_offset}"))?;
 
+                consumer.replayed(num_records, hasher.finish());
+
                 read_sequence.store(NonZeroU64::new(last_message_offset + 1), Ordering::Release);
+
             } else {
                 consumer.replayed(0, Xxh3Default::new().finish());
             }
@@ -258,12 +261,12 @@ async fn create_nats_consumer(
         .await?)
 }
 
-async fn read_nats_messages_until(
+async fn consume_nats_messages_until(
     nats_consumer: NatsConsumer,
     last_message_sequence: u64,
     consumer: Box<dyn InputConsumer>,
     mut parser: Box<dyn Parser>,
-) -> AnyResult<()> {
+) -> AnyResult<(Xxh3Default, usize)> {
     let mut nats_messages = nats_consumer.messages().await?;
 
     let mut hasher = Xxh3Default::new();
@@ -303,9 +306,7 @@ async fn read_nats_messages_until(
         }
     }
 
-    consumer.replayed(num_records, hasher.finish());
-
-    Ok(())
+    Ok((hasher, num_records))
 }
 
 async fn spawn_nats_reader(
