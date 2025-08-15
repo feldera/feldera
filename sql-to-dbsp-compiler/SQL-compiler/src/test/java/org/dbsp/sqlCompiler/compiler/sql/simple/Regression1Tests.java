@@ -719,6 +719,27 @@ public class Regression1Tests extends SqlIoTest {
     }
 
     @Test
+    public void issue4587() {
+        this.getCCS("""
+                CREATE TABLE illegal_tbl(
+                tmestmp TIMESTAMP,
+                datee DATE,
+                tme TIME);
+                
+                CREATE MATERIALIZED VIEW v0 AS SELECT
+                FLOOR(tmestmp TO YEAR) AS yr,
+                FLOOR(datee TO MONTH) AS mth,
+                FLOOR(tme TO HOUR) AS hr
+                FROM illegal_tbl;
+                
+                CREATE MATERIALIZED VIEW v1 AS SELECT
+                CEIL(tmestmp TO YEAR) AS yr,
+                CEIL(datee TO MONTH) AS mth,
+                CEIL(tme TO HOUR) AS hr
+                FROM illegal_tbl;""");
+    }
+
+    @Test
     public void argMin() {
         var ccs = this.getCCS("""
                 CREATE TABLE int0_tbl(

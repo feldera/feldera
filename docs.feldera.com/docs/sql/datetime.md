@@ -164,6 +164,13 @@ Values of type `TIME` can be compared using `=`, `<>`, `!=`, `<`, `>`,
 two time values and expresses the result in the specified time units.
 The result is a 32-bit integer.
 
+<a id="time_floor"></a>
+`FLOOR(time TO <unit>)`, where `<unit>` is a time unit between `HOUR` and
+`MICROSECOND`.
+
+<a id="time_ceil"></a> `CEIL(time TO <unit>)`, where `<unit>` is a
+time unit between `HOUR` and `MICROSECOND`.
+
 ## Timestamps
 
 The `TIMESTAMP` data type represents values composed of a `DATE` (as
