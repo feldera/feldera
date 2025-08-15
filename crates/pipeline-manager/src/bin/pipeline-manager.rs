@@ -88,6 +88,10 @@ async fn main() -> anyhow::Result<()> {
 
     // Run migrations before starting any service
     db.run_migrations().await?;
+
+    // TODO: we should get retention period in days from config
+    db.spawn_cleanup_jobs(7).await?;
+
     let db = Arc::new(Mutex::new(db));
     let db_clone = db.clone();
     let common_config_clone = common_config.clone();

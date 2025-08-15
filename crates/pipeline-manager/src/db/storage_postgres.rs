@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use crate::api::support_data_collector::SupportBundleData;
 #[cfg(feature = "postgresql_embedded")]
 use crate::config::PgEmbedConfig;
@@ -22,7 +24,7 @@ use async_trait::async_trait;
 use deadpool_postgres::{Manager, Pool, RecyclingMethod};
 use feldera_types::config::{PipelineConfig, RuntimeConfig};
 use feldera_types::error::ErrorResponse;
-use log::{debug, info, log, Level};
+use log::{debug, info, log, warn, Level};
 use tokio_postgres::Row;
 use uuid::Uuid;
 
@@ -1307,5 +1309,51 @@ impl StoragePostgres {
                 actual: 0,
             })
         }
+    }
+
+    /// Spawns background cron jobs to cleanup old records.
+    /// This runs every 24 hours interval
+    pub async fn spawn_cleanup_jobs(&self, retention_period_in_days: u64) -> Result<(), DBError> {
+        // execute cleanup every 24 hours
+        let cleanup_interval = Duration::from_secs(60 * 60 * 24);
+        let mut interval = tokio::time::interval(cleanup_interval);
+
+        let statement = format!(
+            "DELETE FROM pipeline_lifecycle_history WHERE timestamp < NOW() - INTERVAL '{retention_period_in_days} days'"
+        );
+
+        let pool = self.pool.clone();
+        tokio::spawn({
+            async move {
+                loop {
+                    interval.tick().await;
+                    // Acquire a client from the pool only when needed, inside the loop.
+                    if let Ok(mut client) = pool.get().await {
+                        if let Ok(txn) = client.transaction().await {
+                            match txn.execute(statement.as_str(), &[]).await {
+                                Ok(deleted) => match txn.commit().await {
+                                    Ok(_) => {
+                                        info!(
+                                            "Pipeline lifecycle cleanup job ran (retention period: {retention_period_in_days} days): deleted {deleted} records."
+                                        );
+                                    }
+                                    Err(e) => {
+                                        warn!(
+                                            "Pipeline lifecycle cleanup job commit failed (retention period: {retention_period_in_days} days): {e}."
+                                        );
+                                    }
+                                },
+                                Err(e) => {
+                                    warn!(
+                                        "Pipeline lifecycle cleanup job failed (retention period: {retention_period_in_days} days): {e}."
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        });
+        Ok(())
     }
 }

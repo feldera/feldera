@@ -1157,7 +1157,7 @@ pub(crate) async fn set_deployment_status(
                 &new_deployment_status.to_string(),
                 &match final_deployment_error {
                     None => None,
-                    Some(v) => Some(serialize_error_response(&v)?),
+                    Some(ref v) => Some(serialize_error_response(v)?),
                 },
                 &final_deployment_config.map(|v| v.to_string()),
                 &final_deployment_location,
@@ -1167,7 +1167,18 @@ pub(crate) async fn set_deployment_status(
             ],
         )
         .await?;
+
     if rows_affected > 0 {
+        // update lifecycle event.
+        insert_pipeline_lifecycle_history(
+            txn,
+            tenant_id,
+            pipeline_id,
+            &current.name,
+            new_deployment_status,
+            &final_deployment_error,
+        )
+        .await?;
         Ok(())
     } else {
         Err(DBError::UnknownPipeline { pipeline_id })
@@ -1453,6 +1464,37 @@ pub(crate) async fn get_support_bundle_data(
     }
 
     Ok(bundles)
+}
+
+/// Inserts a new record into the `pipeline_lifecycle_history` table.
+async fn insert_pipeline_lifecycle_history(
+    transaction: &Transaction<'_>,
+    tenant_id: TenantId,
+    pipeline_id: PipelineId,
+    name: &str,
+    state: PipelineStatus,
+    info: &Option<ErrorResponse>,
+) -> Result<(), DBError> {
+    let query =
+        "INSERT INTO pipeline_lifecycle_history (tenant_id, pipeline_id, name, state, info) \
+                 VALUES ($1, $2, $3, $4, $5)";
+    transaction
+        .execute(
+            query,
+            &[
+                &tenant_id.0,
+                &pipeline_id.0,
+                &name,
+                &state.to_string(),
+                &match info {
+                    None => None,
+                    Some(v) => Some(serialize_error_response(v)?),
+                },
+            ],
+        )
+        .await
+        .map_err(DBError::from)?;
+    Ok(())
 }
 
 #[cfg(test)]
