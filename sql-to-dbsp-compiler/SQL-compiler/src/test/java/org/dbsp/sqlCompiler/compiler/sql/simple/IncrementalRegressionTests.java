@@ -776,7 +776,6 @@ public class IncrementalRegressionTests extends SqlIoTest {
     // Tests that are not in the repository; run manually
     @Test @Ignore
     public void extraTests() throws IOException {
-        Logger.INSTANCE.setLoggingLevel(Passes.class, 1);
         String dir = "../extra";
         File file = new File(dir);
         if (file.exists()) {

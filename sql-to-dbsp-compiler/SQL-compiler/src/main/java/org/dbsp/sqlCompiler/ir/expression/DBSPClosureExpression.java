@@ -32,6 +32,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EquivalenceContext;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Expensive;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.inner.Projection;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -166,12 +167,18 @@ public final class DBSPClosureExpression extends DBSPExpression {
             throw new InternalCompilerError("Expected closure with 1 parameter", this);
 
         if (inline == MAYBE) {
-            Expensive expensive = new Expensive(compiler);
-            expensive.apply(before);
-            if (expensive.isExpensive())
-                inline = NO;
-            else
+            Projection projection = new Projection(compiler);
+            projection.apply(this);
+            if (projection.isProjection) {
                 inline = YES;
+            } else {
+                Expensive expensive = new Expensive(compiler);
+                expensive.apply(before);
+                if (expensive.isExpensive())
+                    inline = NO;
+                else
+                    inline = YES;
+            }
         }
 
         if (inline == YES) {
