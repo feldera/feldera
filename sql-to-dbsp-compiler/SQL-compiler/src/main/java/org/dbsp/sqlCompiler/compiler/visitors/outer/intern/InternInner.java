@@ -25,7 +25,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPBorrowExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCloneExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPConditionalAggregateExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPConditionalIncrementExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPConstructorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFieldExpression;
@@ -439,13 +439,13 @@ public class InternInner extends ExpressionTranslator {
     }
 
     @Override
-    public void postorder(DBSPConditionalAggregateExpression expression) {
+    public void postorder(DBSPConditionalIncrementExpression expression) {
         DBSPExpression left = this.uninternIfNecessary(expression.left);
         DBSPExpression right = this.uninternIfNecessary(expression.right);
         DBSPExpression condition = null;
         if (expression.condition != null)
             condition = this.uninternIfNecessary(expression.condition);
-        DBSPExpression result = new DBSPConditionalAggregateExpression(expression.getNode(), expression.opcode,
+        DBSPExpression result = new DBSPConditionalIncrementExpression(expression.getNode(), expression.opcode,
                 expression.getType(), left, right, condition);
         this.map(expression, result);
     }

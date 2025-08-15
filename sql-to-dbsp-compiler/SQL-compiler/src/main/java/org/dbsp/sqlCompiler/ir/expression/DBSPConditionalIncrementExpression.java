@@ -14,17 +14,18 @@ import org.dbsp.util.IIndentStream;
 
 import javax.annotation.Nullable;
 
-/** A conditional aggregate has the form
+/** A conditional increment has the form
  * (accumulator, increment, predicate) -> accumulator.
- * The predicate is optional. */
-public final class DBSPConditionalAggregateExpression extends DBSPExpression {
+ * The predicate is optional, and then this is an "unconditional" increment.
+ * This translates into a function call, which is more efficient than a conditional.*/
+public final class DBSPConditionalIncrementExpression extends DBSPExpression {
     public final DBSPOpcode opcode;
     public final DBSPExpression left;
     public final DBSPExpression right;
     @Nullable
     public final DBSPExpression condition;
 
-    public DBSPConditionalAggregateExpression(
+    public DBSPConditionalIncrementExpression(
             CalciteObject node, DBSPOpcode opcode, DBSPType resultType, DBSPExpression left,
             DBSPExpression right, @Nullable DBSPExpression condition) {
         super(node, resultType);
@@ -39,13 +40,13 @@ public final class DBSPConditionalAggregateExpression extends DBSPExpression {
 
     @Override
     public DBSPExpression deepCopy() {
-        return new DBSPConditionalAggregateExpression(this.getNode(), this.opcode, this.getType(),
+        return new DBSPConditionalIncrementExpression(this.getNode(), this.opcode, this.getType(),
                 this.left.deepCopy(), this.right.deepCopy(), DBSPExpression.nullableDeepCopy(condition));
     }
 
     @Override
     public boolean equivalent(EquivalenceContext context, DBSPExpression other) {
-        DBSPConditionalAggregateExpression otherExpression = other.as(DBSPConditionalAggregateExpression.class);
+        DBSPConditionalIncrementExpression otherExpression = other.as(DBSPConditionalIncrementExpression.class);
         if (otherExpression == null)
             return false;
         return this.opcode == otherExpression.opcode &&
@@ -75,7 +76,7 @@ public final class DBSPConditionalAggregateExpression extends DBSPExpression {
 
     @Override
     public boolean sameFields(IDBSPInnerNode other) {
-        DBSPConditionalAggregateExpression o = other.as(DBSPConditionalAggregateExpression.class);
+        DBSPConditionalIncrementExpression o = other.as(DBSPConditionalIncrementExpression.class);
         if (o == null)
             return false;
         return this.left == o.left &&
@@ -97,7 +98,7 @@ public final class DBSPConditionalAggregateExpression extends DBSPExpression {
     }
 
     @SuppressWarnings("unused")
-    public static DBSPConditionalAggregateExpression fromJson(JsonNode node, JsonDecoder decoder) {
+    public static DBSPConditionalIncrementExpression fromJson(JsonNode node, JsonDecoder decoder) {
         DBSPExpression left = fromJsonInner(node, "left", decoder, DBSPExpression.class);
         DBSPExpression right = fromJsonInner(node, "right", decoder, DBSPExpression.class);
         DBSPType type = getJsonType(node, decoder);
@@ -105,6 +106,6 @@ public final class DBSPConditionalAggregateExpression extends DBSPExpression {
         if (node.has("condition"))
             condition = fromJsonInner(node, "condition", decoder, DBSPExpression.class);
         DBSPOpcode code = DBSPOpcode.fromJson(node);
-        return new DBSPConditionalAggregateExpression(CalciteObject.EMPTY, code, type, left, right, condition);
+        return new DBSPConditionalIncrementExpression(CalciteObject.EMPTY, code, type, left, right, condition);
     }
 }

@@ -573,7 +573,7 @@ public class ToJsonInnerVisitor extends InnerVisitor {
     }
 
     @Override
-    public void postorder(DBSPConditionalAggregateExpression node) {
+    public void postorder(DBSPConditionalIncrementExpression node) {
         this.property("opcode");
         this.stream.append(node.opcode.name());
         super.postorder(node);

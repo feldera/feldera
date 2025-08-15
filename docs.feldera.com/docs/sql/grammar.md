@@ -26,6 +26,7 @@ statement
   |   createFunctionStatement
   |   createTypeStatement
   |   createIndexStatement
+  |   createAggregateStatement
   |   latenessStatement
 
 columnDecl
@@ -183,6 +184,15 @@ See [Streaming SQL Extensions, WATERMARKS](streaming.md#watermark-expressions)
 createFunctionStatement
   :   CREATE FUNCTION name '(' [ columnDecl [, columnDecl ]* ] ')' RETURNS generalType
       [ AS expression ]
+```
+
+## Creating user-defined aggregates.
+
+`CREATE AGGREGATE` is used to declare [user-defined aggregates](udf.md#user-defined-aggregates).
+
+```
+createAggregateStatement
+  :   CREATE [ LINEAR ] AGGREGATE name '(' [ columnDecl [, columnDecl ]* ] ')' RETURNS generalType
 ```
 
 ## Creating views

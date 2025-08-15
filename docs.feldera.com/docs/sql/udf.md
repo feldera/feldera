@@ -370,7 +370,7 @@ Import this crate to your Feldera pipeline via the `udf.toml` file,
 including only wrapper functions that call the API of this crate in
 `udf.rs`.
 
-## Limitations
+### Limitations
 
 * Currently only limited implicit casts are inserted by the compiler for the
   function arguments and function result in the SQL program.  For
@@ -387,3 +387,107 @@ including only wrapper functions that call the API of this crate in
 * Polymorphic functions are not supported.  For example, in SQL the
   addition operation operates on any numeric types; such an operation
   cannot be implemented as a single user-defined function.
+
+## User-defined aggregates
+
+:::warning Experimental feature
+
+Rust UDA support is currently experimental and may undergo significant
+changes, including non-backward-compatible modifications, in future
+releases of Feldera.
+
+:::
+
+The SQL statement `CREATE AGGREGATE` can be used to declare new
+functions.  Functions need to be implemented in Rust.  Defining linear
+and non-linear aggregate functions is slightly different.
+
+### Creating user-defined linear aggregate functions
+
+The following example shows how a user-defined linear aggregate
+function is declared:
+
+```sql
+CREATE LINEAR AGGREGATE i8_avg(value TINYNT) RETURNS TINYINT;
+CREATE TABLE T(value TINYINT);
+
+CREATE VIEW V0 AS SELECT i8_avg(value) FROM T;
+```
+
+We will implement `i8_avg` to compute the average of the values in the
+input collection, by treating `NULL` values as 0.
+
+In general, an aggregate function A is linear if it has the following
+property: A(C1 UNION C2) = A(C1) + A(C2), where C1 and C2 are
+arbitrary collections.  The type of the result produced by the
+function is expected to have a + operation which is commutative and
+associative.
+
+Based on the declared function name, the users are expected to define
+one Rust type for the "accumulator" produced by the aggregation.  The
+name of the accumulator type is derived from the function name by
+concatenating "_accumulator_type".  For the previous example the
+accumulator type will be named `i8_avg_accumulator_type`.
+
+The accumulator type is required to implement several traits defined
+in the DBSP core library:
+
+- [`DBWeight`]() which is a combination of
+  [`DBData`](https://docs.rs/dbsp/latest/dbsp/trace/trait.DBData.html)
+  and
+  [`MonoidValue`](https://docs.rs/dbsp/latest/dbsp/algebra/trait.MonoidValue.html).
+  `DBData` allows accumulators to be stored in relations which may be
+  spilled to disk; amond other traits, it requires `Ord` and
+  `ArchivedDBData`.  `MonoidValue` essentially requires the traits
+  `Zero`, `HasZero`, `Add` (and variants such as `AddByRef`).
+
+- [`MulByRef`](https://docs.rs/dbsp/latest/dbsp/algebra/trait.MulByRef.html)
+  which allows accumulator values to be multiplied by integer (signed
+  and unsigned) weights.  Negative weights are used when elements are
+  removed from collections; large weights are used when multiple copies of an
+  element are updated in one operation.
+
+In order to implement average, we will define the accumulator type as
+`type i8_avg_accumulator_type = Tup2<i32, i32>`, using a tuple to
+compute the sum and one to compute the count.  Note that the
+pre-defined `Tup2` type automatically implements the traits described
+above if both fields do, by applying the operations pointwise.  Also
+note that we use `i32` to accumulate values of type `i8` to reduce the
+chances of overflow.
+
+The user has two implement two additional functions, whose names are
+derived from the aggregation function name:
+
+- The "map" function name, which would be named `i8_avg_map` in our
+  example.  This function converts the aggregated value into an
+  accumulator value.
+
+- The "post" function name, which would be named `i8_avg_post` in our
+  example.  This function produces the final version of the
+  aggregation by converting the final value of the accumulator into
+  the expected result.
+
+Here is a possible implementation of these functions for computing
+average, which the user would need to add to `udf.rs`:
+
+```
+use crate::Tup2;
+
+pub type i8_avg_accumulator_type = Tup2<i32, i32>;
+
+pub fn i8_avg_map(val: Option<i8>) -> Tup2<i32, i32> {
+    match (val) {
+        None => Tup2::new(0, 1), // Treat NULL like 0
+        Some(x) => Tup2::new(x as i32, 1),
+    }
+}
+
+pub fn i8_avg_post(val: Tup2<i32, i32>) -> Option<i8> {
+    Some((val.0 / val.1).try_into().unwrap())
+}
+```
+
+### Creating user-defined non-linear aggregate functions
+
+Currently user-defined non-linear aggregation functions are not
+supported.

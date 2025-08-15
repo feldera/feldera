@@ -24,7 +24,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCloneExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPComparatorExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPConditionalAggregateExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPConditionalIncrementExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPConstructorExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCustomOrdField;
 import org.dbsp.sqlCompiler.ir.expression.DBSPDerefExpression;
@@ -240,7 +240,7 @@ public class FindUnusedFields extends SymbolicInterpreter<FieldUseMap> {
     }
 
     @Override
-    public void postorder(DBSPConditionalAggregateExpression expression) {
+    public void postorder(DBSPConditionalIncrementExpression expression) {
         if (expression.condition != null)
             this.used(expression.condition);
         this.used(expression.left);
