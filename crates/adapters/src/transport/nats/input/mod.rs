@@ -291,6 +291,7 @@ async fn consume_nats_messages_until(
                     buffer.hash(&mut hasher);
                     buffer.flush();
                 }
+                consumer.buffered(1, data.len());
                 num_records += 1;
                 info!("Got message #{}", info.stream_sequence);
 
