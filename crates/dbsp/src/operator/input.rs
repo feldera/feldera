@@ -7,14 +7,14 @@ use crate::{
     dynamic::{DowncastTrait, DynBool, DynData, DynPair, DynUnit, Erase, LeanVec},
     operator::dynamic::{
         input::{
-            AddInputIndexedZSetFactories, AddInputMapFactories, AddInputSetFactories,
-            AddInputZSetFactories, CollectionHandle, UpsertHandle,
+            AddInputIndexedZSetFactories, AddInputMapFactories, AddInputMapWithWaterlineFactories,
+            AddInputSetFactories, AddInputZSetFactories, CollectionHandle, UpsertHandle,
         },
         input_upsert::DynUpdate,
     },
     typed_batch::{OrdIndexedZSet, OrdZSet},
     utils::Tup2,
-    Circuit, DBData, DynZWeight, RootCircuit, Runtime, Stream, ZWeight,
+    Circuit, DBData, DynZWeight, RootCircuit, Runtime, Stream, TypedBox, ZWeight,
 };
 use std::{
     borrow::{Borrow, Cow},
@@ -490,6 +490,161 @@ impl RootCircuit {
         );
 
         (stream.typed(), MapHandle::new(handle))
+    }
+
+    /// Like `add_input_map`, but additionally tracks a waterline of the input collection and
+    /// rejects inputs that are below the waterline.
+    ///
+    /// An input is rejected if the input record itself is below the waterline or if the existing
+    /// record it replaces is below the waterline.
+    ///
+    /// # Type arguments
+    ///
+    /// - `K`: The type of the key.
+    /// - `V`: The type of the value.
+    /// - `U`: The type that represents updates to values.
+    /// - `W`: The type of the waterline.
+    /// - `E`: The type of the error that is reported when the waterline is violated.
+    ///
+    /// # Arguments
+    ///
+    /// - `patch_func`: A function that applies the update to the value.
+    /// - `init`: A function that initializes the waterline.
+    /// - `extract_ts`: A function that extracts the timestamp from the key/value pair.
+    /// - `least_upper_bound`: A function that computes the least upper bound of two waterlines.
+    /// - `filter_func`: A function that filters out records below the waterline.
+    /// - `report_func`: A function that reports errors when the waterline is violated.
+    ///
+    /// # Returns
+    ///
+    /// - Stream of changes to the collection.
+    /// - Error stream that reports waterline violations.
+    /// - Stream of waterline values.
+    /// - Input handle that allows pushing updates to the collection.
+    ///
+    /// # Garbage collection
+    ///
+    /// This function supports waterlines over both key and values components of the tuple.
+    /// In case the waterline is applied to the key component, the internal index maintained
+    /// by this function can be GC'd by calling [`Stream::integrate_trace_retain_keys`]: on
+    /// the output stream returned by this function:
+    /// `stream.integrate_trace_retain_keys(&waterline, |key, wl| *key >= *wl)`, where
+    /// `waterline` is the stream of waterline values returned by this function.
+    #[track_caller]
+    pub fn add_input_map_with_waterline<K, V, U, W, E, PF, IF, WF, LB, FF, RF>(
+        &self,
+        patch_func: PF,
+        init: IF,
+        extract_ts: WF,
+        least_upper_bound: LB,
+        filter_func: FF,
+        report_func: RF,
+    ) -> (
+        Stream<RootCircuit, OrdIndexedZSet<K, V>>,
+        Stream<RootCircuit, OrdZSet<E>>,
+        Stream<RootCircuit, TypedBox<W, DynData>>,
+        MapHandle<K, V, U>,
+    )
+    where
+        K: DBData,
+        V: DBData,
+        U: DBData + Erase<DynData>,
+        W: DBData,
+        E: DBData,
+        PF: Fn(&mut V, &U) + 'static,
+        IF: Fn() -> W + 'static,
+        WF: Fn(&K, &V) -> W + 'static,
+        LB: Fn(&W, &W) -> W + Clone + 'static,
+        FF: Fn(&W, &K, &V) -> bool + 'static,
+        RF: Fn(&W, &K, &V, ZWeight) -> E + 'static,
+    {
+        self.add_input_map_with_waterline_persistent(
+            None,
+            patch_func,
+            init,
+            extract_ts,
+            least_upper_bound,
+            filter_func,
+            report_func,
+        )
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    #[track_caller]
+    pub fn add_input_map_with_waterline_persistent<K, V, U, W, E, PF, IF, WF, LB, FF, RF>(
+        &self,
+        persistent_id: Option<&str>,
+        patch_func: PF,
+        init: IF,
+        extract_ts: WF,
+        least_upper_bound: LB,
+        filter_func: FF,
+        report_func: RF,
+    ) -> (
+        Stream<RootCircuit, OrdIndexedZSet<K, V>>,
+        Stream<RootCircuit, OrdZSet<E>>,
+        Stream<RootCircuit, TypedBox<W, DynData>>,
+        MapHandle<K, V, U>,
+    )
+    where
+        K: DBData,
+        V: DBData,
+        U: DBData + Erase<DynData>,
+        W: DBData + Erase<DynData>,
+        E: DBData + Erase<DynData>,
+        PF: Fn(&mut V, &U) + 'static,
+        IF: Fn() -> W + 'static,
+        WF: Fn(&K, &V) -> W + 'static,
+        LB: Fn(&W, &W) -> W + Clone + 'static,
+        FF: Fn(&W, &K, &V) -> bool + 'static,
+        RF: Fn(&W, &K, &V, ZWeight) -> E + 'static,
+    {
+        let factories = AddInputMapWithWaterlineFactories::new::<K, V, U, E>();
+        let (stream, errors, waterline, handle) = self.dyn_add_input_map_with_waterline_mono(
+            persistent_id,
+            &factories,
+            Box::new(move |v: &mut DynData, u: &DynData| unsafe {
+                patch_func(v.downcast_mut::<V>(), u.downcast::<U>())
+            }),
+            Box::new(move || Box::new(init())),
+            Box::new(move |k: &DynData, v: &DynData, ts: &mut DynData| {
+                let k = unsafe { k.downcast::<K>() };
+                let v = unsafe { v.downcast::<V>() };
+                let w = unsafe { ts.downcast_mut::<W>() };
+
+                *w = extract_ts(k, v);
+            }),
+            Box::new(move |a: &DynData, b: &DynData, ts: &mut DynData| {
+                let a = unsafe { a.downcast::<W>() };
+                let b = unsafe { b.downcast::<W>() };
+                let ts = unsafe { ts.downcast_mut::<W>() };
+                *ts = least_upper_bound(a, b)
+            }),
+            Box::new(move |wl: &DynData, k: &DynData, v: &DynData| {
+                let wl = unsafe { wl.downcast::<W>() };
+                let k = unsafe { k.downcast::<K>() };
+                let v = unsafe { v.downcast::<V>() };
+
+                filter_func(wl, k, v)
+            }),
+            Box::new(
+                move |wl: &DynData, k: &DynData, v: &DynData, w: ZWeight, err: &mut DynData| {
+                    let wl = unsafe { wl.downcast::<W>() };
+                    let k = unsafe { k.downcast::<K>() };
+                    let v = unsafe { v.downcast::<V>() };
+                    let err = unsafe { err.downcast_mut::<E>() };
+
+                    *err = report_func(wl, k, v, w);
+                },
+            ),
+        );
+
+        (
+            stream.typed(),
+            errors.typed(),
+            unsafe { waterline.typed_data() },
+            MapHandle::new(handle),
+        )
     }
 }
 

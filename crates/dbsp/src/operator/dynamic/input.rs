@@ -2,21 +2,24 @@ use crate::{
     algebra::{
         IndexedZSet, OrdIndexedZSet, OrdIndexedZSetFactories, OrdZSet, OrdZSetFactories, ZSet,
     },
-    circuit::RootCircuit,
+    circuit::{checkpointer::Checkpoint, RootCircuit},
     dynamic::{
         ClonableTrait, DataTrait, DynBool, DynData, DynOpt, DynPair, DynPairs, DynUnit,
         DynWeightedPairs, Erase, Factory, LeanVec, WithFactory,
     },
     operator::{
         dynamic::{
-            input_upsert::{DynUpdate, InputUpsertFactories, PatchFunc},
+            input_upsert::{
+                DynUpdate, InputUpsertFactories, InputUpsertWithWaterlineFactories, PatchFunc,
+            },
+            time_series::LeastUpperBoundFunc,
             upsert::UpdateSetFactories,
         },
         Input, InputHandle, Update,
     },
-    trace::{Batch, BatchFactories, BatchReaderFactories},
+    trace::{Batch, BatchFactories, BatchReaderFactories, Rkyv},
     utils::Tup2,
-    Circuit, DBData, DynZWeight, Stream, ZWeight,
+    Circuit, DBData, DynZWeight, NumEntries, Stream, ZWeight,
 };
 use std::{
     mem::{replace, swap},
@@ -200,6 +203,56 @@ where
     }
 }
 
+pub struct AddInputMapWithWaterlineFactories<B, U, E>
+where
+    B: IndexedZSet,
+    U: DataTrait + ?Sized,
+    E: DataTrait + ?Sized,
+{
+    upsert_factories: InputUpsertWithWaterlineFactories<B, E>,
+    input_pair_factory: &'static dyn Factory<DynPair<B::Key, DynUpdate<B::Val, U>>>,
+    input_pairs_factory: &'static dyn Factory<DynPairs<B::Key, DynUpdate<B::Val, U>>>,
+    upsert_pair_factory: &'static dyn Factory<DynPair<B::Key, DynOpt<DynUnit>>>,
+}
+
+impl<B, U, E> AddInputMapWithWaterlineFactories<B, U, E>
+where
+    B: IndexedZSet,
+    U: DataTrait + ?Sized,
+    E: DataTrait + ?Sized,
+{
+    pub fn new<KType, VType, UType, EType>() -> Self
+    where
+        KType: DBData + Erase<B::Key>,
+        VType: DBData + Erase<B::Val>,
+        UType: DBData + Erase<U>,
+        EType: DBData + Erase<E>,
+    {
+        Self {
+            upsert_factories: InputUpsertWithWaterlineFactories::new::<KType, VType, EType>(),
+            input_pair_factory: WithFactory::<Tup2<KType, Update<VType, UType>>>::FACTORY,
+            input_pairs_factory: WithFactory::<LeanVec<Tup2<KType, Update<VType, UType>>>>::FACTORY,
+            upsert_pair_factory: WithFactory::<Tup2<KType, Option<()>>>::FACTORY,
+        }
+    }
+}
+
+impl<B, U, E> Clone for AddInputMapWithWaterlineFactories<B, U, E>
+where
+    B: IndexedZSet,
+    U: DataTrait + ?Sized,
+    E: DataTrait + ?Sized,
+{
+    fn clone(&self) -> Self {
+        Self {
+            upsert_factories: self.upsert_factories.clone(),
+            input_pair_factory: self.input_pair_factory,
+            input_pairs_factory: self.input_pairs_factory,
+            upsert_pair_factory: self.upsert_pair_factory,
+        }
+    }
+}
+
 impl RootCircuit {
     pub fn dyn_add_input_zset_mono(
         &self,
@@ -240,6 +293,39 @@ impl RootCircuit {
         UpsertHandle<DynData, DynUpdate<DynData, DynData>>,
     ) {
         self.dyn_add_input_map(persistent_id, factories, patch_func)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn dyn_add_input_map_with_waterline_mono(
+        &self,
+        persistent_id: Option<&str>,
+        factories: &AddInputMapWithWaterlineFactories<
+            OrdIndexedZSet<DynData, DynData>,
+            DynData,
+            DynData,
+        >,
+        patch_func: PatchFunc<DynData, DynData>,
+        init_waterline: Box<dyn Fn() -> Box<DynData>>,
+        extract_ts: Box<dyn Fn(&DynData, &DynData, &mut DynData)>,
+        least_upper_bound: LeastUpperBoundFunc<DynData>,
+        filter_func: Box<dyn Fn(&DynData, &DynData, &DynData) -> bool>,
+        report_func: Box<dyn Fn(&DynData, &DynData, &DynData, ZWeight, &mut DynData)>,
+    ) -> (
+        IndexedZSetStream<DynData, DynData>,
+        Stream<RootCircuit, OrdZSet<DynData>>,
+        Stream<RootCircuit, Box<DynData>>,
+        UpsertHandle<DynData, DynUpdate<DynData, DynData>>,
+    ) {
+        self.dyn_add_input_map_with_waterline(
+            persistent_id,
+            factories,
+            patch_func,
+            init_waterline,
+            extract_ts,
+            least_upper_bound,
+            filter_func,
+            report_func,
+        )
     }
 }
 
@@ -454,6 +540,56 @@ impl RootCircuit {
         sorted.input_upsert::<B>(persistent_id, &factories.upsert_factories, patch_func)
     }
 
+    #[allow(clippy::too_many_arguments)]
+    #[track_caller]
+    fn add_upsert_indexed_with_waterline<K, V, U, B, W, E>(
+        &self,
+        persistent_id: Option<&str>,
+        factories: &AddInputMapWithWaterlineFactories<B, U, E>,
+        input_stream: Stream<Self, Box<DynPairs<K, DynUpdate<V, U>>>>,
+        patch_func: PatchFunc<V, U>,
+        init_waterline: Box<dyn Fn() -> Box<W>>,
+        extract_ts: Box<dyn Fn(&B::Key, &B::Val, &mut W)>,
+        least_upper_bound: LeastUpperBoundFunc<W>,
+        filter_func: Box<dyn Fn(&W, &B::Key, &B::Val) -> bool>,
+        report_func: Box<dyn Fn(&W, &B::Key, &B::Val, ZWeight, &mut E)>,
+    ) -> (
+        Stream<Self, B>,
+        Stream<Self, OrdZSet<E>>,
+        Stream<Self, Box<W>>,
+    )
+    where
+        B: IndexedZSet<Key = K, Val = V>,
+        K: DataTrait + ?Sized,
+        V: DataTrait + ?Sized,
+        U: DataTrait + ?Sized,
+        W: DataTrait + Checkpoint + ?Sized,
+        E: DataTrait + ?Sized,
+        Box<W>: Checkpoint + Clone + NumEntries + Rkyv,
+    {
+        let sorted = input_stream
+            .apply_owned(move |mut upserts| {
+                // Sort the vector by key, preserving the history of updates for each key.
+                // Upserts cannot be merged or reordered, therefore we cannot use unstable sort.
+                upserts.sort_by_key();
+
+                upserts
+            })
+            // UpsertHandle shards its inputs.
+            .mark_sharded();
+
+        sorted.input_upsert_with_waterline::<B, W, E>(
+            persistent_id,
+            &factories.upsert_factories,
+            patch_func,
+            init_waterline,
+            extract_ts,
+            least_upper_bound,
+            filter_func,
+            report_func,
+        )
+    }
+
     /// Create an input table with set semantics.
     ///
     /// The `dyn_add_input_set` operator creates an input table that internally
@@ -619,6 +755,61 @@ impl RootCircuit {
                 self.add_upsert_indexed(persistent_id, factories, input_stream, patch_func);
 
             (upsert, zset_handle)
+        })
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    #[track_caller]
+    pub fn dyn_add_input_map_with_waterline<K, V, U, W, E>(
+        &self,
+        persistent_id: Option<&str>,
+        factories: &AddInputMapWithWaterlineFactories<OrdIndexedZSet<K, V>, U, E>,
+        patch_func: PatchFunc<V, U>,
+        init_waterline: Box<dyn Fn() -> Box<W>>,
+        extract_ts: Box<dyn Fn(&K, &V, &mut W)>,
+        least_upper_bound: LeastUpperBoundFunc<W>,
+        filter_func: Box<dyn Fn(&W, &K, &V) -> bool>,
+        report_func: Box<dyn Fn(&W, &K, &V, ZWeight, &mut E)>,
+    ) -> (
+        IndexedZSetStream<K, V>,
+        Stream<RootCircuit, OrdZSet<E>>,
+        Stream<RootCircuit, Box<W>>,
+        UpsertHandle<K, DynUpdate<V, U>>,
+    )
+    where
+        K: DataTrait + ?Sized,
+        V: DataTrait + ?Sized,
+        U: DataTrait + ?Sized,
+        W: DataTrait + Checkpoint + ?Sized,
+        E: DataTrait + ?Sized,
+        Box<W>: Checkpoint + Clone + NumEntries + Rkyv,
+    {
+        self.region("input_map_with_waterline", || {
+            let (input, input_handle) = Input::new(
+                Location::caller(),
+                |tuples: Box<DynPairs<K, DynUpdate<V, U>>>| tuples,
+                Arc::new(|| factories.input_pairs_factory.default_box()),
+            );
+            let input_stream = self.add_source(input);
+            let zset_handle = <UpsertHandle<K, DynUpdate<V, U>>>::new(
+                factories.input_pair_factory,
+                factories.input_pairs_factory,
+                input_handle,
+            );
+
+            let (upsert, errors, waterline) = self.add_upsert_indexed_with_waterline(
+                persistent_id,
+                factories,
+                input_stream,
+                patch_func,
+                init_waterline,
+                extract_ts,
+                least_upper_bound,
+                filter_func,
+                report_func,
+            );
+
+            (upsert, errors, waterline, zset_handle)
         })
     }
 }
@@ -1034,7 +1225,7 @@ mod test {
             TypedBox,
         },
         utils::Tup2,
-        zset, RootCircuit, Runtime, Stream, ZWeight,
+        zset, OutputHandle, RootCircuit, Runtime, Stream, ZWeight,
     };
     use anyhow::Result as AnyResult;
     use std::{cmp::max, iter::once, ops::Mul};
@@ -1674,5 +1865,263 @@ mod test {
     fn map_test_mt4() {
         map_test_mt(4, input_map_updates1, output_map_updates1);
         map_test_mt(4, input_map_updates2, output_map_updates2);
+    }
+
+    fn map_with_waterline_test_circuit(
+        circuit: &RootCircuit,
+    ) -> (
+        MapHandle<u64, u64, i64>,
+        OutputHandle<TypedBox<u64, DynData>>,
+        OutputHandle<OrdIndexedZSet<u64, u64>>,
+        OutputHandle<OrdZSet<String>>,
+    ) {
+        let (stream, errors, waterline, input_handle) = circuit
+            .add_input_map_with_waterline::<u64, u64, i64, u64, String, _, _, _, _, _, _>(
+                |v, u| *v = ((*v as i64) + u) as u64,
+                || 0u64,
+                |_k, v| *v,
+                |wl1, wl2| max(*wl1, *wl2),
+                |wl, _k, v| *v >= *wl,
+                |wl, k, v, w| format!("waterline: {wl}, key: {k}, value: {v}, weight: {w}"),
+            );
+
+        let output_handle = stream.output();
+        let waterline_output_handle = waterline.output();
+        let errors_handle = errors.output();
+
+        (
+            input_handle,
+            waterline_output_handle,
+            output_handle,
+            errors_handle,
+        )
+    }
+
+    /// Test add_input_map_with_waterline over the value part of the tuple.
+    fn map_with_waterline_test(
+        workers: usize,
+        inputs: fn() -> Vec<Vec<Tup2<u64, Update<u64, i64>>>>,
+        expected_outputs: fn() -> Vec<(OrdIndexedZSet<u64, u64>, OrdZSet<String>, u64)>,
+    ) {
+        let expected_outputs = expected_outputs();
+
+        let (mut dbsp, (mut input_handle, waterline_handle, output_handle, errors_handle)) =
+            Runtime::init_circuit(workers, move |circuit| {
+                Ok(map_with_waterline_test_circuit(circuit))
+            })
+            .unwrap();
+
+        for (step, mut vec) in inputs().into_iter().enumerate() {
+            input_handle.append(&mut vec);
+            dbsp.step().unwrap();
+            let output = output_handle.consolidate();
+            assert_eq!(
+                *waterline_handle.take_from_worker(0).unwrap(),
+                expected_outputs[step].2
+            );
+            assert_eq!(output, expected_outputs[step].0);
+
+            let errors = errors_handle.consolidate();
+            assert_eq!(errors, expected_outputs[step].1);
+        }
+
+        dbsp.kill().unwrap();
+    }
+
+    fn input_map_with_waterline_updates1() -> Vec<Vec<Tup2<u64, Update<u64, i64>>>> {
+        vec![
+            vec![
+                Tup2(1, Update::Insert(1)),
+                Tup2(1, Update::Insert(1)),
+                Tup2(2, Update::Delete), // ignored
+                Tup2(3, Update::Insert(1)),
+            ], // waterline: 1
+            vec![
+                Tup2(1, Update::Insert(1)), // noop
+                Tup2(1, Update::Delete),    // ok
+                Tup2(2, Update::Insert(2)), // ok
+                Tup2(3, Update::Insert(3)), // ok
+                Tup2(4, Update::Insert(3)), // ok
+                Tup2(4, Update::Delete),    // ok
+                Tup2(4, Update::Insert(5)), // ok
+            ], // waterline: 5
+            vec![
+                Tup2(1, Update::Insert(5)), // ok
+                Tup2(2, Update::Insert(6)), // rejected: replaces value below waterline
+                Tup2(3, Update::Delete),    // rejected: deletes value below waterline
+                Tup2(4, Update::Insert(6)), // ok
+            ], // waterline: 6
+            vec![
+                Tup2(5, Update::Insert(5)), // rejected: inserts value below waterline
+                Tup2(6, Update::Insert(6)), // ok
+                Tup2(7, Update::Insert(7)), // ok
+                Tup2(4, Update::Insert(8)), // ok
+            ], // waterline: 8
+        ]
+    }
+
+    fn output_map_with_waterline_updates1() -> Vec<(OrdIndexedZSet<u64, u64>, OrdZSet<String>, u64)>
+    {
+        vec![
+            (
+                indexed_zset! { 1u64 => {1u64 => 1}, 3 => {1 => 1} },
+                zset! {},
+                1,
+            ),
+            (
+                indexed_zset! { 1 => {1 => -1}, 2 => {2 => 1}, 3 => {1 => -1, 3 => 1}, 4 => {5 => 1} },
+                zset! {},
+                5,
+            ),
+            (
+                indexed_zset! { 1 => {5 => 1}, 4 => {5 => -1, 6 => 1} },
+                zset! { "waterline: 5, key: 2, value: 2, weight: -1".to_string() => 1, "waterline: 5, key: 3, value: 3, weight: -1".to_string() => 1 },
+                6,
+            ),
+            (
+                indexed_zset! { 4 => {6 => -1, 8 => 1}, 6 => {6 => 1}, 7 => {7 => 1} },
+                zset! {"waterline: 6, key: 5, value: 5, weight: 1".to_string() => 1},
+                8,
+            ),
+        ]
+    }
+
+    #[test]
+    fn map_with_waterline_test_mt() {
+        map_with_waterline_test(
+            4,
+            input_map_with_waterline_updates1,
+            output_map_with_waterline_updates1,
+        );
+    }
+
+    fn map_with_waterline_gc_test_circuit(
+        circuit: &RootCircuit,
+    ) -> (
+        MapHandle<u64, u64, i64>,
+        OutputHandle<TypedBox<u64, DynData>>,
+        OutputHandle<OrdIndexedZSet<u64, u64>>,
+        OutputHandle<OrdZSet<String>>,
+    ) {
+        let (stream, errors, waterline, input_handle) = circuit
+            .add_input_map_with_waterline::<u64, u64, i64, u64, String, _, _, _, _, _, _>(
+                |v, u| *v = ((*v as i64) + u) as u64,
+                || 0u64,
+                |k, _v| *k,
+                |wl1, wl2| max(*wl1, *wl2),
+                |wl, k, _v| *k >= *wl,
+                |wl, k, v, w| format!("waterline: {wl}, key: {k}, value: {v}, weight: {w}"),
+            );
+
+        stream.integrate_trace_retain_keys(&waterline, |key, wl| *key >= *wl);
+
+        let output_handle = stream.output();
+        let waterline_output_handle = waterline.output();
+        let errors_handle = errors.output();
+
+        (
+            input_handle,
+            waterline_output_handle,
+            output_handle,
+            errors_handle,
+        )
+    }
+
+    /// Test add_input_map_with_waterline over the key part of the tuple.
+    /// This operator can get GC'd.
+    fn map_with_waterline_gc_test(
+        workers: usize,
+        inputs: fn() -> Vec<Vec<Tup2<u64, Update<u64, i64>>>>,
+        expected_outputs: fn() -> Vec<(OrdIndexedZSet<u64, u64>, OrdZSet<String>, u64)>,
+    ) {
+        let expected_outputs = expected_outputs();
+
+        let (mut dbsp, (mut input_handle, waterline_handle, output_handle, errors_handle)) =
+            Runtime::init_circuit(workers, move |circuit| {
+                Ok(map_with_waterline_gc_test_circuit(circuit))
+            })
+            .unwrap();
+
+        for (step, mut vec) in inputs().into_iter().enumerate() {
+            input_handle.append(&mut vec);
+            dbsp.step().unwrap();
+            let output = output_handle.consolidate();
+            assert_eq!(
+                *waterline_handle.take_from_worker(0).unwrap(),
+                expected_outputs[step].2
+            );
+            assert_eq!(output, expected_outputs[step].0);
+
+            let errors = errors_handle.consolidate();
+            assert_eq!(errors, expected_outputs[step].1);
+        }
+
+        dbsp.kill().unwrap();
+    }
+
+    fn input_map_with_waterline_gc_updates1() -> Vec<Vec<Tup2<u64, Update<u64, i64>>>> {
+        vec![
+            vec![
+                Tup2(1, Update::Insert(1)),
+                Tup2(1, Update::Insert(1)),
+                Tup2(2, Update::Delete), // ignored
+                Tup2(3, Update::Insert(1)),
+            ], // waterline: 3
+            vec![
+                Tup2(1, Update::Insert(1)), // rejected
+                Tup2(1, Update::Delete),    // rejected
+                Tup2(2, Update::Insert(2)), // rejected
+                Tup2(3, Update::Insert(3)), // ok
+                Tup2(3, Update::Insert(4)), // ok
+                Tup2(4, Update::Insert(3)), // ok
+                Tup2(4, Update::Delete),    // ok
+                Tup2(4, Update::Insert(5)), // ok
+            ], // waterline: 4
+            vec![
+                Tup2(3, Update::Delete),    // rejected
+                Tup2(5, Update::Insert(6)), // ok
+                Tup2(5, Update::Delete),    // ok
+            ], // waterline: (still) 4
+            vec![
+                Tup2(5, Update::Insert(5)), // ok
+                Tup2(6, Update::Insert(6)), // ok
+                Tup2(7, Update::Insert(7)), // ok
+            ], // waterline: 7
+        ]
+    }
+
+    fn output_map_with_waterline_gc_updates1(
+    ) -> Vec<(OrdIndexedZSet<u64, u64>, OrdZSet<String>, u64)> {
+        vec![
+            (
+                indexed_zset! { 1u64 => {1u64 => 1}, 3 => {1 => 1} },
+                zset! {},
+                3,
+            ),
+            (
+                indexed_zset! { 3 => {1 => -1, 4 => 1}, 4 => {5 => 1} },
+                zset! {"waterline: 3, key: 1, value: 1, weight: -1".to_string() => 1, "waterline: 3, key: 2, value: 2, weight: 1".to_string() => 1},
+                4,
+            ),
+            (
+                indexed_zset! {},
+                zset! {"waterline: 4, key: 3, value: 4, weight: -1".to_string() => 1},
+                4,
+            ),
+            (
+                indexed_zset! { 5 => {5 => 1}, 6 => {6 => 1}, 7 => {7 => 1} },
+                zset! {},
+                7,
+            ),
+        ]
+    }
+
+    #[test]
+    fn map_with_waterline_gc_test_mt() {
+        map_with_waterline_gc_test(
+            4,
+            input_map_with_waterline_gc_updates1,
+            output_map_with_waterline_gc_updates1,
+        );
     }
 }

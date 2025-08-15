@@ -81,7 +81,7 @@ where
     ///
     /// Returns a pair of output streams.
     ///
-    /// **Filtered putput stream**: (key, value, weight) tuples that pass the check are sent to the
+    /// **Filtered output stream**: (key, value, weight) tuples that pass the check are sent to the
     /// first output stream unmodified.
     ///
     /// **Error stream**: Tuples that don't pass the check are transformed by `report_func` and sent
