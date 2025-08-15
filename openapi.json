@@ -3076,6 +3076,115 @@
         ]
       }
     },
+    "/v0/pipelines/{pipeline_name}/lifecycle_events": {
+      "get": {
+        "tags": [
+          "Pipeline interaction"
+        ],
+        "summary": "Get lifecycle events for a pipeline.",
+        "description": "Returns a list of lifecycle events for the specified pipeline.\nThe number of events returned is controlled by the `max_events` query parameter.\n\n# Parameters\n- `pipeline_name`: Unique pipeline name (path parameter)\n- `max_events`: Maximum number of events to return (query parameter, required)\n\n# Returns\n- 200 OK: List of lifecycle events for the pipeline\n- 404 NOT_FOUND: Pipeline with that name does not exist\n- 503 SERVICE_UNAVAILABLE: Disconnected or timeout during response\n- 500 INTERNAL_SERVER_ERROR: Internal error",
+        "operationId": "get_pipeline_lifecycle_events",
+        "parameters": [
+          {
+            "name": "pipeline_name",
+            "in": "path",
+            "description": "Unique pipeline name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "max_events",
+            "in": "query",
+            "description": "Maximum number of events to return",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int32",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of lifecycle events for the pipeline",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PipelineLifecycleEvent"
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Pipeline with that name does not exist",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "Unknown pipeline name 'non-existent-pipeline'",
+                  "error_code": "UnknownPipelineName",
+                  "details": {
+                    "pipeline_name": "non-existent-pipeline"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "Disconnected during response": {
+                    "value": {
+                      "message": "Unable to reach pipeline to interact due to: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs.",
+                      "error_code": "PipelineInteractionUnreachable",
+                      "details": {
+                        "error": "the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs."
+                      }
+                    }
+                  },
+                  "Response timeout": {
+                    "value": {
+                      "message": "Unable to reach pipeline to interact due to: timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)",
+                      "error_code": "PipelineInteractionUnreachable",
+                      "details": {
+                        "error": "timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JSON web token (JWT) or API key": []
+          }
+        ]
+      }
+    },
     "/v0/pipelines/{pipeline_name}/logs": {
       "get": {
         "tags": [
@@ -7128,6 +7237,31 @@
           },
           "version": {
             "$ref": "#/components/schemas/Version"
+          }
+        }
+      },
+      "PipelineLifecycleEvent": {
+        "type": "object",
+        "required": [
+          "event_id",
+          "deployment_status",
+          "recorded_at"
+        ],
+        "properties": {
+          "deployment_status": {
+            "$ref": "#/components/schemas/PipelineStatus"
+          },
+          "event_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "info": {
+            "type": "string",
+            "nullable": true
+          },
+          "recorded_at": {
+            "type": "string",
+            "format": "date-time"
           }
         }
       },

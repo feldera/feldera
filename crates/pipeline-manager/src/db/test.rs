@@ -1,3 +1,4 @@
+use crate::api::lifecycle_events::PipelineLifecycleEvent;
 use crate::api::support_data_collector::SupportBundleData;
 use crate::auth::{generate_api_key, TenantRecord};
 use crate::db::error::DBError;
@@ -1868,6 +1869,308 @@ async fn pipeline_provision_version_guard() {
         .unwrap();
 }
 
+/// Tracking pipeline lifecycle events through various deployment statuses.
+#[tokio::test]
+async fn pipeline_lifecycle_events() {
+    let handle = test_setup().await;
+    let tenant_id = TenantRecord::default().id;
+    let pipeline1 = handle
+        .db
+        .new_pipeline(
+            tenant_id,
+            Uuid::now_v7(),
+            "v0",
+            PipelineDescr {
+                name: "example1".to_string(),
+                description: "d1".to_string(),
+                runtime_config: json!({}),
+                program_code: "c1".to_string(),
+                udf_rust: "r1".to_string(),
+                udf_toml: "t2".to_string(),
+                program_config: json!({}),
+            },
+        )
+        .await
+        .unwrap();
+
+    assert!(handle.db.cleanup_pipeline_lifecycle_events(0).await.is_ok());
+
+    // verify there are no events as we just cleaned up
+    assert!(handle
+        .db
+        .get_pipeline_lifecycle_events(tenant_id, &pipeline1.name, 10)
+        .await
+        .is_ok_and(|e| e.is_empty()));
+
+    // "Compile" the program of pipeline1
+    assert_eq!(
+        handle
+            .db
+            .get_pipeline_by_id(tenant_id, pipeline1.id)
+            .await
+            .unwrap()
+            .refresh_version,
+        Version(1)
+    );
+    handle
+        .db
+        .transit_program_status_to_compiling_sql(tenant_id, pipeline1.id, Version(1))
+        .await
+        .unwrap();
+    handle
+        .db
+        .transit_program_status_to_sql_compiled(
+            tenant_id,
+            pipeline1.id,
+            Version(1),
+            &SqlCompilationInfo {
+                exit_code: 0,
+                messages: vec![],
+            },
+            &serde_json::to_value(ProgramInfo {
+                schema: ProgramSchema {
+                    inputs: vec![],
+                    outputs: vec![],
+                },
+                main_rust: "".to_string(),
+                udf_stubs: "".to_string(),
+                input_connectors: BTreeMap::new(),
+                output_connectors: BTreeMap::new(),
+                dataflow: serde_json::Value::Null,
+            })
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        handle
+            .db
+            .get_pipeline_by_id(tenant_id, pipeline1.id)
+            .await
+            .unwrap()
+            .refresh_version,
+        Version(2)
+    );
+    handle
+        .db
+        .transit_program_status_to_compiling_rust(tenant_id, pipeline1.id, Version(1))
+        .await
+        .unwrap();
+    handle
+        .db
+        .transit_program_status_to_success(
+            tenant_id,
+            pipeline1.id,
+            Version(1),
+            &RustCompilationInfo {
+                exit_code: 0,
+                stdout: "".to_string(),
+                stderr: "".to_string(),
+            },
+            "def",
+            "123",
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        handle
+            .db
+            .get_pipeline_by_id(tenant_id, pipeline1.id)
+            .await
+            .unwrap()
+            .refresh_version,
+        Version(3)
+    );
+
+    // "Deploy" pipeline1
+    handle
+        .db
+        .set_deployment_desired_status_paused(tenant_id, "example1")
+        .await
+        .unwrap();
+
+    handle
+        .db
+        .transit_deployment_status_to_provisioning(
+            tenant_id,
+            pipeline1.id,
+            Version(1),
+            serde_json::to_value(generate_pipeline_config(
+                pipeline1.id,
+                &serde_json::from_value(pipeline1.runtime_config.clone()).unwrap(),
+                &BTreeMap::default(),
+                &BTreeMap::default(),
+            ))
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+    handle
+        .db
+        .transit_deployment_status_to_initializing(tenant_id, pipeline1.id, Version(1), "location1")
+        .await
+        .unwrap();
+    handle
+        .db
+        .transit_deployment_status_to_paused(tenant_id, pipeline1.id, Version(1))
+        .await
+        .unwrap();
+    handle
+        .db
+        .set_deployment_desired_status_running(tenant_id, "example1")
+        .await
+        .unwrap();
+    handle
+        .db
+        .transit_deployment_status_to_running(tenant_id, pipeline1.id, Version(1))
+        .await
+        .unwrap();
+    handle
+        .db
+        .set_deployment_desired_status_suspended_or_stopped(tenant_id, "example1", false)
+        .await
+        .unwrap();
+    handle
+        .db
+        .transit_deployment_status_to_stopping(
+            tenant_id,
+            pipeline1.id,
+            Version(1),
+            Some(ErrorResponse {
+                message: "never gonna give you up".into(),
+                error_code: "epic failure".into(),
+                details: json!({}),
+            }),
+            None,
+        )
+        .await
+        .unwrap();
+    handle
+        .db
+        .transit_deployment_status_to_stopped(tenant_id, pipeline1.id, Version(1))
+        .await
+        .unwrap();
+    handle
+        .db
+        .set_deployment_desired_status_paused(tenant_id, "example1")
+        .await
+        .unwrap();
+    handle
+        .db
+        .transit_deployment_status_to_provisioning(
+            tenant_id,
+            pipeline1.id,
+            Version(1),
+            serde_json::to_value(generate_pipeline_config(
+                pipeline1.id,
+                &serde_json::from_value(pipeline1.runtime_config).unwrap(),
+                &BTreeMap::default(),
+                &BTreeMap::default(),
+            ))
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+    handle
+        .db
+        .transit_deployment_status_to_initializing(tenant_id, pipeline1.id, Version(1), "location1")
+        .await
+        .unwrap();
+    handle
+        .db
+        .transit_deployment_status_to_paused(tenant_id, pipeline1.id, Version(1))
+        .await
+        .unwrap();
+    handle
+        .db
+        .set_deployment_desired_status_suspended_or_stopped(tenant_id, "example1", true)
+        .await
+        .unwrap();
+    handle
+        .db
+        .transit_deployment_status_to_stopping(tenant_id, pipeline1.id, Version(1), None, None)
+        .await
+        .unwrap();
+    handle
+        .db
+        .transit_deployment_status_to_stopped(tenant_id, pipeline1.id, Version(1))
+        .await
+        .unwrap();
+
+    let mut events = handle
+        .db
+        .get_pipeline_lifecycle_events(tenant_id, &pipeline1.name, 20)
+        .await
+        .unwrap()
+        .into_iter();
+
+    assert_eq!(
+        Some(PipelineStatus::Provisioning),
+        events.next().map(|s| s.deployment_status)
+    );
+    assert_eq!(
+        Some(PipelineStatus::Initializing),
+        events.next().map(|s| s.deployment_status)
+    );
+    assert_eq!(
+        Some(PipelineStatus::Paused),
+        events.next().map(|s| s.deployment_status)
+    );
+    assert_eq!(
+        Some(PipelineStatus::Running),
+        events.next().map(|s| s.deployment_status)
+    );
+    assert_eq!(
+        Some((
+            PipelineStatus::Stopping,
+            Some(
+                r#"{"message":"never gonna give you up","error_code":"epic failure","details":{}}"#
+                    .to_string()
+            )
+        )),
+        events.next().map(|s| (s.deployment_status, s.info))
+    );
+    assert_eq!(
+        Some((
+            PipelineStatus::Stopped,
+            Some(
+                r#"{"message":"never gonna give you up","error_code":"epic failure","details":{}}"#
+                    .to_string()
+            )
+        )),
+        events.next().map(|s| (s.deployment_status, s.info))
+    );
+
+    assert_eq!(
+        Some(PipelineStatus::Provisioning),
+        events.next().map(|s| s.deployment_status)
+    );
+    assert_eq!(
+        Some(PipelineStatus::Initializing),
+        events.next().map(|s| s.deployment_status)
+    );
+    assert_eq!(
+        Some(PipelineStatus::Paused),
+        events.next().map(|s| s.deployment_status)
+    );
+    assert_eq!(
+        Some(PipelineStatus::Stopping),
+        events.next().map(|s| s.deployment_status)
+    );
+    assert_eq!(
+        Some((PipelineStatus::Stopped, None)),
+        events.next().map(|s| (s.deployment_status, s.info))
+    );
+
+    assert!(handle.db.cleanup_pipeline_lifecycle_events(0).await.is_ok());
+
+    // verify there are no events as we just cleaned up
+    assert!(handle
+        .db
+        .get_pipeline_lifecycle_events(tenant_id, &pipeline1.name, 10)
+        .await
+        .is_ok_and(|e| e.is_empty()));
+}
 //////////////////////////////////////////////////////////////////////////////
 /////                           PROP TESTS                               /////
 
@@ -2006,6 +2309,14 @@ enum StorageAction {
     ClearOngoingRustCompilation(#[proptest(strategy = "limited_platform_version()")] String),
     GetNextRustCompilation(#[proptest(strategy = "limited_platform_version()")] String),
     ListPipelineProgramsAcrossAllTenants,
+    /// Get pipeline lifecycle events for a tenant and pipeline name.
+    GetPipelineLifecycleEvents(
+        TenantId,
+        #[proptest(strategy = "limited_pipeline_name()")] String,
+        u32,
+    ),
+    /// Cleanup pipeline lifecycle events older than the specified age in days
+    CleanupPipelineLifecycleEvents(u16),
 }
 
 /// Alias for a result from the database.
@@ -2316,6 +2627,7 @@ fn db_impl_behaves_like_model() {
                     tenants: BTreeMap::new(),
                     api_keys: BTreeMap::new(),
                     pipelines: BTreeMap::new(),
+                    lifecycle_events: BTreeMap::new(),
                 });
                 runtime.block_on(async {
                     // We empty all tables in the database before each test
@@ -2337,6 +2649,27 @@ fn db_impl_behaves_like_model() {
 
                     for (i, action) in actions.into_iter().enumerate() {
                         match action {
+                            StorageAction::GetPipelineLifecycleEvents(tenant_id, pipeline_name, max_events) => {
+                                create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
+                                let model_response = model.get_pipeline_lifecycle_events(tenant_id, &pipeline_name, max_events).await;
+                                let impl_response = handle.db.get_pipeline_lifecycle_events(tenant_id, &pipeline_name, max_events).await;
+
+                                // remove event_id, recorded_at as they can't be same in db and model
+                                // just verify the events and info is recorded correctly
+                                let extract_relevant_info = |events: Vec<PipelineLifecycleEvent>| {
+                                    events.into_iter().map(|e| (e.deployment_status, e.info)).collect::<Vec<_>>()
+                                };
+
+
+                                let model_response = model_response.map(extract_relevant_info);
+                                let impl_response= impl_response.map(extract_relevant_info);
+                                check_responses(i, model_response, impl_response);
+                            }
+                            StorageAction::CleanupPipelineLifecycleEvents(older_than_days) => {
+                                let model_response = model.cleanup_pipeline_lifecycle_events(older_than_days).await;
+                                let impl_response = handle.db.cleanup_pipeline_lifecycle_events(older_than_days).await;
+                                check_responses(i, model_response, impl_response);
+                            }
                             StorageAction::ListApiKeys(tenant_id) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
                                 let model_response = model.list_api_keys(tenant_id).await.unwrap();
@@ -2590,6 +2923,7 @@ struct DbModel {
     pub tenants: BTreeMap<TenantId, TenantRecord>,
     pub api_keys: BTreeMap<(TenantId, String), (ApiKeyId, String, Vec<ApiPermission>)>,
     pub pipelines: BTreeMap<(TenantId, PipelineId), ExtendedPipelineDescr>,
+    pub lifecycle_events: BTreeMap<(TenantId, PipelineId), Vec<PipelineLifecycleEvent>>,
 }
 
 #[async_trait]
@@ -2609,6 +2943,8 @@ trait ModelHelpers {
         udf_toml: &Option<String>,
         program_config: &Option<serde_json::Value>,
     ) -> Result<ExtendedPipelineDescr, DBError>;
+
+    async fn record_lifecycle_event(&self, tenant_id: TenantId, pipeline: &ExtendedPipelineDescr);
 }
 
 #[async_trait]
@@ -2831,6 +3167,25 @@ impl ModelHelpers for Mutex<DbModel> {
 
         // Return the final extended pipeline descriptor
         Ok(pipeline)
+    }
+
+    /// Helper to insert a pipeline lifecycle event into the model.
+    async fn record_lifecycle_event(&self, tenant_id: TenantId, pipeline: &ExtendedPipelineDescr) {
+        let event = PipelineLifecycleEvent {
+            event_id: Uuid::now_v7(),
+            deployment_status: pipeline.deployment_status,
+            info: pipeline
+                .deployment_error
+                .as_ref()
+                .map(|e| serde_json::to_string(e).unwrap()),
+            recorded_at: Utc::now().naive_utc(),
+        };
+        self.lock()
+            .await
+            .lifecycle_events
+            .entry((tenant_id, pipeline.id))
+            .or_default()
+            .push(event);
     }
 }
 
@@ -3329,11 +3684,12 @@ impl Storage for Mutex<DbModel> {
             return Err(DBError::DeleteRestrictedToClearedStorage);
         }
 
-        // Apply changes: delete
-        self.lock()
-            .await
-            .pipelines
-            .remove(&(tenant_id, pipeline.id));
+        let mut state = self.lock().await;
+        // Delete from state
+        state.pipelines.remove(&(tenant_id, pipeline.id));
+        // remove events for the pipeline
+        state.lifecycle_events.remove(&(tenant_id, pipeline.id));
+
         Ok(pipeline.id)
     }
 
@@ -3714,6 +4070,7 @@ impl Storage for Mutex<DbModel> {
             .await
             .pipelines
             .insert((tenant_id, pipeline.id), pipeline.clone());
+        self.record_lifecycle_event(tenant_id, &pipeline).await;
         Ok(())
     }
 
@@ -3751,6 +4108,7 @@ impl Storage for Mutex<DbModel> {
             .await
             .pipelines
             .insert((tenant_id, pipeline.id), pipeline.clone());
+        self.record_lifecycle_event(tenant_id, &pipeline).await;
         Ok(())
     }
 
@@ -3786,6 +4144,7 @@ impl Storage for Mutex<DbModel> {
             .await
             .pipelines
             .insert((tenant_id, pipeline.id), pipeline.clone());
+        self.record_lifecycle_event(tenant_id, &pipeline).await;
         Ok(())
     }
 
@@ -3819,6 +4178,7 @@ impl Storage for Mutex<DbModel> {
             .await
             .pipelines
             .insert((tenant_id, pipeline.id), pipeline.clone());
+        self.record_lifecycle_event(tenant_id, &pipeline).await;
         Ok(())
     }
 
@@ -4070,5 +4430,47 @@ impl Storage for Mutex<DbModel> {
         _how_many: u64,
     ) -> Result<(ExtendedPipelineDescrMonitoring, Vec<SupportBundleData>), DBError> {
         unimplemented!()
+    }
+
+    async fn get_pipeline_lifecycle_events(
+        &self,
+        tenant_id: TenantId,
+        pipeline_name: &str,
+        max_events: u32,
+    ) -> Result<Vec<PipelineLifecycleEvent>, DBError> {
+        let pipeline = self.get_pipeline(tenant_id, pipeline_name).await?;
+        let mut events = self
+            .lock()
+            .await
+            .lifecycle_events
+            .get(&(tenant_id, pipeline.id))
+            .cloned()
+            .unwrap_or_default();
+
+        // sort event by recorded_at in ascending order
+        // similar to `ORDER BY p.recorded_at ASC`
+        events.sort_by(|e1, e2| e1.recorded_at.cmp(&e2.recorded_at));
+
+        // LIMIT max_events;
+        events.truncate(max_events as usize);
+
+        Ok(events)
+    }
+
+    async fn cleanup_pipeline_lifecycle_events(&self, retention_days: u16) -> Result<u64, DBError> {
+        // similar to query:
+        // DELETE FROM pipeline_lifecycle_events WHERE recorded_at < NOW() - make_interval(days => $1)
+        let cutoff_time = Utc::now() - Duration::from_secs(retention_days as u64 * 24 * 60 * 60);
+        let mut total_deleted = 0;
+
+        let mut state = self.lock().await;
+        state.lifecycle_events.retain(|_, events| {
+            let original_len = events.len();
+            events.retain(|event| event.recorded_at.and_utc() >= cutoff_time);
+            total_deleted += (original_len - events.len()) as u64;
+            !events.is_empty()
+        });
+
+        Ok(total_deleted)
     }
 }

@@ -1,3 +1,7 @@
+use std::sync::Arc;
+use std::time::Duration;
+
+use crate::api::lifecycle_events::PipelineLifecycleEvent;
 use crate::api::support_data_collector::SupportBundleData;
 #[cfg(feature = "postgresql_embedded")]
 use crate::config::PgEmbedConfig;
@@ -22,8 +26,7 @@ use async_trait::async_trait;
 use deadpool_postgres::{Manager, Pool, RecyclingMethod};
 use feldera_types::config::{PipelineConfig, RuntimeConfig};
 use feldera_types::error::ErrorResponse;
-use feldera_types::runtime_status::{ExtendedRuntimeStatus, RuntimeDesiredStatus};
-use log::{debug, info, log, Level};
+use log::{debug, info, log, warn, Level};
 use tokio_postgres::Row;
 use uuid::Uuid;
 
@@ -1043,6 +1046,43 @@ impl Storage for StoragePostgres {
         txn.commit().await?;
         Ok((pipeline, bundle_data))
     }
+
+    async fn get_pipeline_lifecycle_events(
+        &self,
+        tenant_id: TenantId,
+        pipeline_name: &str,
+        max_events: u32,
+    ) -> Result<Vec<PipelineLifecycleEvent>, DBError> {
+        let mut client = self.pool.get().await?;
+        let txn = client.transaction().await?;
+        let pipeline =
+            operations::pipeline::get_pipeline_for_monitoring(&txn, tenant_id, pipeline_name)
+                .await?;
+        let events = operations::pipeline::get_pipeline_lifecycle_events(
+            &txn,
+            tenant_id,
+            pipeline.id,
+            max_events,
+        )
+        .await?;
+        txn.commit().await?;
+        Ok(events)
+    }
+
+    async fn cleanup_pipeline_lifecycle_events(
+        &self,
+        // using u16 so it can be casted safely as i32
+        retention_period_in_days: u16,
+    ) -> Result<u64, DBError> {
+        let query = "DELETE FROM pipeline_lifecycle_events WHERE recorded_at < NOW() - make_interval(days => $1)";
+
+        let mut client = self.pool.get().await?;
+        let txn = client.transaction().await?;
+        let retention_period_in_days = retention_period_in_days as i32; // Convert to i32 for SQL query
+        let deleted = txn.execute(query, &[&retention_period_in_days]).await?;
+        txn.commit().await?;
+        Ok(deleted)
+    }
 }
 
 impl StoragePostgres {
@@ -1237,6 +1277,36 @@ impl StoragePostgres {
                 expected: expected_max_version,
                 actual: 0,
             })
+        }
+    }
+}
+
+// calls cleanup_pipeline_lifecycle_events every interval
+pub async fn regular_cleanup_pipeline_lifecycle_events(
+    db_clone: Arc<tokio::sync::Mutex<StoragePostgres>>,
+    retention_period_in_days: u16,
+    cleanup_frequency_secs: u64,
+) -> ! {
+    let mut interval = tokio::time::interval(Duration::from_secs(cleanup_frequency_secs));
+
+    loop {
+        interval.tick().await;
+        match db_clone
+            .lock()
+            .await
+            .cleanup_pipeline_lifecycle_events(retention_period_in_days)
+            .await
+        {
+            Ok(deleted) => {
+                info!(
+                    "Pipeline lifecycle cleanup job ran ( retention period: {retention_period_in_days} days ): deleted {deleted} records."
+                );
+            }
+            Err(e) => {
+                warn!(
+                    "Pipeline lifecycle cleanup job failed ( retention period: {retention_period_in_days} days ): {e}."
+                );
+            }
         }
     }
 }

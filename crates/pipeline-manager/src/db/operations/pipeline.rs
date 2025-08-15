@@ -1,3 +1,4 @@
+use crate::api::lifecycle_events::PipelineLifecycleEvent;
 use crate::api::support_data_collector::SupportBundleData;
 use crate::db::error::DBError;
 use crate::db::operations::utils::{
@@ -1320,6 +1321,11 @@ pub(crate) async fn set_deployment_resources_status(
         ResourcesStatus::Provisioning | ResourcesStatus::Provisioned => current.deployment_initial,
     };
 
+    let final_deployment_error = match final_deployment_error {
+        None => None,
+        Some(ref v) => Some(serialize_error_response(v)?),
+    };
+
     // Execute query
     let stmt = txn
         .prepare_cached(
@@ -1360,7 +1366,17 @@ pub(crate) async fn set_deployment_resources_status(
             ],
         )
         .await?;
+
     if rows_affected > 0 {
+        // store the event in lifecycle events
+        store_pipeline_lifecycle_event(
+            txn,
+            tenant_id,
+            pipeline_id,
+            new_deployment_status,
+            &final_deployment_error,
+        )
+        .await?;
         Ok(())
     } else {
         Err(DBError::UnknownPipeline { pipeline_id })
@@ -1669,6 +1685,75 @@ pub(crate) async fn get_support_bundle_data(
     }
 
     Ok(bundles)
+}
+
+/// Store a pipeline lifecycle event entry
+pub(crate) async fn store_pipeline_lifecycle_event(
+    transaction: &Transaction<'_>,
+    tenant_id: TenantId,
+    pipeline_id: PipelineId,
+    deployment_status: PipelineStatus,
+    info: &Option<impl AsRef<str>>,
+) -> Result<(), DBError> {
+    let query = r#"
+        INSERT INTO pipeline_lifecycle_events
+        (tenant_id, pipeline_id, deployment_status, info)
+        VALUES ($1, $2, $3, $4)
+    "#;
+
+    transaction
+        .execute(
+            query,
+            &[
+                &tenant_id.0,
+                &pipeline_id.0,
+                &deployment_status.to_string(),
+                &info.as_ref().map(|v| v.as_ref()),
+            ],
+        )
+        .await?;
+
+    Ok(())
+}
+
+/// Get lifecycle events for a pipeline.
+pub(crate) async fn get_pipeline_lifecycle_events(
+    txn: &Transaction<'_>,
+    tenant_id: TenantId,
+    pipeline_id: PipelineId,
+    limit: u32,
+) -> Result<Vec<PipelineLifecycleEvent>, DBError> {
+    let stmt = r#"
+        SELECT p.event_id, p.deployment_status, p.info, p.recorded_at
+        FROM pipeline_lifecycle_events as p
+        WHERE p.tenant_id = $1 AND p.pipeline_id = $2
+        ORDER BY p.recorded_at ASC
+        LIMIT $3
+    "#;
+
+    // case limit to i64 so postgres doesn't complain
+    let limit: i64 = limit as i64;
+    let rows = txn
+        .query(stmt, &[&tenant_id.0, &pipeline_id.0, &limit])
+        .await?;
+
+    let ret: Vec<PipelineLifecycleEvent> = rows
+        .into_iter()
+        .filter_map(|row| {
+            if let Ok(status) = row.get::<_, String>(1).try_into() {
+                let event = PipelineLifecycleEvent {
+                    event_id: row.get(0),
+                    deployment_status: status,
+                    info: row.get(2),
+                    recorded_at: row.get(3),
+                };
+                Some(event)
+            } else {
+                None
+            }
+        })
+        .collect();
+    Ok(ret)
 }
 
 #[cfg(test)]

@@ -4,7 +4,7 @@ use crate::config::CommonConfig;
 use crate::db::listen_table::{Operation, PIPELINE_NOTIFY_CHANNEL_CAPACITY};
 use crate::db::probe::DbProbe;
 use crate::db::storage::Storage;
-use crate::db::storage_postgres::StoragePostgres;
+use crate::db::storage_postgres::{regular_cleanup_pipeline_lifecycle_events, StoragePostgres};
 use crate::db::types::pipeline::PipelineId;
 use crate::error::ManagerError;
 use crate::runner::error::RunnerError;
@@ -188,6 +188,20 @@ pub async fn runner_main<E: PipelineExecutor + 'static>(
         common_config.runner_port,
         common_config.http_workers,
     );
+
+    // Get retention period and cleanup interval from config
+    let retention_period_in_days = common_config.lifecycle_events_retention_days;
+    let cleanup_frequency_secs = common_config.lifecycle_events_cleanup_frequency_secs;
+
+    let db_clone = db.clone();
+    tokio::spawn(async move {
+        regular_cleanup_pipeline_lifecycle_events(
+            db_clone,
+            retention_period_in_days,
+            cleanup_frequency_secs,
+        )
+        .await
+    });
 
     // Reused HTTP(S) client
     let client = common_config.reqwest_client().await;
