@@ -254,15 +254,13 @@ to the start. Weeks, quarters, and years follow from that.
 
 <a id="timestampadd"></a>
 `TIMESTAMPADD(<unit>, integer, timestamp)` adds an interval in the
-specified unit to a timestamp.
-<a id="dateadd"></a>
-`DATEADD` is a synonym for
-`TIMESTAMPADD`.  The added value can be negative.  The type of the
+specified unit to a timestamp or date/time literal. The added value can be negative.  The type of the
 result is as follows:
 
 - Adding anything to a `TIMESTAMP` value produces a `TIMESTAMP` result
-- Adding a interval of hours, minutes, or seconds to a `DATE` produces a `TIMESTAMP` result
-- Adding a an interval of days, months, or longer to a `DATE` produces a `DATE` result
+- Adding an interval of hours, minutes, or seconds to a `DATE` produces a `TIMESTAMP` result
+- Adding an interval of days, months, or longer to a `DATE` produces a `DATE` result
+- Adding an interval of hours, minutes, or seconds to a `TIME` produces a `TIME` result
 
 To create a timestamp using the Unix EPOCH in seconds as a base, you
 can use the `TIMESTAMPADD` function.  The following code creates a
