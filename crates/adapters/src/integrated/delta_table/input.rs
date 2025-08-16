@@ -543,7 +543,7 @@ impl DeltaTableInputEndpointInner {
     ) {
         self.read_ordered_snapshot_inner(table, input_stream, receiver)
             .await
-            .unwrap_or_else(|e| self.consumer.error(true, e));
+            .unwrap_or_else(|e| self.consumer.error(true, e, None));
 
         // Empty buffer to indicate checkpointable state.
         self.queue.push_with_aux(
@@ -758,7 +758,11 @@ impl DeltaTableInputEndpointInner {
                     }
                     Err(e) => {
                         self.consumer.error(
-                            false,anyhow!("error reading the next log entry (current table version: {version}): {e}"));
+                            false,
+                            anyhow!("error reading the next log entry (current table version: {version}): {e}"),
+                            Some("delta-next-log")
+                        );
+
                         sleep(RETRY_INTERVAL).await;
                     }
                 }
@@ -1114,7 +1118,7 @@ impl DeltaTableInputEndpointInner {
             Ok(df) => df,
             Err(e) => {
                 self.consumer
-                    .error(true, anyhow!("error compiling query '{query}': {e}"));
+                    .error(true, anyhow!("error compiling query '{query}': {e}"), None);
                 return;
             }
         };
@@ -1150,7 +1154,7 @@ impl DeltaTableInputEndpointInner {
         let mut stream = match dataframe.execute_stream().await {
             Err(e) => {
                 self.consumer
-                    .error(true, anyhow!("error retrieving {descr}: {e}"));
+                    .error(true, anyhow!("error retrieving {descr}: {e}"), None);
                 return;
             }
             Ok(stream) => stream,
@@ -1201,10 +1205,11 @@ impl DeltaTableInputEndpointInner {
                         DataFusionError::ArrowError(ArrowError::ExternalError(error), _) => self.consumer.error(
                             false,
                             anyhow!("error retrieving batch {num_batches} of {descr}: external error: {error} (root cause: {})", root_cause(error.as_ref()),
-                        )),
+                        ), Some("delta-batch-arrow")),
                         e => self.consumer.error(
                             false,
                             anyhow!("error retrieving batch {num_batches} of {descr}: {e}"),
+                            Some("delta-batch")
                         ),
                     }
 
@@ -1321,7 +1326,7 @@ impl DeltaTableInputEndpointInner {
         let _ = self.datafusion.deregister_table("tmp_table");
 
         if let Err(e) = result {
-            self.consumer.error(false, e);
+            self.consumer.error(false, e, Some("delta-cdc"));
         }
     }
 
@@ -1456,7 +1461,7 @@ impl DeltaTableInputEndpointInner {
         let _ = self.datafusion.deregister_table("tmp_table");
 
         if let Err(e) = result {
-            self.consumer.error(false, e);
+            self.consumer.error(false, e, Some("delta-action"));
         }
     }
 

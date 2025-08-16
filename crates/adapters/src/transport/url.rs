@@ -277,7 +277,7 @@ impl UrlInputReader {
                         )
                         .await
                         {
-                            consumer.error(true, error);
+                            consumer.error(true, error, None);
                         };
                     });
                 }

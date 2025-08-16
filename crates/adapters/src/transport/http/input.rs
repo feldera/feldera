@@ -194,7 +194,7 @@ impl HttpInputEndpoint {
         total_errors
     }
 
-    fn error(&self, fatal: bool, error: AnyError) {
+    fn error(&self, fatal: bool, error: AnyError, tag: Option<&'static str>) {
         self.inner
             .details
             .lock()
@@ -202,7 +202,7 @@ impl HttpInputEndpoint {
             .as_mut()
             .unwrap()
             .consumer
-            .error(fatal, error);
+            .error(fatal, error, tag);
     }
 
     fn _queue_len(&self) -> usize {
@@ -257,7 +257,7 @@ impl HttpInputEndpoint {
                             num_errors += self.push(Some(&bytes), &mut errors);
                         }
                         Ok(Some(Err(e))) => {
-                            self.error(true, anyhow!(e.to_string()));
+                            self.error(true, anyhow!(e.to_string()), None);
                             Err(ControllerError::input_transport_error(
                                 self.name(),
                                 true,

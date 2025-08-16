@@ -536,7 +536,7 @@ impl InputConsumer for DummyInputConsumer {
         });
     }
 
-    fn error(&self, fatal: bool, error: AnyError) {
+    fn error(&self, fatal: bool, error: AnyError, _tag: Option<&'static str>) {
         info!("error: {error}");
         self.called(ConsumerCall::Error(fatal));
     }

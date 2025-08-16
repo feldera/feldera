@@ -295,7 +295,7 @@ impl IcebergInputEndpointInner {
     ) {
         self.read_ordered_snapshot_inner(input_stream, schema, receiver)
             .await
-            .unwrap_or_else(|e| self.consumer.error(true, e));
+            .unwrap_or_else(|e| self.consumer.error(true, e, None));
     }
 
     async fn read_ordered_snapshot_inner(
@@ -783,7 +783,7 @@ impl IcebergInputEndpointInner {
             Ok(df) => df,
             Err(e) => {
                 self.consumer
-                    .error(true, anyhow!("error compiling query '{query}': {e}"));
+                    .error(true, anyhow!("error compiling query '{query}': {e}"), None);
                 return;
             }
         };
@@ -815,7 +815,7 @@ impl IcebergInputEndpointInner {
         let mut stream = match dataframe.execute_stream().await {
             Err(e) => {
                 self.consumer
-                    .error(true, anyhow!("error retrieving {descr}: {e:?}"));
+                    .error(true, anyhow!("error retrieving {descr}: {e:?}"), None);
                 return;
             }
             Ok(stream) => stream,
@@ -830,6 +830,7 @@ impl IcebergInputEndpointInner {
                     self.consumer.error(
                         false,
                         anyhow!("error retrieving batch {num_batches} of {descr}: {e:?}"),
+                        Some("iceberg-batch"),
                     );
                     continue;
                 }
