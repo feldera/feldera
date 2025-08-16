@@ -64,7 +64,7 @@ aggregation functions `BIT_AND`, `BIT_OR`, and `BIT_XOR`.
         Calculates an MD5 128-bit checksum of the argument and returns it as a hex <code>VARCHAR</code> value.
         If the input is NULL, NULL is returned.
     </td>
-    <td><code>SELECT md5(x'0123456789ABCDEF')</code> => <code></code></td>
+    <td><code>SELECT md5(x'0123456789ABCDEF')</code> => <code>a1cd1d1fc6491068d91007283ed84489</code></td>
   </tr>
   <tr>
     <td><a id="octet_length"></a><code>OCTET_LENGTH</code>(binary)</td>
