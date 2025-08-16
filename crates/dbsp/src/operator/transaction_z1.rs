@@ -22,7 +22,7 @@ where
     #[track_caller]
     pub fn transaction_delay_with_initial_value(&self, initial: D) -> Stream<C, D>
     where
-        D: Checkpoint + Eq + SizeOf + NumEntries + Clone + 'static,
+        D: Checkpoint + SizeOf + NumEntries + Clone + 'static,
     {
         let delay_pid = self
             .get_persistent_id()
@@ -92,7 +92,7 @@ where
 
 impl<T> Operator for TransactionZ1<T>
 where
-    T: Checkpoint + Eq + SizeOf + NumEntries + Clone + 'static,
+    T: Checkpoint + SizeOf + NumEntries + Clone + 'static,
 {
     fn name(&self) -> Cow<'static, str> {
         Cow::from("Transaction Z^-1")
@@ -162,7 +162,7 @@ where
 
 impl<T> UnaryOperator<T, T> for TransactionZ1<T>
 where
-    T: Checkpoint + Eq + SizeOf + NumEntries + Clone + 'static,
+    T: Checkpoint + SizeOf + NumEntries + Clone + 'static,
 {
     async fn eval(&mut self, i: &T) -> T {
         if self.flush {
