@@ -6,7 +6,7 @@ from tests.runtime_aggtest.aggtst_base import TstView
 class illarg_date_trunc_legal(TstView):
     def __init__(self):
         # checked manually
-        self.data = [{'tmestmp': '2020-06-01T00:00:00', 'datee': '2020-06-01'}]
+        self.data = [{"tmestmp": "2020-06-01T00:00:00", "datee": "2020-06-01"}]
         self.sql = """CREATE MATERIALIZED VIEW date_trunc_legal AS SELECT
                       DATE_TRUNC(tmestmp, MONTH) AS tmestmp,
                       DATE_TRUNC(datee, MONTH) AS datee
@@ -29,7 +29,24 @@ class illarg_date_trunc_illegal(TstView):
 class illarg_extract_legal(TstView):
     def __init__(self):
         # checked manually
-        self.data = [{'yr': 2020, 'yr1': 2020, 'mth': 6, 'mth1': 6, 'day': 21, 'day1': 21, 'dow': 1, 'dow1': 1, 'hr': 14, 'hr1': 0, 'min': 23, 'min1': 0, 'sec': 44, 'sec1': 0}]
+        self.data = [
+            {
+                "yr": 2020,
+                "yr1": 2020,
+                "mth": 6,
+                "mth1": 6,
+                "day": 21,
+                "day1": 21,
+                "dow": 1,
+                "dow1": 1,
+                "hr": 14,
+                "hr1": 0,
+                "min": 23,
+                "min1": 0,
+                "sec": 44,
+                "sec1": 0,
+            }
+        ]
         self.sql = """CREATE MATERIALIZED VIEW extract_legal AS SELECT
                       EXTRACT(YEAR FROM tmestmp) AS yr,
                       EXTRACT(YEAR FROM datee) AS yr1,
@@ -64,7 +81,24 @@ class illarg_extract_illegal(TstView):
 class illarg_extract_abrv_legal(TstView):
     def __init__(self):
         # checked manually
-        self.data =[{'yr': 2020, 'yr1': 2020, 'mth': 6, 'mth1': 6, 'day': 21, 'day1': 21, 'dow': 1, 'dow1': 1, 'hr': 14, 'hr1': 0, 'min': 23, 'min1': 0, 'sec': 44, 'sec1': 0}]
+        self.data = [
+            {
+                "yr": 2020,
+                "yr1": 2020,
+                "mth": 6,
+                "mth1": 6,
+                "day": 21,
+                "day1": 21,
+                "dow": 1,
+                "dow1": 1,
+                "hr": 14,
+                "hr1": 0,
+                "min": 23,
+                "min1": 0,
+                "sec": 44,
+                "sec1": 0,
+            }
+        ]
         self.sql = """CREATE MATERIALIZED VIEW extract_abrv_legal AS SELECT
                       YEAR(tmestmp) AS yr,
                       YEAR(datee) AS yr1,
@@ -87,7 +121,24 @@ class illarg_extract_abrv_legal(TstView):
 class illarg_extract_abrv1_legal(TstView):
     def __init__(self):
         # checked manually
-        self.data = [{'yr': 2020, 'yr1': 2020, 'mth': 6, 'mth1': 6, 'day': 21, 'day1': 21, 'dow': 1, 'dow1': 1, 'hr': 14, 'hr1': 0, 'min': 23, 'min1': 0, 'sec': 44, 'sec1': 0}]
+        self.data = [
+            {
+                "yr": 2020,
+                "yr1": 2020,
+                "mth": 6,
+                "mth1": 6,
+                "day": 21,
+                "day1": 21,
+                "dow": 1,
+                "dow1": 1,
+                "hr": 14,
+                "hr1": 0,
+                "min": 23,
+                "min1": 0,
+                "sec": 44,
+                "sec1": 0,
+            }
+        ]
         self.sql = """CREATE MATERIALIZED VIEW extract_abrv1_legal AS SELECT
                       DATE_PART(YEAR, tmestmp) AS yr,
                       DATE_PART(YEAR, datee) AS yr1,
@@ -111,7 +162,9 @@ class illarg_extract_abrv1_legal(TstView):
 class illarg_floor_legal(TstView):
     def __init__(self):
         # checked manually
-        self.data = [{'yr': '2020-01-01T00:00:00', 'mth': '2020-06-01', 'hr': '14:00:00'}]
+        self.data = [
+            {"yr": "2020-01-01T00:00:00", "mth": "2020-06-01", "hr": "14:00:00"}
+        ]
         self.sql = """CREATE MATERIALIZED VIEW floor_legal AS SELECT
                       FLOOR(tmestmp TO YEAR) AS yr,
                       FLOOR(datee TO MONTH) AS mth,
@@ -135,7 +188,9 @@ class illarg_floor_illegal(TstView):
 class illarg_ceil_legal(TstView):
     def __init__(self):
         # checked manually
-        self.data = [{'yr': '2021-01-01T00:00:00', 'mth': '2020-07-01', 'hr': '15:00:00'}]
+        self.data = [
+            {"yr": "2021-01-01T00:00:00", "mth": "2020-07-01", "hr": "15:00:00"}
+        ]
         self.sql = """CREATE MATERIALIZED VIEW ceil_legal AS SELECT
                       CEIL(tmestmp TO YEAR) AS yr,
                       CEIL(datee TO MONTH) AS mth,
@@ -159,7 +214,7 @@ class illarg_ceil_illegal(TstView):
 class illarg_tsdiff_legal(TstView):
     def __init__(self):
         # checked manually
-        self.data = [{'yr': 1, 'mth': 19, 'hr': 6}]
+        self.data = [{"yr": 1, "mth": 19, "hr": 6}]
         self.sql = """CREATE MATERIALIZED VIEW tsdiff_legal AS SELECT
                       TIMESTAMPDIFF(YEAR, tmestmp, '2022-01-22 20:24:44'::TIMESTAMP) AS yr,
                       TIMESTAMPDIFF(MONTH, datee, '2022-01-22'::DATE) AS mth,
@@ -183,7 +238,9 @@ class illarg_tsdiff_illegal(TstView):
 class illarg_tsadd_legal(TstView):
     def __init__(self):
         # checked manually
-        self.data = [{'yr': '2022-06-21T14:23:44', 'mth': '2020-08-21', 'hr': '16:23:44'}]
+        self.data = [
+            {"yr": "2022-06-21T14:23:44", "mth": "2020-08-21", "hr": "16:23:44"}
+        ]
         self.sql = """CREATE MATERIALIZED VIEW tsadd_legal AS SELECT
                       TIMESTAMPADD(YEAR, 2, tmestmp) AS yr,
                       TIMESTAMPADD(MONTH, 2, datee) AS mth,
@@ -207,21 +264,23 @@ class illarg_tsadd_illegal(TstView):
 class illarg_format_date_legal(TstView):
     def __init__(self):
         # checked manually
-        self.data = [{'datee': '2020-06'}]
+        self.data = [{"datee": "2020-06"}]
         self.sql = """CREATE MATERIALIZED VIEW format_date_legal AS SELECT
                       FORMAT_DATE('%Y-%m', datee) AS datee
                       FROM illegal_tbl
                       WHERE id = 0"""
 
+
 class illarg_format_date_cast_legal(TstView):
     def __init__(self):
         # checked manually
-        self.data = [{'tmestmp': '2020-06', 'arr': '2021-01'}]
+        self.data = [{"tmestmp": "2020-06", "arr": "2021-01"}]
         self.sql = """CREATE MATERIALIZED VIEW format_date_cast_legal AS SELECT
                       FORMAT_DATE('%Y-%m', tmestmp) AS tmestmp,
                       FORMAT_DATE('%Y-%m', ARR[4]) AS arr
                       FROM illegal_tbl
                       WHERE id = 1"""
+
 
 # Negative Test
 class illarg_format_date_illegal(TstView):
@@ -238,7 +297,7 @@ class illarg_format_date_illegal(TstView):
 class illarg_parse_date_legal(TstView):
     def __init__(self):
         # checked manually
-        self.data = [{'datee': '2021-01-20'}]
+        self.data = [{"datee": "2021-01-20"}]
         self.sql = """CREATE MATERIALIZED VIEW parse_date_legal AS SELECT
                       PARSE_DATE('%Y-%m-%d', ARR[4]) AS datee
                       FROM illegal_tbl
@@ -249,7 +308,7 @@ class illarg_parse_date_legal(TstView):
 class illarg_parse_date_illegal(TstView):
     def __init__(self):
         # checked manually
-        self.data = [{'booll': None}]
+        self.data = [{"booll": None}]
         self.sql = """CREATE MATERIALIZED VIEW parse_date_illegal AS SELECT
                       PARSE_DATE('%Y-%m', booll) AS booll
                       FROM illegal_tbl
@@ -260,11 +319,12 @@ class illarg_parse_date_illegal(TstView):
 # PARSE_TIMESTAMP
 # PARSE_TIME
 
+
 # TIMESTAMP_TRUNC
 class illarg_trunc_ts_legal(TstView):
     def __init__(self):
         # checked manually
-        self.data = [{'tmestmp': '2020-06-01T00:00:00'}]
+        self.data = [{"tmestmp": "2020-06-01T00:00:00"}]
         self.sql = """CREATE MATERIALIZED VIEW ts_trunc_legal AS SELECT
                       TIMESTAMP_TRUNC(tmestmp, MONTH) AS tmestmp
                       FROM illegal_tbl
@@ -274,7 +334,7 @@ class illarg_trunc_ts_legal(TstView):
 class illarg_ts_trunc_cast_legal(TstView):
     def __init__(self):
         # checked manually
-        self.data = [{'datee': '2020-06-01T00:00:00'}]
+        self.data = [{"datee": "2020-06-01T00:00:00"}]
         self.sql = """CREATE MATERIALIZED VIEW ts_trunc_cast_legal AS SELECT
                       TIMESTAMP_TRUNC(datee, MONTH) AS datee
                       FROM illegal_tbl
@@ -290,6 +350,3 @@ class illarg_ts_trunc_illegal(TstView):
                       FROM illegal_tbl
                       WHERE id = 1"""
         self.expected_error = "Cannot apply 'TIMESTAMP_TRUNC' to arguments of type"
-
-
-

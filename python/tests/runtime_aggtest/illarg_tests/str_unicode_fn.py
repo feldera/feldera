@@ -374,7 +374,13 @@ class illarg_md5_fn(TstView):
 class illarg_bin_concat_fn(TstView):
     def __init__(self):
         # checked manually
-        self.data = [{'str': 'h@pP√ h@pP√ '}, {'str': '¯\\_(ツ)_/¯¯\\_(ツ)_/¯'}, {'str': 'かわいいかわいい'}, {'str': '🐍🐍🐍🐍'}, {'str': None}]
+        self.data = [
+            {"str": "h@pP√ h@pP√ "},
+            {"str": "¯\\_(ツ)_/¯¯\\_(ツ)_/¯"},
+            {"str": "かわいいかわいい"},
+            {"str": "🐍🐍🐍🐍"},
+            {"str": None},
+        ]
         self.sql = """CREATE MATERIALIZED VIEW bin_concat_fn AS SELECT
                       str || str AS str
                       FROM str_tbl"""
@@ -384,7 +390,13 @@ class illarg_bin_concat_fn(TstView):
 class illarg_bin_octet_length_fn(TstView):
     def __init__(self):
         # Validated on Postgres
-        self.data = [{'id': 0, 'str': 8}, {'id': 1, 'str': 12}, {'id': 2, 'str': 13}, {'id': 3, 'str': 8}, {'id': 4, 'str': None}]
+        self.data = [
+            {"id": 0, "str": 8},
+            {"id": 1, "str": 12},
+            {"id": 2, "str": 13},
+            {"id": 3, "str": 8},
+            {"id": 4, "str": None},
+        ]
         self.sql = """CREATE MATERIALIZED VIEW bin_octet_length_fn AS SELECT
                       id,
                       OCTET_LENGTH(str) AS str
@@ -395,7 +407,13 @@ class illarg_bin_octet_length_fn(TstView):
 class illarg_bin_overlay_legal(TstView):
     def __init__(self):
         # checked manually
-        self.data = [{'str': 'hbye√ '}, {'str': '¯byeツ)_/¯'}, {'str': 'かbye'}, {'str': '🐍bye'}, {'str': None}]
+        self.data = [
+            {"str": "hbye√ "},
+            {"str": "¯byeツ)_/¯"},
+            {"str": "かbye"},
+            {"str": "🐍bye"},
+            {"str": None},
+        ]
         self.sql = """CREATE MATERIALIZED VIEW bin_overlay_legal AS SELECT
                       CASE
                         WHEN id = 0 THEN OVERLAY(str placing 'bye' from 2 for 3)
@@ -411,26 +429,41 @@ class illarg_bin_overlay_legal(TstView):
 class illarg_bin_to_hex_fn(TstView):
     def __init__(self):
         # Validated on Postgres
-        self.data = [{'id': 0, 'str': 'f09f908df09f908d'}, {'id': 1, 'str': 'e3818be3828fe38184e38184'}, {'id': 2, 'str': 'c2af5c5f28e38384295f2fc2af'}, {'id': 3, 'str': '68407050e2889a20'}, {'id': 4, 'str': None}]
+        self.data = [
+            {"id": 0, "str": "f09f908df09f908d"},
+            {"id": 1, "str": "e3818be3828fe38184e38184"},
+            {"id": 2, "str": "c2af5c5f28e38384295f2fc2af"},
+            {"id": 3, "str": "68407050e2889a20"},
+            {"id": 4, "str": None},
+        ]
         self.sql = """CREATE MATERIALIZED VIEW bin_to_hex_fn AS SELECT
                       id,
                       TO_HEX(str) AS str
                       FROM str_tbl"""
+
 
 # SELECT
 #   id,
 #   encode(convert_to(str, 'UTF8'), 'hex') AS str_hex
 # FROM str_tbl;
 
+
 # TO_INT
 class illarg_bin_to_int_fn(TstView):
     def __init__(self):
         # Validated on Postgres
-        self.data = [{'id': 0, 'str_to_int': -257978227}, {'id': 1, 'str_to_int': - 478049309}, {'id': 2, 'str_to_int': - 1028694945}, {'id': 3, 'str_to_int': 1749053520}, {'id': 4, 'str_to_int': None}]
+        self.data = [
+            {"id": 0, "str_to_int": -257978227},
+            {"id": 1, "str_to_int": -478049309},
+            {"id": 2, "str_to_int": -1028694945},
+            {"id": 3, "str_to_int": 1749053520},
+            {"id": 4, "str_to_int": None},
+        ]
         self.sql = """CREATE MATERIALIZED VIEW bin_to_int_fn AS SELECT
                       id,
                       TO_INT(str) AS str_to_int
                       FROM str_tbl"""
+
 
 # SELECT
 # ('x' || 'f09f908df09f908d')::bit(32)::int,
