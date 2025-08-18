@@ -980,7 +980,7 @@ async fn time_series_stream(state: WebData<ServerState>) -> impl Responder {
             let response_stream = async_stream::stream! {
                 // First, yield all existing samples
                 for sample in existing_samples {
-                    let line = format!("{}\n", serde_json::to_string(&sample).unwrap_or_default());
+                    let line = format!("{}\n", serde_json::to_string(&sample).unwrap());
                     yield Ok::<_, actix_web::Error>(web::Bytes::from(line));
                 }
 
@@ -988,7 +988,7 @@ async fn time_series_stream(state: WebData<ServerState>) -> impl Responder {
                 let mut stream = stream;
                 while let Some(result) = stream.next().await {
                     if let Ok(sample) = result {
-                        let line = format!("{}\n", serde_json::to_string(&sample).unwrap_or_default());
+                        let line = format!("{}\n", serde_json::to_string(&sample).unwrap());
                         yield Ok::<_, actix_web::Error>(web::Bytes::from(line));
                     }
                 }
