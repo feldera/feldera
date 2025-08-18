@@ -669,5 +669,5 @@ class illarg_bin_to_int_cast_legal(TstView):
 
 # SELECT
 # ('x' || '0b1620')::bit(24)::int,
-# ('x' || '627965'::bit(24)::int,
-# ('x' || '68656c6c6f20'::bit(32)::int;
+# ('x' || '627965')::bit(24)::int,
+# ('x' || '68656c6c6f20')::bit(32)::int;
