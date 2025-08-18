@@ -184,6 +184,7 @@ itertools = { workspace = true }
 metrics-process = { version = "2.4.0", default-features = false }
 serde_json_path_to_error = { workspace = true }
 dashmap = "6.1.0"
+smallstr = { workspace = true }
 
 [package.metadata.cargo-machete]
 ignored = ["num-traits"]
@@ -193,7 +194,7 @@ jemalloc_pprof = { workspace = true, features = ["symbolize"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = { workspace = true }
-nix = { workspace = true, features = ["signal"] }
+nix = { workspace = true, features = ["signal", "mman", "time"] }
 
 [dev-dependencies]
 actix-test = { workspace = true }

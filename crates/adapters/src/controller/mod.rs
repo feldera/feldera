@@ -27,6 +27,7 @@ use crate::controller::stats::{InputEndpointMetrics, OutputEndpointMetrics};
 use crate::controller::sync::continuous_pull;
 use crate::controller::sync::SYNCHRONIZER;
 use crate::create_integrated_output_endpoint;
+use crate::samply::SamplySpan;
 use crate::server::metrics::{
     HistogramDiv, LabelStack, MetricsFormatter, MetricsWriter, ValueType,
 };
@@ -106,7 +107,7 @@ use std::{
 };
 use tokio::sync::oneshot;
 use tokio::sync::Mutex as TokioMutex;
-use tracing::{debug, error, info, trace, warn};
+use tracing::{debug, debug_span, error, info, trace, warn};
 use validate::validate_config;
 
 mod checkpoint;
@@ -1271,21 +1272,20 @@ impl CircuitThread {
     }
 
     fn step(&mut self) -> Result<bool, ControllerError> {
-        let total_consumed = match self.input_step()? {
-            Some(total_consumed) => total_consumed,
-            None => return Ok(false),
-        };
+        let total_consumed =
+            match SamplySpan::new(debug_span!("input")).in_scope(|| self.input_step())? {
+                Some(total_consumed) => total_consumed,
+                None => return Ok(false),
+            };
 
         self.step += 1;
 
         // Wake up the backpressure thread to unpause endpoints blocked due to
         // backpressure.
         self.controller.unpark_backpressure();
-        debug!("circuit thread: calling 'circuit.step'");
-        self.circuit
-            .step()
+        SamplySpan::new(debug_span!("step"))
+            .in_scope(|| self.circuit.step())
             .unwrap_or_else(|e| self.controller.error(Arc::new(e.into())));
-        debug!("circuit thread: 'circuit.step' returned");
 
         // If bootstrapping has completed, update the status flag.
         self.controller
@@ -1298,7 +1298,7 @@ impl CircuitThread {
         // query results always reflect all data that we have reported
         // processing; otherwise, there is a race for any code that runs a query
         // as soon as input has been processed.
-        self.update_snapshot();
+        SamplySpan::new(debug_span!("update")).in_scope(|| self.update_snapshot());
 
         // Record that we've processed the records.
         let processed_records = self.processed_records(total_consumed);

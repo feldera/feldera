@@ -187,6 +187,8 @@ pub use transport::{
     TransportInputEndpoint,
 };
 
+pub mod samply;
+
 /// Some dependencies of this crate use the `rustls` library. This library has two features
 /// `ring` and `aws-lc-rs`. When both are enabled, the library requires a process-wide default
 /// crypto provider to be configured. While no single dependency enables both these features,
