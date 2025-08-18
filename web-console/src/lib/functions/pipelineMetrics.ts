@@ -8,7 +8,8 @@ import type {
   InputEndpointMetrics,
   InputEndpointStatus,
   OutputEndpointMetrics,
-  OutputEndpointStatus
+  OutputEndpointStatus,
+  TimeSeriesEntry
 } from '$lib/types/pipelineManager'
 import invariant from 'tiny-invariant'
 import { discreteDerivative } from './common/math'
@@ -18,51 +19,15 @@ export const emptyPipelineMetrics = {
   views: new Map<string, OutputEndpointMetrics>(),
   inputs: [] as InputEndpointStatus[],
   outputs: [] as OutputEndpointStatus[],
-  global: [] as GlobalMetricsTimestamp[]
+  global: {} as GlobalMetricsTimestamp
 }
 
 export type PipelineMetrics = typeof emptyPipelineMetrics & { lastTimestamp?: number }
 
-/**
- * Accumulate metrics history, accounting for the desired time window, dropping the previous data if the new data overwrites it
- * @param keepMs Time window of metrics age to be kept
- */
-const reconcileHistoricData = (
-  oldData: GlobalMetricsTimestamp[],
-  newData: GlobalMetricsTimestamp,
-  refetchMs: number,
-  keepMs?: number
-) => {
-  const sliceAt = (() => {
-    if (!nonNull(keepMs)) {
-      return -oldData.length
-    }
-    const isOverwritingTimestamp = !!oldData.find((m) => m.timeMs >= newData.timeMs)
-    if (isOverwritingTimestamp) {
-      // clear metrics history if we get a timestamp that overwrites existing data point
-      return oldData.length
-    }
-    // return one more element than needed to satisfy keepMs when applying discreteDerivative() to result data series
-    return -Math.ceil(keepMs / refetchMs)
-  })()
-  return [...oldData.slice(sliceAt), newData]
-}
-
 const addZeroMetrics = (previous: PipelineMetrics) => ({
   ...previous,
   tables: new Map(),
-  views: new Map(),
-  global: previous.global.length
-    ? ((m) => [
-        ...previous.global,
-        {
-          ...m,
-          rss_bytes: 0,
-          timeMs: Date.now(),
-          start_time: 0
-        }
-      ])(previous.global.at(-1))
-    : []
+  views: new Map()
 })
 
 export const accumulatePipelineMetrics =
@@ -143,23 +108,20 @@ export const accumulatePipelineMetrics =
           )
         )
       ),
-      global: reconcileHistoricData(oldData?.global ?? [], globalWithTimestamp, refetchMs, keepMs)
+      global: globalWithTimestamp
     } as any
   }
 
 /**
  * @returns Time series of throughput with smoothing window over 3 data intervals
  */
-export const calcPipelineThroughput = (metrics: { global: GlobalMetricsTimestamp[] }) => {
-  const totalProcessed = metrics.global.map((m) => tuple(m.timeMs, m.total_processed_records))
-  const series = discreteDerivative(totalProcessed, ({}, {}, i, arr) => {
-    const n3 = arr[i]
-    const n2 = arr[i - 1]
-    const n1 = arr[i - 2] ?? n2
-    const n0 = arr[i - 3] ?? n1
+export const calcPipelineThroughput = (metrics: TimeSeriesEntry[]) => {
+  const series = discreteDerivative(metrics, ({}, {}, i, arr) => {
+    const n1 = arr[i]
+    const n0 = arr[i - 1]
     return {
-      name: n3[0].toString(),
-      value: tuple(n3[0], ((n3[1] - n0[1]) * 1000) / (n3[0] - n0[0]))
+      name: n1.t.toFixed(),
+      value: tuple(n1.t.toNumber(), n1.r.minus(n0.r).toNumber())
     }
   })
 

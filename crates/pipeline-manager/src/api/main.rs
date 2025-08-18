@@ -103,6 +103,8 @@ only the program-related core fields, and is used by the compiler to discern whe
         endpoints::pipeline_interaction::completion_status,
         endpoints::pipeline_interaction::start_transaction,
         endpoints::pipeline_interaction::commit_transaction,
+        endpoints::pipeline_interaction::get_pipeline_time_series,
+        endpoints::pipeline_interaction::get_pipeline_time_series_stream,
 
         // API keys
         endpoints::api_key::list_api_keys,
@@ -253,6 +255,8 @@ only the program-related core fields, and is used by the compiler to discern whe
         feldera_types::checkpoint::CheckpointResponse,
         feldera_types::checkpoint::CheckpointFailure,
         feldera_types::transaction::StartTransactionResponse,
+        feldera_types::time_series::TimeSeries,
+        feldera_types::time_series::SampleStatistics,
 
         // Cluster health check
         crate::cluster_health::HealthStatus,
@@ -315,6 +319,7 @@ fn api_scope() -> Scope {
         .service(endpoints::pipeline_interaction::get_pipeline_stats)
         .service(endpoints::pipeline_interaction::get_pipeline_metrics)
         .service(endpoints::pipeline_interaction::get_pipeline_time_series)
+        .service(endpoints::pipeline_interaction::get_pipeline_time_series_stream)
         .service(endpoints::pipeline_interaction::get_pipeline_circuit_profile)
         .service(endpoints::pipeline_interaction::get_pipeline_heap_profile)
         .service(endpoints::pipeline_interaction::support_bundle::get_pipeline_support_bundle)

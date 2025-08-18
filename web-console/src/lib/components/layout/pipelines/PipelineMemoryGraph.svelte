@@ -17,6 +17,7 @@
   import type { ECMouseEvent } from 'svelte-echarts'
   import type { EChartsOption } from 'echarts'
   import { rgbToHex } from '$lib/functions/common/color'
+  import type { TimeSeriesEntry } from '$lib/types/pipelineManager'
 
   let {
     pipeline,
@@ -25,7 +26,7 @@
     keepMs
   }: {
     pipeline: { current: Pipeline }
-    metrics: PipelineMetrics
+    metrics: TimeSeriesEntry[]
     refetchMs: number
     keepMs: number
   } = $props()
@@ -40,8 +41,7 @@
 
   let pipelineName = $derived(pipeline.current.name)
 
-  const memUsed = $derived(metrics.global.map((m) => tuple(m.timeMs, m.rss_bytes ?? 0)))
-  const valueMax = $derived(memUsed.length ? Math.max(...memUsed.map((v) => v[1])) : 0)
+  const valueMax = $derived(metrics.length ? Math.max(...metrics.map((v) => v.m.toNumber())) : 0)
   const yMaxStep = $derived(Math.pow(2, Math.ceil(Math.log2(valueMax * 1.25))))
   const yMax = $derived(valueMax !== 0 ? yMaxStep : 1024 * 2048)
   const yMin = 0
@@ -56,16 +56,16 @@
   let ref: EChartsType | undefined = $state()
 
   $effect(() => {
-    metrics.global
+    metrics
     if (!ref) {
       return
     }
     ref.setOption({
       series: [
         {
-          data: metrics.global.map((m) => ({
-            name: m.timeMs.toString(),
-            value: tuple(m.timeMs, m.rss_bytes ?? 0)
+          data: metrics.map((m) => ({
+            name: m.t.toString(),
+            value: tuple(m.t.toNumber(), m.m.toNumber() ?? 0)
           }))
         }
       ],
@@ -102,7 +102,7 @@
 
   let options: EChartsOption = {
     animationDuration: 0,
-    animationDurationUpdate: refetchMs,
+    animationDurationUpdate: 0,
     animationEasingUpdate: 'linear' as const,
     grid: {
       top: 10,
@@ -111,6 +111,8 @@
       bottom: 48
     },
     xAxis: {
+      animationDuration: 0,
+      animationDurationUpdate: refetchMs,
       type: 'time' as const,
       min: Date.now() - keepMs - refetchMs,
       max: Date.now() - refetchMs,
@@ -122,6 +124,8 @@
       animation: true // optional, makes axis transitions smoother
     },
     yAxis: {
+      animationDuration: 0,
+      animationDurationUpdate: 0,
       type: 'value' as const,
       // svelte-ignore state_referenced_locally
       interval: (yMax - yMin) / 2,
@@ -150,14 +154,16 @@
     color: primaryColor,
     series: [
       {
+        animationDuration: 0,
+        animationDurationUpdate: refetchMs,
         type: 'line' as const,
         // symbol: 'none',
         itemStyle: {
           opacity: 0
         },
-        data: metrics.global.map((m) => ({
-          name: m.timeMs.toString(),
-          value: tuple(m.timeMs, m.rss_bytes ?? 0)
+        data: metrics.map((m) => ({
+          name: m.t.toString(),
+          value: tuple(m.t.toNumber(), m.m.toNumber() ?? 0)
         })),
         markLine: {
           animation: false,
@@ -198,7 +204,7 @@
 
 <div class="absolute h-full w-full py-4">
   <div class="pl-16">
-    Used memory: {humanSize(metrics.global.at(-1)?.rss_bytes ?? 0)}
+    Used memory: {humanSize(metrics.at(-1)?.m.toNumber() ?? 0)}
   </div>
   {#key pipelineName}
     <Chart init={(dom, theme, opts) => (ref = init(dom, theme, opts))} {options} />

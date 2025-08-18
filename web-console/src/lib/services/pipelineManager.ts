@@ -462,6 +462,19 @@ export const adHocQuery = async (pipelineName: string, query: string) => {
   )
 }
 
+export const pipelineTimeSeriesStream = async (pipelineName: string) => {
+  return streamingFetch(
+    getAuthenticatedFetch(),
+    `${felderaEndpoint}/v0/pipelines/${pipelineName}/time_series_stream`,
+    {},
+    (msg) =>
+      new Error(
+        `Failed to connect to the time series stream of pipeline ${pipelineName}: \n${msg}`
+      ),
+    (e) => new Error(e.details?.error ?? e.message, { cause: e })
+  )
+}
+
 export type XgressEntry = { previewSlice: string } & (
   | { insert: XgressRecord }
   | { delete: XgressRecord }

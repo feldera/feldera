@@ -2692,8 +2692,11 @@ impl StatisticsThread {
             if time_series.len() >= 60 {
                 time_series.pop_front();
             }
-            time_series.push_back(sample);
+            time_series.push_back(sample.clone());
             drop(time_series);
+
+            // Notify subscribers about the new time series data
+            let _ = controller_status.time_series_notifier.send(sample);
 
             std::thread::park_timeout(Duration::from_secs(1));
         }

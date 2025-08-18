@@ -24,6 +24,7 @@ use actix_web::{
     web::{self, Data as WebData, Payload, Query},
     App, Error as ActixError, HttpRequest, HttpResponse, HttpServer, Responder,
 };
+use async_stream;
 use chrono::Utc;
 use clap::Parser;
 use colored::{ColoredString, Colorize};
@@ -72,6 +73,7 @@ use tokio::{
         oneshot,
     },
 };
+use tokio_stream::{wrappers::BroadcastStream, StreamExt};
 use tracing::{debug, error, info, info_span, trace, warn, Instrument, Level, Subscriber};
 use tracing_subscriber::fmt::format::Format;
 use tracing_subscriber::fmt::{FormatEvent, FormatFields};
@@ -765,6 +767,7 @@ where
         .service(stats)
         .service(metrics_handler)
         .service(time_series)
+        .service(time_series_stream)
         .service(metadata)
         .service(heap_profile)
         .service(dump_profile)
@@ -945,6 +948,55 @@ async fn time_series(state: WebData<ServerState>) -> impl Responder {
                     .collect(),
             };
             Ok(HttpResponse::Ok().json(time_series))
+        }
+        None => Err(missing_controller_error(&state)),
+    }
+}
+
+/// Stream time series for basic statistics.
+///
+/// Returns a snapshot of all existing time series data followed by a stream of
+/// new time series data points as they become available. Each line in the response
+/// is a JSON object representing a single time series data point.
+#[get("/time_series_stream")]
+async fn time_series_stream(state: WebData<ServerState>) -> impl Responder {
+    match &*state.controller.read().unwrap() {
+        Some(controller) => {
+            let controller_status = controller.status();
+
+            // Get existing time series data as snapshot
+            let existing_samples: Vec<_> = controller_status
+                .time_series
+                .lock()
+                .unwrap()
+                .iter()
+                .cloned()
+                .collect();
+
+            // Subscribe to future updates
+            let receiver = controller_status.time_series_notifier.subscribe();
+            let stream = BroadcastStream::new(receiver);
+
+            let response_stream = async_stream::stream! {
+                // First, yield all existing samples
+                for sample in existing_samples {
+                    let line = format!("{}\n", serde_json::to_string(&sample).unwrap_or_default());
+                    yield Ok::<_, actix_web::Error>(web::Bytes::from(line));
+                }
+
+                // Then yield new samples as they arrive
+                let mut stream = stream;
+                while let Some(result) = stream.next().await {
+                    if let Ok(sample) = result {
+                        let line = format!("{}\n", serde_json::to_string(&sample).unwrap_or_default());
+                        yield Ok::<_, actix_web::Error>(web::Bytes::from(line));
+                    }
+                }
+            };
+
+            Ok(HttpResponse::Ok()
+                .content_type("application/x-ndjson")
+                .streaming(response_stream))
         }
         None => Err(missing_controller_error(&state)),
     }

@@ -104,6 +104,7 @@ enum-map = { workspace = true }
 google-cloud-pubsub = { workspace = true, optional = true }
 google-cloud-gax = { workspace = true, optional = true }
 tokio-util = { workspace = true }
+tokio-stream = { workspace = true, features = ["sync"] }
 home = { workspace = true }
 datafusion = { workspace = true }
 sha2 = { workspace = true }

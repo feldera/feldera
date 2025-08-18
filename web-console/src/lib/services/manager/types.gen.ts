@@ -67,6 +67,48 @@ export type AuthProvider =
     }
 
 /**
+ * Information about the build of the platform.
+ */
+export type BuildInformation = {
+  /**
+   * CPU of build machine.
+   */
+  build_cpu: string
+  /**
+   * OS of build machine.
+   */
+  build_os: string
+  /**
+   * Timestamp of the build.
+   */
+  build_timestamp: string
+  /**
+   * Whether the build is optimized for performance.
+   */
+  cargo_debug: string
+  /**
+   * Dependencies used during the build.
+   */
+  cargo_dependencies: string
+  /**
+   * Features enabled during the build.
+   */
+  cargo_features: string
+  /**
+   * Optimization level of the build.
+   */
+  cargo_opt_level: string
+  /**
+   * Target triple of the build.
+   */
+  cargo_target_triple: string
+  /**
+   * Rust version of the build used.
+   */
+  rustc_version: string
+}
+
+/**
  * Information about a failed checkpoint.
  */
 export type CheckpointFailure = {
@@ -233,6 +275,7 @@ export type CompletionTokenResponse = {
 }
 
 export type Configuration = {
+  build_info: BuildInformation
   /**
    * URL that navigates to the changelog of the current version
    */
@@ -244,13 +287,20 @@ export type Configuration = {
   license_validity?: LicenseValidity | null
   /**
    * Specific revision corresponding to the edition `version` (e.g., git commit hash).
-   * This is an empty string if it is unspecified.
    */
   revision: string
+  /**
+   * Specific revision corresponding to the default runtime version of the platform (e.g., git commit hash).
+   */
+  runtime_revision: string
   /**
    * Telemetry key.
    */
   telemetry: string
+  /**
+   * List of unstable features that are enabled.
+   */
+  unstable_features?: string | null
   update_info?: UpdateInformation | null
   /**
    * The version corresponding to the type of `edition`.
@@ -781,6 +831,8 @@ export type FileInputConfig = {
   follow?: boolean
   /**
    * File path.
+   *
+   * This may be a file name or a `file://` URL with an absolute path.
    */
   path: string
 }
@@ -880,6 +932,12 @@ export type GenerationPlan = {
    * running tests with lateness and many workers you can e.g., reduce the
    * chunk size to make sure a smaller range of records is being ingested in parallel.
    *
+   * This also controls the sizes of input batches.  If, for example, `rate`
+   * and `worker_chunk_size` are both 1000, with a single worker, the
+   * generator will output 1000 records once a second.  But if we reduce
+   * `worker_chunk_size` to 100 without changing `rate`, the generator will
+   * instead output 100 records 10 times per second.
+   *
    * # Example
    * Assume you generate a total of 125 records with 4 workers and a chunk size of 25.
    * In this case, worker A will generate records 0..25, worker B will generate records 25..50,
@@ -933,6 +991,11 @@ export type GlueCatalogConfig = {
    * Example: `"s3://my-data-warehouse/tables/"`
    */
   'glue.warehouse'?: string | null
+}
+
+export type HealthStatus = {
+  compiler: ServiceStatus
+  runner: ServiceStatus
 }
 
 /**
@@ -1381,7 +1444,7 @@ export type LicenseValidity =
 
 /**
  * Circuit metrics output format.
- * - `prometheus`: [format](https://github.com/prometheus/docs/blob/main/content/docs/instrumenting/exposition_formats.md) expected by Prometheus
+ * - `prometheus`: [format](https://github.com/prometheus/docs/blob/4b1b80f5f660a2f8dc25a54f52a65a502f31879a/docs/instrumenting/exposition_formats.md) expected by Prometheus
  * - `json`: JSON format
  */
 export type MetricsFormat = 'prometheus' | 'json'
@@ -1662,12 +1725,11 @@ export type PipelineConfig = {
    *
    * This parameter controls the execution of queries that use the `NOW()` function.  The output of such
    * queries depends on the real-time clock and can change over time without any external
-   * inputs.  The pipeline will update the clock value and trigger incremental recomputation
-   * at most each `clock_resolution_usecs` microseconds.
+   * inputs.  If the query uses `NOW()`, the pipeline will update the clock value and trigger incremental
+   * recomputation at most each `clock_resolution_usecs` microseconds.  If the query does not use
+   * `NOW()`, then clock value updates are suppressed and the pipeline ignores this setting.
    *
    * It is set to 1 second (1,000,000 microseconds) by default.
-   *
-   * Set to `null` to disable periodic clock updates.
    */
   clock_resolution_usecs?: number | null
   /**
@@ -1688,9 +1750,43 @@ export type PipelineConfig = {
   }
   fault_tolerance?: FtConfig
   /**
+   * Sets the number of available runtime threads for the http server.
+   *
+   * In most cases, this does not need to be set explicitly and
+   * the default is sufficient. Can be increased in case the
+   * pipeline HTTP API operations are a bottleneck.
+   *
+   * If not specified, the default is set to `workers`.
+   */
+  http_workers?: number | null
+  /**
    * Specification of additional (sidecar) containers.
    */
   init_containers?: unknown
+  /**
+   * Sets the number of available runtime threads for async IO tasks.
+   *
+   * This affects some networking and file I/O operations
+   * especially adapters and ad-hoc queries.
+   *
+   * In most cases, this does not need to be set explicitly and
+   * the default is sufficient. Can be increased in case
+   * ingress, egress or ad-hoc queries are a bottleneck.
+   *
+   * If not specified, the default is set to `workers`.
+   */
+  io_workers?: number | null
+  /**
+   * Log filtering directives.
+   *
+   * If set to a valid [tracing-subscriber] filter, this controls the log
+   * messages emitted by the pipeline process.  Otherwise, or if the filter
+   * has invalid syntax, messages at "info" severity and higher are written
+   * to the log and all others are discarded.
+   *
+   * [tracing-subscriber]: https://docs.rs/tracing-subscriber/latest/tracing_subscriber/filter/struct.EnvFilter.html#directives
+   */
+  logging?: string | null
   /**
    * Maximal delay in microseconds to wait for `min_batch_size_records` to
    * get buffered by the controller, defaults to 0.
@@ -1774,6 +1870,12 @@ export type PipelineConfig = {
   outputs?: {
     [key: string]: OutputEndpointConfig
   }
+  /**
+   * Directory containing values of secrets.
+   *
+   * If this is not set, a default directory is used.
+   */
+  secrets_dir?: string | null
   storage_config?: StorageConfig | null
 }
 
@@ -1868,22 +1970,26 @@ export type PipelineSelectedInfo = {
  *
  * ```text
  * Stopped ◄─────────── Stopping ◄───── All states can transition
- * │                    ▲            to Stopping by either:
- * /start or /pause │                    │            (1) user calling /stop?force=true, or;
- * ▼                    │            (2) pipeline encountering a fatal
- * ⌛Provisioning          Suspending            resource or runtime error,
- * │                    ▲                having the system call /stop?force=true
- * ▼                    │ /stop          effectively
- * ⌛Initializing ──────────────┤  ?force=false
- * │                    │
- * ┌─────────┼────────────────────┴─────┐
- * │         ▼                          │
- * │       Paused  ◄──────► Unavailable │
- * │        │   ▲                ▲      │
- * │ /start │   │  /pause        │      │
- * │        ▼   │                │      │
- * │       Running ◄─────────────┘      │
- * └────────────────────────────────────┘
+ * │                   ▲            to Stopping by either:
+ * /start or /pause │                   │            (1) user calling /stop?force=true, or;
+ * ▼                   │            (2) pipeline encountering a fatal
+ * ⌛Provisioning         Suspending            resource or runtime error,
+ * │                   ▲                having the system call /stop?force=true
+ * │                   │ /stop          effectively
+ * │                   │  ?force=false
+ * │                   │
+ * ┌──────────────┼───────────────────┴─────┐
+ * │              ▼                         │
+ * │  ┌──► Initializing                     │
+ * │  │           ▲  ▲                      │
+ * │  │           │  └───────────┐          │
+ * │  │           ▼              ▼          │
+ * │  │        Paused  ◄──────► Unavailable │
+ * │  │          │  ▲                ▲      │
+ * │  │   /start │  │  /pause        │      │
+ * │  │          ▼  │                │      │
+ * │  └─────►  Running ◄─────────────┘      │
+ * └────────────────────────────────────────┘
  * ```
  *
  * ### Desired and actual status
@@ -1967,6 +2073,29 @@ export type PostgresReaderConfig = {
  */
 export type PostgresWriterConfig = {
   /**
+   * The maximum buffer size in for a single operation.
+   * Note that the buffers of `INSERT`, `UPDATE` and `DELETE` queries are
+   * separate.
+   * Default: 1 MiB
+   */
+  max_buffer_size_bytes?: number
+  /**
+   * The maximum number of records in a single buffer.
+   */
+  max_records_in_buffer?: number | null
+  /**
+   * The CA certificate in PEM format.
+   */
+  ssl_ca_pem?: string | null
+  /**
+   * The client certificate key in PEM format.
+   */
+  ssl_client_key?: string | null
+  /**
+   * The client certificate in PEM format.
+   */
+  ssl_client_pem?: string | null
+  /**
    * The table to write the output to.
    */
   table: string
@@ -1975,6 +2104,10 @@ export type PostgresWriterConfig = {
    * See: <https://docs.rs/tokio-postgres/0.7.12/tokio_postgres/config/struct.Config.html>
    */
   uri: string
+  /**
+   * True to enable hostname verification when using TLS. True by default.
+   */
+  verify_hostname?: boolean | null
 }
 
 /**
@@ -1989,6 +2122,31 @@ export type ProgramConfig = {
    */
   cache?: boolean
   profile?: CompilationProfile | null
+  /**
+   * Override runtime version of the pipeline being executed.
+   *
+   * Warning: This setting is experimental and may change in the future.
+   * Requires the platform to run with the unstable feature `runtime_version`
+   * enabled. Should only be used for testing purposes, and requires
+   * network access.
+   *
+   * A runtime version can be specified in the form of a version
+   * or SHA taken from the `feldera/feldera` repository main branch.
+   *
+   * Examples: `v0.96.0` or `f4dcac0989ca0fda7d2eb93602a49d007cb3b0ae`
+   *
+   * A platform of version `0.x.y` may be capable of running future and past
+   * runtimes with versions `>=0.x.y` and `<=0.x.y` until breaking API changes happen,
+   * the exact bounds for each platform version are unspecified until we reach a
+   * stable version. Compatibility is only guaranteed if platform and runtime version
+   * are exact matches.
+   *
+   * Note that any enterprise features are currently considered to be part of
+   * the platform.
+   *
+   * If not set (null), the runtime version will be the same as the platform version.
+   */
+  runtime_version?: string | null
 }
 
 /**
@@ -2360,12 +2518,11 @@ export type RuntimeConfig = {
    *
    * This parameter controls the execution of queries that use the `NOW()` function.  The output of such
    * queries depends on the real-time clock and can change over time without any external
-   * inputs.  The pipeline will update the clock value and trigger incremental recomputation
-   * at most each `clock_resolution_usecs` microseconds.
+   * inputs.  If the query uses `NOW()`, the pipeline will update the clock value and trigger incremental
+   * recomputation at most each `clock_resolution_usecs` microseconds.  If the query does not use
+   * `NOW()`, then clock value updates are suppressed and the pipeline ignores this setting.
    *
    * It is set to 1 second (1,000,000 microseconds) by default.
-   *
-   * Set to `null` to disable periodic clock updates.
    */
   clock_resolution_usecs?: number | null
   /**
@@ -2386,9 +2543,43 @@ export type RuntimeConfig = {
   }
   fault_tolerance?: FtConfig
   /**
+   * Sets the number of available runtime threads for the http server.
+   *
+   * In most cases, this does not need to be set explicitly and
+   * the default is sufficient. Can be increased in case the
+   * pipeline HTTP API operations are a bottleneck.
+   *
+   * If not specified, the default is set to `workers`.
+   */
+  http_workers?: number | null
+  /**
    * Specification of additional (sidecar) containers.
    */
   init_containers?: unknown
+  /**
+   * Sets the number of available runtime threads for async IO tasks.
+   *
+   * This affects some networking and file I/O operations
+   * especially adapters and ad-hoc queries.
+   *
+   * In most cases, this does not need to be set explicitly and
+   * the default is sufficient. Can be increased in case
+   * ingress, egress or ad-hoc queries are a bottleneck.
+   *
+   * If not specified, the default is set to `workers`.
+   */
+  io_workers?: number | null
+  /**
+   * Log filtering directives.
+   *
+   * If set to a valid [tracing-subscriber] filter, this controls the log
+   * messages emitted by the pipeline process.  Otherwise, or if the filter
+   * has invalid syntax, messages at "info" severity and higher are written
+   * to the log and all others are discarded.
+   *
+   * [tracing-subscriber]: https://docs.rs/tracing-subscriber/latest/tracing_subscriber/filter/struct.EnvFilter.html#directives
+   */
+  logging?: string | null
   /**
    * Maximal delay in microseconds to wait for `min_batch_size_records` to
    * get buffered by the controller, defaults to 0.
@@ -2523,6 +2714,35 @@ export type S3InputConfig = {
   region: string
 }
 
+/**
+ * One sample of time-series data.
+ */
+export type SampleStatistics = {
+  /**
+   * Memory usage in bytes.
+   */
+  m: number
+  /**
+   * Records processed.
+   */
+  r: number
+  /**
+   * Storage usage in bytes.
+   */
+  s: number
+  /**
+   * Sample time.
+   */
+  t: string
+}
+
+export type ServiceStatus = {
+  checked_at: string
+  healthy: boolean
+  message: string
+  unchanged_since: string
+}
+
 export type SourcePosition = {
   end_column: number
   end_line_number: number
@@ -2594,6 +2814,10 @@ export type SqlType =
   | 'SmallInt'
   | 'Int'
   | 'BigInt'
+  | 'UTinyInt'
+  | 'USmallInt'
+  | 'UInt'
+  | 'UBigInt'
   | 'Real'
   | 'Double'
   | 'Decimal'
@@ -2613,6 +2837,15 @@ export type SqlType =
   | 'Null'
   | 'Uuid'
   | 'Variant'
+
+export type StartFromCheckpoint = 'latest' | string | null
+
+/**
+ * Response to a `/start_transaction` request.
+ */
+export type StartTransactionResponse = {
+  transaction_id: number
+}
 
 /**
  * Backend storage configuration.
@@ -2735,6 +2968,11 @@ export type SyncConfig = {
    */
   bucket: string
   /**
+   * The number of checkers to run in parallel.
+   * Default: 20
+   */
+  checkers?: number | null
+  /**
    * The endpoint URL for the storage service.
    *
    * This is typically required for custom or local S3-compatible storage providers like MinIO.
@@ -2744,6 +2982,43 @@ export type SyncConfig = {
    */
   endpoint?: string | null
   /**
+   * When true, the pipeline will fail to initialize if fetching the
+   * specified checkpoint fails (missing, download error).
+   * When false, the pipeline will start from scratch instead.
+   *
+   * False by default.
+   */
+  fail_if_no_checkpoint?: boolean
+  /**
+   * Extra flags to pass to `rclone`.
+   *
+   * WARNING: Supplying incorrect or conflicting flags can break `rclone`.
+   * Use with caution.
+   *
+   * Refer to the docs to see the supported flags:
+   * - [Global flags](https://rclone.org/flags/)
+   * - [S3 specific flags](https://rclone.org/s3/)
+   */
+  flags?: Array<string> | null
+  /**
+   * Set to skip post copy check of checksums, and only check the file sizes.
+   * This can significantly improve the throughput.
+   * Defualt: false
+   */
+  ignore_checksum?: boolean | null
+  /**
+   * Use multi-thread download for files above this size.
+   * Format: `[size][Suffix]` (Example: 1G, 500M)
+   * Supported suffixes: k|M|G|T
+   * Default: 100M
+   */
+  multi_thread_cutoff?: string | null
+  /**
+   * Number of streams to use for multi-thread downloads.
+   * Default: 10
+   */
+  multi_thread_streams?: number | null
+  /**
    * The name of the cloud storage provider (e.g., `"AWS"`, `"Minio"`).
    *
    * Used for provider-specific behavior in rclone.
@@ -2752,6 +3027,15 @@ export type SyncConfig = {
    * See [rclone S3 provider documentation](https://rclone.org/s3/#s3-provider)
    */
   provider?: string | null
+  /**
+   * The interval (in seconds) between each attempt to fetch the latest
+   * checkpoint from object store while in standby mode.
+   *
+   * Applies only when `start_from_checkpoint` is set to `latest`.
+   *
+   * Default: 10 seconds
+   */
+  pull_interval?: number
   /**
    * The region that this bucket is in.
    *
@@ -2767,10 +3051,48 @@ export type SyncConfig = {
    */
   secret_key?: string | null
   /**
-   * If `true`, will try to pull the latest checkpoint from the configured
-   * object store and resume from that point.
+   * When `true`, the pipeline starts in **standby** mode; processing doesn't
+   * start until activation (`POST /activate`).
+   * If this pipeline was previously activated and the storage has not been
+   * cleared, the pipeline will auto activate, no newer checkpoints will be
+   * fetched.
+   *
+   * Standby behavior depends on `start_from_checkpoint`:
+   * - If `latest`, pipeline continuously fetches the latest available
+   * checkpoint until activated.
+   * - If checkpoint UUID, pipeline fetches this checkpoint once and waits
+   * in standby until activated.
+   *
+   * Default: `false`
    */
-  start_from_checkpoint: boolean
+  standby?: boolean
+  start_from_checkpoint?: StartFromCheckpoint | null
+  /**
+   * The number of file transfers to run in parallel.
+   * Default: 20
+   */
+  transfers?: number | null
+  /**
+   * The number of chunks of the same file that are uploaded for multipart uploads.
+   * Default: 10
+   */
+  upload_concurrency?: number | null
+}
+
+/**
+ * Time series to make graphs in the web console easier.
+ */
+export type TimeSeries = {
+  /**
+   * Current time as of the creation of the structure.
+   */
+  now: string
+  /**
+   * Time series.
+   *
+   * These report 60 seconds of samples, one per second.
+   */
+  samples: Array<SampleStatistics>
 }
 
 /**
@@ -2941,6 +3263,10 @@ export type DeleteApiKeyResponse = unknown
 
 export type DeleteApiKeyError = ErrorResponse
 
+export type GetHealthResponse = HealthStatus
+
+export type GetHealthError = HealthStatus
+
 export type GetConfigResponse = Configuration
 
 export type GetConfigError = ErrorResponse
@@ -3040,6 +3366,19 @@ export type PatchPipelineResponse = PipelineInfo
 
 export type PatchPipelineError = ErrorResponse
 
+export type ActivatePipelineData = {
+  path: {
+    /**
+     * Unique pipeline name
+     */
+    pipeline_name: string
+  }
+}
+
+export type ActivatePipelineResponse = CheckpointResponse
+
+export type ActivatePipelineError = ErrorResponse
+
 export type CheckpointPipelineData = {
   path: {
     /**
@@ -3052,6 +3391,32 @@ export type CheckpointPipelineData = {
 export type CheckpointPipelineResponse = CheckpointResponse
 
 export type CheckpointPipelineError = ErrorResponse
+
+export type SyncCheckpointData = {
+  path: {
+    /**
+     * Unique pipeline name
+     */
+    pipeline_name: string
+  }
+}
+
+export type SyncCheckpointResponse = CheckpointResponse
+
+export type SyncCheckpointError = ErrorResponse
+
+export type GetCheckpointSyncStatusData = {
+  path: {
+    /**
+     * Unique pipeline name
+     */
+    pipeline_name: string
+  }
+}
+
+export type GetCheckpointSyncStatusResponse = CheckpointStatus
+
+export type GetCheckpointSyncStatusError = ErrorResponse
 
 export type GetCheckpointStatusData = {
   path: {
@@ -3093,6 +3458,19 @@ export type PostPipelineClearData = {
 export type PostPipelineClearResponse = unknown
 
 export type PostPipelineClearError = ErrorResponse
+
+export type CommitTransactionData = {
+  path: {
+    /**
+     * Unique pipeline name
+     */
+    pipeline_name: string
+  }
+}
+
+export type CommitTransactionResponse = unknown
+
+export type CommitTransactionError = ErrorResponse
 
 export type CompletionStatusData = {
   path: {
@@ -3223,9 +3601,7 @@ export type GetPipelineMetricsData = {
   }
 }
 
-export type GetPipelineMetricsResponse = {
-  [key: string]: unknown
-}
+export type GetPipelineMetricsResponse = Blob | File
 
 export type GetPipelineMetricsError = ErrorResponse
 
@@ -3241,19 +3617,6 @@ export type PostPipelinePauseData = {
 export type PostPipelinePauseResponse = unknown
 
 export type PostPipelinePauseError = ErrorResponse
-
-export type GetProgramInfoData = {
-  path: {
-    /**
-     * Unique pipeline name
-     */
-    pipeline_name: string
-  }
-}
-
-export type GetProgramInfoResponse = ProgramInfo
-
-export type GetProgramInfoError = ErrorResponse
 
 export type PipelineAdhocSqlData = {
   path: {
@@ -3291,6 +3654,19 @@ export type PostPipelineStartResponse = unknown
 
 export type PostPipelineStartError = ErrorResponse
 
+export type StartTransactionData = {
+  path: {
+    /**
+     * Unique pipeline name
+     */
+    pipeline_name: string
+  }
+}
+
+export type StartTransactionResponse2 = StartTransactionResponse
+
+export type StartTransactionError = ErrorResponse
+
 export type GetPipelineStatsData = {
   path: {
     /**
@@ -3326,6 +3702,49 @@ export type PostPipelineStopData = {
 export type PostPipelineStopResponse = unknown
 
 export type PostPipelineStopError = ErrorResponse
+
+export type GetPipelineSupportBundleData = {
+  path: {
+    /**
+     * Unique pipeline name
+     */
+    pipeline_name: string
+  }
+  query?: {
+    /**
+     * Whether to collect circuit profile data (default: true)
+     */
+    circuit_profile?: boolean
+    /**
+     * Whether to collect heap profile data (default: true)
+     */
+    heap_profile?: boolean
+    /**
+     * Whether to collect logs data (default: true)
+     */
+    logs?: boolean
+    /**
+     * Whether to collect metrics data (default: true)
+     */
+    metrics?: boolean
+    /**
+     * Whether to collect pipeline configuration data (default: true)
+     */
+    pipeline_config?: boolean
+    /**
+     * Whether to collect stats data (default: true)
+     */
+    stats?: boolean
+    /**
+     * Whether to collect system configuration data (default: true)
+     */
+    system_config?: boolean
+  }
+}
+
+export type GetPipelineSupportBundleResponse = Blob | File
+
+export type GetPipelineSupportBundleError = ErrorResponse
 
 export type CompletionTokenData = {
   path: {
@@ -3395,6 +3814,32 @@ export type PostPipelineInputConnectorActionData = {
 export type PostPipelineInputConnectorActionResponse = unknown
 
 export type PostPipelineInputConnectorActionError = ErrorResponse
+
+export type GetPipelineTimeSeriesData = {
+  path: {
+    /**
+     * Unique pipeline name
+     */
+    pipeline_name: string
+  }
+}
+
+export type GetPipelineTimeSeriesResponse = TimeSeries
+
+export type GetPipelineTimeSeriesError = ErrorResponse
+
+export type GetPipelineTimeSeriesStreamData = {
+  path: {
+    /**
+     * Unique pipeline name
+     */
+    pipeline_name: string
+  }
+}
+
+export type GetPipelineTimeSeriesStreamResponse = string
+
+export type GetPipelineTimeSeriesStreamError = ErrorResponse
 
 export type GetPipelineOutputConnectorStatusData = {
   path: {
@@ -3483,6 +3928,20 @@ export type $OpenApiTs = {
          * API key with that name does not exist
          */
         '404': ErrorResponse
+      }
+    }
+  }
+  '/v0/cluster_healthz': {
+    get: {
+      res: {
+        /**
+         * All services healthy
+         */
+        '200': HealthStatus
+        /**
+         * One or more services unhealthy
+         */
+        '503': HealthStatus
       }
     }
   }
@@ -3619,6 +4078,23 @@ export type $OpenApiTs = {
       }
     }
   }
+  '/v0/pipelines/{pipeline_name}/activate': {
+    post: {
+      req: ActivatePipelineData
+      res: {
+        /**
+         * Pipeline activation initiated
+         */
+        '202': CheckpointResponse
+        /**
+         * Pipeline with that name does not exist
+         */
+        '404': ErrorResponse
+        '500': ErrorResponse
+        '503': ErrorResponse
+      }
+    }
+  }
   '/v0/pipelines/{pipeline_name}/checkpoint': {
     post: {
       req: CheckpointPipelineData
@@ -3627,6 +4103,40 @@ export type $OpenApiTs = {
          * Checkpoint initiated
          */
         '200': CheckpointResponse
+        /**
+         * Pipeline with that name does not exist
+         */
+        '404': ErrorResponse
+        '500': ErrorResponse
+        '503': ErrorResponse
+      }
+    }
+  }
+  '/v0/pipelines/{pipeline_name}/checkpoint/sync': {
+    post: {
+      req: SyncCheckpointData
+      res: {
+        /**
+         * Checkpoint synced to object store
+         */
+        '200': CheckpointResponse
+        /**
+         * No checkpoints found
+         */
+        '404': ErrorResponse
+        '500': ErrorResponse
+        '503': ErrorResponse
+      }
+    }
+  }
+  '/v0/pipelines/{pipeline_name}/checkpoint/sync_status': {
+    get: {
+      req: GetCheckpointSyncStatusData
+      res: {
+        /**
+         * Checkpoint sync status retrieved successfully
+         */
+        '200': CheckpointStatus
         /**
          * Pipeline with that name does not exist
          */
@@ -3689,6 +4199,23 @@ export type $OpenApiTs = {
          */
         '404': ErrorResponse
         '500': ErrorResponse
+      }
+    }
+  }
+  '/v0/pipelines/{pipeline_name}/commit_transaction': {
+    post: {
+      req: CommitTransactionData
+      res: {
+        /**
+         * Commit operation initiated.
+         */
+        '200': unknown
+        /**
+         * Another transaction is already in progress.
+         */
+        '409': ErrorResponse
+        '500': ErrorResponse
+        '503': ErrorResponse
       }
     }
   }
@@ -3798,9 +4325,7 @@ export type $OpenApiTs = {
         /**
          * Pipeline circuit metrics retrieved successfully
          */
-        '200': {
-          [key: string]: unknown
-        }
+        '200': Blob | File
         /**
          * Pipeline with that name does not exist
          */
@@ -3822,22 +4347,6 @@ export type $OpenApiTs = {
          * Action could not be performed
          */
         '400': ErrorResponse
-        /**
-         * Pipeline with that name does not exist
-         */
-        '404': ErrorResponse
-        '500': ErrorResponse
-      }
-    }
-  }
-  '/v0/pipelines/{pipeline_name}/program_info': {
-    get: {
-      req: GetProgramInfoData
-      res: {
-        /**
-         * Pipeline retrieved successfully
-         */
-        '200': ProgramInfo
         /**
          * Pipeline with that name does not exist
          */
@@ -3884,6 +4393,23 @@ export type $OpenApiTs = {
          */
         '404': ErrorResponse
         '500': ErrorResponse
+      }
+    }
+  }
+  '/v0/pipelines/{pipeline_name}/start_transaction': {
+    post: {
+      req: StartTransactionData
+      res: {
+        /**
+         * Transaction successfully started.
+         */
+        '200': StartTransactionResponse
+        /**
+         * Another transaction is already in progress.
+         */
+        '409': ErrorResponse
+        '500': ErrorResponse
+        '503': ErrorResponse
       }
     }
   }
@@ -3938,6 +4464,23 @@ export type $OpenApiTs = {
       }
     }
   }
+  '/v0/pipelines/{pipeline_name}/support_bundle': {
+    get: {
+      req: GetPipelineSupportBundleData
+      res: {
+        /**
+         * Support bundle containing diagnostic information
+         */
+        '200': Blob | File
+        /**
+         * Pipeline with that name does not exist
+         */
+        '404': ErrorResponse
+        '500': ErrorResponse
+        '503': ErrorResponse
+      }
+    }
+  }
   '/v0/pipelines/{pipeline_name}/tables/{table_name}/connectors/{connector_name}/completion_token': {
     get: {
       req: CompletionTokenData
@@ -3984,6 +4527,40 @@ export type $OpenApiTs = {
         '200': unknown
         /**
          * Pipeline, table and/or input connector with that name does not exist
+         */
+        '404': ErrorResponse
+        '500': ErrorResponse
+        '503': ErrorResponse
+      }
+    }
+  }
+  '/v0/pipelines/{pipeline_name}/time_series': {
+    get: {
+      req: GetPipelineTimeSeriesData
+      res: {
+        /**
+         * Pipeline time series retrieved successfully
+         */
+        '200': TimeSeries
+        /**
+         * Pipeline with that name does not exist
+         */
+        '404': ErrorResponse
+        '500': ErrorResponse
+        '503': ErrorResponse
+      }
+    }
+  }
+  '/v0/pipelines/{pipeline_name}/time_series_stream': {
+    get: {
+      req: GetPipelineTimeSeriesStreamData
+      res: {
+        /**
+         * Pipeline time series stream established successfully
+         */
+        '200': string
+        /**
+         * Pipeline with that name does not exist
          */
         '404': ErrorResponse
         '500': ErrorResponse

@@ -725,7 +725,7 @@ impl InputGenerator {
 
             // Count how long we took to so far to create a batch
             // If we end up taking too long we send a batch earlier even if we don't reach `batch_size`
-            const BATCH_CREATION_TIMEOUT: StdDuration = StdDuration::from_secs(1);
+            const BATCH_CREATION_TIMEOUT: StdDuration = StdDuration::from_millis(500);
             let mut batch_creation_duration = TokioInstant::now();
 
             // Number of generated records.

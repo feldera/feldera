@@ -12,6 +12,7 @@ import {
   getPipelineStatus,
   patchPipeline,
   pipelineLogsStream,
+  pipelineTimeSeriesStream,
   postApiKey,
   postPipeline,
   postPipelineAction,
@@ -132,6 +133,10 @@ export const usePipelineManager = () => {
       () => `Failed to connect to the log stream`
     ),
     adHocQuery: reportError(adHocQuery, () => `Failed to invoke an ad-hoc query`),
+    pipelineTimeSeriesStream: reportError(
+      pipelineTimeSeriesStream,
+      () => `Failed to connect to the time series stream`
+    ),
     relationIngress: reportError(
       relationIngress,
       (_, tableName) => `Failed to push data to the ${tableName} table`

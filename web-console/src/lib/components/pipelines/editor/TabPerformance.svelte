@@ -13,6 +13,16 @@
   import PipelineStorageGraph from '$lib/components/layout/pipelines/PipelineStorageGraph.svelte'
   import Tooltip from '$lib/components/common/Tooltip.svelte'
   import { useElapsedTime } from '$lib/functions/format'
+  import {
+    usePipelineManager,
+    type PipelineManagerApi
+  } from '$lib/compositions/usePipelineManager.svelte'
+  import {
+    CustomJSONParserTransformStream,
+    parseCancellable,
+    pushAsCircularBuffer
+  } from '$lib/functions/pipelines/changeStream'
+  import type { TimeSeriesEntry } from '$lib/types/pipelineManager'
 
   const formatQty = (v: number) => format(',.0f')(v)
 
@@ -21,11 +31,85 @@
     metrics
   }: { pipeline: { current: ExtendedPipeline }; metrics: { current: PipelineMetrics } } = $props()
 
-  const global = $derived(metrics.current.global.at(-1))
+  const global = $derived(metrics.current.global)
   const { formatElapsedTime } = useElapsedTime()
+
+  let timeSeries: TimeSeriesEntry[] = $state([])
 
   let statusTab: 'age' | 'updated' = $state('age')
   let isXl = useIsScreenXl()
+  let api = usePipelineManager()
+
+  let cancelStream: (() => void) | undefined = undefined
+
+  const endMetricsStream = (id?: string) => {
+    cancelStream?.()
+    cancelStream = undefined
+    timeSeries = []
+  }
+  const startMetricsStream = async (api: PipelineManagerApi, targetPipelineName: string) => {
+    const result = await api.pipelineTimeSeriesStream(pipelineName)
+    if (result instanceof Error) {
+      cancelStream = undefined
+      return undefined
+    }
+    const { cancel } = parseCancellable(
+      result,
+      {
+        pushChanges: (rows: TimeSeriesEntry[]) => {
+          pushAsCircularBuffer(
+            () => timeSeries,
+            63,
+            (v: TimeSeriesEntry) => v
+          )(rows)
+        },
+        onBytesSkipped: (skippedBytes) => {},
+        onParseEnded: () => {
+          if (metricsAvailable && cancelStream) {
+            endMetricsStream()
+            if (pipelineName !== targetPipelineName) {
+              return
+            }
+            startMetricsStream(api, targetPipelineName)
+          }
+        },
+        onNetworkError: () => {
+          if (metricsAvailable && cancelStream) {
+            endMetricsStream()
+            if (pipelineName !== targetPipelineName) {
+              return
+            }
+            startMetricsStream(api, targetPipelineName)
+          }
+        }
+      },
+      new CustomJSONParserTransformStream<TimeSeriesEntry>({
+        paths: ['$'],
+        separator: ''
+      }),
+      {
+        bufferSize: 8 * 1024 * 1024
+      }
+    )
+    cancelStream = cancel
+  }
+
+  let pipelineName = $derived(pipeline.current.name)
+  let metricsAvailable = $derived(isMetricsAvailable(pipeline.current.status) === 'yes')
+
+  $effect(() => {
+    pipelineName
+    if (!metricsAvailable) {
+      endMetricsStream()
+      return
+    }
+    $effect.root(() => {
+      if (cancelStream) {
+        endMetricsStream()
+      }
+      setTimeout(() => startMetricsStream(api, pipelineName), 100)
+    })
+  })
 </script>
 
 {#snippet pipelineId()}
@@ -171,25 +255,17 @@
         <div class="bg-white-dark relative h-52 w-full max-w-[700px] rounded">
           <PipelineThroughputGraph
             {pipeline}
-            metrics={metrics.current}
+            metrics={timeSeries}
             refetchMs={1000}
             keepMs={60 * 1000}
           ></PipelineThroughputGraph>
         </div>
         <div class="bg-white-dark relative h-52 w-full max-w-[700px] rounded">
-          <PipelineMemoryGraph
-            {pipeline}
-            metrics={metrics.current}
-            refetchMs={1000}
-            keepMs={60 * 1000}
+          <PipelineMemoryGraph {pipeline} metrics={timeSeries} refetchMs={1000} keepMs={60 * 1000}
           ></PipelineMemoryGraph>
         </div>
         <div class="bg-white-dark relative h-52 w-full max-w-[700px] rounded">
-          <PipelineStorageGraph
-            {pipeline}
-            metrics={metrics.current}
-            refetchMs={1000}
-            keepMs={60 * 1000}
+          <PipelineStorageGraph {pipeline} metrics={timeSeries} refetchMs={1000} keepMs={60 * 1000}
           ></PipelineStorageGraph>
         </div>
       </div>

@@ -100,6 +100,60 @@ export const $AuthProvider = {
   ]
 } as const
 
+export const $BuildInformation = {
+  type: 'object',
+  description: 'Information about the build of the platform.',
+  required: [
+    'build_timestamp',
+    'build_cpu',
+    'build_os',
+    'cargo_dependencies',
+    'cargo_features',
+    'cargo_debug',
+    'cargo_opt_level',
+    'cargo_target_triple',
+    'rustc_version'
+  ],
+  properties: {
+    build_cpu: {
+      type: 'string',
+      description: 'CPU of build machine.'
+    },
+    build_os: {
+      type: 'string',
+      description: 'OS of build machine.'
+    },
+    build_timestamp: {
+      type: 'string',
+      description: 'Timestamp of the build.'
+    },
+    cargo_debug: {
+      type: 'string',
+      description: 'Whether the build is optimized for performance.'
+    },
+    cargo_dependencies: {
+      type: 'string',
+      description: 'Dependencies used during the build.'
+    },
+    cargo_features: {
+      type: 'string',
+      description: 'Features enabled during the build.'
+    },
+    cargo_opt_level: {
+      type: 'string',
+      description: 'Optimization level of the build.'
+    },
+    cargo_target_triple: {
+      type: 'string',
+      description: 'Target triple of the build.'
+    },
+    rustc_version: {
+      type: 'string',
+      description: 'Rust version of the build used.'
+    }
+  }
+} as const
+
 export const $CheckpointFailure = {
   type: 'object',
   description: 'Information about a failed checkpoint.',
@@ -348,8 +402,19 @@ inputs associated with the token have been fully processed by the pipeline.`
 
 export const $Configuration = {
   type: 'object',
-  required: ['telemetry', 'edition', 'version', 'revision', 'changelog_url'],
+  required: [
+    'telemetry',
+    'edition',
+    'version',
+    'revision',
+    'runtime_revision',
+    'changelog_url',
+    'build_info'
+  ],
   properties: {
+    build_info: {
+      $ref: '#/components/schemas/BuildInformation'
+    },
     changelog_url: {
       type: 'string',
       description: 'URL that navigates to the changelog of the current version'
@@ -368,12 +433,22 @@ export const $Configuration = {
     },
     revision: {
       type: 'string',
-      description: `Specific revision corresponding to the edition \`version\` (e.g., git commit hash).
-This is an empty string if it is unspecified.`
+      description:
+        'Specific revision corresponding to the edition `version` (e.g., git commit hash).'
+    },
+    runtime_revision: {
+      type: 'string',
+      description:
+        'Specific revision corresponding to the default runtime version of the platform (e.g., git commit hash).'
     },
     telemetry: {
       type: 'string',
       description: 'Telemetry key.'
+    },
+    unstable_features: {
+      type: 'string',
+      description: 'List of unstable features that are enabled.',
+      nullable: true
     },
     update_info: {
       allOf: [
@@ -1060,7 +1135,9 @@ appended to it.`
     },
     path: {
       type: 'string',
-      description: 'File path.'
+      description: `File path.
+
+This may be a file name or a \`file://\` URL with an absolute path.`
     }
   }
 } as const
@@ -1189,6 +1266,12 @@ to determine it. This works well in most situations. However, if you're
 running tests with lateness and many workers you can e.g., reduce the
 chunk size to make sure a smaller range of records is being ingested in parallel.
 
+This also controls the sizes of input batches.  If, for example, \`rate\`
+and \`worker_chunk_size\` are both 1000, with a single worker, the
+generator will output 1000 records once a second.  But if we reduce
+\`worker_chunk_size\` to 100 without changing \`rate\`, the generator will
+instead output 100 records 10 times per second.
+
 # Example
 Assume you generate a total of 125 records with 4 workers and a chunk size of 25.
 In this case, worker A will generate records 0..25, worker B will generate records 25..50,
@@ -1258,6 +1341,19 @@ Example: \`"https://glue.us-east-1.amazonaws.com"\``,
 
 Example: \`"s3://my-data-warehouse/tables/"\``,
       nullable: true
+    }
+  }
+} as const
+
+export const $HealthStatus = {
+  type: 'object',
+  required: ['runner', 'compiler'],
+  properties: {
+    compiler: {
+      $ref: '#/components/schemas/ServiceStatus'
+    },
+    runner: {
+      $ref: '#/components/schemas/ServiceStatus'
     }
   }
 } as const
@@ -1851,7 +1947,7 @@ the server failed (e.g., if it could not reach the server).`
 export const $MetricsFormat = {
   type: 'string',
   description: `Circuit metrics output format.
-- \`prometheus\`: [format](https://github.com/prometheus/docs/blob/main/content/docs/instrumenting/exposition_formats.md) expected by Prometheus
+- \`prometheus\`: [format](https://github.com/prometheus/docs/blob/4b1b80f5f660a2f8dc25a54f52a65a502f31879a/docs/instrumenting/exposition_formats.md) expected by Prometheus
 - \`json\`: JSON format`,
   enum: ['prometheus', 'json']
 } as const
@@ -2228,12 +2324,11 @@ exposed type for users to configure pipelines.`,
 
 This parameter controls the execution of queries that use the \`NOW()\` function.  The output of such
 queries depends on the real-time clock and can change over time without any external
-inputs.  The pipeline will update the clock value and trigger incremental recomputation
-at most each \`clock_resolution_usecs\` microseconds.
+inputs.  If the query uses \`NOW()\`, the pipeline will update the clock value and trigger incremental
+recomputation at most each \`clock_resolution_usecs\` microseconds.  If the query does not use
+\`NOW()\`, then clock value updates are suppressed and the pipeline ignores this setting.
 
-It is set to 1 second (1,000,000 microseconds) by default.
-
-Set to \`null\` to disable periodic clock updates.`,
+It is set to 1 second (1,000,000 microseconds) by default.`,
           default: 1000000,
           nullable: true,
           minimum: 0
@@ -2266,8 +2361,52 @@ available, or on their behavior.`,
             checkpoint_interval_secs: 60
           }
         },
+        http_workers: {
+          type: 'integer',
+          format: 'int64',
+          description: `Sets the number of available runtime threads for the http server.
+
+In most cases, this does not need to be set explicitly and
+the default is sufficient. Can be increased in case the
+pipeline HTTP API operations are a bottleneck.
+
+If not specified, the default is set to \`workers\`.`,
+          default: null,
+          nullable: true,
+          minimum: 0
+        },
         init_containers: {
           description: 'Specification of additional (sidecar) containers.',
+          nullable: true
+        },
+        io_workers: {
+          type: 'integer',
+          format: 'int64',
+          description: `Sets the number of available runtime threads for async IO tasks.
+
+This affects some networking and file I/O operations
+especially adapters and ad-hoc queries.
+
+In most cases, this does not need to be set explicitly and
+the default is sufficient. Can be increased in case
+ingress, egress or ad-hoc queries are a bottleneck.
+
+If not specified, the default is set to \`workers\`.`,
+          default: null,
+          nullable: true,
+          minimum: 0
+        },
+        logging: {
+          type: 'string',
+          description: `Log filtering directives.
+
+If set to a valid [tracing-subscriber] filter, this controls the log
+messages emitted by the pipeline process.  Otherwise, or if the filter
+has invalid syntax, messages at "info" severity and higher are written
+to the log and all others are discarded.
+
+[tracing-subscriber]: https://docs.rs/tracing-subscriber/latest/tracing_subscriber/filter/struct.EnvFilter.html#directives`,
+          default: null,
           nullable: true
         },
         max_buffering_delay_usecs: {
@@ -2414,6 +2553,13 @@ used during a step.`,
           additionalProperties: {
             $ref: '#/components/schemas/OutputEndpointConfig'
           }
+        },
+        secrets_dir: {
+          type: 'string',
+          description: `Directory containing values of secrets.
+
+If this is not set, a default directory is used.`,
+          nullable: true
         },
         storage_config: {
           allOf: [
@@ -2704,22 +2850,26 @@ desired state, and are applied asynchronously by the automata.
 
 \`\`\`text
 Stopped ◄─────────── Stopping ◄───── All states can transition
-│                    ▲            to Stopping by either:
-/start or /pause │                    │            (1) user calling /stop?force=true, or;
-▼                    │            (2) pipeline encountering a fatal
-⌛Provisioning          Suspending            resource or runtime error,
-│                    ▲                having the system call /stop?force=true
-▼                    │ /stop          effectively
-⌛Initializing ──────────────┤  ?force=false
-│                    │
-┌─────────┼────────────────────┴─────┐
-│         ▼                          │
-│       Paused  ◄──────► Unavailable │
-│        │   ▲                ▲      │
-│ /start │   │  /pause        │      │
-│        ▼   │                │      │
-│       Running ◄─────────────┘      │
-└────────────────────────────────────┘
+│                   ▲            to Stopping by either:
+/start or /pause │                   │            (1) user calling /stop?force=true, or;
+▼                   │            (2) pipeline encountering a fatal
+⌛Provisioning         Suspending            resource or runtime error,
+│                   ▲                having the system call /stop?force=true
+│                   │ /stop          effectively
+│                   │  ?force=false
+│                   │
+┌──────────────┼───────────────────┴─────┐
+│              ▼                         │
+│  ┌──► Initializing                     │
+│  │           ▲  ▲                      │
+│  │           │  └───────────┐          │
+│  │           ▼              ▼          │
+│  │        Paused  ◄──────► Unavailable │
+│  │          │  ▲                ▲      │
+│  │   /start │  │  /pause        │      │
+│  │          ▼  │                │      │
+│  └─────►  Running ◄─────────────┘      │
+└────────────────────────────────────────┘
 \`\`\`
 
 ### Desired and actual status
@@ -2836,6 +2986,36 @@ export const $PostgresWriterConfig = {
   description: 'Postgres output connector configuration.',
   required: ['uri', 'table'],
   properties: {
+    max_buffer_size_bytes: {
+      type: 'integer',
+      description: `The maximum buffer size in for a single operation.
+Note that the buffers of \`INSERT\`, \`UPDATE\` and \`DELETE\` queries are
+separate.
+Default: 1 MiB`,
+      default: 1048576,
+      minimum: 0
+    },
+    max_records_in_buffer: {
+      type: 'integer',
+      description: 'The maximum number of records in a single buffer.',
+      nullable: true,
+      minimum: 0
+    },
+    ssl_ca_pem: {
+      type: 'string',
+      description: 'The CA certificate in PEM format.',
+      nullable: true
+    },
+    ssl_client_key: {
+      type: 'string',
+      description: 'The client certificate key in PEM format.',
+      nullable: true
+    },
+    ssl_client_pem: {
+      type: 'string',
+      description: 'The client certificate in PEM format.',
+      nullable: true
+    },
     table: {
       type: 'string',
       description: 'The table to write the output to.'
@@ -2844,6 +3024,11 @@ export const $PostgresWriterConfig = {
       type: 'string',
       description: `Postgres URI.
 See: <https://docs.rs/tokio-postgres/0.7.12/tokio_postgres/config/struct.Config.html>`
+    },
+    verify_hostname: {
+      type: 'boolean',
+      description: 'True to enable hostname verification when using TLS. True by default.',
+      nullable: true
     }
   }
 } as const
@@ -2866,6 +3051,33 @@ and as well can result in overriding an existing binary.`,
           $ref: '#/components/schemas/CompilationProfile'
         }
       ],
+      default: null,
+      nullable: true
+    },
+    runtime_version: {
+      type: 'string',
+      description: `Override runtime version of the pipeline being executed.
+
+Warning: This setting is experimental and may change in the future.
+Requires the platform to run with the unstable feature \`runtime_version\`
+enabled. Should only be used for testing purposes, and requires
+network access.
+
+A runtime version can be specified in the form of a version
+or SHA taken from the \`feldera/feldera\` repository main branch.
+
+Examples: \`v0.96.0\` or \`f4dcac0989ca0fda7d2eb93602a49d007cb3b0ae\`
+
+A platform of version \`0.x.y\` may be capable of running future and past
+runtimes with versions \`>=0.x.y\` and \`<=0.x.y\` until breaking API changes happen,
+the exact bounds for each platform version are unspecified until we reach a
+stable version. Compatibility is only guaranteed if platform and runtime version
+are exact matches.
+
+Note that any enterprise features are currently considered to be part of
+the platform.
+
+If not set (null), the runtime version will be the same as the platform version.`,
       default: null,
       nullable: true
     }
@@ -3165,22 +3377,20 @@ export const $ResourceConfig = {
   type: 'object',
   properties: {
     cpu_cores_max: {
-      type: 'integer',
-      format: 'int64',
+      type: 'number',
+      format: 'double',
       description: `The maximum number of CPU cores to reserve
 for an instance of this pipeline`,
       default: null,
-      nullable: true,
-      minimum: 0
+      nullable: true
     },
     cpu_cores_min: {
-      type: 'integer',
-      format: 'int64',
+      type: 'number',
+      format: 'double',
       description: `The minimum number of CPU cores to reserve
 for an instance of this pipeline`,
       default: null,
-      nullable: true,
-      minimum: 0
+      nullable: true
     },
     memory_mb_max: {
       type: 'integer',
@@ -3434,12 +3644,11 @@ exposed type for users to configure pipelines.`,
 
 This parameter controls the execution of queries that use the \`NOW()\` function.  The output of such
 queries depends on the real-time clock and can change over time without any external
-inputs.  The pipeline will update the clock value and trigger incremental recomputation
-at most each \`clock_resolution_usecs\` microseconds.
+inputs.  If the query uses \`NOW()\`, the pipeline will update the clock value and trigger incremental
+recomputation at most each \`clock_resolution_usecs\` microseconds.  If the query does not use
+\`NOW()\`, then clock value updates are suppressed and the pipeline ignores this setting.
 
-It is set to 1 second (1,000,000 microseconds) by default.
-
-Set to \`null\` to disable periodic clock updates.`,
+It is set to 1 second (1,000,000 microseconds) by default.`,
       default: 1000000,
       nullable: true,
       minimum: 0
@@ -3472,8 +3681,52 @@ available, or on their behavior.`,
         checkpoint_interval_secs: 60
       }
     },
+    http_workers: {
+      type: 'integer',
+      format: 'int64',
+      description: `Sets the number of available runtime threads for the http server.
+
+In most cases, this does not need to be set explicitly and
+the default is sufficient. Can be increased in case the
+pipeline HTTP API operations are a bottleneck.
+
+If not specified, the default is set to \`workers\`.`,
+      default: null,
+      nullable: true,
+      minimum: 0
+    },
     init_containers: {
       description: 'Specification of additional (sidecar) containers.',
+      nullable: true
+    },
+    io_workers: {
+      type: 'integer',
+      format: 'int64',
+      description: `Sets the number of available runtime threads for async IO tasks.
+
+This affects some networking and file I/O operations
+especially adapters and ad-hoc queries.
+
+In most cases, this does not need to be set explicitly and
+the default is sufficient. Can be increased in case
+ingress, egress or ad-hoc queries are a bottleneck.
+
+If not specified, the default is set to \`workers\`.`,
+      default: null,
+      nullable: true,
+      minimum: 0
+    },
+    logging: {
+      type: 'string',
+      description: `Log filtering directives.
+
+If set to a valid [tracing-subscriber] filter, this controls the log
+messages emitted by the pipeline process.  Otherwise, or if the filter
+has invalid syntax, messages at "info" severity and higher are written
+to the log and all others are discarded.
+
+[tracing-subscriber]: https://docs.rs/tracing-subscriber/latest/tracing_subscriber/filter/struct.EnvFilter.html#directives`,
+      default: null,
       nullable: true
     },
     max_buffering_delay_usecs: {
@@ -3681,6 +3934,58 @@ Recommended range: 1–10. Default: 8.`,
   }
 } as const
 
+export const $SampleStatistics = {
+  type: 'object',
+  description: 'One sample of time-series data.',
+  required: ['t', 'r', 'm', 's'],
+  properties: {
+    m: {
+      type: 'integer',
+      format: 'int64',
+      description: 'Memory usage in bytes.',
+      minimum: 0
+    },
+    r: {
+      type: 'integer',
+      format: 'int64',
+      description: 'Records processed.',
+      minimum: 0
+    },
+    s: {
+      type: 'integer',
+      format: 'int64',
+      description: 'Storage usage in bytes.',
+      minimum: 0
+    },
+    t: {
+      type: 'string',
+      format: 'date-time',
+      description: 'Sample time.'
+    }
+  }
+} as const
+
+export const $ServiceStatus = {
+  type: 'object',
+  required: ['healthy', 'message', 'unchanged_since', 'checked_at'],
+  properties: {
+    checked_at: {
+      type: 'string',
+      format: 'date-time'
+    },
+    healthy: {
+      type: 'boolean'
+    },
+    message: {
+      type: 'string'
+    },
+    unchanged_since: {
+      type: 'string',
+      format: 'date-time'
+    }
+  }
+} as const
+
 export const $SourcePosition = {
   type: 'object',
   required: ['start_line_number', 'start_column', 'end_line_number', 'end_column'],
@@ -3831,6 +4136,26 @@ export const $SqlType = {
     },
     {
       type: 'string',
+      description: 'SQL `TINYINT UNSIGNED` type.',
+      enum: ['UTinyInt']
+    },
+    {
+      type: 'string',
+      description: 'SQL `SMALLINT UNSIGNED` type.',
+      enum: ['USmallInt']
+    },
+    {
+      type: 'string',
+      description: 'SQL `UNSIGNED`, `INTEGER UNSIGNED`, `INT UNSIGNED` type.',
+      enum: ['UInt']
+    },
+    {
+      type: 'string',
+      description: 'SQL `BIGINT UNSIGNED` type.',
+      enum: ['UBigInt']
+    },
+    {
+      type: 'string',
       description: 'SQL `REAL` or `FLOAT4` or `FLOAT32` type.',
       enum: ['Real']
     },
@@ -3920,6 +4245,32 @@ export const $SqlType = {
     }
   ],
   description: 'The available SQL types as specified in `CREATE` statements.'
+} as const
+
+export const $StartFromCheckpoint = {
+  oneOf: [
+    {
+      type: 'string',
+      enum: ['latest']
+    },
+    {
+      type: 'string',
+      format: 'uuid'
+    }
+  ],
+  nullable: true
+} as const
+
+export const $StartTransactionResponse = {
+  type: 'object',
+  description: 'Response to a `/start_transaction` request.',
+  required: ['transaction_id'],
+  properties: {
+    transaction_id: {
+      type: 'integer',
+      format: 'int64'
+    }
+  }
 } as const
 
 export const $StorageBackendConfig = {
@@ -4089,7 +4440,7 @@ InUse ◄───┘
 
 export const $SyncConfig = {
   type: 'object',
-  required: ['bucket', 'start_from_checkpoint'],
+  required: ['bucket'],
   properties: {
     access_key: {
       type: 'string',
@@ -4106,6 +4457,14 @@ this can be left empty to allow automatic authentication via the pod's service a
 
 This may include a path to a folder inside the bucket (e.g., \`my-bucket/data\`).`
     },
+    checkers: {
+      type: 'integer',
+      format: 'int32',
+      description: `The number of checkers to run in parallel.
+Default: 20`,
+      nullable: true,
+      minimum: 0
+    },
     endpoint: {
       type: 'string',
       description: `The endpoint URL for the storage service.
@@ -4116,6 +4475,53 @@ Example: \`http://localhost:9000\`
 Relevant rclone config key: [\`endpoint\`](https://rclone.org/s3/#s3-endpoint)`,
       nullable: true
     },
+    fail_if_no_checkpoint: {
+      type: 'boolean',
+      description: `When true, the pipeline will fail to initialize if fetching the
+specified checkpoint fails (missing, download error).
+When false, the pipeline will start from scratch instead.
+
+False by default.`,
+      default: false
+    },
+    flags: {
+      type: 'array',
+      items: {
+        type: 'string'
+      },
+      description: `Extra flags to pass to \`rclone\`.
+
+WARNING: Supplying incorrect or conflicting flags can break \`rclone\`.
+Use with caution.
+
+Refer to the docs to see the supported flags:
+- [Global flags](https://rclone.org/flags/)
+- [S3 specific flags](https://rclone.org/s3/)`,
+      nullable: true
+    },
+    ignore_checksum: {
+      type: 'boolean',
+      description: `Set to skip post copy check of checksums, and only check the file sizes.
+This can significantly improve the throughput.
+Defualt: false`,
+      nullable: true
+    },
+    multi_thread_cutoff: {
+      type: 'string',
+      description: `Use multi-thread download for files above this size.
+Format: \`[size][Suffix]\` (Example: 1G, 500M)
+Supported suffixes: k|M|G|T
+Default: 100M`,
+      nullable: true
+    },
+    multi_thread_streams: {
+      type: 'integer',
+      format: 'int32',
+      description: `Number of streams to use for multi-thread downloads.
+Default: 10`,
+      nullable: true,
+      minimum: 0
+    },
     provider: {
       type: 'string',
       description: `The name of the cloud storage provider (e.g., \`"AWS"\`, \`"Minio"\`).
@@ -4125,6 +4531,18 @@ If omitted, defaults to \`"Other"\`.
 
 See [rclone S3 provider documentation](https://rclone.org/s3/#s3-provider)`,
       nullable: true
+    },
+    pull_interval: {
+      type: 'integer',
+      format: 'int64',
+      description: `The interval (in seconds) between each attempt to fetch the latest
+checkpoint from object store while in standby mode.
+
+Applies only when \`start_from_checkpoint\` is set to \`latest\`.
+
+Default: 10 seconds`,
+      default: 10,
+      minimum: 0
     },
     region: {
       type: 'string',
@@ -4142,10 +4560,68 @@ If not provided, rclone will fall back to environment-based credentials, such as
 this can be left empty to allow automatic authentication via the pod's service account.`,
       nullable: true
     },
-    start_from_checkpoint: {
+    standby: {
       type: 'boolean',
-      description: `If \`true\`, will try to pull the latest checkpoint from the configured
-object store and resume from that point.`
+      description: `When \`true\`, the pipeline starts in **standby** mode; processing doesn't
+start until activation (\`POST /activate\`).
+If this pipeline was previously activated and the storage has not been
+cleared, the pipeline will auto activate, no newer checkpoints will be
+fetched.
+
+Standby behavior depends on \`start_from_checkpoint\`:
+- If \`latest\`, pipeline continuously fetches the latest available
+checkpoint until activated.
+- If checkpoint UUID, pipeline fetches this checkpoint once and waits
+in standby until activated.
+
+Default: \`false\``,
+      default: false
+    },
+    start_from_checkpoint: {
+      allOf: [
+        {
+          $ref: '#/components/schemas/StartFromCheckpoint'
+        }
+      ],
+      nullable: true
+    },
+    transfers: {
+      type: 'integer',
+      format: 'int32',
+      description: `The number of file transfers to run in parallel.
+Default: 20`,
+      nullable: true,
+      minimum: 0
+    },
+    upload_concurrency: {
+      type: 'integer',
+      format: 'int32',
+      description: `The number of chunks of the same file that are uploaded for multipart uploads.
+Default: 10`,
+      nullable: true,
+      minimum: 0
+    }
+  }
+} as const
+
+export const $TimeSeries = {
+  type: 'object',
+  description: 'Time series to make graphs in the web console easier.',
+  required: ['now', 'samples'],
+  properties: {
+    now: {
+      type: 'string',
+      format: 'date-time',
+      description: 'Current time as of the creation of the structure.'
+    },
+    samples: {
+      type: 'array',
+      items: {
+        $ref: '#/components/schemas/SampleStatistics'
+      },
+      description: `Time series.
+
+These report 60 seconds of samples, one per second.`
     }
   }
 } as const
