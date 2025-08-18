@@ -62,6 +62,7 @@ use dbsp::{
     profile::GraphProfile,
     DBSPHandle,
 };
+use dbsp::{Runtime, WeakRuntime};
 use enum_map::EnumMap;
 use feldera_adapterlib::format::BufferSize;
 use feldera_adapterlib::transport::Resume;
@@ -1166,6 +1167,7 @@ impl CircuitThread {
 
         let (parker, backpressure_thread, command_receiver, controller) = ControllerInner::new(
             pipeline_config,
+            circuit.runtime(),
             catalog,
             lir,
             error_cb,
@@ -2988,6 +2990,12 @@ impl OutputEndpoints {
                 .map(|(_, endpoints)| endpoints.remove(endpoint_id));
         })
     }
+
+    fn unpark_all(&self) {
+        for endpoint in self.by_id.values() {
+            endpoint.unparker.unpark();
+        }
+    }
 }
 
 /// Buffer used by the output endpoint thread to accumulate outputs.
@@ -3144,6 +3152,9 @@ pub struct ControllerInner {
     next_input_id: Atomic<EndpointId>,
     outputs: ShardedLock<OutputEndpoints>,
     next_output_id: Atomic<EndpointId>,
+    /// Weak reference to the runtime, so we can deallocate the runtime once all DBSP threads and auxiliary threads are done
+    /// without waiting for the controller to be dropped.
+    runtime: WeakRuntime,
     circuit_thread_unparker: Unparker,
     backpressure_thread_unparker: Unparker,
     error_cb: Box<dyn Fn(Arc<ControllerError>) + Send + Sync>,
@@ -3157,10 +3168,17 @@ pub struct ControllerInner {
     restoring: AtomicBool,
 }
 
+impl Drop for ControllerInner {
+    fn drop(&mut self) {
+        debug!("ControllerInner is being dropped");
+    }
+}
+
 impl ControllerInner {
     #[allow(clippy::too_many_arguments)]
     fn new(
         config: PipelineConfig,
+        runtime: &Runtime,
         catalog: Box<dyn CircuitCatalog>,
         lir: LirCircuit,
         error_cb: Box<dyn Fn(Arc<ControllerError>) + Send + Sync>,
@@ -3189,6 +3207,7 @@ impl ControllerInner {
             next_input_id: Atomic::new(0),
             outputs: ShardedLock::new(OutputEndpoints::new()),
             next_output_id: Atomic::new(0),
+            runtime: runtime.downgrade(),
             circuit_thread_unparker: circuit_thread_parker.unparker().clone(),
             backpressure_thread_unparker: backpressure_thread_parker.unparker().clone(),
             error_cb,
@@ -3588,7 +3607,7 @@ impl ControllerInner {
         initial_statistics: Option<&CheckpointOutputEndpointMetrics>,
     ) -> Result<EndpointId, ControllerError> {
         // NOTE: We release the lock after the check below and then re-acquire it in the end of the function
-        // to actually insert the new inpoint in the map. This means that this function is racey (a concurrent
+        // to actually insert the new endpoint in the map. This means that this function is racey (a concurrent
         // invocation can insert an endpoint with the same name). I think it's ok the way we use it: when
         // initializing the pipeline, we have an endpoint map with names that are guaranteed to be unique;
         // hence it's safe to call `add_output_endpoint` concurrently. In the future we may need to maintain
@@ -3747,10 +3766,12 @@ impl ControllerInner {
             initial_statistics,
         );
 
-        // Thread to run the output pipeline.
-        thread::Builder::new()
-            .name(format!("{endpoint_name_string}-output"))
-            .spawn(move || {
+        // Thread to run the output pipeline. We run it inside the DBSP runtime as an aux thread, so
+        // that it can use the storage backend to maintain the output buffer.
+        self.runtime
+            .upgrade()
+            .expect("attempt to add an output connector after the runtime has terminated")
+            .spawn_aux_thread(&format!("{endpoint_name_string}-output"), move || {
                 Self::output_thread_func(
                     endpoint_id,
                     endpoint_name_string,
@@ -3761,8 +3782,7 @@ impl ControllerInner {
                     disconnect_flag,
                     controller,
                 )
-            })
-            .expect("failed to spawn output thread");
+            });
 
         Ok(endpoint_id)
     }
@@ -3930,6 +3950,7 @@ impl ControllerInner {
 
         self.unpark_circuit();
         self.unpark_backpressure();
+        let _ = self.outputs.write().map(|outputs| outputs.unpark_all());
     }
 
     fn set_input_endpoint_paused(

@@ -242,7 +242,11 @@ pub struct AtomicCacheStats(EnumMap<ThreadType, EnumMap<CacheAccess, AtomicCache
 impl AtomicCacheStats {
     /// Records that `location` was access in the cache with effect `access`.
     pub fn record(&self, access: CacheAccess, duration: Duration, location: BlockLocation) {
-        self.0[ThreadType::current()][access].record(duration, location);
+        let Some(thread_type) = ThreadType::current() else {
+            // TODO: record stats for aux threads.
+            return;
+        };
+        self.0[thread_type][access].record(duration, location);
     }
 
     /// Reads out the statistics for processing.
