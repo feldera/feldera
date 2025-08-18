@@ -1332,10 +1332,29 @@ impl CircuitThread {
     // This updates what ad hoc snapshots query.
     fn update_snapshot(&mut self) {
         let mut consistent_snapshot = self.controller.trace_snapshot.blocking_lock();
+        let mut to_drop = Vec::new();
         for (name, clh) in self.controller.catalog.output_iter() {
             if let Some(ih) = &clh.integrate_handle {
-                consistent_snapshot.insert(name.clone(), ih.take_from_all());
+                // Insert the new value and get the previous value.
+                let prev = consistent_snapshot.insert(name.clone(), ih.take_from_all());
+
+                // The old values are often final references, because they're
+                // snapshots of data that is now obsolete.  Dropping these final
+                // references can be expensive because they can contain large
+                // amounts of data or require deleting files.  Incurring that
+                // cost in the circuit thread will directly delay the start of
+                // the next step, so collect them to drop in a separate thread.
+                to_drop.extend(
+                    prev.into_iter()
+                        .flatten()
+                        .filter(|value| Arc::strong_count(value) == 1),
+                );
             }
+        }
+        if !to_drop.is_empty() {
+            TOKIO.spawn_blocking(move || {
+                let _ = to_drop;
+            });
         }
     }
 
