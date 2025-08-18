@@ -446,6 +446,17 @@ where
             .map(|b| SerBatchImpl::<_, KD, VD>::new_arc(b) as Arc<dyn SerBatch>)
             .collect()
     }
+
+    fn snapshot(&self) -> Arc<dyn SerBatchReader> {
+        Arc::new(SerBatchImpl::<_, KD, VD>::new(TypedBatch::<
+            B::Key,
+            B::Val,
+            B::R,
+            _,
+        >::new(
+            self.batch.dyn_snapshot()
+        )))
+    }
 }
 
 impl<B, KD, VD> SyncSerBatchReader for SerBatchImpl<B, KD, VD>
