@@ -36,12 +36,12 @@ use std::{
     panic::{self, Location, PanicHookInfo},
     sync::{
         atomic::{AtomicBool, Ordering},
-        Arc, RwLock,
+        Arc, RwLock, Weak,
     },
     thread::{Builder, JoinHandle, Result as ThreadResult},
 };
 use tokio::sync::Notify;
-use tracing::{debug, info, warn};
+use tracing::{debug, error, info, warn};
 use typedmap::TypedDashMap;
 
 use super::dbsp_handle::{Layout, Mode};
@@ -116,7 +116,9 @@ mod thread_type {
     use serde::Serialize;
 
     thread_local! {
-        static CURRENT: Cell<ThreadType> = const { Cell::new(ThreadType::Foreground) };
+        /// `None` means that this is an auxiliary thread that runs inside the runtime
+        /// but is neither a DBSP foreground nor a background thread.
+        static CURRENT: Cell<Option<ThreadType>> = const { Cell::new(None) };
     }
 
     /// Type of a thread running in a [Runtime].
@@ -134,12 +136,12 @@ mod thread_type {
         /// Returns the kind of thread we're currently running in, if we're in a
         /// [Runtime].  Outside of a [Runtime], this returns
         /// [ThreadType::Foreground].
-        pub fn current() -> Self {
+        pub fn current() -> Option<Self> {
             CURRENT.get()
         }
 
         pub(super) fn set_current(thread_type: Self) {
-            CURRENT.set(thread_type);
+            CURRENT.set(Some(thread_type));
         }
     }
 
@@ -259,7 +261,9 @@ struct RuntimeInner {
     storage: Option<RuntimeStorage>,
     store: LocalStore,
     kill_signal: AtomicBool,
+    // Background threads spawned by this runtime, including for aux threads, in no specific order.
     background_threads: Mutex<Vec<JoinHandle<()>>>,
+    aux_threads: Mutex<Vec<JoinHandle<()>>>,
     buffer_caches: Vec<EnumMap<ThreadType, Arc<BufferCache>>>,
     pin_cpus: Vec<EnumMap<ThreadType, CoreId>>,
     worker_sequence_numbers: Vec<AtomicUsize>,
@@ -267,6 +271,12 @@ struct RuntimeInner {
     panic_info: Vec<EnumMap<ThreadType, RwLock<Option<WorkerPanicInfo>>>>,
     panicked: AtomicBool,
     replay_step_size: AtomicUsize,
+}
+
+impl Drop for RuntimeInner {
+    fn drop(&mut self) {
+        debug!("dropping RuntimeInner");
+    }
 }
 
 impl Debug for RuntimeInner {
@@ -378,6 +388,7 @@ impl RuntimeInner {
             store: TypedDashMap::new(),
             kill_signal: AtomicBool::new(false),
             background_threads: Mutex::new(Vec::new()),
+            aux_threads: Mutex::new(Vec::new()),
             buffer_caches: (0..nworkers)
                 .map(|_| EnumMap::from_fn(|_| Arc::new(BufferCache::new(cache_size_bytes))))
                 .collect(),
@@ -394,7 +405,9 @@ impl RuntimeInner {
     fn pin_cpu(&self) {
         if !self.pin_cpus.is_empty() {
             let worker_index = Runtime::worker_index();
-            let thread_type = ThreadType::current();
+            let Some(thread_type) = ThreadType::current() else {
+                panic!("pin_cpu() called outside of a runtime or on an aux thread");
+            };
             let core = self.pin_cpus[worker_index][thread_type];
             if !core_affinity::set_for_current(core) {
                 warn!(
@@ -434,6 +447,17 @@ fn panic_hook(panic_info: &PanicHookInfo<'_>, default_panic_hook: &dyn Fn(&Panic
 #[repr(transparent)]
 #[derive(Clone, Debug)]
 pub struct Runtime(Arc<RuntimeInner>);
+
+/// A weak reference to a [Runtime].
+#[repr(transparent)]
+#[derive(Clone, Debug)]
+pub struct WeakRuntime(Weak<RuntimeInner>);
+
+impl WeakRuntime {
+    pub fn upgrade(&self) -> Option<Runtime> {
+        self.0.upgrade().map(Runtime)
+    }
+}
 
 /// Stores the default Rust panic hook, so we can invoke it as part of
 /// the DBSP custom hook.
@@ -533,6 +557,10 @@ impl Runtime {
         Ok(RuntimeHandle::new(runtime, workers))
     }
 
+    pub fn downgrade(&self) -> WeakRuntime {
+        WeakRuntime(Arc::downgrade(&self.0))
+    }
+
     /// Returns a reference to the multithreaded runtime that
     /// manages the current worker thread, or `None` if the thread
     /// runs without a runtime.
@@ -578,22 +606,54 @@ impl Runtime {
         thread_local! {
             static BUFFER_CACHE: RefCell<Option<Arc<BufferCache>>> = const { RefCell::new(None) };
         }
+        // No `Runtime` means there's only a single worker, so use a single
+        // global cache.
+        // This cache is also used by all auxiliary threads in the runtime.
+        // FIXME: We may need a tunable strategy for aux threads. We cannot simply give each of them the
+        // same cache as DBSP worker threads, as there can be dozens of aux threads (currently one per
+        // output connector), which do not necessarily need a large cache. OTOH, sharing the same cache
+        // across all of them may potentially cause performance issues.
+        static NO_RUNTIME_CACHE: LazyLock<Arc<BufferCache>> =
+            LazyLock::new(|| Arc::new(BufferCache::new(1024 * 1024 * 256)));
+
         if let Some(buffer_cache) = BUFFER_CACHE.with(|bc| bc.borrow().clone()) {
             return buffer_cache;
         }
 
         // Slow path for initializing the thread-local.
         let buffer_cache = if let Some(rt) = Runtime::runtime() {
-            rt.get_buffer_cache(Runtime::worker_index(), ThreadType::current())
+            if let Some(thread_type) = ThreadType::current() {
+                rt.get_buffer_cache(Runtime::worker_index(), thread_type)
+            } else {
+                // Aux thread: use the global cache.
+                NO_RUNTIME_CACHE.clone()
+            }
         } else {
-            // No `Runtime` means there's only a single worker, so use a single
-            // global cache.
-            static NO_RUNTIME_CACHE: LazyLock<Arc<BufferCache>> =
-                LazyLock::new(|| Arc::new(BufferCache::new(1024 * 1024 * 256)));
             NO_RUNTIME_CACHE.clone()
         };
         BUFFER_CACHE.set(Some(buffer_cache.clone()));
         buffer_cache
+    }
+
+    /// Spawn an auxiliary thread inside the runtime.
+    ///
+    /// The auxiliary thread will have access to the runtime's resources, including the
+    /// storage backend. The current use case for this is to be able to use spines outside
+    /// of the DBSP worker threads, e.g., to maintain output buffers.
+    pub fn spawn_aux_thread<F>(&self, thread_name: &str, f: F)
+    where
+        F: FnOnce() + Send + 'static,
+    {
+        let runtime = self.clone();
+        let handle = Builder::new()
+            .name(thread_name.to_string())
+            .spawn(|| {
+                RUNTIME.with(|rt| *rt.borrow_mut() = Some(runtime));
+                f()
+            })
+            .expect("failed to spawn auxiliary thread");
+
+        self.inner().aux_threads.lock().unwrap().push(handle)
     }
 
     /// Returns this runtime's buffer cache for thread type `thread_type` in
@@ -679,8 +739,9 @@ impl Runtime {
     }
 
     /// Returns the minimum number of bytes in a batch (one that persists from
-    /// step to step) to spill it to storage, or `None` if this thread doesn't
-    /// have a [Runtime] or if it doesn't have storage configured.
+    /// step to step) to spill it to storage. Returns `None` if this thread doesn't
+    /// have storage configured or a default value (1MiB) if it runs without a
+    /// [Runtime].
     pub fn min_index_storage_bytes() -> Option<usize> {
         RUNTIME.with(|rt| {
             Some(
@@ -813,7 +874,12 @@ impl Runtime {
     // Record information about a worker thread panic in `panic_info`
     fn panic(&self, panic_info: &PanicHookInfo) {
         let worker_index = Self::worker_index();
-        let thread_type = ThreadType::current();
+        let Some(thread_type) = ThreadType::current() else {
+            // We only install panic hooks on foreground and background threads,
+            // so this shouldn't happen, but we cannot panic here.
+            error!("panic hook called outside of a runtime or on an aux thread");
+            return;
+        };
         let panic_info = WorkerPanicInfo::new(panic_info);
         let _ = self.inner().panic_info[worker_index][thread_type]
             .write()
@@ -1004,6 +1070,17 @@ impl RuntimeHandle {
         self.runtime
             .inner()
             .background_threads
+            .lock()
+            .unwrap()
+            .drain(..)
+            .for_each(|h| {
+                let _ = h.join();
+            });
+
+        // Wait for aux threads.
+        self.runtime
+            .inner()
+            .aux_threads
             .lock()
             .unwrap()
             .drain(..)
