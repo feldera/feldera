@@ -13,7 +13,8 @@ PIPELINE_TO_KAFKA_SERVER = os.environ.get(
     "FELDERA_PIPELINE_TO_KAFKA_SERVER", "redpanda:9092"
 )
 
-TEST_CLIENT = FelderaClient(BASE_URL, api_key=API_KEY, requests_verify=False)
+REQUESTS_VERIFY = os.environ.get("TEST_FELDERA_HTTPS_TLS_CERT_PATH", False)
+TEST_CLIENT = FelderaClient(BASE_URL, api_key=API_KEY, requests_verify=REQUESTS_VERIFY)
 
 
 def enterprise_only(fn):
