@@ -725,6 +725,7 @@ impl InputGenerator {
 
             // Count how long we took to so far to create a batch
             // If we end up taking too long we send a batch earlier even if we don't reach `batch_size`
+            // The batches are sent twice as often as we are polling for pipeline telemetry (1000 ms) to avoid a jagged throughput graph
             const BATCH_CREATION_TIMEOUT: StdDuration = StdDuration::from_millis(500);
             let mut batch_creation_duration = TokioInstant::now();
 
