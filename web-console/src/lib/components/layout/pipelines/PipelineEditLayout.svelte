@@ -59,7 +59,9 @@
   } = $props()
 
   let editCodeDisabled = $derived(
-    nonNull(pipeline.current.status) && !isPipelineCodeEditable(pipeline.current.status) || (pipeline.current.storageStatus !== 'Cleared' && !pipeline.current.runtimeConfig?.dev_tweaks?.['backfill_avoidance'])
+    (nonNull(pipeline.current.status) && !isPipelineCodeEditable(pipeline.current.status)) ||
+      (pipeline.current.storageStatus !== 'Cleared' &&
+        !pipeline.current.runtimeConfig?.dev_tweaks?.['backfill_avoidance'])
   )
   let editConfigDisabled = $derived(
     nonNull(pipeline.current.status) && !isPipelineConfigEditable(pipeline.current.status)
@@ -80,7 +82,7 @@
     await Promise.allSettled(cbs.map((x) => x(pipelineName)))
     if (action === 'start_paused_start') {
       api.postPipelineAction(pipelineName, 'start')
-      updatePipeline(pipelineName, p => ({...p, status: 'Initializing'}))
+      updatePipeline(pipelineName, (p) => ({ ...p, status: 'Initializing' }))
     }
   }
   const handleDeletePipeline = async (pipelineName: string) => {
@@ -97,7 +99,7 @@
     )
   )
 
-  let metrics = useAggregatePipelineStats(pipeline, 1000, 64000)
+  let metrics = useAggregatePipelineStats(pipeline, 2000, 63000)
 
   let files = $derived.by(() => {
     const current = pipeline.current

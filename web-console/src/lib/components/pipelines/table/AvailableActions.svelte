@@ -68,30 +68,32 @@
       (_, p) => p
     )
   )
-  let actions = $derived(selected.length === 0 ? [] :
-    selected
-      .map(statusActions)
-      .reduce(
-        (acc, cur) =>
-          intersect2(
-            acc,
-            cur,
-            (e) => e,
-            (e) => e,
-            (a) => a
-          ),
-        availableActions
-      )
-      .map((action) =>
-        match(action)
-          .with('start', () => btnStart)
-          .with('pause', () => btnPause)
-          .with('stop', () => btnStop)
-          .with('kill', () => btnKill)
-          .with('delete', () => btnDelete)
-          .with('clear', () => btnClear)
-          .exhaustive()
-      )
+  let actions = $derived(
+    selected.length === 0
+      ? []
+      : selected
+          .map(statusActions)
+          .reduce(
+            (acc, cur) =>
+              intersect2(
+                acc,
+                cur,
+                (e) => e,
+                (e) => e,
+                (a) => a
+              ),
+            availableActions
+          )
+          .map((action) =>
+            match(action)
+              .with('start', () => btnStart)
+              .with('pause', () => btnPause)
+              .with('stop', () => btnStop)
+              .with('kill', () => btnKill)
+              .with('delete', () => btnDelete)
+              .with('clear', () => btnClear)
+              .exhaustive()
+          )
   )
   const globalDialog = useGlobalDialog()
   const api = usePipelineManager()

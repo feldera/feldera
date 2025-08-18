@@ -1,8 +1,9 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 
 /// Time series to make graphs in the web console easier.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
 pub struct TimeSeries {
     /// Current time as of the creation of the structure.
     #[serde(with = "chrono::serde::ts_milliseconds")]
@@ -15,7 +16,7 @@ pub struct TimeSeries {
 }
 
 /// One sample of time-series data.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema)]
 pub struct SampleStatistics {
     /// Sample time.
     #[serde(with = "chrono::serde::ts_milliseconds")]

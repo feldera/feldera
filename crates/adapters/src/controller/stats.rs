@@ -66,6 +66,7 @@ use std::{
         Mutex,
     },
 };
+use tokio::sync::broadcast;
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
@@ -407,6 +408,10 @@ pub struct ControllerStatus {
     #[serde(skip_serializing)]
     pub time_series: Mutex<VecDeque<SampleStatistics>>,
 
+    /// Broadcast channel for notifying subscribers about new time series data.
+    #[serde(skip_serializing)]
+    pub time_series_notifier: broadcast::Sender<SampleStatistics>,
+
     /// If this is empty, the pipeline can be suspended or checkpointed.  If
     /// this is nonempty, it is the (permanent or temporary) reasons why not.
     // This field is computed on-demand by calling `ControllerStatus::update`.
@@ -427,10 +432,12 @@ impl ControllerStatus {
         processed_records: u64,
         initial_start_time: Option<DateTime<Utc>>,
     ) -> Self {
+        let (time_series_notifier, _) = broadcast::channel(1024); // Buffer for up to 1024 time series updates
         Self {
             pipeline_config,
             global_metrics: GlobalControllerMetrics::new(processed_records, initial_start_time),
             time_series: Mutex::new(VecDeque::with_capacity(60)),
+            time_series_notifier,
             suspend_error: Mutex::new(None),
             inputs: ShardedLock::new(BTreeMap::new()),
             outputs: ShardedLock::new(BTreeMap::new()),

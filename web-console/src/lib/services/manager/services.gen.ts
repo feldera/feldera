@@ -15,6 +15,8 @@ import type {
   DeleteApiKeyData,
   DeleteApiKeyError,
   DeleteApiKeyResponse,
+  GetHealthError,
+  GetHealthResponse,
   GetConfigError,
   GetConfigResponse,
   GetConfigDemosError,
@@ -39,9 +41,18 @@ import type {
   PatchPipelineData,
   PatchPipelineError,
   PatchPipelineResponse,
+  ActivatePipelineData,
+  ActivatePipelineError,
+  ActivatePipelineResponse,
   CheckpointPipelineData,
   CheckpointPipelineError,
   CheckpointPipelineResponse,
+  SyncCheckpointData,
+  SyncCheckpointError,
+  SyncCheckpointResponse,
+  GetCheckpointSyncStatusData,
+  GetCheckpointSyncStatusError,
+  GetCheckpointSyncStatusResponse,
   GetCheckpointStatusData,
   GetCheckpointStatusError,
   GetCheckpointStatusResponse,
@@ -51,6 +62,9 @@ import type {
   PostPipelineClearData,
   PostPipelineClearError,
   PostPipelineClearResponse,
+  CommitTransactionData,
+  CommitTransactionError,
+  CommitTransactionResponse,
   CompletionStatusData,
   CompletionStatusError,
   CompletionStatusResponse2,
@@ -72,21 +86,24 @@ import type {
   PostPipelinePauseData,
   PostPipelinePauseError,
   PostPipelinePauseResponse,
-  GetProgramInfoData,
-  GetProgramInfoError,
-  GetProgramInfoResponse,
   PipelineAdhocSqlData,
   PipelineAdhocSqlError,
   PipelineAdhocSqlResponse,
   PostPipelineStartData,
   PostPipelineStartError,
   PostPipelineStartResponse,
+  StartTransactionData,
+  StartTransactionError,
+  StartTransactionResponse2,
   GetPipelineStatsData,
   GetPipelineStatsError,
   GetPipelineStatsResponse,
   PostPipelineStopData,
   PostPipelineStopError,
   PostPipelineStopResponse,
+  GetPipelineSupportBundleData,
+  GetPipelineSupportBundleError,
+  GetPipelineSupportBundleResponse,
   CompletionTokenData,
   CompletionTokenError,
   CompletionTokenResponse2,
@@ -96,6 +113,12 @@ import type {
   PostPipelineInputConnectorActionData,
   PostPipelineInputConnectorActionError,
   PostPipelineInputConnectorActionResponse,
+  GetPipelineTimeSeriesData,
+  GetPipelineTimeSeriesError,
+  GetPipelineTimeSeriesResponse,
+  GetPipelineTimeSeriesStreamData,
+  GetPipelineTimeSeriesStreamError,
+  GetPipelineTimeSeriesStreamResponse,
   GetPipelineOutputConnectorStatusData,
   GetPipelineOutputConnectorStatusError,
   GetPipelineOutputConnectorStatusResponse
@@ -151,6 +174,13 @@ export const deleteApiKey = (options: Options<DeleteApiKeyData>) => {
   return (options?.client ?? client).delete<DeleteApiKeyResponse, DeleteApiKeyError>({
     ...options,
     url: '/v0/api_keys/{api_key_name}'
+  })
+}
+
+export const getHealth = (options?: Options) => {
+  return (options?.client ?? client).get<GetHealthResponse, GetHealthError>({
+    ...options,
+    url: '/v0/cluster_healthz'
   })
 }
 
@@ -250,6 +280,18 @@ export const patchPipeline = (options: Options<PatchPipelineData>) => {
 }
 
 /**
+ * Activates the pipeline if it is currently in standby mode.
+ * This endpoint is only applicable when the pipeline is configured to start
+ * from object store and launched in standby mode (`sync.standby: true`).
+ */
+export const activatePipeline = (options: Options<ActivatePipelineData>) => {
+  return (options?.client ?? client).post<ActivatePipelineResponse, ActivatePipelineError>({
+    ...options,
+    url: '/v0/pipelines/{pipeline_name}/activate'
+  })
+}
+
+/**
  * Initiates checkpoint for a running or paused pipeline.
  * Returns a checkpoint sequence number that can be used with `/checkpoint_status` to
  * determine when the checkpoint has completed.
@@ -258,6 +300,29 @@ export const checkpointPipeline = (options: Options<CheckpointPipelineData>) => 
   return (options?.client ?? client).post<CheckpointPipelineResponse, CheckpointPipelineError>({
     ...options,
     url: '/v0/pipelines/{pipeline_name}/checkpoint'
+  })
+}
+
+/**
+ * Syncs latest checkpoints to the object store configured in pipeline config.
+ */
+export const syncCheckpoint = (options: Options<SyncCheckpointData>) => {
+  return (options?.client ?? client).post<SyncCheckpointResponse, SyncCheckpointError>({
+    ...options,
+    url: '/v0/pipelines/{pipeline_name}/checkpoint/sync'
+  })
+}
+
+/**
+ * Retrieve status of checkpoint sync activity in a pipeline.
+ */
+export const getCheckpointSyncStatus = (options: Options<GetCheckpointSyncStatusData>) => {
+  return (options?.client ?? client).get<
+    GetCheckpointSyncStatusResponse,
+    GetCheckpointSyncStatusError
+  >({
+    ...options,
+    url: '/v0/pipelines/{pipeline_name}/checkpoint/sync_status'
   })
 }
 
@@ -297,6 +362,16 @@ export const postPipelineClear = (options: Options<PostPipelineClearData>) => {
   return (options?.client ?? client).post<PostPipelineClearResponse, PostPipelineClearError>({
     ...options,
     url: '/v0/pipelines/{pipeline_name}/clear'
+  })
+}
+
+/**
+ * Commit the current transaction.
+ */
+export const commitTransaction = (options: Options<CommitTransactionData>) => {
+  return (options?.client ?? client).post<CommitTransactionResponse, CommitTransactionError>({
+    ...options,
+    url: '/v0/pipelines/{pipeline_name}/commit_transaction'
   })
 }
 
@@ -411,16 +486,6 @@ export const postPipelinePause = (options: Options<PostPipelinePauseData>) => {
 }
 
 /**
- * Retrieve the program info of a pipeline.
- */
-export const getProgramInfo = (options: Options<GetProgramInfoData>) => {
-  return (options?.client ?? client).get<GetProgramInfoResponse, GetProgramInfoError>({
-    ...options,
-    url: '/v0/pipelines/{pipeline_name}/program_info'
-  })
-}
-
-/**
  * Execute an ad-hoc SQL query in a running or paused pipeline.
  * The evaluation is not incremental.
  */
@@ -446,6 +511,16 @@ export const postPipelineStart = (options: Options<PostPipelineStartData>) => {
   return (options?.client ?? client).post<PostPipelineStartResponse, PostPipelineStartError>({
     ...options,
     url: '/v0/pipelines/{pipeline_name}/start'
+  })
+}
+
+/**
+ * Start a transaction.
+ */
+export const startTransaction = (options: Options<StartTransactionData>) => {
+  return (options?.client ?? client).post<StartTransactionResponse2, StartTransactionError>({
+    ...options,
+    url: '/v0/pipelines/{pipeline_name}/start_transaction'
   })
 }
 
@@ -488,6 +563,22 @@ export const postPipelineStop = (options: Options<PostPipelineStopData>) => {
   return (options?.client ?? client).post<PostPipelineStopResponse, PostPipelineStopError>({
     ...options,
     url: '/v0/pipelines/{pipeline_name}/stop'
+  })
+}
+
+/**
+ * Generate a support bundle for a pipeline.
+ * This endpoint collects various diagnostic data from the pipeline including
+ * circuit profile, heap profile, metrics, logs, stats, and connector statistics,
+ * and packages them into a single ZIP file for support purposes.
+ */
+export const getPipelineSupportBundle = (options: Options<GetPipelineSupportBundleData>) => {
+  return (options?.client ?? client).get<
+    GetPipelineSupportBundleResponse,
+    GetPipelineSupportBundleError
+  >({
+    ...options,
+    url: '/v0/pipelines/{pipeline_name}/support_bundle'
   })
 }
 
@@ -556,6 +647,35 @@ export const postPipelineInputConnectorAction = (
   >({
     ...options,
     url: '/v0/pipelines/{pipeline_name}/tables/{table_name}/connectors/{connector_name}/{action}'
+  })
+}
+
+/**
+ * Retrieve time series for statistics of a running or paused pipeline.
+ */
+export const getPipelineTimeSeries = (options: Options<GetPipelineTimeSeriesData>) => {
+  return (options?.client ?? client).get<GetPipelineTimeSeriesResponse, GetPipelineTimeSeriesError>(
+    {
+      ...options,
+      url: '/v0/pipelines/{pipeline_name}/time_series'
+    }
+  )
+}
+
+/**
+ * Stream time series for statistics of a running or paused pipeline.
+ * Returns a snapshot of all existing time series data followed by a continuous stream of
+ * new time series data points as they become available. The response is in newline-delimited
+ * JSON format (NDJSON) where each line is a JSON object representing a single time series
+ * data point.
+ */
+export const getPipelineTimeSeriesStream = (options: Options<GetPipelineTimeSeriesStreamData>) => {
+  return (options?.client ?? client).get<
+    GetPipelineTimeSeriesStreamResponse,
+    GetPipelineTimeSeriesStreamError
+  >({
+    ...options,
+    url: '/v0/pipelines/{pipeline_name}/time_series_stream'
   })
 }
 

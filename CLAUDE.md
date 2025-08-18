@@ -302,7 +302,6 @@ Follow these governing principles when documenting the repository in CLAUDE.md f
 
 ## Context: .github/workflows/CLAUDE.md
 <!-- SECTION:.github/workflows/CLAUDE.md START -->
-
 ## Overview
 
 The `.github/workflows/` directory contains GitHub Actions workflows that form a comprehensive CI/CD ecosystem for the Feldera platform. These workflows orchestrate a sophisticated development pipeline that spans multiple languages, platforms, and deployment targets.
@@ -813,7 +812,6 @@ This documentation will be expanded with additional workflow descriptions as the
 
 ## Context: benchmark/CLAUDE.md
 <!-- SECTION:benchmark/CLAUDE.md START -->
-
 ## Overview
 
 The `benchmark/` directory contains comprehensive benchmarking infrastructure for comparing Feldera's performance against other stream processing systems. It implements industry-standard benchmarks (NEXMark, TPC-H, TikTok) across multiple platforms to provide objective performance comparisons.
@@ -1038,7 +1036,6 @@ This benchmarking infrastructure provides comprehensive tools for validating Fel
 
 ## Context: crates/adapterlib/CLAUDE.md
 <!-- SECTION:crates/adapterlib/CLAUDE.md START -->
-
 ## Overview
 
 ## Key Development Commands
@@ -1306,7 +1303,6 @@ This crate provides the foundational abstractions that make it easy to implement
 
 ## Context: crates/adapters/CLAUDE.md
 <!-- SECTION:crates/adapters/CLAUDE.md START -->
-
 ## Overview
 
 ## Key Development Commands
@@ -1597,7 +1593,6 @@ The test suite requires external services:
 
 ## Context: crates/adapters/src/adhoc/CLAUDE.md
 <!-- SECTION:crates/adapters/src/adhoc/CLAUDE.md START -->
-
 ## Overview
 
 ## Key Development Commands
@@ -1990,9 +1985,257 @@ This module bridges the gap between Feldera's incremental streaming processing a
 
 ---
 
+## Context: crates/adapters/src/controller/CLAUDE.md
+<!-- SECTION:crates/adapters/src/controller/CLAUDE.md START -->
+# Controller Architecture
+
+The controller module implements the centralized orchestration layer for Feldera's I/O adapter system. It coordinates circuit execution, manages data flow, implements fault tolerance, and provides runtime statistics.
+
+## Core Purpose
+
+The controller serves as the **central control plane** that:
+- Coordinates DBSP circuit execution with I/O endpoints
+- Implements runtime flow control and backpressure management
+- Manages pipeline state transitions and lifecycle
+- Provides fault tolerance through journaling and checkpointing
+- Collects and reports performance statistics
+- Orchestrates streaming data ingestion and output processing
+
+## Architecture Overview
+
+### Multi-Threaded Design
+
+The controller employs a **three-thread architecture** for optimal performance:
+
+1. **Circuit Thread** (`CircuitThread`) - The main orchestrator that:
+   - Owns the DBSP circuit handle and executes `circuit.step()`
+   - Coordinates with input/output endpoints
+   - Manages circuit state transitions (Running/Paused/Terminated)
+   - Handles commands (checkpointing, profiling, suspension)
+   - Implements fault-tolerant journaling and replay logic
+
+2. **Backpressure Thread** (`BackpressureThread`) - Flow control manager that:
+   - Monitors input buffer levels across all endpoints
+   - Pauses/resumes input endpoints based on buffer thresholds
+   - Prevents memory exhaustion during high-throughput scenarios
+   - Implements user-requested connector state changes
+
+3. **Statistics Thread** (`StatisticsThread`) - Performance monitoring that:
+   - Collects metrics every second (memory, storage, processed records)
+   - Maintains a 60-second rolling window of time series data
+   - Notifies subscribers of new metrics via broadcast channels
+   - Provides data for real-time monitoring and alerting
+
+### Key Components
+
+#### Controller (`Controller`)
+- **Public API** for pipeline management and state control
+- **Thread-safe wrapper** around `ControllerInner` with proper lifecycle management
+- **Command interface** for asynchronous operations (checkpointing, profiling)
+
+#### ControllerInner (`ControllerInner`)
+- **Shared state** accessible by all threads
+- **Input/Output endpoint management** with dynamic reconfiguration
+- **Circuit catalog integration** for schema-aware processing
+- **Configuration management** and validation
+
+#### ControllerStatus (`ControllerStatus`)
+- **Lock-free performance counters** using atomics for minimal overhead
+- **Statistical aggregation** across all endpoints and circuit operations
+- **Time series broadcasting** for real-time monitoring clients
+- **Flow control metrics** for backpressure management
+
+## File Organization
+
+### Core Files
+
+- **`mod.rs`** - Main controller implementation with multi-threaded orchestration
+- **`stats.rs`** - Performance monitoring, metrics collection, and statistics reporting
+- **`error.rs`** - Error handling abstractions (re-exports from adapterlib)
+
+### Specialized Modules
+
+- **`checkpoint.rs`** - Fault tolerance through persistent checkpointing
+  - Circuit state serialization and recovery
+  - Input endpoint offset tracking
+  - Configuration preservation across restarts
+
+- **`journal.rs`** - Transaction log for exactly-once processing
+  - Step-by-step metadata recording
+  - Replay mechanism for fault recovery
+  - Storage-agnostic persistence layer
+
+- **`sync.rs`** - Enterprise checkpoint synchronization (S3/cloud storage)
+  - Distributed checkpoint management
+  - Cross-instance state coordination
+  - Activation markers for standby pipelines
+
+- **`validate.rs`** - Configuration validation and dependency analysis
+  - Connector dependency cycle detection
+  - Pipeline configuration consistency checks
+  - Input/output endpoint validation
+
+- **`test.rs`** - Comprehensive testing utilities and integration tests
+
+## Key Design Patterns
+
+### 1. Lock-Free Statistics
+```rust
+// Atomic counters prevent blocking the datapath
+pub total_input_records: AtomicU64,
+pub total_processed_records: AtomicU64,
+// Broadcast channels for real-time streaming
+pub time_series_notifier: broadcast::Sender<SampleStatistics>,
+```
+
+**Benefits:**
+- Zero-overhead metrics collection
+- Non-blocking circuit execution
+- Real-time monitoring without performance impact
+
+### 2. Thread Coordination
+```rust
+struct CircuitThread {
+    controller: Arc<ControllerInner>,      // Shared state
+    circuit: DBSPHandle,                   // Circuit ownership
+    backpressure_thread: BackpressureThread, // Flow control
+    _statistics_thread: StatisticsThread,    // Metrics
+}
+```
+
+**Benefits:**
+- Clear separation of concerns
+- Independent thread lifecycles
+- Coordinated shutdown without deadlocks
+
+### 3. Command Pattern for Async Operations
+```rust
+enum Command {
+    GraphProfile(GraphProfileCallbackFn),
+    Checkpoint(CheckpointCallbackFn),
+    Suspend(SuspendCallbackFn),
+}
+```
+
+**Benefits:**
+- Non-blocking public API
+- Type-safe callback handling
+- Graceful error propagation
+
+### 4. State Machine Pipeline Management
+```rust
+pub enum PipelineState {
+    Paused,    // Endpoints paused, draining existing data
+    Running,   // Active ingestion and processing
+    Terminated, // Permanent shutdown
+}
+```
+
+**Benefits:**
+- Predictable state transitions
+- Clean resource management
+- User-controlled pipeline lifecycle
+
+## Fault Tolerance Architecture
+
+### Journaling System
+- **Step-by-step logging** of all input processing
+- **Metadata preservation** for exact replay scenarios
+- **Storage-agnostic** design supporting file systems and cloud storage
+
+### Checkpointing Integration
+- **Circuit state snapshots** at configurable intervals
+- **Input offset tracking** for consistent recovery points
+- **Configuration preservation** across pipeline restarts
+
+### Error Handling Strategy
+- **Transient vs Permanent errors** with different recovery strategies
+- **Graceful degradation** rather than complete failure
+- **Detailed error context** for debugging and monitoring
+
+## Performance Characteristics
+
+### Throughput Optimization
+- **Lock-free statistics** prevent contention on hot paths
+- **Batched circuit steps** amortize processing overhead
+- **Parallel I/O processing** with independent endpoint threads
+
+### Memory Management
+- **Bounded buffers** prevent unlimited memory growth
+- **Backpressure coordination** maintains system stability
+- **Efficient broadcast channels** for multiple monitoring clients
+
+### Latency Minimization
+- **Direct circuit coupling** avoids unnecessary queuing
+- **Atomic metric updates** enable real-time monitoring
+- **Thread affinity** for CPU cache optimization
+
+## Integration Points
+
+### DBSP Circuit Integration
+- Direct `DBSPHandle` ownership and step execution
+- Schema-aware input/output catalog management
+- Performance profile collection and analysis
+
+### Transport Layer Integration
+- Dynamic endpoint creation and lifecycle management
+- Pluggable transport implementations (Kafka, HTTP, Files)
+- Format-agnostic data processing pipeline
+
+### Storage System Integration
+- Backend-agnostic checkpoint and journal persistence
+- Cloud storage synchronization for distributed deployments
+- Efficient binary serialization for compact storage
+
+## Development Patterns
+
+### Adding New Metrics
+1. Define atomic counters in `ControllerStatus`
+2. Update collection logic in `StatisticsThread`
+3. Include in time series broadcasting
+4. Add appropriate accessor methods
+
+### Extending State Management
+1. Modify `PipelineState` enum if needed
+2. Update state transition logic in circuit thread
+3. Add appropriate synchronization primitives
+4. Update error handling and recovery paths
+
+### Implementing New Commands
+1. Add command variant to `Command` enum
+2. Implement callback-based processing
+3. Add public API method with proper error handling
+4. Ensure graceful shutdown behavior
+
+## Best Practices
+
+### Thread Safety
+- Use `Arc<AtomicBool>` for cancellation flags
+- Employ `crossbeam` primitives for lock-free data structures
+- Minimize shared mutable state through message passing
+
+### Resource Management
+- Implement proper `Drop` traits for cleanup
+- Use `JoinHandle` for thread lifecycle management
+- Employ timeouts for external operations
+
+### Error Propagation
+- Distinguish between recoverable and permanent errors
+- Provide detailed error context for debugging
+- Use structured error types with clear categorization
+
+### Performance Monitoring
+- Collect metrics without impacting datapath performance
+- Use efficient serialization for network transmission
+- Implement configurable aggregation windows
+
+This controller architecture enables Feldera to achieve high-performance stream processing while maintaining strong consistency guarantees and providing comprehensive observability into pipeline operations.
+<!-- SECTION:crates/adapters/src/controller/CLAUDE.md END -->
+
+---
+
 ## Context: crates/adapters/src/format/CLAUDE.md
 <!-- SECTION:crates/adapters/src/format/CLAUDE.md START -->
-
 ## Overview
 
 The format module implements Feldera's unified data serialization/deserialization layer, providing extensible support for multiple data formats (JSON, CSV, Avro, Parquet, Raw) while integrating seamlessly with DBSP circuits. It enables high-performance data parsing and generation across diverse external systems while maintaining strong type safety and comprehensive error handling.
@@ -2526,7 +2769,6 @@ This format module represents a sophisticated, production-ready data processing 
 
 ## Context: crates/adapters/src/integrated/CLAUDE.md
 <!-- SECTION:crates/adapters/src/integrated/CLAUDE.md START -->
-
 ## Overview
 
 ## Key Development Commands
@@ -2986,7 +3228,6 @@ This module enables Feldera to integrate seamlessly with external data systems w
 
 ## Context: crates/adapters/src/transport/CLAUDE.md
 <!-- SECTION:crates/adapters/src/transport/CLAUDE.md START -->
-
 ## Overview
 
 The transport module implements Feldera's I/O abstraction layer, providing unified access to diverse external systems for DBSP circuits. It enables high-performance, fault-tolerant data ingestion and emission across transports including Kafka, HTTP, files, databases, and cloud storage systems, while maintaining strong consistency guarantees for incremental computation.
@@ -3460,7 +3701,6 @@ This transport layer provides Feldera with a robust, high-performance, and exten
 
 ## Context: crates/CLAUDE.md
 <!-- SECTION:crates/CLAUDE.md START -->
-
 ## Overview
 
 The `crates/` directory contains all Rust crates that make up the Feldera platform. This is a workspace-based project where each crate serves a specific purpose in the overall architecture, from core computational engines to I/O adapters and development tools.
@@ -3585,7 +3825,6 @@ This workspace architecture enables modular development while maintaining consis
 
 ## Context: crates/datagen/CLAUDE.md
 <!-- SECTION:crates/datagen/CLAUDE.md START -->
-
 ## Overview
 
 ## Key Development Commands
@@ -3845,7 +4084,6 @@ This crate provides essential data generation capabilities that support testing,
 
 ## Context: crates/dbsp/CLAUDE.md
 <!-- SECTION:crates/dbsp/CLAUDE.md START -->
-
 ## Overview
 
 ## Key Development Commands
@@ -4070,7 +4308,6 @@ circuit.step()?;
 
 ## Context: crates/dbsp/src/CLAUDE.md
 <!-- SECTION:crates/dbsp/src/CLAUDE.md START -->
-
 ## Overview
 
 The `crates/dbsp/src/` directory contains the core implementation of DBSP (Database Stream Processor), a computational engine for incremental computation on changing datasets. DBSP enables processing changes in time proportional to the size of changes rather than the entire dataset, making it ideal for continuous analysis of large, frequently-changing data.
@@ -4504,7 +4741,6 @@ This DBSP source code represents a sophisticated computational engine that succe
 
 ## Context: crates/fda/CLAUDE.md
 <!-- SECTION:crates/fda/CLAUDE.md START -->
-
 ## Overview
 
 ## Key Development Commands
@@ -4814,7 +5050,6 @@ This crate serves as the development companion tool, providing essential utiliti
 
 ## Context: crates/feldera-types/CLAUDE.md
 <!-- SECTION:crates/feldera-types/CLAUDE.md START -->
-
 ## Overview
 
 ## Key Development Commands
@@ -5103,7 +5338,6 @@ This crate is foundational to the Feldera platform, providing the type system ba
 
 ## Context: crates/fxp/CLAUDE.md
 <!-- SECTION:crates/fxp/CLAUDE.md START -->
-
 ## Overview
 
 ## Key Development Commands
@@ -5403,7 +5637,6 @@ This crate provides the mathematical foundation for precise decimal arithmetic i
 
 ## Context: crates/iceberg/CLAUDE.md
 <!-- SECTION:crates/iceberg/CLAUDE.md START -->
-
 ## Overview
 
 ## Key Development Commands
@@ -5689,7 +5922,6 @@ This crate enables Feldera to work with modern data lake architectures using the
 
 ## Context: crates/ir/CLAUDE.md
 <!-- SECTION:crates/ir/CLAUDE.md START -->
-
 ## Overview
 
 ## Key Development Commands
@@ -6039,7 +6271,6 @@ This crate provides the compiler infrastructure that enables sophisticated analy
 
 ## Context: crates/nexmark/CLAUDE.md
 <!-- SECTION:crates/nexmark/CLAUDE.md START -->
-
 ## Overview
 
 ## Key Development Commands
@@ -6309,7 +6540,6 @@ This crate provides industry-standard benchmarking for streaming systems, enabli
 
 ## Context: crates/pipeline-manager/CLAUDE.md
 <!-- SECTION:crates/pipeline-manager/CLAUDE.md START -->
-
 ## Overview
 
 ## Key Development Commands
@@ -6560,7 +6790,6 @@ The service supports multiple configuration sources:
 
 ## Context: crates/rest-api/CLAUDE.md
 <!-- SECTION:crates/rest-api/CLAUDE.md START -->
-
 ## Overview
 
 ## Key Development Commands
@@ -6801,7 +7030,6 @@ This crate provides the foundational API types and specifications that enable co
 
 ## Context: crates/sqllib/CLAUDE.md
 <!-- SECTION:crates/sqllib/CLAUDE.md START -->
-
 ## Overview
 
 ## Key Development Commands
@@ -7117,7 +7345,6 @@ This crate is essential for SQL compatibility, providing the runtime functions t
 
 ## Context: crates/storage/CLAUDE.md
 <!-- SECTION:crates/storage/CLAUDE.md START -->
-
 ## Overview
 
 ## Key Development Commands
@@ -7398,7 +7625,6 @@ This crate provides the storage foundation that enables DBSP to persist state an
 
 ## Context: deploy/CLAUDE.md
 <!-- SECTION:deploy/CLAUDE.md START -->
-
 ## Overview
 
 The `deploy/` directory contains Docker configurations and deployment orchestration for the Feldera platform. These files support multiple deployment scenarios from development builds to production releases, and integrate with the GitHub Actions workflows to provide a comprehensive CI/CD and deployment pipeline.
@@ -7746,7 +7972,6 @@ This deployment architecture provides Feldera with a robust, scalable, and maint
 
 ## Context: docs.feldera.com/CLAUDE.md
 <!-- SECTION:docs.feldera.com/CLAUDE.md START -->
-
 ## Overview
 
 ## Key Development Commands
@@ -7918,7 +8143,6 @@ This documentation site serves as the primary resource for Feldera users, provid
 
 ## Context: python/CLAUDE.md
 <!-- SECTION:python/CLAUDE.md START -->
-
 ## Overview
 
 ## Key Development Commands
@@ -8129,7 +8353,6 @@ pipeline = client.create_pipeline("my_pipeline")
 
 ## Context: scripts/CLAUDE.md
 <!-- SECTION:scripts/CLAUDE.md START -->
-
 ## Overview
 
 The scripts directory contains scripts commonly used throughout the repository.
@@ -8171,7 +8394,6 @@ The comment markers ensure that:
 
 ## Context: sql-to-dbsp-compiler/CLAUDE.md
 <!-- SECTION:sql-to-dbsp-compiler/CLAUDE.md START -->
-
 ## Overview
 
 ## Key Development Commands
@@ -8370,7 +8592,6 @@ The compiler generates Rust code that:
 
 ## Context: sql-to-dbsp-compiler/SQL-compiler/CLAUDE.md
 <!-- SECTION:sql-to-dbsp-compiler/SQL-compiler/CLAUDE.md START -->
-
 ## Overview
 
 The SQL-compiler is a sophisticated Java-based compilation system that transforms SQL queries into optimized DBSP (Database Stream Processor) circuits for incremental computation. It implements a complete compilation pipeline from SQL parsing through DBSP circuit generation to Rust code emission, enabling high-performance incremental view maintenance.
@@ -8684,7 +8905,6 @@ This SQL-to-DBSP compiler represents a sophisticated piece of compiler engineeri
 
 ## Context: web-console/CLAUDE.md
 <!-- SECTION:web-console/CLAUDE.md START -->
-
 ## Key Development Commands
 
 ### Package Manager

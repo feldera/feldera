@@ -10,6 +10,7 @@
   import type { Pipeline } from '$lib/services/pipelineManager'
   import type { EChartsOption } from 'echarts'
   import { rgbToHex } from '$lib/functions/common/color'
+  import type { TimeSeriesEntry } from '$lib/types/pipelineManager'
 
   const formatQty = (v: number) => format(v >= 1000 ? '.3s' : '.0f')(v)
 
@@ -19,7 +20,7 @@
     refetchMs,
     keepMs
   }: {
-    metrics: PipelineMetrics
+    metrics: TimeSeriesEntry[]
     refetchMs: number
     keepMs: number
     pipeline: { current: Pipeline }
@@ -60,7 +61,7 @@
 
   const options: EChartsOption = {
     animationDuration: 0,
-    animationDurationUpdate: refetchMs,
+    animationDurationUpdate: 0,
     animationEasingUpdate: 'linear' as const,
     dataLabels: { enabled: false },
     grid: {
@@ -70,6 +71,8 @@
       bottom: 48
     },
     xAxis: {
+      animationDuration: 0,
+      animationDurationUpdate: refetchMs,
       type: 'time' as const,
       min: Date.now() - keepMs - refetchMs,
       max: Date.now() - refetchMs,
@@ -80,6 +83,8 @@
       }
     },
     yAxis: {
+      animationDuration: 0,
+      animationDurationUpdate: 0,
       type: 'value' as const,
       // svelte-ignore state_referenced_locally
       interval: (throughput.yMax - throughput.yMin) / 2,
@@ -109,6 +114,8 @@
     color: primaryColor,
     series: [
       {
+        animationDuration: 0,
+        animationDurationUpdate: refetchMs,
         type: 'line' as const,
         itemStyle: {
           opacity: 0
