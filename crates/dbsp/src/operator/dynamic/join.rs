@@ -2,7 +2,7 @@ use crate::algebra::{ZBatch, ZBatchReader};
 use crate::circuit::circuit_builder::StreamId;
 use crate::circuit::metadata::{BatchSizeStats, OUTPUT_BATCHES_LABEL};
 use crate::circuit::splitter_output_chunk_size;
-use crate::dynamic::DynData;
+use crate::dynamic::{DynData, WeightTrait};
 use crate::operator::async_stream_operators::{StreamingBinaryOperator, StreamingBinaryWrapper};
 use crate::operator::dynamic::concat::dyn_accumulate_concat;
 use crate::trace::spine_async::WithSnapshot;
@@ -1317,6 +1317,83 @@ where
     }
 }
 
+/// A cursor that iterates over matching keys in two cursors.
+/// It enumerates all keys in one cursor, and for each key
+/// checks if the other cursor has a matching key.
+///
+/// The `swap` flag indicates which cursor is the primary one:
+/// - If `swap` is `true`, the `trace_cursor` is the primary cursor,
+///   and `delta_cursor` is the secondary cursor.
+/// - If `swap` is `false`, the `delta_cursor` is the primary cursor.
+///
+/// This is used to optimize the join operation by iterating over the smaller cursor.
+struct JointKeyCursor<'a, C1, K, V1, V2, T, R>
+where
+    C1: Cursor<K, V1, (), R>,
+    K: DataTrait + ?Sized,
+    V1: DataTrait + ?Sized,
+    V2: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+{
+    delta_cursor: C1,
+    trace_cursor: Box<dyn Cursor<K, V2, T, R> + 'a>,
+    swap: bool,
+    phantom: PhantomData<fn(&K, &V1, &V2, &T, &R)>,
+}
+
+impl<'a, C1, K, V1, V2, T, R> JointKeyCursor<'a, C1, K, V1, V2, T, R>
+where
+    C1: Cursor<K, V1, (), R>,
+    K: DataTrait + ?Sized,
+    V1: DataTrait + ?Sized,
+    V2: DataTrait + ?Sized,
+    R: WeightTrait + ?Sized,
+{
+    pub fn new(left: C1, right: Box<dyn Cursor<K, V2, T, R> + 'a>, swap: bool) -> Self {
+        Self {
+            delta_cursor: left,
+            trace_cursor: right,
+            swap,
+            phantom: PhantomData,
+        }
+    }
+
+    pub fn next(&mut self) -> bool {
+        if self.swap {
+            while self.trace_cursor.key_valid() {
+                if self.delta_cursor.seek_key_exact(self.trace_cursor.key()) {
+                    return true;
+                }
+                self.trace_cursor.step_key();
+            }
+        } else {
+            while self.delta_cursor.key_valid() {
+                if self.trace_cursor.seek_key_exact(self.delta_cursor.key()) {
+                    return true;
+                }
+                self.delta_cursor.step_key();
+            }
+        }
+        false
+    }
+
+    pub fn step_key(&mut self) {
+        if self.swap {
+            self.trace_cursor.step_key();
+        } else {
+            self.delta_cursor.step_key();
+        }
+    }
+
+    pub fn position(&self) -> Option<Position> {
+        if self.swap {
+            self.trace_cursor.position()
+        } else {
+            self.delta_cursor.position()
+        }
+    }
+}
+
 impl<I, B, T, Z, Clk> StreamingBinaryOperator<Option<Spine<I>>, T, Z> for JoinTrace<I, B, T, Z, Clk>
 where
     I: ZBatch<Time = ()>,
@@ -1356,8 +1433,10 @@ where
             }
 
             let delta = self.delta.borrow_mut().take().expect("no input delta provided before flush");
+            let delta_len = delta.len();
 
             let trace = trace.unwrap();
+            let trace_len = trace.len();
 
             *self.empty_input.borrow_mut() = delta.is_empty();
             *self.empty_output.borrow_mut() = true;
@@ -1370,15 +1449,18 @@ where
                 None
             };
 
-            let mut delta_cursor = delta.cursor();
+            let delta_cursor = delta.cursor();
 
-            let mut trace_cursor = if let Some(fetched) = fetched.as_ref() {
+            let trace_cursor = if let Some(fetched) = fetched.as_ref() {
                 fetched.get_cursor()
             } else {
                 Box::new(trace.cursor())
             };
 
             let mut val = self.right_factories.val_factory().default_box();
+
+            let mut joint_cursor =
+                JointKeyCursor::new(delta_cursor, trace_cursor, fetched.is_none() && (delta_len > trace_len));
 
             let batch = if size_of::<T::Time>() != 0 {
                 let time = self.clock.time();
@@ -1394,22 +1476,21 @@ where
 
                 let mut timed_item = self.timed_item_factory.default_box();
 
-                while delta_cursor.key_valid() {
-                    if trace_cursor.seek_key_exact(delta_cursor.key()) {
-                        //println!("key: {}", index_cursor.key(index));
+                while joint_cursor.next() {
+                    //println!("key: {}", index_cursor.key(index));
 
-                        while delta_cursor.val_valid() {
-                            let w1 = **delta_cursor.weight();
-                            let v1 = delta_cursor.val();
-                            //println!("v1: {}, w1: {}", v1, w1);
+                    while joint_cursor.delta_cursor.val_valid() {
+                        let w1 = **joint_cursor.delta_cursor.weight();
+                        let v1 = joint_cursor.delta_cursor.val();
+                        //println!("v1: {}, w1: {}", v1, w1);
 
-                            while trace_cursor.val_valid() {
-                                // FIXME: this clone is only needed to avoid borrow checker error due to
-                                // borrowing `trace_cursor` below.
-                                trace_cursor.val().clone_to(val.as_mut());
+                        while joint_cursor.trace_cursor.val_valid() {
+                            // FIXME: this clone is only needed to avoid borrow checker error due to
+                            // borrowing `trace_cursor` below.
+                            joint_cursor.trace_cursor.val().clone_to(val.as_mut());
 
-                                (self.join_func.borrow_mut())(delta_cursor.key(), v1, &val, &mut |k, v| {
-                                        trace_cursor
+                            (self.join_func.borrow_mut())(joint_cursor.delta_cursor.key(), v1, &val, &mut |k, v| {
+                                    joint_cursor.trace_cursor
                                         .map_times(&mut |ts: &T::Time, w2: &T::R| {
                                             let (time_ref, item) = timed_item.split_mut();
                                             let (kv, w) = item.split_mut();
@@ -1421,14 +1502,14 @@ where
                                             **time_ref = ts.join(&time);
                                             output_tuples.push_val(timed_item.as_mut());
                                         });
-                                });
-                                trace_cursor.step_val();
-                            }
-                            trace_cursor.rewind_vals();
-                            delta_cursor.step_val();
+                            });
+                            joint_cursor.trace_cursor.step_val();
                         }
+                        joint_cursor.trace_cursor.rewind_vals();
+                        joint_cursor.delta_cursor.step_val();
                     }
-                    delta_cursor.step_key();
+
+                    joint_cursor.step_key();
                 }
 
                 self.stats.borrow_mut().output_tuples += output_tuples.len();
@@ -1477,60 +1558,59 @@ where
 
                 let mut output_tuple = self.output_factories.weighted_item_factory().default_box();
 
-                while delta_cursor.key_valid() {
-                    if trace_cursor.seek_key_exact(delta_cursor.key()) {
-                        //println!("key: {}", index_cursor.key(index));
+                while joint_cursor.next() {
+                    //println!("key: {}", index_cursor.key(index));
 
-                        while delta_cursor.val_valid() {
-                            let w1 = **delta_cursor.weight();
-                            let v1 = delta_cursor.val();
-                            //println!("v1: {}, w1: {}", v1, w1);
+                    while joint_cursor.delta_cursor.val_valid() {
+                        let w1 = **joint_cursor.delta_cursor.weight();
+                        let v1 = joint_cursor.delta_cursor.val();
+                        //println!("v1: {}, w1: {}", v1, w1);
 
-                            while trace_cursor.val_valid() {
-                                // FIXME: this clone is only needed to avoid borrow checker error due to
-                                // borrowing `trace_cursor` below.
-                                trace_cursor.val().clone_to(val.as_mut());
+                        while joint_cursor.trace_cursor.val_valid() {
+                            // FIXME: this clone is only needed to avoid borrow checker error due to
+                            // borrowing `trace_cursor` below.
+                            joint_cursor.trace_cursor.val().clone_to(val.as_mut());
 
-                                (self.join_func.borrow_mut())(delta_cursor.key(), v1, &val, &mut |k, v| {
-                                    trace_cursor
-                                        .map_times(&mut |_ts: &T::Time, w2: &T::R| {
-                                            let (kv, w) = output_tuple.split_mut();
-                                            let (key, val) = kv.split_mut();
+                            (self.join_func.borrow_mut())(joint_cursor.delta_cursor.key(), v1, &val, &mut |k, v| {
+                                joint_cursor.trace_cursor
+                                    .map_times(&mut |_ts: &T::Time, w2: &T::R| {
+                                        let (kv, w) = output_tuple.split_mut();
+                                        let (key, val) = kv.split_mut();
 
-                                            **w = w1.mul_by_ref(&**w2);
-                                            k.clone_to(key);
-                                            v.clone_to(val);
-                                            output_tuples.push_val(output_tuple.as_mut());
-                                        });
-                                });
+                                        **w = w1.mul_by_ref(&**w2);
+                                        k.clone_to(key);
+                                        v.clone_to(val);
+                                        output_tuples.push_val(output_tuple.as_mut());
+                                    });
+                            });
 
-                                // Push a sufficiently large chunk of update to the batcher. The batcher
-                                // will consolidate the updates and possibly merge them with previous updates.
-                                // Yield if the batcher has accumulated enough tuples. The divisor of 3 guarantees that
-                                // the output batch won't exceed `chunk_size` by more than 33%. Alternatively we could
-                                // push every individual output tuple to the batcher, but that's probably inefficient.
-                                if output_tuples.len() >= chunk_size / 3 {
-                                    self.stats.borrow_mut().output_tuples += output_tuples.len();
-                                    batcher.push_batch(&mut output_tuples);
+                            // Push a sufficiently large chunk of update to the batcher. The batcher
+                            // will consolidate the updates and possibly merge them with previous updates.
+                            // Yield if the batcher has accumulated enough tuples. The divisor of 3 guarantees that
+                            // the output batch won't exceed `chunk_size` by more than 33%. Alternatively we could
+                            // push every individual output tuple to the batcher, but that's probably inefficient.
+                            if output_tuples.len() >= chunk_size / 3 {
+                                self.stats.borrow_mut().output_tuples += output_tuples.len();
+                                batcher.push_batch(&mut output_tuples);
 
-                                    if batcher.tuples() >= chunk_size {
-                                        *self.empty_output.borrow_mut() = false;
-                                        let batch = batcher.seal();
-                                        self.stats.borrow_mut().add_output_batch(&batch);
+                                if batcher.tuples() >= chunk_size {
+                                    *self.empty_output.borrow_mut() = false;
+                                    let batch = batcher.seal();
+                                    self.stats.borrow_mut().add_output_batch(&batch);
 
-                                        yield (batch, false, delta_cursor.position());
-                                        batcher = Z::Batcher::new_batcher(&self.output_factories, ());
-                                    }
+                                    yield (batch, false, joint_cursor.position());
+                                    batcher = Z::Batcher::new_batcher(&self.output_factories, ());
                                 }
-
-                                trace_cursor.step_val();
                             }
 
-                            trace_cursor.rewind_vals();
-                            delta_cursor.step_val();
+                            joint_cursor.trace_cursor.step_val();
                         }
+
+                        joint_cursor.trace_cursor.rewind_vals();
+                        joint_cursor.delta_cursor.step_val();
+
                     }
-                    delta_cursor.step_key();
+                    joint_cursor.step_key();
                 }
 
                 self.stats.borrow_mut().output_tuples += output_tuples.len();
@@ -1552,7 +1632,7 @@ where
                 *self.empty_output.borrow_mut() = false;
             }
 
-            yield (batch, true, delta_cursor.position())
+            yield (batch, true, joint_cursor.position())
         }
     }
 }
