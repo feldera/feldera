@@ -3828,8 +3828,11 @@ impl ControllerInner {
                 // One of the triggering conditions for flushing the output buffer is satisfied:
                 // go ahead and flush the buffer; we will check for more messages at the next iteration
                 // of the loop.
+                // There is no point in continue to merge batches in the output buffer at this point,
+                // so we convert the spine to a snapshot to avoid wasting CPU, I/O, and memory on
+                // background merging.
                 Self::push_batch_to_encoder(
-                    output_buffer.take_buffer().unwrap().as_batch_reader(),
+                    output_buffer.take_buffer().unwrap().snapshot().as_ref(),
                     endpoint_id,
                     &endpoint_name,
                     encoder.as_mut(),

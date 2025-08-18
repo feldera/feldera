@@ -125,6 +125,9 @@ pub trait BatchReader: 'static {
     /// Returns the list of statically typed batches comprising `self`.
     fn batches(&self) -> Vec<Arc<TypedBatch<Self::Key, Self::Val, Self::R, Self::IntoBatch>>>;
 
+    /// Assemble batches from `self` into a spine snapshot.
+    fn dyn_snapshot(&self) -> DynSpineSnapshot<Self::IntoBatch>;
+
     /// Convert `self` into a spine snapshot.
     fn into_dyn_snapshot(self) -> DynSpineSnapshot<Self::IntoBatch>;
 }
@@ -510,6 +513,10 @@ where
                 Vec<Arc<TypedBatch<Self::Key, Self::Val, Self::R, Self::IntoBatch>>>,
             >(self.dyn_batches())
         }
+    }
+
+    fn dyn_snapshot(&self) -> DynSpineSnapshot<Self::IntoBatch> {
+        self.inner.ro_snapshot()
     }
 }
 

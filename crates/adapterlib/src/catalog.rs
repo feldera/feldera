@@ -215,6 +215,8 @@ pub trait SerBatchReader: 'static {
     /// A reader can wrap a single batch or a spine or a spine snapshot. This method extracts
     /// all batches from the reader.
     fn batches(&self) -> Vec<Arc<dyn SerBatch>>;
+
+    fn snapshot(&self) -> Arc<dyn SerBatchReader>;
 }
 
 impl Debug for dyn SerBatchReader {
