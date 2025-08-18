@@ -496,6 +496,10 @@ impl Profiler {
                         MetaItem::Duration(profile.step_profile.total_time()),
                     ),
                     (
+                        Cow::Borrowed("total_idle_time"),
+                        MetaItem::Duration(profile.idle_profile.total_time()),
+                    ),
+                    (
                         Cow::Borrowed("runtime_elapsed"),
                         MetaItem::Duration(runtime_elapsed),
                     ),
