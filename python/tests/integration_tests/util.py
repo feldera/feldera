@@ -11,8 +11,7 @@ from feldera.runtime_config import RuntimeConfig
 
 API_KEY = os.environ.get("FELDERA_API_KEY")
 BASE_URL = (
-    os.environ.get("FELDERA_BASE_URL")  # deprecated
-    or os.environ.get("FELDERA_HOST")
+    os.environ.get("FELDERA_HOST")
     or "http://localhost:8080"
 )
 TEST_CLIENT = FelderaClient(BASE_URL, api_key=API_KEY)
@@ -51,8 +50,7 @@ def validate_view(pipeline: Pipeline, view_name: str, view_query: str):
     if extra_rows or missing_rows:
         raise AssertionError(f"Validation failed for view {view_name}")
 
-
-def run_pipeline(pipeline_name: str, tables: dict, views: dict):
+def build_pipeline(pipeline_name: str, tables: dict, views: dict) -> Pipeline:
     sql = ""
 
     for table_sql in tables.values():
@@ -69,6 +67,19 @@ def run_pipeline(pipeline_name: str, tables: dict, views: dict):
         runtime_config=RuntimeConfig(provisioning_timeout_secs=60),
     ).create_or_replace()
 
+    return pipeline
+
+def validate_outputs(pipeline: Pipeline, tables: dict, views: dict):
+    for table in tables.keys():
+        row_count = list(pipeline.query(f"select count(*) from {table}"))
+        print(f"Table '{table}' count(*):\n{row_count}")
+
+    for view_name, view_query in views.items():
+        validate_view(pipeline, view_name, view_query)
+
+def run_pipeline(pipeline_name: str, tables: dict, views: dict):
+    pipeline = build_pipeline(pipeline_name, tables, views)
+
     pipeline.start()
     start_time = time.monotonic()
 
@@ -84,11 +95,6 @@ def run_pipeline(pipeline_name: str, tables: dict, views: dict):
     elapsed = time.monotonic() - start_time
     print(f"Commit took {elapsed}")
 
-    for table in tables.keys():
-        row_count = list(pipeline.query(f"select count(*) from {table}"))
-        print(f"Table '{table}' count(*):\n{row_count}")
-
-    for view_name, view_query in views.items():
-        validate_view(pipeline, view_name, view_query)
+    validate_outputs(pipeline, tables, views)
 
     pipeline.stop(force=True)
