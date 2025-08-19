@@ -209,6 +209,17 @@ fn markers_dir() -> Option<&'static Path> {
     Some(LazyLock::force(&MARKERS_DIR).as_ref()?)
 }
 
+fn page_size() -> NonZeroUsize {
+    static PAGE_SIZE: LazyLock<NonZeroUsize> = LazyLock::new(|| {
+        let page_size = match nix::unistd::sysconf(nix::unistd::SysconfVar::PAGE_SIZE) {
+            Ok(Some(value)) if value > 0 => value as usize,
+            _ => 4096,
+        };
+        NonZeroUsize::new(page_size).unwrap()
+    });
+    *PAGE_SIZE
+}
+
 fn with_marker_file<F, R>(f: F) -> Option<R>
 where
     F: FnOnce(&mut File) -> R,
@@ -235,17 +246,25 @@ where
             .ok()?;
 
         // Create an mmap for the file.  This cannot be skipped because it
-        // triggers samply to read and interpret the file.  We will not use it
-        // to write to the file (because writing to a text file via mmap is
-        // painful and we haven't yet proved that it is a performance problem),
-        // so it is not necessary to map it with any particular protection or
-        // flags, so we use PROT_READ because that offers the fewest ways to
-        // screw up.
+        // signals samply to read and interpret the file.
         unsafe {
             nix::sys::mman::mmap(
                 None,
-                NonZeroUsize::new(4096).unwrap(),
-                ProtFlags::PROT_READ,
+                {
+                    // It doesn't matter how much we map, because neither we nor
+                    // `samply` uses the mapping to read or write the file.
+                    // Instead, `samply` uses the existence of the mapping as a
+                    // signal to read the file.
+                    page_size()
+                },
+                {
+                    // We do not use the mapping to write to the file, because
+                    // writing to a text file via mmap is painful and we haven't
+                    // yet proved that it is a performance problem.  Therefore,
+                    // it is not necssary to map it with any particular
+                    // protection.  `PROT_READ` offers the fewest pitfalls.
+                    ProtFlags::PROT_READ
+                },
                 MapFlags::MAP_SHARED,
                 &file,
                 0,
