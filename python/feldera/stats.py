@@ -46,7 +46,7 @@ class GlobalPipelineMetrics:
         self.rss_bytes: Optional[int] = None
         self.cpu_msecs: Optional[int] = None
         self.start_time: Optional[datetime] = None
-        self.incarnation_uuid: Optional[uuid] = None
+        self.incarnation_uuid: Optional[uuid.UUID] = None
         self.storage_bytes: Optional[int] = None
         self.storage_mb_secs: Optional[int] = None
         self.runtime_elapsed_msecs: Optional[int] = None
