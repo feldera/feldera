@@ -35,6 +35,10 @@ import TabItem from '@theme/TabItem';
         tolerance is enabled, because multiple resumes from a given checkpoint
         were always allowed in that case.)
 
+        ### Changes to Python SDK `feldera`:
+        - `Pipeline.sync_checkpoint` will now raise a runtime error if `wait`
+          is set to `True` and pushing this checkpoint fails.
+
         ## 0.105.0
 
         Changed the semantics of functions `ARRAY_CONTAINS`,
