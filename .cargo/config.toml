@@ -5,4 +5,4 @@
 #   postgresql_embedded bundle step (e.g. not omit minor or bugfix)
 # - Also note that we can't change the major version without making sure
 #   the database directories in ~/.feldera for users get upgraded too.
-POSTGRESQL_VERSION = "15.13.0"
+POSTGRESQL_VERSION = "=15.13.0"

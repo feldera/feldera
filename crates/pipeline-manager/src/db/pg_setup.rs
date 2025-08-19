@@ -30,7 +30,7 @@ pub(crate) async fn install(
         data_dir: database_dir,
         username: "postgres".to_string(),
         password: "postgres".to_string(),
-        version: VersionReq::from_str(format!("={}", env!("POSTGRESQL_VERSION")).as_str())?,
+        version: VersionReq::from_str(env!("POSTGRESQL_VERSION"))?,
         temporary: !persistent,
         port: port.unwrap_or(5432),
         ..Default::default()
