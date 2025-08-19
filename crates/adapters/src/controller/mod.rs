@@ -1034,6 +1034,17 @@ impl Controller {
     }
 }
 
+struct SyncCheckpointRequest {
+    uuid: Arc<TokioMutex<Option<uuid::Uuid>>>,
+    cb: Option<SyncCheckpointCallbackFn>,
+}
+
+impl SyncCheckpointRequest {
+    fn uuid(&self) -> Option<uuid::Uuid> {
+        *self.uuid.blocking_lock()
+    }
+}
+
 struct CircuitThread {
     controller: Arc<ControllerInner>,
     circuit: DBSPHandle,
@@ -1048,7 +1059,7 @@ struct CircuitThread {
     checkpoint_requests: Vec<CheckpointRequest>,
 
     /// Currently only allows one request at a time.
-    sync_checkpoint_request: Option<(uuid::Uuid, SyncCheckpointCallbackFn)>,
+    sync_checkpoint_request: Option<SyncCheckpointRequest>,
 
     /// Storage backend for writing checkpoints.
     storage: Option<Arc<dyn StorageBackend>>,
@@ -1467,12 +1478,18 @@ impl CircuitThread {
             CHECKPOINT_WRITTEN.record((written_after - written_before) / 1_000_000);
             CHECKPOINT_PROCESSED_RECORDS.store(processed_records, Ordering::Relaxed);
 
-            // TODO: check the requested checkpoint UUID
-            if this.sync_checkpoint_request.is_none() {
+            let sync_requested = this
+                .sync_checkpoint_request
+                .as_ref()
+                .map(|s| s.uuid())
+                .flatten();
+
+            if sync_requested.is_none() {
                 if let Err(error) = this.circuit.gc_checkpoint() {
                     warn!("error removing old checkpoints: {error}");
                 }
             }
+
             if let Some(ft) = &mut this.ft {
                 ft.checkpointed()?;
             }
@@ -1557,7 +1574,10 @@ impl CircuitThread {
                         .push(CheckpointRequest::SuspendCommand(reply_callback));
                 }
                 Command::SyncCheckpoint((uuid, reply_callback)) => {
-                    self.sync_checkpoint_request = Some((uuid, reply_callback));
+                    self.sync_checkpoint_request = Some(SyncCheckpointRequest {
+                        uuid: Arc::new(TokioMutex::new(Some(uuid))),
+                        cb: Some(reply_callback),
+                    });
                 }
             }
         }
@@ -1882,7 +1902,15 @@ impl CircuitThread {
     }
 
     fn sync_checkpoint(&mut self) {
-        let Some((uuid, cb)) = self.sync_checkpoint_request.take() else {
+        let Some((uuid_lock, Some(cb))) = self
+            .sync_checkpoint_request
+            .as_mut()
+            .map(|u| (u.uuid.clone(), u.cb.take()))
+        else {
+            return;
+        };
+
+        let Some(uuid) = uuid_lock.blocking_lock().clone() else {
             return;
         };
 
@@ -1940,6 +1968,8 @@ impl CircuitThread {
                 } else {
                     cb(Ok(()))
                 }
+
+                uuid_lock.blocking_lock().take()
             })
             .expect("failed to spawn s3-synchronizer thread");
     }
