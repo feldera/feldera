@@ -233,7 +233,7 @@ where
 
         // Create the file.
         let file = File::options()
-            .create(true)
+            .create_new(true)
             .write(true)
             .read({
                 // We aren't going to read from the file, so we ordinarily
