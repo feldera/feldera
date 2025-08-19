@@ -37,6 +37,9 @@ arrow = { workspace = true, features = ["ipc", "prettyprint"] }
 serde = { workspace = true, features = ["derive"] }
 uuid = { workspace = true, features = ["serde", "v4"] }
 chrono = { workspace = true, features = ["serde"] }
+anyhow = { workspace = true }
+ordered-float.workspace = true
+itertools.workspace = true
 
 [build-dependencies]
 prettyplease = { workspace = true }
