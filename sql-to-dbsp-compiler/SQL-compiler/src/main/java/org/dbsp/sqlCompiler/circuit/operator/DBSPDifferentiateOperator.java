@@ -38,7 +38,7 @@ import java.util.List;
 
 public final class DBSPDifferentiateOperator extends DBSPUnaryOperator {
     public DBSPDifferentiateOperator(CalciteRelNode node, OutputPort source) {
-        super(node, "accumulate_differentiate", null, source.outputType(), source.isMultiset(), source);
+        super(node, "differentiate", null, source.outputType(), source.isMultiset(), source);
     }
 
     @Override
