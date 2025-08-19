@@ -194,7 +194,7 @@ jemalloc_pprof = { workspace = true, features = ["symbolize"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = { workspace = true }
-nix = { workspace = true, features = ["signal", "mman", "time"] }
+nix = { workspace = true, features = ["signal", "mman", "time", "feature"] }
 
 [dev-dependencies]
 actix-test = { workspace = true }
