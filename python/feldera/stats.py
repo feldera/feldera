@@ -26,7 +26,7 @@ class PipelineStatistics:
         pipeline.inputs = [
             InputEndpointStatus.from_dict(input) for input in d["inputs"]
         ]
-        pipeline.inputs = [
+        pipeline.outputs = [
             OutputEndpointStatus().from_dict(output) for output in d["outputs"]
         ]
         return pipeline
