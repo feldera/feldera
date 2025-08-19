@@ -1,7 +1,7 @@
 from tests.shared_test_pipeline import SharedTestPipeline
 from tests import enterprise_only
 from feldera.runtime_config import RuntimeConfig, Storage
-from feldera.enums import PipelineStatus, FaultToleranceModel
+from feldera.enums import PipelineStatus, FaultToleranceModel, CheckpointStatus
 from typing import Optional
 import os
 import sys
@@ -60,7 +60,16 @@ class TestCheckpointSync(SharedTestPipeline):
         standby: bool = False,
     ):
         """
-        CREATE TABLE t0 (c0 INT, c1 VARCHAR);
+        CREATE TABLE t0 (c0 INT, c1 VARCHAR) with (
+            'connectors' = '[{
+                "name": "datagen",
+                "paused": true,
+                "transport": {
+                    "name": "datagen",
+                    "config": {}
+                }
+            }]'
+        );
         CREATE MATERIALIZED VIEW v0 AS SELECT * FROM t0;
         """
 
@@ -224,7 +233,7 @@ class TestCheckpointSync(SharedTestPipeline):
         data_initial = [{"c0": i, "c1": str(i)} for i in range(1, total_initial)]
         self.pipeline.input_json("t0", data_initial)
         self.pipeline.execute("INSERT INTO t0 VALUES (21, 'exists')")
-        self.pipeline.wait_for_completion()
+        self.pipeline.wait_for_idle(1.0)
 
         got_before = list(self.pipeline.query("select * from v0"))
 
@@ -269,7 +278,7 @@ class TestCheckpointSync(SharedTestPipeline):
             new_val = 100 + i
             new_data = [{"c0": new_val, "c1": f"extra_{new_val}"}]
             self.pipeline.input_json("t0", new_data)
-            self.pipeline.wait_for_completion()
+            self.pipeline.wait_for_idle(1.0)
             total_additional += 1
             self.pipeline.checkpoint(wait=True)
             self.pipeline.sync_checkpoint(wait=True)
@@ -317,3 +326,35 @@ class TestCheckpointSync(SharedTestPipeline):
     @enterprise_only
     def test_standby_fallback_from_uuid(self):
         self.test_standby_fallback(from_uuid=True)
+
+    @enterprise_only
+    def test_sync_race_condition(self):
+        # Step 1: Start main pipeline
+        storage_config = storage_cfg(self.pipeline.name, start_from_checkpoint="latest")
+        ft = FaultToleranceModel.AtLeastOnce
+        self.pipeline.set_runtime_config(
+            RuntimeConfig(
+                fault_tolerance_model=ft, storage=Storage(config=storage_config)
+            )
+        )
+        self.pipeline.start()
+        self.pipeline.resume_connector("t0", "datagen")
+
+        # Insert initial data
+        random.seed(time.time())
+        n = random.randint(10, 20)
+
+        uuids = []
+
+        for _ in range(n):
+            # Step 2: Create checkpoint and sync
+            self.pipeline.checkpoint(wait=True)
+            uuids.append(self.pipeline.sync_checkpoint(wait=False))
+
+        uuids.append(self.pipeline.sync_checkpoint(wait=True))
+
+        for uuid in uuids:
+            status = self.pipeline.sync_checkpoint_status(uuid)
+            assert status != CheckpointStatus.Failure
+
+        self.pipeline.stop(force=True)
