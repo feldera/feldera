@@ -986,7 +986,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             stream=True,
         )
 
-        for chunk in resp.iter_lines(chunk_size=50000000):
+        for chunk in resp.iter_lines(chunk_size=1024):
             if chunk:
                 yield json.loads(chunk, parse_float=Decimal)
 

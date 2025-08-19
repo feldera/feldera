@@ -685,6 +685,7 @@ pipeline '{self.name}' to make checkpoint '{seq}'"""
             checkpoint to complete syncing.
 
         :raises FelderaAPIError: If no checkpoints have been made.
+        :raises RuntimeError: If syncing the checkpoint fails.
         """
 
         uuid = self.client.sync_checkpoint(self.name)
@@ -702,6 +703,11 @@ pipeline '{self.name}' to make checkpoint '{seq}'"""
 pipeline '{self.name}' to sync checkpoint '{uuid}'"""
                 )
             status = self.sync_checkpoint_status(uuid)
+            if status == CheckpointStatus.Failure:
+                raise RuntimeError(
+                    f"failed to sync checkpoint '{uuid}': ", status.get_error()
+                )
+
             if status in [CheckpointStatus.InProgress, CheckpointStatus.Unknown]:
                 time.sleep(0.1)
                 continue
@@ -715,6 +721,9 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
         Checks the status of the given checkpoint sync operation.
         If the checkpoint is currently being synchronized, returns
         `CheckpointStatus.Unknown`.
+
+        Failures are not raised as runtime errors and must be explicitly
+        checked.
 
         :param uuid: The checkpoint uuid.
         """
@@ -731,6 +740,7 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
         if uuid == fail.get("uuid"):
             failure = CheckpointStatus.Failure
             failure.error = fail.get("error", "")
+            logging.error(f"failed to sync checkpoint '{uuid}': {failure.error}")
             return failure
 
         if (success is None) or UUID(uuid) > UUID(success):
