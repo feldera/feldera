@@ -189,6 +189,13 @@ pub enum DebugActions {
         #[arg(value_hint = ValueHint::FilePath)]
         path: PathBuf,
     },
+
+    /// Reads metrics from a file and prints them in an easier-to-read form..
+    Metrics {
+        /// The Prometheus metrics file to read.
+        #[arg(value_hint = ValueHint::FilePath)]
+        path: PathBuf,
+    },
 }
 
 /// A list of possible configuration options.

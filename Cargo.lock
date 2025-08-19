@@ -4640,6 +4640,7 @@ dependencies = [
 name = "fda"
 version = "0.129.0"
 dependencies = [
+ "anyhow",
  "arrow",
  "chrono",
  "clap",
@@ -4650,8 +4651,10 @@ dependencies = [
  "feldera-types",
  "futures",
  "futures-util",
+ "itertools 0.14.0",
  "json_to_table",
  "log",
+ "ordered-float 4.6.0",
  "prettyplease",
  "progenitor",
  "progenitor-client 0.9.1",
