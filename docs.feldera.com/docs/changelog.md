@@ -25,6 +25,10 @@ import TabItem from '@theme/TabItem';
         the pipeline is initializing. Instead it returns status OK with message
         body containing the "Initializing" string.
 
+        ### Changes to Python SDK `feldera`:
+        - `Pipeline.sync_checkpoint` will now raise a runtime error if `wait`
+          is set to `True` and pushing this checkpoint fails.
+
         ## 0.129.0
 
         Values that are late in the NOW stream are no longer logged to the
