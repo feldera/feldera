@@ -74,6 +74,7 @@ const config: Config = {
         enableInDevelopment: true,
       },
     ],
+    'docusaurus-plugin-hubspot'
   ],
 
   themeConfig: {
