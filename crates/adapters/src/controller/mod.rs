@@ -1333,15 +1333,21 @@ impl CircuitThread {
         // as soon as input has been processed.
         SamplySpan::new(debug_span!("update")).in_scope(|| self.update_snapshot());
 
-        // Record that we've processed the records.
+        // Record that we've processed the records, unless there is a transaction in progress,
+        // in which case records are ingested by the circuit but are not fully processed.
         let processed_records = self.processed_records(total_consumed);
+        let processed_records = if self.controller.get_transaction_state() == TransactionState::None
+        {
+            Some(processed_records)
+        } else {
+            None
+        };
 
-        // Push output batches to output pipelines.
         if let Some(ft) = self.ft.as_mut() {
             ft.sync_step()?;
         }
+        // Push output batches to output pipelines.
         self.push_output(bootstrapping, processed_records);
-
         if let Some(ft) = self.ft.as_mut() {
             ft.next_step(self.step)?;
             self.finish_replaying();
@@ -1954,8 +1960,9 @@ impl CircuitThread {
     /// * `bootstrapping` is true if the step producing the outputs was performed while bootstrapping.
     ///
     /// * `processed_records` is the total number of records processed by the
-    ///   pipeline *before* this step.
-    fn push_output(&mut self, bootstrapping: bool, processed_records: u64) {
+    ///   pipeline *before* this step. If `processed_records` is `None`, we're in
+    ///   the middle of a transaction and the records are not fully processed yet.
+    fn push_output(&mut self, bootstrapping: bool, processed_records: Option<u64>) {
         let outputs = self.controller.outputs.read().unwrap();
         for (stream, (output_handles, endpoints)) in outputs.iter_by_stream() {
             let delta_batch = output_handles.delta_handle.as_ref().concat();
@@ -2202,9 +2209,7 @@ impl FtState {
     ) -> HashMap<EndpointId, (String, bool)> {
         controller
             .status
-            .inputs
-            .read()
-            .unwrap()
+            .input_status()
             .iter()
             .map(|(id, status)| {
                 (
@@ -2267,7 +2272,7 @@ impl FtState {
                 let mut remove_inputs = HashSet::new();
                 let mut add_inputs = HashMap::new();
                 let mut changed_inputs = HashMap::new();
-                let inputs = self.controller.status.inputs.read().unwrap();
+                let inputs = self.controller.status.input_status();
 
                 // Stop recording if the controller is shutting down. Avoid race with
                 // `stop`, which removes input endpoints from the pipeline. Without this
@@ -2898,9 +2903,9 @@ impl Drop for StatisticsThread {
 /// A lock-free queue used to send output batches from the circuit thread
 /// to output endpoint threads.  Each entry is annotated with a progress label
 /// that is equal to the number of input records fully processed by
-/// DBSP before emitting this batch of outputs.  The label increases
-/// monotonically over time.
-type BatchQueue = SegQueue<(Step, Arc<dyn SyncSerBatchReader>, u64)>;
+/// DBSP before emitting this batch of outputs or `None` if the circuit is
+/// executing a transaction.  The label increases monotonically over time.
+type BatchQueue = SegQueue<(Step, Arc<dyn SyncSerBatchReader>, Option<u64>)>;
 
 /// State tracked by the controller for each output endpoint.
 struct OutputEndpointDescr {
@@ -3043,7 +3048,15 @@ impl OutputBuffer {
     }
 
     /// Insert `batch` into the buffer.
-    fn insert(&mut self, batch: Arc<dyn SyncSerBatchReader>, step: Step, processed_records: u64) {
+    ///
+    /// `processed_records` is the number of records fully processed by the circuit
+    /// before this batch was produced or `None` if the circuit is executing a transaction.
+    fn insert(
+        &mut self,
+        batch: Arc<dyn SyncSerBatchReader>,
+        step: Step,
+        processed_records: Option<u64>,
+    ) {
         if let Some(buffer) = &mut self.buffer {
             for batch in batch.batches() {
                 buffer.insert(batch);
@@ -3059,7 +3072,9 @@ impl OutputBuffer {
             self.buffer_since = Instant::now();
         }
         self.buffered_step = step;
-        self.buffered_processed_records = processed_records;
+        if let Some(records) = processed_records {
+            self.buffered_processed_records = records;
+        }
     }
 
     /// Returns `true` when it is time to flush the buffer either because it's full or
@@ -3379,9 +3394,7 @@ impl ControllerInner {
         // initialization.
         if self
             .status
-            .inputs
-            .read()
-            .unwrap()
+            .input_status()
             .values()
             .any(|ep| ep.endpoint_name == endpoint_name)
         {
@@ -3448,7 +3461,7 @@ impl ControllerInner {
 
                 // Register the endpoint, so that if the the `open` call below signals `eoi` to the controller,
                 // the eoi status is recorded and not dropped on the floor.
-                self.status.inputs.write().unwrap().insert(
+                self.status.inputs.write().insert(
                     endpoint_id,
                     InputEndpointStatus::new(
                         endpoint_name,
@@ -3466,13 +3479,12 @@ impl ControllerInner {
                         self.status
                             .inputs
                             .write()
-                            .unwrap()
                             .get_mut(&endpoint_id)
                             .unwrap()
                             .reader = Some(reader);
                     }
                     Err(e) => {
-                        self.status.inputs.write().unwrap().remove(&endpoint_id);
+                        self.status.inputs.write().remove(&endpoint_id);
                         return Err(e);
                     }
                 }
@@ -3488,7 +3500,7 @@ impl ControllerInner {
 
                 let fault_tolerance = endpoint.fault_tolerance();
 
-                self.status.inputs.write().unwrap().insert(
+                self.status.inputs.write().insert(
                     endpoint_id,
                     InputEndpointStatus::new(
                         endpoint_name,
@@ -3506,13 +3518,12 @@ impl ControllerInner {
                         self.status
                             .inputs
                             .write()
-                            .unwrap()
                             .get_mut(&endpoint_id)
                             .unwrap()
                             .reader = Some(reader);
                     }
                     Err(e) => {
-                        self.status.inputs.write().unwrap().remove(&endpoint_id);
+                        self.status.inputs.write().remove(&endpoint_id);
                         return Err(e);
                     }
                 }
@@ -3939,10 +3950,7 @@ impl ControllerInner {
         self.status.set_state(PipelineState::Terminated);
 
         // Prevent nested panic when stopping the pipeline in response to a panic.
-        let Ok(mut inputs) = self.status.inputs.write() else {
-            error!("Error shutting down the pipeline: failed to acquire a poisoned lock. This indicates that the pipeline is an inconsistent state.");
-            return;
-        };
+        let mut inputs = self.status.inputs.write();
 
         for ep in inputs.values() {
             if let Some(reader) = ep.reader.as_ref() {
@@ -3950,6 +3958,7 @@ impl ControllerInner {
             }
         }
         inputs.clear();
+        drop(inputs);
 
         self.unpark_circuit();
         self.unpark_backpressure();

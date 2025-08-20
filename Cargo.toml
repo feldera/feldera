@@ -254,6 +254,7 @@ xxhash-rust = "0.8.6"
 zip = "0.6.2"
 zstd = "0.12.0"
 backtrace = "0.3.75"
+parking_lot = "0.12.4"
 
 [workspace.metadata.release]
 release = false
