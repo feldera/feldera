@@ -205,10 +205,10 @@ where
 
 #[cfg(test)]
 mod test {
-    use std::cmp::min;
+    use std::cmp::{max, min};
 
     use crate::{
-        circuit::CircuitConfig, operator::Min, typed_batch::SpineSnapshot, utils::Tup2,
+        circuit::CircuitConfig, operator::Min, typed_batch::SpineSnapshot, utils::Tup2, zset,
         OrdIndexedZSet, OutputHandle, RootCircuit, Runtime, ZSetHandle, ZWeight,
     };
     use proptest::{collection, prelude::*};
@@ -269,5 +269,69 @@ mod test {
                 assert_eq!(SpineSnapshot::<OrdIndexedZSet<u64, String>>::concat(&aggregate.take_from_all()).iter().collect::<Vec<_>>(), SpineSnapshot::<OrdIndexedZSet<u64, String>>::concat(&delta_aggregate.take_from_all()).iter().collect::<Vec<_>>());
             }
         }
+    }
+
+    /// NOW() clock implemented as a chain aggregate, as in the SQL compiler.
+    /// This design is robust against clock going back, clock input missing in some steps (e.g., in the middle of a transaction),
+    /// and multiple clock updates in a single step.
+    #[test]
+    fn clock_test() {
+        let (mut dbsp, (clock_handle, busy_input_handle, now_handle)) = Runtime::init_circuit(
+            CircuitConfig::with_workers(4).with_splitter_chunk_size_records(1),
+            |circuit| {
+                let (clock_stream, clock_handle) = circuit.add_input_zset::<u64>();
+
+                // Feeding >1 values to this stream will force transaction commit to take multiple steps.
+                let (busy_stream, busy_input_handle) = circuit.add_input_zset::<u64>();
+                busy_stream.map_index(|x| (*x, *x)).distinct();
+
+                let now = clock_stream
+                    .map_index(|x| ((), *x))
+                    .chain_aggregate(|v, _w| *v, |acc, i, _w| max(acc, *i));
+
+                let now_handle = now.map(|(_, x)| *x).accumulate_output();
+                Ok((clock_handle, busy_input_handle, now_handle))
+            },
+        )
+        .unwrap();
+
+        // Feed initial clock value.
+        clock_handle.append(&mut vec![Tup2(10u64, 1)]);
+        dbsp.transaction().unwrap();
+        assert_eq!(now_handle.concat().consolidate(), zset! { 10 => 1 });
+
+        // Clock goes back - keep the old value.
+        clock_handle.append(&mut vec![Tup2(5u64, 1)]);
+        dbsp.transaction().unwrap();
+        assert_eq!(now_handle.concat().consolidate(), zset! {});
+
+        // Multiple clock updates - only the bigger value has effect.
+        clock_handle.append(&mut vec![Tup2(15u64, 1), Tup2(20u64, 1)]);
+        busy_input_handle.append(&mut (0..100).map(|i| Tup2(i, 1)).collect::<Vec<_>>());
+
+        dbsp.transaction().unwrap();
+        assert_eq!(
+            now_handle.concat().consolidate(),
+            zset! { 10 => -1, 20 => 1 }
+        );
+
+        // Miss a clock tick
+        dbsp.transaction().unwrap();
+        assert_eq!(now_handle.concat().consolidate(), zset! {});
+
+        // Transaction
+        dbsp.start_transaction().unwrap();
+        busy_input_handle.append(&mut (100..200).map(|i| Tup2(i, 1)).collect::<Vec<_>>());
+
+        for i in 20..30 {
+            clock_handle.append(&mut vec![Tup2(i as u64, 1)]);
+            dbsp.step().unwrap();
+            assert_eq!(now_handle.concat().consolidate(), zset! {});
+        }
+
+        dbsp.commit_transaction().unwrap();
+        assert_eq!(now_handle.concat().consolidate(), zset! {20 => -1, 29 => 1});
+
+        dbsp.kill().unwrap();
     }
 }
