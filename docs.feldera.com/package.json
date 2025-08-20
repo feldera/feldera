@@ -30,6 +30,7 @@
     "url": "^0.11.4"
   },
   "devDependencies": {
+    "@stackql/docusaurus-plugin-hubspot": "^1.1.0",
     "mobx": "^6.13.7",
     "redocusaurus": "^2.5.0",
     "styled-components": "^6.1.18",

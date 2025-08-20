@@ -2186,6 +2186,11 @@
     micromark-util-character "^1.1.0"
     micromark-util-symbol "^1.0.1"
 
+"@stackql/docusaurus-plugin-hubspot@^1.1.0":
+  version "1.1.0"
+  resolved "https://registry.yarnpkg.com/@stackql/docusaurus-plugin-hubspot/-/docusaurus-plugin-hubspot-1.1.0.tgz#2549c521e7cb162ec3c20352cbe3a458da988b6c"
+  integrity sha512-pQIF3WkzJ0Ng8gjc3cpG72GwNu5AHc9/jIpyvOO8kYNAzSTcKDMFJGOGGSz8dG3j6M0ZZp1TciLbZod2cFpSQQ==
+
 "@svgr/babel-plugin-add-jsx-attribute@8.0.0":
   version "8.0.0"
   resolved "https://registry.yarnpkg.com/@svgr/babel-plugin-add-jsx-attribute/-/babel-plugin-add-jsx-attribute-8.0.0.tgz#4001f5d5dd87fa13303e36ee106e3ff3a7eb8b22"
