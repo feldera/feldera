@@ -10,10 +10,7 @@ from feldera.runtime_config import RuntimeConfig
 
 
 API_KEY = os.environ.get("FELDERA_API_KEY")
-BASE_URL = (
-    os.environ.get("FELDERA_HOST")
-    or "http://localhost:8080"
-)
+BASE_URL = os.environ.get("FELDERA_HOST") or "http://localhost:8080"
 TEST_CLIENT = FelderaClient(BASE_URL, api_key=API_KEY)
 
 
@@ -50,6 +47,7 @@ def validate_view(pipeline: Pipeline, view_name: str, view_query: str):
     if extra_rows or missing_rows:
         raise AssertionError(f"Validation failed for view {view_name}")
 
+
 def build_pipeline(pipeline_name: str, tables: dict, views: dict) -> Pipeline:
     sql = ""
 
@@ -69,6 +67,7 @@ def build_pipeline(pipeline_name: str, tables: dict, views: dict) -> Pipeline:
 
     return pipeline
 
+
 def validate_outputs(pipeline: Pipeline, tables: dict, views: dict):
     for table in tables.keys():
         row_count = list(pipeline.query(f"select count(*) from {table}"))
@@ -76,6 +75,7 @@ def validate_outputs(pipeline: Pipeline, tables: dict, views: dict):
 
     for view_name, view_query in views.items():
         validate_view(pipeline, view_name, view_query)
+
 
 def run_pipeline(pipeline_name: str, tables: dict, views: dict):
     pipeline = build_pipeline(pipeline_name, tables, views)
