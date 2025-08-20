@@ -251,5 +251,13 @@ public class EquivalenceTests {
                 y.deepCopy().to(DBSPVariablePath.class),
                 x.deepCopy().to(DBSPVariablePath.class));
         Assert.assertTrue(EquivalenceContext.equiv(blockLambda0, blockLambda1));
+
+        DBSPTypeTuple ii = new DBSPTypeTuple(i32, i32);
+        DBSPTypeTuple iii = new DBSPTypeTuple(i32, i32, i32);
+        DBSPVariablePath x5 = new DBSPVariablePath("x", ii);
+        DBSPVariablePath y5 = new DBSPVariablePath("y", iii);
+        DBSPExpression x0 = x5.field(0).closure(x5);
+        DBSPExpression y0 = y5.field(0).closure(y5);
+        Assert.assertFalse(EquivalenceContext.equiv(x0, y0));
     }
 }

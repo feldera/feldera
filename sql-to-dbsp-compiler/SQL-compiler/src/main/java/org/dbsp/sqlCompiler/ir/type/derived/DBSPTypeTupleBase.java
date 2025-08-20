@@ -51,7 +51,7 @@ public abstract class DBSPTypeTupleBase extends DBSPType {
         this.tupFields = tupFields;
         for (DBSPType type: this.tupFields)
             if (type == null)
-                throw new NullPointerException();
+                throw new NullPointerException("null field for tuple type");
     }
 
     @Nullable @Override

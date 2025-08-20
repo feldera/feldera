@@ -85,6 +85,8 @@ public final class DBSPClosureExpression extends DBSPExpression {
         newContext.leftDeclaration.newContext();
         newContext.rightDeclaration.newContext();
         for (int i = 0; i < parameters.length; i++) {
+            if (!this.parameters[i].getType().sameType(otherExpression.parameters[i].getType()))
+                return false;
             newContext.leftDeclaration.substitute(this.parameters[i].name, this.parameters[i]);
             newContext.rightDeclaration.substitute(otherExpression.parameters[i].name, otherExpression.parameters[i]);
             newContext.leftToRight.put(this.parameters[i], otherExpression.parameters[i]);
@@ -156,6 +158,7 @@ public final class DBSPClosureExpression extends DBSPExpression {
 
     /** Compose this closure by applying it after the 'before'
      * closure expression.  This closure must have exactly 1
+     * parameter, while the before one can have multiple ones.
      * parameter, while the before one can have multiple ones.
      * @param before Closure to compose.
      * @param inline If {@link Maybe#YES}, inline the call,

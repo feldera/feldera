@@ -96,7 +96,7 @@
       "positions": [],
       "persistent_id": "5e6c4775639ef50da58436d192195ae13fa8cd9681af464d09f0927ebbd24bbf"
     }, "s3": {
-      "operation": "map_index",
+      "operation": "flat_map_index",
       "inputs": [
         { "node": "s2", "output": 0 }
       ],
@@ -108,8 +108,10 @@
             "partial": 3
           }]
       },
-      "positions": [],
-      "persistent_id": "20e32f4b3b66b72a630fe9dfde075dbf6f5685dc5a61574bd7a2ee844174b882"
+      "positions": [
+        {"start_line_number":1,"start_column":1,"end_line_number":1,"end_column":56}
+      ],
+      "persistent_id": "818c7468fa4db4704d39762d9a674575e6e67c76d9c99264abc9813294dd6feb"
     }, "s4": {
       "operation": "differentiate",
       "inputs": [
@@ -119,7 +121,7 @@
         "partial": 3
       },
       "positions": [],
-      "persistent_id": "cc69beadd24044b7aaabbdc61c90ee37b09b25f8d0112c6dd86b082103ea83e0"
+      "persistent_id": "6facae8579db99aae3877089a35d46490e1c9c0eafd864388065616a487f41c8"
     }, "s5": {
       "operation": "aggregate_linear_postprocess",
       "inputs": [
@@ -131,7 +133,7 @@
       "positions": [
         {"start_line_number":2,"start_column":25,"end_line_number":2,"end_column":33}
       ],
-      "persistent_id": "4c281c3dcb6fb51fb33f1fd57db596b0d82b2c53d833335d01aa25d84b7fd8d8"
+      "persistent_id": "4cdd7a649834a94117119752908e5bda76359883f090a94c91428c0bd101477b"
     }, "s6": {
       "operation": "map",
       "inputs": [
@@ -141,7 +143,7 @@
         "partial": 3
       },
       "positions": [],
-      "persistent_id": "fd79fb45cf0054a18755e3bdec5f35fcb6d5f72bd5edc058def593e8e985b672"
+      "persistent_id": "ddd7ad2921d2fc14604b1d921c6162fb915137230eaf2b4226309f61a6f69e30"
     }, "s7": {
       "operation": "map",
       "inputs": [
@@ -151,7 +153,7 @@
         "partial": 3
       },
       "positions": [],
-      "persistent_id": "8b5500cd7da47504c8be8a4db833a4cf9124c4ebecdfcfbe5ee0a4a5748e807d"
+      "persistent_id": "0e041680c02aae97e8c080c2f30513e00b1bafe87c00248f81bb42180556d7ee"
     }, "s8": {
       "operation": "neg",
       "inputs": [
@@ -161,7 +163,7 @@
         "partial": 3
       },
       "positions": [],
-      "persistent_id": "7065bd160b9d4256d2efd4b4f5ab87e7053cfaee8b6325f715e884eec0d0f55a"
+      "persistent_id": "45eaa416304723af931a6c92432f4167112f3d61db5823218a54837e341f5376"
     }, "s9": {
       "operation": "integrate",
       "inputs": [
@@ -171,7 +173,7 @@
         "partial": 3
       },
       "positions": [],
-      "persistent_id": "32eb84e31ac0ef9ebc30f7ac76f07617deab90a8d7f14038ecf49e92fa348a89"
+      "persistent_id": "3eee465ae73e1ef60c8671cfd8666abbdf01c9efdf850ef5bb1d7757677cc0e5"
     }, "s10": {
       "operation": "integrate",
       "inputs": [
@@ -181,7 +183,7 @@
         "partial": 3
       },
       "positions": [],
-      "persistent_id": "245e868576e35876b8319a96c38bbb35143479b8d988b9a3a6279da4a4af1f01"
+      "persistent_id": "b9e607a7762b1334e5f9bd39326e061af6ab0eab3587e4e856dddaaf3edf0a56"
     }, "s11": {
       "operation": "sum",
       "inputs": [
@@ -193,7 +195,7 @@
         "partial": 3
       },
       "positions": [],
-      "persistent_id": "52a0c6881e85cdff7938bfd17433f8838004aabc2cbed4e75d9e0a6d05adc8a1"
+      "persistent_id": "fdead6b6101f69cfbf76a8f83e77f5079f587695ec966c2c1e763aab5977bd37"
     }, "s12": {
       "operation": "inspect",
       "inputs": [
@@ -203,7 +205,7 @@
         "final": 3
       },
       "positions": [],
-      "persistent_id": "d52d13513077f79d4ba18fd65bec7a0fd93ba8e84a0208c4c960c7779de8b674"
+      "persistent_id": "4318cbb3677f5065b6d821a9d7a92954b7fe0e6e6dd26fc02b8f42b82bcc4c7d"
     }, "s13": {
       "operation": "inspect",
       "inputs": [

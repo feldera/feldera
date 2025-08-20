@@ -8,6 +8,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRef;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.util.ICastable;
 import org.dbsp.util.Linq;
@@ -186,14 +187,14 @@ public class FieldUseMap {
         @Nullable @Override
         public DBSPType compressedType(int depth) {
             if (!this.used)
-                return null;
+                return new DBSPTypeTuple();
             return this.type;
         }
 
         @Override @Nullable
         public DBSPExpression allUsedFields(DBSPExpression from, int depth) {
             if (!this.used)
-                return null;
+                return new DBSPTupleExpression();
             return from.applyCloneIfNeeded();
         }
 
@@ -312,9 +313,12 @@ public class FieldUseMap {
             for (int i = 0; i < this.size(); i++) {
                 if (this.fields.get(i).anyUsed() || isRaw) {
                     // For raw tuples never discard fields, rather return Tup0.
-                    fields[index++] = this.fields.get(i).allUsedFields(from.field(i), depth - 1);
+                    fields[index] = this.fields.get(i).allUsedFields(from.field(i), depth - 1);
+                    Utilities.enforce(fields[index] != null);
+                    index++;
                 }
             }
+            Utilities.enforce(index == size);
             if (isRaw)
                 return new DBSPRawTupleExpression(fields);
             else
