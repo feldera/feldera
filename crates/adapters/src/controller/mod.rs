@@ -1478,11 +1478,7 @@ impl CircuitThread {
             CHECKPOINT_WRITTEN.record((written_after - written_before) / 1_000_000);
             CHECKPOINT_PROCESSED_RECORDS.store(processed_records, Ordering::Relaxed);
 
-            let sync_requested = this
-                .sync_checkpoint_request
-                .as_ref()
-                .map(|s| s.uuid())
-                .flatten();
+            let sync_requested = this.sync_checkpoint_request.as_ref().and_then(|s| s.uuid());
 
             if sync_requested.is_none() {
                 if let Err(error) = this.circuit.gc_checkpoint() {
@@ -1910,7 +1906,7 @@ impl CircuitThread {
             return;
         };
 
-        let Some(uuid) = uuid_lock.blocking_lock().clone() else {
+        let Some(uuid) = *uuid_lock.blocking_lock() else {
             return;
         };
 
