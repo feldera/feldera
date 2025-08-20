@@ -53,7 +53,10 @@ pipeline.start_transaction()
 
 print(f"inputs: {pipeline.stats().inputs}")
 
-while pipeline.stats().global_metrics.total_input_records < INPUT_RECORDS or pipeline.stats().global_metrics.buffered_input_records > 0:
+while (
+    pipeline.stats().global_metrics.total_input_records < INPUT_RECORDS
+    or pipeline.stats().global_metrics.buffered_input_records > 0
+):
     print(f"Waiting for {INPUT_RECORDS} records to be ingested...")
     time.sleep(1)
 
