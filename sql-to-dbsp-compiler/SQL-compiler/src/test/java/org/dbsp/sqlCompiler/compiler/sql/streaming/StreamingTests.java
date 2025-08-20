@@ -1663,14 +1663,20 @@ public class StreamingTests extends StreamingTestBase {
                 CREATE TABLE T2(l INT, m INT, n INT);
                 CREATE VIEW V0 AS
                 select a, l from t1 full outer join t2 on t1.a = t2.l and t1.b < 5 and t2.m > 0;""");
-        int[] fmi = new int[1];
         CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
+            int fmi = 0;
+
+            @Override
             public void postorder(DBSPFlatMapIndexOperator unused) {
-                fmi[0]++;
+                fmi++;
+            }
+
+            @Override
+            public void endVisit() {
+                Assert.assertEquals(4, fmi);
             }
         };
         ccs.visit(visitor);
-        Assert.assertEquals(3, fmi[0]);
         ccs.step("""
                 INSERT INTO T1 VALUES(0, 1, 2);
                 INSERT INTO T2 VALUES(0, 1, 2);

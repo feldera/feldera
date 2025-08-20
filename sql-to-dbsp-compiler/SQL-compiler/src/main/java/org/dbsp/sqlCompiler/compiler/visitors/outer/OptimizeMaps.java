@@ -29,6 +29,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPSumOperator;
 import org.dbsp.sqlCompiler.compiler.AnalyzedSet;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
+import org.dbsp.sqlCompiler.compiler.frontend.ExpressionCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerRewriteVisitor;
@@ -148,7 +149,7 @@ public class OptimizeMaps extends CircuitCloneWithGraphsVisitor {
                     return;
                 }
             }
-            if (projection.isProjection && operator.hasAnnotation(a -> a.is(IsProjection.class)) &&
+            if (projection.isProjection &&
                     (source.node().is(DBSPAntiJoinOperator.class)
                     || source.node().is(DBSPStreamAntiJoinOperator.class))) {
                 DBSPBinaryOperator join = source.node().to(DBSPBinaryOperator.class);
@@ -180,6 +181,10 @@ public class OptimizeMaps extends CircuitCloneWithGraphsVisitor {
                 }
 
                 DBSPSimpleOperator newJoin = join.withInputs(Linq.list(leftPort, rightPort), false);
+                if (newJoin.outputType.sameType(join.outputType)) {
+                    super.postorder(operator);
+                    return;
+                }
 
                 // Now project the keys after the join
                 if (RemoveIdentityOperators.isIdentityFunction(split.right)) {
@@ -361,6 +366,15 @@ public class OptimizeMaps extends CircuitCloneWithGraphsVisitor {
             DBSPSimpleOperator result = source.simpleNode().withFunction(newFunction, operator.outputType);
             this.map(operator, result);
             return;
+        } else if (source.node().is(DBSPDeindexOperator.class) && inputFanout == 1) {
+            DBSPClosureExpression expression = source.simpleNode().getClosureFunction();
+            DBSPClosureExpression newFunction = operator.getClosureFunction()
+                    .applyAfter(this.compiler(), expression, Maybe.YES);
+            OutputPort input = source.simpleNode().inputs.get(0);
+            DBSPSimpleOperator result =
+                    new DBSPMapOperator(source.node().getRelNode(), newFunction, input);
+            this.map(operator, result);
+            return;
         } else if ((source.node().is(DBSPIntegrateOperator.class) && (inputFanout == 1)) ||
                 source.node().is(DBSPDifferentiateOperator.class) ||
                 source.node().is(DBSPDelayOperator.class) ||
@@ -389,6 +403,56 @@ public class OptimizeMaps extends CircuitCloneWithGraphsVisitor {
             DBSPSimpleOperator result = source.simpleNode().withInputs(newSources, true);
             this.map(operator, result, operator != result);
             return;
+        }
+        if (source.node().is(DBSPAntiJoinOperator.class) || source.node().is(DBSPStreamAntiJoinOperator.class)) {
+            DBSPBinaryOperator join = source.node().to(DBSPBinaryOperator.class);
+            Projection projection = new Projection(this.compiler());
+            projection.apply(operator.getFunction());
+            if (projection.isProjection) {
+                OutputPort left = join.left();
+                OutputPort right = join.right();
+
+                DBSPClosureExpression proj = operator.getClosureFunction();
+                // We must preserve keys unchanged, but we can project away any values
+                DBSPVariablePath var = left.getOutputIndexedZSetType().getKVRefType().var();
+                DBSPClosureExpression computeValue = new DBSPRawTupleExpression(
+                        ExpressionCompiler.expandTuple(proj.getNode(), var.field(0).deref()),
+                        proj.call(var).reduce(this.compiler)
+                ).closure(var);
+
+                OutputPort leftPort = left;
+                if (!RemoveIdentityOperators.isIdentityFunction(computeValue)) {
+                    // Identical index operators on both sides
+                    DBSPSimpleOperator leftIndex = new DBSPMapIndexOperator(operator.getRelNode(),
+                            computeValue, left).addAnnotation(new IsProjection(size), DBSPSimpleOperator.class);
+                    this.addOperator(leftIndex);
+                    leftPort = leftIndex.outputPort();
+                }
+
+                // On the right of the antijoin we can drop all value fields, but we only do this if
+                // the right input of the antijoin does not have other outputs.
+                OutputPort rightPort = right;
+                DBSPClosureExpression closure = keysOnly(join.right().getOutputIndexedZSetType());
+                if (!RemoveIdentityOperators.isIdentityFunction(closure)) {
+                    DBSPSimpleOperator rightIndex = new DBSPMapIndexOperator(operator.getRelNode(),
+                            closure, right).addAnnotation(new IsProjection(size), DBSPSimpleOperator.class);
+                    this.addOperator(rightIndex);
+                    rightPort = rightIndex.outputPort();
+                }
+
+                DBSPSimpleOperator newJoin = join.withInputs(Linq.list(leftPort, rightPort), false);
+                if (newJoin.outputType.sameType(join.outputType)) {
+                    super.postorder(operator);
+                    return;
+                }
+
+                // Now project the keys after the join
+                if (newJoin != join)
+                    this.addOperator(newJoin);
+                DBSPSimpleOperator result = new DBSPDeindexOperator(operator.getRelNode(), newJoin.outputPort());
+                this.map(operator, result);
+                return;
+            }
         }
         super.postorder(operator);
     }
