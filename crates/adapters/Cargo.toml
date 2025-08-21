@@ -183,8 +183,9 @@ backtrace = { workspace = true }
 itertools = { workspace = true }
 metrics-process = { version = "2.4.0", default-features = false }
 serde_json_path_to_error = { workspace = true }
-dashmap = "6.1.0"
 smallstr = { workspace = true }
+dashmap = { workspace = true }
+arrow-digest = { workspace = true }
 
 [package.metadata.cargo-machete]
 ignored = ["num-traits"]

@@ -7,8 +7,8 @@ use datafusion::execution::runtime_env::RuntimeEnvBuilder;
 use datafusion::execution::SessionStateBuilder;
 use datafusion::prelude::*;
 use executor::{
-    infallible_from_bytestring, stream_arrow_query, stream_json_query, stream_parquet_query,
-    stream_text_query,
+    hash_query_result, infallible_from_bytestring, stream_arrow_query, stream_json_query,
+    stream_parquet_query, stream_text_query,
 };
 use feldera_adapterlib::errors::journal::ControllerError;
 use feldera_types::config::PipelineConfig;
@@ -165,6 +165,20 @@ async fn adhoc_query_handler(
                 }
             }
         }
+        AdHocResultFormat::Hash => {
+            let hash_result = hash_query_result(df).await;
+            match hash_result {
+                Ok(hash) => {
+                    ws_session.text(hash).await?;
+                }
+                Err(e) => {
+                    ws_session
+                        .text(serde_json::to_string(&e).unwrap_or(e.to_string()))
+                        .await?;
+                    ws_close(ws_session, CloseCode::Error).await;
+                }
+            }
+        }
     }
 
     Ok(())
@@ -302,5 +316,8 @@ pub(crate) async fn stream_adhoc_result(
                 .content_type(mime::APPLICATION_OCTET_STREAM)
                 .streaming(stream_parquet_query(df)))
         }
+        AdHocResultFormat::Hash => Ok(HttpResponse::Ok()
+            .content_type(mime::TEXT_PLAIN)
+            .body(hash_query_result(df).await?)),
     }
 }

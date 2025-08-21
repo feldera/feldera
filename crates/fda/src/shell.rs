@@ -153,7 +153,10 @@ pub async fn shell(format: OutputFormat, name: String, client: Client) {
                                 OutputFormat::Json => "json",
                                 OutputFormat::ArrowIpc => "arrow",
                                 OutputFormat::Parquet => "parquet",
-                                OutputFormat::Prometheus => "prometheus",
+                                OutputFormat::Hash => "hash",
+                                OutputFormat::Prometheus => {
+                                    panic!("Prometheus format is not supported for ad-hoc SQL");
+                                }
                             };
                             match client
                                 .pipeline_adhoc_sql()

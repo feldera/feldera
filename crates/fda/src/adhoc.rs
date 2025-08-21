@@ -157,6 +157,7 @@ pub(crate) async fn handle_adhoc_query(
             eprintln!("`query` command does not support Prometheus output format");
             std::process::exit(1);
         }
+        OutputFormat::Hash => AdHocResultFormat::Hash,
     };
     let sql = sql.unwrap_or_else(|| {
         if stdin {
@@ -227,6 +228,19 @@ pub(crate) async fn handle_adhoc_query(
             }
             result_file.flush().unwrap();
             println!("Query result saved to '{}'", path.display());
+        }
+        AdHocResultFormat::Hash => {
+            while let Some(chunk) = websocket.next().await {
+                let mut text: String = String::new();
+                if let Ok(Message::Text(chunk)) = chunk {
+                    text.push_str(chunk.as_str());
+                    print!("{}", chunk);
+                } else {
+                    handle_websocket_message_generic(&mut websocket, chunk).await;
+                    break;
+                }
+            }
+            println!()
         }
     }
 }

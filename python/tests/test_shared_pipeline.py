@@ -84,6 +84,16 @@ class TestPipeline(SharedTestPipeline):
         got = "\n".join(resp)
         assert got in expected
 
+    def test_adhoc_query_hash(self):
+        data = "1\n2\n"
+        self.pipeline.start()
+        TEST_CLIENT.push_to_pipeline(self.pipeline.name, "tbl", "csv", data)
+        resp = TEST_CLIENT.query_as_hash(
+            self.pipeline.name, "SELECT * FROM tbl ORDER BY id"
+        )
+        assert resp in "0B021466CA428474EF16F899D0F841D7338C168C063DA5DB43666D1AB3081558"
+
+
     def test_adhoc_query_parquet(self):
         data = "1\n2\n"
         self.pipeline.start()
