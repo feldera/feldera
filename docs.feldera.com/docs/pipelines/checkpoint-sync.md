@@ -56,7 +56,8 @@ Here is a sample configuration:
 | `multi_thread_cutoff`   | `string`        | `100M`      | File size threshold to enable multi-threaded downloads (e.g., `100M`, `1G`). Supported suffixes: `k`, `M`, `G`, `T`.                                                                                                                                                                                          |
 | `upload_concurrency`    | `integer (u8)`  | `10`        | Number of concurrent chunks to upload during multipart uploads.                                                                                                                                                                                                                                               |
 | `flags`                 | `array[string]` |             | Extra flags to pass to `rclone`.<p> ⚠️ Incorrect or conflicting flags may break behavior. See [rclone flags](https://rclone.org/flags/) and [S3 flags](https://rclone.org/s3/). </p>                                                                                                                          |
-
+| `retention_min_count`   | `integer (u32)` | `10`        | The minimum number of checkpoints to retain in object store. No checkpoints will be deleted if the total count is below this threshold.                                |
+| `retention_min_age`     | `integer (u32)` | `30`        | The minimum age (in days) a checkpoint must reach before it becomes eligible for deletion. All younger checkpoints will be preserved.                                  |
 
 *Fields marked with an asterisk are required.
 

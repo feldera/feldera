@@ -472,10 +472,34 @@ pub struct SyncConfig {
     /// - [Global flags](https://rclone.org/flags/)
     /// - [S3 specific flags](https://rclone.org/s3/)
     pub flags: Option<Vec<String>>,
+
+    /// The minimum number of checkpoints to retain in object store.
+    /// No checkpoints will be deleted if the total count is below this threshold.
+    ///
+    /// Default: 10
+    #[schema(default = default_retention_min_count)]
+    #[serde(default = "default_retention_min_count")]
+    pub retention_min_count: u32,
+
+    /// The minimum age (in days) a checkpoint must reach before it becomes
+    /// eligible for deletion. All younger checkpoints will be preserved.
+    ///
+    /// Default: 30
+    #[schema(default = default_retention_min_age)]
+    #[serde(default = "default_retention_min_age")]
+    pub retention_min_age: u32,
 }
 
 fn default_pull_interval() -> u64 {
     10
+}
+
+fn default_retention_min_count() -> u32 {
+    10
+}
+
+fn default_retention_min_age() -> u32 {
+    30
 }
 
 impl SyncConfig {
