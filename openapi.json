@@ -8423,6 +8423,20 @@
             "description": "The region that this bucket is in.\n\nLeave empty for Minio or the default region (`us-east-1` for AWS).",
             "nullable": true
           },
+          "retention_min_age": {
+            "type": "integer",
+            "format": "int32",
+            "description": "The minimum age (in days) a checkpoint must reach before it becomes\neligible for deletion. All younger checkpoints will be preserved.\n\nDefault: 30",
+            "default": 30,
+            "minimum": 0
+          },
+          "retention_min_count": {
+            "type": "integer",
+            "format": "int32",
+            "description": "The minimum number of checkpoints to retain in object store.\nNo checkpoints will be deleted if the total count is below this threshold.\n\nDefault: 10",
+            "default": 10,
+            "minimum": 0
+          },
           "secret_key": {
             "type": "string",
             "description": "The secret key used together with the access key for authentication.\n\nIf not provided, rclone will fall back to environment-based credentials, such as\n`RCLONE_S3_SECRET_ACCESS_KEY`. In Kubernetes environments using IRSA (IAM Roles for Service Accounts),\nthis can be left empty to allow automatic authentication via the pod's service account.",
