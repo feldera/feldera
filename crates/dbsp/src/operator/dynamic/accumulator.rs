@@ -6,8 +6,9 @@ use crate::{
     circuit::{
         circuit_builder::StreamId,
         metadata::{
-            MetaItem, OperatorLocation, OperatorMeta, ALLOCATED_BYTES_LABEL, NUM_ENTRIES_LABEL,
-            SHARED_BYTES_LABEL, USED_BYTES_LABEL,
+            BatchSizeStats, MetaItem, OperatorLocation, OperatorMeta, ALLOCATED_BYTES_LABEL,
+            INPUT_BATCHES_LABEL, NUM_ENTRIES_LABEL, OUTPUT_BATCHES_LABEL, SHARED_BYTES_LABEL,
+            USED_BYTES_LABEL,
         },
         operator_traits::{Operator, UnaryOperator},
     },
@@ -46,6 +47,12 @@ where
     state: Spine<B>,
     flush: bool,
     location: &'static Location<'static>,
+
+    // Input batch sizes.
+    input_batch_stats: BatchSizeStats,
+
+    // Output batch sizes.
+    output_batch_stats: BatchSizeStats,
 }
 
 impl<B> Accumulator<B>
@@ -58,6 +65,8 @@ where
             state: Spine::new(factories),
             flush: false,
             location,
+            input_batch_stats: BatchSizeStats::new(),
+            output_batch_stats: BatchSizeStats::new(),
         }
     }
 }
@@ -85,6 +94,9 @@ where
             USED_BYTES_LABEL => MetaItem::bytes(bytes.used_bytes()),
             "allocations" => MetaItem::Count(bytes.distinct_allocations()),
             SHARED_BYTES_LABEL => MetaItem::bytes(bytes.shared_bytes()),
+            INPUT_BATCHES_LABEL => self.input_batch_stats.metadata(),
+            OUTPUT_BATCHES_LABEL => self.output_batch_stats.metadata(),
+
         });
 
         self.state.metadata(meta);
@@ -123,11 +135,15 @@ where
     B: Batch,
 {
     async fn eval(&mut self, batch: &B) -> Option<Spine<B>> {
+        self.input_batch_stats.add_batch(batch.len());
+
         self.state.insert(batch.clone());
         if self.flush {
             self.flush = false;
             let mut spine = Spine::<B>::new(&self.factories);
             std::mem::swap(&mut self.state, &mut spine);
+
+            self.output_batch_stats.add_batch(spine.len());
             Some(spine)
         } else {
             None
@@ -135,11 +151,15 @@ where
     }
 
     async fn eval_owned(&mut self, batch: B) -> Option<Spine<B>> {
+        self.input_batch_stats.add_batch(batch.len());
+
         self.state.insert(batch);
         if self.flush {
             self.flush = false;
             let mut spine = Spine::<B>::new(&self.factories);
             std::mem::swap(&mut self.state, &mut spine);
+
+            self.output_batch_stats.add_batch(spine.len());
             Some(spine)
         } else {
             None
