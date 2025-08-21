@@ -895,6 +895,30 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             if chunk:
                 yield chunk.decode("utf-8")
 
+    def query_as_hash(
+        self, pipeline_name: str, query: str
+    ) -> str:
+        """
+        Executes an ad-hoc query on the specified pipeline and returns a hash of the result.
+
+        :param pipeline_name: The name of the pipeline to query.
+        :param query: The SQL query to be executed.
+        :return: A generator yielding the query result in tabular format, one line at a time.
+        """
+        params = {
+            "pipeline_name": pipeline_name,
+            "sql": query,
+            "format": "hash",
+        }
+
+        resp = self.http.get(
+            path=f"/pipelines/{pipeline_name}/query",
+            params=params,
+            stream=False,
+        )
+        return resp
+
+
     def query_as_parquet(self, pipeline_name: str, query: str, path: str):
         """
         Executes an ad-hoc query on the specified pipeline and saves the result to a parquet file.

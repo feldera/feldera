@@ -783,6 +783,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "arrow-digest"
+version = "55.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5402bf1f5c3ad9c1ce46fc231ba03536c6c7eb327e905e584b2b1da83064f64c"
+dependencies = [
+ "arrow",
+ "digest",
+]
+
+[[package]]
 name = "arrow-ipc"
 version = "55.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3755,6 +3765,7 @@ dependencies = [
  "anyhow",
  "apache-avro 0.18.0",
  "arrow",
+ "arrow-digest",
  "arrow-json",
  "async-channel 2.3.1",
  "async-stream",
@@ -3851,7 +3862,6 @@ dependencies = [
  "serde_yaml",
  "serial_test",
  "sha2",
- "smallstr",
  "tempfile",
  "test_bin",
  "threadpool",
@@ -4640,7 +4650,6 @@ dependencies = [
 name = "fda"
 version = "0.129.0"
 dependencies = [
- "anyhow",
  "arrow",
  "chrono",
  "clap",
@@ -4651,10 +4660,8 @@ dependencies = [
  "feldera-types",
  "futures",
  "futures-util",
- "itertools 0.14.0",
  "json_to_table",
  "log",
- "ordered-float 4.6.0",
  "prettyplease",
  "progenitor",
  "progenitor-client 0.9.1",
@@ -10851,9 +10858,9 @@ dependencies = [
 
 [[package]]
 name = "tempfile"
-version = "3.21.0"
+version = "3.20.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "15b61f8f20e3a6f7e0649d825294eaf317edce30f82cf6026e7e4cb9222a7d1e"
+checksum = "e8a64e3985349f2441a1a9ef0b853f869006c3855f2cda6862a94d26ebb9d6a1"
 dependencies = [
  "fastrand",
  "getrandom 0.3.3",

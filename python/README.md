@@ -5,19 +5,19 @@ Feldera Python is the Feldera SDK for Python developers.
 ## Installation
 
 ```bash
-pip install feldera
+uv pip install feldera
 ```
 
 ### Installing from Github
 
 ```bash
-pip install git+https://github.com/feldera/feldera#subdirectory=python
+uv pip install git+https://github.com/feldera/feldera#subdirectory=python
 ```
 
 Similarly, to install from a specific branch:
 
 ```bash
-$ pip install git+https://github.com/feldera/feldera@{BRANCH_NAME}#subdirectory=python
+uv pip install git+https://github.com/feldera/feldera@{BRANCH_NAME}#subdirectory=python
 ```
 
 Replace `{BRANCH_NAME}` with the name of the branch you want to install from.
@@ -28,7 +28,12 @@ If you have cloned the Feldera repo, you can install the python SDK as follows:
 
 ```bash
 # the Feldera Python SDK is present inside the python/ directory
-pip install python/
+cd python
+# If you don't have a virtual environment, create one
+uv venv
+source .venv/activate
+# Install the SDK in editable mode
+uv pip install .
 ```
 
 ## Documentation
@@ -38,7 +43,7 @@ The Python SDK documentation is available at
 
 To build the html documentation run:
 
-Ensure that you have sphinx installed. If not, install it using `pip install sphinx`.
+Ensure that you have sphinx installed. If not, install it using `uv pip install sphinx`.
 
 Then run the following commands:
 
@@ -69,7 +74,13 @@ To run tests from a specific file:
 (cd python && python3 -m pytest ./tests/path-to-file.py)
 ```
 
-#### Running Tests
+To run a specific test:
+
+```bash
+uv run python -m pytest tests/test_shared_pipeline.py::TestPipeline::test_adhoc_query_hash -v
+```
+
+#### Running All Tests
 
 The tests validate end-to-end correctness of SQL functionality.  To
 run the tests use:

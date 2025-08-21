@@ -809,6 +809,25 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
 
         return self.client.query_as_text(self.name, query)
 
+    def query_hash(self, query: str):
+        """
+        Executes an ad-hoc SQL query on this pipeline and returns the result
+        as a hash of the result set. This is useful for quickly checking
+        if the result set has changed without retrieving the entire result.
+
+        Note:
+            For a stable hash, the query must be deterministic which means
+            it should be sorted.
+
+        :param query: The SQL query to be executed.
+
+        :raises FelderaAPIError: If the pipeline is not in a RUNNING or PAUSED
+            state.
+        :raises FelderaAPIError: If querying a non materialized table or view.
+        :raises FelderaAPIError: If the query is invalid.
+        """
+        return self.client.query_as_hash(self.name, query)
+
     def execute(self, query: str):
         """
         Executes an ad-hoc SQL query on the current pipeline, discarding its

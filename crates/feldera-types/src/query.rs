@@ -22,6 +22,13 @@ pub enum AdHocResultFormat {
     Parquet,
     /// Stream data in the arrow IPC format.
     ArrowIpc,
+    /// Returns a hash of the results instead of the actual data.
+    /// This is useful for verifying the integrity of the data
+    /// without transferring the entire dataset.
+    ///
+    /// Note that for the hash to be meaningful the query must sort data
+    /// in a deterministic way.
+    Hash,
 }
 
 impl Display for AdHocResultFormat {
@@ -31,6 +38,7 @@ impl Display for AdHocResultFormat {
             AdHocResultFormat::Json => write!(f, "json"),
             AdHocResultFormat::Parquet => write!(f, "parquet"),
             AdHocResultFormat::ArrowIpc => write!(f, "arrow_ipc"),
+            AdHocResultFormat::Hash => write!(f, "hash"),
         }
     }
 }

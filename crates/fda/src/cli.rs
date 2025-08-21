@@ -126,6 +126,10 @@ pub enum OutputFormat {
     ///
     /// This format can only be specified for the `metrics` command.
     Prometheus,
+    /// Return the output as a hash of the result.
+    ///
+    /// This format can only be specified for SQL queries.
+    Hash,
 }
 
 impl Display for OutputFormat {
@@ -136,6 +140,7 @@ impl Display for OutputFormat {
             OutputFormat::ArrowIpc => "arrow_ipc",
             OutputFormat::Parquet => "parquet",
             OutputFormat::Prometheus => "prometheus",
+            OutputFormat::Hash => "hash",
         };
         write!(f, "{}", output)
     }

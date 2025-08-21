@@ -2,6 +2,7 @@ use arrow::array::RecordBatch;
 use arrow::error::ArrowError;
 use arrow::util::display::{ArrayFormatter, FormatOptions};
 use comfy_table::{Cell, Table};
+
 pub(crate) fn create_table(results: &[RecordBatch]) -> Result<Table, ArrowError> {
     let options = FormatOptions::default().with_display_error(true);
     let mut table = Table::new();

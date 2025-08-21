@@ -1,6 +1,7 @@
 use arrow::array::RecordBatch;
 use arrow::ipc::writer::StreamWriter;
 use arrow::util::pretty::pretty_format_batches;
+use arrow_digest::{RecordDigest, RecordDigestV0};
 use arrow_json::writer::LineDelimited;
 use arrow_json::WriterBuilder;
 use async_stream::{stream, try_stream};
@@ -18,6 +19,7 @@ use parquet::arrow::async_writer::AsyncFileWriter;
 use parquet::arrow::AsyncArrowWriter;
 use parquet::basic::Compression;
 use parquet::file::properties::WriterProperties;
+use sha2::Sha256;
 use std::convert::Infallible;
 use tokio::sync::mpsc::error::SendError;
 use tokio::sync::oneshot::Receiver;
@@ -94,6 +96,29 @@ pub(crate) fn stream_text_query(
             yield txt_table.into();
         }
     }
+}
+
+pub(crate) async fn hash_query_result(df: DataFrame) -> Result<String, PipelineError> {
+    let schema = df.schema().inner().clone();
+    let stream_executor = execute_stream(df)
+        .await
+        .map_err(|e| PipelineError::AdHocQueryError {
+            error: e.to_string(),
+            df: None,
+        })?;
+    let mut stream = stream_executor.map_err(|e| PipelineError::AdHocQueryError {
+        error: e.to_string(),
+        df: Some(Box::new(e)),
+    })?;
+
+    let mut digest = RecordDigestV0::<Sha256>::new(&schema);
+    while let Some(batch) = stream.next().await {
+        let batch = batch.map_err(PipelineError::from)?;
+        digest.update(&batch);
+    }
+
+    let hash = digest.finalize();
+    Ok(format!("{:X}", hash))
 }
 
 pub(crate) fn stream_json_query(
