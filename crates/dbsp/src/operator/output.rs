@@ -2,6 +2,7 @@ use super::{require_persistent_id, Mailbox};
 use crate::{
     circuit::{
         circuit_builder::CircuitBase,
+        metadata::{BatchSizeStats, OperatorMeta, OUTPUT_BATCHES_LABEL},
         operator_traits::{BinarySinkOperator, Operator, SinkOperator},
         GlobalNodeId, LocalStoreMarker, OwnershipPreference, RootCircuit, Scope,
     },
@@ -426,6 +427,7 @@ where
 {
     global_id: GlobalNodeId,
     mailbox: Mailbox<Option<SpineSnapshot<B>>>,
+    output_batch_stats: BatchSizeStats,
 }
 
 impl<B> AccumulateOutput<B>
@@ -439,6 +441,7 @@ where
         let output = Self {
             global_id: GlobalNodeId::root(),
             mailbox,
+            output_batch_stats: BatchSizeStats::new(),
         };
 
         (output, handle)
@@ -481,6 +484,12 @@ where
         Ok(())
     }
 
+    fn metadata(&self, meta: &mut OperatorMeta) {
+        meta.extend(metadata! {
+            OUTPUT_BATCHES_LABEL => self.output_batch_stats.metadata(),
+        });
+    }
+
     fn fixedpoint(&self, _scope: Scope) -> bool {
         true
     }
@@ -492,12 +501,14 @@ where
 {
     async fn eval(&mut self, val: &Option<Spine<B>>) {
         if let Some(val) = val {
+            self.output_batch_stats.add_batch(val.len());
             self.mailbox.set(Some(val.ro_snapshot()));
         }
     }
 
     async fn eval_owned(&mut self, val: Option<Spine<B>>) {
         if let Some(val) = val {
+            self.output_batch_stats.add_batch(val.len());
             self.mailbox.set(Some(val.ro_snapshot()));
         }
     }
