@@ -801,4 +801,12 @@ public class Regression1Tests extends SqlIoTest {
                 CREATE TABLE T(x TIME);
                 CREATE VIEW V AS SELECT HOUR(x) FROM T;""");
     }
+
+    @Test
+    public void sltCrash() {
+        this.showPlan();
+        this.getCC("""
+                CREATE TABLE tab2(col0 INTEGER, col1 INTEGER, col2 INTEGER);
+                CREATE VIEW V AS SELECT ( + 34 ) * - ( col0 / + ( col1 / 79 ) ) FROM tab2 WHERE NOT col1 IS NOT NULL;""");
+    }
 }
