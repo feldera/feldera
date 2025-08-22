@@ -4,7 +4,7 @@ use std::fmt::Display;
 use std::path::PathBuf;
 
 use crate::make_client;
-use feldera_rest_api::types::{CompilationProfile, ProgramConfig};
+use feldera_rest_api::types::CompilationProfile;
 
 /// Autocompletion for pipeline names by trying to fetch them from the server.
 fn pipeline_names(current: &std::ffi::OsStr) -> Vec<CompletionCandidate> {
@@ -230,36 +230,6 @@ pub enum RuntimeConfigKey {
     DevTweaks,
 }
 
-#[derive(ValueEnum, Clone, Copy, Debug)]
-#[value(rename_all = "snake_case")]
-pub enum Profile {
-    Dev,
-    Unoptimized,
-    Optimized,
-}
-
-#[allow(clippy::from_over_into)]
-impl Into<CompilationProfile> for Profile {
-    fn into(self) -> CompilationProfile {
-        match self {
-            Profile::Dev => CompilationProfile::Dev,
-            Profile::Unoptimized => CompilationProfile::Unoptimized,
-            Profile::Optimized => CompilationProfile::Optimized,
-        }
-    }
-}
-
-#[allow(clippy::from_over_into)]
-impl Into<ProgramConfig> for Profile {
-    fn into(self) -> ProgramConfig {
-        ProgramConfig {
-            profile: Some(self.into()),
-            cache: true,
-            runtime_version: None,
-        }
-    }
-}
-
 #[derive(Subcommand)]
 pub enum PipelineAction {
     /// Create a new pipeline.
@@ -279,9 +249,17 @@ pub enum PipelineAction {
         /// A path to the TOML file containing the dependencies for the UDF functions.
         #[arg(short = 't', long, value_hint = ValueHint::FilePath, conflicts_with = "stdin")]
         udf_toml: Option<String>,
+        /// Override the runtime version of the pipeline.
+        ///
+        /// If not specified, the default version of the platform will be used.
+        ///
+        /// Note: This feature needs to be enabled in the platform configuration
+        /// and is still in development. Use for testing purposes only.
+        #[arg(long, short = 'r', env = "FELDERA_RUNTIME_VERSION")]
+        runtime_version: Option<String>,
         /// The compilation profile to use.
         #[arg(default_value = "optimized")]
-        profile: Profile,
+        profile: CompilationProfile,
         /// Read the program code from stdin.
         ///
         /// EXAMPLES:
@@ -651,6 +629,10 @@ pub(crate) struct BenchmarkArgs {
     #[arg(long, short = 'n', default_value_t = false)]
     pub no_recompile: bool,
 
+    /// Do not wrap the benchmark in a transaction.
+    #[arg(long, default_value_t = false)]
+    pub no_transaction: bool,
+
     /// If set upload results to feldera benchmark host.
     ///
     /// For development purposes, you most likely don't want to set this to true.
@@ -785,7 +767,7 @@ pub enum ProgramAction {
         ///
         /// If not specified, the optimized profile will be used.
         #[arg(short = 'p', long)]
-        profile: Option<Profile>,
+        profile: Option<CompilationProfile>,
         /// Override the runtime version of the pipeline.
         ///
         /// EXPERIMENTAL:
