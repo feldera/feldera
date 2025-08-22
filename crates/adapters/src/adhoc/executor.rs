@@ -10,6 +10,8 @@ use bytestring::ByteString;
 use datafusion::common::{DataFusionError, Result as DFResult};
 use datafusion::dataframe::DataFrame;
 use datafusion::execution::SendableRecordBatchStream;
+use datafusion::logical_expr::SortExpr;
+use datafusion::prelude::col;
 use feldera_storage::tokio::TOKIO;
 use feldera_types::query::MAX_WS_FRAME_SIZE;
 use futures::stream::Stream;
@@ -99,8 +101,16 @@ pub(crate) fn stream_text_query(
 }
 
 /// Hashes the result set of a DataFrame query using SHA-256.
-pub(crate) async fn hash_query_result(df: DataFrame) -> Result<String, PipelineError> {
+pub(crate) async fn hash_query_result(mut df: DataFrame) -> Result<String, PipelineError> {
     let schema = df.schema().inner().clone();
+
+    let fields = df.schema().fields();
+    let sort_exprs: Vec<_> = fields
+        .iter()
+        .map(|f| col(f.name()).sort(true, true))
+        .collect();
+    df = df.sort(sort_exprs).map_err(PipelineError::from)?;
+
     let stream_executor = execute_stream(df)
         .await
         .map_err(|e| PipelineError::AdHocQueryError {
