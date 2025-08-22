@@ -895,9 +895,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             if chunk:
                 yield chunk.decode("utf-8")
 
-    def query_as_hash(
-        self, pipeline_name: str, query: str
-    ) -> str:
+    def query_as_hash(self, pipeline_name: str, query: str) -> str:
         """
         Executes an ad-hoc query on the specified pipeline and returns a hash of the result.
 
@@ -917,7 +915,6 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             stream=False,
         )
         return resp
-
 
     def query_as_parquet(self, pipeline_name: str, query: str, path: str):
         """

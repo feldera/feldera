@@ -91,8 +91,9 @@ class TestPipeline(SharedTestPipeline):
         resp = TEST_CLIENT.query_as_hash(
             self.pipeline.name, "SELECT * FROM tbl ORDER BY id"
         )
-        assert resp == "0B021466CA428474EF16F899D0F841D7338C168C063DA5DB43666D1AB3081558"
-
+        assert (
+            resp == "0B021466CA428474EF16F899D0F841D7338C168C063DA5DB43666D1AB3081558"
+        )
 
     def test_adhoc_query_parquet(self):
         data = "1\n2\n"

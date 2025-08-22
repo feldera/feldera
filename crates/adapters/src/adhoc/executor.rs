@@ -10,7 +10,6 @@ use bytestring::ByteString;
 use datafusion::common::{DataFusionError, Result as DFResult};
 use datafusion::dataframe::DataFrame;
 use datafusion::execution::SendableRecordBatchStream;
-use datafusion::logical_expr::SortExpr;
 use datafusion::prelude::col;
 use feldera_storage::tokio::TOKIO;
 use feldera_types::query::MAX_WS_FRAME_SIZE;
