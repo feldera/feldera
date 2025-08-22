@@ -225,11 +225,18 @@ where
     F: FnOnce(&mut File) -> R,
 {
     fn create_marker_file() -> Option<File> {
-        let file_name = markers_dir()?.join(format!(
-            "marker-{}-{}.txt",
-            nix::unistd::getpid(),
-            nix::unistd::gettid()
-        ));
+        // On Linux, use the thread ID reported by `gettid`, which should help samply
+        // to associate file names with threads. On other systems (MacOS, windows),
+        // `gettid` is not available, so we use the thread-id crate to get a unique
+        // identifier for the thread in a portable way; however this identifier is not
+        // known to samply, so all markers will be associated with the process as a whole.
+        #[cfg(target_os = "linux")]
+        let tid = nix::unistd::gettid();
+        #[cfg(not(target_os = "linux"))]
+        let tid = thread_id::get();
+
+        let file_name =
+            markers_dir()?.join(format!("marker-{}-{}.txt", nix::unistd::getpid(), tid));
 
         // Create the file.
         let file = File::options()
