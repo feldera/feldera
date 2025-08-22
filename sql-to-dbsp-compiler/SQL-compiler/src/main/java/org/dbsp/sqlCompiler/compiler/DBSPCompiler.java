@@ -237,7 +237,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         // Declare the system tables
         this.compileInternal(
                 """
-                CREATE TABLE NOW(now TIMESTAMP NOT NULL LATENESS INTERVAL 0 SECONDS);
+                CREATE TABLE NOW(now TIMESTAMP NOT NULL); -- LATENESS INTERVAL 0 SECONDS
                 -- next table will be deleted after view is hooked to proper inputs
                 CREATE TABLE FELDERA_ERROR_TABLE(table_or_view_name VARCHAR NOT NULL, message VARCHAR NOT NULL, metadata VARCHAR NOT NULL);
                 CREATE VIEW ERROR_VIEW AS SELECT * FROM FELDERA_ERROR_TABLE;

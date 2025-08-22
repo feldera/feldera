@@ -31,7 +31,7 @@ import static org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator.commonInf
 
 /**
  * The {@link DBSPControlledKeyFilterOperator} is an operator with 2 outputs, including
- * an error stream.  The left input is a stream of ZSets, while the
+ * an error stream.  The left input is a stream of ZSets/Indexed ZSets, while the
  * right input is a stream of scalars.  {@code function} is a boolean function
  * that takes a scalar and an input element; when the function returns 'true'
  * the input element makes it to the output.  The {@code error} function takes

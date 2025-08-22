@@ -62,7 +62,7 @@ public final class DBSPSortExpression extends DBSPExpression {
                 new DBSPTypeArray(elementType, false),
                 // Argument type
                 new DBSPTypeRawTuple(
-                        new DBSPTypeTuple().ref(),
+                        DBSPTypeTuple.EMPTY.ref(),
                         new DBSPTypeArray(elementType, false).ref())));
         this.comparator = comparator;
         this.elementType = elementType;

@@ -91,6 +91,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStrLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.IsNumericType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
@@ -99,6 +100,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeTypedBox;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeWeight;
@@ -413,6 +415,46 @@ public class InsertLimiters extends CircuitCloneVisitor {
         }
 
         ReplacementExpansion ae = expanded.to(ReplacementExpansion.class);
+
+        if (aggregator.annotations.first(AlwaysMonotone.class) != null) {
+            // This operator computes its own waterline.
+            // This treatment is similar to the ImplementNow.scalarNow function.
+
+            DBSPDeindexOperator deindex = new DBSPDeindexOperator(aggregator.getRelNode(), aggregator.outputPort());
+            DBSPTypeTuple tuple = deindex.getOutputZSetElementType().to(DBSPTypeTuple.class);
+            DBSPVariablePath t = tuple.ref().var();
+
+            DBSPTupleExpression min = new DBSPTupleExpression(
+                    Linq.map(tuple.tupFields, type -> type.to(IsBoundedType.class).getMinValue(), DBSPExpression.class));
+            DBSPExpression timestampTuple = ExpressionCompiler.expandTuple(aggregator.getNode(), t.deref());
+            DBSPClosureExpression max = InsertLimiters.timestampMax(aggregator.getNode(), min.getTypeAsTupleBase());
+            DBSPWaterlineOperator waterline = new DBSPWaterlineOperator(
+                    aggregator.getRelNode(), min.closure(),
+                    timestampTuple.closure(t, DBSPTypeRawTuple.EMPTY.ref().var()),
+                    max, aggregator.outputPort());
+            this.map(aggregator.outputPort(), aggregator.outputPort());
+            this.addOperator(waterline);
+
+            // An apply operator to add a Boolean bit to the waterline.
+            // This bit is 'true' when the waterline produces a value
+            // that is not 'minimum'.
+            DBSPVariablePath var = t.getType().var();
+            DBSPExpression eq = eq(min, var.deref());
+            DBSPSimpleOperator extend = new DBSPApplyOperator(aggregator.getRelNode(),
+                    new DBSPTupleExpression(
+                            eq.not(),
+                            new DBSPRawTupleExpression(
+                                    new DBSPTupleExpression(),
+                                    var.deref().applyClone())).closure(var),
+                    waterline.outputPort(), null);
+            extend.addAnnotation(Waterline.INSTANCE, DBSPSimpleOperator.class);
+            this.addOperator(extend);
+
+            this.markBound(aggregator.outputPort(), extend.outputPort());
+            this.markBound(ae.replacement.outputPort(), extend.outputPort());
+            return;
+        }
+
         OutputPort limiter = this.bound.get(aggregator.input());
         if (limiter == null) {
             super.postorder(aggregator);
@@ -1366,7 +1408,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
         DBSPWaterlineOperator waterline = new DBSPWaterlineOperator(
                 operator.getRelNode(), min.closure(),
                 // second parameter unused for timestamp
-                timestamp.closure(t, new DBSPTypeRawTuple().ref().var()),
+                timestamp.closure(t, DBSPTypeRawTuple.EMPTY.ref().var()),
                 max, replacement.outputPort());
         OutputPort waterlineOutputPort = waterline.outputPort();
         if (!replaceIndexedInput)
@@ -1453,7 +1495,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
 
         // The last parameter is not used
         DBSPVariablePath dataVar0 = dataVar.getType().var();
-        DBSPVariablePath valArg = new DBSPTypeRawTuple().ref().var();
+        DBSPVariablePath valArg = DBSPTypeRawTuple.EMPTY.ref().var();
         DBSPVariablePath weightArg = DBSPTypeWeight.INSTANCE.var();
         DBSPClosureExpression error = new DBSPTupleExpression(
                 new DBSPStringLiteral(tableOrViewName.toString()),
@@ -1512,7 +1554,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
             DBSPWaterlineOperator waterline = new DBSPWaterlineOperator(
                     operator.getRelNode(), min.closure(),
                     // Second parameter unused for timestamp
-                    timestamp.closure(parameter, new DBSPTypeRawTuple().ref().var().asParameter()),
+                    timestamp.closure(parameter, DBSPTypeRawTuple.EMPTY.ref().var().asParameter()),
                     max, operator.outputPort());
             this.addOperator(waterline);
 

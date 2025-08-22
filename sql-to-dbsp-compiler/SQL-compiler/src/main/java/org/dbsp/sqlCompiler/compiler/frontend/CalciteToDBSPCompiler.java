@@ -899,7 +899,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                     var.field(0).deref().applyCloneIfNeeded(),
                     new DBSPTupleExpression());
             DBSPSimpleOperator ix2 = new DBSPMapIndexOperator(node, addEmpty.closure(var),
-                    makeIndexedZSet(localGroupType, new DBSPTypeTuple()), indexedInput.outputPort());
+                    makeIndexedZSet(localGroupType, DBSPTypeTuple.EMPTY), indexedInput.outputPort());
             this.addOperator(ix2);
             result = new DBSPStreamDistinctOperator(node, ix2.outputPort());
             this.addOperator(result);
@@ -2184,7 +2184,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 new DBSPTupleExpression(),
                         new DBSPTupleExpression(DBSPTypeTuple.flatten(row.deref()), false));
         DBSPSimpleOperator index = new DBSPMapIndexOperator(node, indexingFunction.closure(row),
-                new DBSPTypeIndexedZSet(node, new DBSPTypeTuple(), inputRowType), opInput.outputPort());
+                new DBSPTypeIndexedZSet(node, DBSPTypeTuple.EMPTY, inputRowType), opInput.outputPort());
         this.addOperator(index);
 
         switch (collect.getCollectionType()) {
@@ -2262,7 +2262,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         }
         DBSPAggregateList aggregate = new DBSPAggregateList(node, row, Linq.list(agg));
         DBSPSimpleOperator aggregateOperator = new DBSPAggregateOperator(
-                node, new DBSPTypeIndexedZSet(node, new DBSPTypeTuple(), type), null, aggregate, index.outputPort());
+                node, new DBSPTypeIndexedZSet(node, DBSPTypeTuple.EMPTY, type), null, aggregate, index.outputPort());
         this.addOperator(aggregateOperator);
 
         DBSPSimpleOperator deindex = new DBSPDeindexOperator(node.getFinal(), aggregateOperator.outputPort());
@@ -2352,21 +2352,21 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 new DBSPRawTupleExpression(
                         DBSPTupleExpression.flatten(t.deref()),
                         new DBSPTupleExpression()).closure(t);
-        DBSPVariablePath l = new DBSPTypeTuple().ref().var();
-        DBSPVariablePath r = new DBSPTypeTuple().ref().var();
+        DBSPVariablePath l = DBSPTypeTuple.EMPTY.ref().var();
+        DBSPVariablePath r = DBSPTypeTuple.EMPTY.ref().var();
         DBSPVariablePath k = inputRowType.ref().var();
 
         DBSPClosureExpression closure = DBSPTupleExpression.flatten(k.deref()).closure(k, l, r);
         for (int i = 1; i < inputs.size(); i++) {
             DBSPSimpleOperator previousIndex = new DBSPMapIndexOperator(
                     node, entireKey,
-                    makeIndexedZSet(inputRowType, new DBSPTypeTuple()),
+                    makeIndexedZSet(inputRowType, DBSPTypeTuple.EMPTY),
                     previous.outputPort());
             this.addOperator(previousIndex);
             DBSPSimpleOperator inputI = this.getInputAs(intersect.getInput(i), false);
             DBSPSimpleOperator index = new DBSPMapIndexOperator(
                     node, entireKey.to(DBSPClosureExpression.class),
-                    makeIndexedZSet(inputRowType, new DBSPTypeTuple()),
+                    makeIndexedZSet(inputRowType, DBSPTypeTuple.EMPTY),
                     inputI.outputPort());
             this.addOperator(index);
             previous = new DBSPStreamJoinOperator(node, this.makeZSet(resultType),
@@ -3429,7 +3429,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                         DBSPTupleExpression.flatten(t.deref())).closure(t);
         DBSPSimpleOperator index = new DBSPMapIndexOperator(
                 node, emptyGroupKeys,
-                makeIndexedZSet(new DBSPTypeTuple(), inputRowType),
+                makeIndexedZSet(DBSPTypeTuple.EMPTY, inputRowType),
                 opInput.outputPort());
         this.addOperator(index);
 
@@ -3502,7 +3502,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPClosureExpression post = new DBSPApplyMethodExpression("into", arrayType, var).closure(var);
         DBSPFold folder = new DBSPFold(node, semigroup, zero, push, post);
         DBSPStreamAggregateOperator agg = new DBSPStreamAggregateOperator(node,
-                makeIndexedZSet(new DBSPTypeTuple(), arrayType),
+                makeIndexedZSet(DBSPTypeTuple.EMPTY, arrayType),
                 folder, null, index.outputPort());
         this.addOperator(agg);
 

@@ -45,6 +45,8 @@ import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.TUPLE;
 
 /** Our own version of a tuple */
 public class DBSPTypeTuple extends DBSPTypeTupleBase {
+    public static final DBSPTypeTuple EMPTY = new DBSPTypeTuple();
+
     /** If the type is produced from a struct type, keep here original type.
      * WARNING: this field is ignored by sameType! */
     @Nullable

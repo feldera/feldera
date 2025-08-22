@@ -15,6 +15,9 @@ import TabItem from '@theme/TabItem';
 
         ## Unreleased
 
+        Values that are late in the NOW stream are no longer logged to the
+        error stream.
+
         We have changed the documentation for the SUBSTR and SUBSTRING
         function to specify correctly their behaviors when arguments are
         negative.  Their behavior has not changed, but the documentation

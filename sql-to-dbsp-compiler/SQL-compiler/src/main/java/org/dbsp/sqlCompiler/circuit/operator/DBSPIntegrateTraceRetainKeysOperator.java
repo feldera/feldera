@@ -16,6 +16,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.util.Utilities;
@@ -52,6 +53,8 @@ public final class DBSPIntegrateTraceRetainKeysOperator
         DBSPExpression compare0 = controlArg.deref().field(0).not();
         if (data.outputType().is(DBSPTypeIndexedZSet.class)) {
             DBSPType keyType = data.getOutputIndexedZSetType().keyType;
+            if (keyType.sameType(DBSPTypeTuple.EMPTY))
+                return null;
             DBSPVariablePath dataArg = keyType.ref().var();
             param = new DBSPParameter(dataArg.variable, dataArg.getType());
             IMaybeMonotoneType dataField0 = dataProjection

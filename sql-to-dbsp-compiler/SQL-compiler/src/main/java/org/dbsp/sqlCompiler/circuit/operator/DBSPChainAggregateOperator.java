@@ -12,6 +12,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeWeight;
 import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
@@ -29,9 +30,14 @@ public class DBSPChainAggregateOperator extends DBSPUnaryOperator {
         Utilities.enforce(init.parameters.length == 2);
         Utilities.enforce(function.parameters.length == 3);
         Utilities.enforce(init.getResultType().sameType(function.getResultType()));
+        Utilities.enforce(init.getResultType().sameType(function.parameters[0].getType()));
+        Utilities.enforce(init.parameters[0].getType().sameType(function.parameters[1].getType()));
+        Utilities.enforce(init.parameters[1].getType().sameType(DBSPTypeWeight.INSTANCE));
+        Utilities.enforce(function.parameters[2].getType().sameType(DBSPTypeWeight.INSTANCE));
         Utilities.enforce(outputType.is(DBSPTypeIndexedZSet.class));
         Utilities.enforce(source.outputType().is(DBSPTypeIndexedZSet.class));
         Utilities.enforce(source.getOutputIndexedZSetType().keyType.sameType(this.getOutputIndexedZSetType().keyType));
+        Utilities.enforce(source.getOutputIndexedZSetType().elementType.ref().sameType(init.parameters[0].getType()));
         this.checkResultType(function, this.getOutputIndexedZSetType().elementType);
     }
 

@@ -2,6 +2,7 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPApplyOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPChainAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDeindexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDifferentiateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFilterOperator;
@@ -41,10 +42,10 @@ import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.IDBSPDeclaration;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.circuit.annotation.AlwaysMonotone;
-import org.dbsp.sqlCompiler.circuit.annotation.NoInc;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPConditionalAggregateExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
@@ -221,7 +222,9 @@ public class ImplementNow extends Passes {
         // Holds the indexed version of the 'now' operator (indexed with an empty key).
         // (actually, it's the differentiator after the index)
         @Nullable
-        DBSPMapIndexOperator nowIndexed = null;
+        DBSPSimpleOperator nowIndexed = null;
+        @Nullable
+        DBSPSimpleOperator now = null;
 
         public RewriteNow(DBSPCompiler compiler) {
             super(compiler, false);
@@ -235,11 +238,11 @@ public class ImplementNow extends Passes {
                     DBSPTupleExpression.flatten(var.deref()));
             DBSPMapIndexOperator index = new DBSPMapIndexOperator(
                     operator.getRelNode(), indexFunction.closure(var),
-                    TypeCompiler.makeIndexedZSet(new DBSPTypeTuple(), inputType), input.outputPort());
+                    TypeCompiler.makeIndexedZSet(DBSPTypeTuple.EMPTY, inputType), input.outputPort());
             this.addOperator(index);
 
             // Join with 'indexedNow'
-            DBSPVariablePath key = new DBSPTypeTuple().ref().var();
+            DBSPVariablePath key = DBSPTypeTuple.EMPTY.ref().var();
             DBSPVariablePath left = inputType.ref().var();
             DBSPVariablePath right = new DBSPTypeTuple(ContainsNow.timestampType()).ref().var();
             List<DBSPExpression> fields = left.deref().allFields();
@@ -666,27 +669,28 @@ public class ImplementNow extends Passes {
         }
 
         public DBSPSimpleOperator getNow() {
-            Utilities.enforce(this.nowIndexed != null);
-            return this.nowIndexed.inputs.get(0).simpleNode();
+            return Objects.requireNonNull(this.now);
         }
 
-        public DBSPSimpleOperator flattenNow() {
-            // An operator that produces a scalar value of the now input
-            // (not a ZSet, but a single scalar).
+        /** An operator that produces a scalar value of the now input
+            (not a ZSet, but a single scalar), including a differentiator. */
+        DBSPSimpleOperator scalarNow() {
             DBSPSimpleOperator source = this.getNow();
-            DBSPVariablePath t = source.getOutputZSetElementType().ref().var();
+            DBSPDifferentiateOperator diff = new DBSPDifferentiateOperator(source.getRelNode(), source.outputPort());
+            this.addOperator(diff);
+
             // We know that the output type of the source is Zset<Tup1<Timestamp>>
+            DBSPVariablePath t = source.getOutputZSetElementType().ref().var();
             DBSPTypeTimestamp type = ContainsNow.timestampType();
             DBSPExpression timestamp = t.deref().field(0);
 
             DBSPTupleExpression min = new DBSPTupleExpression(Linq.list(type.getMinValue()), false);
             DBSPTupleExpression timestampTuple = new DBSPTupleExpression(Linq.list(timestamp), false);
-            DBSPParameter parameter = t.asParameter();
             DBSPClosureExpression max = InsertLimiters.timestampMax(source.getNode(), min.getTypeAsTupleBase());
             DBSPWaterlineOperator waterline = new DBSPWaterlineOperator(
                     source.getRelNode(), min.closure(),
-                    timestampTuple.closure(parameter, new DBSPTypeRawTuple().ref().var().asParameter()),
-                    max, source.outputPort());
+                    timestampTuple.closure(t, DBSPTypeRawTuple.EMPTY.ref().var()),
+                    max, diff.outputPort());
             this.addOperator(waterline);
             return waterline;
         }
@@ -723,11 +727,11 @@ public class ImplementNow extends Passes {
                                                    DBSPSimpleOperator source,
                                                    TemporalFilterList comparisons) {
             // Now input comes from here
-            DBSPSimpleOperator flattenNow = this.flattenNow();
+            DBSPSimpleOperator scalarNow = this.scalarNow();
             WindowBounds bounds = comparisons.getWindowBounds(this.compiler());
             DBSPClosureExpression makeWindow = bounds.makeWindow();
             DBSPSimpleOperator windowBounds = new DBSPApplyOperator(operator.getRelNode(),
-                    makeWindow, flattenNow.outputPort(), null);
+                    makeWindow, scalarNow.outputPort(), null);
             this.addOperator(windowBounds);
 
             // Filter the null timestamps away, they won't be selected anyway,
@@ -862,38 +866,62 @@ public class ImplementNow extends Passes {
             DBSPType timestamp = ContainsNow.timestampType();
             CalciteRelNode node = CalciteEmptyRel.INSTANCE;
 
-            DBSPSimpleOperator now;
             boolean useSource = !this.compiler.compiler().options.ioOptions.nowStream;
             if (useSource) {
-                now = new DBSPNowOperator(node);
+                this.now = new DBSPNowOperator(node);
             } else {
-                // A table followed by a differentiator.
+                // table -> map_index -> chain_aggregate(max) -> deindex
                 ProgramIdentifier tableName = DBSPCompiler.NOW_TABLE_NAME;
                 IInputOperator nowInput = circuit.getInput(tableName);
                 if (nowInput == null) {
                     throw new CompilationError("Declaration for table 'NOW' not found in program");
                 }
-                now = nowInput.asOperator().to(DBSPSimpleOperator.class);
+                this.now = nowInput.asOperator().to(DBSPSimpleOperator.class);
                 // Prevent processing it again by this visitor
-                this.visited.add(now);
-                this.addOperator(now);
+                this.visited.add(this.now);
+                this.addOperator(this.now);
 
-                DBSPDifferentiateOperator dNow = new DBSPDifferentiateOperator(node, now.outputPort());
-                now = dNow;
-                dNow.annotations.add(NoInc.INSTANCE);
+                DBSPVariablePath var = new DBSPTypeTuple(timestamp).ref().var();
+                DBSPClosureExpression indexTuple = new DBSPRawTupleExpression(
+                        new DBSPTupleExpression(), new DBSPTupleExpression(var.deref().field(0))).closure(var);
+                DBSPMapIndexOperator index = new DBSPMapIndexOperator(node, indexTuple, this.now.outputPort());
+                this.addOperator(index);
+
+                DBSPVariablePath weightVar = compiler.weightVar;
+                DBSPVariablePath timestampVar = new DBSPTypeTuple(timestamp).ref().var();
+                DBSPClosureExpression init = new DBSPTupleExpression(timestampVar.deref().field(0))
+                        .closure(timestampVar, weightVar);
+
+                DBSPType chainType = index.outputType;
+
+                DBSPVariablePath acc = new DBSPTypeTuple(timestamp).var();
+                DBSPClosureExpression function = new DBSPTupleExpression(
+                        new DBSPConditionalAggregateExpression(
+                                node, DBSPOpcode.AGG_MAX, timestamp,
+                                acc.field(0), timestampVar.deref().field(0), null))
+                        .closure(acc, timestampVar, weightVar);
+
+                DBSPChainAggregateOperator aggregate = new DBSPChainAggregateOperator(
+                        node, init, function, chainType, index.outputPort());
+                this.addOperator(aggregate);
+                this.nowIndexed = aggregate;
+
+                this.now = new DBSPDeindexOperator(node, aggregate.outputPort());
             }
-            this.addOperator(now);
-            this.map(now.outputPort(), now.outputPort(), false);
+            this.addOperator(this.now);
+            this.map(this.now.outputPort(), this.now.outputPort(), false);
 
-            DBSPVariablePath var = new DBSPTypeTuple(timestamp).ref().var();
-            DBSPExpression indexFunction = new DBSPRawTupleExpression(
-                    new DBSPTupleExpression(),
-                    new DBSPTupleExpression(DBSPTypeTupleBase.flatten(var.deref()), false));
-            this.nowIndexed = new DBSPMapIndexOperator(
-                    node, indexFunction.closure(var),
-                    TypeCompiler.makeIndexedZSet(new DBSPTypeTuple(), new DBSPTypeTuple(timestamp)), now.outputPort());
+            if (this.nowIndexed == null) {
+                DBSPVariablePath var = new DBSPTypeTuple(timestamp).ref().var();
+                DBSPExpression indexFunction = new DBSPRawTupleExpression(
+                        new DBSPTupleExpression(),
+                        new DBSPTupleExpression(var.deref().field(0)));
+                this.nowIndexed = new DBSPMapIndexOperator(
+                        node, indexFunction.closure(var),
+                        TypeCompiler.makeIndexedZSet(DBSPTypeTuple.EMPTY, new DBSPTypeTuple(timestamp)), now.outputPort());
+                this.addOperator(this.nowIndexed);
+            }
             this.nowIndexed.addAnnotation(AlwaysMonotone.INSTANCE, DBSPSimpleOperator.class);
-            this.addOperator(this.nowIndexed);
             return VisitDecision.CONTINUE;
         }
     }
