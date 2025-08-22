@@ -325,9 +325,9 @@ public class TinyintTests extends SqlIoTest {
 
     @Test
     public void testSelectOverflow() {
-        this.qf("SELECT i.f1, i.f1 * 2::TINYINT AS x FROM INT_TBL i", "causes overflow");
-        this.qf( "SELECT i.f1, i.f1 + '2'::TINYINT AS x FROM INT_TBL i", "causes overflow");
-        this.qf("SELECT i.f1, i.f1 - '2'::TINYINT AS x FROM INT_TBL i", "causes overflow");
+        this.qf("SELECT i.f1, i.f1 * 2::TINYINT AS x FROM INT_TBL i", "causes overflow for type TINYINT");
+        this.qf( "SELECT i.f1, i.f1 + '2'::TINYINT AS x FROM INT_TBL i", "causes overflow for type TINYINT");
+        this.qf("SELECT i.f1, i.f1 - '2'::TINYINT AS x FROM INT_TBL i", "causes overflow for type TINYINT");
     }
 
     @Test
@@ -342,7 +342,7 @@ public class TinyintTests extends SqlIoTest {
     }
 
     @Test
-    public void testTINYINTMINOverflowError() {
+    public void testTinyIntMinOverflowError() {
         this.qf("SELECT (-128)::tinyint * (-1)::tinyint", "causes overflow");
         this.qf("SELECT (-128)::tinyint / (-1)::tinyint", "causes overflow");
     }

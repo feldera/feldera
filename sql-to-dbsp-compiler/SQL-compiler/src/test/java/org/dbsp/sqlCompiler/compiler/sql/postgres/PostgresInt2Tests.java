@@ -275,9 +275,9 @@ public class PostgresInt2Tests extends SqlIoTest {
 
     @Test
     public void testSelectOverflow() {
-        this.qf("SELECT i.f1, i.f1 * 2::INT2 AS x FROM INT2_TBL i", "causes overflow");
-        this.qf( "SELECT i.f1, i.f1 + '2'::INT2 AS x FROM INT2_TBL i", "causes overflow");
-        this.qf("SELECT i.f1, i.f1 - '2'::INT2 AS x FROM INT2_TBL i", "causes overflow");
+        this.qf("SELECT i.f1, i.f1 * 2::INT2 AS x FROM INT2_TBL i", "causes overflow for type SHORTINT");
+        this.qf( "SELECT i.f1, i.f1 + '2'::INT2 AS x FROM INT2_TBL i", "causes overflow for type SHORTINT");
+        this.qf("SELECT i.f1, i.f1 - '2'::INT2 AS x FROM INT2_TBL i", "causes overflow for type SHORTINT");
     }
 
     @Test

@@ -5,7 +5,7 @@ use num::{PrimInt, Zero};
 use num_traits::{CheckedAdd, CheckedDiv, CheckedMul, CheckedSub};
 use std::cmp::Ordering;
 
-use crate::{for_all_int_operator, some_existing_operator, some_operator};
+use crate::{for_all_int_operator, some_existing_operator, some_operator, type_name};
 
 macro_rules! for_all_compare {
     // Arguments with different types
@@ -219,7 +219,10 @@ where
 {
     match left.checked_add(&right) {
         Some(value) => value,
-        None => panic!("'{left} + {right}' causes overflow"),
+        None => panic!(
+            "'{left} + {right}' causes overflow for type {}",
+            type_name(std::any::type_name::<T>())
+        ),
     }
 }
 
@@ -244,7 +247,10 @@ where
 {
     match left.checked_sub(&right) {
         Some(result) => result,
-        None => panic!("'{left} - {right}' causes overflow"),
+        None => panic!(
+            "'{left} - {right}' causes overflow for type {}",
+            type_name(std::any::type_name::<T>()),
+        ),
     }
 }
 
@@ -297,7 +303,10 @@ where
     T: CheckedMul + std::fmt::Display,
 {
     match left.checked_mul(&right) {
-        None => panic!("'{left} * {right}' causes overflow"),
+        None => panic!(
+            "'{left} * {right}' causes overflow for type {}",
+            type_name(std::any::type_name::<T>()),
+        ),
         Some(value) => value,
     }
 }
@@ -355,7 +364,10 @@ where
     T: CheckedDiv + Zero + Eq + std::fmt::Display,
 {
     match left.checked_div(&right) {
-        None => panic!("'{left} / {right}' causes overflow"),
+        None => panic!(
+            "'{left} / {right}' causes overflow for type {}",
+            type_name(std::any::type_name::<T>()),
+        ),
         Some(value) => value,
     }
 }
