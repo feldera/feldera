@@ -126,9 +126,10 @@ pub enum OutputFormat {
     ///
     /// This format can only be specified for the `metrics` command.
     Prometheus,
-    /// Return the output as a hash of the result.
+    /// Returns a hash of the result instead of the result.
     ///
-    /// This format can only be specified for SQL queries.
+    /// This format can only be specified for ad-hoc SQL queries.
+    /// The output in this case is a single string/line containing a SHA256 hash.
     Hash,
 }
 

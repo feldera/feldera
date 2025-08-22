@@ -23,11 +23,20 @@ pub enum AdHocResultFormat {
     /// Stream data in the arrow IPC format.
     ArrowIpc,
     /// Returns a hash of the results instead of the actual data.
+    ///
+    /// The output in this case is a single string/line containing a
+    /// SHA256 hash (or a JSON formatted error message in case the query
+    /// failed to execute).
+    ///
     /// This is useful for verifying the integrity of the data
     /// without transferring the entire dataset.
     ///
-    /// Note that for the hash to be meaningful the query must sort data
-    /// in a deterministic way.
+    /// Note that supplying a query with this format will implicitly
+    /// add an `ORDER BY` clause for all fields of the result to the query
+    /// to ensure consistent ordering of results.
+    ///
+    /// e.g., a query like `select * from materialized_view` will be rewritten as
+    /// `select * from materialized_view order by col1, col2, ..., colN`
     Hash,
 }
 
