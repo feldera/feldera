@@ -903,7 +903,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
 
         :param pipeline_name: The name of the pipeline to query.
         :param query: The SQL query to be executed.
-        :return: A generator yielding the query result in tabular format, one line at a time.
+        :return: A string containing the hash of the query result.
         """
         params = {
             "pipeline_name": pipeline_name,
