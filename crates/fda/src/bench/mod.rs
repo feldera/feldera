@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use feldera_rest_api::types::{CompilationProfile, Configuration};
+use feldera_rest_api::types::{CompilationProfile, Configuration, ProgramConfig};
 use feldera_rest_api::Client;
 use feldera_types::error::ErrorResponse;
 use log::{error, info, warn};
@@ -341,14 +341,20 @@ impl Benchmark {
 async fn collect_metrics(
     client: &Client,
     pipeline_name: &str,
-    duration_secs: Option<u64>,
+    duration: Option<u64>,
+    needs_commit: bool,
 ) -> Vec<Map<String, Value>> {
+    enum PipelineStatus<T> {
+        Ingesting,
+        Committing(T),
+    }
+
     let mut metrics = Vec::new();
     let start_time = Instant::now();
-    let duration = duration_secs.map(Duration::from_secs);
+    let duration = duration.map(Duration::from_secs);
+    let mut status = PipelineStatus::Ingesting;
 
     loop {
-        sleep(Duration::from_secs(1)).await;
         match client
             .get_pipeline_stats()
             .pipeline_name(pipeline_name.to_string())
@@ -360,21 +366,58 @@ async fn collect_metrics(
                 metrics.push(stats.clone());
                 info!("Collected metrics at {}s", start_time.elapsed().as_secs());
 
-                // Check if pipeline is complete
-                if let Some(global_metrics) = stats.get("global_metrics") {
-                    if let Some(complete) = global_metrics.get("pipeline_complete") {
-                        if complete.as_bool().unwrap_or(false) {
-                            println!("Pipeline completed, stopping benchmark");
-                            break;
+                match status {
+                    PipelineStatus::Ingesting => {
+                        if let Some(global_metrics) = stats.get("global_metrics") {
+                            if let Some(complete) = global_metrics.get("pipeline_complete") {
+                                if complete.as_bool().unwrap_or(false) {
+                                    println!("Pipeline completed, stopping benchmark");
+                                    if needs_commit {
+                                        status = PipelineStatus::Committing(Box::pin(
+                                            client
+                                                .commit_transaction()
+                                                .pipeline_name(pipeline_name)
+                                                .send(),
+                                        ));
+                                    } else {
+                                        break;
+                                    }
+                                }
+                            }
                         }
-                    }
-                }
 
-                // Check if we've reached the duration limit
-                if let Some(duration) = duration {
-                    if start_time.elapsed() >= duration {
-                        println!("Reached duration limit of {}s", duration_secs.unwrap());
-                        break;
+                        // Check if we've reached the duration limit
+                        if let Some(duration) = duration {
+                            if start_time.elapsed() >= duration {
+                                println!("Reached duration limit of {}s", duration.as_secs());
+                                if needs_commit {
+                                    status = PipelineStatus::Committing(Box::pin(
+                                        client
+                                            .commit_transaction()
+                                            .pipeline_name(pipeline_name)
+                                            .send(),
+                                    ));
+                                } else {
+                                    break;
+                                }
+                            }
+                        }
+                        sleep(Duration::from_secs(1)).await;
+                    }
+                    PipelineStatus::Committing(ref mut fut) => {
+                        tokio::select! {
+                            res = fut => {
+                                // Transaction committed within the window
+                                if res.is_err() {
+                                    eprintln!("Failed to commit transaction: {}", res.unwrap_err());
+                                    std::process::exit(1);
+                                }
+                                break;
+                            }
+                            _ = sleep(Duration::from_secs(1)) => {
+                                // Timed out this round; get stats and try again
+                            }
+                        }
                     }
                 }
             }
@@ -490,10 +533,30 @@ pub(crate) async fn bench(client: Client, format: OutputFormat, args: BenchmarkA
     ))
     .await;
 
+    let need_commit = if !args.no_transaction {
+        match client
+            .start_transaction()
+            .pipeline_name(pipeline_name.clone())
+            .send()
+            .await
+        {
+            Ok(_) => {
+                info!("Transaction started for pipeline '{}'", pipeline_name);
+                true
+            }
+            Err(e) => {
+                warn!("Failed to start transaction for pipeline '{}' due to {e}. This may affect benchmark results.", pipeline_name);
+                false
+            }
+        }
+    } else {
+        false
+    };
+
     let start_time: chrono::DateTime<chrono::Utc> = chrono::Utc::now();
     // Collect metrics over time
     println!("Collecting metrics...");
-    let metrics = collect_metrics(&client, &pipeline_name, args.duration).await;
+    let metrics = collect_metrics(&client, &pipeline_name, args.duration, need_commit).await;
     let end_time: chrono::DateTime<chrono::Utc> = chrono::Utc::now();
 
     // Shutdown the pipeline after collecting metrics
@@ -529,6 +592,7 @@ pub(crate) async fn bench(client: Client, format: OutputFormat, args: BenchmarkA
             args,
             feldera_testbed,
             feldera_instance_config,
+            pipeline.program_config.clone(),
             bmf_benchmark,
             start_time,
             end_time,
@@ -551,6 +615,7 @@ async fn upload_result(
     args: BenchmarkArgs,
     feldera_testbed: String,
     feldera_instance_config: Configuration,
+    program_config: Option<ProgramConfig>,
     benchmark_data: Benchmark,
     start_time: DateTime<Utc>,
     end_time: DateTime<Utc>,
@@ -614,10 +679,13 @@ async fn upload_result(
     //"bencher.dev/v0/branch/ref": "refs/heads/benchmarks",
     //"bencher.dev/v0/testbed/fingerprint": "rkn4va8erzzh3",
 
-    let git_hash: Option<GitHash> = if feldera_instance_config.revision.is_empty() {
-        None
-    } else {
-        Some(GitHash(feldera_instance_config.revision.clone()))
+    let git_hash: Option<GitHash> = match (
+        program_config.and_then(|pc| pc.runtime_version.clone()),
+        feldera_instance_config.runtime_revision,
+    ) {
+        (Some(r), _) => Some(GitHash(r)),
+        (None, r) if !r.is_empty() => Some(GitHash(r.clone())),
+        _ => None,
     };
     let project = ResourceId(args.project);
     let testbed = NameId(feldera_testbed);

@@ -562,6 +562,35 @@ async fn wait_for_status(
     }
 }
 
+async fn wait_for_storage_status(
+    client: &Client,
+    name: String,
+    wait_for: StorageStatus,
+    waiting_text: &str,
+) {
+    let mut print_every_30_seconds = Instant::now();
+    let mut is_transitioning = true;
+    while is_transitioning {
+        let pc = client
+            .get_pipeline()
+            .pipeline_name(name.clone())
+            .send()
+            .await
+            .map_err(handle_errors_fatal(
+                client.baseurl().clone(),
+                "Failed to get program config",
+                1,
+            ))
+            .unwrap();
+        is_transitioning = pc.storage_status != wait_for;
+        if print_every_30_seconds.elapsed().as_secs() > 30 {
+            info!("{}", waiting_text);
+            print_every_30_seconds = Instant::now();
+        }
+        sleep(Duration::from_millis(500)).await;
+    }
+}
+
 async fn wait_for_checkpoint(client: &Client, name: String, seq_number: u64, waiting_text: &str) {
     let mut print_every_30_seconds = Instant::now();
     let mut is_waiting_for_checkpoint = true;
@@ -612,6 +641,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
         PipelineAction::Create {
             name,
             program_path,
+            runtime_version,
             profile,
             udf_rs,
             udf_toml,
@@ -630,7 +660,11 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                         program_code: program_code.unwrap_or_default(),
                         udf_rust,
                         udf_toml,
-                        program_config: Some(profile.into()),
+                        program_config: Some(ProgramConfig {
+                            cache: true,
+                            profile: Some(profile),
+                            runtime_version,
+                        }),
                         runtime_config: None,
                     })
                     .send()
@@ -928,10 +962,10 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
             trace!("{:#?}", response);
 
             if !no_wait {
-                wait_for_status(
+                wait_for_storage_status(
                     &client,
                     name.clone(),
-                    PipelineStatus::Stopped,
+                    StorageStatus::Cleared,
                     "Clearing pipeline...",
                 )
                 .await;
@@ -1896,7 +1930,7 @@ async fn program(format: OutputFormat, action: ProgramAction, client: Client) {
                 udf_rust: None,
                 udf_toml: None,
                 program_config: Some(ProgramConfig {
-                    profile: profile.map(|p| p.into()),
+                    profile,
                     cache: true,
                     runtime_version,
                 }),
