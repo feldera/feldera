@@ -308,8 +308,7 @@ public class StreamingTests extends StreamingTestBase {
 
             @Override
             public void endVisit() {
-                // 2 for the lag, one for the window
-                Assert.assertEquals(3, this.integrate_trace);
+                Assert.assertEquals(1, this.integrate_trace);
                 Assert.assertEquals(1, this.window);
             }
         };
@@ -1011,28 +1010,46 @@ public class StreamingTests extends StreamingTestBase {
                 WHERE ts >= now() - INTERVAL 1 DAY
                 GROUP BY users""";
         CompilerCircuitStream ccs = this.getCCS(sql);
-        CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
-            int window = 0;
-            int waterline = 0;
-
-            @Override
-            public void postorder(DBSPWindowOperator operator) {
-                this.window++;
-            }
-
-            @Override
-            public void postorder(DBSPWaterlineOperator operator) {
-                this.waterline++;
-            }
-
-            @Override
-            public void endVisit() {
-                Assert.assertEquals(1, this.window);
-                Assert.assertEquals(3, this.waterline);
-            }
-        };
+        CircuitVisitor visitor = new Inspector(ccs.compiler, 1, 1, 2);
         ccs.visit(visitor);
     }
+
+    static class Inspector extends CircuitVisitor {
+        final int expectedWindow;
+        final int expectedChain;
+        final int expectedWaterline;
+
+        public Inspector(DBSPCompiler compiler, int window, int chain, int waterline) {
+            super(compiler);
+            this.expectedChain = chain;
+            this.expectedWaterline = waterline;
+            this.expectedWindow = window;
+        }
+
+        int window = 0;
+        int waterline = 0;
+        int chain = 0;
+
+        @Override
+        public void postorder(DBSPChainAggregateOperator operator) { this.chain++; }
+
+        @Override
+        public void postorder(DBSPWindowOperator operator) {
+            this.window++;
+        }
+
+        @Override
+        public void postorder(DBSPWaterlineOperator operator) {
+            this.waterline++;
+        }
+
+        @Override
+        public void endVisit() {
+            Assert.assertEquals(this.expectedWindow, this.window);
+            Assert.assertEquals(this.expectedWaterline, this.waterline);
+            Assert.assertEquals(this.expectedChain, this.chain);
+        }
+    };
 
     @Test
     public void testNow5() {
@@ -1047,26 +1064,7 @@ public class StreamingTests extends StreamingTestBase {
                 FROM transactions
                 WHERE ts BETWEEN now() - INTERVAL 1 DAY AND now() + INTERVAL 1 DAY""";
         CompilerCircuitStream ccs = this.getCCS(sql);
-        CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
-            int window = 0;
-            int waterline = 0;
-
-            @Override
-            public void postorder(DBSPWindowOperator operator) {
-                this.window++;
-            }
-
-            @Override
-            public void postorder(DBSPWaterlineOperator operator) {
-                this.waterline++;
-            }
-
-            @Override
-            public void endVisit() {
-                Assert.assertEquals(1, this.window);
-                Assert.assertEquals(2, this.waterline);
-            }
-        };
+        CircuitVisitor visitor = new Inspector(ccs.compiler, 1, 1, 1);
         ccs.visit(visitor);
         ccs.step("""
                  INSERT INTO transactions VALUES (1, '2024-01-01 00:00:10');
@@ -1103,26 +1101,7 @@ public class StreamingTests extends StreamingTestBase {
                 FROM transactions
                 WHERE ts >= year(now()) + 10""";
         CompilerCircuit cc = this.getCC(sql);
-        CircuitVisitor visitor = new CircuitVisitor(cc.compiler) {
-            int window = 0;
-            int waterline = 0;
-
-            @Override
-            public void postorder(DBSPWindowOperator operator) {
-                this.window++;
-            }
-
-            @Override
-            public void postorder(DBSPWaterlineOperator operator) {
-                this.waterline++;
-            }
-
-            @Override
-            public void endVisit() {
-                Assert.assertEquals(1, this.window);
-                Assert.assertEquals(2, this.waterline);
-            }
-        };
+        CircuitVisitor visitor = new Inspector(cc.compiler, 1, 1, 1);
         cc.visit(visitor);
     }
 
@@ -1140,26 +1119,7 @@ public class StreamingTests extends StreamingTestBase {
                 WHERE id + ts/2 - SIN(id) >= year(now()) + 10 AND
                       id + ts/2 - SIN(id) <= EXTRACT(CENTURY FROM now()) * 20;""";
         CompilerCircuit cc = this.getCC(sql);
-        CircuitVisitor visitor = new CircuitVisitor(cc.compiler) {
-            int window = 0;
-            int waterline = 0;
-
-            @Override
-            public void postorder(DBSPWindowOperator operator) {
-                this.window++;
-            }
-
-            @Override
-            public void postorder(DBSPWaterlineOperator operator) {
-                this.waterline++;
-            }
-
-            @Override
-            public void endVisit() {
-                Assert.assertEquals(1, this.window);
-                Assert.assertEquals(2, this.waterline);
-            }
-        };
+        CircuitVisitor visitor = new Inspector(cc.compiler, 1, 1, 1);
         cc.visit(visitor);
     }
 
@@ -1180,26 +1140,7 @@ public class StreamingTests extends StreamingTestBase {
                       id >= EXTRACT(CENTURY FROM now()) * 20 AND
                       id = 4;""";
         CompilerCircuit cc = this.getCC(sql);
-        CircuitVisitor visitor = new CircuitVisitor(cc.compiler) {
-            int window = 0;
-            int waterline = 0;
-
-            @Override
-            public void postorder(DBSPWindowOperator operator) {
-                this.window++;
-            }
-
-            @Override
-            public void postorder(DBSPWaterlineOperator operator) {
-                this.waterline++;
-            }
-
-            @Override
-            public void endVisit() {
-                Assert.assertEquals(2, this.window);
-                Assert.assertEquals(2, this.waterline);
-            }
-        };
+        CircuitVisitor visitor = new Inspector(cc.compiler, 2, 1, 1);
         cc.visit(visitor);
     }
 
@@ -1217,26 +1158,7 @@ public class StreamingTests extends StreamingTestBase {
                 WHERE id >= EXTRACT(CENTURY FROM now()) * 20 AND
                       EXTRACT(CENTURY FROM now()) % 10 = 0;""";
         CompilerCircuit cc = this.getCC(sql);
-        CircuitVisitor visitor = new CircuitVisitor(cc.compiler) {
-            int window = 0;
-            int waterline = 0;
-
-            @Override
-            public void postorder(DBSPWindowOperator operator) {
-                this.window++;
-            }
-
-            @Override
-            public void postorder(DBSPWaterlineOperator operator) {
-                this.waterline++;
-            }
-
-            @Override
-            public void endVisit() {
-                Assert.assertEquals(1, this.window);
-                Assert.assertEquals(2, this.waterline);
-            }
-        };
+        CircuitVisitor visitor = new Inspector(cc.compiler, 1, 1, 2);
         cc.visit(visitor);
     }
 

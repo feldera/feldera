@@ -41,6 +41,8 @@ import java.util.List;
 
 /** A Raw Rust tuple.  Very seldom can be nullable. */
 public class DBSPTypeRawTuple extends DBSPTypeTupleBase {
+    public static final DBSPTypeRawTuple EMPTY = new DBSPTypeRawTuple();
+
     private DBSPTypeRawTuple(CalciteObject node, DBSPTypeCode code, boolean mayBeNull, DBSPType... tupArgs) {
         super(node, code, mayBeNull, tupArgs);
     }

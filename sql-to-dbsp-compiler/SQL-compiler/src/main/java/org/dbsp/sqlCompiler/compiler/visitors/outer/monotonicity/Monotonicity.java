@@ -789,18 +789,19 @@ public class Monotonicity extends CircuitVisitor {
         IMaybeMonotoneType projection = Monotonicity.getBodyType(inputValue);
         PartiallyMonotoneTuple tuple = projection.to(PartiallyMonotoneTuple.class);
         IMaybeMonotoneType tuple0 = tuple.getField(0);
-        // Drop field 1 of the value projection.
         if (!tuple0.mayBeMonotone())
             return;
 
         DBSPTypeIndexedZSet ix = node.getOutputIndexedZSetType();
         DBSPTypeTupleBase outputValueType = ix.getKVType();
 
-        Utilities.enforce(tuple0.getType().sameType(outputValueType.tupFields[0]), "Types differ " + tuple0.getType() + " and " + outputValueType.tupFields[0]);
+        Utilities.enforce(tuple0.getType().sameType(outputValueType.tupFields[0]),
+                "Types differ " + tuple0.getType() + " and " + outputValueType.tupFields[0]);
         DBSPTypeTupleBase varType = projection.getType().to(DBSPTypeTupleBase.class);
         Utilities.enforce(varType.size() == 2, "Expected a pair, got " + varType);
         varType = new DBSPTypeRawTuple(varType.tupFields[0].ref(), varType.tupFields[1].ref());
         DBSPVariablePath var = varType.var();
+        // Drop field 1 of the value projection.
         DBSPExpression body = new DBSPRawTupleExpression(
                 var.field(0).deref(),
                 makeNoExpression(ix.elementType));
@@ -823,6 +824,24 @@ public class Monotonicity extends CircuitVisitor {
 
     @Override
     public void postorder(DBSPChainAggregateOperator node) {
+        if (node.annotations.first(AlwaysMonotone.class) != null) {
+            // This is the NOW operator; treat it as if it has a LATENESS of 0
+            List<IMaybeMonotoneType> fields = new ArrayList<>();
+            DBSPTypeIndexedZSet ix = node.getOutputIndexedZSetType();
+
+            IMaybeMonotoneType key = new PartiallyMonotoneTuple(Linq.list(), false, false);
+            DBSPTypeTuple tuple = ix.getElementTypeTuple();
+            for (DBSPType fieldType: tuple.tupFields) {
+                IMaybeMonotoneType columnType = new MonotoneType(fieldType);
+                fields.add(columnType);
+            }
+            IMaybeMonotoneType value = new PartiallyMonotoneTuple(fields, false, false);
+            IMaybeMonotoneType pair = new PartiallyMonotoneTuple(Linq.list(key, value), true, false);
+            MonotoneExpression result = this.identity(node, pair, true);
+            this.set(node, result);
+            return;
+        }
+
         // TODO: for MAX the output is always monotone, but we cannot use this information.
         // https://github.com/feldera/feldera/issues/2805
         this.aggregate(node);

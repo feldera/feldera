@@ -42,7 +42,7 @@ public final class DBSPForExpression extends DBSPExpression implements IDBSPDecl
     public final DBSPBlockExpression block;
 
     public DBSPForExpression(String variable, DBSPExpression iterated, DBSPBlockExpression block) {
-        super(iterated.getNode(), new DBSPTypeRawTuple());
+        super(iterated.getNode(), DBSPTypeRawTuple.EMPTY);
         this.variable = variable;
         this.iterated = iterated;
         this.block = block;

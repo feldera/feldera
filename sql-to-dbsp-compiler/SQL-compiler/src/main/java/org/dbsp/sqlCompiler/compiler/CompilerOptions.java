@@ -195,6 +195,7 @@ public class CompilerOptions implements IDiff<CompilerOptions>, IValidate {
         @Parameter(names = "--jdbcSource",
                 description = "Connection string to a database that contains table metadata")
         public String metadataSource = "";
+        // The pipeline manager uses --nowstream
         @Parameter(names = "--nowstream",
                 description = "Implement NOW as a stream (true) or as an internal operator (false)")
         public boolean nowStream = false;
