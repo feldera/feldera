@@ -567,8 +567,8 @@ public class PostgresInt8Tests extends SqlIoTest {
 
     @Test
     public void testINT64MINOverflowError() {
-        this.qf("SELECT (-9223372036854775808)::int64 * (-1)::int64", "causes overflow");
-        this.qf("SELECT (-9223372036854775808)::int64 / (-1)::int64", "causes overflow");
+        this.qf("SELECT (-9223372036854775808)::int64 * (-1)::int64", "causes overflow for type BIGINT");
+        this.qf("SELECT (-9223372036854775808)::int64 / (-1)::int64", "causes overflow for type BIGINT");
         this.qf("SELECT (-9223372036854775808)::int64 * (-1)::int4",  "causes overflow");
         this.qf("SELECT (-9223372036854775808)::int64 / (-1)::int4",  "causes overflow");
         this.qf("SELECT (-9223372036854775808)::int64 * (-1)::int2",  "causes overflow");
