@@ -98,6 +98,7 @@ pub(crate) fn stream_text_query(
     }
 }
 
+/// Hashes the result set of a DataFrame query using SHA-256.
 pub(crate) async fn hash_query_result(df: DataFrame) -> Result<String, PipelineError> {
     let schema = df.schema().inner().clone();
     let stream_executor = execute_stream(df)
