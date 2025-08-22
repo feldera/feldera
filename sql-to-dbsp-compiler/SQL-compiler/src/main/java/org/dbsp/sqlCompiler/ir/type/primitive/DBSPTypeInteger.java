@@ -238,7 +238,7 @@ public class DBSPTypeInteger extends DBSPTypeBaseType
     public DBSPExpression fold(DBSPBinaryExpression expression) {
         try {
             DBSPLiteral ll = expression.left.as(DBSPLiteral.class);
-            DBSPLiteral rl = expression.left.as(DBSPLiteral.class);
+            DBSPLiteral rl = expression.right.as(DBSPLiteral.class);
             if (ll == null || rl == null)
                 return expression;
             if ((ll.isNull()) && expression.opcode.isStrict())
