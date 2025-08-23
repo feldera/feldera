@@ -238,6 +238,7 @@ class illarg_trim_fn(TstView):
                         WHEN id = 1 THEN TRIM(trailing 'い' from str)
                         WHEN id = 2 THEN TRIM(trailing '/¯' from str)
                         WHEN id = 3 THEN TRIM(trailing '√ ' from str)
+                        WHEN id = 4 THEN TRIM(trailing NULL from str)
                       END AS str
                       FROM str_tbl"""
 
@@ -260,6 +261,7 @@ class illarg_position_fn(TstView):
                         WHEN id = 1 THEN POSITION('い' in str)
                         WHEN id = 2 THEN POSITION('/¯' in str)
                         WHEN id = 3 THEN POSITION('√ ' in str)
+                        WHEN id = 4 THEN POSITION(NULL in str)
                       END AS str
                       FROM str_tbl"""
 
@@ -299,6 +301,7 @@ class illarg_rlike_fn(TstView):
                         WHEN id = 1 THEN RLIKE(str, '..い.')
                         WHEN id = 2 THEN RLIKE(str, '...(ツ)...')
                         WHEN id = 3 THEN RLIKE(str, '....√ ')
+                        WHEN id = 4 THEN RLIKE(str, NULL)
                       END AS str
                       FROM str_tbl"""
 
@@ -321,6 +324,7 @@ class illarg_split_fn(TstView):
                         WHEN id = 1 THEN SPLIT(str, 'わ')
                         WHEN id = 2 THEN SPLIT(str, '(ツ)')
                         WHEN id = 3 THEN SPLIT(str, '@')
+                        WHEN id = 4 THEN SPLIT(str, NULL)
                       END AS str
                       FROM str_tbl"""
 
@@ -343,6 +347,7 @@ class illarg_split_part_fn(TstView):
                         WHEN id = 1 THEN SPLIT_PART(str, 'わ', 2)
                         WHEN id = 2 THEN SPLIT_PART(str, '(ツ)', 2)
                         WHEN id = 3 THEN SPLIT_PART(str, '@', 2)
+                        WHEN id = 4 THEN SPLIT_PART(str, NULL, 2)
                       END AS str
                       FROM str_tbl"""
 
@@ -362,3 +367,106 @@ class illarg_md5_fn(TstView):
                       id,
                       MD5(str) AS str
                       FROM str_tbl"""
+
+
+# BINARY type specific functions
+# ||(concatenation operator) => (successful for all arguments)
+class illarg_bin_concat_fn(TstView):
+    def __init__(self):
+        # checked manually
+        self.data = [
+            {"str": "h@pP√ h@pP√ "},
+            {"str": "¯\\_(ツ)_/¯¯\\_(ツ)_/¯"},
+            {"str": "かわいいかわいい"},
+            {"str": "🐍🐍🐍🐍"},
+            {"str": None},
+        ]
+        self.sql = """CREATE MATERIALIZED VIEW bin_concat_fn AS SELECT
+                      str || str AS str
+                      FROM str_tbl"""
+
+
+# OCTET_LENGTH
+class illarg_bin_octet_length_fn(TstView):
+    def __init__(self):
+        # Validated on Postgres
+        self.data = [
+            {"id": 0, "str": 8},
+            {"id": 1, "str": 12},
+            {"id": 2, "str": 13},
+            {"id": 3, "str": 8},
+            {"id": 4, "str": None},
+        ]
+        self.sql = """CREATE MATERIALIZED VIEW bin_octet_length_fn AS SELECT
+                      id,
+                      OCTET_LENGTH(str) AS str
+                      FROM str_tbl"""
+
+
+# OVERLAY
+class illarg_bin_overlay_legal(TstView):
+    def __init__(self):
+        # checked manually
+        self.data = [
+            {"str": "hbye√ "},
+            {"str": "¯byeツ)_/¯"},
+            {"str": "かbye"},
+            {"str": "🐍bye"},
+            {"str": None},
+        ]
+        self.sql = """CREATE MATERIALIZED VIEW bin_overlay_legal AS SELECT
+                      CASE
+                        WHEN id = 0 THEN OVERLAY(str placing 'bye' from 2 for 3)
+                        WHEN id = 1 THEN OVERLAY(str placing 'bye' from 2 for 3)
+                        WHEN id = 2 THEN OVERLAY(str placing 'bye' from 2 for 3)
+                        WHEN id = 3 THEN OVERLAY(str placing 'bye' from 2 for 3)
+                        WHEN id = 4 THEN OVERLAY(str placing 'bye' from 2 for 3)
+                      END AS str
+                      FROM str_tbl"""
+
+
+# TO_HEX
+class illarg_bin_to_hex_fn(TstView):
+    def __init__(self):
+        # Validated on Postgres
+        self.data = [
+            {"id": 0, "str": "f09f908df09f908d"},
+            {"id": 1, "str": "e3818be3828fe38184e38184"},
+            {"id": 2, "str": "c2af5c5f28e38384295f2fc2af"},
+            {"id": 3, "str": "68407050e2889a20"},
+            {"id": 4, "str": None},
+        ]
+        self.sql = """CREATE MATERIALIZED VIEW bin_to_hex_fn AS SELECT
+                      id,
+                      TO_HEX(str) AS str
+                      FROM str_tbl"""
+
+
+# SELECT
+#   id,
+#   encode(convert_to(str, 'UTF8'), 'hex') AS str_hex
+# FROM str_tbl;
+
+
+# TO_INT
+class illarg_bin_to_int_fn(TstView):
+    def __init__(self):
+        # Validated on Postgres
+        self.data = [
+            {"id": 0, "str_to_int": -257978227},
+            {"id": 1, "str_to_int": -478049309},
+            {"id": 2, "str_to_int": -1028694945},
+            {"id": 3, "str_to_int": 1749053520},
+            {"id": 4, "str_to_int": None},
+        ]
+        self.sql = """CREATE MATERIALIZED VIEW bin_to_int_fn AS SELECT
+                      id,
+                      TO_INT(str) AS str_to_int
+                      FROM str_tbl"""
+
+
+# SELECT
+# ('x' || 'f09f908df09f908d')::bit(32)::int,
+# ('x' || 'e3818be3828fe38184e38184')::bit(32)::int,
+# ('x' || 'c2af5c5f28e38384295f2fc2af')::bit(32)::int,
+# ('x' || '68407050e2889a20')::bit(32)::int;
