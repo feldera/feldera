@@ -371,6 +371,7 @@ public class Utilities {
         List<String> args = new ArrayList<>();
         args.add("cargo");
         args.add("test");
+        args.add("--offline");
         if (System.getenv("CI") == null) {
             args.add("--jobs");
             args.add("6");
@@ -415,6 +416,7 @@ public class Utilities {
         List<String> args = new ArrayList<>();
         args.add("cargo");
         args.add("check");
+        args.add("--offline");
         if (System.getenv("CI") == null) {
             args.add("--jobs");
             args.add("6");
