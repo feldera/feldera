@@ -1,6 +1,8 @@
 //! Filter and transform data record-by-record.
 
-use crate::circuit::metadata::{MetaItem, OperatorLocation, OperatorMeta, NUM_INPUTS, NUM_OUTPUTS};
+use crate::circuit::metadata::{
+    BatchSizeStats, OperatorLocation, OperatorMeta, INPUT_BATCHES_LABEL, OUTPUT_BATCHES_LABEL,
+};
 use crate::dynamic::DynData;
 use crate::trace::VecWSet;
 use crate::{
@@ -549,17 +551,17 @@ where
 #[derive(Default)]
 struct Metrics {
     // Total number of input tuples processed by the operator.
-    num_inputs: usize,
+    input_batch_stats: BatchSizeStats,
 
-    // Total number of output tuples processed by the operator.
-    num_outputs: usize,
+    // Output batch sizes.
+    output_batch_stats: BatchSizeStats,
 }
 
 impl Metrics {
     fn metadata(&self, meta: &mut OperatorMeta) {
         meta.extend(metadata! {
-            NUM_INPUTS => MetaItem::Count(self.num_inputs),
-            NUM_OUTPUTS => MetaItem::Count(self.num_outputs),
+            INPUT_BATCHES_LABEL => self.input_batch_stats.metadata(),
+            OUTPUT_BATCHES_LABEL => self.output_batch_stats.metadata(),
         });
     }
 }
@@ -639,7 +641,7 @@ where
 {
     #[trace]
     async fn eval(&mut self, input: &B) -> B {
-        self.metrics.num_inputs += input.len();
+        self.metrics.input_batch_stats.add_batch(input.len());
 
         // We can use Builder because cursor yields ordered values.  This
         // is a nice property of the filter operation.
@@ -665,7 +667,7 @@ where
         }
 
         let result = builder.done();
-        self.metrics.num_outputs += result.len();
+        self.metrics.output_batch_stats.add_batch(result.len());
         result
     }
 
@@ -758,7 +760,7 @@ where
 {
     #[trace]
     async fn eval(&mut self, input: &B) -> B {
-        self.metrics.num_inputs += input.len();
+        self.metrics.input_batch_stats.add_batch(input.len());
 
         // We can use Builder because cursor yields ordered values.  This
         // is a nice property of the filter operation.
@@ -788,7 +790,7 @@ where
         }
 
         let result = builder.done();
-        self.metrics.num_outputs += result.len();
+        self.metrics.output_batch_stats.add_batch(result.len());
         result
     }
 
@@ -877,7 +879,7 @@ where
 {
     #[trace]
     async fn eval(&mut self, i: &CI) -> CO {
-        self.metrics.num_inputs += i.len();
+        self.metrics.input_batch_stats.add_batch(i.len());
 
         let mut batch = self.output_factories.weighted_items_factory().default_box();
         batch.reserve(i.len());
@@ -898,7 +900,7 @@ where
         }
 
         let result = CO::dyn_from_tuples(&self.output_factories, (), &mut batch);
-        self.metrics.num_outputs += result.len();
+        self.metrics.output_batch_stats.add_batch(result.len());
 
         result
     }
@@ -965,7 +967,7 @@ where
 {
     #[trace]
     async fn eval(&mut self, i: &CI) -> CO {
-        self.metrics.num_inputs += i.len();
+        self.metrics.input_batch_stats.add_batch(i.len());
 
         let mut batch = self.output_factories.weighted_items_factory().default_box();
         batch.reserve(i.len());
@@ -986,7 +988,7 @@ where
         }
 
         let result = CO::dyn_from_tuples(&self.output_factories, (), &mut batch);
-        self.metrics.num_outputs += result.len();
+        self.metrics.output_batch_stats.add_batch(result.len());
         result
     }
 }
@@ -1044,7 +1046,7 @@ where
 {
     #[trace]
     async fn eval(&mut self, i: &CI) -> CO {
-        self.metrics.num_inputs += i.len();
+        self.metrics.input_batch_stats.add_batch(i.len());
 
         let mut batch = self.output_factories.weighted_items_factory().default_box();
         batch.reserve(i.len());
@@ -1079,7 +1081,7 @@ where
         }
 
         let result = CO::dyn_from_tuples(&self.output_factories, (), &mut batch);
-        self.metrics.num_outputs += result.len();
+        self.metrics.output_batch_stats.add_batch(result.len());
         result
     }
 }
@@ -1144,7 +1146,7 @@ where
 {
     #[trace]
     async fn eval(&mut self, i: &CI) -> CO {
-        self.metrics.num_inputs += i.len();
+        self.metrics.input_batch_stats.add_batch(i.len());
 
         let mut batch = self.output_factories.weighted_items_factory().default_box();
         batch.reserve(i.len());
@@ -1179,7 +1181,7 @@ where
         }
 
         let result = CO::dyn_from_tuples(&self.output_factories, (), &mut batch);
-        self.metrics.num_outputs += result.len();
+        self.metrics.output_batch_stats.add_batch(result.len());
         result
     }
 }
@@ -1187,8 +1189,11 @@ where
 #[cfg(test)]
 mod test {
     use crate::{
-        indexed_zset, operator::Generator, typed_batch::OrdZSet, utils::Tup2, zset, Circuit,
-        RootCircuit,
+        indexed_zset,
+        operator::Generator,
+        typed_batch::{OrdZSet, SpineSnapshot},
+        utils::Tup2,
+        zset, Circuit, OrdIndexedZSet, RootCircuit,
     };
     use std::vec;
 
@@ -1343,7 +1348,7 @@ mod test {
         .unwrap().0;
 
         for _ in 0..1 {
-            circuit.step().unwrap();
+            circuit.transaction().unwrap();
         }
     }
 
@@ -1367,7 +1372,7 @@ mod test {
             // The bug caused the following assertion to fail.
             assert!(!filtered.inner().is_distinct());
 
-            Ok((input_handle, filtered.distinct_count().output()))
+            Ok((input_handle, filtered.distinct_count().accumulate_output()))
         })
         .unwrap();
 
@@ -1379,12 +1384,12 @@ mod test {
             Tup2(3, ((), 3).into()),
             Tup2(4, ((), 4).into()),
         ]);
-        circuit.step().unwrap();
-        let output = output_handle.consolidate();
+        circuit.transaction().unwrap();
+        let output =
+            SpineSnapshot::<OrdIndexedZSet<i32, i64>>::concat(&output_handle.take_from_all())
+                .iter()
+                .collect::<Vec<_>>();
         // The bug caused the weights below to be 1,2,3,4 instead of 1,1,1,1.
-        assert_eq!(
-            output,
-            indexed_zset! {1 => {1 => 1}, 2 => {1 => 1}, 3 => {1 => 1}, 4 => {1 => 1}}
-        );
+        assert_eq!(output, vec![(1, 1, 1), (2, 1, 1), (3, 1, 1), (4, 1, 1)]);
     }
 }

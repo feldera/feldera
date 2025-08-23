@@ -1,3 +1,4 @@
+use crate::trace::cursor::Position;
 use crate::{
     dynamic::{
         DataTrait, DynDataTyped, DynOpt, DynPair, DynUnit, DynVec, DynWeightedPairs, Erase,
@@ -315,6 +316,7 @@ where
     T: Timestamp,
     R: WeightTrait + ?Sized,
 {
+    type Timed<T2: Timestamp> = FileKeyBatch<K, T2, R>;
     type Batcher = MergeBatcher<Self>;
     type Builder = FileKeyBuilder<K, T, R>;
 
@@ -579,6 +581,13 @@ where
     fn fast_forward_vals(&mut self) {
         self.val_valid = true;
     }
+
+    fn position(&self) -> Option<Position> {
+        Some(Position {
+            total: self.cursor.len(),
+            offset: self.cursor.absolute_position(),
+        })
+    }
 }
 
 /// A builder for creating layers from unsorted update tuples.
@@ -594,6 +603,7 @@ where
     #[size_of(skip)]
     writer: Writer2<K, DynUnit, DynDataTyped<T>, R>,
     key: Box<DynOpt<K>>,
+    num_tuples: usize,
 }
 
 impl<K, T, R> Builder<FileKeyBatch<K, T, R>> for FileKeyBuilder<K, T, R>
@@ -617,6 +627,7 @@ where
             )
             .unwrap_storage(),
             key: factories.opt_key_factory.default_box(),
+            num_tuples: 0,
         }
     }
 
@@ -629,6 +640,7 @@ where
     fn push_time_diff(&mut self, time: &T, weight: &R) {
         debug_assert!(!weight.is_zero());
         self.writer.write1((time, weight)).unwrap_storage();
+        self.num_tuples += 1;
     }
 
     fn done(self) -> FileKeyBatch<K, T, R> {
@@ -636,6 +648,10 @@ where
             factories: self.factories,
             file: Arc::new(self.writer.into_reader().unwrap_storage()),
         }
+    }
+
+    fn num_tuples(&self) -> usize {
+        self.num_tuples
     }
 }
 

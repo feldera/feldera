@@ -115,7 +115,7 @@ fn main() -> Result<()> {
     for i in 0..STEPS {
         let iteration = i + 1;
         println!("Iteration {} starts...", iteration);
-        circuit_handle.step()?;
+        circuit_handle.transaction()?;
         let output = output_handle.consolidate();
         assert_eq!(output, expected_outputs.next().unwrap());
         output.iter().for_each(

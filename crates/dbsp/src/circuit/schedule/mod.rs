@@ -1,12 +1,14 @@
 //! The scheduling framework controls the execution of a circuit at runtime.
 
+#![allow(async_fn_in_trait)]
+
 use super::{trace::SchedulerEvent, Circuit, GlobalNodeId, NodeId};
-use crate::DetailedError;
+use crate::{DetailedError, Position};
 use itertools::Itertools;
 use serde::Serialize;
 use std::{
     borrow::Cow,
-    collections::BTreeSet,
+    collections::{BTreeMap, BTreeSet},
     error::Error as StdError,
     fmt::{Display, Error as FmtError, Formatter},
     future::Future,
@@ -32,6 +34,8 @@ pub enum Error {
     CyclicCircuit {
         node_id: GlobalNodeId,
     },
+    CommitWithoutTransaction,
+    StepWithoutTransaction,
     /// Execution of the circuit interrupted by the user (via
     /// [`RuntimeHandle::kill`](`crate::circuit::RuntimeHandle::kill`)).
     Killed,
@@ -53,6 +57,8 @@ impl DetailedError for Error {
         match self {
             Self::OwnershipConflict { .. } => Cow::from("OwnershipConflict"),
             Self::CyclicCircuit { .. } => Cow::from("CyclicCircuit"),
+            Self::CommitWithoutTransaction => Cow::from("CommitWithoutTransaction"),
+            Self::StepWithoutTransaction => Cow::from("StepWithoutTransaction"),
             Self::Killed => Cow::from("Killed"),
             Self::TokioError { .. } => Cow::from("TokioError"),
             Self::ReplayInfoConflict { .. } => Cow::from("ReplayInfoConflict"),
@@ -65,11 +71,15 @@ impl Display for Error {
         match self {
             Self::OwnershipConflict { origin, consumers } => {
                 write!(f, "ownership conflict: output of node '{origin}' is consumed by value by the following nodes: [{}]",
-                       consumers.iter().map(ToString::to_string).format(","))
+                               consumers.iter().map(ToString::to_string).format(","))
             }
             Self::CyclicCircuit { node_id } => {
                 write!(f, "unschedulable circuit due to a cyclic topology: cycle through node '{node_id}'")
             }
+            Error::CommitWithoutTransaction => {
+                f.write_str("commit invoked outside of a transaction")
+            }
+            Error::StepWithoutTransaction => f.write_str("step called outside of a transaction"),
             Self::Killed => f.write_str("circuit has been killed by the user"),
             Self::TokioError { error } => write!(f, "tokio error: {error}"),
             Self::ReplayInfoConflict { error } => {
@@ -81,6 +91,134 @@ impl Display for Error {
 
 impl StdError for Error {}
 
+/// Progress toward committing a transaction.
+#[derive(Debug)]
+pub struct CommitProgress {
+    /// Nodes that have been fully flushed along with the latest positions when flush completed.
+    completed: BTreeMap<NodeId, Option<Position>>,
+
+    /// Nodes that are currently being flushed, along with the current positions.
+    in_progress: BTreeMap<NodeId, Option<Position>>,
+
+    /// Nodes that are yet to be flushed.
+    remaining: BTreeSet<NodeId>,
+}
+
+impl Default for CommitProgress {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl CommitProgress {
+    pub fn new() -> Self {
+        Self {
+            completed: BTreeMap::new(),
+            in_progress: BTreeMap::new(),
+            remaining: BTreeSet::new(),
+        }
+    }
+
+    pub fn add_remaining(&mut self, node_id: NodeId) {
+        self.remaining.insert(node_id);
+    }
+
+    pub fn add_completed(&mut self, node_id: NodeId, progress: Option<Position>) {
+        debug_assert!(!self.completed.contains_key(&node_id));
+        debug_assert!(!self.in_progress.contains_key(&node_id));
+        debug_assert!(!self.remaining.contains(&node_id));
+
+        self.completed.insert(node_id, progress);
+    }
+
+    pub fn add_in_progress(&mut self, node_id: NodeId, progress: Option<Position>) {
+        debug_assert!(!self.completed.contains_key(&node_id));
+        debug_assert!(!self.in_progress.contains_key(&node_id));
+        debug_assert!(!self.remaining.contains(&node_id));
+
+        self.in_progress.insert(node_id, progress);
+    }
+
+    pub fn summary(&self) -> CommitProgressSummary {
+        let completed = self.completed.len() as u64;
+        let in_progress = self.in_progress.len() as u64;
+        let remaining = self.remaining.len() as u64;
+        let in_progress_processed_records = self
+            .in_progress
+            .values()
+            .map(|progress| progress.as_ref().map(|p| p.offset).unwrap_or_default())
+            .sum();
+
+        let in_progress_total_records = self
+            .in_progress
+            .values()
+            .map(|progress| progress.as_ref().map(|p| p.total).unwrap_or_default())
+            .sum();
+
+        CommitProgressSummary {
+            completed,
+            in_progress,
+            remaining,
+            in_progress_processed_records,
+            in_progress_total_records,
+        }
+    }
+}
+
+/// Summary of the commit progress.
+pub struct CommitProgressSummary {
+    /// Number of operators that have been fully flushed.
+    completed: u64,
+
+    /// Number of operators that are currently being flushed.
+    in_progress: u64,
+
+    /// Number of operators that haven't started flushing.
+    remaining: u64,
+
+    /// Number of records processed by operators that are currently being flushed.
+    in_progress_processed_records: u64,
+
+    // Total number of records that operators that are currently being flushed need to process.
+    in_progress_total_records: u64,
+}
+
+impl Default for CommitProgressSummary {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl CommitProgressSummary {
+    pub fn new() -> Self {
+        Self {
+            completed: 0,
+            in_progress: 0,
+            remaining: 0,
+            in_progress_processed_records: 0,
+            in_progress_total_records: 0,
+        }
+    }
+
+    pub fn merge(&mut self, other: &CommitProgressSummary) {
+        self.completed += other.completed;
+        self.in_progress += other.in_progress;
+        self.remaining += other.remaining;
+        self.in_progress_processed_records += other.in_progress_processed_records;
+        self.in_progress_total_records += other.in_progress_total_records;
+    }
+}
+
+impl Display for CommitProgressSummary {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "completed: {} operators, evaluating: {} operators [{}/{} changes processed], remaining: {} operators",
+            self.completed, self.in_progress, self.in_progress_processed_records, self.in_progress_total_records, self.remaining
+        )
+    }
+}
+
 /// A scheduler defines the order in which nodes in a circuit are evaluated at
 /// runtime.
 ///
@@ -88,8 +226,12 @@ impl StdError for Error {}
 /// decide the order in which a step through the circuit evaluates operators.
 /// They do not affect process or thread scheduling.
 ///
-/// A valid schedule evaluates each node exactly once, after all of its upstream
-/// nodes have been evaluated.  Note that this works for circuits with logical
+/// This API supports two-level scheduling of circuits: **steps** and **transactions**.
+///
+/// ## Steps
+///
+/// During a step, the scheduler evaluates each node exactly once, after all of its
+/// upstream nodes have been evaluated.  Note that this works for circuits with logical
 /// cycles, as all such cycles must contain a [strict
 /// operator](`crate::circuit::operator_traits::StrictOperator`), which maps
 /// into a pair of source and sink nodes, so that the resulting circuit is still
@@ -97,6 +239,34 @@ impl StdError for Error {}
 /// it.  In addition, the scheduler must wait for an async operator to be in a
 /// ready state before evaluating it (see
 /// [`Operator::is_async`](`crate::circuit::operator_traits::Operator`)).
+///
+/// ## Transactions
+///
+/// A transaction is a sequence of steps that evaluate a set of inputs for a single logical
+/// timestamp to completion.
+///
+/// Transaction lifecycle:
+///
+/// ```text
+///                              is_commit_complete() = true
+///    ┌────────────────────────────────────────────────────────────────────────────────────┐
+///    ▼                                                                                    │
+/// ┌───────┐      start_transaction()      ┌───────────┐ start_commit_transaction()  ┌─────┴────┐
+/// │ idle  ├──────────────────────────────►│  started  ├────────────────────────────►│committing│
+/// └───────┘                               └────────┬──┘                             └─────────┬┘
+///                                           ▲      │                                    ▲     │
+///                                           └──────┘                                    └─────┘
+///                                            step()                                      step()
+/// ```
+///
+/// During the in-progress phase, each operator gets to decide how much of the input to process.
+/// Some operators may accumulate inputs to process them later.
+///
+/// During the committing phase, the scheduler forces operators to process their inputs to completion
+/// by invoking `flush` on each operator. Once all predecessor of an operator have finished processing
+/// inputs for the current transaction, the scheduler invokes `flush` of the operator. It tracks the
+/// frontier of flushed operators and reports `is_commit_complete()` as true once all operators have
+/// been flushed.
 pub trait Scheduler
 where
     Self: Sized,
@@ -120,6 +290,22 @@ where
     where
         C: Circuit;
 
+    /// Start a transaction.
+    async fn start_transaction<C>(&self, circuit: &C) -> Result<(), Error>
+    where
+        C: Circuit;
+
+    /// Start committing the current transaction.
+    fn start_commit_transaction(&self) -> Result<(), Error>;
+
+    /// Check if the current transaction is complete.
+    ///
+    /// Must be invoked after every `step` in the `committing` phase of the transaction.
+    fn is_commit_complete(&self) -> bool;
+
+    /// Estimated commit progress.
+    fn commit_progress(&self) -> CommitProgress;
+
     /// Evaluate the circuit at runtime.
     ///
     /// Evaluates each node in the circuit exactly once in an order that
@@ -131,9 +317,22 @@ where
     ///
     /// * `circuit` - circuit to schedule, this must be the same circuit for
     ///   which the schedule was computed.
-    fn step<C>(&self, circuit: &C) -> impl Future<Output = Result<(), Error>>
+    async fn step<C>(&self, circuit: &C) -> Result<(), Error>
     where
         C: Circuit;
+
+    async fn transaction<C>(&self, circuit: &C) -> Result<(), Error>
+    where
+        C: Circuit,
+    {
+        self.start_transaction(circuit).await?;
+        self.start_commit_transaction()?;
+        while !self.is_commit_complete() {
+            self.step(circuit).await?;
+        }
+
+        Ok(())
+    }
 }
 
 /// An executor executes a circuit by evaluating all of its operators using a
@@ -142,7 +341,23 @@ where
 pub trait Executor<C>: 'static {
     fn prepare(&mut self, circuit: &C, nodes: Option<&BTreeSet<NodeId>>) -> Result<(), Error>;
 
-    fn run<'a>(&'a self, circuit: &'a C) -> Pin<Box<dyn Future<Output = Result<(), Error>> + 'a>>;
+    fn start_commit_transaction(&self) -> Result<(), Error>;
+
+    fn is_commit_complete(&self) -> bool;
+
+    fn commit_progress(&self) -> CommitProgress;
+
+    fn start_transaction<'a>(
+        &'a self,
+        circuit: &'a C,
+    ) -> Pin<Box<dyn Future<Output = Result<(), Error>> + 'a>>;
+
+    fn step<'a>(&'a self, circuit: &'a C) -> Pin<Box<dyn Future<Output = Result<(), Error>> + 'a>>;
+
+    fn transaction<'a>(
+        &'a self,
+        circuit: &'a C,
+    ) -> Pin<Box<dyn Future<Output = Result<(), Error>> + 'a>>;
 }
 
 /// An iterative executor evaluates the circuit until the `termination_check`
@@ -173,14 +388,29 @@ where
     C: Circuit,
     S: Scheduler + 'static,
 {
-    fn run<'a>(&'a self, circuit: &C) -> Pin<Box<dyn Future<Output = Result<(), Error>> + 'a>> {
+    fn start_transaction<'a>(
+        &'a self,
+        _circuit: &C,
+    ) -> Pin<Box<dyn Future<Output = Result<(), Error>> + 'a>> {
+        unimplemented!()
+    }
+
+    fn step<'a>(&'a self, circuit: &'a C) -> Pin<Box<dyn Future<Output = Result<(), Error>> + 'a>> {
+        let circuit = circuit.clone();
+        Box::pin(async move { self.scheduler.step(&circuit).await })
+    }
+
+    fn transaction<'a>(
+        &'a self,
+        circuit: &C,
+    ) -> Pin<Box<dyn Future<Output = Result<(), Error>> + 'a>> {
         let circuit = circuit.clone();
         Box::pin(async move {
             circuit.log_scheduler_event(&SchedulerEvent::clock_start());
             circuit.clock_start(0);
 
             loop {
-                self.scheduler.step(&circuit).await?;
+                self.scheduler.transaction(&circuit).await?;
                 if (self.termination_check)().await? {
                     break;
                 }
@@ -194,6 +424,18 @@ where
 
     fn prepare(&mut self, circuit: &C, nodes: Option<&BTreeSet<NodeId>>) -> Result<(), Error> {
         self.scheduler.prepare(circuit, nodes)
+    }
+
+    fn start_commit_transaction(&self) -> Result<(), Error> {
+        Ok(())
+    }
+
+    fn commit_progress(&self) -> CommitProgress {
+        CommitProgress::new()
+    }
+
+    fn is_commit_complete(&self) -> bool {
+        true
     }
 }
 
@@ -220,12 +462,38 @@ where
     C: Circuit,
     S: Scheduler + 'static,
 {
-    fn run<'a>(&'a self, circuit: &'a C) -> Pin<Box<dyn Future<Output = Result<(), Error>> + 'a>> {
+    fn start_transaction<'a>(
+        &'a self,
+        circuit: &'a C,
+    ) -> Pin<Box<dyn Future<Output = Result<(), Error>> + 'a>> {
+        Box::pin(async { self.scheduler.start_transaction(circuit).await })
+    }
+
+    fn step<'a>(&'a self, circuit: &'a C) -> Pin<Box<dyn Future<Output = Result<(), Error>> + 'a>> {
         Box::pin(async { self.scheduler.step(circuit).await })
+    }
+
+    fn transaction<'a>(
+        &'a self,
+        circuit: &'a C,
+    ) -> Pin<Box<dyn Future<Output = Result<(), Error>> + 'a>> {
+        Box::pin(async { self.scheduler.transaction(circuit).await })
     }
 
     fn prepare(&mut self, circuit: &C, nodes: Option<&BTreeSet<NodeId>>) -> Result<(), Error> {
         self.scheduler.prepare(circuit, nodes)
+    }
+
+    fn start_commit_transaction(&self) -> Result<(), Error> {
+        self.scheduler.start_commit_transaction()
+    }
+
+    fn is_commit_complete(&self) -> bool {
+        self.scheduler.is_commit_complete()
+    }
+
+    fn commit_progress(&self) -> CommitProgress {
+        self.scheduler.commit_progress()
     }
 }
 

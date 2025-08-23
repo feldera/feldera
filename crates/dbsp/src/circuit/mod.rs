@@ -38,10 +38,12 @@ pub use circuit_builder::{
     NestedCircuit, NodeId, OwnershipPreference, RootCircuit, Scope, Stream, WithClock,
 };
 pub use dbsp_handle::{
-    CircuitConfig, CircuitStorageConfig, DBSPHandle, DevTweaks, Host, Layout, Mode,
-    StorageCacheConfig, StorageConfig, StorageOptions,
+    splitter_output_chunk_size, CircuitConfig, CircuitStorageConfig, DBSPHandle, DevTweaks, Host,
+    Layout, Mode, StorageCacheConfig, StorageConfig, StorageOptions,
 };
-pub use runtime::{Error as RuntimeError, LocalStore, LocalStoreMarker, Runtime, RuntimeHandle};
+pub use runtime::{
+    Error as RuntimeError, LocalStore, LocalStoreMarker, Runtime, RuntimeHandle, WeakRuntime,
+};
 
 pub use schedule::Error as SchedulerError;
 

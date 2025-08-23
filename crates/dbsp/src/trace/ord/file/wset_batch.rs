@@ -13,11 +13,11 @@ use crate::{
         },
     },
     trace::{
-        cursor::{CursorFactoryWrapper, Pending, PushCursor},
+        cursor::{CursorFactoryWrapper, Pending, Position, PushCursor},
         merge_batches_by_reference,
         ord::{file::UnwrapStorage, merge_batcher::MergeBatcher},
         Batch, BatchFactories, BatchLocation, BatchReader, BatchReaderFactories, Builder, Cursor,
-        Deserializer, Serializer, VecWSetFactories, WeightedItem,
+        Deserializer, FileKeyBatch, Serializer, VecWSetFactories, WeightedItem,
     },
     DBData, DBWeight, NumEntries, Runtime,
 };
@@ -438,6 +438,7 @@ where
     K: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
+    type Timed<T: crate::Timestamp> = FileKeyBatch<K, T, R>;
     type Batcher = MergeBatcher<Self>;
     type Builder = FileWSetBuilder<K, R>;
 
@@ -740,6 +741,13 @@ where
             logic(&(), self.diff.as_ref())
         }
     }
+
+    fn position(&self) -> Option<Position> {
+        Some(Position {
+            total: self.cursor.len(),
+            offset: self.cursor.absolute_position(),
+        })
+    }
 }
 
 /// A builder for creating layers from unsorted update tuples.
@@ -754,6 +762,7 @@ where
     #[size_of(skip)]
     writer: Writer1<K, R>,
     weight: Box<R>,
+    num_tuples: usize,
 }
 
 impl<K, R> Builder<FileWSet<K, R>> for FileWSetBuilder<K, R>
@@ -777,6 +786,7 @@ where
             )
             .unwrap_storage(),
             weight: factories.weight_factory().default_box(),
+            num_tuples: 0,
         }
     }
 
@@ -796,5 +806,10 @@ where
     fn push_time_diff(&mut self, _time: &(), weight: &R) {
         debug_assert!(!weight.is_zero());
         weight.clone_to(&mut self.weight);
+        self.num_tuples += 1;
+    }
+
+    fn num_tuples(&self) -> usize {
+        self.num_tuples
     }
 }

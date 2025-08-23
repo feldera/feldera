@@ -750,6 +750,8 @@ async fn test_follow(
         .await
         .unwrap();
 
+        println!("Pipeline created");
+
         pipeline.start();
         pipeline
     }
@@ -988,6 +990,7 @@ async fn test_follow(
     //     }
     // }
 
+    println!("Stopping pipeline");
     pipeline.stop().unwrap();
 }
 
