@@ -49,6 +49,19 @@ cargo_workspace
 # python
 __pycache__
 .ruff_cache
+.coverage
+__pycache__
+test.log
+.idea
+.venv
+venv
+python/docs/_build
+python/docs/make.bat
+python/docs/modules.rst
+python/docs/feldera.rest.rst
+feldera.egg-info
+UNKNOWN.egg-info
+.vscode
 
 # clone of the benchmark repo
 gh-pages

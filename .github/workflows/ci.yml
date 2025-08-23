@@ -38,10 +38,16 @@ jobs:
     uses: ./.github/workflows/build-docker.yml
     secrets: inherit
 
-  invoke-tests-integration:
+  invoke-tests-integration-platform:
     name: Integration Tests
     needs: [invoke-build-docker]
-    uses: ./.github/workflows/test-integration.yml
+    uses: ./.github/workflows/test-integration-platform.yml
+    secrets: inherit
+
+  invoke-tests-integration-runtime:
+    name: Integration Tests
+    needs: [invoke-build-java]
+    uses: ./.github/workflows/test-integration-runtime.yml
     secrets: inherit
 
   invoke-tests-java:
@@ -63,7 +69,8 @@ jobs:
       - invoke-tests-unit
       - invoke-tests-adapter
       - invoke-build-docker
-      - invoke-tests-integration
+      - invoke-tests-integration-platform
+      - invoke-tests-integration-runtime
       - invoke-tests-java
     steps:
       - name: Finalize Workflow
