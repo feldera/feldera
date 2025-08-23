@@ -1317,9 +1317,6 @@ impl CircuitThread {
         self.controller.unpark_backpressure();
         self.step_circuit();
 
-        // Memorize if the step was performed while bootstrapping.
-        let bootstrapping = self.controller.status.bootstrap_in_progress();
-
         // If bootstrapping has completed, update the status flag.
         self.controller
             .status
@@ -1347,7 +1344,7 @@ impl CircuitThread {
             ft.sync_step()?;
         }
         // Push output batches to output pipelines.
-        self.push_output(bootstrapping, processed_records);
+        self.push_output(processed_records);
         if let Some(ft) = self.ft.as_mut() {
             ft.next_step(self.step)?;
             self.finish_replaying();
@@ -1957,28 +1954,15 @@ impl CircuitThread {
     ///
     /// # Arguments
     ///
-    /// * `bootstrapping` is true if the step producing the outputs was performed while bootstrapping.
-    ///
     /// * `processed_records` is the total number of records processed by the
     ///   pipeline *before* this step. If `processed_records` is `None`, we're in
     ///   the middle of a transaction and the records are not fully processed yet.
-    fn push_output(&mut self, bootstrapping: bool, processed_records: Option<u64>) {
+    fn push_output(&mut self, processed_records: Option<u64>) {
         let outputs = self.controller.outputs.read().unwrap();
-        for (stream, (output_handles, endpoints)) in outputs.iter_by_stream() {
+        for (_stream, (output_handles, endpoints)) in outputs.iter_by_stream() {
             let delta_batch = output_handles.delta_handle.as_ref().concat();
             let num_delta_records = delta_batch.len();
 
-            // Some of the output handles may not produce any output while bootstrapping.
-            // Note 1: this is different from the connector producing an empty output, in which case
-            // the `delta_batch` vector will consist of multiple empty batches, one per worker.
-            // Note 2: when the bootstrapping is complete, the circuit will perform an extra step, which
-            // will propagate the latest processed_records count to the outputs.
-            if delta_batch.is_empty() {
-                if !bootstrapping {
-                    error!("'{stream}' produced no output");
-                }
-                continue;
-            }
             let mut delta_batch = Some(delta_batch);
 
             for (i, endpoint_id) in endpoints.iter().enumerate() {
