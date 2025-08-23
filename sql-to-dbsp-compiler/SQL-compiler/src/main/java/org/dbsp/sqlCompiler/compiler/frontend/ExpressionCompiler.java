@@ -1554,6 +1554,12 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 if (expr != null)
                     return expr;
                 if (call.operands.size() == 2) {
+                    DBSPKeywordLiteral keyword = ops.get(1).to(DBSPKeywordLiteral.class);
+                    if (keyword.keyword.equalsIgnoreCase("dow") ||
+                        keyword.keyword.equalsIgnoreCase("doy")) {
+                        throw new CompilationError("Function " + Utilities.singleQuote(operationName) +
+                                " not supported with unit " + Utilities.singleQuote(keyword.keyword), node);
+                    }
                     return compileKeywordFunction(call, node, null, type, ops, 1, 2);
                 } else if (call.operands.size() == 1) {
                     DBSPType opType = ops.get(0).getType();

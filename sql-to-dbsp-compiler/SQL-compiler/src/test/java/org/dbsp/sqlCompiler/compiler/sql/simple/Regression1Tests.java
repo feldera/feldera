@@ -721,7 +721,7 @@ public class Regression1Tests extends SqlIoTest {
     @Test
     public void issue4587() {
         this.getCCS("""
-                CREATE TABLE illegal_tbl(
+                CREATE TABLE t(
                 tmestmp TIMESTAMP,
                 datee DATE,
                 tme TIME);
@@ -729,14 +729,30 @@ public class Regression1Tests extends SqlIoTest {
                 CREATE MATERIALIZED VIEW v0 AS SELECT
                 FLOOR(tmestmp TO YEAR) AS yr,
                 FLOOR(datee TO MONTH) AS mth,
-                FLOOR(tme TO HOUR) AS hr
-                FROM illegal_tbl;
+                FLOOR(tme TO HOUR) AS hr,
+                FLOOR(tmestmp TO MILLISECOND) AS millsec,
+                FLOOR(tmestmp TO MICROSECOND) AS microsec,
+                FLOOR(tme TO MILLISECOND) AS millsec1,
+                FLOOR(tme TO MICROSECOND) AS microsec
+                FROM t;
                 
                 CREATE MATERIALIZED VIEW v1 AS SELECT
                 CEIL(tmestmp TO YEAR) AS yr,
                 CEIL(datee TO MONTH) AS mth,
-                CEIL(tme TO HOUR) AS hr
-                FROM illegal_tbl;""");
+                CEIL(tme TO HOUR) AS hr,
+                CEIL(tmestmp TO MILLISECOND) AS millsec,
+                CEIL(tmestmp TO MICROSECOND) AS microsec,
+                CEIL(tme TO MILLISECOND) AS millsec1,
+                CEIL(tme TO MICROSECOND) AS microsec
+                FROM t;""");
+    }
+
+    @Test
+    public void issue4614() {
+        this.statementsFailingInCompilation("CREATE VIEW V AS SELECT CEIL(DATE '2024-01-01' TO DOW)",
+                "Function 'CEIL' not supported with unit 'dow'");
+        this.statementsFailingInCompilation("CREATE VIEW V AS SELECT FLOOR(TIME '10:00:00' TO DOY)",
+                "Function 'FLOOR' not supported with unit 'doy'");
     }
 
     @Test
