@@ -1,0 +1,192 @@
+# Run all the things we can run once we have a working docker image
+name: Platform Integration Tests
+
+on:
+  workflow_call:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: "ID of the workflow run that uploaded the artifact"
+        required: true
+
+jobs:
+  manager-no-network:
+    if: ${{ !contains(vars.CI_SKIP_JOBS, 'manager-no-network') }}
+    name: Make sure manager runs without access to a network
+    runs-on: ubuntu-latest-amd64
+    steps:
+      - name: Login to GHCR with GITHUB_TOKEN
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+      - name: Create a network
+        run: |
+          docker network create --internal --driver bridge no-internet-net
+      - name: Start pipeline-manager in background
+        run: |
+          docker run -d \
+            --pull missing \
+            --name pipeline-manager-no-internet \
+            --network no-internet-net \
+            --health-cmd='curl --fail --silent --max-time 2 http://localhost:8080/healthz || exit 1' \
+            --health-interval=10s \
+            --health-timeout=5s \
+            --health-retries=5 \
+            ${{ vars.FELDERA_IMAGE_NAME }}:sha-${{ github.sha }}
+      - name: Wait for container to become healthy (max 50s)
+        run: |
+          for i in {1..50}; do
+            status=$(docker inspect --format '{{json .State.Health}}' pipeline-manager-no-internet | jq -r .Status 2>/dev/null || echo "starting")
+            echo "Health status: $status"
+            if [ "$status" == "healthy" ]; then
+              echo "pipeline-manager is healthy"
+              exit 0
+            elif [ "$status" == "unhealthy" ]; then
+              echo "pipeline-manager not healthy"
+              exit 1
+            fi
+            sleep 1
+          done
+          echo "Timed out waiting for pipeline-manager to become healthy"
+          exit 1
+      - name: Logs & Cleanup
+        if: always()
+        run: |
+          docker logs pipeline-manager-no-internet || true
+          docker inspect pipeline-manager-no-internet || true
+          docker rm -f pipeline-manager-no-internet || true
+          docker network rm no-internet-net || true
+
+  manager-https:
+    if: ${{ !contains(vars.CI_SKIP_JOBS, 'manager-https') }}
+    name: Make sure manager runs with HTTPS
+    runs-on: ubuntu-latest-amd64
+    steps:
+      - name: Download Test Binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: feldera-test-binaries-x86_64-unknown-linux-gnu
+          path: build
+          run-id: ${{ github.event.inputs.run_id || github.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      # Remove if https://github.com/actions/upload-artifact/issues/38 ever gets fixed
+      - name: Make binaries executable
+        run: chmod +x ./build/*
+
+      - name: Login to GHCR with GITHUB_TOKEN
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      - name: Start pipeline-manager in background
+        run: |
+          mkdir test-tls
+          echo -e "[x509_v3]\nsubjectAltName = @alt_names\n\n[alt_names]\nDNS.1 = localhost\nIP.1 = 127.0.0.1\n" > test-tls/x509_v3_test.ext
+          openssl req -x509 -newkey rsa:4096 -nodes -keyout test-tls/tls_test.key -out test-tls/tls_test.crt -days 365 \
+            -subj '/CN=localhost' -config test-tls/x509_v3_test.ext -extensions x509_v3
+          chmod 644 test-tls/tls_test.key
+          docker run -d \
+            --pull missing \
+            --name pipeline-manager-https \
+            --health-cmd='curl --fail --silent --max-time 2 --cacert /home/ubuntu/test-tls/tls_test.crt https://localhost:8080/healthz || exit 1' \
+            --health-interval=10s \
+            --health-timeout=5s \
+            --health-retries=5 \
+            --mount type=bind,src=./test-tls,dst=/home/ubuntu/test-tls,readonly \
+            -p 8080:8080 \
+            ${{ vars.FELDERA_IMAGE_NAME }}:sha-${{ github.sha }} \
+            --enable-https \
+            --https-tls-cert-path /home/ubuntu/test-tls/tls_test.crt \
+            --https-tls-key-path /home/ubuntu/test-tls/tls_test.key
+      - name: Wait for container to become healthy (max 50s)
+        run: |
+          for i in {1..50}; do
+            status=$(docker inspect --format '{{json .State.Health}}' pipeline-manager-https | jq -r .Status 2>/dev/null || echo "starting")
+            echo "Health status: $status"
+            if [ "$status" == "healthy" ]; then
+              echo "pipeline-manager is healthy"
+              exit 0
+            elif [ "$status" == "unhealthy" ]; then
+              echo "pipeline-manager not healthy"
+              exit 1
+            fi
+            sleep 1
+          done
+          echo "Timed out waiting for pipeline-manager to become healthy"
+          exit 1
+      - name: Run manager integration tests
+        run: |
+          ./build/integration_test-*
+        env:
+          TEST_FELDERA_HTTPS_TLS_CERT_PATH: test-tls/tls_test.crt
+          TEST_FELDERA_URL: https://localhost:8080
+          RUST_BACKTRACE: 1
+      - name: Logs & Cleanup
+        if: always()
+        run: |
+          rm -rf test-tls
+          docker logs pipeline-manager-https || true
+          docker inspect pipeline-manager-https || true
+          docker rm -f pipeline-manager-https || true
+
+  oss-platform-tests:
+    if: ${{ !contains(vars.CI_SKIP_JOBS, 'oss-platform-tests') }}
+    name: Platform Integration Tests (OSS Docker Image)
+    strategy:
+      matrix:
+        include:
+          - runner: [k8s-runners-amd64]
+            arch: x86_64
+            target: x86_64-unknown-linux-gnu
+          #- runner: [k8s-runners-arm64 ]
+          #  arch: aarch64
+          #  target: aarch64-unknown-linux-gnu
+    runs-on: ${{ matrix.runner }}
+
+    container:
+      image: ghcr.io/feldera/feldera-dev:sha-8781162739b57966b50e89e85730d522d08d3d87
+    services:
+      pipeline-manager:
+        image: ${{ vars.FELDERA_IMAGE_NAME }}:sha-${{ github.sha }}
+        options: >-
+          --health-cmd "curl --fail --request GET --url http://localhost:8080/healthz || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download Test Binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: feldera-test-binaries-${{ matrix.target }}
+          path: build
+          run-id: ${{ github.event.inputs.run_id || github.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      # Remove if https://github.com/actions/upload-artifact/issues/38 ever gets fixed
+      - name: Make binaries executable
+        run: chmod +x ./build/*
+
+      - name: Validate and run packaged demos
+        if: ${{ vars.CI_DRY_RUN != 'true' }}
+        run: |
+          (cd demo/packaged && uv run validate-preamble.py sql/*.sql)
+          uv run demo/all-packaged/run.py --api-url http://localhost:8080
+        env:
+          PYTHONPATH: ${{ github.workspace }}/python
+
+      - name: Run manager tests
+        if: ${{ vars.CI_DRY_RUN != 'true' }}
+        run: ./build/integration_test-*
+        env:
+          TEST_FELDERA_URL: http://localhost:8080
+          RUST_BACKTRACE: 1
+
+      - name: Run python tests
+        if: ${{ vars.CI_DRY_RUN != 'true' }}
+        run: uv run --locked pytest -n ${{ vars.PYTEST_WORKERS }} tests/platform --timeout=600
+        working-directory: python
+        env:
+          FELDERA_HOST: http://localhost:8080
+          PYTHONPATH: ${{ github.workspace }}/python
+          IN_CI: 1 # We use this flag to skip some kafka tests in the python code base

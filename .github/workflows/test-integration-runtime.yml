@@ -1,0 +1,48 @@
+# Run all the runtiem things against our CI installations
+name: Runtime Integration Tests
+
+on:
+  workflow_call:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: "ID of the workflow run that uploaded the artifact"
+        required: true
+
+jobs:
+  runtime-tests:
+    if: ${{ !contains(vars.CI_SKIP_JOBS, 'runtime-tests') }}
+    name: Runtime Integration Tests
+    strategy:
+      matrix:
+        include:
+          - runner: [k8s-runners-amd64]
+            feldera_host: ${{ vars.FELDERA_HOST_CI_AMD64 }}
+            feldera_api_key: FELDERA_API_KEY_CI_AMD64
+          - runner: [k8s-runners-arm64]
+            feldera_host: ${{ vars.FELDERA_HOST_CI_ARM64 }}
+            feldera_api_key: FELDERA_API_KEY_CI_ARM64
+    runs-on: ${{ matrix.runner }}
+    env:
+      FELDERA_HOST: ${{ matrix.feldera_host }}
+      FELDERA_API_KEY: ${{ secrets[matrix.feldera_api_key] }}
+      FELDERA_RUNTIME_VERSION: ${{ github.sha }}
+    container:
+      image: ghcr.io/feldera/feldera-dev:sha-8781162739b57966b50e89e85730d522d08d3d87
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Python runtime tests
+        if: ${{ vars.CI_DRY_RUN != 'true' }}
+        run: uv run --locked pytest -n ${{ vars.PYTEST_WORKERS }} tests/runtime --timeout=600
+        working-directory: python
+        env:
+          PYTHONPATH: ${{ github.workspace }}/python
+
+      - name: Python runtime_aggtest test
+        if: ${{ vars.CI_DRY_RUN != 'true' }}
+        run: uv run --locked ./tests/runtime_aggtest/run-all-tests.sh
+        working-directory: python
+        env:
+          PYTHONPATH: ${{ github.workspace }}/python
