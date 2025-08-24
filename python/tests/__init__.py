@@ -14,8 +14,7 @@ PIPELINE_TO_KAFKA_SERVER = os.environ.get(
 )
 
 TEST_CLIENT = FelderaClient(
-    BASE_URL, api_key=API_KEY,
-    connection_timeout=10, requests_verify=False
+    BASE_URL, api_key=API_KEY, connection_timeout=10, requests_verify=False
 )
 
 
