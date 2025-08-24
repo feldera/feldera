@@ -57,6 +57,7 @@ class HttpRequests:
         self.headers["Content-Type"] = content_type
 
         try:
+            conn_timeout = self.config.connection_timeout
             timeout = self.config.timeout
             headers = self.headers
 
@@ -74,7 +75,7 @@ class HttpRequests:
                 if http_method.__name__ == "get":
                     request = http_method(
                         request_path,
-                        timeout=timeout,
+                        timeout=(conn_timeout, timeout),
                         headers=headers,
                         params=params,
                         stream=stream,
@@ -83,7 +84,7 @@ class HttpRequests:
                 elif isinstance(body, bytes):
                     request = http_method(
                         request_path,
-                        timeout=timeout,
+                        timeout=(conn_timeout, timeout),
                         headers=headers,
                         data=body,
                         params=params,
@@ -93,7 +94,7 @@ class HttpRequests:
                 else:
                     request = http_method(
                         request_path,
-                        timeout=timeout,
+                        timeout=(conn_timeout, timeout),
                         headers=headers,
                         data=json_serialize(body) if serialize else body,
                         params=params,
@@ -118,9 +119,18 @@ class HttpRequests:
                             time.sleep(2)  # backoff, adjust as needed
                             continue
                     raise  # re-raise for all other errors or if out of retries
+                except requests.exceptions.Timeout as err:
+                    if attempt < max_retries:
+                        logging.warning(
+                            "HTTP Connection Timeout for %s, retrying (%d/%d)...",
+                            path,
+                            attempt + 1,
+                            max_retries,
+                        )
+                        time.sleep(2)
+                        continue
+                    raise FelderaTimeoutError(str(err)) from err
 
-        except requests.exceptions.Timeout as err:
-            raise FelderaTimeoutError(str(err)) from err
         except requests.exceptions.ConnectionError as err:
             raise FelderaCommunicationError(str(err)) from err
 

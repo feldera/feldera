@@ -12,6 +12,7 @@ class Config:
         api_key: Optional[str] = None,
         version: Optional[str] = None,
         timeout: Optional[float] = None,
+        connection_timeout: Optional[float] = None,
         requests_verify: bool = True,
     ) -> None:
         """
@@ -19,6 +20,7 @@ class Config:
         :param api_key: The optional API key to access Feldera
         :param version: The version of the API to use
         :param timeout: The timeout for the HTTP requests
+        :param connection_timeout: The connection timeout for the HTTP requests
         :param requests_verify: The `verify` parameter passed to the requests
             library. `True` by default.
         """
@@ -27,4 +29,5 @@ class Config:
         self.api_key: Optional[str] = api_key
         self.version: Optional[str] = version or "v0"
         self.timeout: Optional[float] = timeout
+        self.connection_timeout: Optional[float] = connection_timeout
         self.requests_verify: bool = requests_verify
