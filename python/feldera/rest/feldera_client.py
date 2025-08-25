@@ -54,8 +54,8 @@ class FelderaClient:
         :param api_key: The optional API key for Feldera
         :param timeout: (optional) The amount of time in seconds that the
             client will wait for a response before timing out.
-        :param timeout: (optional) The amount of time in seconds that the
-            client will wait to establish connection before timing out.
+        :param connection_timeout: (optional) The amount of time in seconds that
+            the client will wait to establish connection before timing out.
         :param requests_verify: The `verify` parameter passed to the requests
             library. `True` by default.
         """
