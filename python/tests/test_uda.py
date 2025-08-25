@@ -163,7 +163,7 @@ pub fn i128_sum_post(val: i128_sum_accumulator_type) -> Option<ByteArray> {
                     }
                 }
             ],
-            update_format="insert_delete"
+            update_format="insert_delete",
         )
         pipeline.wait_for_idle()
         output = list(pipeline.query("SELECT * FROM V;"))
@@ -191,12 +191,12 @@ pub fn i128_sum_post(val: i128_sum_accumulator_type) -> Option<ByteArray> {
                             255,
                             255,
                             255,
-                            255
+                            255,
                         ],
                     }
                 }
             ],
-            update_format="insert_delete"
+            update_format="insert_delete",
         )
         pipeline.wait_for_idle()
         output = list(pipeline.query("SELECT * FROM V;"))
@@ -211,7 +211,7 @@ pub fn i128_sum_post(val: i128_sum_accumulator_type) -> Option<ByteArray> {
                     }
                 }
             ],
-            update_format="insert_delete"
+            update_format="insert_delete",
         )
         output = list(pipeline.query("SELECT * FROM V;"))
         assert output == [{"s": "00000000000000000000000000000002", "c": 3}]
@@ -225,53 +225,53 @@ pub fn i128_sum_post(val: i128_sum_accumulator_type) -> Option<ByteArray> {
                     }
                 }
             ],
-            update_format="insert_delete"
+            update_format="insert_delete",
         )
         output = list(pipeline.query("SELECT * FROM V;"))
         assert output == [{"s": "00000000000000000000000000000005", "c": 4}]
 
         pipeline.input_json(
             "t",
-             [
-                 {
-                     "delete": {
-                         "x": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
-                     }
-                 },
-                 {
-                     "delete": {
-                         "x": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2],
-                     }
-                 },
-                 {
-                     "delete": {
-                         "x": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3],
-                     }
-                 },
-                 {
-                     "delete": {
-                         "x": [
-                             255,
-                             255,
-                             255,
-                             255,
-                             255,
-                             255,
-                             255,
-                             255,
-                             255,
-                             255,
-                             255,
-                             255,
-                             255,
-                             255,
-                             255,
-                             1,
-                         ],
-                     }
-                 },
-             ],
-             update_format="insert_delete",
+            [
+                {
+                    "delete": {
+                        "x": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+                    }
+                },
+                {
+                    "delete": {
+                        "x": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2],
+                    }
+                },
+                {
+                    "delete": {
+                        "x": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3],
+                    }
+                },
+                {
+                    "delete": {
+                        "x": [
+                            255,
+                            255,
+                            255,
+                            255,
+                            255,
+                            255,
+                            255,
+                            255,
+                            255,
+                            255,
+                            255,
+                            255,
+                            255,
+                            255,
+                            255,
+                            1,
+                        ],
+                    }
+                },
+            ],
+            update_format="insert_delete",
         )
         output = list(pipeline.query("SELECT * FROM V;"))
         assert output == [{"s": None, "c": 0}]
