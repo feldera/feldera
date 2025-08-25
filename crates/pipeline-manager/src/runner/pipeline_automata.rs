@@ -1050,7 +1050,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                                 details: "".to_string()
                             }),
                             "Running" => Ok(ExtendedRuntimeStatus {
-                                status: RuntimeStatus::Paused,
+                                status: RuntimeStatus::Running,
                                 details: "".to_string()
                             }),
                             "Terminated" => Err(ErrorResponse::from(&RunnerError::PipelineInteractionInvalidResponse {
