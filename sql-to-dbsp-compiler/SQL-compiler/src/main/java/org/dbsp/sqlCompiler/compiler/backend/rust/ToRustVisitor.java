@@ -641,8 +641,10 @@ public class ToRustVisitor extends CircuitVisitor {
             }
             this.builder.append("})");
         }
-        this.sourceMapPostfix(operator);
+        this.builder.decrease().append(");").newline();
         this.tagStream(operator.asOperator());
+        this.builder.newline();
+        this.sourceMapPostfix(operator);
         return VisitDecision.STOP;
     }
 
@@ -703,12 +705,15 @@ public class ToRustVisitor extends CircuitVisitor {
         operator.filter.accept(this.innerVisitor);
         this.builder.append(", ");
         operator.error.accept(this.innerVisitor);
+        this.builder.decrease().append(");").newline();
+        this.builder.newline()
+                .append(operator.getOutput(0).getName(this.preferHash))
+                .append(".set_persistent_id(hash);");
+        this.builder.newline();
         return this.sourceMapPostfix(operator);
     }
 
     public VisitDecision sourceMapPostfix(IInputMapOperator operator) {
-        this.builder.decrease().append(");").newline();
-
         DBSPTypeStruct type = operator.getOriginalRowType();
         DBSPTypeStruct keyStructType = operator.getKeyStructType(
                 new ProgramIdentifier(operator.getOriginalRowType().sanitizedName + "_key", false));

@@ -3,6 +3,7 @@ package org.dbsp.sqlCompiler.compiler.sql;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPInputMapWithWaterlineOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
@@ -10,6 +11,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
@@ -168,6 +170,43 @@ public class CatalogTests extends BaseSQLTests {
             }
         };
         ccs.visit(checkStruct.getCircuitVisitor(false));
+    }
+
+    @Test
+    public void testOver() {
+        var ccs = this.getCCS("""
+                CREATE TABLE table_name (
+                    id INT NOT NULL PRIMARY KEY,
+                    customer_id INT NOT NULL,
+                    timestamp_column TIMESTAMP NOT NULL LATENESS INTERVAL 0 DAYS,
+                    column_name DECIMAL(10, 2) NOT NULL
+                );
+
+                CREATE VIEW V AS SELECT
+                    customer_id,
+                    timestamp_column,
+                    column_name,
+                    SUM(column_name) OVER (
+                        PARTITION BY customer_id, DATE_TRUNC(timestamp_column, MONTH)
+                        ORDER BY timestamp_column
+                        RANGE BETWEEN INTERVAL 31 DAYS PRECEDING AND CURRENT ROW
+                    ) AS cumulative_sum
+                FROM
+                    table_name;
+                """);
+        ccs.visit(new CircuitVisitor(ccs.compiler) {
+            int imww = 0;
+
+            @Override
+            public void postorder(DBSPInputMapWithWaterlineOperator operator) {
+                this.imww++;
+            }
+
+            @Override
+            public void endVisit() {
+                Assert.assertEquals(1, this.imww);
+            }
+        });
     }
 
     @Test
