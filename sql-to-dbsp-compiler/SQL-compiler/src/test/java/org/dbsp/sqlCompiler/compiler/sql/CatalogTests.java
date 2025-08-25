@@ -436,8 +436,7 @@ public class CatalogTests extends BaseSQLTests {
                     pk VARCHAR NOT NULL PRIMARY KEY
                 );
 
-                CREATE VIEW V WITH ('rust' = '//code emitted')
-                AS SELECT * FROM varchar_pk;""";
+                CREATE VIEW V AS SELECT * FROM varchar_pk;""";
         this.compileRustTestCase(sql);
     }
 

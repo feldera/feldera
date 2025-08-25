@@ -333,18 +333,6 @@ public class ToRustVisitor extends CircuitVisitor {
             if (!node.is(DBSPSourceBaseOperator.class))
                 this.processNode(node);
 
-        // Hack: if a view has a 'rust' property, emit the attached code here
-        for (ProgramIdentifier view: circuit.getOutputViews()) {
-            DBSPSinkOperator sink = circuit.getSink(view);
-            Utilities.enforce(sink != null);
-            if (sink.metadata.properties != null) {
-                String rust = sink.metadata.properties.getPropertyValue("rust");
-                if (rust != null) {
-                    this.builder.append(rust).newline();
-                }
-            }
-        }
-
         if (!this.useHandles)
             this.builder.append("Ok(catalog)");
         else {
