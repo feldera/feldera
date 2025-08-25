@@ -36,6 +36,7 @@ import org.apache.calcite.sql.SqlNode;
 import org.apache.calcite.sql.SqlOperatorTable;
 import org.apache.calcite.sql.parser.SqlParseException;
 import org.apache.calcite.sql.util.SqlOperatorTables;
+import org.apache.calcite.sql.validate.SqlUserDefinedAggFunction;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.operator.IInputOperator;
 import org.dbsp.sqlCompiler.compiler.backend.MerkleInner;
@@ -56,8 +57,10 @@ import org.dbsp.sqlCompiler.compiler.frontend.CalciteToDBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.TableContents;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.SqlToRelCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.CustomFunctions;
+import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateAggregate;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateView;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlFragmentIdentifier;
+import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateAggregateStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateFunctionStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateIndexStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateTableStatement;
@@ -519,6 +522,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
             List<ForeignKey> foreignKeys = new ArrayList<>();
             // All UDFs which have no bodies in SQL
             final List<SqlFunction> rustFunctions = new ArrayList<>();
+            final List<SqlUserDefinedAggFunction> aggregateFunctions = new ArrayList<>();
 
             // Compile first the statements that define functions, types, and lateness
             for (ParsedStatement node: parsed) {
@@ -535,6 +539,18 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
                         continue;
                     this.relToDBSPCompiler.compile(fe);
                     continue;
+                }
+                if (kind == SqlKind.OTHER && node.statement() instanceof SqlCreateAggregate) {
+                    CreateAggregateStatement stat = this.sqlToRelCompiler.compileCreateAggregate(node, this.sources);
+                    boolean exists = this.sqlToRelCompiler.functionExists(stat.function.getName());
+                    if (exists) {
+                        throw new CompilationError("A function named " + Utilities.singleQuote(stat.function.getName()) +
+                                " is already predefined, or the name is reserved.\nPlease consider using a " +
+                                "different name for the user-defined aggregate",
+                                stat.getCalciteObject());
+                    }
+                    aggregateFunctions.add(stat.function);
+                    this.relToDBSPCompiler.compile(stat);
                 }
                 if (kind == SqlKind.CREATE_FUNCTION) {
                     CreateFunctionStatement stat = this.sqlToRelCompiler.compileCreateFunction(node, this.sources);
@@ -574,11 +590,13 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
                 }
             }
 
-            if (!rustFunctions.isEmpty()) {
+            if (!rustFunctions.isEmpty() || !aggregateFunctions.isEmpty()) {
                 // Reload the operator table to include the newly defined Rust function.
                 // These we can load all at the end, since they can't depend on each other.
                 SqlOperatorTable newFunctions = SqlOperatorTables.of(rustFunctions);
                 this.sqlToRelCompiler.addOperatorTable(newFunctions);
+                SqlOperatorTable newAggregates = SqlOperatorTables.of(aggregateFunctions);
+                this.sqlToRelCompiler.addOperatorTable(newAggregates);
             }
 
             // Compile all statements which do not define functions or types

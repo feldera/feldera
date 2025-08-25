@@ -16,12 +16,15 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeUser;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
 
 import java.util.ArrayList;
 import java.util.List;
+
+import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.USER;
 
 /**
  * A linear aggregate is compiled as two functions and a constant
@@ -61,29 +64,44 @@ public class LinearAggregate extends IAggregate {
         Utilities.enforce(mapType.sameType(postProcess.parameters[0].getType()));
     }
 
-    /** Given an DBSPAggregate where all Implementation objects have a linearFunction
-     * component, combine these linear functions into a single one. */
-    public static LinearAggregate combine(
+    /** Given an DBSPAggregate where all Implementation objects have a (compatible) linearFunction
+     * component, combine these linear functions into a single one.  Note: 'this' is not
+     * used in the result; it is expected it is the first in the list. */
+    @Override
+    public IAggregate combine(
             CalciteObject node, DBSPCompiler compiler,
-            DBSPVariablePath rowVar, List<LinearAggregate> aggregates) {
-        // Essentially runs all the aggregates in the list in parallel
+            DBSPVariablePath rowVar, List<IAggregate> list) {
+        List<LinearAggregate> aggregates = Linq.map(list, l -> l.to(LinearAggregate.class));
         DBSPParameter parameter = rowVar.asParameter();
         List<DBSPExpression> bodies = Linq.map(aggregates, c -> c.map.body);
-        DBSPTupleExpression tuple = new DBSPTupleExpression(bodies, false);
+        boolean many = aggregates.size() > 1;
+        DBSPExpression tuple = many ?
+                new DBSPTupleExpression(bodies, false)
+                : bodies.get(0);
         DBSPClosureExpression map = tuple.closure(parameter);
         // Zero
-        DBSPExpression zero = new DBSPTupleExpression(
-                Linq.map(aggregates, IAggregate::getEmptySetResult), false);
+        DBSPExpression zero = many ?
+                new DBSPTupleExpression(
+                        Linq.map(aggregates, IAggregate::getEmptySetResult), false) :
+                aggregates.get(0).emptySetResult;
         // Post
-        List<DBSPType> paramTypes = Linq.map(aggregates, c -> c.postProcess.parameters[0].getType());
-        DBSPVariablePath postParam = new DBSPTypeTuple(node, paramTypes).var();
-        List<DBSPExpression> posts = new ArrayList<>();
-        for (int i = 0; i < aggregates.size(); i++) {
-            posts.add(aggregates.get(i).postProcess.call(postParam.field(i)));
+        DBSPClosureExpression post;
+        if (many) {
+            List<DBSPType> paramTypes = Linq.map(aggregates, c -> c.postProcess.parameters[0].getType());
+            DBSPVariablePath postParam = new DBSPTypeTuple(node, paramTypes).var();
+            List<DBSPExpression> posts = new ArrayList<>();
+            for (int i = 0; i < aggregates.size(); i++) {
+                posts.add(aggregates.get(i).postProcess.call(postParam.field(i)));
+            }
+            tuple = new DBSPTupleExpression(posts, false);
+            post = tuple.closure(postParam)
+                    .reduce(compiler).to(DBSPClosureExpression.class);
+        } else {
+            DBSPClosureExpression post0 = aggregates.get(0).postProcess;
+            var var = post0.parameters[0].getType().var();
+            post = new DBSPTupleExpression(post0.call(var)).closure(var)
+                    .reduce(compiler).to(DBSPClosureExpression.class);
         }
-        tuple = new DBSPTupleExpression(posts, false);
-        DBSPClosureExpression post = tuple.closure(postParam)
-                .reduce(compiler).to(DBSPClosureExpression.class);
         return new LinearAggregate(node, map, post, zero);
     }
 
@@ -180,6 +198,22 @@ public class LinearAggregate extends IAggregate {
     @Override
     public boolean equivalent(EquivalenceContext context, DBSPExpression other) {
         return false;
+    }
+
+    /** The accumulator type generated for a linear user-defined aggregate function */
+    public static DBSPTypeUser accumulatorType(CalciteObject node, String aggregateFunctionName) {
+        String accumulatorTypeName = aggregateFunctionName + "_accumulator_type";
+        return new DBSPTypeUser(node, USER, accumulatorTypeName, false);
+    }
+
+    /** The name of the map function generated for a linear user-defined aggregate function */
+    public static String userDefinedMapFunctionName(String aggregateFunctionName) {
+        return aggregateFunctionName + "_map";
+    }
+
+    /** The name of the postprocessing function generated for a linear user-defined aggregate function */
+    public static String userDefinedPostFunctionName(String aggregateFunctionName) {
+        return aggregateFunctionName + "_post";
     }
 
     @SuppressWarnings("unused")

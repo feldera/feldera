@@ -263,6 +263,29 @@ SqlCreateFunctionDeclaration SqlCreateFunction(Span s, boolean replace) :
     }
 }
 
+SqlCreateAggregate SqlCreateAggregate(Span s, boolean replace) :
+{
+    final boolean ifNotExists;
+    final SqlIdentifier id;
+    final SqlNodeList parameters;
+    final SqlDataTypeSpec type;
+    final boolean nullable;
+    boolean linear = false;
+}
+{
+    [ <LINEAR> { linear = true; } ]
+    <AGGREGATE> ifNotExists = IfNotExistsOpt()
+    id = SimpleIdentifier()
+    parameters = AttributeDefList()
+    <RETURNS>
+    type = DataType()
+    nullable = NullableOptDefaultTrue()
+    {
+        return new SqlCreateAggregate(s.end(this), replace, ifNotExists, linear,
+            id, parameters, type.withNullable(nullable));
+    }
+}
+
 SqlCreate SqlCreateType(Span s, boolean replace) :
 {
     final SqlIdentifier id;

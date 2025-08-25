@@ -1,6 +1,7 @@
 package org.dbsp.sqlCompiler.ir.aggregate;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import org.apache.calcite.rel.core.Aggregate;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
@@ -92,11 +93,6 @@ public class NonLinearAggregate extends IAggregate {
 
     public DBSPType getIncrementType() {
         return this.increment.parameters[0].getType();
-    }
-
-    @Override
-    public boolean isLinear() {
-        return false;
     }
 
     @Override
@@ -197,10 +193,12 @@ public class NonLinearAggregate extends IAggregate {
         return builder;
     }
 
-    /** Combines multiple {@link NonLinearAggregate} objects into one. */
-    public static NonLinearAggregate combine(
+    /** Combines multiple {@link NonLinearAggregate} objects into one.
+     * Note: 'this' is not used in the result; it is only used for dynamic dispatch. */
+    @Override
+    public IAggregate combine(
             CalciteObject node, DBSPCompiler compiler,
-            DBSPVariablePath rowVar, List<NonLinearAggregate> components) {
+            DBSPVariablePath rowVar, List<IAggregate> components) {
         int parts = components.size();
         DBSPExpression[] zeros = new DBSPExpression[parts];
         DBSPClosureExpression[] increments = new DBSPClosureExpression[parts];
@@ -211,7 +209,7 @@ public class NonLinearAggregate extends IAggregate {
         DBSPType[] semigroups = new DBSPType[parts];
         DBSPType weightType = null;
         for (int i = 0; i < parts; i++) {
-            NonLinearAggregate implementation = components.get(i);
+            NonLinearAggregate implementation = components.get(i).to(NonLinearAggregate.class);
             DBSPType incType = implementation.getIncrementType();
             zeros[i] = implementation.zero;
             increments[i] = implementation.increment;
@@ -263,6 +261,11 @@ public class NonLinearAggregate extends IAggregate {
         DBSPTypeUser semigroup = new DBSPTypeSemigroup(accumulatorTypes, semigroups);
         return new NonLinearAggregate(node, new DBSPTupleExpression(zeros),
                 accumFunction, postClosure, new DBSPTupleExpression(emptySetResults), semigroup);
+    }
+
+    @Override
+    public boolean isLinear() {
+        return false;
     }
 
     public boolean equivalent(EquivalenceContext context, NonLinearAggregate other) {

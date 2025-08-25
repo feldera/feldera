@@ -46,13 +46,11 @@ public class ProfilingTests extends StreamingTestBase {
             Assert.assertEquals(1, strings.size());
             String[] split = strings.get(0).split(",");
             Assert.assertEquals(3, split.length);
-            boolean deleted = outFilePath.toFile().delete();
-            Assert.assertTrue(deleted);
+            Utilities.deleteFile(outFilePath.toFile(), true);
             return Linq.map(split, Long::parseLong, Long.class);
         } finally {
             File mainFile = new File(mainFilePath);
-            boolean deleted = mainFile.delete();
-            Assert.assertTrue(deleted);
+            Utilities.deleteFile(mainFile, true);
         }
     }
 

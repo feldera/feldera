@@ -15,6 +15,7 @@ data: {
       "org.dbsp.sqlCompiler.compiler.frontend.parser.SqlExtendedColumnDeclaration"
       "org.dbsp.sqlCompiler.compiler.frontend.parser.SqlViewColumnDeclaration"
       "org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateFunctionDeclaration"
+      "org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateAggregate"
       "org.dbsp.sqlCompiler.compiler.frontend.parser.SqlRemove"
       "org.dbsp.sqlCompiler.compiler.frontend.parser.SqlLateness"
       "org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateView"
@@ -32,6 +33,8 @@ data: {
       "IF"
       "INTERNED"
       "LATENESS"
+      "AGGREGATE"
+      "LINEAR"
       "MATERIALIZED"
       "WATERMARK"
       "PLANS"
@@ -55,6 +58,7 @@ data: {
       "ADD"
       "ADMIN"
       "AFTER"
+      "AGGREGATE"
       "ALWAYS"
       "APPLY"
       "ARRAY_AGG"
@@ -639,6 +643,7 @@ data: {
       "LIKE"
       "LIKE_REGEX"
 #     "LIMIT"
+      "LINEAR"
       "LN"
       "LOCAL"
       "LOCALTIME"
@@ -928,6 +933,7 @@ data: {
       "SqlCreateIndex"
       "SqlCreateType"
       "SqlCreateFunction"
+      "SqlCreateAggregate"
     ]
 
     truncateStatementParserMethods: [

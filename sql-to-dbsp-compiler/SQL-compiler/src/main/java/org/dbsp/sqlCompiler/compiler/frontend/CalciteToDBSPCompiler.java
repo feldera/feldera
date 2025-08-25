@@ -127,6 +127,7 @@ import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.RelColumnMetadata;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.SqlToRelCompiler;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.SqlUserDefinedAggregationFunction;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteEmptyRel;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
@@ -136,6 +137,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.RelAnd;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateView;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.SqlCreateTable;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CalciteTableDescription;
+import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateAggregateStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateFunctionStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateIndexStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateTableStatement;
@@ -150,6 +152,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.statements.TableModifyStatement;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Simplify;
 import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.FieldUseMap;
 import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.FindUnusedFields;
+import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPFold;
 import org.dbsp.sqlCompiler.ir.aggregate.IAggregate;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregateList;
@@ -3923,6 +3926,31 @@ public class CalciteToDBSPCompiler extends RelVisitor
         return result;
     }
 
+    @Nullable
+    public DBSPNode compileCreateAggregate(CreateAggregateStatement aggregate) {
+        SqlUserDefinedAggregationFunction uda = aggregate.getFunction();
+        CalciteObject node = aggregate.getCalciteObject();
+        String name = uda.description.name.getSimple();
+        if (uda.isLinear()) {
+            // Add two functions that the user needs to define to the circuit declarations.
+            DBSPTypeUser accumulatorType = LinearAggregate.accumulatorType(node, name);
+            List<DBSPParameter> parameters = Linq.map(uda.description.parameterList,
+                    p -> new DBSPParameter(p.getName(), this.convertType(p.getType(), false)));
+            DBSPFunction mapFunction = new DBSPFunction(
+                    node, LinearAggregate.userDefinedMapFunctionName(name), parameters, accumulatorType, null, Linq.list());
+            this.getCircuit().addDeclaration(new DBSPDeclaration(new DBSPFunctionItem(mapFunction)));
+
+            DBSPType resultType = this.convertType(uda.description.returnType, false);
+            DBSPFunction postFunction = new DBSPFunction(
+                    node, LinearAggregate.userDefinedPostFunctionName(name),
+                    Linq.list(new DBSPParameter("accumulator", accumulatorType)), resultType, null, Linq.list());
+            this.getCircuit().addDeclaration(new DBSPDeclaration(new DBSPFunctionItem(postFunction)));
+        } else {
+            throw new UnimplementedException("Non-linear user-defined aggregation functions");
+        }
+        return null;
+    }
+
     @SuppressWarnings("UnusedReturnValue")
     @Nullable
     public DBSPNode compile(RelStatement statement) {
@@ -3955,6 +3983,9 @@ public class CalciteToDBSPCompiler extends RelVisitor
         } else if (statement.is(CreateIndexStatement.class)) {
             CreateIndexStatement ci = statement.to(CreateIndexStatement.class);
             return this.compileCreateIndex(ci);
+        } else if (statement.is(CreateAggregateStatement.class)) {
+            CreateAggregateStatement ca = statement.to(CreateAggregateStatement.class);
+            return this.compileCreateAggregate(ca);
         }
         throw new UnsupportedException(statement.getCalciteObject());
     }

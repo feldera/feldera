@@ -123,15 +123,23 @@ public class Utilities {
                 deleteRecursive(f, true);
         }
         if (self) {
-            boolean success = file.delete();
-            if (!success)
-                throw new RuntimeException("Could not delete file " + singleQuote(file.getPath()));
+            Utilities.deleteFile(file, true);
         }
     }
 
     /** Delete recursively the contents of a directory. */
     public static void deleteContents(File file) {
         deleteRecursive(file, false);
+    }
+
+    public static void deleteFile(@Nullable File file, boolean enforce) {
+        if (file == null)
+            return;
+        if (!file.exists())
+            return;
+        boolean success = file.delete();
+        if (enforce)
+            Utilities.enforce(success, "Could not delete file " + file.getName());
     }
 
     public static String getBaseName(String filePath) {
