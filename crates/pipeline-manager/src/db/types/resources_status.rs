@@ -63,7 +63,7 @@ pub fn validate_resources_status_transition(
     // Convert pipeline status which includes runtime statuses to their base resources status
     let current_resources_status = current_status.as_resources_status();
     let new_resources_status = new_status.as_resources_status();
-    
+
     // Check rules on transitioning resources status
     if matches!(
         (storage_status, current_resources_status, new_resources_status),
