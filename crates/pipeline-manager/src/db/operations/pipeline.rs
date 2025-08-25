@@ -12,6 +12,7 @@ use crate::db::types::program::{
     validate_program_status_transition, ProgramError, ProgramStatus, RustCompilationInfo,
     SqlCompilationInfo,
 };
+use crate::db::types::resources_status::ResourcesStatus;
 use crate::db::types::storage::{validate_storage_status_transition, StorageStatus};
 use crate::db::types::tenant::TenantId;
 use crate::db::types::utils::{
@@ -90,7 +91,8 @@ const RETRIEVE_PIPELINE_COLUMNS: &str =
      p.program_status_since, p.program_error, p.program_info,
      p.program_binary_source_checksum, p.program_binary_integrity_checksum,
      p.deployment_status, p.deployment_status_since, p.deployment_desired_status,
-     p.deployment_error, p.deployment_config, p.deployment_location, p.refresh_version, p.suspend_info, p.storage_status";
+     p.deployment_error, p.deployment_config, p.deployment_location, p.refresh_version,
+     p.suspend_info, p.storage_status, p.deployment_id";
 
 /// Converts a pipeline table row to its extended descriptor with all fields.
 ///
@@ -103,7 +105,7 @@ const RETRIEVE_PIPELINE_COLUMNS: &str =
 ///   Backwards incompatible changes therein will prevent retrieval of pipelines
 ///   because an error will be returned instead.
 fn row_to_extended_pipeline_descriptor(row: &Row) -> Result<ExtendedPipelineDescr, DBError> {
-    assert_eq!(row.len(), 28);
+    assert_eq!(row.len(), 29);
 
     // Runtime configuration: RuntimeConfig
     let runtime_config = deserialize_json_value(row.get(7))?;
@@ -175,6 +177,7 @@ fn row_to_extended_pipeline_descriptor(row: &Row) -> Result<ExtendedPipelineDesc
         refresh_version: Version(row.get(25)),
         suspend_info,
         storage_status: row.get::<_, String>(27).try_into()?,
+        deployment_id: row.get(28),
     })
 }
 
@@ -183,13 +186,14 @@ const RETRIEVE_PIPELINE_MONITORING_COLUMNS: &str =
     "p.id, p.tenant_id, p.name, p.description, p.created_at, p.version, p.platform_version,
      p.program_version, p.program_status, p.program_status_since,
      p.deployment_status, p.deployment_status_since, p.deployment_desired_status,
-     p.deployment_error, p.deployment_location, p.refresh_version, p.storage_status";
+     p.deployment_error, p.deployment_location, p.refresh_version, p.storage_status,
+     p.deployment_id";
 
 /// Converts a pipeline table row to its extended descriptor with only fields relevant to monitoring.
 fn row_to_extended_pipeline_descriptor_monitoring(
     row: &Row,
 ) -> Result<ExtendedPipelineDescrMonitoring, DBError> {
-    assert_eq!(row.len(), 17);
+    assert_eq!(row.len(), 18);
     // Deployment error: ErrorResponse
     let deployment_error = match row.get::<_, Option<String>>(13) {
         None => None,
@@ -213,6 +217,7 @@ fn row_to_extended_pipeline_descriptor_monitoring(
         deployment_location: row.get(14),
         refresh_version: Version(row.get(15)),
         storage_status: row.get::<_, String>(16).try_into()?,
+        deployment_id: row.get(17),
     })
 }
 
@@ -1022,6 +1027,7 @@ pub(crate) async fn set_deployment_status(
     version_guard: Version,
     new_deployment_status: PipelineStatus,
     new_deployment_error: Option<ErrorResponse>,
+    new_deployment_id: Option<Uuid>,
     new_deployment_config: Option<serde_json::Value>,
     new_deployment_location: Option<String>,
     new_suspend_info: Option<serde_json::Value>,
@@ -1068,6 +1074,7 @@ pub(crate) async fn set_deployment_status(
     // Deployment error is set when becoming...
     // - Stopping: maybe a value
     // - Stopped: existing value
+    // - Provisioning: NULL
     // - Otherwise: NULL
     let final_deployment_error = if new_deployment_status == PipelineStatus::Stopping {
         new_deployment_error
@@ -1081,6 +1088,21 @@ pub(crate) async fn set_deployment_status(
         assert!(current.deployment_error.is_none());
         assert!(new_deployment_error.is_none());
         None
+    };
+
+    // Deployment identifier is set when becoming...
+    // - Provisioning: a value
+    // - Stopping: NULL
+    // - Otherwise: current value
+    let final_deployment_id = if new_deployment_status == PipelineStatus::Provisioning {
+        assert!(new_deployment_id.is_some());
+        new_deployment_id
+    } else if new_deployment_status == PipelineStatus::Stopping {
+        assert!(new_deployment_id.is_none());
+        None
+    } else {
+        assert!(new_deployment_id.is_none());
+        current.deployment_id
     };
 
     // Deployment configuration is set when becoming...
@@ -1109,19 +1131,20 @@ pub(crate) async fn set_deployment_status(
     }
 
     // Deployment location is set when becoming...
-    // - Initializing: a value
+    // - Any of the provisioned pipeline statuses: a value
     // - Stopping: NULL
     // - Otherwise: current value
-    let final_deployment_location = if new_deployment_status == PipelineStatus::Initializing {
-        assert!(new_deployment_location.is_some());
-        new_deployment_location
-    } else if new_deployment_status == PipelineStatus::Stopping {
-        assert!(new_deployment_location.is_none());
-        None
-    } else {
-        assert!(new_deployment_location.is_none());
-        current.deployment_location
-    };
+    let final_deployment_location =
+        if new_deployment_status.as_resources_status() == ResourcesStatus::Provisioned {
+            assert!(new_deployment_location.is_some());
+            new_deployment_location
+        } else if new_deployment_status == PipelineStatus::Stopping {
+            assert!(new_deployment_location.is_none());
+            None
+        } else {
+            assert!(new_deployment_location.is_none());
+            current.deployment_location
+        };
 
     // Suspend information is set when becoming...
     // - Stopping: maybe a value
@@ -1144,10 +1167,11 @@ pub(crate) async fn set_deployment_status(
                  SET deployment_status = $1,
                      deployment_status_since = now(),
                      deployment_error = $2,
-                     deployment_config = $3,
-                     deployment_location = $4,
-                     suspend_info = $5
-                 WHERE tenant_id = $6 AND id = $7",
+                     deployment_id = $3,
+                     deployment_config = $4,
+                     deployment_location = $5,
+                     suspend_info = $6
+                 WHERE tenant_id = $7 AND id = $8",
         )
         .await?;
     let rows_affected = txn
@@ -1159,6 +1183,7 @@ pub(crate) async fn set_deployment_status(
                     None => None,
                     Some(v) => Some(serialize_error_response(&v)?),
                 },
+                &final_deployment_id,
                 &final_deployment_config.map(|v| v.to_string()),
                 &final_deployment_location,
                 &final_suspend_info.map(|v| v.to_string()),

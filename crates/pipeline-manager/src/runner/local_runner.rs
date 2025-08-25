@@ -23,6 +23,7 @@ use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 use tokio::time::sleep;
 use tokio::{fs, fs::create_dir_all, select, spawn};
+use uuid::Uuid;
 
 /// How many times to attempt to retrieve the pipeline binary.
 const BINARY_RETRIEVAL_ATTEMPTS: u64 = 5;
@@ -364,6 +365,7 @@ impl PipelineExecutor for LocalRunner {
     /// - Switches to operational logging following the stdout/stderr of the process
     async fn provision(
         &mut self,
+        deployment_id: &Uuid,
         deployment_config: &PipelineConfig,
         program_binary_url: &str,
         program_version: Version,
@@ -437,6 +439,8 @@ impl PipelineExecutor for LocalRunner {
             .arg(&config_file_path)
             .arg("--bind-address")
             .arg(&self.common_config.bind_address)
+            .arg("--deployment-id")
+            .arg(deployment_id.to_string())
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());

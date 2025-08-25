@@ -4919,6 +4919,7 @@ dependencies = [
  "proptest",
  "proptest-derive",
  "regex",
+ "reqwest 0.12.20",
  "serde",
  "serde_json",
  "serde_yaml",

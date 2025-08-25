@@ -1,9 +1,14 @@
 use crate::db::error::DBError;
 use crate::db::types::program::{ProgramError, ProgramStatus};
+use crate::db::types::resources_status::{
+    validate_resources_desired_status_transition, validate_resources_status_transition,
+    ResourcesDesiredStatus, ResourcesStatus,
+};
 use crate::db::types::storage::StorageStatus;
 use crate::db::types::version::Version;
 use chrono::{DateTime, Utc};
 use feldera_types::error::ErrorResponse;
+use feldera_types::runtime_status::{RuntimeDesiredStatus, RuntimeStatus};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::fmt::Display;
@@ -26,98 +31,95 @@ impl Display for PipelineId {
 
 /// Pipeline status.
 ///
-/// This type represents the state of the pipeline tracked by the pipeline
-/// runner and observed by the API client via the `GET /v0/pipelines/{name}` endpoint.
+/// This type represents the status of the pipeline tracked by the pipeline runner and observed by
+/// the API client via the `GET /v0/pipelines/{name}` endpoint.
 ///
 /// ### The lifecycle of a pipeline
 ///
 /// The following automaton captures the lifecycle of the pipeline.
-/// Individual states and transitions of the automaton are described below.
+/// Individual statuses and transitions of the automaton are described below.
 ///
-/// * States labeled with the hourglass symbol (⌛) are **timed** states. The
-///   automaton stays in timed state until the corresponding operation completes
-///   or until it transitions to become failed after the pre-defined timeout
-///   period expires.
+/// * Statuses labeled with the hourglass symbol (⌛) are **timed** statuses. The automaton stays in
+///   timed status until the corresponding operation completes or until it transitions to become
+///   failed after the pre-defined timeout  period expires.
 ///
-/// * State transitions labeled with API endpoint names (`/start`, `/pause`,
-///   `/stop`) are triggered by invoking corresponding endpoint,
-///   e.g., `POST /v0/pipelines/{name}/start`. Note that these only express
-///   desired state, and are applied asynchronously by the automata.
+/// * Some transitions can be initiated by calling an API endpoint (e.g., `/start`). These
+///   endpoints only express desired state, and are applied asynchronously by the automaton.
 ///
 /// ```text
-///                 Stopped ◄─────────── Stopping ◄───── All states can transition
-///                    │                   ▲            to Stopping by either:
-///   /start or /pause │                   │            (1) user calling /stop?force=true, or;
-///                    ▼                   │            (2) pipeline encountering a fatal
-///             ⌛Provisioning         Suspending            resource or runtime error,
-///                    │                   ▲                having the system call /stop?force=true
-///                    │                   │ /stop          effectively
-///                    │                   │  ?force=false
-///                    │                   │
-///     ┌──────────────┼───────────────────┴─────┐
-///     │              ▼                         │
-///     │  ┌──► Initializing                     │
-///     │  │           ▲  ▲                      │
-///     │  │           │  └───────────┐          │
-///     │  │           ▼              ▼          │
-///     │  │        Paused  ◄──────► Unavailable │
-///     │  │          │  ▲                ▲      │
-///     │  │   /start │  │  /pause        │      │
-///     │  │          ▼  │                │      │
-///     │  └─────►  Running ◄─────────────┘      │
-///     └────────────────────────────────────────┘
+///          /start /pause /standby (early start failed)
+///          ┌───────────────────┐
+///          │                   ▼
+///       Stopped ◄────────── Stopping
+///   /start │                   ▲
+///   /pause │                   │ /stop
+/// /standby │                   │ OR: timeout (from Provisioning)
+///          ▼                   │ OR: fatal runtime or resource error
+///    ⌛Provisioning ────────────│
+///          │                   │
+///          │                   │
+///          ▼                   │
+///      ┌───────────────────────┴─────┐
+///      │ Initializing, Unavailable,  │
+///      │   Standby, Bootstrapping,   │
+///      │ Replaying, Paused, Running, │
+///      │    Suspended, Terminated    │
+///      └─────────────────────────────┘
+///  Runtime statuses, can be changed by calling
+///     /start, /pause, /standby, and /stop
 /// ```
 ///
 /// ### Desired and actual status
 ///
-/// We use the desired state model to manage the lifecycle of a pipeline.
-/// In this model, the pipeline has two status attributes associated with
-/// it at runtime: the **desired** status, which represents what the user
-/// would like the pipeline to do, and the **current** status, which
-/// represents the actual state of the pipeline.  The pipeline runner
-/// service continuously monitors both fields and steers the pipeline
-/// towards the desired state specified by the user.
+/// We use the desired state model to manage the lifecycle of a pipeline. In this model, the
+/// pipeline has two status attributes associated with it: the **desired** status, which represents
+/// what the user would like the pipeline to do, and the **current** status, which represents the
+/// actual (last observed) status of the pipeline. The pipeline runner service continuously monitors
+/// the desired status field to decide where to steer the pipeline towards.
 ///
-/// Only four of the states in the pipeline automaton above can be
-/// used as desired statuses: `Paused`, `Running`, `Suspended` and
-/// `Stopped`. These statuses are selected by invoking REST endpoints
-/// shown in the diagram (respectively, `/pause`, `/start`, and `/stop`).
+/// There are five desired statuses:
+/// - `Standby` (set by invoking `/standby`)
+/// - `Running` (set by invoking `/start`)
+/// - `Paused` (set by invoking `/pause`)
+/// - `Suspended` (set by invoking `/stop?force=false`)
+/// - `Stopped` (set by invoking `/stop?force=true`)
 ///
-/// The user can monitor the current state of the pipeline via the
-/// `GET /v0/pipelines/{name}` endpoint. In a typical scenario,
-/// the user first sets the desired state, e.g., by invoking the
-/// `/start` endpoint, and then polls the `GET /v0/pipelines/{name}`
-/// endpoint to monitor the actual status of the pipeline until its
-/// `deployment_status` attribute changes to `Running` indicating
-/// that the pipeline has been successfully initialized and is
-/// processing data, or `Stopped` with `deployment_error` being set.
+/// Of these, `Suspended` is a "virtual" desired status. Once the runner has successfully suspended,
+/// it will change the desired status to `Stopped`. Not all endpoints can be called at all times.
+///
+/// The user can monitor the current status of the pipeline via the `GET /v0/pipelines/{name}`
+/// endpoint. In a typical scenario, the user first sets the desired status, e.g., by invoking the
+/// `/start` endpoint, and then polls the `GET /v0/pipelines/{name}` endpoint to monitor the actual
+/// status of the pipeline until its `deployment_status` attribute changes to `Running` indicating
+/// that the pipeline has been successfully provisioned, or `Stopped` with `deployment_error` being
+/// set.
 #[derive(Deserialize, Serialize, ToSchema, Eq, PartialEq, Debug, Clone, Copy)]
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub enum PipelineStatus {
-    /// Pipeline has not (yet) been started or has been stopped either
-    /// manually by the user or automatically by the system because
-    /// a resource or runtime error was encountered.
+    /// Pipeline has not (yet) been started or has been stopped either manually by the user or
+    /// automatically by the system because a resource or runtime error was encountered.
     ///
-    /// The pipeline remains in this state until:
+    /// No compute resources are provisioned, but there might still be storage resources
+    /// provisioned. They can be deprovisioned using `/clear`.
     ///
-    /// 1. The user triggers a start by invoking the `/start` or `/pause` endpoint.
+    /// The pipeline remains in this status until:
+    ///
+    /// 1. The user triggers a start by invoking the `/start` endpoint.
     ///    It transitions to `Provisioning`.
     ///
     /// 2. If applicable, early start fails (e.g., pipeline fails to compile).
     ///    It transitions to `Stopping`.
     Stopped,
 
-    /// The compute and (optionally) storage resources needed for the
-    /// running the pipeline are being provisioned.
+    /// The compute and (optionally) storage resources needed for the running the pipeline process
+    /// are being provisioned.
     ///
-    /// The provisioning is performed asynchronously, as such the user
-    /// is able to cancel.
+    /// The provisioning is performed asynchronously, as such the user is able to cancel.
     ///
-    /// The pipeline remains in this state until:
+    /// The pipeline remains in this status until:
     ///
-    /// 1. Resources check passes, indicating all resources were provisioned,
-    ///    and status check outcome is not Unavailable.
-    ///    It transitions to `Initializing` or `Stopping` depending on check outcome
+    /// 1. Resources check passes, indicating all resources were provisioned.
+    ///    It transitions to `Provisioned`.
     ///
     /// 2. Resource provisioning fails or takes too long (timeout exceeded).
     ///    It transitions to `Stopping` with `deployment_error` set.
@@ -126,104 +128,97 @@ pub enum PipelineStatus {
     ///    It transitions to `Stopping`.
     Provisioning,
 
-    /// The pipeline is initializing its internal state and connectors.
-    ///
-    /// In this state, the pipeline resources were provisioned, but the pipeline
-    /// is not yet ready to be able to process data (e.g., its query engine and
-    /// input and output connectors are still initializing).
-    ///
-    /// The pipeline remains in this state until:
-    ///
-    /// 1. Initialization check passes, indicating pipeline is ready.
-    ///    It transitions to either `Paused` or `Running` depending on check outcome.
-    ///
-    /// 2. Resource error or runtime error is encountered.
-    ///    It transitions to `Stopping` with `deployment_error` set.
-    ///
-    /// 3. The user suspends the pipeline by invoking the `/stop?force=false` endpoint.
-    ///    It transitions to `Suspending`.
-    ///
-    /// 4. The user stops the pipeline by invoking the `/stop?force=true` endpoint.
-    ///    It transitions to `Stopping`.
-    Initializing,
-
-    /// The pipeline was at least once initialized, and in the most recent status check
-    /// reported its data processing is paused.
-    ///
-    /// The pipeline remains in this state until:
-    ///
-    /// 1. The user starts the pipeline by invoking the `/start` endpoint.
-    ///    It asynchronously passes the request to the pipeline, and upon
-    ///    success transitions to `Running`.
-    ///
-    /// 2. Resource error or runtime error is encountered.
-    ///    It transitions to `Stopping` with `deployment_error` set.
-    ///
-    /// 3. The user suspends the pipeline by invoking the `/stop?force=false` endpoint.
-    ///    It transitions to `Suspending`.
-    ///
-    /// 4. The user stops the pipeline by invoking the `/stop?force=true` endpoint.
-    ///    It transitions to `Stopping`.
-    Paused,
-
-    /// The pipeline was at least once initialized, and in the most recent status check
-    /// reported to be processing data.
-    ///
-    /// The pipeline remains in this state until:
-    ///
-    /// 1. The user pauses the pipeline by invoking the `/pause` endpoint.
-    ///    It asynchronously passes the request to the pipeline, and upon
-    ///    transitions to `Paused`.
-    ///
-    /// 2. Resource error or runtime error is encountered.
-    ///    It transitions to `Stopping` with `deployment_error` set.
-    ///
-    /// 3. The user suspends the pipeline by invoking the `/stop?force=false` endpoint.
-    ///    It transitions to `Suspending`.
-    ///
-    /// 4. The user stops the pipeline by invoking the `/stop?force=true` endpoint.
-    ///    It transitions to `Stopping`.
-    Running,
-
     /// The pipeline was at least once initialized, but in the most recent status check either
     /// could not be reached or returned it is not yet ready.
     ///
-    /// The pipeline remains in this state until:
-    ///
-    /// 1. A status check succeeds, in which case it transitions to either
-    ///    `Initializing`, `Paused` or `Running` depending on the check outcome.
-    ///
-    /// 2. Resource error or runtime error is encountered.
-    ///    It transitions to `Stopping` with `deployment_error` set.
-    ///
-    /// 3. The user suspends the pipeline by invoking the `/stop?force=false` endpoint.
-    ///    It transitions to `Suspending`.
-    ///
-    /// 4. The user stops the pipeline by invoking the `/stop?force=true` endpoint.
-    ///    It transitions to `Stopping`.
-    ///
-    /// Note that calls to `/start` and `/pause` express desired state and
-    /// are applied asynchronously. While the pipeline is in this state,
-    /// the runner will not try to reach out to start/pause until a status
-    /// check has succeeded.
+    /// The pipeline remains in this status until:
+    /// - It is available again
+    /// - Resource or runtime error
+    /// - User calls `/stop`
     Unavailable,
 
-    /// The pipeline is being requested to suspend the circuit to storage.
+    /// The pipeline constantly pulling the latest checkpoint to S3 but not processing any inputs.
     ///
-    /// The pipeline remains in this state until:
-    ///
-    /// 1. A suspend request succeeds, in which case it transitions to
-    ///    `Stopping` with `suspend_info` set.
-    ///
-    /// 2. Resource error or runtime error is encountered.
-    ///    It transitions to `Stopping` with `deployment_error` set.
-    Suspending,
+    /// The pipeline remains in this status until:
+    /// - Resource or runtime error
+    /// - User calls `/start` or `/pause`
+    /// - User calls `/stop`
+    Standby,
 
-    /// The compute resources of the pipeline are being scaled down to zero.
+    /// The input and output connectors are establishing connections to their data sources and sinks
+    /// respectively.
     ///
-    /// The pipeline remains in this state until the compute resources are deallocated,
-    /// after which it transitions to `Stopped`.
+    /// The pipeline remains in this status until:
+    /// - Initialization finishes
+    /// - Resource or runtime error
+    /// - User calls `/stop`
+    Initializing,
+
+    /// The pipeline was modified since the last time it was started, and as such it is currently
+    /// computing modified views.
+    ///
+    /// The pipeline remains in this status until:
+    /// - Bootstrapping finishes
+    /// - Resource or runtime error
+    /// - User calls `/stop`
+    Bootstrapping,
+
+    /// Input records that were stored in the journal but were not yet processed, are being
+    /// processed first.
+    ///
+    /// The pipeline remains in this status until:
+    /// - Replaying finishes
+    /// - Resource or runtime error
+    /// - User calls `/stop`
+    Replaying,
+
+    /// The input connectors are paused.
+    ///
+    /// The pipeline remains in this status until:
+    /// - Resource or runtime error
+    /// - User calls `/start`
+    /// - User calls `/stop`
+    Paused,
+
+    /// The input connectors are running.
+    ///
+    /// The pipeline remains in this status until:
+    /// - Resource or runtime error
+    /// - User calls `/pause`
+    /// - User calls `/stop`
+    Running,
+
+    /// The compute resources of the pipeline are being deprovisioned.
+    ///
+    /// The pipeline remains in this status until the compute resources are deprovisioned, after
+    /// which it transitions to `Stopped`.
     Stopping,
+}
+
+impl PipelineStatus {
+    pub fn as_resources_status(&self) -> ResourcesStatus {
+        match self {
+            PipelineStatus::Stopped => ResourcesStatus::Stopped,
+            PipelineStatus::Provisioning => ResourcesStatus::Provisioning,
+            PipelineStatus::Stopping => ResourcesStatus::Stopping,
+            _ => ResourcesStatus::Provisioned,
+        }
+    }
+
+    pub fn as_runtime_status(&self) -> Option<RuntimeStatus> {
+        match self {
+            PipelineStatus::Stopped => None,
+            PipelineStatus::Provisioning => None,
+            PipelineStatus::Unavailable => Some(RuntimeStatus::Unavailable),
+            PipelineStatus::Standby => Some(RuntimeStatus::Standby),
+            PipelineStatus::Initializing => Some(RuntimeStatus::Initializing),
+            PipelineStatus::Bootstrapping => Some(RuntimeStatus::Bootstrapping),
+            PipelineStatus::Replaying => Some(RuntimeStatus::Replaying),
+            PipelineStatus::Paused => Some(RuntimeStatus::Paused),
+            PipelineStatus::Running => Some(RuntimeStatus::Running),
+            PipelineStatus::Stopping => None,
+        }
+    }
 }
 
 impl TryFrom<String> for PipelineStatus {
@@ -232,11 +227,13 @@ impl TryFrom<String> for PipelineStatus {
         match value.as_str() {
             "stopped" => Ok(Self::Stopped),
             "provisioning" => Ok(Self::Provisioning),
+            "standby" => Ok(Self::Standby),
             "initializing" => Ok(Self::Initializing),
+            "bootstrapping" => Ok(Self::Bootstrapping),
+            "replaying" => Ok(Self::Replaying),
             "paused" => Ok(Self::Paused),
             "running" => Ok(Self::Running),
             "unavailable" => Ok(Self::Unavailable),
-            "suspending" => Ok(Self::Suspending),
             "stopping" => Ok(Self::Stopping),
             _ => Err(DBError::invalid_pipeline_status(value)),
         }
@@ -248,11 +245,13 @@ impl From<PipelineStatus> for &'static str {
         match val {
             PipelineStatus::Stopped => "stopped",
             PipelineStatus::Provisioning => "provisioning",
+            PipelineStatus::Standby => "standby",
             PipelineStatus::Initializing => "initializing",
+            PipelineStatus::Bootstrapping => "bootstrapping",
+            PipelineStatus::Replaying => "replaying",
             PipelineStatus::Paused => "paused",
             PipelineStatus::Running => "running",
             PipelineStatus::Unavailable => "unavailable",
-            PipelineStatus::Suspending => "suspending",
             PipelineStatus::Stopping => "stopping",
         }
     }
@@ -269,9 +268,32 @@ impl Display for PipelineStatus {
 #[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub enum PipelineDesiredStatus {
     Stopped,
+    Standby,
     Paused,
     Running,
     Suspended,
+}
+
+impl PipelineDesiredStatus {
+    pub fn as_resources_desired_status(&self) -> ResourcesDesiredStatus {
+        match self {
+            PipelineDesiredStatus::Stopped => ResourcesDesiredStatus::Stopped,
+            PipelineDesiredStatus::Standby => ResourcesDesiredStatus::Provisioned,
+            PipelineDesiredStatus::Paused => ResourcesDesiredStatus::Provisioned,
+            PipelineDesiredStatus::Running => ResourcesDesiredStatus::Provisioned,
+            PipelineDesiredStatus::Suspended => ResourcesDesiredStatus::Provisioned,
+        }
+    }
+
+    pub fn as_runtime_desired_status(&self) -> Option<RuntimeDesiredStatus> {
+        match self {
+            PipelineDesiredStatus::Stopped => None,
+            PipelineDesiredStatus::Standby => Some(RuntimeDesiredStatus::Standby),
+            PipelineDesiredStatus::Paused => Some(RuntimeDesiredStatus::Paused),
+            PipelineDesiredStatus::Running => Some(RuntimeDesiredStatus::Running),
+            PipelineDesiredStatus::Suspended => Some(RuntimeDesiredStatus::Suspended),
+        }
+    }
 }
 
 impl TryFrom<String> for PipelineDesiredStatus {
@@ -279,6 +301,7 @@ impl TryFrom<String> for PipelineDesiredStatus {
     fn try_from(value: String) -> Result<Self, DBError> {
         match value.as_str() {
             "stopped" => Ok(Self::Stopped),
+            "standby" => Ok(Self::Standby),
             "paused" => Ok(Self::Paused),
             "running" => Ok(Self::Running),
             "suspended" => Ok(Self::Suspended),
@@ -291,6 +314,7 @@ impl From<PipelineDesiredStatus> for &'static str {
     fn from(val: PipelineDesiredStatus) -> Self {
         match val {
             PipelineDesiredStatus::Stopped => "stopped",
+            PipelineDesiredStatus::Standby => "standby",
             PipelineDesiredStatus::Paused => "paused",
             PipelineDesiredStatus::Running => "running",
             PipelineDesiredStatus::Suspended => "suspended",
@@ -312,43 +336,11 @@ pub fn validate_deployment_status_transition(
     current_status: PipelineStatus,
     new_status: PipelineStatus,
 ) -> Result<(), DBError> {
-    if matches!(
-        (storage_status, current_status, new_status),
-        (StorageStatus::Cleared | StorageStatus::InUse,  PipelineStatus::Stopped, PipelineStatus::Provisioning)
-        | (StorageStatus::Cleared | StorageStatus::InUse, PipelineStatus::Stopped, PipelineStatus::Stopping)
-        | (StorageStatus::InUse,PipelineStatus::Provisioning, PipelineStatus::Initializing)
-        | (StorageStatus::InUse, PipelineStatus::Provisioning, PipelineStatus::Stopping)
-        | (StorageStatus::InUse, PipelineStatus::Initializing, PipelineStatus::Paused)
-        | (StorageStatus::InUse, PipelineStatus::Initializing, PipelineStatus::Running)
-        | (StorageStatus::InUse, PipelineStatus::Initializing, PipelineStatus::Suspending)
-        | (StorageStatus::InUse, PipelineStatus::Initializing, PipelineStatus::Stopping)
-        | (StorageStatus::InUse, PipelineStatus::Initializing, PipelineStatus::Unavailable)
-        | (StorageStatus::InUse, PipelineStatus::Running, PipelineStatus::Paused)
-        | (StorageStatus::InUse, PipelineStatus::Running, PipelineStatus::Unavailable)
-        | (StorageStatus::InUse, PipelineStatus::Running, PipelineStatus::Initializing)
-        | (StorageStatus::InUse, PipelineStatus::Running, PipelineStatus::Suspending)
-        | (StorageStatus::InUse, PipelineStatus::Running, PipelineStatus::Stopping)
-        | (StorageStatus::InUse, PipelineStatus::Paused, PipelineStatus::Running)
-        | (StorageStatus::InUse, PipelineStatus::Paused, PipelineStatus::Unavailable)
-        | (StorageStatus::InUse, PipelineStatus::Paused, PipelineStatus::Initializing)
-        | (StorageStatus::InUse, PipelineStatus::Paused, PipelineStatus::Suspending)
-        | (StorageStatus::InUse, PipelineStatus::Paused, PipelineStatus::Stopping)
-        | (StorageStatus::InUse, PipelineStatus::Unavailable, PipelineStatus::Initializing)
-        | (StorageStatus::InUse, PipelineStatus::Unavailable, PipelineStatus::Running)
-        | (StorageStatus::InUse, PipelineStatus::Unavailable, PipelineStatus::Paused)
-        | (StorageStatus::InUse, PipelineStatus::Unavailable, PipelineStatus::Suspending)
-        | (StorageStatus::InUse, PipelineStatus::Unavailable, PipelineStatus::Stopping)
-        | (StorageStatus::InUse, PipelineStatus::Suspending, PipelineStatus::Stopping)
-        | (StorageStatus::Cleared | StorageStatus::InUse, PipelineStatus::Stopping, PipelineStatus::Stopped)
-    ) {
-        Ok(())
-    } else {
-        Err(DBError::InvalidDeploymentStatusTransition {
-            storage_status,
-            current_status,
-            new_status,
-        })
-    }
+    // Check that the underlying resources status transition is valid
+    validate_resources_status_transition(storage_status, current_status, new_status)?;
+
+    // All other (runtime) transitions are currently allowed, as they are strictly observed.
+    Ok(())
 }
 
 /// Validates the deployment desired status transition from current status to a new one.
@@ -357,68 +349,54 @@ pub fn validate_deployment_desired_status_transition(
     current_desired_status: PipelineDesiredStatus,
     new_desired_status: PipelineDesiredStatus,
 ) -> Result<(), DBError> {
+    // Check that the underlying resources desired status transition is valid
+    validate_resources_desired_status_transition(
+        pipeline_status,
+        current_desired_status,
+        new_desired_status,
+    )?;
+
+    // What remains are validating whether runtime status transitions can be performed
     match new_desired_status {
         PipelineDesiredStatus::Stopped => {
             // It's always possible to stop a pipeline
             Ok(())
         }
-        PipelineDesiredStatus::Paused | PipelineDesiredStatus::Running => {
-            if current_desired_status == PipelineDesiredStatus::Stopped
-                && pipeline_status != PipelineStatus::Stopped
+        PipelineDesiredStatus::Standby => {
+            if current_desired_status != PipelineDesiredStatus::Stopped
+                && current_desired_status != PipelineDesiredStatus::Standby
             {
-                // After calling `/stop`, it must first become `Stopped`
                 return Err(DBError::IllegalPipelineAction {
                     pipeline_status,
                     current_desired_status,
                     new_desired_status,
-                    hint: "Cannot restart the pipeline while it is stopping. Wait until it is stopped before starting the pipeline again.".to_string(),
+                    hint: "Cannot start into or transition into standby mode if it has already been set to become running or paused.".to_string(),
                 });
             };
-
+            Ok(())
+        }
+        PipelineDesiredStatus::Paused | PipelineDesiredStatus::Running => {
             if current_desired_status == PipelineDesiredStatus::Suspended {
                 // After calling `/stop?force=false`, it must first become `Stopped`
                 return Err(DBError::IllegalPipelineAction {
                     pipeline_status,
                     current_desired_status,
                     new_desired_status,
-                    hint: "Cannot resume the pipeline while it is suspending. Wait until is stopped after the suspend before resuming the pipeline.".to_string(),
+                    hint: "Cannot set a pipeline to become running or paused while it is suspending. Wait until it is stopped after the suspend.".to_string(),
                 });
             };
-
             Ok(())
         }
         PipelineDesiredStatus::Suspended => {
-            match current_desired_status {
-                PipelineDesiredStatus::Stopped => Err(DBError::IllegalPipelineAction {
+            if current_desired_status == PipelineDesiredStatus::Standby {
+                return Err(DBError::IllegalPipelineAction {
                     pipeline_status,
                     current_desired_status,
                     new_desired_status,
-                    hint: "Cannot suspend a pipeline which is stopping.".to_string(),
-                }),
-                PipelineDesiredStatus::Paused | PipelineDesiredStatus::Running => {
-                    if matches!(
-                        pipeline_status,
-                        PipelineStatus::Initializing
-                            | PipelineStatus::Running
-                            | PipelineStatus::Paused
-                            | PipelineStatus::Unavailable
-                    ) {
-                        // Calling `/stop?force=false` is only possible if the pipeline is Initializing, Running, Paused or Unavailable.
-                        Ok(())
-                    } else {
-                        // In other cases, it is not possible. Sometimes it will become possible eventually
-                        // (e.g., `Provisioning` should eventually generally transition to these states).
-                        Err(DBError::IllegalPipelineAction {
-                            pipeline_status,
-                            current_desired_status,
-                            new_desired_status,
-                            hint: "Cannot suspend a pipeline which is not initializing, running, paused or unavailable."
-                                .to_string(),
-                        })
-                    }
-                }
-                PipelineDesiredStatus::Suspended => Ok(()),
+                    hint: "Cannot suspend a pipeline which is standby.".to_string(),
+                });
             }
+            Ok(())
         }
     }
 }
@@ -532,8 +510,7 @@ pub struct ExtendedPipelineDescr {
     /// Current status of the pipeline.
     pub deployment_status: PipelineStatus,
 
-    /// Time when the pipeline was assigned its current status
-    /// of the pipeline.
+    /// Timestamp at which the `deployment_status` last changed.
     pub deployment_status_since: DateTime<Utc>,
 
     /// Desired pipeline status, i.e., the status requested by the user.
@@ -567,6 +544,9 @@ pub struct ExtendedPipelineDescr {
 
     /// Storage status.
     pub storage_status: StorageStatus,
+
+    /// Identifier of the current deployment.
+    pub deployment_id: Option<Uuid>,
 }
 
 /// Pipeline descriptor which includes the fields relevant to system monitoring.
@@ -593,4 +573,5 @@ pub struct ExtendedPipelineDescrMonitoring {
     pub deployment_location: Option<String>,
     pub refresh_version: Version,
     pub storage_status: StorageStatus,
+    pub deployment_id: Option<Uuid>,
 }

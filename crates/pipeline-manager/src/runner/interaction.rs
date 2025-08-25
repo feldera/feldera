@@ -19,6 +19,7 @@ use tokio::sync::Mutex;
 use tokio::time::Instant;
 
 use crate::db::listen_table::PIPELINE_NOTIFY_CHANNEL_CAPACITY;
+use crate::db::types::resources_status::ResourcesStatus;
 use actix_http::encoding::Decoder;
 
 /// Max non-streaming HTTP response body returned by the pipeline.
@@ -37,20 +38,30 @@ impl CachedPipelineDescr {
     /// Return the deployment location only if the pipeline is in the correct
     /// status to be interacted with (i.e., running or paused).
     fn deployment_location_based_on_status(&self) -> Result<String, ManagerError> {
-        match self.pipeline.deployment_status {
-            PipelineStatus::Initializing | PipelineStatus::Running | PipelineStatus::Paused | PipelineStatus::Suspending => {}
-            PipelineStatus::Unavailable => Err(RunnerError::PipelineInteractionUnreachable {
-                error: "deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again".to_string()
-            })?,
-            status => Err(RunnerError::PipelineInteractionNotDeployed {
-                status,
-                desired_status: self.pipeline.deployment_desired_status
-            })?,
-        };
+        // Interaction with the pipeline is only useful to be attempted if the pipeline has its
+        // resources provisioned, and the latest runtime status check did not return indicate even
+        // the runner can't interact with it.
+        let resources_status = self.pipeline.deployment_status.as_resources_status();
+        if resources_status == ResourcesStatus::Provisioned {
+            if self.pipeline.deployment_status == PipelineStatus::Unavailable {
+                return Err(ManagerError::from(
+                    RunnerError::PipelineInteractionUnreachable {
+                        error: "status is currently 'unavailable'".to_string(),
+                    },
+                ));
+            }
+        } else {
+            return Err(ManagerError::from(
+                RunnerError::PipelineInteractionNotDeployed {
+                    status: self.pipeline.deployment_status,
+                    desired_status: self.pipeline.deployment_desired_status,
+                },
+            ));
+        }
 
         Ok(match &self.pipeline.deployment_location {
             None => Err(RunnerError::PipelineInteractionUnreachable {
-                error: "deployment location is missing despite status being 'running' or 'paused'"
+                error: "deployment location is missing despite it being fully provisioned"
                     .to_string(),
             })?,
             Some(location) => location.clone(),

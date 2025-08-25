@@ -91,6 +91,7 @@ pub struct PipelineInfo {
     pub deployment_error: Option<ErrorResponse>,
     pub refresh_version: Version,
     pub storage_status: StorageStatus,
+    pub deployment_id: Option<Uuid>,
 }
 
 /// Pipeline information (internal).
@@ -126,6 +127,7 @@ pub struct PipelineInfoInternal {
     pub deployment_error: Option<ErrorResponse>,
     pub refresh_version: Version,
     pub storage_status: StorageStatus,
+    pub deployment_id: Option<Uuid>,
 }
 
 impl PipelineInfoInternal {
@@ -153,6 +155,7 @@ impl PipelineInfoInternal {
             deployment_error: extended_pipeline.deployment_error,
             refresh_version: extended_pipeline.refresh_version,
             storage_status: extended_pipeline.storage_status,
+            deployment_id: extended_pipeline.deployment_id,
         }
     }
 }
@@ -191,6 +194,7 @@ pub struct PipelineSelectedInfo {
     pub deployment_error: Option<ErrorResponse>,
     pub refresh_version: Version,
     pub storage_status: StorageStatus,
+    pub deployment_id: Option<Uuid>,
 }
 
 /// Pipeline information which has a selected subset of optional fields (internal).
@@ -231,6 +235,7 @@ pub struct PipelineSelectedInfoInternal {
     pub deployment_error: Option<ErrorResponse>,
     pub refresh_version: Version,
     pub storage_status: StorageStatus,
+    pub deployment_id: Option<Uuid>,
 }
 
 impl PipelineSelectedInfoInternal {
@@ -260,6 +265,7 @@ impl PipelineSelectedInfoInternal {
             deployment_error: extended_pipeline.deployment_error,
             refresh_version: extended_pipeline.refresh_version,
             storage_status: extended_pipeline.storage_status,
+            deployment_id: extended_pipeline.deployment_id,
         }
     }
 
@@ -287,6 +293,7 @@ impl PipelineSelectedInfoInternal {
             deployment_error: extended_pipeline.deployment_error,
             refresh_version: extended_pipeline.refresh_version,
             storage_status: extended_pipeline.storage_status,
+            deployment_id: extended_pipeline.deployment_id,
         }
     }
 }
@@ -318,6 +325,8 @@ pub enum PipelineFieldSelector {
     /// - `deployment_desired_status`
     /// - `deployment_error`
     /// - `refresh_version`
+    /// - `storage_status`
+    /// - `deployment_id`
     All,
     /// Select only the fields required to know the status of a pipeline.
     ///
@@ -337,6 +346,8 @@ pub enum PipelineFieldSelector {
     /// - `deployment_desired_status`
     /// - `deployment_error`
     /// - `refresh_version`
+    /// - `storage_status`
+    /// - `deployment_id`
     Status,
 }
 
@@ -801,8 +812,9 @@ pub(crate) async fn delete_pipeline(
 /// Progress should be monitored by polling the pipeline `GET` endpoints.
 ///
 /// Note the following:
-/// - A stopped pipeline can be started through calling either `/start` or `/pause`
-/// - Both starting as running and resuming a pipeline is done by calling `/start`
+/// - A stopped pipeline can be started through calling either `/standby`, `/start` or `/pause`
+/// - Both starting as running, activating as running and resuming a pipeline is done by calling
+///   `/start`
 /// - A pipeline which is in the process of suspending or stopping cannot be started
 #[utoipa::path(
     context_path = "/v0",
@@ -852,8 +864,9 @@ pub(crate) async fn post_pipeline_start(
 /// Progress should be monitored by polling the pipeline `GET` endpoints.
 ///
 /// Note the following:
-/// - A stopped pipeline can be started through calling either `/start` or `/pause`
-/// - Both starting as paused and pausing a pipeline is done by calling `/pause`
+/// - A stopped pipeline can be started through calling either `/standby`, `/start` or `/pause`
+/// - Both starting as paused, activating as paused and pausing a pipeline is done by calling
+///   `/pause`
 /// - A pipeline which is in the process of suspending or stopping cannot be paused
 #[utoipa::path(
     context_path = "/v0",
@@ -891,6 +904,57 @@ pub(crate) async fn post_pipeline_pause(
         .await?;
     info!(
         "Accepted action: going to pause pipeline {pipeline_id} (tenant: {})",
+        *tenant_id
+    );
+    Ok(HttpResponse::Accepted().finish())
+}
+
+/// Standby the pipeline asynchronously by updating the desired state.
+///
+/// The endpoint returns immediately after setting the desired state to `Standby`.
+/// The procedure to get to the desired state is performed asynchronously.
+/// Progress should be monitored by polling the pipeline `GET` endpoints.
+///
+/// Note the following:
+/// - A stopped pipeline can be started through calling either `/standby`, `/start` or `/pause`
+/// - A pipeline which desires to be running or paused cannot be set to desire standby
+/// - A pipeline which is in the process of stopping cannot be standby
+#[utoipa::path(
+    context_path = "/v0",
+    security(("JSON web token (JWT) or API key" = [])),
+    params(
+        ("pipeline_name" = String, Path, description = "Unique pipeline name")
+    ),
+    responses(
+        (status = ACCEPTED
+            , description = "Action is accepted and is being performed"),
+        (status = NOT_FOUND
+            , description = "Pipeline with that name does not exist"
+            , body = ErrorResponse
+            , example = json!(examples::error_unknown_pipeline_name())),
+        (status = BAD_REQUEST
+            , description = "Action could not be performed"
+            , body = ErrorResponse
+            , example = json!(examples::error_illegal_pipeline_action())),
+        (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
+    ),
+    tag = "Pipeline management"
+)]
+#[post("/pipelines/{pipeline_name}/standby")]
+pub(crate) async fn post_pipeline_standby(
+    state: WebData<ServerState>,
+    tenant_id: ReqData<TenantId>,
+    path: web::Path<String>,
+) -> Result<HttpResponse, ManagerError> {
+    let pipeline_name = path.into_inner();
+    let pipeline_id = state
+        .db
+        .lock()
+        .await
+        .set_deployment_desired_status_standby(*tenant_id, &pipeline_name)
+        .await?;
+    info!(
+        "Accepted action: going to standby pipeline {pipeline_id} (tenant: {})",
         *tenant_id
     );
     Ok(HttpResponse::Accepted().finish())
