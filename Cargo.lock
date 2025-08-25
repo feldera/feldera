@@ -3677,7 +3677,7 @@ dependencies = [
 
 [[package]]
 name = "dbsp"
-version = "0.129.0"
+version = "0.130.0"
 dependencies = [
  "anyhow",
  "arc-swap",
@@ -3755,7 +3755,7 @@ dependencies = [
 
 [[package]]
 name = "dbsp_adapters"
-version = "0.129.0"
+version = "0.130.0"
 dependencies = [
  "actix",
  "actix-codec",
@@ -3881,7 +3881,7 @@ dependencies = [
 
 [[package]]
 name = "dbsp_nexmark"
-version = "0.129.0"
+version = "0.130.0"
 dependencies = [
  "anyhow",
  "ascii_table",
@@ -4650,7 +4650,7 @@ dependencies = [
 
 [[package]]
 name = "fda"
-version = "0.129.0"
+version = "0.130.0"
 dependencies = [
  "anyhow",
  "arrow",
@@ -4696,7 +4696,7 @@ dependencies = [
 
 [[package]]
 name = "feldera-adapterlib"
-version = "0.129.0"
+version = "0.130.0"
 dependencies = [
  "actix-web",
  "anyhow",
@@ -4724,7 +4724,7 @@ dependencies = [
 
 [[package]]
 name = "feldera-datagen"
-version = "0.129.0"
+version = "0.130.0"
 dependencies = [
  "anyhow",
  "async-channel 2.3.1",
@@ -4750,7 +4750,7 @@ dependencies = [
 
 [[package]]
 name = "feldera-fxp"
-version = "0.129.0"
+version = "0.130.0"
 dependencies = [
  "bytecheck",
  "dbsp",
@@ -4770,7 +4770,7 @@ dependencies = [
 
 [[package]]
 name = "feldera-iceberg"
-version = "0.129.0"
+version = "0.130.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -4805,7 +4805,7 @@ dependencies = [
 
 [[package]]
 name = "feldera-ir"
-version = "0.129.0"
+version = "0.130.0"
 dependencies = [
  "feldera-types",
  "serde",
@@ -4815,7 +4815,7 @@ dependencies = [
 
 [[package]]
 name = "feldera-rest-api"
-version = "0.129.0"
+version = "0.130.0"
 dependencies = [
  "chrono",
  "feldera-types",
@@ -4847,7 +4847,7 @@ dependencies = [
 
 [[package]]
 name = "feldera-sqllib"
-version = "0.129.0"
+version = "0.130.0"
 dependencies = [
  "arcstr",
  "base58",
@@ -4885,7 +4885,7 @@ dependencies = [
 
 [[package]]
 name = "feldera-storage"
-version = "0.129.0"
+version = "0.130.0"
 dependencies = [
  "anyhow",
  "feldera-types",
@@ -4906,7 +4906,7 @@ dependencies = [
 
 [[package]]
 name = "feldera-types"
-version = "0.129.0"
+version = "0.130.0"
 dependencies = [
  "actix-web",
  "anyhow",
@@ -7850,7 +7850,7 @@ checksum = "8b870d8c151b6f2fb93e84a13146138f05d02ed11c7e7c54f8826aaaf7c9f184"
 
 [[package]]
 name = "pipeline-manager"
-version = "0.129.0"
+version = "0.130.0"
 dependencies = [
  "actix-cors",
  "actix-files",
@@ -8863,7 +8863,7 @@ dependencies = [
 
 [[package]]
 name = "readers"
-version = "0.129.0"
+version = "0.130.0"
 dependencies = [
  "async-std",
  "csv",
@@ -10282,7 +10282,7 @@ dependencies = [
 
 [[package]]
 name = "sltsqlvalue"
-version = "0.129.0"
+version = "0.130.0"
 dependencies = [
  "dbsp",
  "feldera-sqllib",
