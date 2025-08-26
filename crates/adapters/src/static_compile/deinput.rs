@@ -15,6 +15,7 @@ use anyhow::{anyhow, bail, Result as AnyResult};
 use apache_avro::{types::Value as AvroValue, Schema as AvroSchema};
 use arrow::array::RecordBatch;
 use dbsp::dynamic::Data;
+use dbsp::operator::StagedBuffers;
 use dbsp::{
     algebra::HasOne, operator::Update, utils::Tup2, DBData, InputHandle, MapHandle, SetHandle,
     ZSetHandle, ZWeight,
@@ -25,6 +26,7 @@ use feldera_types::format::csv::CsvParserConfig;
 use feldera_types::serde_with_context::{DeserializeWithContext, SqlSerdeConfig};
 use serde_arrow::Deserializer as ArrowDeserializer;
 use serde_json::de::SliceRead;
+use std::any::Any;
 use std::hash::Hasher;
 use std::iter::zip;
 use std::{collections::VecDeque, marker::PhantomData, ops::Neg};
@@ -554,6 +556,15 @@ where
             self.buffer.updates.truncate(len);
         }
     }
+
+    fn stage(&self, buffers: Vec<Box<dyn InputBuffer>>) -> Box<dyn StagedBuffers> {
+        Box::new(self.buffer.handle.stage(buffers.into_iter().map(|b| {
+            (b as Box<dyn Any>)
+                .downcast::<DeZSetStreamBuffer<K>>()
+                .unwrap()
+                .updates
+        })))
+    }
 }
 
 /// Returns `(num/denom) * mul` as if in floating point, rounding down.  To
@@ -677,6 +688,15 @@ where
     fn fork(&self) -> Box<dyn ArrowStream> {
         Box::new(Self::new(self.buffer.handle.clone(), self.config.clone()))
     }
+
+    fn stage(&self, buffers: Vec<Box<dyn InputBuffer>>) -> Box<dyn StagedBuffers> {
+        Box::new(self.buffer.handle.stage(buffers.into_iter().map(|b| {
+            (b as Box<dyn Any>)
+                .downcast::<DeZSetStreamBuffer<K>>()
+                .unwrap()
+                .updates
+        })))
+    }
 }
 
 impl<K, D, C> InputBuffer for ArrowZSetStream<K, D, C>
@@ -753,6 +773,15 @@ where
 
     fn fork(&self) -> Box<dyn AvroStream> {
         Box::new(self.clone())
+    }
+
+    fn stage(&self, buffers: Vec<Box<dyn InputBuffer>>) -> Box<dyn StagedBuffers> {
+        Box::new(self.buffer.handle.stage(buffers.into_iter().map(|b| {
+            (b as Box<dyn Any>)
+                .downcast::<DeZSetStreamBuffer<K>>()
+                .unwrap()
+                .updates
+        })))
     }
 }
 
@@ -986,6 +1015,15 @@ where
             self.buffer.updates.truncate(len);
         }
     }
+
+    fn stage(&self, buffers: Vec<Box<dyn InputBuffer>>) -> Box<dyn StagedBuffers> {
+        Box::new(self.buffer.handle.stage(buffers.into_iter().map(|b| {
+            (b as Box<dyn Any>)
+                .downcast::<DeSetStreamBuffer<K>>()
+                .unwrap()
+                .updates
+        })))
+    }
 }
 
 impl<De, K, D, C> InputBuffer for DeSetStream<De, K, D, C>
@@ -1076,6 +1114,15 @@ where
 
         Ok(())
     }
+
+    fn stage(&self, buffers: Vec<Box<dyn InputBuffer>>) -> Box<dyn StagedBuffers> {
+        Box::new(self.buffer.handle.stage(buffers.into_iter().map(|b| {
+            (b as Box<dyn Any>)
+                .downcast::<DeSetStreamBuffer<K>>()
+                .unwrap()
+                .updates
+        })))
+    }
 }
 
 impl<K, D, C> InputBuffer for ArrowSetStream<K, D, C>
@@ -1152,6 +1199,15 @@ where
 
     fn fork(&self) -> Box<dyn AvroStream> {
         Box::new(self.clone())
+    }
+
+    fn stage(&self, buffers: Vec<Box<dyn InputBuffer>>) -> Box<dyn StagedBuffers> {
+        Box::new(self.buffer.handle.stage(buffers.into_iter().map(|b| {
+            (b as Box<dyn Any>)
+                .downcast::<DeSetStreamBuffer<K>>()
+                .unwrap()
+                .updates
+        })))
     }
 }
 
@@ -1499,6 +1555,15 @@ where
             self.buffer.updates.truncate(len);
         }
     }
+
+    fn stage(&self, buffers: Vec<Box<dyn InputBuffer>>) -> Box<dyn StagedBuffers> {
+        Box::new(self.buffer.handle.stage(buffers.into_iter().map(|b| {
+            (b as Box<dyn Any>)
+                .downcast::<DeMapStreamBuffer<K, V, U>>()
+                .unwrap()
+                .updates
+        })))
+    }
 }
 
 impl<De, K, KD, V, VD, U, UD, VF, UF, C> InputBuffer
@@ -1629,6 +1694,15 @@ where
 
         Ok(())
     }
+
+    fn stage(&self, buffers: Vec<Box<dyn InputBuffer>>) -> Box<dyn StagedBuffers> {
+        Box::new(self.buffer.handle.stage(buffers.into_iter().map(|b| {
+            (b as Box<dyn Any>)
+                .downcast::<DeMapStreamBuffer<K, V, U>>()
+                .unwrap()
+                .updates
+        })))
+    }
 }
 
 impl<K, KD, V, VD, U, VF, C> InputBuffer for ArrowMapStream<K, KD, V, VD, U, VF, C>
@@ -1737,6 +1811,15 @@ where
 
     fn fork(&self) -> Box<dyn AvroStream> {
         Box::new(self.clone())
+    }
+
+    fn stage(&self, buffers: Vec<Box<dyn InputBuffer>>) -> Box<dyn StagedBuffers> {
+        Box::new(self.buffer.handle.stage(buffers.into_iter().map(|b| {
+            (b as Box<dyn Any>)
+                .downcast::<DeMapStreamBuffer<K, V, U>>()
+                .unwrap()
+                .updates
+        })))
     }
 }
 

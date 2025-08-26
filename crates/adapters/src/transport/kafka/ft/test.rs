@@ -17,6 +17,7 @@ use crate::{InputBuffer, InputReader, Parser, TransportInputEndpoint};
 use anyhow::Error as AnyError;
 use crossbeam::sync::{Parker, Unparker};
 use csv::ReaderBuilder as CsvReaderBuilder;
+use dbsp::operator::StagedBuffers;
 use feldera_adapterlib::format::BufferSize;
 use feldera_adapterlib::transport::Resume;
 use feldera_types::config::{
@@ -36,6 +37,7 @@ use rdkafka::Message;
 use rmpv::Value as RmpValue;
 use serde_json::Value as JsonValue;
 use serde_yaml::Mapping;
+use std::any::Any;
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::fs::create_dir;
@@ -297,6 +299,18 @@ enum ConsumerCall {
     Eoi,
 }
 
+struct DummyStagedBuffers {
+    data: Vec<String>,
+    handle: Arc<DummyInputReceiverInner>,
+}
+
+impl StagedBuffers for DummyStagedBuffers {
+    fn flush(&mut self) {
+        info!("flushing {} staged buffers", self.data.len());
+        self.handle.flushed.lock().unwrap().append(&mut self.data);
+    }
+}
+
 struct DummyParser(Arc<DummyInputReceiverInner>);
 
 impl DummyParser {
@@ -322,6 +336,22 @@ impl Parser for DummyParser {
 
     fn fork(&self) -> Box<dyn Parser> {
         Box::new(Self(self.0.clone()))
+    }
+
+    fn stage(&self, buffers: Vec<Box<dyn InputBuffer>>) -> Box<dyn StagedBuffers> {
+        Box::new(DummyStagedBuffers {
+            data: buffers
+                .into_iter()
+                .map(|buffer| {
+                    (buffer as Box<dyn Any>)
+                        .downcast::<DummyInputBuffer>()
+                        .unwrap()
+                        .data
+                })
+                .flatten()
+                .collect(),
+            handle: self.0.clone(),
+        })
     }
 }
 

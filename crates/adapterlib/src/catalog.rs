@@ -8,6 +8,7 @@ use anyhow::Result as AnyResult;
 use apache_avro::{schema::NamesRef, types::Value as AvroValue, Schema as AvroSchema};
 use arrow::record_batch::RecordBatch;
 use dbsp::circuit::NodeId;
+use dbsp::operator::StagedBuffers;
 use dyn_clone::DynClone;
 use feldera_types::format::csv::CsvParserConfig;
 use feldera_types::format::json::JsonFlavor;
@@ -101,6 +102,14 @@ pub trait DeCollectionStream: Send + Sync + InputBuffer {
     /// Removes any updates beyond the first `len`.
     fn truncate(&mut self, len: usize);
 
+    /// Stages all of the `buffers`, which must have been obtained from a
+    /// [Parser] for this stream, into a [StagedBuffers] that may later be used
+    /// to push the collected data into the circuit.  See [StagedBuffers] for
+    /// more information.
+    ///
+    /// [Parser]: crate::format::Parser
+    fn stage(&self, buffers: Vec<Box<dyn InputBuffer>>) -> Box<dyn StagedBuffers>;
+
     /// Create a new deserializer with the same configuration connected to the
     /// same input stream. The new deserializer has an independent buffer that
     /// is initially empty.
@@ -122,6 +131,14 @@ pub trait ArrowStream: InputBuffer + Send + Sync {
     /// Create a new deserializer with the same configuration connected to
     /// the same input stream.
     fn fork(&self) -> Box<dyn ArrowStream>;
+
+    /// Stages all of the `buffers`, which must have been obtained from a
+    /// [Parser] for this stream, into a [StagedBuffers] that may later be used
+    /// to push the collected data into the circuit.  See [StagedBuffers] for
+    /// more information.
+    ///
+    /// [Parser]: crate::format::Parser
+    fn stage(&self, buffers: Vec<Box<dyn InputBuffer>>) -> Box<dyn StagedBuffers>;
 }
 
 /// Like `DeCollectionStream`, but deserializes Avro-encoded records before pushing them to a
@@ -135,6 +152,14 @@ pub trait AvroStream: InputBuffer + Send + Sync {
     /// Create a new deserializer with the same configuration connected to
     /// the same input stream.
     fn fork(&self) -> Box<dyn AvroStream>;
+
+    /// Stages all of the `buffers`, which must have been obtained from a
+    /// [Parser] for this stream, into a [StagedBuffers] that may later be used
+    /// to push the collected data into the circuit.  See [StagedBuffers] for
+    /// more information.
+    ///
+    /// [Parser]: crate::format::Parser
+    fn stage(&self, buffers: Vec<Box<dyn InputBuffer>>) -> Box<dyn StagedBuffers>;
 }
 
 /// A handle to an input collection that can be used to feed serialized data

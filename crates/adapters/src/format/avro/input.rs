@@ -8,6 +8,7 @@ use crate::{
 };
 use actix_web::HttpRequest;
 use apache_avro::{from_avro_datum, types::Value as AvroValue, Schema as AvroSchema};
+use dbsp::operator::StagedBuffers;
 use erased_serde::Serialize as ErasedSerialize;
 use feldera_types::{
     format::avro::{AvroParserConfig, AvroUpdateFormat},
@@ -475,5 +476,9 @@ impl Parser for AvroParser {
             last_event_number: 0,
             schema_cache: self.schema_cache.clone(),
         })
+    }
+
+    fn stage(&self, buffers: Vec<Box<dyn InputBuffer>>) -> Box<dyn StagedBuffers> {
+        self.input_stream.as_ref().unwrap().stage(buffers)
     }
 }

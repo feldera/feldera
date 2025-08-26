@@ -5,6 +5,7 @@ use crate::{
 };
 use actix_web::HttpRequest;
 use core::str;
+use dbsp::operator::StagedBuffers;
 use erased_serde::Serialize as ErasedSerialize;
 use feldera_types::{
     format::raw::{RawParserConfig, RawParserMode},
@@ -152,6 +153,10 @@ impl Parser for RawParser {
         }
 
         (self.input_stream.take_all(), errors)
+    }
+
+    fn stage(&self, buffers: Vec<Box<dyn InputBuffer>>) -> Box<dyn StagedBuffers> {
+        self.input_stream.stage(buffers)
     }
 }
 
