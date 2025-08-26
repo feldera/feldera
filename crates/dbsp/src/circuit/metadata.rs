@@ -8,7 +8,7 @@ use std::{
     time::Duration,
 };
 
-use crate::storage::buffer_cache::CacheCounts;
+use crate::{metadata, storage::buffer_cache::CacheCounts};
 
 /// Attribute that represents the total number of bytes used by a stateful
 /// operator. This includes bytes used to store the actual state, but not the
@@ -31,16 +31,87 @@ pub const SHARED_BYTES_LABEL: &str = "shared bytes";
 pub const NUM_ENTRIES_LABEL: &str = "total size";
 
 /// The number of input tuples ingested by the operator.
-pub const NUM_INPUTS: &str = "inputs";
+pub const NUM_INPUTS_LABEL: &str = "inputs";
 
-/// The number of output tuples ingested by the operator.
-pub const NUM_OUTPUTS: &str = "outputs";
+/// Input batch sizes.
+pub const INPUT_BATCHES_LABEL: &str = "input batches";
+
+/// Output batch sizes.
+pub const OUTPUT_BATCHES_LABEL: &str = "output batches";
+
+/// The amount of time an async operator spent wait to become ready.
+pub const EXCHANGE_WAIT_TIME: &str = "exchange_wait_time";
 
 /// An operator's location within the source program
 pub type OperatorLocation = Option<&'static Location<'static>>;
 
 /// The label to a metadata item
 pub type MetaLabel = Cow<'static, str>;
+
+/// Stats about batch sizes.
+///
+/// Can be used to track the distribution of batch sizes in input/output streams.
+/// Batches here don't have to be DBSP `Batch`s. These can be vector of tuples or
+/// anything else that has a size.
+// TODO: add a histogram.
+#[derive(Clone, Debug, PartialEq, Default)]
+pub struct BatchSizeStats {
+    /// Smallest batch size.
+    min: usize,
+
+    /// Largest batch size.
+    max: usize,
+
+    /// The number of batches.
+    cnt: usize,
+
+    /// Total size.
+    total: usize,
+}
+
+impl BatchSizeStats {
+    pub const fn new() -> Self {
+        Self {
+            min: usize::MAX,
+            max: 0,
+            cnt: 0,
+            total: 0,
+        }
+    }
+
+    pub fn add_batch(&mut self, size: usize) {
+        self.cnt += 1;
+        self.total = self.total.wrapping_add(size);
+        self.min = if size < self.min { size } else { self.min };
+        self.max = if size > self.max { size } else { self.max };
+    }
+
+    pub fn total_size(&self) -> usize {
+        self.total
+    }
+
+    pub fn metadata(&self) -> MetaItem {
+        if self.cnt == 0 {
+            MetaItem::Map(
+                metadata! {
+                    "batches" => MetaItem::Count(0),
+                }
+                .into(),
+            )
+        } else {
+            MetaItem::Map(
+                metadata! {
+                    "batches" => MetaItem::Count(self.cnt),
+                    "min size" => MetaItem::Count(self.min),
+                    "max size" => MetaItem::Count(self.max),
+                    "avg size" => MetaItem::Count(self.total / self.cnt),
+                    "total records" => MetaItem::Count(self.total)
+                }
+                .into(),
+            )
+        }
+    }
+}
 
 /// General metadata about an operator's execution
 #[derive(Debug, Clone, PartialEq, Default)]

@@ -113,7 +113,7 @@ fn main() -> Result<()> {
         println!("Input {} records:", batch.len());
         input_handle.append(&mut batch);
 
-        circuit.step()?;
+        circuit.transaction()?;
 
         output_handle
             .consolidate()

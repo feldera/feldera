@@ -141,12 +141,12 @@ where
     }
 }
 
-/// Given a tuple Tup1<(Option<K>, V)>, this aggregator that returns
+/// Given a tuple `Tup1<(Option<K>, V)>`, this aggregator that returns
 /// the smallest V for the smallest value K that is not None.  This is
 /// useful for implementing the SQL ARG_MIN operator.  Notice that the
 /// ARG_MIN(a, b) function returns the smallest a for the smallest b
 /// in the collection (it compares first on b); however, the compiler
-/// swaps the arguments when using this aggregator, so type Option<K>
+/// swaps the arguments when using this aggregator, so type `Option<K>`
 /// below is the type of b, and V is the type of A.  (This aggregator
 /// is used only when b is nullable, otherwise the regular Min
 /// aggregator is fine.)

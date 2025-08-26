@@ -14,7 +14,7 @@ use dyn_clone::clone_box;
 use crate::{
     algebra::{IndexedZSet, OrdIndexedZSet},
     dynamic::{DataTrait, DynPair, Factory, WeightTrait},
-    trace::{Batch, BatchReader, Cursor},
+    trace::{cursor::Position, Batch, BatchReader, Cursor},
 };
 use std::marker::PhantomData;
 
@@ -208,11 +208,14 @@ where
     }
 
     fn rewind_keys(&mut self) {
+        debug_assert!(self.cursor.key_valid() && self.cursor.val_valid());
+
         self.cursor.rewind_vals();
         self.cursor.val().fst().clone_to(&mut self.key);
     }
 
     fn fast_forward_keys(&mut self) {
+        debug_assert!(self.cursor.key_valid() && self.cursor.val_valid());
         self.cursor.fast_forward_vals();
         self.cursor.val().fst().clone_to(&mut self.key);
     }
@@ -235,6 +238,10 @@ where
 
     fn fast_forward_vals(&mut self) {
         unimplemented!()
+    }
+
+    fn position(&self) -> Option<Position> {
+        None
     }
 }
 

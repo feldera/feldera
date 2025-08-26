@@ -223,7 +223,7 @@ $ cat ../temp/src/lib.rs
 // Automatically-generated file
 
 [...boring stuff removed...]
-fn circuit(workers: usize) -> Result<(DBSPHandle, (CollectionHandle<Tup3<String, Option<i32>, Option<bool>>, Weight>, OutputHandle<OrdZSet<Tup1<String>, Weight>>, )), DbspError> {
+fn circuit(workers: usize) -> Result<(DBSPHandle, (CollectionHandle<Tup3<String, Option<i32>, Option<bool>>, Weight>, OutputHandle<SpineSnapshot<OrdZSet<Tup1<String>, Weight>>>, )), DbspError> {
 
     let (circuit, streams) = Runtime::init_circuit(workers, |circuit| {
         // CREATE TABLE `PERSON` (`NAME` VARCHAR NOT NULL, `AGE` INTEGER, `PRESENT` BOOLEAN)
@@ -299,7 +299,7 @@ fn circuit(workers: usize) -> Result<(DBSPHandle, (CollectionHandle<Tup3<String,
         serialize_table_record!(ADULT_0[1]{
             r#field["NAME"]: String
         });
-        let handleADULT = stream4.output();
+        let handleADULT = stream4.accumulate_output();
 
         Ok((handlePERSON, handleADULT, ))
     })?;
@@ -334,7 +334,7 @@ pub fn test() {
     // Second input has a count of "2"
     person.push( (SqlString::from_ref("Tom"), Some(20), Some(false)).into(), 2 );
     // Execute the circuit on these inputs
-    circuit.step().unwrap();
+    circuit.transaction().unwrap();
     // Read the produced output
     let out = adult.consolidate();
     // Print the produced output
@@ -367,14 +367,14 @@ difference between this circuit and the previous one is as follows:
 
 - For the non-incremental circuit, every time we supply an input
   value, the table `PERSONS` is cleared and filled with the supplied
-  value.  The `circuit.step()` function computes the contents of the
+  value.  The `circuit.transaction()` function computes the contents of the
   output view `ADULTS`.  Reading the output handle gives us the entire
   contents of this view.
 
 - For the incremental circuit, the `PERSONS` table is initially empty.
   Every time we supply an input it is *added* to the table.  (Input
   encoding formats such as [`JSON`](../formats/json) can also specify
-  *deletions* from the table.)  The `circuit.step()` function computes
+  *deletions* from the table.)  The `circuit.transaction()` function computes
   the *changes* to the output view `ADULTS`.  Reading the output
   handle gives us the latest *changes* to the contents of this view.
   Formats such as CSV cannot represent deletions, so they may be
@@ -409,7 +409,7 @@ pub fn test() {
     persons_stream.flush();
     // Execute the circuit on these inputs
     circuit
-        .step()
+        .transaction()
         .unwrap();
 
     let adult = &catalog
@@ -418,7 +418,7 @@ pub fn test() {
         .delta_handle;
 
     // Read the produced output
-    let out = adult.consolidate();
+    let out = adult.concat().consolidate();
     // Print the produced output
     println!("{:?}", out);
 }

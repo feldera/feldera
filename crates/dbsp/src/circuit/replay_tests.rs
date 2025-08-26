@@ -6,6 +6,7 @@ use crate::{
         time_series::{RelOffset, RelRange},
         Max, Min,
     },
+    typed_batch::SpineSnapshot,
     utils::{Tup2, Tup3},
     CmpFunc, DBData, OrdZSet, OutputHandle, RootCircuit, Runtime, Stream, ZSetHandle, ZWeight,
 };
@@ -53,7 +54,7 @@ macro_rules! impl_test_data {
             $($t: DBData),*
         {
             type InputHandles = ($(ZSetHandle<$t>),*);
-            type OutputHandles = ($(OutputHandle<OrdZSet<$t>>),*);
+            type OutputHandles = ($(OutputHandle<SpineSnapshot<OrdZSet<$t>>>),*);
             type Chunk = ($(Vec<Tup2<$t, ZWeight>>),*);
             type ZSet = ($(OrdZSet<$t>),*);
 
@@ -64,7 +65,7 @@ macro_rules! impl_test_data {
             }
 
             fn read_outputs(handles: &Self::OutputHandles) -> Self::ZSet {
-                ($(handles.$name.consolidate()),*)
+                ($(SpineSnapshot::<OrdZSet<$t>>::concat(&handles.$name.take_from_all()).consolidate()),*)
             }
         }
     };
@@ -93,7 +94,7 @@ where
     T1: DBData,
 {
     type InputHandles = ZSetHandle<T1>;
-    type OutputHandles = OutputHandle<OrdZSet<T1>>;
+    type OutputHandles = OutputHandle<SpineSnapshot<OrdZSet<T1>>>;
     type Chunk = Vec<Tup2<T1, ZWeight>>;
     type ZSet = OrdZSet<T1>;
 
@@ -102,7 +103,7 @@ where
     }
 
     fn read_outputs(handles: &Self::OutputHandles) -> Self::ZSet {
-        handles.consolidate()
+        SpineSnapshot::<OrdZSet<T1>>::concat(&handles.take_from_all()).consolidate()
     }
 }
 
@@ -205,7 +206,7 @@ fn test_replay<I1, I2, I3, O1, O2, O3>(
             I1::push_inputs(data1.clone(), &input_handles1);
             I2::push_inputs(data2.clone(), &input_handles2);
 
-            circuit.step().unwrap();
+            circuit.transaction().unwrap();
 
             reference_output1.push(O1::read_outputs(&output_handles1));
             reference_output2.push(O2::read_outputs(&output_handles2));
@@ -214,7 +215,7 @@ fn test_replay<I1, I2, I3, O1, O2, O3>(
         for data2 in inputs2_2.iter() {
             I2::push_inputs(data2.clone(), &input_handles2);
 
-            circuit.step().unwrap();
+            circuit.transaction().unwrap();
 
             reference_output2.push(O2::read_outputs(&output_handles2));
         }
@@ -231,7 +232,7 @@ fn test_replay<I1, I2, I3, O1, O2, O3>(
         for data2 in inputs2_1.iter() {
             I2::push_inputs(data2.clone(), &input_handles2);
 
-            circuit.step().unwrap();
+            circuit.transaction().unwrap();
 
             reference_output2_2.push(O2::read_outputs(&output_handles2));
         }
@@ -240,7 +241,7 @@ fn test_replay<I1, I2, I3, O1, O2, O3>(
             I2::push_inputs(data2.clone(), &input_handles2);
             I3::push_inputs(data3.clone(), &input_handles3);
 
-            circuit.step().unwrap();
+            circuit.transaction().unwrap();
 
             reference_output2_2.push(O2::read_outputs(&output_handles2));
             reference_output3.push(O3::read_outputs(&output_handles3));
@@ -271,14 +272,14 @@ fn test_replay<I1, I2, I3, O1, O2, O3>(
             I1::push_inputs(data1.clone(), &input_handles1);
             I2::push_inputs(data2.clone(), &input_handles2);
 
-            circuit.step().unwrap();
+            circuit.transaction().unwrap();
 
             actual_output1.push(O1::read_outputs(&output_handles1));
             actual_output2.push(O2::read_outputs(&output_handles2));
         }
 
         // Checkpoint.
-        let checkpoint = circuit.commit().unwrap();
+        let checkpoint = circuit.checkpoint().unwrap();
         circuit.kill().unwrap();
         checkpoint
     };
@@ -301,7 +302,7 @@ fn test_replay<I1, I2, I3, O1, O2, O3>(
             .unwrap();
 
         while circuit.bootstrap_in_progress() {
-            circuit.step().unwrap();
+            circuit.transaction().unwrap();
         }
         println!("Replay finished");
 
@@ -310,7 +311,7 @@ fn test_replay<I1, I2, I3, O1, O2, O3>(
             I2::push_inputs(data2.clone(), &input_handles2);
             I3::push_inputs(data3.clone(), &input_handles3);
 
-            circuit.step().unwrap();
+            circuit.transaction().unwrap();
 
             actual_output2.push(O2::read_outputs(&output_handles2));
             actual_output3.push(O3::read_outputs(&output_handles3));
@@ -341,22 +342,32 @@ fn chain(from: u64, to: u64) -> Vec<Vec<Tup2<Tup2<u64, u64>, ZWeight>>> {
 // No state to checkpoint or replay.
 fn linear_circuit1(
     circuit: &mut RootCircuit,
-) -> (ZSetHandle<u64>, (), OutputHandle<OrdZSet<u64>>, ()) {
+) -> (
+    ZSetHandle<u64>,
+    (),
+    OutputHandle<SpineSnapshot<OrdZSet<u64>>>,
+    (),
+) {
     let (input_stream, input_handle) = circuit.add_input_zset::<u64>();
     let output_handle = input_stream
         .map(|x| x % 1000)
-        .output_persistent(Some("output1"));
+        .accumulate_output_persistent(Some("output1"));
 
     (input_handle, (), output_handle, ())
 }
 
 fn linear_circuit2(
     circuit: &mut RootCircuit,
-) -> ((), ZSetHandle<u64>, (), OutputHandle<OrdZSet<u64>>) {
+) -> (
+    (),
+    ZSetHandle<u64>,
+    (),
+    OutputHandle<SpineSnapshot<OrdZSet<u64>>>,
+) {
     let (input_stream, input_handle) = circuit.add_input_zset::<u64>();
     let output_handle = input_stream
         .map(|x| x >> 1)
-        .output_persistent(Some("output2"));
+        .accumulate_output_persistent(Some("output2"));
 
     ((), input_handle, (), output_handle)
 }
@@ -392,8 +403,8 @@ fn linear_circuit_materialized_inputs1(
 ) -> (
     ZSetHandle<u64>,
     ZSetHandle<u64>,
-    OutputHandle<OrdZSet<u64>>,
-    OutputHandle<OrdZSet<u64>>,
+    OutputHandle<SpineSnapshot<OrdZSet<u64>>>,
+    OutputHandle<SpineSnapshot<OrdZSet<u64>>>,
 ) {
     let (input_stream1, input_handle1) = circuit.add_input_zset::<u64>();
     input_stream1.set_persistent_id(Some("input1"));
@@ -407,11 +418,11 @@ fn linear_circuit_materialized_inputs1(
 
     let output_handle1 = input_stream1
         .map(|x| x % 1000)
-        .output_persistent(Some("output1"));
+        .accumulate_output_persistent(Some("output1"));
 
     let output_handle2 = input_stream2
         .map(|x| x + 5)
-        .output_persistent(Some("output2"));
+        .accumulate_output_persistent(Some("output2"));
 
     (input_handle1, input_handle2, output_handle1, output_handle2)
 }
@@ -421,8 +432,8 @@ fn linear_circuit_materialized_inputs2(
 ) -> (
     ZSetHandle<u64>,
     ZSetHandle<u64>,
-    OutputHandle<OrdZSet<u64>>,
-    OutputHandle<OrdZSet<u64>>,
+    OutputHandle<SpineSnapshot<OrdZSet<u64>>>,
+    OutputHandle<SpineSnapshot<OrdZSet<u64>>>,
 ) {
     let (input_stream2, input_handle2) = circuit.add_input_zset::<u64>();
     input_stream2.set_persistent_id(Some("input2"));
@@ -435,11 +446,11 @@ fn linear_circuit_materialized_inputs2(
 
     let output_handle2 = input_stream2
         .map(|x| x + 5)
-        .output_persistent(Some("output2"));
+        .accumulate_output_persistent(Some("output2"));
 
     let output_handle3 = input_stream3
         .map(|x| x >> 1)
-        .output_persistent(Some("output3"));
+        .accumulate_output_persistent(Some("output3"));
 
     (input_handle2, input_handle3, output_handle2, output_handle3)
 }
@@ -482,7 +493,10 @@ fn linear_circuit_materialized_inputs1_2(
 ) -> (
     ZSetHandle<u64>,
     ZSetHandle<u64>,
-    (OutputHandle<OrdZSet<u64>>, OutputHandle<OrdZSet<u64>>),
+    (
+        OutputHandle<SpineSnapshot<OrdZSet<u64>>>,
+        OutputHandle<SpineSnapshot<OrdZSet<u64>>>,
+    ),
     (),
 ) {
     let (input_stream1, input_handle1) = circuit.add_input_zset::<u64>();
@@ -497,11 +511,11 @@ fn linear_circuit_materialized_inputs1_2(
 
     let output_handle1 = input_stream1
         .map(|x| x % 1000)
-        .output_persistent(Some("output1"));
+        .accumulate_output_persistent(Some("output1"));
 
     let output_handle2 = input_stream2
         .map(|x| x + 5)
-        .output_persistent(Some("output2"));
+        .accumulate_output_persistent(Some("output2"));
 
     (
         input_handle1,
@@ -517,7 +531,10 @@ fn linear_circuit_materialized_inputs2_2(
     ZSetHandle<u64>,
     ZSetHandle<u64>,
     (),
-    (OutputHandle<OrdZSet<u64>>, OutputHandle<OrdZSet<u64>>),
+    (
+        OutputHandle<SpineSnapshot<OrdZSet<u64>>>,
+        OutputHandle<SpineSnapshot<OrdZSet<u64>>>,
+    ),
 ) {
     let (input_stream2, input_handle2) = circuit.add_input_zset::<u64>();
     input_stream2.set_persistent_id(Some("input2"));
@@ -530,11 +547,11 @@ fn linear_circuit_materialized_inputs2_2(
 
     let output_handle2 = input_stream2
         .map(|x| x + 5)
-        .output_persistent(Some("output2_2"));
+        .accumulate_output_persistent(Some("output2_2"));
 
     let output_handle3 = input_stream3
         .map(|x| x >> 1)
-        .output_persistent(Some("output3"));
+        .accumulate_output_persistent(Some("output3"));
 
     (
         input_handle2,
@@ -585,7 +602,7 @@ fn join_circuit1(
     (),
     (ZSetHandle<u64>, ZSetHandle<u64>),
     (),
-    OutputHandle<OrdZSet<u64>>,
+    OutputHandle<SpineSnapshot<OrdZSet<u64>>>,
 ) {
     let (input_stream1, input_handle1) = circuit.add_input_zset::<u64>();
     input_stream1.set_persistent_id(Some("input1"));
@@ -606,7 +623,7 @@ fn join_circuit1(
 
     let output_handle1 = input_stream1_indexed
         .join(&input_stream2_indexed, |key, _v1, _v2| *key)
-        .output_persistent(Some("output1"));
+        .accumulate_output_persistent(Some("output1"));
 
     ((), (input_handle1, input_handle2), (), output_handle1)
 }
@@ -616,8 +633,8 @@ fn join_circuit2(
 ) -> (
     (ZSetHandle<u64>, ZSetHandle<u64>),
     ZSetHandle<u64>,
-    OutputHandle<OrdZSet<u64>>,
-    OutputHandle<OrdZSet<u64>>,
+    OutputHandle<SpineSnapshot<OrdZSet<u64>>>,
+    OutputHandle<SpineSnapshot<OrdZSet<u64>>>,
 ) {
     let (input_stream1, input_handle1) = circuit.add_input_zset::<u64>();
     input_stream1.set_persistent_id(Some("input1"));
@@ -645,11 +662,11 @@ fn join_circuit2(
 
     let output_handle1 = input_stream1_indexed
         .join(&input_stream2_indexed, |key, _v1, _v2| *key)
-        .output_persistent(Some("output1"));
+        .accumulate_output_persistent(Some("output1"));
 
     let output_handle2 = input_stream2_indexed
         .join(&input_stream3_indexed, |key, _v1, _v2| *key)
-        .output_persistent(Some("output2"));
+        .accumulate_output_persistent(Some("output2"));
 
     (
         (input_handle1, input_handle2),
@@ -685,7 +702,12 @@ fn test_join_circuit() {
 //
 fn aggregate_circuit1(
     circuit: &mut RootCircuit,
-) -> ((), ZSetHandle<u64>, (), OutputHandle<OrdZSet<u64>>) {
+) -> (
+    (),
+    ZSetHandle<u64>,
+    (),
+    OutputHandle<SpineSnapshot<OrdZSet<u64>>>,
+) {
     let (input_stream1, input_handle1) = circuit.add_input_zset::<u64>();
     input_stream1.set_persistent_id(Some("input1"));
 
@@ -703,7 +725,7 @@ fn aggregate_circuit1(
         .map(|(_k, v)| *v)
         .set_persistent_id(Some("aggregate1_flat"));
 
-    let output_handle1 = aggregate1_flat.output_persistent(Some("output1"));
+    let output_handle1 = aggregate1_flat.accumulate_output_persistent(Some("output1"));
 
     ((), input_handle1, (), output_handle1)
 }
@@ -713,8 +735,11 @@ fn aggregate_circuit2(
 ) -> (
     ZSetHandle<u64>,
     (),
-    OutputHandle<OrdZSet<u64>>,
-    (OutputHandle<OrdZSet<u64>>, OutputHandle<OrdZSet<u64>>),
+    OutputHandle<SpineSnapshot<OrdZSet<u64>>>,
+    (
+        OutputHandle<SpineSnapshot<OrdZSet<u64>>>,
+        OutputHandle<SpineSnapshot<OrdZSet<u64>>>,
+    ),
 ) {
     let (input_stream1, input_handle1) = circuit.add_input_zset::<u64>();
     input_stream1.set_persistent_id(Some("input1"));
@@ -749,9 +774,9 @@ fn aggregate_circuit2(
         .map(|(_k, v)| *v)
         .set_persistent_id(Some("aggregate3_flat"));
 
-    let output_handle1 = aggregate1_flat.output_persistent(Some("output1"));
-    let output_handle2 = aggregate2_flat.output_persistent(Some("output2"));
-    let output_handle3 = aggregate3_flat.output_persistent(Some("output3"));
+    let output_handle1 = aggregate1_flat.accumulate_output_persistent(Some("output1"));
+    let output_handle2 = aggregate2_flat.accumulate_output_persistent(Some("output2"));
+    let output_handle3 = aggregate3_flat.accumulate_output_persistent(Some("output3"));
 
     (
         input_handle1,
@@ -791,7 +816,7 @@ fn recursive_circuit1(
     (),
     ZSetHandle<Tup2<u64, u64>>,
     (),
-    OutputHandle<OrdZSet<Tup2<u64, u64>>>,
+    OutputHandle<SpineSnapshot<OrdZSet<Tup2<u64, u64>>>>,
 ) {
     let (input_stream1, input_handle1) = circuit.add_input_zset::<Tup2<u64, u64>>();
     input_stream1.set_persistent_id(Some("input1"));
@@ -809,7 +834,7 @@ fn recursive_circuit1(
         })
         .unwrap();
 
-    let output_handle1 = paths.output_persistent(Some("output1"));
+    let output_handle1 = paths.accumulate_output_persistent(Some("output1"));
 
     ((), input_handle1, (), output_handle1)
 }
@@ -819,8 +844,8 @@ fn recursive_circuit2(
 ) -> (
     ZSetHandle<Tup2<u64, u64>>,
     (),
-    OutputHandle<OrdZSet<Tup2<u64, u64>>>,
-    OutputHandle<OrdZSet<Tup2<u64, u64>>>,
+    OutputHandle<SpineSnapshot<OrdZSet<Tup2<u64, u64>>>>,
+    OutputHandle<SpineSnapshot<OrdZSet<Tup2<u64, u64>>>>,
 ) {
     let (input_stream1, input_handle1) = circuit.add_input_zset::<Tup2<u64, u64>>();
     input_stream1.set_persistent_id(Some("input1"));
@@ -838,8 +863,8 @@ fn recursive_circuit2(
         })
         .unwrap();
 
-    let output_handle1 = paths.output_persistent(Some("output1"));
-    let output_handle2 = paths.output_persistent(Some("output2"));
+    let output_handle1 = paths.accumulate_output_persistent(Some("output1"));
+    let output_handle2 = paths.accumulate_output_persistent(Some("output2"));
 
     (input_handle1, (), output_handle1, output_handle2)
 }
@@ -890,7 +915,7 @@ fn lag_circuit1(
     (),
     ZSetHandle<u64>,
     (),
-    OutputHandle<OrdZSet<Tup2<u64, u64>>>,
+    OutputHandle<SpineSnapshot<OrdZSet<Tup2<u64, u64>>>>,
 ) {
     let (input_stream1, input_handle1) = circuit.add_input_zset::<u64>();
     input_stream1.set_persistent_id(Some("input1"));
@@ -912,7 +937,7 @@ fn lag_circuit1(
 
     let lag1_flat = lag1.map(|(_k, v)| *v).set_persistent_id(Some("lag1_flat"));
 
-    let output_handle1 = lag1_flat.output_persistent(Some("output1"));
+    let output_handle1 = lag1_flat.accumulate_output_persistent(Some("output1"));
 
     ((), input_handle1, (), output_handle1)
 }
@@ -922,10 +947,10 @@ fn lag_circuit2(
 ) -> (
     ZSetHandle<u64>,
     (),
-    OutputHandle<OrdZSet<Tup2<u64, u64>>>,
+    OutputHandle<SpineSnapshot<OrdZSet<Tup2<u64, u64>>>>,
     (
-        OutputHandle<OrdZSet<Tup3<u64, u64, u64>>>,
-        OutputHandle<OrdZSet<Tup2<u64, u64>>>,
+        OutputHandle<SpineSnapshot<OrdZSet<Tup3<u64, u64, u64>>>>,
+        OutputHandle<SpineSnapshot<OrdZSet<Tup2<u64, u64>>>>,
     ),
 ) {
     let (input_stream1, input_handle1) = circuit.add_input_zset::<u64>();
@@ -970,9 +995,9 @@ fn lag_circuit2(
 
     let lag3_flat = lag3.map(|(_k, v)| *v).set_persistent_id(Some("lag3_flat"));
 
-    let output_handle1 = lag1_flat.output_persistent(Some("output1"));
-    let output_handle2 = lag2_flat.output_persistent(Some("output2"));
-    let output_handle3 = lag3_flat.output_persistent(Some("output3"));
+    let output_handle1 = lag1_flat.accumulate_output_persistent(Some("output1"));
+    let output_handle2 = lag2_flat.accumulate_output_persistent(Some("output2"));
+    let output_handle3 = lag3_flat.accumulate_output_persistent(Some("output3"));
 
     (
         input_handle1,
@@ -1018,8 +1043,8 @@ fn rolling_circuit1(
 ) -> (
     (),
     ZSetHandle<u64>,
-    OutputHandle<OrdZSet<Tup2<u64, Option<u64>>>>,
-    OutputHandle<OrdZSet<Tup2<u64, Option<u64>>>>,
+    OutputHandle<SpineSnapshot<OrdZSet<Tup2<u64, Option<u64>>>>>,
+    OutputHandle<SpineSnapshot<OrdZSet<Tup2<u64, Option<u64>>>>>,
 ) {
     let (input_stream1, input_handle1) = circuit.add_input_zset::<u64>();
     input_stream1.set_persistent_id(Some("input1"));
@@ -1044,7 +1069,7 @@ fn rolling_circuit1(
         .map(|(_k, v)| *v)
         .set_persistent_id(Some("rolling1_flat"));
 
-    let output_handle1 = rolling1_flat.output_persistent(Some("output1"));
+    let output_handle1 = rolling1_flat.accumulate_output_persistent(Some("output1"));
 
     let rolling2 = input_stream1_indexed
         .partitioned_rolling_aggregate_persistent(
@@ -1060,7 +1085,7 @@ fn rolling_circuit1(
         .map(|(_k, v)| *v)
         .set_persistent_id(Some("rolling2_flat"));
 
-    let output_handle2 = rolling2_flat.output_persistent(Some("output2"));
+    let output_handle2 = rolling2_flat.accumulate_output_persistent(Some("output2"));
 
     ((), input_handle1, output_handle1, output_handle2)
 }
@@ -1070,10 +1095,10 @@ fn rolling_circuit2(
 ) -> (
     ZSetHandle<u64>,
     (),
-    OutputHandle<OrdZSet<Tup2<u64, Option<u64>>>>,
+    OutputHandle<SpineSnapshot<OrdZSet<Tup2<u64, Option<u64>>>>>,
     (
-        OutputHandle<OrdZSet<Tup2<u64, Option<u64>>>>,
-        OutputHandle<OrdZSet<Tup2<u64, Option<u64>>>>,
+        OutputHandle<SpineSnapshot<OrdZSet<Tup2<u64, Option<u64>>>>>,
+        OutputHandle<SpineSnapshot<OrdZSet<Tup2<u64, Option<u64>>>>>,
     ),
 ) {
     let (input_stream1, input_handle1) = circuit.add_input_zset::<u64>();
@@ -1099,7 +1124,7 @@ fn rolling_circuit2(
         .map(|(_k, v)| *v)
         .set_persistent_id(Some("rolling2_flat"));
 
-    let output_handle2 = rolling2_flat.output_persistent(Some("output2"));
+    let output_handle2 = rolling2_flat.accumulate_output_persistent(Some("output2"));
 
     let rolling3 = rolling2_flat
         .map_index(|Tup2(x, y)| (*x, Tup2(*x, *y)))
@@ -1116,7 +1141,7 @@ fn rolling_circuit2(
         .map(|(_k, v)| *v)
         .set_persistent_id(Some("rolling3_flat"));
 
-    let output_handle3 = rolling3_flat.output_persistent(Some("output3"));
+    let output_handle3 = rolling3_flat.accumulate_output_persistent(Some("output3"));
 
     let rolling4 = input_stream1_indexed
         .partitioned_rolling_aggregate_persistent(
@@ -1132,7 +1157,7 @@ fn rolling_circuit2(
         .map(|(_k, v)| *v)
         .set_persistent_id(Some("rolling4_flat"));
 
-    let output_handle4 = rolling4_flat.output_persistent(Some("output4"));
+    let output_handle4 = rolling4_flat.accumulate_output_persistent(Some("output4"));
 
     (
         input_handle1,

@@ -52,7 +52,7 @@ fn main() -> Result<()> {
     input_handle.append(&mut input_records);
 
     // Execute circuit.
-    circuit.step()?;
+    circuit.transaction()?;
 
     // ...read output from circuit...
     Ok(())

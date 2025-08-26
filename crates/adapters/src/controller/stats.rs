@@ -45,7 +45,7 @@ use base64::{prelude::BASE64_URL_SAFE_NO_PAD, Engine};
 use bytemuck::NoUninit;
 use chrono::{DateTime, Utc};
 use cpu_time::ProcessTime;
-use crossbeam::sync::{ShardedLock, ShardedLockReadGuard, Unparker};
+use crossbeam::sync::Unparker;
 use feldera_adapterlib::{
     errors::journal::ControllerError,
     format::BufferSize,
@@ -55,8 +55,10 @@ use feldera_types::{
     config::{FtModel, PipelineConfig},
     suspend::SuspendError,
     time_series::SampleStatistics,
+    transaction::TransactionId,
 };
 use memory_stats::memory_stats;
+use parking_lot::{RwLock, RwLockReadGuard};
 use serde::{Deserialize, Serialize, Serializer};
 use std::{
     cmp::min,
@@ -119,6 +121,18 @@ impl CompletionToken {
     }
 }
 
+/// Transaction status summarized as a single value.
+#[derive(Debug, Default, Copy, PartialEq, Eq, Clone, Serialize, NoUninit)]
+#[repr(u8)]
+pub enum TransactionStatus {
+    #[default]
+    None,
+    TransactionStarting,
+    TransactionInProgress,
+    CommitRequested,
+    CommitInProgress,
+}
+
 #[derive(Default, Serialize)]
 pub struct GlobalControllerMetrics {
     /// State of the pipeline: running, paused, or terminating.
@@ -128,6 +142,12 @@ pub struct GlobalControllerMetrics {
     /// The pipeline has been resumed from a checkpoint and is currently bootstrapping
     /// new and modified views.
     bootstrap_in_progress: AtomicBool,
+
+    #[serde(serialize_with = "serialize_atomic")]
+    pub transaction_status: Atomic<TransactionStatus>,
+
+    #[serde(serialize_with = "serialize_atomic")]
+    pub transaction_id: Atomic<TransactionId>,
 
     /// Resident set size of the pipeline process, in bytes.
     // This field is computed on-demand by calling `ControllerStatus::update`.
@@ -252,6 +272,8 @@ impl GlobalControllerMetrics {
         Self {
             state: Atomic::new(PipelineState::Paused),
             bootstrap_in_progress: AtomicBool::new(false),
+            transaction_id: Atomic::new(0),
+            transaction_status: Atomic::new(TransactionStatus::None),
             rss_bytes: AtomicU64::new(0),
             cpu_msecs: AtomicU64::new(0),
             uptime_msecs: AtomicU64::new(0),
@@ -369,15 +391,15 @@ impl GlobalControllerMetrics {
 // Write access is only required when adding or removing an endpoint.
 // Regular stats updates only require a read lock thanks to the use of
 // atomics.
-type InputsStatus = ShardedLock<BTreeMap<EndpointId, InputEndpointStatus>>;
-type OutputsStatus = ShardedLock<BTreeMap<EndpointId, OutputEndpointStatus>>;
+type InputsStatus = RwLock<BTreeMap<EndpointId, InputEndpointStatus>>;
+type OutputsStatus = RwLock<BTreeMap<EndpointId, OutputEndpointStatus>>;
 
 // Serialize inputs as a vector of `InputEndpointStatus`.
 fn serialize_inputs<S>(inputs: &InputsStatus, serializer: S) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
 {
-    let inputs = inputs.read().unwrap();
+    let inputs = inputs.read_recursive();
     let mut inputs = inputs.values().collect::<Vec<_>>();
     inputs.sort_by(|ep1, ep2| ep1.endpoint_name.cmp(&ep2.endpoint_name));
     inputs.serialize(serializer)
@@ -388,7 +410,7 @@ fn serialize_outputs<S>(outputs: &OutputsStatus, serializer: S) -> Result<S::Ok,
 where
     S: Serializer,
 {
-    let outputs = outputs.read().unwrap();
+    let outputs = outputs.read_recursive();
     let mut outputs = outputs.values().collect::<Vec<_>>();
     outputs.sort_by(|ep1, ep2| ep1.endpoint_name.cmp(&ep2.endpoint_name));
     outputs.serialize(serializer)
@@ -439,8 +461,8 @@ impl ControllerStatus {
             time_series: Mutex::new(VecDeque::with_capacity(60)),
             time_series_notifier,
             suspend_error: Mutex::new(None),
-            inputs: ShardedLock::new(BTreeMap::new()),
-            outputs: ShardedLock::new(BTreeMap::new()),
+            inputs: RwLock::new(BTreeMap::new()),
+            outputs: RwLock::new(BTreeMap::new()),
         }
     }
 
@@ -507,9 +529,7 @@ impl ControllerStatus {
     /// previously paused.
     pub fn set_input_endpoint_paused(&self, endpoint: &EndpointId, paused: bool) -> Option<bool> {
         Some(
-            self.inputs
-                .read()
-                .unwrap()
+            self.input_status()
                 .get(endpoint)?
                 .paused
                 .swap(paused, Ordering::Release),
@@ -529,13 +549,7 @@ impl ControllerStatus {
     }
 
     pub fn is_input_endpoint_paused(&self, endpoint: &EndpointId) -> Option<bool> {
-        Some(
-            self.inputs
-                .read()
-                .unwrap()
-                .get(endpoint)?
-                .is_paused_by_user(),
-        )
+        Some(self.input_status().get(endpoint)?.is_paused_by_user())
     }
 
     /// Invoked when one of the input endpoints has finished processing
@@ -544,7 +558,7 @@ impl ControllerStatus {
     pub fn start_dependencies(&self, backpressure_thread_unparker: &Unparker) {
         let mut endpoints_to_start: Vec<EndpointId> = Vec::new();
 
-        let inputs = self.inputs.read().unwrap();
+        let inputs = self.input_status();
 
         let mut unfinished_labels = BTreeSet::new();
         for input in inputs.values() {
@@ -580,11 +594,11 @@ impl ControllerStatus {
     }
 
     pub fn remove_input(&self, endpoint_id: &EndpointId) -> Option<InputEndpointStatus> {
-        self.inputs.write().unwrap().remove(endpoint_id)
+        self.inputs.write().remove(endpoint_id)
     }
 
     pub fn remove_output(&self, endpoint_id: &EndpointId) {
-        self.outputs.write().unwrap().remove(endpoint_id);
+        self.outputs.write().remove(endpoint_id);
     }
 
     /// Initialize stats for a new output endpoint.
@@ -602,7 +616,7 @@ impl ControllerStatus {
             .global_metrics
             .total_processed_records
             .load(Ordering::Acquire);
-        self.outputs.write().unwrap().insert(
+        self.outputs.write().insert(
             *endpoint_id,
             OutputEndpointStatus::new(
                 endpoint_name,
@@ -658,6 +672,13 @@ impl ControllerStatus {
             .set_bootstrap_in_progress(bootstrap_in_progress);
     }
 
+    pub fn transaction_in_progress(&self) -> bool {
+        self.global_metrics
+            .transaction_status
+            .load(Ordering::Acquire)
+            != TransactionStatus::None
+    }
+
     pub fn request_step(&self, circuit_thread_unparker: &Unparker) {
         let old = self.global_metrics.set_step_requested();
         if !old {
@@ -666,22 +687,20 @@ impl ControllerStatus {
     }
 
     /// Input endpoint stats.
-    pub fn input_status(&self) -> ShardedLockReadGuard<BTreeMap<EndpointId, InputEndpointStatus>> {
-        self.inputs.read().unwrap()
+    pub fn input_status(&self) -> RwLockReadGuard<BTreeMap<EndpointId, InputEndpointStatus>> {
+        self.inputs.read_recursive()
     }
 
     /// Output endpoint stats.
-    pub fn output_status(
-        &self,
-    ) -> ShardedLockReadGuard<BTreeMap<EndpointId, OutputEndpointStatus>> {
-        self.outputs.read().unwrap()
+    pub fn output_status(&self) -> RwLockReadGuard<BTreeMap<EndpointId, OutputEndpointStatus>> {
+        self.outputs.read_recursive()
     }
 
     /// Number of records buffered by the endpoint or 0 if the endpoint
     /// doesn't exist (the latter is possible if the endpoint is being
     /// destroyed).
     pub fn num_input_endpoint_buffered_records(&self, endpoint_id: &EndpointId) -> u64 {
-        match &self.inputs.read().unwrap().get(endpoint_id) {
+        match &self.input_status().get(endpoint_id) {
             None => 0,
             Some(endpoint_stats) => endpoint_stats
                 .metrics
@@ -710,7 +729,7 @@ impl ControllerStatus {
             .total_processed_records
             .load(Ordering::Acquire);
 
-        for output_ep in self.outputs.read().unwrap().values() {
+        for output_ep in self.output_status().values() {
             total_completed_records = min(
                 total_completed_records,
                 output_ep.num_total_processed_input_records(),
@@ -806,7 +825,7 @@ impl ControllerStatus {
         // There is a potential race condition if the endpoint is currently
         // being removed. In this case, it's safe to ignore this operation.
         if !amt.is_empty() {
-            let inputs = self.inputs.read().unwrap();
+            let inputs = self.input_status();
             if let Some(endpoint_stats) = inputs.get(&endpoint_id) {
                 let old = endpoint_stats.add_buffered(amt);
                 let threshold = endpoint_stats.config.connector_config.max_queued_records;
@@ -841,7 +860,7 @@ impl ControllerStatus {
 
         // Update endpoint counters, no need to wake up the backpressure thread since we
         // won't see any more inputs from this endpoint.
-        let inputs = self.inputs.read().unwrap();
+        let inputs = self.input_status();
         if let Some(endpoint_stats) = inputs.get(&endpoint_id) {
             endpoint_stats.eoi();
             finished = endpoint_stats.finished();
@@ -865,7 +884,7 @@ impl ControllerStatus {
         step_results: StepResults,
         backpressure_thread_unparker: &Unparker,
     ) {
-        let inputs = self.inputs.read().unwrap();
+        let inputs = self.input_status();
         self.global_metrics
             .consume_buffered_inputs(step_results.amt);
 
@@ -911,10 +930,12 @@ impl ControllerStatus {
         };
     }
 
+    /// `total_processed_records` is the total number of records processed by the circuit
+    /// before this output batch was produced or `None` if the circuit is executing a transaction.
     pub fn output_batch(
         &self,
         endpoint_id: EndpointId,
-        total_processed_records: u64,
+        total_processed_records: Option<u64>,
         num_records: usize,
         circuit_thread_unparker: &Unparker,
     ) {
@@ -1666,10 +1687,12 @@ impl OutputEndpointStatus {
 
     /// A batch has been pushed to the output transport directly from the queue,
     /// bypassing the buffer.
-    fn output_batch(&self, total_processed_input_records: u64, num_records: usize) -> u64 {
-        self.metrics
-            .total_processed_input_records
-            .store(total_processed_input_records, Ordering::Release);
+    fn output_batch(&self, total_processed_input_records: Option<u64>, num_records: usize) -> u64 {
+        if let Some(total_processed_input_records) = total_processed_input_records {
+            self.metrics
+                .total_processed_input_records
+                .store(total_processed_input_records, Ordering::Release);
+        }
 
         let old = self
             .metrics
@@ -1685,7 +1708,10 @@ impl OutputEndpointStatus {
         self.metrics
             .buffered_records
             .fetch_add(num_records as u64, Ordering::AcqRel);
-        self.metrics.buffered_batches.fetch_add(1, Ordering::AcqRel);
+        // Don't count empty batches.
+        if num_records > 0 {
+            self.metrics.buffered_batches.fetch_add(1, Ordering::AcqRel);
+        }
 
         let old = self
             .metrics

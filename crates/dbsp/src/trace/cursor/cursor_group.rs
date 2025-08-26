@@ -2,6 +2,7 @@ use std::marker::PhantomData;
 
 use crate::{
     dynamic::{DataTrait, DynUnit, Erase, Factory, WeightTrait},
+    trace::cursor::Position,
     Timestamp,
 };
 
@@ -168,5 +169,9 @@ where
 
     fn fast_forward_vals(&mut self) {
         self.val_valid = true;
+    }
+
+    fn position(&self) -> Option<Position> {
+        None
     }
 }

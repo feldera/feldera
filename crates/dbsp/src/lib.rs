@@ -97,7 +97,7 @@ pub use algebra::{DynZWeight, ZWeight};
 
 pub use circuit::{
     ChildCircuit, Circuit, CircuitHandle, DBSPHandle, NestedCircuit, RootCircuit, Runtime,
-    RuntimeError, SchedulerError, Stream,
+    RuntimeError, SchedulerError, Stream, WeakRuntime,
 };
 #[cfg(not(feature = "backend-mode"))]
 pub use operator::FilterMap;
@@ -105,7 +105,7 @@ pub use operator::{
     input::{IndexedZSetHandle, InputHandle, MapHandle, SetHandle, ZSetHandle},
     CmpFunc, OrdPartitionedIndexedZSet, OutputHandle,
 };
-pub use trace::{DBData, DBWeight};
+pub use trace::{cursor::Position, DBData, DBWeight};
 pub use typed_batch::{
     Batch, BatchReader, FallbackKeyBatch, FallbackValBatch, FallbackWSet, FallbackZSet,
     FileIndexedWSet, FileIndexedZSet, FileKeyBatch, FileValBatch, FileWSet, FileZSet, IndexedZSet,
