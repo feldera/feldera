@@ -98,10 +98,12 @@
         // =============
         'Provisioning',
         'Initializing',
+        'Standby',
+        'Bootstrapping',
+        'Replaying',
         'Running',
         'Pausing',
         'Paused',
-        'Suspending',
         'Resuming',
         'Unavailable',
         () => true
