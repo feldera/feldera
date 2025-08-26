@@ -20,12 +20,12 @@ use actix_web::{
     dev::{ServiceFactory, ServiceRequest},
     get,
     http::header,
+    http::StatusCode,
     post, rt,
     web::{self, Data as WebData, Payload, Query},
     App, Error as ActixError, HttpRequest, HttpResponse, HttpServer, Responder, ResponseError,
 };
 use async_stream;
-use awc::error::StatusCode;
 use chrono::Utc;
 use clap::Parser;
 use colored::{ColoredString, Colorize};
