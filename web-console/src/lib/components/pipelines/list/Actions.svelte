@@ -1,9 +1,48 @@
+<!--
+Pipeline Actions Component - Generic Multi-Action Dropdown System
+
+This component implements a flexible button/dropdown system for pipeline actions that automatically
+groups related actions into multi-action dropdowns when multiple options are available.
+
+## Architecture Overview:
+
+### 1. Action Processing Pipeline:
+   getRawActions() → processActionsForDropdowns() → render individual buttons or multi-action dropdowns
+
+### 2. Multi-Action Dropdown System:
+   - **Static Configuration**: `multiActionConfigs` defines dropdown metadata (aria labels, button classes)
+   - **Static Button Definitions**: `buttonConfigs` maps each action to complete button information
+   - **Dynamic Availability**: `availableStartButtons` & `availableStopButtons` determine which actions are available
+   - **Generic Rendering**: `_multiAction` snippet combines static config with derived availability
+
+### 3. Dropdown Logic:
+   - Start actions: Groups `_start`, `_start_paused`, `_resume` when multiple are available
+   - Stop actions: Groups `_stop`, `_kill`, `_pause` when multiple are available
+   - Prime button: First available action from each group, rendered using standalone button snippet
+   - Dropdown menu: All available actions with labels, descriptions, and click handlers
+
+### 4. Button Reuse:
+   - Prime buttons reuse existing standalone button snippets (`_start()`, `_pause()`, etc.)
+   - Dropdown achieves visual effect by placing chevron button adjacent to standalone button
+   - Ensures perfect consistency between standalone and dropdown representations
+
+### 5. Extensibility:
+   - Add new actions to `buttonConfigs` with `standaloneButton` reference
+   - Update `startActions`/`stopActions` arrays to include in dropdowns
+   - System automatically handles grouping and rendering
+
+## Key Benefits:
+- **Consistent UX**: Same actions work identically in standalone and dropdown contexts
+- **Responsive Design**: Automatically adapts based on available pipeline actions
+- **Easy Extension**: New action types require minimal configuration changes
+- **Clean Separation**: Static configuration, dynamic availability, and rendering logic are separate
+-->
+
 <script lang="ts">
   import {
     type ExtendedPipeline,
     type Pipeline,
-    type PipelineAction,
-    type PipelineStatus
+    type PipelineAction
   } from '$lib/services/pipelineManager'
   import { match, P } from 'ts-pattern'
   import DeleteDialog, { deleteDialogProps } from '$lib/components/dialogs/DeleteDialog.svelte'
@@ -23,7 +62,7 @@
   import { slide } from 'svelte/transition'
   import { useIsMobile } from '$lib/compositions/layout/useIsMobile.svelte'
   import { usePipelineAction } from '$lib/compositions/usePipelineAction.svelte'
-  import { useUpdatePipelineList } from '$lib/compositions/pipelines/usePipelineList.svelte'
+  import { usePipelineActionCallbacks } from '$lib/compositions/pipelines/usePipelineActionCallbacks.svelte'
 
   let {
     pipeline,
@@ -42,12 +81,11 @@
     onDeletePipeline?: (pipelineName: string) => void
     editConfigDisabled: boolean
     unsavedChanges: boolean
-    onActionSuccess?: (pipelineName: string, action: PipelineAction | 'start_paused_start') => void
+    onActionSuccess?: (pipelineName: string, action: PipelineAction) => void
     saveFile: () => void
     class?: string
   } = $props()
 
-  const { updatePipeline } = useUpdatePipelineList()
   const globalDialog = useGlobalDialog()
   const api = usePipelineManager()
   const deletePipeline = async (pipelineName: string) => {
@@ -62,11 +100,13 @@
     _start_paused,
     _start_error,
     _start_pending,
+    _resume,
     _pause,
     _kill_short,
     _kill,
     _stop,
     _multiStop,
+    _multiStart,
     _delete,
     _spacer_short,
     _spacer_long,
@@ -80,10 +120,16 @@
     _storage_indicator
   }
 
-  const active = $derived.by(() => {
-    return match(pipeline.current.status)
+  let isPremium = usePremiumFeatures()
+
+  const stopButtons = ((isPremium.value ? (['_stop', '_kill'] as const) : (['_kill', '_stop'] as const)))
+
+  // Helper function to get raw actions for current pipeline status
+  const getRawActions = (status: typeof pipeline.current.status) => {
+    return match(status)
       .returnType<(keyof typeof actions)[]>()
       .with('Stopped', () => [
+        '_start',
         '_start_paused',
         '_saveFile',
         '_configurations',
@@ -99,7 +145,7 @@
         '_delete'
       ])
       .with('Pausing', 'Resuming', () => [
-        '_multiStop',
+        ...stopButtons,
         '_spinner',
         '_saveFile',
         '_configurations',
@@ -107,7 +153,7 @@
         '_delete'
       ])
       .with('Unavailable', () => [
-        '_multiStop',
+        ...stopButtons,
         '_spacer_long',
         '_saveFile',
         '_configurations',
@@ -115,7 +161,7 @@
         '_delete'
       ])
       .with('Running', () => [
-        '_multiStop',
+        ...stopButtons,
         '_pause',
         '_saveFile',
         '_configurations',
@@ -123,14 +169,30 @@
         '_delete'
       ])
       .with('Paused', () => [
-        '_multiStop',
-        '_start',
+        ...stopButtons,
+        '_resume',
         '_saveFile',
         '_configurations',
         '_storage_indicator',
         '_delete'
       ])
-      .with('Suspending', () => [
+      .with('Standby', () => [
+        '_kill',
+        '_spinner',
+        '_saveFile',
+        '_configurations',
+        '_storage_indicator',
+        '_delete'
+      ])
+      .with('Bootstrapping', () => [
+        '_kill',
+        '_spinner',
+        '_saveFile',
+        '_configurations',
+        '_storage_indicator',
+        '_delete'
+      ])
+      .with('Replaying', () => [
         '_kill',
         '_spinner',
         '_saveFile',
@@ -169,7 +231,64 @@
         '_delete'
       ])
       .exhaustive()
+  }
+
+  // Define groupable actions
+  const startActions: (keyof typeof buttonConfigs)[] = ['_start', '_start_paused', '_pause']
+  const stopActions: (keyof typeof buttonConfigs)[] = ['_stop', '_kill']
+
+  // Derived lists of button names to display in each dropdown
+  const availableStartButtons = $derived.by(() => {
+    const rawActions = getRawActions(pipeline.current.status)
+    const buttons = rawActions.filter((action) =>
+      startActions.find((a) => a === action)
+    ) as (keyof typeof buttonConfigs)[]
+
+    return buttons
   })
+
+  const availableStopButtons = $derived.by(() => {
+    const rawActions = getRawActions(pipeline.current.status)
+    const buttons = rawActions.filter((action) =>
+      stopActions.find((a) => a === action)
+    ) as (keyof typeof buttonConfigs)[]
+
+    return buttons
+  })
+
+  const active = $derived.by(() => {
+    const rawActions = getRawActions(pipeline.current.status)
+    // Group actions into dropdowns
+    return processActionsForDropdowns(rawActions)
+  })
+
+  function processActionsForDropdowns(
+    rawActions: (keyof typeof actions)[]
+  ): (keyof typeof actions)[] {
+    let processedActions = [...rawActions]
+
+    if (availableStartButtons.length > 1) {
+      const firstStartIndex = processedActions.findIndex((action) =>
+        startActions.find((a) => a === action)
+      )
+      // Remove all start actions and replace the first one with _multiStart
+      processedActions = processedActions.filter(
+        (action) => !startActions.find((a) => a === action)
+      )
+      processedActions.splice(firstStartIndex, 0, '_multiStart')
+    }
+
+    if (availableStopButtons.length > 1) {
+      const firstStopIndex = processedActions.findIndex((action) =>
+        stopActions.find((a) => a === action)
+      )
+      // Remove all stop actions and replace the first one with _multiStop
+      processedActions = processedActions.filter((action) => !stopActions.find((a) => a === action))
+      processedActions.splice(firstStopIndex, 0, '_multiStop')
+    }
+
+    return processedActions
+  }
 
   const isMobile = useIsMobile()
 
@@ -182,21 +301,101 @@
   const importantBtnColor = 'preset-filled-primary-500'
 
   const { postPipelineAction } = usePipelineAction()
+  const pipelineActionCallbacks = usePipelineActionCallbacks()
+
   const performStartAction = async (
-    action: PipelineAction | 'start_paused_start',
+    action: PipelineAction,
     pipelineName: string,
-    nextStatus: PipelineStatus
+    // nextStatus: PipelineStatus
   ) => {
-    const { waitFor } = await postPipelineAction(
-      pipeline.current.name,
-      action === 'start_paused_start' ? 'start_paused' : action
-    )
-    pipeline.optimisticUpdate({ status: nextStatus })
-    updatePipeline(pipelineName, (p) => ({ ...p, status: nextStatus }))
+    const callbacks =
+      action === 'start'
+        ? {
+            onPausedReady: async (pipelineName: string) => {
+              const cbs = pipelineActionCallbacks.getAll(pipelineName, 'start_paused')
+              await Promise.allSettled(cbs.map((x) => x(pipelineName)))
+            }
+          }
+        : undefined
+
+    const { waitFor } = await postPipelineAction(pipeline.current.name, action, callbacks)
     waitFor().then(() => onActionSuccess?.(pipelineName, action), toastError)
   }
 
-  let isPremium = usePremiumFeatures()
+  // Static multi-action dropdown configurations
+  const multiActionConfigs = {
+    start: {
+      ariaLabel: 'See start options',
+      buttonClass: 'preset-filled-primary-500'
+    },
+    stop: {
+      ariaLabel: 'See stop options',
+      buttonClass: 'preset-filled-surface-100-900'
+    }
+  }
+
+  // Static button configurations for each action
+  const buttonConfigs = {
+    _start: {
+      label: 'Start',
+      description: 'Start the pipeline normally',
+      onclick: () => {
+        const pipelineName = pipeline.current.name
+        performStartAction('start', pipelineName)
+      },
+      disabled: () => unsavedChanges,
+      disabledText: 'Save First',
+      standaloneButton: _start
+    },
+    _start_paused: {
+      label: 'Start Paused',
+      description: 'Start the pipeline in a paused state',
+      onclick: () => {
+        const pipelineName = pipeline.current.name
+        performStartAction('start_paused', pipelineName)
+      },
+      disabled: () => unsavedChanges,
+      disabledText: 'Save First',
+      standaloneButton: _start_paused
+    },
+    _resume: {
+      label: 'Resume',
+      description: 'Resume the paused pipeline',
+      onclick: () => {
+        const pipelineName = pipeline.current.name
+        performStartAction('resume', pipelineName)
+      },
+      disabled: () => unsavedChanges,
+      disabledText: 'Save First',
+      standaloneButton: _start
+    },
+    _stop: {
+      label: 'Stop',
+      description: 'Stop the pipeline after taking a checkpoint',
+      onclick: () => (globalDialog.dialog = stopDialog),
+      disabled: () => !isPremium.value,
+      disabledText: 'Enterprise Only',
+      standaloneButton: _stop
+    },
+    _kill: {
+      label: 'Force Stop',
+      description: 'Stop the pipeline immediately',
+      onclick: () => (globalDialog.dialog = killDialog),
+      disabled: () => false,
+      standaloneButton: _kill
+    },
+    _pause: {
+      label: 'Pause',
+      description: 'Pause the running pipeline',
+      onclick: async () => {
+        const pipelineName = pipeline.current.name
+        const { waitFor } = await postPipelineAction(pipelineName, 'pause')
+        waitFor().then(() => onActionSuccess?.(pipelineName, 'pause'), toastError)
+      },
+      disabled: () => false,
+      standaloneButton: _pause
+    }
+  }
 </script>
 
 {#snippet clearDialog()}
@@ -205,9 +404,8 @@
       'Clear',
       (name) => `Clear ${name} pipeline storage?`,
       async (pipelineName: string) => {
-        await api.postPipelineAction(pipelineName, 'clear')
-        pipeline.optimisticUpdate({ storageStatus: 'Clearing' })
-        updatePipeline(pipelineName, (p) => ({ ...p, storageStatus: 'Clearing' }))
+        const { waitFor } = await postPipelineAction(pipelineName, 'clear')
+        waitFor().then(() => {}, toastError)
       },
       'This will delete all checkpoints.'
     )(pipeline.current.name)}
@@ -233,12 +431,9 @@
     {...deleteDialogProps(
       'Force stop',
       (name) => `Force stop ${name} pipeline?`,
-      (pipelineName: string) => {
-        return api.postPipelineAction(pipelineName, 'kill').then(() => {
-          onActionSuccess?.(pipelineName, 'kill')
-          pipeline.optimisticUpdate({ status: 'Stopping' })
-          updatePipeline(pipelineName, (p) => ({ ...p, status: 'Stopping' }))
-        })
+      async (pipelineName: string) => {
+        const { waitFor } = await postPipelineAction(pipelineName, 'kill')
+        waitFor().then(() => onActionSuccess?.(pipelineName, 'kill'), toastError)
       },
       'The pipeline will stop processing inputs without making a checkpoint, leaving only a previous one, if any.'
     )(pipeline.current.name)}
@@ -251,12 +446,9 @@
     {...deleteDialogProps(
       'Stop',
       (name) => `Stop ${name} pipeline?`,
-      (pipelineName: string) => {
-        return api.postPipelineAction(pipelineName, 'stop').then(() => {
-          onActionSuccess?.(pipelineName, 'stop')
-          pipeline.optimisticUpdate({ status: 'Suspending' })
-          updatePipeline(pipelineName, (p) => ({ ...p, status: 'Suspending' }))
-        })
+      async (pipelineName: string) => {
+        const { waitFor } = await postPipelineAction(pipelineName, 'stop')
+        waitFor().then(() => onActionSuccess?.(pipelineName, 'stop'), toastError)
       },
       'The pipeline will stop processing inputs and make a checkpoint of its state.'
     )(pipeline.current.name)}
@@ -282,45 +474,44 @@
   {@render _delete()} -->
 </div>
 
-{#snippet _multiStop()}
+{#snippet _multiAction(configKey: keyof typeof multiActionConfigs)}
+  {@const config = multiActionConfigs[configKey]}
+  {@const buttonNames = configKey === 'start' ? availableStartButtons : availableStopButtons}
+  {@const primeButtonName = buttonNames[0]}
+  {@const primeButtonConfig = buttonConfigs[primeButtonName]}
+
   <Popup>
     {#snippet trigger(toggle)}
       <div class="flex flex-nowrap p-0">
-        <div class="w-[58px] sm:w-[140px]">{@render (isPremium.value ? _stop : _kill)()}</div>
+        <div class="w-[58px] sm:w-[140px]">
+          {@render primeButtonConfig.standaloneButton()}
+        </div>
         <div class="z-10 -ml-6 h-9 border-l-[2px] border-surface-50-950"></div>
         <button
           onclick={toggle}
-          class="fd fd-chevron-down btn btn-icon z-10 w-8 !rounded-l-none text-[24px] preset-filled-surface-100-900"
-          aria-label="See stop options"
+          class="fd fd-chevron-down btn btn-icon z-10 w-8 !rounded-l-none text-[24px] {config.buttonClass}"
+          aria-label={config.ariaLabel}
         >
         </button>
       </div>
     {/snippet}
     {#snippet content(close)}
-      <!-- <div
-        transition:slide={{ duration: 100 }}
-        class="absolute z-30 mt-2 flex max-h-[400px] flex-col justify-stretch rounded shadow-md bg-surface-50-950 scrollbar"
-      >
-        {@render (isPremium.value ? _kill : _stop)()}
-      </div> -->
-      {@const buttons = [
-        {
-          label: 'Stop',
-          description: 'Stop the pipeline after taking a checkpoint',
-          onclick: () => (close(), (globalDialog.dialog = stopDialog)),
-          disabled: !isPremium.value
-        },
-        {
-          label: 'Force Stop',
-          description: 'Stop the pipeline immediately',
-          onclick: () => (close(), (globalDialog.dialog = killDialog))
+      {@const buttons = buttonNames.map((buttonName) => {
+        const buttonConfig = buttonConfigs[buttonName]
+        return {
+          ...buttonConfig,
+          disabled: buttonConfig.disabled(),
+          onclick: () => {
+            close()
+            buttonConfig.onclick()
+          }
         }
-      ]}
+      })}
       <div
         transition:slide={{ duration: 100 }}
         class="bg-white-dark absolute z-30 mt-2 flex max-h-[400px] w-[calc(100vw-36px)] max-w-[340px] -translate-x-4 flex-col justify-stretch rounded shadow-md scrollbar sm:max-w-[380px] sm:translate-x-0"
       >
-        {#each isPremium.value ? buttons : buttons.reverse() as button}
+        {#each buttons as button}
           <button
             class="flex flex-col gap-1 px-4 py-3 text-left hover:bg-surface-50-950 {button.disabled
               ? 'pointer-events-none opacity-80'
@@ -344,6 +535,14 @@
   </Popup>
 {/snippet}
 
+{#snippet _multiStart()}
+  {@render _multiAction('start')}
+{/snippet}
+
+{#snippet _multiStop()}
+  {@render _multiAction('stop')}
+{/snippet}
+
 {#snippet _delete()}
   <div>
     <button
@@ -365,12 +564,10 @@
 {#snippet start({
   text,
   getAction,
-  nextStatus,
   disabled
 }: {
   text: string
-  getAction?: (alt: boolean) => PipelineAction | 'start_paused_start'
-  nextStatus?: PipelineStatus
+  getAction?: (alt: boolean) => PipelineAction
   disabled?: boolean
 })}
   <div>
@@ -381,12 +578,12 @@
         ? `${buttonClass} ${shortClass} ${importantBtnColor} {iconClass}`
         : `${buttonClass} ${longClass} ${importantBtnColor}`}
       onclick={async (e) => {
-        if (!getAction || !nextStatus) {
+        if (!getAction) {
           return
         }
         const action = getAction(e.ctrlKey || e.shiftKey || e.metaKey)
         const pipelineName = pipeline.current.name
-        performStartAction(action, pipelineName, nextStatus)
+        performStartAction(action, pipelineName)
       }}
     >
       <span class="fd fd-play {iconClass}"></span>
@@ -399,9 +596,8 @@
 {/snippet}
 {#snippet _start()}
   {@render start({
-    text: 'Resume',
+    text: 'Start',
     getAction: () => 'start',
-    nextStatus: 'Resuming',
     disabled: unsavedChanges
   })}
   {#if unsavedChanges}
@@ -413,8 +609,19 @@
 {#snippet _start_paused()}
   {@render start({
     text: 'Start',
-    getAction: (alt) => (alt ? 'start_paused' : 'start_paused_start'),
-    nextStatus: 'Preparing',
+    getAction: (alt) => (alt ? 'start_paused' : 'start'),
+    disabled: unsavedChanges
+  })}
+  {#if unsavedChanges}
+    <Tooltip class="bg-white-dark z-20 rounded text-surface-950-50" placement="top">
+      Save the program before running
+    </Tooltip>
+  {/if}
+{/snippet}
+{#snippet _resume()}
+  {@render start({
+    text: 'Resume',
+    getAction: () => 'resume',
     disabled: unsavedChanges
   })}
   {#if unsavedChanges}
@@ -443,10 +650,8 @@
     class="hidden sm:flex {buttonClass} {longClass} {basicBtnColor}"
     onclick={async () => {
       const pipelineName = pipeline.current.name
-      await api.postPipelineAction(pipelineName, 'pause')
-      onActionSuccess?.(pipelineName, 'pause')
-      pipeline.optimisticUpdate({ status: 'Pausing' })
-      updatePipeline(pipelineName, (p) => ({ ...p, status: 'Pausing' }))
+      const { waitFor } = await postPipelineAction(pipelineName, 'pause')
+      waitFor().then(() => onActionSuccess?.(pipelineName, 'pause'), toastError)
     }}
   >
     <span class="fd fd-pause {iconClass}"></span>
@@ -457,10 +662,8 @@
     class="flex sm:hidden {buttonClass} {shortClass} {basicBtnColor} {iconClass}"
     onclick={async () => {
       const pipelineName = pipeline.current.name
-      await api.postPipelineAction(pipelineName, 'pause')
-      onActionSuccess?.(pipelineName, 'pause')
-      pipeline.optimisticUpdate({ status: 'Pausing' })
-      updatePipeline(pipelineName, (p) => ({ ...p, status: 'Pausing' }))
+      const { waitFor } = await postPipelineAction(pipelineName, 'pause')
+      waitFor().then(() => onActionSuccess?.(pipelineName, 'pause'), toastError)
     }}
   >
     <span class="fd fd-pause {iconClass}"></span>

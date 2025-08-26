@@ -41,9 +41,6 @@ import type {
   PatchPipelineData,
   PatchPipelineError,
   PatchPipelineResponse,
-  ActivatePipelineData,
-  ActivatePipelineError,
-  ActivatePipelineResponse,
   CheckpointPipelineData,
   CheckpointPipelineError,
   CheckpointPipelineResponse,
@@ -89,6 +86,9 @@ import type {
   PipelineAdhocSqlData,
   PipelineAdhocSqlError,
   PipelineAdhocSqlResponse,
+  PostPipelineStandbyData,
+  PostPipelineStandbyError,
+  PostPipelineStandbyResponse,
   PostPipelineStartData,
   PostPipelineStartError,
   PostPipelineStartResponse,
@@ -280,18 +280,6 @@ export const patchPipeline = (options: Options<PatchPipelineData>) => {
 }
 
 /**
- * Activates the pipeline if it is currently in standby mode.
- * This endpoint is only applicable when the pipeline is configured to start
- * from object store and launched in standby mode (`sync.standby: true`).
- */
-export const activatePipeline = (options: Options<ActivatePipelineData>) => {
-  return (options?.client ?? client).post<ActivatePipelineResponse, ActivatePipelineError>({
-    ...options,
-    url: '/v0/pipelines/{pipeline_name}/activate'
-  })
-}
-
-/**
  * Initiates checkpoint for a running or paused pipeline.
  * Returns a checkpoint sequence number that can be used with `/checkpoint_status` to
  * determine when the checkpoint has completed.
@@ -474,8 +462,9 @@ export const getPipelineMetrics = (options: Options<GetPipelineMetricsData>) => 
  * Progress should be monitored by polling the pipeline `GET` endpoints.
  *
  * Note the following:
- * - A stopped pipeline can be started through calling either `/start` or `/pause`
- * - Both starting as paused and pausing a pipeline is done by calling `/pause`
+ * - A stopped pipeline can be started through calling either `/standby`, `/start` or `/pause`
+ * - Both starting as paused, activating as paused and pausing a pipeline is done by calling
+ * `/pause`
  * - A pipeline which is in the process of suspending or stopping cannot be paused
  */
 export const postPipelinePause = (options: Options<PostPipelinePauseData>) => {
@@ -497,14 +486,33 @@ export const pipelineAdhocSql = (options: Options<PipelineAdhocSqlData>) => {
 }
 
 /**
+ * Standby the pipeline asynchronously by updating the desired state.
+ * The endpoint returns immediately after setting the desired state to `Standby`.
+ * The procedure to get to the desired state is performed asynchronously.
+ * Progress should be monitored by polling the pipeline `GET` endpoints.
+ *
+ * Note the following:
+ * - A stopped pipeline can be started through calling either `/standby`, `/start` or `/pause`
+ * - A pipeline which desires to be running or paused cannot be set to desire standby
+ * - A pipeline which is in the process of stopping cannot be standby
+ */
+export const postPipelineStandby = (options: Options<PostPipelineStandbyData>) => {
+  return (options?.client ?? client).post<PostPipelineStandbyResponse, PostPipelineStandbyError>({
+    ...options,
+    url: '/v0/pipelines/{pipeline_name}/standby'
+  })
+}
+
+/**
  * Start the pipeline asynchronously by updating the desired state.
  * The endpoint returns immediately after setting the desired state to `Running`.
  * The procedure to get to the desired state is performed asynchronously.
  * Progress should be monitored by polling the pipeline `GET` endpoints.
  *
  * Note the following:
- * - A stopped pipeline can be started through calling either `/start` or `/pause`
- * - Both starting as running and resuming a pipeline is done by calling `/start`
+ * - A stopped pipeline can be started through calling either `/standby`, `/start` or `/pause`
+ * - Both starting as running, activating as running and resuming a pipeline is done by calling
+ * `/start`
  * - A pipeline which is in the process of suspending or stopping cannot be started
  */
 export const postPipelineStart = (options: Options<PostPipelineStartData>) => {
