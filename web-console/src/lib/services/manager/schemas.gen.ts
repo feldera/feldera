@@ -19,7 +19,7 @@ the \`fda\` command-line tool.`,
 export const $AdHocResultFormat = {
   type: 'string',
   description: 'URL-encoded `format` argument to the `/query` endpoint.',
-  enum: ['text', 'json', 'parquet', 'arrow_ipc']
+  enum: ['text', 'json', 'parquet', 'arrow_ipc', 'hash']
 } as const
 
 export const $AdhocQueryArgs = {
@@ -2581,7 +2581,7 @@ if applicable, is set by the runner.`
 
 export const $PipelineDesiredStatus = {
   type: 'string',
-  enum: ['Stopped', 'Paused', 'Running', 'Suspended']
+  enum: ['Stopped', 'Standby', 'Paused', 'Running', 'Suspended']
 } as const
 
 export const $PipelineFieldSelector = {
@@ -2635,6 +2635,11 @@ It both includes fields which are user-provided and system-generated.`,
           $ref: '#/components/schemas/ErrorResponse'
         }
       ],
+      nullable: true
+    },
+    deployment_id: {
+      type: 'string',
+      format: 'uuid',
       nullable: true
     },
     deployment_status: {
@@ -2741,6 +2746,11 @@ If an optional field is not selected (i.e., is \`None\`), it will not be seriali
       ],
       nullable: true
     },
+    deployment_id: {
+      type: 'string',
+      format: 'uuid',
+      nullable: true
+    },
     deployment_status: {
       $ref: '#/components/schemas/PipelineStatus'
     },
@@ -2830,79 +2840,78 @@ export const $PipelineStatus = {
   type: 'string',
   description: `Pipeline status.
 
-This type represents the state of the pipeline tracked by the pipeline
-runner and observed by the API client via the \`GET /v0/pipelines/{name}\` endpoint.
+This type represents the status of the pipeline tracked by the pipeline runner and observed by
+the API client via the \`GET /v0/pipelines/{name}\` endpoint.
 
 ### The lifecycle of a pipeline
 
 The following automaton captures the lifecycle of the pipeline.
-Individual states and transitions of the automaton are described below.
+Individual statuses and transitions of the automaton are described below.
 
-* States labeled with the hourglass symbol (⌛) are **timed** states. The
-automaton stays in timed state until the corresponding operation completes
-or until it transitions to become failed after the pre-defined timeout
-period expires.
+* Statuses labeled with the hourglass symbol (⌛) are **timed** statuses. The automaton stays in
+timed status until the corresponding operation completes or until it transitions to become
+failed after the pre-defined timeout  period expires.
 
-* State transitions labeled with API endpoint names (\`/start\`, \`/pause\`,
-\`/stop\`) are triggered by invoking corresponding endpoint,
-e.g., \`POST /v0/pipelines/{name}/start\`. Note that these only express
-desired state, and are applied asynchronously by the automata.
+* Some transitions can be initiated by calling an API endpoint (e.g., \`/start\`). These
+endpoints only express desired state, and are applied asynchronously by the automaton.
 
 \`\`\`text
-Stopped ◄─────────── Stopping ◄───── All states can transition
-│                   ▲            to Stopping by either:
-/start or /pause │                   │            (1) user calling /stop?force=true, or;
-▼                   │            (2) pipeline encountering a fatal
-⌛Provisioning         Suspending            resource or runtime error,
-│                   ▲                having the system call /stop?force=true
-│                   │ /stop          effectively
-│                   │  ?force=false
+/start /pause /standby (early start failed)
+┌───────────────────┐
+│                   ▼
+Stopped ◄────────── Stopping
+/start │                   ▲
+/pause │                   │ /stop
+/standby │                   │ OR: timeout (from Provisioning)
+▼                   │ OR: fatal runtime or resource error
+⌛Provisioning ────────────│
 │                   │
-┌──────────────┼───────────────────┴─────┐
-│              ▼                         │
-│  ┌──► Initializing                     │
-│  │           ▲  ▲                      │
-│  │           │  └───────────┐          │
-│  │           ▼              ▼          │
-│  │        Paused  ◄──────► Unavailable │
-│  │          │  ▲                ▲      │
-│  │   /start │  │  /pause        │      │
-│  │          ▼  │                │      │
-│  └─────►  Running ◄─────────────┘      │
-└────────────────────────────────────────┘
+│                   │
+▼                   │
+┌───────────────────────┴─────┐
+│ Initializing, Unavailable,  │
+│   Standby, Bootstrapping,   │
+│ Replaying, Paused, Running, │
+│    Suspended, Terminated    │
+└─────────────────────────────┘
+Runtime statuses, can be changed by calling
+/start, /pause, /standby, and /stop
 \`\`\`
 
 ### Desired and actual status
 
-We use the desired state model to manage the lifecycle of a pipeline.
-In this model, the pipeline has two status attributes associated with
-it at runtime: the **desired** status, which represents what the user
-would like the pipeline to do, and the **current** status, which
-represents the actual state of the pipeline.  The pipeline runner
-service continuously monitors both fields and steers the pipeline
-towards the desired state specified by the user.
+We use the desired state model to manage the lifecycle of a pipeline. In this model, the
+pipeline has two status attributes associated with it: the **desired** status, which represents
+what the user would like the pipeline to do, and the **current** status, which represents the
+actual (last observed) status of the pipeline. The pipeline runner service continuously monitors
+the desired status field to decide where to steer the pipeline towards.
 
-Only four of the states in the pipeline automaton above can be
-used as desired statuses: \`Paused\`, \`Running\`, \`Suspended\` and
-\`Stopped\`. These statuses are selected by invoking REST endpoints
-shown in the diagram (respectively, \`/pause\`, \`/start\`, and \`/stop\`).
+There are five desired statuses:
+- \`Standby\` (set by invoking \`/standby\`)
+- \`Running\` (set by invoking \`/start\`)
+- \`Paused\` (set by invoking \`/pause\`)
+- \`Suspended\` (set by invoking \`/stop?force=false\`)
+- \`Stopped\` (set by invoking \`/stop?force=true\`)
 
-The user can monitor the current state of the pipeline via the
-\`GET /v0/pipelines/{name}\` endpoint. In a typical scenario,
-the user first sets the desired state, e.g., by invoking the
-\`/start\` endpoint, and then polls the \`GET /v0/pipelines/{name}\`
-endpoint to monitor the actual status of the pipeline until its
-\`deployment_status\` attribute changes to \`Running\` indicating
-that the pipeline has been successfully initialized and is
-processing data, or \`Stopped\` with \`deployment_error\` being set.`,
+Of these, \`Suspended\` is a "virtual" desired status. Once the runner has successfully suspended,
+it will change the desired status to \`Stopped\`. Not all endpoints can be called at all times.
+
+The user can monitor the current status of the pipeline via the \`GET /v0/pipelines/{name}\`
+endpoint. In a typical scenario, the user first sets the desired status, e.g., by invoking the
+\`/start\` endpoint, and then polls the \`GET /v0/pipelines/{name}\` endpoint to monitor the actual
+status of the pipeline until its \`deployment_status\` attribute changes to \`Running\` indicating
+that the pipeline has been successfully provisioned, or \`Stopped\` with \`deployment_error\` being
+set.`,
   enum: [
     'Stopped',
     'Provisioning',
+    'Unavailable',
+    'Standby',
     'Initializing',
+    'Bootstrapping',
+    'Replaying',
     'Paused',
     'Running',
-    'Unavailable',
-    'Suspending',
     'Stopping'
   ]
 } as const
@@ -4423,7 +4432,7 @@ export const $StorageStatus = {
   type: 'string',
   description: `Storage status.
 
-The storage status can only transition when the pipeline status is \`Stopped\`.
+The storage status can only transition when the resources status is \`Stopped\`.
 
 \`\`\`text
 Cleared ───┐
@@ -4550,6 +4559,26 @@ Default: 10 seconds`,
 
 Leave empty for Minio or the default region (\`us-east-1\` for AWS).`,
       nullable: true
+    },
+    retention_min_age: {
+      type: 'integer',
+      format: 'int32',
+      description: `The minimum age (in days) a checkpoint must reach before it becomes
+eligible for deletion. All younger checkpoints will be preserved.
+
+Default: 30`,
+      default: 30,
+      minimum: 0
+    },
+    retention_min_count: {
+      type: 'integer',
+      format: 'int32',
+      description: `The minimum number of checkpoints to retain in object store.
+No checkpoints will be deleted if the total count is below this threshold.
+
+Default: 10`,
+      default: 10,
+      minimum: 0
     },
     secret_key: {
       type: 'string',
