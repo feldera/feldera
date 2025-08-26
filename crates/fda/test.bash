@@ -109,15 +109,15 @@ fda connector p1 example unknown start || true
 fda query p1 "SELECT * FROM example"
 
 # Transaction tests
-#echo "Testing transaction commands..."
-#fail_on_success fda commit-transaction p1
-#fda start-transaction p1
-#fail_on_success fda commit-transaction p1 --tid 999
-#fda commit-transaction p1
-#fda start-transaction p1
-#fda commit-transaction p1 --timeout 10
-#fda start-transaction p1
-#fda commit-transaction p1 --no-wait
+echo "Testing transaction commands..."
+fail_on_success fda commit-transaction p1
+fda start-transaction p1
+fail_on_success fda commit-transaction p1 --tid 999
+fda commit-transaction p1
+fda start-transaction p1
+fda commit-transaction p1 --timeout 10
+fda start-transaction p1
+fda commit-transaction p1 --no-wait
 
 fda shutdown p1
 
@@ -200,14 +200,6 @@ fail_on_success fda program set punknown file-path --stdin
 fail_on_success fda program set p1 --udf-toml udf.toml --stdin
 fail_on_success fda program set p1 --udf-rs udf.toml --stdin
 fail_on_success fda program set p1 --udf-rs udf.toml --udf-toml udf.toml --stdin
-
-# Test error cases
-echo "Testing transaction error cases..."
-# Try to commit without starting a transaction (should fail)
-fail_on_success fda commit-transaction p1
-# Try to commit with wrong transaction ID (should fail)
-fda start-transaction p1
-fail_on_success fda commit-transaction p1 --transaction-id 999999
 
 rm program.sql
 rm udf.toml
