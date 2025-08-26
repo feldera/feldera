@@ -200,6 +200,12 @@ public class BigQueryTests extends SqlIoTest {
                  r
                 ---
                  NULL
+                (1 row)
+                
+                SELECT PARSE_TIMESTAMP('%Y-%m-%d %H:%M:%S', '2020-10-01 00:00:00');
+                 r
+                ---
+                2020-10-01 00:00:00
                 (1 row)""");
     }
 
@@ -239,6 +245,12 @@ public class BigQueryTests extends SqlIoTest {
                 +------------+
                 (1 row)
                 
+                SELECT PARSE_TIME('%H:%M', '10:10');
+                 r
+                ---
+                 10:10:00
+                (1 row)
+
                 SELECT PARSE_TIME('%I:%M:%S %p', '07:30:00 am');
                 +----------+
                 | EXPR$0   |
