@@ -39,6 +39,12 @@ public class DateFormatsTests extends SqlIoTest {
     @Test
     public void testParseDate() {
         this.qs("""
+                SELECT PARSE_DATE(' %Y-%m-%d', '   2020-10-01');
+                 d
+                ---
+                 2020-10-01
+                (1 row)
+                
                 SELECT PARSE_DATE('%Y-%m-%d', '2020-10-01');
                  d
                 ---
@@ -105,6 +111,12 @@ public class DateFormatsTests extends SqlIoTest {
         // Year 0 is not legal, replaced with year 1
         // %Y in MySql is %y
         this.qs("""
+                SELECT format_date('%Y-%m', DATE '2020-10-10');
+                valid_date
+                ------------
+                 2020-10
+                (1 row)
+                
                 SELECT format_date('%A %d %B %Y', '0001-01-01') as valid_date;
                 valid_date
                 ------------

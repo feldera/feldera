@@ -416,10 +416,10 @@ We support the following functions for formatting and parsing date-like values:
 
 | Operation          | Arguments             | Result    | Example                              |
 |--------------------|-----------------------|-----------|--------------------------------------|
-| `FORMAT_DATE`      | string_format, date   | string    | `FORMAT_DATE("%Y-%m", d)` => 2020-10 |
-| `PARSE_DATE`       | string_format, string | DATE      | `PARSE_DATE(" %Y-%m-%d", '   2020-10-01')` => `2020-10-01` |
-| `PARSE_TIME`       | string_format, string | TIME      | `PARSE_TIME("%H:%m", '10:10')` => `10:10:00` |
-| `PARSE_TIMESTAMP`  | string_format, string | TIMESTAMP | `PARSE_TIMESTAMP("%Y-%m", '2020-10')` => `2020-10-01 00:00:00` |
+| `FORMAT_DATE`      | string_format, date   | string    | `FORMAT_DATE('%Y-%m', DATE '2020-10-10')` => 2020-10 |
+| `PARSE_DATE`       | string_format, string | DATE      | `PARSE_DATE(' %Y-%m-%d', '   2020-10-01')` => `2020-10-01` |
+| `PARSE_TIME`       | string_format, string | TIME      | `PARSE_TIME('%H:%M', '10:10')` => `10:10:00` |
+| `PARSE_TIMESTAMP`  | string_format, string | TIMESTAMP | `PARSE_TIMESTAMP('%Y-%m-%d %H:%M:%S', '2020-10-01 00:00:00')` => `2020-10-01 00:00:00` |
 
 If the string cannot be parsed according to the specified format:
 
