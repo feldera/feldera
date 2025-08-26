@@ -71,19 +71,9 @@
 
   const api = usePipelineManager()
   const pipelineActionCallbacks = usePipelineActionCallbacks()
-  const handleActionSuccess = async (
-    pipelineName: string,
-    action: PipelineAction | 'start_paused_start'
-  ) => {
-    const cbs = pipelineActionCallbacks.getAll(
-      pipelineName,
-      action === 'start_paused_start' ? 'start_paused' : action
-    )
+  const handleActionSuccess = async (pipelineName: string, action: PipelineAction) => {
+    const cbs = pipelineActionCallbacks.getAll(pipelineName, action)
     await Promise.allSettled(cbs.map((x) => x(pipelineName)))
-    if (action === 'start_paused_start') {
-      api.postPipelineAction(pipelineName, 'start')
-      updatePipeline(pipelineName, (p) => ({ ...p, status: 'Initializing' }))
-    }
   }
   const handleDeletePipeline = async (pipelineName: string) => {
     updatePipelines((pipelines) => pipelines.filter((p) => p.name !== pipelineName))
