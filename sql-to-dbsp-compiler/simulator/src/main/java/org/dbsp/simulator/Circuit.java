@@ -1,6 +1,5 @@
 package org.dbsp.simulator;
 
-import com.fasterxml.jackson.databind.ser.Serializers;
 import org.dbsp.simulator.operators.BaseOperator;
 import org.dbsp.simulator.operators.InputOperator;
 import org.dbsp.simulator.operators.OutputOperator;

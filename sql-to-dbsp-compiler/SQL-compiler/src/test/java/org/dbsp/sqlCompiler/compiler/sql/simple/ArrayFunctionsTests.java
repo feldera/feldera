@@ -1124,22 +1124,22 @@ public class ArrayFunctionsTests extends SqlIoTest {
                 {1, 2, null, 3}
                 (1 row)""");
 
-        // select array_insert(array[array[1,2]], 1, array[1])",
+        // select array_insert(array[array[1,2]], 1, array[1]);
         //  r
         // ---
-        // [[1], [1, 2]]", "INTEGER NOT NULL ARRAY NOT NULL ARRAY NOT NULL");
-        // select array_insert(array[array[1,2]], -1, array[1])",
+        // [[1], [1, 2]]"
+        // select array_insert(array[array[1,2]], -1, array[1]);
         //  r
         // ---
-        //     "[[1, 2], [1]]", "INTEGER NOT NULL ARRAY NOT NULL ARRAY NOT NULL");
-        // select array_insert(array[map[1, 'a']], 1, map[2, 'b'])", "[{2=b}, {1=a}]",
+        // [[1, 2], [1]]
+        // select array_insert(array[map[1, 'a']], 1, map[2, 'b']);
         //  r
         // ---
-        //     "(INTEGER NOT NULL, CHAR(1) NOT NULL) MAP NOT NULL ARRAY NOT NULL");
-        // select array_insert(array[map[1, 'a']], -1, map[2, 'b'])", "[{1=a}, {2=b}]",
+        // [{2=b}, {1=a}]
+        // select array_insert(array[map[1, 'a']], -1, map[2, 'b']);
         //  r
         // ---
-        //     "(INTEGER NOT NULL, CHAR(1) NOT NULL) MAP NOT NULL ARRAY NOT NULL");
+        // [{1=a}, {2=b}]
     }
 
     @Test

@@ -1,7 +1,5 @@
 package org.dbsp.simulator.types;
 
-import org.dbsp.simulator.util.ICastable;
-
 /**
  * Weights represented as integers.
  * Throws on overflow.

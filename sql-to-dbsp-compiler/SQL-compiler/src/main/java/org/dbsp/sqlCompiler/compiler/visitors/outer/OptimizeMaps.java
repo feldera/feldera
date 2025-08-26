@@ -186,7 +186,7 @@ public class OptimizeMaps extends CircuitCloneWithGraphsVisitor {
 
                 DBSPSimpleOperator newJoin = join
                         .withInputs(Linq.list(leftPort, rightPort), false)
-                        .to(DBSPSimpleOperator.class);;
+                        .to(DBSPSimpleOperator.class);
                 if (newJoin.outputType.sameType(join.outputType)) {
                     super.postorder(operator);
                     return;

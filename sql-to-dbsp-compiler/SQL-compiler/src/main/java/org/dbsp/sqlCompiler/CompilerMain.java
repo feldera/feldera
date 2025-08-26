@@ -70,11 +70,9 @@ public class CompilerMain {
     }
 
     void usage(JCommander commander) {
-        /*
         // JCommander mistakenly prints this as default value
         // if it manages to parse it partially.
-        this.options.ioOptions.loggingLevel.clear();
-         */
+        // this.options.ioOptions.loggingLevel.clear();
         commander.usage();
     }
 

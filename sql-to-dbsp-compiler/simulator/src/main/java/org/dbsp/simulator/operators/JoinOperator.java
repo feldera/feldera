@@ -3,9 +3,6 @@ package org.dbsp.simulator.operators;
 import org.dbsp.simulator.collections.BaseCollection;
 import org.dbsp.simulator.collections.IndexedZSet;
 import org.dbsp.simulator.types.CollectionType;
-import org.dbsp.simulator.types.DataType;
-import org.dbsp.simulator.types.SqlType;
-import org.dbsp.simulator.types.WeightType;
 import org.dbsp.simulator.values.SqlTuple;
 
 import java.util.function.BiFunction;
@@ -21,6 +18,7 @@ public class JoinOperator<Weight> extends BaseOperator {
         this.combiner = combiner;
     }
 
+    @SuppressWarnings("unchecked")
     @Override
     public void step() {
         BaseCollection left = this.inputs[0].getCurrentValue();

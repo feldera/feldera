@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPInputMapWithWaterlineOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
@@ -194,8 +195,16 @@ public class CatalogTests extends BaseSQLTests {
                 FROM
                     table_name;
                 """);
+        // Note: we compile without -i, so there are fewer GC operators than expected
         ccs.visit(new CircuitVisitor(ccs.compiler) {
             int imww = 0;
+            int retain = 0;
+
+            // Check that InputMapWithWaterline is GC-ed
+            @Override
+            public void postorder(DBSPIntegrateTraceRetainValuesOperator node) {
+                this.retain++;
+            }
 
             @Override
             public void postorder(DBSPInputMapWithWaterlineOperator operator) {
@@ -205,6 +214,7 @@ public class CatalogTests extends BaseSQLTests {
             @Override
             public void endVisit() {
                 Assert.assertEquals(1, this.imww);
+                Assert.assertEquals(1, this.retain);
             }
         });
     }

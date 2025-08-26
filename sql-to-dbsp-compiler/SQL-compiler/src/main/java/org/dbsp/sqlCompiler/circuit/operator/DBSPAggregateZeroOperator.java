@@ -28,7 +28,7 @@ import java.util.Objects;
  * For this we synthesize the following graph:
  *     |
  * {}/{c->1}------------------------
- *    | map (|x| x -> z}           |
+ *    | map (|x| x -> z)           |
  * {}/{z->1}                       |
  *    | -                          |
  * {} {z->-1}   {z->1} (constant)  |

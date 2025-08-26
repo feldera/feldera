@@ -67,7 +67,7 @@ public class OptimizeProjectionVisitor extends CircuitCloneWithGraphsVisitor {
                             sourceFunction.rightProjections, sourceFunction.ordinalityIndexType, shuffle);
                     DBSPSimpleOperator result = source.simpleNode()
                             .withFunction(newFunction, operator.outputType)
-                            .to(DBSPSimpleOperator.class);;
+                            .to(DBSPSimpleOperator.class);
                     this.map(operator, result);
                     return;
                 }

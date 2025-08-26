@@ -452,34 +452,36 @@ public class CalciteToDBSPCompiler extends RelVisitor
     }
 
     void visitCorrelate(LogicalCorrelate correlate) {
-        // We decorrelate queries using Calcite's optimizer, which doesn't always work.
-        // In particular, it won't decorrelate queries with unnest.
-        // Here we check for unnest-type queries.  We assume that unnest queries
-        // have a restricted plan of this form:
-        // LogicalCorrelate(correlation=[$cor0], joinType=[inner], requiredColumns=[{...}])
-        //    LeftSubquery (arbitrary)
-        //    Uncollect
-        //      LogicalProject(COL=[$cor0.ARRAY])  // uncollectInput
-        //        LogicalValues(tuples=[[{ 0 }]])
-        // or
-        // LogicalCorrelate(correlation=[$cor0], joinType=[inner], requiredColumns=[{...}])
-        //    LeftSubquery
-        //    LogicalProject // rightProject
-        //      Uncollect
-        //        LogicalProject(COL=[$cor0.ARRAY])  // uncollectInput
-        //          LogicalValues(tuples=[[{ 0 }]])
-        // Instead of projecting and joining again we directly apply flatmap.
-        // The translation for this is:
-        // stream.flat_map({
-        //   move |x: &Tuple2<Vec<i32>, Option<i32>>, | -> _ {
-        //     let xA: Vec<i32> = x.0.clone();
-        //     let xB: x.1.clone();
-        //     x.0.clone().into_iter().map({
-        //        move |e: i32, | -> Tuple3<Vec<i32>, Option<i32>, i32> {
-        //            Tuple3::new(xA.clone(), xB.clone(), e)
-        //        }
-        //     })
-        //  });
+        /*
+         We decorrelate queries using Calcite's optimizer, which doesn't always work.
+         In particular, it won't decorrelate queries with unnest.
+         Here we check for unnest-type queries.  We assume that unnest queries
+         have a restricted plan of this form:
+         LogicalCorrelate(correlation=[$cor0], joinType=[inner], requiredColumns=[{...}])
+            LeftSubquery (arbitrary)
+            Uncollect
+              LogicalProject(COL=[$cor0.ARRAY])  // uncollectInput
+                LogicalValues(tuples=[[{ 0 }]])
+         or
+         LogicalCorrelate(correlation=[$cor0], joinType=[inner], requiredColumns=[{...}])
+            LeftSubquery
+            LogicalProject // rightProject
+              Uncollect
+                LogicalProject(COL=[$cor0.ARRAY])  // uncollectInput
+                  LogicalValues(tuples=[[{ 0 }]])
+         Instead of projecting and joining again we directly apply flatmap.
+         The translation for this is:
+         stream.flat_map({
+           move |x: &Tuple2<Vec<i32>, Option<i32>>, | -> _ {
+             let xA: Vec<i32> = x.0.clone();
+             let xB: x.1.clone();
+             x.0.clone().into_iter().map({
+                move |e: i32, | -> Tuple3<Vec<i32>, Option<i32>, i32> {
+                    Tuple3::new(xA.clone(), xB.clone(), e)
+                }
+             })
+          });
+         */
         CalciteObject node = CalciteObject.create(correlate);
         DBSPTypeTuple type = this.convertType(correlate.getRowType(), false).to(DBSPTypeTuple.class);
         /*
@@ -488,7 +490,6 @@ public class CalciteToDBSPCompiler extends RelVisitor
         if (correlate.getJoinType().isOuterJoin())
             throw this.decorrelateError(node);
          */
-
         this.visit(correlate.getLeft(), 0, correlate);
         DBSPSimpleOperator left = this.getInputAs(correlate.getLeft(), true);
         DBSPTypeTuple leftElementType = left.getOutputZSetElementType().to(DBSPTypeTuple.class);
@@ -2667,7 +2668,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             }
 
             // This operator is always incremental, so create the non-incremental version
-            // of it by adding a D and an I around it.
+            // of it by adding a Differentiator and an Integrator around it.
             DBSPDifferentiateOperator diff = new DBSPDifferentiateOperator(this.node, inputIndexed);
             this.compiler.getCircuit().addOperator(diff);
 
@@ -3094,7 +3095,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 // Compute the window aggregate
 
                 // This operator is always incremental, so create the non-incremental version
-                // of it by adding a D and an I around it.
+                // of it by adding a Differentiator and an Integrator around it.
                 DBSPDifferentiateOperator diff = new DBSPDifferentiateOperator(node, mapIndex.outputPort());
                 this.compiler.getCircuit().addOperator(diff);
 

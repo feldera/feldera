@@ -24,7 +24,6 @@
 package org.dbsp.sqlCompiler.compiler.sql.simple;
 
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
-import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 
 public class OptimizedIncrementalTests extends NaiveIncrementalTests {
     @Override

@@ -2287,7 +2287,7 @@ public class FunctionsTest extends SqlIoTest {
         this.getCC("""
                 CREATE TABLE str_tbl(id INT, str VARCHAR);
                 CREATE VIEW V0 AS SELECT POSITION('🐍' in str), POSITION('い' in str), POSITION('√ ' in str) FROM str_tbl;
-                CREATE VIEW V1 AS SELECT REGEXP_REPLACE(str, '([🐍い]|/¯|√\s*)+$', 'i') FROM str_tbl;
+                CREATE VIEW V1 AS SELECT REGEXP_REPLACE(str, '([🐍い]|/¯|√\\s*)+$', 'i') FROM str_tbl;
                 CREATE VIEW V2 AS SELECT RLIKE(str, '🐍.'), RLIKE(str, '..い.'), RLIKE(str, '....√ ') FROM str_tbl;
                 CREATE VIEW V3 AS SELECT SPLIT(str, '🐍.'), SPLIT(str, '..い.'), SPLIT(str, '....√ ') FROM str_tbl;
                 CREATE VIEW V4 AS SELECT SPLIT_PART(str, '🐍.', 2), SPLIT_PART(str, '..い.', 2), SPLIT_PART(str, '....√ ', 2) FROM str_tbl""");

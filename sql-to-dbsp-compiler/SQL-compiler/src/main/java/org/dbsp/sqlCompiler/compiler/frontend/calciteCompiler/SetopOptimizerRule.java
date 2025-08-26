@@ -85,7 +85,7 @@ public class SetopOptimizerRule
         Pair<RelNode, @Nullable RexNode> first = extractSourceAndCond(inputs.get(0).stripped().getInput(0).stripped());
 
         // Groups conditions by their source relational node and input position.
-        // - Key: Pair of (sourceRelNode, inputPosition)
+        // - Key: A pair of (sourceRelNode, inputPosition)
         //   - inputPosition is null for mergeable conditions
         //   - inputPosition contains original index for non-mergeable inputs
         // - Value: List of conditions

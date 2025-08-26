@@ -5,7 +5,6 @@ import com.fasterxml.jackson.databind.MappingIterator;
 import com.fasterxml.jackson.databind.ObjectWriter;
 import com.fasterxml.jackson.dataformat.csv.CsvMapper;
 import com.fasterxml.jackson.dataformat.csv.CsvSchema;
-import org.apache.commons.math3.analysis.function.Add;
 import org.dbsp.simulator.collections.IndexedZSet;
 import org.dbsp.simulator.collections.ZSet;
 import org.dbsp.simulator.types.IntegerSqlType;
@@ -106,7 +105,7 @@ public class SimulatorTests {
 
         @Override
         public SqlType getType() {
-            return null;
+            return new TupleSqlType();
         }
 
         @Override
@@ -447,7 +446,7 @@ public class SimulatorTests {
     public void testIndex() {
         ZSet<Person> input = getPersons();
         IndexedZSet<StringSqlValue, Person> index = input.index(
-                new RuntimeFunction<Person, StringSqlValue>(p -> new StringSqlValue(p.name != null ? p.name.substring(0, 1) : null)));
+                new RuntimeFunction<>(p -> new StringSqlValue(p.name != null ? p.name.substring(0, 1) : null)));
         Assert.assertEquals(2, index.groupCount());
     }
 

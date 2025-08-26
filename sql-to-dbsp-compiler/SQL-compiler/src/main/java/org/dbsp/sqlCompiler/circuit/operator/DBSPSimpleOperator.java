@@ -46,7 +46,7 @@ public abstract class DBSPSimpleOperator extends DBSPOperator
     /** Type of output produced. */
     public final DBSPType outputType;
     /** True if the output of the operator is a multiset.  Conservative approximation;
-     * if this is 'false', it is surely false.  It if is true, the output may still be a set. */
+     * if this is 'false', it is surely false.  If it is true, the output may still be a set. */
     public final boolean isMultiset;
     /** True if the operator contains an integrator */
     public final boolean containsIntegrator;

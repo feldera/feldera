@@ -149,7 +149,7 @@ Here is a description of the non-obvious command-line options:
 
 --lenient: Some SQL queries generate output views having multiple columns
      with the same name.  Such views can cause problems with other tools
-     that interface with the compiler outputs.  By default the compiler will
+     that interface with the compiler outputs.  By default, the compiler will
      emit an error when given such views.  For example, the following definition:
 
      `CREATE VIEW V AS SELECT T.COL2, S.COL2 from T, S`

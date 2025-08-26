@@ -91,7 +91,6 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStrLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
-import org.dbsp.sqlCompiler.ir.type.IsNumericType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
@@ -100,7 +99,6 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeTypedBox;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeWeight;
@@ -1359,8 +1357,8 @@ public class InsertLimiters extends CircuitCloneVisitor {
      * {@link DBSPInputMapWithWaterlineOperator}*/
     DBSPOperator processLateness(
             ProgramIdentifier viewOrTable, DBSPSimpleOperator operator, DBSPSimpleOperator expansion) {
-        MonotoneExpression expression = this.expansionMonotoneValues.get(expansion);
-        if (expression == null) {
+        MonotoneExpression me = this.expansionMonotoneValues.get(expansion);
+        if (me == null) {
             this.nonMonotone(expansion);
             return operator;
         }
@@ -1421,8 +1419,9 @@ public class InsertLimiters extends CircuitCloneVisitor {
 
         DBSPControlledKeyFilterOperator filter = this.createControlledKeyFilter(
                 operator.getRelNode(), viewOrTable, replacement.outputPort(),
-                Monotonicity.getBodyType(expression), delay.outputPort());
+                Monotonicity.getBodyType(me), delay.outputPort());
         DBSPOperator result = filter;
+        DBSPInputMapWithWaterlineOperator newSource = null;
 
         if (replaceIndexedInput) {
             List<Integer> keyFields = IndexedInputs.getKeyFields(multisetInput);
@@ -1435,15 +1434,15 @@ public class InsertLimiters extends CircuitCloneVisitor {
             Utilities.enforce(filter.error.parameters.length == 4);
             DBSPClosureExpression error = filter.error.body.closure(
                     filter.error.parameters[0], k.asParameter(), filter.error.parameters[1], filter.error.parameters[3]);
-            result = new DBSPInputMapWithWaterlineOperator(
+            newSource = new DBSPInputMapWithWaterlineOperator(
                     multisetInput.getRelNode(), multisetInput.sourceName, keyFields,
                     indexedOutputType, multisetInput.originalRowType, multisetInput.metadata, multisetInput.tableName,
                     min.closure(), timestamp.closure(k, t), max, ff, error);
-            this.errorStreams.add(result.getOutput(1));
-            waterlineOutputPort = result.getOutput(2);
-            this.addOperator(result);
+            this.errorStreams.add(newSource.getOutput(1));
+            waterlineOutputPort = newSource.getOutput(2);
+            this.addOperator(newSource);
 
-            result = new DBSPDeindexOperator(multisetInput.getRelNode(), result.getOutput(0));
+            result = new DBSPDeindexOperator(multisetInput.getRelNode(), newSource.getOutput(0));
         } else {
             OutputPort errorPort = result.getOutput(1);
             if (!this.reachableFromError.contains(result.inputs.get(0).operator)) {
@@ -1470,6 +1469,17 @@ public class InsertLimiters extends CircuitCloneVisitor {
         this.markBound(operator.outputPort(), extend.outputPort());
         if (operator != expansion)
             this.markBound(expansion.outputPort(), extend.outputPort());
+
+        if (INSERT_RETAIN_VALUES && replaceIndexedInput) {
+            IMaybeMonotoneType projection = me.getMonotoneType().to(MonotoneClosureType.class).getBodyType();
+            // The new input operator produces an indexed Zset, need to adjust the projection
+            projection = new PartiallyMonotoneTuple(
+                    List.of(NonMonotoneType.nonMonotone(indexedOutputType.keyType), projection), true, false);
+            DBSPSimpleOperator retain = DBSPIntegrateTraceRetainValuesOperator.create(
+                    operator.getRelNode(), newSource.getOutput(0),
+                    projection, extend.outputPort());
+            this.addOperator(retain);
+        }
 
         return result;
     }

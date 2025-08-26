@@ -66,7 +66,7 @@ public class BaseSQLTests {
     // Debugging: set to true to only compile SQL
     public static final boolean skipRust = false;
     // Debugging: set to only accept some tests
-    public static Predicate<CompilerCircuitStream> acceptTest = x -> true;
+    public static final Predicate<CompilerCircuitStream> acceptTest = x -> true;
 
     /** Override this method to prepare the tables on
      * which the tests are built. */

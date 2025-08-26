@@ -339,7 +339,7 @@ public class ValueNumbering extends InnerVisitor {
     @Override
     public void startVisit(IDBSPInnerNode node) {
         // This node may not be a DBSPClosureExpression.
-        // It can be a e.g., Fold constructor.
+        // It can be e.g., Fold constructor.
         Logger.INSTANCE.belowLevel(this, 1)
                 .append("CSE analyzing ")
                 .appendSupplier(node::toString)
