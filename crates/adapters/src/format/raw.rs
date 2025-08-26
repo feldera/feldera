@@ -153,6 +153,10 @@ impl Parser for RawParser {
 
         (self.input_stream.take_all(), errors)
     }
+
+    fn gather_staged(&self) -> Box<dyn dbsp::operator::StagedBuffers> {
+        self.input_stream.gather_staged()
+    }
 }
 
 /// Deserializer implementation that deserializes a byte slice as a struct with one column that contains

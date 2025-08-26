@@ -17,6 +17,7 @@ use crate::{InputBuffer, InputReader, Parser, TransportInputEndpoint};
 use anyhow::Error as AnyError;
 use crossbeam::sync::{Parker, Unparker};
 use csv::ReaderBuilder as CsvReaderBuilder;
+use dbsp::operator::StagedBuffers;
 use feldera_adapterlib::format::BufferSize;
 use feldera_adapterlib::transport::Resume;
 use feldera_types::config::{
@@ -297,6 +298,18 @@ enum ConsumerCall {
     Eoi,
 }
 
+struct DummyStagedBuffers {
+    data: Vec<String>,
+    handle: Arc<DummyInputReceiverInner>,
+}
+
+impl StagedBuffers for DummyStagedBuffers {
+    fn flush(&mut self) {
+        info!("flushing {} staged buffers", self.data.len());
+        self.handle.flushed.lock().unwrap().append(&mut self.data);
+    }
+}
+
 struct DummyParser(Arc<DummyInputReceiverInner>);
 
 impl DummyParser {
@@ -323,6 +336,13 @@ impl Parser for DummyParser {
     fn fork(&self) -> Box<dyn Parser> {
         Box::new(Self(self.0.clone()))
     }
+
+    fn gather_staged(&self) -> Box<dyn StagedBuffers> {
+        Box::new(DummyStagedBuffers {
+            data: mem::take(&mut *self.0.staged.lock().unwrap()),
+            handle: self.0.clone(),
+        })
+    }
 }
 
 struct DummyInputBuffer {
@@ -335,6 +355,13 @@ impl InputBuffer for DummyInputBuffer {
         if let Some(s) = self.data.take() {
             info!("flushing {:?}", s);
             self.receiver.flushed.lock().unwrap().push(s);
+        }
+    }
+
+    fn stage(&mut self) {
+        if let Some(s) = self.data.take() {
+            info!("staging {:?}", s);
+            self.receiver.staged.lock().unwrap().push(s);
         }
     }
 
@@ -370,6 +397,7 @@ struct DummyInputReceiverInner {
     drop_buffered: AtomicBool,
     calls: Mutex<Vec<ConsumerCall>>,
     flushed: Mutex<Vec<String>>,
+    staged: Mutex<Vec<String>>,
 }
 
 impl DummyInputReceiver {
@@ -383,6 +411,7 @@ impl DummyInputReceiver {
                 drop_buffered: AtomicBool::new(false),
                 calls: Mutex::new(Vec::new()),
                 flushed: Mutex::new(Vec::new()),
+                staged: Mutex::new(Vec::new()),
             }),
             parker,
         }

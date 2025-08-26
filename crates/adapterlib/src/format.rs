@@ -1,3 +1,4 @@
+use std::any::Any;
 use std::borrow::Cow;
 use std::fmt::{Display, Error as FmtError, Formatter};
 use std::hash::Hasher;
@@ -5,6 +6,7 @@ use std::ops::{Add, AddAssign};
 
 use actix_web::HttpRequest;
 use anyhow::Result as AnyResult;
+use dbsp::operator::input::StagedBuffers;
 use erased_serde::Serialize as ErasedSerialize;
 use feldera_types::config::ConnectorConfig;
 use feldera_types::program_schema::Relation;
@@ -61,13 +63,40 @@ pub trait InputFormat: Send + Sync {
 /// A collection of records associated with an input handle.
 ///
 /// A [Parser] holds and adds records to an [InputBuffer].  The client, which is
-/// typically an [InputReader](crate::transport::InputReader), gathers one or
+/// typically an [InputReader](crate::transport::InputReader), collects one or
 /// more [InputBuffer]s and pushes them to the circuit when the controller
 /// requests it.
-pub trait InputBuffer: Send {
+///
+/// # Pushing buffers into a circuit
+///
+/// There are two ways to push `InputBuffer`s into a circuit:
+///
+/// - With [InputBuffer::flush].  This immediately pushes the input buffer into
+///   the DBSP input handle.
+///
+/// - With [InputBuffer::stage] on some number of buffers, followed by
+///   [Parser::gather_staged], which collects all the parser's staged buffers
+///   into a [StagedBuffers].  Then, later, call [StagedBuffers::flush] pushes
+///   the input buffers into the circuit.
+///
+/// Both approaches are equivalent in terms of correctness.  There can be a
+/// difference in performance, because [InputBuffer::flush] has a significant
+/// cost for a large number of records.  Using [StagedBuffers] has a similar
+/// cost, but it incurs it in the call to [Parser::gather_staged] rather than in
+/// [StagedBuffers::flush].  This means that, if the input connector can buffer
+/// data ahead of the circuit's demand for it, the cost can be hidden and the
+/// circuit as a whole runs faster.
+pub trait InputBuffer: Any + Send {
     /// Pushes all of the records into the circuit input handle, and discards
     /// those records.
     fn flush(&mut self);
+
+    /// Stages the records into the [Parser]'s internal staging buffer.
+    ///
+    /// See [Pushing buffers into a circuit] for more information.
+    ///
+    /// [Pushing buffers into a circuit]: InputBuffer#pushing-buffers-into-a-circuit
+    fn stage(&mut self);
 
     /// Returns the number of buffered records and bytes.
     fn len(&self) -> BufferSize;
@@ -172,6 +201,12 @@ impl InputBuffer for Option<Box<dyn InputBuffer>> {
         }
     }
 
+    fn stage(&mut self) {
+        if let Some(buffer) = self.as_mut() {
+            buffer.stage()
+        }
+    }
+
     fn take_some(&mut self, n: usize) -> Option<Box<dyn InputBuffer>> {
         self.as_mut().and_then(|buffer| buffer.take_some(n))
     }
@@ -185,6 +220,13 @@ pub trait Parser: Send + Sync {
     /// XXX it would be even better if this were `&self` and avoided keeping
     /// state entirely.
     fn parse(&mut self, data: &[u8]) -> (Option<Box<dyn InputBuffer>>, Vec<ParseError>);
+
+    /// Collects all of the [InputBuffer]s returned by [parse](Self::parse) that
+    /// have been staged with [InputBuffer::stage].  See [Pushing buffers into a
+    /// circuit] for more information.
+    ///
+    /// [Pushing buffers into a circuit]: InputBuffer#pushing-buffers-into-a-circuit
+    fn gather_staged(&self) -> Box<dyn StagedBuffers>;
 
     /// Returns an object that can be used to break a stream of incoming data
     /// into complete records to pass to [Parser::parse].
