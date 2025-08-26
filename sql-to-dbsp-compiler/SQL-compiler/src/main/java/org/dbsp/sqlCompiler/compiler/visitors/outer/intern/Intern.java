@@ -39,7 +39,7 @@ public class Intern extends Passes {
         public String toString() {
             return this.columns.toString();
         }
-    };
+    }
 
     final Map<DBSPSourceTableOperator, InternedColumnList> internedInputs;
 

@@ -11,7 +11,7 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.IsNumericType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeISize;
 
-/** Converts a[index] into a[(isize)(index - 1] */
+/** Converts a[index] into a[(isize)(index - 1)] */
 public class AdjustSqlIndex extends ExpressionTranslator {
     public AdjustSqlIndex(DBSPCompiler compiler) {
         super(compiler);

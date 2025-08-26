@@ -53,7 +53,7 @@ public class DBSPHandleErrorExpression extends DBSPExpression {
         PanicWithSource,
         /** On error return None; this is the behavior of e.g., safe_cast in SQL */
         ReturnNone
-    };
+    }
 
     public final RuntimeBehavior runtimeBehavior;
     /** Index in the table with error messages; used for PanicWithSource; 0 if unused. */

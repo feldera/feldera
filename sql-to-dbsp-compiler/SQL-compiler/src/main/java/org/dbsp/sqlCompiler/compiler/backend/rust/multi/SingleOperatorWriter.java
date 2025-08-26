@@ -34,7 +34,8 @@ public final class SingleOperatorWriter extends BaseRustCodeGenerator {
 
     /* Example output:
      * ... preamble ...
-     * pub fn create_xxx(circuit: &RootCircuit, hash: Option<&'static str>, sourceMap: &'static SourceMap, catalog: &mut Catalog,
+     * pub fn create_xxx(circuit: &RootCircuit, hash: Option<&'static str>,
+     *                  sourceMap: &'static SourceMap, catalog: &mut Catalog,
      *                  i0: &Stream<RootCircuit, WSet<Tup1<Option<i32>>>>,
      *                  i1: &Stream<RootCircuit, WSet<Tup1<Option<i32>>>>,
      *                  i2: &Stream<RootCircuit, WSet<Tup1<Option<i32>>>>, ) ->

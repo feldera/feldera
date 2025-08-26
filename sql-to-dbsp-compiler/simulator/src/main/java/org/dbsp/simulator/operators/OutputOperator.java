@@ -1,8 +1,6 @@
 package org.dbsp.simulator.operators;
 
 import org.dbsp.simulator.collections.BaseCollection;
-import org.dbsp.simulator.types.DataType;
-import org.dbsp.simulator.types.SqlType;
 
 public class OutputOperator extends UnaryOperator {
     final String name;

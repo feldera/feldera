@@ -55,7 +55,7 @@ public class CalciteOptimizer implements IWritesLogs {
         RelNode optimize(RelNode rel, int level);
     }
 
-    /** Base class for optimizations that use a Hep optimizer */
+    /** Base class for optimizations that use a HEP optimizer */
     public static abstract class HepOptimizerStep implements CalciteOptimizerStep {
         /** The program that performs the optimization for the specified optimization level */
         abstract HepProgram getProgram(RelNode node, int level);

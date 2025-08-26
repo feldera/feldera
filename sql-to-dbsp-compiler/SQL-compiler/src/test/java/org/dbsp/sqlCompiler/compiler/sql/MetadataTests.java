@@ -1457,7 +1457,7 @@ public class MetadataTests extends BaseSQLTests {
     }
 
     @Test
-    public void issue4466() throws IOException, InterruptedException, SQLException {
+    public void issue4466() throws IOException, SQLException {
         File file = createInputScript("""
                 CREATE TABLE tbl(arr1 INT ARRAY);
                 CREATE MATERIALIZED VIEW v AS SELECT

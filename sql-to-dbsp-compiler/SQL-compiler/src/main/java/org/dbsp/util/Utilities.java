@@ -498,7 +498,7 @@ public class Utilities {
         }
     }
 
-    /** Serialize as String a object to the specified depth */
+    /** Serialize as String an object to the specified depth */
     public static String toDepth(JsonNode node, int depth) {
         IndentStreamBuilder builder = new IndentStreamBuilder();
         toDepth(node, depth, builder);

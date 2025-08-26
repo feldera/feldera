@@ -8,8 +8,6 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 
-import java.util.List;
-
 /** These operators have *two* outputs: a regular stream output
  * and an error output */
 public abstract class DBSPOperatorWithError

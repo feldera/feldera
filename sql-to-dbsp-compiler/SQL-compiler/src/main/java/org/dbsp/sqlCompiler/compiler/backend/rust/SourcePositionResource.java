@@ -2,11 +2,9 @@ package org.dbsp.sqlCompiler.compiler.backend.rust;
 
 import org.dbsp.sqlCompiler.circuit.annotation.OperatorHash;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
-import org.dbsp.sqlCompiler.compiler.backend.rust.multi.CircuitWriter;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePosition;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.ir.expression.DBSPHandleErrorExpression;
-import org.dbsp.sqlCompiler.ir.expression.DBSPStaticExpression;
 import org.dbsp.util.HashString;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Utilities;

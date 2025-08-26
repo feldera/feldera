@@ -4,8 +4,8 @@ import org.junit.Test;
 public class IntegratorTests {
     int sum(int[] data) {
         int sum = 0;
-        for (int i = 0; i < data.length; i++) {
-            sum += data[i];
+        for (int datum : data) {
+            sum += datum;
         }
         return sum;
     }

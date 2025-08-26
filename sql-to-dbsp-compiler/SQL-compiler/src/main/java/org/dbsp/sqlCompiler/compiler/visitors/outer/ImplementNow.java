@@ -78,7 +78,7 @@ import java.util.Set;
 /** Implements the "now" operator.
  * This requires:
  * - using the input stream called now
- * - rewriting map operators that have calls to "now()' into a join followed by a map
+ * - rewriting map operators that have calls to "now()" into a join followed by a map
  * - rewriting the invocations to the now() function in the map function to references to the input variable */
 public class ImplementNow extends Passes {
     /** Discovers whether an expression contains a call to the now() function */
@@ -215,7 +215,7 @@ public class ImplementNow extends Passes {
 
     /** Replace map operators that contain now() as an expression with
      * map operators that take an extra field and use that instead of the now() call.
-     * Insert a join prior to such operators (which also requires a MapIndex operator.
+     * Insert a join prior to such operators (which also requires a MapIndex operator).
      * Also inserts a MapIndex operator to index the 'NOW' built-in table.
      * Same for filter operators. */
     static class RewriteNow extends CircuitCloneVisitor {

@@ -124,7 +124,7 @@ public interface IHasSchema extends IHasCalciteObject, ICastable {
             String json = Utilities.deterministicObjectMapper().writeValueAsString(jsonType);
             RelDataType type = RelJsonReader.readType(typeFactory, json);
             RelDataTypeField field = new RelDataTypeFieldImpl(name, index, type);
-            // Do we need lateness, watermark, etc?
+            // Do we need lateness, watermark, etc.?
             boolean interned = node.has("interned");
             return new RelColumnMetadata(CalciteObject.EMPTY, field, isPrimaryKey, caseSensitive,
                     null, null, null, SourcePositionRange.INVALID, interned);

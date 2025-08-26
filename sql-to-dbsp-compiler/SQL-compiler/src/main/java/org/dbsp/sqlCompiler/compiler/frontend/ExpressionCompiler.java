@@ -803,7 +803,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
     @Nullable
     DBSPExpression makeRegex(DBSPStringLiteral lit) {
         DBSPTypeUser user = new DBSPTypeUser(CalciteObject.EMPTY, USER, "Regex", true);
-        // Here we lie about the type: new does not return an Regex, but a Result<Regex, Error>.
+        // Here we lie about the type: new does not return a Regex, but a Result<Regex, Error>.
         // We lie again that ok returns an unchanged type.  These two lies cancel out.
         DBSPExpression init = user.constructor("new", lit.toStr());
         init = init.applyMethod("ok", init.getType());

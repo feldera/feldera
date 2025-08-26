@@ -100,7 +100,7 @@ public class PostgresTimestampTests extends SqlIoTest {
                 // -- this fails (even though TZ is a no-op, we still look it up)
                 // INSERT INTO TIMESTAMP_TBL VALUES ('19970710 173201 America/Does_not_exist');
                 // ERROR:  time zone "america/does_not_exist" not recognized
-                // LINE 1: INSERT INTO TIMESTAMP_TBL VALUES ('19970710 173201 America/D...
+                // LINE 1: INSERT INTO TIMESTAMP_TBL VALUES ('19970710 173201 America/D...)
                 // -- Check date conversion and date arithmetic
                 "INSERT INTO TIMESTAMP_TBL VALUES ('1997-06-10 18:32:01');\n" +          // INSERT INTO TIMESTAMP_TBL VALUES ('1997-06-10 18:32:01 PDT');
                 "INSERT INTO TIMESTAMP_TBL VALUES ('1997-02-10 17:32:01');\n" +          // INSERT INTO TIMESTAMP_TBL VALUES ('Feb 10 17:32:01 1997');

@@ -3,7 +3,7 @@ package org.dbsp.sqlCompiler.compiler.sql.quidem;
 import org.junit.Ignore;
 import org.junit.Test;
 
-// From from winagg.iq that use the HR database
+// From winagg.iq that use the HR database
 public class HRWinAggTests extends HrBaseTests {
     @Test
     @Ignore("ORDER BY strings not supported https://github.com/feldera/feldera/issues/457, first_value")

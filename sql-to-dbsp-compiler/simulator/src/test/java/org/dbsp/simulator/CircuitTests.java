@@ -20,6 +20,7 @@ import org.junit.Assert;
 import org.junit.Test;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.function.Function;
 
 public class CircuitTests {
@@ -31,8 +32,9 @@ public class CircuitTests {
         InputOperator input = new InputOperator("T", new ZSetType(new TupleSqlType(List.of(IntegerSqlType.INSTANCE)), w));
         circuit.addOperator(input);
         Function<DynamicSqlValue, DynamicSqlValue> func = x ->
-                new SqlTuple(new IntegerSqlValue(x.to(SqlTuple.class).get(0)
-                        .to(IntegerSqlValue.class).getValue() + 1));
+                new SqlTuple(new IntegerSqlValue(
+                        Objects.requireNonNull(x.to(SqlTuple.class).get(0)
+                                .to(IntegerSqlValue.class).getValue()) + 1));
         SelectOperator select = new SelectOperator(new ZSetType(new TupleSqlType(IntegerSqlType.INSTANCE), w),
                 new RuntimeFunction<>(new FunctionType(IntegerSqlType.INSTANCE, IntegerSqlType.INSTANCE), func),
                 input.getOutput());
@@ -59,9 +61,6 @@ public class CircuitTests {
         Circuit circuit = new Circuit();
         InputOperator input = new InputOperator("T", new ZSetType(new TupleSqlType(List.of(IntegerSqlType.INSTANCE)), w));
         circuit.addOperator(input);
-        Function<DynamicSqlValue, DynamicSqlValue> func = x ->
-                new SqlTuple(new IntegerSqlValue(x.to(SqlTuple.class).get(0)
-                        .to(IntegerSqlValue.class).getValue() + 1));
         IntegrateOperator select = new IntegrateOperator(input.getOutput());
         circuit.addOperator(select);
         OutputOperator output = new OutputOperator("V", select.getOutput());

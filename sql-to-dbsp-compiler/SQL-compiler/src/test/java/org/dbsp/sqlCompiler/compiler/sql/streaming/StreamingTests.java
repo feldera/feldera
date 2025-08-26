@@ -1049,7 +1049,7 @@ public class StreamingTests extends StreamingTestBase {
             Assert.assertEquals(this.expectedWaterline, this.waterline);
             Assert.assertEquals(this.expectedChain, this.chain);
         }
-    };
+    }
 
     @Test
     public void testNow5() {
@@ -1938,11 +1938,6 @@ public class StreamingTests extends StreamingTestBase {
                 DBSPTypeString.varchar(false)
         );
         DBSPType e = new DBSPTypeTuple(DBSPTypeString.varchar(false));
-        /*
-        DBSPTypeMap map = new DBSPTypeMap(
-                new DBSPTypeVariant(false),
-                new DBSPTypeVariant(false), false);
-         */
 
         String sql = """
                 CREATE TABLE series (

@@ -4,6 +4,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessRetai
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPBinaryOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPChainAggregateOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPInputMapWithWaterlineOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPLagOperator;
@@ -22,6 +23,8 @@ public class StrayGC extends CircuitWithGraphsVisitor {
     void check(DBSPBinaryOperator operator) {
         // At least one sibling on the left input must contain an integral
         var left = operator.left();
+        if (left.operator.is(DBSPInputMapWithWaterlineOperator.class))
+            return;
         CircuitGraph graph = this.getGraph();
         for (Port<DBSPOperator> sibling: graph.getSuccessors(left.operator)) {
             DBSPOperator so = sibling.node();

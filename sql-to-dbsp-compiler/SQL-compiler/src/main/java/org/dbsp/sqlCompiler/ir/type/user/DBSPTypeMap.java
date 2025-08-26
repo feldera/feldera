@@ -9,7 +9,6 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPMapExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.ICollectionType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
-import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
 

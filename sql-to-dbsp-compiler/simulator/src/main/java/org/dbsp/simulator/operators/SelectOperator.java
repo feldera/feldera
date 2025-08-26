@@ -16,6 +16,7 @@ public class SelectOperator extends UnaryOperator {
         this.tupleTransform = tupleTransform;
     }
 
+    @SuppressWarnings("unchecked")
     @Override
     public void step() {
         ZSet<DynamicSqlValue> input = (ZSet<DynamicSqlValue>) this.input().getCurrentValue();

@@ -87,7 +87,7 @@ public class DBSPNestedOperator extends DBSPOperator implements ICircuit {
     /** Add an output for this nested operator.  The port may be null if the corresponding output
      * has actually been deleted.
      * @param view  View corresponding to output.
-     * @param port  Output port corresponding to the view (may be in a differentiator).
+     * @param port  Output port corresponding to the view (could be in a differentiator).
      * @return      A port of this operator that corresponds
      */
     public OutputPort addOutput(ProgramIdentifier view, @Nullable OutputPort port) {

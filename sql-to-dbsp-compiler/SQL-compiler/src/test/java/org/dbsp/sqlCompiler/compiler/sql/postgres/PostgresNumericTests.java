@@ -855,30 +855,6 @@ public class PostgresNumericTests extends SqlIoTest {
                     -7.777 |        -8 |      -7.8 |        -7 |      -7.7""");
     }
 
-    // -- the large values fall into the numeric abbreviation code's maximal classes
-    //WITH v(x) AS
-    //  (VALUES('0'::numeric),('1'),('-1'),('4.2'),('-7.777'),('1e340'),('-1e340'),
-    //         ('inf'),('-inf'),('nan'),
-    //         ('inf'),('-inf'),('nan'))
-    //SELECT substring(x::text, 1, 32)
-    //FROM v ORDER BY x;
-    //            substring
-    //----------------------------------
-    // -Infinity
-    // -Infinity
-    // -1000000000000000000000000000000
-    // -7.777
-    // -1
-    // 0
-    // 1
-    // 4.2
-    // 10000000000000000000000000000000
-    // Infinity
-    // Infinity
-    // NaN
-    // NaN
-    //(13 rows)
-
     @Test
     public void testSqrt() {
         // Removed 'inf' and 'nan'.
