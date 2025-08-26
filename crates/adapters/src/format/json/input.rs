@@ -9,6 +9,7 @@ use crate::{
     ControllerError,
 };
 use actix_web::HttpRequest;
+use dbsp::operator::StagedBuffers;
 use erased_serde::Serialize as ErasedSerialize;
 use feldera_adapterlib::format::Splitter;
 use feldera_types::format::json::{JsonLines, JsonParserConfig, JsonUpdateFormat};
@@ -369,6 +370,10 @@ impl Parser for JsonParser {
         }
 
         (self.input_stream.take_all(), errors)
+    }
+
+    fn stage(&self, buffers: Vec<Box<dyn InputBuffer>>) -> Box<dyn StagedBuffers> {
+        self.input_stream.stage(buffers)
     }
 
     fn fork(&self) -> Box<dyn Parser> {

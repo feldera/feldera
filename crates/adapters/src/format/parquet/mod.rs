@@ -9,6 +9,7 @@ use arrow::datatypes::{
     TimeUnit,
 };
 use bytes::Bytes;
+use dbsp::operator::StagedBuffers;
 use erased_serde::Serialize as ErasedSerialize;
 use feldera_adapterlib::catalog::ArrowStream;
 use feldera_types::config::ConnectorConfig;
@@ -158,6 +159,10 @@ impl Parser for ParquetParser {
 
     fn splitter(&self) -> Box<dyn super::Splitter> {
         Box::new(Sponge)
+    }
+
+    fn stage(&self, buffers: Vec<Box<dyn InputBuffer>>) -> Box<dyn StagedBuffers> {
+        self.input_stream.stage(buffers)
     }
 }
 

@@ -2,6 +2,7 @@ use crate::catalog::InputCollectionHandle;
 use crate::format::{get_input_format, InputBuffer, Splitter};
 use crate::{controller::FormatConfig, InputConsumer, ParseError, Parser};
 use anyhow::{anyhow, Error as AnyError};
+use dbsp::operator::StagedBuffers;
 use feldera_adapterlib::format::BufferSize;
 use feldera_adapterlib::transport::Resume;
 use feldera_types::config::FtModel;
@@ -204,5 +205,9 @@ impl Parser for MockInputParser {
     fn splitter(&self) -> Box<dyn Splitter> {
         let state = self.0.lock().unwrap();
         state.parser.splitter()
+    }
+
+    fn stage(&self, buffers: Vec<Box<dyn InputBuffer>>) -> Box<dyn StagedBuffers> {
+        self.0.lock().unwrap().parser.stage(buffers)
     }
 }

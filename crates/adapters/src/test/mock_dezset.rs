@@ -11,12 +11,13 @@ use anyhow::anyhow;
 use anyhow::Result as AnyResult;
 use apache_avro::{types::Value as AvroValue, Schema as AvroSchema};
 use arrow::array::RecordBatch;
-use dbsp::DBData;
+use dbsp::{operator::StagedBuffers, DBData};
 use erased_serde::Deserializer as ErasedDeserializer;
 use feldera_adapterlib::format::BufferSize;
 use feldera_types::serde_with_context::{DeserializeWithContext, SqlSerdeConfig};
 use serde_arrow::Deserializer as ArrowDeserializer;
 use std::{
+    any::Any,
     fmt::Debug,
     hash::{DefaultHasher, Hash, Hasher},
     mem::swap,
@@ -258,6 +259,44 @@ where
     }
 }
 
+struct MockDeZSetStreamStagedBuffers<T, U> {
+    buffers: Vec<MockUpdate<T, U>>,
+    handle: MockDeZSet<T, U>,
+}
+
+impl<T, U> MockDeZSetStreamStagedBuffers<T, U>
+where
+    T: 'static,
+    U: 'static,
+{
+    fn new(buffers: Vec<Box<dyn InputBuffer>>, zset: &MockDeZSet<T, U>) -> Self {
+        Self {
+            buffers: buffers
+                .into_iter()
+                .map(|buffer| {
+                    (buffer as Box<dyn Any>)
+                        .downcast::<MockDeZSetStreamBuffer<T, U>>()
+                        .unwrap()
+                        .updates
+                })
+                .flatten()
+                .collect(),
+            handle: zset.clone(),
+        }
+    }
+}
+
+impl<T, U> StagedBuffers for MockDeZSetStreamStagedBuffers<T, U> {
+    fn flush(&mut self) {
+        self.handle
+            .0
+            .lock()
+            .unwrap()
+            .flushed
+            .append(&mut self.buffers);
+    }
+}
+
 #[derive(Clone)]
 pub struct MockDeZSetStream<De, T, U, C>
 where
@@ -324,6 +363,13 @@ where
 
     fn fork(&self) -> Box<dyn DeCollectionStream> {
         Box::new(Self::new(self.buffer.handle.clone(), self.config.clone()))
+    }
+
+    fn stage(&self, buffers: Vec<Box<dyn InputBuffer>>) -> Box<dyn StagedBuffers> {
+        Box::new(MockDeZSetStreamStagedBuffers::new(
+            buffers,
+            &self.buffer.handle,
+        ))
     }
 }
 
@@ -445,6 +491,13 @@ where
     fn fork(&self) -> Box<dyn ArrowStream> {
         Box::new(self.clone())
     }
+
+    fn stage(&self, buffers: Vec<Box<dyn InputBuffer>>) -> Box<dyn StagedBuffers> {
+        Box::new(MockDeZSetStreamStagedBuffers::new(
+            buffers,
+            &self.buffer.handle,
+        ))
+    }
 }
 
 /// [`AvroStream`] implementation that collects deserialized records into a
@@ -490,6 +543,10 @@ where
 
     fn fork(&self) -> Box<dyn AvroStream> {
         Box::new(Self::new(self.handle.clone()))
+    }
+
+    fn stage(&self, buffers: Vec<Box<dyn InputBuffer>>) -> Box<dyn StagedBuffers> {
+        Box::new(MockDeZSetStreamStagedBuffers::new(buffers, &self.handle))
     }
 }
 
