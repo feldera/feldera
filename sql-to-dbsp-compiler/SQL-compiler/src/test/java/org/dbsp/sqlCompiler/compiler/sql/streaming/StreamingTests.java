@@ -1011,7 +1011,7 @@ public class StreamingTests extends StreamingTestBase {
                 WHERE ts >= now() - INTERVAL 1 DAY
                 GROUP BY users""";
         CompilerCircuitStream ccs = this.getCCS(sql);
-        CircuitVisitor visitor = new Inspector(ccs.compiler, 1, 1, 2);
+        CircuitVisitor visitor = new Inspector(ccs.compiler, 1, 1, 1);
         ccs.visit(visitor);
     }
 

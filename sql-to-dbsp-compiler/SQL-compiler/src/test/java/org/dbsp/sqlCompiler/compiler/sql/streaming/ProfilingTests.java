@@ -64,12 +64,13 @@ public class ProfilingTests extends StreamingTestBase {
                         CircuitConfig,
                         metrics::TOTAL_LATE_RECORDS,
                     },
-                    utils::{Tup2, Tup3},
+                    utils::{Tup1, Tup2, Tup3},
                     zset,
                 };
 
                 use feldera_sqllib::{
                     append_to_collection_handle,
+                    append_to_map_handle,
                     read_output_handle,
                     casts::{cast_to_Timestamp_s,handle_error},
                     string::SqlString,
@@ -219,6 +220,36 @@ public class ProfilingTests extends StreamingTestBase {
                             let duration = end.duration_since(start).expect("could not get time");
                             println!("{:?},{:?}", duration.as_millis(), profile.total_used_bytes().unwrap().bytes);
                             */
+                        }
+                    }""");
+        this.profile(sql, main);
+    }
+
+    @Test
+    public void profileInputWithWaterline() throws IOException, InterruptedException, SQLException {
+        // Check that the GC for InputMapWithWaterline works.
+        String sql = """
+                CREATE TABLE auction (
+                   date_time TIMESTAMP NOT NULL LATENESS INTERVAL 1 MINUTE,
+                   expires   TIMESTAMP NOT NULL,
+                   id        INT NOT NULL PRIMARY KEY
+                );
+
+                CREATE VIEW V AS
+                SELECT * FROM auction;
+                """;
+        // Rust program which profiles the circuit.
+        String main = this.createMain("""
+                    // Initial data value for timestamp
+                    let mut timestamp = handle_error(cast_to_Timestamp_s(SqlString::from_ref("2024-01-10 10:10:10")));
+                    for i in 0..1000000 {
+                        let expire = timestamp.add(1000000);
+                        timestamp = timestamp.add(20000);
+                        let auction = zset!(Tup3::new(timestamp, expire, i) => 1);
+                        append_to_map_handle(&auction, &streams.0, |x| Tup1::new(x.2));
+                        if i % 100 == 0 {
+                            let _ = circuit.step().expect("could not run circuit");
+                            let _ = &read_output_handle(&streams.2);
                         }
                     }""");
         this.profile(sql, main);

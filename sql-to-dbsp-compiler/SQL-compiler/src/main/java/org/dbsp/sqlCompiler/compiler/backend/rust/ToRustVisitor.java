@@ -106,12 +106,10 @@ import org.dbsp.sqlCompiler.ir.statement.DBSPFunctionItem;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStaticItem;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStructItem;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
-import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeStream;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
-import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeUser;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.util.HashString;
@@ -273,21 +271,7 @@ public class ToRustVisitor extends CircuitVisitor {
         } else {
             signature.append("(").increase();
             for (IInputOperator input: circuit.sourceOperators.values()) {
-                DBSPType type;
-                DBSPTypeZSet zset = input.getDataOutputType().as(DBSPTypeZSet.class);
-                if (zset != null) {
-                    type = new DBSPTypeUser(
-                            zset.getNode(), DBSPTypeCode.USER, "ZSetHandle", false,
-                            zset.elementType);
-                } else {
-                    DBSPTypeStruct upsertStruct = input.asOperator()
-                            .to(IInputMapOperator.class).getStructUpsertType(
-                            new ProgramIdentifier(input.getOriginalRowType().sanitizedName + "_upsert", false));
-                    DBSPTypeIndexedZSet ix = input.getDataOutputType().to(DBSPTypeIndexedZSet.class);
-                    type = new DBSPTypeUser(
-                            ix.getNode(), DBSPTypeCode.USER, "MapHandle", false,
-                            ix.keyType, ix.elementType, upsertStruct.toTupleDeep());
-                }
+                DBSPType type = input.getHandleType();
                 type.accept(inner);
                 signature.append(",").newline();
             }

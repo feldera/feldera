@@ -1,21 +1,24 @@
 package org.dbsp.sqlCompiler.circuit;
 
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.circuit.operator.IInputOperator;
 import org.dbsp.sqlCompiler.compiler.TableMetadata;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeOption;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeUser;
 
 import java.util.ArrayList;
 import java.util.List;
 
 /** Interface for a source operator that has primary keys */
-public interface IInputMapOperator {
+public interface IInputMapOperator extends IInputOperator {
     TableMetadata getMetadata();
     List<Integer> getKeyFields();
     DBSPTypeIndexedZSet getOutputIndexedZSetType();
@@ -90,5 +93,14 @@ public interface IInputMapOperator {
             current++;
         }
         return new DBSPTypeStruct(this.getOriginalRowType().getNode(), name, name.name(), fields, false);
+    }
+
+    default DBSPTypeUser getHandleType() {
+        DBSPTypeStruct upsertStruct = this.getStructUpsertType(
+                        new ProgramIdentifier(this.getOriginalRowType().sanitizedName + "_upsert", false));
+        DBSPTypeIndexedZSet ix = this.getDataOutputType().to(DBSPTypeIndexedZSet.class);
+        return new DBSPTypeUser(
+                ix.getNode(), DBSPTypeCode.USER, "MapHandle", false,
+                ix.keyType, ix.elementType, upsertStruct.toTupleDeep());
     }
 }

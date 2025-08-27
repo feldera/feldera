@@ -5,6 +5,7 @@ import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeUser;
 
 public interface IInputOperator {
     TableMetadata getMetadata();
@@ -13,4 +14,6 @@ public interface IInputOperator {
     SourcePositionRange getSourcePosition();
     DBSPType getDataOutputType();
     DBSPTypeStruct getOriginalRowType();
+    /** Type of handle used for this operator when inserted in the circuit */
+    DBSPTypeUser getHandleType();
 }

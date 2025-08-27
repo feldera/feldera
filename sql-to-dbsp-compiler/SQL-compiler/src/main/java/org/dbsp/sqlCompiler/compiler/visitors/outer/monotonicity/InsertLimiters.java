@@ -1386,8 +1386,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
             return operator;
         }
 
-        boolean replaceIndexedInput = indexedOutputType != null
-                && !this.compiler.options.ioOptions.emitHandles;
+        boolean replaceIndexedInput = indexedOutputType != null;
 
         List<OutputPort> sources = Linq.map(operator.inputs, this::mapped);
         DBSPSimpleOperator replacement = operator.withInputs(sources, this.force)
