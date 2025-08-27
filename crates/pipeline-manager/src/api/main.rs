@@ -13,7 +13,7 @@ use crate::unstable_features;
 use actix_http::body::BoxBody;
 use actix_http::StatusCode;
 use actix_web::body::MessageBody;
-use actix_web::dev::{HttpServiceFactory, Service, ServiceResponse};
+use actix_web::dev::{Service, ServiceResponse};
 use actix_web::http::{header, Method};
 use actix_web::Scope;
 use actix_web::{
