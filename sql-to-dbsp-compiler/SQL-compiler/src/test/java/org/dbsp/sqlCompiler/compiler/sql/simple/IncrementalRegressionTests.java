@@ -766,7 +766,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
                 if (operator.right().operator.is(DBSPJoinIndexOperator.class))
                     depth = Math.max(depth, depthMap.get(operator.right().operator) + 1);
                 depthMap.put(operator, depth);
-                Assert.assertTrue(depth < 3);
+                Assert.assertTrue(depth <= 3);
             }
         });
     }

@@ -1,7 +1,6 @@
 package org.dbsp.sqlCompiler.ir.aggregate;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import org.apache.calcite.rel.core.Aggregate;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
