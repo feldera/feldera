@@ -67,18 +67,19 @@ use dbsp::{
     },
     circuit::metrics::TOTAL_LATE_RECORDS,
     dynamic::{DowncastTrait, DynData, Erase},
+    operator::Update,
     trace::{
         ord::{OrdIndexedWSetBuilder, OrdWSetBuilder},
         BatchReader, BatchReaderFactories, Builder, Cursor,
     },
     typed_batch::TypedBatch,
     utils::*,
-    DBData, OrdIndexedZSet, OrdZSet, OutputHandle, SetHandle, ZSetHandle, ZWeight,
+    DBData, MapHandle, OrdIndexedZSet, OrdZSet, OutputHandle, ZSetHandle, ZWeight,
 };
 use num::PrimInt;
 use num_traits::Pow;
 use std::marker::PhantomData;
-use std::ops::{Add, Deref, Neg};
+use std::ops::{Deref, Neg};
 use std::sync::OnceLock;
 use std::{fmt::Debug, sync::atomic::Ordering};
 
@@ -1084,22 +1085,27 @@ where
 }
 
 #[doc(hidden)]
-pub fn append_to_upsert_handle<K>(data: &WSet<K>, handle: &SetHandle<K>)
-where
+pub fn append_to_map_handle<K, V, U>(
+    data: &WSet<V>,
+    handle: &MapHandle<K, V, U>,
+    key_f: fn(&V) -> K,
+) where
     K: DBData,
+    V: DBData,
+    U: DBData,
 {
     let mut cursor = data.cursor();
     while cursor.key_valid() {
-        let mut w = *cursor.weight().deref();
-        let mut insert = true;
-        if !w.ge0() {
-            insert = false;
-            w = w.neg();
+        let w = *cursor.weight().deref();
+        if w.is_zero() {
+            continue;
         }
-        while !w.le0() {
-            let key = unsafe { cursor.key().downcast::<K>() };
-            handle.push(key.clone(), insert);
-            w = w.add(Weight::neg(Weight::one()));
+        if !w.ge0() {
+            let key = unsafe { cursor.key().downcast::<V>() };
+            handle.push(key_f(&key.clone()), Update::Delete);
+        } else {
+            let key = unsafe { cursor.key().downcast::<V>() };
+            handle.push(key_f(&key.clone()), Update::Insert(key.clone()));
         }
         cursor.step_key();
     }

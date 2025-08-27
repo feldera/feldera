@@ -60,12 +60,12 @@ public class TimeTests extends BaseSQLTests {
         DBSPCompiler compiler = this.compileQuery(query);
         CompilerCircuitStream ccs = this.getCCS(compiler);
         DBSPZSetExpression expectedOutput = new DBSPZSetExpression(new DBSPTupleExpression(fields));
-        InputOutputChange change = new InputOutputChange(this.createInput(), new Change(expectedOutput));
+        InputOutputChange change = new InputOutputChange(this.createInput("T"), new Change("V", expectedOutput));
         ccs.addChange(change);
     }
 
-    public Change createInput() {
-        return new Change(new DBSPZSetExpression(new DBSPTupleExpression(new DBSPTimestampLiteral(100))));
+    public Change createInput(String name) {
+        return new Change(name, new DBSPZSetExpression(new DBSPTupleExpression(new DBSPTimestampLiteral(100))));
     }
 
     @Test

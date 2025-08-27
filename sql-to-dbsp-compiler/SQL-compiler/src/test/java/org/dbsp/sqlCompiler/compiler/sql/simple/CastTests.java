@@ -63,7 +63,7 @@ public class CastTests extends SqlIoTest {
     }
 
     public Change createInput() {
-        return new Change(new DBSPZSetExpression(new DBSPTupleExpression(
+        return new Change("T", new DBSPZSetExpression(new DBSPTupleExpression(
                 new DBSPI32Literal(10),
                 new DBSPDoubleLiteral(12.0),
                 new DBSPStringLiteral("100100"),
@@ -74,7 +74,7 @@ public class CastTests extends SqlIoTest {
     public void testQuery(String query, DBSPZSetExpression expectedOutput) {
         query = "CREATE VIEW V AS " + query + ";";
         CompilerCircuitStream ccs = this.getCCS(query);
-        InputOutputChange change = new InputOutputChange(this.createInput(), new Change(expectedOutput));
+        InputOutputChange change = new InputOutputChange(this.createInput(), new Change("V", expectedOutput));
         ccs.addChange(change);
     }
 

@@ -24,6 +24,7 @@
 package org.dbsp.sqlCompiler.compiler.sql.postgres;
 
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.frontend.TableData;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.sql.tools.CompilerCircuitStream;
 import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
@@ -142,7 +143,7 @@ public class PostgresTimestampTests extends SqlIoTest {
         query = "CREATE VIEW V AS " + query;
         DBSPCompiler compiler = this.compileQuery(query, true);
         CompilerCircuitStream ccs = this.getCCS(compiler);
-        DBSPZSetExpression input = compiler.getTableContents().getTableContents(
+        TableData input = compiler.getTableContents().getTableData(
                 compiler.canonicalName("TIMESTAMP_TBL", false));
         InputOutputChange change = new InputOutputChange(new Change(input), expectedOutput);
         ccs.addChange(change);
@@ -558,7 +559,7 @@ public class PostgresTimestampTests extends SqlIoTest {
                         new DBSPI32Literal(-(int)(TableParser.shortIntervalToMilliseconds(d) / 60000), true)), DBSPExpression.class);
         String query = "SELECT TIMESTAMPDIFF(MINUTE, d1, timestamp '1997-01-02') AS diff\n" +
                 "   FROM TIMESTAMP_TBL WHERE d1 BETWEEN '1902-01-01' AND '2038-01-01'";
-        this.testQuery(query, new Change(new DBSPZSetExpression(results)));
+        this.testQuery(query, new Change("V", new DBSPZSetExpression(results)));
     }
 
     @Test
@@ -661,7 +662,7 @@ public class PostgresTimestampTests extends SqlIoTest {
         DBSPExpression[] results = Linq.map(data, d ->
                 new DBSPTupleExpression(d == null ? DBSPLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,true)) :
                         new DBSPI32Literal(-(int)(TableParser.shortIntervalToMilliseconds(d)/1000), true)), DBSPExpression.class);
-        this.testQuery(query, new Change(new DBSPZSetExpression(results)));
+        this.testQuery(query, new Change("V", new DBSPZSetExpression(results)));
     }
 
     @Test

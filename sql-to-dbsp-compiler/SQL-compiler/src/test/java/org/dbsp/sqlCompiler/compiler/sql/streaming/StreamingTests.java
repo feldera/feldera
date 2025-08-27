@@ -12,6 +12,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.TestUtil;
+import org.dbsp.sqlCompiler.compiler.frontend.TableData;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.sql.OtherTests;
 import org.dbsp.sqlCompiler.compiler.sql.StreamingTestBase;
@@ -1817,49 +1818,32 @@ public class StreamingTests extends StreamingTestBase {
                 SELECT AVG(distance), CAST(pickup AS DATE) FROM series GROUP BY CAST(pickup AS DATE);""";
         CompilerCircuitStream ccs = this.getCCS(sql);
         ccs.addChange(new InputOutputChange(
-                new Change(
+                new Change("series",
                         new DBSPZSetExpression(
                                 new DBSPTupleExpression(
                                         new DBSPDoubleLiteral(10.0, true),
                                         new DBSPTimestampLiteral("2023-12-30 10:00:00", false)))),
                 new Change(
-                        new DBSPZSetExpression(
+                        new TableData("V", new DBSPZSetExpression(
                                 new DBSPTupleExpression(
                                         new DBSPDoubleLiteral(10.0, true),
-                                        new DBSPDateLiteral("2023-12-30", false))),
-                        DBSPZSetExpression.emptyWithElementType(error))));
+                                        new DBSPDateLiteral("2023-12-30", false)))),
+                        new TableData(DBSPCompiler.ERROR_TABLE_NAME, DBSPZSetExpression.emptyWithElementType(error)))));
         // Insert tuple before waterline, should be dropped
         ccs.addChange(new InputOutputChange(
-                new Change(
+                new Change("series",
                         new DBSPZSetExpression(
                                 new DBSPTupleExpression(
                                         new DBSPDoubleLiteral(10.0, true),
                                         new DBSPTimestampLiteral("2023-12-29 10:00:00", false)))),
                 new Change(
-                        DBSPZSetExpression.emptyWithElementType(out),
-                        new DBSPZSetExpression(
+                        new TableData("V", DBSPZSetExpression.emptyWithElementType(out)),
+                        new TableData(DBSPCompiler.ERROR_TABLE_NAME, new DBSPZSetExpression(
                                 new DBSPTupleExpression(
                                         new DBSPStringLiteral("series"),
                                         new DBSPStringLiteral("Late value"),
-                                        /*
-                                        new DBSPVariantExpression(
-                                                new DBSPMapExpression(map,
-                                                        Linq.list(
-                                                                new DBSPVariantExpression(
-                                                                        new DBSPStringLiteral("distance")
-                                                                ),
-                                                                new DBSPVariantExpression(
-                                                                        new DBSPDoubleLiteral(10.0)
-                                                                ),
-                                                                new DBSPVariantExpression(
-                                                                        new DBSPStringLiteral("pickup")
-                                                                ),
-                                                                new DBSPVariantExpression(
-                                                                        new DBSPTimestampLiteral("2023-12-29 10:00:00", false)
-                                                                )))))
-                                        */
                                         new DBSPStringLiteral("(Some(10.0), 2023-12-29 10:00:00)")
-                        )))));
+                        ))))));
         // Insert tuple after waterline, should change average.
         // Waterline is advanced
         var set = new DBSPZSetExpression(
@@ -1871,44 +1855,28 @@ public class StreamingTests extends StreamingTestBase {
                         new DBSPDoubleLiteral(10.0, true),
                         new DBSPDateLiteral("2023-12-30", false))).negate());
         ccs.addChange(new InputOutputChange(
-                new Change(
+                new Change("series",
                         new DBSPZSetExpression(
                                 new DBSPTupleExpression(
                                         new DBSPDoubleLiteral(20.0, true),
                                         new DBSPTimestampLiteral("2023-12-30 10:10:00", false)))),
-                new Change(set, DBSPZSetExpression.emptyWithElementType(error))));
+                new Change(new TableData("V", set),
+                        new TableData(DBSPCompiler.ERROR_TABLE_NAME, DBSPZSetExpression.emptyWithElementType(error)))));
         // Insert tuple before last waterline, should be dropped
         ccs.addChange(new InputOutputChange(
-                new Change(
+                new Change("series",
                         new DBSPZSetExpression(
                                 new DBSPTupleExpression(
                                         new DBSPDoubleLiteral(10.0, true),
                                         new DBSPTimestampLiteral("2023-12-29 09:10:00", false)))),
                 new Change(
-                        DBSPZSetExpression.emptyWithElementType(out),
-                        new DBSPZSetExpression(
+                        new TableData("V", DBSPZSetExpression.emptyWithElementType(out)),
+                        new TableData(DBSPCompiler.ERROR_TABLE_NAME, new DBSPZSetExpression(
                                 new DBSPTupleExpression(
                                         new DBSPStringLiteral("series"),
                                         new DBSPStringLiteral("Late value"),
-                                        /*
-                                        new DBSPVariantExpression(
-                                                new DBSPMapExpression(map,
-                                                        Linq.list(
-                                                                new DBSPVariantExpression(
-                                                                        new DBSPStringLiteral("distance")
-                                                                ),
-                                                                new DBSPVariantExpression(
-                                                                        new DBSPDoubleLiteral(10.0)
-                                                                ),
-                                                                new DBSPVariantExpression(
-                                                                        new DBSPStringLiteral("pickup")
-                                                                ),
-                                                                new DBSPVariantExpression(
-                                                                        new DBSPTimestampLiteral("2023-12-29 09:10:00", false)
-                                                                ))))
-                                         */
                                         new DBSPStringLiteral("(Some(10.0), 2023-12-29 09:10:00)")
-                                )))));
+                                ))))));
         // Insert tuple in the past, but before the last waterline
         var set1 = new DBSPZSetExpression(
                 new DBSPTupleExpression(
@@ -1919,12 +1887,14 @@ public class StreamingTests extends StreamingTestBase {
                     new DBSPDoubleLiteral(15.0, true),
                     new DBSPDateLiteral("2023-12-30", false))).negate());
         ccs.addChange(new InputOutputChange(
-                new Change(
+                new Change("series",
                         new DBSPZSetExpression(
                                 new DBSPTupleExpression(
                                         new DBSPDoubleLiteral(10.0, true),
                                         new DBSPTimestampLiteral("2023-12-30 10:00:00", false)))),
-                new Change(set1, DBSPZSetExpression.emptyWithElementType(error))));
+                new Change(
+                        new TableData("V", set1),
+                        new TableData(DBSPCompiler.ERROR_TABLE_NAME, DBSPZSetExpression.emptyWithElementType(error)))));
     }
 
     @Test
@@ -1949,102 +1919,67 @@ public class StreamingTests extends StreamingTestBase {
                 CREATE VIEW E AS SELECT MESSAGE FROM ERROR_VIEW WHERE MESSAGE LIKE '%a%';""";
         CompilerCircuitStream ccs = this.getCCS(sql, Linq.list("series"), Linq.list("e", "error_view"));
         ccs.addChange(new InputOutputChange(
-                new Change(
+                new Change("series",
                         new DBSPZSetExpression(
                                 new DBSPTupleExpression(
                                         new DBSPDoubleLiteral(10.0, true),
                                         new DBSPTimestampLiteral("2023-12-30 10:00:00", false)))),
                 new Change(
-                        DBSPZSetExpression.emptyWithElementType(e),
-                        DBSPZSetExpression.emptyWithElementType(error))));
+                        new TableData("E", DBSPZSetExpression.emptyWithElementType(e)),
+                        new TableData(DBSPCompiler.ERROR_TABLE_NAME, DBSPZSetExpression.emptyWithElementType(error)))));
         // Insert tuple before waterline, should be dropped
         ccs.addChange(new InputOutputChange(
-                new Change(
+                new Change("series",
                         new DBSPZSetExpression(
                                 new DBSPTupleExpression(
                                         new DBSPDoubleLiteral(10.0, true),
                                         new DBSPTimestampLiteral("2023-12-29 10:00:00", false)))),
                 new Change(
-                        new DBSPZSetExpression(
-                                new DBSPTupleExpression(new DBSPStringLiteral("Late value"))),
-                        new DBSPZSetExpression(
+                        new TableData("E", new DBSPZSetExpression(
+                                new DBSPTupleExpression(new DBSPStringLiteral("Late value")))),
+                        new TableData(DBSPCompiler.ERROR_TABLE_NAME, new DBSPZSetExpression(
                                 new DBSPTupleExpression(
                                         new DBSPStringLiteral("series"),
                                         new DBSPStringLiteral("Late value"),
-                                        /*
-                                        new DBSPVariantExpression(
-                                                new DBSPMapExpression(map,
-                                                        Linq.list(
-                                                                new DBSPVariantExpression(
-                                                                        new DBSPStringLiteral("distance")
-                                                                ),
-                                                                new DBSPVariantExpression(
-                                                                        new DBSPDoubleLiteral(10.0)
-                                                                ),
-                                                                new DBSPVariantExpression(
-                                                                        new DBSPStringLiteral("pickup")
-                                                                ),
-                                                                new DBSPVariantExpression(
-                                                                        new DBSPTimestampLiteral("2023-12-29 10:00:00", false)
-                                                                ))))
-
-                                         */
                                         new DBSPStringLiteral("(Some(10.0), 2023-12-29 10:00:00)")
-                                )))));
+                                ))))));
         // Insert tuple after waterline, should change average.
         // Waterline is advanced
         ccs.addChange(new InputOutputChange(
-                new Change(
+                new Change("series",
                         new DBSPZSetExpression(
                                 new DBSPTupleExpression(
                                         new DBSPDoubleLiteral(20.0, true),
                                         new DBSPTimestampLiteral("2023-12-30 10:10:00", false)))),
                 new Change(
-                        DBSPZSetExpression.emptyWithElementType(e),
-                        DBSPZSetExpression.emptyWithElementType(error))));
+                        new TableData("E", DBSPZSetExpression.emptyWithElementType(e)),
+                        new TableData(DBSPCompiler.ERROR_TABLE_NAME, DBSPZSetExpression.emptyWithElementType(error)))));
         // Insert tuple before last waterline, should be dropped
         ccs.addChange(new InputOutputChange(
-                new Change(
+                new Change("series",
                         new DBSPZSetExpression(
                                 new DBSPTupleExpression(
                                         new DBSPDoubleLiteral(10.0, true),
                                         new DBSPTimestampLiteral("2023-12-29 09:10:00", false)))),
                 new Change(
-                        new DBSPZSetExpression(
-                                new DBSPTupleExpression(new DBSPStringLiteral("Late value"))),
-                        new DBSPZSetExpression(
+                        new TableData("E", new DBSPZSetExpression(
+                                new DBSPTupleExpression(new DBSPStringLiteral("Late value")))),
+                        new TableData(DBSPCompiler.ERROR_TABLE_NAME, new DBSPZSetExpression(
                                 new DBSPTupleExpression(
                                         new DBSPStringLiteral("series"),
                                         new DBSPStringLiteral("Late value"),
-                                        /*
-                                        new DBSPVariantExpression(
-                                                new DBSPMapExpression(map,
-                                                        Linq.list(
-                                                                new DBSPVariantExpression(
-                                                                        new DBSPStringLiteral("distance")
-                                                                ),
-                                                                new DBSPVariantExpression(
-                                                                        new DBSPDoubleLiteral(10.0)
-                                                                ),
-                                                                new DBSPVariantExpression(
-                                                                        new DBSPStringLiteral("pickup")
-                                                                ),
-                                                                new DBSPVariantExpression(
-                                                                        new DBSPTimestampLiteral("2023-12-29 09:10:00", false)
-                                                                ))))
-                                         */
                                         new DBSPStringLiteral("(Some(10.0), 2023-12-29 09:10:00)")
-                                )))));
+                                ))))));
         // Insert tuple in the past, but before the last waterline
         ccs.addChange(new InputOutputChange(
-                new Change(
+                new Change("series",
                         new DBSPZSetExpression(
                                 new DBSPTupleExpression(
                                         new DBSPDoubleLiteral(10.0, true),
                                         new DBSPTimestampLiteral("2023-12-30 10:00:00", false)))),
                 new Change(
-                        DBSPZSetExpression.emptyWithElementType(e),
-                        DBSPZSetExpression.emptyWithElementType(error))));
+                        new TableData("E", DBSPZSetExpression.emptyWithElementType(e)),
+                        new TableData(DBSPCompiler.ERROR_TABLE_NAME, DBSPZSetExpression.emptyWithElementType(error)))));
     }
 
     @Test

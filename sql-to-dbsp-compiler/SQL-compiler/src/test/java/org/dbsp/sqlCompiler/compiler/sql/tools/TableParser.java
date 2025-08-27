@@ -3,6 +3,7 @@ package org.dbsp.sqlCompiler.compiler.sql.tools;
 import org.apache.calcite.util.ConversionUtil;
 import org.apache.calcite.util.TimeString;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
+import org.dbsp.sqlCompiler.compiler.frontend.TableData;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
@@ -424,7 +425,7 @@ public class TableParser {
         extraFields.add(new DBSPTypeInteger(CalciteObject.EMPTY, 64, true, false));
         DBSPType extraOutputType = new DBSPTypeTuple(extraFields);
         Change change = parseTable(table, new DBSPTypeZSet(extraOutputType), -1);
-        DBSPZSetExpression[] extracted = Linq.map(change.sets, SqlIoTest::extractWeight, DBSPZSetExpression.class);
+        TableData[] extracted = Linq.map(change.sets, SqlIoTest::extractWeight, TableData.class);
         return new Change(extracted);
     }
 
@@ -497,7 +498,7 @@ public class TableParser {
             throw new RuntimeException("Expected " + rowCount + " rows, found " + rowsFound + ": " + table);
         if (inHeader)
             throw new RuntimeException("Could not find end of header for table " + table);
-        return new Change(result);
+        return new Change(table, result);
     }
 
     public static Change fromResultSet(ResultSet data, DBSPType outputType) throws SQLException {

@@ -31,13 +31,11 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.CreateTableStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.DropTableStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.RelStatement;
-import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.ExpandCasts;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Simplify;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.util.Utilities;
 
-import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -52,22 +50,27 @@ public class TableContents implements ICompilerComponent {
     /** Remember the last statement that created each table. */
     final Map<ProgramIdentifier, CreateTableStatement> tableCreation = new HashMap<>();
     /** Keep track of the contents of each table. */
-    @Nullable
     final Map<ProgramIdentifier, DBSPZSetExpression> tableContents;
     final DBSPCompiler compiler;
 
-    public TableContents(DBSPCompiler compiler, boolean trackTableContents) {
+    public TableContents(DBSPCompiler compiler) {
         this.compiler = compiler;
-        if (trackTableContents)
-            this.tableContents = new HashMap<>();
-        else
-            this.tableContents = null;
+        this.tableContents = new HashMap<>();
     }
 
     public DBSPZSetExpression getTableContents(ProgramIdentifier tableName) {
-        if (this.tableContents == null)
-            throw new UnsupportedException("Not keeping track of table contents", CalciteObject.EMPTY);
         return Utilities.getExists(this.tableContents, tableName);
+    }
+
+    public TableData getTableData(ProgramIdentifier tableName) {
+        return new TableData(tableName,
+                this.getTableContents(tableName),
+                this.getPrimaryKeyColumns(tableName));
+    }
+
+    public List<Integer> getPrimaryKeyColumns(ProgramIdentifier tableName) {
+        CreateTableStatement stat = Utilities.getExists(this.tableCreation, tableName);
+        return stat.getPrimaryKeyColumns();
     }
 
     /** "Execute" a DDL statement.
@@ -77,16 +80,14 @@ public class TableContents implements ICompilerComponent {
             CreateTableStatement create = statement.to(CreateTableStatement.class);
             Utilities.putNew(this.tableCreation, create.relationName, create);
             this.tablesCreated.add(create.relationName);
-            if (this.tableContents != null)
-                Utilities.putNew(this.tableContents, create.relationName,
-                        DBSPZSetExpression.emptyWithElementType(
-                                create.getRowTypeAsTuple(this.compiler.getTypeCompiler())));
+            Utilities.putNew(this.tableContents, create.relationName,
+                    DBSPZSetExpression.emptyWithElementType(
+                            create.getRowTypeAsTuple(this.compiler.getTypeCompiler())));
         } else if (statement.is(DropTableStatement.class)) {
             DropTableStatement drop = statement.to(DropTableStatement.class);
             this.tableCreation.remove(drop.tableName);
             this.tablesCreated.remove(drop.tableName);
-            if (this.tableContents != null)
-                this.tableContents.remove(drop.tableName);
+            this.tableContents.remove(drop.tableName);
         }
         return true;
     }
@@ -96,8 +97,6 @@ public class TableContents implements ICompilerComponent {
     }
 
     public void addToTable(ProgramIdentifier tableName, DBSPZSetExpression value, DBSPCompiler compiler) {
-        if (this.tableContents == null)
-            throw new UnsupportedException("Not keeping track of table contents", CalciteObject.EMPTY);
         DBSPZSetExpression table = this.tableContents.get(tableName);
         Simplify simplify = new Simplify(compiler);
         ExpandCasts expand = new ExpandCasts(compiler);
@@ -124,16 +123,12 @@ public class TableContents implements ICompilerComponent {
 
     /** Clear the contents of all tables */
     public void clear() {
-        if (this.tableContents == null)
-            return;
         for (Map.Entry<ProgramIdentifier, DBSPZSetExpression> entry: this.tableContents.entrySet()) {
             entry.setValue(DBSPZSetExpression.emptyWithElementType(entry.getValue().getElementType()));
         }
     }
 
     public void removeTable(ProgramIdentifier name) {
-        if (this.tableContents == null)
-            return;
         this.tableContents.remove(name);
         this.tablesCreated.remove(name);
     }

@@ -5,6 +5,7 @@ import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.TestUtil;
 import org.dbsp.sqlCompiler.compiler.backend.rust.ToRustInnerVisitor;
+import org.dbsp.sqlCompiler.compiler.frontend.TableData;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Simplify;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
@@ -14,6 +15,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
+import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
 import org.junit.Assert;
 
@@ -103,13 +105,13 @@ public abstract class SqlIoTest extends BaseSQLTests {
      * (a, b) -> 4
      * (c, d) -> -1
      */
-    static DBSPZSetExpression extractWeight(DBSPZSetExpression data) {
-        DBSPTypeTuple rowType = data.getElementType().to(DBSPTypeTuple.class);
+    static TableData extractWeight(TableData data) {
+        DBSPTypeTuple rowType = data.data().getElementType().to(DBSPTypeTuple.class);
         int rowSize = rowType.size();
         DBSPType resultType = rowType.slice(0, rowSize - 1);
         DBSPZSetExpression result = DBSPZSetExpression.emptyWithElementType(resultType);
 
-        for (Map.Entry<DBSPExpression, Long> entry: data.data.entrySet()) {
+        for (Map.Entry<DBSPExpression, Long> entry: data.data().data.entrySet()) {
             Long weight = entry.getValue();
             DBSPExpression row = entry.getKey();
             DBSPTupleExpression tuple = row.to(DBSPTupleExpression.class);
@@ -121,14 +123,15 @@ public abstract class SqlIoTest extends BaseSQLTests {
             DBSPExpression newRow = new DBSPTupleExpression(prefix);
             result.append(newRow, weight);
         }
-        return result;
+        return new TableData(data.name(), result, data.primaryKeys());
     }
 
     // Maps Rust representation to change
     static final HashMap<String, Change> cachedChangeList = new HashMap<>();
 
-    static Change getCachedChange(DBSPCompiler compiler, DBSPZSetExpression[] data) {
-        DBSPTupleExpression tuple = new DBSPTupleExpression(data);
+    static Change getCachedChange(DBSPCompiler compiler, TableData[] data) {
+        DBSPTupleExpression tuple = new DBSPTupleExpression(
+                Linq.map(data, TableData::data, DBSPZSetExpression.class));
         String string = ToRustInnerVisitor.toRustString(compiler, tuple, null, false);
         Change change = cachedChangeList.get(string);
         if (change != null)
@@ -139,14 +142,13 @@ public abstract class SqlIoTest extends BaseSQLTests {
     }
 
     public Change getPreparedInputs(DBSPCompiler compiler) {
-        DBSPZSetExpression[] inputs = new DBSPZSetExpression[
+        TableData[] inputs = new TableData[
                 compiler.getTableContents().tablesCreated.size()];
         int index = 0;
         Simplify simplify = new Simplify(compiler);
         for (ProgramIdentifier table: compiler.getTableContents().tablesCreated) {
-            DBSPZSetExpression data = compiler.getTableContents().getTableContents(table);
-            var simplified = simplify.apply(data);
-            inputs[index++] = simplified.to(DBSPZSetExpression.class);
+            TableData data = compiler.getTableContents().getTableData(table);
+            inputs[index++] = data.transform(simplify);
         }
         return getCachedChange(compiler, inputs);
     }
@@ -162,7 +164,7 @@ public abstract class SqlIoTest extends BaseSQLTests {
             compiler.throwIfErrorsOccurred();
         InputOutputChange iochange = new InputOutputChange(
                 this.getPreparedInputs(compiler),
-                new Change(expected)
+                new Change("VV", expected)
         );
         ccs.addChange(iochange);
     }
@@ -293,7 +295,7 @@ public abstract class SqlIoTest extends BaseSQLTests {
         CompilerCircuitStream ccs = this.getCCSFailing(compiler, panicMessage);
         DBSPCircuit circuit = ccs.circuit;
         DBSPType outputType = circuit.getSingleOutputType();
-        Change result = new Change(
+        Change result = new Change("VV",
                 DBSPZSetExpression.emptyWithElementType(outputType.to(DBSPTypeZSet.class).getElementType()));
         InputOutputChange ioChange = new InputOutputChange(
                 this.getPreparedInputs(compiler),

@@ -37,6 +37,7 @@ import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.rust.RustFileWriter;
 import org.dbsp.sqlCompiler.compiler.frontend.TableContents;
+import org.dbsp.sqlCompiler.compiler.frontend.TableData;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.CreateRuntimeErrorWrappers;
@@ -83,7 +84,6 @@ import org.dbsp.sqllogictest.SqlTestPrepareViews;
 import org.dbsp.util.IndentStream;
 import org.dbsp.util.Linq;
 import org.dbsp.util.ProgramAndTester;
-import org.dbsp.util.TableValue;
 import org.dbsp.util.Utilities;
 
 import javax.annotation.Nullable;
@@ -131,14 +131,14 @@ public class DBSPExecutor extends SqlSltTestExecutor {
         this.toSkip = toSkip;
     }
 
-    public TableValue[] getInputSets(DBSPCompiler compiler) throws SQLException {
+    public TableData[] getInputSets(DBSPCompiler compiler) throws SQLException {
         for (SltSqlStatement statement : this.inputPreparation.statements)
             compiler.submitStatementForCompilation(statement.statement);
         TableContents tables = compiler.getTableContents();
-        TableValue[] tableValues = new TableValue[tables.tablesCreated.size()];
+        TableData[] tableValues = new TableData[tables.tablesCreated.size()];
         for (int i = 0; i < tableValues.length; i++) {
             ProgramIdentifier table = tables.tablesCreated.get(i);
-            tableValues[i] = new TableValue(table, tables.getTableContents(table));
+            tableValues[i] = new TableData(table, tables.getTableContents(table));
         }
         return tableValues;
     }
@@ -151,7 +151,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
         }
 
         @Override
-        public TableValue[] getInputs() throws SQLException {
+        public TableData[] getInputs() throws SQLException {
             return DBSPExecutor.this.getInputSets(this.compiler);
         }
     }

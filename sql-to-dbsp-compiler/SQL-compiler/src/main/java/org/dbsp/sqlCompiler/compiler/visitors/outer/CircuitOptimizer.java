@@ -106,13 +106,12 @@ public class CircuitOptimizer extends Passes {
                 g -> new OptimizeMaps(compiler, true, g, operatorsAnalyzed)));
         this.add(new OptimizeWithGraph(compiler, g -> new FilterJoinVisitor(compiler, g)));
         this.add(new MonotoneAnalyzer(compiler));
+        // Can remove this table after the monotone analysis only
         this.add(new RemoveTable(compiler, DBSPCompiler.ERROR_TABLE_NAME));
         // The circuit is complete here, start optimizing for real.
-        // Doing this after the monotone analysis only
 
         this.add(new LinearPostprocessRetainKeys(compiler));
-        if (!options.ioOptions.emitHandles)
-            this.add(new IndexedInputs(compiler));
+        this.add(new IndexedInputs(compiler));
         this.add(new OptimizeWithGraph(compiler, g -> new FilterJoinVisitor(compiler, g)));
         this.add(new DeadCode(compiler, true, false));
         this.add(new Simplify(compiler).circuitRewriter(true));

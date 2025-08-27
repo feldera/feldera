@@ -54,6 +54,11 @@ public abstract class DBSPSourceTableOperator
     }
 
     @Override
+    public DBSPTypeStruct getOriginalRowType() {
+        return this.originalRowType;
+    }
+
+    @Override
     public Iterable<? extends IColumnMetadata> getColumnsMetadata() {
         return this.metadata.getColumns();
     }

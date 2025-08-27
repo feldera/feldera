@@ -34,6 +34,7 @@ import org.dbsp.util.Linq;
 import org.dbsp.util.Properties;
 
 import javax.annotation.Nullable;
+import java.util.ArrayList;
 import java.util.List;
 
 /** Base class for CreateTableStatement and CreateViewStatement. */
@@ -58,6 +59,16 @@ public abstract class CreateRelationStatement
 
     public ProgramIdentifier getName() {
         return this.relationName;
+    }
+
+    public List<Integer> getPrimaryKeyColumns() {
+        List<Integer> keys = new ArrayList<>();
+        for (int i = 0; i < this.columns.size(); i++) {
+            RelColumnMetadata meta = this.columns.get(i);
+            if (meta.isPrimaryKey)
+                keys.add(i);
+        }
+        return keys;
     }
 
     public List<RelColumnMetadata> getColumns() {

@@ -4,6 +4,7 @@ import org.apache.calcite.util.TimeString;
 import org.apache.calcite.util.TimestampString;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.frontend.TableData;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests;
 import org.dbsp.sqlCompiler.compiler.sql.tools.Change;
@@ -76,7 +77,7 @@ public class VariantTests extends BaseSQLTests {
         query = "CREATE VIEW V AS " + query;
         CompilerCircuitStream ccs = this.getCCS(query);
         DBSPZSetExpression expectedOutput = new DBSPZSetExpression(new DBSPTupleExpression(fields));
-        InputOutputChange change = new InputOutputChange(new Change(), new Change(expectedOutput));
+        InputOutputChange change = new InputOutputChange(new Change(), new Change(new TableData("V", expectedOutput)));
         ccs.addChange(change);
     }
 

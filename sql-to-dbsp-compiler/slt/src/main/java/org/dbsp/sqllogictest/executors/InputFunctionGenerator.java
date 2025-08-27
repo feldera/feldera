@@ -2,6 +2,7 @@ package org.dbsp.sqllogictest.executors;
 
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.ToCsvVisitor;
+import org.dbsp.sqlCompiler.compiler.frontend.TableData;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.ir.DBSPFunction;
@@ -11,7 +12,6 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStrLiteral;
 import org.dbsp.sqllogictest.Main;
 import org.dbsp.util.Linq;
-import org.dbsp.util.TableValue;
 
 import javax.annotation.Nullable;
 import java.io.File;
@@ -39,27 +39,27 @@ class InputFunctionGenerator {
     }
 
     DBSPFunction createInputFunction() throws IOException, SQLException {
-        TableValue[] inputSets = this.inputGenerator.getInputs();
+        TableData[] inputSets = this.inputGenerator.getInputs();
         DBSPExpression[] fields = new DBSPExpression[inputSets.length];
         int totalSize = 0;
         Set<ProgramIdentifier> seen = new HashSet<>();
         for (int i = 0; i < inputSets.length; i++) {
-            totalSize += inputSets[i].contents.size();
-            fields[i] = inputSets[i].contents;
-            if (seen.contains(inputSets[i].tableName))
-                throw new RuntimeException("Table " + inputSets[i].tableName + " already in input");
-            seen.add(inputSets[i].tableName);
+            totalSize += inputSets[i].data().size();
+            fields[i] = inputSets[i].data();
+            if (seen.contains(inputSets[i].name()))
+                throw new RuntimeException("Table " + inputSets[i].name() + " already in input");
+            seen.add(inputSets[i].name());
         }
 
         if (totalSize > 10) {
             // If the data is large write, it to a set of CSV files and read it at runtime.
             for (int i = 0; i < inputSets.length; i++) {
-                String fileName = (Main.getAbsoluteRustDirectory() + inputSets[i].tableName) + ".csv";
+                String fileName = (Main.getAbsoluteRustDirectory() + inputSets[i].name()) + ".csv";
                 File file = new File(fileName);
-                ToCsvVisitor.toCsv(compiler, file, inputSets[i].contents);
+                ToCsvVisitor.toCsv(compiler, file, inputSets[i].data());
                 fields[i] = new DBSPApplyExpression(CalciteObject.EMPTY, "read_csv",
-                        inputSets[i].contents.getType(),
-                        new DBSPStrLiteral("./src/" + inputSets[i].tableName + ".csv"));
+                        inputSets[i].data().getType(),
+                        new DBSPStrLiteral("./src/" + inputSets[i].name() + ".csv"));
             }
         }
         DBSPRawTupleExpression result = new DBSPRawTupleExpression(fields);

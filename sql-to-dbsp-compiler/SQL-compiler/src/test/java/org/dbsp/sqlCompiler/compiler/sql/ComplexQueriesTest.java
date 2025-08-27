@@ -4,6 +4,7 @@ import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateWithWaterlineOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.frontend.TableData;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests;
 import org.dbsp.sqlCompiler.compiler.sql.tools.Change;
@@ -378,7 +379,7 @@ public class ComplexQueriesTest extends BaseSQLTests {
                     ON t1.cc_num = t2.cc_num);""";
         DBSPCompiler compiler = testCompiler();
         compiler.submitStatementsForCompilation(script);
-        DBSPZSetExpression[] inputs = new DBSPZSetExpression[] {
+        TableData demographics = new TableData("demographics",
                 new DBSPZSetExpression(new DBSPTupleExpression(
                         new DBSPDoubleLiteral(0.0),
                         new DBSPStringLiteral("First", true),
@@ -393,7 +394,8 @@ public class ComplexQueriesTest extends BaseSQLTests {
                         new DBSPI32Literal(100000, true),
                         new DBSPStringLiteral("Job", true),
                         new DBSPStringLiteral("2020-02-20", true)
-                        )),
+                        )));
+        TableData transactions = new TableData("transactions",
                 new DBSPZSetExpression(new DBSPTupleExpression(
                         new DBSPTimestampLiteral("2020-02-20 10:00:00", false),
                         new DBSPDoubleLiteral(0.0, false),
@@ -405,9 +407,8 @@ public class ComplexQueriesTest extends BaseSQLTests {
                         new DBSPDoubleLiteral(128.0),
                         new DBSPDoubleLiteral(128.0),
                         new DBSPI32Literal(0, true)
-                ))
-        };
-        InputOutputChange ip = new InputOutputChange(new Change(inputs), new Change());
+                )));
+        InputOutputChange ip = new InputOutputChange(new Change(demographics, transactions), new Change());
         CompilerCircuitStream ccs = this.getCCS(compiler);
         ccs.addChange(ip);
     }
@@ -437,14 +438,13 @@ public class ComplexQueriesTest extends BaseSQLTests {
                 FROM transactions AS t1;""";
         DBSPCompiler compiler = testCompiler();
         compiler.submitStatementsForCompilation(script);
-        DBSPZSetExpression[] inputs = new DBSPZSetExpression[] {
+        TableData transactions = new TableData("transactions",
                 new DBSPZSetExpression(new DBSPTupleExpression(
                         new DBSPI64Literal(0, false),
                         new DBSPDoubleLiteral(10.0, true),
                         new DBSPI32Literal(1000)
-                ))
-        };
-        InputOutputChange ip = new InputOutputChange(new Change(inputs), new Change());
+                )));
+        InputOutputChange ip = new InputOutputChange(new Change(transactions), new Change());
         CompilerCircuitStream ccs = this.getCCS(compiler);
         ccs.addChange(ip);
     }
