@@ -36,17 +36,14 @@ exclude = [
 ]
 resolver = "2"
 
-[patch.crates-io]
-actix-http = { git = "https://github.com/feldera/actix-web.git", branch = "issue1313"}
-
 [workspace.dependencies]
 actix = "0.13.1"
 actix-codec = "0.5.0"
 actix-cors = "0.6.4"
 actix-files = "0.6.2"
-actix-http = "3.9.0"
+actix-http = "3.11.1"
 actix-test = "0.1.1"
-actix-web = "4.9.0"
+actix-web = "4.11.0"
 actix-web-httpauth = "0.8.0"
 actix-web-static-files = "4.0.1"
 actix-ws = "0.3.0"
