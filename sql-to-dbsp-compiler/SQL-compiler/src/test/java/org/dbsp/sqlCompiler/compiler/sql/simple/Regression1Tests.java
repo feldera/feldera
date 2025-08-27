@@ -55,8 +55,8 @@ public class Regression1Tests extends SqlIoTest {
 
             @Override
             public void endVisit() {
-                // 1 combined max
-                Assert.assertEquals(1, this.streamAggregates);
+                // 3 separate max
+                Assert.assertEquals(3, this.streamAggregates);
                 // 1 for the two sums
                 Assert.assertEquals(1, this.linearAggregates);
             }

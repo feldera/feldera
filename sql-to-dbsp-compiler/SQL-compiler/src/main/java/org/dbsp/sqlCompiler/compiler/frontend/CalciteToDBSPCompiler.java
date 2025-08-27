@@ -784,9 +784,10 @@ public class CalciteToDBSPCompiler extends RelVisitor
     }
 
     /** Given two results of aggregation functions, join them on the common keys and concatenate the fields */
-    DBSPStreamJoinIndexOperator combineTwoAggregates(
+    public static DBSPStreamJoinIndexOperator combineTwoAggregates(
             CalciteRelNode node, DBSPType groupKeyType,
-            DBSPSimpleOperator left, DBSPSimpleOperator right) {
+            DBSPSimpleOperator left, DBSPSimpleOperator right,
+            Consumer<DBSPOperator> addOperator) {
         DBSPTypeTupleBase leftType = left.getOutputIndexedZSetType().getElementTypeTuple();
         DBSPTypeTupleBase rightType = right.getOutputIndexedZSetType().getElementTypeTuple();
 
@@ -804,7 +805,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
 
         DBSPStreamJoinIndexOperator result = new DBSPStreamJoinIndexOperator(
                 node, joinOutputType, appendFields, false, left.outputPort(), right.outputPort());
-        this.addOperator(result);
+        addOperator.accept(result);
         return result;
     }
 
@@ -833,8 +834,9 @@ public class CalciteToDBSPCompiler extends RelVisitor
     }
 
     /** Given a list of aggregates, combine them using joins in a balanced binary tree. */
-    DBSPSimpleOperator combineAggregateList(
-            CalciteRelNode node, DBSPType groupKeyType, List<DBSPSimpleOperator> aggregates) {
+    public static DBSPSimpleOperator combineAggregateList(
+            CalciteRelNode node, DBSPType groupKeyType, List<DBSPSimpleOperator> aggregates,
+            Consumer<DBSPOperator> addOperator) {
         if (aggregates.size() == 1) {
             return aggregates.get(0);
         }
@@ -844,19 +846,20 @@ public class CalciteToDBSPCompiler extends RelVisitor
             if (i == aggregates.size() - 1) {
                 pairs.add(aggregates.get(i));
             } else {
-                DBSPSimpleOperator join = this.combineTwoAggregates(node, groupKeyType, aggregates.get(i), aggregates.get(i + 1));
+                DBSPSimpleOperator join = combineTwoAggregates(
+                        node, groupKeyType, aggregates.get(i), aggregates.get(i + 1), addOperator);
                 pairs.add(join);
             }
         }
-        return this.combineAggregateList(node, groupKeyType, pairs);
+        return combineAggregateList(node, groupKeyType, pairs, addOperator);
     }
 
-    DBSPSimpleOperator joinAllAggregates(
+    public DBSPSimpleOperator joinAllAggregates(
             CalciteRelNode node, DBSPType groupKeyType, OutputPort indexedInput,
             List<DBSPAggregateList> aggregates) {
         List<DBSPSimpleOperator> implementations =
                 Linq.map(aggregates, a -> this.implementAggregate(node, groupKeyType, indexedInput, a));
-        DBSPSimpleOperator result = this.combineAggregateList(node, groupKeyType, implementations);
+        DBSPSimpleOperator result = combineAggregateList(node, groupKeyType, implementations, this::addOperator);
         return Objects.requireNonNull(result);
     }
 

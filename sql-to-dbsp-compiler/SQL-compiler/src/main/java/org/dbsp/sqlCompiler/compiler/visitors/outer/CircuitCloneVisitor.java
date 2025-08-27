@@ -81,24 +81,29 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs, 
 
     /**
      * The output that used to be computed by 'old' is now
-     * computed by 'newOp',
-     * @param old    Operator in the previous circuit.
-     * @param newOp  Operator replacing it in the new circuit.
-     * @param add    If true add the operator to the new circuit.
-     *               This may not be necessary if the operator has already been added. */
-    protected void map(OutputPort old, OutputPort newOp, boolean add) {
-        if (!old.equals(newOp)) {
+     * computed by 'newPort',
+     * @param oldPort  Port in the previous circuit.
+     * @param newPort  Port replacing it in the new circuit.
+     * @param add      If true add the newPort.node() operator to the new circuit.
+     *                 This may not be necessary if the operator has already been added. */
+    protected void map(OutputPort oldPort, OutputPort newPort, boolean add) {
+        if (!oldPort.equals(newPort)) {
+            if (this.preservesTypes && oldPort.exists() && newPort.exists()) {
+                Utilities.enforce(oldPort.outputType().sameType(newPort.outputType()),
+                        "Replacing operator with type\n" + oldPort.outputType() +
+                                " with new type\n" + newPort.outputType());
+            }
             Logger.INSTANCE.belowLevel(this, 1)
                     .appendSupplier(this::toString)
                     .append(":")
-                    .appendSupplier(old::toString)
+                    .appendSupplier(oldPort::toString)
                     .append(" -> ")
-                    .appendSupplier(newOp::toString)
+                    .appendSupplier(newPort::toString)
                     .newline();
         }
-        Utilities.putNew(this.remap, old, newOp);
+        Utilities.putNew(this.remap, oldPort, newPort);
         if (add)
-            this.addOperator(newOp.node());
+            this.addOperator(newPort.node());
     }
 
     protected void map(DBSPSimpleOperator old, DBSPSimpleOperator newOp, boolean add) {
@@ -120,11 +125,6 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs, 
         if (!old.equals(newOp)) {
             long derivedFrom = old.node().derivedFrom;
             newOp.node().setDerivedFrom(derivedFrom);
-            if (this.preservesTypes) {
-                Utilities.enforce(old.outputType().sameType(newOp.outputType()),
-                        "Replacing operator with type\n" + old.outputType() +
-                                " with new type\n" + newOp.outputType());
-            }
         }
     }
 

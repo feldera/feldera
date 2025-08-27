@@ -34,6 +34,7 @@ import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregateList;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregator;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeFunction;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.util.Utilities;
 
@@ -51,7 +52,16 @@ public final class DBSPStreamAggregateOperator extends DBSPAggregateOperatorBase
         Utilities.enforce(aggregateList == null || !aggregateList.isLinear());
         Utilities.enforce(aggregateList == null ||
                 aggregateList.rowVar.getType().sameType(input.getOutputIndexedZSetType().elementType.ref()));
+        Utilities.enforce(aggregateList == null ||
+                aggregateList.getType().to(DBSPTypeFunction.class).resultType.sameType(outputType.elementType));
         Utilities.enforce(input.getOutputIndexedZSetType().keyType.sameType(outputType.keyType));
+        /*
+        TODO: this requires some cleanup; types are not used consistently
+        Utilities.enforce(function == null ||
+                (outputType.getElementTypeTuple().size() == 1 &&
+                 outputType.getElementTypeTuple().sameType(
+                         function.type.to(DBSPTypeFunction.class).resultType)));
+         */
     }
 
     @Override

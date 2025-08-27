@@ -42,7 +42,7 @@ public class DBSPTypeSemigroup extends DBSPTypeUser {
         super(CalciteObject.EMPTY, DBSPTypeCode.SEMIGROUP, "Semigroup" + elementTypes.length, false,
                 Linq.concat(semigroupTypes, elementTypes));
         if (elementTypes.length != semigroupTypes.length)
-            throw new InternalCompilerError("Each element must have a corresponding semigroup, but I have " +
+            throw new InternalCompilerError("Each element must have a corresponding semigroup, but there are " +
                     elementTypes.length + " and " + semigroupTypes.length, this);
     }
 
