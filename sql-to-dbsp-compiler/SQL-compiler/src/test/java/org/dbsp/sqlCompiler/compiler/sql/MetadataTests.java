@@ -19,6 +19,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.statements.DeclareViewStatement;
 import org.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 import org.dbsp.util.NameGen;
 import org.dbsp.util.Utilities;
@@ -527,7 +528,7 @@ public class MetadataTests extends BaseSQLTests {
         TestUtil.assertMessagesContain(compiler, "PRIMARY KEY cannot be nullable");
         IInputOperator t = circuit.getInput(new ProgramIdentifier("t", false));
         Assert.assertNotNull(t);
-        DBSPType ix = t.getDataOutputType().to(DBSPTypeZSet.class).elementType;
+        DBSPType ix = t.getDataOutputType().to(DBSPTypeIndexedZSet.class).elementType;
         Assert.assertTrue(ix.is(DBSPTypeTuple.class));
         DBSPTypeTuple tuple = ix.to(DBSPTypeTuple.class);
         // The type should not be nullable despite the declaration

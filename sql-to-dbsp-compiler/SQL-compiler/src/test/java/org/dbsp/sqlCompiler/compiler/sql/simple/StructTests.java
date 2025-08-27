@@ -88,7 +88,7 @@ public class StructTests extends SqlIoTest {
         DBSPExpression pair = new DBSPTupleExpression(person0, person0);
         DBSPZSetExpression input = new DBSPZSetExpression(pair);
         DBSPZSetExpression output = new DBSPZSetExpression(new DBSPTupleExpression(address0));
-        ccs.addPair(new Change(input), new Change(output));
+        ccs.addPair(new Change("PERS", input), new Change("V", output));
     }
 
     @Test
@@ -127,7 +127,7 @@ public class StructTests extends SqlIoTest {
                         new DBSPStringLiteral("New York", true),
                         new DBSPStringLiteral("CA", true),
                         new DBSPStringLiteral("90000", true))));
-        ccs.addPair(new Change(input), new Change(output));
+        ccs.addPair(new Change("PERS", input), new Change("V0", output));
     }
 
     @Test
@@ -161,7 +161,7 @@ public class StructTests extends SqlIoTest {
         DBSPZSetExpression input = new DBSPZSetExpression(new DBSPTupleExpression(pers));
         DBSPZSetExpression output = new DBSPZSetExpression(new DBSPTupleExpression(
                         new DBSPStringLiteral("Broadway", true)));
-        ccs.addPair(new Change(input), new Change(output));
+        ccs.addPair(new Change("PERS", input), new Change("V", output));
     }
 
     @Test
@@ -185,7 +185,7 @@ public class StructTests extends SqlIoTest {
                         new DBSPStringLiteral("5th Avenue", true)),
                 new DBSPTupleExpression(
                         new DBSPStringLiteral("1st Street", true)));
-        ccs.addPair(new Change(input), new Change(output));
+        ccs.addPair(new Change("PERS", input), new Change("V", output));
     }
 
     @Test
@@ -223,7 +223,7 @@ public class StructTests extends SqlIoTest {
                 new DBSPTupleExpression(new DBSPI32Literal(3, true), t),
                 new DBSPTupleExpression(new DBSPI32Literal(4, true), t),
                 new DBSPTupleExpression(new DBSPI32Literal(5, true), t));
-        ccs.addPair(new Change(input), new Change(output));
+        ccs.addPair(new Change("T", input), new Change("V", output));
     }
 
     @Test
@@ -257,7 +257,7 @@ public class StructTests extends SqlIoTest {
                 new DBSPTupleExpression(new DBSPI32Literal(4, true)),
                 new DBSPTupleExpression(new DBSPI32Literal(5, true)),
                 new DBSPTupleExpression(new DBSPI32Literal(6, true)));
-        ccs.addPair(new Change(input), new Change(output));
+        ccs.addPair(new Change("T", input), new Change("V", output));
     }
 
     @Test
@@ -291,7 +291,7 @@ public class StructTests extends SqlIoTest {
                 new DBSPTupleExpression(new DBSPI32Literal(4, true)),
                 new DBSPTupleExpression(new DBSPI32Literal(5, true)),
                 new DBSPTupleExpression(new DBSPI32Literal(6, true)));
-        ccs.addPair(new Change(input), new Change(output));
+        ccs.addPair(new Change("T", input), new Change("V", output));
     }
 
     @Test
@@ -326,7 +326,7 @@ public class StructTests extends SqlIoTest {
         DBSPExpression data = new DBSPTupleExpression(person0);
         DBSPZSetExpression input = new DBSPZSetExpression(data);
         DBSPZSetExpression output = new DBSPZSetExpression(new DBSPTupleExpression(address0));
-        ccs.addPair(new Change(input), new Change(output));
+        ccs.addPair(new Change("PERS", input), new Change("V", output));
     }
 
     @Test
@@ -347,6 +347,6 @@ public class StructTests extends SqlIoTest {
         ).withMayBeNull(true);
         DBSPExpression address0 = tuple.none();
         DBSPZSetExpression input = new DBSPZSetExpression(new DBSPTupleExpression(address0));
-        ccs.addPair(new Change(input), new Change());
+        ccs.addPair(new Change("Address", input), new Change());
     }
 }

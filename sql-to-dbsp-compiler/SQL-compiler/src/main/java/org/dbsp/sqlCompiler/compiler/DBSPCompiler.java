@@ -174,8 +174,7 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         this.messages = new CompilerMessages(this);
         this.metadata = new ProgramMetadata();
         this.sqlToRelCompiler = new SqlToRelCompiler(options, this);
-        this.relToDBSPCompiler = new CalciteToDBSPCompiler(true, options,
-                this, this.metadata);
+        this.relToDBSPCompiler = new CalciteToDBSPCompiler(options, this, this.metadata);
         this.sources = new SourceFileContents();
         this.typeCompiler = new TypeCompiler(this);
         this.weightVar = DBSPTypeWeight.INSTANCE.var();

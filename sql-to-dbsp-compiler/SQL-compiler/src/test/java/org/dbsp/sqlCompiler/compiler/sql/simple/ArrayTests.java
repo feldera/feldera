@@ -27,7 +27,6 @@ import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests;
 import org.dbsp.sqlCompiler.compiler.sql.tools.Change;
-import org.dbsp.sqlCompiler.compiler.sql.tools.InputOutputChange;
 import org.dbsp.sqlCompiler.compiler.sql.tools.InputOutputChangeStream;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
@@ -52,6 +51,15 @@ public class ArrayTests extends BaseSQLTests {
         compiler.submitStatementsForCompilation(statements);
         compiler.submitStatementForCompilation(query);
         return compiler;
+    }
+
+    void testQuery(String query, Change input, DBSPZSetExpression output) {
+        this.testQuery("", query, input, output);
+    }
+
+    void testQuery(String statements, String query, Change input, DBSPZSetExpression output) {
+        this.testQuery(statements, query,
+                new InputOutputChangeStream().addPair(input, new Change("V", output)));
     }
 
     void testQuery(String statements, String query, InputOutputChangeStream streams) {
@@ -81,7 +89,7 @@ public class ArrayTests extends BaseSQLTests {
                         Linq.list(new DBSPTypeInteger(CalciteObject.EMPTY, 64, true, false))
                 ), true);
         // null vector
-        Change input = new Change(new DBSPZSetExpression(new DBSPTupleExpression(
+        Change input = new Change("bar", new DBSPZSetExpression(new DBSPTupleExpression(
                 Linq.list(new DBSPArrayExpression(vecType, true)), false)));
         Change output = new Change();
         InputOutputChangeStream stream = new InputOutputChangeStream().addPair(input, output);
@@ -111,8 +119,7 @@ public class ArrayTests extends BaseSQLTests {
                 Objects.requireNonNull(result).append(tuple);
         }
 
-        this.testQuery("", query, new InputOutputChange(
-                new Change(), new Change(result)).toStream());
+        this.testQuery(query, new Change(), result);
     }
 
     @Test
@@ -125,8 +132,7 @@ public class ArrayTests extends BaseSQLTests {
                 new DBSPI32Literal(4, false),
                 new DBSPI32Literal(6, false));
         DBSPZSetExpression result = new DBSPZSetExpression(tuple0, tuple1);
-        this.testQuery("", query, new InputOutputChange(
-                new Change(), new Change(result)).toStream());
+        this.testQuery(query, new Change(), result);
     }
 
     @Test
@@ -143,8 +149,7 @@ public class ArrayTests extends BaseSQLTests {
                         new DBSPI32Literal(6, false),
                         new DBSPI32Literal(12, false)));
         DBSPZSetExpression result = new DBSPZSetExpression(tuple0, tuple1);
-        this.testQuery("", query, new InputOutputChange(
-                new Change(), new Change(result)).toStream());
+        this.testQuery(query, new Change(), result);
     }
 
     @Test
@@ -159,8 +164,7 @@ public class ArrayTests extends BaseSQLTests {
                 Objects.requireNonNull(result).append(tuple);
         }
 
-        this.testQuery("", query, new InputOutputChange(
-                new Change(), new Change(result)).toStream());
+        this.testQuery(query, new Change(), result);
     }
 
     @Test
@@ -176,8 +180,7 @@ public class ArrayTests extends BaseSQLTests {
         }
         result.append(new DBSPTupleExpression(
                 DBSPLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,true))));
-        this.testQuery("", query, new InputOutputChange(
-                new Change(), new Change(result)).toStream());
+        this.testQuery(query, new Change(), result);
     }
 
     @Test
@@ -193,8 +196,7 @@ public class ArrayTests extends BaseSQLTests {
             else
                 Objects.requireNonNull(result).append(tuple);
         }
-        this.testQuery("", query, new InputOutputChange(
-                new Change(), new Change(result)).toStream());
+        this.testQuery(query, new Change(), result);
     }
 
     @Test
@@ -214,8 +216,7 @@ public class ArrayTests extends BaseSQLTests {
                 DBSPLiteral.none(new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,true)),
                 new DBSPI32Literal(6)));
 
-        this.testQuery("", query, new InputOutputChange(
-                new Change(), new Change(result)).toStream());
+        this.testQuery(query, new Change(), result);
     }
 
     @Test @Ignore("UNNEST with 2 arguments not yet implemented")
@@ -233,8 +234,7 @@ public class ArrayTests extends BaseSQLTests {
                 Objects.requireNonNull(result).append(tuple);
         }
 
-        this.testQuery("", query, new InputOutputChange(
-                new Change(), new Change(result)).toStream());
+        this.testQuery(query, new Change(), result);
     }
 
     @Test
@@ -266,8 +266,7 @@ public class ArrayTests extends BaseSQLTests {
                 new DBSPTupleExpression(new DBSPI32Literal(4, true), new DBSPI32Literal(7)),
                 new DBSPTupleExpression(new DBSPI32Literal(6, true), new DBSPI32Literal(7))
         );
-        this.testQuery(ddl, query, new InputOutputChange(
-                new Change(input), new Change(result)).toStream());
+        this.testQuery(ddl, query, new Change("ARR_TABLE", input), result);
     }
 
     @Test
@@ -322,7 +321,7 @@ public class ArrayTests extends BaseSQLTests {
                         new DBSPI32Literal(14));
                 result.append(tuple);
             }
-        this.testQuery(ddl, query, new InputOutputChange(new Change(input), new Change(result)).toStream());
+        this.testQuery(ddl, query, new Change("ARR_TABLE", input), result);
     }
 
     @Test
@@ -344,20 +343,19 @@ public class ArrayTests extends BaseSQLTests {
     @Test
     public void testConstants() {
         String query = "SELECT ARRAY[2,3][2], CARDINALITY(ARRAY[2,3]), ELEMENT(ARRAY[2])";
-        this.testQuery("", query, new InputOutputChange(new Change(),
-                new Change(new DBSPZSetExpression(
+        this.testQuery(query, new Change(),
+                new DBSPZSetExpression(
                         new DBSPTupleExpression(
                                 new DBSPI32Literal(3, true),
                                 new DBSPI32Literal(2),
-                                new DBSPI32Literal(2, true))
-                ))).toStream());
+                                new DBSPI32Literal(2, true))));
     }
 
     @Test
     public void testElementNull() {
-        this.testQuery("", "SELECT ELEMENT(NULL)", new InputOutputChange(new Change(),
-                new Change(new DBSPZSetExpression(
-                        new DBSPTupleExpression(DBSPNullLiteral.INSTANCE)))).toStream());
+        this.testQuery("", "SELECT ELEMENT(NULL)",
+                new Change(),
+                new DBSPZSetExpression(new DBSPTupleExpression(DBSPNullLiteral.INSTANCE)));
     }
 
     @Test
@@ -401,7 +399,7 @@ public class ArrayTests extends BaseSQLTests {
         );
 
         this.testQuery(ddl, "SELECT ARRAY_APPEND(val, 4) FROM ARR_TBL",
-                new InputOutputChangeStream().addPair(new Change(input), new Change(result)));
+                new Change("ARR_TBL", input), result);
     }
 
     @Test
@@ -439,7 +437,7 @@ public class ArrayTests extends BaseSQLTests {
         );
 
         this.testQuery(ddl, "SELECT ARRAY_APPEND(val, 4) FROM ARR_TBL",
-                new InputOutputChangeStream().addPair(new Change(input), new Change(result)));
+                new Change("ARR_TBL", input), result);
     }
 
     @Test
@@ -481,7 +479,7 @@ public class ArrayTests extends BaseSQLTests {
         );
 
         this.testQuery(ddl, "SELECT ARRAY_APPEND(val, 4) FROM ARR_TBL",
-                new InputOutputChangeStream().addPair(new Change(input), new Change(result)));
+                new Change("ARR_TBL", input), result);
     }
 
     @Test
@@ -511,7 +509,7 @@ public class ArrayTests extends BaseSQLTests {
         );
 
         this.testQuery(ddl, "SELECT ARRAY_MAX(val) FROM ARR_TBL",
-                new InputOutputChangeStream().addPair(new Change(input), new Change(result)));
+                new Change("ARR_TBL", input), result);
     }
 
     @Test
@@ -531,7 +529,7 @@ public class ArrayTests extends BaseSQLTests {
                             new DBSPI32Literal(10), new DBSPStringLiteral("hello"))
                     )));
         this.testQuery(ddl, "SELECT ARRAY(SELECT * FROM PAIRS)",
-                new InputOutputChangeStream().addPair(new Change(input), new Change(result)));
+                new Change("PAIRS", input), result);
     }
 
     @Test
@@ -563,7 +561,7 @@ public class ArrayTests extends BaseSQLTests {
         );
 
         this.testQuery(ddl, "SELECT ARRAY_MAX(val) FROM ARR_TBL",
-                new InputOutputChangeStream().addPair(new Change(input), new Change(result)));
+                new Change("ARR_TBL", input), result);
     }
 
     @Test
@@ -594,7 +592,7 @@ public class ArrayTests extends BaseSQLTests {
         );
 
         this.testQuery(ddl, "SELECT ARRAY_MIN(val) FROM ARR_TBL",
-                new InputOutputChangeStream().addPair(new Change(input), new Change(result)));
+                new Change("ARR_TBL", input), result);
     }
 
     @Test
@@ -626,7 +624,7 @@ public class ArrayTests extends BaseSQLTests {
         );
 
         this.testQuery(ddl, "SELECT ARRAY_MIN(val) FROM ARR_TBL",
-                new InputOutputChangeStream().addPair(new Change(input), new Change(result)));
+                new Change("ARR_TBL", input), result);
     }
 
     @Test
@@ -634,11 +632,9 @@ public class ArrayTests extends BaseSQLTests {
         String sql = """
                 SELECT a[SAFE_OFFSET(1)], a[SAFE_OFFSET(2)] FROM
                 (SELECT ARRAY[1, 2] a)""";
-        this.testQuery("", sql,
-                new InputOutputChangeStream().addPair(new Change(),
-                        new Change(new DBSPZSetExpression(
-                                new DBSPTupleExpression(
-                                        new DBSPI32Literal(2, true),
-                                        new DBSPI32Literal())))));
+        this.testQuery(sql, new Change(), new DBSPZSetExpression(
+                new DBSPTupleExpression(
+                        new DBSPI32Literal(2, true),
+                        new DBSPI32Literal())));
     }
 }

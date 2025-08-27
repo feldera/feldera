@@ -271,17 +271,15 @@ public class CalciteToDBSPCompiler extends RelVisitor
 
     /**
      * Create a compiler that translated from calcite to DBSP circuits.
-     * @param trackTableContents  If true this compiler will track INSERT and DELETE statements.
      * @param options             Options for compilation.
      * @param compiler            Parent compiler; used to report errors.
      */
-    public CalciteToDBSPCompiler(boolean trackTableContents,
-                                 CompilerOptions options, DBSPCompiler compiler,
+    public CalciteToDBSPCompiler(CompilerOptions options, DBSPCompiler compiler,
                                  ProgramMetadata metadata) {
         this.circuit = new DBSPCircuit(compiler.metadata);
         this.compiler = compiler;
         this.nodeOperator = new HashMap<>();
-        this.tableContents = new TableContents(compiler, trackTableContents);
+        this.tableContents = new TableContents(compiler);
         this.options = options;
         this.ancestors = new ArrayList<>();
         this.metadata = metadata;

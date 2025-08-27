@@ -104,7 +104,7 @@ public class EndToEndTests extends BaseSQLTests {
      INSERT INTO T VALUES (10, 12e0, true, 'Hi', NULL, NULL, NULL);
      INSERT INTO T VALUES (10, 1e0, false, 'Hi', 1, 0e0, 5);
      */
-    static final Change INPUT = new Change(new DBSPZSetExpression(E0, E1));
+    static final Change INPUT = new Change("T", new DBSPZSetExpression(E0, E1));
 
     public DBSPCompiler compileQuery(String query) {
         DBSPCompiler compiler = this.testCompiler();
@@ -125,22 +125,22 @@ public class EndToEndTests extends BaseSQLTests {
 
     /** Use this function to test queries whose result does not change when table T is modified. */
     void testConstantOutput(String query, DBSPZSetExpression output) {
-        this.testQueryBase(query, new InputOutputChange(INPUT, new Change(output)).toStream());
+        this.testQueryBase(query, new InputOutputChange(INPUT, new Change("V", output)).toStream());
     }
 
     /** Use this function to test queries that compute aggregates */
     void testAggregate(String query,
                        DBSPZSetExpression firstOutput,
                        DBSPZSetExpression outputForEmptyInput) {
-        this.testQueryBase(query, new InputOutputChange(INPUT, new Change(firstOutput)).toStream());
+        this.testQueryBase(query, new InputOutputChange(INPUT, new Change("V", firstOutput)).toStream());
     }
 
-    static final DBSPZSetExpression z0 = new DBSPZSetExpression(E0);
-    static final DBSPZSetExpression z1 = new DBSPZSetExpression(E1);
-    static final DBSPZSetExpression empty = DBSPZSetExpression.emptyWithElementType(z0.getElementType());
+    static final DBSPZSetExpression Z0 = new DBSPZSetExpression(E0);
+    static final DBSPZSetExpression Z1 = new DBSPZSetExpression(E1);
+    static final DBSPZSetExpression EMPTY = DBSPZSetExpression.emptyWithElementType(Z0.getElementType());
 
     public void testQuery(String query, DBSPZSetExpression expectedOutput) {
-        this.testQuery(query, new Change(expectedOutput));
+        this.testQuery(query, new Change("V", expectedOutput));
     }
 
     public void testQuery(String query, Change expectedOutput) {
@@ -546,8 +546,8 @@ public class EndToEndTests extends BaseSQLTests {
     @Test
     public void unionAllTest() {
         String query = "(SELECT * FROM T) UNION ALL (SELECT * FROM T)";
-        var set = INPUT.getSet(0).clone();
-        set.append(set);
+        var set = INPUT.getSet(0);
+        set = set.add(set);
         Change doubleOutput = new Change(set);
         this.testQuery(query, doubleOutput);
     }
@@ -642,7 +642,7 @@ public class EndToEndTests extends BaseSQLTests {
     @Test
     public void emptyWhereTest() {
         String query = "SELECT * FROM T WHERE FALSE";
-        this.testQuery(query, empty);
+        this.testQuery(query, EMPTY);
     }
 
     @Test
@@ -656,43 +656,43 @@ public class EndToEndTests extends BaseSQLTests {
     @Test
     public void whereImplicitCastTest() {
         String query = "SELECT * FROM T WHERE COL2 < COL1";
-        this.testQuery(query, z1);
+        this.testQuery(query, Z1);
     }
 
     @Test
     public void whereExplicitCastTest() {
         String query = "SELECT * FROM T WHERE COL2 < CAST(COL1 AS DOUBLE)";
-        this.testQuery(query, z1);
+        this.testQuery(query, Z1);
     }
 
     @Test
     public void whereExplicitCastTestNull() {
         String query = "SELECT * FROM T WHERE COL2 < CAST(COL5 AS DOUBLE)";
-        this.testQuery(query, empty);
+        this.testQuery(query, EMPTY);
     }
 
     @Test
     public void whereExplicitImplicitCastTest() {
         String query = "SELECT * FROM T WHERE COL2 < CAST(COL1 AS REAL)";
-        this.testQuery(query, z1);
+        this.testQuery(query, Z1);
     }
 
     @Test
     public void whereExplicitImplicitCastTestNull() {
         String query = "SELECT * FROM T WHERE COL2 < CAST(COL5 AS REAL)";
-        this.testQuery(query, empty);
+        this.testQuery(query, EMPTY);
     }
 
     @Test
     public void whereExpressionTest() {
         String query = "SELECT * FROM T WHERE COL2 < 0";
-        this.testQuery(query, DBSPZSetExpression.emptyWithElementType(z0.getElementType()));
+        this.testQuery(query, DBSPZSetExpression.emptyWithElementType(Z0.getElementType()));
     }
 
     @Test
     public void exceptTest() {
         String query = "SELECT * FROM T EXCEPT (SELECT * FROM T WHERE COL3)";
-        this.testQuery(query, z1);
+        this.testQuery(query, Z1);
     }
 
     @Test

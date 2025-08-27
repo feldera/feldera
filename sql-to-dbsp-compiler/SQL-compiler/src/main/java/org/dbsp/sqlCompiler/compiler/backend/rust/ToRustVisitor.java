@@ -280,10 +280,13 @@ public class ToRustVisitor extends CircuitVisitor {
                             zset.getNode(), DBSPTypeCode.USER, "ZSetHandle", false,
                             zset.elementType);
                 } else {
+                    DBSPTypeStruct upsertStruct = input.asOperator()
+                            .to(IInputMapOperator.class).getStructUpsertType(
+                            new ProgramIdentifier(input.getOriginalRowType().sanitizedName + "_upsert", false));
                     DBSPTypeIndexedZSet ix = input.getDataOutputType().to(DBSPTypeIndexedZSet.class);
                     type = new DBSPTypeUser(
                             ix.getNode(), DBSPTypeCode.USER, "MapHandle", false,
-                            ix.keyType, ix.elementType);
+                            ix.keyType, ix.elementType, upsertStruct.toTupleDeep());
                 }
                 type.accept(inner);
                 signature.append(",").newline();
@@ -588,9 +591,7 @@ public class ToRustVisitor extends CircuitVisitor {
                 .append(operator.asOperator().getNodeName(this.preferHash))
                 .append(", ")
                 .append(this.handleName(operator.asOperator()))
-                .append(") = circuit.add_")
-                .append("input_map")
-                .append("_persistent::<");
+                .append(") = circuit.add_input_map_persistent::<");
 
         DBSPTypeIndexedZSet ix = ((IInputMapOperator) operator).getOutputIndexedZSetType();
         this.innerVisitor.setOperatorContext(operator.asOperator());

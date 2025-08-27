@@ -24,6 +24,7 @@
 package org.dbsp.sqlCompiler.compiler.sql.simple;
 
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.frontend.TableData;
 import org.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests;
 import org.dbsp.sqlCompiler.compiler.sql.tools.Change;
 import org.dbsp.sqlCompiler.compiler.sql.tools.CompilerCircuitStream;
@@ -51,12 +52,12 @@ public class MultiViewTests extends BaseSQLTests {
         CompilerCircuitStream ccs = this.getCCS(compiler);
         Change inputChange = EndToEndTests.INPUT;
         Change outputChange = new Change(
-                new DBSPZSetExpression(
+                new TableData("V1", new DBSPZSetExpression(
                         new DBSPTupleExpression(new DBSPBoolLiteral(true)),
-                        new DBSPTupleExpression(new DBSPBoolLiteral(false))),
-                new DBSPZSetExpression(
+                        new DBSPTupleExpression(new DBSPBoolLiteral(false)))),
+                new TableData("V2", new DBSPZSetExpression(
                         new DBSPTupleExpression(new DBSPDoubleLiteral(12.0)),
-                        new DBSPTupleExpression(new DBSPDoubleLiteral(1.0))));
+                        new DBSPTupleExpression(new DBSPDoubleLiteral(1.0)))));
         ccs.addPair(inputChange, outputChange);
     }
 
@@ -74,13 +75,13 @@ public class MultiViewTests extends BaseSQLTests {
 
         InputOutputChange change = new InputOutputChange(
                 EndToEndTests.INPUT,
-                new Change(new DBSPZSetExpression(
-                        new DBSPTupleExpression(new DBSPBoolLiteral(true)),
-                        new DBSPTupleExpression(new DBSPBoolLiteral(false))),
-                        new DBSPZSetExpression(
+                new Change(
+                        new TableData("V1", new DBSPZSetExpression(
                                 new DBSPTupleExpression(new DBSPBoolLiteral(true)),
-                                new DBSPTupleExpression(new DBSPBoolLiteral(false))))
-        );
+                                new DBSPTupleExpression(new DBSPBoolLiteral(false)))),
+                        new TableData("V2", new DBSPZSetExpression(
+                                new DBSPTupleExpression(new DBSPBoolLiteral(true)),
+                                new DBSPTupleExpression(new DBSPBoolLiteral(false))))));
         ccs.addChange(change);
     }
 
@@ -98,11 +99,11 @@ public class MultiViewTests extends BaseSQLTests {
         CompilerCircuitStream ccs = this.getCCS(compiler);
         InputOutputChange change = new InputOutputChange(
                 EndToEndTests.INPUT,
-                new Change(new DBSPZSetExpression(
+                new Change(new TableData("V1", new DBSPZSetExpression(
                         new DBSPTupleExpression(new DBSPBoolLiteral(true)),
-                        new DBSPTupleExpression(new DBSPBoolLiteral(false))),
-                        new DBSPZSetExpression(
-                                new DBSPTupleExpression(new DBSPI32Literal(10))))
+                        new DBSPTupleExpression(new DBSPBoolLiteral(false)))),
+                        new TableData("V2", new DBSPZSetExpression(
+                                new DBSPTupleExpression(new DBSPI32Literal(10)))))
         );
         ccs.addChange(change);
     }

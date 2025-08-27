@@ -30,6 +30,7 @@ import net.hydromatic.sqllogictest.TestStatistics;
 import net.hydromatic.sqllogictest.executors.JdbcExecutor;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.frontend.TableData;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
@@ -41,7 +42,6 @@ import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDouble;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
-import org.dbsp.util.TableValue;
 
 import javax.annotation.Nullable;
 import java.io.IOException;
@@ -154,12 +154,12 @@ public class DbspJdbcExecutor extends DBSPExecutor {
     }
 
     @Override
-    public TableValue[] getInputSets(DBSPCompiler compiler) throws SQLException {
-        TableValue[] result = new TableValue[this.tablesCreated.size()];
+    public TableData[] getInputSets(DBSPCompiler compiler) throws SQLException {
+        TableData[] result = new TableData[this.tablesCreated.size()];
         int i = 0;
         for (ProgramIdentifier table: this.tablesCreated) {
             DBSPZSetExpression lit = this.getTableContents(table);
-            result[i++] = new TableValue(table, lit);
+            result[i++] = new TableData(table, lit);
         }
         return result;
     }

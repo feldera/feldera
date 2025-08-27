@@ -520,7 +520,7 @@ public class PostgresNumericTests extends SqlIoTest {
         CompilerCircuitStream ccs = this.getCCS(compiler);
         InputOutputChange change = new InputOutputChange(
                 this.getPreparedInputs(compiler),
-                new Change(
+                new Change("E", 
                         DBSPZSetExpression.emptyWithElementType(new DBSPTypeTuple(
                                 new DBSPTypeInteger(CalciteObject.EMPTY, 32, true,false),
                                 new DBSPTypeInteger(CalciteObject.EMPTY, 64, true,false),

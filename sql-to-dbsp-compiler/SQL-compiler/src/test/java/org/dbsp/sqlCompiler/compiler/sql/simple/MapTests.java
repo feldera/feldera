@@ -35,10 +35,10 @@ public class MapTests extends BaseSQLTests {
         this.getCCS(compiler, streams);
     }
 
-    private void testQuery(String query, DBSPZSetExpression literal) {
+    private void testQuery(String query, DBSPZSetExpression expression) {
         this.testQuery("", query,
                 new InputOutputChangeStream().addChange(
-                        new InputOutputChange(new Change(), new Change(literal))));
+                        new InputOutputChange(new Change(), new Change("V", expression))));
     }
 
     @Test
@@ -111,7 +111,7 @@ public class MapTests extends BaseSQLTests {
                                         new DBSPI32Literal(10, true))
                         )));
         this.testQuery(ddl, query,
-                new InputOutputChangeStream().addPair(new Change(input), new Change(result)));
+                new InputOutputChangeStream().addPair(new Change("T", input), new Change("V", result)));
     }
 
     @Test
@@ -122,7 +122,7 @@ public class MapTests extends BaseSQLTests {
                     new DBSPStringLiteral("a", false),
                     new DBSPI32Literal(12, false)));
         this.testQuery("", sql,
-                new InputOutputChangeStream().addPair(new Change(), new Change(result)));
+                new InputOutputChangeStream().addPair(new Change(), new Change("V", result)));
     }
 
     @Test
@@ -139,7 +139,7 @@ public class MapTests extends BaseSQLTests {
                         new DBSPStringLiteral("c", false),
                         new DBSPI32Literal()));
         this.testQuery("", sql,
-                new InputOutputChangeStream().addPair(new Change(), new Change(result)));
+                new InputOutputChangeStream().addPair(new Change(), new Change("V", result)));
     }
 
     @Test
@@ -161,6 +161,6 @@ public class MapTests extends BaseSQLTests {
                         new DBSPI32Literal(5, false),
                         new DBSPI32Literal()));
         this.testQuery("", sql, new InputOutputChangeStream()
-                .addPair(new Change(), new Change(result)));
+                .addPair(new Change(), new Change("V", result)));
     }
 }

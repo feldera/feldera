@@ -42,12 +42,12 @@ public class NaiveIncrementalTests extends EndToEndTests {
 
     @Override
     public void testQuery(String query, DBSPZSetExpression firstOutput) {
-        Change secondOutput = Change.singleEmptyWithElementType(firstOutput.getElementType());
+        Change secondOutput = Change.singleEmptyWithElementType("V", firstOutput.getElementType());
         Change thirdOutput = new Change(secondOutput.getSet(0).minus(firstOutput));
         this.invokeTestQueryBase(query,
                 new InputOutputChangeStream()
-                        .addPair(INPUT, new Change(firstOutput))  // Add first input
-                        .addPair(new Change(empty), secondOutput) // Add an empty input
+                        .addPair(INPUT, new Change("V", firstOutput))  // Add first input
+                        .addPair(new Change("T", EMPTY), secondOutput) // Add an empty input
                         .addPair(new Change(INPUT.getSet(0).negate()), thirdOutput) // Subtract the first input
         );
     }
@@ -55,11 +55,11 @@ public class NaiveIncrementalTests extends EndToEndTests {
     @Override
     void testConstantOutput(String query, DBSPZSetExpression output) {
         Change input = INPUT;
-        Change e = Change.singleEmptyWithElementType(output.getElementType());
+        Change e = Change.singleEmptyWithElementType("V", output.getElementType());
         this.invokeTestQueryBase(query,
                 new InputOutputChangeStream()
-                        .addPair(input, new Change(output))                  // Add first input
-                        .addPair(new Change(NaiveIncrementalTests.empty), e) // Add an empty input
+                        .addPair(input, new Change("V", output))                  // Add first input
+                        .addPair(new Change("T", NaiveIncrementalTests.EMPTY), e) // Add an empty input
                         .addPair(new Change(input.getSet(0).negate()), e));  // Subtract the first input
     }
 
@@ -68,12 +68,12 @@ public class NaiveIncrementalTests extends EndToEndTests {
                        DBSPZSetExpression firstOutput,
                        DBSPZSetExpression outputForEmptyInput) {
         Change input = INPUT;
-        Change secondOutput = Change.singleEmptyWithElementType(firstOutput.getElementType());
-        Change thirdOutput = new Change(outputForEmptyInput.minus(firstOutput));
+        Change secondOutput = Change.singleEmptyWithElementType("V", firstOutput.getElementType());
+        Change thirdOutput = new Change("V", outputForEmptyInput.minus(firstOutput));
         this.invokeTestQueryBase(query,
                 new InputOutputChangeStream()
-                        .addPair(input, new Change(firstOutput))   // Add first input
-                        .addPair(new Change(empty), secondOutput)  // Add an empty input
+                        .addPair(input, new Change("V", firstOutput))   // Add first input
+                        .addPair(new Change("T", EMPTY), secondOutput)  // Add an empty input
                         .addPair(new Change(input.getSet(0).negate()), thirdOutput));  // Subtract the first input
     }
 

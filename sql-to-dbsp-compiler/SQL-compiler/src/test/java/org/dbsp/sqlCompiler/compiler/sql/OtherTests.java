@@ -580,9 +580,9 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
                 REMOVE FROM T VALUES(3, 'Z');""").simplify(compiler);
         String set = change.getSet(0).toString();
         Assert.assertEquals("""
-                zset!(Tup2::new(Some(1), "x", ) => 1i64,
+                TableData[name=t, data=zset!(Tup2::new(Some(1), "x", ) => 1i64,
                 Tup2::new(Some(2), "Y", ) => -1i64,
-                Tup2::new(Some(3), "Z", ) => -1i64,)""", set);
+                Tup2::new(Some(3), "Z", ) => -1i64,), primaryKeys=[]]""", set);
     }
 
     @Test
