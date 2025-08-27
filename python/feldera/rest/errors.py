@@ -40,6 +40,10 @@ class FelderaAPIError(FelderaError):
                 self.details = json_data.get("details")
             except Exception:
                 self.message = request.text
+                err_msg += request.text
+
+        err_msg += f"\nResponse Status: {request.status_code}"
+        err_msg = err_msg.strip()
 
         super().__init__(err_msg)
 
