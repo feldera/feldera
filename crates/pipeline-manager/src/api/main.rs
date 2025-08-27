@@ -13,11 +13,11 @@ use crate::unstable_features;
 use actix_http::body::BoxBody;
 use actix_http::StatusCode;
 use actix_web::body::MessageBody;
-use actix_web::dev::{Service, ServiceResponse};
-use actix_web::http::Method;
+use actix_web::dev::{HttpServiceFactory, Service, ServiceResponse};
+use actix_web::http::{header, Method};
 use actix_web::Scope;
 use actix_web::{
-    get,
+    get, middleware,
     web::Data as WebData,
     web::{self},
     App, HttpResponse, HttpServer,
@@ -275,6 +275,48 @@ pub struct ApiDoc;
 // `static_files` magic.
 include!(concat!(env!("OUT_DIR"), "/generated.rs"));
 
+/// Middleware to add aggressive caching headers for immutable static files
+/// (files with hashes in their names from web-console build)
+async fn add_cache_headers(
+    req: actix_web::dev::ServiceRequest,
+    next: middleware::Next<impl MessageBody>,
+) -> Result<actix_web::dev::ServiceResponse<impl MessageBody>, actix_web::Error> {
+    let path = req.path().to_owned();
+    let mut res = next.call(req).await?;
+
+    // SvelteKit generates files like:
+    // - _app/immutable/chunks/bundle.abc123.js
+    // - _app/immutable/assets/style.def456.css
+    // - _app/immutable/entry/app.789abc.js
+    if path.contains("/_app/immutable/") || path.contains(".immutable.") {
+        // These file names include content hashes and are truly immutable
+        res.headers_mut().insert(
+            header::CACHE_CONTROL,
+            header::HeaderValue::from_static("public, max-age=31536000, immutable"),
+        );
+        res.headers_mut().insert(
+            header::EXPIRES,
+            // Far-future expiration date (>10 years) to ensure immutable files
+            // are never revalidated. Thu, 31 Dec 2037 is commonly used as it's
+            // well beyond any reasonable cache lifetime but before Y2038 issues.
+            header::HeaderValue::from_static("Thu, 31 Dec 2037 23:55:55 GMT"),
+        );
+    } else if path.ends_with(".js")
+        || path.ends_with(".css")
+        || path.ends_with(".woff2")
+        || path.ends_with(".svg")
+        || path.ends_with(".png")
+    {
+        // Other static assets - cache for a shorter period but still aggressive
+        res.headers_mut().insert(
+            header::CACHE_CONTROL,
+            header::HeaderValue::from_static("public, max-age=86400"), // 24 hours
+        );
+    }
+
+    Ok(res)
+}
+
 // The scope for all unauthenticated API endpoints
 fn public_scope() -> Scope {
     let openapi = ApiDoc::openapi();
@@ -286,7 +328,11 @@ fn public_scope() -> Scope {
         .service(endpoints::config::get_config_authentication)
         .service(SwaggerUi::new("/swagger-ui/{_:.*}").url("/api-doc/openapi.json", openapi))
         .service(healthz)
-        .service(ResourceFiles::new("/", generate()).resolve_not_found_to_root())
+        .service(
+            web::scope("") // Nested scope: also matches "/"
+                .wrap(middleware::from_fn(add_cache_headers))
+                .service(ResourceFiles::new("/", generate()).resolve_not_found_to_root()),
+        )
 }
 
 // The scope for all authenticated API endpoints
