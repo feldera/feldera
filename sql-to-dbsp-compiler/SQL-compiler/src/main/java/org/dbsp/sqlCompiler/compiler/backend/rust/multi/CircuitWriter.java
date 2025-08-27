@@ -16,10 +16,6 @@ import org.dbsp.sqlCompiler.compiler.backend.rust.ToRustInnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CollectSourcePositions;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
-import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
-import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
-import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeUser;
-import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 import org.dbsp.util.HashString;
 import org.dbsp.util.IndentStream;
 import org.dbsp.util.IndentStreamBuilder;
@@ -92,18 +88,7 @@ public final class CircuitWriter extends BaseRustCodeGenerator {
         } else {
             signature.append("(").increase();
             for (IInputOperator input: circuit.sourceOperators.values()) {
-                DBSPType type;
-                DBSPTypeZSet zset = input.getDataOutputType().as(DBSPTypeZSet.class);
-                if (zset != null) {
-                    type = new DBSPTypeUser(
-                            zset.getNode(), DBSPTypeCode.USER, "ZSetHandle", false,
-                            zset.elementType);
-                } else {
-                    DBSPTypeIndexedZSet ix = input.getDataOutputType().to(DBSPTypeIndexedZSet.class);
-                    type = new DBSPTypeUser(
-                            ix.getNode(), DBSPTypeCode.USER, "SetHandle", false,
-                            ix.elementType);
-                }
+                DBSPType type = input.getHandleType();
                 type.accept(inner);
                 signature.append(",").newline();
             }

@@ -43,7 +43,7 @@ import java.util.Set;
 public class NexmarkTest extends StreamingTestBase {
     static final String tables = """
 CREATE TABLE person (
-    id BIGINT NOT NULL PRIMARY KEY,
+    id BIGINT NOT NULL,
     name VARCHAR,
     emailAddress VARCHAR,
     creditCard VARCHAR,
@@ -53,20 +53,20 @@ CREATE TABLE person (
     extra  VARCHAR
 );
 CREATE TABLE auction (
-    id  BIGINT NOT NULL PRIMARY KEY,
+    id BIGINT NOT NULL,
     itemName  VARCHAR,
     description  VARCHAR,
     initialBid  BIGINT,
     reserve  BIGINT,
     date_time  TIMESTAMP(3) NOT NULL LATENESS INTERVAL 4 SECONDS,
     expires  TIMESTAMP(3),
-    seller  BIGINT FOREIGN KEY REFERENCES person(id),
+    seller  BIGINT,
     category  BIGINT,
     extra  VARCHAR
 );
 CREATE TABLE bid (
-    auction  BIGINT FOREIGN KEY REFERENCES auction(id),
-    bidder  BIGINT NOT NULL PRIMARY KEY,
+    auction  BIGINT,
+    bidder  BIGINT NOT NULL,
     price  BIGINT,
     channel  VARCHAR,
     url  VARCHAR,

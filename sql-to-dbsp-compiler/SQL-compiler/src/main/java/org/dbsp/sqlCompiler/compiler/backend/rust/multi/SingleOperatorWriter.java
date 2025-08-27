@@ -12,6 +12,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSumOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.GCOperator;
+import org.dbsp.sqlCompiler.circuit.operator.IInputOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.rust.BaseRustCodeGenerator;
 import org.dbsp.sqlCompiler.compiler.backend.rust.RustWriter;
@@ -120,10 +121,12 @@ public final class SingleOperatorWriter extends BaseRustCodeGenerator {
                 }
                 DBSPType streamType = operator.outputStreamType(0, this.topLevel);
                 streamType.accept(visitor.innerVisitor);
-                if (operator.is(DBSPSourceBaseOperator.class) && useHandles) {
-                    this.builder().append(", ZSetHandle<");
-                    operator.to(DBSPSourceBaseOperator.class).getOutputZSetElementType().accept(visitor.innerVisitor);
-                    this.builder().append(">)");
+
+                if (operator.is(IInputOperator.class) && useHandles) {
+                    this.builder().append(", ");
+                    DBSPType type = operator.to(IInputOperator.class).getHandleType();
+                    type.accept(visitor.innerVisitor);
+                    this.builder().append(")");
                 }
             } else {
                 this.builder().append("(");

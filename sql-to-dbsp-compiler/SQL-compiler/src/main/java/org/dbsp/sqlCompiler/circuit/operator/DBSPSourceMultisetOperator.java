@@ -13,8 +13,10 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.DBSPNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeUser;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 import org.dbsp.util.Utilities;
 
@@ -63,6 +65,14 @@ public final class DBSPSourceMultisetOperator
                     this.metadata, this.tableName, this.comment).copyAnnotations(this);
         }
         return this;
+    }
+
+    @Override
+    public DBSPTypeUser getHandleType() {
+        DBSPType elementType = this.getOutputZSetElementType();
+        return new DBSPTypeUser(
+                this.getNode(), DBSPTypeCode.USER, "ZSetHandle", false,
+                elementType);
     }
 
     @Override
