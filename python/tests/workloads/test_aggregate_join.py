@@ -1,7 +1,11 @@
-from util import run_pipeline
+import os
+import unittest
+from string import Template
+
+from feldera.testutils import run_workload
 
 tables = {
-    "t1": """
+    "t1": Template("""
     create table t1(
         id bigint not null primary key,
         group_id bigint,
@@ -13,7 +17,7 @@ tables = {
         "name": "datagen",
         "config": {
             "plan": [{
-                "limit": 10000000,
+                "limit": $limit,
                 "fields": {
                     "group_id": { "range": [1, 10000] },
                     "s": { "strategy": "word" }
@@ -22,8 +26,8 @@ tables = {
         }
         }
     }]');
-    """,
-    "t2": """
+    """).substitute(limit=os.environ.get("ROW_LIMIT", "1000000")),
+    "t2": Template("""
     create table t2(
         id bigint not null primary key,
         group_id bigint,
@@ -35,7 +39,7 @@ tables = {
         "name": "datagen",
         "config": {
             "plan": [{
-                "limit": 10000000,
+                "limit": $limit,
                 "fields": {
                     "group_id": { "range": [1, 10000] },
                     "s": { "strategy": "word" }
@@ -44,7 +48,7 @@ tables = {
         }
         }
     }]');
-    """,
+    """).substitute(limit=os.environ.get("ROW_LIMIT", "1000000")),
 }
 
 views = {
@@ -78,4 +82,11 @@ views = {
     """,
 }
 
-run_pipeline("aggregate-join-test", tables, views)
+
+class TestPipelineBuilder(unittest.TestCase):
+    def test_aggregate_joins(self):
+        run_workload("aggregate-join-test", tables, views)
+
+
+if __name__ == "__main__":
+    unittest.main()

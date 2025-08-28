@@ -4,13 +4,14 @@
 
 This directory contains the main integration tests for feldera.
 Think about where to add new tests when covering any new features or bug fixes.
-The tests are organized into two main categories:
+The tests are organized into these categories:
 
 1. **Runtime Tests**: These tests validate the core functionality of feldera's runtime
    (e.g., adapters, ingress, egress, query execution, checkpointing, object store sync,
    and result correctness).
-   There are two types of runtime tests frameworks:
-     - `runtime` folder: These are standard unit tests that use the `pytest` framework.
+   There are three types of runtime tests:
+     - `runtime` folder: These are tests that use `pytest`, `unittest` to run. See advice
+        below on how to reduce redundant compilation cycles.
      - `runtime_aggtest` folder: These tests use a custom testing framework designed for
         batching many SQL programs into a single pipeline.
      - `workloads` These tests are designed to run larger, standardized workloads
@@ -88,5 +89,5 @@ These tests run with a different testing framework. To execute them, use:
 
 ```bash
 cd python
-PYTHONPATH=`pwd` ./tests/run-all-tests.sh
+PYTHONPATH=`pwd` ./tests/runtime_aggtest/run.sh
 ```

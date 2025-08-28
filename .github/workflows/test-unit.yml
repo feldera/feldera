@@ -51,6 +51,11 @@ jobs:
           mkdir -p sql-to-dbsp-compiler/SQL-compiler/target
           cp build/sql2dbsp-jar-with-dependencies.jar sql-to-dbsp-compiler/SQL-compiler/target
 
+      - name: Python SDK unit-tests
+        if: ${{ vars.CI_DRY_RUN != 'true' }}
+        run: uv run --locked pytest -n ${{ vars.PYTEST_WORKERS }} feldera
+        working-directory: python
+
       - name: feldera-types
         if: ${{ vars.CI_DRY_RUN != 'true' }}
         run: ./build/feldera_types-*
