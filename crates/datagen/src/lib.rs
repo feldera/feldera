@@ -660,8 +660,10 @@ impl InputGenerator {
                         seed,
                     }
                     .into();
-                    let resume =
-                        Resume::new_metadata_only(serde_json::to_value(metadata).unwrap(), hasher);
+                    let resume = Resume::new_metadata_only(
+                        serde_json::to_value(metadata).unwrap(),
+                        hasher.map(|h| h.finish()),
+                    );
                     consumer.extended(total, Some(resume));
                 }
                 Some(InputReaderCommand::Disconnect) => break,

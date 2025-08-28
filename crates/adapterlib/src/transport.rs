@@ -1,6 +1,5 @@
 use std::collections::VecDeque;
 use std::fmt::Display;
-use std::hash::Hasher;
 use std::marker::PhantomData;
 use std::sync::Mutex;
 
@@ -658,38 +657,39 @@ impl Resume {
         }
     }
 
-    /// If `hasher` is provided, returns `Resume::Replay` with its hash value
-    /// and `seek`; otherwise, returns `Resume::Seek` with `seek`.
+    /// If `hash` is provided, returns `Resume::Replay` with its hash value and
+    /// `seek`; otherwise, returns `Resume::Seek` with `seek`.
     ///
     /// This is convenient for endpoints that only need to use metadata to
-    /// support journaling.  Use [InputConsumer::hasher] to get the hasher.
-    pub fn new_metadata_only(seek: JsonValue, hasher: Option<Xxh3Default>) -> Self {
-        match hasher {
-            Some(hasher) => Self::Replay {
+    /// support journaling. [InputConsumer::hasher] can be a convenient way to
+    /// get a hasher.
+    pub fn new_metadata_only(seek: JsonValue, hash: Option<u64>) -> Self {
+        match hash {
+            Some(hash) => Self::Replay {
                 seek,
                 replay: RmpValue::Nil,
-                hash: hasher.finish(),
+                hash,
             },
             None => Self::Seek { seek },
         }
     }
 
-    /// If `hasher` is provided, returns `Resume::Replay` with its hash value
-    /// and whatever `replay` returns; otherwise, returns `Resume::Seek`.
+    /// If `hash` is provided, returns `Resume::Replay` with its hash value and
+    /// whatever `replay` returns; otherwise, returns `Resume::Seek`.
     ///
     /// This is convenient for endpoints that support journaling by journaling
-    /// all the data (and that don't need to journal any metadata).  Use
-    /// [InputConsumer::hasher] to get the hasher.
-    pub fn new_data_only<F>(replay: F, hasher: Option<Xxh3Default>) -> Self
+    /// all the data (and that don't need to journal any metadata).
+    /// [InputConsumer::hasher] can be a convenient way to get a hasher.
+    pub fn new_data_only<F>(replay: F, hash: Option<u64>) -> Self
     where
         F: FnOnce() -> RmpValue,
     {
         let seek = JsonValue::Null;
-        match hasher {
-            Some(hasher) => Self::Replay {
+        match hash {
+            Some(hash) => Self::Replay {
                 seek,
                 replay: replay(),
-                hash: hasher.finish(),
+                hash,
             },
             None => Self::Seek { seek },
         }

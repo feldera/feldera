@@ -381,7 +381,7 @@ fn worker_thread(
                         event_ids: events.unwrap_or_else(|| next_event_id..next_event_id),
                     })
                     .unwrap(),
-                    hasher,
+                    hasher.map(|h| h.finish()),
                 );
                 consumers[NexmarkTable::Bid].extended(total, Some(resume));
             }
