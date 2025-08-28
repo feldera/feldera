@@ -129,7 +129,7 @@ making them eviction candidates. To raise their priority:
 
 When investigating pipeline performance, Feldera support will typically request a support-bundle.  The bundle can be downloaded from your installation with the following:
 
-* The `support_bundle` [fda command](/interface/cli):
+* The `support-bundle` [fda command](/interface/cli):
 
  ```bash
  fda support-bundle affected-pipeline-name
