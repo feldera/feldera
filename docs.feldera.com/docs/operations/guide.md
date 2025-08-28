@@ -127,14 +127,15 @@ making them eviction candidates. To raise their priority:
 
 ## Diagnosing Performance Issues
 
-When investigating pipeline performance, Feldera support will typically request a support-bundle.
-The bundle can be downloaded from your installation with the following [fda](/interface/cli) command:
+When investigating pipeline performance, Feldera support will typically request a support-bundle.  The bundle can be downloaded from your installation with the following:
 
-```bash
-fda support-bundle affected-pipeline-name
-```
+* The `support_bundle` [fda command](/interface/cli):
 
-Note that a corresponding function, `support_bundle` is [available in the Python SDK](https://docs.feldera.com/python/examples.html#retrieve-a-support-bundle-for-a-pipeline).
+ ```bash
+ fda support-bundle affected-pipeline-name
+ ```
+* the `support_bundle` [function in the Python SDK](https://docs.feldera.com/python/examples.html#retrieve-a-support-bundle-for-a-pipeline).
+* or the `support_bundle` [endpoint in the REST API](https://docs.feldera.com/api/generate-a-support-bundle-for-a-pipeline).
 
 The support bundle contains the following content:
 
