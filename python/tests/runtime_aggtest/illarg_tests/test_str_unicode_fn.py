@@ -404,7 +404,7 @@ class illarg_bin_octet_length_fn(TstView):
 
 
 # OVERLAY
-class illarg_bin_overlay_legal(TstView):
+class illarg_bin_overlay_fn_legal(TstView):
     def __init__(self):
         # checked manually
         self.data = [
@@ -414,7 +414,7 @@ class illarg_bin_overlay_legal(TstView):
             {"str": "🐍bye"},
             {"str": None},
         ]
-        self.sql = """CREATE MATERIALIZED VIEW bin_overlay_legal AS SELECT
+        self.sql = """CREATE MATERIALIZED VIEW bin_overlay_fn_legal AS SELECT
                       CASE
                         WHEN id = 0 THEN OVERLAY(str placing 'bye' from 2 for 3)
                         WHEN id = 1 THEN OVERLAY(str placing 'bye' from 2 for 3)
