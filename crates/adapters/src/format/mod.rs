@@ -2,7 +2,6 @@ use crate::format::parquet::{ParquetInputFormat, ParquetOutputFormat};
 #[cfg(feature = "with-avro")]
 use avro::input::AvroInputFormat;
 use once_cell::sync::Lazy;
-use std::hash::Hasher;
 use std::ops::Range;
 use std::{
     cmp::max,
@@ -68,23 +67,6 @@ static OUTPUT_FORMATS: Lazy<BTreeMap<&'static str, Box<dyn OutputFormat>>> = Laz
 
 pub fn get_output_format(name: &str) -> Option<&'static dyn OutputFormat> {
     OUTPUT_FORMATS.get(name).map(|f| &**f)
-}
-
-/// An empty [InputBuffer].
-pub struct EmptyInputBuffer;
-
-impl InputBuffer for EmptyInputBuffer {
-    fn flush(&mut self) {}
-
-    fn hash(&self, _hasher: &mut dyn Hasher) {}
-
-    fn len(&self) -> BufferSize {
-        BufferSize::empty()
-    }
-
-    fn take_some(&mut self, _n: usize) -> Option<Box<dyn InputBuffer>> {
-        None
-    }
 }
 
 /// A [Splitter] that never breaks data into records.
