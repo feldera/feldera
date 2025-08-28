@@ -216,7 +216,7 @@ impl FileInputReader {
                         .unwrap();
 
                         let resume = match get_barrier(&path) {
-                            None => Resume::new_metadata_only(seek, hasher),
+                            None => Resume::new_metadata_only(seek, hasher.map(|h| h.finish())),
                             Some(barrier) => {
                                 num_records += total.records;
                                 if num_records < barrier {

@@ -395,7 +395,7 @@ impl UrlInputReader {
                                         ofs..ofs
                                     }),
                             }).unwrap();
-                            consumer.extended(total, Some(Resume::new_metadata_only(seek, hasher)));
+                            consumer.extended(total, Some(Resume::new_metadata_only(seek, hasher.map(|h| h.finish()))));
                         }
                         InputReaderCommand::Disconnect => return Ok(()),
                     }

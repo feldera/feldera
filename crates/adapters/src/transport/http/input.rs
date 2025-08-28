@@ -124,7 +124,7 @@ impl HttpInputEndpointInner {
                             })
                             .unwrap()
                         },
-                        hasher,
+                        hasher.map(|h| h.finish()),
                     );
                     details.consumer.extended(num_records, Some(resume));
                 }
