@@ -65,7 +65,9 @@ pub use generator::{Generator, GeneratorNested};
 // // //pub use index::Index;
 pub use group::CmpFunc;
 use input::Mailbox;
-pub use input::{IndexedZSetHandle, Input, InputHandle, MapHandle, SetHandle, Update, ZSetHandle};
+pub use input::{
+    IndexedZSetHandle, Input, InputHandle, MapHandle, SetHandle, StagedBuffers, Update, ZSetHandle,
+};
 pub use inspect::Inspect;
 
 pub use dynamic::join_range::StreamJoinRange;

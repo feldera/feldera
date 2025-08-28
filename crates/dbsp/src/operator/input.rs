@@ -4,7 +4,7 @@ use crate::{
         operator_traits::{Operator, SourceOperator},
         LocalStoreMarker, Scope,
     },
-    dynamic::{DowncastTrait, DynBool, DynData, DynPair, DynUnit, Erase, LeanVec},
+    dynamic::{DowncastTrait, DynBool, DynData, DynPair, DynPairs, DynUnit, Erase, LeanVec},
     operator::dynamic::{
         input::{
             AddInputIndexedZSetFactories, AddInputMapFactories, AddInputMapWithWaterlineFactories,
@@ -16,8 +16,10 @@ use crate::{
     utils::Tup2,
     Circuit, DBData, DynZWeight, RootCircuit, Runtime, Stream, TypedBox, ZWeight,
 };
+use itertools::Itertools;
 use std::{
     borrow::{Borrow, Cow},
+    collections::VecDeque,
     fmt::Debug,
     hash::{Hash, Hasher},
     marker::PhantomData,
@@ -32,6 +34,53 @@ pub use crate::operator::dynamic::input_upsert::{PatchFunc, Update};
 
 pub type IndexedZSetStream<K, V> = Stream<RootCircuit, OrdIndexedZSet<K, V>>;
 pub type ZSetStream<K> = Stream<RootCircuit, OrdZSet<K>>;
+
+/// Input prepared for flushing into an input handle.
+///
+/// [ZSetHandle], [IndexedZSetHandle], [SetHandle], and [MapHandle] all support
+/// similar ways to push data into a circuit.  The following discussion just
+/// talks about `ZSetHandle`, for clarity.
+///
+/// There are two ways to push data into a circuit with [ZSetHandle]:
+///
+/// - Immediately, either one data point at a time with
+///   [push](ZSetHandle::push), or a vector at a time with, e.g.,
+///   [append](ZSetHandle::append).
+///
+/// - Preparing data in advance into a [StagedBuffers] using
+///   [stage](Self::stage).  Then, later, calling [StagedBuffers::flush] pushes
+///   the input buffers into the circuit.
+///
+/// Both approaches are equally correct.  They can differ in performance,
+/// because [push](ZSetHandle::push) and [append](ZSetHandle::append) have a
+/// significant cost for a large number of records.  Using [StagedBuffers] has a
+/// similar cost, but it incurs it in the call to [stage](Self::stage) rather
+/// than in [StagedBuffers::flush].  This means that, if the code driving the
+/// circuit can buffer data ahead of the circuit's demand for it, the cost can
+/// be hidden and data processing as a whole runs faster.
+pub trait StagedBuffers {
+    /// Flushes the data gathered into this buffer to the circuit.
+    fn flush(&mut self);
+}
+
+pub struct ZSetStagedBuffers {
+    input_handle: InputHandle<Vec<Box<DynPairs<DynPair<DynData, DynUnit>, DynZWeight>>>>,
+    vals: Vec<Box<DynPairs<DynPair<DynData, DynUnit>, DynZWeight>>>,
+}
+
+impl StagedBuffers for ZSetStagedBuffers {
+    fn flush(&mut self) {
+        for (vals, worker) in self
+            .vals
+            .drain(..)
+            .zip_eq(0..self.input_handle.0.mailbox.len())
+        {
+            self.input_handle.update_for_worker(worker, |tuples| {
+                tuples.push(vals);
+            });
+        }
+    }
+}
 
 #[repr(transparent)]
 pub struct ZSetHandle<K> {
@@ -80,6 +129,49 @@ where
 
         self.handle.dyn_append(&mut vals.erase_box())
     }
+
+    pub fn stage(
+        &self,
+        buffers: impl IntoIterator<Item = VecDeque<Tup2<K, ZWeight>>>,
+    ) -> ZSetStagedBuffers {
+        let num_partitions = self.handle.num_partitions();
+        let mut partitions = vec![self.handle.pairs_factory.default_box(); num_partitions];
+        let mut next_worker = 0;
+        for vals in buffers {
+            let mut vec = Vec::from(vals);
+            // SAFETY: `()` is a zero-sized type, more precisely it's a 1-ZST.
+            // According to the Rust spec adding it to a tuple doesn't change
+            // its memory layout.
+            let vals: &mut Vec<Tup2<Tup2<K, ()>, ZWeight>> = unsafe { transmute(&mut vec) };
+            let vals = Box::new(LeanVec::from(take(vals)));
+
+            self.handle
+                .dyn_stage(&mut vals.erase_box(), &mut next_worker, &mut partitions);
+        }
+        ZSetStagedBuffers {
+            input_handle: self.handle.input_handle.clone(),
+            vals: partitions,
+        }
+    }
+}
+
+pub struct IndexedZSetStagedBuffers {
+    input_handle: InputHandle<Vec<Box<DynPairs<DynData, DynPair<DynData, DynZWeight>>>>>,
+    vals: Vec<Box<DynPairs<DynData, DynPair<DynData, DynZWeight>>>>,
+}
+
+impl StagedBuffers for IndexedZSetStagedBuffers {
+    fn flush(&mut self) {
+        for (vals, worker) in self
+            .vals
+            .drain(..)
+            .zip_eq(0..self.input_handle.0.mailbox.len())
+        {
+            self.input_handle.update_for_worker(worker, |tuples| {
+                tuples.push(vals);
+            });
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -108,6 +200,25 @@ where
     pub fn append(&self, vals: &mut Vec<Tup2<K, Tup2<V, ZWeight>>>) {
         let vals = Box::new(LeanVec::from(take(vals)));
         self.handle.dyn_append(&mut vals.erase_box())
+    }
+}
+
+pub struct SetStagedBuffers {
+    input_handle: InputHandle<Vec<Box<DynPairs<DynData, DynBool>>>>,
+    vals: Vec<Box<DynPairs<DynData, DynBool>>>,
+}
+
+impl StagedBuffers for SetStagedBuffers {
+    fn flush(&mut self) {
+        for (vals, worker) in self
+            .vals
+            .drain(..)
+            .zip_eq(0..self.input_handle.0.mailbox.len())
+        {
+            self.input_handle.update_for_worker(worker, |tuples| {
+                tuples.push(vals);
+            });
+        }
     }
 }
 
@@ -144,6 +255,43 @@ where
     pub fn append(&mut self, vals: &mut Vec<Tup2<K, bool>>) {
         let vals = Box::new(LeanVec::from(take(vals)));
         self.handle.dyn_append(&mut vals.erase_box())
+    }
+
+    pub fn stage(
+        &self,
+        buffers: impl IntoIterator<Item = VecDeque<Tup2<K, bool>>>,
+    ) -> SetStagedBuffers {
+        let num_partitions = self.handle.num_partitions();
+        let mut partitions = vec![self.handle.pairs_factory.default_box(); num_partitions];
+        for vals in buffers {
+            let vec = Vec::from(vals);
+            let vals = Box::new(LeanVec::from(vec));
+            self.handle
+                .dyn_stage(&mut vals.erase_box(), &mut partitions);
+        }
+        SetStagedBuffers {
+            input_handle: self.handle.input_handle.clone(),
+            vals: partitions,
+        }
+    }
+}
+
+pub struct MapStagedBuffers {
+    input_handle: InputHandle<Vec<Box<DynPairs<DynData, DynUpdate<DynData, DynData>>>>>,
+    vals: Vec<Box<DynPairs<DynData, DynUpdate<DynData, DynData>>>>,
+}
+
+impl StagedBuffers for MapStagedBuffers {
+    fn flush(&mut self) {
+        for (vals, worker) in self
+            .vals
+            .drain(..)
+            .zip_eq(0..self.input_handle.0.mailbox.len())
+        {
+            self.input_handle.update_for_worker(worker, |tuples| {
+                tuples.push(vals);
+            });
+        }
     }
 }
 
@@ -182,6 +330,24 @@ where
     pub fn append(&mut self, vals: &mut Vec<Tup2<K, Update<V, U>>>) {
         let vals = Box::new(LeanVec::from(take(vals)));
         self.handle.dyn_append(&mut vals.erase_box())
+    }
+
+    pub fn stage(
+        &self,
+        buffers: impl IntoIterator<Item = VecDeque<Tup2<K, Update<V, U>>>>,
+    ) -> MapStagedBuffers {
+        let num_partitions = self.handle.num_partitions();
+        let mut partitions = vec![self.handle.pairs_factory.default_box(); num_partitions];
+        for vals in buffers {
+            let vec = Vec::from(vals);
+            let vals = Box::new(LeanVec::from(vec));
+            self.handle
+                .dyn_stage(&mut vals.erase_box(), &mut partitions);
+        }
+        MapStagedBuffers {
+            input_handle: self.handle.input_handle.clone(),
+            vals: partitions,
+        }
     }
 }
 
