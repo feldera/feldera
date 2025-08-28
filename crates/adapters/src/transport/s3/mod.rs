@@ -1,5 +1,6 @@
 use std::{
     collections::{BTreeMap, VecDeque},
+    hash::Hasher,
     sync::Arc,
     thread,
 };
@@ -696,7 +697,7 @@ impl S3InputReader {
                                 partially_processed_keys: partially_processed_keys.by_index().await,
                             })
                             .unwrap(),
-                            hasher,
+                            hasher.map(|h| h.finish()),
                         )),
                     );
                 }
