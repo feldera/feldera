@@ -201,7 +201,7 @@ where
     }
 }
 
-impl<K, V, U> Stream<RootCircuit, Box<DynPairs<K, DynUpdate<V, U>>>>
+impl<K, V, U> Stream<RootCircuit, Vec<Box<DynPairs<K, DynUpdate<V, U>>>>>
 where
     K: DataTrait + ?Sized,
     V: DataTrait + ?Sized,
@@ -512,7 +512,7 @@ where
     }
 }
 
-impl<T, U, B> BinaryOperator<T, Box<DynPairs<T::Key, DynUpdate<T::Val, U>>>, B>
+impl<T, U, B> BinaryOperator<T, Vec<Box<DynPairs<T::Key, DynUpdate<T::Val, U>>>>, B>
     for InputUpsert<T, U, B>
 where
     T: ZTrace,
@@ -523,10 +523,22 @@ where
     async fn eval(
         &mut self,
         trace: &T,
-        updates: &Box<DynPairs<T::Key, DynUpdate<T::Val, U>>>,
+        updates: &Vec<Box<DynPairs<T::Key, DynUpdate<T::Val, U>>>>,
     ) -> B {
         // Inputs must be sorted by key
-        debug_assert!(updates.is_sorted_by(&|u1, u2| u1.fst().cmp(u2.fst())));
+        let mut updates = updates
+            .iter()
+            .filter_map(|updates| {
+                if !updates.is_empty() {
+                    Some((&**updates, 0))
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+        debug_assert!(updates
+            .iter()
+            .all(|updates| updates.0.is_sorted_by(&|u1, u2| u1.fst().cmp(u2.fst()))));
 
         let mut key_updates = self.batch_factories.weighted_vals_factory().default_box();
 
@@ -541,7 +553,18 @@ where
         // to it.
         let mut cur_val: Box<DynOpt<T::Val>> = self.opt_val_factory.default_box();
 
-        for key_upd in updates.dyn_iter() {
+        while !updates.is_empty() {
+            let (index, key_upd) = updates
+                .iter()
+                .map(|(updates, index)| updates.index(*index))
+                .enumerate()
+                .min_by(|(_a_index, a), (_b_index, b)| a.cmp(b))
+                .unwrap();
+            updates[index].1 += 1;
+            if updates[index].1 >= updates[index].0.len() {
+                updates.remove(index);
+            }
+
             let (key, upd) = key_upd.split();
 
             // We finished processing updates for the previous key. Push them to the
@@ -718,7 +741,7 @@ where
     }
 }
 
-impl<T, U, B, W, E> TernaryOperator<T, Box<DynPairs<T::Key, DynUpdate<T::Val, U>>>, Box<W>, B>
+impl<T, U, B, W, E> TernaryOperator<T, Vec<Box<DynPairs<T::Key, DynUpdate<T::Val, U>>>>, Box<W>, B>
     for InputUpsertWithWaterline<T, U, B, W, E>
 where
     T: ZTrace + Clone,
@@ -732,11 +755,23 @@ where
     async fn eval(
         &mut self,
         trace: Cow<'_, T>,
-        updates: Cow<'_, Box<DynPairs<T::Key, DynUpdate<T::Val, U>>>>,
+        updates: Cow<'_, Vec<Box<DynPairs<T::Key, DynUpdate<T::Val, U>>>>>,
         waterline: Cow<'_, Box<W>>,
     ) -> B {
         // Inputs must be sorted by key
-        debug_assert!(updates.is_sorted_by(&|u1, u2| u1.fst().cmp(u2.fst())));
+        let mut updates = updates
+            .iter()
+            .filter_map(|updates| {
+                if !updates.is_empty() {
+                    Some((updates, 0))
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+        debug_assert!(updates
+            .iter()
+            .all(|updates| updates.0.is_sorted_by(&|u1, u2| u1.fst().cmp(u2.fst()))));
 
         let mut errors = self
             .factories
@@ -769,7 +804,18 @@ where
         // all updates for this key.
         let mut skip_key = false;
 
-        for key_upd in updates.dyn_iter() {
+        while !updates.is_empty() {
+            let (index, key_upd) = updates
+                .iter()
+                .map(|(updates, index)| updates.index(*index))
+                .enumerate()
+                .min_by(|(_a_index, a), (_b_index, b)| a.cmp(b))
+                .unwrap();
+            updates[index].1 += 1;
+            if updates[index].1 >= updates[index].0.len() {
+                updates.remove(index);
+            }
+
             let (key, upd) = key_upd.split();
 
             // We finished processing updates for the previous key. Push them to the
