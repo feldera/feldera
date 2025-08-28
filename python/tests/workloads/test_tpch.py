@@ -1,8 +1,41 @@
-from util import run_pipeline
+import os
+import unittest
+
+from string import Template
+from feldera.testutils import run_workload
+
+
+def mk_config(table: str) -> str:
+    TPCH_BUCKET = os.environ.get("TPCH_BUCKET_URL", "s3://batchtofeldera")
+    TPCH_BUCKET_REGION = os.environ.get("TPCH_BUCKET_REGION", "ap-southeast-2")
+
+    if os.environ.get("AWS_ACCESS_KEY_ID") and os.environ.get("AWS_SECRET_ACCESS_KEY"):
+        aws_access = Template("""
+            "aws_access_key_id": "$aws_access_key_id",
+            "aws_secret_access_key": "$aws_secret_access_key",
+    """).substitute(
+            aws_access_key_id=os.environ.get("AWS_ACCESS_KEY_ID"),
+            aws_secret_access_key=os.environ.get("AWS_SECRET_ACCESS_KEY"),
+        )
+    else:
+        aws_access = '"aws_skip_signature": "true",'
+
+    return Template(""""config": {
+            "uri": "$tpch_bucket/$table",
+            $aws_access
+            "aws_region": "$tpch_bucket_region",
+            "mode": "snapshot"
+        }""").substitute(
+        table=table,
+        aws_access=aws_access,
+        tpch_bucket=TPCH_BUCKET,
+        tpch_bucket_region=TPCH_BUCKET_REGION,
+    )
+
 
 # https://github.com/feldera/feldera/issues/4448
 tables = {
-    "lineitem": """
+    "lineitem": Template("""
   CREATE TABLE LINEITEM (
           L_ORDERKEY    INTEGER NOT NULL,
           L_PARTKEY     INTEGER NOT NULL,
@@ -25,17 +58,12 @@ tables = {
     'connectors' = '[{
         "transport": {
         "name": "delta_table_input",
-        "config": {
-            "uri": "s3://batchtofeldera/lineitem",
-            "aws_skip_signature": "true",
-            "aws_region": "ap-southeast-2",
-            "mode": "snapshot"
-        }
+        $config
         }
     }]'
 );
-  """,
-    "orders": """
+  """).substitute(config=mk_config("lineitem")),
+    "orders": Template("""
   CREATE TABLE ORDERS  (
           O_ORDERKEY       INTEGER NOT NULL,
           O_CUSTKEY        INTEGER NOT NULL,
@@ -51,18 +79,13 @@ tables = {
      'connectors' = '[{
         "transport": {
         "name": "delta_table_input",
-        "config": {
-            "uri": "s3://batchtofeldera/orders",
-            "aws_skip_signature": "true",
-            "aws_region": "ap-southeast-2",
-            "mode": "snapshot"
-        }
+        $config
         }
     }]'
 );
-  """,
+  """).substitute(config=mk_config("orders")),
     # https://github.com/feldera/feldera/issues/4448
-    "part": """
+    "part": Template("""
   CREATE TABLE PART (
           P_PARTKEY     INTEGER NOT NULL,
           P_NAME        VARCHAR(55) NOT NULL,
@@ -78,17 +101,12 @@ tables = {
      'connectors' = '[{
         "transport": {
         "name": "delta_table_input",
-        "config": {
-            "uri": "s3://batchtofeldera/part",
-            "aws_skip_signature": "true",
-            "aws_region": "ap-southeast-2",
-            "mode": "snapshot"
-        }
+        $config
         }
     }]'
   );
-  """,
-    "customer": """
+  """).substitute(config=mk_config("part")),
+    "customer": Template("""
   CREATE TABLE CUSTOMER (
           C_CUSTKEY     INTEGER NOT NULL,
           C_NAME        VARCHAR(25) NOT NULL,
@@ -103,17 +121,12 @@ tables = {
      'connectors' = '[{
         "transport": {
         "name": "delta_table_input",
-        "config": {
-            "uri": "s3://batchtofeldera/customer",
-            "aws_skip_signature": "true",
-            "aws_region": "ap-southeast-2",
-            "mode": "snapshot"
-        }
+        $config
         }
     }]'
  );
-  """,
-    "supplier": """
+  """).substitute(config=mk_config("customer")),
+    "supplier": Template("""
   CREATE TABLE SUPPLIER (
           S_SUPPKEY     INTEGER NOT NULL,
           S_NAME        CHAR(25) NOT NULL,
@@ -127,17 +140,12 @@ tables = {
     'connectors' = '[{
         "transport": {
         "name": "delta_table_input",
-        "config": {
-            "uri": "s3://batchtofeldera/supplier",
-            "aws_skip_signature": "true",
-            "aws_region": "ap-southeast-2",
-            "mode": "snapshot"
-        }
+        $config
         }
     }]'
 );
-  """,
-    "partsupp": """
+  """).substitute(config=mk_config("supplier")),
+    "partsupp": Template("""
   CREATE TABLE PARTSUPP (
           PS_PARTKEY     INTEGER NOT NULL,
           PS_SUPPKEY     INTEGER NOT NULL,
@@ -149,17 +157,12 @@ tables = {
     'connectors' = '[{
         "transport": {
         "name": "delta_table_input",
-        "config": {
-            "uri": "s3://batchtofeldera/partsupp",
-            "aws_skip_signature": "true",
-            "aws_region": "ap-southeast-2",
-            "mode": "snapshot"
-        }
+        $config
         }
     }]'
 );
-  """,
-    "nation": """
+  """).substitute(config=mk_config("partsupp")),
+    "nation": Template("""
   CREATE TABLE NATION  (
           N_NATIONKEY  INTEGER NOT NULL,
           N_NAME       CHAR(25) NOT NULL,
@@ -170,17 +173,12 @@ tables = {
     'connectors' = '[{
         "transport": {
         "name": "delta_table_input",
-        "config": {
-            "uri": "s3://batchtofeldera/nation",
-            "aws_skip_signature": "true",
-            "aws_region": "ap-southeast-2",
-            "mode": "snapshot"
-        }
+        $config
         }
     }]'
 );
-  """,
-    "region": """
+  """).substitute(config=mk_config("nation")),
+    "region": Template("""
   CREATE TABLE REGION  (
           R_REGIONKEY  INTEGER NOT NULL,
           R_NAME       CHAR(25) NOT NULL,
@@ -190,16 +188,11 @@ tables = {
     'connectors' = '[{
         "transport": {
         "name": "delta_table_input",
-        "config": {
-            "uri": "s3://batchtofeldera/region",
-            "aws_skip_signature": "true",
-            "aws_region": "ap-southeast-2",
-            "mode": "snapshot"
-        }
+        $config
         }
     }]'
 );
-""",
+""").substitute(config=mk_config("region")),
 }
 
 views = {
@@ -860,4 +853,10 @@ order by
 }
 
 
-run_pipeline("tpc-h-test", tables, views)
+class TestPipelineBuilder(unittest.TestCase):
+    def test_aggregate_joins(self):
+        run_workload("tpc-h-test", tables, views)
+
+
+if __name__ == "__main__":
+    unittest.main()

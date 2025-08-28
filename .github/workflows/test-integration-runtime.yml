@@ -42,7 +42,14 @@ jobs:
 
       - name: Python runtime_aggtest test
         if: ${{ vars.CI_DRY_RUN != 'true' }}
-        run: uv run --locked ./tests/runtime_aggtest/run-all-tests.sh
+        run: uv run --locked ./tests/runtime_aggtest/run.sh
+        working-directory: python
+        env:
+          PYTHONPATH: ${{ github.workspace }}/python
+
+      - name: Python workload tests
+        if: ${{ vars.CI_DRY_RUN != 'true' }}
+        run: uv run --locked pytest -n ${{ vars.PYTEST_WORKERS }} tests/workloads --timeout=600
         working-directory: python
         env:
           PYTHONPATH: ${{ github.workspace }}/python
