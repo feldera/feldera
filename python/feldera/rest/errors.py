@@ -1,5 +1,6 @@
 from requests import Response
 import json
+from urllib.parse import urlparse
 
 
 class FelderaError(Exception):
@@ -43,6 +44,17 @@ class FelderaAPIError(FelderaError):
                 err_msg += request.text
 
         err_msg += f"\nResponse Status: {request.status_code}"
+
+        if int(request.status_code) == 401:
+            parsed = urlparse(request.request.url)
+
+            auth_err = f"\nAuthorization error: Failed to connect to '{parsed.scheme}://{parsed.hostname}': "
+            auth = request.request.headers.get("Authorization")
+            if auth is None:
+                err_msg += f"{auth_err} API key not set"
+            else:
+                err_msg += f"{auth_err} invalid API key"
+
         err_msg = err_msg.strip()
 
         super().__init__(err_msg)
