@@ -3240,7 +3240,7 @@ impl ControllerInner {
                 );
 
                 match endpoint
-                    .open(probe, parser, input_handle.schema.clone(), seek)
+                    .open(probe, parser.fork(), input_handle.schema.clone(), seek)
                     .map_err(|e| ControllerError::input_transport_error(endpoint_name, true, e))
                 {
                     Ok(reader) => {

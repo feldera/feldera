@@ -8,6 +8,7 @@ use anyhow::Result as AnyResult;
 use apache_avro::{schema::NamesRef, types::Value as AvroValue, Schema as AvroSchema};
 use arrow::record_batch::RecordBatch;
 use dbsp::circuit::NodeId;
+use dbsp::operator::StagedBuffers;
 use dyn_clone::DynClone;
 use feldera_types::format::csv::CsvParserConfig;
 use feldera_types::format::json::JsonFlavor;
@@ -101,6 +102,8 @@ pub trait DeCollectionStream: Send + Sync + InputBuffer {
     /// Removes any updates beyond the first `len`.
     fn truncate(&mut self, len: usize);
 
+    fn gather_staged(&self) -> Box<dyn StagedBuffers>;
+
     /// Create a new deserializer with the same configuration connected to the
     /// same input stream. The new deserializer has an independent buffer that
     /// is initially empty.
@@ -122,6 +125,8 @@ pub trait ArrowStream: InputBuffer + Send + Sync {
     /// Create a new deserializer with the same configuration connected to
     /// the same input stream.
     fn fork(&self) -> Box<dyn ArrowStream>;
+
+    fn gather_staged(&self) -> Box<dyn StagedBuffers>;
 }
 
 /// Like `DeCollectionStream`, but deserializes Avro-encoded records before pushing them to a
@@ -135,6 +140,8 @@ pub trait AvroStream: InputBuffer + Send + Sync {
     /// Create a new deserializer with the same configuration connected to
     /// the same input stream.
     fn fork(&self) -> Box<dyn AvroStream>;
+
+    fn gather_staged(&self) -> Box<dyn StagedBuffers>;
 }
 
 /// A handle to an input collection that can be used to feed serialized data

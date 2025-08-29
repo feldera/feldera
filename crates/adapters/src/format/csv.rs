@@ -6,6 +6,7 @@ use crate::{
 };
 use actix_web::HttpRequest;
 use anyhow::{bail, Result as AnyResult};
+use dbsp::operator::StagedBuffers;
 use erased_serde::Serialize as ErasedSerialize;
 use feldera_types::{
     config::ConnectorConfig,
@@ -155,6 +156,10 @@ impl Parser for CsvParser {
             self.parse_record(data, &mut errors);
         }
         (self.input_stream.take_all(), errors)
+    }
+
+    fn gather_staged(&self) -> Box<dyn StagedBuffers> {
+        self.input_stream.gather_staged()
     }
 }
 

@@ -11,7 +11,7 @@ use anyhow::anyhow;
 use anyhow::Result as AnyResult;
 use apache_avro::{types::Value as AvroValue, Schema as AvroSchema};
 use arrow::array::RecordBatch;
-use dbsp::DBData;
+use dbsp::{operator::StagedBuffers, DBData};
 use erased_serde::Deserializer as ErasedDeserializer;
 use feldera_adapterlib::format::BufferSize;
 use feldera_types::serde_with_context::{DeserializeWithContext, SqlSerdeConfig};
@@ -19,7 +19,7 @@ use serde_arrow::Deserializer as ArrowDeserializer;
 use std::{
     fmt::Debug,
     hash::{DefaultHasher, Hash, Hasher},
-    mem::swap,
+    mem::{swap, take},
     sync::{Arc, Mutex, MutexGuard},
 };
 
@@ -70,6 +70,7 @@ impl<T: Debug, U: Debug> MockUpdate<T, U> {
 pub struct MockDeZSetState<T, U> {
     /// Records flushed since the last `reset`.
     pub flushed: Vec<MockUpdate<T, U>>,
+    pub staged: Vec<MockUpdate<T, U>>,
 }
 
 impl<T, U> Default for MockDeZSetState<T, U> {
@@ -82,6 +83,7 @@ impl<T, U> MockDeZSetState<T, U> {
     pub fn new() -> Self {
         Self {
             flushed: Vec::new(),
+            staged: Vec::new(),
         }
     }
 
@@ -225,6 +227,16 @@ where
         self.n_bytes = 0;
     }
 
+    fn stage(&mut self) {
+        self.handle
+            .0
+            .lock()
+            .unwrap()
+            .staged
+            .append(&mut self.updates);
+        self.n_bytes = 0;
+    }
+
     fn len(&self) -> BufferSize {
         BufferSize {
             records: self.updates.len(),
@@ -255,6 +267,22 @@ where
         } else {
             None
         }
+    }
+}
+
+struct MockDeZSetStreamStagedBuffers<T, U> {
+    buffers: Vec<MockUpdate<T, U>>,
+    handle: MockDeZSet<T, U>,
+}
+
+impl<T, U> StagedBuffers for MockDeZSetStreamStagedBuffers<T, U> {
+    fn flush(&mut self) {
+        self.handle
+            .0
+            .lock()
+            .unwrap()
+            .flushed
+            .append(&mut self.buffers);
     }
 }
 
@@ -325,6 +353,13 @@ where
     fn fork(&self) -> Box<dyn DeCollectionStream> {
         Box::new(Self::new(self.buffer.handle.clone(), self.config.clone()))
     }
+
+    fn gather_staged(&self) -> Box<dyn StagedBuffers> {
+        Box::new(MockDeZSetStreamStagedBuffers {
+            buffers: take(&mut self.buffer.handle.0.lock().unwrap().staged),
+            handle: self.buffer.handle.clone(),
+        })
+    }
 }
 
 impl<De, T, U, C> InputBuffer for MockDeZSetStream<De, T, U, C>
@@ -336,6 +371,10 @@ where
 {
     fn flush(&mut self) {
         self.buffer.flush()
+    }
+
+    fn stage(&mut self) {
+        self.buffer.stage();
     }
 
     fn take_some(&mut self, n: usize) -> Option<Box<dyn InputBuffer>> {
@@ -383,6 +422,10 @@ where
 {
     fn flush(&mut self) {
         self.buffer.flush()
+    }
+
+    fn stage(&mut self) {
+        self.buffer.stage();
     }
 
     fn take_some(&mut self, n: usize) -> Option<Box<dyn InputBuffer>> {
@@ -445,6 +488,13 @@ where
     fn fork(&self) -> Box<dyn ArrowStream> {
         Box::new(self.clone())
     }
+
+    fn gather_staged(&self) -> Box<dyn StagedBuffers> {
+        Box::new(MockDeZSetStreamStagedBuffers {
+            buffers: take(&mut self.buffer.handle.0.lock().unwrap().staged),
+            handle: self.buffer.handle.clone(),
+        })
+    }
 }
 
 /// [`AvroStream`] implementation that collects deserialized records into a
@@ -491,6 +541,13 @@ where
     fn fork(&self) -> Box<dyn AvroStream> {
         Box::new(Self::new(self.handle.clone()))
     }
+
+    fn gather_staged(&self) -> Box<dyn StagedBuffers> {
+        Box::new(MockDeZSetStreamStagedBuffers {
+            buffers: take(&mut self.handle.0.lock().unwrap().staged),
+            handle: self.handle.clone(),
+        })
+    }
 }
 
 impl<T, U> InputBuffer for MockAvroStream<T, U>
@@ -501,6 +558,15 @@ where
     fn flush(&mut self) {
         let mut state = self.handle.0.lock().unwrap();
         state.flushed.append(&mut self.updates);
+    }
+
+    fn stage(&mut self) {
+        self.handle
+            .0
+            .lock()
+            .unwrap()
+            .staged
+            .append(&mut self.updates);
     }
 
     fn take_some(&mut self, n: usize) -> Option<Box<dyn InputBuffer>> {

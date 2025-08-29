@@ -15,6 +15,7 @@ use anyhow::{anyhow, bail, Result as AnyResult};
 use apache_avro::{types::Value as AvroValue, Schema as AvroSchema};
 use arrow::array::RecordBatch;
 use dbsp::dynamic::Data;
+use dbsp::operator::StagedBuffers;
 use dbsp::{
     algebra::HasOne, operator::Update, utils::Tup2, DBData, InputHandle, MapHandle, SetHandle,
     ZSetHandle, ZWeight,
@@ -451,6 +452,11 @@ where
         self.n_bytes = 0;
     }
 
+    fn stage(&mut self) {
+        self.handle.stage(std::mem::take(&mut self.updates));
+        self.n_bytes = 0;
+    }
+
     fn hash(&self, hasher: &mut dyn Hasher) {
         for update in &self.updates {
             hasher.write_u64(update.default_hash())
@@ -545,7 +551,7 @@ where
     }
 
     fn fork(&self) -> Box<dyn DeCollectionStream> {
-        Box::new(Self::new(self.buffer.handle.clone(), self.config.clone()))
+        Box::new(Self::new(self.buffer.handle.fork(), self.config.clone()))
     }
 
     fn truncate(&mut self, len: usize) {
@@ -553,6 +559,10 @@ where
             self.buffer.n_bytes = fraction(len, self.buffer.updates.len(), self.buffer.n_bytes);
             self.buffer.updates.truncate(len);
         }
+    }
+
+    fn gather_staged(&self) -> Box<dyn StagedBuffers> {
+        Box::new(self.buffer.handle.gather_staged())
     }
 }
 
@@ -593,6 +603,10 @@ where
 {
     fn flush(&mut self) {
         self.buffer.flush()
+    }
+
+    fn stage(&mut self) {
+        self.buffer.stage()
     }
 
     fn len(&self) -> BufferSize {
@@ -677,6 +691,10 @@ where
     fn fork(&self) -> Box<dyn ArrowStream> {
         Box::new(Self::new(self.buffer.handle.clone(), self.config.clone()))
     }
+
+    fn gather_staged(&self) -> Box<dyn StagedBuffers> {
+        Box::new(self.buffer.handle.gather_staged())
+    }
 }
 
 impl<K, D, C> InputBuffer for ArrowZSetStream<K, D, C>
@@ -687,6 +705,10 @@ where
 {
     fn flush(&mut self) {
         self.buffer.flush()
+    }
+
+    fn stage(&mut self) {
+        self.buffer.stage()
     }
 
     fn take_some(&mut self, n: usize) -> Option<Box<dyn InputBuffer>> {
@@ -754,6 +776,10 @@ where
     fn fork(&self) -> Box<dyn AvroStream> {
         Box::new(self.clone())
     }
+
+    fn gather_staged(&self) -> Box<dyn StagedBuffers> {
+        Box::new(self.buffer.handle.gather_staged())
+    }
 }
 
 #[cfg(feature = "with-avro")]
@@ -764,6 +790,10 @@ where
 {
     fn flush(&mut self) {
         self.buffer.flush()
+    }
+
+    fn stage(&mut self) {
+        self.buffer.stage()
     }
 
     fn take_some(&mut self, n: usize) -> Option<Box<dyn InputBuffer>> {
@@ -887,6 +917,11 @@ where
         self.n_bytes = 0;
     }
 
+    fn stage(&mut self) {
+        self.handle.stage(std::mem::take(&mut self.updates));
+        self.n_bytes = 0;
+    }
+
     fn len(&self) -> BufferSize {
         BufferSize {
             records: self.updates.len(),
@@ -977,7 +1012,7 @@ where
     }
 
     fn fork(&self) -> Box<dyn DeCollectionStream> {
-        Box::new(Self::new(self.buffer.handle.clone(), self.config.clone()))
+        Box::new(Self::new(self.buffer.handle.fork(), self.config.clone()))
     }
 
     fn truncate(&mut self, len: usize) {
@@ -985,6 +1020,10 @@ where
             self.buffer.n_bytes = fraction(len, self.buffer.updates.len(), self.buffer.n_bytes);
             self.buffer.updates.truncate(len);
         }
+    }
+
+    fn gather_staged(&self) -> Box<dyn StagedBuffers> {
+        Box::new(self.buffer.handle.gather_staged())
     }
 }
 
@@ -997,6 +1036,10 @@ where
 {
     fn flush(&mut self) {
         self.buffer.flush()
+    }
+
+    fn stage(&mut self) {
+        self.buffer.stage()
     }
 
     fn len(&self) -> BufferSize {
@@ -1076,6 +1119,10 @@ where
 
         Ok(())
     }
+
+    fn gather_staged(&self) -> Box<dyn StagedBuffers> {
+        Box::new(self.buffer.handle.gather_staged())
+    }
 }
 
 impl<K, D, C> InputBuffer for ArrowSetStream<K, D, C>
@@ -1086,6 +1133,10 @@ where
 {
     fn flush(&mut self) {
         self.buffer.flush()
+    }
+
+    fn stage(&mut self) {
+        self.buffer.stage()
     }
 
     fn take_some(&mut self, n: usize) -> Option<Box<dyn InputBuffer>> {
@@ -1153,6 +1204,10 @@ where
     fn fork(&self) -> Box<dyn AvroStream> {
         Box::new(self.clone())
     }
+
+    fn gather_staged(&self) -> Box<dyn StagedBuffers> {
+        Box::new(self.buffer.handle.gather_staged())
+    }
 }
 
 #[cfg(feature = "with-avro")]
@@ -1163,6 +1218,10 @@ where
 {
     fn flush(&mut self) {
         self.buffer.flush()
+    }
+
+    fn stage(&mut self) {
+        self.buffer.stage()
     }
 
     fn take_some(&mut self, n: usize) -> Option<Box<dyn InputBuffer>> {
@@ -1361,6 +1420,11 @@ where
         self.n_bytes = 0;
     }
 
+    fn stage(&mut self) {
+        self.handle.stage(std::mem::take(&mut self.updates));
+        self.n_bytes = 0;
+    }
+
     fn len(&self) -> BufferSize {
         BufferSize {
             records: self.updates.len(),
@@ -1486,7 +1550,7 @@ where
 
     fn fork(&self) -> Box<dyn DeCollectionStream> {
         Box::new(Self::new(
-            self.buffer.handle.clone(),
+            self.buffer.handle.fork(),
             self.value_key_func.clone(),
             self.update_key_func.clone(),
             self.config.clone(),
@@ -1498,6 +1562,10 @@ where
             self.buffer.n_bytes = fraction(len, self.buffer.updates.len(), self.buffer.n_bytes);
             self.buffer.updates.truncate(len);
         }
+    }
+
+    fn gather_staged(&self) -> Box<dyn StagedBuffers> {
+        Box::new(self.buffer.handle.gather_staged())
     }
 }
 
@@ -1517,6 +1585,10 @@ where
 {
     fn flush(&mut self) {
         self.buffer.flush()
+    }
+
+    fn stage(&mut self) {
+        self.buffer.stage();
     }
 
     fn len(&self) -> BufferSize {
@@ -1629,6 +1701,10 @@ where
 
         Ok(())
     }
+
+    fn gather_staged(&self) -> Box<dyn StagedBuffers> {
+        Box::new(self.buffer.handle.gather_staged())
+    }
 }
 
 impl<K, KD, V, VD, U, VF, C> InputBuffer for ArrowMapStream<K, KD, V, VD, U, VF, C>
@@ -1643,6 +1719,10 @@ where
 {
     fn flush(&mut self) {
         self.buffer.flush()
+    }
+
+    fn stage(&mut self) {
+        self.buffer.stage();
     }
 
     fn take_some(&mut self, n: usize) -> Option<Box<dyn InputBuffer>> {
@@ -1738,6 +1818,10 @@ where
     fn fork(&self) -> Box<dyn AvroStream> {
         Box::new(self.clone())
     }
+
+    fn gather_staged(&self) -> Box<dyn StagedBuffers> {
+        Box::new(self.buffer.handle.gather_staged())
+    }
 }
 
 #[cfg(feature = "with-avro")]
@@ -1752,6 +1836,10 @@ where
 {
     fn flush(&mut self) {
         self.buffer.flush()
+    }
+
+    fn stage(&mut self) {
+        self.buffer.stage();
     }
 
     fn take_some(&mut self, n: usize) -> Option<Box<dyn InputBuffer>> {

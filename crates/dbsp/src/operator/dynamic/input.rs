@@ -1,3 +1,5 @@
+use itertools::Itertools;
+
 use crate::{
     algebra::{
         IndexedZSet, OrdIndexedZSet, OrdIndexedZSetFactories, OrdZSet, OrdZSetFactories, ZSet,
@@ -17,12 +19,13 @@ use crate::{
         },
         Input, InputHandle, Update,
     },
-    trace::{Batch, BatchFactories, BatchReaderFactories, Rkyv},
+    trace::{Batch, BatchFactories, BatchReaderFactories, Batcher, FallbackWSet, Rkyv},
     utils::Tup2,
     Circuit, DBData, DynZWeight, NumEntries, Stream, ZWeight,
 };
 use std::{
     mem::{replace, swap},
+    ops::Not,
     panic::Location,
     sync::{
         atomic::{AtomicUsize, Ordering},
@@ -364,12 +367,17 @@ impl RootCircuit {
 
         let (input, input_handle) = Input::new(
             Location::caller(),
-            move |mut tuples: Box<DynPairs<_, _>>| {
+            move |tuples: Vec<Box<DynPairs<_, _>>>| {
                 let mut pairs = weighted_pairs_factory.default_box();
-                pairs.from_pairs(tuples.as_mut());
-                OrdZSet::dyn_from_tuples(&zset_factories, (), &mut pairs)
+                let mut batcher =
+                    <FallbackWSet<_, _> as Batch>::Batcher::new_batcher(&zset_factories, ());
+                for mut tuples in tuples {
+                    pairs.from_pairs(tuples.as_mut());
+                    batcher.push_batch(&mut pairs);
+                }
+                batcher.seal()
             },
-            Arc::new(|| pairs_factory.default_box()),
+            Arc::new(|| vec![pairs_factory.default_box()]),
         );
 
         // This stream doesn't strictly need to be sharded. We shard it to make sure that when it is materialized,
@@ -386,6 +394,7 @@ impl RootCircuit {
 
         let zset_handle = <CollectionHandle<DynPair<K, DynUnit>, DynZWeight>>::new(
             factories.pair_factory,
+            factories.pairs_factory,
             input_handle,
         );
 
@@ -425,7 +434,7 @@ impl RootCircuit {
 
         let (input, input_handle) = Input::new(
             Location::caller(),
-            move |mut tuples: Box<DynPairs<K, DynPair<V, DynZWeight>>>| {
+            move |tuples: Vec<Box<DynPairs<K, DynPair<V, DynZWeight>>>>| {
                 let mut indexed_tuples = factories_clone
                     .indexed_zset_factories
                     .weighted_items_factory()
@@ -435,15 +444,17 @@ impl RootCircuit {
                     .weighted_item_factory()
                     .default_box();
 
-                for kvw in tuples.dyn_iter_mut() {
-                    let (k, vw) = kvw.split_mut();
-                    let (v, w) = vw.split_mut();
-                    let (kv, item_w) = item.split_mut();
-                    let (item_k, item_v) = kv.split_mut();
-                    k.clone_to(item_k);
-                    v.clone_to(item_v);
-                    w.clone_to(item_w);
-                    indexed_tuples.push_val(&mut *item);
+                for mut tuples in tuples {
+                    for kvw in tuples.dyn_iter_mut() {
+                        let (k, vw) = kvw.split_mut();
+                        let (v, w) = vw.split_mut();
+                        let (kv, item_w) = item.split_mut();
+                        let (item_k, item_v) = kv.split_mut();
+                        k.clone_to(item_k);
+                        v.clone_to(item_v);
+                        w.clone_to(item_w);
+                        indexed_tuples.push_val(&mut *item);
+                    }
                 }
                 OrdIndexedZSet::dyn_from_tuples(
                     &factories_clone.indexed_zset_factories,
@@ -451,7 +462,7 @@ impl RootCircuit {
                     &mut indexed_tuples,
                 )
             },
-            Arc::new(|| factories.pairs_factory.default_box()),
+            Arc::new(|| vec![factories.pairs_factory.default_box()]),
         );
 
         // This stream doesn't strictly need to be sharded. We shard it to make sure that when it is materialized,
@@ -466,6 +477,7 @@ impl RootCircuit {
 
         let zset_handle = <CollectionHandle<K, DynPair<V, DynZWeight>>>::new(
             factories.pair_factory,
+            factories.pairs_factory,
             input_handle,
         );
 
@@ -477,7 +489,7 @@ impl RootCircuit {
         &self,
         persistent_id: Option<&str>,
         factories: &AddInputSetFactories<B>,
-        input_stream: Stream<Self, Box<DynPairs<K, DynBool>>>,
+        input_stream: Stream<Self, Vec<Box<DynPairs<K, DynBool>>>>,
     ) -> Stream<Self, B>
     where
         K: DataTrait + ?Sized,
@@ -486,22 +498,51 @@ impl RootCircuit {
         let factories_clone = factories.clone();
 
         let sorted = input_stream
-            .apply_owned(move |mut upserts| {
-                // Sort the vector by key, preserving the history of updates for each key.
+            .apply_owned(move |upserts| {
+                struct UpsertPosition<T> {
+                    upserts: T,
+                    position: usize,
+                }
+                // Sort the vectors by key, preserving the history of updates for each key.
                 // Upserts cannot be merged or reordered, therefore we cannot use unstable sort.
-                upserts.sort_by_key();
+                let mut upserts = upserts
+                    .into_iter()
+                    .filter_map(|mut upserts| {
+                        upserts.sort_by_key();
 
-                // Find the last upsert for each key, that's the only one that matters.
-                upserts.dedup_by_key_keep_last();
+                        // Find the last upsert for each key, that's the only one that matters.
+                        upserts.dedup_by_key_keep_last();
+
+                        upserts.is_empty().not().then(|| UpsertPosition {
+                            upserts,
+                            position: 0,
+                        })
+                    })
+                    .collect::<Vec<_>>();
 
                 let mut result = factories_clone.upsert_pairs_factory.default_box();
                 let mut tuple = factories_clone.upsert_pair_factory.default_box();
 
-                for upsert in upserts.dyn_iter_mut() {
+                while !upserts.is_empty() {
+                    let min_index = (0..upserts.len())
+                        .min_by(|a, b| {
+                            let a = upserts[*a].upserts.index(upserts[*a].position);
+                            let b = upserts[*b].upserts.index(upserts[*b].position);
+                            a.cmp(b)
+                        })
+                        .unwrap();
+                    let min = &mut upserts[min_index];
+                    let upsert = min.upserts.index_mut(min.position);
+
                     let (k, v) = upsert.split_mut();
                     let mut v = if **v { Some(()) } else { None };
                     tuple.from_vals(k, v.erase_mut());
                     result.push_val(&mut *tuple);
+
+                    min.position += 1;
+                    if min.position >= min.upserts.len() {
+                        upserts.remove(min_index);
+                    }
                 }
 
                 result
@@ -517,7 +558,7 @@ impl RootCircuit {
         &self,
         persistent_id: Option<&str>,
         factories: &AddInputMapFactories<B, U>,
-        input_stream: Stream<Self, Box<DynPairs<K, DynUpdate<V, U>>>>,
+        input_stream: Stream<Self, Vec<Box<DynPairs<K, DynUpdate<V, U>>>>>,
         patch_func: PatchFunc<V, U>,
     ) -> Stream<Self, B>
     where
@@ -528,9 +569,12 @@ impl RootCircuit {
     {
         let sorted = input_stream
             .apply_owned(move |mut upserts| {
-                // Sort the vector by key, preserving the history of updates for each key.
+                // Sort the vectors by key, preserving the history of updates for each key.
                 // Upserts cannot be merged or reordered, therefore we cannot use unstable sort.
-                upserts.sort_by_key();
+                upserts.retain_mut(|pairs| {
+                    pairs.sort_by_key();
+                    !pairs.is_empty()
+                });
 
                 upserts
             })
@@ -546,7 +590,7 @@ impl RootCircuit {
         &self,
         persistent_id: Option<&str>,
         factories: &AddInputMapWithWaterlineFactories<B, U, E>,
-        input_stream: Stream<Self, Box<DynPairs<K, DynUpdate<V, U>>>>,
+        input_stream: Stream<Self, Vec<Box<DynPairs<K, DynUpdate<V, U>>>>>,
         patch_func: PatchFunc<V, U>,
         init_waterline: Box<dyn Fn() -> Box<W>>,
         extract_ts: Box<dyn Fn(&B::Key, &B::Val, &mut W)>,
@@ -569,9 +613,12 @@ impl RootCircuit {
     {
         let sorted = input_stream
             .apply_owned(move |mut upserts| {
-                // Sort the vector by key, preserving the history of updates for each key.
+                // Sort the vectors by key, preserving the history of updates for each key.
                 // Upserts cannot be merged or reordered, therefore we cannot use unstable sort.
-                upserts.sort_by_key();
+                upserts.retain_mut(|pairs| {
+                    pairs.sort_by_key();
+                    !pairs.is_empty()
+                });
 
                 upserts
             })
@@ -648,8 +695,8 @@ impl RootCircuit {
         self.region("input_set", || {
             let (input, input_handle) = Input::new(
                 Location::caller(),
-                |tuples: Box<DynPairs<K, DynBool>>| tuples,
-                Arc::new(|| factories.input_pairs_factory.default_box()),
+                |tuples: Vec<Box<DynPairs<K, DynBool>>>| tuples,
+                Arc::new(|| vec![factories.input_pairs_factory.default_box()]),
             );
             let input_stream = self.add_source(input);
             let upsert_handle = <UpsertHandle<K, DynBool>>::new(
@@ -741,8 +788,8 @@ impl RootCircuit {
         self.region("input_map", || {
             let (input, input_handle) = Input::new(
                 Location::caller(),
-                |tuples: Box<DynPairs<K, DynUpdate<V, U>>>| tuples,
-                Arc::new(|| factories.input_pairs_factory.default_box()),
+                |tuples: Vec<Box<DynPairs<K, DynUpdate<V, U>>>>| tuples,
+                Arc::new(|| vec![factories.input_pairs_factory.default_box()]),
             );
             let input_stream = self.add_source(input);
             let zset_handle = <UpsertHandle<K, DynUpdate<V, U>>>::new(
@@ -787,8 +834,8 @@ impl RootCircuit {
         self.region("input_map_with_waterline", || {
             let (input, input_handle) = Input::new(
                 Location::caller(),
-                |tuples: Box<DynPairs<K, DynUpdate<V, U>>>| tuples,
-                Arc::new(|| factories.input_pairs_factory.default_box()),
+                |tuples: Vec<Box<DynPairs<K, DynUpdate<V, U>>>>| tuples,
+                Arc::new(|| vec![factories.input_pairs_factory.default_box()]),
             );
             let input_stream = self.add_source(input);
             let zset_handle = <UpsertHandle<K, DynUpdate<V, U>>>::new(
@@ -888,7 +935,8 @@ where
 /// consumes updates buffered in each mailbox, leaving the mailbox empty.
 pub struct CollectionHandle<K: DataTrait + ?Sized, V: DataTrait + ?Sized> {
     pair_factory: &'static dyn Factory<DynPair<K, V>>,
-    input_handle: InputHandle<Box<DynPairs<K, V>>>,
+    pub pairs_factory: &'static dyn Factory<DynPairs<K, V>>,
+    pub input_handle: InputHandle<Vec<Box<DynPairs<K, V>>>>,
     // Used to send tuples to workers in round robin.  Oftentimes the
     // workers will immediately repartition the inputs based on the hash
     // of the key; however this is more efficient than doing it here, as
@@ -900,6 +948,7 @@ impl<K: DataTrait + ?Sized, V: DataTrait + ?Sized> Clone for CollectionHandle<K,
     fn clone(&self) -> Self {
         Self {
             pair_factory: self.pair_factory,
+            pairs_factory: self.pairs_factory,
             input_handle: self.input_handle.clone(),
             next_worker: self.next_worker.clone(),
         }
@@ -909,17 +958,19 @@ impl<K: DataTrait + ?Sized, V: DataTrait + ?Sized> Clone for CollectionHandle<K,
 impl<K: DataTrait + ?Sized, V: DataTrait + ?Sized> CollectionHandle<K, V> {
     fn new(
         pair_factory: &'static dyn Factory<DynPair<K, V>>,
-        input_handle: InputHandle<Box<DynPairs<K, V>>>,
+        pairs_factory: &'static dyn Factory<DynPairs<K, V>>,
+        input_handle: InputHandle<Vec<Box<DynPairs<K, V>>>>,
     ) -> Self {
         Self {
             pair_factory,
+            pairs_factory,
             input_handle,
             next_worker: Arc::new(AtomicUsize::new(0)),
         }
     }
 
     #[inline]
-    fn num_partitions(&self) -> usize {
+    pub fn num_partitions(&self) -> usize {
         self.input_handle.0.mailbox.len()
     }
 
@@ -934,7 +985,7 @@ impl<K: DataTrait + ?Sized, V: DataTrait + ?Sized> CollectionHandle<K, V> {
             next_worker + self.input_handle.workers().start,
             |tuples| {
                 tuple.from_vals(k, v);
-                tuples.push_val(&mut *tuple);
+                tuples.first_mut().unwrap().push_val(&mut *tuple);
             },
         );
     }
@@ -982,6 +1033,7 @@ impl<K: DataTrait + ?Sized, V: DataTrait + ?Sized> CollectionHandle<K, V> {
             let worker = (next_worker + i) % num_partitions + worker_ofs;
             if partition_size == vals.len() {
                 self.input_handle.update_for_worker(worker, |tuples| {
+                    let tuples = tuples.first_mut().unwrap();
                     if tuples.is_empty() {
                         swap(tuples, vals);
                     } else {
@@ -994,6 +1046,7 @@ impl<K: DataTrait + ?Sized, V: DataTrait + ?Sized> CollectionHandle<K, V> {
             // Draining from the end should be more efficient as it doesn't
             // require memcpy'ing the tail of the vector to the front.
             self.input_handle.update_for_worker(worker, |tuples| {
+                let tuples = tuples.first_mut().unwrap();
                 let len = vals.len();
                 tuples.append_range(vals.as_vec_mut(), len - partition_size, len);
             });
@@ -1008,6 +1061,74 @@ impl<K: DataTrait + ?Sized, V: DataTrait + ?Sized> CollectionHandle<K, V> {
         if remainder > 0 {
             self.next_worker
                 .store(next_worker + remainder, Ordering::Release);
+        }
+    }
+
+    /// Adds `vals` to `partitions`, which must be an vector with
+    /// `self.num_partitions()` elements, evenly dividing them among the
+    /// partitions.  If the values can't be evenly divided, then some of them
+    /// will receive extra, starting with `*next_worker`, and `*next_worker`
+    /// will be updated so that the next call will start with the partitions
+    /// that didn't receive extra.
+    ///
+    /// This is used with [Self::dyn_append_staged].
+    pub fn dyn_stage(
+        &self,
+        vals: &mut Box<DynPairs<K, V>>,
+        next_worker: &mut usize,
+        partitions: &mut [Box<DynPairs<K, V>>],
+    ) {
+        let num_partitions = self.num_partitions();
+
+        // We divide `val` across `num_partitions` workers as evenly as we can.  The
+        // first `remainder` workers will receive `quotient + 1` values, and the
+        // rest will receive `quotient`.
+        let quotient = vals.len() / num_partitions;
+        let remainder = vals.len() % num_partitions;
+        let worker_ofs = self.input_handle.workers().start;
+        for i in 0..num_partitions {
+            let mut partition_size = quotient;
+            if i < remainder {
+                partition_size += 1;
+            }
+
+            let worker = (*next_worker + i) % num_partitions + worker_ofs;
+            let len = vals.len();
+            if partition_size == len && partitions[worker].is_empty() {
+                swap(&mut partitions[worker], vals);
+                break;
+            }
+
+            // Draining from the end should be more efficient as it doesn't
+            // require memcpy'ing the tail of the vector to the front.
+            partitions[worker].append_range(vals.as_vec_mut(), len - partition_size, len);
+            vals.truncate(len - partition_size);
+        }
+
+        assert!(vals.is_empty());
+
+        // If `remainder` is positive, then the values were not distributed completely
+        // evenly. Advance `self.next_worker` so that the next batch of values
+        // will give extra values to the ones that didn't get extra this time.
+        *next_worker = (*next_worker + remainder) % num_partitions;
+    }
+
+    /// Adds `vals` to the inputs, where `vals` was previously partitioned
+    /// evenly using [Self::dyn_stage].
+    ///
+    /// This is much faster than [Self::dyn_append], since the bulk of the work
+    /// was already done in [Self::dyn_stage].  It can be valuable to do that
+    /// work in advance if it can be done in parallel with the circuit running.
+    ///
+    /// # Concurrency
+    ///
+    /// This has the same concurrency implications as [Self::dyn_append],
+    /// although on a per-worker basis it is atomic.
+    pub fn dyn_append_staged(&self, vals: Vec<Box<DynPairs<K, V>>>) {
+        for (vals, worker) in vals.into_iter().zip_eq(0..self.num_partitions()) {
+            self.input_handle.update_for_worker(worker, |tuples| {
+                tuples.push(vals);
+            });
         }
     }
 
@@ -1060,16 +1181,16 @@ impl<K: ?Sized, F> HashFunc<K> for F where F: Fn(&K) -> u32 + Send + Sync {}
 /// the mailbox empty.
 pub struct UpsertHandle<K: DataTrait + ?Sized, V: DataTrait + ?Sized> {
     pair_factory: &'static dyn Factory<DynPair<K, V>>,
-    pairs_factory: &'static dyn Factory<DynPairs<K, V>>,
+    pub pairs_factory: &'static dyn Factory<DynPairs<K, V>>,
     buffers: Vec<Box<DynPairs<K, V>>>,
-    input_handle: InputHandle<Box<DynPairs<K, V>>>,
+    pub input_handle: InputHandle<Vec<Box<DynPairs<K, V>>>>,
     // Sharding the input collection based on the hash of the key is more
     // expensive than simple round robin partitioning used by
     // `CollectionHandle`; however it is necessary here, since the `Upsert`
     // operator requires that all updates to the same key are processed
     // by the same worker thread and in the same order they were pushed
     // by the client.
-    hash_func: Arc<dyn HashFunc<K>>,
+    pub hash_func: Arc<dyn HashFunc<K>>,
 }
 
 impl<K: DataTrait + ?Sized, V: DataTrait + ?Sized> Clone for UpsertHandle<K, V> {
@@ -1088,7 +1209,7 @@ impl<K: DataTrait + ?Sized, V: DataTrait + ?Sized> UpsertHandle<K, V> {
     fn new(
         pair_factory: &'static dyn Factory<DynPair<K, V>>,
         pairs_factory: &'static dyn Factory<DynPairs<K, V>>,
-        input_handle: InputHandle<Box<DynPairs<K, V>>>,
+        input_handle: InputHandle<Vec<Box<DynPairs<K, V>>>>,
     ) -> Self {
         Self::with_hasher(
             pair_factory,
@@ -1101,7 +1222,7 @@ impl<K: DataTrait + ?Sized, V: DataTrait + ?Sized> UpsertHandle<K, V> {
     fn with_hasher(
         pair_factory: &'static dyn Factory<DynPair<K, V>>,
         pairs_factory: &'static dyn Factory<DynPairs<K, V>>,
-        input_handle: InputHandle<Box<DynPairs<K, V>>>,
+        input_handle: InputHandle<Vec<Box<DynPairs<K, V>>>>,
         hash_func: Arc<dyn HashFunc<K>>,
     ) -> Self {
         Self {
@@ -1114,8 +1235,8 @@ impl<K: DataTrait + ?Sized, V: DataTrait + ?Sized> UpsertHandle<K, V> {
     }
 
     #[inline]
-    fn num_partitions(&self) -> usize {
-        self.buffers.len()
+    pub fn num_partitions(&self) -> usize {
+        self.input_handle.0.mailbox.len()
     }
 
     /// Push a single `(key,value)` pair to the input stream.
@@ -1128,14 +1249,14 @@ impl<K: DataTrait + ?Sized, V: DataTrait + ?Sized> UpsertHandle<K, V> {
                 |tuples| {
                     let mut tuple = self.pair_factory.default_box();
                     tuple.from_vals(k, v);
-                    tuples.push_val(&mut *tuple);
+                    tuples.first_mut().unwrap().push_val(&mut *tuple);
                 },
             );
         } else {
             self.input_handle.update_for_worker(0, |tuples| {
                 let mut tuple = self.pair_factory.default_box();
                 tuple.from_vals(k, v);
-                tuples.push_val(&mut *tuple);
+                tuples.first_mut().unwrap().push_val(&mut *tuple);
             });
         }
     }
@@ -1171,6 +1292,7 @@ impl<K: DataTrait + ?Sized, V: DataTrait + ?Sized> UpsertHandle<K, V> {
             vals.clear();
             for worker in 0..num_partitions {
                 self.input_handle.update_for_worker(worker, |tuples| {
+                    let tuples = tuples.first_mut().unwrap();
                     if tuples.is_empty() {
                         *tuples =
                             replace(&mut self.buffers[worker], self.pairs_factory.default_box());
@@ -1181,11 +1303,52 @@ impl<K: DataTrait + ?Sized, V: DataTrait + ?Sized> UpsertHandle<K, V> {
             }
         } else {
             self.input_handle.update_for_worker(0, |tuples| {
+                let tuples = tuples.first_mut().unwrap();
                 if tuples.is_empty() {
                     *tuples = replace(vals, self.pairs_factory.default_box());
                 } else {
                     tuples.append(vals.as_vec_mut());
                 }
+            });
+        }
+    }
+
+    /// Adds `vals` to `partitions`, which must be an vector with
+    /// `self.num_partitions()` elements, evenly dividing them among the
+    /// partitions.  If the values can't be evenly divided, then some of them
+    /// will receive extra, starting with `*next_worker`, and `*next_worker`
+    /// will be updated so that the next call will start with the partitions
+    /// that didn't receive extra.
+    ///
+    /// This is used with [Self::dyn_append_staged].
+    pub fn dyn_stage(
+        &self,
+        vals: &mut Box<DynPairs<K, V>>,
+        partitions: &mut [Box<DynPairs<K, V>>],
+    ) {
+        let num_partitions = self.num_partitions();
+
+        for kv in vals.dyn_iter_mut() {
+            let k = kv.fst();
+            partitions[((self.hash_func)(k) as usize) % num_partitions].push_val(kv)
+        }
+    }
+
+    /// Adds `vals` to the inputs, where `vals` was previously partitioned
+    /// evenly using [Self::dyn_stage].
+    ///
+    /// This is much faster than [Self::dyn_append], since the bulk of the work
+    /// was already done in [Self::dyn_stage].  It can be valuable to do that
+    /// work in advance if it can be done in parallel with the circuit running.
+    ///
+    /// # Concurrency
+    ///
+    /// This has the same concurrency implications as [Self::dyn_append],
+    /// although on a per-worker basis it is atomic.
+    pub fn dyn_append_staged(&self, vals: Vec<Box<DynPairs<K, V>>>) {
+        for (vals, worker) in vals.into_iter().zip_eq(0..self.num_partitions()) {
+            self.input_handle.update_for_worker(worker, |tuples| {
+                tuples.push(vals);
             });
         }
     }

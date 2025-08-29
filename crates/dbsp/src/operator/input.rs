@@ -4,7 +4,7 @@ use crate::{
         operator_traits::{Operator, SourceOperator},
         LocalStoreMarker, Scope,
     },
-    dynamic::{DowncastTrait, DynBool, DynData, DynPair, DynUnit, Erase, LeanVec},
+    dynamic::{DowncastTrait, DynBool, DynData, DynPair, DynPairs, DynUnit, Erase, LeanVec},
     operator::dynamic::{
         input::{
             AddInputIndexedZSetFactories, AddInputMapFactories, AddInputMapWithWaterlineFactories,
@@ -16,8 +16,10 @@ use crate::{
     utils::Tup2,
     Circuit, DBData, DynZWeight, RootCircuit, Runtime, Stream, TypedBox, ZWeight,
 };
+use itertools::Itertools;
 use std::{
     borrow::{Borrow, Cow},
+    collections::VecDeque,
     fmt::Debug,
     hash::{Hash, Hasher},
     marker::PhantomData,
@@ -33,17 +35,82 @@ pub use crate::operator::dynamic::input_upsert::{PatchFunc, Update};
 pub type IndexedZSetStream<K, V> = Stream<RootCircuit, OrdIndexedZSet<K, V>>;
 pub type ZSetStream<K> = Stream<RootCircuit, OrdZSet<K>>;
 
-#[repr(transparent)]
+/// Input prepared for flushing into an input handle.
+///
+/// [ZSetHandle], [IndexedZSetHandle], [SetHandle], and [MapHandle] all support
+/// similar ways to push data into a circuit.  The following discussion just
+/// talks about `ZSetHandle`, for clarity.
+///
+/// There are two ways to push data into a circuit with [ZSetHandle]:
+///
+/// - Immediately, either one data point at a time with
+///   [push](ZSetHandle::push), or a vector at a time with, e.g.,
+///   [append](ZSetHandle::append).
+///
+/// - Preparing data in advance with a series of calls to
+///   [stage](ZSetHandle::stage), then collecting that data into a [StagedBuffers]
+///   using [gather_staged](ZSetHandle::gather_staged).  Then, later, calling
+///   [StagedBuffers::flush] pushes the input buffers into the circuit.
+///
+/// Both approaches are equivalent in terms of correctness.  There can be a
+/// difference in performance, because [push](ZSetHandle::push) and
+/// [append](ZSetHandle::append) have a significant cost for a large number of
+/// records.  Using [StagedBuffers] has a similar cost, but it incurs it in the
+/// call to [gather_staged](ZSetHandle::gather_staged) rather than in
+/// [StagedBuffers::flush].  This means that, if the code driving the circuit
+/// can buffer data ahead of the circuit's demand for it, the cost can be hidden
+/// and data processing as a whole runs faster.
+pub trait StagedBuffers {
+    /// Flushes the data gathered into this buffer to the circuit.
+    fn flush(&mut self);
+}
+
+#[derive(Debug)]
+pub struct ZSetStage<K> {
+    staged: Vec<VecDeque<Tup2<K, ZWeight>>>,
+}
+
+impl<K> Default for ZSetStage<K> {
+    fn default() -> Self {
+        Self { staged: Vec::new() }
+    }
+}
+
+impl<K> ZSetStage<K> {
+    fn stage(&mut self, buffers: VecDeque<Tup2<K, ZWeight>>) {
+        self.staged.push(buffers);
+    }
+}
+
+pub struct ZSetStagedBuffers {
+    input_handle: InputHandle<Vec<Box<DynPairs<DynPair<DynData, DynUnit>, DynZWeight>>>>,
+    vals: Vec<Box<DynPairs<DynPair<DynData, DynUnit>, DynZWeight>>>,
+}
+
+impl StagedBuffers for ZSetStagedBuffers {
+    fn flush(&mut self) {
+        for (vals, worker) in self
+            .vals
+            .drain(..)
+            .zip_eq(0..self.input_handle.0.mailbox.len())
+        {
+            self.input_handle.update_for_worker(worker, |tuples| {
+                tuples.push(vals);
+            });
+        }
+    }
+}
+
 pub struct ZSetHandle<K> {
     handle: CollectionHandle<DynPair<DynData, DynUnit>, DynZWeight>,
-    phantom: PhantomData<fn(&K)>,
+    stage: Arc<Mutex<ZSetStage<K>>>,
 }
 
 impl<K> Clone for ZSetHandle<K> {
     fn clone(&self) -> Self {
         Self {
             handle: self.handle.clone(),
-            phantom: PhantomData,
+            stage: self.stage.clone(),
         }
     }
 }
@@ -63,8 +130,15 @@ where
     fn new(handle: CollectionHandle<DynPair<DynData, DynUnit>, DynZWeight>) -> Self {
         Self {
             handle,
-            phantom: PhantomData,
+            stage: Arc::default(),
         }
+    }
+
+    /// Creates a new handle with the same underlying input handle for which the
+    /// staging area used by [stage](Self::stage) and
+    /// [gather_stage](Self::gather_stage) is independent and initially empty.
+    pub fn fork(&self) -> Self {
+        Self::new(self.handle.clone())
     }
 
     pub fn push(&self, k: K, mut w: ZWeight) {
@@ -80,13 +154,80 @@ where
 
         self.handle.dyn_append(&mut vals.erase_box())
     }
+
+    /// Adds the data in `buffers` to the staging area for this handle.  It may
+    /// later be collected into a [StagedBuffers] using
+    /// [gather_staged](Self::gather_staged).
+    pub fn stage(&mut self, buffers: VecDeque<Tup2<K, ZWeight>>) {
+        self.stage.lock().unwrap().stage(buffers)
+    }
+
+    /// Gathers all of the data previously staged with [stage](Self::stage) into
+    /// a [StagedBuffers] that may later be used to push the collected data into
+    /// the circuit.  See [StagedBuffers] for more information.
+    pub fn gather_staged(&self) -> ZSetStagedBuffers {
+        let mut stage = take(&mut *self.stage.lock().unwrap());
+        let num_partitions = self.handle.num_partitions();
+        let mut partitions = vec![self.handle.pairs_factory.default_box(); num_partitions];
+        let mut next_worker = 0;
+        for vals in stage.staged.drain(..) {
+            let mut vec = Vec::from(vals);
+            // SAFETY: `()` is a zero-sized type, more precisely it's a 1-ZST.
+            // According to the Rust spec adding it to a tuple doesn't change
+            // its memory layout.
+            let vals: &mut Vec<Tup2<Tup2<K, ()>, ZWeight>> = unsafe { transmute(&mut vec) };
+            let vals = Box::new(LeanVec::from(take(vals)));
+
+            self.handle
+                .dyn_stage(&mut vals.erase_box(), &mut next_worker, &mut partitions);
+        }
+        ZSetStagedBuffers {
+            input_handle: self.handle.input_handle.clone(),
+            vals: partitions,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct IndexedZSetStage<K, V> {
+    staged: Vec<VecDeque<Tup2<K, Tup2<V, ZWeight>>>>,
+}
+
+impl<K, V> Default for IndexedZSetStage<K, V> {
+    fn default() -> Self {
+        Self { staged: Vec::new() }
+    }
+}
+
+impl<K, V> IndexedZSetStage<K, V> {
+    fn stage(&mut self, buffers: VecDeque<Tup2<K, Tup2<V, ZWeight>>>) {
+        self.staged.push(buffers);
+    }
+}
+
+pub struct IndexedZSetStagedBuffers {
+    input_handle: InputHandle<Vec<Box<DynPairs<DynData, DynPair<DynData, DynZWeight>>>>>,
+    vals: Vec<Box<DynPairs<DynData, DynPair<DynData, DynZWeight>>>>,
+}
+
+impl StagedBuffers for IndexedZSetStagedBuffers {
+    fn flush(&mut self) {
+        for (vals, worker) in self
+            .vals
+            .drain(..)
+            .zip_eq(0..self.input_handle.0.mailbox.len())
+        {
+            self.input_handle.update_for_worker(worker, |tuples| {
+                tuples.push(vals);
+            });
+        }
+    }
 }
 
 #[derive(Clone)]
-#[repr(transparent)]
 pub struct IndexedZSetHandle<K, V> {
     handle: CollectionHandle<DynData, DynPair<DynData, DynZWeight>>,
-    phantom: PhantomData<fn(&K, &V)>,
+    stage: Arc<Mutex<IndexedZSetStage<K, V>>>,
 }
 
 impl<K, V> IndexedZSetHandle<K, V>
@@ -97,8 +238,15 @@ where
     fn new(handle: CollectionHandle<DynData, DynPair<DynData, DynZWeight>>) -> Self {
         Self {
             handle,
-            phantom: PhantomData,
+            stage: Arc::default(),
         }
+    }
+
+    /// Creates a new handle with the same underlying input handle for which the
+    /// staging area used by [stage](Self::stage) and
+    /// [gather_stage](Self::gather_stage) is independent and initially empty.
+    pub fn fork(&self) -> Self {
+        Self::new(self.handle.clone())
     }
 
     pub fn push(&self, mut k: K, (v, w): (V, ZWeight)) {
@@ -109,19 +257,86 @@ where
         let vals = Box::new(LeanVec::from(take(vals)));
         self.handle.dyn_append(&mut vals.erase_box())
     }
+
+    /// Adds the data in `buffers` to the staging area for this handle.  It may
+    /// later be collected into a [StagedBuffers] using
+    /// [gather_staged](Self::gather_staged).
+    pub fn stage(&mut self, buffers: VecDeque<Tup2<K, Tup2<V, ZWeight>>>) {
+        self.stage.lock().unwrap().stage(buffers)
+    }
+
+    /// Gathers all of the data previously staged with [stage](Self::stage) into
+    /// a [StagedBuffers] that may later be used to push the collected data into
+    /// the circuit.  See [StagedBuffers] for more information.
+    pub fn gather_staged(&self) -> IndexedZSetStagedBuffers {
+        let mut stage = take(&mut *self.stage.lock().unwrap());
+        let num_partitions = self.handle.num_partitions();
+        let mut partitions = vec![self.handle.pairs_factory.default_box(); num_partitions];
+        let mut next_worker = 0;
+        for vals in stage.staged.drain(..) {
+            let mut vec = Vec::from(vals);
+            // SAFETY: `()` is a zero-sized type, more precisely it's a 1-ZST.
+            // According to the Rust spec adding it to a tuple doesn't change
+            // its memory layout.
+            let vals: &mut Vec<Tup2<K, Tup2<V, ZWeight>>> = unsafe { transmute(&mut vec) };
+            let vals = Box::new(LeanVec::from(take(vals)));
+
+            self.handle
+                .dyn_stage(&mut vals.erase_box(), &mut next_worker, &mut partitions);
+        }
+        IndexedZSetStagedBuffers {
+            input_handle: self.handle.input_handle.clone(),
+            vals: partitions,
+        }
+    }
 }
 
-#[repr(transparent)]
+#[derive(Debug)]
+pub struct SetStage<K> {
+    staged: Vec<VecDeque<Tup2<K, bool>>>,
+}
+
+impl<K> Default for SetStage<K> {
+    fn default() -> Self {
+        Self { staged: Vec::new() }
+    }
+}
+
+impl<K> SetStage<K> {
+    fn stage(&mut self, buffers: VecDeque<Tup2<K, bool>>) {
+        self.staged.push(buffers);
+    }
+}
+
+pub struct SetStagedBuffers {
+    input_handle: InputHandle<Vec<Box<DynPairs<DynData, DynBool>>>>,
+    vals: Vec<Box<DynPairs<DynData, DynBool>>>,
+}
+
+impl StagedBuffers for SetStagedBuffers {
+    fn flush(&mut self) {
+        for (vals, worker) in self
+            .vals
+            .drain(..)
+            .zip_eq(0..self.input_handle.0.mailbox.len())
+        {
+            self.input_handle.update_for_worker(worker, |tuples| {
+                tuples.push(vals);
+            });
+        }
+    }
+}
+
 pub struct SetHandle<K> {
     handle: UpsertHandle<DynData, DynBool>,
-    phantom: PhantomData<fn(&K)>,
+    stage: Arc<Mutex<SetStage<K>>>,
 }
 
 impl<K> Clone for SetHandle<K> {
     fn clone(&self) -> Self {
         Self {
             handle: self.handle.clone(),
-            phantom: PhantomData,
+            stage: self.stage.clone(),
         }
     }
 }
@@ -133,8 +348,22 @@ where
     fn new(handle: UpsertHandle<DynData, DynBool>) -> Self {
         Self {
             handle,
-            phantom: PhantomData,
+            stage: Arc::default(),
         }
+    }
+
+    /// Creates a new handle with the same underlying input handle for which the
+    /// staging area used by [stage](Self::stage) and
+    /// [gather_stage](Self::gather_stage) is independent and initially empty.
+    pub fn fork(&self) -> Self {
+        Self::new(self.handle.clone())
+    }
+
+    /// Adds the data in `buffers` to the staging area for this handle.  It may
+    /// later be collected into a [StagedBuffers] using
+    /// [gather_staged](Self::gather_staged).
+    pub fn stage(&mut self, buffers: VecDeque<Tup2<K, bool>>) {
+        self.stage.lock().unwrap().stage(buffers)
     }
 
     pub fn push(&self, mut k: K, mut v: bool) {
@@ -145,19 +374,93 @@ where
         let vals = Box::new(LeanVec::from(take(vals)));
         self.handle.dyn_append(&mut vals.erase_box())
     }
+
+    /// Gathers all of the data previously staged with [stage](Self::stage) into
+    /// a [StagedBuffers] that may later be used to push the collected data into
+    /// the circuit.  See [StagedBuffers] for more information.
+    pub fn gather_staged(&self) -> SetStagedBuffers {
+        let mut stage = take(&mut *self.stage.lock().unwrap());
+        let num_partitions = self.handle.num_partitions();
+        let mut partitions = vec![self.handle.pairs_factory.default_box(); num_partitions];
+        for vals in stage.staged.drain(..) {
+            let vec = Vec::from(vals);
+            let vals = Box::new(LeanVec::from(vec));
+            self.handle
+                .dyn_stage(&mut vals.erase_box(), &mut partitions);
+        }
+        SetStagedBuffers {
+            input_handle: self.handle.input_handle.clone(),
+            vals: partitions,
+        }
+    }
 }
 
-#[repr(transparent)]
-pub struct MapHandle<K, V, U> {
-    handle: UpsertHandle<DynData, DynUpdate<DynData, DynData>>,
-    phantom: PhantomData<fn(&K, &V, &U)>,
+#[derive(Debug)]
+pub struct MapStage<K, V, U>
+where
+    V: DBData,
+    U: DBData,
+{
+    staged: Vec<VecDeque<Tup2<K, Update<V, U>>>>,
 }
 
-impl<K, V, U> Clone for MapHandle<K, V, U> {
+impl<K, V, U> Default for MapStage<K, V, U>
+where
+    V: DBData,
+    U: DBData,
+{
+    fn default() -> Self {
+        Self { staged: Vec::new() }
+    }
+}
+
+impl<K, V, U> MapStage<K, V, U>
+where
+    V: DBData,
+    U: DBData,
+{
+    fn stage(&mut self, buffers: VecDeque<Tup2<K, Update<V, U>>>) {
+        self.staged.push(buffers);
+    }
+}
+
+pub struct MapStagedBuffers {
+    input_handle: InputHandle<Vec<Box<DynPairs<DynData, DynUpdate<DynData, DynData>>>>>,
+    vals: Vec<Box<DynPairs<DynData, DynUpdate<DynData, DynData>>>>,
+}
+
+impl StagedBuffers for MapStagedBuffers {
+    fn flush(&mut self) {
+        for (vals, worker) in self
+            .vals
+            .drain(..)
+            .zip_eq(0..self.input_handle.0.mailbox.len())
+        {
+            self.input_handle.update_for_worker(worker, |tuples| {
+                tuples.push(vals);
+            });
+        }
+    }
+}
+
+pub struct MapHandle<K, V, U>
+where
+    V: DBData,
+    U: DBData,
+{
+    pub handle: UpsertHandle<DynData, DynUpdate<DynData, DynData>>,
+    stage: Arc<Mutex<MapStage<K, V, U>>>,
+}
+
+impl<K, V, U> Clone for MapHandle<K, V, U>
+where
+    V: DBData,
+    U: DBData,
+{
     fn clone(&self) -> Self {
         Self {
             handle: self.handle.clone(),
-            phantom: PhantomData,
+            stage: self.stage.clone(),
         }
     }
 }
@@ -171,8 +474,22 @@ where
     fn new(handle: UpsertHandle<DynData, DynUpdate<DynData, DynData>>) -> Self {
         Self {
             handle,
-            phantom: PhantomData,
+            stage: Arc::default(),
         }
+    }
+
+    /// Creates a new handle with the same underlying input handle for which the
+    /// staging area used by [stage](Self::stage) and
+    /// [gather_stage](Self::gather_stage) is independent and initially empty.
+    pub fn fork(&self) -> Self {
+        Self::new(self.handle.clone())
+    }
+
+    /// Adds the data in `buffers` to the staging area for this handle.  It may
+    /// later be collected into a [StagedBuffers] using
+    /// [gather_staged](Self::gather_staged).
+    pub fn stage(&mut self, buffers: VecDeque<Tup2<K, Update<V, U>>>) {
+        self.stage.lock().unwrap().stage(buffers)
     }
 
     pub fn push(&self, mut k: K, mut upd: Update<V, U>) {
@@ -180,8 +497,28 @@ where
     }
 
     pub fn append(&mut self, vals: &mut Vec<Tup2<K, Update<V, U>>>) {
-        let vals = Box::new(LeanVec::from(take(vals)));
+        let vals = take(vals);
+        let vals = Box::new(LeanVec::from(vals));
         self.handle.dyn_append(&mut vals.erase_box())
+    }
+
+    /// Gathers all of the data previously staged with [stage](Self::stage) into
+    /// a [StagedBuffers] that may later be used to push the collected data into
+    /// the circuit.  See [StagedBuffers] for more information.
+    pub fn gather_staged(&self) -> MapStagedBuffers {
+        let mut stage = take(&mut *self.stage.lock().unwrap());
+        let num_partitions = self.handle.num_partitions();
+        let mut partitions = vec![self.handle.pairs_factory.default_box(); num_partitions];
+        for vals in stage.staged.drain(..) {
+            let vec = Vec::from(vals);
+            let vals = Box::new(LeanVec::from(vec));
+            self.handle
+                .dyn_stage(&mut vals.erase_box(), &mut partitions);
+        }
+        MapStagedBuffers {
+            input_handle: self.handle.input_handle.clone(),
+            vals: partitions,
+        }
     }
 }
 
