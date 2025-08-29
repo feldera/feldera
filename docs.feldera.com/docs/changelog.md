@@ -36,7 +36,7 @@ import TabItem from '@theme/TabItem';
 
         Changed the default character set from ISO-8859-1 to UTF-8.
         Removed from the documentation the ability to specify a different
-        charater set for strings.  Removed mentions of trailing space
+        character set for strings.  Removed mentions of trailing space
         trimming from strings.
 
         ## 0.124.0
