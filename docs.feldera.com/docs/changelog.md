@@ -15,18 +15,12 @@ import TabItem from '@theme/TabItem';
 
         ## Unreleased
 
+        ## 0.129.0
+
         Values that are late in the NOW stream are no longer logged to the
         error stream.
 
-        We have changed the documentation for the SUBSTR and SUBSTRING
-        function to specify correctly their behaviors when arguments are
-        negative.  Their behavior has not changed, but the documentation
-        was incorrect.
-
-        Changed the default character set from ISO-8859-1 to UTF-8.
-        Removed from the documentation the ability to specify a different
-        charater set for strings.  Removed mentions of trailing space
-        trimming from strings.
+        ## 0.126.0
 
         Until now, when fault tolerance was not enabled, resuming from a
         checkpoint would delete the checkpoint, so that it could only be resumed
@@ -37,6 +31,20 @@ import TabItem from '@theme/TabItem';
         resumed more than once.  (This does not change behavior when fault
         tolerance is enabled, because multiple resumes from a given checkpoint
         were always allowed in that case.)
+
+        ## 0.125.0
+
+        Changed the default character set from ISO-8859-1 to UTF-8.
+        Removed from the documentation the ability to specify a different
+        charater set for strings.  Removed mentions of trailing space
+        trimming from strings.
+
+        ## 0.124.0
+
+        We have changed the documentation for the SUBSTR and SUBSTRING
+        function to specify correctly their behaviors when arguments are
+        negative.  Their behavior has not changed, but the documentation
+        was incorrect.
 
         ## 0.105.0
 
