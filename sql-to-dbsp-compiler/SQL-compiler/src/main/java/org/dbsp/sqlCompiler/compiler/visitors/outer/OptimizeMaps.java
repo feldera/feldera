@@ -96,7 +96,8 @@ public class OptimizeMaps extends CircuitCloneWithGraphsVisitor {
                     .applyAfter(this.compiler(), expression, Maybe.MAYBE);
             CalciteRelNode node = operator.getRelNode().after(source.node().getRelNode());
             DBSPSimpleOperator result = new DBSPMapIndexOperator(
-                    node, newFunction, operator.getOutputIndexedZSetType(), source.node().inputs.get(0));
+                    node, newFunction, operator.getOutputIndexedZSetType(), source.node().inputs.get(0))
+                    .copyAnnotations(operator).copyAnnotations(source.simpleNode());
             this.map(operator, result);
             return;
         } else if (source.node().is(DBSPMapIndexOperator.class) && this.canMergeSource(source, size)) {
@@ -113,7 +114,8 @@ public class OptimizeMaps extends CircuitCloneWithGraphsVisitor {
                     .reduce(this.compiler()).to(DBSPClosureExpression.class);
             CalciteRelNode node = operator.getRelNode().after(source.node().getRelNode());
             DBSPSimpleOperator result = new DBSPMapIndexOperator(
-                    node, newFunction, operator.getOutputIndexedZSetType(), source.node().inputs.get(0));
+                    node, newFunction, operator.getOutputIndexedZSetType(), source.node().inputs.get(0))
+                    .copyAnnotations(operator).copyAnnotations(source.simpleNode());
             this.map(operator, result);
             return;
         } else if ((source.node().is(DBSPIntegrateOperator.class)) ||
@@ -126,6 +128,7 @@ public class OptimizeMaps extends CircuitCloneWithGraphsVisitor {
             for (OutputPort sourceSource: source.node().inputs) {
                 DBSPSimpleOperator newProjection = operator
                         .withInputs(Linq.list(sourceSource), true)
+                        .copyAnnotations(operator)
                         .to(DBSPSimpleOperator.class);
                 newSources.add(newProjection.outputPort());
                 this.addOperator(newProjection);

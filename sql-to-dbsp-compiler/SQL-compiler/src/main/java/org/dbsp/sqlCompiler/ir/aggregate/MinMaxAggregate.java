@@ -30,7 +30,7 @@ public class MinMaxAggregate extends NonLinearAggregate {
      * has the same type as the row variable (second parameter of the increment).
      * For min and max this is the argument value; for arg_min and arg_max this
      * contains both arguments.  This is currently only used for optimizing Min, Max,
-     * ArgMin and ArgMAx aggregate implementations. */
+     * ArgMin and ArgMax aggregate implementations. */
     public final DBSPClosureExpression comparedValue;
 
     public MinMaxAggregate(CalciteObject origin, DBSPExpression zero, DBSPClosureExpression increment,

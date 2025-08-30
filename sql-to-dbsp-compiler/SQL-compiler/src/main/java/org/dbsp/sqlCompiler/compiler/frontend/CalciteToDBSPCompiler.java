@@ -77,6 +77,7 @@ import org.apache.calcite.sql.ddl.SqlCreateType;
 import org.apache.calcite.sql.type.SqlTypeName;
 import org.apache.calcite.util.ImmutableBitSet;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
+import org.dbsp.sqlCompiler.circuit.annotation.NoChain;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAsofJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperator;
@@ -3172,7 +3173,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 DBSPExpression body = new DBSPRawTupleExpression(
                         new DBSPTupleExpression(keyFields, false),
                         new DBSPApplyMethodExpression(this.node, "unwrap_or_default", aggResultType, agg));
-                index = new DBSPMapIndexOperator(this.node, body.closure(var), windowAgg.outputPort());
+                index = new DBSPMapIndexOperator(this.node, body.closure(var), windowAgg.outputPort())
+                        .addAnnotation(new NoChain(), DBSPMapIndexOperator.class);
                 this.compiler.getCircuit().addOperator(index);
             }
 

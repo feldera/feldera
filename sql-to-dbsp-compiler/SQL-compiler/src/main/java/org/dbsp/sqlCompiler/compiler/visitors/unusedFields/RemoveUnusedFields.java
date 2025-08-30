@@ -426,6 +426,7 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
             DBSPClosureExpression compressed = rw.rewriteClosure(closure);
             OutputPort source = this.mapped(operator.input());
             DBSPSimpleOperator adjust = new DBSPMapIndexOperator(operator.getRelNode(), projection, source)
+                    .copyAnnotations(operator)
                     .addAnnotation(new IsProjection(size), DBSPSimpleOperator.class);
             this.addOperator(adjust);
             DBSPSimpleOperator result = new DBSPMapIndexOperator(
