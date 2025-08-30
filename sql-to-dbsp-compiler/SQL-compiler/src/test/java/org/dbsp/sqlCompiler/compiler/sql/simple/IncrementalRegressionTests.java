@@ -814,4 +814,18 @@ public class IncrementalRegressionTests extends SqlIoTest {
                     FROM T
                 ) WHERE rn = 1;""");
     }
+
+    @Test
+    public void issue4660() {
+        var ccs = this.getCCS("""
+                CREATE TABLE T(x BIGINT NOT NULL);
+                CREATE VIEW V AS SELECT MAX(x) OVER () FROM T;""");
+        ccs.step("", """
+                 max | weight
+                --------------""");
+        ccs.step("INSERT INTO T VALUES(1), (2), (-1);", """
+                 max | weight
+                --------------
+                   2 | 3""");
+    }
 }
