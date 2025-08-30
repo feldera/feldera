@@ -1596,7 +1596,7 @@ public class StreamingTests extends StreamingTestBase {
 
             @Override
             public void endVisit() {
-                Assert.assertEquals(4, fmi);
+                Assert.assertEquals(2, fmi);
             }
         };
         ccs.visit(visitor);

@@ -3,6 +3,8 @@ package org.dbsp.sqlCompiler.compiler.visitors.outer;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPChainOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Expensive;
@@ -69,15 +71,26 @@ public class ImplementChains extends CircuitCloneVisitor {
     public void postorder(DBSPChainOperator node) {
         DBSPChainOperator.ComputationChain chain = this.shrink(node.chain);
         DBSPClosureExpression function = chain.collapse(this.compiler);
+        boolean containsFilter = chain.containsFilter();
         DBSPSimpleOperator result;
         if (node.outputType.is(DBSPTypeZSet.class)) {
-            result = new DBSPFlatMapOperator(
-                    node.getRelNode(), function, node.getOutputZSetType(),
-                    node.isMultiset, this.mapped(node.input()));
+            if (containsFilter)
+                result = new DBSPFlatMapOperator(
+                        node.getRelNode(), function, node.getOutputZSetType(),
+                        node.isMultiset, this.mapped(node.input()));
+            else
+                result = new DBSPMapOperator(
+                        node.getRelNode(), function, node.getOutputZSetType(),
+                        node.isMultiset, this.mapped(node.input()));
         } else {
-            result = new DBSPFlatMapIndexOperator(
-                    node.getRelNode(), function, node.getOutputIndexedZSetType(),
-                    node.isMultiset, this.mapped(node.input()));
+            if (containsFilter)
+                result = new DBSPFlatMapIndexOperator(
+                        node.getRelNode(), function, node.getOutputIndexedZSetType(),
+                        node.isMultiset, this.mapped(node.input()));
+            else
+                result = new DBSPMapIndexOperator(
+                        node.getRelNode(), function, node.getOutputIndexedZSetType(),
+                        node.isMultiset, this.mapped(node.input()));
         }
         this.map(node, result);
     }

@@ -345,7 +345,7 @@ public class SqlToRelCompiler implements IWritesLogs {
 
         @Override
         public int getMaxPrecision(SqlTypeName typeName) {
-            if (typeName.equals(SqlTypeName.TIME))
+            if (typeName == SqlTypeName.TIME)
                 return 9;
             return super.getMaxPrecision(typeName);
         }

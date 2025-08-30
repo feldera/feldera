@@ -41,10 +41,10 @@ import java.util.Objects;
 
 public final class DBSPMapOperator extends DBSPUnaryOperator {
     public DBSPMapOperator(CalciteRelNode node, DBSPExpression function,
-                           DBSPTypeZSet outputType, OutputPort input) {
+                           DBSPTypeZSet outputType, boolean isMultiset, OutputPort input) {
+        super(node, "map", function, outputType, isMultiset, input);
         // Currently the output type can only be a ZSet, but the input
         // type may be a ZSet or an IndexedZSet.
-        super(node, "map", function, outputType, true, input);
         DBSPType elementType = this.getOutputZSetElementType();
         if (function.is(DBSPClosureExpression.class)) {
             // Could also be a SortExpression
@@ -52,6 +52,11 @@ public final class DBSPMapOperator extends DBSPUnaryOperator {
         }
         this.checkResultType(function, elementType);
         checkArgumentFunctionType(function, input);
+    }
+
+    public DBSPMapOperator(CalciteRelNode node, DBSPExpression function,
+                           DBSPTypeZSet outputType, OutputPort input) {
+        this(node, function, outputType, true, input);
     }
 
     public DBSPMapOperator(CalciteRelNode node, DBSPClosureExpression function, OutputPort input) {
