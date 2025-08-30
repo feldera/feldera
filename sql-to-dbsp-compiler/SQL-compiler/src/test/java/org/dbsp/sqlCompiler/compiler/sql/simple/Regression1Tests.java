@@ -245,6 +245,47 @@ public class Regression1Tests extends SqlIoTest {
     }
 
     @Test
+    public void issue4562() {
+        this.qs("""
+                SELECT TIMESTAMPADD(MINUTE, 2, '2020-06-21 14:23:44.123'::TIMESTAMP);
+                 r
+                ---
+                 2020-06-21 14:25:44.123
+                (1 row)""");
+    }
+
+    @Test
+    public void issue4650() {
+        var ccs = this.getCCS("""
+                CREATE TABLE t(tmestmp TIMESTAMP);
+                
+                CREATE MATERIALIZED VIEW v AS SELECT
+                TIMESTAMPDIFF(MINUTE, tmestmp, TIMESTAMP '2022-01-22 20:24:44.332') AS min,
+                TIMESTAMPDIFF(SECOND, tmestmp, TIMESTAMP '2022-01-22 20:24:44.332') AS sec,
+                TIMESTAMPDIFF(MINUTE, TIMESTAMP '2020-06-21 14:23:44.123', TIMESTAMP '2022-01-22 20:24:44.332') AS min1,
+                TIMESTAMPDIFF(SECOND, TIMESTAMP '2020-06-21 14:23:44.123', TIMESTAMP '2022-01-22 20:24:44.332') AS sec1
+                FROM t;""");
+        ccs.step("INSERT INTO T VALUES(TIMESTAMP '2020-06-21 14:23:44.123');", """
+                 min | sec | min1 | sec1 | weight
+                --------------------------------------------
+                 835561 | 50133660 | 835561 | 50133660 | 1""");
+
+        ccs = this.getCCS("""
+                CREATE TABLE t(tmestmp TIMESTAMP);
+
+                CREATE MATERIALIZED VIEW v AS SELECT
+                TIMESTAMPDIFF(MINUTE, tmestmp, '2022-01-22 20:24:44.332'::TIMESTAMP) AS min,
+                TIMESTAMPDIFF(SECOND, tmestmp, '2022-01-22 20:24:44.332'::TIMESTAMP) AS sec,
+                TIMESTAMPDIFF(MINUTE, '2020-06-21 14:23:44.123'::TIMESTAMP, '2022-01-22 20:24:44.332'::TIMESTAMP) AS min1,
+                TIMESTAMPDIFF(SECOND, '2020-06-21 14:23:44.123'::TIMESTAMP, '2022-01-22 20:24:44.332'::TIMESTAMP) AS sec1
+                FROM t;""");
+        ccs.step("INSERT INTO T VALUES(TIMESTAMP '2020-06-21 14:23:44.123');", """
+                 min | sec | min1 | sec1 | weight
+                --------------------------------------------
+                 835561 | 50133660 | 835561 | 50133660 | 1""");
+    }
+
+    @Test
     public void issue4010() {
         this.getCCS("""
                 -- Customers.
@@ -498,7 +539,7 @@ public class Regression1Tests extends SqlIoTest {
         ccs.step("INSERT INTO T VALUES(10.20, 10)", """
                  x                   | decimal             | int                 | y                  | weight
                 -----------------------------------------------------------------------------------------------
-                 1970-01-01 00:00:00 | 1970-01-01 00:00:00 | 1970-01-01 00:00:00 | 1970-01-01 00:00:00 |1""");
+                 1970-01-01 00:00:00 | 1970-01-01 00:00:00 | 1970-01-01 00:00:00.010 | 1970-01-01 00:00:00 |1""");
     }
 
     @Test

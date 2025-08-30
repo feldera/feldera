@@ -1113,7 +1113,7 @@ public class TrigonometryTests extends SqlIoTest {
         );
 
         this.queryFailingInCompilation("SELECT sin(CAST('15:06:51.06731' AS TIME))",
-                "Cannot apply 'SIN' to arguments of type 'SIN(<TIME(0)>)'. " +
+                "Cannot apply 'SIN' to arguments of type 'SIN(<TIME(3)>)'. " +
                         "Supported form(s): 'SIN(<NUMERIC>)'"
         );
     }

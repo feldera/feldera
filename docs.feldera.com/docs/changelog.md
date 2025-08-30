@@ -15,6 +15,10 @@ import TabItem from '@theme/TabItem';
 
         ## Unreleased
 
+        TIMESTAMP is now the same as TIMESTAMP(3); TIME is now the same as
+        TIME(3) (the default precision has been changed from 0 to 3; the
+        documentation always claimed that the precision is 3).
+
         ## 0.129.0
 
         Values that are late in the NOW stream are no longer logged to the

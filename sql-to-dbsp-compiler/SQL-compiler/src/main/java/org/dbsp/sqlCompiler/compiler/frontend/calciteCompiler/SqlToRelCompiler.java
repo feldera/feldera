@@ -351,6 +351,15 @@ public class SqlToRelCompiler implements IWritesLogs {
         }
 
         @Override
+        public int getDefaultPrecision(SqlTypeName typeName) {
+            if (typeName == SqlTypeName.TIMESTAMP)
+                return 3;
+            if (typeName == SqlTypeName.TIME)
+                return 3;
+            return super.getDefaultPrecision(typeName);
+        }
+
+        @Override
         public boolean shouldConvertRaggedUnionTypesToVarying() { return true; }
     };
 
