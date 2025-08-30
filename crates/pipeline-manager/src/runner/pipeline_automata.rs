@@ -751,6 +751,8 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                         StatusCheckResult::Paused
                     } else if pipeline_status == "Running" {
                         StatusCheckResult::Running
+                    } else if pipeline_status == "Initializing" {
+                        StatusCheckResult::Initializing
                     } else {
                         // Notably: "Terminated"
                         return StatusCheckResult::Error(ErrorResponse::from_error_nolog(
@@ -762,19 +764,9 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                         ));
                     }
                 } else if status_code == StatusCode::SERVICE_UNAVAILABLE {
-                    // Check if pipeline returned SERVICE_UNAVAILABLE because it is Initializing
-                    if body["error_code"]
-                        .as_str()
-                        .is_some_and(|s| s == "Initializing")
-                    {
-                        StatusCheckResult::Initializing
-                    } else {
-                        // Pipeline HTTP server is running but indicates it is not yet available
-                        warn!(
-                            "Pipeline {pipeline_id} responds to status check it is not (yet) ready"
-                        );
-                        StatusCheckResult::Unavailable
-                    }
+                    // Pipeline HTTP server is running but indicates it is not yet available
+                    warn!("Pipeline {pipeline_id} responds to status check it is not (yet) ready");
+                    StatusCheckResult::Unavailable
                 } else {
                     // All other status codes indicate a fatal error
                     // The HTTP server is still running, but the pipeline itself failed
