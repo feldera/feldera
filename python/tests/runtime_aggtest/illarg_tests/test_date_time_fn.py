@@ -473,8 +473,8 @@ class illarg_tsdiff_ts_legal(TstView):
                 "doy": 580,
                 "dow": 580,
                 "hr": 13926,
-                "min": 835560,
-                "sec": 50133659,
+                "min": 835561,
+                "sec": 50133660,
             }
         ]
         self.sql = """CREATE MATERIALIZED VIEW tsdiff_ts_legal AS SELECT
