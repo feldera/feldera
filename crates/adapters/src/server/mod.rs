@@ -824,7 +824,10 @@ async fn status(state: WebData<ServerState>) -> impl Responder {
             let status = controller.status().global_metrics.get_state();
             Ok(HttpResponse::Ok().json(status))
         }
-        None => Err(missing_controller_error(&state)),
+        None => match *state.phase.read().unwrap() {
+            PipelinePhase::Initializing => Ok(HttpResponse::Ok().json("Initializing")),
+            _ => Err(missing_controller_error(&state)),
+        },
     }
 }
 

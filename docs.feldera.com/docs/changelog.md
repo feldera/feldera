@@ -19,6 +19,12 @@ import TabItem from '@theme/TabItem';
         TIME(3) (the default precision has been changed from 0 to 3; the
         documentation always claimed that the precision is 3).
 
+        The following change doesn't affect the external Feldera API, only the
+        pipeline's API available from a sidecare container. The `/status`
+        endpoint no longer returns HTTP status 503 (SERVICE_UNAVAILABLE) while
+        the pipeline is initializing. Instead it returns status OK with message
+        body containing the "Initializing" string.
+
         ## 0.129.0
 
         Values that are late in the NOW stream are no longer logged to the
