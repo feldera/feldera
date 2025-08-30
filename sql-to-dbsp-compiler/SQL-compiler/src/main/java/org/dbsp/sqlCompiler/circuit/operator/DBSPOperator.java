@@ -114,6 +114,10 @@ public abstract class DBSPOperator extends DBSPNode implements IDBSPOuterNode {
         return this.annotations.contains(test);
     }
 
+    public <T extends Annotation> boolean hasAnnotation(Class<T> clazz) {
+        return this.hasAnnotation(clazz::isInstance);
+    }
+
     /**
      * Return true if any of the inputs in `newInputs` is different from one of the inputs
      * of this operator.

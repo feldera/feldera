@@ -1,6 +1,7 @@
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
 import org.dbsp.sqlCompiler.circuit.OutputPort;
+import org.dbsp.sqlCompiler.circuit.annotation.NoChain;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPChainOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFilterOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
@@ -40,6 +41,8 @@ public class ChainVisitor extends CircuitCloneWithGraphsVisitor {
     DBSPChainOperator chain(DBSPUnaryOperator operator) {
         if (this.getGraph().getFanout(operator.input().node()) != 1)
             return null;
+        if (operator.hasAnnotation(NoChain.class))
+            return null;
         DBSPChainOperator.Computation computation = getComputation(operator);
         if (computation == null)
             return null;
@@ -50,7 +53,7 @@ public class ChainVisitor extends CircuitCloneWithGraphsVisitor {
             return new DBSPChainOperator(operator.getRelNode().after(in.node().getRelNode()),
                     chain.add(computation), operator.isMultiset, chainOp.input());
         } else {
-            if (!in.node().is(DBSPSimpleOperator.class))
+            if (!in.node().is(DBSPSimpleOperator.class) || in.node().hasAnnotation(NoChain.class))
                 return null;
             DBSPSimpleOperator inSimple = in.simpleNode();
             DBSPChainOperator.Computation inComputation = getComputation(inSimple);
