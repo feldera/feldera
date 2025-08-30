@@ -128,6 +128,39 @@ fn validate_map_schema(
     Ok(())
 }
 
+/// Check that Avro schema can be deserialized as SQL `BIGINT` type.
+fn validate_bigint_schema(avro_schema: &AvroSchema) -> Result<(), String> {
+    match avro_schema {
+        AvroSchema::Long | AvroSchema::Int => Ok(()),
+        _ => Err(format!(
+            "invalid Avro schema for a column of type 'BIGINT': expected 'long' or 'int', but found {}",
+            schema_json(avro_schema)
+        )),
+    }
+}
+
+/// Check that Avro schema can be deserialized as SQL `INT UNSIGNED` type.
+fn validate_uint_schema(avro_schema: &AvroSchema) -> Result<(), String> {
+    match avro_schema {
+        AvroSchema::Long | AvroSchema::Int => Ok(()),
+        _ => Err(format!(
+            "invalid Avro schema for a column of type 'INT UNSIGNED': expected 'long' or 'int', but found {}",
+            schema_json(avro_schema)
+        )),
+    }
+}
+
+/// Check that Avro schema can be deserialized as SQL `BIGINT UNSIGNED` type.
+fn validate_ubigint_schema(avro_schema: &AvroSchema) -> Result<(), String> {
+    match avro_schema {
+        AvroSchema::Long | AvroSchema::Int | AvroSchema::String => Ok(()),
+        _ => Err(format!(
+            "invalid Avro schema for a column of type 'BIGINT UNSIGNED': expected 'long', 'int', or 'string', but found {}",
+            schema_json(avro_schema)
+        )),
+    }
+}
+
 /// Check that Avro schema can be deserialized as SQL `TIMESTAMP` type.
 fn validate_decimal_schema(
     avro_schema: &AvroSchema,
@@ -254,9 +287,15 @@ pub fn validate_field_schema(
         SqlType::Boolean => AvroSchema::Boolean,
         SqlType::TinyInt | SqlType::SmallInt | SqlType::Int => AvroSchema::Int,
         SqlType::UTinyInt | SqlType::USmallInt => AvroSchema::Int,
-        SqlType::UInt => AvroSchema::Long,
-        SqlType::BigInt => AvroSchema::Long,
-        SqlType::UBigInt => AvroSchema::String,
+        SqlType::UInt => {
+            return validate_uint_schema(avro_schema);
+        }
+        SqlType::BigInt => {
+            return validate_bigint_schema(avro_schema);
+        }
+        SqlType::UBigInt => {
+            return validate_ubigint_schema(avro_schema);
+        }
         SqlType::Real => AvroSchema::Float,
         SqlType::Double => AvroSchema::Double,
         SqlType::Decimal => {

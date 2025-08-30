@@ -763,6 +763,160 @@ fn test_ms_time() {
     run_parser_test(vec![test]);
 }
 
+/// Type used to serialize different integer types as Avro `int`.
+#[derive(
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    serde::Serialize,
+    Clone,
+    Hash,
+    SizeOf,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
+#[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
+struct TestIntConversionsSrc {
+    uint: i32,
+    ulong: i32,
+    int: i32,
+    long: i32,
+}
+
+impl TestIntConversionsSrc {
+    pub fn avro_schema() -> &'static str {
+        r#"{
+            "type": "record",
+            "name": "TestIntConversions",
+            "connect.name": "test_namespace.TestIntConversions",
+            "fields": [
+                { "name": "uint", "type": "int" },
+                { "name": "ulong", "type": "int" },
+                { "name": "int", "type": "int" },
+                { "name": "long", "type": "int" }
+            ]
+        }"#
+    }
+
+    pub fn schema() -> Vec<Field> {
+        vec![
+            Field::new("uint".into(), ColumnType::int(false)),
+            Field::new("ulong".into(), ColumnType::int(false)),
+            Field::new("int".into(), ColumnType::int(false)),
+            Field::new("long".into(), ColumnType::int(false)),
+        ]
+    }
+
+    pub fn relation_schema() -> Relation {
+        Relation {
+            name: SqlIdentifier::new("TestIntConversions", false),
+            fields: Self::schema(),
+            materialized: false,
+            properties: BTreeMap::new(),
+        }
+    }
+}
+
+serialize_table_record!(TestIntConversionsSrc[4]{
+    r#uint["uint"]: i32,
+    r#ulong["ulong"]: i32,
+    r#int["int"]: i32,
+    r#long["long"]: i32
+});
+
+deserialize_table_record!(TestIntConversionsSrc["TestIntConversions", 4] {
+    (r#uint, "uint", false, i32, None),
+    (r#ulong, "ulong", false, i32, None),
+    (r#int, "int", false, i32, None),
+    (r#long, "long", false, i32, None)
+});
+
+/// Type used to deserialize different integer types from Avro `int`.
+#[derive(
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    serde::Serialize,
+    Clone,
+    Hash,
+    SizeOf,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
+#[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
+struct TestIntConversionsDst {
+    uint: u32,
+    ulong: u64,
+    int: i32,
+    long: i64,
+}
+
+serialize_table_record!(TestIntConversionsDst[4]{
+    r#uint["uint"]: u32,
+    r#ulong["ulong"]: u64,
+    r#int["int"]: i32,
+    r#long["long"]: i64
+});
+
+deserialize_table_record!(TestIntConversionsDst["TestIntConversions", 4] {
+    (r#uint, "uint", false, u32, None),
+    (r#ulong, "ulong", false, u64, None),
+    (r#int, "int", false, i32, None),
+    (r#long, "long", false, i64, None)
+});
+
+/// Test for issue #4664: make sure that we can deserialize different 32-bit and 64-bit integer types from `int`.
+#[test]
+fn test_issue4664() {
+    let input_vals = [TestIntConversionsSrc {
+        uint: 1,
+        ulong: 2,
+        int: 3,
+        long: 4,
+    }];
+
+    let output_vals = [TestIntConversionsDst {
+        uint: 1,
+        ulong: 2,
+        int: 3,
+        long: 4,
+    }];
+
+    let schema = AvroSchema::parse_str(TestIntConversionsSrc::avro_schema()).unwrap();
+
+    let input_batches = input_vals
+        .iter()
+        .map(|v| (serialize_record(v, &schema), vec![]))
+        .collect::<Vec<_>>();
+
+    let expected_output = output_vals
+        .iter()
+        .map(|v| MockUpdate::Insert(v.clone()))
+        .collect::<Vec<_>>();
+
+    let test = TestCase {
+        relation_schema: TestIntConversionsSrc::relation_schema(),
+        config: AvroParserConfig {
+            update_format: AvroUpdateFormat::Raw,
+            schema: Some(TestIntConversionsSrc::avro_schema().to_string()),
+            skip_schema_id: false,
+            registry_config: Default::default(),
+        },
+        input_batches,
+        expected_output: expected_output.clone(),
+    };
+
+    run_parser_test(vec![test]);
+}
+
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(2))]
 
