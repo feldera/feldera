@@ -782,7 +782,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
                 return;
             Arrays.sort(toCompile);
             for (File c: toCompile) {
-                if (!c.getName().contains("grouped_orders.sql")) continue;
+                if (!c.getName().contains("nubank-funnel.sql")) continue;
                 if (c.getName().contains("sql")) {
                     System.out.println("Compiling " + c);
                     String sql = Utilities.readFile(c.getPath());
@@ -813,5 +813,19 @@ public class IncrementalRegressionTests extends SqlIoTest {
                         ) AS rn
                     FROM T
                 ) WHERE rn = 1;""");
+    }
+
+    @Test
+    public void issue4660() {
+        var ccs = this.getCCS("""
+                CREATE TABLE T(x BIGINT NOT NULL);
+                CREATE VIEW V AS SELECT MAX(x) OVER () FROM T;""");
+        ccs.step("", """
+                 max | weight
+                --------------""");
+        ccs.step("INSERT INTO T VALUES(1), (2), (-1);", """
+                 max | weight
+                --------------
+                   2 | 3""");
     }
 }

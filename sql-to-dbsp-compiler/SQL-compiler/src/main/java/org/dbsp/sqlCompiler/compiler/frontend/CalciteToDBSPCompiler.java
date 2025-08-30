@@ -3388,8 +3388,22 @@ public class CalciteToDBSPCompiler extends RelVisitor
             index++;
         }
 
-        Utilities.enforce(lastOperator.getOutputZSetElementType().sameType(resultType),
-                "WINDOW result has type " + lastOperator.getOutputZSetElementType() + " but expected " + resultType);
+        // Some aggregate functions always return nullable results (e.g., Max), but sometimes we know that the type
+        // cannot be nullable (e.g. window aggregate of non-nullable values); adjust now:
+        DBSPTypeTuple tuple = resultType.to(DBSPTypeTuple.class);
+        if (!lastOperator.getOutputZSetElementType().sameType(resultType)) {
+            Utilities.enforce(
+                    lastOperator.getOutputZSetElementType().to(DBSPTypeTuple.class).size() == tuple.size(),
+                    "Window aggregate type size does not match expected size");
+            DBSPVariablePath var = lastOperator.getOutputZSetElementType().ref().var();
+            List<DBSPExpression> fields = new ArrayList<>();
+            for (int i = 0; i < tuple.size(); i++) {
+                fields.add(var.deref().field(i).applyCloneIfNeeded().nullabilityCast(tuple.tupFields[i], false));
+            }
+            DBSPClosureExpression convert = new DBSPTupleExpression(fields, false).closure(var);
+            this.addOperator(lastOperator);
+            lastOperator = new DBSPMapOperator(lastOperator.getRelNode(), convert, lastOperator.outputPort());
+        }
         this.assignOperator(window, lastOperator);
     }
 
