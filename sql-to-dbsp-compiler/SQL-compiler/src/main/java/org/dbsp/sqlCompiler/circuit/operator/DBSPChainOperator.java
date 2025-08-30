@@ -137,6 +137,12 @@ public class DBSPChainOperator extends DBSPUnaryOperator {
             }
         }
 
+        public boolean containsFilter() {
+            return Linq.any(this.computations, c -> c.kind() == ComputationKind.Filter);
+        }
+
+        /** Return a function that is equivalent to the composition of the functions in the chain.
+         * If the chain contains any filters the result will have an Option type result. */
         public DBSPClosureExpression collapse(DBSPCompiler compiler) {
             DBSPVariablePath inputVar;
             DBSPExpression currentArg;
@@ -156,6 +162,7 @@ public class DBSPChainOperator extends DBSPUnaryOperator {
             else
                 resultType = resultType.to(DBSPTypeIndexedZSet.class).getKVType();
             none = resultType.withMayBeNull(true).none();
+            boolean foundFilter = false;
             List<DBSPStatement> statements = new ArrayList<>();
             for (Computation comp: this.computations) {
                 CalciteObject node = comp.closure().getNode();
@@ -169,6 +176,7 @@ public class DBSPChainOperator extends DBSPUnaryOperator {
                         break;
                     }
                     case Filter: {
+                        foundFilter = true;
                         stat = new DBSPExpressionStatement(
                                 new DBSPIfExpression(node, this.call(compiler, comp.closure, currentArg).not(),
                                         new DBSPReturnExpression(node, none),
@@ -181,7 +189,7 @@ public class DBSPChainOperator extends DBSPUnaryOperator {
                 }
                 statements.add(stat);
             }
-            DBSPExpression last = currentArg.some();
+            DBSPExpression last = (foundFilter) ? currentArg.some() : currentArg;
             DBSPBlockExpression block = new DBSPBlockExpression(statements, last);
             return block.closure(inputVar);
         }
