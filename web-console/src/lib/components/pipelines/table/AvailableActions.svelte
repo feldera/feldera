@@ -52,7 +52,9 @@
       .with('Running', () => [...stop, 'kill', 'pause'])
       .with('Pausing', () => [...stop, 'kill', 'delete'])
       .with('Paused', () => [...stop, 'kill', 'start'])
-      .with('Suspending', () => ['kill', 'delete'])
+      .with('Standby', () => ['kill', 'delete'])
+      .with('Bootstrapping', () => ['kill', 'delete'])
+      .with('Replaying', () => ['kill', 'delete'])
       .with('Resuming', () => [...stop, 'kill', 'delete'])
       .with('Stopping', () => ['kill'])
       .with('Unavailable', () => [...stop, 'kill', 'delete'])
@@ -112,7 +114,7 @@
         )
         updatePipeline(pipeline.name, (p) => ({
           ...p,
-          status: isPremium.value ? 'Suspending' : 'Stopping'
+          status: isPremium.value ? 'Stopping' : 'Stopping'
         }))
         await waitFor().catch(toastError)
       }

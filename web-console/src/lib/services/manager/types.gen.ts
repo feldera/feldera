@@ -17,7 +17,7 @@ export type AdHocInputConfig = {
 /**
  * URL-encoded `format` argument to the `/query` endpoint.
  */
-export type AdHocResultFormat = 'text' | 'json' | 'parquet' | 'arrow_ipc'
+export type AdHocResultFormat = 'text' | 'json' | 'parquet' | 'arrow_ipc' | 'hash'
 
 /**
  * Arguments to the `/query` endpoint.
@@ -1879,7 +1879,7 @@ export type PipelineConfig = {
   storage_config?: StorageConfig | null
 }
 
-export type PipelineDesiredStatus = 'Stopped' | 'Paused' | 'Running' | 'Suspended'
+export type PipelineDesiredStatus = 'Stopped' | 'Standby' | 'Paused' | 'Running' | 'Suspended'
 
 export type PipelineFieldSelector = 'all' | 'status'
 
@@ -1896,6 +1896,7 @@ export type PipelineInfo = {
   created_at: string
   deployment_desired_status: PipelineDesiredStatus
   deployment_error?: ErrorResponse | null
+  deployment_id?: string | null
   deployment_status: PipelineStatus
   deployment_status_since: string
   description: string
@@ -1926,6 +1927,7 @@ export type PipelineSelectedInfo = {
   created_at: string
   deployment_desired_status: PipelineDesiredStatus
   deployment_error?: ErrorResponse | null
+  deployment_id?: string | null
   deployment_status: PipelineStatus
   deployment_status_since: string
   description: string
@@ -1950,80 +1952,79 @@ export type PipelineSelectedInfo = {
 /**
  * Pipeline status.
  *
- * This type represents the state of the pipeline tracked by the pipeline
- * runner and observed by the API client via the `GET /v0/pipelines/{name}` endpoint.
+ * This type represents the status of the pipeline tracked by the pipeline runner and observed by
+ * the API client via the `GET /v0/pipelines/{name}` endpoint.
  *
  * ### The lifecycle of a pipeline
  *
  * The following automaton captures the lifecycle of the pipeline.
- * Individual states and transitions of the automaton are described below.
+ * Individual statuses and transitions of the automaton are described below.
  *
- * * States labeled with the hourglass symbol (⌛) are **timed** states. The
- * automaton stays in timed state until the corresponding operation completes
- * or until it transitions to become failed after the pre-defined timeout
- * period expires.
+ * * Statuses labeled with the hourglass symbol (⌛) are **timed** statuses. The automaton stays in
+ * timed status until the corresponding operation completes or until it transitions to become
+ * failed after the pre-defined timeout  period expires.
  *
- * * State transitions labeled with API endpoint names (`/start`, `/pause`,
- * `/stop`) are triggered by invoking corresponding endpoint,
- * e.g., `POST /v0/pipelines/{name}/start`. Note that these only express
- * desired state, and are applied asynchronously by the automata.
+ * * Some transitions can be initiated by calling an API endpoint (e.g., `/start`). These
+ * endpoints only express desired state, and are applied asynchronously by the automaton.
  *
  * ```text
- * Stopped ◄─────────── Stopping ◄───── All states can transition
- * │                   ▲            to Stopping by either:
- * /start or /pause │                   │            (1) user calling /stop?force=true, or;
- * ▼                   │            (2) pipeline encountering a fatal
- * ⌛Provisioning         Suspending            resource or runtime error,
- * │                   ▲                having the system call /stop?force=true
- * │                   │ /stop          effectively
- * │                   │  ?force=false
+ * /start /pause /standby (early start failed)
+ * ┌───────────────────┐
+ * │                   ▼
+ * Stopped ◄────────── Stopping
+ * /start │                   ▲
+ * /pause │                   │ /stop
+ * /standby │                   │ OR: timeout (from Provisioning)
+ * ▼                   │ OR: fatal runtime or resource error
+ * ⌛Provisioning ────────────│
  * │                   │
- * ┌──────────────┼───────────────────┴─────┐
- * │              ▼                         │
- * │  ┌──► Initializing                     │
- * │  │           ▲  ▲                      │
- * │  │           │  └───────────┐          │
- * │  │           ▼              ▼          │
- * │  │        Paused  ◄──────► Unavailable │
- * │  │          │  ▲                ▲      │
- * │  │   /start │  │  /pause        │      │
- * │  │          ▼  │                │      │
- * │  └─────►  Running ◄─────────────┘      │
- * └────────────────────────────────────────┘
+ * │                   │
+ * ▼                   │
+ * ┌───────────────────────┴─────┐
+ * │ Initializing, Unavailable,  │
+ * │   Standby, Bootstrapping,   │
+ * │ Replaying, Paused, Running, │
+ * │    Suspended, Terminated    │
+ * └─────────────────────────────┘
+ * Runtime statuses, can be changed by calling
+ * /start, /pause, /standby, and /stop
  * ```
  *
  * ### Desired and actual status
  *
- * We use the desired state model to manage the lifecycle of a pipeline.
- * In this model, the pipeline has two status attributes associated with
- * it at runtime: the **desired** status, which represents what the user
- * would like the pipeline to do, and the **current** status, which
- * represents the actual state of the pipeline.  The pipeline runner
- * service continuously monitors both fields and steers the pipeline
- * towards the desired state specified by the user.
+ * We use the desired state model to manage the lifecycle of a pipeline. In this model, the
+ * pipeline has two status attributes associated with it: the **desired** status, which represents
+ * what the user would like the pipeline to do, and the **current** status, which represents the
+ * actual (last observed) status of the pipeline. The pipeline runner service continuously monitors
+ * the desired status field to decide where to steer the pipeline towards.
  *
- * Only four of the states in the pipeline automaton above can be
- * used as desired statuses: `Paused`, `Running`, `Suspended` and
- * `Stopped`. These statuses are selected by invoking REST endpoints
- * shown in the diagram (respectively, `/pause`, `/start`, and `/stop`).
+ * There are five desired statuses:
+ * - `Standby` (set by invoking `/standby`)
+ * - `Running` (set by invoking `/start`)
+ * - `Paused` (set by invoking `/pause`)
+ * - `Suspended` (set by invoking `/stop?force=false`)
+ * - `Stopped` (set by invoking `/stop?force=true`)
  *
- * The user can monitor the current state of the pipeline via the
- * `GET /v0/pipelines/{name}` endpoint. In a typical scenario,
- * the user first sets the desired state, e.g., by invoking the
- * `/start` endpoint, and then polls the `GET /v0/pipelines/{name}`
- * endpoint to monitor the actual status of the pipeline until its
- * `deployment_status` attribute changes to `Running` indicating
- * that the pipeline has been successfully initialized and is
- * processing data, or `Stopped` with `deployment_error` being set.
+ * Of these, `Suspended` is a "virtual" desired status. Once the runner has successfully suspended,
+ * it will change the desired status to `Stopped`. Not all endpoints can be called at all times.
+ *
+ * The user can monitor the current status of the pipeline via the `GET /v0/pipelines/{name}`
+ * endpoint. In a typical scenario, the user first sets the desired status, e.g., by invoking the
+ * `/start` endpoint, and then polls the `GET /v0/pipelines/{name}` endpoint to monitor the actual
+ * status of the pipeline until its `deployment_status` attribute changes to `Running` indicating
+ * that the pipeline has been successfully provisioned, or `Stopped` with `deployment_error` being
+ * set.
  */
 export type PipelineStatus =
   | 'Stopped'
   | 'Provisioning'
+  | 'Unavailable'
+  | 'Standby'
   | 'Initializing'
+  | 'Bootstrapping'
+  | 'Replaying'
   | 'Paused'
   | 'Running'
-  | 'Unavailable'
-  | 'Suspending'
   | 'Stopping'
 
 /**
@@ -2937,7 +2938,7 @@ export type StorageOptions = {
 /**
  * Storage status.
  *
- * The storage status can only transition when the pipeline status is `Stopped`.
+ * The storage status can only transition when the resources status is `Stopped`.
  *
  * ```text
  * Cleared ───┐
@@ -3042,6 +3043,20 @@ export type SyncConfig = {
    * Leave empty for Minio or the default region (`us-east-1` for AWS).
    */
   region?: string | null
+  /**
+   * The minimum age (in days) a checkpoint must reach before it becomes
+   * eligible for deletion. All younger checkpoints will be preserved.
+   *
+   * Default: 30
+   */
+  retention_min_age?: number
+  /**
+   * The minimum number of checkpoints to retain in object store.
+   * No checkpoints will be deleted if the total count is below this threshold.
+   *
+   * Default: 10
+   */
+  retention_min_count?: number
   /**
    * The secret key used together with the access key for authentication.
    *
@@ -3366,19 +3381,6 @@ export type PatchPipelineResponse = PipelineInfo
 
 export type PatchPipelineError = ErrorResponse
 
-export type ActivatePipelineData = {
-  path: {
-    /**
-     * Unique pipeline name
-     */
-    pipeline_name: string
-  }
-}
-
-export type ActivatePipelineResponse = CheckpointResponse
-
-export type ActivatePipelineError = ErrorResponse
-
 export type CheckpointPipelineData = {
   path: {
     /**
@@ -3640,6 +3642,19 @@ export type PipelineAdhocSqlData = {
 export type PipelineAdhocSqlResponse = Blob | File
 
 export type PipelineAdhocSqlError = ErrorResponse
+
+export type PostPipelineStandbyData = {
+  path: {
+    /**
+     * Unique pipeline name
+     */
+    pipeline_name: string
+  }
+}
+
+export type PostPipelineStandbyResponse = unknown
+
+export type PostPipelineStandbyError = ErrorResponse
 
 export type PostPipelineStartData = {
   path: {
@@ -4078,23 +4093,6 @@ export type $OpenApiTs = {
       }
     }
   }
-  '/v0/pipelines/{pipeline_name}/activate': {
-    post: {
-      req: ActivatePipelineData
-      res: {
-        /**
-         * Pipeline activation initiated
-         */
-        '202': CheckpointResponse
-        /**
-         * Pipeline with that name does not exist
-         */
-        '404': ErrorResponse
-        '500': ErrorResponse
-        '503': ErrorResponse
-      }
-    }
-  }
   '/v0/pipelines/{pipeline_name}/checkpoint': {
     post: {
       req: CheckpointPipelineData
@@ -4373,6 +4371,26 @@ export type $OpenApiTs = {
         '404': ErrorResponse
         '500': ErrorResponse
         '503': ErrorResponse
+      }
+    }
+  }
+  '/v0/pipelines/{pipeline_name}/standby': {
+    post: {
+      req: PostPipelineStandbyData
+      res: {
+        /**
+         * Action is accepted and is being performed
+         */
+        '202': unknown
+        /**
+         * Action could not be performed
+         */
+        '400': ErrorResponse
+        /**
+         * Pipeline with that name does not exist
+         */
+        '404': ErrorResponse
+        '500': ErrorResponse
       }
     }
   }

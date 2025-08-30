@@ -132,7 +132,9 @@ const consolidatePipelineStatus = (
     .with(['Paused', P.any, P._], () => 'Paused' as const)
     .with(['Running', 'Paused', P._], () => 'Pausing' as const)
     .with(['Running', 'Stopped', P._], () => 'Stopping' as const)
-    .with(['Suspending', P._, P._], () => 'Suspending' as const)
+    .with(['Standby', P._, P._], () => 'Standby' as const)
+    .with(['Bootstrapping', P._, P._], () => 'Bootstrapping' as const)
+    .with(['Replaying', P._, P._], () => 'Replaying' as const)
     .with(['Running', P.any, P._], () => 'Running' as const)
     .with(['Unavailable', P.any, P.any], () => 'Unavailable' as const)
     .otherwise(() => {
@@ -140,6 +142,7 @@ const consolidatePipelineStatus = (
         `Unable to consolidatePipelineStatus: ${pipelineStatus} ${desiredStatus} ${pipelineError} ${programStatus}`
       )
     })
+
   return {
     status
   }
@@ -157,9 +160,11 @@ export const programStatusOf = (status: PipelineStatus) =>
       'Unavailable',
       'Running',
       'Paused',
-      'Suspending',
       'Stopping',
       'Stopped',
+      'Standby',
+      'Bootstrapping',
+      'Replaying',
       () => 'Success' as const
     )
     .with({ Queued: P.any }, () => 'Pending' as const)
@@ -365,12 +370,22 @@ export const deletePipeline = async (pipeline_name: string) => {
   await mapResponse(_deletePipeline({ path: { pipeline_name } }), (v) => v)
 }
 
-export type PipelineAction = 'start' | 'pause' | 'stop' | 'kill' | 'start_paused' | 'clear'
+export type PipelineAction =
+  | 'start'
+  | 'pause'
+  | 'stop'
+  | 'kill'
+  | 'start_paused'
+  | 'resume'
+  | 'clear'
 
 export const postPipelineAction = async (pipeline_name: string, action: PipelineAction) => {
   return mapResponse(
     _postPipelineAction({
-      path: { pipeline_name, action: action === 'start_paused' ? 'pause' : action }
+      path: {
+        pipeline_name,
+        action: action === 'start_paused' ? 'pause' : action === 'resume' ? 'start' : action
+      }
     }),
     (v) => v
   )

@@ -192,6 +192,7 @@ pub enum DBError {
         #[serde(skip)]
         openssl_error: Option<openssl::error::ErrorStack>,
     },
+    SuspendedIsNotValidPipelineStatus,
 }
 
 impl DBError {
@@ -632,6 +633,13 @@ impl Display for DBError {
                     "Deployment status (current: '{pipeline_status:?}', desired: '{current_desired_status:?}') cannot have desired changed to '{new_desired_status:?}'. {hint}"
                 )
             }
+            DBError::SuspendedIsNotValidPipelineStatus => {
+                write!(
+                    f,
+                    "Although Suspended is a valid runtime status, the pipeline status should not transition to it as in response the \
+                    pipeline should get stopped."
+                )
+            }
             DBError::TlsConnection { hint, .. } => {
                 write!(f, "Unable to setup TLS connection to the database: {hint}")
             }
@@ -724,6 +732,9 @@ impl DetailedError for DBError {
             Self::IllegalPipelineAction { .. } => Cow::from("IllegalPipelineAction"),
             Self::TlsConnection { .. } => Cow::from("TlsConnection"),
             Self::DeleteRestrictedToClearedStorage => Cow::from("DeleteRestrictedToClearedStorage"),
+            Self::SuspendedIsNotValidPipelineStatus => {
+                Cow::from("SuspendedIsNotValidPipelineStatus")
+            }
         }
     }
 }
@@ -779,8 +790,9 @@ impl ResponseError for DBError {
             Self::StorageStatusImmutableUnlessStopped { .. } => StatusCode::BAD_REQUEST,
             Self::IllegalPipelineAction { .. } => StatusCode::BAD_REQUEST, // User trying to set a deployment desired status which cannot be performed currently
             Self::TlsConnection { .. } => StatusCode::INTERNAL_SERVER_ERROR,
-            DBError::DeleteRestrictedToClearedStorage => StatusCode::BAD_REQUEST,
-            DBError::InvalidStorageStatusTransition { .. } => StatusCode::BAD_REQUEST,
+            Self::DeleteRestrictedToClearedStorage => StatusCode::BAD_REQUEST,
+            Self::InvalidStorageStatusTransition { .. } => StatusCode::BAD_REQUEST,
+            Self::SuspendedIsNotValidPipelineStatus => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 

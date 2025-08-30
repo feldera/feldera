@@ -71,6 +71,7 @@ fn extended_pipeline_1() -> ExtendedPipelineDescr {
         refresh_version: Version(4),
         suspend_info: None,
         storage_status: StorageStatus::Cleared,
+        deployment_id: None,
     }
 }
 
@@ -141,6 +142,7 @@ fn extended_pipeline_2() -> ExtendedPipelineDescr {
         refresh_version: Version(1),
         suspend_info: None,
         storage_status: StorageStatus::Cleared,
+        deployment_id: None,
     }
 }
 
@@ -182,6 +184,7 @@ fn pipeline_info_internal_to_external(pipeline: PipelineInfoInternal) -> Pipelin
         deployment_error: pipeline.deployment_error,
         refresh_version: pipeline.refresh_version,
         storage_status: pipeline.storage_status,
+        deployment_id: pipeline.deployment_id,
     }
 }
 
@@ -229,6 +232,7 @@ fn pipeline_selected_info_internal_to_external(
         deployment_error: pipeline.deployment_error,
         refresh_version: pipeline.refresh_version,
         storage_status: pipeline.storage_status,
+        deployment_id: pipeline.deployment_id,
     }
 }
 

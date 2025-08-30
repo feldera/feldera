@@ -8,7 +8,7 @@ use utoipa::ToSchema;
 
 /// Storage status.
 ///
-/// The storage status can only transition when the pipeline status is `Stopped`.
+/// The storage status can only transition when the resources status is `Stopped`.
 ///
 /// ```text
 ///           Cleared ───┐
@@ -31,7 +31,7 @@ pub enum StorageStatus {
     ///
     /// Being `InUse` restricts what edits can be made when the pipeline is `Stopped`.
     ///
-    /// It remains in this state until the user invokes `/clear`, which transitions
+    /// It remains in this status until the user invokes `/clear`, which transitions
     /// it to `Clearing`.
     InUse,
 

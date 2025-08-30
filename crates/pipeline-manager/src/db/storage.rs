@@ -9,6 +9,7 @@ use crate::db::types::tenant::TenantId;
 use crate::db::types::version::Version;
 use async_trait::async_trait;
 use feldera_types::error::ErrorResponse;
+use feldera_types::runtime_status::ExtendedRuntimeStatus;
 use uuid::Uuid;
 
 #[derive(Debug, PartialEq, Eq)]
@@ -41,6 +42,7 @@ impl ExtendedPipelineDescrRunner {
                 deployment_location: pipeline.deployment_location.clone(),
                 refresh_version: pipeline.refresh_version,
                 storage_status: pipeline.storage_status,
+                deployment_id: pipeline.deployment_id,
             },
         }
     }
@@ -271,6 +273,13 @@ pub(crate) trait Storage {
         pipeline_name: &str,
     ) -> Result<PipelineId, DBError>;
 
+    /// Sets deployment desired status to `Standby`.
+    async fn set_deployment_desired_status_standby(
+        &self,
+        tenant_id: TenantId,
+        pipeline_name: &str,
+    ) -> Result<PipelineId, DBError>;
+
     /// Sets deployment desired status to `Suspended` or `Stopped` depending on state.
     async fn set_deployment_desired_status_suspended_or_stopped(
         &self,
@@ -285,48 +294,18 @@ pub(crate) trait Storage {
         tenant_id: TenantId,
         pipeline_id: PipelineId,
         version_guard: Version,
+        deployment_id: Uuid,
         deployment_config: serde_json::Value,
     ) -> Result<(), DBError>;
 
-    /// Transitions deployment status to `Initializing`.
-    async fn transit_deployment_status_to_initializing(
+    /// Transitions deployment status to one of the provisioned runtime statuses.
+    async fn transit_deployment_status_to_provisioned(
         &self,
         tenant_id: TenantId,
         pipeline_id: PipelineId,
         version_guard: Version,
         deployment_location: &str,
-    ) -> Result<(), DBError>;
-
-    /// Transitions deployment status to `Running`.
-    async fn transit_deployment_status_to_running(
-        &self,
-        tenant_id: TenantId,
-        pipeline_id: PipelineId,
-        version_guard: Version,
-    ) -> Result<(), DBError>;
-
-    /// Transitions deployment status to `Paused`.
-    async fn transit_deployment_status_to_paused(
-        &self,
-        tenant_id: TenantId,
-        pipeline_id: PipelineId,
-        version_guard: Version,
-    ) -> Result<(), DBError>;
-
-    /// Transitions deployment status to `Unavailable`.
-    async fn transit_deployment_status_to_unavailable(
-        &self,
-        tenant_id: TenantId,
-        pipeline_id: PipelineId,
-        version_guard: Version,
-    ) -> Result<(), DBError>;
-
-    /// Transitions deployment status to `Suspending`.
-    async fn transit_deployment_status_to_suspending(
-        &self,
-        tenant_id: TenantId,
-        pipeline_id: PipelineId,
-        version_guard: Version,
+        extended_runtime_status: ExtendedRuntimeStatus,
     ) -> Result<(), DBError>;
 
     /// Transitions deployment status to `Stopping`.
