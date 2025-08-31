@@ -3,6 +3,18 @@ from tests import TEST_CLIENT
 from feldera import PipelineBuilder, Pipeline
 
 
+def sql(text_or_iterable):
+    """
+    Decorator to attach SQL (string or list/tuple of strings) to a test method.
+    """
+
+    def _wrap(fn):
+        fn.SQL = text_or_iterable
+        return fn
+
+    return _wrap
+
+
 class SharedTestPipeline(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -10,19 +22,21 @@ class SharedTestPipeline(unittest.TestCase):
         cls.client = TEST_CLIENT
         cls.pipeline_name = cls.__name__
         for attr in dir(cls):
-            if attr.startswith("test_"):
-                func = getattr(cls, attr)
-                ddl = getattr(func, "__doc__", None)
-                # Check for enterprise_only decorator
-                is_enterprise_only = getattr(func, "_enterprise_only", False)
-                if (
-                    is_enterprise_only
-                    and not TEST_CLIENT.get_config().edition.is_enterprise()
-                ):
-                    continue  # Skip DDL for enterprise-only tests if not enterprise
-                if ddl:
-                    if ddl not in cls._ddls:
-                        cls._ddls.append(ddl.strip())
+            if not attr.startswith("test_"):
+                continue
+
+            func = getattr(cls, attr)
+            # Check for enterprise_only decorator
+            is_enterprise_only = getattr(func, "_enterprise_only", False)
+            if (
+                is_enterprise_only
+                and not cls.client.get_config().edition.is_enterprise()
+            ):
+                continue  # Skip DDL for enterprise-only tests if not enterprise
+
+            ddl = getattr(func, "SQL", getattr(func, "__doc__", None))
+            if ddl and ddl.strip() not in cls._ddls:
+                cls._ddls.append(ddl.strip())
 
         if not hasattr(cls, "_pipeline"):
             cls.ddl = "\n".join(cls._ddls)
