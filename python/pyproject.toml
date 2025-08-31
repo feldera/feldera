@@ -45,3 +45,6 @@ dev-dependencies = [
     "sphinx==7.3.7",
     "simplejson==3.20.1"
 ]
+
+[tool.pytest.ini_options]
+pythonpath = "feldera"

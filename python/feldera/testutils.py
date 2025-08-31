@@ -23,7 +23,7 @@ KAFKA_SERVER = os.environ.get("FELDERA_KAFKA_SERVER", "localhost:19092")
 PIPELINE_TO_KAFKA_SERVER = os.environ.get(
     "FELDERA_PIPELINE_TO_KAFKA_SERVER", "redpanda:9092"
 )
-
+FELDERA_TLS_INSECURE = True if os.environ.get("FELDERA_TLS_INSECURE") else False
 
 class _LazyClient:
     "Construct the FelderaClient only when accessed as opposed to when imported."
@@ -36,7 +36,7 @@ class _LazyClient:
     def _ensure(self):
         if self._client is None:
             self._client = FelderaClient(
-                BASE_URL, api_key=API_KEY, connection_timeout=10, requests_verify=False
+                BASE_URL, api_key=API_KEY, connection_timeout=10, requests_verify=not FELDERA_TLS_INSECURE
             )
         return self._client
 

@@ -60,17 +60,11 @@ jobs:
     name: Make sure manager runs with HTTPS
     runs-on: ubuntu-latest-amd64
     steps:
-      - name: Download Test Binaries
-        uses: actions/download-artifact@v4
-        with:
-          name: feldera-test-binaries-x86_64-unknown-linux-gnu
-          path: build
-          run-id: ${{ github.event.inputs.run_id || github.run_id }}
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      # Remove if https://github.com/actions/upload-artifact/issues/38 ever gets fixed
-      - name: Make binaries executable
-        run: chmod +x ./build/*
+      - name: Install the latest version of uv
+        uses: astral-sh/setup-uv@v6
 
       - name: Login to GHCR with GITHUB_TOKEN
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
@@ -111,13 +105,16 @@ jobs:
           done
           echo "Timed out waiting for pipeline-manager to become healthy"
           exit 1
-      - name: Run manager integration tests
-        run: |
-          ./build/integration_test-*
+      - name: Run platform tests
+        if: ${{ vars.CI_DRY_RUN != 'true' }}
+        run: uv run --locked pytest -n ${{ vars.PYTEST_WORKERS }} tests/platform/test_pipeline_crud.py --timeout=600
+        working-directory: python
         env:
           TEST_FELDERA_HTTPS_TLS_CERT_PATH: test-tls/tls_test.crt
-          TEST_FELDERA_URL: https://localhost:8080
-          RUST_BACKTRACE: 1
+          FELDERA_TLS_INSECURE: 1
+          FELDERA_HOST: https://localhost:8080
+          PYTHONPATH: ${{ github.workspace }}/python
+          IN_CI: 1 # We use this flag to skip some kafka tests in the python code base
       - name: Logs & Cleanup
         if: always()
         run: |
@@ -155,18 +152,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Download Test Binaries
-        uses: actions/download-artifact@v4
-        with:
-          name: feldera-test-binaries-${{ matrix.target }}
-          path: build
-          run-id: ${{ github.event.inputs.run_id || github.run_id }}
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-
-      # Remove if https://github.com/actions/upload-artifact/issues/38 ever gets fixed
-      - name: Make binaries executable
-        run: chmod +x ./build/*
-
       - name: Validate and run packaged demos
         if: ${{ vars.CI_DRY_RUN != 'true' }}
         run: |
@@ -175,16 +160,9 @@ jobs:
         env:
           PYTHONPATH: ${{ github.workspace }}/python
 
-      - name: Run manager tests
+      - name: Run platform tests
         if: ${{ vars.CI_DRY_RUN != 'true' }}
-        run: ./build/integration_test-*
-        env:
-          TEST_FELDERA_URL: http://localhost:8080
-          RUST_BACKTRACE: 1
-
-      - name: Run python tests
-        if: ${{ vars.CI_DRY_RUN != 'true' }}
-        run: uv run --locked pytest -n ${{ vars.PYTEST_WORKERS }} tests/platform --timeout=600
+        run: uv run --locked pytest -n ${{ vars.PYTEST_WORKERS }} tests/platform --timeout=1500
         working-directory: python
         env:
           FELDERA_HOST: http://localhost:8080
