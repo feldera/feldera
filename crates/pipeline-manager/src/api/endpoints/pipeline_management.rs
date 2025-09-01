@@ -1,4 +1,3 @@
-#[cfg(feature = "feldera-enterprise")]
 use crate::api::error::ApiError;
 use crate::api::examples;
 use crate::api::main::ServerState;
@@ -6,17 +5,18 @@ use crate::api::main::ServerState;
 use crate::common_error::CommonError;
 use crate::db::error::DBError;
 use crate::db::storage::Storage;
+use crate::db::types::combined_status::{combine_since, CombinedDesiredStatus, CombinedStatus};
 use crate::db::types::pipeline::{
-    ExtendedPipelineDescr, ExtendedPipelineDescrMonitoring, PipelineDescr, PipelineDesiredStatus,
-    PipelineId, PipelineStatus,
+    ExtendedPipelineDescr, ExtendedPipelineDescrMonitoring, PipelineDescr, PipelineId,
 };
 use crate::db::types::program::{ProgramConfig, ProgramError, ProgramStatus};
+use crate::db::types::resources_status::{ResourcesDesiredStatus, ResourcesStatus};
 use crate::db::types::storage::StorageStatus;
 use crate::db::types::tenant::TenantId;
 use crate::db::types::version::Version;
 use crate::error::ManagerError;
 #[cfg(feature = "feldera-enterprise")]
-use actix_http::body::MessageBody;
+use actix_web::http::Method;
 use actix_web::{
     delete, get,
     http::header::{CacheControl, CacheDirective},
@@ -28,13 +28,14 @@ use chrono::{DateTime, Utc};
 use feldera_types::config::{InputEndpointConfig, OutputEndpointConfig, RuntimeConfig};
 use feldera_types::error::ErrorResponse;
 use feldera_types::program_schema::ProgramSchema;
-#[cfg(feature = "feldera-enterprise")]
-use feldera_types::suspend::SuspendableResponse;
+use feldera_types::runtime_status::{RuntimeDesiredStatus, RuntimeStatus};
 use log::info;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::borrow::Cow;
 use std::collections::BTreeMap;
+#[cfg(feature = "feldera-enterprise")]
+use std::time::Duration;
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
@@ -85,12 +86,23 @@ pub struct PipelineInfo {
     pub program_status_since: DateTime<Utc>,
     pub program_error: ProgramError,
     pub program_info: Option<PartialProgramInfo>,
-    pub deployment_status: PipelineStatus,
-    pub deployment_status_since: DateTime<Utc>,
-    pub deployment_desired_status: PipelineDesiredStatus,
     pub deployment_error: Option<ErrorResponse>,
     pub refresh_version: Version,
     pub storage_status: StorageStatus,
+    pub deployment_id: Option<Uuid>,
+    pub deployment_initial: Option<RuntimeDesiredStatus>,
+    pub deployment_status: CombinedStatus,
+    pub deployment_status_since: DateTime<Utc>,
+    pub deployment_desired_status: CombinedDesiredStatus,
+    pub deployment_desired_status_since: DateTime<Utc>,
+    pub deployment_resources_status: ResourcesStatus,
+    pub deployment_resources_status_since: DateTime<Utc>,
+    pub deployment_resources_desired_status: ResourcesDesiredStatus,
+    pub deployment_resources_desired_status_since: DateTime<Utc>,
+    pub deployment_runtime_status: Option<RuntimeStatus>,
+    pub deployment_runtime_status_since: Option<DateTime<Utc>>,
+    pub deployment_runtime_desired_status: Option<RuntimeDesiredStatus>,
+    pub deployment_runtime_desired_status_since: Option<DateTime<Utc>>,
 }
 
 /// Pipeline information (internal).
@@ -120,12 +132,23 @@ pub struct PipelineInfoInternal {
     pub program_status_since: DateTime<Utc>,
     pub program_error: ProgramError,
     pub program_info: Option<serde_json::Value>,
-    pub deployment_status: PipelineStatus,
-    pub deployment_status_since: DateTime<Utc>,
-    pub deployment_desired_status: PipelineDesiredStatus,
     pub deployment_error: Option<ErrorResponse>,
     pub refresh_version: Version,
     pub storage_status: StorageStatus,
+    pub deployment_id: Option<Uuid>,
+    pub deployment_initial: Option<RuntimeDesiredStatus>,
+    pub deployment_status: CombinedStatus,
+    pub deployment_status_since: DateTime<Utc>,
+    pub deployment_desired_status: CombinedDesiredStatus,
+    pub deployment_desired_status_since: DateTime<Utc>,
+    pub deployment_resources_status: ResourcesStatus,
+    pub deployment_resources_status_since: DateTime<Utc>,
+    pub deployment_resources_desired_status: ResourcesDesiredStatus,
+    pub deployment_resources_desired_status_since: DateTime<Utc>,
+    pub deployment_runtime_status: Option<RuntimeStatus>,
+    pub deployment_runtime_status_since: Option<DateTime<Utc>>,
+    pub deployment_runtime_desired_status: Option<RuntimeDesiredStatus>,
+    pub deployment_runtime_desired_status_since: Option<DateTime<Utc>>,
 }
 
 impl PipelineInfoInternal {
@@ -147,12 +170,39 @@ impl PipelineInfoInternal {
             program_status_since: extended_pipeline.program_status_since,
             program_error: extended_pipeline.program_error,
             program_info: remove_large_fields_from_program_info(extended_pipeline.program_info),
-            deployment_status: extended_pipeline.deployment_status,
-            deployment_status_since: extended_pipeline.deployment_status_since,
-            deployment_desired_status: extended_pipeline.deployment_desired_status,
             deployment_error: extended_pipeline.deployment_error,
             refresh_version: extended_pipeline.refresh_version,
             storage_status: extended_pipeline.storage_status,
+            deployment_id: extended_pipeline.deployment_id,
+            deployment_initial: extended_pipeline.deployment_initial,
+            deployment_status: CombinedStatus::new(
+                extended_pipeline.deployment_resources_status,
+                extended_pipeline.deployment_runtime_status,
+            ),
+            deployment_status_since: combine_since(
+                extended_pipeline.deployment_resources_status_since,
+                extended_pipeline.deployment_runtime_status_since,
+            ),
+            deployment_desired_status: CombinedDesiredStatus::new(
+                extended_pipeline.deployment_resources_desired_status,
+                extended_pipeline.deployment_initial,
+                extended_pipeline.deployment_runtime_desired_status,
+            ),
+            deployment_desired_status_since: combine_since(
+                extended_pipeline.deployment_resources_desired_status_since,
+                extended_pipeline.deployment_runtime_desired_status_since,
+            ),
+            deployment_resources_status: extended_pipeline.deployment_resources_status,
+            deployment_resources_status_since: extended_pipeline.deployment_resources_status_since,
+            deployment_resources_desired_status: extended_pipeline
+                .deployment_resources_desired_status,
+            deployment_resources_desired_status_since: extended_pipeline
+                .deployment_resources_desired_status_since,
+            deployment_runtime_status: extended_pipeline.deployment_runtime_status,
+            deployment_runtime_status_since: extended_pipeline.deployment_runtime_status_since,
+            deployment_runtime_desired_status: extended_pipeline.deployment_runtime_desired_status,
+            deployment_runtime_desired_status_since: extended_pipeline
+                .deployment_runtime_desired_status_since,
         }
     }
 }
@@ -185,12 +235,23 @@ pub struct PipelineSelectedInfo {
     pub program_error: Option<ProgramError>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub program_info: Option<Option<PartialProgramInfo>>,
-    pub deployment_status: PipelineStatus,
-    pub deployment_status_since: DateTime<Utc>,
-    pub deployment_desired_status: PipelineDesiredStatus,
     pub deployment_error: Option<ErrorResponse>,
     pub refresh_version: Version,
     pub storage_status: StorageStatus,
+    pub deployment_id: Option<Uuid>,
+    pub deployment_initial: Option<RuntimeDesiredStatus>,
+    pub deployment_status: CombinedStatus,
+    pub deployment_status_since: DateTime<Utc>,
+    pub deployment_desired_status: CombinedDesiredStatus,
+    pub deployment_desired_status_since: DateTime<Utc>,
+    pub deployment_resources_status: ResourcesStatus,
+    pub deployment_resources_status_since: DateTime<Utc>,
+    pub deployment_resources_desired_status: ResourcesDesiredStatus,
+    pub deployment_resources_desired_status_since: DateTime<Utc>,
+    pub deployment_runtime_status: Option<RuntimeStatus>,
+    pub deployment_runtime_status_since: Option<DateTime<Utc>>,
+    pub deployment_runtime_desired_status: Option<RuntimeDesiredStatus>,
+    pub deployment_runtime_desired_status_since: Option<DateTime<Utc>>,
 }
 
 /// Pipeline information which has a selected subset of optional fields (internal).
@@ -225,12 +286,23 @@ pub struct PipelineSelectedInfoInternal {
     pub program_error: Option<ProgramError>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub program_info: Option<Option<serde_json::Value>>,
-    pub deployment_status: PipelineStatus,
-    pub deployment_status_since: DateTime<Utc>,
-    pub deployment_desired_status: PipelineDesiredStatus,
     pub deployment_error: Option<ErrorResponse>,
     pub refresh_version: Version,
     pub storage_status: StorageStatus,
+    pub deployment_id: Option<Uuid>,
+    pub deployment_initial: Option<RuntimeDesiredStatus>,
+    pub deployment_status: CombinedStatus,
+    pub deployment_status_since: DateTime<Utc>,
+    pub deployment_desired_status: CombinedDesiredStatus,
+    pub deployment_desired_status_since: DateTime<Utc>,
+    pub deployment_resources_status: ResourcesStatus,
+    pub deployment_resources_status_since: DateTime<Utc>,
+    pub deployment_resources_desired_status: ResourcesDesiredStatus,
+    pub deployment_resources_desired_status_since: DateTime<Utc>,
+    pub deployment_runtime_status: Option<RuntimeStatus>,
+    pub deployment_runtime_status_since: Option<DateTime<Utc>>,
+    pub deployment_runtime_desired_status: Option<RuntimeDesiredStatus>,
+    pub deployment_runtime_desired_status_since: Option<DateTime<Utc>>,
 }
 
 impl PipelineSelectedInfoInternal {
@@ -254,12 +326,39 @@ impl PipelineSelectedInfoInternal {
             program_info: Some(remove_large_fields_from_program_info(
                 extended_pipeline.program_info,
             )),
-            deployment_status: extended_pipeline.deployment_status,
-            deployment_status_since: extended_pipeline.deployment_status_since,
-            deployment_desired_status: extended_pipeline.deployment_desired_status,
             deployment_error: extended_pipeline.deployment_error,
             refresh_version: extended_pipeline.refresh_version,
             storage_status: extended_pipeline.storage_status,
+            deployment_id: extended_pipeline.deployment_id,
+            deployment_initial: extended_pipeline.deployment_initial,
+            deployment_status: CombinedStatus::new(
+                extended_pipeline.deployment_resources_status,
+                extended_pipeline.deployment_runtime_status,
+            ),
+            deployment_status_since: combine_since(
+                extended_pipeline.deployment_resources_status_since,
+                extended_pipeline.deployment_runtime_status_since,
+            ),
+            deployment_desired_status: CombinedDesiredStatus::new(
+                extended_pipeline.deployment_resources_desired_status,
+                extended_pipeline.deployment_initial,
+                extended_pipeline.deployment_runtime_desired_status,
+            ),
+            deployment_desired_status_since: combine_since(
+                extended_pipeline.deployment_resources_desired_status_since,
+                extended_pipeline.deployment_runtime_desired_status_since,
+            ),
+            deployment_resources_status: extended_pipeline.deployment_resources_status,
+            deployment_resources_status_since: extended_pipeline.deployment_resources_status_since,
+            deployment_resources_desired_status: extended_pipeline
+                .deployment_resources_desired_status,
+            deployment_resources_desired_status_since: extended_pipeline
+                .deployment_resources_desired_status_since,
+            deployment_runtime_status: extended_pipeline.deployment_runtime_status,
+            deployment_runtime_status_since: extended_pipeline.deployment_runtime_status_since,
+            deployment_runtime_desired_status: extended_pipeline.deployment_runtime_desired_status,
+            deployment_runtime_desired_status_since: extended_pipeline
+                .deployment_runtime_desired_status_since,
         }
     }
 
@@ -281,12 +380,39 @@ impl PipelineSelectedInfoInternal {
             program_status_since: extended_pipeline.program_status_since,
             program_error: None,
             program_info: None,
-            deployment_status: extended_pipeline.deployment_status,
-            deployment_status_since: extended_pipeline.deployment_status_since,
-            deployment_desired_status: extended_pipeline.deployment_desired_status,
             deployment_error: extended_pipeline.deployment_error,
             refresh_version: extended_pipeline.refresh_version,
             storage_status: extended_pipeline.storage_status,
+            deployment_id: extended_pipeline.deployment_id,
+            deployment_initial: extended_pipeline.deployment_initial,
+            deployment_status: CombinedStatus::new(
+                extended_pipeline.deployment_resources_status,
+                extended_pipeline.deployment_runtime_status,
+            ),
+            deployment_status_since: combine_since(
+                extended_pipeline.deployment_resources_status_since,
+                extended_pipeline.deployment_runtime_status_since,
+            ),
+            deployment_desired_status: CombinedDesiredStatus::new(
+                extended_pipeline.deployment_resources_desired_status,
+                extended_pipeline.deployment_initial,
+                extended_pipeline.deployment_runtime_desired_status,
+            ),
+            deployment_desired_status_since: combine_since(
+                extended_pipeline.deployment_resources_desired_status_since,
+                extended_pipeline.deployment_runtime_desired_status_since,
+            ),
+            deployment_resources_status: extended_pipeline.deployment_resources_status,
+            deployment_resources_status_since: extended_pipeline.deployment_resources_status_since,
+            deployment_resources_desired_status: extended_pipeline
+                .deployment_resources_desired_status,
+            deployment_resources_desired_status_since: extended_pipeline
+                .deployment_resources_desired_status_since,
+            deployment_runtime_status: extended_pipeline.deployment_runtime_status,
+            deployment_runtime_status_since: extended_pipeline.deployment_runtime_status_since,
+            deployment_runtime_desired_status: extended_pipeline.deployment_runtime_desired_status,
+            deployment_runtime_desired_status_since: extended_pipeline
+                .deployment_runtime_desired_status_since,
         }
     }
 }
@@ -313,11 +439,23 @@ pub enum PipelineFieldSelector {
     /// - `program_status_since`
     /// - `program_error`
     /// - `program_info`
+    /// - `deployment_error`
+    /// - `refresh_version`
+    /// - `storage_status`
+    /// - `deployment_id`
+    /// - `deployment_initial`
     /// - `deployment_status`
     /// - `deployment_status_since`
     /// - `deployment_desired_status`
-    /// - `deployment_error`
-    /// - `refresh_version`
+    /// - `deployment_desired_status_since`
+    /// - `deployment_resources_status`
+    /// - `deployment_resources_status_since`
+    /// - `deployment_resources_desired_status`
+    /// - `deployment_resources_desired_status_since`
+    /// - `deployment_runtime_status`
+    /// - `deployment_runtime_status_since`
+    /// - `deployment_runtime_desired_status`
+    /// - `deployment_runtime_desired_status_since`
     All,
     /// Select only the fields required to know the status of a pipeline.
     ///
@@ -332,11 +470,23 @@ pub enum PipelineFieldSelector {
     /// - `program_status`
     /// - `program_status_since`
     /// - `program_error`
+    /// - `deployment_error`
+    /// - `refresh_version`
+    /// - `storage_status`
+    /// - `deployment_id`
+    /// - `deployment_initial`
     /// - `deployment_status`
     /// - `deployment_status_since`
     /// - `deployment_desired_status`
-    /// - `deployment_error`
-    /// - `refresh_version`
+    /// - `deployment_desired_status_since`
+    /// - `deployment_resources_status`
+    /// - `deployment_resources_status_since`
+    /// - `deployment_resources_desired_status`
+    /// - `deployment_resources_desired_status_since`
+    /// - `deployment_runtime_status`
+    /// - `deployment_runtime_status_since`
+    /// - `deployment_runtime_desired_status`
+    /// - `deployment_runtime_desired_status_since`
     Status,
 }
 
@@ -434,6 +584,20 @@ pub struct PatchPipelineInternal {
     pub udf_rust: Option<String>,
     pub udf_toml: Option<String>,
     pub program_config: Option<serde_json::Value>,
+}
+
+/// Default for the `initial` query parameter when POST a pipeline start.
+fn default_pipeline_start_desired() -> String {
+    "running".to_string()
+}
+
+/// Query parameters to POST a pipeline start.
+#[derive(Debug, Deserialize, IntoParams, ToSchema)]
+pub struct PostStartPipelineParameters {
+    /// The `initial` parameter determines whether to after provisioning the pipeline make it
+    /// become `standby`, `paused` or `running` (only valid values).
+    #[serde(default = "default_pipeline_start_desired")]
+    initial: String,
 }
 
 /// Default for the `force` query parameter when POST a pipeline stop.
@@ -794,21 +958,24 @@ pub(crate) async fn delete_pipeline(
     Ok(HttpResponse::Ok().finish())
 }
 
-/// Start the pipeline asynchronously by updating the desired state.
+/// Start the pipeline asynchronously by updating the desired status.
 ///
-/// The endpoint returns immediately after setting the desired state to `Running`.
-/// The procedure to get to the desired state is performed asynchronously.
+/// The endpoint returns immediately after setting the desired status.
+/// The procedure to get to the desired status is performed asynchronously.
 /// Progress should be monitored by polling the pipeline `GET` endpoints.
 ///
 /// Note the following:
-/// - A stopped pipeline can be started through calling either `/start` or `/pause`
-/// - Both starting as running and resuming a pipeline is done by calling `/start`
-/// - A pipeline which is in the process of suspending or stopping cannot be started
+/// - A stopped pipeline can be started through calling `/start?initial=running`,
+///   `/start?initial=paused`, or `/start?initial=standby`.
+/// - If the pipeline is already (being) started (provisioned), it will still return success
+/// - It is not possible to call `/start` when the pipeline has already had `/stop` called and is
+///   in the process of suspending or stopping.
 #[utoipa::path(
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
     params(
-        ("pipeline_name" = String, Path, description = "Unique pipeline name")
+        ("pipeline_name" = String, Path, description = "Unique pipeline name"),
+        PostStartPipelineParameters
     ),
     responses(
         (status = ACCEPTED
@@ -830,70 +997,58 @@ pub(crate) async fn post_pipeline_start(
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
     path: web::Path<String>,
+    query: web::Query<PostStartPipelineParameters>,
 ) -> Result<HttpResponse, ManagerError> {
     let pipeline_name = path.into_inner();
-    let pipeline_id = state
-        .db
-        .lock()
-        .await
-        .set_deployment_desired_status_running(*tenant_id, &pipeline_name)
-        .await?;
-    info!(
-        "Accepted action: going to start pipeline {pipeline_id} (tenant: {})",
-        *tenant_id
-    );
-    Ok(HttpResponse::Accepted().finish())
-}
+    let initial = query.into_inner().initial;
+    let pipeline_id = match initial.as_str() {
+        "standby" => {
+            state
+                .db
+                .lock()
+                .await
+                .set_deployment_resources_desired_status_provisioned(
+                    *tenant_id,
+                    &pipeline_name,
+                    RuntimeDesiredStatus::Standby,
+                )
+                .await?
+        }
+        "paused" => {
+            state
+                .db
+                .lock()
+                .await
+                .set_deployment_resources_desired_status_provisioned(
+                    *tenant_id,
+                    &pipeline_name,
+                    RuntimeDesiredStatus::Paused,
+                )
+                .await?
+        }
+        "running" => {
+            state
+                .db
+                .lock()
+                .await
+                .set_deployment_resources_desired_status_provisioned(
+                    *tenant_id,
+                    &pipeline_name,
+                    RuntimeDesiredStatus::Running,
+                )
+                .await?
+        }
+        _ => Err(ManagerError::from(ApiError::UnsupportedPipelineAction {
+            action: format!("/start?initial={initial}"),
+            reason: format!("unknown initial runtime desired status: {initial}"),
+        }))?,
+    };
 
-/// Pause the pipeline asynchronously by updating the desired state.
-///
-/// The endpoint returns immediately after setting the desired state to `Paused`.
-/// The procedure to get to the desired state is performed asynchronously.
-/// Progress should be monitored by polling the pipeline `GET` endpoints.
-///
-/// Note the following:
-/// - A stopped pipeline can be started through calling either `/start` or `/pause`
-/// - Both starting as paused and pausing a pipeline is done by calling `/pause`
-/// - A pipeline which is in the process of suspending or stopping cannot be paused
-#[utoipa::path(
-    context_path = "/v0",
-    security(("JSON web token (JWT) or API key" = [])),
-    params(
-        ("pipeline_name" = String, Path, description = "Unique pipeline name")
-    ),
-    responses(
-        (status = ACCEPTED
-            , description = "Action is accepted and is being performed"),
-        (status = NOT_FOUND
-            , description = "Pipeline with that name does not exist"
-            , body = ErrorResponse
-            , example = json!(examples::error_unknown_pipeline_name())),
-        (status = BAD_REQUEST
-            , description = "Action could not be performed"
-            , body = ErrorResponse
-            , example = json!(examples::error_illegal_pipeline_action())),
-        (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
-    ),
-    tag = "Pipeline management"
-)]
-#[post("/pipelines/{pipeline_name}/pause")]
-pub(crate) async fn post_pipeline_pause(
-    state: WebData<ServerState>,
-    tenant_id: ReqData<TenantId>,
-    path: web::Path<String>,
-) -> Result<HttpResponse, ManagerError> {
-    let pipeline_name = path.into_inner();
-    let pipeline_id = state
-        .db
-        .lock()
-        .await
-        .set_deployment_desired_status_paused(*tenant_id, &pipeline_name)
-        .await?;
     info!(
-        "Accepted action: going to pause pipeline {pipeline_id} (tenant: {})",
-        *tenant_id
+        "Accepted action: going to start pipeline {pipeline_id} as {} (tenant: {})",
+        initial, *tenant_id
     );
-    Ok(HttpResponse::Accepted().finish())
+    Ok(HttpResponse::Accepted().json(json!("Pipeline is starting")))
 }
 
 /// Stop the pipeline asynchronously by updating the desired state.
@@ -967,13 +1122,18 @@ pub(crate) async fn post_pipeline_stop(
     query: web::Query<PostStopPipelineParameters>,
 ) -> Result<HttpResponse, ManagerError> {
     let pipeline_name = path.into_inner();
-    let pipeline_id = if query.force {
-        state
+    if query.force {
+        let pipeline_id = state
             .db
             .lock()
             .await
-            .set_deployment_desired_status_suspended_or_stopped(*tenant_id, &pipeline_name, true)
-            .await?
+            .set_deployment_resources_desired_status_stopped(*tenant_id, &pipeline_name)
+            .await?;
+        info!(
+            "Accepted action: going to forcefully stop pipeline {pipeline_id} (tenant: {})",
+            *tenant_id
+        );
+        Ok(HttpResponse::Accepted().json(json!("Pipeline is forcefully stopping")))
     } else {
         #[cfg(not(feature = "feldera-enterprise"))]
         {
@@ -983,99 +1143,44 @@ pub(crate) async fn post_pipeline_stop(
         }
         #[cfg(feature = "feldera-enterprise")]
         {
-            use crate::runner::error::RunnerError;
-            // A request to check whether it can be suspended is done only when it is at least
-            // viable to send such a request (i.e., it is either Initializing, Paused, Running,
-            // or Unavailable). If it is in none of those states, then it is either already
-            // Suspending and thus Suspended will remain the target state, or it is Stopping
-            // or Stopped, in which case the target state will become Stopped.
-            let pipeline = state
+            let (was_set, pipeline_id) = state
                 .db
                 .lock()
                 .await
-                .get_pipeline_for_monitoring(*tenant_id, &pipeline_name)
+                .set_deployment_resources_desired_status_stopped_if_not_provisioned(
+                    *tenant_id,
+                    &pipeline_name,
+                )
                 .await?;
-            if matches!(
-                pipeline.deployment_status,
-                PipelineStatus::Initializing
-                    | PipelineStatus::Paused
-                    | PipelineStatus::Running
-                    | PipelineStatus::Unavailable
-            ) {
+            if was_set {
+                info!(
+                    "Accepted action: going to forcefully stop pipeline {pipeline_id} (tenant: {}) because it is not provisioned",
+                    *tenant_id
+                );
+                Ok(HttpResponse::Accepted().json(json!("Pipeline is forcefully stopping")))
+            } else {
                 let response = state
                     .runner
                     .forward_http_request_to_pipeline_by_name(
                         _client.as_ref(),
                         *tenant_id,
                         &pipeline_name,
-                        actix_http::Method::GET,
-                        "suspendable",
+                        Method::POST,
+                        "suspend",
                         "",
-                        None,
+                        Some(Duration::from_secs(120)),
                     )
-                    .await?;
-                let suspendable_response = if response.status().is_success() {
-                    let body = response.into_body();
-                    if let Ok(b) = body.try_into_bytes() {
-                        if let Ok(v) = serde_json::from_slice::<SuspendableResponse>(&b) {
-                            v
-                        } else {
-                            Err(RunnerError::PipelineInteractionInvalidResponse { error: format!("Pipeline returned an invalid response to a /suspendable request: {}", String::from_utf8_lossy(&b)) })?
-                        }
-                    } else {
-                        Err(RunnerError::PipelineInteractionInvalidResponse {
-                            error: "Error processing pipelines's response to a /suspendable request: failed to extract response body".to_string()
-                        })?
-                    }
-                } else {
-                    return Ok(response);
-                };
-                if suspendable_response.suspendable {
-                    state
-                        .db
-                        .lock()
-                        .await
-                        .set_deployment_desired_status_suspended_or_stopped(
-                            *tenant_id,
-                            &pipeline_name,
-                            false,
-                        )
-                        .await?
-                } else {
-                    let reasons = suspendable_response
-                        .reasons
-                        .iter()
-                        .map(|reason| format!("   - {reason}"))
-                        .collect::<Vec<_>>()
-                        .join("\n");
-                    Err(ManagerError::from(ApiError::UnsupportedPipelineAction {
-                        action: "stop?force=false".to_string(),
-                        reason: format!(
-                            "this pipeline does not support the stop without force (\"suspend\") operation for the following reason(s):\n{reasons}"
-                        ),
-                    }))?
-                }
-            } else {
+                    .await;
                 state
                     .db
                     .lock()
                     .await
-                    .set_deployment_desired_status_suspended_or_stopped(
-                        *tenant_id,
-                        &pipeline_name,
-                        false,
-                    )
-                    .await?
+                    .increment_notify_counter(*tenant_id, &pipeline_name)
+                    .await?;
+                response
             }
         }
-    };
-
-    info!(
-        "Accepted action: going to {}stop pipeline {pipeline_id} (tenant: {})",
-        if query.force { "forcefully " } else { "" },
-        *tenant_id
-    );
-    Ok(HttpResponse::Accepted().finish())
+    }
 }
 
 /// Clears the pipeline storage asynchronously.
@@ -1128,7 +1233,7 @@ pub(crate) async fn post_pipeline_clear(
         "Accepted storage action: going to clear storage of pipeline {pipeline_id} (tenant: {})",
         *tenant_id
     );
-    Ok(HttpResponse::Accepted().finish())
+    Ok(HttpResponse::Accepted().json(json!("Pipeline storage is being cleared")))
 }
 
 /// Retrieve logs of a pipeline as a stream.
