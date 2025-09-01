@@ -20,6 +20,9 @@ release = true
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
+[lib]
+crate-type = ["dylib"]
+
 [features]
 default = ["backend-mode"]
 

@@ -13,6 +13,8 @@ license = { workspace = true }
 authors = { workspace = true }
 rust-version = { workspace = true }
 
+[lib]
+crate-type = ["dylib"]
 
 [features]
 default = [

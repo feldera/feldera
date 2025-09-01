@@ -10,6 +10,9 @@ authors = { workspace = true }
 rust-version = { workspace = true }
 readme = { workspace = true }
 
+[lib]
+crate-type = ["dylib"]
+
 [features]
 with-avro = ["apache-avro"]
 
