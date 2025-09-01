@@ -902,6 +902,38 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
         self.refresh()
         return self._inner.program_code
 
+    def modify(
+        self,
+        sql: Optional[str] = None,
+        udf_rust: Optional[str] = None,
+        udf_toml: Optional[str] = None,
+        program_config: Optional[Mapping[str, Any]] = None,
+        runtime_config: Optional[Mapping[str, Any]] = None,
+        description: Optional[str] = None,
+    ):
+        """
+        Modify the pipeline.
+
+        Modify the values of pipeline attributes: SQL code, UDF Rust code,
+        UDF Rust dependencies (TOML), program config, runtime config, and
+        description. Only the provided attributes will be modified. Other
+        attributes will remain unchanged.
+
+        The pipeline must be in the STOPPED state to be modified.
+
+        :raises FelderaAPIError: If the pipeline is not in a STOPPED state.
+        """
+
+        self.client.patch_pipeline(
+            name=self._inner.name,
+            sql=sql,
+            udf_rust=udf_rust,
+            udf_toml=udf_toml,
+            program_config=program_config,
+            runtime_config=runtime_config,
+            description=description,
+        )
+
     def storage_status(self) -> StorageStatus:
         """
         Return the storage status of the pipeline.
