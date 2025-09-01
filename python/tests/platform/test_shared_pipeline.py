@@ -6,7 +6,6 @@ import unittest
 import io
 import tempfile
 import zipfile
-import sys
 
 from tests.shared_test_pipeline import SharedTestPipeline
 from tests import TEST_CLIENT, enterprise_only
