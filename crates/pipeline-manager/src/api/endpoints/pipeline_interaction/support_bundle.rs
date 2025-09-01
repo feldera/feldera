@@ -7,6 +7,7 @@ use crate::api::error::ApiError;
 use crate::api::examples;
 use crate::api::main::ServerState;
 use crate::api::support_data_collector::{SupportBundleData, SupportBundleParameters};
+use crate::db::types::combined_status::{combine_since, CombinedDesiredStatus, CombinedStatus};
 use crate::db::types::pipeline::ExtendedPipelineDescrMonitoring;
 use crate::db::{storage::Storage, types::tenant::TenantId};
 use crate::error::ManagerError;
@@ -33,17 +34,30 @@ impl SupportBundleZip {
         let options =
             zip::write::FileOptions::default().compression_method(CompressionMethod::Deflated);
         let mut manifest = String::with_capacity(8 * 1024);
+        let combined_status = CombinedStatus::new(
+            pipeline.deployment_resources_status,
+            pipeline.deployment_runtime_status,
+        );
+        let combined_status_since = combine_since(
+            pipeline.deployment_resources_status_since,
+            pipeline.deployment_runtime_status_since,
+        )
+        .to_rfc3339();
+        let combined_desired_status = CombinedDesiredStatus::new(
+            pipeline.deployment_resources_desired_status,
+            pipeline.deployment_initial,
+            pipeline.deployment_runtime_desired_status,
+        );
         manifest.push_str(&format!(
-            "\n# Support Bundle Table of Contents\n\nRequested at: {}\nPipeline Status: {} (since {})\n",
+            "\n# Support Bundle Table of Contents\n\nRequested at: {}\nPipeline Status: {:?} (since {})\n",
             chrono::Utc::now().to_rfc3339(),
-            pipeline.deployment_status,
-            pipeline.deployment_status_since.to_rfc3339(),
+            combined_status,
+            combined_status_since,
         ));
-        if pipeline.deployment_status.to_string() != pipeline.deployment_desired_status.to_string()
-        {
+        if format!("{:?}", combined_status) != format!("{:?}", combined_desired_status) {
             manifest.push_str(&format!(
-                "Pipeline Desired Status: {}\n",
-                pipeline.deployment_desired_status
+                "Pipeline Desired Status: {:?}\n",
+                combined_desired_status
             ));
         }
 

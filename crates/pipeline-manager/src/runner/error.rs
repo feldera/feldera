@@ -1,4 +1,4 @@
-use crate::db::types::pipeline::{PipelineDesiredStatus, PipelineStatus};
+use crate::db::types::resources_status::{ResourcesDesiredStatus, ResourcesStatus};
 use crate::db::types::utils::ValidationError;
 use actix_web::{
     body::BoxBody, http::StatusCode, HttpResponse, HttpResponseBuilder, ResponseError,
@@ -19,8 +19,10 @@ pub enum RunnerError {
     AutomatonCannotConstructProgramBinaryUrl {
         error: String,
     },
+    AutomatonMissingDeploymentId,
     AutomatonMissingDeploymentConfig,
     AutomatonMissingDeploymentLocation,
+    AutomatonMissingDeploymentInitial,
     AutomatonInvalidRuntimeConfig {
         value: serde_json::Value,
         error: ValidationError,
@@ -48,8 +50,8 @@ pub enum RunnerError {
     },
     AutomatonAfterInitializationBecameRunning,
     AutomatonImpossibleDesiredStatus {
-        current_status: PipelineStatus,
-        desired_status: PipelineDesiredStatus,
+        current_status: ResourcesStatus,
+        desired_status: ResourcesDesiredStatus,
     },
 
     // The pipeline runner implementation encounters an error
@@ -75,8 +77,8 @@ pub enum RunnerError {
 
     // Interaction with the pipeline
     PipelineInteractionNotDeployed {
-        status: PipelineStatus,
-        desired_status: PipelineDesiredStatus,
+        status: ResourcesStatus,
+        desired_status: ResourcesDesiredStatus,
     },
     PipelineInteractionUnreachable {
         error: String,
@@ -93,11 +95,15 @@ impl DetailedError for RunnerError {
             RunnerError::AutomatonCannotConstructProgramBinaryUrl { .. } => {
                 Cow::from("AutomatonCannotConstructProgramBinaryUrl")
             }
+            RunnerError::AutomatonMissingDeploymentId => Cow::from("AutomatonMissingDeploymentId"),
             RunnerError::AutomatonMissingDeploymentConfig => {
                 Cow::from("AutomatonMissingDeploymentConfig")
             }
             RunnerError::AutomatonMissingDeploymentLocation => {
                 Cow::from("AutomatonMissingDeploymentLocation")
+            }
+            RunnerError::AutomatonMissingDeploymentInitial => {
+                Cow::from("AutomatonMissingDeploymentInitial")
             }
             RunnerError::AutomatonInvalidRuntimeConfig { .. } => {
                 Cow::from("AutomatonInvalidRuntimeConfig")
@@ -164,6 +170,12 @@ impl Display for RunnerError {
             Self::AutomatonCannotConstructProgramBinaryUrl { error } => {
                 write!(f, "Cannot construct program binary URL due to: {error}")
             }
+            Self::AutomatonMissingDeploymentId => {
+                write!(
+                    f,
+                    "Unable to provision pipeline because its deployment identifier is missing"
+                )
+            }
             Self::AutomatonMissingDeploymentConfig => {
                 write!(
                     f,
@@ -174,6 +186,12 @@ impl Display for RunnerError {
                 write!(
                     f,
                     "Unable to status check the pipeline because its deployment location is missing"
+                )
+            }
+            Self::AutomatonMissingDeploymentInitial => {
+                write!(
+                    f,
+                    "The deployment initial desired runtime status is missing"
                 )
             }
             Self::AutomatonInvalidRuntimeConfig { value, error } => {
@@ -284,27 +302,12 @@ impl Display for RunnerError {
             }
             Self::PipelineInteractionNotDeployed {
                 status,
-                desired_status,
+                desired_status: _,
             } => {
-                let resolution = match (status, desired_status) {
-                    (PipelineStatus::Stopped, PipelineDesiredStatus::Stopped) => {
-                        "start the pipeline"
-                    }
-                    (_, PipelineDesiredStatus::Suspended) => {
-                        "wait for the pipeline to suspend and stop, and then start again"
-                    }
-                    (_, PipelineDesiredStatus::Running | PipelineDesiredStatus::Paused) => {
-                        "wait for the pipeline to become running or paused"
-                    }
-                    (_, PipelineDesiredStatus::Stopped) => {
-                        "wait for the pipeline to stop and start again afterwards"
-                    }
-                };
                 write!(
                     f,
-                    "Unable to interact with pipeline because the deployment status ('{status}') \
-                    is not one of the deployed statuses ('running', 'paused' or 'unavailable') \
-                    -- to resolve this: {resolution}"
+                    "Unable to interact with pipeline because the deployment status ({status}) \
+                    indicates it is not (yet) fully provisioned"
                 )
             }
             Self::PipelineInteractionUnreachable { error } => {
@@ -335,8 +338,10 @@ impl ResponseError for RunnerError {
             Self::AutomatonCannotConstructProgramBinaryUrl { .. } => {
                 StatusCode::INTERNAL_SERVER_ERROR
             }
+            Self::AutomatonMissingDeploymentId => StatusCode::INTERNAL_SERVER_ERROR,
             Self::AutomatonMissingDeploymentConfig => StatusCode::INTERNAL_SERVER_ERROR,
             Self::AutomatonMissingDeploymentLocation => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::AutomatonMissingDeploymentInitial => StatusCode::INTERNAL_SERVER_ERROR,
             Self::AutomatonInvalidRuntimeConfig { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::AutomatonInvalidProgramInfo { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::AutomatonInvalidDeploymentConfig { .. } => StatusCode::INTERNAL_SERVER_ERROR,
