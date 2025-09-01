@@ -76,6 +76,8 @@ export const usePipelineAction = () => {
         .with('pause', () => 'Pausing' as const)
         .with('stop', 'kill', () => 'Stopping' as const)
         .with('clear', () => undefined) // clear updates storageStatus, not status
+        .with('standby', () => 'Standby' as const)
+        .with('activate', () => 'Running' as const)
         .exhaustive()
 
       // Apply optimistic updates
@@ -129,7 +131,9 @@ export const usePipelineAction = () => {
           start_paused: (p) => p.status === 'Paused',
           stop: (p) => p.status === 'Stopped',
           kill: (p) => p.status === 'Stopped',
-          clear: (p) => p.storageStatus === 'Cleared'
+          clear: (p) => p.storageStatus === 'Cleared',
+          standby: (p) => p.status === 'Standby',
+          activate: (p) => p.status === 'Running'
         } satisfies Record<PipelineAction | 'resume', (pipeline: PipelineThumb) => boolean>
       )[action]
 
@@ -142,6 +146,8 @@ export const usePipelineAction = () => {
           'start_paused',
           'stop',
           'kill',
+          'standby',
+          'activate',
           () => (pipeline: PipelineThumb) => ignoreStatuses.includes(unionName(pipeline.status))
         )
         .exhaustive()
