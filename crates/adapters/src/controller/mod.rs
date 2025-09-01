@@ -1111,7 +1111,7 @@ impl CircuitThread {
     {
         let ft_model = config.global.fault_tolerance.model;
         let ControllerInit {
-            pipeline_config,
+            mut pipeline_config,
             circuit_config,
             processed_records,
             initial_start_time,
@@ -1126,6 +1126,16 @@ impl CircuitThread {
             .map(|storage| storage.backend.clone());
 
         let (mut circuit, catalog) = circuit_factory(circuit_config)?;
+
+        // If the pipeline has been modified, we must pick up the new connector config, which means that we discard
+        // any dynamically added connectors (such as HTTP input and output) from the checkpoint. This is ok because
+        // these connectors are only needed to replay journalled inputs; however bootstrapping and replay cannot happen
+        // at the same time (see below).
+        if circuit.bootstrap_in_progress() {
+            pipeline_config.inputs = config.inputs.clone();
+            pipeline_config.outputs = config.outputs.clone();
+        }
+
         let lir = circuit.lir()?;
 
         // Seek each input endpoint to its initial offset.
@@ -2660,7 +2670,8 @@ impl ControllerInit {
                 logging: config.global.logging,
             },
 
-            // Adapter configuration has to come from the checkpoint.
+            // Adapter configuration has to come from the checkpoint, so that we can use it to
+            // replay journaled inputs.
             inputs: checkpoint_config.inputs,
             outputs: checkpoint_config.outputs,
 
