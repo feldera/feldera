@@ -3,10 +3,11 @@ use crate::db::error::DBError;
 use crate::db::storage::{ExtendedPipelineDescrRunner, Storage};
 use crate::db::storage_postgres::StoragePostgres;
 use crate::db::types::pipeline::{
-    ExtendedPipelineDescr, ExtendedPipelineDescrMonitoring, PipelineDesiredStatus, PipelineId,
-    PipelineStatus,
+    runtime_desired_status_to_string, runtime_status_to_string, ExtendedPipelineDescr,
+    ExtendedPipelineDescrMonitoring, PipelineId,
 };
 use crate::db::types::program::{generate_pipeline_config, ProgramStatus};
+use crate::db::types::resources_status::{ResourcesDesiredStatus, ResourcesStatus};
 use crate::db::types::storage::StorageStatus;
 use crate::db::types::tenant::TenantId;
 use crate::db::types::utils::{
@@ -17,8 +18,9 @@ use crate::runner::error::RunnerError;
 use crate::runner::interaction::{format_pipeline_url, format_timeout_error_message};
 use crate::runner::pipeline_executor::PipelineExecutor;
 use crate::runner::pipeline_logs::{start_thread_pipeline_logs, LogMessage, LogsSender};
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use feldera_types::error::ErrorResponse;
+use feldera_types::runtime_status::{ExtendedRuntimeStatus, RuntimeDesiredStatus, RuntimeStatus};
 use log::{debug, error, info, warn, Level};
 use reqwest::{Method, StatusCode};
 use serde_json::json;
@@ -26,22 +28,25 @@ use std::sync::Arc;
 use thiserror::Error as ThisError;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinHandle;
+use tokio::time::Instant;
 use tokio::{sync::Mutex, time::Duration};
 use tokio::{sync::Notify, time::timeout};
+use uuid::Uuid;
 
 /// State change action that needs to be undertaken.
 #[derive(Debug, PartialEq)]
 enum State {
     TransitionToProvisioning {
+        deployment_id: Uuid,
         deployment_config: serde_json::Value,
     },
-    TransitionToInitializing {
+    TransitionToProvisioned {
         deployment_location: String,
+        extended_runtime_status: ExtendedRuntimeStatus,
+        /// `true` if it is the transition from `Provisioning` toward `Provisioned`,
+        /// `false` otherwise (it is an update to the runtime status and remains `Provisioned`).
+        is_initial_transition: bool,
     },
-    TransitionToPaused,
-    TransitionToRunning,
-    TransitionToUnavailable,
-    TransitionToSuspending,
     TransitionToStopping {
         error: Option<ErrorResponse>,
         suspend_info: Option<serde_json::Value>,
@@ -49,20 +54,6 @@ enum State {
     TransitionToStopped,
     StorageTransitionToCleared,
     Unchanged,
-}
-
-/// Outcome of a status check for a pipeline by polling its `/status` endpoint.
-enum StatusCheckResult {
-    /// Pipeline responded it is `Paused` (status code: OK).
-    Paused,
-    /// Pipeline responded it is `Running` (status code: OK).
-    Running,
-    /// Pipeline responded it is `Initializing` (status code: SERVICE_UNAVAILABLE).
-    Initializing,
-    /// The pipeline could not be reached, as such there is no response.
-    Unavailable,
-    /// The pipeline responded, but the response could not be parsed or was a runtime error.
-    Error(ErrorResponse),
 }
 
 #[derive(ThisError, Debug)]
@@ -95,24 +86,43 @@ pub struct PipelineAutomaton<T>
 where
     T: PipelineExecutor,
 {
+    /// Current platform version. The runner is only able to start pipelines that were compiled on
+    /// this platform version.
     platform_version: String,
+
+    /// Common configuration.
     common_config: CommonConfig,
+
+    /// Identifier of the pipeline this runner manages.
     pipeline_id: PipelineId,
+
+    /// Identifier of the tenant that owns the pipeline.
     tenant_id: TenantId,
+
+    /// Handle to the pipeline executor.
     pipeline_handle: T,
+
+    /// Database connection.
     db: Arc<Mutex<StoragePostgres>>,
+
+    /// Notifier which notifies when the table row in the pipeline table corresponding to this
+    /// pipeline was added, updated or deleted.
     notifier: Arc<Notify>,
 
     /// HTTP client which is reused.
     client: reqwest::Client,
 
-    /// Set when provision() is called in the `Provisioning` stage.
+    /// Set when the pipeline executor `provision()` is called in the `Provisioning` stage.
     /// Content is the provisioning timeout in seconds.
     provision_called: Option<u64>,
 
-    /// Maximum time to wait for the pipeline resources to be provisioned.
+    /// Default maximum time to wait for the pipeline resources to be provisioned.
     /// This can differ significantly between the type of runner.
     default_provisioning_timeout: Duration,
+
+    /// Start of the grace period of provisioned during which the pipeline does not become
+    /// `Unavailable` because the pipeline cannot be reached.
+    provisioned_grace_period_start: Option<Instant>,
 
     /// Counter for how many database errors were encountered in succession.
     database_error_counter: u64,
@@ -125,43 +135,34 @@ where
 }
 
 impl<T: PipelineExecutor> PipelineAutomaton<T> {
-    /// While stopped, database notifications should trigger when the user sets
-    /// the desired status, which will preempt the waiting.
+    /// Polling period while `Stopped`. The database notification that occurs when the user changes
+    /// the desired status or storage status will likely preempt this.
     const POLL_PERIOD_STOPPED: Duration = Duration::from_millis(2_500);
 
-    /// During provisioning, there is regular polling to check whether the pipeline
-    /// resources have become available. Usually nothing will change in the database,
-    /// which means no notifications will occur in this phase: as such, this poll
-    /// period is frequent.
-    const POLL_PERIOD_PROVISIONING: Duration = Duration::from_millis(500);
+    /// Polling period while `Provisioning`. It will not be preempted by a database notification
+    /// usually unless the user decides to prematurely stop the pipeline.
+    const POLL_PERIOD_PROVISIONING: Duration = Duration::from_millis(1_000);
 
-    /// During initialization, there is regular polling to check whether the pipeline
-    /// process has come up. Usually nothing will change in the database, which means no
-    /// notifications will occur in this phase: as such, this poll period is frequent.
-    const POLL_PERIOD_INITIALIZING: Duration = Duration::from_millis(250);
+    /// Polling period while `Provisioned`. During normal operation, changes will likely be caused
+    /// by the user changing the desired status, and as such database notification will occur. If
+    /// something goes wrong with the pipeline (e.g., it can't be reached anymore, or worse, it
+    /// encounters a runtime or resource error), this poll period will impact the delay until this
+    /// is discovered.
+    const POLL_PERIOD_PROVISIONED: Duration = Duration::from_millis(2_500);
 
-    /// While operational, polling should happen regularly to check the pipeline
-    /// is still reachable. Generally this is the case, and changes are usually
-    /// caused by the user changing the desired state, thus triggering a database
-    /// notification which will preempt the waiting.
-    const POLL_PERIOD_RUNNING_PAUSED_UNAVAILABLE: Duration = Duration::from_millis(2_500);
-
-    /// The suspend call of the pipeline is done synchronously, as such this period
-    /// is for when to retry if it failed.
-    const POLL_PERIOD_SUSPENDING: Duration = Duration::from_millis(1_000);
-
-    /// The stop operation is done synchronously, as such this period is
-    /// for when to retry if it failed.
+    /// Polling period while `Stopping`. The stop operation is done synchronously, as such this
+    /// period is for how long to wait to retry if it failed.
     const POLL_PERIOD_STOPPING: Duration = Duration::from_millis(1_000);
 
-    /// Timeout for an HTTP request to the pipeline `/status`.
-    const HTTP_REQUEST_STATUS_TIMEOUT: Duration = Duration::from_secs(5);
+    /// Timeout for an HTTP request to the pipeline `/status` endpoint.
+    const PIPELINE_STATUS_HTTP_REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
 
-    /// Timeout for an HTTP request to the pipeline `/start` or `/pause`.
-    const HTTP_REQUEST_ACTION_TIMEOUT: Duration = Duration::from_secs(5);
-
-    /// Timeout for an HTTP request to the pipeline `/suspend`.
-    const HTTP_REQUEST_SUSPEND_TIMEOUT: Duration = Duration::from_secs(5);
+    /// When the pipeline becomes `Provisioned`, it will provide the first runtime status in
+    /// advance (`Initializing`). It will take some time before the pipeline HTTP server actually
+    /// becomes responsive and is able to provide its own runtime status. This is the grace period
+    /// during which even if the status check comes back `Unavailable`, the runtime status remains
+    /// `Initializing`. If it comes back one time something different, the grace period ends.
+    const PROVISIONED_GRACE_PERIOD: Duration = Duration::from_secs(20);
 
     /// Creates a new automaton for a given pipeline.
     #[allow(clippy::too_many_arguments)]
@@ -193,6 +194,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             client,
             provision_called: None,
             default_provisioning_timeout,
+            provisioned_grace_period_start: None,
             logs_sender,
             logs_thread_terminate_sender_and_join_handle: Some(
                 logs_thread_terminate_sender_and_join_handle,
@@ -267,14 +269,20 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
 
     /// Executes one run cycle.
     async fn do_run(&mut self) -> Result<Duration, DBError> {
-        // Depending on the upcoming transition, it either retrieves the smaller monitoring descriptor,
-        // or the larger complete descriptor. It should only get the complete descriptor if:
-        // - current=`Stopped`
-        //   AND desired=`Paused`/`Running`
-        //   AND (program_status=`Success` AND platform_version=self.platform_version)
-        // - current=`Provisioning`
-        //   AND desired=`Paused`/`Running`
-        //   AND `provision()` is not yet called
+        // Depending on the upcoming transition, it either retrieves the smaller monitoring
+        // descriptor, or the larger complete descriptor. It needs the complete descriptor when it
+        // is needs to construct the `deployment_config` (when transitioning to Provisioning) or
+        // to access it (when calling `provision()` during the Provisioning phase).
+        //
+        // - Stopped but wanting to be provisioned and is compiled at correct platform version:
+        //   * status = Stopped
+        //   * AND desired_status = Provisioned
+        //   * AND program_status = Success AND platform_version=self.platform_version
+        //
+        // - Provisioning but wanting to be provisioned:
+        //   * status = Provisioning
+        //   * AND desired_status = Provisioned
+        //   * AND `provision()` is not yet called
         //
         // The complete descriptor can be converted into the monitoring one, which is done to avoid
         // checking which one was returned in the general flow.
@@ -294,287 +302,229 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         // Determine transition
         let transition: State = match (
             pipeline.storage_status,
-            pipeline.deployment_status,
-            pipeline.deployment_desired_status,
+            pipeline.deployment_resources_status,
+            pipeline.deployment_resources_desired_status,
         ) {
             // Stopped
             (
                 StorageStatus::Cleared | StorageStatus::InUse,
-                PipelineStatus::Stopped,
-                PipelineDesiredStatus::Stopped,
+                ResourcesStatus::Stopped,
+                ResourcesDesiredStatus::Stopped,
             ) => State::Unchanged,
-            (StorageStatus::Clearing, PipelineStatus::Stopped, PipelineDesiredStatus::Stopped) => {
-                self.transit_storage_clearing_to_cleared(pipeline).await
-            }
+            (
+                StorageStatus::Clearing,
+                ResourcesStatus::Stopped,
+                ResourcesDesiredStatus::Stopped,
+            ) => self.transit_storage_clearing_to_cleared(pipeline).await,
             (
                 StorageStatus::Cleared | StorageStatus::InUse,
-                PipelineStatus::Stopped,
-                PipelineDesiredStatus::Paused | PipelineDesiredStatus::Running,
+                ResourcesStatus::Stopped,
+                ResourcesDesiredStatus::Provisioned,
             ) => {
-                self.transit_stopped_towards_paused_or_running(pipeline_monitoring_or_complete)
+                self.transit_stopped_towards_provisioned(pipeline_monitoring_or_complete)
                     .await?
             }
 
             // Provisioning
             (
                 StorageStatus::InUse,
-                PipelineStatus::Provisioning,
-                PipelineDesiredStatus::Paused | PipelineDesiredStatus::Running,
+                ResourcesStatus::Provisioning,
+                ResourcesDesiredStatus::Provisioned,
             ) => {
-                self.transit_provisioning_towards_paused_or_running(pipeline_monitoring_or_complete)
+                self.transit_provisioning_towards_provisioned(pipeline_monitoring_or_complete)
                     .await
             }
 
-            // Initializing
+            // Provisioned
             (
                 StorageStatus::InUse,
-                PipelineStatus::Initializing,
-                PipelineDesiredStatus::Paused | PipelineDesiredStatus::Running,
-            ) => self.probe_pipeline_for_status(pipeline).await,
-
-            // Paused
-            (StorageStatus::InUse, PipelineStatus::Paused, PipelineDesiredStatus::Paused) => {
-                self.probe_pipeline_for_status(pipeline).await
+                ResourcesStatus::Provisioned,
+                ResourcesDesiredStatus::Provisioned,
+            ) => {
+                self.observe_provisioned_pipeline_and_enforce_runtime_status(pipeline)
+                    .await
             }
-            (StorageStatus::InUse, PipelineStatus::Paused, PipelineDesiredStatus::Running) => {
-                self.perform_action_on_pipeline(pipeline, true).await
-            }
-            (StorageStatus::InUse, PipelineStatus::Paused, PipelineDesiredStatus::Suspended) => {
-                State::TransitionToSuspending
-            }
-
-            // Running
-            (StorageStatus::InUse, PipelineStatus::Running, PipelineDesiredStatus::Paused) => {
-                self.perform_action_on_pipeline(pipeline, false).await
-            }
-            (StorageStatus::InUse, PipelineStatus::Running, PipelineDesiredStatus::Running) => {
-                self.probe_pipeline_for_status(pipeline).await
-            }
-            (StorageStatus::InUse, PipelineStatus::Running, PipelineDesiredStatus::Suspended) => {
-                State::TransitionToSuspending
-            }
-
-            // Unavailable
-            (
-                StorageStatus::InUse,
-                PipelineStatus::Unavailable,
-                PipelineDesiredStatus::Paused | PipelineDesiredStatus::Running,
-            ) => self.probe_pipeline_for_status(pipeline).await,
-            (
-                StorageStatus::InUse,
-                PipelineStatus::Unavailable,
-                PipelineDesiredStatus::Suspended,
-            ) => State::TransitionToSuspending,
-
-            // Suspending
-            (
-                StorageStatus::InUse,
-                PipelineStatus::Suspending,
-                PipelineDesiredStatus::Suspended,
-            ) => self.transit_suspending_towards_suspended(pipeline).await,
 
             // Stopping: as a fail-safe, all storage and desired pipeline statuses are viable
-            (_, PipelineStatus::Stopping, _) => {
+            (_, ResourcesStatus::Stopping, _) => {
                 self.transit_stopping_towards_stopped(pipeline).await
             }
 
             // Any statuses except Stopping will transition to Stopping when going towards Stopped
             (
                 StorageStatus::InUse,
-                PipelineStatus::Provisioning
-                | PipelineStatus::Initializing
-                | PipelineStatus::Paused
-                | PipelineStatus::Running
-                | PipelineStatus::Unavailable
-                | PipelineStatus::Suspending,
-                PipelineDesiredStatus::Stopped,
+                ResourcesStatus::Provisioning | ResourcesStatus::Provisioned,
+                ResourcesDesiredStatus::Stopped,
             ) => State::TransitionToStopping {
                 error: None,
                 suspend_info: None,
             },
 
-            // All other combinations should not occur, which are explicitly listed here.
+            // All other combinations are explicitly listed here, and should not occur.
             // As a fail-safe, they transition towards `Stopped`.
-            (_, PipelineStatus::Stopped, PipelineDesiredStatus::Suspended)
-            | (_, PipelineStatus::Provisioning, PipelineDesiredStatus::Suspended)
-            | (_, PipelineStatus::Initializing, PipelineDesiredStatus::Suspended)
-            | (
+            (
                 StorageStatus::Clearing,
-                PipelineStatus::Stopped,
-                PipelineDesiredStatus::Paused | PipelineDesiredStatus::Running,
+                ResourcesStatus::Stopped,
+                ResourcesDesiredStatus::Provisioned,
             )
-            | (StorageStatus::Cleared | StorageStatus::Clearing, PipelineStatus::Provisioning, _)
-            | (StorageStatus::Cleared | StorageStatus::Clearing, PipelineStatus::Initializing, _)
-            | (StorageStatus::Cleared | StorageStatus::Clearing, PipelineStatus::Paused, _)
-            | (StorageStatus::Cleared | StorageStatus::Clearing, PipelineStatus::Running, _)
-            | (StorageStatus::Cleared | StorageStatus::Clearing, PipelineStatus::Unavailable, _)
-            | (StorageStatus::Cleared | StorageStatus::Clearing, PipelineStatus::Suspending, _)
             | (
-                StorageStatus::InUse,
-                PipelineStatus::Suspending,
-                PipelineDesiredStatus::Paused | PipelineDesiredStatus::Running,
-            ) => State::TransitionToStopping {
-                error: Some(ErrorResponse::from(
-                    &RunnerError::AutomatonImpossibleDesiredStatus {
-                        current_status: pipeline.deployment_status,
-                        desired_status: pipeline.deployment_desired_status,
-                    },
-                )),
-                suspend_info: None,
-            },
+                StorageStatus::Cleared | StorageStatus::Clearing,
+                ResourcesStatus::Provisioning,
+                _,
+            )
+            | (StorageStatus::Cleared | StorageStatus::Clearing, ResourcesStatus::Provisioned, _) => {
+                State::TransitionToStopping {
+                    error: Some(ErrorResponse::from(
+                        &RunnerError::AutomatonImpossibleDesiredStatus {
+                            current_status: pipeline.deployment_resources_status,
+                            desired_status: pipeline.deployment_resources_desired_status,
+                        },
+                    )),
+                    suspend_info: None,
+                }
+            }
         };
 
         // Store the transition in the database
         let version_guard = pipeline.version;
-        let new_status = match &transition {
-            State::TransitionToProvisioning { deployment_config } => {
-                match self
-                    .db
-                    .lock()
-                    .await
-                    .transit_deployment_status_to_provisioning(
-                        self.tenant_id,
-                        pipeline.id,
-                        version_guard,
-                        deployment_config.clone(),
-                    )
-                    .await
-                {
-                    Ok(_) => PipelineStatus::Provisioning,
-                    Err(e) => match e {
-                        DBError::OutdatedPipelineVersion {
-                            outdated_version,
-                            latest_version,
-                        } => {
-                            // This can happen in the following concurrency scenario:
-                            // (1) Automaton is (current: Stopped, desired: Stopped)
-                            // (2) User issues /start on pipeline (v1)
-                            // (3) Automaton picks up (current: Stopped, desired: Running) and
-                            //     generates the deployment_config for v1, but has not yet stored
-                            //     it in the database
-                            // (4) User issues /stop on pipeline, makes an edit to for example
-                            //     the runtime_config (making it v2), and issues /start on the
-                            //     pipeline again
-                            // (5) Only now the automaton gets to store the transition in the
-                            //     database, which would have the deployment_config of v1 whereas
-                            //     the current on which /start was called is v2
-                            //
-                            // The solution is to retry again the next cycle, in which a new
-                            // deployment_config will be generated which corresponds to v2.
-                            //
-                            // For all other transitions, the version guard should always match,
-                            // and as such will cause a database error to bubble up if it does not.
-                            debug!(
+        let (new_resources_status, new_runtime_status, new_runtime_desired_status) =
+            match &transition {
+                State::TransitionToProvisioning {
+                    deployment_id,
+                    deployment_config,
+                } => {
+                    match self
+                        .db
+                        .lock()
+                        .await
+                        .transit_deployment_resources_status_to_provisioning(
+                            self.tenant_id,
+                            pipeline.id,
+                            version_guard,
+                            *deployment_id,
+                            deployment_config.clone(),
+                        )
+                        .await
+                    {
+                        Ok(_) => (ResourcesStatus::Provisioning, None, None),
+                        Err(e) => match e {
+                            DBError::OutdatedPipelineVersion {
+                                outdated_version,
+                                latest_version,
+                            } => {
+                                // This can happen in the following concurrency scenario:
+                                // (1) Automaton is (current: Stopped, desired: Stopped)
+                                // (2) User issues /start on pipeline (v1)
+                                // (3) Automaton picks up (current: Stopped, desired: Running) and
+                                //     generates the deployment_config for v1, but has not yet stored
+                                //     it in the database
+                                // (4) User issues /stop on pipeline, makes an edit to for example
+                                //     the runtime_config (making it v2), and issues /start on the
+                                //     pipeline again
+                                // (5) Only now the automaton gets to store the transition in the
+                                //     database, which would have the deployment_config of v1 whereas
+                                //     the current on which /start was called is v2
+                                //
+                                // The solution is to retry again the next cycle, in which a new
+                                // deployment_config will be generated which corresponds to v2.
+                                //
+                                // For all other transitions, the version guard should always match,
+                                // and as such will cause a database error to bubble up if it does not.
+                                info!(
                                 "Pipeline automaton {}: version initially intended to be started ({}) is outdated by latest ({})",
                                 self.pipeline_id, outdated_version, latest_version
                             );
-                            assert_eq!(pipeline.deployment_status, PipelineStatus::Stopped);
-                            PipelineStatus::Stopped
-                        }
-                        e => {
-                            return Err(e);
-                        }
-                    },
+                                if pipeline.deployment_resources_status != ResourcesStatus::Stopped
+                                {
+                                    error!("Outdated pipeline version occurred when transitioning from {} to Provisioning (not Stopped)", pipeline.deployment_resources_status);
+                                }
+                                (ResourcesStatus::Stopped, None, None)
+                            }
+                            e => {
+                                return Err(e);
+                            }
+                        },
+                    }
                 }
-            }
-            State::TransitionToInitializing {
-                deployment_location,
-            } => {
-                self.db
-                    .lock()
-                    .await
-                    .transit_deployment_status_to_initializing(
-                        self.tenant_id,
-                        pipeline.id,
-                        version_guard,
-                        deployment_location,
+                State::TransitionToProvisioned {
+                    deployment_location,
+                    extended_runtime_status,
+                    is_initial_transition,
+                } => {
+                    self.db
+                        .lock()
+                        .await
+                        .transit_deployment_resources_status_to_provisioned(
+                            self.tenant_id,
+                            pipeline.id,
+                            version_guard,
+                            deployment_location,
+                            extended_runtime_status.clone(),
+                        )
+                        .await?;
+                    if *is_initial_transition {
+                        // Start the grace period if it is the initial transition to `Provisioned`
+                        self.provisioned_grace_period_start = Some(Instant::now());
+                    } else {
+                        // Any update to the runtime status means that it has changed, as such we can
+                        // end the grace period
+                        self.provisioned_grace_period_start = None;
+                    }
+                    (
+                        ResourcesStatus::Provisioned,
+                        Some(extended_runtime_status.runtime_status),
+                        Some(extended_runtime_status.runtime_desired_status),
                     )
-                    .await?;
-                PipelineStatus::Initializing
-            }
-            State::TransitionToPaused => {
-                self.db
-                    .lock()
-                    .await
-                    .transit_deployment_status_to_paused(self.tenant_id, pipeline.id, version_guard)
-                    .await?;
-                PipelineStatus::Paused
-            }
-            State::TransitionToRunning => {
-                self.db
-                    .lock()
-                    .await
-                    .transit_deployment_status_to_running(
-                        self.tenant_id,
-                        pipeline.id,
-                        version_guard,
+                }
+                State::TransitionToStopping {
+                    error,
+                    suspend_info,
+                } => {
+                    self.db
+                        .lock()
+                        .await
+                        .transit_deployment_resources_status_to_stopping(
+                            self.tenant_id,
+                            pipeline.id,
+                            version_guard,
+                            error.clone(),
+                            suspend_info.clone(),
+                        )
+                        .await?;
+                    (ResourcesStatus::Stopping, None, None)
+                }
+                State::TransitionToStopped => {
+                    self.db
+                        .lock()
+                        .await
+                        .transit_deployment_resources_status_to_stopped(
+                            self.tenant_id,
+                            pipeline.id,
+                            version_guard,
+                        )
+                        .await?;
+                    (ResourcesStatus::Stopped, None, None)
+                }
+                State::StorageTransitionToCleared => {
+                    self.db
+                        .lock()
+                        .await
+                        .transit_storage_status_to_cleared(self.tenant_id, pipeline.id)
+                        .await?;
+                    (
+                        pipeline.deployment_resources_status,
+                        pipeline.deployment_runtime_status,
+                        pipeline.deployment_runtime_desired_status,
                     )
-                    .await?;
-                PipelineStatus::Running
-            }
-            State::TransitionToUnavailable => {
-                self.db
-                    .lock()
-                    .await
-                    .transit_deployment_status_to_unavailable(
-                        self.tenant_id,
-                        pipeline.id,
-                        version_guard,
-                    )
-                    .await?;
-                PipelineStatus::Unavailable
-            }
-            State::TransitionToSuspending => {
-                self.db
-                    .lock()
-                    .await
-                    .transit_deployment_status_to_suspending(
-                        self.tenant_id,
-                        pipeline.id,
-                        version_guard,
-                    )
-                    .await?;
-                PipelineStatus::Suspending
-            }
-            State::TransitionToStopping {
-                error,
-                suspend_info,
-            } => {
-                self.db
-                    .lock()
-                    .await
-                    .transit_deployment_status_to_stopping(
-                        self.tenant_id,
-                        pipeline.id,
-                        version_guard,
-                        error.clone(),
-                        suspend_info.clone(),
-                    )
-                    .await?;
-                PipelineStatus::Stopping
-            }
-            State::TransitionToStopped => {
-                self.db
-                    .lock()
-                    .await
-                    .transit_deployment_status_to_stopped(
-                        self.tenant_id,
-                        pipeline.id,
-                        version_guard,
-                    )
-                    .await?;
-                PipelineStatus::Stopped
-            }
-            State::StorageTransitionToCleared => {
-                self.db
-                    .lock()
-                    .await
-                    .transit_storage_status_to_cleared(self.tenant_id, pipeline.id)
-                    .await?;
-                pipeline.deployment_status
-            }
-            State::Unchanged => pipeline.deployment_status,
-        };
+                }
+                State::Unchanged => (
+                    pipeline.deployment_resources_status,
+                    pipeline.deployment_runtime_status,
+                    pipeline.deployment_runtime_desired_status,
+                ),
+            };
+
+        // Log the transition that occurred
         if transition != State::Unchanged {
             if transition == State::StorageTransitionToCleared {
                 info!(
@@ -590,55 +540,51 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                     ))
                     .await;
             } else {
-                info!(
-                    "Transition: {} -> {} (desired: {}) for pipeline {}",
-                    pipeline.deployment_status,
-                    new_status,
-                    pipeline.deployment_desired_status,
-                    pipeline.id
-                );
-                self.logs_sender
-                    .send(LogMessage::new_from_control_plane(
-                        Level::Info,
-                        &format!(
-                            "Status transition: {} -> {}",
-                            pipeline.deployment_status, new_status
-                        ),
-                    ))
-                    .await;
+                if pipeline.deployment_resources_status != new_resources_status {
+                    let message = format!(
+                        "Resources transition: {} -> {} (desired: {})",
+                        pipeline.deployment_resources_status,
+                        new_resources_status,
+                        pipeline.deployment_resources_desired_status,
+                    );
+                    info!("{message} for pipeline {}", pipeline.id);
+                    self.logs_sender
+                        .send(LogMessage::new_from_control_plane(Level::Info, &message))
+                        .await;
+                };
+                if pipeline.deployment_runtime_status != new_runtime_status
+                    || pipeline.deployment_runtime_desired_status != new_runtime_desired_status
+                {
+                    let message = format!(
+                        "Runtime transition: {} -> {} (desired: {})",
+                        pipeline
+                            .deployment_runtime_status
+                            .map(runtime_status_to_string)
+                            .unwrap_or("(none)".to_string()),
+                        new_runtime_status
+                            .map(runtime_status_to_string)
+                            .unwrap_or("(none)".to_string()),
+                        new_runtime_desired_status
+                            .map(runtime_desired_status_to_string)
+                            .unwrap_or("(none)".to_string())
+                    );
+                    info!("{message} for pipeline {}", pipeline.id);
+                    self.logs_sender
+                        .send(LogMessage::new_from_control_plane(Level::Info, &message))
+                        .await;
+                }
             }
         }
 
-        // Determine the poll timeout based on the pipeline status it has become.
+        // Determine the poll timeout based on the pipeline status it has stayed or become.
         // This timeout can be preempted by a database notification.
-        let poll_timeout = match &transition {
-            State::TransitionToProvisioning { .. } => Self::POLL_PERIOD_PROVISIONING,
-            State::TransitionToInitializing { .. } => Self::POLL_PERIOD_INITIALIZING,
-            State::TransitionToPaused
-            | State::TransitionToRunning
-            | State::TransitionToUnavailable => Self::POLL_PERIOD_RUNNING_PAUSED_UNAVAILABLE,
-            State::TransitionToSuspending => Self::POLL_PERIOD_SUSPENDING,
-            State::TransitionToStopping { .. } => Self::POLL_PERIOD_STOPPING,
-            State::TransitionToStopped => Self::POLL_PERIOD_STOPPED,
-            State::StorageTransitionToCleared | State::Unchanged => {
-                match pipeline.deployment_status {
-                    PipelineStatus::Stopped => Self::POLL_PERIOD_STOPPED,
-                    PipelineStatus::Provisioning => Self::POLL_PERIOD_PROVISIONING,
-                    PipelineStatus::Initializing => Self::POLL_PERIOD_INITIALIZING,
-                    PipelineStatus::Paused => Self::POLL_PERIOD_RUNNING_PAUSED_UNAVAILABLE,
-                    PipelineStatus::Running => Self::POLL_PERIOD_RUNNING_PAUSED_UNAVAILABLE,
-                    PipelineStatus::Unavailable => Self::POLL_PERIOD_RUNNING_PAUSED_UNAVAILABLE,
-                    PipelineStatus::Suspending => Self::POLL_PERIOD_SUSPENDING,
-                    PipelineStatus::Stopping => Self::POLL_PERIOD_STOPPING,
-                }
-            }
+        let poll_timeout = match new_resources_status {
+            ResourcesStatus::Stopped => Self::POLL_PERIOD_STOPPED,
+            ResourcesStatus::Provisioning => Self::POLL_PERIOD_PROVISIONING,
+            ResourcesStatus::Provisioned => Self::POLL_PERIOD_PROVISIONED,
+            ResourcesStatus::Stopping => Self::POLL_PERIOD_STOPPING,
         };
         Ok(poll_timeout)
-    }
-
-    /// Whether the time between now and the since timestamp has exceeded the timeout.
-    fn has_timeout_expired(since: DateTime<Utc>, timeout: Duration) -> bool {
-        Utc::now().timestamp_millis() - since.timestamp_millis() > timeout.as_millis() as i64
     }
 
     /// Sends HTTP request from the automaton to the pipeline and parses response as a JSON object.
@@ -691,102 +637,8 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         }
     }
 
-    /// Parses `ErrorResponse` from JSON.
-    /// Upon error, builds an `ErrorResponse` with the original JSON content.
-    fn error_response_from_json(
-        pipeline_id: PipelineId,
-        status: StatusCode,
-        json: &serde_json::Value,
-    ) -> ErrorResponse {
-        serde_json::from_value(json.clone()).unwrap_or_else(|_| {
-            ErrorResponse::from(&RunnerError::PipelineInteractionInvalidResponse {
-                error: format!("Pipeline {pipeline_id} returned HTTP response which cannot be deserialized. Status code: {status}; body: {json:#}"),
-            })
-        })
-    }
-
-    /// Retrieves the deployment location from the descriptor.
-    /// The location is expected to be there.
-    /// Returns an error if the location is missing.
-    fn get_required_deployment_location(
-        pipeline: &ExtendedPipelineDescrMonitoring,
-    ) -> Result<String, RunnerError> {
-        match pipeline.deployment_location.clone() {
-            None => Err(RunnerError::AutomatonMissingDeploymentLocation),
-            Some(location) => Ok(location),
-        }
-    }
-
-    /// Checks the pipeline status by attempting to poll its `/status` endpoint.
-    /// An error result is only returned if the response could not be parsed or
-    /// contained an error.
-    async fn check_pipeline_status(
-        &self,
-        pipeline_id: PipelineId,
-        deployment_location: &str,
-    ) -> StatusCheckResult {
-        match self
-            .http_request_pipeline_json(
-                Method::GET,
-                deployment_location,
-                "status",
-                Self::HTTP_REQUEST_STATUS_TIMEOUT,
-            )
-            .await
-        {
-            Ok((status_code, body)) => {
-                // Able to reach the pipeline HTTP(S) server and get a response
-                if status_code == StatusCode::OK {
-                    // Fatal error: cannot deserialize status
-                    let Some(pipeline_status) = body.as_str() else {
-                        return StatusCheckResult::Error(ErrorResponse::from_error_nolog(
-                            &RunnerError::PipelineInteractionInvalidResponse {
-                                error: format!("Body of /status response: {body}"),
-                            },
-                        ));
-                    };
-
-                    // Fatal error: if it is not Paused/Running
-                    if pipeline_status == "Paused" {
-                        StatusCheckResult::Paused
-                    } else if pipeline_status == "Running" {
-                        StatusCheckResult::Running
-                    } else if pipeline_status == "Initializing" {
-                        StatusCheckResult::Initializing
-                    } else {
-                        // Notably: "Terminated"
-                        return StatusCheckResult::Error(ErrorResponse::from_error_nolog(
-                            &RunnerError::PipelineInteractionInvalidResponse {
-                                error: format!(
-                                    "Pipeline status is not Paused or Running, but is: {pipeline_status}"
-                                ),
-                            },
-                        ));
-                    }
-                } else if status_code == StatusCode::SERVICE_UNAVAILABLE {
-                    // Pipeline HTTP server is running but indicates it is not yet available
-                    warn!("Pipeline {pipeline_id} responds to status check it is not (yet) ready");
-                    StatusCheckResult::Unavailable
-                } else {
-                    // All other status codes indicate a fatal error
-                    // The HTTP server is still running, but the pipeline itself failed
-                    error!("Error response to status check for pipeline {pipeline_id}. Status code: {status_code}. Body: {body}");
-                    StatusCheckResult::Error(Self::error_response_from_json(
-                        pipeline_id,
-                        status_code,
-                        &body,
-                    ))
-                }
-            }
-            Err(e) => {
-                debug!("Unable to reach pipeline {pipeline_id} for status check due to: {e}");
-                StatusCheckResult::Unavailable
-            }
-        }
-    }
-
-    /// Transits from `Stopped` towards `Paused` or `Running`.
-    async fn transit_stopped_towards_paused_or_running(
+    /// Transits from `Stopped` towards `Provisioned`.
+    async fn transit_stopped_towards_provisioned(
         &mut self,
         pipeline_monitoring_or_complete: &ExtendedPipelineDescrRunner,
     ) -> Result<State, DBError> {
@@ -796,7 +648,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         {
             if let ExtendedPipelineDescrRunner::Complete(pipeline) = pipeline_monitoring_or_complete
             {
-                self.transit_stopped_towards_paused_or_running_phase_ready(pipeline)
+                self.transit_stopped_towards_provisioned_phase_ready(pipeline)
                     .await
             } else {
                 panic!(
@@ -806,14 +658,14 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                 );
             }
         } else {
-            self.transit_stopped_towards_paused_or_running_early_start(&pipeline)
+            self.transit_stopped_towards_provisioned_early_start(&pipeline)
                 .await
         }
     }
 
-    /// Transits from `Stopped` towards `Paused` or `Running`
-    /// when it has not yet successfully compiled at the current platform version.
-    async fn transit_stopped_towards_paused_or_running_early_start(
+    /// Transits from `Stopped` towards `Provisioned` when it has not yet successfully compiled at
+    /// the current platform version.
+    async fn transit_stopped_towards_provisioned_early_start(
         &mut self,
         pipeline: &ExtendedPipelineDescrMonitoring,
     ) -> Result<State, DBError> {
@@ -891,9 +743,9 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         Ok(State::Unchanged)
     }
 
-    /// Transits from `Stopped` towards `Paused` or `Running`
-    /// when it has successfully compiled at the current platform version.
-    async fn transit_stopped_towards_paused_or_running_phase_ready(
+    /// Transits from `Stopped` towards `Provisioned` when it has successfully compiled at the
+    /// current platform version.
+    async fn transit_stopped_towards_provisioned_phase_ready(
         &mut self,
         pipeline: &ExtendedPipelineDescr,
     ) -> Result<State, DBError> {
@@ -948,6 +800,9 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             }
         };
 
+        // Deployment identifier
+        let deployment_id = Uuid::now_v7();
+
         // Deployment configuration
         let mut deployment_config =
             generate_pipeline_config(pipeline.id, &runtime_config, &inputs, &outputs);
@@ -967,36 +822,39 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             }
         };
 
-        Ok(State::TransitionToProvisioning { deployment_config })
+        Ok(State::TransitionToProvisioning {
+            deployment_id,
+            deployment_config,
+        })
     }
 
-    /// Transits from `Provisioning` towards `Paused` or `Running`.
-    async fn transit_provisioning_towards_paused_or_running(
+    /// Transits from `Provisioning` towards `Provisioned`.
+    async fn transit_provisioning_towards_provisioned(
         &mut self,
         pipeline_monitoring_or_complete: &ExtendedPipelineDescrRunner,
     ) -> State {
         if self.provision_called.is_none() {
             if let ExtendedPipelineDescrRunner::Complete(pipeline) = pipeline_monitoring_or_complete
             {
-                self.transit_provisioning_towards_paused_or_running_phase_call(pipeline)
+                self.transit_provisioning_towards_provisioned_phase_call(pipeline)
                     .await
             } else {
                 panic!(
-                    "For the transit of Provisioning towards Paused/Running (provision not yet called), \
+                    "For the transit of Provisioning towards Provisioned (provision not yet called), \
                     the complete pipeline descriptor should have been retrieved"
                 );
             }
         } else {
-            self.transit_provisioning_towards_paused_or_running_phase_await(
+            self.transit_provisioning_towards_provisioned_phase_await(
                 &pipeline_monitoring_or_complete.only_monitoring(),
             )
             .await
         }
     }
 
-    /// Transits from `Provisioning` towards `Paused` or `Running`
-    /// when it has not yet called `provision()` (which is idempotent).
-    async fn transit_provisioning_towards_paused_or_running_phase_call(
+    /// Transits from `Provisioning` towards `Provisioned` when it has not yet called `provision()`
+    /// (which is idempotent).
+    async fn transit_provisioning_towards_provisioned_phase_call(
         &mut self,
         pipeline: &ExtendedPipelineDescr,
     ) -> State {
@@ -1017,7 +875,33 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             };
         }
 
-        // Deployment configuration and program binary URL are expected to be set
+        // Deployment initial runtime desired status is expected
+        let deployment_initial = match &pipeline.deployment_initial {
+            None => {
+                return State::TransitionToStopping {
+                    error: Some(ErrorResponse::from_error_nolog(
+                        &RunnerError::AutomatonMissingDeploymentInitial,
+                    )),
+                    suspend_info: None,
+                }
+            }
+            Some(deployment_id) => *deployment_id,
+        };
+
+        // Deployment identifier is expected
+        let deployment_id = match &pipeline.deployment_id {
+            None => {
+                return State::TransitionToStopping {
+                    error: Some(ErrorResponse::from_error_nolog(
+                        &RunnerError::AutomatonMissingDeploymentId,
+                    )),
+                    suspend_info: None,
+                }
+            }
+            Some(deployment_id) => *deployment_id,
+        };
+
+        // Deployment configuration is expected
         let deployment_config = match &pipeline.deployment_config {
             None => {
                 return State::TransitionToStopping {
@@ -1084,6 +968,8 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         match self
             .pipeline_handle
             .provision(
+                deployment_initial,
+                &deployment_id,
                 &deployment_config,
                 &program_binary_url,
                 pipeline.program_version,
@@ -1111,10 +997,9 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         }
     }
 
-    /// Transits from `Provisioning` towards `Paused` or `Running`
-    /// when it has called `provision()` and is now awaiting
-    /// `is_provisioned()` to return success in time.
-    async fn transit_provisioning_towards_paused_or_running_phase_await(
+    /// Transits from `Provisioning` towards `Provisioned` when it has called `provision()` and is
+    /// now awaiting `is_provisioned()` to return success before the timeout.
+    async fn transit_provisioning_towards_provisioned_phase_await(
         &mut self,
         pipeline: &ExtendedPipelineDescrMonitoring,
     ) -> State {
@@ -1123,61 +1008,41 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             self.provision_called
                 .expect("Provision must have been called"),
         );
-        match self.pipeline_handle.is_provisioned().await {
-            Ok(Some(location)) => {
-                match self
-                    .check_pipeline_status(self.pipeline_id, &location)
-                    .await
-                {
-                    StatusCheckResult::Unavailable
-                        if Self::has_timeout_expired(
-                            pipeline.deployment_status_since,
-                            provisioning_timeout,
-                        ) =>
-                    {
-                        error!(
-                            "Pipeline {} was provisioned, but didn't respond to status check in {} seconds - terminating the pipeline",
-                            pipeline.id,
-                            provisioning_timeout.as_secs()
-                        );
-                        State::TransitionToStopping {
-                            error: Some(
-                                RunnerError::AutomatonProvisioningTimeout {
-                                    timeout: provisioning_timeout,
-                                }
-                                .into(),
-                            ),
-                            suspend_info: None,
-                        }
-                    }
-                    StatusCheckResult::Unavailable => {
-                        warn!(
-                            "Pipeline {} is provisioned, but is not yet reachable, retrying...",
-                            pipeline.id
-                        );
-                        State::Unchanged
-                    }
-                    // Only valid transitions from Provisioning is to Initializing or Stopping
-                    // so even when we see it is running, we are transitioning to Initializing
-                    // first which would then probe pipeline and move to actual state.
-                    StatusCheckResult::Initializing
-                    | StatusCheckResult::Running
-                    | StatusCheckResult::Paused => State::TransitionToInitializing {
-                        deployment_location: location,
-                    },
-                    StatusCheckResult::Error(error) => State::TransitionToStopping {
-                        error: Some(error),
-                        suspend_info: None,
-                    },
+
+        // Deployment initial runtime desired state is expected
+        let deployment_initial = match &pipeline.deployment_initial {
+            None => {
+                return State::TransitionToStopping {
+                    error: Some(ErrorResponse::from_error_nolog(
+                        &RunnerError::AutomatonMissingDeploymentInitial,
+                    )),
+                    suspend_info: None,
                 }
             }
+            Some(deployment_id) => *deployment_id,
+        };
+
+        match self.pipeline_handle.is_provisioned().await {
+            Ok(Some(deployment_location)) => State::TransitionToProvisioned {
+                deployment_location,
+                extended_runtime_status: ExtendedRuntimeStatus {
+                    runtime_status: RuntimeStatus::Initializing,
+                    runtime_status_details: "".to_string(),
+                    runtime_desired_status: deployment_initial,
+                },
+                is_initial_transition: true,
+            },
 
             Ok(None) => {
                 debug!(
                     "Pipeline provisioning: pipeline {} is not yet provisioned",
                     pipeline.id
                 );
-                if Self::has_timeout_expired(pipeline.deployment_status_since, provisioning_timeout)
+                if Utc::now().timestamp_millis()
+                    - pipeline
+                        .deployment_resources_status_since
+                        .timestamp_millis()
+                    > provisioning_timeout.as_millis() as i64
                 {
                     error!(
                         "Pipeline provisioning: timed out for pipeline {}",
@@ -1209,250 +1074,214 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         }
     }
 
-    /// Transits from `Paused` or `Running` towards the other one.
-    /// Can go to other states based on pipelines current state
-    /// It issues a request to the pipeline HTTP server `/start` or `/pause` HTTP endpoint.
-    async fn perform_action_on_pipeline(
+    fn parse_status_result(
         &mut self,
-        pipeline: &ExtendedPipelineDescrMonitoring,
-        is_start: bool,
-    ) -> State {
-        let deployment_location = match Self::get_required_deployment_location(pipeline) {
-            Ok(deployment_location) => deployment_location,
-            Err(e) => {
-                return State::TransitionToStopping {
-                    error: Some(ErrorResponse::from_error_nolog(&e)),
-                    suspend_info: None,
-                };
-            }
-        };
-
-        // Check deployment when initialized
-        if let Err(e) = self.pipeline_handle.check().await {
-            return State::TransitionToStopping {
-                error: Some(ErrorResponse::from_error_nolog(&e)),
-                suspend_info: None,
-            };
-        }
-
-        // Issue request to the /start or /pause endpoint
-        let action = if is_start { "start" } else { "pause" };
-        match self
-            .http_request_pipeline_json(
-                Method::GET,
-                &deployment_location,
-                action,
-                Self::HTTP_REQUEST_ACTION_TIMEOUT,
-            )
-            .await
-        {
+        deployment_initial: RuntimeDesiredStatus,
+        result: Result<(StatusCode, serde_json::Value), InternalRequestError>,
+    ) -> Result<ExtendedRuntimeStatus, ErrorResponse> {
+        let pipeline_id = self.pipeline_id;
+        match result {
             Ok((status_code, body)) => {
-                match status_code {
-                    StatusCode::OK if is_start => State::TransitionToRunning,
-                    StatusCode::OK => State::TransitionToPaused,
-                    // Check if pipeline returned SERVICE_UNAVAILABLE because it is Initializing
-                    StatusCode::SERVICE_UNAVAILABLE
-                        if body["error_code"]
-                            .as_str()
-                            .is_some_and(|s| s == "Initializing") =>
-                    {
-                        warn!("Unable to perform action '{action}' on pipeline {} because pipeline indicated it is not (yet) ready", pipeline.id);
-                        State::TransitionToInitializing {
-                            deployment_location,
-                        }
-                    }
-                    StatusCode::SERVICE_UNAVAILABLE => {
-                        warn!("Unable to perform action '{action}' on pipeline {} because pipeline is unreachable", pipeline.id);
-                        State::TransitionToUnavailable
-                    }
-                    _ => {
-                        error!("Error response to action '{action}' on pipeline {}. Status: {status_code}. Body: {body}", pipeline.id);
-                        State::TransitionToStopping {
-                            error: Some(Self::error_response_from_json(
-                                self.pipeline_id,
-                                status_code,
-                                &body,
-                            )),
-                            suspend_info: None,
-                        }
-                    }
-                }
-            }
-            Err(e) => {
-                warn!(
-                    "Unable to reach pipeline {} to perform action '{action}' due to: {e}",
-                    pipeline.id,
-                );
-                State::TransitionToUnavailable
-            }
-        }
-    }
-
-    /// Transits between `Initializing`, `Paused`, `Running` and `Unavailable` depending
-    /// on what the pipeline HTTP `/status` endpoint reports.
-    async fn probe_pipeline_for_status(
-        &mut self,
-        pipeline: &ExtendedPipelineDescrMonitoring,
-    ) -> State {
-        // Check deployment when initialized
-        if let Err(e) = self.pipeline_handle.check().await {
-            return State::TransitionToStopping {
-                error: Some(ErrorResponse::from_error_nolog(&e)),
-                suspend_info: None,
-            };
-        }
-
-        // Perform probe
-        let deployment_location = match Self::get_required_deployment_location(pipeline) {
-            Ok(deployment_location) => deployment_location,
-            Err(e) => {
-                return State::TransitionToStopping {
-                    error: Some(ErrorResponse::from_error_nolog(&e)),
-                    suspend_info: None,
-                }
-            }
-        };
-        match self
-            .check_pipeline_status(pipeline.id, &deployment_location)
-            .await
-        {
-            StatusCheckResult::Paused => {
-                if pipeline.deployment_status == PipelineStatus::Paused {
-                    State::Unchanged
-                } else {
-                    // Possible mismatch: pipeline reports Paused, database reports Running
-                    //
-                    // It is possible for the pipeline endpoint /pause to have been called,
-                    // and the automaton being terminated before the database has stored the
-                    // new status. If then API endpoint /v0/pipelines/{name}/start is called
-                    // before the automaton starts up, this case will occur. In that case, we
-                    // transition to paused such that the automaton tries again to start.
-                    State::TransitionToPaused
-                }
-            }
-            StatusCheckResult::Running => {
-                if pipeline.deployment_status == PipelineStatus::Running {
-                    State::Unchanged
-                } else {
-                    // The same possible mismatch as above can occur but the other way around
-                    State::TransitionToRunning
-                }
-            }
-            StatusCheckResult::Initializing => match pipeline.deployment_status {
-                PipelineStatus::Initializing => State::Unchanged,
-                _ => State::TransitionToInitializing {
-                    deployment_location,
-                },
-            },
-            StatusCheckResult::Unavailable => match pipeline.deployment_status {
-                PipelineStatus::Unavailable => State::Unchanged,
-                _ => State::TransitionToUnavailable,
-            },
-            StatusCheckResult::Error(error) => State::TransitionToStopping {
-                error: Some(error),
-                suspend_info: None,
-            },
-        }
-    }
-
-    /// Transits from `Suspending` towards `Suspended`.
-    ///
-    /// It calls the idempotent pipeline `/suspend` HTTP endpoint, in order to get it to suspend
-    /// its circuit to storage. It does the following based on the outcome:
-    /// - If it cannot be reached, it will try again later
-    /// - If it gets back OK, it will transition to `Stopping` with `suspend_info` set
-    /// - If it gets back SERVICE_UNAVAILABLE, it will try again later
-    /// - If it gets back any other status code, it will transition to `Stopping` with `deployment_error` set
-    async fn transit_suspending_towards_suspended(
-        &mut self,
-        pipeline: &ExtendedPipelineDescrMonitoring,
-    ) -> State {
-        // Check deployment when suspending
-        if let Err(e) = self.pipeline_handle.check().await {
-            return State::TransitionToStopping {
-                error: Some(ErrorResponse::from_error_nolog(&e)),
-                suspend_info: None,
-            };
-        }
-        let deployment_location = match Self::get_required_deployment_location(pipeline) {
-            Ok(deployment_location) => deployment_location,
-            Err(e) => {
-                return State::TransitionToStopping {
-                    error: Some(ErrorResponse::from_error_nolog(&e)),
-                    suspend_info: None,
-                };
-            }
-        };
-        match self
-            .http_request_pipeline_json(
-                Method::POST,
-                &deployment_location,
-                "suspend",
-                Self::HTTP_REQUEST_SUSPEND_TIMEOUT,
-            )
-            .await
-        {
-            Ok((status_code, body)) => {
+                // Able to reach the pipeline HTTP(S) server and get a response
                 if status_code == StatusCode::OK {
-                    // Pipeline has responded its circuit has been suspended to storage,
-                    // as such we can now transition to suspending the compute resources
-                    // themselves (which will terminate the pipeline in its entirety)
-                    State::TransitionToStopping {
-                        error: None,
-                        suspend_info: Some(json!({})),
+                    if let Some(response_str) = body.as_str() {
+                        // Backward compatibility: a JSON string is returned with 200 OK
+                        match response_str {
+                            "Paused" => Ok(ExtendedRuntimeStatus {
+                                runtime_status: RuntimeStatus::Paused,
+                                runtime_status_details: "".to_string(),
+                                runtime_desired_status: RuntimeDesiredStatus::Paused,
+                            }),
+                            "Running" => Ok(ExtendedRuntimeStatus {
+                                runtime_status: RuntimeStatus::Running,
+                                runtime_status_details: "".to_string(),
+                                runtime_desired_status: RuntimeDesiredStatus::Running,
+                            }),
+                            "Initializing" => Ok(ExtendedRuntimeStatus { // Backward compatibility: in anticipation of recent change of 503 to 200
+                                runtime_status: RuntimeStatus::Initializing,
+                                runtime_status_details: "".to_string(),
+                                runtime_desired_status: RuntimeDesiredStatus::Paused,
+                            }),
+                            "Terminated" => Err(ErrorResponse::from(&RunnerError::PipelineInteractionInvalidResponse {
+                                error: "Pipeline responded that it is Terminated".to_string(),
+                            })),
+                            _ => Ok(ExtendedRuntimeStatus {
+                                runtime_status: RuntimeStatus::Unavailable,
+                                runtime_status_details: format!("Pipeline status response (200 OK) is an unexpected JSON string: '{response_str}'"),
+                                runtime_desired_status: RuntimeDesiredStatus::Unavailable,
+                            }),
+                        }
+                    } else if body.is_object() {
+                        // JSON-serialized RuntimeStatusResponse is returned with 200 OK
+                        match serde_json::from_value::<ExtendedRuntimeStatus>(body) {
+                            Ok(response) => Ok(response),
+                            Err(e) => Ok(ExtendedRuntimeStatus {
+                                runtime_status: RuntimeStatus::Unavailable,
+                                runtime_status_details: format!("Pipeline status response (200 OK) cannot be deserialized due to: {e}"),
+                                runtime_desired_status: RuntimeDesiredStatus::Unavailable,
+                            }),
+                        }
+                    } else {
+                        // JSON response must be either a string or an object.
+                        Ok(ExtendedRuntimeStatus {
+                            runtime_status: RuntimeStatus::Unavailable,
+                            runtime_status_details: format!("Pipeline status response (200 OK) is not a string or an object:\n{body:#}"),
+                            runtime_desired_status: RuntimeDesiredStatus::Unavailable,
+                        })
                     }
                 } else if status_code == StatusCode::SERVICE_UNAVAILABLE {
-                    // NOTE: we don't care about the error_code of response here,
-                    // because we want to try it again irrespective of it.
-                    warn!("Unable to suspend pipeline {} because pipeline indicated it is not (yet) ready", pipeline.id);
-                    State::Unchanged
-                } else {
-                    error!("Suspend operation of pipeline {} returned an error. Status: {status_code}. Body: {body}", pipeline.id);
-                    State::TransitionToStopping {
-                        error: Some(Self::error_response_from_json(
-                            self.pipeline_id,
-                            status_code,
-                            &body,
-                        )),
-                        suspend_info: None,
+                    match serde_json::from_value::<ErrorResponse>(body.clone()) {
+                        Ok(error_response) => {
+                            match error_response.error_code.as_ref() {
+                                "Initializing" => Ok(ExtendedRuntimeStatus { // For backward compatibility
+                                    runtime_status: RuntimeStatus::Initializing,
+                                    runtime_status_details: "".to_string(),
+                                    runtime_desired_status: RuntimeDesiredStatus::Paused
+                                }),
+                                _ => {
+                                    warn!(
+                                        "Pipeline {pipeline_id} status is unavailable because the endpoint responded with 503 Service Unavailable:\n{error_response:?}"
+                                    );
+                                    Ok(ExtendedRuntimeStatus {
+                                        runtime_status: RuntimeStatus::Unavailable,
+                                        runtime_status_details: format!("Pipeline status response (503 Service Unavailable) is an error:\n{error_response:?}"),
+                                        runtime_desired_status: RuntimeDesiredStatus::Unavailable,
+                                    })
+                                },
+                            }
+                        }
+                        Err(e) => Ok(ExtendedRuntimeStatus {
+                            runtime_status: RuntimeStatus::Unavailable,
+                            runtime_status_details: format!("Pipeline status response (503 Service Unavailable) cannot be deserialized due to: {e}. Response was:\n{body:#}"),
+                            runtime_desired_status: RuntimeDesiredStatus::Unavailable,
+                        })
                     }
+                } else {
+                    // All other status codes indicate a fatal error, where the HTTP server is still
+                    // running, but the circuit has failed
+                    let error_response = serde_json::from_value(body.clone()).unwrap_or_else(|e| {
+                        ErrorResponse::from(&RunnerError::PipelineInteractionInvalidResponse {
+                            error: format!("Error response cannot be deserialized due to: {e}. Response was:\n{body:#}"),
+                        })
+                    });
+                    error!("Pipeline {pipeline_id} has fatal runtime error and will be stopped. Error:\n{error_response:?}");
+                    Err(error_response)
                 }
             }
-            Err(e) => match e {
-                InternalRequestError::Timeout { .. } => {
-                    self.logs_sender
-                        .send(LogMessage::new_from_control_plane(
-                            Level::Info,
-                            "Suspend request timed out: either the suspend is taking long (this is the case for large states) or the pipeline may be unresponsive...",
-                        ))
-                        .await;
-                    State::Unchanged
-                }
-                InternalRequestError::Unreachable { error } => {
+            Err(e) => {
+                if self
+                    .provisioned_grace_period_start
+                    .is_some_and(|t| t.elapsed() <= Self::PROVISIONED_GRACE_PERIOD)
+                {
+                    Ok(ExtendedRuntimeStatus {
+                        runtime_status: RuntimeStatus::Initializing,
+                        runtime_status_details: format!("Still in the grace period for initializing. Pipeline status endpoint cannot yet be reached due to: {e}"),
+                        runtime_desired_status: deployment_initial,
+                    })
+                } else {
                     warn!(
-                        "Unable to suspend pipeline {} because it could not be reached due to: {error}",
-                        pipeline.id
+                        "Pipeline {pipeline_id} status is unavailable because the endpoint could not be reached due to: {e}"
                     );
-                    State::Unchanged
+                    Ok(ExtendedRuntimeStatus {
+                        runtime_status: RuntimeStatus::Unavailable,
+                        runtime_status_details: format!(
+                            "Pipeline status endpoint could not be reached due to: {e}"
+                        ),
+                        runtime_desired_status: RuntimeDesiredStatus::Unavailable,
+                    })
                 }
-                InternalRequestError::InvalidResponseBody { error } => {
-                    warn!(
-                        "Unable to suspend pipeline {} because its response body was invalid: {error}",
-                        pipeline.id
-                    );
-                    State::Unchanged
+            }
+        }
+    }
+
+    /// While in `Provisioned` status, probe the pipeline for its latest runtime status.
+    async fn observe_provisioned_pipeline_and_enforce_runtime_status(
+        &mut self,
+        pipeline: &ExtendedPipelineDescrMonitoring,
+    ) -> State {
+        // While provisioned, check the health of the resources
+        if let Err(e) = self.pipeline_handle.check().await {
+            return State::TransitionToStopping {
+                error: Some(ErrorResponse::from_error_nolog(&e)),
+                suspend_info: None,
+            };
+        }
+
+        // Determine deployment location
+        let deployment_location = match pipeline.deployment_location.as_ref() {
+            Some(deployment_location) => deployment_location,
+            None => {
+                return State::TransitionToStopping {
+                    error: Some(ErrorResponse::from_error_nolog(
+                        &RunnerError::AutomatonMissingDeploymentLocation,
+                    )),
+                    suspend_info: None,
                 }
+            }
+        };
+
+        // Determine deployment initial
+        let deployment_initial = match pipeline.deployment_initial.as_ref() {
+            Some(deployment_initial) => *deployment_initial,
+            None => {
+                return State::TransitionToStopping {
+                    error: Some(ErrorResponse::from_error_nolog(
+                        &RunnerError::AutomatonMissingDeploymentInitial,
+                    )),
+                    suspend_info: None,
+                }
+            }
+        };
+
+        // Retrieve runtime status
+        let retrieved_status = self.parse_status_result(
+            deployment_initial,
+            self.http_request_pipeline_json(
+                Method::GET,
+                deployment_location,
+                "status",
+                Self::PIPELINE_STATUS_HTTP_REQUEST_TIMEOUT,
+            )
+            .await,
+        );
+        match retrieved_status {
+            Ok(extended_runtime_status) => {
+                if let Some(prev_runtime_status) = pipeline.deployment_runtime_status {
+                    if let Some(prev_runtime_desired_status) =
+                        pipeline.deployment_runtime_desired_status
+                    {
+                        if prev_runtime_status == extended_runtime_status.runtime_status
+                            && prev_runtime_desired_status
+                                == extended_runtime_status.runtime_desired_status
+                        {
+                            return State::Unchanged;
+                        }
+                    }
+                }
+                if extended_runtime_status.runtime_status == RuntimeStatus::Suspended {
+                    return State::TransitionToStopping {
+                        error: None,
+                        suspend_info: Some(json!({})),
+                    };
+                }
+                State::TransitionToProvisioned {
+                    deployment_location: deployment_location.to_owned(),
+                    extended_runtime_status,
+                    is_initial_transition: false,
+                }
+            }
+            Err(error_response) => State::TransitionToStopping {
+                error: Some(error_response),
+                suspend_info: None,
             },
         }
     }
 
-    /// Transits from `Stopping` towards `Stopped`.
+    /// Transits from `Stopping` towards `Stopped` by deprovisioning the compute resources.
     ///
-    /// Scales down to zero or deallocates the compute resources.
-    ///
-    /// The runner should always be able to eventually delete resources, as they are
-    /// under its control. As such, it does not return an error upon failure to stop,
-    /// but instead does not change the state such that it is retried.
+    /// The runner should always be able to eventually delete compute resources, as they are under
+    /// its control. As such, it does not return an error upon failure to stop, but instead does not
+    /// change the state such that it is retried.
     async fn transit_stopping_towards_stopped(
         &mut self,
         pipeline: &ExtendedPipelineDescrMonitoring,
@@ -1469,13 +1298,12 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         }
     }
 
-    /// Transits storage status from `Clearing` towards `Cleared`.
+    /// Transits storage status from `Clearing` towards `Cleared` by deprovisioning the storage
+    /// resources.
     ///
-    /// Scales down to zero or deallocates the compute resources.
-    ///
-    /// The runner should always be able to eventually delete resources, as they are
-    /// under its control. As such, it does not return an error upon failure to stop,
-    /// but instead does not change the state such that it is retried.
+    /// The runner should always be able to eventually delete storage resources, as they are under
+    /// its control. As such, it does not return an error upon failure to stop, but instead does not
+    /// change the state such that it is retried.
     async fn transit_storage_clearing_to_cleared(
         &mut self,
         pipeline: &ExtendedPipelineDescrMonitoring,
@@ -1644,7 +1472,7 @@ mod test {
                 .await
                 .unwrap();
             assert_eq!(
-                status, pipeline.deployment_status,
+                status, pipeline.deployment_resources_status,
                 "Status does not match; deployment_error: {:?}",
                 pipeline.deployment_error
             );

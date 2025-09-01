@@ -77,7 +77,6 @@ only the program-related core fields, and is used by the compiler to discern whe
         endpoints::pipeline_management::patch_pipeline,
         endpoints::pipeline_management::delete_pipeline,
         endpoints::pipeline_management::post_pipeline_start,
-        endpoints::pipeline_management::post_pipeline_pause,
         endpoints::pipeline_management::post_pipeline_stop,
         endpoints::pipeline_management::post_pipeline_clear,
         endpoints::pipeline_management::get_pipeline_logs,
@@ -98,7 +97,9 @@ only the program-related core fields, and is used by the compiler to discern whe
         endpoints::pipeline_interaction::get_checkpoint_status,
         endpoints::pipeline_interaction::sync_checkpoint,
         endpoints::pipeline_interaction::get_checkpoint_sync_status,
-        endpoints::pipeline_interaction::activate_pipeline,
+        endpoints::pipeline_interaction::post_pipeline_pause,
+        endpoints::pipeline_interaction::post_pipeline_resume,
+        endpoints::pipeline_interaction::post_pipeline_activate,
         endpoints::pipeline_interaction::completion_token,
         endpoints::pipeline_interaction::completion_status,
         endpoints::pipeline_interaction::start_transaction,
@@ -140,8 +141,12 @@ only the program-related core fields, and is used by the compiler to discern whe
 
         // Pipeline
         crate::db::types::pipeline::PipelineId,
-        crate::db::types::pipeline::PipelineStatus,
-        crate::db::types::pipeline::PipelineDesiredStatus,
+        crate::db::types::combined_status::CombinedStatus,
+        crate::db::types::combined_status::CombinedDesiredStatus,
+        crate::db::types::resources_status::ResourcesStatus,
+        crate::db::types::resources_status::ResourcesDesiredStatus,
+        feldera_types::runtime_status::RuntimeStatus,
+        feldera_types::runtime_status::RuntimeDesiredStatus,
         crate::api::endpoints::pipeline_management::PipelineInfo,
         crate::api::endpoints::pipeline_management::PipelineSelectedInfo,
         crate::api::endpoints::pipeline_management::PipelineFieldSelector,
@@ -347,7 +352,6 @@ fn api_scope() -> Scope {
         .service(endpoints::pipeline_management::patch_pipeline)
         .service(endpoints::pipeline_management::delete_pipeline)
         .service(endpoints::pipeline_management::post_pipeline_start)
-        .service(endpoints::pipeline_management::post_pipeline_pause)
         .service(endpoints::pipeline_management::post_pipeline_stop)
         .service(endpoints::pipeline_management::post_pipeline_clear)
         .service(endpoints::pipeline_management::get_pipeline_logs)
@@ -358,7 +362,9 @@ fn api_scope() -> Scope {
         .service(endpoints::pipeline_interaction::sync_checkpoint)
         .service(endpoints::pipeline_interaction::get_checkpoint_status)
         .service(endpoints::pipeline_interaction::get_checkpoint_sync_status)
-        .service(endpoints::pipeline_interaction::activate_pipeline)
+        .service(endpoints::pipeline_interaction::post_pipeline_pause)
+        .service(endpoints::pipeline_interaction::post_pipeline_resume)
+        .service(endpoints::pipeline_interaction::post_pipeline_activate)
         .service(endpoints::pipeline_interaction::post_pipeline_input_connector_action)
         .service(endpoints::pipeline_interaction::get_pipeline_input_connector_status)
         .service(endpoints::pipeline_interaction::get_pipeline_output_connector_status)

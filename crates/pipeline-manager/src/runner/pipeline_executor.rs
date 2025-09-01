@@ -5,7 +5,9 @@ use crate::error::ManagerError;
 use crate::runner::pipeline_logs::LogsSender;
 use async_trait::async_trait;
 use feldera_types::config::{PipelineConfig, StorageConfig};
+use feldera_types::runtime_status::RuntimeDesiredStatus;
 use std::time::Duration;
+use uuid::Uuid;
 
 /// Trait to be implemented by any pipeline runner.
 /// The `PipelineAutomaton` invokes these methods per pipeline.
@@ -39,6 +41,8 @@ pub trait PipelineExecutor: Sync + Send {
     /// checked using `is_provisioned()`.
     async fn provision(
         &mut self,
+        deployment_initial: RuntimeDesiredStatus,
+        deployment_id: &Uuid,
         deployment_config: &PipelineConfig,
         program_binary_url: &str,
         program_version: Version,

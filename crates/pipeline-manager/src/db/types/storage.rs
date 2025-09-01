@@ -1,5 +1,5 @@
 use crate::db::error::DBError;
-use crate::db::types::pipeline::PipelineStatus;
+use crate::db::types::resources_status::ResourcesStatus;
 use serde::{Deserialize, Serialize};
 use std::convert::TryFrom;
 use std::fmt;
@@ -8,7 +8,7 @@ use utoipa::ToSchema;
 
 /// Storage status.
 ///
-/// The storage status can only transition when the pipeline status is `Stopped`.
+/// The storage status can only transition when the resources status is `Stopped`.
 ///
 /// ```text
 ///           Cleared ───┐
@@ -31,7 +31,7 @@ pub enum StorageStatus {
     ///
     /// Being `InUse` restricts what edits can be made when the pipeline is `Stopped`.
     ///
-    /// It remains in this state until the user invokes `/clear`, which transitions
+    /// It remains in this status until the user invokes `/clear`, which transitions
     /// it to `Clearing`.
     InUse,
 
@@ -78,13 +78,13 @@ impl Display for StorageStatus {
 
 /// Validates the storage status transition from current status to a new one.
 pub fn validate_storage_status_transition(
-    pipeline_status: PipelineStatus,
+    resources_status: ResourcesStatus,
     current_status: StorageStatus,
     new_status: StorageStatus,
 ) -> Result<(), DBError> {
-    if pipeline_status != PipelineStatus::Stopped {
+    if resources_status != ResourcesStatus::Stopped {
         return Err(DBError::StorageStatusImmutableUnlessStopped {
-            pipeline_status,
+            resources_status,
             current_status,
             new_status,
         });

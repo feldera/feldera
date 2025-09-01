@@ -7,10 +7,9 @@ use crate::api::endpoints::pipeline_management::{
 };
 use crate::api::error::ApiError;
 use crate::db::error::DBError;
-use crate::db::types::pipeline::{
-    ExtendedPipelineDescr, PipelineDesiredStatus, PipelineId, PipelineStatus,
-};
+use crate::db::types::pipeline::{ExtendedPipelineDescr, PipelineId};
 use crate::db::types::program::{CompilationProfile, ProgramConfig, ProgramError, ProgramStatus};
+use crate::db::types::resources_status::{ResourcesDesiredStatus, ResourcesStatus};
 use crate::db::types::storage::StorageStatus;
 use crate::db::types::utils::{
     validate_program_config, validate_program_info, validate_runtime_config,
@@ -64,13 +63,20 @@ fn extended_pipeline_1() -> ExtendedPipelineDescr {
         program_binary_integrity_checksum: None,
         deployment_config: None,
         deployment_location: None,
-        deployment_status: PipelineStatus::Stopped,
-        deployment_status_since: Default::default(),
-        deployment_desired_status: PipelineDesiredStatus::Stopped,
         deployment_error: None,
         refresh_version: Version(4),
         suspend_info: None,
         storage_status: StorageStatus::Cleared,
+        deployment_id: None,
+        deployment_initial: None,
+        deployment_resources_status: ResourcesStatus::Stopped,
+        deployment_resources_status_since: Default::default(),
+        deployment_resources_desired_status: ResourcesDesiredStatus::Stopped,
+        deployment_resources_desired_status_since: Default::default(),
+        deployment_runtime_status: None,
+        deployment_runtime_status_since: None,
+        deployment_runtime_desired_status: None,
+        deployment_runtime_desired_status_since: None,
     }
 }
 
@@ -134,13 +140,20 @@ fn extended_pipeline_2() -> ExtendedPipelineDescr {
         program_binary_integrity_checksum: None,
         deployment_config: None,
         deployment_location: None,
-        deployment_status: PipelineStatus::Stopped,
-        deployment_status_since: Default::default(),
-        deployment_desired_status: PipelineDesiredStatus::Stopped,
         deployment_error: None,
         refresh_version: Version(1),
         suspend_info: None,
         storage_status: StorageStatus::Cleared,
+        deployment_id: None,
+        deployment_initial: None,
+        deployment_resources_status: ResourcesStatus::Stopped,
+        deployment_resources_status_since: Default::default(),
+        deployment_resources_desired_status: ResourcesDesiredStatus::Stopped,
+        deployment_resources_desired_status_since: Default::default(),
+        deployment_runtime_status: None,
+        deployment_runtime_status_since: None,
+        deployment_runtime_desired_status: None,
+        deployment_runtime_desired_status_since: None,
     }
 }
 
@@ -176,12 +189,24 @@ fn pipeline_info_internal_to_external(pipeline: PipelineInfoInternal) -> Pipelin
                 output_connectors: program_info.output_connectors,
             }
         }),
-        deployment_status: pipeline.deployment_status,
-        deployment_status_since: pipeline.deployment_status_since,
-        deployment_desired_status: pipeline.deployment_desired_status,
         deployment_error: pipeline.deployment_error,
         refresh_version: pipeline.refresh_version,
         storage_status: pipeline.storage_status,
+        deployment_id: pipeline.deployment_id,
+        deployment_initial: pipeline.deployment_initial,
+        deployment_status: pipeline.deployment_status,
+        deployment_status_since: pipeline.deployment_status_since,
+        deployment_desired_status: pipeline.deployment_desired_status,
+        deployment_desired_status_since: pipeline.deployment_desired_status_since,
+        deployment_resources_status: pipeline.deployment_resources_status,
+        deployment_resources_status_since: pipeline.deployment_resources_status_since,
+        deployment_resources_desired_status: pipeline.deployment_resources_desired_status,
+        deployment_resources_desired_status_since: pipeline
+            .deployment_resources_desired_status_since,
+        deployment_runtime_status: pipeline.deployment_runtime_status,
+        deployment_runtime_status_since: pipeline.deployment_runtime_status_since,
+        deployment_runtime_desired_status: pipeline.deployment_runtime_desired_status,
+        deployment_runtime_desired_status_since: pipeline.deployment_runtime_desired_status_since,
     }
 }
 
@@ -223,12 +248,24 @@ fn pipeline_selected_info_internal_to_external(
                 }
             })
         }),
-        deployment_status: pipeline.deployment_status,
-        deployment_status_since: pipeline.deployment_status_since,
-        deployment_desired_status: pipeline.deployment_desired_status,
         deployment_error: pipeline.deployment_error,
         refresh_version: pipeline.refresh_version,
         storage_status: pipeline.storage_status,
+        deployment_id: pipeline.deployment_id,
+        deployment_initial: pipeline.deployment_initial,
+        deployment_status: pipeline.deployment_status,
+        deployment_status_since: pipeline.deployment_status_since,
+        deployment_desired_status: pipeline.deployment_desired_status,
+        deployment_desired_status_since: pipeline.deployment_desired_status_since,
+        deployment_resources_status: pipeline.deployment_resources_status,
+        deployment_resources_status_since: pipeline.deployment_resources_status_since,
+        deployment_resources_desired_status: pipeline.deployment_resources_desired_status,
+        deployment_resources_desired_status_since: pipeline
+            .deployment_resources_desired_status_since,
+        deployment_runtime_status: pipeline.deployment_runtime_status,
+        deployment_runtime_status_since: pipeline.deployment_runtime_status_since,
+        deployment_runtime_desired_status: pipeline.deployment_runtime_desired_status,
+        deployment_runtime_desired_status_since: pipeline.deployment_runtime_desired_status_since,
     }
 }
 
@@ -338,9 +375,9 @@ pub(crate) fn error_unsupported_pipeline_action() -> ErrorResponse {
 
 pub(crate) fn error_illegal_pipeline_action() -> ErrorResponse {
     ErrorResponse::from_error_nolog(&DBError::IllegalPipelineAction {
-            pipeline_status: PipelineStatus::Stopping,
-            current_desired_status: PipelineDesiredStatus::Stopped,
-            new_desired_status: PipelineDesiredStatus::Running,
+            status: ResourcesStatus::Stopping,
+            current_desired_status: ResourcesDesiredStatus::Stopped,
+            new_desired_status: ResourcesDesiredStatus::Provisioned,
             hint: "Cannot restart the pipeline while it is stopping. Wait for it to stop before starting a new instance of the pipeline.".to_string(),
     })
 }
@@ -357,8 +394,8 @@ pub(crate) fn error_illegal_pipeline_storage_action() -> ErrorResponse {
 
 pub(crate) fn error_pipeline_interaction_not_deployed() -> ErrorResponse {
     ErrorResponse::from_error_nolog(&RunnerError::PipelineInteractionNotDeployed {
-        status: PipelineStatus::Stopped,
-        desired_status: PipelineDesiredStatus::Running,
+        status: ResourcesStatus::Stopped,
+        desired_status: ResourcesDesiredStatus::Provisioned,
     })
 }
 

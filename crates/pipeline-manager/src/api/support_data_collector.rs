@@ -1,9 +1,21 @@
+use crate::api::endpoints::config::Configuration;
+use crate::api::error::ApiError;
+use crate::api::main::ServerState;
+use crate::db::error::DBError;
+use crate::db::operations::pipeline::{
+    cleanup_old_support_data_collections, store_support_data_collection,
+};
+use crate::db::storage::Storage;
+use crate::db::types::pipeline::PipelineId;
+use crate::db::types::tenant::TenantId;
+use crate::error::ManagerError;
 use actix_web::http::Method;
 use actix_web::rt::time::timeout;
 use actix_web::HttpResponse;
 use awc::Client;
 use chrono::{DateTime, Utc};
 use feldera_types::error::ErrorResponse;
+use feldera_types::runtime_status::RuntimeStatus;
 use futures_util::StreamExt;
 use log::{debug, error, info};
 use serde::Deserialize;
@@ -14,18 +26,6 @@ use std::sync::Arc;
 use tokio::sync::watch;
 use tokio::time::{sleep, Duration, Instant};
 use utoipa::{IntoParams, ToSchema};
-
-use crate::api::endpoints::config::Configuration;
-use crate::api::error::ApiError;
-use crate::api::main::ServerState;
-use crate::db::error::DBError;
-use crate::db::operations::pipeline::{
-    cleanup_old_support_data_collections, store_support_data_collection,
-};
-use crate::db::storage::Storage;
-use crate::db::types::pipeline::{PipelineId, PipelineStatus};
-use crate::db::types::tenant::TenantId;
-use crate::error::ManagerError;
 
 const COLLECTION_TIMEOUT: Duration = Duration::from_secs(120);
 
@@ -717,7 +717,7 @@ impl SupportDataCollector {
 
         for (tenant_id, pipeline) in running_pipelines {
             // Only collect data for pipelines that are actually running
-            if pipeline.deployment_status == PipelineStatus::Running {
+            if pipeline.deployment_runtime_status == Some(RuntimeStatus::Running) {
                 let pipeline_id = pipeline.id;
 
                 // Check if this pipeline is already scheduled
@@ -829,10 +829,10 @@ impl SupportDataCollector {
         };
 
         // Only collect data for running pipelines
-        if pipeline.deployment_status != PipelineStatus::Running {
+        if pipeline.deployment_runtime_status != Some(RuntimeStatus::Running) {
             debug!(
                 "Removing {} from support data collection schedule (status change to: {:?})",
-                entry.pipeline_id, pipeline.deployment_status
+                entry.pipeline_id, pipeline.deployment_runtime_status
             );
             return Ok(PostCollectionAction::Remove);
         }
@@ -920,6 +920,9 @@ mod tests {
     use crate::db::types::pipeline::PipelineDescr;
     use crate::db::types::program::{RustCompilationInfo, SqlCompilationInfo};
     use crate::db::types::version::Version;
+    use feldera_types::runtime_status::{
+        ExtendedRuntimeStatus, RuntimeDesiredStatus, RuntimeStatus,
+    };
     use serde_json::json;
     use std::sync::Arc;
     use tokio::sync::Mutex;
@@ -1117,15 +1120,20 @@ mod tests {
         // Set deployment status to running
         db.lock()
             .await
-            .set_deployment_desired_status_running(tenant_id, "test_pipeline")
+            .set_deployment_resources_desired_status_provisioned(
+                tenant_id,
+                "test_pipeline",
+                RuntimeDesiredStatus::Running,
+            )
             .await
             .unwrap();
         db.lock()
             .await
-            .transit_deployment_status_to_provisioning(
+            .transit_deployment_resources_status_to_provisioning(
                 tenant_id,
                 pipeline_id,
                 Version(1),
+                Uuid::nil(),
                 json!({
                     "inputs": {}
                 }),
@@ -1134,17 +1142,32 @@ mod tests {
             .unwrap();
         db.lock()
             .await
-            .transit_deployment_status_to_initializing(
+            .transit_deployment_resources_status_to_provisioned(
                 tenant_id,
                 pipeline_id,
                 Version(1),
                 "test-location",
+                ExtendedRuntimeStatus {
+                    runtime_status: RuntimeStatus::Initializing,
+                    runtime_status_details: "".to_string(),
+                    runtime_desired_status: RuntimeDesiredStatus::Running,
+                },
             )
             .await
             .unwrap();
         db.lock()
             .await
-            .transit_deployment_status_to_running(tenant_id, pipeline_id, Version(1))
+            .transit_deployment_resources_status_to_provisioned(
+                tenant_id,
+                pipeline_id,
+                Version(1),
+                "test-location",
+                ExtendedRuntimeStatus {
+                    runtime_status: RuntimeStatus::Running,
+                    runtime_status_details: "".to_string(),
+                    runtime_desired_status: RuntimeDesiredStatus::Running,
+                },
+            )
             .await
             .unwrap();
 
@@ -1181,17 +1204,23 @@ mod tests {
         // Stop and clear the pipeline
         db.lock()
             .await
-            .set_deployment_desired_status_suspended_or_stopped(tenant_id, "test_pipeline", true)
+            .set_deployment_resources_desired_status_stopped(tenant_id, "test_pipeline")
             .await
             .unwrap();
         db.lock()
             .await
-            .transit_deployment_status_to_stopping(tenant_id, pipeline_id, Version(1), None, None)
+            .transit_deployment_resources_status_to_stopping(
+                tenant_id,
+                pipeline_id,
+                Version(1),
+                None,
+                None,
+            )
             .await
             .unwrap();
         db.lock()
             .await
-            .transit_deployment_status_to_stopped(tenant_id, pipeline_id, Version(1))
+            .transit_deployment_resources_status_to_stopped(tenant_id, pipeline_id, Version(1))
             .await
             .unwrap();
         db.lock()
@@ -1287,15 +1316,20 @@ mod tests {
 
         db.lock()
             .await
-            .set_deployment_desired_status_running(tenant_id, "test_pipeline")
+            .set_deployment_resources_desired_status_provisioned(
+                tenant_id,
+                "test_pipeline",
+                RuntimeDesiredStatus::Running,
+            )
             .await
             .unwrap();
         db.lock()
             .await
-            .transit_deployment_status_to_provisioning(
+            .transit_deployment_resources_status_to_provisioning(
                 tenant_id,
                 pipeline_id,
                 Version(1),
+                Uuid::from_u128(1),
                 json!({
                     "inputs": {}
                 }),
@@ -1304,17 +1338,32 @@ mod tests {
             .unwrap();
         db.lock()
             .await
-            .transit_deployment_status_to_initializing(
+            .transit_deployment_resources_status_to_provisioned(
                 tenant_id,
                 pipeline_id,
                 Version(1),
                 "test-location",
+                ExtendedRuntimeStatus {
+                    runtime_status: RuntimeStatus::Initializing,
+                    runtime_status_details: "".to_string(),
+                    runtime_desired_status: RuntimeDesiredStatus::Running,
+                },
             )
             .await
             .unwrap();
         db.lock()
             .await
-            .transit_deployment_status_to_running(tenant_id, pipeline_id, Version(1))
+            .transit_deployment_resources_status_to_provisioned(
+                tenant_id,
+                pipeline_id,
+                Version(1),
+                "test-location",
+                ExtendedRuntimeStatus {
+                    runtime_status: RuntimeStatus::Running,
+                    runtime_status_details: "".to_string(),
+                    runtime_desired_status: RuntimeDesiredStatus::Running,
+                },
+            )
             .await
             .unwrap();
 
@@ -1444,7 +1493,11 @@ mod tests {
         // Start the pipeline
         db.lock()
             .await
-            .set_deployment_desired_status_running(tenant_id, "test_pipeline")
+            .set_deployment_resources_desired_status_provisioned(
+                tenant_id,
+                "test_pipeline",
+                RuntimeDesiredStatus::Running,
+            )
             .await
             .unwrap();
 
@@ -1454,10 +1507,11 @@ mod tests {
 
         db.lock()
             .await
-            .transit_deployment_status_to_provisioning(
+            .transit_deployment_resources_status_to_provisioning(
                 tenant_id,
                 pipeline_id,
                 Version(1),
+                Uuid::from_u128(456),
                 json!({
                     "inputs": {}
                 }),
@@ -1471,11 +1525,16 @@ mod tests {
 
         db.lock()
             .await
-            .transit_deployment_status_to_initializing(
+            .transit_deployment_resources_status_to_provisioned(
                 tenant_id,
                 pipeline_id,
                 Version(1),
                 "test-location",
+                ExtendedRuntimeStatus {
+                    runtime_status: RuntimeStatus::Initializing,
+                    runtime_status_details: "".to_string(),
+                    runtime_desired_status: RuntimeDesiredStatus::Running,
+                },
             )
             .await
             .unwrap();
@@ -1486,7 +1545,17 @@ mod tests {
 
         db.lock()
             .await
-            .transit_deployment_status_to_running(tenant_id, pipeline_id, Version(1))
+            .transit_deployment_resources_status_to_provisioned(
+                tenant_id,
+                pipeline_id,
+                Version(1),
+                "test-location",
+                ExtendedRuntimeStatus {
+                    runtime_status: RuntimeStatus::Running,
+                    runtime_status_details: "".to_string(),
+                    runtime_desired_status: RuntimeDesiredStatus::Running,
+                },
+            )
             .await
             .unwrap();
 
@@ -1499,19 +1568,25 @@ mod tests {
         // Stop the pipeline
         db.lock()
             .await
-            .set_deployment_desired_status_suspended_or_stopped(tenant_id, "test_pipeline", true)
+            .set_deployment_resources_desired_status_stopped(tenant_id, "test_pipeline")
             .await
             .unwrap();
 
         db.lock()
             .await
-            .transit_deployment_status_to_stopping(tenant_id, pipeline_id, Version(1), None, None)
+            .transit_deployment_resources_status_to_stopping(
+                tenant_id,
+                pipeline_id,
+                Version(1),
+                None,
+                None,
+            )
             .await
             .unwrap();
 
         db.lock()
             .await
-            .transit_deployment_status_to_stopped(tenant_id, pipeline_id, Version(1))
+            .transit_deployment_resources_status_to_stopped(tenant_id, pipeline_id, Version(1))
             .await
             .unwrap();
 
@@ -1526,15 +1601,20 @@ mod tests {
         // Start the pipeline again
         db.lock()
             .await
-            .set_deployment_desired_status_running(tenant_id, "test_pipeline")
+            .set_deployment_resources_desired_status_provisioned(
+                tenant_id,
+                "test_pipeline",
+                RuntimeDesiredStatus::Running,
+            )
             .await
             .unwrap();
         db.lock()
             .await
-            .transit_deployment_status_to_provisioning(
+            .transit_deployment_resources_status_to_provisioning(
                 tenant_id,
                 pipeline_id,
                 Version(1),
+                Uuid::from_u128(123),
                 json!({
                     "inputs": {}
                 }),
@@ -1543,17 +1623,32 @@ mod tests {
             .unwrap();
         db.lock()
             .await
-            .transit_deployment_status_to_initializing(
+            .transit_deployment_resources_status_to_provisioned(
                 tenant_id,
                 pipeline_id,
                 Version(1),
                 "test-location",
+                ExtendedRuntimeStatus {
+                    runtime_status: RuntimeStatus::Initializing,
+                    runtime_status_details: "".to_string(),
+                    runtime_desired_status: RuntimeDesiredStatus::Running,
+                },
             )
             .await
             .unwrap();
         db.lock()
             .await
-            .transit_deployment_status_to_running(tenant_id, pipeline_id, Version(1))
+            .transit_deployment_resources_status_to_provisioned(
+                tenant_id,
+                pipeline_id,
+                Version(1),
+                "test-location",
+                ExtendedRuntimeStatus {
+                    runtime_status: RuntimeStatus::Running,
+                    runtime_status_details: "".to_string(),
+                    runtime_desired_status: RuntimeDesiredStatus::Running,
+                },
+            )
             .await
             .unwrap();
 
