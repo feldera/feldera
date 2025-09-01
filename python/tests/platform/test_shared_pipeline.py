@@ -6,6 +6,7 @@ import unittest
 import io
 import tempfile
 import zipfile
+import sys
 
 from tests.shared_test_pipeline import SharedTestPipeline
 from tests import TEST_CLIENT, enterprise_only
@@ -19,6 +20,7 @@ class TestPipeline(SharedTestPipeline):
         """
         CREATE TABLE tbl(id INT) WITH ('materialized' = 'true');
         CREATE MATERIALIZED VIEW v0 AS SELECT * FROM tbl;
+        CREATE MATERIALIZED VIEW "V0" AS SELECT * FROM tbl WHERE id % 2 <> 0;
         """
         pass
 
@@ -64,6 +66,26 @@ class TestPipeline(SharedTestPipeline):
         assert stats.get("global_metrics") is not None
         assert stats.get("inputs") is not None
         assert stats.get("outputs") is not None
+
+    def test_case_sensitive_views_listen(self):
+        all_stream = self.pipeline.listen("v0")
+        odd_stream = self.pipeline.listen("V0")
+
+        self.pipeline.start()
+        self.pipeline.input_json("tbl", [{"id": i} for i in range(10)])
+        self.pipeline.wait_for_completion()
+
+        all = all_stream.to_dict()
+        odd = odd_stream.to_dict()
+
+        expected_all = list(self.pipeline.query("select * from v0"))
+        expected_odd = list(self.pipeline.query('select * from "V0"'))
+
+        def extract_ids(x):
+            return sorted(i["id"] for i in x)
+
+        assert extract_ids(all) == extract_ids(expected_all)
+        assert extract_ids(odd) == extract_ids(expected_odd)
 
     def test_adhoc_query_text(self):
         data = "1\n2\n"

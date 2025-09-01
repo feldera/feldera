@@ -39,14 +39,12 @@ class CallbackRunner(Thread):
         """
 
         pipeline = self.client.get_pipeline(self.pipeline_name)
-        schema = pipeline.program_info["schema"]
 
-        if schema:
-            schemas = [relation for relation in schema["inputs"] + schema["outputs"]]
-            for schema in schemas:
-                if schema["name"] == self.view_name:
-                    self.schema = schema
-                    break
+        schemas = pipeline.tables + pipeline.views
+        for schema in schemas:
+            if schema.name == self.view_name:
+                self.schema = schema
+                break
 
         if self.schema is None:
             raise ValueError(
@@ -66,7 +64,10 @@ class CallbackRunner(Thread):
             case _CallbackRunnerInstruction.PipelineStarted:
                 # listen to the pipeline
                 gen_obj = self.client.listen_to_pipeline(
-                    self.pipeline_name, self.view_name, format="json"
+                    self.pipeline_name,
+                    self.view_name,
+                    format="json",
+                    case_sensitive=self.schema.case_sensitive,
                 )
 
                 # if there is a queue set up, inform the main thread that the listener has been started, and it can
@@ -83,7 +84,7 @@ class CallbackRunner(Thread):
                     seq_no: Optional[int] = chunk.get("sequence_number")
                     if data is not None and seq_no is not None:
                         self.callback(
-                            dataframe_from_response([data], self.schema), seq_no
+                            dataframe_from_response([data], self.schema.fields), seq_no
                         )
 
                     if self.queue:
