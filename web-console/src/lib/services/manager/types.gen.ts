@@ -228,6 +228,27 @@ export type ColumnType = {
   value?: ColumnType | null
 }
 
+export type CombinedDesiredStatus =
+  | 'Stopped'
+  | 'Unavailable'
+  | 'Standby'
+  | 'Paused'
+  | 'Running'
+  | 'Suspended'
+
+export type CombinedStatus =
+  | 'Stopped'
+  | 'Provisioning'
+  | 'Unavailable'
+  | 'Standby'
+  | 'Initializing'
+  | 'Bootstrapping'
+  | 'Replaying'
+  | 'Paused'
+  | 'Running'
+  | 'Suspended'
+  | 'Stopping'
+
 /**
  * Enumeration of possible compilation profiles that can be passed to the Rust compiler
  * as an argument via `cargo build --profile <>`. A compilation profile affects among
@@ -1879,8 +1900,6 @@ export type PipelineConfig = {
   storage_config?: StorageConfig | null
 }
 
-export type PipelineDesiredStatus = 'Stopped' | 'Standby' | 'Paused' | 'Running' | 'Suspended'
-
 export type PipelineFieldSelector = 'all' | 'status'
 
 /**
@@ -1894,10 +1913,20 @@ export type PipelineId = string
  */
 export type PipelineInfo = {
   created_at: string
-  deployment_desired_status: PipelineDesiredStatus
+  deployment_desired_status: CombinedDesiredStatus
+  deployment_desired_status_since: string
   deployment_error?: ErrorResponse | null
   deployment_id?: string | null
-  deployment_status: PipelineStatus
+  deployment_initial?: RuntimeDesiredStatus | null
+  deployment_resources_desired_status: ResourcesDesiredStatus
+  deployment_resources_desired_status_since: string
+  deployment_resources_status: ResourcesStatus
+  deployment_resources_status_since: string
+  deployment_runtime_desired_status?: RuntimeDesiredStatus | null
+  deployment_runtime_desired_status_since?: string | null
+  deployment_runtime_status?: RuntimeStatus | null
+  deployment_runtime_status_since?: string | null
+  deployment_status: CombinedStatus
   deployment_status_since: string
   description: string
   id: PipelineId
@@ -1925,10 +1954,20 @@ export type PipelineInfo = {
  */
 export type PipelineSelectedInfo = {
   created_at: string
-  deployment_desired_status: PipelineDesiredStatus
+  deployment_desired_status: CombinedDesiredStatus
+  deployment_desired_status_since: string
   deployment_error?: ErrorResponse | null
   deployment_id?: string | null
-  deployment_status: PipelineStatus
+  deployment_initial?: RuntimeDesiredStatus | null
+  deployment_resources_desired_status: ResourcesDesiredStatus
+  deployment_resources_desired_status_since: string
+  deployment_resources_status: ResourcesStatus
+  deployment_resources_status_since: string
+  deployment_runtime_desired_status?: RuntimeDesiredStatus | null
+  deployment_runtime_desired_status_since?: string | null
+  deployment_runtime_status?: RuntimeStatus | null
+  deployment_runtime_status_since?: string | null
+  deployment_status: CombinedStatus
   deployment_status_since: string
   description: string
   id: PipelineId
@@ -1948,84 +1987,6 @@ export type PipelineSelectedInfo = {
   udf_toml?: string | null
   version: Version
 }
-
-/**
- * Pipeline status.
- *
- * This type represents the status of the pipeline tracked by the pipeline runner and observed by
- * the API client via the `GET /v0/pipelines/{name}` endpoint.
- *
- * ### The lifecycle of a pipeline
- *
- * The following automaton captures the lifecycle of the pipeline.
- * Individual statuses and transitions of the automaton are described below.
- *
- * * Statuses labeled with the hourglass symbol (⌛) are **timed** statuses. The automaton stays in
- * timed status until the corresponding operation completes or until it transitions to become
- * failed after the pre-defined timeout  period expires.
- *
- * * Some transitions can be initiated by calling an API endpoint (e.g., `/start`). These
- * endpoints only express desired state, and are applied asynchronously by the automaton.
- *
- * ```text
- * /start /pause /standby (early start failed)
- * ┌───────────────────┐
- * │                   ▼
- * Stopped ◄────────── Stopping
- * /start │                   ▲
- * /pause │                   │ /stop
- * /standby │                   │ OR: timeout (from Provisioning)
- * ▼                   │ OR: fatal runtime or resource error
- * ⌛Provisioning ────────────│
- * │                   │
- * │                   │
- * ▼                   │
- * ┌───────────────────────┴─────┐
- * │ Initializing, Unavailable,  │
- * │   Standby, Bootstrapping,   │
- * │ Replaying, Paused, Running, │
- * │    Suspended, Terminated    │
- * └─────────────────────────────┘
- * Runtime statuses, can be changed by calling
- * /start, /pause, /standby, and /stop
- * ```
- *
- * ### Desired and actual status
- *
- * We use the desired state model to manage the lifecycle of a pipeline. In this model, the
- * pipeline has two status attributes associated with it: the **desired** status, which represents
- * what the user would like the pipeline to do, and the **current** status, which represents the
- * actual (last observed) status of the pipeline. The pipeline runner service continuously monitors
- * the desired status field to decide where to steer the pipeline towards.
- *
- * There are five desired statuses:
- * - `Standby` (set by invoking `/standby`)
- * - `Running` (set by invoking `/start`)
- * - `Paused` (set by invoking `/pause`)
- * - `Suspended` (set by invoking `/stop?force=false`)
- * - `Stopped` (set by invoking `/stop?force=true`)
- *
- * Of these, `Suspended` is a "virtual" desired status. Once the runner has successfully suspended,
- * it will change the desired status to `Stopped`. Not all endpoints can be called at all times.
- *
- * The user can monitor the current status of the pipeline via the `GET /v0/pipelines/{name}`
- * endpoint. In a typical scenario, the user first sets the desired status, e.g., by invoking the
- * `/start` endpoint, and then polls the `GET /v0/pipelines/{name}` endpoint to monitor the actual
- * status of the pipeline until its `deployment_status` attribute changes to `Running` indicating
- * that the pipeline has been successfully provisioned, or `Stopped` with `deployment_error` being
- * set.
- */
-export type PipelineStatus =
-  | 'Stopped'
-  | 'Provisioning'
-  | 'Unavailable'
-  | 'Standby'
-  | 'Initializing'
-  | 'Bootstrapping'
-  | 'Replaying'
-  | 'Paused'
-  | 'Running'
-  | 'Stopping'
 
 /**
  * Create a new pipeline (POST), or fully update an existing pipeline (PUT).
@@ -2371,6 +2332,48 @@ export type ResourceConfig = {
   storage_mb_max?: number | null
 }
 
+export type ResourcesDesiredStatus = 'Stopped' | 'Provisioned'
+
+/**
+ * Pipeline resources status.
+ *
+ * ```text
+ * /start (early start failed)
+ * ┌───────────────────┐
+ * │                   ▼
+ * Stopped ◄────────── Stopping
+ * /start │                   ▲
+ * │                   │ /stop?force=true
+ * │                   │ OR: timeout (from Provisioning)
+ * ▼                   │ OR: fatal runtime or resource error
+ * ⌛Provisioning ────────────│ OR: runtime status is Suspended
+ * │                   │
+ * │                   │
+ * ▼                   │
+ * Provisioned ─────────────┘
+ * ```
+ *
+ * ### Desired and actual status
+ *
+ * We use the desired state model to manage the lifecycle of a pipeline. In this model, the
+ * pipeline has two status attributes associated with it: the **desired** status, which represents
+ * what the user would like the pipeline to do, and the **current** status, which represents the
+ * actual (last observed) status of the pipeline. The pipeline runner service continuously monitors
+ * the desired status field to decide where to steer the pipeline towards.
+ *
+ * There are two desired statuses:
+ * - `Provisioned` (set by invoking `/start`)
+ * - `Stopped` (set by invoking `/stop?force=true`)
+ *
+ * The user can monitor the current status of the pipeline via the `GET /v0/pipelines/{name}`
+ * endpoint. In a typical scenario, the user first sets the desired status, e.g., by invoking the
+ * `/start` endpoint, and then polls the `GET /v0/pipelines/{name}` endpoint to monitor the actual
+ * status of the pipeline until its `deployment_resources_status` attribute changes to
+ * `Provisioned` indicating that the pipeline has been successfully provisioned, or `Stopped` with
+ * `deployment_error` being set.
+ */
+export type ResourcesStatus = 'Stopped' | 'Provisioning' | 'Provisioned' | 'Stopping'
+
 /**
  * Iceberg REST catalog config.
  */
@@ -2648,6 +2651,24 @@ export type RuntimeConfig = {
    */
   workers?: number
 }
+
+export type RuntimeDesiredStatus = 'Unavailable' | 'Standby' | 'Paused' | 'Running' | 'Suspended'
+
+/**
+ * Runtime status of the pipeline.
+ *
+ * Of the statuses, only `Unavailable` is determined by the runner. All other statuses are
+ * determined by the pipeline and taken over by the runner.
+ */
+export type RuntimeStatus =
+  | 'Unavailable'
+  | 'Standby'
+  | 'Initializing'
+  | 'Bootstrapping'
+  | 'Replaying'
+  | 'Paused'
+  | 'Running'
+  | 'Suspended'
 
 /**
  * Rust compilation information.
@@ -3381,6 +3402,19 @@ export type PatchPipelineResponse = PipelineInfo
 
 export type PatchPipelineError = ErrorResponse
 
+export type PostPipelineActivateData = {
+  path: {
+    /**
+     * Unique pipeline name
+     */
+    pipeline_name: string
+  }
+}
+
+export type PostPipelineActivateResponse = CheckpointResponse
+
+export type PostPipelineActivateError = ErrorResponse
+
 export type CheckpointPipelineData = {
   path: {
     /**
@@ -3643,7 +3677,7 @@ export type PipelineAdhocSqlResponse = Blob | File
 
 export type PipelineAdhocSqlError = ErrorResponse
 
-export type PostPipelineStandbyData = {
+export type PostPipelineResumeData = {
   path: {
     /**
      * Unique pipeline name
@@ -3652,9 +3686,9 @@ export type PostPipelineStandbyData = {
   }
 }
 
-export type PostPipelineStandbyResponse = unknown
+export type PostPipelineResumeResponse = unknown
 
-export type PostPipelineStandbyError = ErrorResponse
+export type PostPipelineResumeError = ErrorResponse
 
 export type PostPipelineStartData = {
   path: {
@@ -3662,6 +3696,13 @@ export type PostPipelineStartData = {
      * Unique pipeline name
      */
     pipeline_name: string
+  }
+  query?: {
+    /**
+     * The `initial` parameter determines whether to after provisioning the pipeline make it
+     * become `standby`, `paused` or `running` (only valid values).
+     */
+    initial?: string
   }
 }
 
@@ -4093,6 +4134,23 @@ export type $OpenApiTs = {
       }
     }
   }
+  '/v0/pipelines/{pipeline_name}/activate': {
+    post: {
+      req: PostPipelineActivateData
+      res: {
+        /**
+         * Pipeline activation initiated
+         */
+        '202': CheckpointResponse
+        /**
+         * Pipeline with that name does not exist
+         */
+        '404': ErrorResponse
+        '500': ErrorResponse
+        '503': ErrorResponse
+      }
+    }
+  }
   '/v0/pipelines/{pipeline_name}/checkpoint': {
     post: {
       req: CheckpointPipelineData
@@ -4374,9 +4432,9 @@ export type $OpenApiTs = {
       }
     }
   }
-  '/v0/pipelines/{pipeline_name}/standby': {
+  '/v0/pipelines/{pipeline_name}/resume': {
     post: {
-      req: PostPipelineStandbyData
+      req: PostPipelineResumeData
       res: {
         /**
          * Action is accepted and is being performed

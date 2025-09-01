@@ -52,6 +52,8 @@
       .with('Running', () => [...stop, 'kill', 'pause'])
       .with('Pausing', () => [...stop, 'kill', 'delete'])
       .with('Paused', () => [...stop, 'kill', 'start'])
+      .with('Suspending', () => ['kill', 'delete'])
+      .with('Suspended', () => ['kill', 'delete'])
       .with('Standby', () => ['kill', 'delete'])
       .with('Bootstrapping', () => ['kill', 'delete'])
       .with('Replaying', () => ['kill', 'delete'])
@@ -70,12 +72,11 @@
       (_, p) => p
     )
   )
-  let actions = $derived(
-    selected.length === 0
-      ? []
-      : selected
-          .map(statusActions)
-          .reduce(
+  let actions = $derived.by(() => {
+    let actions =
+      selected.length === 0
+        ? []
+        : selected.map(statusActions).reduce(
             (acc, cur) =>
               intersect2(
                 acc,
@@ -86,17 +87,24 @@
               ),
             availableActions
           )
-          .map((action) =>
-            match(action)
-              .with('start', () => btnStart)
-              .with('pause', () => btnPause)
-              .with('stop', () => btnStop)
-              .with('kill', () => btnKill)
-              .with('delete', () => btnDelete)
-              .with('clear', () => btnClear)
-              .exhaustive()
-          )
-  )
+
+    if (selected.length === pipelines.length && !actions.includes('stop')) {
+      // If every pipeline is selected, add 'stop' action
+      actions.splice(-2, 0, 'stop')
+    }
+
+    return actions.map((action) =>
+      match(action)
+        .with('start', () => btnStart)
+        .with('pause', () => btnPause)
+        .with('stop', () => btnStop)
+        .with('kill', () => btnKill)
+        .with('delete', () => btnDelete)
+        .with('clear', () => btnClear)
+        .exhaustive()
+    )
+  })
+
   const globalDialog = useGlobalDialog()
   const api = usePipelineManager()
   let postPipelinesAction = (action: PipelineAction) => {

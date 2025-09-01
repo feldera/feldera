@@ -344,6 +344,28 @@ to None
   }
 } as const
 
+export const $CombinedDesiredStatus = {
+  type: 'string',
+  enum: ['Stopped', 'Unavailable', 'Standby', 'Paused', 'Running', 'Suspended']
+} as const
+
+export const $CombinedStatus = {
+  type: 'string',
+  enum: [
+    'Stopped',
+    'Provisioning',
+    'Unavailable',
+    'Standby',
+    'Initializing',
+    'Bootstrapping',
+    'Replaying',
+    'Paused',
+    'Running',
+    'Suspended',
+    'Stopping'
+  ]
+} as const
+
 export const $CompilationProfile = {
   type: 'string',
   description: `Enumeration of possible compilation profiles that can be passed to the Rust compiler
@@ -2579,11 +2601,6 @@ of the compiled program (e.g., connectors). Storage configuration,
 if applicable, is set by the runner.`
 } as const
 
-export const $PipelineDesiredStatus = {
-  type: 'string',
-  enum: ['Stopped', 'Standby', 'Paused', 'Running', 'Suspended']
-} as const
-
 export const $PipelineFieldSelector = {
   type: 'string',
   enum: ['all', 'status']
@@ -2615,11 +2632,16 @@ It both includes fields which are user-provided and system-generated.`,
     'program_status',
     'program_status_since',
     'program_error',
+    'refresh_version',
+    'storage_status',
     'deployment_status',
     'deployment_status_since',
     'deployment_desired_status',
-    'refresh_version',
-    'storage_status'
+    'deployment_desired_status_since',
+    'deployment_resources_status',
+    'deployment_resources_status_since',
+    'deployment_resources_desired_status',
+    'deployment_resources_desired_status_since'
   ],
   properties: {
     created_at: {
@@ -2627,7 +2649,11 @@ It both includes fields which are user-provided and system-generated.`,
       format: 'date-time'
     },
     deployment_desired_status: {
-      $ref: '#/components/schemas/PipelineDesiredStatus'
+      $ref: '#/components/schemas/CombinedDesiredStatus'
+    },
+    deployment_desired_status_since: {
+      type: 'string',
+      format: 'date-time'
     },
     deployment_error: {
       allOf: [
@@ -2642,8 +2668,56 @@ It both includes fields which are user-provided and system-generated.`,
       format: 'uuid',
       nullable: true
     },
+    deployment_initial: {
+      allOf: [
+        {
+          $ref: '#/components/schemas/RuntimeDesiredStatus'
+        }
+      ],
+      nullable: true
+    },
+    deployment_resources_desired_status: {
+      $ref: '#/components/schemas/ResourcesDesiredStatus'
+    },
+    deployment_resources_desired_status_since: {
+      type: 'string',
+      format: 'date-time'
+    },
+    deployment_resources_status: {
+      $ref: '#/components/schemas/ResourcesStatus'
+    },
+    deployment_resources_status_since: {
+      type: 'string',
+      format: 'date-time'
+    },
+    deployment_runtime_desired_status: {
+      allOf: [
+        {
+          $ref: '#/components/schemas/RuntimeDesiredStatus'
+        }
+      ],
+      nullable: true
+    },
+    deployment_runtime_desired_status_since: {
+      type: 'string',
+      format: 'date-time',
+      nullable: true
+    },
+    deployment_runtime_status: {
+      allOf: [
+        {
+          $ref: '#/components/schemas/RuntimeStatus'
+        }
+      ],
+      nullable: true
+    },
+    deployment_runtime_status_since: {
+      type: 'string',
+      format: 'date-time',
+      nullable: true
+    },
     deployment_status: {
-      $ref: '#/components/schemas/PipelineStatus'
+      $ref: '#/components/schemas/CombinedStatus'
     },
     deployment_status_since: {
       type: 'string',
@@ -2724,11 +2798,16 @@ If an optional field is not selected (i.e., is \`None\`), it will not be seriali
     'program_version',
     'program_status',
     'program_status_since',
+    'refresh_version',
+    'storage_status',
     'deployment_status',
     'deployment_status_since',
     'deployment_desired_status',
-    'refresh_version',
-    'storage_status'
+    'deployment_desired_status_since',
+    'deployment_resources_status',
+    'deployment_resources_status_since',
+    'deployment_resources_desired_status',
+    'deployment_resources_desired_status_since'
   ],
   properties: {
     created_at: {
@@ -2736,7 +2815,11 @@ If an optional field is not selected (i.e., is \`None\`), it will not be seriali
       format: 'date-time'
     },
     deployment_desired_status: {
-      $ref: '#/components/schemas/PipelineDesiredStatus'
+      $ref: '#/components/schemas/CombinedDesiredStatus'
+    },
+    deployment_desired_status_since: {
+      type: 'string',
+      format: 'date-time'
     },
     deployment_error: {
       allOf: [
@@ -2751,8 +2834,56 @@ If an optional field is not selected (i.e., is \`None\`), it will not be seriali
       format: 'uuid',
       nullable: true
     },
+    deployment_initial: {
+      allOf: [
+        {
+          $ref: '#/components/schemas/RuntimeDesiredStatus'
+        }
+      ],
+      nullable: true
+    },
+    deployment_resources_desired_status: {
+      $ref: '#/components/schemas/ResourcesDesiredStatus'
+    },
+    deployment_resources_desired_status_since: {
+      type: 'string',
+      format: 'date-time'
+    },
+    deployment_resources_status: {
+      $ref: '#/components/schemas/ResourcesStatus'
+    },
+    deployment_resources_status_since: {
+      type: 'string',
+      format: 'date-time'
+    },
+    deployment_runtime_desired_status: {
+      allOf: [
+        {
+          $ref: '#/components/schemas/RuntimeDesiredStatus'
+        }
+      ],
+      nullable: true
+    },
+    deployment_runtime_desired_status_since: {
+      type: 'string',
+      format: 'date-time',
+      nullable: true
+    },
+    deployment_runtime_status: {
+      allOf: [
+        {
+          $ref: '#/components/schemas/RuntimeStatus'
+        }
+      ],
+      nullable: true
+    },
+    deployment_runtime_status_since: {
+      type: 'string',
+      format: 'date-time',
+      nullable: true
+    },
     deployment_status: {
-      $ref: '#/components/schemas/PipelineStatus'
+      $ref: '#/components/schemas/CombinedStatus'
     },
     deployment_status_since: {
       type: 'string',
@@ -2834,86 +2965,6 @@ If an optional field is not selected (i.e., is \`None\`), it will not be seriali
       $ref: '#/components/schemas/Version'
     }
   }
-} as const
-
-export const $PipelineStatus = {
-  type: 'string',
-  description: `Pipeline status.
-
-This type represents the status of the pipeline tracked by the pipeline runner and observed by
-the API client via the \`GET /v0/pipelines/{name}\` endpoint.
-
-### The lifecycle of a pipeline
-
-The following automaton captures the lifecycle of the pipeline.
-Individual statuses and transitions of the automaton are described below.
-
-* Statuses labeled with the hourglass symbol (⌛) are **timed** statuses. The automaton stays in
-timed status until the corresponding operation completes or until it transitions to become
-failed after the pre-defined timeout  period expires.
-
-* Some transitions can be initiated by calling an API endpoint (e.g., \`/start\`). These
-endpoints only express desired state, and are applied asynchronously by the automaton.
-
-\`\`\`text
-/start /pause /standby (early start failed)
-┌───────────────────┐
-│                   ▼
-Stopped ◄────────── Stopping
-/start │                   ▲
-/pause │                   │ /stop
-/standby │                   │ OR: timeout (from Provisioning)
-▼                   │ OR: fatal runtime or resource error
-⌛Provisioning ────────────│
-│                   │
-│                   │
-▼                   │
-┌───────────────────────┴─────┐
-│ Initializing, Unavailable,  │
-│   Standby, Bootstrapping,   │
-│ Replaying, Paused, Running, │
-│    Suspended, Terminated    │
-└─────────────────────────────┘
-Runtime statuses, can be changed by calling
-/start, /pause, /standby, and /stop
-\`\`\`
-
-### Desired and actual status
-
-We use the desired state model to manage the lifecycle of a pipeline. In this model, the
-pipeline has two status attributes associated with it: the **desired** status, which represents
-what the user would like the pipeline to do, and the **current** status, which represents the
-actual (last observed) status of the pipeline. The pipeline runner service continuously monitors
-the desired status field to decide where to steer the pipeline towards.
-
-There are five desired statuses:
-- \`Standby\` (set by invoking \`/standby\`)
-- \`Running\` (set by invoking \`/start\`)
-- \`Paused\` (set by invoking \`/pause\`)
-- \`Suspended\` (set by invoking \`/stop?force=false\`)
-- \`Stopped\` (set by invoking \`/stop?force=true\`)
-
-Of these, \`Suspended\` is a "virtual" desired status. Once the runner has successfully suspended,
-it will change the desired status to \`Stopped\`. Not all endpoints can be called at all times.
-
-The user can monitor the current status of the pipeline via the \`GET /v0/pipelines/{name}\`
-endpoint. In a typical scenario, the user first sets the desired status, e.g., by invoking the
-\`/start\` endpoint, and then polls the \`GET /v0/pipelines/{name}\` endpoint to monitor the actual
-status of the pipeline until its \`deployment_status\` attribute changes to \`Running\` indicating
-that the pipeline has been successfully provisioned, or \`Stopped\` with \`deployment_error\` being
-set.`,
-  enum: [
-    'Stopped',
-    'Provisioning',
-    'Unavailable',
-    'Standby',
-    'Initializing',
-    'Bootstrapping',
-    'Replaying',
-    'Paused',
-    'Running',
-    'Stopping'
-  ]
 } as const
 
 export const $PostPutPipeline = {
@@ -3438,6 +3489,52 @@ for an instance of this pipeline`,
   }
 } as const
 
+export const $ResourcesDesiredStatus = {
+  type: 'string',
+  enum: ['Stopped', 'Provisioned']
+} as const
+
+export const $ResourcesStatus = {
+  type: 'string',
+  description: `Pipeline resources status.
+
+\`\`\`text
+/start (early start failed)
+┌───────────────────┐
+│                   ▼
+Stopped ◄────────── Stopping
+/start │                   ▲
+│                   │ /stop?force=true
+│                   │ OR: timeout (from Provisioning)
+▼                   │ OR: fatal runtime or resource error
+⌛Provisioning ────────────│ OR: runtime status is Suspended
+│                   │
+│                   │
+▼                   │
+Provisioned ─────────────┘
+\`\`\`
+
+### Desired and actual status
+
+We use the desired state model to manage the lifecycle of a pipeline. In this model, the
+pipeline has two status attributes associated with it: the **desired** status, which represents
+what the user would like the pipeline to do, and the **current** status, which represents the
+actual (last observed) status of the pipeline. The pipeline runner service continuously monitors
+the desired status field to decide where to steer the pipeline towards.
+
+There are two desired statuses:
+- \`Provisioned\` (set by invoking \`/start\`)
+- \`Stopped\` (set by invoking \`/stop?force=true\`)
+
+The user can monitor the current status of the pipeline via the \`GET /v0/pipelines/{name}\`
+endpoint. In a typical scenario, the user first sets the desired status, e.g., by invoking the
+\`/start\` endpoint, and then polls the \`GET /v0/pipelines/{name}\` endpoint to monitor the actual
+status of the pipeline until its \`deployment_resources_status\` attribute changes to
+\`Provisioned\` indicating that the pipeline has been successfully provisioned, or \`Stopped\` with
+\`deployment_error\` being set.`,
+  enum: ['Stopped', 'Provisioning', 'Provisioned', 'Stopping']
+} as const
+
 export const $RestCatalogConfig = {
   type: 'object',
   description: 'Iceberg REST catalog config.',
@@ -3859,6 +3956,29 @@ used during a step.`,
       minimum: 0
     }
   }
+} as const
+
+export const $RuntimeDesiredStatus = {
+  type: 'string',
+  enum: ['Unavailable', 'Standby', 'Paused', 'Running', 'Suspended']
+} as const
+
+export const $RuntimeStatus = {
+  type: 'string',
+  description: `Runtime status of the pipeline.
+
+Of the statuses, only \`Unavailable\` is determined by the runner. All other statuses are
+determined by the pipeline and taken over by the runner.`,
+  enum: [
+    'Unavailable',
+    'Standby',
+    'Initializing',
+    'Bootstrapping',
+    'Replaying',
+    'Paused',
+    'Running',
+    'Suspended'
+  ]
 } as const
 
 export const $RustCompilationInfo = {

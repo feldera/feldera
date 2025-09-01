@@ -54,6 +54,16 @@ export const pipelineStatusColor = (status: PipelineStatus): StatusColors => {
       dot: 'preset-filled-tertiary-200-800',
       deploymentChip: 'preset-filled-tertiary-200-800'
     }))
+    .with('Suspending', () => ({
+      chip: 'preset-filled-secondary-200-800',
+      dot: 'preset-filled-secondary-200-800',
+      deploymentChip: 'preset-filled-secondary-200-800'
+    }))
+    .with('Suspended', () => ({
+      chip: 'bg-blue-200 dark:bg-blue-800',
+      dot: 'bg-blue-400 dark:bg-blue-600',
+      deploymentChip: 'bg-blue-200 dark:bg-blue-800'
+    }))
     .with('Stopping', () => ({
       chip: 'preset-filled-secondary-200-800',
       dot: 'preset-filled-secondary-200-800',

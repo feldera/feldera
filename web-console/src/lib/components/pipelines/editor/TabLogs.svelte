@@ -98,6 +98,8 @@
         // =============
         'Provisioning',
         'Initializing',
+        'Suspending',
+        'Suspended',
         'Standby',
         'Bootstrapping',
         'Replaying',

@@ -122,7 +122,9 @@ groups related actions into multi-action dropdowns when multiple options are ava
 
   let isPremium = usePremiumFeatures()
 
-  const stopButtons = ((isPremium.value ? (['_stop', '_kill'] as const) : (['_kill', '_stop'] as const)))
+  const stopButtons = isPremium.value
+    ? (['_stop', '_kill'] as const)
+    : (['_kill', '_stop'] as const)
 
   // Helper function to get raw actions for current pipeline status
   const getRawActions = (status: typeof pipeline.current.status) => {
@@ -171,6 +173,21 @@ groups related actions into multi-action dropdowns when multiple options are ava
       .with('Paused', () => [
         ...stopButtons,
         '_resume',
+        '_saveFile',
+        '_configurations',
+        '_storage_indicator',
+        '_delete'
+      ])
+      .with('Suspending', () => [
+        '_kill',
+        '_spinner',
+        '_saveFile',
+        '_configurations',
+        '_storage_indicator',
+        '_delete'
+      ])
+      .with('Suspended', () => [
+        '_kill',
         '_saveFile',
         '_configurations',
         '_storage_indicator',
@@ -305,7 +322,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
 
   const performStartAction = async (
     action: PipelineAction,
-    pipelineName: string,
+    pipelineName: string
     // nextStatus: PipelineStatus
   ) => {
     const callbacks =

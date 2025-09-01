@@ -84,7 +84,7 @@
   </div>
 </div>
 <Datatable headless {table}>
-  <table class="max-w-[1500px] p-1">
+  <table class="p-1">
     <thead>
       <tr>
         <th class="w-10 px-2 text-left"

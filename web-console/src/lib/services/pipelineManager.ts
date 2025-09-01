@@ -5,7 +5,8 @@ import {
   putPipeline as _putPipeline,
   patchPipeline as _patchPipeline,
   deletePipeline as _deletePipeline,
-  type PipelineStatus as _PipelineStatus,
+  type CombinedStatus as _CombinedStatus,
+  type CombinedDesiredStatus as _CombinedDesiredStatus,
   type ProgramStatus as _ProgramStatus,
   postPipelineStart,
   postPipelinePause,
@@ -28,7 +29,9 @@ import {
   type SqlCompilerMessage,
   type PostPutPipeline,
   type ProgramError,
-  type PipelineDesiredStatus
+  type RuntimeDesiredStatus,
+  postPipelineResume,
+  postPipelineActivate
 } from '$lib/services/manager'
 export type {
   // PipelineDescr,
@@ -80,14 +83,30 @@ const toCompilerOutput = (programError: ProgramError | null | undefined) => {
 const _postPipelineAction = ({
   path
 }: {
-  path: { pipeline_name: string; action: 'start' | 'pause' | 'stop' | 'kill' | 'clear' }
+  path: {
+    pipeline_name: string
+    action:
+      | 'start'
+      | 'start_paused'
+      | 'pause'
+      | 'resume'
+      | 'standby'
+      | 'activate'
+      | 'stop'
+      | 'kill'
+      | 'clear'
+  }
 }) =>
   match(path.action)
-    .with('start', () => postPipelineStart({ path }))
+    .with('start', () => postPipelineStart({ path, query: { initial: 'running' } }))
+    .with('resume', () => postPipelineResume({ path }))
     .with('pause', () => postPipelinePause({ path }))
     .with('stop', 'kill', (action) =>
       postPipelineStop({ path, query: { force: action === 'kill' } })
     )
+    .with('standby', () => postPipelineStart({ path, query: { initial: 'standby' } }))
+    .with('activate', () => postPipelineActivate({ path }))
+    .with('start_paused', () => postPipelineStart({ path, query: { initial: 'paused' } }))
     .with('clear', () => postPipelineClear({ path }))
     .exhaustive()
 
@@ -95,11 +114,11 @@ export type PipelineStatus = ReturnType<typeof consolidatePipelineStatus>['statu
 
 const consolidatePipelineStatus = (
   programStatus: ProgramStatus,
-  pipelineStatus: _PipelineStatus,
-  desiredStatus: PipelineDesiredStatus,
+  deploymentStatus: _CombinedStatus,
+  desiredStatus: _CombinedDesiredStatus,
   pipelineError: ErrorResponse | null | undefined
 ) => {
-  const status = match([pipelineStatus, desiredStatus, programStatus])
+  const status = match([deploymentStatus, desiredStatus, programStatus])
     .with(['Stopped', P.any, 'Pending'], () => ({
       Queued: { cause: desiredStatus === 'Stopped' ? ('compile' as const) : ('upgrade' as const) }
     }))
@@ -132,6 +151,8 @@ const consolidatePipelineStatus = (
     .with(['Paused', P.any, P._], () => 'Paused' as const)
     .with(['Running', 'Paused', P._], () => 'Pausing' as const)
     .with(['Running', 'Stopped', P._], () => 'Stopping' as const)
+    .with(['Suspended', 'Suspended', P._], () => 'Suspended' as const)
+    .with([P._, 'Suspended', P._], () => 'Suspending' as const)
     .with(['Standby', P._, P._], () => 'Standby' as const)
     .with(['Bootstrapping', P._, P._], () => 'Bootstrapping' as const)
     .with(['Replaying', P._, P._], () => 'Replaying' as const)
@@ -139,7 +160,7 @@ const consolidatePipelineStatus = (
     .with(['Unavailable', P.any, P.any], () => 'Unavailable' as const)
     .otherwise(() => {
       throw new Error(
-        `Unable to consolidatePipelineStatus: ${pipelineStatus} ${desiredStatus} ${pipelineError} ${programStatus}`
+        `Unable to consolidatePipelineStatus: ${deploymentStatus} ${desiredStatus} ${pipelineError} ${programStatus}`
       )
     })
 
@@ -162,6 +183,8 @@ export const programStatusOf = (status: PipelineStatus) =>
       'Paused',
       'Stopping',
       'Stopped',
+      'Suspending',
+      'Suspended',
       'Standby',
       'Bootstrapping',
       'Replaying',
@@ -372,11 +395,13 @@ export const deletePipeline = async (pipeline_name: string) => {
 
 export type PipelineAction =
   | 'start'
+  | 'start_paused'
   | 'pause'
+  | 'resume'
+  | 'standby'
+  | 'activate'
   | 'stop'
   | 'kill'
-  | 'start_paused'
-  | 'resume'
   | 'clear'
 
 export const postPipelineAction = async (pipeline_name: string, action: PipelineAction) => {
@@ -384,7 +409,7 @@ export const postPipelineAction = async (pipeline_name: string, action: Pipeline
     _postPipelineAction({
       path: {
         pipeline_name,
-        action: action === 'start_paused' ? 'pause' : action === 'resume' ? 'start' : action
+        action
       }
     }),
     (v) => v
