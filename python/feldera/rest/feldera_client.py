@@ -830,6 +830,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         backpressure: bool = True,
         array: bool = False,
         timeout: Optional[float] = None,
+        case_sensitive: bool = False,
     ):
         """
         Listen for updates to views for pipeline, yields the chunks of data
@@ -845,6 +846,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             "json" format, the default value is False
 
         :param timeout: The amount of time in seconds to listen to the stream for
+        :param case_sensitive: True if the table name is case sensitive, False by default
         """
 
         params = {
@@ -854,6 +856,8 @@ Reason: The pipeline is in a STOPPED state due to the following error:
 
         if format == "json":
             params["array"] = _prepare_boolean_input(array)
+
+        table_name = f'"{table_name}"' if case_sensitive else table_name
 
         resp = self.http.post(
             path=f"/pipelines/{pipeline_name}/egress/{table_name}",

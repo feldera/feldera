@@ -60,7 +60,7 @@ def ensure_dataframe_has_columns(df: pd.DataFrame):
         )
 
 
-def dataframe_from_response(buffer: list[list[dict]], schema: dict):
+def dataframe_from_response(buffer: list[list[dict]], fields: list[dict]):
     """
     Converts the response from Feldera to a pandas DataFrame.
     """
@@ -70,7 +70,7 @@ def dataframe_from_response(buffer: list[list[dict]], schema: dict):
     decimal_col = []
     uuid_col = []
 
-    for column in schema["fields"]:
+    for column in fields:
         column_name = column["name"]
         if not column["case_sensitive"]:
             column_name = column_name.lower()
