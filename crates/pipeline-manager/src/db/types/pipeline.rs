@@ -221,7 +221,7 @@ pub struct ExtendedPipelineDescr {
     /// Identifier of the current deployment.
     pub deployment_id: Option<Uuid>,
 
-    /// Identifier of the current deployment.
+    /// Initial runtime desired status of the current deployment.
     pub deployment_initial: Option<RuntimeDesiredStatus>,
 
     /// Resources status of the current deployment.
