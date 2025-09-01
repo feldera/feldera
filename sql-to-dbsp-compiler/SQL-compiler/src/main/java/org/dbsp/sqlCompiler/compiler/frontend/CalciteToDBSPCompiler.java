@@ -62,6 +62,7 @@ import org.apache.calcite.rex.RexLiteral;
 import org.apache.calcite.rex.RexNode;
 import org.apache.calcite.rex.RexOver;
 import org.apache.calcite.rex.RexWindowBound;
+import org.apache.calcite.rex.RexWindowBounds;
 import org.apache.calcite.rex.RexWindowExclusion;
 import org.apache.calcite.sql.SqlDataTypeSpec;
 import org.apache.calcite.sql.SqlIdentifier;
@@ -2616,7 +2617,16 @@ public class CalciteToDBSPCompiler extends RelVisitor
             GroupAndAggregates result = switch (call.getAggregation().getKind()) {
                 case FIRST_VALUE, LAST_VALUE -> new FirstLastAggregate(
                         compiler, window, group, windowFieldIndex, call);
-                case LAG, LEAD -> new LeadLagAggregates(compiler, window, group, windowFieldIndex);
+                case LAG, LEAD -> {
+                    String agg = Utilities.singleQuote(call.getAggregation().getKind().toString());
+                    if (group.isRows)
+                        throw new UnimplementedException(agg + " with ROWS not yet implemented",
+                                457, CalciteObject.create(window));
+                    if (call.ignoreNulls())
+                        throw new UnimplementedException(agg + " with IGNORE NULLS not yet implemented",
+                                CalciteObject.create(window));
+                    yield new LeadLagAggregates(compiler, window, group, windowFieldIndex);
+                }
                 default -> (isUnbounded(group) && group.orderKeys.getFieldCollations().isEmpty()) ?
                             new SimpleAggregates(compiler, window, group, windowFieldIndex) :
                             new RangeAggregates(compiler, window, group, windowFieldIndex);
@@ -2802,8 +2812,30 @@ public class CalciteToDBSPCompiler extends RelVisitor
                 int windowFieldIndex, AggregateCall call) {
             super(compiler, window, group, windowFieldIndex);
             this.call = call;
-            if (!isUnbounded(group))
-                throw new UnimplementedException("FIRST_VALUE/LAST_VALUE only supported with UNBOUNDED RANGE",
+            String agg = call.getAggregation().getKind().toString();
+            boolean canImplement = false;
+            // If the range is unbounded, we can do it
+            if (isUnbounded(group)) {
+                canImplement = true;
+            } else if (call.getAggregation().kind == SqlKind.FIRST_VALUE) {
+                if (group.lowerBound.isUnboundedPreceding() &&
+                        group.upperBound.isCurrentRow()) {
+                    // These combinations are equivalent to unbounded with RANGE or ROWS
+                    canImplement = true;
+                }
+            } else if (call.getAggregation().kind == SqlKind.LAST_VALUE) {
+                if (group.upperBound.isUnboundedFollowing() &&
+                        group.lowerBound.isCurrentRow()) {
+                    // These combinations are equivalent to unbounded with RANGE or ROWS
+                    canImplement = true;
+                }
+            }
+            if (this.call.ignoreNulls()) {
+                throw new UnimplementedException(agg + " with IGNORE NULLS ",
+                        CalciteObject.create(window));
+            }
+            if (!canImplement)
+                throw new UnimplementedException(agg + " with bounded range",
                         CalciteObject.create(window));
             if (group.orderKeys.getFieldCollations().isEmpty()) {
                 this.compiler.compiler.reportWarning(
@@ -2830,6 +2862,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
             DBSPSimpleOperator index = this.compiler.indexWindow(this.window, this.group);
             RelNode input1 = this.window.getInput();
             DBSPType inputRowType1 = this.compiler.convertType(input1.getRowType(), false);
+            if (call.ignoreNulls())
+                throw new UnimplementedException(call.name + " with IGNORE NULLS", node);
 
             // Generate comparison function for sorting the vector
             boolean reverse = this.getKind() == SqlKind.LAST_VALUE;
@@ -3277,9 +3311,6 @@ public class CalciteToDBSPCompiler extends RelVisitor
     List<GroupAndAggregates> splitWindow(LogicalWindow window, int windowFieldIndex) {
         List<GroupAndAggregates> result = new ArrayList<>();
         for (Window.Group group: window.groups) {
-            if (group.isRows)
-                throw new UnimplementedException("WINDOW aggregate with ROWS/ROW_NUMBER not yet implemented",
-                        457, CalciteObject.create(window));
             List<AggregateCall> calls = group.getAggregateCalls(window);
             GroupAndAggregates previous = null;
             // Must keep call in the same order as in the original list,

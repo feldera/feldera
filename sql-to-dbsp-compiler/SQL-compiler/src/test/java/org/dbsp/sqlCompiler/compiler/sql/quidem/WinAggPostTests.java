@@ -111,19 +111,6 @@ public class WinAggPostTests extends PostBaseTests {
                 +--------+--------+-------+----+---+-----+
                 (8 rows)
 
-                select *, first_value(ename) over (partition by deptno order by gender range unbounded preceding) from emp;
-                 ename | deptno | gender | first_value
-                -------+--------+--------+-------------
-                 Jane  |     10 | F      | Jane
-                 Bob   |     10 | M      | Jane
-                 Eric  |     20 | M      | Eric
-                 Alice |     30 | F      | Alice
-                 Susan |     30 | F      | Alice
-                 Eve   |     50 | F      | Eve
-                 Adam  |     50 | M      | Eve
-                 Grace |     60 | F      | Grace
-                (8 rows)
-
                 -- [CALCITE-6011] Add the planner rule that pushes the Filter past a Window
                 -- Get the initial result which not push filter past window.
                 select gender, count(*) over(partition by gender order by ename) as count1 from emp;
@@ -161,7 +148,21 @@ public class WinAggPostTests extends PostBaseTests {
     public void test0() {
         // Constant argument to aggregate, issue 4010
         // validated on Postgres
-        this.qs("""
+        this.qs(""" 
+                select *, first_value(ename) over (partition by deptno order by gender range unbounded preceding) from emp;
+                 ename | deptno | gender | first_value
+                -------+--------+--------+-------------
+                 Jane|       10 | F| Jane
+                 Bob|        10 | M| Jane
+                 Eric|       20 | M| Eric
+                 Alice|      30 | F| Alice
+                 Susan|      30 | F| Alice
+                 Eve|        50 | F| Eve
+                 Adam|       50 | M| Eve
+                 Grace|      60 | F| Grace
+                 Wilma|         | F| Wilma
+                (9 rows)
+                
                 select gender,deptno,
                 sum(1) over (partition by gender,deptno) as count1
                 from emp;
