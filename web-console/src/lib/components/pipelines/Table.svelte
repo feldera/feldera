@@ -65,11 +65,9 @@
   const { formatElapsedTime } = useElapsedTime()
 </script>
 
-<div
-  class="relative mb-6 mt-5 flex h-10 flex-col items-center justify-end gap-4 sm:-mt-7 sm:flex-row md:mb-0"
->
+<div class="relative -mt-7 mb-6 flex flex-col items-center justify-end gap-4 md:mb-0 md:flex-row">
   <select
-    class="select ml-auto w-40 sm:ml-0"
+    class="select ml-auto w-40 md:ml-0"
     onchange={(e) => {
       statusFilter.value = filterStatuses.find((v) => e.currentTarget.value === v[0])![0]
       statusFilter.set()
@@ -79,7 +77,7 @@
       <option value={filter[0]}>{filter[0]}</option>
     {/each}
   </select>
-  <div class="ml-auto flex gap-4 sm:ml-0">
+  <div class="ml-auto flex gap-4 md:ml-0">
     {@render preHeaderEnd?.()}
   </div>
 </div>
