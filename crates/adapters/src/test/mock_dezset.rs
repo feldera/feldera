@@ -273,13 +273,12 @@ where
         Self {
             buffers: buffers
                 .into_iter()
-                .map(|buffer| {
+                .flat_map(|buffer| {
                     (buffer as Box<dyn Any>)
                         .downcast::<MockDeZSetStreamBuffer<T, U>>()
                         .unwrap()
                         .updates
                 })
-                .flatten()
                 .collect(),
             handle: zset.clone(),
         }

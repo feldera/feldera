@@ -342,13 +342,12 @@ impl Parser for DummyParser {
         Box::new(DummyStagedBuffers {
             data: buffers
                 .into_iter()
-                .map(|buffer| {
+                .filter_map(|buffer| {
                     (buffer as Box<dyn Any>)
                         .downcast::<DummyInputBuffer>()
                         .unwrap()
                         .data
                 })
-                .flatten()
                 .collect(),
             handle: self.0.clone(),
         })
