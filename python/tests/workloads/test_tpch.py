@@ -1,41 +1,245 @@
-import os
+import sys
+import time
 import unittest
+from feldera.pipeline import Pipeline
+from feldera.testutils import (
+    IndexSpec,
+    ViewSpec,
+    build_pipeline,
+    check_for_endpoint_errors,
+    checkpoint_pipeline,
+    generate_program,
+    log,
+    number_of_processed_records,
+    run_workload,
+    transaction,
+    unique_pipeline_name,
+    validate_outputs,
+)
+import tempfile
+import os
+import argparse
+from typing import List, Optional
 
-from string import Template
-from feldera.testutils import run_workload
+
+class TPCHTestConfig:
+    def __init__(
+        self,
+        mode: str,
+        input_mode: str,
+        s3_bucket: Optional[str] = None,
+        s3_prefix: Optional[str] = None,
+        s3_path: Optional[str] = None,
+        s3_region: Optional[str] = None,
+        input_dir: Optional[str] = None,
+    ):
+        self.mode = mode
+
+        if mode not in ["transaction", "stream", "checkpoint"]:
+            raise ValueError(f"Unknown mode: {mode}")
+
+        self.input_mode = input_mode
+
+        if self.input_mode == "file":
+            self.input_dir = input_dir
+            if not self.input_dir:
+                raise ValueError("input_dir must be specified if input_mode is 'file'")
+        elif self.input_mode == "s3":
+            self.s3_bucket = s3_bucket
+
+            if not self.s3_bucket:
+                raise ValueError("s3_bucket must be specified if input_mode is 's3'")
+
+            self.s3_prefix = s3_prefix
+            if not self.s3_prefix:
+                raise ValueError("s3_prefix must be specified if input_mode is 's3'")
+
+            self.s3_region = s3_region
+            if not self.s3_region:
+                raise ValueError("s3_region must be specified if input_mode is 's3'")
+
+        elif self.input_mode == "delta":
+            self.s3_path = s3_path
+            if not self.s3_path:
+                raise ValueError("s3_path must be specified if input_mode is 'delta'")
+
+            self.s3_region = s3_region
+            if not self.s3_region:
+                raise ValueError("s3_region must be specified if input_mode is 'delta'")
+        else:
+            raise ValueError(f"Unknown input mode: {self.input_mode}")
+
+    def __repr__(self):
+        return f"IndexSpec(name={self.name!r},columns={self.columns!r})"
 
 
-def mk_config(table: str) -> str:
-    TPCH_BUCKET = os.environ.get("TPCH_BUCKET_URL", "s3://batchtofeldera")
-    TPCH_BUCKET_REGION = os.environ.get("TPCH_BUCKET_REGION", "ap-southeast-2")
+def run_cli():
+    parser = argparse.ArgumentParser(description="TPC-H test")
 
-    if os.environ.get("AWS_ACCESS_KEY_ID") and os.environ.get("AWS_SECRET_ACCESS_KEY"):
-        aws_access = Template("""
-            "aws_access_key_id": "$aws_access_key_id",
-            "aws_secret_access_key": "$aws_secret_access_key",
-    """).substitute(
-            aws_access_key_id=os.environ.get("AWS_ACCESS_KEY_ID"),
-            aws_secret_access_key=os.environ.get("AWS_SECRET_ACCESS_KEY"),
+    parser.add_argument(
+        "--mode",
+        default="transaction",
+        choices=["transaction", "stream", "checkpoint"],
+        help="Test mode: 'transaction' (default), 'stream' or 'checkpoint'. In 'transaction' mode, data is ingested in a single transactions. This mode is used for testing and benchmarking transactions."
+        " In 'stream' mode, data is ingested without transactions. This mode is used for testing and benchmarking incremental processing."
+        " In 'checkpoint' mode, the dataset is split into segments; the pipeline ingests a segment in a series of transactions, making a checkpoint mid-segment. The pipeline is then shutdown and restarted from the last checkpoint. This mode is used for testing checkpointing and bootstrapping.",
+    )
+
+    parser.add_argument(
+        "--input-dir",
+        nargs="?",
+        help="Path to the input data directory. Use this setting to ingest input data from local files. The directory should contain the TPC-H CSV files named as follows: lineitem.csv, orders.csv, part.csv, customer.csv, supplier.csv, partsupp.csv, nation.csv, region.csv.",
+    )
+
+    parser.add_argument(
+        "--s3-bucket",
+        nargs="?",
+        help="S3 bucket containing the input dataset. Use this setting to ingest data using the S3 input connector.",
+    )
+
+    parser.add_argument(
+        "--s3-prefix",
+        nargs="?",
+        help="S3 prefix within the bucket specified via --s3-bucket containing the input dataset. The S3 location should contain the TPC-H CSV files named as follows: lineitem.csv, orders.csv, part.csv, customer.csv, supplier.csv, partsupp.csv, nation.csv, region.csv.",
+    )
+
+    parser.add_argument(
+        "--s3-path",
+        nargs="?",
+        help="S3 bucket and prefix containing the input dataset in the DeltaLake format. Use this setting to ingest data using the DeltaLake input connector.",
+    )
+
+    parser.add_argument(
+        "--s3-region",
+        nargs="?",
+        help="S3 bucket region. Required if --s3-bucket or --s3-path is specified.",
+    )
+
+    args = parser.parse_args()
+
+    if sum(x is not None for x in (args.s3_bucket, args.s3_path, args.input_dir)) > 1:
+        raise ValueError(
+            "At most one of --input_dir, --s3_path, --s3_bucket can be specified"
         )
+
+    if args.input_dir:
+        input_mode = "file"
+        s3_path = None
+        s3_region = None
+    elif args.s3_bucket:
+        input_mode = "s3"
+        s3_region = args.s3_region
+    elif args.s3_path:
+        input_mode = "delta"
+        s3_path = args.s3_path
+        s3_region = args.s3_region
+    else:
+        input_mode = "delta"
+        s3_path = "s3://batchtofeldera"
+        s3_region = "ap-southeast-2"
+
+    mode = args.mode
+
+    log(f"Test mode: {mode}")
+    log(f"Input mode: {input_mode}")
+
+    config = TPCHTestConfig(
+        mode,
+        input_mode,
+        s3_bucket=args.s3_bucket,
+        s3_prefix=args.s3_prefix,
+        s3_region=s3_region,
+        s3_path=s3_path,
+        input_dir=args.input_dir,
+    )
+
+    tpch_test(config)
+
+
+def delta_input_connector(s3_path: str, region: str, table: str) -> str:
+    if os.environ.get("AWS_ACCESS_KEY_ID") and os.environ.get("AWS_SECRET_ACCESS_KEY"):
+        aws_access = f"""
+            "aws_access_key_id": "{os.environ.get("AWS_ACCESS_KEY_ID")}",
+            "aws_secret_access_key": "{os.environ.get("AWS_SECRET_ACCESS_KEY")}",
+        """
     else:
         aws_access = '"aws_skip_signature": "true",'
 
-    return Template(""""config": {
-            "uri": "$tpch_bucket/$table",
-            $aws_access
-            "aws_region": "$tpch_bucket_region",
-            "mode": "snapshot"
-        }""").substitute(
-        table=table,
-        aws_access=aws_access,
-        tpch_bucket=TPCH_BUCKET,
-        tpch_bucket_region=TPCH_BUCKET_REGION,
-    )
+    return f"""{{
+        "transport": {{
+            "name": "delta_table_input",
+            "config": {{
+                "uri": "{s3_path}/{table}",
+                {aws_access}
+                "aws_region": "{region}",
+                "mode": "snapshot"
+            }}
+        }}
+    }}"""
+
+
+def file_input_connector(path: str, table: str) -> str:
+    return f"""{{
+        "transport": {{
+            "name": "file_input",
+            "config": {{
+                "path": "{path}/{table}.csv"
+            }}
+        }},
+        "format": {{
+            "name": "csv",
+            "config": {{
+                "headers": true
+            }}
+        }}
+    }}"""
+
+
+def s3_input_connector(bucket: str, prefix: str, region: str, table: str) -> str:
+    if os.environ.get("AWS_ACCESS_KEY_ID") and os.environ.get("AWS_SECRET_ACCESS_KEY"):
+        aws_access = f"""
+            "aws_access_key_id": "{os.environ.get("AWS_ACCESS_KEY_ID")}",
+            "aws_secret_access_key": "{os.environ.get("AWS_SECRET_ACCESS_KEY")}",
+        """
+    else:
+        aws_access = '"aws_skip_signature": "true",'
+
+    return f"""{{
+        "transport": {{
+            "name": "s3_input",
+            "config": {{
+                "bucket_name": "{bucket}",
+                "key": "{prefix}/{table}.csv",
+                {aws_access}
+                "region": "{region}"
+            }}
+        }},
+        "format": {{
+            "name": "csv",
+            "config": {{
+                "headers": true
+            }}
+        }}
+    }}"""
+
+
+def input_connector(config: TPCHTestConfig, table: str) -> str:
+    if config.input_mode == "delta":
+        return delta_input_connector(config.s3_path, config.s3_region, table)
+    elif config.input_mode == "s3":
+        return s3_input_connector(
+            config.s3_bucket, config.s3_prefix, config.s3_region, table
+        )
+    elif config.input_mode == "file":
+        return file_input_connector(config.input_dir, table)
+    else:
+        raise RuntimeError(f"Unknown input mode: {config.input_mode}")
 
 
 # https://github.com/feldera/feldera/issues/4448
-tables = {
-    "lineitem": Template("""
+def tpch_tables(config: TPCHTestConfig):
+    return {
+        "lineitem": f"""
   CREATE TABLE LINEITEM (
           L_ORDERKEY    INTEGER NOT NULL,
           L_PARTKEY     INTEGER NOT NULL,
@@ -52,20 +256,16 @@ tables = {
           L_RECEIPTDATE DATE NOT NULL,
           L_SHIPINSTRUCT CHAR(25) NOT NULL,
           L_SHIPMODE     /*CHAR(10)*/STRING NOT NULL,
-          L_COMMENT      VARCHAR(44) NOT NULL
+          L_COMMENT      VARCHAR(44) NOT NULL,
+          PRIMARY KEY (L_ORDERKEY, L_LINENUMBER)
   ) WITH (
     'materialized' = 'true',
-    'connectors' = '[{
-        "transport": {
-        "name": "delta_table_input",
-        $config
-        }
-    }]'
+    'connectors' = '[{input_connector(config, "lineitem")}]'
 );
-  """).substitute(config=mk_config("lineitem")),
-    "orders": Template("""
+  """,
+        "orders": f"""
   CREATE TABLE ORDERS  (
-          O_ORDERKEY       INTEGER NOT NULL,
+          O_ORDERKEY       INTEGER NOT NULL PRIMARY KEY,
           O_CUSTKEY        INTEGER NOT NULL,
           O_ORDERSTATUS    CHAR(1) NOT NULL,
           O_TOTALPRICE     DECIMAL(15,2) NOT NULL,
@@ -76,18 +276,13 @@ tables = {
           O_COMMENT        VARCHAR(79) NOT NULL
   ) WITH (
     'materialized' = 'true',
-     'connectors' = '[{
-        "transport": {
-        "name": "delta_table_input",
-        $config
-        }
-    }]'
+    'connectors' = '[{input_connector(config, "orders")}]'
 );
-  """).substitute(config=mk_config("orders")),
-    # https://github.com/feldera/feldera/issues/4448
-    "part": Template("""
+  """,
+        # https://github.com/feldera/feldera/issues/4448
+        "part": f"""
   CREATE TABLE PART (
-          P_PARTKEY     INTEGER NOT NULL,
+          P_PARTKEY     INTEGER NOT NULL PRIMARY KEY,
           P_NAME        VARCHAR(55) NOT NULL,
           P_MFGR        CHAR(25) NOT NULL,
           P_BRAND       CHAR(10) NOT NULL,
@@ -98,17 +293,12 @@ tables = {
           P_COMMENT     VARCHAR(23) NOT NULL
   ) WITH (
     'materialized' = 'true',
-     'connectors' = '[{
-        "transport": {
-        "name": "delta_table_input",
-        $config
-        }
-    }]'
+    'connectors' = '[{input_connector(config, "part")}]'
   );
-  """).substitute(config=mk_config("part")),
-    "customer": Template("""
+  """,
+        "customer": f"""
   CREATE TABLE CUSTOMER (
-          C_CUSTKEY     INTEGER NOT NULL,
+          C_CUSTKEY     INTEGER NOT NULL PRIMARY KEY,
           C_NAME        VARCHAR(25) NOT NULL,
           C_ADDRESS     VARCHAR(40) NOT NULL,
           C_NATIONKEY   INTEGER NOT NULL,
@@ -118,17 +308,12 @@ tables = {
           C_COMMENT     VARCHAR(117) NOT NULL
   ) WITH (
     'materialized' = 'true',
-     'connectors' = '[{
-        "transport": {
-        "name": "delta_table_input",
-        $config
-        }
-    }]'
+    'connectors' = '[{input_connector(config, "customer")}]'
  );
-  """).substitute(config=mk_config("customer")),
-    "supplier": Template("""
+  """,
+        "supplier": f"""
   CREATE TABLE SUPPLIER (
-          S_SUPPKEY     INTEGER NOT NULL,
+          S_SUPPKEY     INTEGER NOT NULL PRIMARY KEY,
           S_NAME        CHAR(25) NOT NULL,
           S_ADDRESS     VARCHAR(40) NOT NULL,
           S_NATIONKEY   INTEGER NOT NULL,
@@ -137,66 +322,53 @@ tables = {
           S_COMMENT     VARCHAR(101) NOT NULL
   ) WITH (
     'materialized' = 'true',
-    'connectors' = '[{
-        "transport": {
-        "name": "delta_table_input",
-        $config
-        }
-    }]'
+    'connectors' = '[{input_connector(config, "supplier")}]'
 );
-  """).substitute(config=mk_config("supplier")),
-    "partsupp": Template("""
+  """,
+        "partsupp": f"""
   CREATE TABLE PARTSUPP (
           PS_PARTKEY     INTEGER NOT NULL,
           PS_SUPPKEY     INTEGER NOT NULL,
           PS_AVAILQTY    INTEGER NOT NULL,
           PS_SUPPLYCOST  DECIMAL(15,2)  NOT NULL,
-          PS_COMMENT     VARCHAR(199) NOT NULL
+          PS_COMMENT     VARCHAR(199) NOT NULL,
+          PRIMARY KEY (PS_PARTKEY, PS_SUPPKEY)
   ) WITH (
     'materialized' = 'true',
-    'connectors' = '[{
-        "transport": {
-        "name": "delta_table_input",
-        $config
-        }
-    }]'
+    'connectors' = '[{input_connector(config, "partsupp")}]'
+
 );
-  """).substitute(config=mk_config("partsupp")),
-    "nation": Template("""
+  """,
+        "nation": f"""
   CREATE TABLE NATION  (
-          N_NATIONKEY  INTEGER NOT NULL,
+          N_NATIONKEY  INTEGER NOT NULL PRIMARY KEY,
           N_NAME       CHAR(25) NOT NULL,
           N_REGIONKEY  INTEGER NOT NULL,
           N_COMMENT    VARCHAR(152)
   ) WITH (
     'materialized' = 'true',
-    'connectors' = '[{
-        "transport": {
-        "name": "delta_table_input",
-        $config
-        }
-    }]'
+    'connectors' = '[{input_connector(config, "nation")}]'
+
 );
-  """).substitute(config=mk_config("nation")),
-    "region": Template("""
+  """,
+        "region": f"""
   CREATE TABLE REGION  (
-          R_REGIONKEY  INTEGER NOT NULL,
+          R_REGIONKEY  INTEGER NOT NULL PRIMARY KEY,
           R_NAME       CHAR(25) NOT NULL,
           R_COMMENT    VARCHAR(152)
   ) WITH (
     'materialized' = 'true',
-    'connectors' = '[{
-        "transport": {
-        "name": "delta_table_input",
-        $config
-        }
-    }]'
+    'connectors' = '[{input_connector(config, "region")}]'
 );
-""").substitute(config=mk_config("region")),
-}
+""",
+    }
 
-views = {
-    "q1": """
+
+def tpch_views(q_dirs: List[str]) -> List[ViewSpec]:
+    return [
+        ViewSpec(
+            "q1",
+            """
     select
       l_returnflag,
       l_linestatus,
@@ -219,7 +391,23 @@ views = {
       l_returnflag,
       l_linestatus
   """,
-    "q2": """
+            connectors=f"""[{{
+        "index": "q1_idx",
+        "transport": {{
+            "name": "delta_table_output",
+            "config": {{
+                "uri": "file://{q_dirs[1]}",
+                "mode": "truncate"
+            }}
+        }},
+        "enable_output_buffer": true,
+        "max_output_buffer_time_millis": 2000
+    }}]""",
+            indexes=[IndexSpec("q1_idx", ["l_returnflag", "l_linestatus"])],
+        ),
+        ViewSpec(
+            "q2",
+            """
   select
     s_acctbal,
     s_name,
@@ -264,7 +452,10 @@ order by
     s_name,
     p_partkey
 LIMIT 100""",
-    "q3": """
+        ),
+        ViewSpec(
+            "q3",
+            """
   select
     l_orderkey,
     sum(l_extendedprice * (1 - l_discount)) as revenue,
@@ -288,7 +479,25 @@ order by
     revenue desc,
     o_orderdate
 LIMIT 10""",
-    "q4": """
+            connectors=f"""[{{
+        "index": "q3_idx",
+        "transport": {{
+            "name": "delta_table_output",
+            "config": {{
+                "uri": "file://{q_dirs[3]}",
+                "mode": "truncate"
+            }}
+        }},
+        "enable_output_buffer": true,
+        "max_output_buffer_time_millis": 2000
+    }}]""",
+            indexes=[
+                IndexSpec("q3_idx", ["l_orderkey", "o_orderdate", "o_shippriority"])
+            ],
+        ),
+        ViewSpec(
+            "q4",
+            """
 select
     o_orderpriority,
     count(*) as order_count
@@ -310,7 +519,23 @@ group by
     o_orderpriority
 order by
     o_orderpriority""",
-    "q5": """
+            connectors=f"""[{{
+        "index": "q4_idx",
+        "transport": {{
+            "name": "delta_table_output",
+            "config": {{
+                "uri": "file://{q_dirs[4]}",
+                "mode": "truncate"
+            }}
+        }},
+        "enable_output_buffer": true,
+        "max_output_buffer_time_millis": 2000
+    }}]""",
+            indexes=[IndexSpec("q4_idx", ["o_orderpriority"])],
+        ),
+        ViewSpec(
+            "q5",
+            """
   select
     n_name,
     sum(l_extendedprice * (1 - l_discount)) as revenue
@@ -335,7 +560,23 @@ group by
     n_name
 order by
     revenue desc""",
-    "q6": """
+            connectors=f"""[{{
+        "index": "q5_idx",
+        "transport": {{
+            "name": "delta_table_output",
+            "config": {{
+                "uri": "file://{q_dirs[5]}",
+                "mode": "truncate"
+            }}
+        }},
+        "enable_output_buffer": true,
+        "max_output_buffer_time_millis": 2000
+    }}]""",
+            indexes=[IndexSpec("q5_idx", ["n_name"])],
+        ),
+        ViewSpec(
+            "q6",
+            """
   select
     sum(l_extendedprice * l_discount) as revenue
 from
@@ -345,47 +586,75 @@ where
     and l_shipdate < date '1994-01-01' + interval '1' year
     and l_discount between 0.08 - 0.01 and 0.08 + 0.01
     and l_quantity < 24""",
-    "q7": """
-  select
-    supp_nation,
-    cust_nation,
-    l_year,
-    sum(volume) as revenue
-from
-    (
-        select
-            n1.n_name as supp_nation,
-            n2.n_name as cust_nation,
-            extract(year from l_shipdate) as l_year,
-            l_extendedprice * (1 - l_discount) as volume
-        from
-            supplier,
-            lineitem,
-            orders,
-            customer,
-            nation n1,
-            nation n2
-        where
-            s_suppkey = l_suppkey
-            and o_orderkey = l_orderkey
-            and c_custkey = o_custkey
-            and s_nationkey = n1.n_nationkey
-            and c_nationkey = n2.n_nationkey
-            and (
-                (n1.n_name = 'ROMANIA' and n2.n_name = 'INDIA')
-                or (n1.n_name = 'INDIA' and n2.n_name = 'ROMANIA')
-            )
-            and l_shipdate between date '1995-01-01' and date '1996-12-31'
-    ) as shipping
-group by
-    supp_nation,
-    cust_nation,
-    l_year
-order by
-    supp_nation,
-    cust_nation,
-    l_year""",
-    "q8": """
+            connectors=f"""[{{
+        "transport": {{
+            "name": "delta_table_output",
+            "config": {{
+                "uri": "file://{q_dirs[6]}",
+                "mode": "truncate"
+            }}
+        }},
+        "enable_output_buffer": true,
+        "max_output_buffer_time_millis": 2000
+    }}]""",
+        ),
+        #     ViewSpec("q7", """
+        #   select
+        #     supp_nation,
+        #     cust_nation,
+        #     l_year,
+        #     sum(volume) as revenue
+        # from
+        #     (
+        #         select
+        #             n1.n_name as supp_nation,
+        #             n2.n_name as cust_nation,
+        #             extract(year from l_shipdate) as l_year,
+        #             l_extendedprice * (1 - l_discount) as volume
+        #         from
+        #             supplier,
+        #             lineitem,
+        #             orders,
+        #             customer,
+        #             nation n1,
+        #             nation n2
+        #         where
+        #             s_suppkey = l_suppkey
+        #             and o_orderkey = l_orderkey
+        #             and c_custkey = o_custkey
+        #             and s_nationkey = n1.n_nationkey
+        #             and c_nationkey = n2.n_nationkey
+        #             and (
+        #                 (n1.n_name = 'ROMANIA' and n2.n_name = 'INDIA')
+        #                 or (n1.n_name = 'INDIA' and n2.n_name = 'ROMANIA')
+        #             )
+        #             and l_shipdate between date '1995-01-01' and date '1996-12-31'
+        #     ) as shipping
+        # group by
+        #     supp_nation,
+        #     cust_nation,
+        #     l_year
+        # order by
+        #     supp_nation,
+        #     cust_nation,
+        #     l_year""",
+        #     connectors=f"""[{{
+        #         "index": "q7_idx",
+        #         "transport": {{
+        #             "name": "delta_table_output",
+        #             "config": {{
+        #                 "uri": "file://{q_dirs[7]}",
+        #                 "mode": "truncate"
+        #             }}
+        #         }},
+        #         "enable_output_buffer": true,
+        #         "max_output_buffer_time_millis": 2000
+        #     }}]""",
+        #     indexes=[IndexSpec("q7_idx", ["supp_nation", "cust_nation", "l_year"])]
+        # ),
+        ViewSpec(
+            "q8",
+            """
   select
     o_year,
     CAST(ROUND(sum(case
@@ -423,7 +692,23 @@ group by
     o_year
 order by
     o_year""",
-    "q9": """
+            connectors=f"""[{{
+        "index": "q8_idx",
+        "transport": {{
+            "name": "delta_table_output",
+            "config": {{
+                "uri": "file://{q_dirs[8]}",
+                "mode": "truncate"
+            }}
+        }},
+        "enable_output_buffer": true,
+        "max_output_buffer_time_millis": 2000
+    }}]""",
+            indexes=[IndexSpec("q8_idx", ["o_year"])],
+        ),
+        ViewSpec(
+            "q9",
+            """
   select
     nation,
     o_year,
@@ -456,7 +741,23 @@ group by
 order by
 nation,
     o_year desc""",
-    "q10": """
+            connectors=f"""[{{
+        "index": "q9_idx",
+        "transport": {{
+            "name": "delta_table_output",
+            "config": {{
+                "uri": "file://{q_dirs[9]}",
+                "mode": "truncate"
+            }}
+        }},
+        "enable_output_buffer": true,
+        "max_output_buffer_time_millis": 2000
+    }}]""",
+            indexes=[IndexSpec("q9_idx", ["nation", "o_year"])],
+        ),
+        ViewSpec(
+            "q10",
+            """
 select
     c_custkey,
     c_name,
@@ -489,7 +790,23 @@ group by
 order by
     revenue desc
 LIMIT 20""",
-    "q11": """
+            connectors=f"""[{{
+        "index": "q10_idx",
+        "transport": {{
+            "name": "delta_table_output",
+            "config": {{
+                "uri": "file://{q_dirs[10]}",
+                "mode": "truncate"
+            }}
+        }},
+        "enable_output_buffer": true,
+        "max_output_buffer_time_millis": 2000
+    }}]""",
+            indexes=[IndexSpec("q10_idx", ["c_custkey"])],
+        ),
+        ViewSpec(
+            "q11",
+            """
   select
     ps_partkey,
     sum(ps_supplycost * ps_availqty) as value
@@ -502,7 +819,8 @@ where
     and s_nationkey = n_nationkey
     and n_name = 'ARGENTINA'
 group by
-    ps_partkey having
+    ps_partkey
+having
         sum(ps_supplycost * ps_availqty) > (
             select
                 sum(ps_supplycost * ps_availqty) * 0.0001000000
@@ -517,7 +835,23 @@ group by
         )
 order by
     value desc""",
-    "q12": """
+            connectors=f"""[{{
+        "index": "q11_idx",
+        "transport": {{
+            "name": "delta_table_output",
+            "config": {{
+                "uri": "file://{q_dirs[11]}",
+                "mode": "truncate"
+            }}
+        }},
+        "enable_output_buffer": true,
+        "max_output_buffer_time_millis": 2000
+    }}]""",
+            indexes=[IndexSpec("q11_idx", ["ps_partkey"])],
+        ),
+        ViewSpec(
+            "q12",
+            """
   select
     l_shipmode,
     sum(case
@@ -546,7 +880,23 @@ group by
     l_shipmode
 order by
     l_shipmode""",
-    "q13": """
+            connectors=f"""[{{
+        "index": "q12_idx",
+        "transport": {{
+            "name": "delta_table_output",
+            "config": {{
+                "uri": "file://{q_dirs[12]}",
+                "mode": "truncate"
+            }}
+        }},
+        "enable_output_buffer": true,
+        "max_output_buffer_time_millis": 2000
+    }}]""",
+            indexes=[IndexSpec("q12_idx", ["l_shipmode"])],
+        ),
+        ViewSpec(
+            "q13",
+            """
   select
     c_count,
     count(*) as custdist
@@ -567,7 +917,23 @@ group by
 order by
     custdist desc,
     c_count desc""",
-    "q14": """
+            connectors=f"""[{{
+        "index": "q13_idx",
+        "transport": {{
+            "name": "delta_table_output",
+            "config": {{
+                "uri": "file://{q_dirs[13]}",
+                "mode": "truncate"
+            }}
+        }},
+        "enable_output_buffer": true,
+        "max_output_buffer_time_millis": 2000
+    }}]""",
+            indexes=[IndexSpec("q13_idx", ["c_count"])],
+        ),
+        ViewSpec(
+            "q14",
+            """
   select
     CAST(ROUND(100.00 * sum(case
         when p_type like 'PROMO%'
@@ -581,19 +947,20 @@ where
     l_partkey = p_partkey
     and l_shipdate >= date '1994-03-01'
     and l_shipdate < date '1994-03-01' + interval '1' month""",
-    "revenue0": """
-  select
-        l_suppkey as supplier_no,
-        sum(l_extendedprice * (1 - l_discount)) as total_revenue
-    from
-        lineitem
-    where
-        l_shipdate >= date '1993-01-01'
-        and l_shipdate < date '1993-01-01' + interval '3' month
-    group by
-        l_suppkey
-  """,
-    "q15": """
+        ),
+        ViewSpec(
+            "q15",
+            """
+    with revenue0 as (select
+            l_suppkey as supplier_no,
+            sum(l_extendedprice * (1 - l_discount)) as total_revenue
+        from
+            lineitem
+        where
+            l_shipdate >= date '1993-01-01'
+            and l_shipdate < date '1993-01-01' + interval '3' month
+        group by
+            l_suppkey)
   select
     s_suppkey,
     s_name,
@@ -613,7 +980,10 @@ where
     )
 order by
     s_suppkey""",
-    "q16": """
+        ),
+        ViewSpec(
+            "q16",
+            """
   select
     p_brand,
     p_type,
@@ -644,7 +1014,21 @@ order by
     p_brand,
     p_type,
     p_size""",
-    "q17": """
+            connectors=f"""[{{
+        "transport": {{
+            "name": "delta_table_output",
+            "config": {{
+                "uri": "file://{q_dirs[16]}",
+                "mode": "truncate"
+            }}
+        }},
+        "enable_output_buffer": true,
+        "max_output_buffer_time_millis": 2000
+    }}]""",
+        ),
+        ViewSpec(
+            "q17",
+            """
   select
     CAST(ROUND(sum(l_extendedprice) / 7.0) as DECIMAL(15,2)) as avg_yearly
 from
@@ -662,7 +1046,10 @@ where
         where
             l_partkey = p_partkey
     )""",
-    "q18": """
+        ),
+        ViewSpec(
+            "q18",
+            """
   select
     c_name,
     c_custkey,
@@ -696,7 +1083,23 @@ order by
     o_totalprice desc,
     o_orderdate
 LIMIT 100""",
-    "q19": """
+            connectors=f"""[{{
+        "index": "q18_idx",
+        "transport": {{
+            "name": "delta_table_output",
+            "config": {{
+                "uri": "file://{q_dirs[18]}",
+                "mode": "truncate"
+            }}
+        }},
+        "enable_output_buffer": true,
+        "max_output_buffer_time_millis": 2000
+    }}]""",
+            indexes=[IndexSpec("q18_idx", ["c_custkey", "o_orderkey"])],
+        ),
+        ViewSpec(
+            "q19",
+            """
   select
     sum(l_extendedprice* (1 - l_discount)) as revenue
 from
@@ -732,7 +1135,10 @@ where
         and l_shipmode in ('AIR', 'AIR REG')
         and l_shipinstruct = 'DELIVER IN PERSON'
     )""",
-    "q20": """
+        ),
+        ViewSpec(
+            "q20",
+            """
   select
     s_name,
     s_address
@@ -770,7 +1176,10 @@ where
     and n_name = 'IRAN'
 order by
     s_name""",
-    "q21": """
+        ),
+        ViewSpec(
+            "q21",
+            """
   select
     s_name,
     count(*) as numwait
@@ -812,7 +1221,23 @@ order by
     s_name
 LIMIT 100
 """,
-    "q22": """
+            connectors=f"""[{{
+        "index": "q21_idx",
+        "transport": {{
+            "name": "delta_table_output",
+            "config": {{
+                "uri": "file://{q_dirs[21]}",
+                "mode": "truncate"
+            }}
+        }},
+        "enable_output_buffer": true,
+        "max_output_buffer_time_millis": 2000
+    }}]""",
+            indexes=[IndexSpec("q21_idx", ["s_name"])],
+        ),
+        ViewSpec(
+            "q22",
+            """
   select
     cntrycode,
     count(*) as numcust,
@@ -850,13 +1275,186 @@ group by
     cntrycode
 order by
     cntrycode""",
-}
+            connectors=f"""[{{
+        "index": "q22_idx",
+        "transport": {{
+            "name": "delta_table_output",
+            "config": {{
+                "uri": "file://{q_dirs[22]}",
+                "mode": "truncate"
+            }}
+        }},
+        "enable_output_buffer": true,
+        "max_output_buffer_time_millis": 2000
+    }}]""",
+            indexes=[IndexSpec("q22_idx", ["cntrycode"])],
+        ),
+    ]
 
 
-class TestPipelineBuilder(unittest.TestCase):
-    def test_aggregate_joins(self):
-        run_workload("tpc-h-test", tables, views)
+def tpch_test_segment(
+    pipeline: Pipeline,
+    tables: dict,
+    views: List[ViewSpec],
+    expected_processed_records,
+    segment_size: int,
+) -> tuple[bool, int]:
+    """Run a test segment.
+
+    Start the pipeline (from a checkpoint if one exists), run a series of transactions followed by streaming ingest periods,
+    until the pipeline processed segment_size records. A checkpoint is created halfway through the segment, or at the end. The
+    pipeline is then paused,outputs validated, and the pipeline stopped.
+    """
+
+    # Start pipeline.
+    start_time = time.monotonic()
+    log(
+        f"Starting pipeline to process {segment_size} records, starting from (approximately) {expected_processed_records} processed records"
+    )
+    pipeline.start()
+    log(f"Pipeline started in {time.monotonic() - start_time} seconds")
+
+    # Current number of processed records.
+    initial_processed_records = number_of_processed_records(pipeline)
+
+    log(
+        f"Initial processed records at the start of a segment: {initial_processed_records}"
+    )
+
+    if initial_processed_records < expected_processed_records:
+        raise RuntimeError(
+            f"Expected at least {expected_processed_records} processed records on startup, got {initial_processed_records}"
+        )
+
+    # Expected number of processed records after this segment.
+    expected_processed_records = initial_processed_records + segment_size
+
+    # Make a checkpoint halfway through the segment after processing this many records.
+    halfway_processed_records = (
+        initial_processed_records + expected_processed_records
+    ) >> 1
+
+    checkpoint = False
+
+    while not pipeline.is_complete():
+        current_processed_records = number_of_processed_records(pipeline)
+        log(
+            f"Processed {current_processed_records} total records so far (processed {current_processed_records - initial_processed_records} records in this segment)"
+        )
+
+        if current_processed_records >= expected_processed_records:
+            log("Сompleting test segment")
+            break
+
+        # Transaction
+        transaction(pipeline, 100)
+        check_for_endpoint_errors(pipeline)
+
+        # Streaming ingest (no transaction)
+        log("Running streaming ingest for 10 seconds")
+        time.sleep(10)
+        check_for_endpoint_errors(pipeline)
+
+        if not checkpoint:
+            processed_before_checkpoint = number_of_processed_records(pipeline)
+
+            if processed_before_checkpoint >= halfway_processed_records:
+                log(
+                    f"Creating checkpoint after processing {processed_before_checkpoint} records"
+                )
+                checkpoint_pipeline(pipeline)
+                checkpoint = True
+
+    if not checkpoint:
+        processed_before_checkpoint = number_of_processed_records(pipeline)
+        log(
+            f"Creating checkpoint at the end of the segment after processing {processed_before_checkpoint} records"
+        )
+        checkpoint(pipeline)
+
+    pipeline.pause()
+
+    # validate outputs
+    validate_outputs(pipeline, tables, views)
+
+    complete = pipeline.is_complete()
+
+    log("Stopping pipeline")
+    pipeline.stop(force=True)
+
+    return (complete, processed_before_checkpoint)
+
+
+def tpch_test(config: TPCHTestConfig):
+    # Directory to store output delta tables.
+    output_dir = tempfile.mkdtemp()
+
+    q_dirs = {}
+
+    for q in range(1, 23):
+        q_dirs[q] = os.path.join(output_dir, f"q{q}")
+        os.makedirs(q_dirs[q], exist_ok=False)
+        log(f"Created directory {q_dirs[q]} for query q{q} output")
+
+    tables = tpch_tables(config)
+    views = tpch_views(q_dirs)
+
+    if config.mode == "checkpoint":
+        pipeline = build_pipeline(
+            unique_pipeline_name("tpc-h-checkpoint"), tables, views
+        )
+
+        last_processed = 0
+        iteration = 1
+        modified_views = views
+        while True:
+            (complete, last_processed) = tpch_test_segment(
+                pipeline, tables, modified_views, last_processed, 100000000
+            )
+            if complete:
+                break
+
+            iteration += 1
+            modified_views = list(
+                map(
+                    lambda view: view.clone_with_name(f"{view.name}_{iteration}"), views
+                )
+            )
+
+            sql = generate_program(tables, modified_views)
+            pipeline.modify(sql=sql)
+
+    elif config.mode == "transaction":
+        run_workload(
+            unique_pipeline_name("tpc-h-transaction"), tables, views, transaction=True
+        )
+    elif config.mode == "stream":
+        run_workload(
+            unique_pipeline_name("tpc-h-stream"), tables, views, transaction=False
+        )
+    else:
+        raise RuntimeError(f"Unknown mode: {config.mode}")
+
+
+class TestTPCH(unittest.TestCase):
+    def test_tpch_transaction(self):
+        config = TPCHTestConfig(
+            "transaction",
+            "delta",
+            s3_path="s3://batchtofeldera",
+            s3_region="ap-southeast-2",
+        )
+        tpch_test(config)
+
+    def test_tpch_stream(self):
+        config = TPCHTestConfig(
+            "stream", "delta", s3_path="s3://batchtofeldera", s3_region="ap-southeast-2"
+        )
+        tpch_test(config)
 
 
 if __name__ == "__main__":
-    unittest.main()
+    if len(sys.argv) > 1:
+        run_cli()
+    else:
+        unittest.main()
