@@ -26,6 +26,7 @@ from tests import FELDERA_TLS_INSECURE, API_KEY, BASE_URL, unique_pipeline_name
 
 API_PREFIX = "/v0"
 
+
 def _base_headers() -> Dict[str, str]:
     headers = {
         "Accept": "application/json",
