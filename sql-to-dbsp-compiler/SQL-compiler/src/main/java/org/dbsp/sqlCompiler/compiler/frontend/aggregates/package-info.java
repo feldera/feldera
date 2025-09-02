@@ -22,13 +22,13 @@
  */
 
 /**
- * Core circuit data structure; includes classes for all DBSP operators.
+ * Classes for implementing aggregates.
  */
 
 @ParametersAreNonnullByDefault
 @FieldsAreNonnullByDefault
 @MethodsAreNonnullByDefault
-package org.dbsp.sqlCompiler.circuit;
+package org.dbsp.sqlCompiler.compiler.frontend.aggregates;
 
 import org.dbsp.util.FieldsAreNonnullByDefault;
 import org.dbsp.util.MethodsAreNonnullByDefault;
