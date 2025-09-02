@@ -152,16 +152,20 @@ const consolidatePipelineStatus = (
     .with(['Running', 'Paused', P._], () => 'Pausing' as const)
     .with(['Running', 'Stopped', P._], () => 'Stopping' as const)
     .with(['Suspended', 'Suspended', P._], () => 'Suspended' as const)
-    .with([P._, 'Suspended', P._], () => 'Suspending' as const)
     .with(['Standby', P._, P._], () => 'Standby' as const)
     .with(['Bootstrapping', P._, P._], () => 'Bootstrapping' as const)
     .with(['Replaying', P._, P._], () => 'Replaying' as const)
     .with(['Running', P.any, P._], () => 'Running' as const)
     .with(['Unavailable', P.any, P.any], () => 'Unavailable' as const)
+    .with([P._, 'Suspended', P._], () => 'Suspending' as const)
     .otherwise(() => {
-      throw new Error(
+      // throw new Error(
+      //   `Unable to consolidatePipelineStatus: ${deploymentStatus} ${desiredStatus} ${pipelineError} ${programStatus}`
+      // )
+      console.error(
         `Unable to consolidatePipelineStatus: ${deploymentStatus} ${desiredStatus} ${pipelineError} ${programStatus}`
       )
+      return 'Unavailable' as const
     })
 
   return {

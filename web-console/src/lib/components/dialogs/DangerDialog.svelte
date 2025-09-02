@@ -17,6 +17,13 @@
     <span class="whitespace-pre-wrap">
       {content.description}
     </span>
+    {#if content.scrollableContent}
+      <div
+        class="bg-surface-100-800-token max-h-[60vh] overflow-y-auto whitespace-pre-wrap rounded border p-2 scrollbar"
+      >
+        {content.scrollableContent}
+      </div>
+    {/if}
   </div>
   <div class="flex flex-col-reverse gap-4 pt-4 sm:flex-row sm:justify-end">
     <button class="btn px-4 preset-filled-surface-50-950" onclick={onClose}> Cancel </button>
