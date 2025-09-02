@@ -45,7 +45,9 @@ import static org.apache.calcite.sql.type.OperandTypes.*;
 import static org.apache.calcite.sql.type.ReturnTypes.ARG1;
 import static org.apache.calcite.util.Static.RESOURCE;
 
-/** Several functions that we define and add to the existing ones. */
+/** Several functions that we define and add to the existing ones.
+ * Unfortunately we cannot replace functions from the Calcite {@link SqlStdOperatorTable}, unless
+ * we give them new names. */
 public class CustomFunctions {
     private final List<NonOptimizedFunction> functions;
     private final HashMap<ProgramIdentifier, ExternalFunction> udf;
