@@ -3,7 +3,12 @@ import DangerDialog from '$lib/components/dialogs/DangerDialog.svelte'
 
 type DialogAction = { name: string; callback: () => void | Promise<any>; 'data-testid'?: string }
 
-export type GlobalDialogContent = { title: string; description: string; onSuccess: DialogAction }
+export type GlobalDialogContent = {
+  title: string
+  description: string
+  scrollableContent?: string
+  onSuccess: DialogAction
+}
 
 let globalDialogState = $state(null as null | Snippet)
 

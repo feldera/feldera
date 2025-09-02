@@ -22,8 +22,10 @@
     selectedPipelines = $bindable()
   }: { pipelines: PipelineThumb[]; selectedPipelines: string[] } = $props()
   const { updatePipelines, updatePipeline } = useUpdatePipelineList()
+  const sortedSelectedPipelines = $derived([...selectedPipelines].sort())
   const availableActions = [
     'start' as const,
+    'resume' as const,
     'pause' as const,
     'stop' as const,
     'kill' as const,
@@ -51,7 +53,7 @@
       .with('Preparing', 'Provisioning', 'Initializing', () => ['kill', 'delete'])
       .with('Running', () => [...stop, 'kill', 'pause'])
       .with('Pausing', () => [...stop, 'kill', 'delete'])
-      .with('Paused', () => [...stop, 'kill', 'start'])
+      .with('Paused', () => [...stop, 'kill', 'resume'])
       .with('Suspending', () => ['kill', 'delete'])
       .with('Suspended', () => ['kill', 'delete'])
       .with('Standby', () => ['kill', 'delete'])
@@ -90,12 +92,13 @@
 
     if (selected.length === pipelines.length && !actions.includes('stop')) {
       // If every pipeline is selected, add 'stop' action
-      actions.splice(-2, 0, 'stop')
+      actions.splice(-2, 0, ...stop, 'kill')
     }
 
     return actions.map((action) =>
       match(action)
         .with('start', () => btnStart)
+        .with('resume', () => btnResume)
         .with('pause', () => btnPause)
         .with('stop', () => btnStop)
         .with('kill', () => btnKill)
@@ -143,6 +146,12 @@
     Start
   </button>
 {/snippet}
+{#snippet btnResume()}
+  <button class="btn preset-tonal-surface" onclick={() => postPipelinesAction('resume')}>
+    <span class="fd fd-play text-[20px]"></span>
+    Resume
+  </button>
+{/snippet}
 {#snippet btnPause()}
   <button class="btn preset-tonal-surface" onclick={() => postPipelinesAction('pause')}>
     <span class="fd fd-pause text-[20px]"></span>
@@ -174,9 +183,11 @@
   </button>
 {/snippet}
 
-{#each actions as action}
-  {@render action()}
-{/each}
+<div class="flex flex-wrap gap-2">
+  {#each actions as action}
+    {@render action()}
+  {/each}
+</div>
 
 {#snippet deleteDialog()}
   <DeleteDialog
@@ -187,9 +198,8 @@
           ? 'You are about to delete 1 pipeline:'
           : 'You are about to delete ' + selectedPipelines.length.toFixed() + ' pipelines:',
       deletePipelines,
-      selectedPipelines.join('\n') +
-        '\n' +
-        'Are you sure? You will lose the associated code and computation state.\nThis action is irreversible.'
+      'Are you sure? You will lose the associated code and computation state.\nThis action is irreversible.',
+      sortedSelectedPipelines.join('\n')
     )()}
     onClose={() => (globalDialog.dialog = null)}
   ></DeleteDialog>
@@ -206,11 +216,10 @@
             selectedPipelines.length.toFixed() +
             ' pipelines:',
       () => postPipelinesAction('clear'),
-      selectedPipelines.join('\n') +
-        '\n' +
-        (selectedPipelines.length === 1
-          ? 'This will delete any checkpoints of this pipeline.'
-          : 'This will delete any checkpoints of these pipelines.')
+      selectedPipelines.length === 1
+        ? 'This will delete any checkpoints of this pipeline.'
+        : 'This will delete any checkpoints of these pipelines.',
+      sortedSelectedPipelines.join('\n')
     )()}
     onClose={() => (globalDialog.dialog = null)}
   ></DeleteDialog>
@@ -225,11 +234,10 @@
           ? 'You are about to stop 1 pipeline:'
           : 'You are about to stop ' + selectedPipelines.length.toFixed() + ' pipelines:',
       () => postPipelinesAction('stop'),
-      selectedPipelines.join('\n') +
-        '\n' +
-        (selectedPipelines.length === 1
-          ? 'The pipeline will stop processing inputs and make a checkpoint of its state.'
-          : 'These pipelines will stop processing inputs and make checkpoints of their states.')
+      selectedPipelines.length === 1
+        ? 'The pipeline will stop processing inputs and make a checkpoint of its state.'
+        : 'These pipelines will stop processing inputs and make checkpoints of their states.',
+      sortedSelectedPipelines.join('\n')
     )()}
     onClose={() => (globalDialog.dialog = null)}
   ></DeleteDialog>
@@ -241,16 +249,15 @@
       'Force stop',
       () =>
         selectedPipelines.length === 1
-          ? 'You are about to forcefully stop 1 pipeline"'
+          ? 'You are about to forcefully stop 1 pipeline:'
           : 'You are about to forcefully stop ' +
             selectedPipelines.length.toFixed() +
             ' pipelines:',
       () => postPipelinesAction('kill'),
-      selectedPipelines.join('\n') +
-        '\n' +
-        (selectedPipelines.length === 1
-          ? 'The pipeline will stop processing inputs without making a checkpoint, leaving only a previous one, if any.'
-          : 'These pipelines will stop processing inputs without making checkpoints, leaving only previous ones, if any.')
+      selectedPipelines.length === 1
+        ? 'The pipeline will stop processing inputs without making a checkpoint, leaving only a previous one, if any.'
+        : 'These pipelines will stop processing inputs without making checkpoints, leaving only previous ones, if any.',
+      sortedSelectedPipelines.join('\n')
     )()}
     onClose={() => (globalDialog.dialog = null)}
   ></DeleteDialog>
