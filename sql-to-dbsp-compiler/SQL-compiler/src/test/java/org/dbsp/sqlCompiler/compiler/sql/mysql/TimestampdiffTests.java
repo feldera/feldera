@@ -13,6 +13,38 @@ public class TimestampdiffTests extends SqlIoTest {
                 FROM time_tbl;""");
     }
 
+    @Test
+    public void issue4651() {
+        this.statementsFailingInCompilation(
+                "CREATE VIEW V AS SELECT TIMESTAMPADD(DOY, 2, '2020-06-21 14:23:44.123'::TIMESTAMP)",
+                "'DOY' is not a valid time frame in 'TIMESTAMPADD'");
+        this.statementsFailingInCompilation(
+                "CREATE VIEW V AS SELECT TIMESTAMPADD(DOW, 2, '2020-06-21 14:23:44.123'::TIMESTAMP);",
+                "'DOW' is not a valid time frame in 'TIMESTAMPADD'");
+    }
+
+    @Test
+    public void issue4610() {
+        this.qs("""
+                SELECT CAST(TIME '10:00:00' AS TIMESTAMP);
+                 t
+                ---
+                 1970-01-01 10:00:00
+                (1 row)
+
+                SELECT TIMESTAMPDIFF(DAY, DATE '2020-01-01', TIMESTAMP '2020-01-01 00:00:00');
+                 d
+                ---
+                 0
+                (1 row)
+               
+                SELECT TIMESTAMPDIFF(DAY, DATE '2020-01-01', TIME '10:00:00');
+                 d
+                ---
+                 -18261
+                (1 row)""");
+    }
+
     // Test data obtained from
     // https://github.com/mysql/mysql-server/blob/mysql-test/r/func_time.result#L715
     @Test

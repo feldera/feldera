@@ -871,4 +871,19 @@ public class Regression1Tests extends SqlIoTest {
         this.qf("SELECT CAST(1 AS TINYINT UNSIGNED) / CAST(0 AS TINYINT UNSIGNED)",
                 "'1 / 0' causes overflow for type TINYINT UNSIGNED");
     }
+
+    @Test
+    public void issue4649() {
+        var ccs = this.getCCS("""
+                CREATE TABLE t(booll BOOL);
+                
+                CREATE MATERIALIZED VIEW equality_illegal AS SELECT
+                booll = 456 AS booll,
+                FALSE = 456 AS booll2
+                FROM t;""");
+        ccs.step("INSERT INTO T VALUES(false);", """
+                 booll | booll2 | weight
+                -------------------------
+                 false | false  | 1""");
+    }
 }

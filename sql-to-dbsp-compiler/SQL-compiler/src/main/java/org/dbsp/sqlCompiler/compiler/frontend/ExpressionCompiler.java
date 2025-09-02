@@ -94,6 +94,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPArrayExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPUuidLiteral;
 import org.dbsp.sqlCompiler.ir.path.DBSPPath;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.IsDateType;
 import org.dbsp.sqlCompiler.ir.type.IsIntervalType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeFunction;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
@@ -348,7 +349,9 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
     @SuppressWarnings("unused")
     public static boolean needCommonType(DBSPOpcode opcode, DBSPType result, DBSPType left, DBSPType right) {
         if (opcode == DBSPOpcode.CONCAT) return false;
-        // Dates can be mixed with other types in a binary operation
+        if (opcode == DBSPOpcode.SUB && left.is(IsDateType.class) && right.is(IsDateType.class))
+            return true;
+        // Dates can be mixed with interval types in a binary operation
         if (left.is(IsTimeRelatedType.class)) return false;
         if (right.is(IsTimeRelatedType.class)) return false;
         // Allow arithmetic on different DECIMAL types
@@ -433,7 +436,10 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
             expressionResultType = commonBase.withMayBeNull(anyNull);
             if (commonBase.is(DBSPTypeDecimal.class))
                 expressionResultType = DBSPTypeDecimal.getDefault().withMayBeNull(anyNull);  // no limits
-            if (opcode == DBSPOpcode.BW_AND ||
+            if (commonBase.is(IsDateType.class) && opcode == DBSPOpcode.SUB) {
+                expressionResultType = type;
+                opcode = timestampOperation(opcode);
+            } else if (opcode == DBSPOpcode.BW_AND ||
                     opcode == DBSPOpcode.BW_OR || opcode == DBSPOpcode.XOR ||
                     opcode == DBSPOpcode.MAX || opcode == DBSPOpcode.MIN ||
                     opcode == DBSPOpcode.ADD ||
@@ -524,7 +530,8 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
             else if (leftType.is(DBSPTypeDecimal.class) && rightType.is(DBSPTypeDecimal.class))
                 expressionResultType = typeWithNull;
             else
-                throw new UnsupportedException("Operation " + opcode + " on " + leftType + " and " + rightType, node);
+                throw new UnsupportedException("Operation " + opcode + " on " +
+                        left.getType().asSqlString() + " and " + right.getType().asSqlString(), node);
             if (opcode.isComparison()) {
                 expressionResultType = DBSPTypeBool.create(anyNull);
             }
@@ -1835,8 +1842,16 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
             }
             case HOP:
                 throw new UnimplementedException("Please use the TABLE function HOP", node);
-            case ROW:
-                return new DBSPTupleExpression(node, ops);
+            case ROW: {
+                // The Calcite optimizer does not always preserve the types of the operands of the constructor
+                DBSPTypeTuple tuple = type.to(DBSPTypeTuple.class);
+                Utilities.enforce(tuple.size() == ops.size(), "Incorrect number of operands for ROW");
+                List<DBSPExpression> converted = new ArrayList<>();
+                for (int i = 0; i < tuple.size(); i++) {
+                    converted.add(ops.get(i).cast(node, tuple.getFieldType(i), false));
+                }
+                return new DBSPTupleExpression(node, converted);
+            }
             case COALESCE: {
                 if (ops.isEmpty()) {
                     throw new CompilationError(

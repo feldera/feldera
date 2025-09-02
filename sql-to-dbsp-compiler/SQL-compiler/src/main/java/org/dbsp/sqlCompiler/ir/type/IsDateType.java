@@ -29,4 +29,4 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
 
 /** interface implemented by {@link DBSPTypeTimestamp}, {@link DBSPTypeDate}, 
  * {@link DBSPTypeTime}. */
-public interface IsDateType extends IsBoundedType {}
+public interface IsDateType extends IsBoundedType, IsTimeRelatedType {}

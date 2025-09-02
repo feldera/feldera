@@ -527,36 +527,6 @@ polymorphic_return_function2!(
 );
 
 #[doc(hidden)]
-pub fn minus_Date_Timestamp_LongInterval(left: Date, right: Timestamp) -> LongInterval {
-    minus_Timestamp_Timestamp_LongInterval(cast_to_Timestamp_Date(left).unwrap(), right)
-}
-
-polymorphic_return_function2!(
-    minus,
-    Date,
-    Date,
-    Timestamp,
-    Timestamp,
-    LongInterval,
-    LongInterval
-);
-
-#[doc(hidden)]
-pub fn minus_Timestamp_Date_LongInterval(left: Timestamp, right: Date) -> LongInterval {
-    minus_Timestamp_Timestamp_LongInterval(left, cast_to_Timestamp_Date(right).unwrap())
-}
-
-polymorphic_return_function2!(
-    minus,
-    Timestamp,
-    Timestamp,
-    Date,
-    Date,
-    LongInterval,
-    LongInterval
-);
-
-#[doc(hidden)]
 pub fn extract_year_Timestamp(value: Timestamp) -> i64 {
     let date = value.to_dateTime();
     date.year().into()

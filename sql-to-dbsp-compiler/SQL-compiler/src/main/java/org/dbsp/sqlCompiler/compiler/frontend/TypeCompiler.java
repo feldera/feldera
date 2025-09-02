@@ -38,6 +38,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.RelStruct;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
+import org.dbsp.sqlCompiler.ir.type.IsDateType;
 import org.dbsp.sqlCompiler.ir.type.IsNumericType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
@@ -102,13 +103,18 @@ public class TypeCompiler implements ICompilerComponent {
      */
     public static DBSPType reduceType(CalciteObject node, DBSPType left, DBSPType right,
                                       String error, boolean acceptStrings) {
-        if (left.is(DBSPTypeNull.class))
+        if (left.code == DBSPTypeCode.NULL)
             return right.withMayBeNull(true);
-        if (right.is(DBSPTypeNull.class))
+        if (right.code == DBSPTypeCode.NULL)
             return left.withMayBeNull(true);
         boolean anyNull = left.mayBeNull || right.mayBeNull;
         if (left.sameTypeIgnoringNullability(right))
             return left.withMayBeNull(anyNull);
+
+        if (left.is(DBSPTypeTimestamp.class) && right.is(IsDateType.class))
+            return left.withMayBeNull(anyNull);
+        if (right.is(DBSPTypeTimestamp.class) && left.is(IsDateType.class))
+            return right.withMayBeNull(anyNull);
 
         if (left.is(DBSPTypeTupleBase.class)) {
             if (!right.is(DBSPTypeTupleBase.class))
@@ -127,7 +133,7 @@ public class TypeCompiler implements ICompilerComponent {
         }
 
         if (acceptStrings) {
-            if (left.is(DBSPTypeString.class) && right.is(DBSPTypeString.class)) {
+            if (left.code == DBSPTypeCode.STRING && right.code == DBSPTypeCode.STRING) {
                 DBSPTypeString ls = left.to(DBSPTypeString.class);
                 DBSPTypeString rs = right.to(DBSPTypeString.class);
                 boolean fixed = ls.fixed && rs.fixed;

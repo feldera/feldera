@@ -102,7 +102,7 @@ Values of type `DATE` can be compared using `=`, `<>`, `!=`, `<`, `>`,
 `<=`, `>=`, `<=>`, `BETWEEN`; the result is a Boolean.
 
 <a id="date_timestampdiff"></a>
-`TIMESTAMPDIFF(<unit>, left, right)` computes the difference between
+`TIMESTAMPDIFF(<unit>, left, right)` computes the difference (right - left) between
 two dates values and expresses the result in the specified time units.
 The result is a 32-bit integer.
 
@@ -160,7 +160,7 @@ Values of type `TIME` can be compared using `=`, `<>`, `!=`, `<`, `>`,
 `<=`, `>=`, `<=>`, `BETWEEN`; the result is a Boolean.
 
 <a id="timestamp_timestampdiff"></a>
-`TIMESTAMPDIFF(<unit>, left, right)` computes the difference between
+`TIMESTAMPDIFF(<unit>, left, right)` computes the difference (right - left) between
 two time values and expresses the result in the specified time units.
 The result is a 32-bit integer.
 
@@ -245,7 +245,7 @@ Values of type `TIMESTAMP` can be compared using `=`, `<>`, `!=`, `<`,
 `>`, `<=`, `>=`, `<=>`, `BETWEEN`; the result is a Boolean.
 
 <a id="timestamp_timestampdiff"></a>
-`TIMESTAMPDIFF(<unit>, left, right)` computes the difference between
+`TIMESTAMPDIFF(<unit>, left, right)` computes the difference (right - left) between
 two timestamps and expresses the result in the specified time units.
 The result is a 32-bit integer.  `DATEDIFF` is a synonym for
 `TIMESTAMPDIFF`.  One month is considered elapsed when the calendar
