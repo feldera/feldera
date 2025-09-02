@@ -846,7 +846,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             "json" format, the default value is False
 
         :param timeout: The amount of time in seconds to listen to the stream for
-        :param case_sensitive: True if the table name is case sensitive, False by default
+        :param case_sensitive: True if the table name is case sensitive or a reserved keyword, False by default
         """
 
         params = {
