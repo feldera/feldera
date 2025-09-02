@@ -117,7 +117,7 @@ export const usePipelineAction = () => {
         await callbacks?.onPausedReady?.(pipeline_name)
 
         // Then start normally
-        await api.postPipelineAction(pipeline_name, 'start')
+        await api.postPipelineAction(pipeline_name, 'resume')
         updatePipeline(pipeline_name, (p) => ({ ...p, status: 'Initializing' }))
       } else {
         await api.postPipelineAction(pipeline_name, action)

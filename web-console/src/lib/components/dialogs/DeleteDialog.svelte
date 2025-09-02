@@ -3,13 +3,15 @@
     actionName: string,
     itemName: string | ((...args: Args) => string),
     onAction: (...args: Args) => void | Promise<any>,
-    description = 'Are you sure? This action is irreversible.'
+    description = 'Are you sure? This action is irreversible.',
+    scrollableContent?: string
   ) {
     return (...args: Args) => ({
       actionName,
       itemName,
       onAction,
       description,
+      scrollableContent,
       args
     })
   }
@@ -23,6 +25,7 @@
     itemName,
     onAction,
     description = 'Are you sure? This action is irreversible.',
+    scrollableContent,
     args,
     onClose
   }: {
@@ -30,6 +33,7 @@
     itemName: string | ((...args: Args) => string)
     onAction: (...args: Args) => void | Promise<any>
     description?: string
+    scrollableContent?: string
     args: Args
     onClose: () => void
   } = $props()
@@ -37,6 +41,7 @@
   let content = $derived({
     title: typeof itemName === 'string' ? itemName : itemName(...args),
     description,
+    scrollableContent,
     onSuccess: {
       name: actionName,
       callback: () => onAction(...args),

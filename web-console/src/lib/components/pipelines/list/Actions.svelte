@@ -100,6 +100,8 @@ groups related actions into multi-action dropdowns when multiple options are ava
     _start_paused,
     _start_error,
     _start_pending,
+    _standby,
+    _activate,
     _resume,
     _pause,
     _kill_short,
@@ -133,6 +135,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
       .with('Stopped', () => [
         '_start',
         '_start_paused',
+        '_standby',
         '_saveFile',
         '_configurations',
         '_storage_indicator',
@@ -179,14 +182,15 @@ groups related actions into multi-action dropdowns when multiple options are ava
         '_delete'
       ])
       .with('Suspending', () => [
-        '_kill',
         '_spinner',
+        '_kill',
         '_saveFile',
         '_configurations',
         '_storage_indicator',
         '_delete'
       ])
       .with('Suspended', () => [
+        '_spinner',
         '_kill',
         '_saveFile',
         '_configurations',
@@ -195,7 +199,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
       ])
       .with('Standby', () => [
         '_kill',
-        '_spinner',
+        '_activate',
         '_saveFile',
         '_configurations',
         '_storage_indicator',
@@ -251,7 +255,13 @@ groups related actions into multi-action dropdowns when multiple options are ava
   }
 
   // Define groupable actions
-  const startActions: (keyof typeof buttonConfigs)[] = ['_start', '_start_paused', '_pause']
+  const startActions: (keyof typeof buttonConfigs)[] = [
+    '_start',
+    '_start_paused',
+    '_pause',
+    '_standby',
+    '_activate'
+  ]
   const stopActions: (keyof typeof buttonConfigs)[] = ['_stop', '_kill']
 
   // Derived lists of button names to display in each dropdown
@@ -365,7 +375,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
       standaloneButton: _start
     },
     _start_paused: {
-      label: 'Start Paused',
+      label: 'Start as Paused',
       description: 'Start the pipeline in a paused state',
       onclick: () => {
         const pipelineName = pipeline.current.name
@@ -411,6 +421,28 @@ groups related actions into multi-action dropdowns when multiple options are ava
       },
       disabled: () => false,
       standaloneButton: _pause
+    },
+    _standby: {
+      label: 'Start in Standby',
+      description: 'Put the pipeline in standby mode',
+      onclick: async () => {
+        const pipelineName = pipeline.current.name
+        const { waitFor } = await postPipelineAction(pipelineName, 'standby')
+        waitFor().then(() => onActionSuccess?.(pipelineName, 'standby'), toastError)
+      },
+      disabled: () => false,
+      standaloneButton: _standby
+    },
+    _activate: {
+      label: 'Activate',
+      description: 'Activate the pipeline to start data ingress and processing',
+      onclick: async () => {
+        const pipelineName = pipeline.current.name
+        const { waitFor } = await postPipelineAction(pipelineName, 'activate')
+        waitFor().then(() => onActionSuccess?.(pipelineName, 'activate'), toastError)
+      },
+      disabled: () => false,
+      standaloneButton: _activate
     }
   }
 </script>
@@ -646,6 +678,26 @@ groups related actions into multi-action dropdowns when multiple options are ava
       Save the program before running
     </Tooltip>
   {/if}
+{/snippet}
+{#snippet _standby()}
+  {@render start({
+    text: 'Standby',
+    getAction: () => 'standby',
+    disabled: unsavedChanges
+  })}
+  <Tooltip class="bg-white-dark z-20 rounded text-surface-950-50" placement="top">
+    Put the pipeline in standby mode
+  </Tooltip>
+{/snippet}
+{#snippet _activate()}
+  {@render start({
+    text: 'Activate',
+    getAction: () => 'activate',
+    disabled: unsavedChanges
+  })}
+  <Tooltip class="bg-white-dark z-20 rounded text-surface-950-50" placement="top">
+    Activate the pipeline to start data ingress and processing
+  </Tooltip>
 {/snippet}
 {#snippet _start_disabled()}
   {@render start({ text: 'Start', disabled: true })}
