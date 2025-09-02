@@ -865,4 +865,10 @@ public class Regression1Tests extends SqlIoTest {
                 CREATE TABLE tab2(col0 INTEGER, col1 INTEGER, col2 INTEGER);
                 CREATE VIEW V AS SELECT ( + 34 ) * - ( col0 / + ( col1 / 79 ) ) FROM tab2 WHERE NOT col1 IS NOT NULL;""");
     }
+
+    @Test
+    public void issue4677() {
+        this.qf("SELECT CAST(1 AS TINYINT UNSIGNED) / CAST(0 AS TINYINT UNSIGNED)",
+                "'1 / 0' causes overflow for type TINYINT UNSIGNED");
+    }
 }
