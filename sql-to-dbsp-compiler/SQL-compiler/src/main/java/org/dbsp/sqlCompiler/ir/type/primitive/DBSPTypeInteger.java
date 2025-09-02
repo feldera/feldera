@@ -146,7 +146,7 @@ public class DBSPTypeInteger extends DBSPTypeBaseType
             }
         } else {
             switch (this.width) {
-                case 8: return new DBSPU8Literal(0, this.mayBeNull);
+                case 8: return new DBSPU8Literal(1, this.mayBeNull);
                 case 16: return new DBSPU16Literal(1, this.mayBeNull);
                 case 32: return new DBSPU32Literal(1L, this.mayBeNull);
                 case 64: return new DBSPU64Literal(BigInteger.ONE, this.mayBeNull);
