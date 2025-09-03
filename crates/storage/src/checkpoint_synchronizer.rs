@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 
 use feldera_types::{checkpoint::CheckpointMetadata, config::SyncConfig};
 
@@ -20,3 +20,14 @@ pub trait CheckpointSynchronizer: Sync {
 }
 
 inventory::collect!(&'static dyn CheckpointSynchronizer);
+
+/// Lazily resolves the checkpoint synchronizer.
+///
+/// This panic is safe as all enterprise builds must include the checkpoint-sync
+/// crate.
+pub static SYNCHRONIZER: LazyLock<&'static dyn CheckpointSynchronizer> = LazyLock::new(|| {
+    *inventory::iter::<&dyn CheckpointSynchronizer>
+        .into_iter()
+        .next()
+        .expect("no checkpoint synchronizer found; are enterprise features enabled?")
+});
