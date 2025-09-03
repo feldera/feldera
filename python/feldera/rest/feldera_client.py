@@ -43,19 +43,21 @@ class FelderaClient:
 
     def __init__(
         self,
-        url: str,
+        url: Optional[str] = None,
         api_key: Optional[str] = None,
         timeout: Optional[float] = None,
         connection_timeout: Optional[float] = None,
         requests_verify: bool | str = True,
     ) -> None:
         """
-        :param url: The url to Feldera API (ex: https://try.feldera.com)
+        :param url: The url to Feldera API (ex: https://try.feldera.com). If
+            not set, attempts to read from the environment variable
+            `FELDERA_HOST`. Default: `http://localhost:8080`
         :param api_key: The optional API key for Feldera
         :param timeout: (optional) The amount of time in seconds that the
             client will wait for a response before timing out.
-        :param connection_timeout: (optional) The amount of time in seconds that
-            the client will wait to establish connection before timing out.
+        :param connection_timeout: (optional) The amount of time in seconds
+            that the client will wait to establish connection before timing out
         :param requests_verify: The `verify` parameter passed to the requests
             library. `True` by default. To use a self signed certificate, set
             it to the path to the certificate.

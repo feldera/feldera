@@ -1,4 +1,5 @@
 from typing import Optional
+import os
 
 
 class Config:
@@ -8,7 +9,7 @@ class Config:
 
     def __init__(
         self,
-        url: str,
+        url: Optional[str] = None,
         api_key: Optional[str] = None,
         version: Optional[str] = None,
         timeout: Optional[float] = None,
@@ -25,9 +26,22 @@ class Config:
             library. `True` by default.
         """
 
-        self.url: str = url
-        self.api_key: Optional[str] = api_key
+        BASE_URL = (
+            url
+            or os.environ.get("FELDERA_HOST")
+            or os.environ.get("FELDERA_BASE_URL")
+            or "http://localhost:8080"
+        )
+        self.url: str = BASE_URL
+        self.api_key: Optional[str] = os.environ.get("FELDERA_API_KEY", api_key)
         self.version: Optional[str] = version or "v0"
         self.timeout: Optional[float] = timeout
         self.connection_timeout: Optional[float] = connection_timeout
+
+        FELDERA_TLS_INSECURE = True if os.environ.get("FELDERA_TLS_INSECURE") else False
+        FELDERA_HTTPS_TLS_CERT = os.environ.get("FELDERA_HTTPS_TLS_CERT")
+        requests_verify = not FELDERA_TLS_INSECURE
+        if requests_verify and FELDERA_HTTPS_TLS_CERT is not None:
+            requests_verify = FELDERA_HTTPS_TLS_CERT
+
         self.requests_verify: bool | str = requests_verify
