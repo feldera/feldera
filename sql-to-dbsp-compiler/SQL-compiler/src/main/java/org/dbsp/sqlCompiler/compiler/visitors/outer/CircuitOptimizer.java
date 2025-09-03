@@ -31,7 +31,6 @@ import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.MerkleOuter;
 import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
-import org.dbsp.sqlCompiler.compiler.visitors.inner.BetaReduction;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.CanonicalForm;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.EliminateDump;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.ExpandCasts;
@@ -140,8 +139,6 @@ public class CircuitOptimizer extends Passes {
         this.add(new ImplementChains(compiler));
         // Lowering may surface additional casts that need to be expanded
         this.add(new Repeat(compiler, new ExpandCasts(compiler).circuitRewriter(true)));
-        // Beta reduction after implementing aggregates.
-        this.add(new BetaReduction(compiler).getCircuitRewriter(false));
         this.add(new CSE(compiler));
         this.add(new ExpandJoins(compiler));
         this.add(new RemoveViewOperators(compiler, true));
