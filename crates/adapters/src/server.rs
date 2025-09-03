@@ -1,4 +1,4 @@
-use crate::controller::CompletionToken;
+use crate::controller::{CompletionToken, ControllerBuilder};
 use crate::format::{get_input_format, get_output_format};
 use crate::server::metrics::{
     JsonFormatter, LabelStack, MetricsFormatter, MetricsWriter, PrometheusFormatter,
@@ -789,10 +789,10 @@ fn do_bootstrap(
     };
 
     let weak_state_ref = Arc::downgrade(state);
-    let controller = Controller::with_config(
+    let builder = ControllerBuilder::new(&config)?;
+    builder.continuous_pull(|| state.activated())?;
+    let controller = builder.build(
         circuit_factory,
-        &config,
-        weak_state_ref.clone(),
         Box::new(move |e| error_handler(&weak_state_ref, e))
             as Box<dyn Fn(Arc<ControllerError>) + Send + Sync>,
     )?;
@@ -1825,6 +1825,7 @@ mod test_with_kafka {
         time::{Duration, Instant},
     };
     use tempfile::NamedTempFile;
+    use uuid::Uuid;
 
     async fn print_stats(server: &TestServer) {
         let stats = serde_json::to_string_pretty(
@@ -2191,7 +2192,7 @@ outputs:
 
         println!("Creating HTTP server");
 
-        let state = WebData::new(ServerState::new(None));
+        let state = WebData::new(ServerState::new(None, RuntimeDesiredStatus::Paused));
         let state_clone = state.clone();
 
         let args = ServerArgs {
@@ -2203,6 +2204,8 @@ outputs:
             enable_https: false,
             https_tls_cert_path: None,
             https_tls_key_path: None,
+            initial: RuntimeDesiredStatus::Paused,
+            deployment_id: Uuid::default(),
         };
 
         let config = parse_config(&args.config_file).unwrap();

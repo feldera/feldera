@@ -21,23 +21,11 @@ use crate::server::ServerState;
 /// crate.
 pub(super) static SYNCHRONIZER: LazyLock<&'static dyn CheckpointSynchronizer> =
     LazyLock::new(|| {
-        let Some(synchronizer) = inventory::iter::<&dyn CheckpointSynchronizer>
+        *inventory::iter::<&dyn CheckpointSynchronizer>
             .into_iter()
             .next()
-        else {
-            unreachable!("no checkpoint synchronizer found; are enterprise features enabled?");
-        };
-
-        *synchronizer
+            .expect("no checkpoint synchronizer found; are enterprise features enabled?")
     });
-
-#[cfg(feature = "feldera-enterprise")]
-fn upgrade_state(weak: Weak<ServerState>) -> Result<Arc<ServerState>, ControllerError> {
-    weak.upgrade()
-        .ok_or(ControllerError::checkpoint_fetch_error(
-            "unreachable: failed to upgrade server state".to_owned(),
-        ))
-}
 
 /// Pulls the checkpoint specified by the sync config and garbage collects all
 /// older checkpoints.
@@ -64,10 +52,13 @@ fn pull_and_gc(
 }
 
 #[cfg(feature = "feldera-enterprise")]
-pub fn continuous_pull(
+pub fn continuous_pull<F>(
     storage: &CircuitStorageConfig,
-    weak: Weak<ServerState>,
-) -> Result<(), ControllerError> {
+    is_activated: F,
+) -> Result<(), ControllerError>
+where
+    F: Fn() -> bool,
+{
     let StorageBackendConfig::File(ref file_cfg) = storage.options.backend else {
         return Ok(());
     };
@@ -87,7 +78,6 @@ pub fn continuous_pull(
         return Ok(());
     }
 
-    let state = upgrade_state(weak)?;
     let mut cpm = None;
     let activation_file = StoragePath::from(ACTIVATION_MARKER_FILE);
     let previously_activated = storage.backend.exists(&activation_file).unwrap_or(false);
@@ -108,7 +98,7 @@ pub fn continuous_pull(
         return Ok(());
     }
 
-    while !state.activated() {
+    while !is_activated() {
         match pull_and_gc(storage.backend.clone(), sync) {
             Err(err) => {
                 if sync.fail_if_no_checkpoint {
