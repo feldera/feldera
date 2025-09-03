@@ -461,7 +461,7 @@ class illarg_ceil_legal_legal_ts_date(TstView):
                       WHERE id = 0"""
 
 
-# TIMESTAMPDIFF : contains bug: https://github.com/feldera/feldera/issues/4650
+# TIMESTAMPDIFF
 class illarg_tsdiff_ts_legal(TstView):
     def __init__(self):
         # checked manually
@@ -486,30 +486,28 @@ class illarg_tsdiff_ts_legal(TstView):
                       WHERE id = 0"""
 
 
-# class illarg_tsdiff_ts1_legal(TstView):
-#     def __init__(self):
-#         # checked manually
-#         self.data = [
-#             {
-#                 "yr": 1,
-#                 "mth": 19,
-#                 "day": 580,
-#                 "doy": 580,
-#                 "dow": 580,
-#                 "hr": 13926,
-#                 "min": 835560,
-#                 "sec": 50133659,
-#             }
-#         ]
-#         self.sql = """CREATE MATERIALIZED VIEW tsdiff_ts1_legal AS SELECT
-#                       TIMESTAMPDIFF(YEAR, '2020-06-21 14:23:44.123'::TIMESTAMP, '2022-01-22 20:24:44.332'::TIMESTAMP) AS yr,
-#                       TIMESTAMPDIFF(MONTH, '2020-06-21 14:23:44.123'::TIMESTAMP, '2022-01-22 20:24:44.332'::TIMESTAMP) AS mth,
-#                       TIMESTAMPDIFF(DAY, '2020-06-21 14:23:44.123'::TIMESTAMP, '2022-01-22 20:24:44.332'::TIMESTAMP) AS day,
-#                       TIMESTAMPDIFF(HOUR, '2020-06-21 14:23:44.123'::TIMESTAMP, '2022-01-22 20:24:44.332'::TIMESTAMP) AS hr,
-#                       TIMESTAMPDIFF(MINUTE, '2020-06-21 14:23:44.123'::TIMESTAMP, '2022-01-22 20:24:44.332'::TIMESTAMP) AS min,
-#                       TIMESTAMPDIFF(SECOND, '2020-06-21 14:23:44.123'::TIMESTAMP, '2022-01-22 20:24:44.332'::TIMESTAMP) AS sec
-#                       FROM illegal_tbl
-#                       WHERE id = 0"""
+class illarg_tsdiff_ts1_legal(TstView):
+    def __init__(self):
+        # checked manually
+        self.data = [
+            {
+                "yr": 1,
+                "mth": 19,
+                "day": 580,
+                "hr": 13926,
+                "min": 835561,
+                "sec": 50133660,
+            }
+        ]
+        self.sql = """CREATE MATERIALIZED VIEW tsdiff_ts1_legal AS SELECT
+                      TIMESTAMPDIFF(YEAR, '2020-06-21 14:23:44.123'::TIMESTAMP, '2022-01-22 20:24:44.332'::TIMESTAMP) AS yr,
+                      TIMESTAMPDIFF(MONTH, '2020-06-21 14:23:44.123'::TIMESTAMP, '2022-01-22 20:24:44.332'::TIMESTAMP) AS mth,
+                      TIMESTAMPDIFF(DAY, '2020-06-21 14:23:44.123'::TIMESTAMP, '2022-01-22 20:24:44.332'::TIMESTAMP) AS day,
+                      TIMESTAMPDIFF(HOUR, '2020-06-21 14:23:44.123'::TIMESTAMP, '2022-01-22 20:24:44.332'::TIMESTAMP) AS hr,
+                      TIMESTAMPDIFF(MINUTE, '2020-06-21 14:23:44.123'::TIMESTAMP, '2022-01-22 20:24:44.332'::TIMESTAMP) AS min,
+                      TIMESTAMPDIFF(SECOND, '2020-06-21 14:23:44.123'::TIMESTAMP, '2022-01-22 20:24:44.332'::TIMESTAMP) AS sec
+                      FROM illegal_tbl
+                      WHERE id = 0"""
 
 
 class illarg_tsdiff_datee_legal(TstView):
@@ -576,11 +574,21 @@ class illarg_tsadd_ts_legal(TstView):
                       WHERE id = 0"""
 
 
-# Ignore: https://github.com/feldera/feldera/issues/4652
-class ignore_tsadd_ts1_legal(TstView):
+class illarg_tsadd_ts1_legal(TstView):
     def __init__(self):
         # checked manually
-        self.data = []
+        self.data = [
+            {
+                "yr": "2022-06-21T14:23:44.123",
+                "mth": "2020-08-21T14:23:44.123",
+                "day": "2020-06-23T14:23:44.123",
+                "hr": "2020-06-21T16:23:44.123",
+                "min": "2020-06-21T14:25:44.123",
+                "sec": "2020-06-21T14:23:46.123",
+                "millisec": "2020-06-21T14:23:44.125",
+                "microsec": "2020-06-21T14:23:44.123",
+            }
+        ]
         self.sql = """CREATE MATERIALIZED VIEW tsadd_ts1_legal AS SELECT
                       TIMESTAMPADD(YEAR, 2, '2020-06-21 14:23:44.123'::TIMESTAMP) AS yr,
                       TIMESTAMPADD(MONTH, 2, '2020-06-21 14:23:44.123'::TIMESTAMP) AS mth,
@@ -594,28 +602,10 @@ class ignore_tsadd_ts1_legal(TstView):
                       WHERE id = 0"""
 
 
-# Ignore: https://github.com/feldera/feldera/issues/4651
-class ignore_v(TstView):
-    def __init__(self):
-        # checked manually
-        self.data = []
-        self.sql = """CREATE MATERIALIZED VIEW v AS SELECT
-                      TIMESTAMPADD(DOY, 2, '2020-06-21 14:23:44.123'::TIMESTAMP) AS doy,
-                      TIMESTAMPADD(DOW, 2, '2020-06-21 14:23:44.123'::TIMESTAMP) AS dow
-                      FROM illegal_tbl
-                      WHERE id = 0"""
-
-
 class illarg_tsadd_datee_legal(TstView):
     def __init__(self):
         # checked manually
-        self.data = [
-            {
-                "yr": "2022-06-21",
-                "mth": "2020-08-21",
-                "day": "2020-06-23",
-            }
-        ]
+        self.data = [{"yr": "2022-06-21", "mth": "2020-08-21", "day": "2020-06-23"}]
         self.sql = """CREATE MATERIALIZED VIEW tsadd_datee_legal AS SELECT
                       TIMESTAMPADD(YEAR, 2, datee) AS yr,
                       TIMESTAMPADD(MONTH, 2, datee) AS mth,
