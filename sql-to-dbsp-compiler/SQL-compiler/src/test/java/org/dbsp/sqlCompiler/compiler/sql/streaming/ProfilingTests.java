@@ -248,7 +248,7 @@ public class ProfilingTests extends StreamingTestBase {
                         let auction = zset!(Tup3::new(timestamp, expire, i) => 1);
                         append_to_map_handle(&auction, &streams.0, |x| Tup1::new(x.2));
                         if i % 100 == 0 {
-                            let _ = circuit.step().expect("could not run circuit");
+                            let _ = circuit.transaction().expect("could not run circuit");
                             let _ = &read_output_handle(&streams.2);
                         }
                     }""");
