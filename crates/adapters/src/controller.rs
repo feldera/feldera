@@ -23,7 +23,6 @@ use crate::controller::checkpoint::{
 };
 use crate::controller::journal::Journal;
 use crate::controller::stats::{InputEndpointMetrics, OutputEndpointMetrics, TransactionStatus};
-use crate::controller::sync::SYNCHRONIZER;
 use crate::create_integrated_output_endpoint;
 use crate::samply::SamplySpan;
 use crate::server::metrics::{
@@ -65,6 +64,7 @@ use feldera_adapterlib::format::BufferSize;
 use feldera_adapterlib::transport::Resume;
 use feldera_adapterlib::utils::datafusion::execute_query_text;
 use feldera_ir::LirCircuit;
+use feldera_storage::checkpoint_synchronizer::SYNCHRONIZER;
 use feldera_storage::histogram::ExponentialHistogram;
 use feldera_storage::metrics::{
     READ_BLOCKS_BYTES, READ_LATENCY_MICROSECONDS, SYNC_LATENCY_MICROSECONDS, WRITE_BLOCKS_BYTES,
@@ -113,6 +113,7 @@ mod checkpoint;
 mod error;
 mod journal;
 mod stats;
+#[cfg(feature = "feldera-enterprise")]
 mod sync;
 mod validate;
 
