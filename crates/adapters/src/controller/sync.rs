@@ -5,7 +5,8 @@ use std::sync::{Arc, LazyLock, Weak};
 use dbsp::circuit::{checkpointer::Checkpointer, CircuitStorageConfig};
 use feldera_adapterlib::errors::journal::ControllerError;
 use feldera_storage::{
-    checkpoint_synchronizer::CheckpointSynchronizer, StorageBackend, StoragePath,
+    checkpoint_synchronizer::{CheckpointSynchronizer, SYNCHRONIZER},
+    StorageBackend, StoragePath,
 };
 use feldera_types::{
     checkpoint::CheckpointMetadata,
@@ -15,21 +16,8 @@ use feldera_types::{
 
 use crate::server::ServerState;
 
-/// Lazily resolves the checkpoint synchronizer.
-///
-/// This panic is safe as all enterprise builds must include the checkpoint-sync
-/// crate.
-pub(super) static SYNCHRONIZER: LazyLock<&'static dyn CheckpointSynchronizer> =
-    LazyLock::new(|| {
-        *inventory::iter::<&dyn CheckpointSynchronizer>
-            .into_iter()
-            .next()
-            .expect("no checkpoint synchronizer found; are enterprise features enabled?")
-    });
-
 /// Pulls the checkpoint specified by the sync config and garbage collects all
 /// older checkpoints.
-#[cfg(feature = "feldera-enterprise")]
 fn pull_and_gc(
     storage: Arc<dyn StorageBackend>,
     sync: &SyncConfig,
@@ -51,7 +39,6 @@ fn pull_and_gc(
     }
 }
 
-#[cfg(feature = "feldera-enterprise")]
 pub fn continuous_pull<F>(
     storage: &CircuitStorageConfig,
     is_activated: F,
