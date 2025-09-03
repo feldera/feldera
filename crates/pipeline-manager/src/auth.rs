@@ -329,14 +329,16 @@ fn validate_groups_authorization(claim: &Claim, config: &ApiServerConfig) -> Res
 }
 
 fn extract_tenant_from_issuer(issuer: &str) -> Option<String> {
-    if let Some(domain_part) = issuer.split("://").nth(1) {
-        if let Some(domain) = domain_part.split('/').next() {
-            if let Some(subdomain) = domain.split('.').next() {
-                return Some(subdomain.to_string());
-            }
-        }
-    }
-    None
+    use regex::Regex;
+
+    // Extract subdomain from HTTP/HTTPS URLs
+    // Matches: protocol://subdomain(.domain)?(:port)?(/path)?
+    let re = Regex::new(r"^https?://([^.:/?]+)").unwrap();
+
+    re.captures(issuer)
+        .and_then(|caps| caps.get(1))
+        .map(|m| m.as_str().to_string())
+        .filter(|s| !s.is_empty())
 }
 
 #[derive(Clone, Serialize, ToSchema)]
@@ -422,7 +424,6 @@ pub(crate) fn okta_auth_config(api_config: &crate::config::ApiServerConfig) -> A
         vec!["groups".to_string()]
     } else {
         vec![]
-        // vec!["groups".to_string()]
     };
 
     AuthConfiguration {
@@ -1213,5 +1214,69 @@ mod test {
             .to_request();
         let res = run_test(req, None, Some(api_key), validation).await;
         assert_eq!(200, res.status());
+    }
+
+    #[tokio::test]
+    async fn test_extract_tenant_from_issuer() {
+        use super::extract_tenant_from_issuer;
+
+        let test_cases = vec![
+            // Standard Okta domains
+            ("https://acme-corp.okta.com/oauth2/default", Some("acme-corp")),
+            ("https://dev-123456.okta.com/oauth2/default", Some("dev-123456")),
+            ("https://my-company.okta.com/oauth2/custom", Some("my-company")),
+
+            // AWS Cognito domains
+            ("https://cognito-idp.us-west-2.amazonaws.com/us-west-2_ABCDEFGH", Some("cognito-idp")),
+            ("https://my-pool.auth.us-east-1.amazoncognito.com/", Some("my-pool")),
+
+            // Google Identity domains
+            ("https://accounts.google.com", Some("accounts")),
+            ("https://oauth2.googleapis.com/token", Some("oauth2")),
+
+            // Custom domains
+            ("https://auth.company.com/oauth2/v1", Some("auth")),
+            ("https://login.enterprise.org/oidc", Some("login")),
+
+            // Domain with hyphen and numbers
+            ("https://tenant-123.auth-provider.com/v2/token", Some("tenant-123")),
+            ("https://dev-env-staging.example.com/auth", Some("dev-env-staging")),
+
+            // Edge cases that should return None
+            ("", None),
+            ("invalid-url", None),
+            ("http://", None),
+            ("https://", None),
+            ("https:///oauth2/default", None),
+            ("ftp://domain.com/path", None),
+
+            // URLs without protocol
+            ("domain.com/path", None),
+            ("//domain.com/path", None),
+
+            // IP addresses (should extract first octet as tenant)
+            ("https://192.168.1.100/auth", Some("192")),
+            ("http://127.0.0.1:8080/token", Some("127")),
+
+            // Localhost
+            ("http://localhost:3000/auth", Some("localhost")),
+            ("https://localhost/oauth2/default", Some("localhost")),
+
+            // Single word domains
+            ("https://auth/token", Some("auth")),
+            ("http://provider/oauth", Some("provider")),
+
+            // Domains with ports
+            ("https://tenant.example.com:8443/auth", Some("tenant")),
+            ("http://dev-server.local:3000/oauth2", Some("dev-server")),
+
+            // Very long subdomain
+            ("https://very-long-tenant-name-with-many-hyphens.auth.example.com/oauth2", Some("very-long-tenant-name-with-many-hyphens")),
+        ];
+
+        for (input, expected) in test_cases {
+            let result = extract_tenant_from_issuer(input);
+            assert_eq!(result, expected.map(|s| s.to_string()), "Failed for input: {}", input);
+        }
     }
 }
