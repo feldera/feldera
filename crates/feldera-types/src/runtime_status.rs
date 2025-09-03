@@ -12,7 +12,6 @@ use utoipa::ToSchema;
 /// Of the statuses, only `Unavailable` is determined by the runner. All other statuses are
 /// determined by the pipeline and taken over by the runner.
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
-#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub enum RuntimeStatus {
     /// The runner was unable to determine the pipeline runtime status. This status is never
     /// returned by the pipeline endpoint itself, but only determined by the runner.
@@ -51,7 +50,6 @@ pub enum RuntimeStatus {
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
-#[cfg_attr(test, derive(proptest_derive::Arbitrary))]
 pub enum RuntimeDesiredStatus {
     Unavailable,
     Standby,
