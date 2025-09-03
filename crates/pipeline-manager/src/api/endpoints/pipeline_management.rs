@@ -1179,7 +1179,7 @@ pub(crate) async fn post_pipeline_stop(
                     .await?;
                 if response
                     .as_ref()
-                    .is_ok_and(|v| v.status() == StatusCode::ACCEPTED)
+                    .is_ok_and(|v| v.status() == actix_web::http::StatusCode::ACCEPTED)
                 {
                     info!(
                         "Accepted action: going to non-forcefully stop pipeline {pipeline_id} (tenant: {})",
