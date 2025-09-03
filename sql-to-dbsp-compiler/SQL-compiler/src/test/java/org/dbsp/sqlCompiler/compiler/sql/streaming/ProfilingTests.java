@@ -57,7 +57,7 @@ public class ProfilingTests extends StreamingTestBase {
     String createMain(String rustDataGenerator) {
         String preamble = """
                 #![allow(unused_imports)]
-                
+
                 use dbsp::{
                     algebra::F64,
                     circuit::{

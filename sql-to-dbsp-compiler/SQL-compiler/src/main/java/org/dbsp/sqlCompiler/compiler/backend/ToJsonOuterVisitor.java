@@ -21,6 +21,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceTableOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPUnaryOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -95,7 +96,7 @@ public class ToJsonOuterVisitor extends CircuitVisitor {
     public void property(String name) {
         this.stream.label(name);
     }
-    
+
     @SuppressWarnings("SameParameterValue")
     boolean checkDone(IDBSPOuterNode node, boolean silent) {
         if (this.serialized.contains(node.getId())) {
@@ -303,6 +304,15 @@ public class ToJsonOuterVisitor extends CircuitVisitor {
         this.stream.append(operator.lowerInclusive);
         this.property("upperInclusive");
         this.stream.append(operator.upperInclusive);
+        return VisitDecision.CONTINUE;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPIntegrateTraceRetainValuesOperator operator) {
+        if (this.preorder(operator.to(DBSPBinaryOperator.class)).stop())
+            return VisitDecision.STOP;
+        this.property("accumulate");
+        this.stream.append(operator.accumulate);
         return VisitDecision.CONTINUE;
     }
 
