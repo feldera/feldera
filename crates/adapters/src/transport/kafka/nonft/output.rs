@@ -292,7 +292,6 @@ outputs:
                 ))
             },
             &config,
-            std::sync::Weak::new(),
             Box::new(|e| panic!("error: {e}")),
         ) {
             Ok(_) => panic!("expected an error"),
