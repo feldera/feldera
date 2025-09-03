@@ -352,14 +352,8 @@ impl AvroParser {
 
         let input_stream = self.input_stream.as_mut().unwrap();
 
-        let record_copy = record;
-
         let avro_value = from_avro_datum(schema, &mut record, None).map_err(|e| {
-            ParseError::bin_envelope_error(
-                format!("error parsing avro record: {e}"),
-                record_copy,
-                None,
-            )
+            ParseError::bin_envelope_error(format!("error parsing avro record: {e}"), record, None)
         })?;
 
         match self.config.update_format {
