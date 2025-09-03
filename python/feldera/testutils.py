@@ -25,6 +25,10 @@ PIPELINE_TO_KAFKA_SERVER = os.environ.get(
 )
 FELDERA_TLS_INSECURE = True if os.environ.get("FELDERA_TLS_INSECURE") else False
 FELDERA_HTTPS_TLS_CERT = os.environ.get("FELDERA_HTTPS_TLS_CERT")
+if not FELDERA_TLS_INSECURE and FELDERA_HTTPS_TLS_CERT is not None:
+    FELDERA_REQUESTS_VERIFY = FELDERA_HTTPS_TLS_CERT
+else:
+    FELDERA_REQUESTS_VERIFY = not FELDERA_TLS_INSECURE
 
 
 class _LazyClient:
@@ -36,16 +40,9 @@ class _LazyClient:
         self._client = None
 
     def _ensure(self):
-        requests_verify = not FELDERA_TLS_INSECURE
-        if requests_verify and FELDERA_HTTPS_TLS_CERT is not None:
-            requests_verify = FELDERA_HTTPS_TLS_CERT
-
         if self._client is None:
             self._client = FelderaClient(
-                BASE_URL,
-                api_key=API_KEY,
                 connection_timeout=10,
-                requests_verify=requests_verify,
             )
         return self._client
 
