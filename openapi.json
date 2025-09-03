@@ -4844,6 +4844,17 @@
                 "$ref": "#/components/schemas/ProviderGoogleIdentity"
               }
             }
+          },
+          {
+            "type": "object",
+            "required": [
+              "Okta"
+            ],
+            "properties": {
+              "Okta": {
+                "$ref": "#/components/schemas/ProviderOkta"
+              }
+            }
           }
         ]
       },
@@ -5122,7 +5133,9 @@
           "revision",
           "runtime_revision",
           "changelog_url",
-          "build_info"
+          "build_info",
+          "tenant_id",
+          "tenant_name"
         ],
         "properties": {
           "build_info": {
@@ -5155,6 +5168,13 @@
           "telemetry": {
             "type": "string",
             "description": "Telemetry key."
+          },
+          "tenant_id": {
+            "$ref": "#/components/schemas/TenantId"
+          },
+          "tenant_name": {
+            "type": "string",
+            "description": "Current user's tenant name"
           },
           "unstable_features": {
             "type": "string",
@@ -7282,6 +7302,28 @@
           }
         }
       },
+      "ProviderOkta": {
+        "type": "object",
+        "required": [
+          "jwk_uri",
+          "client_id",
+          "extra_oidc_scopes"
+        ],
+        "properties": {
+          "client_id": {
+            "type": "string"
+          },
+          "extra_oidc_scopes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "jwk_uri": {
+            "type": "string"
+          }
+        }
+      },
       "PubSubInputConfig": {
         "type": "object",
         "description": "Google Pub/Sub input connector configuration.",
@@ -8471,6 +8513,10 @@
             "minimum": 0
           }
         }
+      },
+      "TenantId": {
+        "type": "string",
+        "format": "uuid"
       },
       "TimeSeries": {
         "type": "object",

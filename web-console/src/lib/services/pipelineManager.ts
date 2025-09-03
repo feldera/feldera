@@ -260,7 +260,9 @@ const mapResponse = <R, T, E extends { message: string }>(
       if (g) {
         return g(response.error)
       }
-      throw new Error(response.error.message, { cause: response.error })
+      throw new Error(response.error.message, {
+        cause: { ...response.error, response: response.response }
+      })
     }
     return f(response.data!)
   })

@@ -6652,6 +6652,10 @@ POST   /api/pipelines          - Create pipeline
 GET    /api/pipelines/{id}     - Get pipeline details
 PATCH  /api/pipelines/{id}     - Update pipeline
 DELETE /api/pipelines/{id}     - Delete pipeline
+
+GET    /v0/config              - Get configuration (includes tenant info)
+GET    /config/authentication  - Get authentication provider configuration
+GET    /config/demos           - Get list of available demos
 ```
 
 #### Pipeline Lifecycle
@@ -6673,10 +6677,54 @@ GET  /api/pipelines/{id}/stats    - Get runtime statistics
 
 ### Authentication System
 
-- **JWT Tokens**: Stateless authentication
-- **API Keys**: Service-to-service authentication
-- **Multi-tenant**: Tenant isolation and resource management
-- **RBAC**: Role-based access control
+The pipeline-manager supports multiple authentication providers through a unified OIDC/OAuth2 framework:
+
+#### **Supported Providers**
+- **None**: No authentication (development/testing)
+- **AWS Cognito**: Enterprise identity management with Cognito User Pools
+- **Google Identity**: Google OAuth2 authentication
+- **Okta**: Enterprise SSO integration for B2B deployments
+
+#### **Authentication Mechanisms**
+- **JWT Tokens**: OIDC-compliant token validation with RS256 signature verification
+- **API Keys**: Service-to-service authentication with scoped permissions
+- **JWK Caching**: Automatic public key fetching and caching from provider endpoints
+- **Bearer Token Authorization**: Client sends Access OIDC token as Bearer token; all claims (tenant, groups, etc.) are extracted from this Access token
+
+#### **Configuration**
+```bash
+# Environment variables for OIDC providers
+AUTH_ISSUER=https://your-domain.okta.com/oauth2/<custom-auth-server-id>
+AUTH_CLIENT_ID=your-client-id
+
+# For AWS Cognito (additional variables)
+AWS_COGNITO_LOGIN_URL=https://your-domain.auth.region.amazoncognito.com/login
+AWS_COGNITO_LOGOUT_URL=https://your-domain.auth.region.amazoncognito.com/logout
+```
+
+#### **Tenant Assignment Models**
+
+The authentication system supports flexible tenant assignment strategies across all OIDC providers (AWS Cognito, Okta, Google Identity):
+
+**CLI Configuration Flags:**
+- `--individual-tenant` (default: true) - Creates individual tenants based on user's `sub` claim
+- `--issuer-tenant` (default: false) - Extracts tenant from issuer domain (e.g., `company.okta.com` → `company`)
+
+**Tenant Resolution Priority (all providers):**
+1. `tenant` claim (explicit tenant assignment via OIDC provider)
+2. Issuer domain extraction (when `--issuer-tenant` enabled)
+3. User `sub` claim (when `--individual-tenant` enabled)
+
+**Authorization Behavior:**
+- If `--individual-tenant=false` and no explicit tenant found → authorization denied
+- Enables enterprise B2B deployments with organization-level tenant isolation
+- Supports identity provider admins configuring tenant claims based on user group membership
+
+#### **Enterprise Features**
+- **Multi-tenant**: Tenant isolation and resource management with flexible assignment
+- **RBAC**: Role-based access control through provider claims
+- **Token Validation**: Generic OIDC claim validation with provider-specific extensions
+- **Provider-Specific Authorization**: Additional authorization options based on identity provider (e.g., Okta's `groups` claim filtering with `--authorized-groups`)
 
 ## Development Workflow
 

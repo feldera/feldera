@@ -128,9 +128,11 @@ only the program-related core fields, and is used by the compiler to discern whe
         crate::auth::AuthProvider,
         crate::auth::ProviderAwsCognito,
         crate::auth::ProviderGoogleIdentity,
+        crate::auth::ProviderOkta,
 
         // Common
         crate::db::types::version::Version,
+        crate::db::types::tenant::TenantId,
         crate::license::DisplaySchedule,
         crate::license::LicenseInformation,
         crate::license::LicenseValidity,
@@ -536,6 +538,7 @@ pub async fn run(
         crate::config::AuthProviderType::None => None,
         crate::config::AuthProviderType::AwsCognito => Some(crate::auth::aws_auth_config()),
         crate::config::AuthProviderType::GoogleIdentity => Some(crate::auth::google_auth_config()),
+        crate::config::AuthProviderType::Okta => Some(crate::auth::okta_auth_config(&api_config)),
     };
     let server = match auth_configuration {
         // We instantiate an awc::Client that can be used if the api-server needs to

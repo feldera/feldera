@@ -35,32 +35,34 @@ const initPosthog = async (config: Configuration) => {
   })
 }
 
-type LayoutData = {
+export type LayoutData = {
   auth: AuthDetails
-  feldera: {
-    version: string
-    edition: string
-    changelog?: string
-    revision: string
-    update?: {
-      version: string
-      url: string
-    }
-    config: Configuration
-  }
+  feldera:
+    | {
+        version: string
+        edition: string
+        changelog?: string
+        revision: string
+        update?: {
+          version: string
+          url: string
+        }
+        tenantId: string
+        tenantName: string
+        config: Configuration
+      }
+    | undefined
+  error?: Error
+}
+
+const emptyLayoutData: LayoutData = {
+  auth: 'none',
+  feldera: undefined
 }
 
 export const load = async ({ fetch, url }): Promise<LayoutData> => {
   if (!('window' in globalThis)) {
-    return {
-      auth: 'none',
-      feldera: {
-        version: '',
-        edition: '',
-        revision: '',
-        config: undefined!
-      }
-    }
+    return emptyLayoutData
   }
 
   const authConfig = await loadAuthConfig()
@@ -88,12 +90,29 @@ export const load = async ({ fetch, url }): Promise<LayoutData> => {
 
   if (typeof auth === 'object' && 'login' in auth) {
     return {
-      auth,
-      feldera: undefined!
+      ...emptyLayoutData,
+      auth
     }
   }
 
-  const config = await getConfig()
+  let config: Configuration | undefined = undefined
+
+  try {
+    config = await getConfig()
+  } catch (e: any) {
+    if (e.cause.response.status === 401 || e.cause.response.status === 403) {
+      return {
+        ...emptyLayoutData,
+        auth,
+        error: e
+      }
+    }
+  }
+
+  if (!config) {
+    console.error('Failed to load configuration')
+    return emptyLayoutData
+  }
 
   if (typeof auth === 'object' && 'logout' in auth) {
     initPosthog(config).then(() => {
@@ -150,6 +169,8 @@ export const load = async ({ fetch, url }): Promise<LayoutData> => {
           : undefined,
       changelog: config.changelog_url,
       revision: config.revision,
+      tenantId: config.tenant_id,
+      tenantName: config.tenant_name,
       config
     }
   }

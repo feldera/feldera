@@ -28,3 +28,15 @@ pub async fn get_or_create_tenant_id(
     };
     Ok(TenantId(id))
 }
+
+/// Retrieves the tenant name for a given tenant ID.
+pub async fn get_tenant_name(
+    txn: &Transaction<'_>,
+    tenant_id: TenantId,
+) -> Result<String, DBError> {
+    let stmt = txn
+        .prepare_cached("SELECT tenant FROM tenant WHERE id = $1")
+        .await?;
+    let row = txn.query_one(&stmt, &[&tenant_id.0]).await?;
+    Ok(row.get(0))
+}

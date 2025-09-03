@@ -201,7 +201,7 @@ export type OidcConfig = {
   authority: string
   response_type: 'code'
   scope: string
-  metadata: {
+  authority_configuration?: {
     issuer: string
     authorization_endpoint: string
     token_endpoint: string
@@ -233,11 +233,11 @@ export const loadAuthConfig = async () => {
         const storage = sessionStorage
         return {
           oidc: {
-            authority: endpoint,
+            authority: endpoint.replace(/\/+$/g, ''),
             client_id: clientId,
             response_type: 'code',
             scope: 'openid profile email',
-            metadata: {
+            authority_configuration: {
               issuer,
               authorization_endpoint: `${endpoint}authorize`,
               token_endpoint: `${endpoint}token`,
@@ -264,6 +264,38 @@ export const loadAuthConfig = async () => {
         }
       })
       .with({ GoogleIdentity: P.select() }, (config) => ({}) as any)
+      .with({ Okta: P.select() }, (config) => {
+        const authority = /(.*)(\/v1\/keys)$/.exec(config.jwk_uri)?.[1]
+        invariant(authority, 'Okta authority is not valid')
+        const storage = sessionStorage
+
+        // Build scope string: always include openid, profile, email, and any extra scopes
+        const baseScopes = 'openid profile email'
+        const extraScopes = config.extra_oidc_scopes.join(' ')
+        const scope = extraScopes ? `${baseScopes} ${extraScopes}` : baseScopes
+
+        return {
+          oidc: {
+            authority,
+            client_id: config.client_id,
+            response_type: 'code',
+            scope,
+            authority_configuration: {
+              issuer: authority,
+              authorization_endpoint: `${authority}/v1/authorize`,
+              token_endpoint: `${authority}/v1/token`,
+              revocation_endpoint: `${authority}/v1/revoke`,
+              userinfo_endpoint: `${authority}/v1/userinfo`,
+              end_session_endpoint: `${authority}/v1/logout`
+            },
+            redirect_uri: `${window.location.origin}${base}/auth/callback/`,
+            post_logout_redirect_uri: `${base}/`,
+            client_authentication: 'client_secret_basic',
+            loadUserInfo: true,
+            storage
+          }
+        }
+      })
       // .with({ Auth0: P.select() }, (config) => [
       //   {
       //     provider: providerAuth0({clientId: config.client_id, endpoint: config.endpoint}),

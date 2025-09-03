@@ -1,9 +1,15 @@
 // Configuration API to retrieve the current authentication configuration and list of demos
-use actix_web::{get, web::Data as WebData, HttpRequest, HttpResponse};
+use actix_web::{
+    get,
+    web::{Data as WebData, ReqData},
+    HttpRequest, HttpResponse,
+};
 use serde::Serialize;
 use utoipa::ToSchema;
 
 use crate::api::main::ServerState;
+use crate::db::storage::Storage;
+use crate::db::types::tenant::TenantId;
 use crate::error::ManagerError;
 use crate::license::{DisplaySchedule, LicenseCheck, LicenseValidity};
 use crate::unstable_features;
@@ -82,10 +88,14 @@ pub(crate) struct Configuration {
     pub update_info: Option<UpdateInformation>,
     /// Information about the build environment
     pub build_info: BuildInformation,
+    /// Current user's tenant ID
+    pub tenant_id: TenantId,
+    /// Current user's tenant name
+    pub tenant_name: String,
 }
 
 impl Configuration {
-    pub(crate) async fn gather(state: &ServerState) -> Self {
+    pub(crate) async fn gather(state: &ServerState, tenant_id: TenantId) -> Self {
         let version = env!("CARGO_PKG_VERSION").to_string();
         let mut revision = env!("FELDERA_PLATFORM_VERSION_SUFFIX");
         if revision.is_empty() {
@@ -95,6 +105,12 @@ impl Configuration {
         }
         let runtime_revision = env!("VERGEN_GIT_SHA");
         let license_check = LicenseCheck::validate(state).await.unwrap_or_default();
+
+        let db = state.db.lock().await;
+        let tenant_name = db
+            .get_tenant_name(tenant_id)
+            .await
+            .unwrap_or_else(|_| "unknown".to_string());
 
         Configuration {
             telemetry: state.config.telemetry.clone(),
@@ -117,6 +133,8 @@ impl Configuration {
             license_validity: license_check.map(|v| v.check_outcome),
             update_info: None,
             build_info: BuildInformation::from_env(),
+            tenant_id,
+            tenant_name,
         }
     }
 }
@@ -138,10 +156,13 @@ impl Configuration {
 )]
 #[get("/config")]
 pub(crate) async fn get_config(
+    // state: WebData<ServerState>,
+    // req: HttpRequest,
     state: WebData<ServerState>,
-    _req: HttpRequest,
+    client: WebData<awc::Client>,
+    tenant_id: ReqData<TenantId>,
 ) -> Result<HttpResponse, ManagerError> {
-    let config = Configuration::gather(&state).await;
+    let config = Configuration::gather(&state, *tenant_id).await;
     Ok(HttpResponse::Ok().json(config))
 }
 

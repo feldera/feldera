@@ -96,6 +96,15 @@ export const $AuthProvider = {
           $ref: '#/components/schemas/ProviderGoogleIdentity'
         }
       }
+    },
+    {
+      type: 'object',
+      required: ['Okta'],
+      properties: {
+        Okta: {
+          $ref: '#/components/schemas/ProviderOkta'
+        }
+      }
     }
   ]
 } as const
@@ -409,7 +418,9 @@ export const $Configuration = {
     'revision',
     'runtime_revision',
     'changelog_url',
-    'build_info'
+    'build_info',
+    'tenant_id',
+    'tenant_name'
   ],
   properties: {
     build_info: {
@@ -444,6 +455,13 @@ export const $Configuration = {
     telemetry: {
       type: 'string',
       description: 'Telemetry key.'
+    },
+    tenant_id: {
+      $ref: '#/components/schemas/TenantId'
+    },
+    tenant_name: {
+      type: 'string',
+      description: "Current user's tenant name"
     },
     unstable_features: {
       type: 'string',
@@ -3235,6 +3253,25 @@ export const $ProviderGoogleIdentity = {
   }
 } as const
 
+export const $ProviderOkta = {
+  type: 'object',
+  required: ['jwk_uri', 'client_id', 'extra_oidc_scopes'],
+  properties: {
+    client_id: {
+      type: 'string'
+    },
+    extra_oidc_scopes: {
+      type: 'array',
+      items: {
+        type: 'string'
+      }
+    },
+    jwk_uri: {
+      type: 'string'
+    }
+  }
+} as const
+
 export const $PubSubInputConfig = {
   type: 'object',
   description: 'Google Pub/Sub input connector configuration.',
@@ -4602,6 +4639,11 @@ Default: 10`,
       minimum: 0
     }
   }
+} as const
+
+export const $TenantId = {
+  type: 'string',
+  format: 'uuid'
 } as const
 
 export const $TimeSeries = {
