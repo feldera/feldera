@@ -363,20 +363,22 @@ impl AvroParser {
         })?;
 
         match self.config.update_format {
-            AvroUpdateFormat::Raw => input_stream.insert(&avro_value, schema).map_err(|e| {
-                ParseError::bin_event_error(
-                    format!(
+            AvroUpdateFormat::Raw => input_stream
+                .insert(&avro_value, schema, record.len())
+                .map_err(|e| {
+                    ParseError::bin_event_error(
+                        format!(
                         "error converting avro record to table row (record: {avro_value:?}): {e}"
                     ),
-                    self.last_event_number,
-                    data,
-                    None,
-                )
-            })?,
+                        self.last_event_number,
+                        data,
+                        None,
+                    )
+                })?,
             AvroUpdateFormat::Debezium => {
                 let (before, after) = Self::extract_debezium_values(&avro_value)?;
                 if let Some(before) = before {
-                    input_stream.delete(before, value_schema).map_err(|e| {
+                    input_stream.delete(before, value_schema, record.len()).map_err(|e| {
                         ParseError::bin_event_error(
                             format!(
                                 "error converting 'before' record to table row (record: {before:?}): {e}"
@@ -388,7 +390,7 @@ impl AvroParser {
                     })?;
                 }
                 if let Some(after) = after {
-                    input_stream.insert(after, value_schema).map_err(|e| {
+                    input_stream.insert(after, value_schema, record.len()).map_err(|e| {
                             ParseError::bin_event_error(
                                 format!(
                                     "error converting 'after' record to table row (record: {after:?}): {e}"

@@ -145,9 +145,9 @@ pub trait ArrowStream: InputBuffer + Send + Sync {
 /// stream.
 #[cfg(feature = "with-avro")]
 pub trait AvroStream: InputBuffer + Send + Sync {
-    fn insert(&mut self, data: &AvroValue, schema: &AvroSchema) -> AnyResult<()>;
+    fn insert(&mut self, data: &AvroValue, schema: &AvroSchema, n_bytes: usize) -> AnyResult<()>;
 
-    fn delete(&mut self, data: &AvroValue, schema: &AvroSchema) -> AnyResult<()>;
+    fn delete(&mut self, data: &AvroValue, schema: &AvroSchema, n_bytes: usize) -> AnyResult<()>;
 
     /// Create a new deserializer with the same configuration connected to
     /// the same input stream.

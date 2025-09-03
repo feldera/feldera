@@ -753,20 +753,22 @@ where
     K: DBData + From<D>,
     D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + Sync + 'static,
 {
-    fn insert(&mut self, data: &AvroValue, schema: &AvroSchema) -> AnyResult<()> {
+    fn insert(&mut self, data: &AvroValue, schema: &AvroSchema, n_bytes: usize) -> AnyResult<()> {
         let v: D = from_avro_value(data, schema)
             .map_err(|e| anyhow!("error deserializing Avro record: {e}"))?;
 
         self.buffer.updates.push_back(Tup2(K::from(v), 1));
+        self.buffer.n_bytes += n_bytes;
 
         Ok(())
     }
 
-    fn delete(&mut self, data: &AvroValue, schema: &AvroSchema) -> AnyResult<()> {
+    fn delete(&mut self, data: &AvroValue, schema: &AvroSchema, n_bytes: usize) -> AnyResult<()> {
         let v: D = from_avro_value(data, schema)
             .map_err(|e| anyhow!("error deserializing Avro record: {e}"))?;
 
         self.buffer.updates.push_back(Tup2(K::from(v), -1));
+        self.buffer.n_bytes += n_bytes;
 
         Ok(())
     }
@@ -987,6 +989,7 @@ where
         let key = <K as From<D>>::from(self.deserializer.deserialize::<D>(data)?);
 
         self.buffer.updates.push_back(Tup2(key, true));
+        self.buffer.n_bytes += data.len();
         Ok(())
     }
 
@@ -994,6 +997,7 @@ where
         let key = <K as From<D>>::from(self.deserializer.deserialize::<D>(data)?);
 
         self.buffer.updates.push_back(Tup2(key, false));
+        self.buffer.n_bytes += data.len();
         Ok(())
     }
 
@@ -1079,6 +1083,7 @@ where
         self.buffer
             .updates
             .extend(records.into_iter().map(|r| Tup2(K::from(r), true)));
+        self.buffer.n_bytes += data.get_array_memory_size();
 
         Ok(())
     }
@@ -1090,6 +1095,7 @@ where
         self.buffer
             .updates
             .extend(records.into_iter().map(|r| Tup2(K::from(r), false)));
+        self.buffer.n_bytes += data.get_array_memory_size();
 
         Ok(())
     }
@@ -1111,6 +1117,7 @@ where
         self.buffer.updates.extend(
             zip(records, polarities).map(|(record, polarity)| Tup2(K::from(record), *polarity)),
         );
+        self.buffer.n_bytes += data.get_array_memory_size();
 
         Ok(())
     }
@@ -1179,20 +1186,22 @@ where
     K: DBData + From<D>,
     D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + Sync + 'static,
 {
-    fn insert(&mut self, data: &AvroValue, schema: &AvroSchema) -> AnyResult<()> {
+    fn insert(&mut self, data: &AvroValue, schema: &AvroSchema, n_bytes: usize) -> AnyResult<()> {
         let v: D = from_avro_value(data, schema)
             .map_err(|e| anyhow!("error deserializing Avro record: {e}"))?;
 
         self.buffer.updates.push_back(Tup2(K::from(v), true));
+        self.buffer.n_bytes += n_bytes;
 
         Ok(())
     }
 
-    fn delete(&mut self, data: &AvroValue, schema: &AvroSchema) -> AnyResult<()> {
+    fn delete(&mut self, data: &AvroValue, schema: &AvroSchema, n_bytes: usize) -> AnyResult<()> {
         let v: D = from_avro_value(data, schema)
             .map_err(|e| anyhow!("error deserializing Avro record: {e}"))?;
 
         self.buffer.updates.push_back(Tup2(K::from(v), false));
+        self.buffer.n_bytes += n_bytes;
 
         Ok(())
     }
@@ -1516,6 +1525,7 @@ where
         self.buffer
             .updates
             .push_back(Tup2(key, Update::Insert(val)));
+        self.buffer.n_bytes += data.len();
         Ok(())
     }
 
@@ -1523,6 +1533,7 @@ where
         let key = K::from(self.deserializer.deserialize::<KD>(data)?);
 
         self.buffer.updates.push_back(Tup2(key, Update::Delete));
+        self.buffer.n_bytes += data.len();
         Ok(())
     }
 
@@ -1533,6 +1544,7 @@ where
         self.buffer
             .updates
             .push_back(Tup2(key, Update::Update(upd)));
+        self.buffer.n_bytes += data.len();
         Ok(())
     }
 
@@ -1644,6 +1656,7 @@ where
             let v = V::from(r);
             Tup2((self.value_key_func)(&v), Update::Insert(v))
         }));
+        self.buffer.n_bytes += data.get_array_memory_size();
 
         Ok(())
     }
@@ -1656,6 +1669,7 @@ where
             let v = V::from(r);
             Tup2((self.value_key_func)(&v), Update::Delete)
         }));
+        self.buffer.n_bytes += data.get_array_memory_size();
 
         Ok(())
     }
@@ -1691,6 +1705,7 @@ where
                     },
                 )
             }));
+        self.buffer.n_bytes += data.get_array_memory_size();
 
         Ok(())
     }
@@ -1785,7 +1800,7 @@ where
     U: DBData,
     VF: Fn(&V) -> K + Clone + Send + Sync + 'static,
 {
-    fn insert(&mut self, data: &AvroValue, schema: &AvroSchema) -> AnyResult<()> {
+    fn insert(&mut self, data: &AvroValue, schema: &AvroSchema, n_bytes: usize) -> AnyResult<()> {
         let v: VD = from_avro_value(data, schema)
             .map_err(|e| anyhow!("error deserializing Avro record: {e}"))?;
 
@@ -1793,11 +1808,12 @@ where
         self.buffer
             .updates
             .push_back(Tup2((self.value_key_func)(&val), Update::Insert(val)));
+        self.buffer.n_bytes += n_bytes;
 
         Ok(())
     }
 
-    fn delete(&mut self, data: &AvroValue, schema: &AvroSchema) -> AnyResult<()> {
+    fn delete(&mut self, data: &AvroValue, schema: &AvroSchema, n_bytes: usize) -> AnyResult<()> {
         let v: VD = from_avro_value(data, schema)
             .map_err(|e| anyhow!("error deserializing Avro record: {e}"))?;
 
@@ -1805,6 +1821,7 @@ where
         self.buffer
             .updates
             .push_back(Tup2((self.value_key_func)(&val), Update::Delete));
+        self.buffer.n_bytes += n_bytes;
 
         Ok(())
     }
