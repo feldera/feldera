@@ -100,8 +100,8 @@ public final class CrateGenerator {
             stream.println("sync-checkpoint = { workspace = true }");
         }
         String extraDep = """
-                [target.'cfg(not(target_env = "msvc"))'.dependencies]
-                tikv-jemallocator = { workspace = true }
+                # [target.'cfg(not(target_env = "msvc"))'.dependencies]
+                # tikv-jemallocator = { workspace = true }
                 """;
         if (this.crateName.contains("main"))
             stream.println(extraDep);
