@@ -77,6 +77,33 @@
         },
         {
           "id": 3,
+          "relOp": "LogicalFilter",
+          "condition": {
+            "op": {
+              "name": "<",
+              "kind": "LESS_THAN",
+              "syntax": "BINARY"
+            },
+            "operands": [
+              {
+                "input": 0,
+                "name": "$0"
+              },
+              {
+                "literal": 10,
+                "type": {
+                  "type": "INTEGER",
+                  "nullable": false
+                }
+              }
+            ]
+          },
+          "inputs": [
+            2
+          ]
+        },
+        {
+          "id": 4,
           "relOp": "LogicalProject",
           "fields": [
             "n",
@@ -118,33 +145,6 @@
           ]
         },
         {
-          "id": 4,
-          "relOp": "LogicalFilter",
-          "condition": {
-            "op": {
-              "name": "<",
-              "kind": "LESS_THAN",
-              "syntax": "BINARY"
-            },
-            "operands": [
-              {
-                "input": 0,
-                "name": "$0"
-              },
-              {
-                "literal": 10,
-                "type": {
-                  "type": "INTEGER",
-                  "nullable": false
-                }
-              }
-            ]
-          },
-          "inputs": [
-            3
-          ]
-        },
-        {
           "id": 5,
           "relOp": "LogicalFilter",
           "condition": {
@@ -168,7 +168,7 @@
             ]
           },
           "inputs": [
-            2
+            4
           ]
         },
         {
@@ -182,18 +182,18 @@
             },
             "operands": [
               {
-                "input": 3,
-                "name": "$3"
+                "input": 0,
+                "name": "$0"
               },
               {
-                "input": 2,
-                "name": "$2"
+                "input": 4,
+                "name": "$4"
               }
             ]
           },
           "joinType": "inner",
           "inputs": [
-            4,
+            3,
             5
           ]
         },
@@ -213,8 +213,8 @@
               },
               "operands": [
                 {
-                  "input": 3,
-                  "name": "$3"
+                  "input": 0,
+                  "name": "$0"
                 },
                 {
                   "literal": 1,
@@ -233,12 +233,12 @@
               },
               "operands": [
                 {
-                  "input": 4,
-                  "name": "$4"
-                },
-                {
                   "input": 1,
                   "name": "$1"
+                },
+                {
+                  "input": 3,
+                  "name": "$3"
                 }
               ]
             }
@@ -299,7 +299,7 @@
         "calcite": {
           "seq": [
             {
-              "final": 5
+              "final": 3
             },{
               "partial": 6
             }]
@@ -318,9 +318,9 @@
         "calcite": {
           "seq": [
             {
-              "final": 3
-            },{
               "final": 4
+            },{
+              "final": 5
             },{
               "partial": 6
             }]
@@ -359,8 +359,8 @@
       "s8": {
         "operation": "join",
         "inputs": [
-          { "node": "s5", "output": 0 },
-          { "node": "s4", "output": 0 }
+          { "node": "s4", "output": 0 },
+          { "node": "s5", "output": 0 }
         ],
         "calcite": {
           "partial": 6
@@ -369,7 +369,7 @@
           {"start_line_number":16,"start_column":9,"end_line_number":16,"end_column":33},
           {"start_line_number":15,"start_column":9,"end_line_number":15,"end_column":18}
         ],
-        "persistent_id": "de9ef9705dbd23ecebb057d78c4b03b40f821a9da8d20ddfdaaf494b95d67ce3"
+        "persistent_id": "f7e48fa774d50b1ed15f1300a2882b4f16567808cde35fd137a46ef153cfdbc5"
       },
       "s9": {
         "operation": "sum",
@@ -381,7 +381,7 @@
           "final": 8
         },
         "positions": [],
-        "persistent_id": "1b929a147eeb312635f5be31d04291cc0886f049bc29eb5f49c400efe4bd9d42"
+        "persistent_id": "18fd13ca7df0f4021055a5baaf5e6cb74d137212787dca80d40e149e3582933f"
       }
     }, "s10": {
       "operation": "inspect",
@@ -392,7 +392,7 @@
         "final": 8
       },
       "positions": [],
-      "persistent_id": "839bb28c34d9c6fe44d2e4afc688c43ea063ac477911baf81218c30d721ca8e4"
+      "persistent_id": "bf8f6c7cffaadfddd8c7fe702709e02e786220624bccf9d3296c7997186a9242"
     }, "s11": {
       "operation": "inspect",
       "inputs": [
