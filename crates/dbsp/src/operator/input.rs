@@ -47,14 +47,14 @@ pub type ZSetStream<K> = Stream<RootCircuit, OrdZSet<K>>;
 ///   [push](ZSetHandle::push), or a vector at a time with, e.g.,
 ///   [append](ZSetHandle::append).
 ///
-/// - Preparing data in advance into a [StagedBuffers] using
-///   [stage](Self::stage).  Then, later, calling [StagedBuffers::flush] pushes
+/// - Preparing data in advance into [StagedBuffers] using
+///   `stage`.  Then, later, calling [StagedBuffers::flush] pushes
 ///   the input buffers into the circuit.
 ///
 /// Both approaches are equally correct.  They can differ in performance,
 /// because [push](ZSetHandle::push) and [append](ZSetHandle::append) have a
 /// significant cost for a large number of records.  Using [StagedBuffers] has a
-/// similar cost, but it incurs it in the call to [stage](Self::stage) rather
+/// similar cost, but it incurs it in the call to `stage` rather
 /// than in [StagedBuffers::flush].  This means that, if the code driving the
 /// circuit can buffer data ahead of the circuit's demand for it, the cost can
 /// be hidden and data processing as a whole runs faster.
