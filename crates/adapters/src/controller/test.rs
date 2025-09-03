@@ -74,7 +74,6 @@ inputs:
             ))
         },
         &config,
-        std::sync::Weak::new(),
         Box::new(|e| panic!("error: {e}")),
     ) else {
         panic!("expected to fail")
@@ -147,7 +146,6 @@ inputs:
             ))
         },
         &config,
-        std::sync::Weak::new(),
         Box::new(|e| panic!("error: {e}")),
     )
     .unwrap();
@@ -239,7 +237,6 @@ outputs:
         let controller = Controller::with_config(
                 |circuit_config| Ok(test_circuit::<TestStruct>(circuit_config, &[], &[None])),
                 &config,
-                std::sync::Weak::new(),
                 Box::new(|e| panic!("error: {e}")),
             )
             .unwrap();
@@ -581,7 +578,6 @@ outputs:
                 ))
             },
             &config,
-            std::sync::Weak::new(),
             Box::new(|e| panic!("error: {e}")),
         )
         .unwrap();
@@ -760,7 +756,6 @@ inputs:
             ))
         },
         &config,
-        std::sync::Weak::new(),
         Box::new(|e| panic!("error: {e}")),
     )
     .unwrap();
@@ -855,7 +850,6 @@ inputs:
             ))
         },
         &config,
-        std::sync::Weak::new(),
         Box::new(|e| panic!("error: {e}")),
     );
 
@@ -1064,7 +1058,6 @@ outputs:
                 ))
             },
             &config,
-            std::sync::Weak::new(),
             Box::new(|e| panic!("error: {e}")),
         )
         .unwrap();
@@ -1179,7 +1172,6 @@ outputs:
             ))
         },
         &config,
-        std::sync::Weak::new(),
         Box::new(|e| panic!("error: {e}")),
     )
     .unwrap();
@@ -1231,7 +1223,6 @@ outputs:
                 ))
             },
             &config,
-            std::sync::Weak::new(),
             Box::new(|e| panic!("error: {e}")),
         )
         .unwrap();
@@ -1415,7 +1406,6 @@ inputs:
             ))
         },
         &config,
-        std::sync::Weak::new(),
         Box::new(|e| panic!("error: {e}")),
     )
     .unwrap();
@@ -1725,7 +1715,6 @@ outputs:
             ))
         },
         &config,
-        std::sync::Weak::new(),
         Box::new(|e| panic!("error: {e}")),
     )
     .unwrap();

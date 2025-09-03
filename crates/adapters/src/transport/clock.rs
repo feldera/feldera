@@ -388,7 +388,6 @@ inputs:
         let controller = Controller::with_config(
             move |workers| Ok(clock_test_circuit(workers, test_stats_clone)),
             &config,
-            std::sync::Weak::new(),
             Box::new(move |e| panic!("clock_test pipeline 1: error: {e}")),
         )
         .unwrap();
@@ -439,7 +438,6 @@ inputs:
         let controller = Controller::with_config(
             move |workers| Ok(clock_test_circuit(workers, test_stats_clone)),
             &config,
-            std::sync::Weak::new(),
             Box::new(move |e| panic!("clock_test pipeline 2: error: {e}")),
         )
         .unwrap();

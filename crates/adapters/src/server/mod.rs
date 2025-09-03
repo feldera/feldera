@@ -1,4 +1,4 @@
-use crate::controller::CompletionToken;
+use crate::controller::{CompletionToken, ControllerBuilder};
 use crate::format::{get_input_format, get_output_format};
 use crate::server::metrics::{
     JsonFormatter, LabelStack, MetricsFormatter, MetricsWriter, PrometheusFormatter,
@@ -789,10 +789,10 @@ fn do_bootstrap(
     };
 
     let weak_state_ref = Arc::downgrade(state);
-    let controller = Controller::with_config(
+    let builder = ControllerBuilder::new(&config)?;
+    builder.continuous_pull(|| state.activated())?;
+    let controller = builder.build(
         circuit_factory,
-        &config,
-        weak_state_ref.clone(),
         Box::new(move |e| error_handler(&weak_state_ref, e))
             as Box<dyn Fn(Arc<ControllerError>) + Send + Sync>,
     )?;
