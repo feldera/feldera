@@ -653,7 +653,7 @@ impl Storage for StoragePostgres {
         let pipeline =
             operations::pipeline::get_pipeline_for_monitoring(&txn, tenant_id, pipeline_name)
                 .await?;
-        let was_set = if pipeline.deployment_resources_status == ResourcesStatus::Provisioned {
+        let was_set = if pipeline.deployment_resources_status != ResourcesStatus::Provisioned {
             operations::pipeline::set_deployment_resources_desired_status(
                 &txn,
                 tenant_id,
@@ -803,7 +803,7 @@ impl Storage for StoragePostgres {
         Ok(())
     }
 
-    async fn transit_storage_status_to_clearing(
+    async fn transit_storage_status_to_clearing_if_not_cleared(
         &self,
         tenant_id: TenantId,
         pipeline_name: &str,

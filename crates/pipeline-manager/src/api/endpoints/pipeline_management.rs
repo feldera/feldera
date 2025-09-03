@@ -1177,6 +1177,15 @@ pub(crate) async fn post_pipeline_stop(
                     .await
                     .increment_notify_counter(*tenant_id, &pipeline_name)
                     .await?;
+                if response
+                    .as_ref()
+                    .is_ok_and(|v| v.status() == StatusCode::ACCEPTED)
+                {
+                    info!(
+                        "Accepted action: going to non-forcefully stop pipeline {pipeline_id} (tenant: {})",
+                        *tenant_id
+                    );
+                }
                 response
             }
         }
@@ -1226,7 +1235,7 @@ pub(crate) async fn post_pipeline_clear(
         .db
         .lock()
         .await
-        .transit_storage_status_to_clearing(*tenant_id, &pipeline_name)
+        .transit_storage_status_to_clearing_if_not_cleared(*tenant_id, &pipeline_name)
         .await?;
 
     info!(

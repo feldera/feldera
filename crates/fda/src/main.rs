@@ -516,7 +516,7 @@ async fn read_program_code(
 async fn wait_for_status(
     client: &Client,
     name: String,
-    wait_for: PipelineStatus,
+    wait_for: CombinedStatus,
     waiting_text: &str,
 ) {
     let mut print_every_30_seconds = Instant::now();
@@ -800,7 +800,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                 wait_for_status(
                     &client,
                     name.clone(),
-                    PipelineStatus::Running,
+                    CombinedStatus::Running,
                     "Starting the pipeline...",
                 )
                 .await;
@@ -854,7 +854,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                 wait_for_status(
                     &client,
                     name.clone(),
-                    PipelineStatus::Paused,
+                    CombinedStatus::Paused,
                     "Pausing the pipeline...",
                 )
                 .await;
@@ -895,12 +895,12 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
             wait_for_status(
                 &client,
                 name.clone(),
-                PipelineStatus::Stopped,
+                CombinedStatus::Stopped,
                 "Shutting down the pipeline...",
             )
             .await;
 
-            if current_status.deployment_status != PipelineStatus::Stopped {
+            if current_status.deployment_status != CombinedStatus::Stopped {
                 println!("Pipeline shutdown successful.");
             }
 
@@ -937,7 +937,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                 wait_for_status(
                     &client,
                     name.clone(),
-                    PipelineStatus::Stopped,
+                    CombinedStatus::Stopped,
                     "Shutting down the pipeline...",
                 )
                 .await;

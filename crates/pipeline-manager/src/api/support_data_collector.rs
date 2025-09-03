@@ -1225,7 +1225,7 @@ mod tests {
             .unwrap();
         db.lock()
             .await
-            .transit_storage_status_to_clearing(tenant_id, "test_pipeline")
+            .transit_storage_status_to_clearing_if_not_cleared(tenant_id, "test_pipeline")
             .await
             .unwrap();
         db.lock()

@@ -5,14 +5,16 @@ use crate::db::storage::{ExtendedPipelineDescrRunner, Storage};
 use crate::db::storage_postgres::StoragePostgres;
 use crate::db::types::api_key::{ApiKeyDescr, ApiKeyId, ApiPermission};
 use crate::db::types::pipeline::{
-    validate_deployment_desired_status_transition, validate_deployment_status_transition,
-    ExtendedPipelineDescr, ExtendedPipelineDescrMonitoring, PipelineDescr, PipelineDesiredStatus,
-    PipelineId, PipelineStatus,
+    ExtendedPipelineDescr, ExtendedPipelineDescrMonitoring, PipelineDescr, PipelineId,
 };
 use crate::db::types::program::{
     generate_pipeline_config, validate_program_status_transition, CompilationProfile,
     ProgramConfig, ProgramError, ProgramInfo, ProgramStatus, RustCompilationInfo,
     SqlCompilationInfo,
+};
+use crate::db::types::resources_status::{
+    validate_resources_desired_status_transition, validate_resources_status_transition,
+    ResourcesDesiredStatus, ResourcesStatus,
 };
 use crate::db::types::storage::{validate_storage_status_transition, StorageStatus};
 use crate::db::types::tenant::TenantId;
@@ -26,6 +28,7 @@ use chrono::{TimeZone, Utc};
 use feldera_types::config::{FtConfig, PipelineConfig, ResourceConfig, RuntimeConfig};
 use feldera_types::error::ErrorResponse;
 use feldera_types::program_schema::ProgramSchema;
+use feldera_types::runtime_status::{ExtendedRuntimeStatus, RuntimeDesiredStatus, RuntimeStatus};
 use log::info;
 use openssl::sha;
 use proptest::prelude::*;
@@ -493,6 +496,62 @@ fn limited_optional_error_response() -> impl Strategy<Value = Option<ErrorRespon
     })
 }
 
+/// Generates deployment location limited to only 5 variants.
+fn limited_deployment_location() -> impl Strategy<Value = String> {
+    any::<u16>().prop_map(|val| format!("example-deployment-location-{}", val % 5))
+}
+
+/// Generates deployment identifier.
+fn limited_deployment_id() -> impl Strategy<Value = Uuid> {
+    any::<u128>().prop_map(Uuid::from_u128)
+}
+
+/// Generates a random runtime status based on the value.
+fn map_val_to_runtime_status(val: u64) -> RuntimeStatus {
+    match val % 8 {
+        0 => RuntimeStatus::Unavailable,
+        1 => RuntimeStatus::Standby,
+        2 => RuntimeStatus::Initializing,
+        3 => RuntimeStatus::Bootstrapping,
+        4 => RuntimeStatus::Replaying,
+        5 => RuntimeStatus::Paused,
+        6 => RuntimeStatus::Running,
+        7 => RuntimeStatus::Suspended,
+        _ => panic!("Should only go until 7"),
+    }
+}
+
+/// Generates a random runtime desired status based on the value.
+fn map_val_to_runtime_desired_status(val: u64) -> RuntimeDesiredStatus {
+    match val % 5 {
+        0 => RuntimeDesiredStatus::Unavailable,
+        1 => RuntimeDesiredStatus::Standby,
+        2 => RuntimeDesiredStatus::Paused,
+        3 => RuntimeDesiredStatus::Running,
+        4 => RuntimeDesiredStatus::Suspended,
+        _ => panic!("Should only go until 4"),
+    }
+}
+
+/// Generates runtime desired status spanning all of its variants.
+fn arbitrary_runtime_desired_status() -> impl Strategy<Value = RuntimeDesiredStatus> {
+    any::<u64>().prop_map(map_val_to_runtime_desired_status)
+}
+
+/// Generates extended runtime status spanning all of its variants.
+fn limited_extended_runtime_status() -> impl Strategy<Value = ExtendedRuntimeStatus> {
+    any::<(u64, u16, u64)>().prop_map(|(v1, v2, v3)| {
+        let runtime_status = map_val_to_runtime_status(v1);
+        let runtime_status_details = format!("runtime-status-details-{v2}");
+        let runtime_desired_status = map_val_to_runtime_desired_status(v3);
+        ExtendedRuntimeStatus {
+            runtime_status,
+            runtime_status_details,
+            runtime_desired_status,
+        }
+    })
+}
+
 //////////////////////////////////////////////////////////////////////////////
 /////                          MANUAL TESTS                              /////
 
@@ -642,11 +701,11 @@ async fn pipeline_creation() {
     assert_eq!(actual.program_info, None);
 
     // System-decided deployment fields
-    assert_eq!(actual.deployment_status, PipelineStatus::Stopped);
+    assert_eq!(actual.deployment_resources_status, ResourcesStatus::Stopped);
     // actual.deployment_status_since
     assert_eq!(
-        actual.deployment_desired_status,
-        PipelineDesiredStatus::Stopped
+        actual.deployment_resources_desired_status,
+        ResourcesDesiredStatus::Stopped
     );
     assert_eq!(actual.deployment_error, None);
     assert_eq!(actual.deployment_config, None);
@@ -1409,15 +1468,20 @@ async fn pipeline_deployment() {
     // "Deploy" pipeline1
     handle
         .db
-        .set_deployment_desired_status_paused(tenant_id, "example1")
+        .set_deployment_resources_desired_status_provisioned(
+            tenant_id,
+            "example1",
+            RuntimeDesiredStatus::Paused,
+        )
         .await
         .unwrap();
     handle
         .db
-        .transit_deployment_status_to_provisioning(
+        .transit_deployment_resources_status_to_provisioning(
             tenant_id,
             pipeline1.id,
             Version(1),
+            Uuid::nil(),
             serde_json::to_value(generate_pipeline_config(
                 pipeline1.id,
                 &serde_json::from_value(pipeline1.runtime_config.clone()).unwrap(),
@@ -1430,32 +1494,87 @@ async fn pipeline_deployment() {
         .unwrap();
     handle
         .db
-        .transit_deployment_status_to_initializing(tenant_id, pipeline1.id, Version(1), "location1")
+        .transit_deployment_resources_status_to_provisioned(
+            tenant_id,
+            pipeline1.id,
+            Version(1),
+            "location1",
+            ExtendedRuntimeStatus {
+                runtime_status: RuntimeStatus::Initializing,
+                runtime_status_details: "".to_string(),
+                runtime_desired_status: RuntimeDesiredStatus::Paused,
+            },
+        )
         .await
         .unwrap();
     handle
         .db
-        .transit_deployment_status_to_paused(tenant_id, pipeline1.id, Version(1))
+        .transit_deployment_resources_status_to_provisioned(
+            tenant_id,
+            pipeline1.id,
+            Version(1),
+            "location1",
+            ExtendedRuntimeStatus {
+                runtime_status: RuntimeStatus::Paused,
+                runtime_status_details: "".to_string(),
+                runtime_desired_status: RuntimeDesiredStatus::Paused,
+            },
+        )
         .await
         .unwrap();
     handle
         .db
-        .set_deployment_desired_status_running(tenant_id, "example1")
+        .transit_deployment_resources_status_to_provisioned(
+            tenant_id,
+            pipeline1.id,
+            Version(1),
+            "location1",
+            ExtendedRuntimeStatus {
+                runtime_status: RuntimeStatus::Paused,
+                runtime_status_details: "".to_string(),
+                runtime_desired_status: RuntimeDesiredStatus::Running,
+            },
+        )
         .await
         .unwrap();
     handle
         .db
-        .transit_deployment_status_to_running(tenant_id, pipeline1.id, Version(1))
+        .transit_deployment_resources_status_to_provisioned(
+            tenant_id,
+            pipeline1.id,
+            Version(1),
+            "location1",
+            ExtendedRuntimeStatus {
+                runtime_status: RuntimeStatus::Paused,
+                runtime_status_details: "".to_string(),
+                runtime_desired_status: RuntimeDesiredStatus::Running,
+            },
+        )
         .await
         .unwrap();
     handle
         .db
-        .set_deployment_desired_status_suspended_or_stopped(tenant_id, "example1", false)
+        .transit_deployment_resources_status_to_provisioned(
+            tenant_id,
+            pipeline1.id,
+            Version(1),
+            "location1",
+            ExtendedRuntimeStatus {
+                runtime_status: RuntimeStatus::Running,
+                runtime_status_details: "".to_string(),
+                runtime_desired_status: RuntimeDesiredStatus::Running,
+            },
+        )
         .await
         .unwrap();
     handle
         .db
-        .transit_deployment_status_to_stopping(
+        .set_deployment_resources_desired_status_stopped(tenant_id, "example1")
+        .await
+        .unwrap();
+    handle
+        .db
+        .transit_deployment_resources_status_to_stopping(
             tenant_id,
             pipeline1.id,
             Version(1),
@@ -1466,20 +1585,25 @@ async fn pipeline_deployment() {
         .unwrap();
     handle
         .db
-        .transit_deployment_status_to_stopped(tenant_id, pipeline1.id, Version(1))
+        .transit_deployment_resources_status_to_stopped(tenant_id, pipeline1.id, Version(1))
         .await
         .unwrap();
     handle
         .db
-        .set_deployment_desired_status_paused(tenant_id, "example1")
+        .set_deployment_resources_desired_status_provisioned(
+            tenant_id,
+            "example1",
+            RuntimeDesiredStatus::Paused,
+        )
         .await
         .unwrap();
     handle
         .db
-        .transit_deployment_status_to_provisioning(
+        .transit_deployment_resources_status_to_provisioning(
             tenant_id,
             pipeline1.id,
             Version(1),
+            Uuid::nil(),
             serde_json::to_value(generate_pipeline_config(
                 pipeline1.id,
                 &serde_json::from_value(pipeline1.runtime_config).unwrap(),
@@ -1492,27 +1616,53 @@ async fn pipeline_deployment() {
         .unwrap();
     handle
         .db
-        .transit_deployment_status_to_initializing(tenant_id, pipeline1.id, Version(1), "location1")
+        .transit_deployment_resources_status_to_provisioned(
+            tenant_id,
+            pipeline1.id,
+            Version(1),
+            "location1",
+            ExtendedRuntimeStatus {
+                runtime_status: RuntimeStatus::Initializing,
+                runtime_status_details: "".to_string(),
+                runtime_desired_status: RuntimeDesiredStatus::Paused,
+            },
+        )
         .await
         .unwrap();
     handle
         .db
-        .transit_deployment_status_to_paused(tenant_id, pipeline1.id, Version(1))
+        .transit_deployment_resources_status_to_provisioned(
+            tenant_id,
+            pipeline1.id,
+            Version(1),
+            "location1",
+            ExtendedRuntimeStatus {
+                runtime_status: RuntimeStatus::Paused,
+                runtime_status_details: "".to_string(),
+                runtime_desired_status: RuntimeDesiredStatus::Paused,
+            },
+        )
         .await
         .unwrap();
     handle
         .db
-        .set_deployment_desired_status_suspended_or_stopped(tenant_id, "example1", true)
+        .set_deployment_resources_desired_status_stopped(tenant_id, "example1")
         .await
         .unwrap();
     handle
         .db
-        .transit_deployment_status_to_stopping(tenant_id, pipeline1.id, Version(1), None, None)
+        .transit_deployment_resources_status_to_stopping(
+            tenant_id,
+            pipeline1.id,
+            Version(1),
+            None,
+            None,
+        )
         .await
         .unwrap();
     handle
         .db
-        .transit_deployment_status_to_stopped(tenant_id, pipeline1.id, Version(1))
+        .transit_deployment_resources_status_to_stopped(tenant_id, pipeline1.id, Version(1))
         .await
         .unwrap();
 }
@@ -1641,10 +1791,11 @@ async fn pipeline_provision_version_guard() {
     // Any deployment status transition happening on the incorrect version should fail
     assert!(matches!(
         handle.db
-              .transit_deployment_status_to_provisioning(
+              .transit_deployment_resources_status_to_provisioning(
                   tenant_id,
                   pipeline.id,
                   Version(1),
+                  Uuid::nil(),
                   serde_json::to_value(generate_pipeline_config(
                       pipeline.id,
                       &serde_json::from_value(pipeline.runtime_config.clone()).unwrap(),
@@ -1656,31 +1807,43 @@ async fn pipeline_provision_version_guard() {
         DBError::OutdatedPipelineVersion { outdated_version, latest_version } if outdated_version == Version(1) && latest_version == Version(2)));
     assert!(matches!(
         handle.db
-              .transit_deployment_status_to_initializing(tenant_id, pipeline.id, Version(1), "location1")
+              .transit_deployment_resources_status_to_provisioned(tenant_id, pipeline.id, Version(1), "location1", ExtendedRuntimeStatus {
+            runtime_status: RuntimeStatus::Initializing,
+            runtime_status_details: "".to_string(),
+            runtime_desired_status: RuntimeDesiredStatus::Paused,
+        })
               .await.unwrap_err(),
         DBError::OutdatedPipelineVersion { outdated_version, latest_version } if outdated_version == Version(1) && latest_version == Version(2)
     ));
     assert!(matches!(
         handle.db
-              .transit_deployment_status_to_paused(tenant_id, pipeline.id, Version(1))
+              .transit_deployment_resources_status_to_provisioned(tenant_id, pipeline.id, Version(1), "location1", ExtendedRuntimeStatus {
+                runtime_status: RuntimeStatus::Paused,
+                runtime_status_details: "".to_string(),
+                runtime_desired_status: RuntimeDesiredStatus::Paused,
+        })
               .await.unwrap_err(),
         DBError::OutdatedPipelineVersion { outdated_version, latest_version } if outdated_version == Version(1) && latest_version == Version(2)
     ));
     assert!(matches!(
         handle.db
-              .transit_deployment_status_to_running(tenant_id, pipeline.id, Version(1))
+              .transit_deployment_resources_status_to_provisioned(tenant_id, pipeline.id, Version(1), "location1", ExtendedRuntimeStatus {
+            runtime_status: RuntimeStatus::Paused,
+            runtime_status_details: "".to_string(),
+            runtime_desired_status: RuntimeDesiredStatus::Paused,
+        })
               .await.unwrap_err(),
         DBError::OutdatedPipelineVersion { outdated_version, latest_version } if outdated_version == Version(1) && latest_version == Version(2)
     ));
     assert!(matches!(
         handle.db
-              .transit_deployment_status_to_stopping(tenant_id, pipeline.id, Version(1), None, None)
+              .transit_deployment_resources_status_to_stopping(tenant_id, pipeline.id, Version(1), None, None)
               .await.unwrap_err(),
         DBError::OutdatedPipelineVersion { outdated_version, latest_version } if outdated_version == Version(1) && latest_version == Version(2)
     ));
     assert!(matches!(
         handle.db
-              .transit_deployment_status_to_stopped(tenant_id, pipeline.id, Version(1))
+              .transit_deployment_resources_status_to_stopped(tenant_id, pipeline.id, Version(1))
               .await.unwrap_err(),
         DBError::OutdatedPipelineVersion { outdated_version, latest_version } if outdated_version == Version(1) && latest_version == Version(2)
     ));
@@ -1688,10 +1851,11 @@ async fn pipeline_provision_version_guard() {
     // This is the correct version and should work
     handle
         .db
-        .transit_deployment_status_to_provisioning(
+        .transit_deployment_resources_status_to_provisioning(
             tenant_id,
             pipeline.id,
             Version(2),
+            Uuid::now_v7(),
             serde_json::to_value(generate_pipeline_config(
                 pipeline.id,
                 &serde_json::from_value(pipeline.runtime_config.clone()).unwrap(),
@@ -1795,43 +1959,46 @@ enum StorageAction {
         #[proptest(strategy = "limited_rust_compilation_info()")] RustCompilationInfo,
     ),
     TransitProgramStatusToSystemError(TenantId, PipelineId, Version, String),
-    SetDeploymentDesiredStatusRunning(
+    SetDeploymentResourcesDesiredStatusProvisioned(
+        TenantId,
+        #[proptest(strategy = "limited_pipeline_name()")] String,
+        #[proptest(strategy = "arbitrary_runtime_desired_status()")] RuntimeDesiredStatus,
+    ),
+    SetDeploymentResourcesDesiredStatusStoppedIfNotProvisioned(
         TenantId,
         #[proptest(strategy = "limited_pipeline_name()")] String,
     ),
-    SetDeploymentDesiredStatusPaused(
-        TenantId,
-        #[proptest(strategy = "limited_pipeline_name()")] String,
-    ),
-    SetDeploymentDesiredStatusSuspendedOrStopped(
-        TenantId,
-        #[proptest(strategy = "limited_pipeline_name()")] String,
-        bool,
-    ),
-    TransitDeploymentStatusToProvisioning(
+    TransitDeploymentResourcesStatusToProvisioning(
         TenantId,
         PipelineId,
         Version,
+        #[proptest(strategy = "limited_deployment_id()")] Uuid,
         #[proptest(strategy = "limited_pipeline_config()")] serde_json::Value,
     ),
-    TransitDeploymentStatusToInitializing(TenantId, PipelineId, Version, String),
-    TransitDeploymentStatusToRunning(TenantId, PipelineId, Version),
-    TransitDeploymentStatusToPaused(TenantId, PipelineId, Version),
-    TransitDeploymentStatusToUnavailable(TenantId, PipelineId, Version),
-    TransitDeploymentStatusToSuspending(TenantId, PipelineId, Version),
-    TransitDeploymentStatusToStopping(
+    TransitDeploymentResourcesStatusToProvisioned(
+        TenantId,
+        PipelineId,
+        Version,
+        #[proptest(strategy = "limited_deployment_location()")] String,
+        #[proptest(strategy = "limited_extended_runtime_status()")] ExtendedRuntimeStatus,
+    ),
+    TransitDeploymentResourcesStatusToStopping(
         TenantId,
         PipelineId,
         Version,
         #[proptest(strategy = "limited_optional_error_response()")] Option<ErrorResponse>,
         #[proptest(strategy = "limited_optional_suspend_info()")] Option<serde_json::Value>,
     ),
-    TransitDeploymentStatusToStopped(TenantId, PipelineId, Version),
+    TransitDeploymentResourcesStatusToStopped(TenantId, PipelineId, Version),
     TransitStorageStatusToClearing(
         TenantId,
         #[proptest(strategy = "limited_pipeline_name()")] String,
     ),
     TransitStorageStatusToCleared(TenantId, PipelineId),
+    IncrementNotifyCounter(
+        TenantId,
+        #[proptest(strategy = "limited_pipeline_name()")] String,
+    ),
     ListPipelineIdsAcrossAllTenants,
     ListPipelinesAcrossAllTenantsForMonitoring,
     ClearOngoingSqlCompilation(#[proptest(strategy = "limited_platform_version()")] String),
@@ -1853,7 +2020,13 @@ fn convert_pipeline_with_constant_timestamps(
     let timestamp = Utc.timestamp_nanos(0);
     pipeline.created_at = timestamp;
     pipeline.program_status_since = timestamp;
-    pipeline.deployment_status_since = timestamp;
+    pipeline.deployment_resources_status_since = timestamp;
+    pipeline.deployment_resources_desired_status_since = timestamp;
+    pipeline.deployment_runtime_status_since =
+        pipeline.deployment_runtime_status_since.map(|_| timestamp);
+    pipeline.deployment_runtime_desired_status_since = pipeline
+        .deployment_runtime_desired_status_since
+        .map(|_| timestamp);
     pipeline
 }
 
@@ -1865,7 +2038,13 @@ fn convert_pipeline_for_monitoring_with_constant_timestamps(
     let timestamp = Utc.timestamp_nanos(0);
     pipeline.created_at = timestamp;
     pipeline.program_status_since = timestamp;
-    pipeline.deployment_status_since = timestamp;
+    pipeline.deployment_resources_status_since = timestamp;
+    pipeline.deployment_resources_desired_status_since = timestamp;
+    pipeline.deployment_runtime_status_since =
+        pipeline.deployment_runtime_status_since.map(|_| timestamp);
+    pipeline.deployment_runtime_desired_status_since = pipeline
+        .deployment_runtime_desired_status_since
+        .map(|_| timestamp);
     pipeline
 }
 
@@ -2304,82 +2483,58 @@ fn db_impl_behaves_like_model() {
                                 let impl_response = handle.db.transit_program_status_to_system_error(tenant_id, pipeline_id, program_version_guard, &system_error).await;
                                 check_responses(i, model_response, impl_response);
                             }
-                            StorageAction::SetDeploymentDesiredStatusRunning(tenant_id, pipeline_name) => {
+                            StorageAction::SetDeploymentResourcesDesiredStatusProvisioned(tenant_id, pipeline_name, initial) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
-                                let model_response = model.set_deployment_desired_status_running(tenant_id, &pipeline_name).await;
-                                let impl_response = handle.db.set_deployment_desired_status_running(tenant_id, &pipeline_name).await;
+                                let model_response = model.set_deployment_resources_desired_status_provisioned(tenant_id, &pipeline_name, initial).await;
+                                let impl_response = handle.db.set_deployment_resources_desired_status_provisioned(tenant_id, &pipeline_name, initial).await;
                                 check_responses(i, model_response, impl_response);
                             }
-                            StorageAction::SetDeploymentDesiredStatusPaused(tenant_id, pipeline_name) => {
+                            StorageAction::SetDeploymentResourcesDesiredStatusStoppedIfNotProvisioned(tenant_id, pipeline_name) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
-                                let model_response = model.set_deployment_desired_status_paused(tenant_id, &pipeline_name).await;
-                                let impl_response = handle.db.set_deployment_desired_status_paused(tenant_id, &pipeline_name).await;
+                                let model_response = model.set_deployment_resources_desired_status_stopped_if_not_provisioned(tenant_id, &pipeline_name).await;
+                                let impl_response = handle.db.set_deployment_resources_desired_status_stopped_if_not_provisioned(tenant_id, &pipeline_name).await;
                                 check_responses(i, model_response, impl_response);
                             }
-                            StorageAction::SetDeploymentDesiredStatusSuspendedOrStopped(tenant_id, pipeline_name, force) => {
+                            StorageAction::TransitDeploymentResourcesStatusToProvisioning(tenant_id, pipeline_id, version_guard, deployment_id, pipeline_config) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
-                                let model_response = model.set_deployment_desired_status_suspended_or_stopped(tenant_id, &pipeline_name, force).await;
-                                let impl_response = handle.db.set_deployment_desired_status_suspended_or_stopped(tenant_id, &pipeline_name, force).await;
+                                let model_response = model.transit_deployment_resources_status_to_provisioning(tenant_id, pipeline_id, version_guard, deployment_id, pipeline_config.clone()).await;
+                                let impl_response = handle.db.transit_deployment_resources_status_to_provisioning(tenant_id, pipeline_id, version_guard, deployment_id, pipeline_config.clone()).await;
                                 check_responses(i, model_response, impl_response);
                             }
-                            StorageAction::TransitDeploymentStatusToProvisioning(tenant_id, pipeline_id, version_guard, pipeline_config) => {
+                            StorageAction::TransitDeploymentResourcesStatusToProvisioned(tenant_id, pipeline_id, version_guard, deployment_location, extended_runtime_status) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
-                                let model_response = model.transit_deployment_status_to_provisioning(tenant_id, pipeline_id, version_guard, pipeline_config.clone()).await;
-                                let impl_response = handle.db.transit_deployment_status_to_provisioning(tenant_id, pipeline_id, version_guard, pipeline_config.clone()).await;
+                                let model_response = model.transit_deployment_resources_status_to_provisioned(tenant_id, pipeline_id, version_guard, &deployment_location, extended_runtime_status.clone()).await;
+                                let impl_response = handle.db.transit_deployment_resources_status_to_provisioned(tenant_id, pipeline_id, version_guard, &deployment_location, extended_runtime_status).await;
                                 check_responses(i, model_response, impl_response);
                             }
-                            StorageAction::TransitDeploymentStatusToInitializing(tenant_id, pipeline_id, version_guard, deployment_location) => {
+                            StorageAction::TransitDeploymentResourcesStatusToStopping(tenant_id, pipeline_id, version_guard, deployment_error, suspend_info) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
-                                let model_response = model.transit_deployment_status_to_initializing(tenant_id, pipeline_id, version_guard, &deployment_location).await;
-                                let impl_response = handle.db.transit_deployment_status_to_initializing(tenant_id, pipeline_id, version_guard, &deployment_location).await;
+                                let model_response = model.transit_deployment_resources_status_to_stopping(tenant_id, pipeline_id, version_guard, deployment_error.clone(), suspend_info.clone()).await;
+                                let impl_response = handle.db.transit_deployment_resources_status_to_stopping(tenant_id, pipeline_id, version_guard, deployment_error, suspend_info).await;
                                 check_responses(i, model_response, impl_response);
                             }
-                            StorageAction::TransitDeploymentStatusToRunning(tenant_id, pipeline_id, version_guard) => {
+                            StorageAction::TransitDeploymentResourcesStatusToStopped(tenant_id, pipeline_id, version_guard) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
-                                let model_response = model.transit_deployment_status_to_running(tenant_id, pipeline_id, version_guard).await;
-                                let impl_response = handle.db.transit_deployment_status_to_running(tenant_id, pipeline_id, version_guard).await;
-                                check_responses(i, model_response, impl_response);
-                            }
-                            StorageAction::TransitDeploymentStatusToPaused(tenant_id, pipeline_id, version_guard) => {
-                                create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
-                                let model_response = model.transit_deployment_status_to_paused(tenant_id, pipeline_id, version_guard).await;
-                                let impl_response = handle.db.transit_deployment_status_to_paused(tenant_id, pipeline_id, version_guard).await;
-                                check_responses(i, model_response, impl_response);
-                            }
-                            StorageAction::TransitDeploymentStatusToUnavailable(tenant_id, pipeline_id, version_guard) => {
-                                create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
-                                let model_response = model.transit_deployment_status_to_unavailable(tenant_id, pipeline_id, version_guard).await;
-                                let impl_response = handle.db.transit_deployment_status_to_unavailable(tenant_id, pipeline_id, version_guard).await;
-                                check_responses(i, model_response, impl_response);
-                            }
-                            StorageAction::TransitDeploymentStatusToSuspending(tenant_id, pipeline_id, version_guard) => {
-                                create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
-                                let model_response = model.transit_deployment_status_to_suspending(tenant_id, pipeline_id, version_guard).await;
-                                let impl_response = handle.db.transit_deployment_status_to_suspending(tenant_id, pipeline_id, version_guard).await;
-                                check_responses(i, model_response, impl_response);
-                            }
-                            StorageAction::TransitDeploymentStatusToStopping(tenant_id, pipeline_id, version_guard, deployment_error, suspend_info) => {
-                                create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
-                                let model_response = model.transit_deployment_status_to_stopping(tenant_id, pipeline_id, version_guard, deployment_error.clone(), suspend_info.clone()).await;
-                                let impl_response = handle.db.transit_deployment_status_to_stopping(tenant_id, pipeline_id, version_guard, deployment_error, suspend_info).await;
-                                check_responses(i, model_response, impl_response);
-                            }
-                            StorageAction::TransitDeploymentStatusToStopped(tenant_id, pipeline_id, version_guard) => {
-                                create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
-                                let model_response = model.transit_deployment_status_to_stopped(tenant_id, pipeline_id, version_guard).await;
-                                let impl_response = handle.db.transit_deployment_status_to_stopped(tenant_id, pipeline_id, version_guard).await;
+                                let model_response = model.transit_deployment_resources_status_to_stopped(tenant_id, pipeline_id, version_guard).await;
+                                let impl_response = handle.db.transit_deployment_resources_status_to_stopped(tenant_id, pipeline_id, version_guard).await;
                                 check_responses(i, model_response, impl_response);
                             }
                             StorageAction::TransitStorageStatusToClearing(tenant_id, pipeline_name) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
-                                let model_response = model.transit_storage_status_to_clearing(tenant_id, &pipeline_name).await;
-                                let impl_response = handle.db.transit_storage_status_to_clearing(tenant_id, &pipeline_name).await;
+                                let model_response = model.transit_storage_status_to_clearing_if_not_cleared(tenant_id, &pipeline_name).await;
+                                let impl_response = handle.db.transit_storage_status_to_clearing_if_not_cleared(tenant_id, &pipeline_name).await;
                                 check_responses(i, model_response, impl_response);
                             }
                             StorageAction::TransitStorageStatusToCleared(tenant_id, pipeline_id) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
                                 let model_response = model.transit_storage_status_to_cleared(tenant_id, pipeline_id).await;
                                 let impl_response = handle.db.transit_storage_status_to_cleared(tenant_id, pipeline_id).await;
+                                check_responses(i, model_response, impl_response);
+                            }
+                            StorageAction::IncrementNotifyCounter(tenant_id, pipeline_name) => {
+                                create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
+                                let model_response = model.increment_notify_counter(tenant_id, &pipeline_name).await;
+                                let impl_response = handle.db.increment_notify_counter(tenant_id, &pipeline_name).await;
                                 check_responses(i, model_response, impl_response);
                             }
                             StorageAction::ListPipelineIdsAcrossAllTenants => {
@@ -2440,7 +2595,7 @@ struct DbModel {
 #[async_trait]
 trait ModelHelpers {
     #[allow(clippy::too_many_arguments)]
-    async fn help_update_pipeline(
+    async fn validate_and_apply_pipeline_update(
         &self,
         is_compiler_update: bool,
         tenant_id: TenantId,
@@ -2454,47 +2609,13 @@ trait ModelHelpers {
         udf_toml: &Option<String>,
         program_config: &Option<serde_json::Value>,
     ) -> Result<ExtendedPipelineDescr, DBError>;
-
-    /// Fetches the existing pipeline, checks the version guard matches,
-    /// checks the transition is valid. Returns the pipeline.
-    async fn help_transit_program_status(
-        &self,
-        tenant_id: TenantId,
-        pipeline_id: PipelineId,
-        program_version_guard: Version,
-        new_status: ProgramStatus,
-    ) -> Result<ExtendedPipelineDescr, DBError>;
-
-    /// Fetches the existing pipeline, checks the program is compiled,
-    /// and checks the transition is valid. Returns the pipeline.
-    async fn help_transit_deployment_status(
-        &self,
-        tenant_id: TenantId,
-        pipeline_id: PipelineId,
-        version_guard: Version,
-        new_status: PipelineStatus,
-    ) -> Result<ExtendedPipelineDescr, DBError>;
-
-    /// Fetches the existing pipeline, checks the transition is valid,
-    /// and checks the program is compiled. Returns the pipeline.
-    async fn help_transit_deployment_desired_status(
-        &self,
-        tenant_id: TenantId,
-        pipeline_name: &str,
-        new_desired_status: PipelineDesiredStatus,
-    ) -> Result<ExtendedPipelineDescr, DBError>;
-
-    async fn help_transit_storage_status(
-        &self,
-        tenant_id: TenantId,
-        pipeline_id: PipelineId,
-        new_status: StorageStatus,
-    ) -> Result<ExtendedPipelineDescr, DBError>;
 }
 
 #[async_trait]
 impl ModelHelpers for Mutex<DbModel> {
-    async fn help_update_pipeline(
+    /// Helps update the pipeline user fields by checking all the constraints and applying the
+    /// relevant changes.
+    async fn validate_and_apply_pipeline_update(
         &self,
         is_compiler_update: bool,
         tenant_id: TenantId,
@@ -2534,14 +2655,14 @@ impl ModelHelpers for Mutex<DbModel> {
         // Pipeline must be stopped
         if !matches!(
             (
-                pipeline.deployment_status,
-                pipeline.deployment_desired_status,
+                pipeline.deployment_resources_status,
+                pipeline.deployment_resources_desired_status,
                 is_compiler_update
             ),
-            (PipelineStatus::Stopped, PipelineDesiredStatus::Stopped, _)
+            (ResourcesStatus::Stopped, ResourcesDesiredStatus::Stopped, _)
                 | (
-                    PipelineStatus::Stopped,
-                    PipelineDesiredStatus::Paused | PipelineDesiredStatus::Running,
+                    ResourcesStatus::Stopped,
+                    ResourcesDesiredStatus::Provisioned,
                     true
                 )
         ) {
@@ -2711,118 +2832,6 @@ impl ModelHelpers for Mutex<DbModel> {
         // Return the final extended pipeline descriptor
         Ok(pipeline)
     }
-
-    async fn help_transit_program_status(
-        &self,
-        tenant_id: TenantId,
-        pipeline_id: PipelineId,
-        program_version_guard: Version,
-        new_status: ProgramStatus,
-    ) -> Result<ExtendedPipelineDescr, DBError> {
-        // Fetch existing pipeline
-        let pipeline = self.get_pipeline_by_id(tenant_id, pipeline_id).await?;
-
-        // Check version guard
-        if pipeline.program_version != program_version_guard {
-            return Err(DBError::OutdatedProgramVersion {
-                outdated_version: program_version_guard,
-                latest_version: pipeline.program_version,
-            });
-        }
-
-        // Check transition
-        validate_program_status_transition(pipeline.program_status, new_status)?;
-
-        // Pipeline must be stopped
-        if pipeline.deployment_status != PipelineStatus::Stopped {
-            return Err(DBError::ProgramStatusUpdateRestrictedToStopped);
-        }
-
-        // Return fetched pipeline
-        Ok(pipeline)
-    }
-
-    async fn help_transit_deployment_status(
-        &self,
-        tenant_id: TenantId,
-        pipeline_id: PipelineId,
-        version_guard: Version,
-        new_status: PipelineStatus,
-    ) -> Result<ExtendedPipelineDescr, DBError> {
-        // Fetch existing pipeline
-        let pipeline = self.get_pipeline_by_id(tenant_id, pipeline_id).await?;
-
-        // Version guard
-        if pipeline.version != version_guard {
-            return Err(DBError::OutdatedPipelineVersion {
-                outdated_version: version_guard,
-                latest_version: pipeline.version,
-            });
-        }
-
-        // Check transition
-        validate_deployment_status_transition(
-            pipeline.storage_status,
-            pipeline.deployment_status,
-            new_status,
-        )?;
-
-        // Check program is compiled if needed
-        if !matches!(
-            (pipeline.deployment_status, new_status),
-            (PipelineStatus::Stopped, PipelineStatus::Stopping)
-                | (PipelineStatus::Stopping, PipelineStatus::Stopped)
-        ) && pipeline.program_status != ProgramStatus::Success
-        {
-            return Err(DBError::TransitionRequiresCompiledProgram {
-                current: pipeline.deployment_status,
-                transition_to: new_status,
-            });
-        }
-
-        // Return fetched pipeline
-        Ok(pipeline)
-    }
-
-    async fn help_transit_deployment_desired_status(
-        &self,
-        tenant_id: TenantId,
-        pipeline_name: &str,
-        new_desired_status: PipelineDesiredStatus,
-    ) -> Result<ExtendedPipelineDescr, DBError> {
-        // Fetch existing pipeline
-        let pipeline = self.get_pipeline(tenant_id, pipeline_name).await?;
-
-        // Check transition
-        validate_deployment_desired_status_transition(
-            pipeline.deployment_status,
-            pipeline.deployment_desired_status,
-            new_desired_status,
-        )?;
-
-        // Return fetched pipeline
-        Ok(pipeline)
-    }
-
-    async fn help_transit_storage_status(
-        &self,
-        tenant_id: TenantId,
-        pipeline_id: PipelineId,
-        new_status: StorageStatus,
-    ) -> Result<ExtendedPipelineDescr, DBError> {
-        // Fetch existing pipeline
-        let pipeline = self.get_pipeline_by_id(tenant_id, pipeline_id).await?;
-
-        // Check transition
-        validate_storage_status_transition(
-            pipeline.deployment_status,
-            pipeline.storage_status,
-            new_status,
-        )?;
-
-        // Return fetched pipeline
-        Ok(pipeline)
-    }
 }
 
 /// Converts the complete extended descriptor to one with only fields relevant to monitoring.
@@ -2839,14 +2848,84 @@ fn convert_descriptor_to_monitoring(
         program_version: pipeline.program_version,
         program_status: pipeline.program_status,
         program_status_since: pipeline.program_status_since,
-        deployment_status: pipeline.deployment_status,
-        deployment_status_since: pipeline.program_status_since,
-        deployment_desired_status: pipeline.deployment_desired_status,
         deployment_error: pipeline.deployment_error.clone(),
         deployment_location: pipeline.deployment_location.clone(),
         refresh_version: pipeline.refresh_version,
         storage_status: pipeline.storage_status,
+        deployment_id: pipeline.deployment_id,
+        deployment_initial: pipeline.deployment_initial,
+        deployment_resources_status: pipeline.deployment_resources_status,
+        deployment_resources_status_since: pipeline.program_status_since,
+        deployment_resources_desired_status: pipeline.deployment_resources_desired_status,
+        deployment_resources_desired_status_since: pipeline
+            .deployment_resources_desired_status_since,
+        deployment_runtime_status: pipeline.deployment_runtime_status,
+        deployment_runtime_status_since: pipeline.deployment_runtime_status_since,
+        deployment_runtime_desired_status: pipeline.deployment_runtime_desired_status,
+        deployment_runtime_desired_status_since: pipeline.deployment_runtime_desired_status_since,
     }
+}
+
+// Performs general validation of moving from one program status to the next.
+fn validate_new_program_status(
+    pipeline: &ExtendedPipelineDescr,
+    program_version_guard: Version,
+    new_status: ProgramStatus,
+) -> Result<(), DBError> {
+    // Check version guard
+    if pipeline.program_version != program_version_guard {
+        return Err(DBError::OutdatedProgramVersion {
+            outdated_version: program_version_guard,
+            latest_version: pipeline.program_version,
+        });
+    }
+
+    // Check transition
+    validate_program_status_transition(pipeline.program_status, new_status)?;
+
+    // Pipeline must be stopped
+    if pipeline.deployment_resources_status != ResourcesStatus::Stopped {
+        return Err(DBError::ProgramStatusUpdateRestrictedToStopped);
+    }
+
+    Ok(())
+}
+
+// Performs general validation of moving from one deployment resources status to the next.
+fn validate_new_deployment_resources_status(
+    pipeline: &ExtendedPipelineDescr,
+    version_guard: Version,
+    new_status: ResourcesStatus,
+) -> Result<(), DBError> {
+    // Version guard
+    if pipeline.version != version_guard {
+        return Err(DBError::OutdatedPipelineVersion {
+            outdated_version: version_guard,
+            latest_version: pipeline.version,
+        });
+    }
+
+    // Check transition
+    validate_resources_status_transition(
+        pipeline.storage_status,
+        pipeline.deployment_resources_status,
+        new_status,
+    )?;
+
+    // Check program is compiled if needed
+    if !matches!(
+        (pipeline.deployment_resources_status, new_status),
+        (ResourcesStatus::Stopped, ResourcesStatus::Stopping)
+            | (ResourcesStatus::Stopping, ResourcesStatus::Stopped)
+    ) && pipeline.program_status != ProgramStatus::Success
+    {
+        return Err(DBError::TransitionRequiresCompiledProgram {
+            current: pipeline.deployment_resources_status,
+            transition_to: new_status,
+        });
+    }
+
+    Ok(())
 }
 
 #[async_trait]
@@ -3039,19 +3118,19 @@ impl Storage for Mutex<DbModel> {
             && pipeline.platform_version == platform_version;
         if matches!(
             (
-                pipeline.deployment_status,
-                pipeline.deployment_desired_status,
+                pipeline.deployment_resources_status,
+                pipeline.deployment_resources_desired_status,
                 is_ready_compiled,
                 provision_called
             ),
             (
-                PipelineStatus::Stopped,
-                PipelineDesiredStatus::Paused | PipelineDesiredStatus::Running,
+                ResourcesStatus::Stopped,
+                ResourcesDesiredStatus::Provisioned,
                 true,
                 _,
             ) | (
-                PipelineStatus::Provisioning,
-                PipelineDesiredStatus::Paused | PipelineDesiredStatus::Running,
+                ResourcesStatus::Provisioning,
+                ResourcesDesiredStatus::Provisioned,
                 _,
                 false,
             ),
@@ -3129,15 +3208,22 @@ impl Storage for Mutex<DbModel> {
             program_info: None,
             program_binary_source_checksum: None,
             program_binary_integrity_checksum: None,
-            deployment_status: PipelineStatus::Stopped,
-            deployment_status_since: now,
-            deployment_desired_status: PipelineDesiredStatus::Stopped,
             deployment_error: None,
             deployment_config: None,
             deployment_location: None,
             refresh_version: Version(1),
             suspend_info: None,
             storage_status: StorageStatus::Cleared,
+            deployment_id: None,
+            deployment_initial: None,
+            deployment_resources_status: ResourcesStatus::Stopped,
+            deployment_resources_status_since: now,
+            deployment_resources_desired_status: ResourcesDesiredStatus::Stopped,
+            deployment_resources_desired_status_since: now,
+            deployment_runtime_status: None,
+            deployment_runtime_status_since: None,
+            deployment_runtime_desired_status: None,
+            deployment_runtime_desired_status_since: None,
         };
 
         // Insert into state
@@ -3203,7 +3289,7 @@ impl Storage for Mutex<DbModel> {
         udf_toml: &Option<String>,
         program_config: &Option<serde_json::Value>,
     ) -> Result<ExtendedPipelineDescr, DBError> {
-        self.help_update_pipeline(
+        self.validate_and_apply_pipeline_update(
             false,
             tenant_id,
             original_name,
@@ -3224,12 +3310,10 @@ impl Storage for Mutex<DbModel> {
         tenant_id: TenantId,
         pipeline_name: &str,
     ) -> Result<PipelineId, DBError> {
-        // Fetch existing pipeline
+        // Validate
         let pipeline = self.get_pipeline(tenant_id, pipeline_name).await?;
-
-        // Pipeline must be fully stopped
-        if pipeline.deployment_status != PipelineStatus::Stopped
-            || pipeline.deployment_desired_status != PipelineDesiredStatus::Stopped
+        if pipeline.deployment_resources_status != ResourcesStatus::Stopped
+            || pipeline.deployment_resources_desired_status != ResourcesDesiredStatus::Stopped
         {
             return Err(DBError::DeleteRestrictedToFullyStopped);
         }
@@ -3237,7 +3321,7 @@ impl Storage for Mutex<DbModel> {
             return Err(DBError::DeleteRestrictedToClearedStorage);
         }
 
-        // Delete from state
+        // Apply changes: delete
         self.lock()
             .await
             .pipelines
@@ -3251,10 +3335,12 @@ impl Storage for Mutex<DbModel> {
         pipeline_id: PipelineId,
         program_version_guard: Version,
     ) -> Result<(), DBError> {
+        // Validate
+        let mut pipeline = self.get_pipeline_by_id(tenant_id, pipeline_id).await?;
         let new_status = ProgramStatus::Pending;
-        let mut pipeline = self
-            .help_transit_program_status(tenant_id, pipeline_id, program_version_guard, new_status)
-            .await?;
+        validate_new_program_status(&pipeline, program_version_guard, new_status)?;
+
+        // Apply changes: update
         pipeline.program_status = new_status;
         pipeline.program_status_since = Utc::now();
         pipeline.program_error = ProgramError {
@@ -3277,10 +3363,12 @@ impl Storage for Mutex<DbModel> {
         pipeline_id: PipelineId,
         program_version_guard: Version,
     ) -> Result<(), DBError> {
+        // Validate
+        let mut pipeline = self.get_pipeline_by_id(tenant_id, pipeline_id).await?;
         let new_status = ProgramStatus::CompilingSql;
-        let mut pipeline = self
-            .help_transit_program_status(tenant_id, pipeline_id, program_version_guard, new_status)
-            .await?;
+        validate_new_program_status(&pipeline, program_version_guard, new_status)?;
+
+        // Apply changes: update
         pipeline.program_status = new_status;
         pipeline.program_status_since = Utc::now();
         self.lock()
@@ -3298,14 +3386,16 @@ impl Storage for Mutex<DbModel> {
         sql_compilation: &SqlCompilationInfo,
         program_info: &serde_json::Value,
     ) -> Result<(), DBError> {
+        // Validate
+        let mut pipeline = self.get_pipeline_by_id(tenant_id, pipeline_id).await?;
         let new_status = ProgramStatus::SqlCompiled;
-        let mut pipeline = self
-            .help_transit_program_status(tenant_id, pipeline_id, program_version_guard, new_status)
-            .await?;
+        validate_new_program_status(&pipeline, program_version_guard, new_status)?;
         validate_program_info(program_info).map_err(|e| DBError::InvalidProgramInfo {
             value: program_info.clone(),
             error: e,
         })?;
+
+        // Apply changes: update
         pipeline.program_status = new_status;
         pipeline.program_status_since = Utc::now();
         pipeline.program_error = ProgramError {
@@ -3328,10 +3418,12 @@ impl Storage for Mutex<DbModel> {
         pipeline_id: PipelineId,
         program_version_guard: Version,
     ) -> Result<(), DBError> {
+        // Validate
+        let mut pipeline = self.get_pipeline_by_id(tenant_id, pipeline_id).await?;
         let new_status = ProgramStatus::CompilingRust;
-        let mut pipeline = self
-            .help_transit_program_status(tenant_id, pipeline_id, program_version_guard, new_status)
-            .await?;
+        validate_new_program_status(&pipeline, program_version_guard, new_status)?;
+
+        // Apply changes: update
         pipeline.program_status = new_status;
         pipeline.program_status_since = Utc::now();
         self.lock()
@@ -3350,10 +3442,12 @@ impl Storage for Mutex<DbModel> {
         program_binary_source_checksum: &str,
         program_binary_integrity_checksum: &str,
     ) -> Result<(), DBError> {
+        // Validate
+        let mut pipeline = self.get_pipeline_by_id(tenant_id, pipeline_id).await?;
         let new_status = ProgramStatus::Success;
-        let mut pipeline = self
-            .help_transit_program_status(tenant_id, pipeline_id, program_version_guard, new_status)
-            .await?;
+        validate_new_program_status(&pipeline, program_version_guard, new_status)?;
+
+        // Apply changes: update
         pipeline.program_status = new_status;
         pipeline.program_status_since = Utc::now();
         pipeline.program_error = ProgramError {
@@ -3379,10 +3473,12 @@ impl Storage for Mutex<DbModel> {
         program_version_guard: Version,
         sql_compilation: &SqlCompilationInfo,
     ) -> Result<(), DBError> {
+        // Validate
+        let mut pipeline = self.get_pipeline_by_id(tenant_id, pipeline_id).await?;
         let new_status = ProgramStatus::SqlError;
-        let mut pipeline = self
-            .help_transit_program_status(tenant_id, pipeline_id, program_version_guard, new_status)
-            .await?;
+        validate_new_program_status(&pipeline, program_version_guard, new_status)?;
+
+        // Apply changes: update
         pipeline.program_status = new_status;
         pipeline.program_status_since = Utc::now();
         pipeline.program_error = ProgramError {
@@ -3405,10 +3501,12 @@ impl Storage for Mutex<DbModel> {
         program_version_guard: Version,
         rust_compilation: &RustCompilationInfo,
     ) -> Result<(), DBError> {
+        // Validate
+        let mut pipeline = self.get_pipeline_by_id(tenant_id, pipeline_id).await?;
         let new_status = ProgramStatus::RustError;
-        let mut pipeline = self
-            .help_transit_program_status(tenant_id, pipeline_id, program_version_guard, new_status)
-            .await?;
+        validate_new_program_status(&pipeline, program_version_guard, new_status)?;
+
+        // Apply changes: update
         pipeline.program_status = new_status;
         pipeline.program_status_since = Utc::now();
         pipeline.program_error = ProgramError {
@@ -3431,10 +3529,12 @@ impl Storage for Mutex<DbModel> {
         program_version_guard: Version,
         system_error: &str,
     ) -> Result<(), DBError> {
+        // Validate
+        let mut pipeline = self.get_pipeline_by_id(tenant_id, pipeline_id).await?;
         let new_status = ProgramStatus::SystemError;
-        let mut pipeline = self
-            .help_transit_program_status(tenant_id, pipeline_id, program_version_guard, new_status)
-            .await?;
+        validate_new_program_status(&pipeline, program_version_guard, new_status)?;
+
+        // Apply changes: update
         pipeline.program_status = new_status;
         pipeline.program_status_since = Utc::now();
         pipeline.program_error = ProgramError {
@@ -3450,16 +3550,28 @@ impl Storage for Mutex<DbModel> {
         Ok(())
     }
 
-    async fn set_deployment_desired_status_running(
+    async fn set_deployment_resources_desired_status_provisioned(
         &self,
         tenant_id: TenantId,
         pipeline_name: &str,
+        initial: RuntimeDesiredStatus,
     ) -> Result<PipelineId, DBError> {
-        let new_desired_status = PipelineDesiredStatus::Running;
-        let mut pipeline = self
-            .help_transit_deployment_desired_status(tenant_id, pipeline_name, new_desired_status)
-            .await?;
-        pipeline.deployment_desired_status = new_desired_status;
+        // Validate
+        let mut pipeline = self.get_pipeline(tenant_id, pipeline_name).await?;
+        let new_resources_desired_status = ResourcesDesiredStatus::Provisioned;
+        validate_resources_desired_status_transition(
+            pipeline.deployment_resources_status,
+            pipeline.deployment_resources_desired_status,
+            new_resources_desired_status,
+        )?;
+        if pipeline.deployment_initial.is_some_and(|v| v != initial) {
+            return Err(DBError::InitialImmutableUnlessStopped);
+        }
+
+        // Apply changes: update
+        pipeline.deployment_initial = Some(initial);
+        pipeline.deployment_resources_desired_status = new_resources_desired_status;
+        pipeline.deployment_resources_desired_status_since = Utc::now();
         self.lock()
             .await
             .pipelines
@@ -3467,47 +3579,61 @@ impl Storage for Mutex<DbModel> {
         Ok(pipeline.id)
     }
 
-    async fn set_deployment_desired_status_paused(
+    async fn set_deployment_resources_desired_status_stopped_if_not_provisioned(
         &self,
         tenant_id: TenantId,
         pipeline_name: &str,
-    ) -> Result<PipelineId, DBError> {
-        let new_desired_status = PipelineDesiredStatus::Paused;
-        let mut pipeline = self
-            .help_transit_deployment_desired_status(tenant_id, pipeline_name, new_desired_status)
-            .await?;
-        pipeline.deployment_desired_status = new_desired_status;
-        self.lock()
-            .await
-            .pipelines
-            .insert((tenant_id, pipeline.id), pipeline.clone());
-        Ok(pipeline.id)
-    }
+    ) -> Result<(bool, PipelineId), DBError> {
+        // Validate
+        let mut pipeline = self.get_pipeline(tenant_id, pipeline_name).await?;
+        if pipeline.deployment_resources_status != ResourcesStatus::Provisioned {
+            let new_resources_desired_status = ResourcesDesiredStatus::Stopped;
+            validate_resources_desired_status_transition(
+                pipeline.deployment_resources_status,
+                pipeline.deployment_resources_desired_status,
+                new_resources_desired_status,
+            )?;
 
-    async fn set_deployment_desired_status_suspended_or_stopped(
-        &self,
-        tenant_id: TenantId,
-        pipeline_name: &str,
-        force: bool,
-    ) -> Result<PipelineId, DBError> {
-        let pipeline = self.get_pipeline(tenant_id, pipeline_name).await?;
-        let new_desired_status = if !force
-            && matches!(
-                pipeline.deployment_status,
-                PipelineStatus::Initializing
-                    | PipelineStatus::Paused
-                    | PipelineStatus::Running
-                    | PipelineStatus::Unavailable
-                    | PipelineStatus::Suspending
-            ) {
-            PipelineDesiredStatus::Suspended
+            // Apply changes: update
+            if pipeline.deployment_resources_status == ResourcesStatus::Stopped {
+                pipeline.deployment_initial = None;
+            } else {
+                // Retain: pipeline.deployment_initial
+            }
+            pipeline.deployment_resources_desired_status = new_resources_desired_status;
+            pipeline.deployment_resources_desired_status_since = Utc::now();
+            self.lock()
+                .await
+                .pipelines
+                .insert((tenant_id, pipeline.id), pipeline.clone());
+            Ok((true, pipeline.id))
         } else {
-            PipelineDesiredStatus::Stopped
-        };
-        let mut pipeline = self
-            .help_transit_deployment_desired_status(tenant_id, pipeline_name, new_desired_status)
-            .await?;
-        pipeline.deployment_desired_status = new_desired_status;
+            Ok((false, pipeline.id))
+        }
+    }
+
+    async fn set_deployment_resources_desired_status_stopped(
+        &self,
+        tenant_id: TenantId,
+        pipeline_name: &str,
+    ) -> Result<PipelineId, DBError> {
+        // Validate
+        let mut pipeline = self.get_pipeline(tenant_id, pipeline_name).await?;
+        let new_resources_desired_status = ResourcesDesiredStatus::Stopped;
+        validate_resources_desired_status_transition(
+            pipeline.deployment_resources_status,
+            pipeline.deployment_resources_desired_status,
+            new_resources_desired_status,
+        )?;
+
+        // Apply changes: update
+        if pipeline.deployment_resources_status == ResourcesStatus::Stopped {
+            pipeline.deployment_initial = None;
+        } else {
+            // Retain: pipeline.deployment_initial
+        }
+        pipeline.deployment_resources_desired_status = new_resources_desired_status;
+        pipeline.deployment_resources_desired_status_since = Utc::now();
         self.lock()
             .await
             .pipelines
@@ -3515,33 +3641,47 @@ impl Storage for Mutex<DbModel> {
         Ok(pipeline.id)
     }
 
-    async fn transit_deployment_status_to_provisioning(
+    async fn transit_deployment_resources_status_to_provisioning(
         &self,
         tenant_id: TenantId,
         pipeline_id: PipelineId,
         version_guard: Version,
+        deployment_id: Uuid,
         deployment_config: serde_json::Value,
     ) -> Result<(), DBError> {
-        let pipeline = self.get_pipeline_by_id(tenant_id, pipeline_id).await?;
+        // Validate
+        let mut pipeline = self.get_pipeline_by_id(tenant_id, pipeline_id).await?;
         validate_storage_status_transition(
-            pipeline.deployment_status,
+            pipeline.deployment_resources_status,
             pipeline.storage_status,
             StorageStatus::InUse,
         )?;
-        let new_status = PipelineStatus::Provisioning;
-        let mut pipeline = self
-            .help_transit_deployment_status(tenant_id, pipeline_id, version_guard, new_status)
-            .await?;
+        let new_resources_status = ResourcesStatus::Provisioning;
+        validate_new_deployment_resources_status(&pipeline, version_guard, new_resources_status)?;
         validate_deployment_config(&deployment_config).map_err(|e| {
             DBError::InvalidDeploymentConfig {
                 value: deployment_config.clone(),
                 error: e,
             }
         })?;
-        pipeline.deployment_status = new_status;
-        pipeline.deployment_status_since = Utc::now();
-        pipeline.deployment_config = Some(deployment_config);
+
+        // Apply changes
         pipeline.storage_status = StorageStatus::InUse;
+        pipeline.deployment_id = Some(deployment_id);
+        // Retain: pipeline.deployment_initial
+        pipeline.deployment_config = Some(deployment_config);
+        pipeline.deployment_location = None;
+        pipeline.deployment_error = None;
+        pipeline.suspend_info = None;
+        pipeline.deployment_resources_status = new_resources_status;
+        pipeline.deployment_resources_status_since = Utc::now();
+        // Retain: pipeline.deployment_resources_desired_status
+        // Retain: pipeline.deployment_resources_desired_status_since
+        pipeline.deployment_runtime_status = None;
+        pipeline.deployment_runtime_status_since = None;
+        pipeline.deployment_runtime_desired_status = None;
+        pipeline.deployment_runtime_desired_status_since = None;
+
         self.lock()
             .await
             .pipelines
@@ -3549,20 +3689,36 @@ impl Storage for Mutex<DbModel> {
         Ok(())
     }
 
-    async fn transit_deployment_status_to_initializing(
+    async fn transit_deployment_resources_status_to_provisioned(
         &self,
         tenant_id: TenantId,
         pipeline_id: PipelineId,
         version_guard: Version,
         deployment_location: &str,
+        extended_runtime_status: ExtendedRuntimeStatus,
     ) -> Result<(), DBError> {
-        let new_status = PipelineStatus::Initializing;
-        let mut pipeline = self
-            .help_transit_deployment_status(tenant_id, pipeline_id, version_guard, new_status)
-            .await?;
-        pipeline.deployment_status = new_status;
-        pipeline.deployment_status_since = Utc::now();
+        // Validate
+        let mut pipeline = self.get_pipeline_by_id(tenant_id, pipeline_id).await?;
+        let new_resources_status = ResourcesStatus::Provisioned;
+        let new_runtime_status = extended_runtime_status.runtime_status;
+        let new_runtime_desired_status = extended_runtime_status.runtime_desired_status;
+        validate_new_deployment_resources_status(&pipeline, version_guard, new_resources_status)?;
+
+        // Apply changes
+        // Retain: pipeline.deployment_id
+        // Retain: pipeline.deployment_initial
+        // Retain: pipeline.deployment_config
         pipeline.deployment_location = Some(deployment_location.to_string());
+        pipeline.deployment_error = None;
+        pipeline.suspend_info = None;
+        pipeline.deployment_resources_status = new_resources_status;
+        pipeline.deployment_resources_status_since = Utc::now();
+        // Retain: pipeline.deployment_resources_desired_status
+        // Retain: pipeline.deployment_resources_desired_status_since
+        pipeline.deployment_runtime_status = Some(new_runtime_status);
+        pipeline.deployment_runtime_status_since = Some(Utc::now());
+        pipeline.deployment_runtime_desired_status = Some(new_runtime_desired_status);
+        pipeline.deployment_runtime_desired_status_since = Some(Utc::now());
         self.lock()
             .await
             .pipelines
@@ -3570,83 +3726,7 @@ impl Storage for Mutex<DbModel> {
         Ok(())
     }
 
-    async fn transit_deployment_status_to_running(
-        &self,
-        tenant_id: TenantId,
-        pipeline_id: PipelineId,
-        version_guard: Version,
-    ) -> Result<(), DBError> {
-        let new_status = PipelineStatus::Running;
-        let mut pipeline = self
-            .help_transit_deployment_status(tenant_id, pipeline_id, version_guard, new_status)
-            .await?;
-        pipeline.deployment_status = new_status;
-        pipeline.deployment_status_since = Utc::now();
-        self.lock()
-            .await
-            .pipelines
-            .insert((tenant_id, pipeline.id), pipeline.clone());
-        Ok(())
-    }
-
-    async fn transit_deployment_status_to_paused(
-        &self,
-        tenant_id: TenantId,
-        pipeline_id: PipelineId,
-        version_guard: Version,
-    ) -> Result<(), DBError> {
-        let new_status = PipelineStatus::Paused;
-        let mut pipeline = self
-            .help_transit_deployment_status(tenant_id, pipeline_id, version_guard, new_status)
-            .await?;
-        pipeline.deployment_status = new_status;
-        pipeline.deployment_status_since = Utc::now();
-        self.lock()
-            .await
-            .pipelines
-            .insert((tenant_id, pipeline.id), pipeline.clone());
-        Ok(())
-    }
-
-    async fn transit_deployment_status_to_unavailable(
-        &self,
-        tenant_id: TenantId,
-        pipeline_id: PipelineId,
-        version_guard: Version,
-    ) -> Result<(), DBError> {
-        let new_status = PipelineStatus::Unavailable;
-        let mut pipeline = self
-            .help_transit_deployment_status(tenant_id, pipeline_id, version_guard, new_status)
-            .await?;
-        pipeline.deployment_status = new_status;
-        pipeline.deployment_status_since = Utc::now();
-        self.lock()
-            .await
-            .pipelines
-            .insert((tenant_id, pipeline.id), pipeline.clone());
-        Ok(())
-    }
-
-    async fn transit_deployment_status_to_suspending(
-        &self,
-        tenant_id: TenantId,
-        pipeline_id: PipelineId,
-        version_guard: Version,
-    ) -> Result<(), DBError> {
-        let new_status = PipelineStatus::Suspending;
-        let mut pipeline = self
-            .help_transit_deployment_status(tenant_id, pipeline_id, version_guard, new_status)
-            .await?;
-        pipeline.deployment_status = new_status;
-        pipeline.deployment_status_since = Utc::now();
-        self.lock()
-            .await
-            .pipelines
-            .insert((tenant_id, pipeline.id), pipeline.clone());
-        Ok(())
-    }
-
-    async fn transit_deployment_status_to_stopping(
+    async fn transit_deployment_resources_status_to_stopping(
         &self,
         tenant_id: TenantId,
         pipeline_id: PipelineId,
@@ -3654,17 +3734,26 @@ impl Storage for Mutex<DbModel> {
         deployment_error: Option<ErrorResponse>,
         suspend_info: Option<serde_json::Value>,
     ) -> Result<(), DBError> {
-        let new_status = PipelineStatus::Stopping;
-        let mut pipeline = self
-            .help_transit_deployment_status(tenant_id, pipeline_id, version_guard, new_status)
-            .await?;
-        pipeline.deployment_desired_status = PipelineDesiredStatus::Stopped;
-        pipeline.deployment_status = new_status;
-        pipeline.deployment_status_since = Utc::now();
+        // Validate
+        let mut pipeline = self.get_pipeline_by_id(tenant_id, pipeline_id).await?;
+        let new_resources_status = ResourcesStatus::Stopping;
+        validate_new_deployment_resources_status(&pipeline, version_guard, new_resources_status)?;
+
+        // Apply changes
+        pipeline.deployment_id = None;
+        pipeline.deployment_initial = None;
         pipeline.deployment_config = None;
         pipeline.deployment_location = None;
         pipeline.deployment_error = deployment_error;
         pipeline.suspend_info = suspend_info;
+        pipeline.deployment_resources_status = new_resources_status;
+        pipeline.deployment_resources_status_since = Utc::now();
+        pipeline.deployment_resources_desired_status = ResourcesDesiredStatus::Stopped;
+        pipeline.deployment_resources_desired_status_since = Utc::now();
+        pipeline.deployment_runtime_status = None;
+        pipeline.deployment_runtime_status_since = None;
+        pipeline.deployment_runtime_desired_status = None;
+        pipeline.deployment_runtime_desired_status_since = None;
         self.lock()
             .await
             .pipelines
@@ -3672,18 +3761,32 @@ impl Storage for Mutex<DbModel> {
         Ok(())
     }
 
-    async fn transit_deployment_status_to_stopped(
+    async fn transit_deployment_resources_status_to_stopped(
         &self,
         tenant_id: TenantId,
         pipeline_id: PipelineId,
         version_guard: Version,
     ) -> Result<(), DBError> {
-        let new_status = PipelineStatus::Stopped;
-        let mut pipeline = self
-            .help_transit_deployment_status(tenant_id, pipeline_id, version_guard, new_status)
-            .await?;
-        pipeline.deployment_status = new_status;
-        pipeline.deployment_status_since = Utc::now();
+        // Validate
+        let mut pipeline = self.get_pipeline_by_id(tenant_id, pipeline_id).await?;
+        let new_resources_status = ResourcesStatus::Stopped;
+        validate_new_deployment_resources_status(&pipeline, version_guard, new_resources_status)?;
+
+        // Apply changes
+        pipeline.deployment_id = None;
+        pipeline.deployment_initial = None;
+        pipeline.deployment_config = None;
+        pipeline.deployment_location = None;
+        // Retain: pipeline.deployment_error
+        // Retain: pipeline.suspend_info
+        pipeline.deployment_resources_status = new_resources_status;
+        pipeline.deployment_resources_status_since = Utc::now();
+        pipeline.deployment_resources_desired_status = ResourcesDesiredStatus::Stopped;
+        pipeline.deployment_resources_desired_status_since = Utc::now();
+        pipeline.deployment_runtime_status = None;
+        pipeline.deployment_runtime_status_since = None;
+        pipeline.deployment_runtime_desired_status = None;
+        pipeline.deployment_runtime_desired_status_since = None;
         self.lock()
             .await
             .pipelines
@@ -3691,17 +3794,22 @@ impl Storage for Mutex<DbModel> {
         Ok(())
     }
 
-    async fn transit_storage_status_to_clearing(
+    async fn transit_storage_status_to_clearing_if_not_cleared(
         &self,
         tenant_id: TenantId,
         pipeline_name: &str,
     ) -> Result<PipelineId, DBError> {
-        let new_status = StorageStatus::Clearing;
-        let pipeline = self.get_pipeline(tenant_id, pipeline_name).await?;
+        // Validate
+        let mut pipeline = self.get_pipeline(tenant_id, pipeline_name).await?;
         if pipeline.storage_status != StorageStatus::Cleared {
-            let mut pipeline = self
-                .help_transit_storage_status(tenant_id, pipeline.id, new_status)
-                .await?;
+            let new_status = StorageStatus::Clearing;
+            validate_storage_status_transition(
+                pipeline.deployment_resources_status,
+                pipeline.storage_status,
+                new_status,
+            )?;
+
+            // Apply changes
             pipeline.storage_status = new_status;
             self.lock()
                 .await
@@ -3716,15 +3824,33 @@ impl Storage for Mutex<DbModel> {
         tenant_id: TenantId,
         pipeline_id: PipelineId,
     ) -> Result<(), DBError> {
+        // Validate
+        let mut pipeline = self.get_pipeline_by_id(tenant_id, pipeline_id).await?;
         let new_status = StorageStatus::Cleared;
-        let mut pipeline = self
-            .help_transit_storage_status(tenant_id, pipeline_id, new_status)
-            .await?;
+        validate_storage_status_transition(
+            pipeline.deployment_resources_status,
+            pipeline.storage_status,
+            new_status,
+        )?;
+
+        // Apply changes
         pipeline.storage_status = new_status;
         self.lock()
             .await
             .pipelines
             .insert((tenant_id, pipeline.id), pipeline.clone());
+        Ok(())
+    }
+
+    async fn increment_notify_counter(
+        &self,
+        tenant_id: TenantId,
+        pipeline_name: &str,
+    ) -> Result<(), DBError> {
+        let _pipeline = self.get_pipeline(tenant_id, pipeline_name).await?;
+        // The notify_counter field in the database is used solely as a notification mechanism for
+        // LISTEN calls on the pipeline table. As such, it should have no effect on the state of the
+        // pipeline and the logic surrounding it. It is also not exposed to the user.
         Ok(())
     }
 
@@ -3761,7 +3887,7 @@ impl Storage for Mutex<DbModel> {
             .list_pipelines_across_all_tenants_for_monitoring()
             .await?;
         for (tid, pipeline) in pipelines {
-            if pipeline.deployment_status == PipelineStatus::Stopped {
+            if pipeline.deployment_resources_status == ResourcesStatus::Stopped {
                 if pipeline.platform_version == platform_version {
                     if pipeline.program_status == ProgramStatus::CompilingSql {
                         self.transit_program_status_to_pending(
@@ -3774,7 +3900,7 @@ impl Storage for Mutex<DbModel> {
                 } else if pipeline.program_status == ProgramStatus::Pending
                     || pipeline.program_status == ProgramStatus::CompilingSql
                 {
-                    self.help_update_pipeline(
+                    self.validate_and_apply_pipeline_update(
                         true,
                         tid,
                         &pipeline.name,
@@ -3804,7 +3930,7 @@ impl Storage for Mutex<DbModel> {
             .pipelines
             .iter()
             .filter(|(_, p)| {
-                p.deployment_status == PipelineStatus::Stopped
+                p.deployment_resources_status == ResourcesStatus::Stopped
                     && p.program_status == ProgramStatus::Pending
                     && p.platform_version == platform_version
             })
@@ -3825,7 +3951,7 @@ impl Storage for Mutex<DbModel> {
             .list_pipelines_across_all_tenants_for_monitoring()
             .await?;
         for (tid, pipeline) in pipelines {
-            if pipeline.deployment_status == PipelineStatus::Stopped {
+            if pipeline.deployment_resources_status == ResourcesStatus::Stopped {
                 if pipeline.platform_version == platform_version {
                     if pipeline.program_status == ProgramStatus::CompilingRust {
                         let pipeline_complete = self.get_pipeline_by_id(tid, pipeline.id).await?;
@@ -3841,7 +3967,7 @@ impl Storage for Mutex<DbModel> {
                 } else if pipeline.program_status == ProgramStatus::SqlCompiled
                     || pipeline.program_status == ProgramStatus::CompilingRust
                 {
-                    self.help_update_pipeline(
+                    self.validate_and_apply_pipeline_update(
                         true,
                         tid,
                         &pipeline.name,
@@ -3871,7 +3997,7 @@ impl Storage for Mutex<DbModel> {
             .pipelines
             .iter()
             .filter(|(_, p)| {
-                p.deployment_status == PipelineStatus::Stopped
+                p.deployment_resources_status == ResourcesStatus::Stopped
                     && p.program_status == ProgramStatus::SqlCompiled
                     && p.platform_version == platform_version
             })
