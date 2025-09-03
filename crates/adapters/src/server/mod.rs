@@ -1875,6 +1875,7 @@ mod test_with_kafka {
     use feldera_types::completion_token::{
         CompletionStatus, CompletionStatusResponse, CompletionTokenResponse,
     };
+    use feldera_types::runtime_status::RuntimeDesiredStatus;
     use proptest::{
         strategy::{Strategy, ValueTree},
         test_runner::TestRunner,
@@ -1887,7 +1888,6 @@ mod test_with_kafka {
         time::{Duration, Instant},
     };
     use tempfile::NamedTempFile;
-    use feldera_types::runtime_status::RuntimeDesiredStatus;
 
     async fn print_stats(server: &TestServer) {
         let stats = serde_json::to_string_pretty(
