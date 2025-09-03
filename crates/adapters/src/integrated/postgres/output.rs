@@ -45,7 +45,7 @@ impl BackoffError {
         match self {
             BackoffError::Permanent(error) | BackoffError::Temporary(error) => {
                 // include the context info
-                anyhow!(error.to_string())
+                anyhow!("{error:?}")
             }
         }
     }
