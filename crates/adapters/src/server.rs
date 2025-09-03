@@ -219,10 +219,11 @@ pub(crate) struct ServerState {
     /// the self-destruct task when shutting down
     /// the server.
     terminate_sender: Option<Sender<()>>,
+    desired_status: Arc<Mutex<RuntimeDesiredStatus>>,
 }
 
 impl ServerState {
-    fn new(terminate_sender: Option<Sender<()>>) -> Self {
+    fn new(terminate_sender: Option<Sender<()>>, initial: RuntimeDesiredStatus) -> Self {
         Self {
             phase: Arc::new(RwLock::new(PipelinePhase::Initializing)),
             metadata: RwLock::new(String::new()),
@@ -231,6 +232,7 @@ impl ServerState {
             sync_checkpoint_state: Arc::new(Mutex::new(CheckpointSyncState::default())),
             activated: Arc::new(AtomicBool::new(false)),
             terminate_sender,
+            desired_status: Arc::new(Mutex::new(initial)),
         }
     }
 
@@ -360,6 +362,7 @@ pub fn run_server(
 ) -> Result<(), ControllerError> {
     ensure_default_crypto_provider();
 
+    let initial = args.initial;
     let bind_address = args.bind_address.clone();
     let port = args.default_port.unwrap_or(0);
     let listener = TcpListener::bind((bind_address, port))
@@ -377,8 +380,9 @@ pub fn run_server(
 
     let (terminate_sender, mut terminate_receiver) = channel(1);
 
-    let state = WebData::new(ServerState::new(Some(terminate_sender)));
+    let state = WebData::new(ServerState::new(Some(terminate_sender), args.initial));
     let state_clone = state.clone();
+    let state_clone2 = state.clone();
 
     // The bootstrap thread initialize the logger.
     // Use this channel to wait for the log to be ready, so that the first few
@@ -527,6 +531,24 @@ pub fn run_server(
         spawn(async move {
             terminate_receiver.recv().await;
             server_handle.stop(true).await
+        });
+
+        // Spawn a task to start the pipeline if initial is running
+        spawn(async move {
+            loop {
+                if initial == RuntimeDesiredStatus::Running {
+                    match &*state_clone2.controller.read().unwrap() {
+                        Some(controller) => {
+                            controller.start();
+                            break;
+                        }
+                        None => {
+                            // Not yet possible
+                        }
+                    }
+                }
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
         });
 
         info!(
@@ -808,6 +830,10 @@ where
 
 #[get("/start")]
 async fn start(state: WebData<ServerState>) -> impl Responder {
+    {
+        let mut runtime_desired_status = state.desired_status.lock().unwrap();
+        *runtime_desired_status = RuntimeDesiredStatus::Running;
+    }
     match &*state.controller.read().unwrap() {
         Some(controller) => {
             controller.start();
@@ -819,6 +845,10 @@ async fn start(state: WebData<ServerState>) -> impl Responder {
 
 #[get("/pause")]
 async fn pause(state: WebData<ServerState>) -> impl Responder {
+    {
+        let mut runtime_desired_status = state.desired_status.lock().unwrap();
+        *runtime_desired_status = RuntimeDesiredStatus::Paused;
+    }
     match &*state.controller.read().unwrap() {
         Some(controller) => {
             controller.pause();
@@ -830,6 +860,10 @@ async fn pause(state: WebData<ServerState>) -> impl Responder {
 
 #[post("/activate")]
 async fn activate(state: WebData<ServerState>) -> impl Responder {
+    {
+        let mut runtime_desired_status = state.desired_status.lock().unwrap();
+        *runtime_desired_status = RuntimeDesiredStatus::Paused;
+    }
     state
         .activated
         .store(true, std::sync::atomic::Ordering::Relaxed);
@@ -890,6 +924,7 @@ async fn attempt_acquire_read_lock<T>(
 async fn status(
     state: WebData<ServerState>,
 ) -> Result<ExtendedRuntimeStatus, ExtendedRuntimeStatusError> {
+    let runtime_desired_status = *state.desired_status.lock().unwrap();
     {
         // Acquire the controller read lock
         let controller = attempt_acquire_read_lock::<Option<Controller>>(&state.controller).await.map_err(|e| match e {
@@ -917,12 +952,12 @@ async fn status(
                 PipelineState::Paused => Ok(ExtendedRuntimeStatus {
                     runtime_status: RuntimeStatus::Paused,
                     runtime_status_details: "".to_string(),
-                    runtime_desired_status: RuntimeDesiredStatus::Paused,
+                    runtime_desired_status,
                 }),
                 PipelineState::Running => Ok(ExtendedRuntimeStatus {
                     runtime_status: RuntimeStatus::Running,
                     runtime_status_details: "".to_string(),
-                    runtime_desired_status: RuntimeDesiredStatus::Running,
+                    runtime_desired_status,
                 }),
                 PipelineState::Terminated => Err(ExtendedRuntimeStatusError {
                     status_code: StatusCode::INTERNAL_SERVER_ERROR,
@@ -959,7 +994,7 @@ async fn status(
         PipelinePhase::Initializing => Ok(ExtendedRuntimeStatus {
             runtime_status: RuntimeStatus::Initializing,
             runtime_status_details: "".to_string(),
-            runtime_desired_status: RuntimeDesiredStatus::Paused,
+            runtime_desired_status,
         }),
         PipelinePhase::InitializationError(e) => {
             let e = PipelineError::InitializationError { error: e.clone() };
@@ -989,13 +1024,13 @@ async fn status(
                 Ok(ExtendedRuntimeStatus {
                     runtime_status: RuntimeStatus::Replaying,
                     runtime_status_details: "".to_string(),
-                    runtime_desired_status: RuntimeDesiredStatus::Paused,
+                    runtime_desired_status,
                 })
             } else if matches!(*e, ControllerError::BootstrapInProgress) {
                 Ok(ExtendedRuntimeStatus {
                     runtime_status: RuntimeStatus::Bootstrapping,
                     runtime_status_details: "".to_string(),
-                    runtime_desired_status: RuntimeDesiredStatus::Paused,
+                    runtime_desired_status,
                 })
             } else {
                 let mut status_code = e.status_code();
@@ -1018,7 +1053,7 @@ async fn status(
         PipelinePhase::Suspended => Ok(ExtendedRuntimeStatus {
             runtime_status: RuntimeStatus::Suspended,
             runtime_status_details: "".to_string(),
-            runtime_desired_status: RuntimeDesiredStatus::Suspended,
+            runtime_desired_status,
         }),
     }
 }
@@ -1338,8 +1373,13 @@ async fn sync_checkpoint_status(state: WebData<ServerState>) -> impl Responder {
 /// suspend requests act like just one.
 #[post("/suspend")]
 async fn suspend(state: WebData<ServerState>) -> Result<impl Responder, PipelineError> {
+    {
+        let mut runtime_desired_status = state.desired_status.lock().unwrap();
+        *runtime_desired_status = RuntimeDesiredStatus::Suspended;
+    }
+
     fn success() -> Result<impl Responder, PipelineError> {
-        Ok(HttpResponse::Ok().json("Pipeline suspended"))
+        Ok(HttpResponse::Accepted().json("Pipeline suspended"))
     }
 
     let receiver = match &*state.controller.read().unwrap() {
@@ -1857,6 +1897,7 @@ mod test_with_kafka {
         time::{Duration, Instant},
     };
     use tempfile::NamedTempFile;
+    use feldera_types::runtime_status::RuntimeDesiredStatus;
 
     async fn print_stats(server: &TestServer) {
         let stats = serde_json::to_string_pretty(
@@ -1929,7 +1970,7 @@ outputs:
 
         println!("Creating HTTP server");
 
-        let state = WebData::new(ServerState::new(None));
+        let state = WebData::new(ServerState::new(None, RuntimeDesiredStatus::Paused));
         let state_clone = state.clone();
 
         let args = ServerArgs {
@@ -1941,6 +1982,8 @@ outputs:
             enable_https: false,
             https_tls_cert_path: None,
             https_tls_key_path: None,
+            initial: RuntimeDesiredStatus::Paused,
+            deployment_id: uuid::Uuid::nil(),
         };
 
         let config = parse_config(&args.config_file).unwrap();
