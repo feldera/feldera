@@ -5,6 +5,16 @@ import org.junit.Test;
 /** Based on struct.iq */
 public class StructTests extends ScottBaseTests {
     @Test
+    public void isNullRow() {
+        this.qs("""
+                SELECT ROW(NULL) IS NULL;
+                 r
+                ---
+                false
+                (1 row)""");
+    }
+
+    @Test
     public void testRow() {
         this.qs("""
                 -- struct.iq - Queries involving structured types
