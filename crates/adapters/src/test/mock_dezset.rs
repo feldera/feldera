@@ -471,6 +471,7 @@ where
                 .into_iter()
                 .map(|r| MockUpdate::<T, U>::with_polarity(r, true)),
         );
+        self.buffer.n_bytes += data.get_array_memory_size();
 
         Ok(())
     }
@@ -523,20 +524,20 @@ where
     T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Hash + Send + Sync + 'static,
     U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Hash + Send + Sync + 'static,
 {
-    fn insert(&mut self, data: &AvroValue, schema: &AvroSchema) -> AnyResult<()> {
+    fn insert(&mut self, data: &AvroValue, schema: &AvroSchema, n_bytes: usize) -> AnyResult<()> {
         let v: T = from_avro_value(data, schema)
             .map_err(|e| anyhow!("error deserializing Avro record: {e}"))?;
         self.updates.push(MockUpdate::Insert(v));
-        self.n_bytes += 1;
+        self.n_bytes += n_bytes;
         Ok(())
     }
 
-    fn delete(&mut self, data: &AvroValue, schema: &AvroSchema) -> AnyResult<()> {
+    fn delete(&mut self, data: &AvroValue, schema: &AvroSchema, n_bytes: usize) -> AnyResult<()> {
         let v: T = from_avro_value(data, schema)
             .map_err(|e| anyhow!("error deserializing Avro record: {e}"))?;
 
         self.updates.push(MockUpdate::Delete(v));
-        self.n_bytes += 1;
+        self.n_bytes += n_bytes;
         Ok(())
     }
 
