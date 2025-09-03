@@ -1259,6 +1259,9 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                     }
                 }
                 if extended_runtime_status.runtime_status == RuntimeStatus::Suspended {
+                    info!(
+                        "Pipeline {} reported it has suspended the circuit and done its last checkpoint -- stopping it", self.pipeline_id
+                    );
                     return State::TransitionToStopping {
                         error: None,
                         suspend_info: Some(json!({})),
@@ -1326,10 +1329,9 @@ mod test {
     use crate::config::CommonConfig;
     use crate::db::storage::Storage;
     use crate::db::storage_postgres::StoragePostgres;
-    use crate::db::types::pipeline::{
-        PipelineDescr, PipelineDesiredStatus, PipelineId, PipelineStatus,
-    };
+    use crate::db::types::pipeline::{PipelineDescr, PipelineId};
     use crate::db::types::program::{ProgramInfo, RustCompilationInfo, SqlCompilationInfo};
+    use crate::db::types::resources_status::ResourcesStatus;
     use crate::db::types::version::Version;
     use crate::error::ManagerError;
     use crate::logging;
@@ -1340,21 +1342,23 @@ mod test {
     use async_trait::async_trait;
     use feldera_types::config::{PipelineConfig, StorageConfig};
     use feldera_types::program_schema::ProgramSchema;
+    use feldera_types::runtime_status::{RuntimeDesiredStatus, RuntimeStatus};
     use serde_json::json;
+    use std::str::FromStr;
     use std::sync::Arc;
     use std::time::Duration;
     use tokio::sync::mpsc::{channel, Sender};
     use tokio::sync::{Mutex, Notify};
     use uuid::Uuid;
     use wiremock::matchers::{method, path};
-    use wiremock::{Mock, MockServer, ResponseTemplate};
+    use wiremock::{http, Mock, MockServer, ResponseTemplate};
 
-    struct MockPipeline {
-        uri: String,
+    struct MockRunner {
+        deployment_location: String,
     }
 
     #[async_trait]
-    impl PipelineExecutor for MockPipeline {
+    impl PipelineExecutor for MockRunner {
         type Config = ();
         const DEFAULT_PROVISIONING_TIMEOUT: Duration = Duration::from_millis(1);
 
@@ -1377,6 +1381,8 @@ mod test {
 
         async fn provision(
             &mut self,
+            _: RuntimeDesiredStatus,
+            _: &Uuid,
             _: &PipelineConfig,
             _: &str,
             _: Version,
@@ -1386,7 +1392,7 @@ mod test {
         }
 
         async fn is_provisioned(&mut self) -> Result<Option<String>, ManagerError> {
-            Ok(Some(self.uri.clone()))
+            Ok(Some(self.deployment_location.clone()))
         }
 
         async fn check(&mut self) -> Result<(), ManagerError> {
@@ -1404,12 +1410,12 @@ mod test {
 
     struct AutomatonTest {
         db: Arc<Mutex<StoragePostgres>>,
-        automaton: PipelineAutomaton<MockPipeline>,
+        automaton: PipelineAutomaton<MockRunner>,
         _follow_request_sender: Sender<Sender<String>>,
     }
 
     impl AutomatonTest {
-        async fn set_desired_state(&self, status: PipelineDesiredStatus) {
+        async fn desire_start(&self, initial: RuntimeDesiredStatus) {
             let automaton = &self.automaton;
             let pipeline = self
                 .db
@@ -1418,51 +1424,19 @@ mod test {
                 .get_pipeline_by_id(automaton.tenant_id, automaton.pipeline_id)
                 .await
                 .unwrap();
-            match status {
-                PipelineDesiredStatus::Stopped => {
-                    self.db
-                        .lock()
-                        .await
-                        .set_deployment_desired_status_suspended_or_stopped(
-                            automaton.tenant_id,
-                            &pipeline.name,
-                            true,
-                        )
-                        .await
-                        .unwrap();
-                }
-                PipelineDesiredStatus::Suspended => {
-                    self.db
-                        .lock()
-                        .await
-                        .set_deployment_desired_status_suspended_or_stopped(
-                            automaton.tenant_id,
-                            &pipeline.name,
-                            false,
-                        )
-                        .await
-                        .unwrap();
-                }
-                PipelineDesiredStatus::Paused => {
-                    self.db
-                        .lock()
-                        .await
-                        .set_deployment_desired_status_paused(automaton.tenant_id, &pipeline.name)
-                        .await
-                        .unwrap();
-                }
-                PipelineDesiredStatus::Running => {
-                    self.db
-                        .lock()
-                        .await
-                        .set_deployment_desired_status_running(automaton.tenant_id, &pipeline.name)
-                        .await
-                        .unwrap();
-                }
-            }
+            self.db
+                .lock()
+                .await
+                .set_deployment_resources_desired_status_provisioned(
+                    automaton.tenant_id,
+                    &pipeline.name,
+                    initial,
+                )
+                .await
+                .unwrap();
         }
 
-        async fn check_current_state(&self, status: PipelineStatus) {
+        async fn desire_stopped(&self) {
             let automaton = &self.automaton;
             let pipeline = self
                 .db
@@ -1471,11 +1445,37 @@ mod test {
                 .get_pipeline_by_id(automaton.tenant_id, automaton.pipeline_id)
                 .await
                 .unwrap();
-            assert_eq!(
-                status, pipeline.deployment_resources_status,
-                "Status does not match; deployment_error: {:?}",
-                pipeline.deployment_error
-            );
+            self.db
+                .lock()
+                .await
+                .set_deployment_resources_desired_status_stopped(
+                    automaton.tenant_id,
+                    &pipeline.name,
+                )
+                .await
+                .unwrap();
+        }
+
+        async fn resources_status(&self) -> ResourcesStatus {
+            let automaton = &self.automaton;
+            self.db
+                .lock()
+                .await
+                .get_pipeline_by_id(automaton.tenant_id, automaton.pipeline_id)
+                .await
+                .unwrap()
+                .deployment_resources_status
+        }
+
+        async fn runtime_status(&self) -> Option<RuntimeStatus> {
+            let automaton = &self.automaton;
+            self.db
+                .lock()
+                .await
+                .get_pipeline_by_id(automaton.tenant_id, automaton.pipeline_id)
+                .await
+                .unwrap()
+                .deployment_runtime_status
         }
 
         async fn tick(&mut self) {
@@ -1483,7 +1483,7 @@ mod test {
         }
     }
 
-    async fn setup(db: Arc<Mutex<StoragePostgres>>, uri: String) -> AutomatonTest {
+    async fn setup(db: Arc<Mutex<StoragePostgres>>, deployment_location: String) -> AutomatonTest {
         // Create a pipeline and a corresponding automaton
         let tenant_id = TenantRecord::default().id;
         let pipeline_id = PipelineId(Uuid::now_v7());
@@ -1591,7 +1591,9 @@ mod test {
             db.clone(),
             notifier.clone(),
             client,
-            MockPipeline { uri },
+            MockRunner {
+                deployment_location,
+            },
             Duration::from_secs(1),
             follow_request_receiver,
             logs_sender,
@@ -1604,20 +1606,44 @@ mod test {
         }
     }
 
-    async fn mock_endpoint(
-        server: &mut MockServer,
-        http_method: &str,
-        endpoint: &str,
-        code: u16,
-        json_body: serde_json::Value,
-    ) {
+    struct MockEndpoint {
+        http_method: String,
+        path: String,
+        response_code: u16,
+        response_body: serde_json::Value,
+    }
+
+    impl MockEndpoint {
+        fn new(
+            http_method: &str,
+            path: &str,
+            response_code: u16,
+            response_body: serde_json::Value,
+        ) -> Self {
+            Self {
+                http_method: http_method.to_string(),
+                path: path.to_string(),
+                response_code,
+                response_body,
+            }
+        }
+    }
+
+    /// Mocks for the server the provided endpoints.
+    /// Prior mocked endpoints are cleared.
+    async fn mock_endpoints(server: &mut MockServer, endpoints: Vec<MockEndpoint>) {
         server.reset().await;
-        let template = ResponseTemplate::new(code).set_body_json(json_body);
-        Mock::given(method(http_method))
-            .and(path(endpoint))
+        for endpoint in endpoints {
+            let template =
+                ResponseTemplate::new(endpoint.response_code).set_body_json(endpoint.response_body);
+            Mock::given(method(
+                http::Method::from_str(&endpoint.http_method).unwrap(),
+            ))
+            .and(path(endpoint.path))
             .respond_with(template)
             .mount(server)
             .await;
+        }
     }
 
     #[cfg(feature = "postgresql_embedded")]
@@ -1636,147 +1662,114 @@ mod test {
     }
 
     #[tokio::test]
-    async fn start_paused() {
+    #[rustfmt::skip]
+    async fn starting() {
         let (mut server, _temp, mut test) = setup_complete().await;
-        test.set_desired_state(PipelineDesiredStatus::Paused).await;
-        test.check_current_state(PipelineStatus::Stopped).await;
+        test.desire_start(RuntimeDesiredStatus::Paused).await;
+        assert_eq!(test.resources_status().await, ResourcesStatus::Stopped);
+        assert_eq!(test.runtime_status().await, None);
         test.tick().await;
-        test.check_current_state(PipelineStatus::Provisioning).await;
+        assert_eq!(test.resources_status().await, ResourcesStatus::Provisioning);
+        assert_eq!(test.runtime_status().await, None);
         test.tick().await; // provision()
-        test.check_current_state(PipelineStatus::Provisioning).await;
-        mock_endpoint(&mut server, "GET", "/status", 200, json!("Paused")).await;
+        assert_eq!(test.resources_status().await, ResourcesStatus::Provisioning);
+        assert_eq!(test.runtime_status().await, None);
         test.tick().await; // is_provisioned()
-        test.check_current_state(PipelineStatus::Initializing).await;
+        assert_eq!(test.resources_status().await, ResourcesStatus::Provisioned);
+        assert_eq!(test.runtime_status().await, Some(RuntimeStatus::Initializing));
+        mock_endpoints(&mut server, vec![MockEndpoint::new("GET", "/status", 200, json!("Initializing"))]).await;
         test.tick().await;
-        test.check_current_state(PipelineStatus::Paused).await;
+        assert_eq!(test.resources_status().await, ResourcesStatus::Provisioned);
+        assert_eq!(test.runtime_status().await, Some(RuntimeStatus::Initializing));
+        mock_endpoints(&mut server, vec![MockEndpoint::new("GET", "/status", 200, json!("Paused"))]).await;
         test.tick().await;
-        test.check_current_state(PipelineStatus::Paused).await;
-        test.set_desired_state(PipelineDesiredStatus::Stopped).await;
+        assert_eq!(test.resources_status().await, ResourcesStatus::Provisioned);
+        assert_eq!(test.runtime_status().await, Some(RuntimeStatus::Paused));
+        mock_endpoints(&mut server, vec![MockEndpoint::new("GET", "/status", 200, json!("Running"))]).await;
         test.tick().await;
-        test.check_current_state(PipelineStatus::Stopping).await;
+        assert_eq!(test.resources_status().await, ResourcesStatus::Provisioned);
+        assert_eq!(test.runtime_status().await, Some(RuntimeStatus::Running));
+        test.desire_stopped().await;
         test.tick().await;
-        test.check_current_state(PipelineStatus::Stopped).await;
+        assert_eq!(test.resources_status().await, ResourcesStatus::Stopping);
+        assert_eq!(test.runtime_status().await, None);
+        test.tick().await;
+        assert_eq!(test.resources_status().await, ResourcesStatus::Stopped);
+        assert_eq!(test.runtime_status().await, None);
     }
 
     #[tokio::test]
-    async fn start_running() {
-        let (mut server, _temp, mut test) = setup_complete().await;
-        test.set_desired_state(PipelineDesiredStatus::Running).await;
-        test.check_current_state(PipelineStatus::Stopped).await;
-        test.tick().await;
-        test.check_current_state(PipelineStatus::Provisioning).await;
-        test.tick().await; // provision()
-        test.check_current_state(PipelineStatus::Provisioning).await;
-        mock_endpoint(&mut server, "GET", "/status", 200, json!("Paused")).await;
-        test.tick().await; // is_provisioned()
-        test.check_current_state(PipelineStatus::Initializing).await;
-        test.tick().await;
-        test.check_current_state(PipelineStatus::Paused).await;
-        mock_endpoint(&mut server, "GET", "/start", 200, json!({})).await;
-        test.tick().await;
-        test.check_current_state(PipelineStatus::Running).await;
-        mock_endpoint(&mut server, "GET", "/status", 200, json!("Running")).await;
-        test.tick().await;
-        test.check_current_state(PipelineStatus::Running).await;
-        test.set_desired_state(PipelineDesiredStatus::Stopped).await;
-        test.tick().await;
-        test.check_current_state(PipelineStatus::Stopping).await;
-        test.tick().await;
-        test.check_current_state(PipelineStatus::Stopped).await;
-    }
-
-    #[tokio::test]
-    async fn start_paused_then_running() {
-        let (mut server, _temp, mut test) = setup_complete().await;
-        test.set_desired_state(PipelineDesiredStatus::Paused).await;
-        test.check_current_state(PipelineStatus::Stopped).await;
-        test.tick().await;
-        test.check_current_state(PipelineStatus::Provisioning).await;
-        test.tick().await; // provision()
-        test.check_current_state(PipelineStatus::Provisioning).await;
-        mock_endpoint(&mut server, "GET", "/status", 200, json!("Paused")).await;
-        test.tick().await; // is_provisioned()
-        test.check_current_state(PipelineStatus::Initializing).await;
-        test.tick().await;
-        test.check_current_state(PipelineStatus::Paused).await;
-        test.tick().await;
-        test.check_current_state(PipelineStatus::Paused).await;
-        test.set_desired_state(PipelineDesiredStatus::Running).await;
-        mock_endpoint(&mut server, "GET", "/start", 200, json!({})).await;
-        test.tick().await;
-        test.check_current_state(PipelineStatus::Running).await;
-        mock_endpoint(&mut server, "GET", "/status", 200, json!("Running")).await;
-        test.tick().await;
-        test.check_current_state(PipelineStatus::Running).await;
-        test.set_desired_state(PipelineDesiredStatus::Stopped).await;
-        test.tick().await;
-        test.check_current_state(PipelineStatus::Stopping).await;
-        test.tick().await;
-        test.check_current_state(PipelineStatus::Stopped).await;
-    }
-
-    #[tokio::test]
+    #[rustfmt::skip]
     async fn stop_provisioning() {
-        let (_mock_server, _temp, mut test) = setup_complete().await;
-        test.set_desired_state(PipelineDesiredStatus::Paused).await;
-        test.check_current_state(PipelineStatus::Stopped).await;
+        let (_server, _temp, mut test) = setup_complete().await;
+        test.desire_start(RuntimeDesiredStatus::Paused).await;
+        assert_eq!(test.resources_status().await, ResourcesStatus::Stopped);
+        assert_eq!(test.runtime_status().await, None);
         test.tick().await;
-        test.check_current_state(PipelineStatus::Provisioning).await;
-        test.set_desired_state(PipelineDesiredStatus::Stopped).await;
+        assert_eq!(test.resources_status().await, ResourcesStatus::Provisioning);
+        assert_eq!(test.runtime_status().await, None);
+        test.desire_stopped().await;
         test.tick().await;
-        test.check_current_state(PipelineStatus::Stopping).await;
+        assert_eq!(test.resources_status().await, ResourcesStatus::Stopping);
+        assert_eq!(test.runtime_status().await, None);
         test.tick().await;
-        test.check_current_state(PipelineStatus::Stopped).await;
+        assert_eq!(test.resources_status().await, ResourcesStatus::Stopped);
+        assert_eq!(test.runtime_status().await, None);
     }
 
     #[tokio::test]
+    #[rustfmt::skip]
     async fn stop_initializing() {
         let (mut server, _temp, mut test) = setup_complete().await;
-        test.set_desired_state(PipelineDesiredStatus::Paused).await;
-        test.check_current_state(PipelineStatus::Stopped).await;
+        test.desire_start(RuntimeDesiredStatus::Paused).await;
+        assert_eq!(test.resources_status().await, ResourcesStatus::Stopped);
+        assert_eq!(test.runtime_status().await, None);
         test.tick().await;
-        test.check_current_state(PipelineStatus::Provisioning).await;
+        assert_eq!(test.resources_status().await, ResourcesStatus::Provisioning);
+        assert_eq!(test.runtime_status().await, None);
         test.tick().await; // provision()
-        test.check_current_state(PipelineStatus::Provisioning).await;
-        mock_endpoint(&mut server, "GET", "/status", 200, json!("Paused")).await;
+        assert_eq!(test.resources_status().await, ResourcesStatus::Provisioning);
+        assert_eq!(test.runtime_status().await, None);
+        mock_endpoints(&mut server, vec![MockEndpoint::new("GET", "/status", 200, json!("Initializing"))]).await;
         test.tick().await; // is_provisioned()
-        test.check_current_state(PipelineStatus::Initializing).await;
-        test.set_desired_state(PipelineDesiredStatus::Stopped).await;
+        assert_eq!(test.resources_status().await, ResourcesStatus::Provisioned);
+        assert_eq!(test.runtime_status().await, Some(RuntimeStatus::Initializing));
+        mock_endpoints(&mut server, vec![MockEndpoint::new("GET", "/status", 200, json!("Paused"))]).await;
+        test.desire_stopped().await;
         test.tick().await;
-        test.check_current_state(PipelineStatus::Stopping).await;
+        assert_eq!(test.resources_status().await, ResourcesStatus::Stopping);
+        assert_eq!(test.runtime_status().await, None);
         test.tick().await;
-        test.check_current_state(PipelineStatus::Stopped).await;
+        assert_eq!(test.resources_status().await, ResourcesStatus::Stopped);
+        assert_eq!(test.runtime_status().await, None);
     }
 
     #[tokio::test]
-    async fn suspend() {
+    #[rustfmt::skip]
+    async fn detecting_suspended() {
         let (mut server, _temp, mut test) = setup_complete().await;
-        test.set_desired_state(PipelineDesiredStatus::Paused).await;
-        test.check_current_state(PipelineStatus::Stopped).await;
+        test.desire_start(RuntimeDesiredStatus::Paused).await;
+        assert_eq!(test.resources_status().await, ResourcesStatus::Stopped);
+        assert_eq!(test.runtime_status().await, None);
         test.tick().await;
-        test.check_current_state(PipelineStatus::Provisioning).await;
+        assert_eq!(test.resources_status().await, ResourcesStatus::Provisioning);
+        assert_eq!(test.runtime_status().await, None);
         test.tick().await; // provision()
-        test.check_current_state(PipelineStatus::Provisioning).await;
-        mock_endpoint(&mut server, "GET", "/status", 200, json!("Paused")).await;
+        assert_eq!(test.resources_status().await, ResourcesStatus::Provisioning);
+        assert_eq!(test.runtime_status().await, None);
         test.tick().await; // is_provisioned()
-        test.check_current_state(PipelineStatus::Initializing).await;
+        assert_eq!(test.resources_status().await, ResourcesStatus::Provisioned);
+        assert_eq!(test.runtime_status().await, Some(RuntimeStatus::Initializing));
+        mock_endpoints(&mut server, vec![MockEndpoint::new("GET", "/status", 200, json!({
+            "runtime_status": "Suspended",
+            "runtime_status_details": "",
+            "runtime_desired_status": "Suspended",
+        }))]).await;
         test.tick().await;
-        test.check_current_state(PipelineStatus::Paused).await;
-        test.set_desired_state(PipelineDesiredStatus::Suspended)
-            .await;
+        assert_eq!(test.resources_status().await, ResourcesStatus::Stopping);
+        assert_eq!(test.runtime_status().await, None);
         test.tick().await;
-        test.check_current_state(PipelineStatus::Suspending).await;
-        mock_endpoint(
-            &mut server,
-            "POST",
-            "/suspend",
-            200,
-            json!("Suspend successful"),
-        )
-        .await;
-        test.tick().await;
-        test.check_current_state(PipelineStatus::Stopping).await;
-        test.tick().await;
-        test.check_current_state(PipelineStatus::Stopped).await;
+        assert_eq!(test.resources_status().await, ResourcesStatus::Stopped);
+        assert_eq!(test.runtime_status().await, None);
     }
 }
