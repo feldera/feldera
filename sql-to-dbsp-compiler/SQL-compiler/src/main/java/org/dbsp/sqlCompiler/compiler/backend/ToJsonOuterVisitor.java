@@ -288,9 +288,9 @@ public class ToJsonOuterVisitor extends CircuitVisitor {
             return VisitDecision.STOP;
         this.property("isLeft");
         this.stream.append(operator.isLeft);
-        this.property("leftTimestampindex");
+        this.property("leftTimestampIndex");
         this.stream.append(operator.leftTimestampIndex);
-        this.property("rightTimestampindex");
+        this.property("rightTimestampIndex");
         this.stream.append(operator.rightTimestampIndex);
         return VisitDecision.CONTINUE;
     }

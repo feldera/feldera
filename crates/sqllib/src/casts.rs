@@ -49,11 +49,11 @@ where
 pub(crate) fn type_name(name: &'static str) -> &'static str {
     match name {
         "i8" => "TINYINT",
-        "i16" => "SHORTINT",
+        "i16" => "SMALLINT",
         "i32" => "INTEGER",
         "i64" => "BIGINT",
         "u8" => "TINYINT UNSIGNED",
-        "u16" => "SHORTINT UNSIGNED",
+        "u16" => "SMALLINT UNSIGNED",
         "u32" => "INTEGER UNSIGNED",
         "u64" => "BIGINT UNSIGNED",
         "f" => "REAL",
@@ -74,11 +74,11 @@ pub(crate) fn type_name(name: &'static str) -> &'static str {
 pub(crate) fn rust_type_name(name: &'static str) -> &'static str {
     match name {
         "i8" => "TINYINT",
-        "i16" => "SHORTINT",
+        "i16" => "SMALLINT",
         "i32" => "INTEGER",
         "i64" => "BIGINT",
         "u8" => "TINYINT UNSIGNED",
-        "u16" => "SHORTINT UNSIGNED",
+        "u16" => "SMALLINT UNSIGNED",
         "u32" => "INTEGER UNSIGNED",
         "u64" => "BIGINT UNSIGNED",
         "F32" => "REAL",

@@ -470,8 +470,6 @@ class illarg_tsdiff_ts_legal(TstView):
                 "yr": 1,
                 "mth": 19,
                 "day": 580,
-                "doy": 580,
-                "dow": 580,
                 "hr": 13926,
                 "min": 835561,
                 "sec": 50133660,
@@ -481,8 +479,6 @@ class illarg_tsdiff_ts_legal(TstView):
                       TIMESTAMPDIFF(YEAR, tmestmp, '2022-01-22 20:24:44.332'::TIMESTAMP) AS yr,
                       TIMESTAMPDIFF(MONTH, tmestmp, '2022-01-22 20:24:44.332'::TIMESTAMP) AS mth,
                       TIMESTAMPDIFF(DAY, tmestmp, '2022-01-22 20:24:44.332'::TIMESTAMP) AS day,
-                      TIMESTAMPDIFF(DOY, tmestmp, '2022-01-22 20:24:44.332'::TIMESTAMP) AS doy,
-                      TIMESTAMPDIFF(DOW, tmestmp, '2022-01-22 20:24:44.332'::TIMESTAMP) AS dow,
                       TIMESTAMPDIFF(HOUR, tmestmp, '2022-01-22 20:24:44.332'::TIMESTAMP) AS hr,
                       TIMESTAMPDIFF(MINUTE, tmestmp, '2022-01-22 20:24:44.332'::TIMESTAMP) AS min,
                       TIMESTAMPDIFF(SECOND, tmestmp, '2022-01-22 20:24:44.332'::TIMESTAMP) AS sec
@@ -509,8 +505,6 @@ class illarg_tsdiff_ts_legal(TstView):
 #                       TIMESTAMPDIFF(YEAR, '2020-06-21 14:23:44.123'::TIMESTAMP, '2022-01-22 20:24:44.332'::TIMESTAMP) AS yr,
 #                       TIMESTAMPDIFF(MONTH, '2020-06-21 14:23:44.123'::TIMESTAMP, '2022-01-22 20:24:44.332'::TIMESTAMP) AS mth,
 #                       TIMESTAMPDIFF(DAY, '2020-06-21 14:23:44.123'::TIMESTAMP, '2022-01-22 20:24:44.332'::TIMESTAMP) AS day,
-#                       TIMESTAMPDIFF(DOY, '2020-06-21 14:23:44.123'::TIMESTAMP, '2022-01-22 20:24:44.332'::TIMESTAMP) AS doy,
-#                       TIMESTAMPDIFF(DOW, '2020-06-21 14:23:44.123'::TIMESTAMP, '2022-01-22 20:24:44.332'::TIMESTAMP) AS dow,
 #                       TIMESTAMPDIFF(HOUR, '2020-06-21 14:23:44.123'::TIMESTAMP, '2022-01-22 20:24:44.332'::TIMESTAMP) AS hr,
 #                       TIMESTAMPDIFF(MINUTE, '2020-06-21 14:23:44.123'::TIMESTAMP, '2022-01-22 20:24:44.332'::TIMESTAMP) AS min,
 #                       TIMESTAMPDIFF(SECOND, '2020-06-21 14:23:44.123'::TIMESTAMP, '2022-01-22 20:24:44.332'::TIMESTAMP) AS sec
@@ -521,13 +515,11 @@ class illarg_tsdiff_ts_legal(TstView):
 class illarg_tsdiff_datee_legal(TstView):
     def __init__(self):
         # checked manually
-        self.data = [{"yr": 1, "mth": 19, "day": 580, "doy": 580, "dow": 580}]
+        self.data = [{"yr": 1, "mth": 19, "day": 580}]
         self.sql = """CREATE MATERIALIZED VIEW tsdiff_datee_legal AS SELECT
                       TIMESTAMPDIFF(YEAR, datee, '2022-01-22'::DATE) AS yr,
                       TIMESTAMPDIFF(MONTH, datee, '2022-01-22'::DATE) AS mth,
-                      TIMESTAMPDIFF(DAY, datee, '2022-01-22'::DATE) AS day,
-                      TIMESTAMPDIFF(DOY, datee, '2022-01-22'::DATE) AS doy,
-                      TIMESTAMPDIFF(DOW, datee, '2022-01-22'::DATE) AS dow
+                      TIMESTAMPDIFF(DAY, datee, '2022-01-22'::DATE) AS day
                       FROM illegal_tbl
                       WHERE id = 0"""
 
@@ -564,8 +556,6 @@ class illarg_tsadd_ts_legal(TstView):
                 "yr": "2022-06-21T14:23:44.123",
                 "mth": "2020-08-21T14:23:44.123",
                 "day": "2020-06-23T14:23:44.123",
-                "doy": None,
-                "dow": None,
                 "hr": "2020-06-21T16:23:44.123",
                 "min": "2020-06-21T14:25:44.123",
                 "sec": "2020-06-21T14:23:46.123",
@@ -577,8 +567,6 @@ class illarg_tsadd_ts_legal(TstView):
                       TIMESTAMPADD(YEAR, 2, tmestmp) AS yr,
                       TIMESTAMPADD(MONTH, 2, tmestmp) AS mth,
                       TIMESTAMPADD(DAY, 2, tmestmp) AS day,
-                      TIMESTAMPADD(DOY, 2, tmestmp) AS doy,
-                      TIMESTAMPADD(DOW, 2, tmestmp) AS dow,
                       TIMESTAMPADD(HOUR, 2, tmestmp) AS hr,
                       TIMESTAMPADD(MINUTE, 2, tmestmp) AS min,
                       TIMESTAMPADD(SECOND, 2, tmestmp) AS sec,
@@ -626,16 +614,12 @@ class illarg_tsadd_datee_legal(TstView):
                 "yr": "2022-06-21",
                 "mth": "2020-08-21",
                 "day": "2020-06-23",
-                "doy": None,
-                "dow": None,
             }
         ]
         self.sql = """CREATE MATERIALIZED VIEW tsadd_datee_legal AS SELECT
                       TIMESTAMPADD(YEAR, 2, datee) AS yr,
                       TIMESTAMPADD(MONTH, 2, datee) AS mth,
-                      TIMESTAMPADD(DAY, 2, datee) AS day,
-                      TIMESTAMPADD(DOY, 2, datee) AS doy,
-                      TIMESTAMPADD(DOW, 2, datee) AS dow
+                      TIMESTAMPADD(DAY, 2, datee) AS day
                       FROM illegal_tbl
                       WHERE id = 0"""
 

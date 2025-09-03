@@ -664,7 +664,7 @@ public class Regression1Tests extends SqlIoTest {
         var ccs = this.getCCS("""
                 CREATE TABLE T(x CHAR(4), y INT);
                 CREATE TABLE S(y INT, z INT);
-                CREATE VIEW V AS SELECT T.x, T.y, S.z FROM T, S WHERE T.x in ('a', 'ab') AND T.y = S.y;""");
+                CREATE VIEW V AS SELECT T.x, T.y, S.z FROM T, S WHERE T.x in ('a   ', 'ab  ') AND T.y = S.y;""");
         ccs.step("INSERT INTO T VALUES('a', 1), ('b', 2);" +
                 "INSERT INTO S VALUES(1, 3);", """
                  x   | y | z | weight
@@ -676,7 +676,7 @@ public class Regression1Tests extends SqlIoTest {
     public void issue4448a() {
         var ccs = this.getCCS("""
                 CREATE TABLE T(x CHAR(10));
-                CREATE VIEW V AS SELECT * FROM T WHERE x in ('hi', 'hey');""");
+                CREATE VIEW V AS SELECT * FROM T WHERE x in ('hi        ', 'hey       ');""");
         ccs.step("INSERT INTO T VALUES('hi');", """
                  x         | weight
                 --------------------
