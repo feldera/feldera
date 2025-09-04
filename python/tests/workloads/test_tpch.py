@@ -72,8 +72,9 @@ class TPCHTestConfig:
     def __repr__(self):
         return f"IndexSpec(name={self.name!r},columns={self.columns!r})"
 
-
 def run_cli():
+    """Run the TPC-H test with configuration specified via CLI arguments."""
+
     parser = argparse.ArgumentParser(description="TPC-H test")
 
     parser.add_argument(
