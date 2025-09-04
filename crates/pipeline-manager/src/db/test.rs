@@ -2866,7 +2866,8 @@ impl Storage for Mutex<DbModel> {
 
     async fn get_tenant_name(&self, tenant_id: TenantId) -> Result<String, DBError> {
         let s = self.lock().await;
-        s.tenants.get(&tenant_id)
+        s.tenants
+            .get(&tenant_id)
             .map(|tenant| tenant.tenant.clone())
             .ok_or(DBError::UnknownTenant { tenant_id })
     }

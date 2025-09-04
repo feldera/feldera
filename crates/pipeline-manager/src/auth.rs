@@ -1222,26 +1222,42 @@ mod test {
 
         let test_cases = vec![
             // Standard Okta domains
-            ("https://acme-corp.okta.com/oauth2/default", Some("acme-corp")),
-            ("https://dev-123456.okta.com/oauth2/default", Some("dev-123456")),
-            ("https://my-company.okta.com/oauth2/custom", Some("my-company")),
-
+            (
+                "https://acme-corp.okta.com/oauth2/default",
+                Some("acme-corp"),
+            ),
+            (
+                "https://dev-123456.okta.com/oauth2/default",
+                Some("dev-123456"),
+            ),
+            (
+                "https://my-company.okta.com/oauth2/custom",
+                Some("my-company"),
+            ),
             // AWS Cognito domains
-            ("https://cognito-idp.us-west-2.amazonaws.com/us-west-2_ABCDEFGH", Some("cognito-idp")),
-            ("https://my-pool.auth.us-east-1.amazoncognito.com/", Some("my-pool")),
-
+            (
+                "https://cognito-idp.us-west-2.amazonaws.com/us-west-2_ABCDEFGH",
+                Some("cognito-idp"),
+            ),
+            (
+                "https://my-pool.auth.us-east-1.amazoncognito.com/",
+                Some("my-pool"),
+            ),
             // Google Identity domains
             ("https://accounts.google.com", Some("accounts")),
             ("https://oauth2.googleapis.com/token", Some("oauth2")),
-
             // Custom domains
             ("https://auth.company.com/oauth2/v1", Some("auth")),
             ("https://login.enterprise.org/oidc", Some("login")),
-
             // Domain with hyphen and numbers
-            ("https://tenant-123.auth-provider.com/v2/token", Some("tenant-123")),
-            ("https://dev-env-staging.example.com/auth", Some("dev-env-staging")),
-
+            (
+                "https://tenant-123.auth-provider.com/v2/token",
+                Some("tenant-123"),
+            ),
+            (
+                "https://dev-env-staging.example.com/auth",
+                Some("dev-env-staging"),
+            ),
             // Edge cases that should return None
             ("", None),
             ("invalid-url", None),
@@ -1249,34 +1265,36 @@ mod test {
             ("https://", None),
             ("https:///oauth2/default", None),
             ("ftp://domain.com/path", None),
-
             // URLs without protocol
             ("domain.com/path", None),
             ("//domain.com/path", None),
-
             // IP addresses (should extract first octet as tenant)
             ("https://192.168.1.100/auth", Some("192")),
             ("http://127.0.0.1:8080/token", Some("127")),
-
             // Localhost
             ("http://localhost:3000/auth", Some("localhost")),
             ("https://localhost/oauth2/default", Some("localhost")),
-
             // Single word domains
             ("https://auth/token", Some("auth")),
             ("http://provider/oauth", Some("provider")),
-
             // Domains with ports
             ("https://tenant.example.com:8443/auth", Some("tenant")),
             ("http://dev-server.local:3000/oauth2", Some("dev-server")),
-
             // Very long subdomain
-            ("https://very-long-tenant-name-with-many-hyphens.auth.example.com/oauth2", Some("very-long-tenant-name-with-many-hyphens")),
+            (
+                "https://very-long-tenant-name-with-many-hyphens.auth.example.com/oauth2",
+                Some("very-long-tenant-name-with-many-hyphens"),
+            ),
         ];
 
         for (input, expected) in test_cases {
             let result = extract_tenant_from_issuer(input);
-            assert_eq!(result, expected.map(|s| s.to_string()), "Failed for input: {}", input);
+            assert_eq!(
+                result,
+                expected.map(|s| s.to_string()),
+                "Failed for input: {}",
+                input
+            );
         }
     }
 }
