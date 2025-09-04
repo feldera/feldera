@@ -828,4 +828,38 @@ public class IncrementalRegressionTests extends SqlIoTest {
                 --------------
                    2 | 3""");
     }
+
+    @Test
+    public void issue4694() {
+        this.getCCS("""
+              CREATE TABLE test_table1 (
+                 id UUID NOT NULL PRIMARY KEY,
+                 ts TIMESTAMP NOT NULL LATENESS INTERVAL 1 MINUTE,
+                 value VARCHAR
+              ) WITH ('append_only' = 'true', 'materialized' = 'true');
+
+              CREATE TABLE test_table2 (
+                  id UUID NOT NULL PRIMARY KEY,
+                  ts TIMESTAMP NOT NULL LATENESS INTERVAL 1 MINUTE,
+                  value VARCHAR
+              ) WITH ('append_only' = 'true', 'materialized' = 'true');
+
+              CREATE LOCAL VIEW test_union AS
+              SELECT id, ts, value, NULL AS fake_field
+              FROM test_table1
+              UNION ALL
+              SELECT id, ts, value, id AS fake_field
+              FROM test_table2;
+
+              CREATE LOCAL VIEW test_agg AS
+              SELECT id, ARG_MAX (value, ts)
+                  FILTER (WHERE value IS NOT NULL) AS value,
+                  ARG_MAX (fake_field, ts)
+                  FILTER (WHERE fake_field IS NOT NULL) AS fake_field
+              FROM test_union
+              GROUP BY id;
+
+              CREATE MATERIALIZED VIEW test_mat AS
+              SELECT id FROM test_agg;""");
+    }
 }

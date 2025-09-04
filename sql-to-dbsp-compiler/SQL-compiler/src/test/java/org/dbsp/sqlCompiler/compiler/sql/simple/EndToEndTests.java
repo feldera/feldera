@@ -796,8 +796,7 @@ public class EndToEndTests extends BaseSQLTests {
     public void floatDivTest() {
         String query = "SELECT CAST(T.COL6 AS DOUBLE) / T.COL6 FROM T";
         this.testQuery(query, new DBSPZSetExpression(
-                new DBSPTupleExpression(DBSPLiteral.none(
-                        new DBSPTypeDouble(CalciteObject.EMPTY,true))),
+                new DBSPTupleExpression(DBSPLiteral.none(DBSPTypeDouble.NULLABLE_INSTANCE)),
                 new DBSPTupleExpression(new DBSPDoubleLiteral(Double.NaN, true))));
     }
 
@@ -848,7 +847,7 @@ public class EndToEndTests extends BaseSQLTests {
                 new DBSPZSetExpression(
                         new DBSPTupleExpression(
                                 DBSPLiteral.none(DBSPTypeInteger.getType(CalciteObject.EMPTY, DBSPTypeCode.INT32, true)),
-                                DBSPLiteral.none(new DBSPTypeDouble(CalciteObject.EMPTY,true)),
+                                DBSPLiteral.none(DBSPTypeDouble.NULLABLE_INSTANCE),
                                 DBSPLiteral.none(DBSPTypeInteger.getType(CalciteObject.EMPTY, DBSPTypeCode.UINT32, true)))));
     }
 
@@ -977,7 +976,7 @@ public class EndToEndTests extends BaseSQLTests {
                 new DBSPZSetExpression(
                         new DBSPTupleExpression(new DBSPDoubleLiteral(13.0, true))),
                 new DBSPZSetExpression(
-                        new DBSPTupleExpression(DBSPLiteral.none(new DBSPTypeDouble(CalciteObject.EMPTY,true)))));
+                        new DBSPTupleExpression(DBSPLiteral.none(DBSPTypeDouble.NULLABLE_INSTANCE))));
     }
 
     @Test
@@ -1005,7 +1004,7 @@ public class EndToEndTests extends BaseSQLTests {
         this.testConstantOutput(query, new DBSPZSetExpression(
                 new DBSPTupleExpression(
                         DBSPLiteral.none(DBSPTypeInteger.getType(CalciteObject.EMPTY, DBSPTypeCode.INT32, true)),
-                        DBSPLiteral.none(new DBSPTypeDouble(CalciteObject.EMPTY, true)))));
+                        DBSPLiteral.none(DBSPTypeDouble.NULLABLE_INSTANCE))));
     }
 
     @Test
@@ -1026,8 +1025,7 @@ public class EndToEndTests extends BaseSQLTests {
                 new DBSPTupleExpression(
                         new DBSPDoubleLiteral(6.5, true)));
         this.testAggregate(query, output, new DBSPZSetExpression(
-                new DBSPTupleExpression(DBSPLiteral.none(
-                        new DBSPTypeDouble(CalciteObject.EMPTY, true)))));
+                new DBSPTupleExpression(DBSPLiteral.none(DBSPTypeDouble.NULLABLE_INSTANCE))));
     }
 
     @Test

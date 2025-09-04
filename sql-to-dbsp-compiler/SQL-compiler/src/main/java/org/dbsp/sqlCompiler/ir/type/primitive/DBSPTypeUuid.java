@@ -9,12 +9,14 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPUuidLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
+import org.dbsp.sqlCompiler.ir.type.IsBoundedType;
 
 import java.util.Objects;
 import java.util.UUID;
 
 /** A 128-bit UUID */
-public class DBSPTypeUuid extends DBSPTypeBaseType {
+public class DBSPTypeUuid extends DBSPTypeBaseType
+        implements IsBoundedType {
     public DBSPTypeUuid(CalciteObject node, boolean mayBeNull) {
         super(node, DBSPTypeCode.UUID, mayBeNull);
     }
@@ -68,5 +70,15 @@ public class DBSPTypeUuid extends DBSPTypeBaseType {
     public static DBSPTypeUuid fromJson(JsonNode node, JsonDecoder decoder) {
         boolean mayBeNull = DBSPType.fromJsonMayBeNull(node);
         return DBSPTypeUuid.create(mayBeNull);
+    }
+
+    @Override
+    public DBSPExpression getMaxValue() {
+        return new DBSPUuidLiteral(new UUID(-1L, -1L), this.mayBeNull);
+    }
+
+    @Override
+    public DBSPExpression getMinValue() {
+        return new DBSPUuidLiteral(new UUID(0L, 0L), this.mayBeNull);
     }
 }

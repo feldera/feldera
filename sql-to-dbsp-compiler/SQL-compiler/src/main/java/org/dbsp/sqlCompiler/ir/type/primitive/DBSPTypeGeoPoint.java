@@ -32,10 +32,11 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPGeoPointConstructor;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
+import org.dbsp.sqlCompiler.ir.type.IsBoundedType;
 
 import java.util.Objects;
 
-public class DBSPTypeGeoPoint extends DBSPTypeGeo {
+public class DBSPTypeGeoPoint extends DBSPTypeGeo implements IsBoundedType {
     public static final DBSPTypeGeoPoint INSTANCE = new DBSPTypeGeoPoint(CalciteObject.EMPTY, false);
     public static final DBSPTypeGeoPoint NULLABLE_INSTANCE = new DBSPTypeGeoPoint(CalciteObject.EMPTY, true);
 
@@ -85,9 +86,10 @@ public class DBSPTypeGeoPoint extends DBSPTypeGeo {
     public DBSPExpression defaultValue() {
         if (this.mayBeNull)
             return this.none();
+
         return new DBSPGeoPointConstructor(CalciteObject.EMPTY,
-                new DBSPTypeDouble(CalciteObject.EMPTY,false).defaultValue(),
-                new DBSPTypeDouble(CalciteObject.EMPTY,false).defaultValue(),
+                DBSPTypeDouble.INSTANCE.defaultValue(),
+                DBSPTypeDouble.INSTANCE.defaultValue(),
                 this);
     }
 
@@ -95,5 +97,19 @@ public class DBSPTypeGeoPoint extends DBSPTypeGeo {
     public static DBSPTypeGeoPoint fromJson(JsonNode node, JsonDecoder decoder) {
         boolean mayBeNull = DBSPType.fromJsonMayBeNull(node);
         return DBSPTypeGeoPoint.create(CalciteObject.EMPTY, mayBeNull);
+    }
+
+    @Override
+    public DBSPExpression getMaxValue() {
+        return new DBSPGeoPointConstructor(
+                CalciteObject.EMPTY, DBSPTypeDouble.INSTANCE.getMaxValue(), DBSPTypeDouble.INSTANCE.getMaxValue(),
+                DBSPTypeGeoPoint.INSTANCE);
+    }
+
+    @Override
+    public DBSPExpression getMinValue() {
+        return new DBSPGeoPointConstructor(
+                CalciteObject.EMPTY, DBSPTypeDouble.INSTANCE.getMinValue(), DBSPTypeDouble.INSTANCE.getMinValue(),
+                DBSPTypeGeoPoint.INSTANCE);
     }
 }

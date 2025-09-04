@@ -350,10 +350,10 @@ public class TypeCompiler implements ICompilerComponent {
                     return new DBSPTypeDecimal(node, precision, scale, nullable);
                 }
                 case REAL:
-                    return new DBSPTypeReal(CalciteObject.EMPTY, nullable);
+                    return DBSPTypeReal.create(nullable);
                 case FLOAT:
                 case DOUBLE:
-                    return new DBSPTypeDouble(CalciteObject.EMPTY, nullable);
+                    return DBSPTypeDouble.create(nullable);
                 case CHAR:
                 case VARCHAR: {
                     int precision = dt.getPrecision();

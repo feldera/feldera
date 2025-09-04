@@ -59,7 +59,7 @@ public final class DBSPRealLiteral extends DBSPFPLiteral implements IsNumericLit
     }
 
     public DBSPRealLiteral(@Nullable Float f, boolean nullable) {
-        this(CalciteObject.EMPTY, new DBSPTypeReal(CalciteObject.EMPTY, nullable), f);
+        this(CalciteObject.EMPTY, DBSPTypeReal.create(nullable), f);
         if (f == null && !nullable)
             throw new InternalCompilerError("Null value with non-nullable type", this);
     }

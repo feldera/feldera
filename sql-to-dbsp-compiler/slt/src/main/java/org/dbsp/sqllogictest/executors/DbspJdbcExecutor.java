@@ -106,7 +106,7 @@ public class DbspJdbcExecutor extends DBSPExecutor {
                         break;
                     case REAL:
                     case DOUBLE:
-                        colTypes[i1] = new DBSPTypeDouble(CalciteObject.EMPTY, nullable);
+                        colTypes[i1] = DBSPTypeDouble.create(nullable);
                         break;
                     case VARCHAR:
                     case LONGVARCHAR:
@@ -131,7 +131,7 @@ public class DbspJdbcExecutor extends DBSPExecutor {
                     } else if (type.is(DBSPTypeDouble.class)) {
                         double value = rs.getDouble(i + 1);
                         if (rs.wasNull())
-                            exp = DBSPLiteral.none(new DBSPTypeDouble(CalciteObject.EMPTY,true));
+                            exp = DBSPLiteral.none(DBSPTypeDouble.create(true));
                         else
                             exp = new DBSPDoubleLiteral(value, type.mayBeNull);
                     } else {

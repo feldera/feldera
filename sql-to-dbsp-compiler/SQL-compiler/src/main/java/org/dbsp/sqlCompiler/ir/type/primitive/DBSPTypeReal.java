@@ -40,6 +40,16 @@ import java.util.Objects;
 public class DBSPTypeReal extends DBSPTypeFP implements IsNumericType {
     public DBSPTypeReal(CalciteObject node, boolean mayBeNull) { super(node, DBSPTypeCode.REAL, mayBeNull); }
 
+    public static final DBSPTypeReal INSTANCE = new DBSPTypeReal(CalciteObject.EMPTY, false);
+    public static final DBSPTypeReal NULLABLE_INSTANCE = new DBSPTypeReal(CalciteObject.EMPTY, true);
+
+    public static DBSPTypeReal create(boolean mayBeNull) {
+        if (mayBeNull)
+            return NULLABLE_INSTANCE;
+        else
+            return INSTANCE;
+    }
+
     @Override
     public DBSPType withMayBeNull(boolean mayBeNull) {
         if (this.mayBeNull == mayBeNull)
@@ -101,6 +111,6 @@ public class DBSPTypeReal extends DBSPTypeFP implements IsNumericType {
     @SuppressWarnings("unused")
     public static DBSPTypeReal fromJson(JsonNode node, JsonDecoder decoder) {
         boolean mayBeNull = DBSPType.fromJsonMayBeNull(node);
-        return new DBSPTypeReal(CalciteObject.EMPTY, mayBeNull);
+        return DBSPTypeReal.create(mayBeNull);
     }
 }

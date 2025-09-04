@@ -33,13 +33,14 @@ import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPNullLiteral;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.IsBoundedType;
 
 import java.util.Objects;
 
 import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.NULL;
 
 /** This type has a single value, NULL. */
-public class DBSPTypeNull extends DBSPTypeBaseType {
+public class DBSPTypeNull extends DBSPTypeBaseType implements IsBoundedType {
     public static final DBSPTypeNull INSTANCE = new DBSPTypeNull(CalciteObject.EMPTY);
 
     DBSPTypeNull(CalciteObject node) {
@@ -94,5 +95,15 @@ public class DBSPTypeNull extends DBSPTypeBaseType {
     @SuppressWarnings("unused")
     public static DBSPTypeNull fromJson(JsonNode node, JsonDecoder decoder) {
         return INSTANCE;
+    }
+
+    @Override
+    public DBSPExpression getMaxValue() {
+        return DBSPNullLiteral.INSTANCE;
+    }
+
+    @Override
+    public DBSPExpression getMinValue() {
+        return DBSPNullLiteral.INSTANCE;
     }
 }
