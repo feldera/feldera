@@ -37,14 +37,16 @@ public abstract class IAggregate extends DBSPExpression implements IDBSPInnerNod
     public abstract IAggregate combine(
             CalciteObject node, DBSPCompiler compiler, DBSPVariablePath rowVar, List<IAggregate> list);
 
-    public abstract boolean isLinear();
-
     /** Return references to all parameters inside the aggregate that refer to the row */
     public abstract List<DBSPParameter> getRowVariableReferences();
+
+    /** Return the type of the accumulator */
+    public abstract DBSPType getAccumulatorType();
 
     /** True if these two aggregates are "compatible", i.e. they
      * can be implemented in a single operator.  For example, all linear
      * aggregates are compatible with each other.
-     * @param other   Aggregate to check compatibility with. */
-    public abstract boolean compatible(IAggregate other);
+     * @param other   Aggregate to check compatibility with.
+     * @param appendOnly  True if the source of the aggregates is append-only. */
+    public abstract boolean compatible(IAggregate other, boolean appendOnly);
 }

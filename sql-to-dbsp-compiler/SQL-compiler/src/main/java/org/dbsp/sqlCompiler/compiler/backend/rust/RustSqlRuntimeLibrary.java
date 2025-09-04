@@ -30,6 +30,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.ir.expression.*;
 import org.dbsp.sqlCompiler.ir.type.*;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.primitive.*;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.util.Utilities;

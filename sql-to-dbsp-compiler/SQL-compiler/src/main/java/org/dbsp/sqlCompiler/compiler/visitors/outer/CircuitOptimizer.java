@@ -86,7 +86,7 @@ public class CircuitOptimizer extends Passes {
         this.add(new UnusedFields(compiler));
         this.add(new Intern(compiler));
         this.add(new CSE(compiler));
-        this.add(new MinMaxOptimize(compiler, compiler.weightVar));
+        this.add(new ExpandAggregates(compiler, compiler.weightVar));
         this.add(new ExpandAggregateZero(compiler));
         this.add(new DeadCode(compiler, true, false));
         this.add(new OptimizeDistinctVisitor(compiler));

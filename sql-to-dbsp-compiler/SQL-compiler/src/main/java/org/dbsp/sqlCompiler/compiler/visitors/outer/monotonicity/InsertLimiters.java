@@ -255,7 +255,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
         DBSPExpression min = function.getResultType().minimumValue();
         DBSPExpression cond = new DBSPTupleExpression(and,
                 new DBSPIfExpression(left.node().getNode(), and,
-                        function.call(l1.borrow(), r1.borrow()), min));
+                        function.call(l1.borrow(), r1.borrow()), min).reduce(this.compiler));
         DBSPApply2Operator result = new DBSPApply2Operator(
                 left.node().getRelNode(), cond.closure(leftVar, rightVar), left, right);
         result.addAnnotation(Waterline.INSTANCE, DBSPApply2Operator.class);

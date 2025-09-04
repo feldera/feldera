@@ -64,7 +64,7 @@ import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.INT128;
 /**
  * Implements a window aggregate with a RANGE
  */
-public class RangeAggregates extends GroupAndAggregates {
+public class RangeAggregates extends WindowAggregates {
     final int orderColumnIndex;
     final RelFieldCollation collation;
 
@@ -203,12 +203,9 @@ public class RangeAggregates extends GroupAndAggregates {
             List<DBSPType> types = Linq.map(
                     this.aggregateCalls, c -> this.compiler.convertType(c.type, false));
             DBSPTypeTuple tuple = new DBSPTypeTuple(types);
-            CalciteToDBSPCompiler.AggregateList folds = this.compiler.createAggregates(this.compiler.compiler(),
+            DBSPAggregateList list = this.compiler.createAggregates(this.compiler.compiler(),
                     this.window, this.aggregateCalls, this.window.constants, tuple, this.inputRowType, 0,
-                    ImmutableBitSet.of(), false, false);
-            Utilities.enforce(folds.permutation().isIdentityPermutation());
-            Utilities.enforce(folds.aggregates().size() == 1);
-            DBSPAggregateList fd = folds.aggregates().get(0);
+                    ImmutableBitSet.of(), false);
 
             // This function is always the same: |Tup2(x, y)| (x, y)
             DBSPVariablePath pr = new DBSPVariablePath(partitionAndRowType.ref());
@@ -218,7 +215,7 @@ public class RangeAggregates extends GroupAndAggregates {
                             pr.deref().field(1).applyCloneIfNeeded())
                             .closure(pr);
 
-            aggResultType = fd.getEmptySetResultType().to(DBSPTypeTuple.class);
+            aggResultType = list.getEmptySetResultType().to(DBSPTypeTuple.class);
             // Prepare a type that will make the operator following the window aggregate happy
             // (that operator is a map_index).  Currently, the compiler cannot represent
             // exactly the output type of the WindowAggregateOperator, so it lies about the actual type.
@@ -230,7 +227,7 @@ public class RangeAggregates extends GroupAndAggregates {
 
             // Compute aggregates for the window
             windowAgg = new DBSPPartitionedRollingAggregateOperator(
-                    node, partitioningFunction, null, fd,
+                    node, partitioningFunction, null, list,
                     lb, ub, windowOutputType, diff.outputPort());
             this.compiler.addOperator(windowAgg);
         }

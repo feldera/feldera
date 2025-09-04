@@ -41,7 +41,7 @@ import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.INT64;
 /**
  * FIRST_VALUE or LAST_VALUE aggregates
  */
-public class FirstLastAggregate extends GroupAndAggregates {
+public class FirstLastAggregate extends WindowAggregates {
     public final AggregateCall call;
 
     protected FirstLastAggregate(

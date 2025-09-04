@@ -50,7 +50,7 @@ import java.util.List;
 public final class DBSPPartitionedRollingAggregateWithWaterlineOperator
         extends DBSPBinaryOperator {
     @Nullable
-    public final DBSPAggregateList aggregate;
+    public final DBSPAggregateList aggregateList;
     public final DBSPClosureExpression partitioningFunction;
     public final DBSPWindowBoundExpression lower;
     public final DBSPWindowBoundExpression upper;
@@ -62,7 +62,7 @@ public final class DBSPPartitionedRollingAggregateWithWaterlineOperator
             // Initially 'function' is null, and the 'aggregate' is not.
             // After lowering 'aggregate' is not null, and 'function' has its expected shape
             @Nullable DBSPExpression function,
-            @Nullable DBSPAggregateList aggregate,
+            @Nullable DBSPAggregateList aggregateList,
             DBSPWindowBoundExpression lower,
             DBSPWindowBoundExpression upper,
             // The output type of partitioned_rolling_aggregate_with_waterline cannot actually be represented
@@ -72,7 +72,7 @@ public final class DBSPPartitionedRollingAggregateWithWaterlineOperator
             OutputPort dataInput, OutputPort waterlineInput) {
         super(node, "partitioned_rolling_aggregate_with_waterline",
                 function, outputType, true, dataInput, waterlineInput, true);
-        this.aggregate = aggregate;
+        this.aggregateList = aggregateList;
         this.lower = lower;
         this.upper = upper;
         this.partitioningFunction = partitioningFunction;
@@ -87,7 +87,7 @@ public final class DBSPPartitionedRollingAggregateWithWaterlineOperator
             return new DBSPPartitionedRollingAggregateWithWaterlineOperator(
                     this.getRelNode(),
                     this.partitioningFunction,
-                    function, this.aggregate, this.lower, this.upper,
+                    function, this.aggregateList, this.lower, this.upper,
                     outputType.to(DBSPTypeIndexedZSet.class),
                     newInputs.get(0), newInputs.get(1)).copyAnnotations(this);
         }
@@ -101,7 +101,7 @@ public final class DBSPPartitionedRollingAggregateWithWaterlineOperator
         DBSPPartitionedRollingAggregateWithWaterlineOperator otherOperator = other.as(DBSPPartitionedRollingAggregateWithWaterlineOperator.class);
         if (otherOperator == null)
             return false;
-        return EquivalenceContext.equiv(this.aggregate, otherOperator.aggregate) &&
+        return EquivalenceContext.equiv(this.aggregateList, otherOperator.aggregateList) &&
                 EquivalenceContext.equiv(this.function, otherOperator.function) &&
                 this.partitioningFunction.equivalent(otherOperator.partitioningFunction) &&
                 this.lower.equivalent(otherOperator.lower) &&
@@ -122,9 +122,9 @@ public final class DBSPPartitionedRollingAggregateWithWaterlineOperator
         super.accept(visitor);
         visitor.property("partitioningFunction");
         this.partitioningFunction.accept(visitor);
-        if (this.aggregate != null) {
-            visitor.property("aggregate");
-            this.aggregate.accept(visitor);
+        if (this.aggregateList != null) {
+            visitor.property("aggregateList");
+            this.aggregateList.accept(visitor);
         }
         visitor.property("lower");
         this.lower.accept(visitor);
@@ -138,8 +138,8 @@ public final class DBSPPartitionedRollingAggregateWithWaterlineOperator
         DBSPClosureExpression partitioningFunction = fromJsonInner(
                 node, "partitioningFunction", decoder, DBSPClosureExpression.class);
         DBSPAggregateList aggregate = null;
-        if (node.has("aggregate"))
-            aggregate = fromJsonInner(node, "aggregate", decoder, DBSPAggregateList.class);
+        if (node.has("aggregateList"))
+            aggregate = fromJsonInner(node, "aggregateList", decoder, DBSPAggregateList.class);
         DBSPWindowBoundExpression lower = fromJsonInner(node, "lower", decoder, DBSPWindowBoundExpression.class);
         DBSPWindowBoundExpression upper = fromJsonInner(node, "upper", decoder, DBSPWindowBoundExpression.class);
         return new DBSPPartitionedRollingAggregateWithWaterlineOperator(
@@ -156,8 +156,8 @@ public final class DBSPPartitionedRollingAggregateWithWaterlineOperator
         DBSPTypeRawTuple pfOut = this.partitioningFunction.getResultType().to(DBSPTypeRawTuple.class);
         args[0] = pfOut.tupFields[0];
         args[1] = this.lower.type;
-        if (this.aggregate != null) {
-            args[2] = this.aggregate.getType();
+        if (this.aggregateList != null) {
+            args[2] = this.aggregateList.getType();
         } else {
             DBSPExpression expr = this.getFunction();
             args[2] = expr.getType().to(DBSPTypeFunction.class).resultType;

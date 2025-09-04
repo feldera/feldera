@@ -684,8 +684,8 @@ public class CircuitRewriter extends CircuitCloneVisitor {
         @Nullable DBSPExpression function = this.transformN(operator.function);
         DBSPExpression partitioningFunction = this.transform(operator.partitioningFunction);
         @Nullable DBSPAggregateList aggregate = null;
-        if (operator.aggregate != null) {
-            IDBSPInnerNode transformed = this.transform.apply(operator.aggregate);
+        if (operator.aggregateList != null) {
+            IDBSPInnerNode transformed = this.transform.apply(operator.aggregateList);
             aggregate = transformed.to(DBSPAggregateList.class);
         }
         DBSPWindowBoundExpression lower = this.transform(operator.lower).to(DBSPWindowBoundExpression.class);
@@ -696,7 +696,7 @@ public class CircuitRewriter extends CircuitCloneVisitor {
                 || !right.equals(operator.right())
                 || partitioningFunction != operator.partitioningFunction
                 || function != operator.function
-                || aggregate != operator.aggregate
+                || aggregate != operator.aggregateList
                 || lower != operator.lower
                 || upper != operator.upper) {
             result = new DBSPPartitionedRollingAggregateWithWaterlineOperator(

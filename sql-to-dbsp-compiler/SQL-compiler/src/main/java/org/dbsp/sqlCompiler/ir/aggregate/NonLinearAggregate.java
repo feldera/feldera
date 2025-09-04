@@ -37,11 +37,11 @@ import java.util.Objects;
  * A non-linear aggregate is compiled as functional fold operation,
  * described by
  * - a zero (initial value),
- * - an increment function, and
+ * - an increment function with signature |accumulator, value, weight|, and
  * - a postprocessing step that makes any necessary conversions.
  * For example, (a non-linear version of) AVG has
  * - a zero of (0,0),
- * - an increment of (1, value), and
+ * - an increment of |accumulator, value, weight| accumulator += (1, value), and
  * - a postprocessing step of |a| a.1/a.0.
  * Notice that the DBSP `Fold` structure has a slightly different signature
  * for the increment. */
@@ -90,12 +90,12 @@ public class NonLinearAggregate extends IAggregate {
         return this.emptySetResult;
     }
 
-    public DBSPType getIncrementType() {
+    public DBSPType getAccumulatorType() {
         return this.increment.parameters[0].getType();
     }
 
     @Override
-    public boolean compatible(IAggregate other) {
+    public boolean compatible(IAggregate other, boolean appendOnly) {
         return other.is(NonLinearAggregate.class) &&
                 !other.is(MinMaxAggregate.class);
     }
@@ -115,7 +115,7 @@ public class NonLinearAggregate extends IAggregate {
                 throw new InternalCompilerError("Post-process result type " + postProcessType +
                         " different from empty set type " + emptyResultType, this);
         } else {
-            DBSPType incrementResultType = this.getIncrementType();
+            DBSPType incrementResultType = this.getAccumulatorType();
             if (!emptyResultType.sameType(incrementResultType)) {
                 throw new InternalCompilerError("Increment result type " + incrementResultType +
                         " different from empty set type " + emptyResultType, this);
@@ -148,7 +148,7 @@ public class NonLinearAggregate extends IAggregate {
         if (this.postProcess != null)
             return this.postProcess;
         // If it is not set return the identity function
-        DBSPVariablePath var = this.getIncrementType().var();
+        DBSPVariablePath var = this.getAccumulatorType().var();
         return var.closure(var);
     }
 
@@ -209,7 +209,7 @@ public class NonLinearAggregate extends IAggregate {
         DBSPType weightType = null;
         for (int i = 0; i < parts; i++) {
             NonLinearAggregate implementation = components.get(i).to(NonLinearAggregate.class);
-            DBSPType incType = implementation.getIncrementType();
+            DBSPType incType = implementation.getAccumulatorType();
             zeros[i] = implementation.zero;
             increments[i] = implementation.increment;
             if (implementation.increment.parameters.length != 3)
@@ -238,9 +238,7 @@ public class NonLinearAggregate extends IAggregate {
         DBSPVariablePath weightVar = new DBSPVariablePath(Objects.requireNonNull(weightType));
         for (int i = 0; i < parts; i++) {
             DBSPExpression accumulatorField = accumulator.deref().field(i);
-            DBSPExpression expr = increments[i].call(accumulatorField, rowVar, weightVar);
-            BetaReduction reducer = new BetaReduction(compiler);
-            expr = reducer.reduce(expr);
+            DBSPExpression expr = increments[i].call(accumulatorField, rowVar, weightVar).reduce(compiler);
             // Generate either increment(&a.i...); or *a.i = increment(&a.i...)
             // depending on the type of the result returned by the increment function
             if (increments[i].getResultType().is(DBSPTypeVoid.class))
@@ -249,8 +247,7 @@ public class NonLinearAggregate extends IAggregate {
                 block.add(new DBSPExpressionStatement(
                         new DBSPAssignmentExpression(accumulatorField, expr)));
             DBSPExpression postAccumulatorField = postAccumulator.field(i).applyCloneIfNeeded();
-            expr = posts[i].call(postAccumulatorField);
-            posts[i] = reducer.reduce(expr);
+            posts[i] = posts[i].call(postAccumulatorField).reduce(compiler);
         }
         DBSPExpression accumulatorBody = new DBSPBlockExpression(block, null);
         DBSPClosureExpression accumFunction = accumulatorBody.closure(
@@ -260,11 +257,6 @@ public class NonLinearAggregate extends IAggregate {
         DBSPTypeUser semigroup = new DBSPTypeSemigroup(accumulatorTypes, semigroups);
         return new NonLinearAggregate(node, new DBSPTupleExpression(zeros),
                 accumFunction, postClosure, new DBSPTupleExpression(emptySetResults), semigroup);
-    }
-
-    @Override
-    public boolean isLinear() {
-        return false;
     }
 
     public boolean equivalent(EquivalenceContext context, NonLinearAggregate other) {

@@ -53,8 +53,8 @@ public class ImplementChains extends CircuitCloneVisitor {
                                 lastFunction.body.field(0).borrow(),
                                 lastFunction.body.field(1).borrow());
                         DBSPExpression apply = comp.closure().call(argument);
-                        composed = apply.closure(lastFunction.parameters)
-                                .reduce(this.compiler()).to(DBSPClosureExpression.class);
+                        composed = apply.reduce(this.compiler())
+                                .closure(lastFunction.parameters);
                     }
                     comp = new DBSPChainOperator.Computation(comp.kind(), composed);
                 }

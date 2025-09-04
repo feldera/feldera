@@ -35,7 +35,7 @@ import java.util.Objects;
 /**
  * A class representing a LEAD or LAG function
  */
-public class LeadLagAggregates extends GroupAndAggregates {
+public class LeadLagAggregates extends WindowAggregates {
     protected LeadLagAggregates(CalciteToDBSPCompiler compiler, Window window,
                                 Window.Group group, int windowFieldIndex) {
         super(compiler, window, group, windowFieldIndex);

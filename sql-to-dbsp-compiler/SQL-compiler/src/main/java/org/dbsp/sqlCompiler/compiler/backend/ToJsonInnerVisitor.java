@@ -126,8 +126,6 @@ public class ToJsonInnerVisitor extends InnerVisitor {
 
     @Override
     public void postorder(DBSPAggregateList node) {
-        this.property("isLinear");
-        this.stream.append(node.isLinear());
         this.stream.endObject();
     }
 
