@@ -130,7 +130,7 @@ public class OptimizeProjectionVisitor extends CircuitCloneWithGraphsVisitor {
     }
 
     static DBSPSimpleOperator mapAfterJoinIndex(
-            DBSPCompiler reporter, DBSPJoinBaseOperator source, DBSPMapOperator operator) {
+            DBSPCompiler compiler, DBSPJoinBaseOperator source, DBSPMapOperator operator) {
         DBSPJoinBaseOperator sourceJoin = source.to(DBSPJoinBaseOperator.class);
         DBSPClosureExpression joinFunction = source.getClosureFunction();
         DBSPClosureExpression function = operator.getClosureFunction();
@@ -139,9 +139,8 @@ public class OptimizeProjectionVisitor extends CircuitCloneWithGraphsVisitor {
         DBSPExpression argument = new DBSPRawTupleExpression(
                 joinFunction.body.field(0).borrow(),
                 joinFunction.body.field(1).borrow());
-        DBSPExpression apply = function.call(argument);
-        DBSPClosureExpression newFunction = apply.closure(joinFunction.parameters)
-                .reduce(reporter).to(DBSPClosureExpression.class);
+        DBSPExpression apply = function.call(argument).reduce(compiler);
+        DBSPClosureExpression newFunction = apply.closure(joinFunction.parameters);
         if (source.is(DBSPJoinIndexOperator.class)) {
             return new DBSPJoinOperator(source.getRelNode(), operator.getOutputZSetType(),
                     newFunction, operator.isMultiset, sourceJoin.left(), sourceJoin.right())
@@ -181,9 +180,8 @@ public class OptimizeProjectionVisitor extends CircuitCloneWithGraphsVisitor {
         DBSPExpression argument = new DBSPRawTupleExpression(
                 joinFunction.body.field(0).borrow(),
                 joinFunction.body.field(1).borrow());
-        DBSPExpression apply = function.call(argument);
-        DBSPClosureExpression newFunction = apply.closure(joinFunction.parameters)
-                .reduce(reporter).to(DBSPClosureExpression.class);
+        DBSPExpression apply = function.call(argument).reduce(reporter);
+        DBSPClosureExpression newFunction = apply.closure(joinFunction.parameters);
         CalciteRelNode node = operator.getRelNode().after(source.getRelNode());
         if (source.is(DBSPJoinIndexOperator.class)) {
             return new DBSPJoinIndexOperator(node, operator.getOutputIndexedZSetType(),

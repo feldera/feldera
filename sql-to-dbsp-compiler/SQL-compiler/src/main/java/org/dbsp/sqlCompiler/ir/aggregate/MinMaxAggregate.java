@@ -68,8 +68,8 @@ public class MinMaxAggregate extends NonLinearAggregate {
     }
 
     @Override
-    public boolean compatible(IAggregate other) {
-        return other.is(MinMaxAggregate.class);
+    public boolean compatible(IAggregate other, boolean appendOnly) {
+        return appendOnly && (other.is(MinMaxAggregate.class) || other.is(LinearAggregate.class));
     }
 
     @Override

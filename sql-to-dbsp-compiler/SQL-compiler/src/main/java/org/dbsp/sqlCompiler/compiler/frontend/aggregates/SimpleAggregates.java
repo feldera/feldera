@@ -9,6 +9,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteToDBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.TypeCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
+import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregateList;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
@@ -25,7 +26,7 @@ import java.util.Objects;
 /**
  * Simple aggregates used in an OVER, no LAG, or RANGE.
  */
-public class SimpleAggregates extends GroupAndAggregates {
+public class SimpleAggregates extends WindowAggregates {
     protected SimpleAggregates(CalciteToDBSPCompiler compiler, Window window, Window.Group group, int windowFieldIndex) {
         super(compiler, window, group, windowFieldIndex);
         Utilities.enforce(this.group.orderKeys.getFieldCollations().isEmpty());
@@ -39,11 +40,10 @@ public class SimpleAggregates extends GroupAndAggregates {
         DBSPType groupKeyType = this.partitionKeys().getType();
         DBSPType inputType = lastOperator.getOutputZSetElementType();
 
-        CalciteToDBSPCompiler.AggregateList aggregates = this.compiler.createAggregates(
+        DBSPAggregateList aggregates = this.compiler.createAggregates(
                 this.compiler.compiler(),
                 this.window, this.aggregateCalls, this.window.constants, tuple, inputType,
-                0, this.group.keys, true, false);
-        Utilities.enforce(aggregates.permutation().isIdentityPermutation());
+                0, this.group.keys, true);
 
         // Index the previous input using the group keys
         DBSPTypeIndexedZSet localGroupAndInput = TypeCompiler.makeIndexedZSet(groupKeyType, inputType);
@@ -63,13 +63,13 @@ public class SimpleAggregates extends GroupAndAggregates {
                 node, makeKeys, localGroupAndInput, lastOperator.outputPort());
         this.compiler.addOperator(indexedInput);
 
-        DBSPSimpleOperator join = this.compiler.joinAllAggregates(
-                this.node, groupKeyType, indexedInput.outputPort(), aggregates.aggregates());
+        DBSPSimpleOperator aggregate = this.compiler.implementAggregateList(
+                this.node, groupKeyType, indexedInput.outputPort(), aggregates);
 
         // Join again with the indexed input
         DBSPVariablePath key = groupKeyType.ref().var();
         DBSPVariablePath left = flattened.getType().ref().var();
-        DBSPVariablePath right = join.getOutputIndexedZSetType().elementType.ref().var();
+        DBSPVariablePath right = aggregate.getOutputIndexedZSetType().elementType.ref().var();
         DBSPClosureExpression append =
                 DBSPTupleExpression.flatten(left.deref(), right.deref()).closure(
                         key, left, right);
@@ -78,7 +78,7 @@ public class SimpleAggregates extends GroupAndAggregates {
             n = this.node.getFinal();
         // Do not insert the last operator
         return new DBSPStreamJoinOperator(n, TypeCompiler.makeZSet(append.getResultType()),
-                append, true, indexedInput.outputPort(), join.outputPort());
+                append, true, indexedInput.outputPort(), aggregate.outputPort());
     }
 
     @Override

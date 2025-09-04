@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.sql.streaming;
 
+import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessRetainKeysOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPChainAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPControlledKeyFilterOperator;
@@ -120,19 +121,69 @@ public class StreamingTests extends StreamingTestBase {
                          20  |   8 | 1""");
         ccs.step("INSERT INTO T VALUES(5, 20);",
                 """
-                         sum | max | weight
+                         max | min | weight
                         --------------------
                          20  |   8 | -1
                          20  |   3 | 1""");
-        int[] chains = new int[1];
         CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
+            int chains = 0;
+
             @Override
             public void postorder(DBSPChainAggregateOperator operator) {
-                chains[0]++;
+                chains++;
+            }
+
+            @Override
+            public void endVisit() {
+                Assert.assertEquals(1, chains);
             }
         };
         ccs.visit(visitor);
-        Assert.assertEquals(1, chains[0]);
+    }
+
+    @Test
+    public void issue4686() {
+        String sql = """
+                CREATE TABLE T(TS INT, X INT) WITH ('append_only' = 'true');
+                CREATE VIEW V AS
+                SELECT SUM(TS * 2), COUNT(TS - 2), MAX(TS) FROM T;""";
+        var ccs = this.getCCS(sql);
+        ccs.step("INSERT INTO T VALUES(NULL, 0);",
+                """
+                         sum | ct  | max | weight
+                        --------------------
+                             |   0 |     | 1""");
+        ccs.step("INSERT INTO T VALUES(10, -10);",
+                """
+                         sum | ct  | max | weight
+                        --------------------
+                             |   0 |     |-1
+                         20  |   1 | 10  | 1""");
+        ccs.step("INSERT INTO T VALUES(5, 20);",
+                """
+                         sum | ct  | max | weight
+                        --------------------
+                         30  |   2 | 10  | 1
+                         20  |   1 | 10  | -1""");
+        CircuitVisitor visitor = new CircuitVisitor(ccs.compiler) {
+            int chains = 0;
+
+            @Override
+            public void postorder(DBSPChainAggregateOperator operator) {
+                chains++;
+            }
+
+            @Override
+            public void postorder(DBSPAggregateLinearPostprocessOperator operator) {
+                Assert.fail("Should not be present");
+            }
+
+            @Override
+            public void endVisit() {
+                Assert.assertEquals(1, chains);
+            }
+        };
+        ccs.visit(visitor);
     }
 
     @Test
@@ -231,7 +282,7 @@ public class StreamingTests extends StreamingTestBase {
 
             @Override
             public void endVisit() {
-                Assert.assertEquals(4, this.integrate_trace);
+                Assert.assertEquals(1, this.integrate_trace);
             }
         };
         cc.visit(visitor);
@@ -334,7 +385,7 @@ public class StreamingTests extends StreamingTestBase {
 
             @Override
             public void endVisit() {
-                Assert.assertEquals(4, this.integrate_trace);
+                Assert.assertEquals(1, this.integrate_trace);
             }
         };
         ccs.visit(visitor);

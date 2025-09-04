@@ -28,11 +28,10 @@ public final class DBSPAggregateList extends DBSPNode
         implements IDBSPInnerNode, IDBSPDeclaration // Declares the row variable
 {
     public final DBSPVariablePath rowVar;
-    /** Component aggregates, must all be linear or non-linear */
+    /** Component aggregates, must all be compatible */
     public final List<IAggregate> aggregates;
     // Cache here the result of aggregation on the empty set
     final DBSPExpression emptySetResult;
-    final boolean isLinear;
 
     public DBSPAggregateList(CalciteObject node, DBSPVariablePath rowVar,
                              List<IAggregate> aggregates) {
@@ -40,10 +39,8 @@ public final class DBSPAggregateList extends DBSPNode
         Utilities.enforce(!aggregates.isEmpty());
         this.rowVar = rowVar;
         this.aggregates = aggregates;
-        this.isLinear = Linq.all(aggregates, IAggregate::isLinear);
         this.emptySetResult = new DBSPTupleExpression(node, Linq.map(aggregates, IAggregate::getEmptySetResult));
         for (IAggregate b: this.aggregates) {
-            Utilities.enforce(b.isLinear() == this.isLinear);
             List<DBSPParameter> params = b.getRowVariableReferences();
             for (DBSPParameter p: params) {
                 Utilities.enforce(this.rowVar.getType().sameType(p.getType()),
@@ -52,10 +49,6 @@ public final class DBSPAggregateList extends DBSPNode
                         "Row var name does not match: " + this.rowVar.variable + " vs " + p.name);
             }
         }
-    }
-
-    public boolean isLinear() {
-        return this.isLinear;
     }
 
     public DBSPTypeTuple getEmptySetResultType() {
@@ -83,26 +76,17 @@ public final class DBSPAggregateList extends DBSPNode
         visitor.postorder(this);
     }
 
-    public DBSPExpression compact(DBSPCompiler compiler) {
-        if (this.isLinear())
-            return this.asLinear(compiler);
-        else
-            return this.asFold(compiler);
-    }
-
     IAggregate combine(DBSPCompiler compiler) {
         Utilities.enforce(!this.aggregates.isEmpty());
         return this.aggregates.get(0).combine(this.getNode(), compiler, this.rowVar, this.aggregates);
     }
 
     public DBSPFold asFold(DBSPCompiler compiler) {
-        Utilities.enforce(!this.isLinear());
         NonLinearAggregate combined = this.combine(compiler).to(NonLinearAggregate.class);
         return combined.asFold();
     }
 
     public LinearAggregate asLinear(DBSPCompiler compiler) {
-        Utilities.enforce(this.isLinear());
         return this.combine(compiler).to(LinearAggregate.class);
     }
 

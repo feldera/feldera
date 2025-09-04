@@ -1663,37 +1663,46 @@ public class ToRustInnerVisitor extends InnerVisitor {
                 break;
             }
             default: {
-                String function = RustSqlRuntimeLibrary.INSTANCE.getFunctionName(
-                        expression.getNode(),
-                        expression.opcode,
-                        expression.getType(),
-                        expression.left.getType(),
-                        expression.right.getType());
-                this.builder.append(function);
-                int genericArgCount =
-                        expression.left.getType().genericArgumentCount() +
-                        expression.right.getType().genericArgumentCount() +
-                        expression.getType().genericArgumentCount();
-                boolean needsGenericArguments =
-                        expression.opcode == DBSPOpcode.ADD ||
-                        expression.opcode == DBSPOpcode.SUB ||
-                        expression.opcode == DBSPOpcode.MUL ||
-                        expression.opcode == DBSPOpcode.DIV ||
-                        expression.opcode == DBSPOpcode.MOD;
-                if (genericArgCount > 0 && needsGenericArguments) {
-                    this.builder.append("::<");
-                    boolean first = expression.left.getType().emitGenericArguments(builder, true);
-                    first = expression.right.getType().emitGenericArguments(builder, first);
-                    expression.getType().emitGenericArguments(builder, first);
-                    this.builder.append(">");
+                if (expression.opcode == DBSPOpcode.ADD && expression.left.getType().is(DBSPTypeTuple.class)) {
+                    this.visitingChild = 0;
+                    expression.left.accept(this);
+                    this.builder.append(".add_by_ref(&");
+                    this.visitingChild = 1;
+                    expression.right.accept(this);
+                    this.builder.append(")");
+                } else {
+                    String function = RustSqlRuntimeLibrary.INSTANCE.getFunctionName(
+                            expression.getNode(),
+                            expression.opcode,
+                            expression.getType(),
+                            expression.left.getType(),
+                            expression.right.getType());
+                    this.builder.append(function);
+                    int genericArgCount =
+                            expression.left.getType().genericArgumentCount() +
+                                    expression.right.getType().genericArgumentCount() +
+                                    expression.getType().genericArgumentCount();
+                    boolean needsGenericArguments =
+                            expression.opcode == DBSPOpcode.ADD ||
+                                    expression.opcode == DBSPOpcode.SUB ||
+                                    expression.opcode == DBSPOpcode.MUL ||
+                                    expression.opcode == DBSPOpcode.DIV ||
+                                    expression.opcode == DBSPOpcode.MOD;
+                    if (genericArgCount > 0 && needsGenericArguments) {
+                        this.builder.append("::<");
+                        boolean first = expression.left.getType().emitGenericArguments(builder, true);
+                        first = expression.right.getType().emitGenericArguments(builder, first);
+                        expression.getType().emitGenericArguments(builder, first);
+                        this.builder.append(">");
+                    }
+                    this.builder.append("(");
+                    this.visitingChild = 0;
+                    expression.left.accept(this);
+                    this.builder.append(", ");
+                    this.visitingChild = 1;
+                    expression.right.accept(this);
+                    this.builder.append(")");
                 }
-                this.builder.append("(");
-                this.visitingChild = 0;
-                expression.left.accept(this);
-                this.builder.append(", ");
-                this.visitingChild = 1;
-                expression.right.accept(this);
-                this.builder.append(")");
                 break;
             }
         }

@@ -201,9 +201,8 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
         projection = new DBSPRawTupleExpression(
                 ExpressionCompiler.expandTuple(var.getNode(), var.field(0).deref()),
                 projection.call(var.field(1)))
-                .closure(var)
                 .reduce(this.compiler)
-                .to(DBSPClosureExpression.class);
+                .closure(var);
 
         int size = operator.getType().getToplevelFieldCount();
         DBSPMapIndexOperator adjust = new DBSPMapIndexOperator(operator.getRelNode(), projection, source)

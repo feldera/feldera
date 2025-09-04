@@ -132,7 +132,7 @@ public class LowerAsof implements CircuitTransform {
             DBSPVariablePath z = ix.elementType.ref().var();
             DBSPVariablePath y = originalRetain.parameters[1].getType().var();
             DBSPExpression arg = new DBSPUnwrapCustomOrdExpression(z.deref()).borrow();
-            DBSPClosureExpression newRetain = originalRetain.call(arg, y).closure(z, y);
+            DBSPClosureExpression newRetain = originalRetain.call(arg, y).reduce(this.compiler).closure(z, y);
             DBSPSimpleOperator replacement = operator.with(
                     newRetain, left.outputType(),
                     Linq.list(left, operator.right()), true);

@@ -152,13 +152,13 @@ public class ToDotNodesVisitor extends CircuitVisitor {
         if (node.is(DBSPAggregateOperatorBase.class)) {
             DBSPAggregateOperatorBase aggregate = node.to(DBSPAggregateOperatorBase.class);
             if (aggregate.aggregateList != null) {
-                expression = aggregate.aggregateList.compact(this.compiler());
+                return aggregate.aggregateList.toString();
             }
         } else if (node.is(DBSPPartitionedRollingAggregateWithWaterlineOperator.class)) {
             DBSPPartitionedRollingAggregateWithWaterlineOperator aggregate =
                     node.to(DBSPPartitionedRollingAggregateWithWaterlineOperator.class);
-            if (aggregate.aggregate != null) {
-                expression = aggregate.aggregate.compact(this.compiler());
+            if (aggregate.aggregateList != null) {
+                return aggregate.aggregateList.toString();
             }
         }
         if (expression == null)

@@ -929,7 +929,8 @@ day | total_bids | rank1_bids | rank2_bids | rank3_bids | total_bidders | rank1_
             @Override
             public VisitDecision preorder(DBSPSimpleOperator node) {
                 Assert.assertTrue( !node.operation.contains("aggregate") ||
-                       node.operation.equals("aggregate_linear_postprocess_retain_keys"));
+                        node.operation.equals("aggregate_linear_postprocess_retain_keys") ||
+                        node.operation.equals("chain_aggregate"));
                 return super.preorder(node);
             }
         };

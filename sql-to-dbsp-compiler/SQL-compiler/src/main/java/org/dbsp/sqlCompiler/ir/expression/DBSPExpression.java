@@ -156,6 +156,16 @@ public abstract class DBSPExpression
 
     public DBSPExpression question() { return new DBSPQuestionExpression(this); }
 
+    /** Addition between two expressions with the same type. */
+    public DBSPExpression add(DBSPExpression with) {
+        return new DBSPBinaryExpression(this.getNode(), this.getType(), DBSPOpcode.ADD, this, with);
+    }
+
+    /** Multiply an expression with a weight; result has same type as this. */
+    public DBSPExpression mulByWeight(DBSPExpression weight) {
+        return new DBSPBinaryExpression(this.getNode(), this.getType(), DBSPOpcode.MUL_WEIGHT, this, weight);
+    }
+
     /** Convenient shortcut to wrap an expression into a Some() constructor. */
     public DBSPExpression some() {
         return new DBSPSomeExpression(this.getNode(), this);

@@ -99,8 +99,7 @@ public class LinearAggregate extends IAggregate {
         } else {
             DBSPClosureExpression post0 = aggregates.get(0).postProcess;
             var var = post0.parameters[0].getType().var();
-            post = new DBSPTupleExpression(post0.call(var)).closure(var)
-                    .reduce(compiler).to(DBSPClosureExpression.class);
+            post = new DBSPTupleExpression(post0.call(var)).reduce(compiler).closure(var);
         }
         return new LinearAggregate(node, map, post, zero);
     }
@@ -121,18 +120,18 @@ public class LinearAggregate extends IAggregate {
     }
 
     @Override
-    public boolean isLinear() {
-        return true;
-    }
-
-    @Override
     public List<DBSPParameter> getRowVariableReferences() {
         return Linq.list(this.map.parameters[0]);
     }
 
     @Override
-    public boolean compatible(IAggregate other) {
-        return other.is(LinearAggregate.class);
+    public DBSPType getAccumulatorType() {
+        return this.map.getResultType();
+    }
+
+    @Override
+    public boolean compatible(IAggregate other, boolean appendOnly) {
+        return other.is(LinearAggregate.class) || (appendOnly && other.is(MinMaxAggregate.class));
     }
 
     @Override

@@ -109,9 +109,8 @@ public class OptimizeMaps extends CircuitCloneWithGraphsVisitor {
             DBSPExpression argument = new DBSPRawTupleExpression(
                     sourceFunction.body.field(0).borrow(),
                     sourceFunction.body.field(1).borrow());
-            DBSPExpression apply = thisFunction.call(argument);
-            DBSPClosureExpression newFunction = apply.closure(sourceFunction.parameters)
-                    .reduce(this.compiler()).to(DBSPClosureExpression.class);
+            DBSPExpression apply = thisFunction.call(argument).reduce(this.compiler());
+            DBSPClosureExpression newFunction = apply.closure(sourceFunction.parameters);
             CalciteRelNode node = operator.getRelNode().after(source.node().getRelNode());
             DBSPSimpleOperator result = new DBSPMapIndexOperator(
                     node, newFunction, operator.getOutputIndexedZSetType(), source.node().inputs.get(0))

@@ -25,7 +25,7 @@ import java.util.List;
  * divide some group/window combinations into multiple
  * combinations.
  */
-public abstract class GroupAndAggregates {
+public abstract class WindowAggregates {
     final CalciteToDBSPCompiler compiler;
     final IntermediateRel node;
     final Window window;
@@ -47,7 +47,7 @@ public abstract class GroupAndAggregates {
      * @param windowFieldIndex Index of first field of aggregate within window.
      *                         The list aggregateCalls contains aggregates starting at this index.
      */
-    GroupAndAggregates(CalciteToDBSPCompiler compiler, Window window, Window.Group group, int windowFieldIndex) {
+    WindowAggregates(CalciteToDBSPCompiler compiler, Window window, Window.Group group, int windowFieldIndex) {
         this.node = CalciteObject.create(window);
         this.compiler = compiler;
         this.window = window;
@@ -81,9 +81,9 @@ public abstract class GroupAndAggregates {
         return group.lowerBound.isUnboundedPreceding() && group.upperBound.isUnboundedFollowing();
     }
 
-    public static GroupAndAggregates newGroup(CalciteToDBSPCompiler compiler, Window window, Window.Group group,
-                                       int windowFieldIndex, AggregateCall call) {
-        GroupAndAggregates result = switch (call.getAggregation().getKind()) {
+    public static WindowAggregates newGroup(CalciteToDBSPCompiler compiler, Window window, Window.Group group,
+                                            int windowFieldIndex, AggregateCall call) {
+        WindowAggregates result = switch (call.getAggregation().getKind()) {
             case FIRST_VALUE, LAST_VALUE -> new FirstLastAggregate(
                     compiler, window, group, windowFieldIndex, call);
             case LAG, LEAD -> {

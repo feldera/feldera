@@ -122,7 +122,10 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
                     fields.add(e0plus1);
                 DBSPExpression argument = new DBSPTupleExpression(
                         fields, flatmap.getCollectionElementType().mayBeNull);
-                resultColumns.add(clo.call(argument.borrow()).applyCloneIfNeeded());
+                DBSPExpression call = clo.call(argument.borrow());
+                if (compiler != null)
+                    call = call.reduce(compiler);
+                resultColumns.add(call.applyCloneIfNeeded());
             }
         } else {
             if (flatmap.ordinalityIndexType != null) {
@@ -377,11 +380,11 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
 
     @Override
     public void postorder(DBSPPartitionedRollingAggregateWithWaterlineOperator node) {
-        if (node.aggregate == null) {
+        if (node.aggregateList == null) {
             super.postorder(node);
             return;
         }
-        DBSPFold function = node.aggregate.asFold(this.compiler());
+        DBSPFold function = node.aggregateList.asFold(this.compiler());
         DBSPSimpleOperator result = new DBSPPartitionedRollingAggregateWithWaterlineOperator(node.getRelNode(),
                 node.partitioningFunction, function, null, node.lower, node.upper,
                 node.getOutputIndexedZSetType(),
