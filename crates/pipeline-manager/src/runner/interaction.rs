@@ -5,6 +5,7 @@ use crate::db::storage_postgres::StoragePostgres;
 use crate::db::types::pipeline::{ExtendedPipelineDescrMonitoring, PipelineStatus};
 use crate::db::types::tenant::TenantId;
 use crate::error::ManagerError;
+use crate::has_unstable_feature;
 use crate::runner::error::RunnerError;
 use actix_web::{http::Method, web::Payload, HttpRequest, HttpResponse, HttpResponseBuilder};
 use actix_ws::{CloseCode, CloseReason};
@@ -12,7 +13,7 @@ use awc::error::{ConnectError, SendRequestError};
 use awc::ClientResponse;
 use crossbeam::sync::ShardedLock;
 use feldera_types::query::MAX_WS_FRAME_SIZE;
-use log::error;
+use log::{error, warn};
 use std::fmt::Display;
 use std::{collections::HashMap, sync::Arc, time::Duration};
 use tokio::sync::Mutex;
@@ -159,9 +160,14 @@ impl RunnerInteraction {
         pipeline_name: &str,
     ) -> Result<(String, bool), ManagerError> {
         let cache = self.endpoint_cache.read().unwrap();
-        let entry = cache
-            .get(&(tenant_id, pipeline_name.to_string()))
-            .filter(|entry| entry.instantiated.elapsed() <= CachedPipelineDescr::CACHE_TTL);
+        let entry = if !has_unstable_feature("location_cache_disabled") {
+            cache
+                .get(&(tenant_id, pipeline_name.to_string()))
+                .filter(|entry| entry.instantiated.elapsed() <= CachedPipelineDescr::CACHE_TTL)
+        } else {
+            None
+        };
+
         match entry {
             Some(entry) => {
                 let location = entry.deployment_location_based_on_status()?;
@@ -286,33 +292,39 @@ impl RunnerInteraction {
         .await;
 
         match r {
-            Ok(response) => Ok(response),
-            Err(e) => {
-                if !cache_hit {
-                    Err(e)
-                } else {
-                    // In case of a cache hit&error, we remove the cache entry and retry the request
-                    // as the cache entry might be outdated. The only time this solves a problem is
-                    // when a pipeline transitions to a different state (e.g. from running
-                    // to paused to running) and we have not yet processed the notification from the
-                    // database that evicts the cache (this scenario is highly unlikely not just because
-                    // we've probably processed the notification, but also because we have to do 3 pipeline
-                    // transitions within the cache ttl of 5 secs).
-                    let mut cache = self.endpoint_cache.write().unwrap();
-                    cache.remove(&(tenant_id, pipeline_name.to_string()));
-                    drop(cache);
-                    Box::pin(self.forward_http_request_to_pipeline_by_name(
-                        client,
-                        tenant_id,
-                        pipeline_name,
-                        method,
-                        endpoint,
-                        query_string,
-                        timeout,
-                    ))
-                    .await
-                }
+            Ok(response)
+                if response.status() != actix_web::http::StatusCode::SERVICE_UNAVAILABLE =>
+            {
+                Ok(response)
             }
+            Ok(response) => {
+                if !cache_hit {
+                    return Ok(response);
+                }
+
+                // In case of a cache hit&error, we remove the cache entry and retry the request
+                // as the cache entry might be outdated. The only time this solves a problem is
+                // when a pipeline transitions to a different state (e.g. from running
+                // to paused to running) and we have not yet processed the notification from the
+                // database that evicts the cache (this scenario is highly unlikely not just because
+                // we've probably processed the notification, but also because we have to do 3 pipeline
+                // transitions within the cache ttl of 5 secs).
+                warn!("encountered 503+Cache hit, retry");
+                let mut cache = self.endpoint_cache.write().unwrap();
+                cache.remove(&(tenant_id, pipeline_name.to_string()));
+                drop(cache);
+                Box::pin(self.forward_http_request_to_pipeline_by_name(
+                    client,
+                    tenant_id,
+                    pipeline_name,
+                    method,
+                    endpoint,
+                    query_string,
+                    timeout,
+                ))
+                .await
+            }
+            Err(e) => Err(e),
         }
     }
 

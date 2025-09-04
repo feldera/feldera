@@ -22,7 +22,8 @@ static UNSTABLE_FEATURES: OnceLock<HashSet<&'static str>> = OnceLock::new();
 
 /// Initialization function to set the platform's unstable feature gate.
 pub fn platform_enable_unstable(requested_features: &str) {
-    let all_features: HashSet<&'static str> = HashSet::from_iter(vec!["runtime_version"]);
+    let all_features: HashSet<&'static str> =
+        HashSet::from_iter(vec!["runtime_version", "location_cache_disabled"]);
     let mut enabled = HashSet::new();
     for requested_feature in requested_features.split(',') {
         if let Some(supported_feature) = all_features.get(requested_feature) {
