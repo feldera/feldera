@@ -20,7 +20,7 @@ dependencies = [
  "futures-util",
  "log",
  "once_cell",
- "parking_lot 0.12.3",
+ "parking_lot 0.12.4",
  "pin-project-lite",
  "smallvec",
  "tokio",
@@ -2851,7 +2851,7 @@ dependencies = [
  "bitflags 2.9.1",
  "crossterm_winapi",
  "mio",
- "parking_lot 0.12.3",
+ "parking_lot 0.12.4",
  "rustix 0.38.44",
  "signal-hook",
  "signal-hook-mio",
@@ -3028,7 +3028,7 @@ dependencies = [
  "hashbrown 0.14.5",
  "lock_api",
  "once_cell",
- "parking_lot_core 0.9.10",
+ "parking_lot_core 0.9.11",
 ]
 
 [[package]]
@@ -3042,7 +3042,7 @@ dependencies = [
  "hashbrown 0.14.5",
  "lock_api",
  "once_cell",
- "parking_lot_core 0.9.10",
+ "parking_lot_core 0.9.11",
 ]
 
 [[package]]
@@ -3093,7 +3093,7 @@ dependencies = [
  "itertools 0.14.0",
  "log",
  "object_store 0.12.2",
- "parking_lot 0.12.3",
+ "parking_lot 0.12.4",
  "parquet",
  "rand 0.8.5",
  "regex",
@@ -3128,7 +3128,7 @@ dependencies = [
  "itertools 0.14.0",
  "log",
  "object_store 0.12.2",
- "parking_lot 0.12.3",
+ "parking_lot 0.12.4",
  "tokio",
 ]
 
@@ -3301,7 +3301,7 @@ dependencies = [
  "itertools 0.14.0",
  "log",
  "object_store 0.12.2",
- "parking_lot 0.12.3",
+ "parking_lot 0.12.4",
  "parquet",
  "rand 0.8.5",
  "tokio",
@@ -3326,7 +3326,7 @@ dependencies = [
  "futures",
  "log",
  "object_store 0.12.2",
- "parking_lot 0.12.3",
+ "parking_lot 0.12.4",
  "rand 0.8.5",
  "tempfile",
  "url",
@@ -3462,7 +3462,7 @@ dependencies = [
  "datafusion-common",
  "datafusion-expr",
  "datafusion-physical-plan",
- "parking_lot 0.12.3",
+ "parking_lot 0.12.4",
  "paste",
 ]
 
@@ -3603,7 +3603,7 @@ dependencies = [
  "indexmap 2.9.0",
  "itertools 0.14.0",
  "log",
- "parking_lot 0.12.3",
+ "parking_lot 0.12.4",
  "pin-project-lite",
  "tokio",
 ]
@@ -3655,7 +3655,7 @@ dependencies = [
  "itertools 0.14.0",
  "log",
  "object_store 0.12.2",
- "parking_lot 0.12.3",
+ "parking_lot 0.12.4",
  "tokio",
 ]
 
@@ -3682,6 +3682,7 @@ version = "0.137.0"
 dependencies = [
  "anyhow",
  "arc-swap",
+ "async-stream",
  "binrw",
  "chrono",
  "clap",
@@ -3703,6 +3704,7 @@ dependencies = [
  "feldera-storage",
  "feldera-types",
  "futures",
+ "futures-util",
  "hashbrown 0.14.5",
  "impl-trait-for-tuples",
  "indexmap 2.9.0",
@@ -3837,6 +3839,7 @@ dependencies = [
  "once_cell",
  "openssl",
  "ordered-float 4.6.0",
+ "parking_lot 0.12.4",
  "parquet",
  "postgres",
  "postgres-openssl",
@@ -4099,7 +4102,7 @@ dependencies = [
  "num-traits",
  "num_cpus",
  "object_store 0.12.2",
- "parking_lot 0.12.3",
+ "parking_lot 0.12.4",
  "parquet",
  "percent-encoding",
  "pin-project-lite",
@@ -5124,7 +5127,7 @@ checksum = "1d930c203dd0b6ff06e0201a4a2fe9149b43c684fd4420555b26d21b1a02956f"
 dependencies = [
  "futures-core",
  "lock_api",
- "parking_lot 0.12.3",
+ "parking_lot 0.12.4",
 ]
 
 [[package]]
@@ -5415,7 +5418,7 @@ dependencies = [
  "futures-util",
  "no-std-compat",
  "nonzero_ext",
- "parking_lot 0.12.3",
+ "parking_lot 0.12.4",
  "portable-atomic",
  "quanta",
  "rand 0.8.5",
@@ -6609,9 +6612,9 @@ checksum = "4d873d7c67ce09b42110d801813efbc9364414e356be9935700d368351657487"
 
 [[package]]
 name = "lock_api"
-version = "0.4.12"
+version = "0.4.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "07af8b9cdd281b7915f413fa73f29ebd5d55d0d3f0155584dade1ff18cea1b17"
+checksum = "96936507f153605bddfcda068dd804796c84324ed2510809e5b2a624c81da765"
 dependencies = [
  "autocfg",
  "scopeguard",
@@ -6839,7 +6842,7 @@ dependencies = [
  "minitrace-macro",
  "minstant",
  "once_cell",
- "parking_lot 0.12.3",
+ "parking_lot 0.12.4",
  "pin-project",
  "rand 0.8.5",
  "rtrb",
@@ -6939,7 +6942,7 @@ dependencies = [
  "event-listener 5.4.0",
  "futures-util",
  "loom",
- "parking_lot 0.12.3",
+ "parking_lot 0.12.4",
  "portable-atomic",
  "rustc_version",
  "smallvec",
@@ -7237,7 +7240,7 @@ dependencies = [
  "hyper 1.6.0",
  "itertools 0.13.0",
  "md-5",
- "parking_lot 0.12.3",
+ "parking_lot 0.12.4",
  "percent-encoding",
  "quick-xml 0.37.5",
  "rand 0.8.5",
@@ -7272,7 +7275,7 @@ dependencies = [
  "hyper 1.6.0",
  "itertools 0.14.0",
  "md-5",
- "parking_lot 0.12.3",
+ "parking_lot 0.12.4",
  "percent-encoding",
  "quick-xml 0.37.5",
  "rand 0.9.1",
@@ -7598,12 +7601,12 @@ dependencies = [
 
 [[package]]
 name = "parking_lot"
-version = "0.12.3"
+version = "0.12.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f1bf18183cf54e8d6059647fc3063646a1801cf30896933ec2311622cc4b9a27"
+checksum = "70d58bf43669b5795d1576d0641cfb6fbb2057bf629506267a92807158584a13"
 dependencies = [
  "lock_api",
- "parking_lot_core 0.9.10",
+ "parking_lot_core 0.9.11",
 ]
 
 [[package]]
@@ -7622,9 +7625,9 @@ dependencies = [
 
 [[package]]
 name = "parking_lot_core"
-version = "0.9.10"
+version = "0.9.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1e401f977ab385c9e4e3ab30627d6f26d00e2c73eef317493c4ec6d468726cf8"
+checksum = "bc838d2a56b5b1a6c25f55575dfc605fabb63bb2365f6c2353ef9159aa69e4a5"
 dependencies = [
  "cfg-if",
  "libc",
@@ -8167,7 +8170,7 @@ dependencies = [
  "log",
  "nix 0.26.4",
  "once_cell",
- "parking_lot 0.12.3",
+ "parking_lot 0.12.4",
  "smallvec",
  "symbolic-demangle",
  "tempfile",
@@ -8601,7 +8604,7 @@ dependencies = [
  "ahash 0.8.12",
  "equivalent",
  "hashbrown 0.15.3",
- "parking_lot 0.12.3",
+ "parking_lot 0.12.4",
 ]
 
 [[package]]
@@ -8681,7 +8684,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "51de85fb3fb6524929c8a2eb85e6b6d363de4e8c48f9e2c2eac4944abc181c93"
 dependencies = [
  "log",
- "parking_lot 0.12.3",
+ "parking_lot 0.12.4",
  "scheduled-thread-pool",
 ]
 
@@ -9800,7 +9803,7 @@ version = "0.2.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3cbc66816425a074528352f5789333ecff06ca41b36b0b0efdfbb29edc391a19"
 dependencies = [
- "parking_lot 0.12.3",
+ "parking_lot 0.12.4",
 ]
 
 [[package]]
@@ -10128,7 +10131,7 @@ dependencies = [
  "futures",
  "log",
  "once_cell",
- "parking_lot 0.12.3",
+ "parking_lot 0.12.4",
  "scc",
  "serial_test_derive",
 ]
@@ -11130,7 +11133,7 @@ dependencies = [
  "bytes",
  "libc",
  "mio",
- "parking_lot 0.12.3",
+ "parking_lot 0.12.4",
  "pin-project-lite",
  "signal-hook-registry",
  "socket2",
@@ -11183,7 +11186,7 @@ dependencies = [
  "futures-channel",
  "futures-util",
  "log",
- "parking_lot 0.12.3",
+ "parking_lot 0.12.4",
  "percent-encoding",
  "phf",
  "pin-project-lite",
