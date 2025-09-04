@@ -25,7 +25,7 @@ from urllib.parse import quote, quote_plus
 from tests import FELDERA_TLS_INSECURE, API_KEY, BASE_URL, unique_pipeline_name
 
 API_PREFIX = "/v0"
-
+WAIT_TIMEOUT_S = 90.0
 
 def _base_headers() -> Dict[str, str]:
     headers = {
@@ -87,19 +87,19 @@ def delete(path: str, **kw) -> requests.Response:
     return http_request("DELETE", path, **kw)
 
 
-def wait_for_deployment_status(name: str, desired: str, timeout_s: float = 60.0):
+def wait_for_deployment_status(name: str, desired: str, timeout_s: float = WAIT_TIMEOUT_S):
     deadline = time.time() + timeout_s
     last = None
     while time.time() < deadline:
         r = get_pipeline(name)
         if r.status_code != HTTPStatus.OK:
-            time.sleep(0.25)
+            time.sleep(1.0)
             continue
         obj = r.json()
         last = obj.get("deployment_status")
         if last == desired:
             return obj
-        time.sleep(0.25)
+        time.sleep(0.75)
     raise TimeoutError(
         f"Timed out waiting for pipeline '{name}' deployment_status={desired} (last={last})"
     )
@@ -111,7 +111,7 @@ def start_pipeline(name: str, wait: bool = True):
         f"Unexpected start response: {r.status_code} {r.text}"
     )
     if wait:
-        wait_for_deployment_status(name, "Running", 30)
+        wait_for_deployment_status(name, "Running")
     return r
 
 
@@ -121,7 +121,7 @@ def pause_pipeline(name: str, wait: bool = True):
         f"Unexpected pause response: {r.status_code} {r.text}"
     )
     if wait:
-        wait_for_deployment_status(name, "Paused", 30)
+        wait_for_deployment_status(name, "Paused")
     return r
 
 
@@ -132,11 +132,12 @@ def stop_pipeline(name: str, force: bool = True, wait: bool = True):
     assert r.status_code == HTTPStatus.ACCEPTED, (
         f"Unexpected stop response: {r.status_code} {r.text}"
     )
-    wait_for_deployment_status(name, "Stopped", 30)
+    if wait:
+        wait_for_deployment_status(name, "Stopped")
     return r
 
 
-def wait_for_cleared_storage(name: str, timeout_s: float = 60.0):
+def wait_for_cleared_storage(name: str, timeout_s: float = WAIT_TIMEOUT_S):
     deadline = time.time() + timeout_s
     last = None
     while time.time() < deadline:

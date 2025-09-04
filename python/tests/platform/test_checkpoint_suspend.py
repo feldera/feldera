@@ -35,7 +35,7 @@ def _adhoc_count(name: str) -> int:
     return line.get("c") or 0
 
 
-def _wait_for_condition(desc: str, predicate, timeout_s: float = 30.0, sleep_s=0.2):
+def _wait_for_condition(desc: str, predicate, timeout_s: float = 30.0, sleep_s=0.5):
     deadline = time.time() + timeout_s
     while time.time() < deadline:
         if predicate():

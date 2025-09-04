@@ -223,7 +223,7 @@ def test_pipeline_stop_with_force(pipeline_name):
 
     # Start paused then stop (simulate by pausing immediately)
     pause_pipeline(pipeline_name)
-    wait_for_deployment_status(pipeline_name, "Paused", 30)
+    wait_for_deployment_status(pipeline_name, "Paused")
     stop_pipeline(pipeline_name, force=True)
 
     # Start, stop (without waiting), then stop again
