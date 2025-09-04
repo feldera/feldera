@@ -58,6 +58,13 @@ public final class DBSPGeoPointConstructor
         this.right = right;
     }
 
+    @Override
+    public boolean equals(Object o) {
+        if (o == null || getClass() != o.getClass()) return false;
+        DBSPGeoPointConstructor that = (DBSPGeoPointConstructor) o;
+        return Objects.equals(left, that.left) && Objects.equals(right, that.right);
+    }
+
     public DBSPGeoPointConstructor() {
         super(CalciteObject.EMPTY, DBSPTypeGeoPoint.NULLABLE_INSTANCE);
         this.left = null;
@@ -134,6 +141,7 @@ public final class DBSPGeoPointConstructor
             builder.append(this.left);
         else
             builder.append("null");
+        builder.append(", ");
         if (this.right != null)
             builder.append(this.right);
         else

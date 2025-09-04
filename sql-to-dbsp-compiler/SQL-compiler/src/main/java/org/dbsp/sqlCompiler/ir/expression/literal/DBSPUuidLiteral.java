@@ -43,7 +43,7 @@ public final class DBSPUuidLiteral extends DBSPLiteral {
     }
 
     public DBSPUuidLiteral(@Nullable UUID u, boolean nullable) {
-        this(CalciteObject.EMPTY, new DBSPTypeUuid(CalciteObject.EMPTY, nullable), u);
+        this(CalciteObject.EMPTY, DBSPTypeUuid.create(nullable), u);
         if (u == null && !nullable)
             throw new InternalCompilerError("Null value with non-nullable type", this);
     }

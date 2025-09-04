@@ -66,7 +66,7 @@ public class DBSPTypeTimestamp extends DBSPTypeBaseType
 
     @Override
     public DBSPExpression getMaxValue() {
-        return new DBSPTimestampLiteral("9999-12-12 23:59:59.99999999", this.mayBeNull);
+        return new DBSPTimestampLiteral("9999-12-31 23:59:59.99999999", this.mayBeNull);
     }
 
     @Override

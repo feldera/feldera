@@ -58,7 +58,7 @@ public final class DBSPDoubleLiteral extends DBSPFPLiteral implements IsNumericL
     }
 
     public DBSPDoubleLiteral(@Nullable Double f, boolean nullable) {
-        this(CalciteObject.EMPTY, new DBSPTypeDouble(CalciteObject.EMPTY,nullable), f);
+        this(CalciteObject.EMPTY, DBSPTypeDouble.create(nullable), f);
         if (f == null && !nullable)
             throw new InternalCompilerError("Null value with non-nullable type", this);
     }

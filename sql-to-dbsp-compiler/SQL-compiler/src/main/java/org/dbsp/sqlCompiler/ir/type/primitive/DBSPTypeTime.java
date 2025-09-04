@@ -44,6 +44,19 @@ public class DBSPTypeTime extends DBSPTypeBaseType implements IsDateType, IsTime
         super(node, TIME, mayBeNull);
     }
 
+    public static final DBSPTypeTime INSTANCE = new DBSPTypeTime(CalciteObject.EMPTY, false);
+    public static final DBSPTypeTime NULLABLE_INSTANCE = new DBSPTypeTime(CalciteObject.EMPTY, true);
+
+    public static DBSPTypeTime create(CalciteObject node, boolean mayBeNull) {
+        if (node.isEmpty())
+            return mayBeNull ? NULLABLE_INSTANCE : INSTANCE;
+        return new DBSPTypeTime(node, mayBeNull);
+    }
+
+    public static DBSPTypeTime create(boolean mayBeNull) {
+        return create(CalciteObject.EMPTY, mayBeNull);
+    }
+
     @Override
     public DBSPExpression defaultValue() {
         if (this.mayBeNull)
@@ -93,6 +106,6 @@ public class DBSPTypeTime extends DBSPTypeBaseType implements IsDateType, IsTime
     @SuppressWarnings("unused")
     public static DBSPTypeTime fromJson(JsonNode node, JsonDecoder decoder) {
         boolean mayBeNull = DBSPType.fromJsonMayBeNull(node);
-        return new DBSPTypeTime(CalciteObject.EMPTY, mayBeNull);
+        return DBSPTypeTime.create(mayBeNull);
     }
 }

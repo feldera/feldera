@@ -217,7 +217,7 @@ public abstract class DBSPType extends DBSPNode implements IDBSPInnerNode {
         } else if (this.is(IsBoundedType.class)) {
             return this.to(IsBoundedType.class).getMinValue();
         } else {
-            throw new UnsupportedException("Type has no minimum value", this.getNode());
+            throw new UnsupportedException("Type " + this.asSqlString() + " has no minimum value", this.getNode());
         }
     }
 

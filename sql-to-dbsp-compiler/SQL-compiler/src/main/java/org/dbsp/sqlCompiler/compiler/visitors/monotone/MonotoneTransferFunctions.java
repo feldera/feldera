@@ -47,7 +47,7 @@ import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.IsNumericLiteral;
 import org.dbsp.sqlCompiler.ir.type.IsNumericType;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeIndexedZSet;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 import org.dbsp.util.Linq;
@@ -439,7 +439,7 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
 
     @Override
     public void postorder(DBSPLiteral expression) {
-        if (expression.getType().is(DBSPTypeString.class)) {
+        if (!MonotoneTransferFunctions.typeCanBeMonotone(expression.getType())) {
             IMaybeMonotoneType nmt = NonMonotoneType.nonMonotone(expression.getType());
             MonotoneExpression result = new MonotoneExpression(expression, nmt, null);
             this.set(expression, result);
@@ -649,6 +649,12 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
         this.set(expression, result);
     }
 
+    static public boolean typeCanBeMonotone(DBSPType type) {
+        return type.is(IsNumericType.class) ||
+                type.is(IsTimeRelatedType.class) ||
+                type.is(DBSPTypeBool.class);
+    }
+
     @Override
     public void postorder(DBSPCastExpression expression) {
         MonotoneExpression source = this.get(expression.source);
@@ -656,9 +662,7 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
 
         // Casts always preserve monotonicity in SQL, but only if the
         // result type can represent monotone values.
-        boolean outputTypeMayBeMonotone =
-                (expression.getType().is(IsNumericType.class) ||
-                        expression.getType().is(IsTimeRelatedType.class));
+        boolean outputTypeMayBeMonotone = typeCanBeMonotone(expression.getType());
         boolean isMonotone = source.mayBeMonotone() && outputTypeMayBeMonotone;
         IMaybeMonotoneType resultType;
         if (isMonotone) {

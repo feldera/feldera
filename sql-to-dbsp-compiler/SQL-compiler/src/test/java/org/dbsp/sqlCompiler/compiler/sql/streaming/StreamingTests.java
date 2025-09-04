@@ -1853,9 +1853,7 @@ public class StreamingTests extends StreamingTestBase {
     @Test
     public void errorStreamTest() {
         // Same as before, but using the error stream
-        DBSPType out = new DBSPTypeTuple(
-                new DBSPTypeDouble(CalciteObject.EMPTY, true),
-                new DBSPTypeDate(CalciteObject.EMPTY, false));
+        DBSPType out = new DBSPTypeTuple(DBSPTypeDouble.NULLABLE_INSTANCE, DBSPTypeDate.INSTANCE);
         DBSPType string = DBSPTypeString.varchar(false);
         DBSPType error = new DBSPTypeTuple(string, string,
                 // new DBSPTypeVariant(false)

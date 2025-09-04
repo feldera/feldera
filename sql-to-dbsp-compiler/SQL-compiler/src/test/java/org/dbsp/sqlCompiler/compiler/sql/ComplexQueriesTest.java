@@ -389,7 +389,7 @@ public class ComplexQueriesTest extends BaseSQLTests {
                         new DBSPStringLiteral("State", true),
                         new DBSPI32Literal(94043, true),
                         //new DBSPDoubleLiteral(128.0, true),
-                        DBSPLiteral.none(new DBSPTypeDouble(CalciteObject.EMPTY,true)),
+                        DBSPLiteral.none(DBSPTypeDouble.create(true)),
                         new DBSPDoubleLiteral(128.0, true),
                         new DBSPI32Literal(100000, true),
                         new DBSPStringLiteral("Job", true),
