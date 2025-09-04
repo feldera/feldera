@@ -47,11 +47,8 @@
 use std::{collections::HashMap, env};
 
 use actix_web::HttpMessage;
-use actix_web::{dev::ServiceRequest, error::ErrorUnauthorized, web::Data, HttpResponse};
-use actix_web_httpauth::extractors::{
-    bearer::{BearerAuth, Config},
-    AuthenticationError,
-};
+use actix_web::{dev::ServiceRequest, error::ErrorUnauthorized, web::Data};
+use actix_web_httpauth::extractors::bearer::BearerAuth;
 use awc::error::JsonPayloadError;
 use base64::Engine;
 use cached::{Cached, TimedCache};
