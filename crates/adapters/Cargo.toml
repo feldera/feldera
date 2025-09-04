@@ -122,6 +122,7 @@ deltalake = { workspace = true, features = [
     "s3",
     "gcs",
     "azure",
+    "unity-experimental",
 ], optional = true }
 apache-avro = { workspace = true, optional = true }
 schema_registry_converter = { workspace = true, features = [
