@@ -89,7 +89,7 @@ where
                     );
                     let (delayed_trace, z1feedback) = circuit.add_feedback_persistent(
                         persistent_id
-                            .map(|name| format!("{name}.integral"))
+                            .map(|name| format!("{name}.accintegral"))
                             .as_deref(),
                         z1,
                     );
@@ -268,7 +268,7 @@ where
                         z1feedback,
                     ) = circuit.add_feedback_with_export_persistent(
                         persistent_id
-                            .map(|name| format!("{name}.integral"))
+                            .map(|name| format!("{name}.accintegral"))
                             .as_deref(),
                         z1,
                     );
@@ -399,7 +399,7 @@ pub trait AccumulateTraceFeedback: Circuit {
         // We'll give `AccumulateZ1Trace` a real name inside `AccumulateTraceFeedbackConnector::connect`, where we have the name of the input stream.
         let (ExportStream { local, export }, feedback) = self.add_feedback_with_export_persistent(
             persistent_id
-                .map(|name| format!("{name}.integral"))
+                .map(|name| format!("{name}.accintegral"))
                 .as_deref(),
             AccumulateZ1Trace::new(
                 factories,
