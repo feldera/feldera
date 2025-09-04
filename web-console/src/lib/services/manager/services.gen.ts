@@ -41,9 +41,9 @@ import type {
   PatchPipelineData,
   PatchPipelineError,
   PatchPipelineResponse,
-  ActivatePipelineData,
-  ActivatePipelineError,
-  ActivatePipelineResponse,
+  PostPipelineActivateData,
+  PostPipelineActivateError,
+  PostPipelineActivateResponse,
   CheckpointPipelineData,
   CheckpointPipelineError,
   CheckpointPipelineResponse,
@@ -89,6 +89,9 @@ import type {
   PipelineAdhocSqlData,
   PipelineAdhocSqlError,
   PipelineAdhocSqlResponse,
+  PostPipelineResumeData,
+  PostPipelineResumeError,
+  PostPipelineResumeResponse,
   PostPipelineStartData,
   PostPipelineStartError,
   PostPipelineStartResponse,
@@ -280,12 +283,16 @@ export const patchPipeline = (options: Options<PatchPipelineData>) => {
 }
 
 /**
- * Activates the pipeline if it is currently in standby mode.
+ * Requests the pipeline to activate if it is currently in standby mode, which it will do
+ * asynchronously.
+ *
+ * Progress should be monitored by polling the pipeline `GET` endpoints.
+ *
  * This endpoint is only applicable when the pipeline is configured to start
- * from object store and launched in standby mode (`sync.standby: true`).
+ * from object store and started as standby.
  */
-export const activatePipeline = (options: Options<ActivatePipelineData>) => {
-  return (options?.client ?? client).post<ActivatePipelineResponse, ActivatePipelineError>({
+export const postPipelineActivate = (options: Options<PostPipelineActivateData>) => {
+  return (options?.client ?? client).post<PostPipelineActivateResponse, PostPipelineActivateError>({
     ...options,
     url: '/v0/pipelines/{pipeline_name}/activate'
   })
@@ -468,15 +475,8 @@ export const getPipelineMetrics = (options: Options<GetPipelineMetricsData>) => 
 }
 
 /**
- * Pause the pipeline asynchronously by updating the desired state.
- * The endpoint returns immediately after setting the desired state to `Paused`.
- * The procedure to get to the desired state is performed asynchronously.
+ * Requests the pipeline to pause, which it will do asynchronously.
  * Progress should be monitored by polling the pipeline `GET` endpoints.
- *
- * Note the following:
- * - A stopped pipeline can be started through calling either `/start` or `/pause`
- * - Both starting as paused and pausing a pipeline is done by calling `/pause`
- * - A pipeline which is in the process of suspending or stopping cannot be paused
  */
 export const postPipelinePause = (options: Options<PostPipelinePauseData>) => {
   return (options?.client ?? client).post<PostPipelinePauseResponse, PostPipelinePauseError>({
@@ -497,15 +497,28 @@ export const pipelineAdhocSql = (options: Options<PipelineAdhocSqlData>) => {
 }
 
 /**
- * Start the pipeline asynchronously by updating the desired state.
- * The endpoint returns immediately after setting the desired state to `Running`.
- * The procedure to get to the desired state is performed asynchronously.
+ * Requests the pipeline to resume, which it will do asynchronously.
+ * Progress should be monitored by polling the pipeline `GET` endpoints.
+ */
+export const postPipelineResume = (options: Options<PostPipelineResumeData>) => {
+  return (options?.client ?? client).post<PostPipelineResumeResponse, PostPipelineResumeError>({
+    ...options,
+    url: '/v0/pipelines/{pipeline_name}/resume'
+  })
+}
+
+/**
+ * Start the pipeline asynchronously by updating the desired status.
+ * The endpoint returns immediately after setting the desired status.
+ * The procedure to get to the desired status is performed asynchronously.
  * Progress should be monitored by polling the pipeline `GET` endpoints.
  *
  * Note the following:
- * - A stopped pipeline can be started through calling either `/start` or `/pause`
- * - Both starting as running and resuming a pipeline is done by calling `/start`
- * - A pipeline which is in the process of suspending or stopping cannot be started
+ * - A stopped pipeline can be started through calling `/start?initial=running`,
+ * `/start?initial=paused`, or `/start?initial=standby`.
+ * - If the pipeline is already (being) started (provisioned), it will still return success
+ * - It is not possible to call `/start` when the pipeline has already had `/stop` called and is
+ * in the process of suspending or stopping.
  */
 export const postPipelineStart = (options: Options<PostPipelineStartData>) => {
   return (options?.client ?? client).post<PostPipelineStartResponse, PostPipelineStartError>({
