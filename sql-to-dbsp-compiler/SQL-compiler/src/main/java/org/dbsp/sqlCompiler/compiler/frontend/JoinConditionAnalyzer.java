@@ -220,9 +220,9 @@ public class JoinConditionAnalyzer implements IWritesLogs {
                 return false;
             }
             DBSPType leftType = JoinConditionAnalyzer.this.typeCompiler.convertType(
-                    left.getType(), true);
+                    node.getPositionRange(), left.getType(), true);
             DBSPType rightType = JoinConditionAnalyzer.this.typeCompiler.convertType(
-                    right.getType(), true);
+                    node.getPositionRange(), right.getType(), true);
             boolean mayBeNull = false;
             if (call.op.kind == SqlKind.IS_NOT_DISTINCT_FROM) {
                 // Only used if any of the operands is not nullable

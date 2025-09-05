@@ -54,9 +54,9 @@ public abstract class WindowAggregates {
         this.group = group;
         this.aggregateCalls = new ArrayList<>();
         this.windowFieldIndex = windowFieldIndex;
-        this.windowResultType = this.compiler.convertType(
+        this.windowResultType = this.compiler.convertType(node.getPositionRange(),
                 window.getRowType(), false).to(DBSPTypeTuple.class);
-        this.inputRowType = this.compiler.convertType(
+        this.inputRowType = this.compiler.convertType(node.getPositionRange(),
                 window.getInput().getRowType(), false).to(DBSPTypeTuple.class);
         this.partitionKeys = this.group.keys.toList();
         this.inputRowRefVar = this.inputRowType.ref().var();

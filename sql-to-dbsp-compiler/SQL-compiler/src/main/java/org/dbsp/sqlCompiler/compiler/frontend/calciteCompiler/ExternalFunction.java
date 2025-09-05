@@ -120,7 +120,7 @@ public class ExternalFunction extends SqlFunction {
      * I.e., may be a struct. */
     public DBSPType getFunctionReturnType(TypeCompiler compiler) {
         if (this.structReturnType == null)
-            this.structReturnType = compiler.convertType(this.returnType, true);
+            this.structReturnType = compiler.convertType(this.position, this.returnType, true);
         return this.structReturnType;
     }
 
@@ -149,11 +149,11 @@ public class ExternalFunction extends SqlFunction {
     public DBSPFunction getDeclaration(TypeCompiler typeCompiler) {
         List<DBSPParameter> parameters = new ArrayList<>();
         for (RelDataTypeField param: this.parameterList) {
-            DBSPType type = typeCompiler.convertType(param.getType(), false);
+            DBSPType type = typeCompiler.convertType(this.position, param.getType(), false);
             DBSPParameter p = new DBSPParameter(param.getName(), type);
             parameters.add(p);
         }
-        DBSPType returnType = typeCompiler.convertType(this.returnType, false);
+        DBSPType returnType = typeCompiler.convertType(SourcePositionRange.INVALID, this.returnType, false);
         // Must wrap the return type in a Result
         returnType = new DBSPTypeResult(returnType);
         return new DBSPFunction(this.node, this.getName(), parameters, returnType, null, Linq.list());
@@ -164,12 +164,12 @@ public class ExternalFunction extends SqlFunction {
         if (this.body != null) {
             List<DBSPParameter> parameters = new ArrayList<>();
             for (RelDataTypeField param: this.parameterList) {
-                DBSPType type = typeCompiler.convertType(param.getType(), false);
+                DBSPType type = typeCompiler.convertType(this.position, param.getType(), false);
                 DBSPParameter p = new DBSPParameter(param.getName(), type);
                 parameters.add(p);
             }
             FunctionBodyGenerator generator = new FunctionBodyGenerator(compiler, parameters);
-            DBSPType returnType = typeCompiler.convertType(this.returnType, false);
+            DBSPType returnType = typeCompiler.convertType(this.position, this.returnType, false);
             DBSPExpression functionBody = generator.compile(this.body);
 
             DBSPType functionType = functionBody.getType();
@@ -198,7 +198,7 @@ public class ExternalFunction extends SqlFunction {
                 strct.map(move |x: _, | -> _ { x.into() })
             }
              */
-            DBSPType returnType = typeCompiler.convertType(this.returnType, false);
+            DBSPType returnType = typeCompiler.convertType(this.position, this.returnType, false);
             DBSPType structType = this.getFunctionReturnType(typeCompiler);
             if (this.parameterList.size() != 1) {
                 compiler.reportError(this.position, "Incorrect signature",
@@ -206,7 +206,7 @@ public class ExternalFunction extends SqlFunction {
                                 " must have a single parameter");
                 return null;
             }
-            DBSPType parameterType = typeCompiler.convertType(this.parameterList.get(0).getType(), false);
+            DBSPType parameterType = typeCompiler.convertType(this.position, this.parameterList.get(0).getType(), false);
             DBSPParameter param = new DBSPParameter("s", parameterType);
             List<DBSPStatement> statements = new ArrayList<>();
             if (parameterType.mayBeNull)
