@@ -559,7 +559,7 @@ metrics"""
 
         self.client.start_pipeline(self.name, wait=wait, timeout_s=timeout_s)
 
-    def start_transaction(self):
+    def start_transaction(self) -> int:
         """
         Start a new transaction.
 
@@ -567,7 +567,7 @@ metrics"""
             Transaction ID.
         """
 
-        self.client.start_transaction(self.name)
+        return self.client.start_transaction(self.name)
 
     def commit_transaction(
         self,
