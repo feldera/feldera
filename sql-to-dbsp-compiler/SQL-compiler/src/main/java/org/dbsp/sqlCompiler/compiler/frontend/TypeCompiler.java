@@ -229,10 +229,11 @@ public class TypeCompiler implements ICompilerComponent {
     public DBSPType convertType(
             CalciteObject node, ProgramIdentifier name,
             List<RelColumnMetadata> columns, boolean asStruct, boolean mayBeNull) {
+        SourcePositionRange range = node.getPositionRange();
         List<DBSPTypeStruct.Field> fields = new ArrayList<>();
         int index = 0;
         for (RelColumnMetadata col : columns) {
-            DBSPType fType = this.convertType(col.getType(), true);
+            DBSPType fType = this.convertType(range, col.getType(), true);
             fields.add(new DBSPTypeStruct.Field(col.node, col.getName(), index++, fType));
         }
         String saneName = this.compiler.generateStructName(name, fields);
@@ -242,7 +243,7 @@ public class TypeCompiler implements ICompilerComponent {
         } else {
             List<DBSPType> typeFields = new ArrayList<>();
             for (RelColumnMetadata col : columns) {
-                DBSPType fType = this.convertType(col.getType(), false);
+                DBSPType fType = this.convertType(range, col.getType(), false);
                 typeFields.add(fType);
             }
             return new DBSPTypeTuple(node, mayBeNull, struct, typeFields);
@@ -271,7 +272,7 @@ public class TypeCompiler implements ICompilerComponent {
      * @param asStruct   If true convert a Struct type to a DBSPTypeStruct, otherwise
      *                   convert it to a DBSPTypeTuple.
      */
-    public DBSPType convertType(RelDataType dt, boolean asStruct) {
+    public DBSPType convertType(SourcePositionRange context, RelDataType dt, boolean asStruct) {
         CalciteObject node = CalciteObject.create(dt);
         boolean nullable = dt.isNullable();
         DBSPTypeStruct struct;
@@ -287,7 +288,7 @@ public class TypeCompiler implements ICompilerComponent {
                 FreshName fieldNameGen = new FreshName(new HashSet<>());
                 int index = 0;
                 for (RelDataTypeField field : dt.getFieldList()) {
-                    DBSPType type = this.convertType(field.getType(), true);
+                    DBSPType type = this.convertType(context, field.getType(), true);
                     String fieldName = field.getName();
                     if (this.compiler().options.languageOptions.lenient)
                         // If we are not lenient and names are duplicated
@@ -305,7 +306,7 @@ public class TypeCompiler implements ICompilerComponent {
                 DBSPType[] fieldTypes = new DBSPType[dt.getFieldCount()];
                 int i = 0;
                 for (RelDataTypeField field : dt.getFieldList()) {
-                    DBSPType type = this.convertType(field.getType(), asStruct);
+                    DBSPType type = this.convertType(context, field.getType(), asStruct);
                     fieldTypes[i++] = type;
                 }
                 return new DBSPTypeTuple(node, nullable, struct, fieldTypes);
@@ -380,7 +381,7 @@ public class TypeCompiler implements ICompilerComponent {
                     return DBSPTypeKeyword.INSTANCE;
                 case ARRAY: {
                     RelDataType ct = Objects.requireNonNull(dt.getComponentType());
-                    DBSPType elementType = this.convertType(ct, asStruct);
+                    DBSPType elementType = this.convertType(context, ct, asStruct);
                     return new DBSPTypeArray(elementType, dt.isNullable());
                 }
                 case UNKNOWN:
@@ -389,9 +390,9 @@ public class TypeCompiler implements ICompilerComponent {
                     return DBSPTypeAny.getDefault();
                 case MAP: {
                     RelDataType kt = Objects.requireNonNull(dt.getKeyType());
-                    DBSPType keyType = this.convertType(kt, asStruct);
+                    DBSPType keyType = this.convertType(context, kt, asStruct);
                     RelDataType vt = Objects.requireNonNull(dt.getValueType());
-                    DBSPType valueType = this.convertType(vt, asStruct);
+                    DBSPType valueType = this.convertType(context, vt, asStruct);
                     return new DBSPTypeMap(keyType, valueType, dt.isNullable());
                 }
                 case MULTISET:
@@ -437,7 +438,7 @@ public class TypeCompiler implements ICompilerComponent {
                 case TIMESTAMP:
                     if (dt.getPrecision() != DBSPTypeTimestamp.PRECISION &&
                             !timestampPrecisionsWarned.contains(dt.getPrecision())) {
-                        this.compiler.reportWarning(SourcePositionRange.INVALID, "TIMESTAMP precision ignored",
+                        this.compiler.reportWarning(context, "TIMESTAMP precision ignored",
                                 "TIMESTAMP precision is always TIMESTAMP(" + DBSPTypeTimestamp.PRECISION +
                                         "); specified precision " + dt.getPrecision() + " is ignored");
                         timestampPrecisionsWarned.add(dt.getPrecision());
@@ -448,7 +449,7 @@ public class TypeCompiler implements ICompilerComponent {
                 case TIME:
                     if (dt.getPrecision() != DBSPTypeTime.PRECISION &&
                             !timePrecisionsWarned.contains(dt.getPrecision())) {
-                        this.compiler.reportWarning(SourcePositionRange.INVALID, "TIME precision ignored",
+                        this.compiler.reportWarning(context, "TIME precision ignored",
                                 "TIME precision is always TIME(" + DBSPTypeTime.PRECISION +
                                         "); specified precision " + dt.getPrecision() + " is ignored");
                         timePrecisionsWarned.add(dt.getPrecision());

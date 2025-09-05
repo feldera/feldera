@@ -269,7 +269,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
     public DBSPExpression visitLiteral(RexLiteral literal) {
         CalciteObject node = CalciteObject.create(this.context, literal);
         try {
-            DBSPType type = this.typeCompiler.convertType(literal.getType(), true);
+            DBSPType type = this.typeCompiler.convertType(node.getPositionRange(), literal.getType(), true);
             if (literal.isNull())
                 return DBSPLiteral.none(type);
             if (type.is(DBSPTypeInteger.class)) {
@@ -831,7 +831,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
     @Override
     public DBSPExpression visitCall(RexCall call) {
         CalciteObject node = CalciteObject.create(this.context, call);
-        DBSPType type = this.typeCompiler.convertType(call.getType(), false);
+        DBSPType type = this.typeCompiler.convertType(node.getPositionRange(), call.getType(), false);
         // If type is NULL we can skip the call altogether...
         if (type.is(DBSPTypeNull.class))
             return DBSPNullLiteral.INSTANCE;
@@ -1911,17 +1911,19 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
 
     @Override
     public DBSPExpression visitLambdaRef(RexLambdaRef variable) {
-        DBSPType type = this.typeCompiler.convertType(variable.getType(), false);
+        CalciteObject node = CalciteObject.create(this.context, variable);
+        DBSPType type = this.typeCompiler.convertType(node.getPositionRange(), variable.getType(), false);
         return new DBSPVariablePath(variable.getName(), type.ref()).deref().applyCloneIfNeeded();
     }
 
     @Override
     public DBSPExpression visitLambda(RexLambda lambda) {
+        CalciteObject node = CalciteObject.create(this.context, lambda);
         var params = lambda.getParameters();
         DBSPParameter[] converted = new DBSPParameter[params.size()];
         int index = 0;
         for (var param: params) {
-            DBSPType type = this.typeCompiler.convertType(param.getType(), false);
+            DBSPType type = this.typeCompiler.convertType(node.getPositionRange(), param.getType(), false);
             DBSPParameter var = new DBSPParameter(param.getName(), type.ref());
             converted[index++] = var;
         }
@@ -2001,7 +2003,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
         if (ef == null)
             throw new CompilationError("Function " + function.singleQuote() + " is unknown", node);
         List<DBSPType> operandTypes = Linq.map(ef.parameterList,
-                p -> this.typeCompiler.convertType(p.getType(), false));
+                p -> this.typeCompiler.convertType(node.getPositionRange(), p.getType(), false));
         // Give warnings if we have to insert casts that cast away nullability,
         // these can cause runtime crashes.
         for (int i = 0; i < ops.size(); i++) {

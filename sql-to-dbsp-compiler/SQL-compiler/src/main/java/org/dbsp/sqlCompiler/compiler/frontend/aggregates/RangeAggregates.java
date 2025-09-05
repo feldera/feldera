@@ -201,7 +201,8 @@ public class RangeAggregates extends WindowAggregates {
             DBSPWindowBoundExpression ub = this.compileWindowBound(group.upperBound, sortType, unsignedSortType, eComp);
 
             List<DBSPType> types = Linq.map(
-                    this.aggregateCalls, c -> this.compiler.convertType(c.type, false));
+                    this.aggregateCalls,
+                    c -> this.compiler.convertType(this.node.getPositionRange(), c.type, false));
             DBSPTypeTuple tuple = new DBSPTypeTuple(types);
             DBSPAggregateList list = this.compiler.createAggregates(this.compiler.compiler(),
                     this.window, this.aggregateCalls, this.window.constants, tuple, this.inputRowType, 0,

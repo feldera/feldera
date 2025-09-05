@@ -94,7 +94,7 @@ public class FirstLastAggregate extends WindowAggregates {
         IntermediateRel node = CalciteObject.create(this.window);
         DBSPSimpleOperator index = this.compiler.indexWindow(this.window, this.group);
         RelNode input = this.window.getInput();
-        DBSPType inputRowType = this.compiler.convertType(input.getRowType(), false);
+        DBSPType inputRowType = this.compiler.convertType(this.node.getPositionRange(), input.getRowType(), false);
 
         // Generate comparison function for sorting the vector
         boolean reverse = this.getKind() == SqlKind.LAST_VALUE;
