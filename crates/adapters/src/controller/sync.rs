@@ -47,7 +47,9 @@ where
     F: Fn() -> bool,
 {
     let StorageBackendConfig::File(ref file_cfg) = storage.options.backend else {
-        return Ok(());
+        return Err(ControllerError::InvalidStandby(
+            "standby mode requires file storage backend",
+        ));
     };
 
     let FileBackendConfig {
@@ -55,14 +57,18 @@ where
         ..
     } = **file_cfg
     else {
-        return Ok(());
+        return Err(ControllerError::InvalidStandby(
+            "standby mode requires file storage backend to have synchronization configured",
+        ));
     };
 
     sync.validate()
         .map_err(ControllerError::checkpoint_fetch_error)?;
 
     if sync.start_from_checkpoint.is_none() {
-        return Ok(());
+        return Err(ControllerError::InvalidStandby(
+            "standby mode requires file storage backend to have synchronization configured to start from a checkpoint",
+        ));
     }
 
     let mut cpm = None;
