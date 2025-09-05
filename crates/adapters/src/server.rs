@@ -33,6 +33,7 @@ use dbsp::{circuit::CircuitConfig, DBSPHandle};
 use dbsp::{RootCircuit, Runtime};
 use dyn_clone::DynClone;
 use feldera_adapterlib::PipelineState;
+use feldera_storage::{StorageBackend, StoragePath};
 use feldera_types::checkpoint::{
     CheckpointFailure, CheckpointResponse, CheckpointStatus, CheckpointSyncFailure,
     CheckpointSyncResponse, CheckpointSyncStatus,
@@ -56,31 +57,26 @@ use futures_util::FutureExt;
 use minitrace::collector::Config;
 use rustls::pki_types::pem::PemObject;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::hash::{BuildHasherDefault, DefaultHasher};
-use std::ops::Deref;
+use std::io::ErrorKind;
+use std::ops::{Deref, DerefMut};
 use std::path::PathBuf;
-use std::sync::atomic::AtomicBool;
-use std::sync::{PoisonError, RwLockReadGuard, TryLockError};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use std::{
     borrow::Cow,
     net::TcpListener,
-    sync::{
-        mpsc::{self, Sender as StdSender},
-        Arc, Mutex, RwLock, Weak,
-    },
+    sync::{Arc, Mutex, Weak},
     thread,
 };
+use tokio::sync::Notify;
+use tokio::task::spawn_blocking;
 use tokio::{
     spawn,
-    sync::{
-        mpsc::{channel, Sender},
-        oneshot,
-    },
+    sync::mpsc::{channel, Sender},
 };
 use tokio_stream::{wrappers::BroadcastStream, StreamExt};
 use tracing::{debug, error, info, info_span, trace, warn, Instrument, Level, Subscriber};
@@ -104,6 +100,7 @@ pub use self::error::{ErrorResponse, PipelineError, MAX_REPORTED_PARSE_ERRORS};
 ///
 /// Enables the server to report the state of the pipeline while it is
 /// initializing, when it has failed to initialize, failed, or been suspended.
+#[derive(Clone)]
 enum PipelinePhase {
     /// Initialization in progress.
     Initializing,
@@ -117,55 +114,6 @@ enum PipelinePhase {
 
     /// Pipeline encountered a fatal error.
     Failed(Arc<ControllerError>),
-
-    /// Pipeline was successfully suspended to storage.
-    Suspended,
-}
-
-/// Generate an appropriate error when `state.controller` is set to
-/// `None`, which can mean that the pipeline is initializing, failed to
-/// initialize, has been shut down or failed.
-fn missing_controller_error(state: &ServerState) -> PipelineError {
-    match &*state.phase.read().unwrap() {
-        PipelinePhase::Initializing => PipelineError::Initializing,
-        PipelinePhase::InitializationError(e) => {
-            PipelineError::InitializationError { error: e.clone() }
-        }
-        PipelinePhase::InitializationComplete => PipelineError::Terminating,
-        PipelinePhase::Failed(e) => PipelineError::ControllerError { error: e.clone() },
-        PipelinePhase::Suspended => PipelineError::Suspended,
-    }
-}
-
-/// Access to the controller within `WebData<ServerState>`.
-///
-/// This is only tricky because it's an `Option`.
-struct ControllerAccess<'a>(RwLockReadGuard<'a, Option<Controller>>);
-
-impl<'a> ControllerAccess<'a> {
-    /// Obtains access to the `controller` wihtin `state`.  Returns an
-    /// appropriate error if there is no controller.
-    ///
-    /// # Panic
-    ///
-    /// Panics if the controller's lock is poisoned.
-    fn new(state: &'a WebData<ServerState>) -> Result<Self, PipelineError> {
-        let inner = state.controller.read().unwrap();
-        if inner.is_some() {
-            Ok(Self(inner))
-        } else {
-            Err(missing_controller_error(state))
-        }
-    }
-}
-
-// It would be better to use [RwLockReadGuard::map] if that ever stabilizes.
-impl<'a> Deref for ControllerAccess<'a> {
-    type Target = Controller;
-
-    fn deref(&self) -> &Self::Target {
-        self.0.as_ref().unwrap()
-    }
 }
 
 #[derive(Clone, Debug, Default)]
@@ -239,38 +187,126 @@ impl CheckpointState {
 }
 
 pub(crate) struct ServerState {
-    phase: Arc<RwLock<PipelinePhase>>,
-    metadata: RwLock<String>,
-    controller: RwLock<Option<Controller>>,
-    checkpoint_state: Arc<Mutex<CheckpointState>>,
-    sync_checkpoint_state: Arc<Mutex<CheckpointSyncState>>,
-    /// Indicates whether the pipeline has been activated from standby mode via
-    /// a call to the `/activate` endpoint.
-    activated: Arc<AtomicBool>,
-    /// Channel used to send a `kill` command to
-    /// the self-destruct task when shutting down
-    /// the server.
+    /// The other locks in this structure nest inside `desired_status`.
+    desired_status: Mutex<RuntimeDesiredStatus>,
+
+    /// Notified when `desired_status` changes.
+    desired_status_change: Arc<Notify>,
+
+    /// `phase` nests inside `controller`.
+    ///
+    /// Use `controller()`, `take_controller()`, `set_controller()` to access.
+    ///
+    /// This lock is only held momentarily.
+    controller: Mutex<Option<Controller>>,
+
+    /// Leaf lock (no more locks may be taken while holding it).
+    ///
+    /// Use `phase()` and `set_phase()` to access.
+    ///
+    /// This lock is only held momentarily.
+    phase: Mutex<PipelinePhase>,
+
+    /// Leaf lock.
+    checkpoint_state: Mutex<CheckpointState>,
+
+    /// Leaf lock.
+    sync_checkpoint_state: Mutex<CheckpointSyncState>,
+
+    /// Channel used to send a `kill` command to the self-destruct task when
+    /// shutting down the server.
     terminate_sender: Option<Sender<()>>,
-    desired_status: Arc<Mutex<RuntimeDesiredStatus>>,
+
+    metadata: String,
 }
 
 impl ServerState {
-    fn new(terminate_sender: Option<Sender<()>>, initial: RuntimeDesiredStatus) -> Self {
-        Self {
-            phase: Arc::new(RwLock::new(PipelinePhase::Initializing)),
-            metadata: RwLock::new(String::new()),
-            controller: RwLock::new(None),
-            checkpoint_state: Arc::new(Mutex::new(CheckpointState::default())),
-            sync_checkpoint_state: Arc::new(Mutex::new(CheckpointSyncState::default())),
-            activated: Arc::new(AtomicBool::new(false)),
+    fn new(
+        md: String,
+        terminate_sender: Option<Sender<()>>,
+        initial: RuntimeDesiredStatus,
+    ) -> Result<Self, ControllerError> {
+        if !matches!(
+            initial,
+            RuntimeDesiredStatus::Running
+                | RuntimeDesiredStatus::Paused
+                | RuntimeDesiredStatus::Standby,
+        ) {
+            return Err(ControllerError::InvalidInitialStatus(initial));
+        }
+        Ok(Self {
+            phase: Mutex::new(PipelinePhase::Initializing),
+            desired_status_change: Arc::default(),
+            metadata: md,
+            controller: Mutex::new(None),
+            checkpoint_state: Default::default(),
+            sync_checkpoint_state: Default::default(),
             terminate_sender,
-            desired_status: Arc::new(Mutex::new(initial)),
+            desired_status: Mutex::new(initial),
+        })
+    }
+
+    /// Generate an appropriate error when `state.controller` is set to
+    /// `None`, which can mean that the pipeline is initializing, failed to
+    /// initialize, has been shut down or failed.
+    fn missing_controller_error(&self) -> PipelineError {
+        match self.phase() {
+            PipelinePhase::Initializing => PipelineError::Initializing,
+            PipelinePhase::InitializationError(e) => {
+                PipelineError::InitializationError { error: e.clone() }
+            }
+            PipelinePhase::InitializationComplete => PipelineError::Terminating,
+            PipelinePhase::Failed(e) => PipelineError::ControllerError { error: e.clone() },
         }
     }
 
-    #[allow(unused)]
-    pub(crate) fn activated(&self) -> bool {
-        self.activated.load(std::sync::atomic::Ordering::Relaxed)
+    /// Grabs a clone of the controller, or an error if there isn't one.
+    fn controller(&self) -> Result<Controller, PipelineError> {
+        self.controller
+            .lock()
+            .unwrap()
+            .deref()
+            .as_ref()
+            .cloned()
+            .ok_or_else(|| self.missing_controller_error())
+    }
+
+    /// Removes the controller and returns it, or an error if there wasn't one.
+    ///
+    /// This only makes sense when we're terminating.
+    fn take_controller(&self) -> Result<Controller, PipelineError> {
+        self.controller
+            .lock()
+            .unwrap()
+            .deref_mut()
+            .take()
+            .ok_or_else(|| self.missing_controller_error())
+    }
+
+    /// Sets the controller.  This should only be done once.
+    fn set_controller(&self, controller: Controller) {
+        *self.controller.lock().unwrap() = Some(controller);
+    }
+
+    fn desired_status(&self) -> RuntimeDesiredStatus {
+        *self.desired_status.lock().unwrap()
+    }
+
+    fn phase(&self) -> PipelinePhase {
+        self.phase.lock().unwrap().clone()
+    }
+
+    fn set_phase(&self, phase: PipelinePhase) {
+        *self.phase.lock().unwrap() = phase;
+    }
+
+    async fn terminate(&self) {
+        if let Some(sender) = &self.terminate_sender {
+            let _ = sender.send(()).await;
+        }
+        if let Err(e) = tokio::fs::remove_file(SERVER_PORT_FILE).await {
+            warn!("Failed to remove server port file: {e}");
+        }
     }
 }
 
@@ -394,7 +430,6 @@ pub fn run_server(
 ) -> Result<(), ControllerError> {
     ensure_default_crypto_provider();
 
-    let initial = args.initial;
     let bind_address = args.bind_address.clone();
     let port = args.default_port.unwrap_or(0);
     let listener = TcpListener::bind((bind_address, port))
@@ -412,19 +447,43 @@ pub fn run_server(
 
     let (terminate_sender, mut terminate_receiver) = channel(1);
 
-    let state = WebData::new(ServerState::new(Some(terminate_sender), args.initial));
-    let state_clone = state.clone();
-    let state_clone2 = state.clone();
-
-    // The bootstrap thread initialize the logger.
-    // Use this channel to wait for the log to be ready, so that the first few
-    // messages from the server don't get lost.
-    let (loginit_sender, loginit_receiver) = mpsc::channel();
-    let config = parse_config(&args.config_file).map_err(|e| {
-        // Print to stderr until logging is initialized.
+    let config = parse_config(&args.config_file).inspect_err(|e| {
+        // Logging isn't initialized and we can't initialize it until we have
+        // the configuration, so just print the message to stderr for now.
         eprintln!("{e}");
-        e
     })?;
+
+    // Initialize the logger by setting its filter and template.
+    let pipeline_name = format!("[{}]", config.name.clone().unwrap_or_default()).cyan();
+    tracing_subscriber::registry()
+        .with(tracing_subscriber::fmt::layer().event_format(PipelineFormat::new(pipeline_name)))
+        .with(get_env_filter(&config))
+        .try_init()
+        .unwrap_or_else(|e| {
+            // This happens in unit tests when another test has initialized logging.
+            eprintln!("Failed to initialize logging: {e}.")
+        });
+
+    if config.global.tracing {
+        use std::net::{SocketAddr, ToSocketAddrs};
+        let socket_addrs: Vec<SocketAddr> = config
+            .global
+            .tracing_endpoint_jaeger
+            .to_socket_addrs()
+            .expect("Valid `tracing_endpoint_jaeger` value (e.g., localhost:6831)")
+            .collect();
+        let reporter = minitrace_jaeger::JaegerReporter::new(
+            *socket_addrs
+                .first()
+                .expect("Valid `tracing_endpoint_jaeger` value (e.g., localhost:6831)"),
+            config
+                .name
+                .clone()
+                .unwrap_or("unknown pipeline".to_string()),
+        )
+        .unwrap();
+        minitrace::set_reporter(reporter, Config::default());
+    }
 
     // Install stack overflow handler early, before creating the controller and parsing DevTweaks.
     #[cfg(target_family = "unix")]
@@ -443,17 +502,50 @@ pub fn run_server(
         }
     }
 
+    #[cfg(not(feature = "feldera-enterprise"))]
+    if config.global.fault_tolerance.is_enabled() {
+        return Err(ControllerError::EnterpriseFeature("fault tolerance"));
+    }
+
+    // Initiate creating the controller so that we can get access to storage,
+    // which is needed to determine the initial state.
+    let builder = ControllerBuilder::new(&config)?;
+    let initial_status = builder
+        .storage()
+        .and_then(|storage| StoredStatus::read(&*storage))
+        .map_or(args.initial, |s| s.desired_status);
+    let storage = builder.storage().clone();
+
+    let md = match &args.metadata_file {
+        None => String::new(),
+        Some(metadata_file) => {
+            let meta = std::fs::read(metadata_file).map_err(|e| {
+                ControllerError::io_error(format!("reading metadata file '{}'", metadata_file), e)
+            })?;
+            String::from_utf8(meta).map_err(|e| {
+                ControllerError::pipeline_config_parse_error(&format!(
+                    "invalid UTF8 string in the metadata file '{}' ({e})",
+                    metadata_file
+                ))
+            })?
+        }
+    };
+
+    let state = WebData::new(ServerState::new(
+        md,
+        Some(terminate_sender),
+        initial_status,
+    )?);
+
     // Initialize the pipeline in a separate thread.  On success, this thread
     // will create a `Controller` instance and store it in `state.controller`.
-    {
-        let args = args.clone();
-        let config = config.clone();
-        thread::Builder::new()
-            .name("pipeline-init".to_string())
-            .spawn(move || bootstrap(args, config, circuit_factory, state_clone, loginit_sender))
-            .expect("failed to spawn pipeline initialization thread");
-        let _ = loginit_receiver.recv();
-    }
+    thread::Builder::new()
+        .name("pipeline-init".to_string())
+        .spawn({
+            let state = state.clone();
+            move || bootstrap(builder, circuit_factory, state)
+        })
+        .expect("failed to spawn pipeline initialization thread");
     info!("Pipeline deployment identifier: {}", args.deployment_id);
 
     let workers = if let Some(http_workers) = config.global.http_workers {
@@ -462,41 +554,44 @@ pub fn run_server(
         config.global.workers as usize
     };
 
-    let server = HttpServer::new(move || {
+    let server = HttpServer::new({
         let state = state.clone();
-        build_app(
-            App::new().wrap_fn(|req, srv| {
-                trace!("Request: {} {}", req.method(), req.path());
-                srv.call(req).map(|res| {
-                    match &res {
-                        Ok(response) => {
-                            let level = if response.status().is_success()
-                                || response.status().is_redirection()
-                                || response.status().is_informational()
-                            {
-                                Level::DEBUG
-                            } else {
-                                Level::ERROR
-                            };
-                            let req = response.request();
-                            dyn_event!(
-                                level,
-                                "Response: {} (size: {:?}) to request {} {}",
-                                response.status(),
-                                response.response().body().size(),
-                                req.method(),
-                                req.path()
-                            );
+        move || {
+            let state = state.clone();
+            build_app(
+                App::new().wrap_fn(|req, srv| {
+                    trace!("Request: {} {}", req.method(), req.path());
+                    srv.call(req).map(|res| {
+                        match &res {
+                            Ok(response) => {
+                                let level = if response.status().is_success()
+                                    || response.status().is_redirection()
+                                    || response.status().is_informational()
+                                {
+                                    Level::DEBUG
+                                } else {
+                                    Level::ERROR
+                                };
+                                let req = response.request();
+                                dyn_event!(
+                                    level,
+                                    "Response: {} (size: {:?}) to request {} {}",
+                                    response.status(),
+                                    response.response().body().size(),
+                                    req.method(),
+                                    req.path()
+                                );
+                            }
+                            Err(e) => {
+                                error!("Service response error: {e}");
+                            }
                         }
-                        Err(e) => {
-                            error!("Service response error: {e}");
-                        }
-                    }
-                    res
-                })
-            }),
-            state,
-        )
+                        res
+                    })
+                }),
+                state,
+            )
+        }
     })
     // The next two settings work around the issue that std::thread::available_parallelism()
     // which is what actix uses internally can't determine the number of threads available
@@ -558,24 +653,36 @@ pub fn run_server(
     };
 
     rt::System::new().block_on(async {
-        // Spawn a task that will shut down the server on `/kill`.
+        // Spawn a task that will shut down the server on `/stop`.
         let server_handle = server.handle();
         spawn(async move {
             terminate_receiver.recv().await;
             server_handle.stop(true).await
         });
 
-        // Spawn a task to start the pipeline if initial is running
-        spawn(async move {
-            loop {
-                if initial == RuntimeDesiredStatus::Running {
-                    if let Ok(controller) = ControllerAccess::new(&state_clone2) {
-                        controller.start();
+        // Spawn a task to update the stored desired state when it changes.
+        if let Some(storage) = storage {
+            spawn(async move {
+                let mut prev_desired_status = None;
+                loop {
+                    let desired_status = state.desired_status();
+                    if Some(desired_status) != prev_desired_status
+                        && matches!(
+                            desired_status,
+                            RuntimeDesiredStatus::Paused
+                                | RuntimeDesiredStatus::Running
+                                | RuntimeDesiredStatus::Standby
+                        )
+                    {
+                        let storage = storage.clone();
+                        let s = StoredStatus { desired_status };
+                        spawn_blocking(move || s.write(&*storage));
                     }
+                    prev_desired_status = Some(desired_status);
+                    state.desired_status_change.notified().await;
                 }
-                tokio::time::sleep(Duration::from_millis(50)).await;
-            }
-        });
+            });
+        }
 
         info!(
             "Started {} server on port {port}",
@@ -622,17 +729,15 @@ fn parse_config(config_file: &str) -> Result<PipelineConfig, ControllerError> {
 
 // Initialization thread function.
 fn bootstrap(
-    args: ServerArgs,
-    config: PipelineConfig,
+    builder: ControllerBuilder,
     circuit_factory: CircuitFactoryFunc,
     state: WebData<ServerState>,
-    loginit_sender: StdSender<()>,
 ) {
-    do_bootstrap(args, config, circuit_factory, &state, loginit_sender).unwrap_or_else(|e| {
+    do_bootstrap(builder, circuit_factory, &state).unwrap_or_else(|e| {
         // Store error in `state.phase`, so that it can be
         // reported by the server.
         error!("Error initializing the pipeline: {e}.");
-        *state.phase.write().unwrap() = PipelinePhase::InitializationError(Arc::new(e));
+        state.set_phase(PipelinePhase::InitializationError(Arc::new(e)));
     })
 }
 
@@ -654,24 +759,10 @@ fn error_handler(state: &Weak<ServerState>, error: Arc<ControllerError>) {
     };
 
     if is_fatal_controller_error(&error) {
-        // Prepare to handle poisoned locks in the following code.
-
-        if let Ok(mut controller) = state.controller.write() {
-            if let Some(controller) = controller.take() {
-                if let Ok(mut phase) = state.phase.write() {
-                    *phase = PipelinePhase::Failed(error);
-                }
-
-                controller.initiate_stop();
-            }
+        if let Ok(controller) = state.take_controller() {
+            state.set_phase(PipelinePhase::Failed(error));
+            controller.initiate_stop();
         }
-
-        /*if let Some(sender) = &state.terminate_sender {
-            let _ = sender.try_send(());
-        }
-        if let Err(e) = std::fs::remove_file(SERVER_PORT_FILE) {
-            warn!("Failed to remove server port file: {e}");
-        }*/
     }
 }
 
@@ -729,75 +820,40 @@ fn get_env_filter(config: &PipelineConfig) -> EnvFilter {
 }
 
 fn do_bootstrap(
-    args: ServerArgs,
-    config: PipelineConfig,
+    builder: ControllerBuilder,
     circuit_factory: CircuitFactoryFunc,
     state: &WebData<ServerState>,
-    loginit_sender: StdSender<()>,
 ) -> Result<(), ControllerError> {
-    #[cfg(not(feature = "feldera-enterprise"))]
-    if config.global.fault_tolerance.is_enabled() {
-        return Err(ControllerError::EnterpriseFeature("fault tolerance"));
-    }
-
-    // Initializes the logger by setting its filter and template.
-    let pipeline_name = format!("[{}]", config.name.clone().unwrap_or_default()).cyan();
-    tracing_subscriber::registry()
-        .with(tracing_subscriber::fmt::layer().event_format(PipelineFormat::new(pipeline_name)))
-        .with(get_env_filter(&config))
-        .try_init()
-        .unwrap_or_else(|e| {
-            // This happens in unit tests when another test has initialized logging.
-            eprintln!("Failed to initialize logging: {e}.")
-        });
-    let _ = loginit_sender.send(());
-
-    if config.global.tracing {
-        use std::net::{SocketAddr, ToSocketAddrs};
-        let socket_addrs: Vec<SocketAddr> = config
-            .global
-            .tracing_endpoint_jaeger
-            .to_socket_addrs()
-            .expect("Valid `tracing_endpoint_jaeger` value (e.g., localhost:6831)")
-            .collect();
-        let reporter = minitrace_jaeger::JaegerReporter::new(
-            *socket_addrs
-                .first()
-                .expect("Valid `tracing_endpoint_jaeger` value (e.g., localhost:6831)"),
-            config
-                .name
-                .clone()
-                .unwrap_or("unknown pipeline".to_string()),
-        )
-        .unwrap();
-        minitrace::set_reporter(reporter, Config::default());
-    }
-
-    *state.metadata.write().unwrap() = match &args.metadata_file {
-        None => String::new(),
-        Some(metadata_file) => {
-            let meta = std::fs::read(metadata_file).map_err(|e| {
-                ControllerError::io_error(format!("reading metadata file '{}'", metadata_file), e)
-            })?;
-            String::from_utf8(meta).map_err(|e| {
-                ControllerError::pipeline_config_parse_error(&format!(
-                    "invalid UTF8 string in the metadata file '{}' ({e})",
-                    metadata_file
-                ))
-            })?
-        }
-    };
-
     let weak_state_ref = Arc::downgrade(state);
-    let builder = ControllerBuilder::new(&config)?;
-    builder.continuous_pull(|| state.activated())?;
+    match state.desired_status() {
+        RuntimeDesiredStatus::Unavailable => unreachable!(),
+        RuntimeDesiredStatus::Running
+        | RuntimeDesiredStatus::Paused
+        | RuntimeDesiredStatus::Suspended => (),
+        RuntimeDesiredStatus::Standby => {
+            builder.continuous_pull(|| state.desired_status() != RuntimeDesiredStatus::Standby)?;
+
+            let mut desired_status = state.desired_status.lock().unwrap();
+            if *desired_status == RuntimeDesiredStatus::Standby {
+                warn!("Exited standby mode without specifying a new desired state, defaulting to paused");
+                *desired_status = RuntimeDesiredStatus::Paused;
+                state.desired_status_change.notify_waiters();
+            }
+        }
+    }
     let controller = builder.build(
         circuit_factory,
         Box::new(move |e| error_handler(&weak_state_ref, e))
             as Box<dyn Fn(Arc<ControllerError>) + Send + Sync>,
     )?;
-
-    *state.controller.write().unwrap() = Some(controller);
+    let desired_status = state.desired_status.lock().unwrap();
+    match *desired_status {
+        RuntimeDesiredStatus::Unavailable | RuntimeDesiredStatus::Standby => unreachable!(),
+        RuntimeDesiredStatus::Paused | RuntimeDesiredStatus::Suspended => controller.pause(),
+        RuntimeDesiredStatus::Running => controller.start(),
+    };
+    state.set_controller(controller);
+    drop(desired_status);
 
     info!("Pipeline initialization complete");
     if let Some(runtime_override) = option_env!("FELDERA_RUNTIME_OVERRIDE") {
@@ -806,7 +862,7 @@ fn do_bootstrap(
             runtime_override
         );
     }
-    *state.phase.write().unwrap() = PipelinePhase::InitializationComplete;
+    state.set_phase(PipelinePhase::InitializationComplete);
 
     Ok(())
 }
@@ -826,7 +882,7 @@ where
         .service(start)
         .service(pause)
         .service(activate)
-        .service(shutdown)
+        .service(stop)
         .service(status)
         .service(suspendable)
         .service(start_transaction)
@@ -856,72 +912,79 @@ where
 
 #[get("/start")]
 async fn start(state: WebData<ServerState>) -> Result<HttpResponse, PipelineError> {
-    {
-        let mut runtime_desired_status = state.desired_status.lock().unwrap();
-        *runtime_desired_status = RuntimeDesiredStatus::Running;
+    let mut desired_status = state.desired_status.lock().unwrap();
+    match *desired_status {
+        RuntimeDesiredStatus::Unavailable => unreachable!(),
+        RuntimeDesiredStatus::Standby | RuntimeDesiredStatus::Suspended => {
+            return Err(PipelineError::InvalidTransition("start", *desired_status))
+        }
+        RuntimeDesiredStatus::Paused | RuntimeDesiredStatus::Running => {
+            *desired_status = RuntimeDesiredStatus::Running;
+            state.desired_status_change.notify_waiters();
+            match state.controller() {
+                Ok(controller) => {
+                    controller.start();
+                }
+                Err(PipelineError::Initializing) => (),
+                Err(error) => return Err(error),
+            }
+            Ok(HttpResponse::Accepted().json("Pipeline is resuming"))
+        }
     }
-
-    ControllerAccess::new(&state)?.start();
-    Ok(HttpResponse::Accepted().json("Pipeline is resuming"))
 }
 
 #[get("/pause")]
 async fn pause(state: WebData<ServerState>) -> Result<HttpResponse, PipelineError> {
-    {
-        let mut runtime_desired_status = state.desired_status.lock().unwrap();
-        *runtime_desired_status = RuntimeDesiredStatus::Paused;
+    let mut desired_status = state.desired_status.lock().unwrap();
+    match *desired_status {
+        RuntimeDesiredStatus::Unavailable => unreachable!(),
+        RuntimeDesiredStatus::Standby | RuntimeDesiredStatus::Suspended => {
+            return Err(PipelineError::InvalidTransition("pause", *desired_status))
+        }
+        RuntimeDesiredStatus::Paused | RuntimeDesiredStatus::Running => {
+            *desired_status = RuntimeDesiredStatus::Paused;
+            state.desired_status_change.notify_waiters();
+            match state.controller() {
+                Ok(controller) => {
+                    controller.pause();
+                }
+                Err(PipelineError::Initializing) => (),
+                Err(error) => return Err(error),
+            }
+            Ok(HttpResponse::Accepted().json("Pipeline is pausing"))
+        }
     }
-    ControllerAccess::new(&state)?.pause();
-    Ok(HttpResponse::Accepted().json("Pipeline is pausing"))
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct ActivateArgs {
+    #[serde(default)]
+    initial: RuntimeDesiredStatus,
 }
 
 #[post("/activate")]
-async fn activate(state: WebData<ServerState>) -> impl Responder {
-    {
-        let mut runtime_desired_status = state.desired_status.lock().unwrap();
-        *runtime_desired_status = RuntimeDesiredStatus::Paused;
-    }
-    state
-        .activated
-        .store(true, std::sync::atomic::Ordering::Relaxed);
-    HttpResponse::Accepted().json("Pipeline is activating")
-}
-
-/// Error enumeration for the timed acquisition of a read lock.
-enum TimedReadLockAcquireError<'a, T> {
-    Timeout(Duration),
-    Poisoned(PoisonError<RwLockReadGuard<'a, T>>),
-}
-
-/// Attempts to acquire a read lock within a reasonable time frame by trying it for 10 times with a
-/// 50ms interval inbetween -- thus should only block for around 450ms at most after which it will
-/// return an error. Acquisition can fail because the lock is poisoned, or it times out.
-async fn attempt_acquire_read_lock<T>(
-    lock: &RwLock<T>,
-) -> Result<RwLockReadGuard<T>, TimedReadLockAcquireError<T>> {
-    let started_at = Instant::now();
-    let num_attempts = 10;
-    for i in 0..num_attempts {
-        match lock.try_read() {
-            Ok(guard) => {
-                // Lock could be acquired in time
-                return Ok(guard);
+async fn activate(
+    state: WebData<ServerState>,
+    args: Query<ActivateArgs>,
+) -> Result<HttpResponse, PipelineError> {
+    let mut desired_status = state.desired_status.lock().unwrap();
+    match *desired_status {
+        RuntimeDesiredStatus::Unavailable => unreachable!(),
+        RuntimeDesiredStatus::Standby => match args.initial {
+            RuntimeDesiredStatus::Running | RuntimeDesiredStatus::Paused => {
+                *desired_status = args.initial;
+                state.desired_status_change.notify_waiters();
+                Ok(HttpResponse::Accepted().json("Pipeline is activating"))
             }
-            Err(e) => match e {
-                TryLockError::Poisoned(e) => {
-                    // Lock has been poisoned
-                    return Err(TimedReadLockAcquireError::Poisoned(e));
-                }
-                TryLockError::WouldBlock => {
-                    // Acquiring the lock would block; try again later
-                }
-            },
-        }
-        if i < num_attempts - 1 {
-            tokio::time::sleep(Duration::from_millis(50)).await;
-        }
+            _ => Err(PipelineError::InvalidActivateStatus(args.initial)),
+        },
+        RuntimeDesiredStatus::Paused
+        | RuntimeDesiredStatus::Running
+        | RuntimeDesiredStatus::Suspended => Err(PipelineError::InvalidTransition(
+            "activate",
+            *desired_status,
+        )),
     }
-    Err(TimedReadLockAcquireError::Timeout(started_at.elapsed()))
 }
 
 /// Retrieve pipeline runtime status.
@@ -929,7 +992,7 @@ async fn attempt_acquire_read_lock<T>(
 /// This endpoint is used by the pipeline runner to observe the pipeline in order to determine
 /// whether (1) it is healthy, and (2) what it is doing. The endpoint either returns:
 ///
-/// - A `200 OK` with as body `ExtendedRuntimeStatus`, containing the current pipeline runtime
+/// - A `200 OK` with as body [ExtendedRuntimeStatus], containing the current pipeline runtime
 ///   status and details regarding it. The runner will store this as the observation.
 /// - A `503 Service Unavailable` with as body `ErrorResponse`. This indicates a lock cannot be
 ///   acquired in order to read the runtime status. The runner will observe it as unavailable.
@@ -941,30 +1004,9 @@ async fn attempt_acquire_read_lock<T>(
 async fn status(
     state: WebData<ServerState>,
 ) -> Result<ExtendedRuntimeStatus, ExtendedRuntimeStatusError> {
-    let runtime_desired_status = *state.desired_status.lock().unwrap();
-    {
-        // Acquire the controller read lock
-        let controller = attempt_acquire_read_lock::<Option<Controller>>(&state.controller).await.map_err(|e| match e {
-            TimedReadLockAcquireError::Timeout(timeout) => ExtendedRuntimeStatusError {
-                status_code: StatusCode::SERVICE_UNAVAILABLE,
-                error: feldera_types::error::ErrorResponse {
-                    message: format!("Pipeline is unable to acquire the read lock for the controller in time (timed out after {}ms).", timeout.as_millis()),
-                    error_code: Cow::from("ControllerLockAcquireTimeout"),
-                    details: json!({}),
-                }
-            },
-            TimedReadLockAcquireError::Poisoned(e) => ExtendedRuntimeStatusError {
-                status_code: StatusCode::INTERNAL_SERVER_ERROR,
-                error: feldera_types::error::ErrorResponse {
-                    message: format!("Pipeline is unable to acquire the read lock for the controller because it is poisoned: {e}"),
-                    error_code: Cow::from("ControllerLockAcquirePoisoned"),
-                    details: json!({}),
-                }
-            }
-        })?;
-
-        // The controller is set: use its state
-        if let Some(controller) = &*controller {
+    let runtime_desired_status = state.desired_status();
+    match state.controller() {
+        Ok(controller) => {
             return match controller.status().global_metrics.get_state() {
                 PipelineState::Paused => Ok(ExtendedRuntimeStatus {
                     runtime_status: RuntimeStatus::Paused,
@@ -984,30 +1026,15 @@ async fn status(
                         details: json!({}),
                     },
                 }),
-            };
+            }
         }
-    }
+        Err(_) => {
+            // Controller isn't set.
+        }
+    };
 
     // The controller is not set: acquire the phase read lock
-    let phase = attempt_acquire_read_lock::<PipelinePhase>(&*state.phase).await.map_err(|e| match e {
-        TimedReadLockAcquireError::Timeout(timeout) => ExtendedRuntimeStatusError {
-            status_code: StatusCode::SERVICE_UNAVAILABLE,
-            error: feldera_types::error::ErrorResponse {
-            message: format!("Pipeline is unable to acquire the read lock for the phase in time (timed out after {}ms).", timeout.as_millis()),
-                error_code: Cow::from("PhaseLockAcquireTimeout"),
-                details: json!({}),
-            }
-        },
-        TimedReadLockAcquireError::Poisoned(e) => ExtendedRuntimeStatusError {
-            status_code: StatusCode::INTERNAL_SERVER_ERROR,
-            error: feldera_types::error::ErrorResponse {
-                message: format!("Pipeline is unable to acquire the read lock for the phase because it is poisoned: {e}"),
-                error_code: Cow::from("PhaseLockAcquirePoisoned"),
-                details: json!({}),
-            }
-        }
-    })?;
-    match &*phase {
+    match state.phase() {
         PipelinePhase::Initializing => Ok(ExtendedRuntimeStatus {
             runtime_status: RuntimeStatus::Initializing,
             runtime_status_details: "".to_string(),
@@ -1067,18 +1094,14 @@ async fn status(
                 })
             }
         }
-        PipelinePhase::Suspended => Ok(ExtendedRuntimeStatus {
-            runtime_status: RuntimeStatus::Suspended,
-            runtime_status_details: "".to_string(),
-            runtime_desired_status,
-        }),
     }
 }
 
 /// Retrieve whether a pipeline is suspendable or not.
 #[get("/suspendable")]
 async fn suspendable(state: WebData<ServerState>) -> Result<HttpResponse, PipelineError> {
-    let suspend_error = ControllerAccess::new(&state)?
+    let suspend_error = state
+        .controller()?
         .status()
         .suspend_error
         .lock()
@@ -1114,26 +1137,17 @@ async fn query(
     request: HttpRequest,
     stream: web::Payload,
 ) -> impl Responder {
-    let session_ctxt = {
-        let controller = state.controller.read().unwrap();
-        controller.as_ref().map(|c| c.session_context())
-    };
-
-    match session_ctxt.transpose()? {
-        Some(session) => {
-            if !request_is_websocket(&request) {
-                stream_adhoc_result(args.into_inner(), session).await
-            } else {
-                adhoc_websocket(session, request, stream).await
-            }
-        }
-        None => Err(missing_controller_error(&state)),
+    let session_ctxt = state.controller()?.session_context()?;
+    if !request_is_websocket(&request) {
+        stream_adhoc_result(args.into_inner(), session_ctxt).await
+    } else {
+        adhoc_websocket(session_ctxt, request, stream).await
     }
 }
 
 #[get("/stats")]
 async fn stats(state: WebData<ServerState>) -> Result<HttpResponse, PipelineError> {
-    Ok(HttpResponse::Ok().json(ControllerAccess::new(&state)?.status()))
+    Ok(HttpResponse::Ok().json(state.controller()?.status()))
 }
 
 /// Retrieve circuit metrics.
@@ -1161,7 +1175,7 @@ async fn metrics_handler(
         metrics_writer.into_output()
     }
 
-    let controller = ControllerAccess::new(&state)?;
+    let controller = state.controller()?;
     match &query_params.format {
         MetricsFormat::Prometheus => Ok(HttpResponse::Ok()
             .content_type(mime::TEXT_PLAIN)
@@ -1177,7 +1191,8 @@ async fn metrics_handler(
 async fn time_series(state: WebData<ServerState>) -> Result<HttpResponse, PipelineError> {
     let time_series = TimeSeries {
         now: Utc::now(),
-        samples: ControllerAccess::new(&state)?
+        samples: state
+            .controller()?
             .status()
             .time_series
             .lock()
@@ -1196,7 +1211,7 @@ async fn time_series(state: WebData<ServerState>) -> Result<HttpResponse, Pipeli
 /// is a JSON object representing a single time series data point.
 #[get("/time_series_stream")]
 async fn time_series_stream(state: WebData<ServerState>) -> Result<HttpResponse, PipelineError> {
-    let controller = ControllerAccess::new(&state)?;
+    let controller = state.controller()?;
     let controller_status = controller.status();
 
     // Get existing time series data as snapshot
@@ -1241,7 +1256,7 @@ async fn time_series_stream(state: WebData<ServerState>) -> Result<HttpResponse,
 async fn metadata(state: WebData<ServerState>) -> impl Responder {
     HttpResponse::Ok()
         .content_type(mime::APPLICATION_JSON)
-        .body(state.metadata.read().unwrap().clone())
+        .body(state.metadata.clone())
 }
 
 #[get("/heap_profile")]
@@ -1273,18 +1288,10 @@ async fn heap_profile() -> impl Responder {
 
 #[get("/dump_profile")]
 async fn dump_profile(state: WebData<ServerState>) -> Result<HttpResponse, PipelineError> {
-    let (sender, receiver) = oneshot::channel();
-    ControllerAccess::new(&state)?.start_graph_profile(Box::new(move |profile| {
-        if sender.send(profile).is_err() {
-            error!("`/dump_profile` result could not be sent");
-        }
-    }));
-    let profile = receiver.await.unwrap()?;
-
     Ok(HttpResponse::Ok()
         .insert_header(header::ContentType("application/zip".parse().unwrap()))
         .insert_header(header::ContentDisposition::attachment("profile.zip"))
-        .body(profile.as_zip()))
+        .body(state.controller()?.async_graph_profile().await?.as_zip()))
 }
 
 /// Dump the low-level IR of the circuit.
@@ -1293,20 +1300,14 @@ async fn lir(state: WebData<ServerState>) -> Result<HttpResponse, PipelineError>
     Ok(HttpResponse::Ok()
         .insert_header(header::ContentType("application/zip".parse().unwrap()))
         .insert_header(header::ContentDisposition::attachment("lir.zip"))
-        .body(ControllerAccess::new(&state)?.lir().as_zip()))
+        .body(state.controller()?.lir().as_zip()))
 }
 
 #[post("/checkpoint/sync")]
 async fn checkpoint_sync(state: WebData<ServerState>) -> Result<HttpResponse, PipelineError> {
-    let controller = ControllerAccess::new(&state)?;
+    let controller = state.controller()?;
 
-    let Some(last_checkpoint) = state
-        .checkpoint_state
-        .clone()
-        .lock()
-        .unwrap()
-        .last_checkpoint
-    else {
+    let Some(last_checkpoint) = state.checkpoint_state.lock().unwrap().last_checkpoint else {
         return Ok(HttpResponse::BadRequest().json(ErrorResponse {
                     message: "no checkpoints found; make a POST request to `/checkpoint` to make a new checkpoint".to_string(),
                     error_code: "400".into(),
@@ -1314,13 +1315,14 @@ async fn checkpoint_sync(state: WebData<ServerState>) -> Result<HttpResponse, Pi
                 }));
     };
 
-    let state = state.sync_checkpoint_state.clone();
-    controller.start_sync_checkpoint(
-        last_checkpoint,
-        Box::new(move |result| {
-            state.lock().unwrap().completed(last_checkpoint, result);
-        }),
-    );
+    spawn(async move {
+        let result = controller.async_sync_checkpoint(last_checkpoint).await;
+        state
+            .sync_checkpoint_state
+            .lock()
+            .unwrap()
+            .completed(last_checkpoint, result);
+    });
 
     Ok(HttpResponse::Accepted().json(CheckpointSyncResponse::new(last_checkpoint)))
 }
@@ -1329,15 +1331,16 @@ async fn checkpoint_sync(state: WebData<ServerState>) -> Result<HttpResponse, Pi
 /// `/checkpoint_status` to determine when the checkpoint completes.
 #[post("/checkpoint")]
 async fn checkpoint(state: WebData<ServerState>) -> Result<HttpResponse, PipelineError> {
-    let controller = ControllerAccess::new(&state)?;
-    let state = state.checkpoint_state.clone();
-    let seq = state.lock().unwrap().next_seq();
-    controller.start_checkpoint(Box::new(move |result| {
+    let controller = state.controller()?;
+    let seq = state.checkpoint_state.lock().unwrap().next_seq();
+    spawn(async move {
+        let result = controller.async_checkpoint().await;
         state
+            .checkpoint_state
             .lock()
             .unwrap()
             .completed(seq, result.map(|c| c.circuit));
-    }));
+    });
     Ok(HttpResponse::Ok().json(CheckpointResponse::new(seq)))
 }
 
@@ -1351,117 +1354,75 @@ async fn sync_checkpoint_status(state: WebData<ServerState>) -> impl Responder {
     HttpResponse::Ok().json(state.sync_checkpoint_state.lock().unwrap().status.clone())
 }
 
-/// Suspends the pipeline (but only a later call to `/shutdown` will shut down
-/// the webserver or terminate the process).
+/// Suspends the pipeline and terminate the process.
 ///
 /// This implementation is designed to be idempotent, so that any number of
 /// suspend requests act like just one.
 #[post("/suspend")]
 async fn suspend(state: WebData<ServerState>) -> Result<impl Responder, PipelineError> {
-    {
-        let mut runtime_desired_status = state.desired_status.lock().unwrap();
-        *runtime_desired_status = RuntimeDesiredStatus::Suspended;
-    }
-
-    fn success() -> Result<impl Responder, PipelineError> {
-        Ok(HttpResponse::Accepted().json("Pipeline suspended"))
-    }
-
-    let receiver = match &*state.controller.read().unwrap() {
-        Some(controller) => {
-            let (sender, receiver) = oneshot::channel();
-            let phase = state.phase.clone();
-            controller.start_suspend(Box::new(move |suspend| {
-                if suspend.is_ok() {
-                    *phase.write().unwrap() = PipelinePhase::Suspended;
-                }
-                if sender.send(suspend).is_err() {
-                    error!("`/suspend` result could not be sent");
-                }
-            }));
-            receiver
+    let mut desired_status = state.desired_status.lock().unwrap();
+    match *desired_status {
+        RuntimeDesiredStatus::Unavailable => unreachable!(),
+        RuntimeDesiredStatus::Standby => {
+            return Err(PipelineError::InvalidTransition("suspend", *desired_status))
         }
-        None => {
-            match missing_controller_error(&state) {
-                PipelineError::Suspended => {
-                    // Ensure idempotence.
-                    return success();
+        RuntimeDesiredStatus::Running | RuntimeDesiredStatus::Paused => {
+            *desired_status = RuntimeDesiredStatus::Suspended;
+            state.desired_status_change.notify_waiters();
+            drop(desired_status);
+
+            async fn suspend(state: WebData<ServerState>) {
+                loop {
+                    if let Ok(controller) = state.controller() {
+                        if let Err(error) = controller.async_suspend().await {
+                            error!("controller suspend failed ({error})");
+                        }
+                        break;
+                    }
+
+                    match state.phase() {
+                        PipelinePhase::Initializing | PipelinePhase::InitializationComplete => (),
+                        PipelinePhase::InitializationError(_) | PipelinePhase::Failed(_) => break,
+                    };
+                    tokio::time::sleep(Duration::from_millis(50)).await;
                 }
-                other => {
-                    return Err(other);
+                if let Ok(controller) = state.controller() {
+                    if let Err(error) = controller.async_stop().await {
+                        error!("stopping controller failed ({error})");
+                    }
                 }
+                state.terminate().await;
             }
+
+            tokio::spawn(async move { suspend(state).await });
         }
+        RuntimeDesiredStatus::Suspended => (),
     };
-
-    let result = receiver.await.unwrap();
-
-    // If the pipeline is already suspended, ignore the error. The controller
-    // can return a ControllerExit error when flushing any remaining suspend requests after
-    // the first successful suspend operation.
-    if !matches!(*state.phase.read().unwrap(), PipelinePhase::Suspended) {
-        result?;
-    }
-
-    let Some(controller) = state.controller.write().unwrap().take() else {
-        match missing_controller_error(&state) {
-            PipelineError::Suspended => {
-                // Ensure idempotence.
-                return success();
-            }
-            other => return Err(other),
-        }
-    };
-
-    controller.stop()?;
-    success()
-}
-
-#[get("/shutdown")]
-async fn shutdown(state: WebData<ServerState>) -> impl Responder {
-    do_shutdown(state).await
+    Ok(HttpResponse::Accepted().json("Pipeline is suspending"))
 }
 
 #[post("/start_transaction")]
 async fn start_transaction(state: WebData<ServerState>) -> Result<impl Responder, PipelineError> {
-    match &*state.controller.read().unwrap() {
-        Some(controller) => {
-            let response = controller.start_transaction()?;
-            Ok(HttpResponse::Ok().json(response))
-        }
-        None => Err(missing_controller_error(&state)),
-    }
+    Ok(HttpResponse::Ok().json(state.controller()?.start_transaction()?))
 }
 
 #[post("/commit_transaction")]
-async fn commit_transaction(state: WebData<ServerState>) -> impl Responder {
-    match &*state.controller.read().unwrap() {
-        Some(controller) => {
-            controller.start_commit_transaction()?;
-            Ok(HttpResponse::Ok().json("Transaction commit initiated"))
-        }
-        None => Err(missing_controller_error(&state)),
-    }
+async fn commit_transaction(state: WebData<ServerState>) -> Result<impl Responder, PipelineError> {
+    state.controller()?.start_commit_transaction()?;
+    Ok(HttpResponse::Ok().json("Transaction commit initiated"))
 }
 
-async fn do_shutdown(state: WebData<ServerState>) -> Result<impl Responder, PipelineError> {
-    let retval = if let Some(controller) = state.controller.write().unwrap().take() {
-        controller.stop()?;
-        Ok(HttpResponse::Ok().json("Pipeline terminated"))
-    } else if let PipelinePhase::Initializing = &*state.phase.read().unwrap() {
-        return Err(PipelineError::Initializing);
-    } else {
-        Ok(HttpResponse::Ok().json("Pipeline already terminated"))
-    };
-
-    if let Some(sender) = &state.terminate_sender {
-        let _ = sender.send(()).await;
+#[get("/stop")]
+async fn stop(state: WebData<ServerState>) -> Result<impl Responder, PipelineError> {
+    match state.take_controller() {
+        Ok(controller) => {
+            controller.async_stop().await?;
+            state.terminate().await;
+            Ok(HttpResponse::Ok().json("Pipeline terminated"))
+        }
+        //Err(ControllerError::Initializing) => todo!(),
+        Err(_) => Ok(HttpResponse::Ok().json("Pipeline already terminated")),
     }
-    if let Err(e) = tokio::fs::remove_file(SERVER_PORT_FILE).await {
-        warn!("Failed to remove server port file: {e}");
-    }
-
-    retval
 }
 
 #[derive(Debug, Deserialize)]
@@ -1502,7 +1463,7 @@ async fn create_http_input_endpoint(
     };
 
     // Connect endpoint.
-    let controller = ControllerAccess::new(state)?;
+    let controller = state.controller()?;
     if controller.register_api_connection().is_err() {
         return Err(PipelineError::ApiConnectionLimit);
     }
@@ -1572,7 +1533,8 @@ async fn input_endpoint(
         .instrument(info_span!("http_input"))
         .await?;
 
-    let token = ControllerAccess::new(&state)?
+    let token = state
+        .controller()?
         .completion_token(endpoint.name())?
         .encode();
     Ok(HttpResponse::Ok().json(CompletionTokenResponse::new(token)))
@@ -1681,7 +1643,7 @@ async fn output_endpoint(
     };
 
     // Connect endpoint.
-    let controller = ControllerAccess::new(&state)?;
+    let controller = state.controller()?;
     if controller.register_api_connection().is_err() {
         return Err(PipelineError::ApiConnectionLimit);
     }
@@ -1696,7 +1658,6 @@ async fn output_endpoint(
         .inspect_err(|_| {
             controller.unregister_api_connection();
         })?;
-    drop(controller);
 
     // We need to pass a callback to `request` to disconnect the endpoint when the
     // request completes.  Use a downgraded reference to `state`, so
@@ -1712,14 +1673,9 @@ async fn output_endpoint(
         // when the HTTP request terminates is to piggyback on the
         // destructor.
         if let Some(state) = weak_state.upgrade() {
-            // This code will be invoked from `drop`, which means that
-            // it can run as part of a panic handler, so we need to
-            // handle a poisoned lock without causing a nested panic.
-            if let Ok(guard) = state.controller.read() {
-                if let Some(controller) = guard.as_ref() {
-                    controller.disconnect_output(&endpoint_id);
-                    controller.unregister_api_connection();
-                }
+            if let Ok(controller) = state.controller() {
+                controller.disconnect_output(&endpoint_id);
+                controller.unregister_api_connection();
             }
         }
     })))
@@ -1732,7 +1688,7 @@ async fn pause_input_endpoint(
     state: WebData<ServerState>,
     path: web::Path<String>,
 ) -> Result<HttpResponse, PipelineError> {
-    ControllerAccess::new(&state)?.pause_input_endpoint(&path)?;
+    state.controller()?.pause_input_endpoint(&path)?;
     Ok(HttpResponse::Ok().into())
 }
 
@@ -1741,7 +1697,7 @@ async fn input_endpoint_status(
     state: WebData<ServerState>,
     path: web::Path<String>,
 ) -> Result<HttpResponse, PipelineError> {
-    let ep_stats = ControllerAccess::new(&state)?.input_endpoint_status(&path)?;
+    let ep_stats = state.controller()?.input_endpoint_status(&path)?;
     Ok(HttpResponse::Ok().json(ep_stats))
 }
 
@@ -1750,8 +1706,7 @@ async fn output_endpoint_status(
     state: WebData<ServerState>,
     path: web::Path<String>,
 ) -> Result<HttpResponse, PipelineError> {
-    let ep_stats = ControllerAccess::new(&state)?.output_endpoint_status(&path)?;
-    Ok(HttpResponse::Ok().json(ep_stats))
+    Ok(HttpResponse::Ok().json(state.controller()?.output_endpoint_status(&path)?))
 }
 
 /// This service journals the paused state, but it does not wait for the journal
@@ -1761,7 +1716,7 @@ async fn start_input_endpoint(
     state: WebData<ServerState>,
     path: web::Path<String>,
 ) -> Result<HttpResponse, PipelineError> {
-    ControllerAccess::new(&state)?.start_input_endpoint(&path)?;
+    state.controller()?.start_input_endpoint(&path)?;
     Ok(HttpResponse::Ok().into())
 }
 
@@ -1771,10 +1726,9 @@ async fn completion_token(
     state: WebData<ServerState>,
     path: web::Path<String>,
 ) -> Result<HttpResponse, PipelineError> {
-    let token = ControllerAccess::new(&state)?
-        .completion_token(&path)?
-        .encode();
-    Ok(HttpResponse::Ok().json(CompletionTokenResponse::new(token)))
+    Ok(HttpResponse::Ok().json(CompletionTokenResponse::new(
+        state.controller()?.completion_token(&path)?.encode(),
+    )))
 }
 
 /// Check the status of a completion token.
@@ -1786,10 +1740,36 @@ async fn completion_status(
     let token = CompletionToken::decode(&args.token).map_err(|e| PipelineError::InvalidParam {
         error: format!("invalid completion token: {e}"),
     })?;
-    if ControllerAccess::new(&state)?.completion_status(&token)? {
+    if state.controller()?.completion_status(&token)? {
         Ok(HttpResponse::Ok().json(CompletionStatusResponse::complete()))
     } else {
         Ok(HttpResponse::Accepted().json(CompletionStatusResponse::inprogress()))
+    }
+}
+
+#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
+struct StoredStatus {
+    desired_status: RuntimeDesiredStatus,
+}
+
+const STATUS_JSON: &str = "status.json";
+
+impl StoredStatus {
+    fn read(storage: &dyn StorageBackend) -> Option<Self> {
+        match storage.read_json::<StoredStatus>(&StoragePath::from(STATUS_JSON)) {
+            Ok(s) => Some(s),
+            Err(e) if e.kind() == ErrorKind::NotFound => None,
+            Err(e) => {
+                warn!("{STATUS_JSON}: failed to read from storage ({e})");
+                None
+            }
+        }
+    }
+
+    fn write(&self, storage: &dyn StorageBackend) {
+        if let Err(e) = storage.write_json(&StoragePath::from(STATUS_JSON), self) {
+            warn!("{STATUS_JSON}: failed to write to storage ({e})");
+        }
     }
 }
 
@@ -1798,7 +1778,7 @@ async fn completion_status(
 mod test_with_kafka {
     use super::{bootstrap, build_app, parse_config, ServerArgs, ServerState};
     use crate::{
-        controller::MAX_API_CONNECTIONS,
+        controller::{ControllerBuilder, MAX_API_CONNECTIONS},
         ensure_default_crypto_provider,
         test::{
             async_wait, generate_test_batches,
@@ -1898,7 +1878,9 @@ outputs:
 
         println!("Creating HTTP server");
 
-        let state = WebData::new(ServerState::new(None, RuntimeDesiredStatus::Paused));
+        let state = WebData::new(
+            ServerState::new(String::from(""), None, RuntimeDesiredStatus::Paused).unwrap(),
+        );
         let state_clone = state.clone();
 
         let args = ServerArgs {
@@ -1915,10 +1897,10 @@ outputs:
         };
 
         let config = parse_config(&args.config_file).unwrap();
+        let builder = ControllerBuilder::new(&config).unwrap();
         thread::spawn(move || {
             bootstrap(
-                args,
-                config,
+                builder,
                 Box::new(|workers| {
                     Ok(test_circuit::<TestStruct>(
                         workers,
@@ -1927,7 +1909,6 @@ outputs:
                     ))
                 }),
                 state_clone,
-                std::sync::mpsc::channel().0,
             )
         });
 
@@ -2153,13 +2134,13 @@ outputs:
         assert!(resp.status().is_success());
         sleep(Duration::from_millis(1000));
 
-        // Shutdown
-        println!("/shutdown");
-        let resp = server.get("/shutdown").send().await.unwrap();
+        // Stop
+        println!("/stop");
+        let resp = server.get("/stop").send().await.unwrap();
         // println!("Response: {resp:?}");
         assert!(resp.status().is_success());
 
-        // Start after shutdown must fail.
+        // Resume after stop must fail.
         println!("/start");
         let resp = server.get("/start").send().await.unwrap();
         assert_eq!(resp.status(), StatusCode::GONE);
@@ -2192,7 +2173,9 @@ outputs:
 
         println!("Creating HTTP server");
 
-        let state = WebData::new(ServerState::new(None, RuntimeDesiredStatus::Paused));
+        let state = WebData::new(
+            ServerState::new(String::default(), None, RuntimeDesiredStatus::Paused).unwrap(),
+        );
         let state_clone = state.clone();
 
         let args = ServerArgs {
@@ -2209,10 +2192,10 @@ outputs:
         };
 
         let config = parse_config(&args.config_file).unwrap();
+        let builder = ControllerBuilder::new(&config).unwrap();
         thread::spawn(move || {
             bootstrap(
-                args,
-                config,
+                builder,
                 Box::new(|workers| {
                     Ok(test_circuit::<TestStruct>(
                         workers,
@@ -2221,7 +2204,6 @@ outputs:
                     ))
                 }),
                 state_clone,
-                std::sync::mpsc::channel().0,
             )
         });
 
@@ -2263,8 +2245,8 @@ outputs:
         TestHttpReceiver::wait_for_output_unordered(&mut egress_resp, &data).await;
 
         // Shutdown
-        println!("/shutdown");
-        let resp = server.get("/shutdown").send().await.unwrap();
+        println!("/stop");
+        let resp = server.get("/stop").send().await.unwrap();
         // println!("Response: {resp:?}");
         assert!(resp.status().is_success());
     }
