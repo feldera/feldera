@@ -8,6 +8,7 @@ from .helper import (
     gen_pipeline_name,
     get_pipeline,
     start_pipeline,
+    start_pipeline_as_paused,
     pause_pipeline,
     stop_pipeline,
     clear_pipeline,
@@ -222,7 +223,7 @@ def test_pipeline_stop_with_force(pipeline_name):
     stop_pipeline(pipeline_name, force=True)
 
     # Start paused then stop (simulate by pausing immediately)
-    pause_pipeline(pipeline_name)
+    start_pipeline_as_paused(pipeline_name)
     wait_for_deployment_status(pipeline_name, "Paused", 30)
     stop_pipeline(pipeline_name, force=True)
 
