@@ -58,6 +58,11 @@ jobs:
         working-directory: ./sql-to-dbsp-compiler
         if: ${{ vars.CI_DRY_RUN != 'true' }}
 
+      - name: Run one quick SLT test
+        if: ${{ vars.CI_DRY_RUN != 'true' }}
+        run: mvn test --no-transfer-progress -q -B -Dsurefire.failIfNoSpecifiedTests=false -Dtest=RotateTests#quick
+        working-directory: ./sql-to-dbsp-compiler
+
       - name: Print sccache stats
         run: |
           sccache --show-stats
