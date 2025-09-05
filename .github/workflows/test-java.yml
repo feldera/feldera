@@ -37,9 +37,9 @@ jobs:
           path: |
             /home/ubuntu/.gradle
             ./sql-to-dbsp-compiler/calcite
-          key: sql2dbsp-java-cache2-${{ runner.os }}-${{ hashFiles('sql-to-dbsp-compiler/calcite_version.env') }}
+          key: sql2dbsp-java-cache3-${{ runner.os }}-${{ hashFiles('sql-to-dbsp-compiler/calcite_version.env') }}
           restore-keys: |
-            sql2dbsp-java-cache2-${{ runner.os }}-
+            sql2dbsp-java-cache3-${{ runner.os }}-
 
       # TODO: Avoid doing this twice and ideally download & reuse the JAR from build-java.yml workflow
       - name: Run build.sh
