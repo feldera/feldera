@@ -21,13 +21,16 @@
       {#snippet icon()}{/snippet}
       Book a demo
     </BookADemo>
-    <a
-      target="_blank"
-      rel="noreferrer"
-      href={page.data.feldera.changelog}
-      class="btn justify-start px-4 hover:bg-surface-50-950"
-      >{page.data.feldera.edition} v{page.data.feldera.version} Changelog</a
-    >
+
+    {#if page.data.feldera}
+      <a
+        target="_blank"
+        rel="noreferrer"
+        href={page.data.feldera.changelog}
+        class="btn justify-start px-4 hover:bg-surface-50-950"
+        >{page.data.feldera.edition} v{page.data.feldera.version} Changelog</a
+      >
+    {/if}
     <div class="btn justify-start px-4">© Feldera {new Date().getUTCFullYear()}</div>
   </div>
 </div>

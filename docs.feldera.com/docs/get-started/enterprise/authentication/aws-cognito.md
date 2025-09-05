@@ -1,13 +1,9 @@
-# Authentication
-
-This document describes how to configure authentication providers to work with **Feldera**.
-
-## AWS Cognito
+# AWS Cognito
 
 To configure AWS Cognito as an authentication provider, follow these steps:
 
 
-### Create a Cognito User Pool
+## Create a Cognito User Pool
 
 In the AWS Console:
 
@@ -15,7 +11,7 @@ In the AWS Console:
 - Choose any settings appropriate to your organization (e.g., required user attributes, password policies).
 
 
-### Create an App Client
+## Create an App Client
 
 Once the User Pool is created:
 
@@ -29,7 +25,7 @@ Once the User Pool is created:
 
 :::
 
-### Configure OAuth 2.0 Settings
+## Configure OAuth 2.0 Settings
 
 In the App Client's **Login Settings**:
 
@@ -42,13 +38,13 @@ In the App Client's **Login Settings**:
   - `profile`
   - `openid`
 
-### Set Up Domain and Branding
+## Set Up Domain and Branding
 
 Go to the **App integration → Domain name** section and set up a custom domain or use the AWS-hosted one (e.g., `your-app.auth.us-west-1.amazoncognito.com`).
 
 This domain will be used in your login and logout URLs.
 
-### Configure Helm Chart (`values.yaml`)
+## Configure Helm Chart (`values.yaml`)
 
 In your Feldera Helm chart configuration (`values.yaml`), fill out the `auth` section with the information from the Cognito console:
 

@@ -294,7 +294,7 @@ impl SupportBundleData {
             Self::collect_logs(state, client, tenant_id, pipeline_name),
             Self::collect_stats(state, client, tenant_id, pipeline_name),
             Self::collect_pipeline_config(state, tenant_id, pipeline_name),
-            Self::collect_system_config(state),
+            Self::collect_system_config(state, tenant_id),
         );
 
         Ok(SupportBundleData {
@@ -408,8 +408,11 @@ impl SupportBundleData {
             .and_then(gz_compress)
     }
 
-    async fn collect_system_config(state: &ServerState) -> BundleResult<Vec<u8>> {
-        Self::get_system_configuration(state)
+    async fn collect_system_config(
+        state: &ServerState,
+        tenant_id: TenantId,
+    ) -> BundleResult<Vec<u8>> {
+        Self::get_system_configuration(state, tenant_id)
             .await
             .map_err(|e| e.to_string())
     }
@@ -561,8 +564,11 @@ impl SupportBundleData {
     }
 
     /// Get system configuration
-    async fn get_system_configuration(state: &ServerState) -> Result<Vec<u8>, ManagerError> {
-        let config = Configuration::gather(state).await;
+    async fn get_system_configuration(
+        state: &ServerState,
+        tenant_id: TenantId,
+    ) -> Result<Vec<u8>, ManagerError> {
+        let config = Configuration::gather(state, tenant_id).await;
         serde_json::to_vec_pretty(&config).map_err(|e| {
             ManagerError::from(ApiError::UnableToCreateSupportBundle {
                 reason: format!("Failed to serialize system config: {}", e),

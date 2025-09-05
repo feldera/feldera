@@ -65,6 +65,9 @@ export type AuthProvider =
   | {
       GoogleIdentity: ProviderGoogleIdentity
     }
+  | {
+      Okta: ProviderOkta
+    }
 
 /**
  * Information about the build of the platform.
@@ -297,6 +300,11 @@ export type Configuration = {
    * Telemetry key.
    */
   telemetry: string
+  tenant_id: TenantId
+  /**
+   * Current user's tenant name
+   */
+  tenant_name: string
   /**
    * List of unstable features that are enabled.
    */
@@ -2237,6 +2245,12 @@ export type ProviderGoogleIdentity = {
   jwk_uri: string
 }
 
+export type ProviderOkta = {
+  client_id: string
+  extra_oidc_scopes: Array<string>
+  jwk_uri: string
+}
+
 /**
  * Google Pub/Sub input connector configuration.
  */
@@ -3078,6 +3092,8 @@ export type SyncConfig = {
    */
   upload_concurrency?: number | null
 }
+
+export type TenantId = string
 
 /**
  * Time series to make graphs in the web console easier.
