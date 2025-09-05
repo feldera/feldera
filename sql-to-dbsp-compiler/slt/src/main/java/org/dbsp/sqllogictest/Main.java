@@ -84,6 +84,19 @@ public class Main {
         main(argv);
     }
 
+    /** Executes one SLT program, to make sure everything is fine */
+    public static void quick() throws IOException, ClassNotFoundException {
+        String[] args = new String[] { "-v", "-x", "-inc", "-e", "hybrid", "-skip", "1",
+                "test/random/expr/slt_good_102.test" };
+
+        String wd = System.getProperty("user.dir");
+        File directory = new File(wd + "/..").getAbsoluteFile();
+        System.setProperty("user.dir", directory.getAbsolutePath());
+        wd = System.getProperty("user.dir");
+        System.out.println("working directory is " + wd);
+        main(args);
+    }
+
     @SuppressWarnings("SpellCheckingInspection")
     public static void main(String[] argv) throws IOException, ClassNotFoundException {
         Class.forName("org.hsqldb.jdbcDriver");
