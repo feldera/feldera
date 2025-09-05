@@ -49,10 +49,11 @@ pub enum RuntimeStatus {
     Suspended,
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
+#[derive(Debug, Default, Clone, Copy, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
 pub enum RuntimeDesiredStatus {
     Unavailable,
     Standby,
+    #[default]
     Paused,
     Running,
     Suspended,

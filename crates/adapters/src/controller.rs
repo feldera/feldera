@@ -106,6 +106,7 @@ use std::{
 };
 use tokio::sync::oneshot;
 use tokio::sync::Mutex as TokioMutex;
+use tokio::task::spawn_blocking;
 use tracing::{debug, debug_span, error, info, trace, warn};
 use validate::validate_config;
 
@@ -198,10 +199,15 @@ impl ControllerBuilder {
     {
         #[cfg(feature = "feldera-enterprise")]
         if let Some(storage) = &self.storage {
-            sync::continuous_pull(storage, _is_activated)?;
+            return sync::continuous_pull(storage, _is_activated);
+        } else {
+            return Err(ControllerError::InvalidStandby(
+                "standby mode requires storage configuration",
+            ));
         }
 
-        Ok(())
+        #[cfg(not(feature = "feldera-enterprise"))]
+        Err(ControllerError::EnterpriseFeature("standby"))
     }
 
     /// Create a new I/O controller for a circuit.
@@ -243,6 +249,10 @@ impl ControllerBuilder {
     {
         Controller::build(self.config, self.storage, circuit_factory, error_cb)
     }
+
+    pub(crate) fn storage(&self) -> Option<Arc<dyn StorageBackend>> {
+        self.storage.as_ref().map(|storage| storage.backend.clone())
+    }
 }
 
 /// Controller that coordinates the creation, reconfiguration, teardown of
@@ -256,11 +266,10 @@ impl ControllerBuilder {
 ///
 /// A pipeline process has a [PipelineState], which is the state requested by
 /// the client, one of [Running], [Paused], or [Terminated]. This state is
-/// initially [Paused].  Calls to [start], [pause], [initiate_stop], and [stop]
-/// change the client-requested state.  Once the state is set to [Terminated],
-/// it can never be changed back to [Running] or [Paused].  Since the pipeline
-/// process always starts up paused, it is the pipeline manager's job to ensure
-/// continuity when the process restarts.
+/// initially as set by the [ControllerBuilder], which defaults to [Paused].
+/// Calls to [start], [pause], [initiate_stop], and [stop] change the
+/// client-requested state.  Once the state is set to [Terminated], it can never
+/// be changed back to [Running] or [Paused].
 ///
 /// The following diagram illustrates internal pipeline process states and their
 /// possible transitions:
@@ -659,6 +668,11 @@ impl Controller {
         &self.inner.status
     }
 
+    /// Returns the pipeline state.
+    pub fn state(&self) -> PipelineState {
+        self.inner.state()
+    }
+
     pub fn catalog(&self) -> &Arc<Box<dyn CircuitCatalog>> {
         &self.inner.catalog
     }
@@ -698,6 +712,26 @@ impl Controller {
         self.inner.send_command(Command::Checkpoint(cb));
     }
 
+    pub async fn async_checkpoint(&self) -> Result<Checkpoint, Arc<ControllerError>> {
+        let (sender, receiver) = oneshot::channel();
+        self.start_checkpoint(Box::new(move |profile| {
+            if sender.send(profile).is_err() {
+                error!("checkpoint result could not be sent");
+            }
+        }));
+        receiver.await.unwrap()
+    }
+
+    pub async fn async_graph_profile(&self) -> Result<GraphProfile, ControllerError> {
+        let (sender, receiver) = oneshot::channel();
+        self.start_graph_profile(Box::new(move |profile| {
+            if sender.send(profile).is_err() {
+                error!("`/dump_profile` result could not be sent");
+            }
+        }));
+        receiver.await.unwrap()
+    }
+
     /// Triggers a sync checkpoint operation. `cb` will be called when it
     /// completes.
     ///
@@ -706,6 +740,22 @@ impl Controller {
     pub fn start_sync_checkpoint(&self, checkpoint: uuid::Uuid, cb: SyncCheckpointCallbackFn) {
         self.inner
             .send_command(Command::SyncCheckpoint((checkpoint, cb)));
+    }
+
+    pub async fn async_sync_checkpoint(
+        &self,
+        checkpoint: uuid::Uuid,
+    ) -> Result<(), Arc<ControllerError>> {
+        let (sender, receiver) = oneshot::channel();
+        self.start_sync_checkpoint(
+            checkpoint,
+            Box::new(move |result| {
+                if sender.send(result).is_err() {
+                    error!("sync_checkpoint result could not be sent");
+                }
+            }),
+        );
+        receiver.await.unwrap()
     }
 
     /// Checkpoints the pipeline.
@@ -732,6 +782,16 @@ impl Controller {
         let (sender, receiver) = oneshot::channel();
         self.start_suspend(Box::new(move |result| sender.send(result).unwrap()));
         receiver.blocking_recv().unwrap()
+    }
+
+    pub async fn async_suspend(&self) -> Result<(), Arc<ControllerError>> {
+        let (sender, receiver) = oneshot::channel();
+        self.start_suspend(Box::new(move |suspend| {
+            if sender.send(suspend).is_err() {
+                error!("suspend result could not be sent");
+            }
+        }));
+        receiver.await.unwrap()
     }
 
     /// Returns whether this pipeline supports suspend-and-resume.  The result
@@ -771,6 +831,10 @@ impl Controller {
         self.inner.fail_if_bootstrapping_or_restoring()?;
 
         self.inner.start_commit_transaction()
+    }
+
+    pub async fn async_stop(self) -> Result<(), ControllerError> {
+        spawn_blocking(|| self.stop()).await.unwrap()
     }
 
     /// Check whether the pipeline has processed all input data to completion.
