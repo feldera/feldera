@@ -565,7 +565,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         :raises RuntimeError: If there is currently no transaction in progress.
         :raises ValueError: If the provided `transaction_id` does not match the current transaction.
         :raises TimeoutError: If the transaction does not commit within the specified timeout (when `wait` is True).
-        :raises FelderaAPIError: If the pipeline fails to start a transaction.
+        :raises FelderaAPIError: If the pipeline fails to commit a transaction.
         """
 
         # TODO: implement this without using /stats when we have a better pipeline status reporting API.

@@ -11,7 +11,12 @@ from collections import deque
 from queue import Queue
 
 from feldera.rest.errors import FelderaAPIError
-from feldera.enums import PipelineStatus, ProgramStatus, CheckpointStatus
+from feldera.enums import (
+    PipelineStatus,
+    ProgramStatus,
+    CheckpointStatus,
+    TransactionStatus,
+)
 from feldera.enums import StorageStatus
 from feldera.rest.pipeline import Pipeline as InnerPipeline
 from feldera.rest.feldera_client import FelderaClient
@@ -563,8 +568,10 @@ metrics"""
         """
         Start a new transaction.
 
-        Returns:
-            Transaction ID.
+        :return: Transaction ID.
+
+        :raises FelderaAPIError: If the pipeline fails to start a transaction, e.g., if the pipeline is not running or
+            there is already an active transaction.
         """
 
         return self.client.start_transaction(self.name)
@@ -576,7 +583,7 @@ metrics"""
         timeout_s: Optional[float] = None,
     ):
         """
-        Commits the currently active transaction.
+        Commit the currently active transaction.
 
         :param transaction_id: If provided, the function verifies that the currently active transaction matches this ID.
             If the active transaction ID does not match, the function raises an error.
@@ -590,10 +597,35 @@ metrics"""
         :raises RuntimeError: If there is currently no transaction in progress.
         :raises ValueError: If the provided `transaction_id` does not match the current transaction.
         :raises TimeoutError: If the transaction does not commit within the specified timeout (when `wait` is True).
-        :raises FelderaAPIError: If the pipeline fails to start a transaction.
+        :raises FelderaAPIError: If the pipeline fails to commit a transaction.
         """
 
         self.client.commit_transaction(self.name, transaction_id, wait, timeout_s)
+
+    def transaction_status(self) -> TransactionStatus:
+        """
+        Get pipeline's transaction handling status.
+
+        :return: Current transaction handling status of the pipeline.
+
+        :raises FelderaAPIError: If pipeline's status couldn't be read, e.g., because the pipeline is not currently running.
+        """
+
+        return self.stats().global_metrics.transaction_status
+
+    def transaction_id(self) -> Optional[int]:
+        """
+        Gets the ID of the currently active transaction or None if there is no active transaction.
+
+        :return: The ID of the transaction.
+        """
+
+        transaction_id = self.stats().global_metrics.transaction_id
+
+        if transaction_id == 0:
+            return None
+        else:
+            return transaction_id
 
     def delete(self, clear_storage: bool = False):
         """
