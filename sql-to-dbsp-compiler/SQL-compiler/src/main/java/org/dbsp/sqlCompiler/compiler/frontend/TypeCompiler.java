@@ -74,6 +74,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 
 public class TypeCompiler implements ICompilerComponent {
     final DBSPCompiler compiler;
@@ -261,6 +262,9 @@ public class TypeCompiler implements ICompilerComponent {
         return new DBSPTypeStruct(node, name, saneName, fields, mayBeNull);
     }
 
+    static final Set<Integer> timePrecisionsWarned = new HashSet<>();
+    static final Set<Integer> timestampPrecisionsWarned = new HashSet<>();
+
     /**
      * Convert a Calcite RelDataType to an equivalent DBSP type.
      * @param dt         Data type to convert.
@@ -431,10 +435,24 @@ public class TypeCompiler implements ICompilerComponent {
                 case GEOMETRY:
                     return DBSPTypeGeoPoint.create(node, nullable);
                 case TIMESTAMP:
+                    if (dt.getPrecision() != DBSPTypeTimestamp.PRECISION &&
+                            !timestampPrecisionsWarned.contains(dt.getPrecision())) {
+                        this.compiler.reportWarning(SourcePositionRange.INVALID, "TIMESTAMP precision ignored",
+                                "TIMESTAMP precision is always TIMESTAMP(" + DBSPTypeTimestamp.PRECISION +
+                                        "); specified precision " + dt.getPrecision() + " is ignored");
+                        timestampPrecisionsWarned.add(dt.getPrecision());
+                    }
                     return DBSPTypeTimestamp.create(node, nullable);
                 case DATE:
                     return new DBSPTypeDate(node, nullable);
                 case TIME:
+                    if (dt.getPrecision() != DBSPTypeTime.PRECISION &&
+                            !timePrecisionsWarned.contains(dt.getPrecision())) {
+                        this.compiler.reportWarning(SourcePositionRange.INVALID, "TIME precision ignored",
+                                "TIME precision is always TIME(" + DBSPTypeTime.PRECISION +
+                                        "); specified precision " + dt.getPrecision() + " is ignored");
+                        timePrecisionsWarned.add(dt.getPrecision());
+                    }
                     return new DBSPTypeTime(node, nullable);
                 case UUID:
                     return new DBSPTypeUuid(node, nullable);

@@ -1159,18 +1159,6 @@ public class PostgresDateTests extends SqlIoTest {
                        0""");
     }
 
-    // These fail in Postgres but work in Calcite
-    // SELECT EXTRACT(MICROSECONDS  FROM DATE '2020-08-11');
-    //ERROR:  unit "microseconds" not supported for type date
-    //SELECT EXTRACT(MILLISECONDS  FROM DATE '2020-08-11');
-    //ERROR:  unit "milliseconds" not supported for type date
-    //SELECT EXTRACT(SECOND        FROM DATE '2020-08-11');
-    //ERROR:  unit "second" not supported for type date
-    //SELECT EXTRACT(MINUTE        FROM DATE '2020-08-11');
-    //ERROR:  unit "minute" not supported for type date
-    //SELECT EXTRACT(HOUR          FROM DATE '2020-08-11');
-    //ERROR:  unit "hour" not supported for type date
-
     @Test
     public void testMilliseconds() {
         this.q("""

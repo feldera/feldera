@@ -159,6 +159,8 @@ import org.dbsp.sqlCompiler.compiler.frontend.statements.DropTableStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.RelStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.statements.TableModifyStatement;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTime;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
 import org.dbsp.util.FreshName;
 import org.dbsp.util.ICastable;
 import org.dbsp.util.IWritesLogs;
@@ -346,16 +348,18 @@ public class SqlToRelCompiler implements IWritesLogs {
         @Override
         public int getMaxPrecision(SqlTypeName typeName) {
             if (typeName == SqlTypeName.TIME)
-                return 9;
+                return DBSPTypeTime.PRECISION;
+            if (typeName == SqlTypeName.TIMESTAMP)
+                return DBSPTypeTimestamp.PRECISION;
             return super.getMaxPrecision(typeName);
         }
 
         @Override
         public int getDefaultPrecision(SqlTypeName typeName) {
             if (typeName == SqlTypeName.TIMESTAMP)
-                return 3;
+                return DBSPTypeTimestamp.PRECISION;
             if (typeName == SqlTypeName.TIME)
-                return 3;
+                return DBSPTypeTime.PRECISION;
             return super.getDefaultPrecision(typeName);
         }
 

@@ -10,4 +10,9 @@ public class RotateTests {
     public void rotate() throws IOException, ClassNotFoundException {
         Main.rotateTests();
     }
+
+    @Test
+    public void quick() throws IOException, ClassNotFoundException {
+        Main.quick();
+    }
 }

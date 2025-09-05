@@ -16,8 +16,10 @@ import TabItem from '@theme/TabItem';
         ## Unreleased
 
         TIMESTAMP is now the same as TIMESTAMP(3); TIME is now the same as
-        TIME(3) (the default precision has been changed from 0 to 3; the
-        documentation always claimed that the precision is 3).
+        TIME(9) (the default precision has been changed from 0 to 3; the
+        documentation always claimed that the precision is 3).  Precisions
+        that differ from the default ones are ignored (and the compiler
+        gives a warning).
 
         The following change doesn't affect the external Feldera API, only the
         pipeline's API available from a sidecare container. The `/status`

@@ -472,7 +472,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
         }
         DBSPLetStatement step =
                 new DBSPLetStatement("_",
-                        new DBSPApplyMethodExpression("step", DBSPTypeAny.getDefault(),
+                        new DBSPApplyMethodExpression("transaction", DBSPTypeAny.getDefault(),
                         cas.getVarReference().field(0)).resultUnwrap());
         list.add(step);
         DBSPLetStatement outputStatement =
@@ -550,6 +550,7 @@ public class DBSPExecutor extends SqlSltTestExecutor {
         return new ProgramAndTester(circuit, function);
     }
 
+    @SuppressWarnings("UnusedReturnValue")
     public boolean statement(SltSqlStatement statement) throws SQLException {
         this.options.message("Executing " + statement + "\n", 2);
         String command = statement.statement.toLowerCase();
