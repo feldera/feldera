@@ -954,6 +954,16 @@ public abstract class ReduceExpressionsRule<C extends org.apache.calcite.rel.rul
                     && (call.getOperator() instanceof SqlRowOperator)) {
                 callConstancy = ReducibleExprLocator.Constancy.NON_CONSTANT;
             }
+            // https://github.com/feldera/feldera/issues/4700:
+            // Disable all expression evaluations for TIME and TIMESTAMP values, since they are broken in Calcite.
+            for (int iOperand = 0; iOperand < operandCount; ++iOperand) {
+                RexNode operand = call.getOperands().get(iOperand);
+                SqlTypeName operandType = operand.getType().getSqlTypeName();
+                if (operandType == SqlTypeName.TIMESTAMP || operandType == SqlTypeName.TIME) {
+                    callConstancy = Constancy.NON_CONSTANT;
+                }
+            }
+
             if (callConstancy == ReducibleExprLocator.Constancy.NON_CONSTANT) {
                 // any REDUCIBLE_CONSTANT children are now known to be maximal
                 // reducible subtrees, so they can be added to the result

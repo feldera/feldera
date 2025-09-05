@@ -22,6 +22,7 @@ The following are legal time units:
 | <a id="second"></a>`SECOND`          | A second within a minute, a number between 0 and 59                                                                                                                                                                                                                                                        |
 | <a id="millisecond"></a>`MILLISECOND`     | A millisecond within a *minute*, including the number of seconds multiplied by 1000, a number between 0 and 59,999                                                                                                                                                                                         |
 | <a id="microsecond"></a>`MICROSECOND`     | A microsecond within a *minute*, including the number of seconds multiplied by 1,000,000, a number between 0 and 59,999,999                                                                                                                                                                                |
+| <a id="nanosecond"></a>`NANOSECOND`       | A nanosecond within a *minute*, including the number of seconds multiplied by 1,000,000,000, a number between 0 and 59,999,999,9999                                                                                                                                                                        |
 | <a id="epoch"></a>`EPOCH`           | Number of seconds from Unix epoch, i.e., 1970/01/01.                                                                                                                                                                                                                                                       |
 | <a id="sql_tsi_year"></a>`SQL_TSI_YEAR`    | Same as `YEAR`                                                                                                                                                                                                                                                                                             |
 | <a id="sql_tsi_quarter"></a>`SQL_TSI_QUARTER` | Same as `QUARTER`                                                                                                                                                                                                                                                                                          |
@@ -109,22 +110,13 @@ The result is a 32-bit integer.
 ## Times
 
 A time represents the time of day, a value between 0 and 24 hours
-(excluding the latter).
-
-The `TIME` data type can specify an optional precision, e.g.,
-`TIME(2)`.  The precision is the number of sub-second digits
-supported.  So `TIME(3)` is a time with a precision of milliseconds.
-
-The default precision is 3.
-
-Currently the maximum supported precision is 3 (milliseconds).  Larger
-precisions are accepted, but internally only up to 3 digits of
-precision are maintained.
+(excluding the latter).  Time values are stored to a precision of
+nanoseconds -- 9 subsecond digits.  Leap seconds are not supported.
 
 ### Time literals
 
 `TIME` literals have the form `TIME 'HH:MM:SS.FFF'`, where the
-fractional part is optional, and can have between 0 and 3 digits.  An
+fractional part is optional, and can have between 0 and 9 digits.  An
 example is: '23:59:59.132'.  The hours must be between 0 and 23, the
 minutes between 0 and 59, and the seconds between 0 and 59.  Exactly
 two digits must be used for hours, minutes, and seconds.  Spaces are
@@ -174,11 +166,8 @@ time unit between `HOUR` and `MICROSECOND`.
 ## Timestamps
 
 The `TIMESTAMP` data type represents values composed of a `DATE` (as
-described above) and a `TIME`.  `TIMESTAMP` support an optional
-precision specification, e.g.: `TIMESTAMP(3)`.  The precision applies
-to the `TIME` component of the `TIMESTAMP`.  The maximum precision
-supported for timestamps is 3.  The default precision for timestamps
-(used when no precision is specified), is also 3.
+described above) and a `TIME`.  `TIMESTAMP`s are represented with a
+precision of milliseconds (3 digits for fractions of second).
 
 ### Timestamp literals
 

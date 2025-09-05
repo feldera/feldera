@@ -40,6 +40,10 @@ import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.TIMESTAMP;
 
 public class DBSPTypeTimestamp extends DBSPTypeBaseType
         implements IsDateType, IsTimeRelatedType {
+
+    /** Number of digits after decimal point (milliseconds) */
+    public static final int PRECISION = 3;
+
     DBSPTypeTimestamp(CalciteObject node, boolean mayBeNull) {
         super(node, TIMESTAMP, mayBeNull);
     }

@@ -612,8 +612,13 @@ pub fn extract_millisecond_Timestamp(value: Timestamp) -> i64 {
 #[doc(hidden)]
 pub fn extract_microsecond_Timestamp(value: Timestamp) -> i64 {
     let date = value.to_dateTime();
-    // This is now what you expect due to CALCITE-5919
-    (date.second() * 1_000_000 + date.timestamp_subsec_millis() * 1000).into()
+    (date.second() * 1_000_000 + date.timestamp_subsec_micros()).into()
+}
+
+#[doc(hidden)]
+pub fn extract_nanosecond_Timestamp(value: Timestamp) -> i64 {
+    let date = value.to_dateTime();
+    (date.second() as i64) * 1_000_000_000i64 + date.timestamp_subsec_nanos() as i64
 }
 
 #[doc(hidden)]
@@ -649,6 +654,7 @@ some_polymorphic_function1!(extract_doy, Timestamp, Timestamp, i64);
 some_polymorphic_function1!(extract_epoch, Timestamp, Timestamp, i64);
 some_polymorphic_function1!(extract_millisecond, Timestamp, Timestamp, i64);
 some_polymorphic_function1!(extract_microsecond, Timestamp, Timestamp, i64);
+some_polymorphic_function1!(extract_nanosecond, Timestamp, Timestamp, i64);
 some_polymorphic_function1!(extract_second, Timestamp, Timestamp, i64);
 some_polymorphic_function1!(extract_minute, Timestamp, Timestamp, i64);
 some_polymorphic_function1!(extract_hour, Timestamp, Timestamp, i64);
@@ -784,6 +790,14 @@ pub fn floor_microsecond_Timestamp(value: Timestamp) -> Timestamp {
 }
 
 some_polymorphic_function1!(floor_microsecond, Timestamp, Timestamp, Timestamp);
+
+#[doc(hidden)]
+pub fn floor_nanosecond_Timestamp(value: Timestamp) -> Timestamp {
+    // we currently don't store more than milliseconds, so this is a no-op
+    value
+}
+
+some_polymorphic_function1!(floor_nanosecond, Timestamp, Timestamp, Timestamp);
 
 #[doc(hidden)]
 fn is_midnight(value: DateTime<Utc>) -> bool {
@@ -957,6 +971,14 @@ pub fn ceil_microsecond_Timestamp(value: Timestamp) -> Timestamp {
 }
 
 some_polymorphic_function1!(ceil_microsecond, Timestamp, Timestamp, Timestamp);
+
+#[doc(hidden)]
+pub fn ceil_nanosecond_Timestamp(value: Timestamp) -> Timestamp {
+    // We currently do not store more than milliseconds, so this is a no-op
+    value
+}
+
+some_polymorphic_function1!(ceil_nanosecond, Timestamp, Timestamp, Timestamp);
 
 #[doc(hidden)]
 pub fn tumble_Timestamp_ShortInterval(ts: Timestamp, i: ShortInterval) -> Timestamp {
@@ -1410,6 +1432,13 @@ pub fn floor_microsecond_Date(value: Date) -> Date {
 some_polymorphic_function1!(floor_microsecond, Date, Date, Date);
 
 #[doc(hidden)]
+pub fn floor_nanosecond_Date(value: Date) -> Date {
+    value
+}
+
+some_polymorphic_function1!(floor_nanosecond, Date, Date, Date);
+
+#[doc(hidden)]
 pub fn ceil_millennium_Date(value: Date) -> Date {
     let d = value.to_date();
     if d.year() % 1000 == 0 && d.month() == 1 && d.day() == 1 {
@@ -1552,6 +1581,13 @@ pub fn ceil_microsecond_Date(value: Date) -> Date {
 }
 
 some_polymorphic_function1!(ceil_microsecond, Date, Date, Date);
+
+#[doc(hidden)]
+pub fn ceil_nanosecond_Date(value: Date) -> Date {
+    value
+}
+
+some_polymorphic_function1!(ceil_nanosecond, Date, Date, Date);
 
 // right - left
 #[doc(hidden)]
@@ -1702,6 +1738,11 @@ pub fn extract_microsecond_Date(_value: Date) -> i64 {
     0
 }
 
+#[doc(hidden)]
+pub fn extract_nanosecond_Date(_value: Date) -> i64 {
+    0
+}
+
 some_polymorphic_function1!(extract_year, Date, Date, i64);
 some_polymorphic_function1!(extract_month, Date, Date, i64);
 some_polymorphic_function1!(extract_day, Date, Date, i64);
@@ -1717,6 +1758,7 @@ some_polymorphic_function1!(extract_doy, Date, Date, i64);
 some_polymorphic_function1!(extract_epoch, Date, Date, i64);
 some_polymorphic_function1!(extract_millisecond, Date, Date, i64);
 some_polymorphic_function1!(extract_microsecond, Date, Date, i64);
+some_polymorphic_function1!(extract_nanosecond, Date, Date, i64);
 some_polymorphic_function1!(extract_second, Date, Date, i64);
 some_polymorphic_function1!(extract_minute, Date, Date, i64);
 some_polymorphic_function1!(extract_hour, Date, Date, i64);
@@ -2269,6 +2311,13 @@ pub fn floor_microsecond_Time(value: Time) -> Time {
 some_polymorphic_function1!(floor_microsecond, Time, Time, Time);
 
 #[doc(hidden)]
+pub fn floor_nanosecond_Time(value: Time) -> Time {
+    time_trunc_nanosecond_Time(value)
+}
+
+some_polymorphic_function1!(floor_nanosecond, Time, Time, Time);
+
+#[doc(hidden)]
 pub fn ceil_millennium_Time(value: Time) -> Time {
     // This makes no sense, but this is the result from Calcite
     value
@@ -2439,6 +2488,13 @@ pub fn ceil_microsecond_Time(value: Time) -> Time {
 some_polymorphic_function1!(ceil_microsecond, Time, Time, Time);
 
 #[doc(hidden)]
+pub fn ceil_nanosecond_Time(value: Time) -> Time {
+    value
+}
+
+some_polymorphic_function1!(ceil_nanosecond, Time, Time, Time);
+
+#[doc(hidden)]
 pub fn extract_millisecond_Time(value: Time) -> i64 {
     let time = value.to_time();
     (time.second() * 1000 + time.nanosecond() / 1_000_000).into()
@@ -2447,8 +2503,13 @@ pub fn extract_millisecond_Time(value: Time) -> i64 {
 #[doc(hidden)]
 pub fn extract_microsecond_Time(value: Time) -> i64 {
     let time = value.to_time();
-    // not what you expect due to CALCITE-5919
-    (time.second() * 1_000_000 + (time.nanosecond() / 1000000) * 1000).into()
+    time.second() as i64 * 1_000_000i64 + (time.nanosecond() as i64 / 1000)
+}
+
+#[doc(hidden)]
+pub fn extract_nanosecond_Time(value: Time) -> i64 {
+    let time = value.to_time();
+    (time.second() as i64) * 1_000_000_000i64 + time.nanosecond() as i64
 }
 
 #[doc(hidden)]
@@ -2471,6 +2532,7 @@ pub fn extract_hour_Time(value: Time) -> i64 {
 
 some_polymorphic_function1!(extract_millisecond, Time, Time, i64);
 some_polymorphic_function1!(extract_microsecond, Time, Time, i64);
+some_polymorphic_function1!(extract_nanosecond, Time, Time, i64);
 some_polymorphic_function1!(extract_second, Time, Time, i64);
 some_polymorphic_function1!(extract_minute, Time, Time, i64);
 some_polymorphic_function1!(extract_hour, Time, Time, i64);
@@ -2691,11 +2753,17 @@ pub fn time_trunc_microsecond_Time(time: Time) -> Time {
     Time::from_time(n)
 }
 
+#[doc(hidden)]
+pub fn time_trunc_nanosecond_Time(time: Time) -> Time {
+    time
+}
+
 some_polymorphic_function1!(time_trunc_hour, Time, Time, Time);
 some_polymorphic_function1!(time_trunc_minute, Time, Time, Time);
 some_polymorphic_function1!(time_trunc_second, Time, Time, Time);
 some_polymorphic_function1!(time_trunc_millisecond, Time, Time, Time);
 some_polymorphic_function1!(time_trunc_microsecond, Time, Time, Time);
+some_polymorphic_function1!(time_trunc_nanosecond, Time, Time, Time);
 
 #[doc(hidden)]
 #[inline(always)]
