@@ -47,6 +47,9 @@ class Pipeline:
         self.program_version: Optional[int] = None
         self.deployment_config: Optional[dict] = None
         self.deployment_desired_status: Optional[str] = None
+        self.deployment_desired_status_since: Optional[str] = None
+        self.deployment_id: Optional[str] = None
+        self.deployment_initial: Optional[str] = None
         self.deployment_error: Optional[dict] = None
         self.deployment_location: Optional[str] = None
         self.program_info: Optional[dict] = (
@@ -56,6 +59,16 @@ class Pipeline:
         self.program_status_since: Optional[str] = None
         self.program_error: Optional[dict] = None
         self.storage_status: Optional[str] = None
+
+        self.deployment_resources_desired_status: Optional[str] = None
+        self.deployment_resources_desired_status_since: Optional[str] = None
+        self.deployment_resources_status: Optional[str] = None
+        self.deployment_resources_status_since: Optional[str] = None
+
+        self.deployment_runtime_desired_status: Optional[str] = None
+        self.deployment_runtime_desired_status_since: Optional[str] = None
+        self.deployment_runtime_status: Optional[str] = None
+        self.deployment_runtime_status_since: Optional[str] = None
 
     @classmethod
     def from_dict(cls, d: Mapping[str, Any]):

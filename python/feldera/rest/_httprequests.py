@@ -206,6 +206,11 @@ class HttpRequests:
         try:
             request.raise_for_status()
 
+            if request is None:
+                # This shouldn't ever be the case, but we've seen it happen
+                return FelderaCommunicationError(
+                    "Failed to Communicate with Feldera Received None as Response",
+                )
             if stream:
                 return request
             if request.headers.get("content-type") == "text/plain":
