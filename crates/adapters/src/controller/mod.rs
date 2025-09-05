@@ -90,7 +90,7 @@ use std::io::ErrorKind;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::PathBuf;
 use std::sync::mpsc::{channel, sync_channel, Receiver, SendError, Sender};
-use std::sync::LazyLock;
+use std::sync::{LazyLock, Mutex};
 use std::thread;
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -332,11 +332,12 @@ impl ControllerBuilder {
 /// [pause]: Controller::pause
 /// [initiate_stop]: Controller::initiate_stop
 /// [is_replaying]: Controller::is_replaying
+#[derive(Clone)]
 pub struct Controller {
     inner: Arc<ControllerInner>,
 
     /// The circuit thread handle (see module-level docs).
-    circuit_thread_handle: JoinHandle<Result<(), ControllerError>>,
+    circuit_thread_handle: Arc<Mutex<Option<JoinHandle<Result<(), ControllerError>>>>>,
 }
 
 /// Type of the callback argument to [`Controller::start_graph_profile`].
@@ -438,7 +439,7 @@ impl Controller {
                 .recv()
                 .map_err(|_| ControllerError::dbsp_panic())??;
 
-            (handle, inner)
+            (Arc::new(Mutex::new(Some(handle))), inner)
         };
 
         Ok(Self {
@@ -747,9 +748,11 @@ impl Controller {
         debug!("Stopping the circuit");
 
         self.initiate_stop();
-        self.circuit_thread_handle
-            .join()
-            .map_err(|_| ControllerError::controller_panic())??;
+        if let Some(handle) = self.circuit_thread_handle.lock().unwrap().take() {
+            handle
+                .join()
+                .map_err(|_| ControllerError::controller_panic())??;
+        }
         Ok(())
     }
 
