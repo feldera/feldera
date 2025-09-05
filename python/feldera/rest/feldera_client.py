@@ -163,6 +163,46 @@ class FelderaClient:
             logging.debug("still compiling %s, waiting for 100 more milliseconds", name)
             time.sleep(0.1)
 
+    def __wait_for_pipeline_state(
+        self,
+        pipeline_name: str,
+        state: str,
+        timeout_s: float = 300.0,
+        start: bool = True,
+    ):
+        start_time = time.monotonic()
+
+        while True:
+            if timeout_s is not None:
+                elapsed = time.monotonic() - start_time
+                if elapsed > timeout_s:
+                    raise TimeoutError(
+                        f"Timed out waiting for pipeline {pipeline_name} to"
+                        f"transition to '{state}' state"
+                    )
+
+            resp = self.get_pipeline(pipeline_name)
+            status = resp.deployment_status
+
+            if status.lower() == state.lower():
+                break
+            elif (
+                status == "Stopped"
+                and len(resp.deployment_error or {}) > 0
+                and resp.deployment_desired_status == "Stopped"
+            ):
+                err_msg = "Unable to START the pipeline:\n" if start else ""
+                raise RuntimeError(
+                    f"""{err_msg}Unable to transition the pipeline to '{state}'.
+Reason: The pipeline is in a STOPPED state due to the following error:
+{resp.deployment_error.get("message", "")}"""
+                )
+
+            logging.debug(
+                "still starting %s, waiting for 100 more milliseconds", pipeline_name
+            )
+            time.sleep(0.1)
+
     def create_pipeline(self, pipeline: Pipeline) -> Pipeline:
         """
         Create a pipeline if it doesn't exist and wait for it to compile
@@ -284,9 +324,10 @@ class FelderaClient:
         """
 
         :param pipeline_name: The name of the pipeline to activate
-        :param wait: Set True to wait for the pipeline to activate. True by default
-        :param timeout_s: The amount of time in seconds to wait for the pipeline
-            to activate. 300 seconds by default.
+        :param wait: Set True to wait for the pipeline to activate. True by
+            default
+        :param timeout_s: The amount of time in seconds to wait for the
+            pipeline to activate. 300 seconds by default.
         """
 
         if timeout_s is None:
@@ -299,46 +340,23 @@ class FelderaClient:
         if not wait:
             return
 
-        start_time = time.monotonic()
+        self.__wait_for_pipeline_state(pipeline_name, "running", timeout_s)
 
-        while True:
-            if timeout_s is not None:
-                elapsed = time.monotonic() - start_time
-                if elapsed > timeout_s:
-                    raise TimeoutError(
-                        f"Timed out waiting for pipeline {pipeline_name} to activate"
-                    )
-
-            resp = self.get_pipeline(pipeline_name)
-            status = resp.deployment_status
-
-            if status == "Running":
-                break
-            elif (
-                status == "Stopped"
-                and len(resp.deployment_error or {}) > 0
-                and resp.deployment_desired_status == "Stopped"
-            ):
-                raise RuntimeError(
-                    f"""Unable to ACTIVATE the pipeline.
-Reason: The pipeline is in a STOPPED state due to the following error:
-{resp.deployment_error.get("message", "")}"""
-                )
-
-            logging.debug(
-                "still starting %s, waiting for 100 more milliseconds", pipeline_name
-            )
-            time.sleep(0.1)
-
-    def start_pipeline(
-        self, pipeline_name: str, wait: bool = True, timeout_s: Optional[float] = 300
+    def _inner_start_pipeline(
+        self,
+        pipeline_name: str,
+        initial: str = "running",
+        wait: bool = True,
+        timeout_s: Optional[float] = 300,
     ):
         """
 
         :param pipeline_name: The name of the pipeline to start
+        :param initial: The initial state to start the pipeline in. "running"
+            by default.
         :param wait: Set True to wait for the pipeline to start. True by default
-        :param timeout_s: The amount of time in seconds to wait for the pipeline
-            to start. 300 seconds by default.
+        :param timeout_s: The amount of time in seconds to wait for the
+            pipeline to start. 300 seconds by default.
         """
 
         if timeout_s is None:
@@ -346,51 +364,91 @@ Reason: The pipeline is in a STOPPED state due to the following error:
 
         self.http.post(
             path=f"/pipelines/{pipeline_name}/start",
+            params={"initial": initial},
         )
 
         if not wait:
             return
 
-        start_time = time.monotonic()
+        self.__wait_for_pipeline_state(pipeline_name, initial, timeout_s)
 
-        while True:
-            if timeout_s is not None:
-                elapsed = time.monotonic() - start_time
-                if elapsed > timeout_s:
-                    raise TimeoutError(
-                        f"Timed out waiting for pipeline {pipeline_name} to start"
-                    )
+    def start_pipeline(
+        self, pipeline_name: str, wait: bool = True, timeout_s: Optional[float] = 300
+    ):
+        """
 
-            resp = self.get_pipeline(pipeline_name)
-            status = resp.deployment_status
+        :param pipeline_name: The name of the pipeline to start
+        :param wait: Set True to wait for the pipeline to start.
+            True by default
+        :param timeout_s: The amount of time in seconds to wait for the
+            pipeline to start. 300 seconds by default.
+        """
 
-            if status == "Running":
-                break
-            elif (
-                status == "Stopped"
-                and len(resp.deployment_error or {}) > 0
-                and resp.deployment_desired_status == "Stopped"
-            ):
-                raise RuntimeError(
-                    f"""Unable to START the pipeline.
-Reason: The pipeline is in a STOPPED state due to the following error:
-{resp.deployment_error.get("message", "")}"""
-                )
+        self._inner_start_pipeline(pipeline_name, "running", wait, timeout_s)
 
-            logging.debug(
-                "still starting %s, waiting for 100 more milliseconds", pipeline_name
-            )
-            time.sleep(0.1)
+    def start_pipeline_as_paused(
+        self, pipeline_name: str, wait: bool = True, timeout_s: Optional[float] = 300
+    ):
+        """
+        :param pipeline_name: The name of the pipeline to start as paused.
+        :param wait: Set True to wait for the pipeline to start as pause.
+            True by default
+        :param timeout_s: The amount of time in seconds to wait for the
+            pipeline to start. 300 seconds by default.
+        """
 
-    def pause_pipeline(
+        self._inner_start_pipeline(pipeline_name, "paused", wait, timeout_s)
+
+    def start_pipeline_as_standby(
+        self, pipeline_name: str, wait: bool = True, timeout_s: Optional[float] = 300
+    ):
+        """
+        :param pipeline_name: The name of the pipeline to start as standby.
+        :param wait: Set True to wait for the pipeline to start as standby.
+            True by default
+        :param timeout_s: The amount of time in seconds to wait for the
+            pipeline to start. 300 seconds by default.
+        """
+
+        self._inner_start_pipeline(pipeline_name, "paused", wait, timeout_s)
+
+    def resume_pipeline(
         self,
         pipeline_name: str,
-        error_message: str = None,
         wait: bool = True,
         timeout_s: Optional[float] = 300,
     ):
         """
-        Stop a pipeline
+        Pause a pipeline
+
+        :param pipeline_name: The name of the pipeline to stop
+        :param error_message: The error message to show if the pipeline is in
+             STOPPED state due to a failure.
+        :param wait: Set True to wait for the pipeline to pause. True by default
+        :param timeout_s: The amount of time in seconds to wait for the pipeline
+            to pause. 300 seconds by default.
+        """
+
+        if timeout_s is None:
+            timeout_s = 300
+
+        self.http.post(
+            path=f"/pipelines/{pipeline_name}/resume",
+        )
+
+        if not wait:
+            return
+
+        self.__wait_for_pipeline_state(pipeline_name, "running", timeout_s)
+
+    def pause_pipeline(
+        self,
+        pipeline_name: str,
+        wait: bool = True,
+        timeout_s: Optional[float] = 300,
+    ):
+        """
+        Pause a pipeline
 
         :param pipeline_name: The name of the pipeline to stop
         :param error_message: The error message to show if the pipeline is in
@@ -410,39 +468,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         if not wait:
             return
 
-        if error_message is None:
-            error_message = "Unable to PAUSE the pipeline.\n"
-
-        start_time = time.monotonic()
-
-        while True:
-            if timeout_s is not None:
-                elapsed = time.monotonic() - start_time
-                if elapsed > timeout_s:
-                    raise TimeoutError(
-                        f"Timed out waiting for pipeline {pipeline_name} to pause"
-                    )
-
-            resp = self.get_pipeline(pipeline_name)
-            status = resp.deployment_status
-
-            if status == "Paused":
-                break
-            elif (
-                status == "Stopped"
-                and len(resp.deployment_error or {}) > 0
-                and resp.deployment_desired_status == "Stopped"
-            ):
-                raise RuntimeError(
-                    error_message
-                    + f"""Reason: The pipeline is in a STOPPED state due to the following error:
-{resp.deployment_error.get("message", "")}"""
-                )
-
-            logging.debug(
-                "still pausing %s, waiting for 100 more milliseconds", pipeline_name
-            )
-            time.sleep(0.1)
+        self.__wait_for_pipeline_state(pipeline_name, "paused", timeout_s)
 
     def stop_pipeline(
         self,

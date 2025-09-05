@@ -11,9 +11,10 @@ from .helper import (
     wait_for_program_success,
     api_url,
     start_pipeline,
+    start_pipeline_as_paused,
+    resume_pipeline,
     stop_pipeline,
     clear_pipeline,
-    pause_pipeline,
     gen_pipeline_name,
 )
 
@@ -54,7 +55,7 @@ def test_pipeline_metrics(pipeline_name):
     r = post_json(api_url("/pipelines"), {"name": pipeline_name, "program_code": ""})
     assert r.status_code == HTTPStatus.CREATED
     wait_for_program_success(pipeline_name, 1)
-    pause_pipeline(pipeline_name)
+    start_pipeline_as_paused(pipeline_name)
 
     # Default
     r_default = get(api_url(f"/pipelines/{pipeline_name}/metrics"))
@@ -202,14 +203,14 @@ def test_pipeline_logs(pipeline_name):
         raise TimeoutError("Logs did not become available in time")
 
     # Pause pipeline
-    pause_pipeline(pipeline_name)
+    start_pipeline_as_paused(pipeline_name)
     assert (
         get(api_url(f"/pipelines/{pipeline_name}/logs"), stream=True).status_code
         == HTTPStatus.OK
     )
 
     # Start pipeline
-    start_pipeline(pipeline_name)
+    resume_pipeline(pipeline_name)
     assert (
         get(api_url(f"/pipelines/{pipeline_name}/logs"), stream=True).status_code
         == HTTPStatus.OK

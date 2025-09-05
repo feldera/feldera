@@ -115,6 +115,26 @@ def start_pipeline(name: str, wait: bool = True):
     return r
 
 
+def resume_pipeline(name: str, wait: bool = True):
+    r = post_no_body(api_url(f"/pipelines/{name}/resume"))
+    assert r.status_code == HTTPStatus.ACCEPTED, (
+        f"Unexpected start response: {r.status_code} {r.text}"
+    )
+    if wait:
+        wait_for_deployment_status(name, "Running", 30)
+    return r
+
+
+def start_pipeline_as_paused(name: str, wait: bool = True):
+    r = post_no_body(api_url(f"/pipelines/{name}/start"), params={"initial": "paused"})
+    assert r.status_code == HTTPStatus.ACCEPTED, (
+        f"Unexpected pause response: {r.status_code} {r.text}"
+    )
+    if wait:
+        wait_for_deployment_status(name, "Paused", 30)
+    return r
+
+
 def pause_pipeline(name: str, wait: bool = True):
     r = post_no_body(api_url(f"/pipelines/{name}/pause"))
     assert r.status_code == HTTPStatus.ACCEPTED, (

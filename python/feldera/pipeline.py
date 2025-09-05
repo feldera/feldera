@@ -16,8 +16,13 @@ from feldera.enums import (
     ProgramStatus,
     CheckpointStatus,
     TransactionStatus,
+    StorageStatus,
+    DeploymentDesiredStatus,
+    DeploymentResourcesDesiredStatus,
+    DeploymentResourcesStatus,
+    DeploymentRuntimeDesiredStatus,
+    DeploymentRuntimeStatus
 )
-from feldera.enums import StorageStatus
 from feldera.rest.pipeline import Pipeline as InnerPipeline
 from feldera.rest.feldera_client import FelderaClient
 from feldera._callback_runner import _CallbackRunnerInstruction, CallbackRunner
@@ -393,9 +398,7 @@ method or use `Pipeline.resume()` to resume a paused pipeline."""
 
             return
 
-        self.client.pause_pipeline(
-            self.name, "Unable to START the pipeline.\n", wait=wait, timeout_s=timeout_s
-        )
+        self.client.start_pipeline_as_paused(self.name, wait=wait, timeout_s=timeout_s)
         self.__setup_output_listeners()
         self.resume(timeout_s=timeout_s)
 
@@ -505,6 +508,20 @@ metrics"""
 
         self.client.activate_pipeline(self.name, wait=wait, timeout_s=timeout_s)
 
+    def start_paused(self, wait: bool = True, timeout_s: Optional[float] = None):
+        """
+        Starts the pipeline in the paused state.
+        """
+
+        self.client.start_pipeline_as_paused(self.name, wait=wait, timeout_s=timeout_s)
+
+    def start_standby(self, wait: bool = True, timeout_s: Optional[float] = None):
+        """
+        Starts the pipeline in the standby state.
+        """
+
+        self.client.start_pipeline_as_standby(self.name, wait=wait, timeout_s=timeout_s)
+
     def pause(self, wait: bool = True, timeout_s: Optional[float] = None):
         """
         Pause the pipeline.
@@ -562,7 +579,7 @@ metrics"""
             pipeline to resume.
         """
 
-        self.client.start_pipeline(self.name, wait=wait, timeout_s=timeout_s)
+        self.client.resume_pipeline(self.name, wait=wait, timeout_s=timeout_s)
 
     def start_transaction(self) -> int:
         """
@@ -1116,14 +1133,52 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
         self.refresh()
         return self._inner.deployment_config
 
-    def deployment_desired_status(self) -> PipelineStatus:
+    def deployment_desired_status(self) -> DeploymentDesiredStatus:
         """
         Return the desired deployment status of the pipeline.
         This is the next state that the pipeline should transition to.
         """
 
         self.refresh()
-        return PipelineStatus.from_str(self._inner.deployment_desired_status)
+        return DeploymentDesiredStatus.from_str(self._inner.deployment_desired_status)
+
+    def deployment_resources_desired_status(self) -> DeploymentResourcesDesiredStatus:
+        """
+        Return the desired status of the the deployment resources.
+        """
+
+        self.refresh()
+        return DeploymentResourcesDesiredStatus.from_str(
+            self._inner.deployment_resources_desired_status
+        )
+
+    def deployment_resources_status(self) -> DeploymentResourcesStatus:
+        """
+        Return the status of the deployment resources.
+        """
+
+        self.refresh()
+        return DeploymentResourcesStatus.from_str(
+            self._inner.deployment_resources_status
+        )
+
+    def deployment_runtime_desired_status(self) -> DeploymentRuntimeDesiredStatus:
+        """
+        Return the deployment runtime desired status.
+        """
+
+        self.refresh()
+        return DeploymentRuntimeDesiredStatus.from_str(
+            self._inner.deployment_runtime_desired_status
+        )
+
+    def deployment_runtime_status(self) -> DeploymentRuntimeStatus:
+        """
+        Return the deployment runtime status.
+        """
+
+        self.refresh()
+        return DeploymentRuntimeStatus.from_str(self._inner.deployment_runtime_status)
 
     def deployment_error(self) -> Mapping[str, Any]:
         """

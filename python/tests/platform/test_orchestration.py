@@ -7,6 +7,8 @@ from .helper import (
     post_no_body,
     api_url,
     start_pipeline,
+    start_pipeline_as_paused,
+    resume_pipeline,
     pause_pipeline,
     gen_pipeline_name,
     cleanup_pipeline,
@@ -66,7 +68,7 @@ def test_pipeline_orchestration_basic(pipeline_name):
         )
         assert r.status_code == HTTPStatus.CREATED, r.text
         wait_for_program_success(cur_pipeline_name, 1)
-        pause_pipeline(cur_pipeline_name)
+        start_pipeline_as_paused(cur_pipeline_name)
 
         # Initial: pipeline paused, connector running, processed=0
         p_paused, c_paused, processed = _basic_orchestration_info(
@@ -88,7 +90,7 @@ def test_pipeline_orchestration_basic(pipeline_name):
         assert processed == 0
 
         # Start pipeline
-        start_pipeline(cur_pipeline_name)
+        resume_pipeline(cur_pipeline_name)
         p_paused, c_paused, processed = _basic_orchestration_info(
             cur_pipeline_name, table_name, connector_name
         )
@@ -131,11 +133,11 @@ def test_pipeline_orchestration_errors(pipeline_name):
     r = post_json(api_url("/pipelines"), {"name": pipeline_name, "program_code": sql})
     assert r.status_code == HTTPStatus.CREATED, r.text
     wait_for_program_success(pipeline_name, 1)
-    pause_pipeline(pipeline_name)
+    start_pipeline_as_paused(pipeline_name)
 
     # ACCEPTED endpoints
     for endpoint in [
-        f"/pipelines/{pipeline_name}/start",
+        f"/pipelines/{pipeline_name}/resume",
         f"/pipelines/{pipeline_name}/pause",
     ]:
         resp = post_no_body(api_url(endpoint))
@@ -211,6 +213,7 @@ def test_pipeline_orchestration_scenarios(pipeline_name):
 
     class Step:
         START_PIPELINE = "start_pipeline"
+        START_PIPELINE_AS_PAUSED = "start_pipeline_as_paused"
         PAUSE_PIPELINE = "pause_pipeline"
         START_CONNECTOR_1 = "start_connector_1"
         PAUSE_CONNECTOR_1 = "pause_connector_1"
@@ -219,12 +222,12 @@ def test_pipeline_orchestration_scenarios(pipeline_name):
 
     scenarios = [
         # Paused pipeline combinations
-        ([Step.PAUSE_PIPELINE], True, False, False),
-        ([Step.PAUSE_PIPELINE, Step.PAUSE_CONNECTOR_1], True, True, False),
-        ([Step.PAUSE_PIPELINE, Step.PAUSE_CONNECTOR_2], True, False, True),
+        ([Step.START_PIPELINE_AS_PAUSED], True, False, False),
+        ([Step.START_PIPELINE_AS_PAUSED, Step.PAUSE_CONNECTOR_1], True, True, False),
+        ([Step.START_PIPELINE_AS_PAUSED, Step.PAUSE_CONNECTOR_2], True, False, True),
         (
             [
-                Step.PAUSE_PIPELINE,
+                Step.START_PIPELINE_AS_PAUSED,
                 Step.PAUSE_CONNECTOR_1,
                 Step.PAUSE_CONNECTOR_2,
             ],
@@ -274,6 +277,8 @@ def test_pipeline_orchestration_scenarios(pipeline_name):
     def apply_step(step: str):
         if step == Step.START_PIPELINE:
             start_pipeline(pipeline_name)
+        elif step == Step.START_PIPELINE_AS_PAUSED:
+            start_pipeline_as_paused(pipeline_name)
         elif step == Step.PAUSE_PIPELINE:
             pause_pipeline(pipeline_name)
         elif step == Step.START_CONNECTOR_1:
