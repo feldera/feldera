@@ -44,6 +44,9 @@ public class DBSPTypeTime extends DBSPTypeBaseType implements IsDateType, IsTime
         super(node, TIME, mayBeNull);
     }
 
+    /** Number of digits after decimal point (nanoseconds) */
+    public static final int PRECISION = 9;
+
     public static final DBSPTypeTime INSTANCE = new DBSPTypeTime(CalciteObject.EMPTY, false);
     public static final DBSPTypeTime NULLABLE_INSTANCE = new DBSPTypeTime(CalciteObject.EMPTY, true);
 

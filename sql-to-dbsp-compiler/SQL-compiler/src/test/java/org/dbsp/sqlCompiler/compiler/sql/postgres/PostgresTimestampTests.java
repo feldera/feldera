@@ -58,7 +58,7 @@ public class PostgresTimestampTests extends SqlIoTest {
     @Override
     public void prepareInputs(DBSPCompiler compiler) {
         String data =
-                "CREATE TABLE TIMESTAMP_TBL (d1 timestamp(2) without time zone)\n;" +
+                "CREATE TABLE TIMESTAMP_TBL (d1 timestamp without time zone)\n;" +
                 // -- Postgres v6.0 standard output format
                 "INSERT INTO TIMESTAMP_TBL VALUES ('1970-01-01 00:00:00');\n" +          // INSERT INTO TIMESTAMP_TBL VALUES ('epoch');
                 "INSERT INTO TIMESTAMP_TBL VALUES ('1997-02-10 17:32:01');\n" +          // INSERT INTO TIMESTAMP_TBL VALUES ('Mon Feb 10 17:32:01 1997 PST');

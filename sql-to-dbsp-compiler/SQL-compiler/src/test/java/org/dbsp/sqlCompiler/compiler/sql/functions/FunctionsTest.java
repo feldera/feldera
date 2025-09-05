@@ -467,6 +467,12 @@ public class FunctionsTest extends SqlIoTest {
     }
 
     @Test
+    public void timePrecision() {
+        this.shouldWarn("CREATE VIEW V AS SELECT CAST('10:00:00' AS TIME(1))",
+                "TIME precision ignored: TIME precision is always TIME\\(9\\); specified precision 1 is ignored");
+    }
+
+    @Test
     public void testSqrtNull() {
         this.q("""
                 SELECT sqrt(null);

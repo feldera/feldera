@@ -2,7 +2,6 @@ package org.dbsp.sqlCompiler.compiler.sql.postgres;
 
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
-import org.junit.Ignore;
 import org.junit.Test;
 
 // https://github.com/postgres/postgres/blob/master/src/test/regress/expected/time.out
@@ -12,7 +11,7 @@ public class PostgresTimeTests extends SqlIoTest {
     public void prepareInputs(DBSPCompiler compiler) {
         // Calcite format is much stricter.  Converted to the right format
         compiler.submitStatementsForCompilation("""
-                CREATE TABLE TIME_TBL (f1 time(2));
+                CREATE TABLE TIME_TBL (f1 time);
                 INSERT INTO TIME_TBL VALUES ('00:00:00');
                 INSERT INTO TIME_TBL VALUES ('01:00:00');
                 INSERT INTO TIME_TBL VALUES ('02:03:00');
@@ -120,20 +119,29 @@ public class PostgresTimeTests extends SqlIoTest {
                 "Cannot apply '+' to arguments");
     }
 
-    @Test @Ignore("Bug in Calcite https://issues.apache.org/jira/browse/CALCITE-5919")
-    public void testMicrosecond() {
-        this.q("""
-                SELECT EXTRACT(MICROSECOND FROM TIME '13:30:25.575401');
-                 extract
-                ----------
-                 25575401""");
-    }
-
     @Test
     public void testUnits() {
         // Removed dates
         // Extract second and millisecond return integers in Calcite instead of DECIMAL
         this.qs("""
+                SELECT EXTRACT(MICROSECOND FROM TIME '13:30:25.575401');
+                 extract
+                ----------
+                 25575401
+                (1 row)
+                
+                SELECT EXTRACT(NANOSECOND FROM TIME '13:30:25.575401');
+                 extract
+                ----------
+                 25575401000
+                (1 row)
+                
+                SELECT EXTRACT(NANOSECOND FROM TIME '13:30:25.575401234');
+                 extract
+                ----------
+                 25575401234
+                (1 row)
+                
                 SELECT EXTRACT(MILLISECOND FROM TIME '13:30:25.575401');
                   extract
                 -----------
@@ -172,12 +180,11 @@ public class PostgresTimeTests extends SqlIoTest {
 
     @Test
     public void testDatePart() {
-        /* Results are truncated to millisecond due to https://issues.apache.org/jira/browse/CALCITE-5919 */
         this.qs("""
                 SELECT date_part(microsecond, TIME '13:30:25.575401');
                  date_part
                 -----------
-                  25575000
+                  25575401
                 (1 row)
 
                 SELECT date_part(millisecond, TIME '13:30:25.575401');

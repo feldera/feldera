@@ -219,10 +219,10 @@ double:
       DOUBLE [ PRECISION ]
 
 time:
-      TIME [ precision ] [ timeZone ]
+      TIME
 
 timestamp:
-      TIMESTAMP [ precision ] [ timeZone ]
+      TIMESTAMP
 
 timeZone:
       WITHOUT TIME ZONE
