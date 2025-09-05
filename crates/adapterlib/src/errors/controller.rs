@@ -14,6 +14,7 @@ use anyhow::Error as AnyError;
 use dbsp::{storage::backend::StorageError, Error as DbspError};
 use feldera_types::{
     error::{DetailedError, ErrorResponse},
+    runtime_status::RuntimeDesiredStatus,
     suspend::SuspendError,
 };
 use serde::{ser::SerializeStruct, Serialize, Serializer};
@@ -731,6 +732,12 @@ pub enum ControllerError {
     CheckpointPushError {
         error: String,
     },
+
+    /// Invalid initial desired status.
+    InvalidInitialStatus(RuntimeDesiredStatus),
+
+    /// Invalid standby configuration,
+    InvalidStandby(&'static str),
 }
 
 impl ResponseError for ControllerError {
@@ -756,6 +763,7 @@ impl ResponseError for ControllerError {
             Self::BootstrapInProgress => StatusCode::SERVICE_UNAVAILABLE,
             Self::PipelineRestarted { .. } => StatusCode::GONE,
             Self::UnknownEndpointInCompletionToken { .. } => StatusCode::GONE,
+            Self::InvalidInitialStatus(_) => StatusCode::GONE,
             _ => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
@@ -888,6 +896,8 @@ impl DbspDetailedError for ControllerError {
             }
             Self::CheckpointFetchError { .. } => Cow::from("CheckpointFetchError"),
             Self::CheckpointPushError { .. } => Cow::from("CheckpointPushError"),
+            Self::InvalidInitialStatus(_) => Cow::from("InvalidInitialStatus"),
+            Self::InvalidStandby(_) => Cow::from("InvalidStandby"),
         }
     }
 }
@@ -1036,6 +1046,12 @@ impl Display for ControllerError {
             }
             Self::CheckpointPushError { error } => {
                 write!(f, "Error pushing checkpoint to object store: {error}")
+            }
+            Self::InvalidInitialStatus(status) => {
+                write!(f, "Invalid initial status {status:?} provided on command line or read from storage (only running, paused, and standby are valid)")
+            }
+            Self::InvalidStandby(standby) => {
+                write!(f, "Cannot enter standby mode: {standby}")
             }
         }
     }
@@ -1406,7 +1422,9 @@ impl ControllerError {
             | Self::UnknownEndpointInCompletionToken { .. }
             | Self::CheckpointFetchError { .. }
             | Self::CheckpointPushError { .. }
-            | Self::PipelineRestarted { .. } => ErrorKind::Other,
+            | Self::PipelineRestarted { .. }
+            | Self::InvalidInitialStatus(_)
+            | Self::InvalidStandby(_) => ErrorKind::Other,
         }
     }
 }

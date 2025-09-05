@@ -46,6 +46,7 @@ use actix_web::{
 use anyhow::Error as AnyError;
 use datafusion::error::DataFusionError;
 use dbsp::DetailedError;
+use feldera_types::runtime_status::RuntimeDesiredStatus;
 use parquet::errors::ParquetError;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value as JsonValue};
@@ -177,6 +178,8 @@ pub enum PipelineError {
         df: Option<Box<DataFusionError>>,
     },
     Suspended,
+    InvalidActivateStatus(RuntimeDesiredStatus),
+    InvalidTransition(&'static str, RuntimeDesiredStatus),
 }
 
 impl From<ControllerError> for PipelineError {
@@ -268,6 +271,15 @@ impl Display for PipelineError {
             Self::Suspended => {
                 write!(f, "Operation failed because the pipeline has been suspended.")
             }
+            Self::InvalidActivateStatus(status) => {
+                write!(
+                    f,
+                    "Invalid activation status {status:?} (only running and paused are valid)"
+                )
+            }
+            Self::InvalidTransition(transition, status) => {
+                write!(f, "Cannot execute {transition} transition starting from {status:?}")
+            }
         }
     }
 }
@@ -287,6 +299,8 @@ impl DetailedError for PipelineError {
             Self::HeapProfilerError { .. } => Cow::from("HeapProfilerError"),
             Self::AdHocQueryError { .. } => Cow::from("AdHocQueryError"),
             Self::Suspended => Cow::from("Suspended"),
+            Self::InvalidActivateStatus(_) => Cow::from("InvalidActivateStatus"),
+            Self::InvalidTransition(_, _) => Cow::from("InvalidTransition"),
         }
     }
 
@@ -317,6 +331,8 @@ impl ResponseError for PipelineError {
             Self::ControllerError { error } => error.status_code(),
             Self::AdHocQueryError { .. } => StatusCode::BAD_REQUEST,
             Self::Suspended => StatusCode::SERVICE_UNAVAILABLE,
+            Self::InvalidActivateStatus(_) => StatusCode::BAD_REQUEST,
+            Self::InvalidTransition(_, _) => StatusCode::BAD_REQUEST,
         }
     }
 
