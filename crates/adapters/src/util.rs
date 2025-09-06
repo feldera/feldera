@@ -427,27 +427,43 @@ where
 }
 
 struct TokenBucket {
-    available: AtomicU32,
-    last_refill: AtomicU64,
-    suppressed: AtomicU64,
-    first_suppression: AtomicU64,
-    last_suppression: AtomicU64,
-    capacity: u32,
-    ticks_per_token: u64, // in ms
+    /// Number of tokens currently available in the bucket.
+    available_tokens: AtomicU32,
+
+    /// Timestamp (ms since limiter start) when the bucket was last refilled.
+    last_refill_ms: AtomicU64,
+
+    /// Number of consecutive suppressed attempts since last successful consume.
+    suppressed_count: AtomicU64,
+
+    /// Timestamp (ms since limiter start) of the first suppressed attempt.
+    first_suppression_ms: AtomicU64,
+
+    /// Timestamp (ms since limiter start) of the last suppressed attempt.
+    last_suppression_ms: AtomicU64,
+
+    /// Maximum tokens the bucket can hold.
+    max_tokens: u32,
+
+    /// Milliseconds per token refill (== window_ms / capacity, floored, min 1).
+    token_refill_interval_ms: u64,
 }
 
 impl TokenBucket {
-    fn new(capacity: u32, refill_interval: Duration, now: u64) -> Self {
-        let refill_ms = refill_interval.as_millis() as u64;
-        let ticks_per_token = std::cmp::max(1, refill_ms / capacity as u64);
+    fn new(max_tokens: u32, refill_window: Duration, now: u64) -> Self {
+        let refill_window_ms = refill_window.as_millis() as u64;
+
+        // clamp to at least 1 ms to avoid a zero interval when refill_window_ms < max_tokens.
+        let token_refill_interval_ms = std::cmp::max(1, refill_window_ms / max_tokens as u64);
+
         Self {
-            available: AtomicU32::new(capacity),
-            last_refill: AtomicU64::new(now),
-            suppressed: AtomicU64::new(0),
-            first_suppression: AtomicU64::new(0),
-            last_suppression: AtomicU64::new(0),
-            capacity,
-            ticks_per_token,
+            available_tokens: AtomicU32::new(max_tokens),
+            last_refill_ms: AtomicU64::new(now),
+            suppressed_count: AtomicU64::new(0),
+            first_suppression_ms: AtomicU64::new(0),
+            last_suppression_ms: AtomicU64::new(0),
+            max_tokens,
+            token_refill_interval_ms,
         }
     }
 
@@ -460,7 +476,7 @@ impl TokenBucket {
     /// concurrently from multiple threads.
     fn try_consume_token(&self) -> Option<RateLimitCheckResult> {
         if self
-            .available
+            .available_tokens
             .fetch_update(Ordering::AcqRel, Ordering::Relaxed, |old| {
                 if old > 0 {
                     Some(old - 1)
@@ -470,12 +486,14 @@ impl TokenBucket {
             })
             .is_ok()
         {
-            let suppressed_count = self.suppressed.swap(0, Ordering::AcqRel);
-            let check_result = if suppressed_count > 0 {
-                let first = self.first_suppression.swap(0, Ordering::AcqRel);
-                let last = self.last_suppression.swap(0, Ordering::AcqRel);
+            // If there were suppressed attempts while tokens were exhausted,
+            // capture and reset suppression counters and report them upstream.
+            let suppressed = self.suppressed_count.swap(0, Ordering::AcqRel);
+            let check_result = if suppressed > 0 {
+                let first = self.first_suppression_ms.swap(0, Ordering::AcqRel);
+                let last = self.last_suppression_ms.swap(0, Ordering::AcqRel);
                 RateLimitCheckResult::AllowedAfterSuppression {
-                    suppressed: suppressed_count,
+                    suppressed,
                     first_suppression: first,
                     last_suppression: last,
                 }
@@ -496,26 +514,30 @@ impl TokenBucket {
     /// There is a possible race where multiple threads may attempt to refill simultaneously,
     /// but only one will succeed in updating `last_refill`, preventing double-counting tokens.
     fn try_refill_tokens(&self, now_ms: u64) {
-        let last = self.last_refill.load(Ordering::Acquire);
+        // Load the last refill timestamp. If no time has passed, nothing to do.
+        let last = self.last_refill_ms.load(Ordering::Acquire);
         if now_ms <= last {
             return;
         }
 
         let elapsed = now_ms - last;
-        let tokens_to_add = (elapsed / self.ticks_per_token) as u32;
+        let tokens_to_add = (elapsed / self.token_refill_interval_ms) as u32;
         if tokens_to_add == 0 {
             return;
         }
 
-        let new_ts = last + tokens_to_add as u64 * self.ticks_per_token;
+        // Only one thread should update last_refill_ms for this interval. Use
+        // compare_exchange to ensure only one thread performs the refill and
+        // the increment of available_tokens.
         if self
-            .last_refill
-            .compare_exchange(last, new_ts, Ordering::AcqRel, Ordering::Relaxed)
+            .last_refill_ms
+            .compare_exchange(last, now_ms, Ordering::AcqRel, Ordering::Relaxed)
             .is_ok()
         {
-            self.available
+            // Safely add tokens but cap to capacity.
+            self.available_tokens
                 .fetch_update(Ordering::AcqRel, Ordering::Relaxed, |old| {
-                    Some((old.saturating_add(tokens_to_add)).min(self.capacity))
+                    Some((old.saturating_add(tokens_to_add)).min(self.max_tokens))
                 })
                 .ok();
         }
@@ -546,11 +568,11 @@ impl TokenBucket {
         }
 
         // No tokens - record suppression and reject
-        let prev_count = self.suppressed.fetch_add(1, Ordering::AcqRel);
+        let prev_count = self.suppressed_count.fetch_add(1, Ordering::AcqRel);
         if prev_count == 0 {
-            self.first_suppression.store(now_ms, Ordering::Release);
+            self.first_suppression_ms.store(now_ms, Ordering::Release);
         }
-        self.last_suppression.store(now_ms, Ordering::Release);
+        self.last_suppression_ms.store(now_ms, Ordering::Release);
 
         RateLimitCheckResult::Suppressed
     }
@@ -569,30 +591,38 @@ pub(crate) enum RateLimitCheckResult {
 
 #[derive(Clone)]
 /// A rate limiter keyed by `K`.
+///
+/// Each key is associated with a `TokenBucket`. The limiter tracks a global
+/// `start_instant` which is used to convert `Instant` durations into a
+/// monotonic millisecond counter used by the buckets.
 pub(crate) struct TokenBucketRateLimiter<K: Eq + Hash> {
     /// Map of keys to their corresponding token buckets.
     buckets: Arc<DashMap<K, TokenBucket>>,
+
     /// Maximum number of tokens per bucket.
-    capacity: u32,
-    /// Interval at which tokens are refilled.
-    refill_interval: Duration,
+    max_tokens: u32,
+
+    /// Window within which a maximum of `max_tokens` events are allowed.
+    /// In other words: up to `max_tokens` events are permitted per `refill_window` duration.
+    refill_window: Duration,
+
     /// Start time for measuring elapsed time.
-    start: Instant,
+    start_instant: Instant,
 }
 
 impl<K: Eq + Hash> TokenBucketRateLimiter<K> {
-    pub fn new(capacity: u32, refill_interval: Duration) -> Self {
+    pub fn new(max_tokens: u32, window: Duration) -> Self {
         Self {
             buckets: Arc::new(DashMap::new()),
-            capacity,
-            refill_interval,
-            start: Instant::now(),
+            max_tokens,
+            refill_window: window,
+            start_instant: Instant::now(),
         }
     }
 
     #[inline]
     pub(crate) fn now_ms(&self) -> u64 {
-        self.start.elapsed().as_millis() as u64
+        self.start_instant.elapsed().as_millis() as u64
     }
 
     pub fn check(&self, key: K) -> RateLimitCheckResult {
@@ -607,7 +637,7 @@ impl<K: Eq + Hash> TokenBucketRateLimiter<K> {
         let bucket = self
             .buckets
             .entry(key)
-            .or_insert_with(|| TokenBucket::new(self.capacity, self.refill_interval, now));
+            .or_insert_with(|| TokenBucket::new(self.max_tokens, self.refill_window, now));
         bucket.check(now)
     }
 }
@@ -674,7 +704,14 @@ mod test {
         let _ = limiter.check(key); // suppressed
         thread::sleep(Duration::from_millis(50));
         let _ = limiter.check(key); // suppressed again
-        thread::sleep(Duration::from_millis(220)); // enough for 1 token
+
+        // window duration is of 200ms, and 2 tokens are allowed within it,
+        // that means time taken to refill 1 token would be 100ms
+        // ie. token_refill_interval = window_duration / max_tokens
+        // = 200ms / 2 = 100ms
+        //
+        // we sleep for 120ms ( 20ms extra ) just to make sure we are past it.
+        thread::sleep(Duration::from_millis(120));
 
         // This call should be allowed WITH suppression info
         match limiter.check(key) {
@@ -708,7 +745,8 @@ mod test {
         limiter.check(key);
         limiter.check(key);
 
-        thread::sleep(Duration::from_millis(450));
+        // refill both tokens
+        thread::sleep(Duration::from_millis(250));
 
         let mut allowed_count = 0;
         for _ in 0..2 {
@@ -746,7 +784,7 @@ mod test {
 
     #[test]
     fn test_concurrent_token_consumption() {
-        let limiter = Arc::new(TokenBucketRateLimiter::new(5, Duration::from_millis(500)));
+        let limiter = Arc::new(TokenBucketRateLimiter::new(5, Duration::from_secs(60)));
         let key = "concurrent";
         let mut handles = vec![];
 
@@ -779,7 +817,7 @@ mod test {
 
     #[test]
     fn test_suppressed_count_and_timing_across_threads() {
-        let limiter = Arc::new(TokenBucketRateLimiter::new(2, Duration::from_millis(200)));
+        let limiter = Arc::new(TokenBucketRateLimiter::new(2, Duration::from_millis(600)));
         let key = "threaded_suppress".to_string();
 
         // Burn 2 tokens
@@ -807,7 +845,7 @@ mod test {
             ));
         }
 
-        thread::sleep(Duration::from_millis(220)); // refill 1
+        thread::sleep(Duration::from_millis(320)); // refill 1
 
         // This call should flush suppressed info
         match limiter.check(key.clone()) {
