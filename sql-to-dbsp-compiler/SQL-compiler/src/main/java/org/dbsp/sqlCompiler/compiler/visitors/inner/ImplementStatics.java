@@ -122,7 +122,7 @@ public class ImplementStatics extends ExpressionTranslator {
 
         DBSPExpression result;
         DBSPExpression renumbered = this.renumber.apply(expression).to(DBSPExpression.class);
-        String name = DBSPStaticExpression.generateName(expression, this.compiler);
+        String name = DBSPStaticExpression.generateName(renumbered, this.compiler);
         DBSPStaticExpression stat = new DBSPStaticExpression(expression.getNode(), renumbered, name);
         if (this.declare) {
             DBSPStaticItem item = new DBSPStaticItem(stat);
