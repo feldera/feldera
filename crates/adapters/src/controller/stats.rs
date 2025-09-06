@@ -126,10 +126,8 @@ impl CompletionToken {
 #[repr(u8)]
 pub enum TransactionStatus {
     #[default]
-    None,
-    TransactionStarting,
+    NoTransaction,
     TransactionInProgress,
-    CommitRequested,
     CommitInProgress,
 }
 
@@ -273,7 +271,7 @@ impl GlobalControllerMetrics {
             state: Atomic::new(PipelineState::Paused),
             bootstrap_in_progress: AtomicBool::new(false),
             transaction_id: Atomic::new(0),
-            transaction_status: Atomic::new(TransactionStatus::None),
+            transaction_status: Atomic::new(TransactionStatus::NoTransaction),
             rss_bytes: AtomicU64::new(0),
             cpu_msecs: AtomicU64::new(0),
             uptime_msecs: AtomicU64::new(0),
@@ -676,7 +674,7 @@ impl ControllerStatus {
         self.global_metrics
             .transaction_status
             .load(Ordering::Acquire)
-            != TransactionStatus::None
+            != TransactionStatus::NoTransaction
     }
 
     pub fn request_step(&self, circuit_thread_unparker: &Unparker) {

@@ -4215,7 +4215,7 @@ impl ControllerInner {
                 self.status
                     .global_metrics
                     .transaction_status
-                    .store(TransactionStatus::None, Ordering::Release);
+                    .store(TransactionStatus::NoTransaction, Ordering::Release);
             }
             (TransactionState::Started(tid), None) => {
                 assert_ne!(tid, 0);
@@ -4227,7 +4227,7 @@ impl ControllerInner {
                 self.status
                     .global_metrics
                     .transaction_status
-                    .store(TransactionStatus::CommitRequested, Ordering::Release);
+                    .store(TransactionStatus::CommitInProgress, Ordering::Release);
             }
             (TransactionState::Committing(tid), None) => {
                 assert_ne!(tid, 0);
@@ -4251,7 +4251,7 @@ impl ControllerInner {
                 self.status
                     .global_metrics
                     .transaction_status
-                    .store(TransactionStatus::TransactionStarting, Ordering::Release);
+                    .store(TransactionStatus::TransactionInProgress, Ordering::Release);
             }
             (TransactionState::Started(tid), Some(tid2)) => {
                 assert_ne!(tid, 0);

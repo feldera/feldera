@@ -170,6 +170,33 @@ class PipelineStatus(Enum):
         return self.value == other.value
 
 
+class TransactionStatus(Enum):
+    """
+    Represents the transaction handling status of a pipeline.
+    """
+
+    NoTransaction = 1
+    """There is currently no active transaction."""
+
+    TransactionInProgress = 2
+    """There is an active transaction in progress."""
+
+    CommitInProgress = 3
+    """A commit is currently in progress."""
+
+    @staticmethod
+    def from_str(value):
+        for member in TransactionStatus:
+            if member.name.lower() == value.lower():
+                return member
+        raise ValueError(
+            f"Unknown value '{value}' for enum {TransactionStatus.__name__}"
+        )
+
+    def __eq__(self, other):
+        return self.value == other.value
+
+
 class ProgramStatus(Enum):
     Pending = 1
     CompilingSql = 2

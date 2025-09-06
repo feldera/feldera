@@ -1,5 +1,5 @@
 from typing import Mapping, Any, Optional, List
-from feldera.enums import PipelineStatus
+from feldera.enums import PipelineStatus, TransactionStatus
 from datetime import datetime
 import uuid
 
@@ -55,6 +55,8 @@ class GlobalPipelineMetrics:
         self.total_processed_records: Optional[int] = None
         self.total_completed_records: Optional[int] = None
         self.pipeline_complete: Optional[bool] = None
+        self.transaction_status: Optional[TransactionStatus] = None
+        self.transaction_id: Optional[int] = None
 
     @classmethod
     def from_dict(cls, d: Mapping[str, Any]):
@@ -63,6 +65,7 @@ class GlobalPipelineMetrics:
         metrics.state = PipelineStatus.from_str(d["state"])
         metrics.incarnation_uuid = uuid.UUID(d["incarnation_uuid"])
         metrics.start_time = datetime.fromtimestamp(d["start_time"])
+        metrics.transaction_status = TransactionStatus.from_str(d["transaction_status"])
         return metrics
 
 

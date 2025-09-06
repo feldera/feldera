@@ -383,7 +383,8 @@ const pipelines = {
             id: "pipelines/configuration",
         },
         "pipelines/fault-tolerance",
-        "pipelines/checkpoint-sync"
+        "pipelines/checkpoint-sync",
+        "pipelines/transactions"
     ]
 };
 
