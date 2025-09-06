@@ -9,6 +9,7 @@
 * `::`: [casts](casts.md#coloncolon)
 * `<`: [comparisons](comparisons.md#lt)
 * `<=`: [comparisons](comparisons.md#lte)
+* `<=>`: [operators](operators.md#comparisons)
 * `<>`: [comparisons](comparisons.md#ne)
 * `=`: [comparisons](comparisons.md#eq)
 * `>`: [comparisons](comparisons.md#gt)

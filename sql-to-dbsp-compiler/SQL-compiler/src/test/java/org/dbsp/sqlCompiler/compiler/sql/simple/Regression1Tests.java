@@ -898,4 +898,18 @@ public class Regression1Tests extends SqlIoTest {
                 -------------
                 NULL | 1""");
     }
+
+    @Test
+    public void issue4708() {
+        var ccs = this.getCCS("""
+                CREATE TABLE tbl(intt INT);
+                
+                CREATE MATERIALIZED VIEW v AS SELECT
+                intt <=> -12 AS intt FROM tbl;""");
+        ccs.step("INSERT INTO tbl VALUES(NULL), (-12)", """
+                 r | weight
+                ------------
+                 true | 1
+                 false | 1""");
+    }
 }
