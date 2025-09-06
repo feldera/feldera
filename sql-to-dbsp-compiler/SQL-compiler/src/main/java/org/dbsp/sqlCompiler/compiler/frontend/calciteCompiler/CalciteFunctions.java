@@ -309,6 +309,7 @@ public class CalciteFunctions implements FunctionDocumentation.FunctionRegistry 
             new Func(SqlLibraryOperators.IS_NAN, "IS_NAN", SqlLibrary.BIG_QUERY, "float#is_nan", false),
             new Func(SqlLibraryOperators.LOG, "LOG", SqlLibrary.BIG_QUERY, "float#log", false),
             new Func(SqlLibraryOperators.INFIX_CAST, "::", SqlLibrary.POSTGRESQL, "casts#coloncolon", false),
+            new Func(SqlLibraryOperators.NULL_SAFE_EQUAL, "<=>", SqlLibrary.MYSQL, "operators#comparisons", false),
             // new Func(SqlLibraryOperators.OFFSET, "OFFSET", SqlLibrary.BIG_QUERY, "", false),
             new Func(SqlLibraryOperators.SAFE_OFFSET, "SAFE_OFFSET", SqlLibrary.BIG_QUERY, "", false),
             // new Func(SqlLibraryOperators.ORDINAL, "ORDINAL", SqlLibrary.BIG_QUERY, "array", false),
@@ -318,6 +319,7 @@ public class CalciteFunctions implements FunctionDocumentation.FunctionRegistry 
                     "map#map_contains_key", false),
             new Func(SqlLibraryOperators.MD5, "MD5", SqlLibrary.SPARK,
                     "string#md5,binary#md5", false),
+
             // new Func(SqlLibraryOperators.SAFE_ORDINAL, "SAFE_ORDINAL", SqlLibrary.BIG_QUERY, "array", false),
     };
 

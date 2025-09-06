@@ -107,6 +107,9 @@ Values of type `DATE` can be compared using `=`, `<>`, `!=`, `<`, `>`,
 two dates values and expresses the result in the specified time units.
 The result is a 32-bit integer.
 
+<a id="dateadd"></a> `DATEADD(<unit>, integer, date)` is a synonym for
+`TIMESTAMPADD(<unit>, integer, timestamp)`.
+
 ## Times
 
 A time represents the time of day, a value between 0 and 24 hours

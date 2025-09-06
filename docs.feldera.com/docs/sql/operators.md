@@ -44,7 +44,7 @@ This table shows the operators associativity, starting from highest to lowest:
     <td></td>
   </tr>
   <tr>
-    <td><code>&lt;, &gt;, =, &lt;=, &gt;=, &lt;&gt;, !=, &lt;=&gt;</code></td>
+    <td><a id="comparisons"></a><a id="<=>"></a><code>&lt;, &gt;, =, &lt;=, &gt;=, &lt;&gt;, !=, &lt;=&gt;</code></td>
     <td>left</td>
     <td>comparisons</td>
   </tr>
