@@ -1,6 +1,7 @@
 package org.dbsp.sqlCompiler.compiler.visitors.inner;
 
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.errors.InternalCompilerError;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitRewriter;
 import org.dbsp.sqlCompiler.ir.aggregate.DBSPFold;
@@ -1233,6 +1234,11 @@ public abstract class InnerRewriteVisitor
         this.push(expression);
         DBSPExpression source = this.transform(expression.initializer);
         this.pop(expression);
+        if (source != expression.initializer) {
+            // This is not allowed because the static name
+            // is a hash of its computation.
+            throw new InternalCompilerError("Changing static expression from " + expression.initializer + " to " + source);
+        }
         DBSPExpression result = new DBSPStaticExpression(expression.getNode(), source, expression.getName());
         this.map(expression, result);
         return VisitDecision.STOP;

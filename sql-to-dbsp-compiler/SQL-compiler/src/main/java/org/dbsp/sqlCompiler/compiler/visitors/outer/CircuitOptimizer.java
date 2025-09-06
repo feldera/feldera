@@ -147,12 +147,14 @@ public class CircuitOptimizer extends Passes {
         this.add(new RemoveViewOperators(compiler, true));
         this.add(new CircuitRewriter(compiler, new InnerCSE(compiler), false, InnerCSE::process));
         this.add(new CreateRuntimeErrorWrappers(compiler).getCircuitRewriter(true));
-        this.add(new StaticDeclarations(compiler, new ImplementStatics(compiler, !compiler.options.ioOptions.multiCrates())));
-        this.add(new ComparatorDeclarations(compiler, new DeclareComparators(compiler)));
-        // this.add(new TestSerialize(compiler));
         this.add(new OptimizeWithGraph(compiler, g -> new StrayGC(compiler, g)));
         // The canonical form is needed if we want the Merkle hashes to be "stable".
         this.add(new CanonicalForm(compiler).getCircuitRewriter(false));
+        this.add(new StaticDeclarations(compiler, new ImplementStatics(compiler, !compiler.options.ioOptions.multiCrates())));
+        // From now on we cannot really change the graph anymore.
+
+        // this.add(new TestSerialize(compiler));
+        this.add(new ComparatorDeclarations(compiler, new DeclareComparators(compiler)));
         this.add(new CompactNames(compiler));
         this.add(new MerkleOuter(compiler, true));
         this.add(new MerkleOuter(compiler, false));
