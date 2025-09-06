@@ -20,6 +20,7 @@ pub fn register_storage_handlers() {
         deltalake::aws::register_handlers(None);
         deltalake::azure::register_handlers(None);
         deltalake::gcp::register_handlers(None);
+        deltalake::unity_catalog::register_handlers(None);
     });
 }
 
