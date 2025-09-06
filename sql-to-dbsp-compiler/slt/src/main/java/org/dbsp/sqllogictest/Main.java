@@ -99,6 +99,9 @@ public class Main {
 
     @SuppressWarnings("SpellCheckingInspection")
     public static void main(String[] argv) throws IOException, ClassNotFoundException {
+        // Used for debugging: how many tests to skip from the first file
+        AtomicReference<Integer> skip = new AtomicReference<>();
+        skip.set(0);
         Class.forName("org.hsqldb.jdbcDriver");
         List<String> files = Linq.list(
                 // "test/random/expr/slt_good_102.test"
@@ -140,9 +143,6 @@ public class Main {
         System.out.println(Arrays.toString(args));
         System.out.println("WD: " + System.getProperty("user.dir"));
         OptionsParser parser = new OptionsParser(true, System.out, System.err);
-        // Used for debugging: how many tests to skip from the first file
-        AtomicReference<Integer> skip = new AtomicReference<>();
-        skip.set(0);
         parser.registerOption("-skip", "skipCount", "How many tests to skip (for debugging)", o -> {
             skip.set(Integer.parseInt(o));
             return true;

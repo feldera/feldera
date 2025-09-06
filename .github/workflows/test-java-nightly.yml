@@ -50,5 +50,5 @@ jobs:
 
       - name: Run SLT tests
         if: ${{ vars.CI_DRY_RUN != 'true' }}
-        run: mvn test --no-transfer-progress -q -B -Dsurefire.failIfNoSpecifiedTests=false -Dtest=RotateTests
+        run: mvn test --no-transfer-progress -q -B -Dsurefire.failIfNoSpecifiedTests=false -Dtest="RotateTests#rotate"
         working-directory: ./sql-to-dbsp-compiler

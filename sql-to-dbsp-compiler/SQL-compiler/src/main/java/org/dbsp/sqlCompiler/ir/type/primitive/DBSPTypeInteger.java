@@ -244,7 +244,7 @@ public class DBSPTypeInteger extends DBSPTypeBaseType
             if ((ll.isNull()) && expression.opcode.isStrict())
                 return ll;
             if ((rl.isNull()) && expression.opcode.isStrict())
-                return ll;
+                return rl;
             switch (this.width) {
                 case 8: {
                     DBSPI8Literal left = expression.left.as(DBSPI8Literal.class);

@@ -886,4 +886,16 @@ public class Regression1Tests extends SqlIoTest {
                 -------------------------
                  false | false  | 1""");
     }
+
+    @Test
+    public void sltBugTest() {
+        var ccs = this.getCCS("""
+                CREATE TABLE tab1(col0 INTEGER, col1 INTEGER, col2 INTEGER);
+                CREATE VIEW V AS SELECT ALL 77 + col1 * - ( - col2 / + CAST ( NULL AS INTEGER ) ) FROM tab1
+                """);
+        ccs.step("INSERT INTO tab1 VALUES(0, 1, 2);", """
+                 r | weight
+                -------------
+                NULL | 1""");
+    }
 }
