@@ -5,11 +5,11 @@ import TabItem from '@theme/TabItem';
 
 :::warning
 Transaction support is an experimental feature and may undergo significant
-changes, including non-backward-compatible modifications, in future releases of
+changes, including non-backward-compatible modifications in future releases of
 Feldera.
 :::
 
-Transactions let Feldera pipelines to ingest and process large volumes of data atomically—in
+Transactions enable Feldera pipelines to ingest and process large volumes of data atomically—in
 one logical unit of work rather than piece-by-piece.  Transactions are used to achieve:
 
 * **Efficient backfill**: ingest and process large historical datasets.
@@ -42,14 +42,14 @@ this is likely to lead to two issues:
 a single batch and processed atomically. In transactional mode,
 Feldera still executes SQL queries incrementally and produces a delta of changes
 to output views. The key difference is in who controls the batch size: instead of the
-engine automatically  deciding chunk boundaries, the scope of
-each transaction is explicitly specified by the user.
+engine automatically deciding chunk boundaries, the user explicitly defines the scope
+of each transaction.
 
 The following table summarizes the two modes:
 
 |                               | Continuous Mode                                                                                                                                | Transactions                                                                                                                                                         |
 |-------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| **When to use**               | <p>Process real-time inputs with low latency</p>                                                                                               | <p>Efficiently process bulk data</p>                                                                                                                                 |
+| **When to use**               | <p>Process real-time inputs with low latency</p>                                                                                               | <ul><li>Efficiently process bulk data</li><li>Process multiple updates atomically</li></ul>                                                                                                                                 |
 | **When query evaluation is triggered** | <p>When an input chunk is ingested</p>                                                                                          | <p>On transaction commit</p>                                                                                                                                         |
 | **Strong consistency**        | <p>Yes: after processing an input chunk, the contents of all views matches all the inputs received so far.</p>                                 | <p>Yes: after committing a transaction the contents of all matches all the inputs received so far, including inputs received as part of the transaction.</p>         |
 
@@ -89,6 +89,8 @@ Use the [`start_transaction`](https://docs.feldera.com/api/start-a-transaction) 
 
 * During a transaction, the pipeline ingests incoming data without producing output, performing only minimal processing such as resolving primary keys and indexing inputs.
 
+* Any inputs received by the pipeline between `start_transaction` and `commit_transaction`, along with data buffered by input connectors but not yet processed at the time `start_transaction` is called, are processed as part of the transaction.
+
 ### Commit a transaction
 
 Once the pipeline has ingested all inputs that must be processed as part of the transaction,
@@ -127,8 +129,8 @@ commit the transaction using the [`commit_transaction`](https://docs.feldera.com
   program. Depending on the volume of ingested data and the complexity of the
   views, this process can take a significant amount of time. While the commit is
   in progress, the pipeline neither ingests new inputs nor produces outputs. To
-  provide visibility, the pipeline periodically (every 10 seconds) reports the
-  progress of the current commit operation in the log.
+  provide visibility, the pipeline periodically (every 10 seconds) logs the
+  progress of the current commit operation.
 
 * Once the commit is complete, the pipeline outputs a batch of updates for every view in the program.
   These updates are processed by the output connectors, which send them to their associated data sinks.
@@ -137,13 +139,11 @@ When the transaction is complete, the pipeline goes back into continuous process
 
 ### Monitoring transaction status
 
-The user can monitor the transaction handling status of the pipeline using the [`/stats`](https://docs.feldera.com/api/retrieve-statistics-e-g-performance-counters-of-a-running-or-paused-pipeline) endpoint. Possible statuses are summarized
-in the following table:
-
+The user can monitor the transaction handling status of the pipeline using the [`/stats`](https://docs.feldera.com/api/retrieve-statistics-e-g-performance-counters-of-a-running-or-paused-pipeline) endpoint. The status can be one of:
 
 | Status                  | Description                                     |
 |-------------------------|-------------------------------------------------|
-| `NoTransaction`         | There is currently no active transaction.       |
+| `NoTransaction`         | There is currently no active transaction. The pipeline is running in continuous mode.|
 | `TransactionInProgress` | There is an active transaction in progress.     |
 | `CommitInProgress`      | The current transaction is being committed.     |
 
@@ -185,7 +185,7 @@ When the status is `TransactionInProgress` or `CommitInProgress`, the `transacti
 
 * Checkpointing is disabled during a transaction. A checkpoint initiated during a transaction gets delayed until the transaction has committed.
 
-* Transaction rollback is currently not supported.
+* A transaction currently cannot be aborted or rolled back. Let us know if this feature is important for your use case by [leaving a comment](https://github.com/feldera/feldera/issues/4710).
 
 ## Example
 
