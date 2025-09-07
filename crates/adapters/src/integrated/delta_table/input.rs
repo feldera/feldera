@@ -38,7 +38,7 @@ use feldera_types::transport::delta_table::DeltaTableReaderConfig;
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -222,6 +222,8 @@ impl DeltaTableInputReader {
             );
         }
 
+        Self::prepare_unity_config(&config.object_store_config);
+
         let input_stream = input_handle
             .handle
             .configure_arrow_deserializer(delta_input_serde_config())?;
@@ -264,6 +266,18 @@ impl DeltaTableInputReader {
             sender,
             inner: endpoint.clone(),
         })
+    }
+
+    /// deltalake_catalog_unity expects all configuration settings to be provided as environment variables.
+    /// This function sets environment variables for all configuration settings that start with "unity_" or "databricks_".
+    fn prepare_unity_config(object_store_config: &HashMap<String, String>) {
+        for (key, val) in object_store_config.iter() {
+            if key.to_lowercase().starts_with("unity_")
+                || key.to_lowercase().starts_with("databricks_")
+            {
+                std::env::set_var(key.to_uppercase(), val);
+            }
+        }
     }
 }
 

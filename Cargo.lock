@@ -4013,6 +4013,7 @@ source = "git+https://github.com/ryzhyk/delta-rs.git?rev=77ef46e#77ef46e0dd1dc00
 dependencies = [
  "deltalake-aws",
  "deltalake-azure",
+ "deltalake-catalog-unity",
  "deltalake-core",
  "deltalake-gcp",
 ]
@@ -4058,6 +4059,31 @@ dependencies = [
  "tokio",
  "tracing",
  "url",
+]
+
+[[package]]
+name = "deltalake-catalog-unity"
+version = "0.10.1"
+source = "git+https://github.com/ryzhyk/delta-rs.git?rev=77ef46e#77ef46e0dd1dc0066cccd7d9e206fecc6b6e865d"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "dashmap 6.1.0",
+ "datafusion",
+ "datafusion-common",
+ "deltalake-aws",
+ "deltalake-core",
+ "futures",
+ "moka",
+ "rand 0.8.5",
+ "reqwest 0.12.20",
+ "reqwest-middleware",
+ "reqwest-retry",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.12",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]
