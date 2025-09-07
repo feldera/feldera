@@ -232,7 +232,8 @@ public class CalciteFunctions implements FunctionDocumentation.FunctionRegistry 
             new Func(SqlStdOperatorTable.HOP, "HOP", SqlLibrary.STANDARD, "table#hop", false),
 
             // SqlLibraryOperators operators
-            new Func(SqlLibraryOperators.DATEADD, "DATEADD", SqlLibrary.POSTGRESQL, "datetime#dateadd", false),
+            // Not implemented, but give a better error message
+            new Func(SqlLibraryOperators.DATEADD, "DATEADD", SqlLibrary.POSTGRESQL, "", false),
             new Func(SqlLibraryOperators.DATEDIFF, "DATEDIFF", SqlLibrary.POSTGRESQL,
                     "datetime#date_timestampdiff,datetime#timestamp_timestampdiff", false),
             new Func(SqlLibraryOperators.MSSQL_CONVERT, "CONVERT", SqlLibrary.POSTGRESQL, "casts", false),

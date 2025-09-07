@@ -84,7 +84,6 @@
 * `DATE_PART`: [datetime](datetime.md#date_extract), [datetime](datetime.md#time_extract), [datetime](datetime.md#timestamp_extract)
 * `DATE_SUB`: [datetime](datetime.md#date_sub)
 * `DATE_TRUNC`: [datetime](datetime.md#date_trunc)
-* `DATEADD`: [datetime](datetime.md#dateadd)
 * `DATEDIFF`: [datetime](datetime.md#date_timestampdiff), [datetime](datetime.md#timestamp_timestampdiff)
 * `DAYOFMONTH`: [datetime](datetime.md#date_dayofmonth), [datetime](datetime.md#timestamp_dayofmonth)
 * `DEFAULT`: [grammar](grammar.md#default)

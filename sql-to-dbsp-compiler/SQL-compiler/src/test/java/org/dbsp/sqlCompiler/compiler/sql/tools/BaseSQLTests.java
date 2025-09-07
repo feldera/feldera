@@ -175,7 +175,7 @@ public class BaseSQLTests {
         this.prepareInputs(compiler);
         compiler.submitStatementsForCompilation(statements);
         getCircuit(compiler);
-        Assert.assertTrue(compiler.hasWarnings);
+        Assert.assertTrue("Expected some warnings; got none", compiler.hasWarnings);
         String warnings = compiler.messages.messages.stream()
                 .filter(error -> error.warning).toList().toString();
         this.shouldMatch(warnings, regex, true);
