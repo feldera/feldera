@@ -302,7 +302,9 @@ inputs:
         move |workers| Ok(test_circuit::<T>(workers, &schema, &[None])),
         &config,
         std::sync::Weak::new(),
-        Box::new(move |e| panic!("delta_table_input_test: error: {e}")),
+        Box::new(move |e| {
+            panic!("delta_table_input_test: error: {e}");
+        }),
     )
     .unwrap()
 }
@@ -1352,7 +1354,7 @@ async fn delta_table_cdc_file_suspend_test() {
 #[cfg(feature = "delta-s3-test")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn delta_table_cdc_s3_test_suspend() {
-    register_storage_handlers();
+    crate::integrated::delta_table::register_storage_handlers();
 
     // We cannot use proptest macros in `async` context, so generate
     // some random data manually.
@@ -1362,7 +1364,6 @@ async fn delta_table_cdc_s3_test_suspend() {
     let relation_schema = DeltaTestStruct::schema();
 
     let input_uuid = uuid::Uuid::new_v4();
-    let output_uuid = uuid::Uuid::new_v4();
 
     let object_store_config = [
         (
@@ -1375,19 +1376,22 @@ async fn delta_table_cdc_s3_test_suspend() {
         ),
         // AWS region must be specified (see https://github.com/delta-io/delta-rs/issues/1095).
         ("aws_region".to_string(), "us-east-2".to_string()),
-        ("AWS_S3_ALLOW_UNSAFE_RENAME".to_string(), "true".to_string()),
+        (
+            "AWS_S3_ALLOW_UNSAFE_RENAME".to_string(),
+            "\"true\"".to_string(),
+        ),
     ]
     .into_iter()
     .collect::<HashMap<_, _>>();
 
     let input_table_uri = format!("s3://feldera-delta-table-test/{input_uuid}/");
-    let output_table_uri = format!("s3://feldera-delta-table-test/{output_uuid}/");
 
     test_cdc(
         &relation_schema,
         &input_table_uri,
         &object_store_config,
         data,
+        false,
         true,
     )
     .await;
@@ -1420,7 +1424,7 @@ async fn delta_table_snapshot_and_follow_file_test_suspend_end_version() {
 
 #[cfg(feature = "delta-s3-test")]
 async fn delta_table_follow_s3_test_common(snapshot: bool, suspend: bool) {
-    register_storage_handlers();
+    crate::integrated::delta_table::register_storage_handlers();
 
     // We cannot use proptest macros in `async` context, so generate
     // some random data manually.
@@ -1677,7 +1681,8 @@ proptest! {
 #[cfg(feature = "delta-s3-test")]
 #[test]
 fn delta_table_s3_people_2m() {
-    let uuid = uuid::Uuid::new_v4();
+    use crate::test::DatabricksPeople;
+
     let object_store_config = [
         (
             "aws_access_key_id".to_string(),
@@ -1697,6 +1702,52 @@ fn delta_table_s3_people_2m() {
 
     //let table_uri = "s3://databricks-workspace-stack-d437e-bucket/unity-catalog/5496131495366467/__unitystorage/catalogs/d1e3a643-f243-4798-8554-d32bf5a7205a/tables/cee86cb4-a525-41b9-82fe-616ae62287fc/";
     let table_uri = "s3://databricks-workspace-stack-d437e-bucket/unity-catalog/5496131495366467/__unitystorage/catalogs/d1e3a643-f243-4798-8554-d32bf5a7205a/tables/90cc5aba-25cd-4ed7-a498-8d08f0ddaa21/";
+    let mut json_file = delta_table_snapshot_to_json::<DatabricksPeople>(
+        table_uri,
+        &DatabricksPeople::schema(),
+        &object_store_config,
+    );
+
+    println!("reading output file");
+    let zset = file_to_zset::<DatabricksPeople>(
+        json_file.as_file_mut(),
+        "json",
+        r#"update_format: "insert_delete""#,
+    );
+
+    assert_eq!(zset.len(), 2_000_000);
+
+    forget(json_file);
+}
+
+/// Read the same table using Unity Catalog path.
+#[cfg(feature = "delta-s3-test")]
+#[test]
+fn delta_table_unity_people_2m() {
+    use crate::test::DatabricksPeople;
+
+    let object_store_config = [
+        (
+            "unity_client_id".to_string(),
+            std::env::var("DELTA_TABLE_TEST_UNITY_CLIENT_ID").unwrap(),
+        ),
+        (
+            "unity_client_secret".to_string(),
+            std::env::var("DELTA_TABLE_TEST_UNITY_CLIENT_SECRET").unwrap(),
+        ),
+        (
+            "databricks_host".to_string(),
+            std::env::var("DELTA_TABLE_TEST_UNITY_HOST").unwrap(),
+        ),
+        // AWS region must be specified (see https://github.com/delta-io/delta-rs/issues/1095).
+        ("aws_region".to_string(), "us-west-1".to_string()),
+        // Set long timeout for reading large files from S3.
+        ("timeout".to_string(), "1000 secs".to_string()),
+    ]
+    .into_iter()
+    .collect::<HashMap<_, _>>();
+
+    let table_uri = "uc://feldera_experimental.default.people_2m";
     let mut json_file = delta_table_snapshot_to_json::<DatabricksPeople>(
         table_uri,
         &DatabricksPeople::schema(),
