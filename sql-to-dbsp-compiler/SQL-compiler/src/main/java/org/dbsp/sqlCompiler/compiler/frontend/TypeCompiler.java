@@ -262,8 +262,8 @@ public class TypeCompiler implements ICompilerComponent {
         return new DBSPTypeStruct(node, name, saneName, fields, mayBeNull);
     }
 
-    static final Set<Integer> timePrecisionsWarned = new HashSet<>();
-    static final Set<Integer> timestampPrecisionsWarned = new HashSet<>();
+    final Set<Integer> timePrecisionsWarned = new HashSet<>();
+    final Set<Integer> timestampPrecisionsWarned = new HashSet<>();
 
     /**
      * Convert a Calcite RelDataType to an equivalent DBSP type.
