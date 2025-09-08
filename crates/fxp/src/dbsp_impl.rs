@@ -128,7 +128,7 @@ mod test {
 
     use crate::Fixed;
 
-    // This is copied from `crates/dbsp/src/operator/dynamic/aggregate/mod.rs`
+    // This is copied from `crates/dbsp/src/operator/dynamic/aggregate.rs`
     // with the value type changed from `i64` to `Fixed<10,0>`.
     fn count_test(workers: usize) {
         type D = Fixed<10, 0>;

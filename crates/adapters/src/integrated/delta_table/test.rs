@@ -55,7 +55,7 @@ fn delta_output_serde_config() -> SqlSerdeConfig {
         .with_date_format(DateFormat::String("%Y-%m-%d"))
         .with_decimal_format(DecimalFormat::String)
         // DeltaLake only supports microsecond-based timestamp encoding, so we just
-        // hardwire that for now.  See also `format/parquet/mod.rs`.
+        // hardwire that for now.  See also `format/parquet.rs`.
         .with_timestamp_format(TimestampFormat::MicrosSinceEpoch)
 }
 

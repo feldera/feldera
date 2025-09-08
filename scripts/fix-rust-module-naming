@@ -1,0 +1,15 @@
+#! /bin/sh -e
+
+exit_status=0
+for src in $(git ls-files | grep 'mod.rs$')
+do
+    dst=$(echo "$src" | sed 's|/mod\.rs$|.rs|')
+    echo "renaming $src to $dst to fit preferred style..."
+    git mv "$src" "$dst"
+
+    # The return value convention for this kind of script is that, if
+    # it finds a problem, it should fix it and then return an error to
+    # indicate that it did it.
+    exit_status=1
+done
+exit $exit_status
