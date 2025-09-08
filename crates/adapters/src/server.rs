@@ -111,6 +111,9 @@ enum PipelinePhase {
 
     /// Pipeline encountered a fatal error.
     Failed(Arc<ControllerError>),
+
+    /// Pipeline was successfully suspended to storage.
+    Suspended,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -253,6 +256,7 @@ impl ServerState {
             }
             PipelinePhase::InitializationComplete => PipelineError::Terminating,
             PipelinePhase::Failed(e) => PipelineError::ControllerError { error: e.clone() },
+            PipelinePhase::Suspended => PipelineError::Suspended,
         }
     }
 
@@ -294,12 +298,6 @@ impl ServerState {
 
     fn set_phase(&self, phase: PipelinePhase) {
         *self.phase.lock().unwrap() = phase;
-    }
-
-    async fn terminate(&self) {
-        if let Err(e) = tokio::fs::remove_file(SERVER_PORT_FILE).await {
-            warn!("Failed to remove server port file: {e}");
-        }
     }
 }
 
@@ -675,14 +673,7 @@ pub fn run_server(
                         desired_status: state.desired_status(),
                         deployment_id: state.deployment_id,
                     };
-                    if Some(stored_status) != prev_stored_status
-                        && matches!(
-                            stored_status.desired_status,
-                            RuntimeDesiredStatus::Paused
-                                | RuntimeDesiredStatus::Running
-                                | RuntimeDesiredStatus::Standby
-                        )
-                    {
+                    if Some(stored_status) != prev_stored_status {
                         let storage = storage.clone();
                         spawn_blocking(move || stored_status.write(&*storage));
                     }
@@ -1099,6 +1090,11 @@ async fn status(
                 })
             }
         }
+        PipelinePhase::Suspended => Ok(ExtendedRuntimeStatus {
+            runtime_status: RuntimeStatus::Suspended,
+            runtime_status_details: "".to_string(),
+            runtime_desired_status,
+        }),
     }
 }
 
@@ -1387,18 +1383,23 @@ async fn suspend(state: WebData<ServerState>) -> Result<impl Responder, Pipeline
 
                     match state.phase() {
                         PipelinePhase::Initializing | PipelinePhase::InitializationComplete => (),
-                        PipelinePhase::InitializationError(_) | PipelinePhase::Failed(_) => break,
+                        PipelinePhase::InitializationError(_)
+                        | PipelinePhase::Failed(_)
+                        | PipelinePhase::Suspended => break,
                     };
                     tokio::time::sleep(Duration::from_millis(50)).await;
                 }
-                if let Ok(controller) = state.controller() {
+                state.set_phase(PipelinePhase::Suspended);
+                if let Ok(controller) = state.take_controller() {
                     if let Err(error) = controller.async_stop().await {
                         error!("stopping controller failed ({error})");
                     }
                 }
-                state.terminate().await;
             }
 
+            // This can only be spawned once, because we only transition to
+            // [RuntimeDesiredStatus::Suspended] once and we never transition
+            // out of it.
             tokio::spawn(async move { suspend(state).await });
         }
         RuntimeDesiredStatus::Suspended => (),
