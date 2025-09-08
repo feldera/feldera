@@ -72,12 +72,9 @@ use std::{
     sync::{Arc, Mutex, Weak},
     thread,
 };
+use tokio::spawn;
 use tokio::sync::Notify;
 use tokio::task::spawn_blocking;
-use tokio::{
-    spawn,
-    sync::mpsc::{channel, Sender},
-};
 use tokio_stream::{wrappers::BroadcastStream, StreamExt};
 use tracing::{debug, error, info, info_span, trace, warn, Instrument, Level, Subscriber};
 use tracing_subscriber::fmt::format::Format;
@@ -213,19 +210,11 @@ pub(crate) struct ServerState {
     /// Leaf lock.
     sync_checkpoint_state: Mutex<CheckpointSyncState>,
 
-    /// Channel used to send a `kill` command to the self-destruct task when
-    /// shutting down the server.
-    terminate_sender: Option<Sender<()>>,
-
     metadata: String,
 }
 
 impl ServerState {
-    fn new(
-        md: String,
-        terminate_sender: Option<Sender<()>>,
-        initial: RuntimeDesiredStatus,
-    ) -> Result<Self, ControllerError> {
+    fn new(md: String, initial: RuntimeDesiredStatus) -> Result<Self, ControllerError> {
         if !matches!(
             initial,
             RuntimeDesiredStatus::Running
@@ -241,7 +230,6 @@ impl ServerState {
             controller: Mutex::new(None),
             checkpoint_state: Default::default(),
             sync_checkpoint_state: Default::default(),
-            terminate_sender,
             desired_status: Mutex::new(initial),
         })
     }
@@ -301,9 +289,6 @@ impl ServerState {
     }
 
     async fn terminate(&self) {
-        if let Some(sender) = &self.terminate_sender {
-            let _ = sender.send(()).await;
-        }
         if let Err(e) = tokio::fs::remove_file(SERVER_PORT_FILE).await {
             warn!("Failed to remove server port file: {e}");
         }
@@ -445,8 +430,6 @@ pub fn run_server(
         })?
         .port();
 
-    let (terminate_sender, mut terminate_receiver) = channel(1);
-
     let config = parse_config(&args.config_file).inspect_err(|e| {
         // Logging isn't initialized and we can't initialize it until we have
         // the configuration, so just print the message to stderr for now.
@@ -531,11 +514,7 @@ pub fn run_server(
         }
     };
 
-    let state = WebData::new(ServerState::new(
-        md,
-        Some(terminate_sender),
-        initial_status,
-    )?);
+    let state = WebData::new(ServerState::new(md, initial_status)?);
 
     // Initialize the pipeline in a separate thread.  On success, this thread
     // will create a `Controller` instance and store it in `state.controller`.
@@ -653,13 +632,6 @@ pub fn run_server(
     };
 
     rt::System::new().block_on(async {
-        // Spawn a task that will shut down the server on `/stop`.
-        let server_handle = server.handle();
-        spawn(async move {
-            terminate_receiver.recv().await;
-            server_handle.stop(true).await
-        });
-
         // Spawn a task to update the stored desired state when it changes.
         if let Some(storage) = storage {
             spawn(async move {
@@ -882,7 +854,6 @@ where
         .service(start)
         .service(pause)
         .service(activate)
-        .service(stop)
         .service(status)
         .service(suspendable)
         .service(start_transaction)
@@ -1412,19 +1383,6 @@ async fn commit_transaction(state: WebData<ServerState>) -> Result<impl Responde
     Ok(HttpResponse::Ok().json("Transaction commit initiated"))
 }
 
-#[get("/stop")]
-async fn stop(state: WebData<ServerState>) -> Result<impl Responder, PipelineError> {
-    match state.take_controller() {
-        Ok(controller) => {
-            controller.async_stop().await?;
-            state.terminate().await;
-            Ok(HttpResponse::Ok().json("Pipeline terminated"))
-        }
-        //Err(ControllerError::Initializing) => todo!(),
-        Err(_) => Ok(HttpResponse::Ok().json("Pipeline already terminated")),
-    }
-}
-
 #[derive(Debug, Deserialize)]
 struct IngressArgs {
     #[serde(default = "HttpInputTransport::default_format")]
@@ -1878,9 +1836,8 @@ outputs:
 
         println!("Creating HTTP server");
 
-        let state = WebData::new(
-            ServerState::new(String::from(""), None, RuntimeDesiredStatus::Paused).unwrap(),
-        );
+        let state =
+            WebData::new(ServerState::new(String::from(""), RuntimeDesiredStatus::Paused).unwrap());
         let state_clone = state.clone();
 
         let args = ServerArgs {
@@ -2134,17 +2091,6 @@ outputs:
         assert!(resp.status().is_success());
         sleep(Duration::from_millis(1000));
 
-        // Stop
-        println!("/stop");
-        let resp = server.get("/stop").send().await.unwrap();
-        // println!("Response: {resp:?}");
-        assert!(resp.status().is_success());
-
-        // Resume after stop must fail.
-        println!("/start");
-        let resp = server.get("/start").send().await.unwrap();
-        assert_eq!(resp.status(), StatusCode::GONE);
-
         drop(buffer_consumer);
         drop(kafka_resources);
     }
@@ -2174,7 +2120,7 @@ outputs:
         println!("Creating HTTP server");
 
         let state = WebData::new(
-            ServerState::new(String::default(), None, RuntimeDesiredStatus::Paused).unwrap(),
+            ServerState::new(String::default(), RuntimeDesiredStatus::Paused).unwrap(),
         );
         let state_clone = state.clone();
 
@@ -2243,11 +2189,5 @@ outputs:
         assert!(resp.status().is_success());
 
         TestHttpReceiver::wait_for_output_unordered(&mut egress_resp, &data).await;
-
-        // Shutdown
-        println!("/stop");
-        let resp = server.get("/stop").send().await.unwrap();
-        // println!("Response: {resp:?}");
-        assert!(resp.status().is_success());
     }
 }
