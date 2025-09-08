@@ -796,6 +796,16 @@ impl Controller {
             labels,
             &DBSP_STEP,
         );
+        metrics.counter(
+            "dbsp_runtime_elapsed_seconds_total",
+            "Time elapsed while the pipeline is executing a step, multiplied by the number of foreground and background threads, in seconds.",
+            labels,
+            status
+                .global_metrics
+                .runtime_elapsed_msecs
+                .load(Ordering::Relaxed) as f64
+                / 1000.0,
+        );
         metrics.histogram(
             "dbsp_step_latency_seconds",
             "Latency of DBSP steps over the last 60 seconds or 1000 steps, whichever is less, in seconds",
@@ -833,6 +843,22 @@ impl Controller {
             status.global_metrics.initial_start_time,
         );
 
+        metrics.gauge(
+            "storage_usage_bytes",
+            "The number of bytes of storage currently in use",
+            labels,
+            &status.global_metrics.storage_bytes,
+        );
+        metrics.counter(
+            "storage_byte_seconds_total",
+            "Storage usage integrated over time during this run of the pipeline, in bytes × seconds.",
+            labels,
+            status
+                .global_metrics
+                .storage_mb_secs
+                .load(Ordering::Relaxed) as f64
+                * (1024.0 * 1024.0),
+        );
         metrics.histogram(
             "storage_read_latency_seconds",
             "Read latency for storage blocks in seconds",
