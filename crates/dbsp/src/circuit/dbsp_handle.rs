@@ -295,9 +295,9 @@ pub struct DevTweaks {
     /// Attempt to print a stack trace on stack overflow.
     ///
     /// To be used for debugging only; do not enable in production.
-    // NOTE: this flag is handled manually in `adapters/src/server/mod.rs` before
+    // NOTE: this flag is handled manually in `adapters/src/server.rs` before
     // parsing DevTweaks. If the name or type of this field changes, make sure to
-    // adjust `server/mod.rs` accordingly.
+    // adjust `server.rs` accordingly.
     pub stack_overflow_backtrace: bool,
 
     /// Enable backfill avoidance feature.

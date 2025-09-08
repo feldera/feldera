@@ -24,7 +24,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 default = ["backend-mode"]
 
 # For use with compiler-generated code.
-# See comments in `mono/mod.rs`
+# See comments in `mono.rs`
 backend-mode = []
 
 [dependencies]

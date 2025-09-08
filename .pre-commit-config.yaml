@@ -39,6 +39,12 @@ repos:
         exclude: 'crates/pipeline-manager/migrations/.*|.*\.patch|.*\.svg|.*\.java'
   - repo: local
     hooks:
+      - id: fix-rust-mod-naming
+        name: Rust module naming
+        entry: scripts/fix-rust-module-naming
+        language: rust
+        files: mod\.rs$
+        pass_filenames: false
       - id: update-openapi
         name: Update OpenAPI
         entry: cargo run --bin=pipeline-manager -- --dump-openapi
