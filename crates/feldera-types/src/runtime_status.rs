@@ -59,6 +59,26 @@ pub enum RuntimeDesiredStatus {
     Suspended,
 }
 
+impl RuntimeDesiredStatus {
+    pub fn may_transition_to(&self, target: Self) -> bool {
+        match (*self, target) {
+            (old, new) if old == new => true,
+            (Self::Standby, Self::Paused | Self::Running) => true,
+            (Self::Paused, Self::Running | Self::Suspended) => true,
+            (Self::Running, Self::Paused | Self::Suspended) => true,
+            _ => false,
+        }
+    }
+
+    pub fn may_transition_to_at_startup(&self, target: Self) -> bool {
+        match (*self, target) {
+            (old, new) if old.may_transition_to(new) => true,
+            (Self::Suspended, Self::Paused | Self::Running) => true,
+            _ => false,
+        }
+    }
+}
+
 impl From<String> for RuntimeDesiredStatus {
     fn from(value: String) -> Self {
         match value.as_str() {
