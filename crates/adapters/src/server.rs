@@ -881,50 +881,60 @@ where
         .service(output_endpoint_status)
 }
 
-#[get("/start")]
-async fn start(state: WebData<ServerState>) -> Result<HttpResponse, PipelineError> {
+/// Implements `/start`, `/pause`, `/activate`:
+///
+/// - `action` is the desired action, used in error messages.
+///
+/// - `new_status` must be [RuntimeDesiredStatus::Paused] or
+///   [RuntimeDesiredStatus::Running], as appropriate.
+///
+/// - `may_activate` is true to allow transitioning out of
+///   [RuntimeDesiredStatus::Standby].
+async fn state_transition(
+    state: WebData<ServerState>,
+    action: &'static str,
+    new_status: RuntimeDesiredStatus,
+    may_activate: bool,
+) -> Result<HttpResponse, PipelineError> {
     let mut desired_status = state.desired_status.lock().unwrap();
-    match *desired_status {
-        RuntimeDesiredStatus::Unavailable => unreachable!(),
-        RuntimeDesiredStatus::Standby | RuntimeDesiredStatus::Suspended => {
-            return Err(PipelineError::InvalidTransition("start", *desired_status))
-        }
-        RuntimeDesiredStatus::Paused | RuntimeDesiredStatus::Running => {
-            *desired_status = RuntimeDesiredStatus::Running;
+    let old_status = *desired_status;
+    if (may_activate || old_status != RuntimeDesiredStatus::Standby)
+        && desired_status.may_transition_to(new_status)
+    {
+        if new_status != old_status {
+            *desired_status = new_status;
             state.desired_status_change.notify_waiters();
             match state.controller() {
                 Ok(controller) => {
-                    controller.start();
+                    match (old_status, new_status) {
+                        (RuntimeDesiredStatus::Standby, _) => {
+                            // `do_bootstrap` will set the new status.
+                        }
+                        (_, RuntimeDesiredStatus::Paused) => controller.pause(),
+                        (_, RuntimeDesiredStatus::Running) => controller.start(),
+                        _ => unreachable!(),
+                    }
                 }
                 Err(PipelineError::Initializing) => (),
                 Err(error) => return Err(error),
             }
-            Ok(HttpResponse::Accepted().json("Pipeline is resuming"))
         }
+        Ok(HttpResponse::Accepted().json(format!(
+            "Pipeline transitioning from {old_status:?} to {new_status:?}"
+        )))
+    } else {
+        Err(PipelineError::InvalidTransition(action, *desired_status))
     }
+}
+
+#[get("/start")]
+async fn start(state: WebData<ServerState>) -> Result<HttpResponse, PipelineError> {
+    state_transition(state, "start", RuntimeDesiredStatus::Running, false).await
 }
 
 #[get("/pause")]
 async fn pause(state: WebData<ServerState>) -> Result<HttpResponse, PipelineError> {
-    let mut desired_status = state.desired_status.lock().unwrap();
-    match *desired_status {
-        RuntimeDesiredStatus::Unavailable => unreachable!(),
-        RuntimeDesiredStatus::Standby | RuntimeDesiredStatus::Suspended => {
-            return Err(PipelineError::InvalidTransition("pause", *desired_status))
-        }
-        RuntimeDesiredStatus::Paused | RuntimeDesiredStatus::Running => {
-            *desired_status = RuntimeDesiredStatus::Paused;
-            state.desired_status_change.notify_waiters();
-            match state.controller() {
-                Ok(controller) => {
-                    controller.pause();
-                }
-                Err(PipelineError::Initializing) => (),
-                Err(error) => return Err(error),
-            }
-            Ok(HttpResponse::Accepted().json("Pipeline is pausing"))
-        }
-    }
+    state_transition(state, "pause", RuntimeDesiredStatus::Paused, false).await
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -938,27 +948,11 @@ async fn activate(
     state: WebData<ServerState>,
     args: Query<ActivateArgs>,
 ) -> Result<HttpResponse, PipelineError> {
-    let mut desired_status = state.desired_status.lock().unwrap();
-    match *desired_status {
-        RuntimeDesiredStatus::Unavailable => unreachable!(),
-        RuntimeDesiredStatus::Standby
-        | RuntimeDesiredStatus::Paused
-        | RuntimeDesiredStatus::Running => match args.initial {
-            RuntimeDesiredStatus::Running | RuntimeDesiredStatus::Paused => {
-                let message = format!(
-                    "Pipeline transitioning from {desired_status:?} to {:?}",
-                    args.initial
-                );
-                *desired_status = args.initial;
-                state.desired_status_change.notify_waiters();
-                Ok(HttpResponse::Accepted().json(message))
-            }
-            _ => Err(PipelineError::InvalidActivateStatus(args.initial)),
-        },
-        RuntimeDesiredStatus::Suspended => Err(PipelineError::InvalidTransition(
-            "activate",
-            *desired_status,
-        )),
+    match args.initial {
+        RuntimeDesiredStatus::Running | RuntimeDesiredStatus::Paused => {
+            state_transition(state, "activate", args.initial, true).await
+        }
+        _ => Err(PipelineError::InvalidActivateStatus(args.initial)),
     }
 }
 
