@@ -72,8 +72,12 @@ impl RuntimeDesiredStatus {
 
     pub fn may_transition_to_at_startup(&self, target: Self) -> bool {
         match (*self, target) {
+            (Self::Suspended, _) => {
+                // A suspended pipeline must transition to "paused" or
+                // "running".
+                matches!(target, Self::Paused | Self::Running)
+            }
             (old, new) if old.may_transition_to(new) => true,
-            (Self::Suspended, Self::Paused | Self::Running) => true,
             _ => false,
         }
     }
