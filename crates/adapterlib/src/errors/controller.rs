@@ -741,6 +741,12 @@ pub enum ControllerError {
 
     /// Invalid standby configuration,
     InvalidStandby(&'static str),
+
+    /// Invalid startup status transition.
+    InvalidStartupTransition {
+        from: RuntimeDesiredStatus,
+        to: RuntimeDesiredStatus,
+    },
 }
 
 impl ResponseError for ControllerError {
@@ -905,6 +911,7 @@ impl DbspDetailedError for ControllerError {
             Self::NoTransactionInProgress => Cow::from("NoTransactionInProgress"),
             Self::InvalidInitialStatus(_) => Cow::from("InvalidInitialStatus"),
             Self::InvalidStandby(_) => Cow::from("InvalidStandby"),
+            Self::InvalidStartupTransition { .. } => Cow::from("InvalidStartupTransition"),
         }
     }
 }
@@ -1071,6 +1078,12 @@ impl Display for ControllerError {
             }
             Self::InvalidStandby(standby) => {
                 write!(f, "Cannot enter standby mode: {standby}")
+            }
+            Self::InvalidStartupTransition { from, to } => {
+                write!(
+                    f,
+                    "Invalid pipeline startup transition from {from:?} to {to:?}"
+                )
             }
         }
     }
@@ -1445,7 +1458,8 @@ impl ControllerError {
             | Self::PipelineRestarted { .. }
             | Self::NoTransactionInProgress
             | Self::InvalidInitialStatus(_)
-            | Self::InvalidStandby(_) => ErrorKind::Other,
+            | Self::InvalidStandby(_)
+            | Self::InvalidStartupTransition { .. } => ErrorKind::Other,
         }
     }
 }

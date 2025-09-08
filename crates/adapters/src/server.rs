@@ -210,11 +210,18 @@ pub(crate) struct ServerState {
     /// Leaf lock.
     sync_checkpoint_state: Mutex<CheckpointSyncState>,
 
+    /// Deployment ID.
+    deployment_id: Uuid,
+
     metadata: String,
 }
 
 impl ServerState {
-    fn new(md: String, initial: RuntimeDesiredStatus) -> Result<Self, ControllerError> {
+    fn new(
+        md: String,
+        initial: RuntimeDesiredStatus,
+        deployment_id: Uuid,
+    ) -> Result<Self, ControllerError> {
         if !matches!(
             initial,
             RuntimeDesiredStatus::Running
@@ -231,6 +238,7 @@ impl ServerState {
             checkpoint_state: Default::default(),
             sync_checkpoint_state: Default::default(),
             desired_status: Mutex::new(initial),
+            deployment_id,
         })
     }
 
@@ -493,10 +501,36 @@ pub fn run_server(
     // Initiate creating the controller so that we can get access to storage,
     // which is needed to determine the initial state.
     let builder = ControllerBuilder::new(&config)?;
-    let initial_status = builder
+    let initial_status = match builder
         .storage()
         .and_then(|storage| StoredStatus::read(&*storage))
-        .map_or(args.initial, |s| s.desired_status);
+    {
+        Some(stored) if stored.deployment_id == args.deployment_id => {
+            // This is an automatic restart (otherwise the deployment ID would
+            // have changed).  Use the stored desired status.
+            stored.desired_status
+        }
+        Some(stored) => {
+            // The pipeline manager restarted us.  Use the desired status it
+            // passed in (if it is a valid transition).
+            if !stored
+                .desired_status
+                .may_transition_to_at_startup(args.initial)
+            {
+                return Err(ControllerError::InvalidStartupTransition {
+                    from: stored.desired_status,
+                    to: args.initial,
+                });
+            }
+            args.initial
+        }
+        None => {
+            // Initial deployment of this pipeline.  Use the desired status
+            // passed in by the pipeline manager (it's the only one we have,
+            // anyway).
+            args.initial
+        }
+    };
     let storage = builder.storage().clone();
 
     let md = match &args.metadata_file {
@@ -514,7 +548,7 @@ pub fn run_server(
         }
     };
 
-    let state = WebData::new(ServerState::new(md, initial_status)?);
+    let state = WebData::new(ServerState::new(md, initial_status, args.deployment_id)?);
 
     // Initialize the pipeline in a separate thread.  On success, this thread
     // will create a `Controller` instance and store it in `state.controller`.
@@ -635,22 +669,24 @@ pub fn run_server(
         // Spawn a task to update the stored desired state when it changes.
         if let Some(storage) = storage {
             spawn(async move {
-                let mut prev_desired_status = None;
+                let mut prev_stored_status = None;
                 loop {
-                    let desired_status = state.desired_status();
-                    if Some(desired_status) != prev_desired_status
+                    let stored_status = StoredStatus {
+                        desired_status: state.desired_status(),
+                        deployment_id: state.deployment_id,
+                    };
+                    if Some(stored_status) != prev_stored_status
                         && matches!(
-                            desired_status,
+                            stored_status.desired_status,
                             RuntimeDesiredStatus::Paused
                                 | RuntimeDesiredStatus::Running
                                 | RuntimeDesiredStatus::Standby
                         )
                     {
                         let storage = storage.clone();
-                        let s = StoredStatus { desired_status };
-                        spawn_blocking(move || s.write(&*storage));
+                        spawn_blocking(move || stored_status.write(&*storage));
                     }
-                    prev_desired_status = Some(desired_status);
+                    prev_stored_status = Some(stored_status);
                     state.desired_status_change.notified().await;
                 }
             });
@@ -1703,9 +1739,13 @@ async fn completion_status(
     }
 }
 
-#[derive(Copy, Clone, Debug, Serialize, Deserialize)]
+#[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 struct StoredStatus {
+    /// Desired status.
     desired_status: RuntimeDesiredStatus,
+
+    // Deployment ID.
+    deployment_id: Uuid,
 }
 
 const STATUS_JSON: &str = "status.json";
@@ -1834,8 +1874,14 @@ outputs:
 
         println!("Creating HTTP server");
 
-        let state =
-            WebData::new(ServerState::new(String::from(""), RuntimeDesiredStatus::Paused).unwrap());
+        let state = WebData::new(
+            ServerState::new(
+                String::from(""),
+                RuntimeDesiredStatus::Paused,
+                Uuid::new_v4(),
+            )
+            .unwrap(),
+        );
         let state_clone = state.clone();
 
         let args = ServerArgs {
