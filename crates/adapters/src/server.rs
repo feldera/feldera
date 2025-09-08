@@ -941,17 +941,21 @@ async fn activate(
     let mut desired_status = state.desired_status.lock().unwrap();
     match *desired_status {
         RuntimeDesiredStatus::Unavailable => unreachable!(),
-        RuntimeDesiredStatus::Standby => match args.initial {
+        RuntimeDesiredStatus::Standby
+        | RuntimeDesiredStatus::Paused
+        | RuntimeDesiredStatus::Running => match args.initial {
             RuntimeDesiredStatus::Running | RuntimeDesiredStatus::Paused => {
+                let message = format!(
+                    "Pipeline transitioning from {desired_status:?} to {:?}",
+                    args.initial
+                );
                 *desired_status = args.initial;
                 state.desired_status_change.notify_waiters();
-                Ok(HttpResponse::Accepted().json("Pipeline is activating"))
+                Ok(HttpResponse::Accepted().json(message))
             }
             _ => Err(PipelineError::InvalidActivateStatus(args.initial)),
         },
-        RuntimeDesiredStatus::Paused
-        | RuntimeDesiredStatus::Running
-        | RuntimeDesiredStatus::Suspended => Err(PipelineError::InvalidTransition(
+        RuntimeDesiredStatus::Suspended => Err(PipelineError::InvalidTransition(
             "activate",
             *desired_status,
         )),
