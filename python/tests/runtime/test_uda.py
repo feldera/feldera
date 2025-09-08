@@ -8,8 +8,8 @@ class TestUDA(unittest.TestCase):
     def test_local(self):
         sql = """
 CREATE LINEAR AGGREGATE I128_SUM(s BINARY(16)) RETURNS BINARY(16);
-CREATE TABLE T(x BINARY(16));
-CREATE MATERIALIZED VIEW V AS SELECT I128_SUM(x) AS S, COUNT(*) AS C FROM T;
+CREATE TABLE T(x BINARY(16), y BINARY(16) NOT NULL);
+CREATE MATERIALIZED VIEW V AS SELECT I128_SUM(x) AS S, I128_SUM(y) AS N, COUNT(*) AS C FROM T;
         """
 
         toml = """
@@ -123,29 +123,18 @@ impl<D: Fallible + ?Sized> rkyv::Deserialize<I256Wrapper, D> for ArchivedI256Wra
     }
 }
 
-pub type i128_sum_accumulator_type = Tup3<I256Wrapper, i64, i64>;
+pub type i128_sum_accumulator_type = I256Wrapper;
 
-pub fn i128_sum_map(val: Option<ByteArray>) -> i128_sum_accumulator_type {
-    match val {
-        None => Tup3::new(I256Wrapper::zero(), 0, 1),
-        Some(val) => Tup3::new(
-           I256Wrapper::from(val.as_slice()),
-           1,
-           1,
-        ),
-    }
+pub fn i128_sum_map(val: ByteArray) -> i128_sum_accumulator_type {
+    I256Wrapper::from(val.as_slice())
 }
 
-pub fn i128_sum_post(val: i128_sum_accumulator_type) -> Option<ByteArray> {
-    if val.1 == 0 {
-       None
-    } else {
-       // Check for overflow
-       if val.0.data < I256::from(i128::MIN) || val.0.data > I256::from(i128::MAX) {
-           panic!("Result of aggregation {} does not fit in 128 bits", val.0.data);
-       }
-       Some(ByteArray::new(&val.0.data.to_be_bytes()[16..]))
+pub fn i128_sum_post(val: i128_sum_accumulator_type) -> ByteArray {
+    // Check for overflow
+    if val.data < I256::from(i128::MIN) || val.data > I256::from(i128::MAX) {
+        panic!("Result of aggregation {} does not fit in 128 bits", val.data);
     }
+    ByteArray::new(&val.data.to_be_bytes()[16..])
 }
         """
 
@@ -160,6 +149,7 @@ pub fn i128_sum_post(val: i128_sum_accumulator_type) -> Option<ByteArray> {
                 {
                     "insert": {
                         "x": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+                        "y": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
                     }
                 }
             ],
@@ -167,7 +157,13 @@ pub fn i128_sum_post(val: i128_sum_accumulator_type) -> Option<ByteArray> {
         )
         pipeline.wait_for_idle()
         output = list(pipeline.query("SELECT * FROM V;"))
-        assert output == [{"s": "00000000000000000000000000000001", "c": 1}]
+        assert output == [
+            {
+                "s": "00000000000000000000000000000001",
+                "n": "00000000000000000000000000000001",
+                "c": 1,
+            }
+        ]
 
         # Insert -1
         pipeline.input_json(
@@ -193,6 +189,24 @@ pub fn i128_sum_post(val: i128_sum_accumulator_type) -> Option<ByteArray> {
                             255,
                             255,
                         ],
+                        "y": [
+                            255,
+                            255,
+                            255,
+                            255,
+                            255,
+                            255,
+                            255,
+                            255,
+                            255,
+                            255,
+                            255,
+                            255,
+                            255,
+                            255,
+                            255,
+                            255,
+                        ],
                     }
                 }
             ],
@@ -200,7 +214,13 @@ pub fn i128_sum_post(val: i128_sum_accumulator_type) -> Option<ByteArray> {
         )
         pipeline.wait_for_idle()
         output = list(pipeline.query("SELECT * FROM V;"))
-        assert output == [{"s": "00000000000000000000000000000000", "c": 2}]
+        assert output == [
+            {
+                "s": "00000000000000000000000000000000",
+                "n": "00000000000000000000000000000000",
+                "c": 2,
+            }
+        ]
 
         pipeline.input_json(
             "t",
@@ -208,13 +228,20 @@ pub fn i128_sum_post(val: i128_sum_accumulator_type) -> Option<ByteArray> {
                 {
                     "insert": {
                         "x": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2],
+                        "y": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2],
                     }
                 }
             ],
             update_format="insert_delete",
         )
         output = list(pipeline.query("SELECT * FROM V;"))
-        assert output == [{"s": "00000000000000000000000000000002", "c": 3}]
+        assert output == [
+            {
+                "s": "00000000000000000000000000000002",
+                "n": "00000000000000000000000000000002",
+                "c": 3,
+            }
+        ]
 
         pipeline.input_json(
             "t",
@@ -222,13 +249,20 @@ pub fn i128_sum_post(val: i128_sum_accumulator_type) -> Option<ByteArray> {
                 {
                     "insert": {
                         "x": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3],
+                        "y": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3],
                     }
                 }
             ],
             update_format="insert_delete",
         )
         output = list(pipeline.query("SELECT * FROM V;"))
-        assert output == [{"s": "00000000000000000000000000000005", "c": 4}]
+        assert output == [
+            {
+                "s": "00000000000000000000000000000005",
+                "n": "00000000000000000000000000000005",
+                "c": 4,
+            }
+        ]
 
         pipeline.input_json(
             "t",
@@ -236,21 +270,42 @@ pub fn i128_sum_post(val: i128_sum_accumulator_type) -> Option<ByteArray> {
                 {
                     "delete": {
                         "x": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
+                        "y": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1],
                     }
                 },
                 {
                     "delete": {
                         "x": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2],
+                        "y": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2],
                     }
                 },
                 {
                     "delete": {
                         "x": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3],
+                        "y": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3],
                     }
                 },
                 {
                     "delete": {
                         "x": [
+                            255,
+                            255,
+                            255,
+                            255,
+                            255,
+                            255,
+                            255,
+                            255,
+                            255,
+                            255,
+                            255,
+                            255,
+                            255,
+                            255,
+                            255,
+                            1,
+                        ],
+                        "y": [
                             255,
                             255,
                             255,
@@ -274,7 +329,7 @@ pub fn i128_sum_post(val: i128_sum_accumulator_type) -> Option<ByteArray> {
             update_format="insert_delete",
         )
         output = list(pipeline.query("SELECT * FROM V;"))
-        assert output == [{"s": None, "c": 0}]
+        assert output == [{"s": None, "n": None, "c": 0}]
 
         pipeline.stop(force=True)
 

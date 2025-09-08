@@ -499,14 +499,8 @@ traits.  Most of the code is devoted for this task, and is relatively
 straightforward.
 
 For our example the accumulator type that the user has to define is
-named `i128_sum_accumulator_type`.  In our implementation the
-accumulator is a tuple with 3 fields:
-
-- the partial sum computed, stored in an I256 value
-
-- the count of non-null elements in the collection encountered
-
-- the total count of elements in the collection
+named `i128_sum_accumulator_type`, holding the partial sum computed,
+stored in an I256 value.
 
 The user would add the following implementation to the `udf.rs` file:
 
@@ -554,7 +548,6 @@ impl MulByRef<Weight> for I256Wrapper {
     type Output = Self;
 
     fn mul_by_ref(&self, other: &Weight) -> Self::Output {
-        println!("Mul {:?} by {}", self, other);
         Self {
             data: self.data.checked_mul_i64(*other)
                 .expect("Overflow during multiplication"),
@@ -616,29 +609,18 @@ impl<D: Fallible + ?Sized> rkyv::Deserialize<I256Wrapper, D> for ArchivedI256Wra
     }
 }
 
-pub type i128_sum_accumulator_type = Tup3<I256Wrapper, i64, i64>;
+pub type i128_sum_accumulator_type = I256Wrapper;
 
-pub fn i128_sum_map(val: Option<ByteArray>) -> i128_sum_accumulator_type {
-    match val {
-        None => Tup3::new(I256Wrapper::zero(), 0, 1),
-        Some(val) => Tup3::new(
-           I256Wrapper::from(val.as_slice()),
-           1,
-           1,
-        ),
-    }
+pub fn i128_sum_map(val: ByteArray) -> i128_sum_accumulator_type {
+    I256Wrapper::from(val.as_slice())
 }
 
-pub fn i128_sum_post(val: i128_sum_accumulator_type) -> Option<ByteArray> {
-    if val.1 == 0 {
-       None
-    } else {
-       // Check for overflow
-       if val.0.data < I256::from(i128::MIN) || val.0.data > I256::from(i128::MAX) {
-           panic!("Result of aggregation {} does not fit in 128 bits", val.0.data);
-       }
-       Some(ByteArray::new(&val.0.data.to_be_bytes()[16..]))
+pub fn i128_sum_post(val: i128_sum_accumulator_type) -> ByteArray {
+    // Check for overflow
+    if val.data < I256::from(i128::MIN) || val.data > I256::from(i128::MAX) {
+        panic!("Result of aggregation {} does not fit in 128 bits", val.data);
     }
+    ByteArray::new(&val.data.to_be_bytes()[16..])
 }
 ```
 
@@ -647,15 +629,15 @@ The two functions needed to implement the aggregation are
 
 `i128_sum_map` converts a `BINARY(16)` value into an accumulator
 value.  Notice that in the SQL runtime library `BINARY(16)` is
-implemented as a `ByteArray`.
+implemented as a `ByteArray`.  The argument of this function must be
+non-nullable.
 
 `i128_sum_post` converts the accumulator value into the expected
-result type `BINARY(16)`.
+result type `BINARY(16)`.  The result must be non-nullable.
 
-We use the `Tup3` type from our SQL runtime library.  This type
-implements `Add` and other required operations if all fields do.
-The addition of `Tup3` values is done field-wise, and the `Zero` trait
-for `Tup3` is a tuple with all fields zero.
+The handling of `NULL` is dictated by the SQL semantics, and cannot be
+changed: aggregating a collection containing only `NULL` values (or
+empty) produces `NULL`.
 
 ### Creating user-defined non-linear aggregate functions
 

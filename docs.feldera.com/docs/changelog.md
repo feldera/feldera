@@ -15,6 +15,17 @@ import TabItem from '@theme/TabItem';
 
         ## Unreleased
 
+        Simplified the way user-defined aggregates are defined -- the
+        compiler now automates the handling of NULL values.
+
+        The following change doesn't affect the external Feldera API, only the
+        pipeline's API available from a sidecar container. The `/status`
+        endpoint no longer returns HTTP status 503 (SERVICE_UNAVAILABLE) while
+        the pipeline is initializing. Instead it returns status OK with message
+        body containing the "Initializing" string.
+
+        ## 0.138.0
+
         [Transaction (also known as huge-step) support](/pipelines/transactions).
 
         TIMESTAMP is now the same as TIMESTAMP(3); TIME is now the same as
@@ -23,11 +34,7 @@ import TabItem from '@theme/TabItem';
         that differ from the default ones are ignored (and the compiler
         gives a warning).
 
-        The following change doesn't affect the external Feldera API, only the
-        pipeline's API available from a sidecar container. The `/status`
-        endpoint no longer returns HTTP status 503 (SERVICE_UNAVAILABLE) while
-        the pipeline is initializing. Instead it returns status OK with message
-        body containing the "Initializing" string.
+        ## 0.136.0
 
         ### Changes to Python SDK `feldera`:
         - `Pipeline.sync_checkpoint` will now raise a runtime error if `wait`
