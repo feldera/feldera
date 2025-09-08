@@ -66,6 +66,7 @@ which Feldera is built.
 | :--- | :--- | :---------- |
 | `compaction_stall_duration_seconds` |counter | Time in seconds a worker was stalled waiting for more merges to complete. |
 | `dbsp_operator_checkpoint_latency_seconds` |histogram | Latency of individual operator checkpoint operations in seconds. (Because checkpoints run in parallel across workers, these will not add to `feldera_checkpoint_latency_seconds`.) |
+| `dbsp_runtime_elapsed_seconds` |counter | Time elapsed while the pipeline is executing a step, multiplied by the number of foreground and background threads, in seconds. |
 | `dbsp_step_latency_seconds` |histogram | Latency of DBSP steps over the last 60 seconds or 1000 steps, whichever is less, in seconds |
 | `dbsp_steps_total` |counter | Total number of DBSP steps executed. |
 
@@ -94,9 +95,11 @@ to work with data larger than memory.
 | :--- | :--- | :---------- |
 | `files_created_total` |counter | Total number of files created. |
 | `files_deleted_total` |counter | Total number of files deleted. |
+| `storage_byte_seconds_total` |counter | Storage usage integrated over time during this run of the pipeline, in bytes × seconds. |
 | `storage_read_block_bytes` |histogram | Sizes in bytes of blocks read from storage. |
 | `storage_read_latency_seconds` |histogram | Read latency for storage blocks in seconds |
 | `storage_sync_latency_seconds` |histogram | Sync latency in seconds |
+| `storage_usage_bytes` |gauge | The number of bytes of storage currently in use |
 | `storage_write_block_bytes` |histogram | Sizes in bytes of blocks written to storage. |
 | `storage_write_latency_seconds` |histogram | Write latency for storage blocks in seconds |
 
