@@ -199,10 +199,15 @@ public class LinearAggregate extends IAggregate {
         return false;
     }
 
-    /** The accumulator type generated for a linear user-defined aggregate function */
-    public static DBSPTypeUser accumulatorType(CalciteObject node, String aggregateFunctionName) {
-        String accumulatorTypeName = aggregateFunctionName + "_accumulator_type";
+    /** The user-defined accumulator type for a linear user-defined aggregate function */
+    public static DBSPType userAccumulatorType(CalciteObject node, String aggregateFunctionName) {
+        String accumulatorTypeName = userDefinedAccumulatorTypeName(aggregateFunctionName);
         return new DBSPTypeUser(node, USER, accumulatorTypeName, false);
+    }
+
+    /** Name of the user-defined accumulator type */
+    public static String userDefinedAccumulatorTypeName(String aggregateFunctionName) {
+        return aggregateFunctionName + "_accumulator_type";
     }
 
     /** The name of the map function generated for a linear user-defined aggregate function */

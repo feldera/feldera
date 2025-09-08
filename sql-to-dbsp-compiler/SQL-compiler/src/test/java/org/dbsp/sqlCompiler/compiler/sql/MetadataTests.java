@@ -609,15 +609,12 @@ public class MetadataTests extends BaseSQLTests {
                 
                 pub type i8_avg_accumulator_type = Tup2<i32, i32>;
                 
-                pub fn i8_avg_map(val: Option<i8>) -> i8_avg_accumulator_type {
-                    match (val) {
-                        None => Tup2::new(0, 1),
-                        Some(x) => Tup2::new(x as i32, 1),
-                    }
+                pub fn i8_avg_map(val: i8) -> i8_avg_accumulator_type {
+                    Tup2::new(val as i32, 1)
                 }
                 
-                pub fn i8_avg_post(val: i8_avg_accumulator_type) -> Option<i8> {
-                    Some((val.0 / val.1).try_into().unwrap())
+                pub fn i8_avg_post(val: i8_avg_accumulator_type) -> i8 {
+                    (val.0 / val.1).try_into().unwrap()
                 }
                 """);
         script.close();
@@ -635,8 +632,8 @@ public class MetadataTests extends BaseSQLTests {
     public void testUDA2() throws IOException, InterruptedException, SQLException {
         File file = createInputScript("""
                 CREATE LINEAR AGGREGATE I128_SUM(s BINARY(16)) RETURNS BINARY(16);
-                CREATE TABLE T(x BINARY(16));
-                CREATE MATERIALIZED VIEW V AS SELECT I128_SUM(x) AS S FROM T;""");
+                CREATE TABLE T(x BINARY(16), y BINARY(16) NOT NULL);
+                CREATE MATERIALIZED VIEW V AS SELECT I128_SUM(x) AS S, I128_SUM(y) AS N FROM T;""");
 
         // Save a copy of cargo.toml
         Path cargo = Paths.get(RUST_DIRECTORY, "..", "Cargo.toml");
@@ -762,29 +759,18 @@ public class MetadataTests extends BaseSQLTests {
                         }
                     }
                     
-                    pub type i128_sum_accumulator_type = Tup3<I256Wrapper, i64, i64>;
+                    pub type i128_sum_accumulator_type = I256Wrapper;
                     
-                    pub fn i128_sum_map(val: Option<ByteArray>) -> i128_sum_accumulator_type {
-                        match val {
-                            None => Tup3::new(I256Wrapper::zero(), 0, 1),
-                            Some(val) => Tup3::new(
-                               I256Wrapper::from(val.as_slice()),
-                               1,
-                               1,
-                            ),
-                        }
+                    pub fn i128_sum_map(val: ByteArray) -> i128_sum_accumulator_type {
+                        I256Wrapper::from(val.as_slice())
                     }
                     
-                    pub fn i128_sum_post(val: i128_sum_accumulator_type) -> Option<ByteArray> {
-                        if val.1 == 0 {
-                           None
-                        } else {
-                           // Check for overflow
-                           if val.0.data < I256::from(i128::MIN) || val.0.data > I256::from(i128::MAX) {
-                               panic!("Result of aggregation {} does not fit in 128 bits", val.0.data);
-                           }
-                           Some(ByteArray::new(&val.0.data.to_be_bytes()[16..]))
+                    pub fn i128_sum_post(val: i128_sum_accumulator_type) -> ByteArray {
+                        // Check for overflow
+                        if val.data < I256::from(i128::MIN) || val.data > I256::from(i128::MAX) {
+                            panic!("Result of aggregation {} does not fit in 128 bits", val.data);
                         }
+                        ByteArray::new(&val.data.to_be_bytes()[16..])
                     }
                     """);
             script.close();

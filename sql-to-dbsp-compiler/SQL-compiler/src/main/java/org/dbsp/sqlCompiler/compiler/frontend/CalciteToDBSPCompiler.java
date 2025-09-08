@@ -3108,9 +3108,10 @@ public class CalciteToDBSPCompiler extends RelVisitor
         String name = uda.description.name.getSimple();
         if (uda.isLinear()) {
             // Add two functions that the user needs to define to the circuit declarations.
-            DBSPTypeUser accumulatorType = LinearAggregate.accumulatorType(node, name);
+            DBSPType accumulatorType = LinearAggregate.userAccumulatorType(node, name);
             List<DBSPParameter> parameters = Linq.map(uda.description.parameterList,
-                    p -> new DBSPParameter(p.getName(), this.convertType(node.getPositionRange(), p.getType(), false)));
+                    p -> new DBSPParameter(p.getName(),
+                            this.convertType(node.getPositionRange(), p.getType(), false).withMayBeNull(false)));
             DBSPFunction mapFunction = new DBSPFunction(
                     node, LinearAggregate.userDefinedMapFunctionName(name), parameters, accumulatorType, null, Linq.list());
             this.getCircuit().addDeclaration(new DBSPDeclaration(new DBSPFunctionItem(mapFunction)));
@@ -3118,7 +3119,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             DBSPType resultType = this.convertType(node.getPositionRange(), uda.description.returnType, false);
             DBSPFunction postFunction = new DBSPFunction(
                     node, LinearAggregate.userDefinedPostFunctionName(name),
-                    Linq.list(new DBSPParameter("accumulator", accumulatorType)), resultType, null, Linq.list());
+                    Linq.list(new DBSPParameter("accumulator", accumulatorType)), resultType.withMayBeNull(false), null, Linq.list());
             this.getCircuit().addDeclaration(new DBSPDeclaration(new DBSPFunctionItem(postFunction)));
         } else {
             throw new UnimplementedException("Non-linear user-defined aggregation functions");

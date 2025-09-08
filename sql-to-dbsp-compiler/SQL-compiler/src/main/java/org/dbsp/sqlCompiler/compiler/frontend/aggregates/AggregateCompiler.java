@@ -59,6 +59,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPConditionalIncrementExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPIfExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
+import org.dbsp.sqlCompiler.ir.expression.DBSPPathExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
@@ -66,11 +67,13 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPBoolLiteral;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI64Literal;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPLiteral;
 import org.dbsp.sqlCompiler.ir.expression.DBSPArrayExpression;
+import org.dbsp.sqlCompiler.ir.path.DBSPPath;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.IsNumericType;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBinary;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
@@ -95,6 +98,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.function.Consumer;
 
+import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.INT64;
 import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.SEMIGROUP;
 
 /** Compiles SQL aggregate functions. */
@@ -870,13 +874,27 @@ public class AggregateCompiler implements ICompilerComponent {
         if (function.isLinear()) {
             String mapFunctionName = LinearAggregate.userDefinedMapFunctionName(function.getName());
             String postFunctionName = LinearAggregate.userDefinedPostFunctionName(function.getName());
-            DBSPTypeUser accumulatorType =
-                    LinearAggregate.accumulatorType(this.node, function.getName());
-            DBSPApplyExpression callMap =
-                    new DBSPApplyExpression(this.node, mapFunctionName, accumulatorType, this.getAggregatedValue());
+            DBSPType innerAccumType = LinearAggregate.userAccumulatorType(this.node, function.getName());
+            DBSPTypeInteger i64 = DBSPTypeInteger.getType(this.node, INT64, false);
+            DBSPType accumulatorType = new DBSPTypeTuple(innerAccumType, i64, i64);
+
+            DBSPExpression isNull = this.getAggregatedValue().is_null();
+            DBSPPath path = new DBSPPath(LinearAggregate.userDefinedAccumulatorTypeName(function.getName()), "zero");
+            DBSPExpression accumulatorZero = new DBSPApplyExpression(new DBSPPathExpression(DBSPTypeAny.getDefault(), path), innerAccumType);
+            DBSPExpression unwrappedAggregated = this.getAggregatedValue().unwrapIfNullable();
+            DBSPExpression callMap =
+                    new DBSPTupleExpression(
+                            new DBSPIfExpression(this.node, isNull, accumulatorZero,
+                                new DBSPApplyExpression(this.node, mapFunctionName, innerAccumType, unwrappedAggregated)),
+                            new DBSPIfExpression(this.node, isNull, i64.getZero(), i64.getOne()),
+                            i64.getOne());
             DBSPVariablePath postVar = accumulatorType.var();
-            DBSPExpression callPost = new DBSPApplyExpression(this.node, postFunctionName, this.resultType, postVar);
-            implementation = new LinearAggregate(this.node, callMap.closure(this.v), callPost.closure(postVar), postZero);
+            DBSPExpression callPost = new DBSPApplyExpression(
+                    this.node, postFunctionName, this.resultType.withMayBeNull(false), postVar.field(0).applyClone()).some();
+            DBSPExpression compare = new DBSPBinaryExpression(
+                    this.node, DBSPTypeBool.create(false), DBSPOpcode.EQ, postVar.field(1), i64.getZero());
+            DBSPExpression condition = new DBSPIfExpression(this.node, compare, postZero, callPost);
+            implementation = new LinearAggregate(this.node, callMap.closure(this.v), condition.closure(postVar), postZero);
         } else {
             // TODO
             throw new UnimplementedException();

@@ -54,6 +54,7 @@ public class MultiCrateTests extends BaseSQLTests {
         compileToMultiCrate(file, check, true);
     }
 
+
     static void compileProgramToMultiCrate(String sql, boolean check) throws IOException, SQLException, InterruptedException {
         File file = createInputScript(sql);
         compileToMultiCrate(file.getAbsolutePath(), check);
@@ -339,15 +340,12 @@ public class MultiCrateTests extends BaseSQLTests {
                 
                 pub type i8_avg_accumulator_type = Tup2<i32, i32>;
                 
-                pub fn i8_avg_map(val: Option<i8>) -> Tup2<i32, i32> {
-                    match (val) {
-                        None => Tup2::new(0, 1),
-                        Some(x) => Tup2::new(x as i32, 1),
-                    }
+                pub fn i8_avg_map(val: i8) -> Tup2<i32, i32> {
+                    Tup2::new(val as i32, 1)
                 }
                 
-                pub fn i8_avg_post(val: Tup2<i32, i32>) -> Option<i8> {
-                    Some((val.0 / val.1).try_into().unwrap())
+                pub fn i8_avg_post(val: i8_avg_accumulator_type) -> i8 {
+                    (val.0 / val.1).try_into().unwrap()
                 }
                 """);
         compileToMultiCrate(file.getAbsolutePath(), true, false);
