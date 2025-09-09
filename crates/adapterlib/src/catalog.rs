@@ -5,7 +5,11 @@ use std::sync::Arc;
 
 use anyhow::Result as AnyResult;
 #[cfg(feature = "with-avro")]
-use apache_avro::{schema::NamesRef, types::Value as AvroValue, Schema as AvroSchema};
+use apache_avro::{
+    schema::{Name as AvroName, NamesRef},
+    types::Value as AvroValue,
+    Schema as AvroSchema,
+};
 use arrow::record_batch::RecordBatch;
 use dbsp::circuit::NodeId;
 use dbsp::operator::StagedBuffers;
@@ -15,6 +19,8 @@ use feldera_types::format::json::JsonFlavor;
 use feldera_types::program_schema::{Relation, SqlIdentifier};
 use feldera_types::serde_with_context::SqlSerdeConfig;
 use serde_arrow::ArrayBuilder;
+#[cfg(feature = "with-avro")]
+use std::collections::HashMap;
 
 use crate::errors::controller::ControllerError;
 use crate::format::InputBuffer;
@@ -141,13 +147,34 @@ pub trait ArrowStream: InputBuffer + Send + Sync {
     fn stage(&self, buffers: Vec<Box<dyn InputBuffer>>) -> Box<dyn StagedBuffers>;
 }
 
+#[cfg(feature = "with-avro")]
+pub type AvroSchemaRefs = HashMap<AvroName, AvroSchema>;
+
 /// Like `DeCollectionStream`, but deserializes Avro-encoded records before pushing them to a
 /// stream.
 #[cfg(feature = "with-avro")]
 pub trait AvroStream: InputBuffer + Send + Sync {
-    fn insert(&mut self, data: &AvroValue, schema: &AvroSchema, n_bytes: usize) -> AnyResult<()>;
+    /// Buffer a new insert update.
+    ///
+    /// # Arguments
+    ///
+    /// * `schema` - The Avro schema to use for deserialization.
+    /// * `refs` - A map of named schema references that may be used to resolve references within `schema`.
+    fn insert(
+        &mut self,
+        data: &AvroValue,
+        schema: &AvroSchema,
+        refs: &AvroSchemaRefs,
+        n_bytes: usize,
+    ) -> AnyResult<()>;
 
-    fn delete(&mut self, data: &AvroValue, schema: &AvroSchema, n_bytes: usize) -> AnyResult<()>;
+    fn delete(
+        &mut self,
+        data: &AvroValue,
+        schema: &AvroSchema,
+        refs: &AvroSchemaRefs,
+        n_bytes: usize,
+    ) -> AnyResult<()>;
 
     /// Create a new deserializer with the same configuration connected to
     /// the same input stream.
