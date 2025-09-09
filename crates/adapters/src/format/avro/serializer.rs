@@ -584,7 +584,7 @@ impl<'a> Serializer for AvroSchemaSerializer<'a> {
 
     fn serialize_str(self, v: &str) -> Result<Self::Ok, Self::Error> {
         serialize_maybe_optional(self.schema, |schema| match schema {
-            AvroSchema::String => Ok(AvroValue::String(v.to_owned())),
+            AvroSchema::String | AvroSchema::Uuid => Ok(AvroValue::String(v.to_owned())),
             _ => Err(AvroSerializerError::incompatible("string", schema)),
         })
     }

@@ -15,7 +15,7 @@ use crate::{
 use apache_avro::{from_avro_datum, schema::ResolvedSchema, to_avro_datum, Schema as AvroSchema};
 use dbsp::{utils::Tup2, OrdIndexedZSet};
 use dbsp::{DBData, OrdZSet};
-use feldera_sqllib::ByteArray;
+use feldera_sqllib::{ByteArray, Uuid};
 use feldera_types::{
     deserialize_table_record,
     format::avro::{AvroEncoderConfig, AvroEncoderKeyMode},
@@ -682,6 +682,98 @@ fn test_parse_binary() {
         config: AvroParserConfig {
             update_format: AvroUpdateFormat::Raw,
             schema: Some(TestBinary::avro_schema().to_string()),
+            skip_schema_id: false,
+            registry_config: Default::default(),
+        },
+        input_batches,
+        expected_output,
+    };
+
+    run_parser_test(vec![test]);
+}
+
+#[derive(
+    Debug,
+    Default,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Clone,
+    Hash,
+    SizeOf,
+    rkyv::Archive,
+    rkyv::Serialize,
+    rkyv::Deserialize,
+)]
+#[archive_attr(derive(Ord, Eq, PartialEq, PartialOrd))]
+struct TestUuid {
+    uuid1: Uuid,
+    uuid2: Uuid,
+}
+
+impl TestUuid {
+    pub fn avro_schema() -> &'static str {
+        r#"{
+            "type": "record",
+            "name": "TestUuid",
+            "connect.name": "test_namespace.TestUuid",
+            "fields": [
+                { "name": "uuid1", "type": "string" },
+                { "name": "uuid2", "type": {"type": "string", "logicalType": "uuid"} }
+            ]
+        }"#
+    }
+
+    pub fn schema() -> Vec<Field> {
+        vec![
+            Field::new("uuid1".into(), ColumnType::uuid(false)),
+            Field::new("uuid2".into(), ColumnType::uuid(false)),
+        ]
+    }
+
+    pub fn relation_schema() -> Relation {
+        Relation {
+            name: SqlIdentifier::new("TestUuid", false),
+            fields: Self::schema(),
+            materialized: false,
+            properties: BTreeMap::new(),
+        }
+    }
+}
+
+serialize_table_record!(TestUuid[2]{
+    r#uuid1["uuid1"]: Uuid,
+    r#uuid2["uuid2"]: Uuid
+});
+
+deserialize_table_record!(TestUuid["TestUuid", 2] {
+    (r#uuid1, "uuid1", false, Uuid, None),
+    (r#uuid2, "uuid2", false, Uuid, None)
+});
+
+// Test for issue #4722: make sure that we can deserialize UUIDs from both plain string and logicalType uuid.
+#[test]
+fn test_issue4722() {
+    let schema = AvroSchema::parse_str(TestUuid::avro_schema()).unwrap();
+    let vals = [TestUuid {
+        uuid1: Uuid::from(uuid::uuid!("550e8400-e29b-41d4-a716-446655440000")),
+        uuid2: Uuid::from(uuid::uuid!("550e8400-e29b-41d4-a716-446655440001")),
+    }];
+    let input_batches = vals
+        .iter()
+        .map(|v| (serialize_record(v, &schema), vec![]))
+        .collect::<Vec<_>>();
+    let expected_output = vals
+        .iter()
+        .map(|v| MockUpdate::Insert(v.clone()))
+        .collect::<Vec<_>>();
+
+    let test = TestCase {
+        relation_schema: TestUuid::relation_schema(),
+        config: AvroParserConfig {
+            update_format: AvroUpdateFormat::Raw,
+            schema: Some(TestUuid::avro_schema().to_string()),
             skip_schema_id: false,
             registry_config: Default::default(),
         },

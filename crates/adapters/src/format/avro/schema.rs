@@ -274,6 +274,18 @@ fn validate_date_schema(avro_schema: &AvroSchema) -> Result<(), String> {
     Ok(())
 }
 
+/// Check that Avro schema can be deserialized as SQL `UUID` type.
+fn validate_uuid_schema(avro_schema: &AvroSchema) -> Result<(), String> {
+    if !matches!(avro_schema, AvroSchema::String | AvroSchema::Uuid) {
+        return Err(format!(
+            "invalid Avro schema for a column of type 'UUID': expected 'string' or '{{\"type\": \"string\",\"logicalType\": \"uuid\"}}', but found {}",
+            schema_json(avro_schema)
+        ));
+    }
+
+    Ok(())
+}
+
 /// Check that Avro schema can be deserialized a SQL column with the given
 /// column type.
 pub fn validate_field_schema(
@@ -363,7 +375,7 @@ pub fn validate_field_schema(
             return validate_map_schema(name, avro_schema, value_type);
         }
         SqlType::Null => AvroSchema::Null,
-        SqlType::Uuid => AvroSchema::String,
+        SqlType::Uuid => return validate_uuid_schema(avro_schema),
     };
 
     if avro_schema != &expected {
