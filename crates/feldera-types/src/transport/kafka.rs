@@ -67,6 +67,15 @@ pub struct KafkaInputConfig {
     ///
     /// If offsets are provided for all partitions, this field can be omitted.
     pub partitions: Option<Vec<i32>>,
+
+    /// By default, if the input connector resumes from a checkpoint and the
+    /// data where it needs to resume has expired from the Kafka topic, the
+    /// input connector fails initialization and the pipeline will fail to start.
+    ///
+    /// Set this to true to change the behavior so that, if data is not
+    /// available on resume, the input connector starts from the earliest
+    /// offsets that are now available.
+    pub resume_earliest_if_data_expires: bool,
 }
 
 impl KafkaInputConfig {
@@ -455,6 +464,16 @@ mod compat {
 
         /// The Kafka partitions to read from.
         partitions: Option<Vec<i32>>,
+
+        /// By default, if the input connector resumes from a checkpoint and the
+        /// data where it needs to resume has expired from the Kafka topic, the
+        /// input connector fails the pipeline.
+        ///
+        /// Set this to true to change the behavior so that, if data is not
+        /// available on resume, the input connector starts from the earliest
+        /// offsets that are now available.
+        #[serde(default)]
+        pub resume_earliest_if_data_expires: bool,
     }
 
     impl TryFrom<KafkaInputConfigCompat> for super::KafkaInputConfig {
@@ -521,6 +540,7 @@ mod compat {
                 start_from,
                 region: compat.region,
                 partitions: compat.partitions,
+                resume_earliest_if_data_expires: compat.resume_earliest_if_data_expires,
             })
         }
     }

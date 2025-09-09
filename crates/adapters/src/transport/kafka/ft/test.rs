@@ -848,20 +848,38 @@ proptest! {
 #[derive(Clone)]
 struct FtTestRound {
     n_records: usize,
+    expect_failure: bool,
     do_checkpoint: bool,
+    delete_topics_afterward: bool,
 }
 
 impl FtTestRound {
     fn with_checkpoint(n_records: usize) -> Self {
         Self {
             n_records,
+            expect_failure: false,
             do_checkpoint: true,
+            delete_topics_afterward: false,
         }
     }
     fn without_checkpoint(n_records: usize) -> Self {
         Self {
             n_records,
+            expect_failure: false,
             do_checkpoint: false,
+            delete_topics_afterward: false,
+        }
+    }
+    fn with_deleting_topics_afterward(self) -> Self {
+        Self {
+            delete_topics_afterward: true,
+            ..self
+        }
+    }
+    fn with_failure_expected(self) -> Self {
+        Self {
+            expect_failure: true,
+            ..self
         }
     }
 }
@@ -873,10 +891,10 @@ impl FtTestRound {
 /// pipeline and waits for it to process the data.  If `do_checkpoint` is
 /// true, it creates a new checkpoint. Then it stops the checkpoint, checks
 /// that the output is as expected, and goes on to the next round.
-fn test_ft(topic: &str, rounds: &[FtTestRound]) {
+fn test_ft(topic: &str, rounds: &[FtTestRound], resume_earliest_if_data_expires: bool) {
     init_test_logger();
 
-    let mut _kafka_resources = KafkaResources::create_topics(&[(topic, 1)]);
+    let mut kafka_resources = KafkaResources::create_topics(&[(topic, 1)]);
     sleep(Duration::from_secs(1));
     let producer = TestProducer::new();
     let tempdir = TempDir::new().unwrap();
@@ -910,6 +928,7 @@ inputs:
                 topic: {topic}
                 start_from: earliest
                 log_level: debug
+                resume_earliest_if_data_expires: {}
         format:
             name: csv
 outputs:
@@ -922,7 +941,12 @@ outputs:
         format:
             name: csv
             config:
-        "#
+        "#,
+        if resume_earliest_if_data_expires {
+            "true"
+        } else {
+            "false"
+        },
     );
 
     let config: PipelineConfig = serde_yaml::from_str(&config_str).unwrap();
@@ -938,16 +962,25 @@ outputs:
         round,
         FtTestRound {
             n_records,
+            expect_failure,
             do_checkpoint,
+            delete_topics_afterward,
         },
     ) in rounds.iter().cloned().enumerate()
     {
         println!(
-            "--- round {round}: add {n_records} records, {} --- ",
-            if do_checkpoint {
+            "--- round {round}: add {n_records} records, {}{} --- ",
+            if expect_failure {
+                "and expect failure on startup"
+            } else if do_checkpoint {
                 "and checkpoint"
             } else {
                 "no checkpoint"
+            },
+            if delete_topics_afterward {
+                " and then delete and recreate the topic"
+            } else {
+                ""
             }
         );
 
@@ -977,7 +1010,7 @@ outputs:
             },
             &config,
             std::sync::Weak::new(),
-            Box::new(|e| panic!("error: {e}")),
+            Box::new(move |e| panic!("error: {e}")),
         )
         .unwrap();
         controller.start();
@@ -989,7 +1022,7 @@ outputs:
             total_records - checkpointed_records
         );
         let mut last_n = 0;
-        wait(
+        let result = wait(
             || {
                 let n = controller
                     .status()
@@ -1004,8 +1037,12 @@ outputs:
                 n >= total_records
             },
             10_000,
-        )
-        .unwrap();
+        );
+        if expect_failure {
+            result.unwrap_err();
+            return;
+        }
+        result.unwrap();
 
         // No more records should arrive, but give the controller some time
         // to send some more in case there's a bug.
@@ -1060,6 +1097,12 @@ outputs:
         if do_checkpoint {
             checkpointed_records = total_records;
         }
+        if delete_topics_afterward {
+            println!("dropping Kafka topics (to test resume behavior)");
+            drop(kafka_resources);
+            println!("recreating Kafka topic as empty");
+            kafka_resources = KafkaResources::create_topics(&[(topic, 1)]);
+        }
         println!();
     }
 }
@@ -1075,6 +1118,54 @@ fn ft_with_checkpoints() {
             FtTestRound::with_checkpoint(2500),
             FtTestRound::with_checkpoint(2500),
         ],
+        false,
+    );
+}
+
+/// Runs a checkpoint, deletes the topic that was read, and then restarts.  This
+/// should fail because the topic can't be read starting at the now-nonexistent
+/// offset.
+#[test]
+fn ft_with_topic_expiration() {
+    test_ft(
+        "ft_with_topic_expiration",
+        &[
+            FtTestRound::with_checkpoint(2500),
+            FtTestRound::with_checkpoint(2500).with_deleting_topics_afterward(),
+            FtTestRound::with_checkpoint(2500).with_failure_expected(),
+        ],
+        false,
+    );
+}
+
+/// Runs a checkpoint, deletes the topic that was read, and then restarts.  This
+/// should not fail, because it will restart from the beginning.
+#[test]
+fn ft_with_topic_expiration_and_resume_earliest() {
+    test_ft(
+        "ft_with_topic_expiration_and_resume_earliest",
+        &[
+            FtTestRound::with_checkpoint(2500),
+            FtTestRound::with_checkpoint(2500).with_deleting_topics_afterward(),
+            FtTestRound::with_checkpoint(2500),
+        ],
+        true,
+    );
+}
+
+/// Runs a checkpoint, deletes the topic that was read, and then restarts.  This
+/// should fail because the topic can't be read starting at the now-nonexistent
+/// offset.
+#[test]
+fn ft_with_tolerance_topic_expiration() {
+    test_ft(
+        "ft_with_tolerance_for_topic_expiration",
+        &[
+            FtTestRound::with_checkpoint(2500),
+            FtTestRound::with_checkpoint(2500).with_deleting_topics_afterward(),
+            FtTestRound::with_checkpoint(2500).with_failure_expected(),
+        ],
+        false,
     );
 }
 
@@ -1089,6 +1180,7 @@ fn ft_without_checkpoints() {
             FtTestRound::without_checkpoint(2500),
             FtTestRound::without_checkpoint(2500),
         ],
+        false,
     );
 }
 
@@ -1108,6 +1200,7 @@ fn ft_alternating() {
             FtTestRound::with_checkpoint(2500),
             FtTestRound::without_checkpoint(2500),
         ],
+        false,
     );
 }
 
@@ -1125,6 +1218,7 @@ fn ft_initially_zero_without_checkpoint() {
             FtTestRound::without_checkpoint(2500),
             FtTestRound::with_checkpoint(2500),
         ],
+        false,
     );
 }
 
@@ -1142,6 +1236,7 @@ fn ft_initially_zero_with_checkpoint() {
             FtTestRound::without_checkpoint(2500),
             FtTestRound::with_checkpoint(2500),
         ],
+        false,
     );
 }
 
@@ -1185,6 +1280,7 @@ fn test_offset(
                 start_from: start_from.clone(),
                 region: None,
                 partitions: None,
+                resume_earliest_if_data_expires: false,
             }),
             format: Some(FormatConfig {
                 name: Cow::from("csv"),
@@ -1592,6 +1688,7 @@ fn test_input_partition(
                 start_from: start_from.clone(),
                 region: None,
                 partitions: Some(partitions.clone()),
+                resume_earliest_if_data_expires: false,
             }),
             format: Some(FormatConfig {
                 name: Cow::from("csv"),
