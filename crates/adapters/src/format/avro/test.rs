@@ -114,13 +114,14 @@ impl<T> DebeziumMessage<T> {
 
 /// Debezium message Avro schema with the specified inner record schema.
 fn debezium_avro_schema(value_schema: &str, value_type_name: &str) -> AvroSchema {
+    // Note: placing `after` before `before` to trigger schema reference resolution.
     let schema_str = r#"{
     "type": "record",
     "name": "Envelope",
     "namespace": "test_namespace",
     "fields": [
         {
-            "name": "before",
+            "name": "after",
             "type": [
                 "null",
                 VALUE_SCHEMA
@@ -128,7 +129,7 @@ fn debezium_avro_schema(value_schema: &str, value_type_name: &str) -> AvroSchema
             "default": null
         },
         {
-            "name": "after",
+            "name": "before",
             "type": [
                 "null",
                 "VALUE_TYPE"
@@ -1071,7 +1072,7 @@ where
             .iter()
             .map(|(_k, v, headers)| {
                 let val = from_avro_datum(&schema, &mut &v.as_ref().unwrap()[5..], None).unwrap();
-                let value = from_avro_value::<T>(&val, &schema).unwrap();
+                let value = from_avro_value::<T>(&val, &schema, &HashMap::new()).unwrap();
                 let w = if headers[0] == ("op".to_string(), Some(b"insert".to_vec())) {
                     1
                 } else {
@@ -1181,12 +1182,12 @@ fn test_raw_avro_output_indexed<K, T>(
         .iter()
         .map(|(k, v, headers)| {
             let val = from_avro_datum(&val_schema, &mut &v.as_ref().unwrap()[5..], None).unwrap();
-            let value = from_avro_value::<T>(&val, &val_schema).unwrap();
+            let value = from_avro_value::<T>(&val, &val_schema, &HashMap::new()).unwrap();
 
             if let Some(key_schema) = &key_schema {
                 let key =
                     from_avro_datum(key_schema, &mut &k.as_ref().unwrap()[5..], None).unwrap();
-                let key = from_avro_value::<K>(&key, key_schema).unwrap();
+                let key = from_avro_value::<K>(&key, key_schema, &HashMap::new()).unwrap();
                 assert_eq!(key, key_func(&value));
             }
 
@@ -1264,12 +1265,12 @@ fn test_confluent_avro_output<K, V, KF>(
         .map(|(k, v, _headers)| {
             if let Some(v) = v {
                 let val = from_avro_datum(&schema, &mut &v[5..], None).unwrap();
-                let value = from_avro_value::<V>(&val, &schema).unwrap();
+                let value = from_avro_value::<V>(&val, &schema, &HashMap::new()).unwrap();
                 (Some(Tup2(value, 1)), None)
             } else {
                 let val =
                     from_avro_datum(&key_schema, &mut &k.as_ref().unwrap()[5..], None).unwrap();
-                let value = from_avro_value::<K>(&val, &key_schema).unwrap();
+                let value = from_avro_value::<K>(&val, &key_schema, &HashMap::new()).unwrap();
                 (None, Some(Tup2(value, -1)))
             }
         })
@@ -1376,11 +1377,11 @@ fn test_confluent_avro_output_indexed<K, V>(
         .iter()
         .map(|(k, v, _headers)| {
             let key = from_avro_datum(&key_schema, &mut &k.as_ref().unwrap()[5..], None).unwrap();
-            let key = from_avro_value::<K>(&key, &key_schema).unwrap();
+            let key = from_avro_value::<K>(&key, &key_schema, &HashMap::new()).unwrap();
 
             let val = v.as_ref().map(|v| {
                 let val = from_avro_datum(&value_schema, &mut &v[5..], None).unwrap();
-                from_avro_value::<V>(&val, &value_schema).unwrap()
+                from_avro_value::<V>(&val, &value_schema, &HashMap::new()).unwrap()
             });
 
             (key, val)

@@ -30,6 +30,7 @@ use apache_avro::{
     BigDecimal, Decimal, Error, Schema,
 };
 use erased_serde::Deserializer as ErasedDeserializer;
+use feldera_adapterlib::catalog::AvroSchemaRefs;
 use feldera_types::serde_with_context::{DeserializeWithContext, SqlSerdeConfig};
 use num_bigint::BigInt;
 use serde::{
@@ -43,6 +44,8 @@ use std::{
     },
     slice::Iter,
 };
+
+use crate::format::avro::resolve_ref;
 
 use super::input::avro_de_config;
 
@@ -65,35 +68,47 @@ pub struct Deserializer<'de> {
     // to deserialize from it. Specifically, `Decimal` only stores the mantissa; scale must be
     // extracted from the schema.
     schema: &'de Schema,
+    refs: &'de AvroSchemaRefs,
     input: &'de Value,
 }
 
 struct SeqDeserializer<'de> {
     input: Iter<'de, Value>,
     item_schema: &'de Schema,
+    refs: &'de AvroSchemaRefs,
 }
 
 struct MapDeserializer<'de> {
     value_schema: &'de Schema,
+    refs: &'de AvroSchemaRefs,
     input_keys: Keys<'de, String, Value>,
     input_values: Values<'de, String, Value>,
 }
 
 struct RecordDeserializer<'de> {
     record_schema: &'de RecordSchema,
+    refs: &'de AvroSchemaRefs,
     input: Iter<'de, (String, Value)>,
     value: Option<&'de Value>,
     next_field_index: usize,
 }
 
 impl<'de> Deserializer<'de> {
-    pub fn new(input: &'de Value, schema: &'de Schema) -> Self {
-        Deserializer { input, schema }
+    pub fn new(input: &'de Value, schema: &'de Schema, refs: &'de AvroSchemaRefs) -> Self {
+        Deserializer {
+            input,
+            schema,
+            refs,
+        }
     }
 }
 
 impl<'de> SeqDeserializer<'de> {
-    pub fn new<E: de::Error>(input: &'de [Value], schema: &'de Schema) -> Result<Self, E> {
+    pub fn new<E: de::Error>(
+        input: &'de [Value],
+        schema: &'de Schema,
+        refs: &'de AvroSchemaRefs,
+    ) -> Result<Self, E> {
         let Schema::Array(array_schema) = schema else {
             return Err(de::Error::custom(format!(
                 "expected array schema, found {schema:?}"
@@ -103,6 +118,7 @@ impl<'de> SeqDeserializer<'de> {
         Ok(SeqDeserializer {
             input: input.iter(),
             item_schema: array_schema.items.as_ref(),
+            refs,
         })
     }
 }
@@ -111,6 +127,7 @@ impl<'de> MapDeserializer<'de> {
     pub fn new<E: de::Error>(
         input: &'de HashMap<String, Value>,
         schema: &'de Schema,
+        refs: &'de AvroSchemaRefs,
     ) -> Result<Self, E> {
         let Schema::Map(map_schema) = schema else {
             return Err(de::Error::custom(format!(
@@ -120,6 +137,7 @@ impl<'de> MapDeserializer<'de> {
 
         Ok(MapDeserializer {
             value_schema: map_schema.types.as_ref(),
+            refs,
             input_keys: input.keys(),
             input_values: input.values(),
         })
@@ -127,10 +145,16 @@ impl<'de> MapDeserializer<'de> {
 }
 
 impl<'de> RecordDeserializer<'de> {
-    pub fn new<E: de::Error>(
+    // The return type is determined by the `apache_avro` crate.
+    #[allow(clippy::result_large_err)]
+    pub fn new(
         input: &'de [(String, Value)],
         schema: &'de Schema,
-    ) -> Result<Self, E> {
+        refs: &'de AvroSchemaRefs,
+    ) -> Result<Self, Error> {
+        // Record schemas can be references, so we need to resolve them here.
+        let schema = resolve_ref(schema, refs).map_err(Error::SchemaResolutionError)?;
+
         let Schema::Record(record_schema) = schema else {
             return Err(de::Error::custom(format!(
                 "expected record schema, found {schema:?}"
@@ -139,6 +163,7 @@ impl<'de> RecordDeserializer<'de> {
 
         Ok(RecordDeserializer {
             record_schema,
+            refs,
             input: input.iter(),
             value: None,
             next_field_index: 0,
@@ -178,11 +203,11 @@ impl<'de> de::Deserializer<'de> for &'_ Deserializer<'de> {
             Value::TimeMillis(i) => visitor.visit_i64(*i as i64 * 1000),
             Value::Float(f) => visitor.visit_f32(*f),
             Value::Double(d) => visitor.visit_f64(*d),
-            Value::Record(ref fields) => visitor.visit_map(RecordDeserializer::new(fields, schema)?),
-            Value::Array(ref fields) => visitor.visit_seq(SeqDeserializer::new(fields, schema)?),
+            Value::Record(ref fields) => visitor.visit_map(RecordDeserializer::new(fields, schema, self.refs)?),
+            Value::Array(ref fields) => visitor.visit_seq(SeqDeserializer::new(fields, schema, self.refs)?),
             Value::String(ref s) => visitor.visit_borrowed_str(s),
             Value::Uuid(uuid) => visitor.visit_str(&uuid.to_string()),
-            Value::Map(ref items) => visitor.visit_map(MapDeserializer::new(items, schema)?),
+            Value::Map(ref items) => visitor.visit_map(MapDeserializer::new(items, schema, self.refs)?),
             Value::Bytes(ref bytes) | Value::Fixed(_, ref bytes) => visitor.visit_bytes(bytes),
             Value::Decimal(ref d) => visitor.visit_str(&deserialize_decimal(d, schema)?),
             value => Err(de::Error::custom(format!(
@@ -285,9 +310,10 @@ impl<'de> de::Deserializer<'de> for &'_ Deserializer<'de> {
                 visitor.visit_some(&Deserializer::new(
                     inner,
                     &union_schema.variants()[*i as usize],
+                    self.refs,
                 ))
             }
-            v => visitor.visit_some(&Deserializer::new(v, self.schema)),
+            v => visitor.visit_some(&Deserializer::new(v, self.schema, self.refs)),
         }
     }
 
@@ -331,8 +357,10 @@ impl<'de> de::Deserializer<'de> for &'_ Deserializer<'de> {
     {
         let (value, schema) = unwrap_union(self.input, self.schema);
         match value {
-            Value::Array(ref items) => visitor.visit_seq(SeqDeserializer::new(items, schema)?),
-            Value::Null => visitor.visit_seq(SeqDeserializer::new(&[], schema)?),
+            Value::Array(ref items) => {
+                visitor.visit_seq(SeqDeserializer::new(items, schema, self.refs)?)
+            }
+            Value::Null => visitor.visit_seq(SeqDeserializer::new(&[], schema, self.refs)?),
             v => Err(de::Error::custom(format!(
                 "expected an Array or Null, but got: {v:?}",
             ))),
@@ -364,7 +392,9 @@ impl<'de> de::Deserializer<'de> for &'_ Deserializer<'de> {
     {
         let (value, schema) = unwrap_union(self.input, self.schema);
         match value {
-            Value::Map(ref items) => visitor.visit_map(MapDeserializer::new(items, schema)?),
+            Value::Map(ref items) => {
+                visitor.visit_map(MapDeserializer::new(items, schema, self.refs)?)
+            }
             v => Err(de::Error::custom(format_args!(
                 "expected a record or a map, but got: {v:?}",
             ))),
@@ -384,7 +414,7 @@ impl<'de> de::Deserializer<'de> for &'_ Deserializer<'de> {
 
         match value {
             Value::Record(ref fields) => {
-                visitor.visit_map(RecordDeserializer::new(fields, schema)?)
+                visitor.visit_map(RecordDeserializer::new(fields, schema, self.refs)?)
             }
             v => Err(de::Error::custom(format!("expected a Record, got: {v:?}",))),
         }
@@ -430,7 +460,7 @@ impl<'de> de::SeqAccess<'de> for SeqDeserializer<'de> {
     {
         match self.input.next() {
             Some(item) => seed
-                .deserialize(&Deserializer::new(item, self.item_schema))
+                .deserialize(&Deserializer::new(item, self.item_schema, self.refs))
                 .map(Some),
             None => Ok(None),
         }
@@ -455,7 +485,9 @@ impl<'de> de::MapAccess<'de> for MapDeserializer<'de> {
         V: DeserializeSeed<'de>,
     {
         match self.input_values.next() {
-            Some(value) => seed.deserialize(&Deserializer::new(value, self.value_schema)),
+            Some(value) => {
+                seed.deserialize(&Deserializer::new(value, self.value_schema, self.refs))
+            }
             None => Err(de::Error::custom("should not happen - too many values")),
         }
     }
@@ -487,6 +519,7 @@ impl<'de> de::MapAccess<'de> for RecordDeserializer<'de> {
                 let result = seed.deserialize(&Deserializer::new(
                     value,
                     &self.record_schema.fields[self.next_field_index].schema,
+                    self.refs,
                 ));
                 self.next_field_index += 1;
                 result
@@ -535,8 +568,9 @@ pub fn avro_deserializer<'a, 'de>(
 pub fn from_avro_value<'de, D: DeserializeWithContext<'de, SqlSerdeConfig>>(
     value: &'de Value,
     schema: &'de Schema,
+    refs: &'de AvroSchemaRefs,
 ) -> Result<D, erased_serde::Error> {
-    let deserializer: Deserializer<'de> = Deserializer::new(value, schema);
+    let deserializer: Deserializer<'de> = Deserializer::new(value, schema, refs);
 
     let deserializer = avro_deserializer(&deserializer);
 

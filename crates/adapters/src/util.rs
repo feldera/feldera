@@ -662,8 +662,8 @@ impl<K: Eq + Hash> TokenBucketRateLimiter<K> {
 #[cfg(test)]
 mod test {
     #[cfg(feature = "with-deltalake")]
-    use std::sync::{Arc, Mutex};
-    use std::{thread, time::Duration};
+    use std::sync::Mutex;
+    use std::{sync::Arc, thread, time::Duration};
 
     use crate::util::{RateLimitCheckResult, TokenBucketRateLimiter};
 

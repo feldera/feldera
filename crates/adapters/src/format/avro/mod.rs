@@ -1,5 +1,7 @@
 use std::time::Duration;
 
+use apache_avro::{schema::Name as AvroName, Schema as AvroSchema};
+use feldera_adapterlib::catalog::AvroSchemaRefs;
 use feldera_types::format::avro::AvroSchemaRegistryConfig;
 use schema_registry_converter::blocking::schema_registry::SrSettings;
 
@@ -77,5 +79,18 @@ fn schema_registry_settings(
         })?))
     } else {
         Ok(None)
+    }
+}
+
+fn resolve_ref<'a>(
+    schema: &'a AvroSchema,
+    refs: &'a AvroSchemaRefs,
+) -> Result<&'a AvroSchema, AvroName> {
+    match schema {
+        AvroSchema::Ref { name } => {
+            let name = name.fully_qualified_name(&schema.namespace());
+            refs.get(&name).ok_or(name)
+        }
+        _ => Ok(schema),
     }
 }

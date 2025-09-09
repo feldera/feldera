@@ -9,8 +9,11 @@ use apache_avro::{
     },
     Schema as AvroSchema,
 };
+use feldera_adapterlib::catalog::AvroSchemaRefs;
 use feldera_types::program_schema::{ColumnType, Field, Relation, SqlIdentifier, SqlType};
 use tracing::warn;
+
+use crate::format::avro::resolve_ref;
 
 /// Indicates whether the field has an optional type (`["null", T]`) and,
 /// if so, whether the non-null element of the union is at position 0 or 1.
@@ -52,8 +55,12 @@ fn lookup_field<'a>(fields: &'a [RecordField], field: &'a Field) -> Option<&'a R
 /// specified field.
 pub fn validate_struct_schema(
     avro_schema: &AvroSchema,
+    refs: &AvroSchemaRefs,
     struct_schema: &[Field],
 ) -> Result<(), String> {
+    let avro_schema = resolve_ref(avro_schema, refs)
+        .map_err(|name| format!("error resolving Avro schema reference: {}", name))?;
+
     let AvroSchema::Record(record_schema) = avro_schema else {
         return Err(format!(
             "expected schema of type 'record', but found {}",
@@ -75,14 +82,18 @@ pub fn validate_struct_schema(
             }
         };
 
-        validate_field_schema(&avro_field.name, &avro_field.schema, &field.columntype).map_err(
-            |e| {
-                format!(
-                    "error validating schema for column '{}': {e}",
-                    field.name.name()
-                )
-            },
-        )?;
+        validate_field_schema(
+            &avro_field.name,
+            &avro_field.schema,
+            refs,
+            &field.columntype,
+        )
+        .map_err(|e| {
+            format!(
+                "error validating schema for column '{}': {e}",
+                field.name.name()
+            )
+        })?;
     }
 
     Ok(())
@@ -93,6 +104,7 @@ pub fn validate_struct_schema(
 fn validate_array_schema(
     name: &str,
     avro_schema: &AvroSchema,
+    refs: &AvroSchemaRefs,
     component_schema: &ColumnType,
 ) -> Result<(), String> {
     let AvroSchema::Array(array_schema) = avro_schema else {
@@ -102,7 +114,7 @@ fn validate_array_schema(
         ));
     };
 
-    validate_field_schema(name, &array_schema.items, component_schema)
+    validate_field_schema(name, &array_schema.items, refs, component_schema)
         .map_err(|e| format!("error validating array element schema: {e}"))?;
 
     Ok(())
@@ -113,6 +125,7 @@ fn validate_array_schema(
 fn validate_map_schema(
     name: &str,
     avro_schema: &AvroSchema,
+    refs: &AvroSchemaRefs,
     value_schema: &ColumnType,
 ) -> Result<(), String> {
     let AvroSchema::Map(map_schema) = avro_schema else {
@@ -122,7 +135,7 @@ fn validate_map_schema(
         ));
     };
 
-    validate_field_schema(name, &map_schema.types, value_schema)
+    validate_field_schema(name, &map_schema.types, refs, value_schema)
         .map_err(|e| format!("error validating map value schema: {e}"))?;
 
     Ok(())
@@ -291,6 +304,7 @@ fn validate_uuid_schema(avro_schema: &AvroSchema) -> Result<(), String> {
 pub fn validate_field_schema(
     name: &str,
     avro_schema: &AvroSchema,
+    refs: &AvroSchemaRefs,
     field_schema: &ColumnType,
 ) -> Result<(), String> {
     let (avro_schema, optional) = schema_unwrap_optional(avro_schema);
@@ -345,12 +359,14 @@ pub fn validate_field_schema(
             return validate_array_schema(
                 name,
                 avro_schema,
+                refs,
                 field_schema.component.as_ref().unwrap(),
             );
         }
         SqlType::Struct => {
             return validate_struct_schema(
                 avro_schema,
+                refs,
                 field_schema.fields.as_ref().unwrap_or(&vec![]),
             );
         }
@@ -372,7 +388,7 @@ pub fn validate_field_schema(
                 ));
             }
 
-            return validate_map_schema(name, avro_schema, value_type);
+            return validate_map_schema(name, avro_schema, refs, value_type);
         }
         SqlType::Null => AvroSchema::Null,
         SqlType::Uuid => return validate_uuid_schema(avro_schema),

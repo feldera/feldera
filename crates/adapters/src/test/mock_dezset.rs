@@ -1,19 +1,24 @@
+#[cfg(feature = "with-avro")]
+use crate::{catalog::AvroStream, format::avro::from_avro_value};
 use crate::{
-    catalog::{ArrowStream, AvroStream, DeCollectionStream, RecordFormat},
-    format::{avro::from_avro_value, raw::raw_serde_config, InputBuffer},
+    catalog::{ArrowStream, DeCollectionStream, RecordFormat},
+    format::{raw::raw_serde_config, InputBuffer},
     static_compile::deinput::{
         fraction, fraction_take, CsvDeserializerFromBytes, DeserializerFromBytes,
         JsonDeserializerFromBytes, RawDeserializerFromBytes,
     },
     ControllerError, DeCollectionHandle,
 };
-use anyhow::anyhow;
 use anyhow::Result as AnyResult;
+#[cfg(feature = "with-avro")]
 use apache_avro::{types::Value as AvroValue, Schema as AvroSchema};
 use arrow::array::RecordBatch;
 use dbsp::{operator::StagedBuffers, DBData};
 use erased_serde::Deserializer as ErasedDeserializer;
+#[cfg(feature = "with-avro")]
+use feldera_adapterlib::catalog::AvroSchemaRefs;
 use feldera_adapterlib::format::BufferSize;
+
 use feldera_types::serde_with_context::{DeserializeWithContext, SqlSerdeConfig};
 use serde_arrow::Deserializer as ArrowDeserializer;
 use std::{
@@ -189,6 +194,7 @@ where
         )))
     }
 
+    #[cfg(feature = "with-avro")]
     fn configure_avro_deserializer(&self) -> Result<Box<dyn AvroStream>, ControllerError> {
         Ok(Box::new(MockAvroStream::new(self.clone())))
     }
@@ -502,6 +508,7 @@ where
 
 /// [`AvroStream`] implementation that collects deserialized records into a
 /// [`MockDeZSet`].
+#[cfg(feature = "with-avro")]
 #[derive(Clone)]
 pub struct MockAvroStream<T, U> {
     updates: Vec<MockUpdate<T, U>>,
@@ -509,6 +516,7 @@ pub struct MockAvroStream<T, U> {
     handle: MockDeZSet<T, U>,
 }
 
+#[cfg(feature = "with-avro")]
 impl<T, U> MockAvroStream<T, U> {
     fn new(handle: MockDeZSet<T, U>) -> Self {
         Self {
@@ -519,22 +527,35 @@ impl<T, U> MockAvroStream<T, U> {
     }
 }
 
+#[cfg(feature = "with-avro")]
 impl<T, U> AvroStream for MockAvroStream<T, U>
 where
     T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Hash + Send + Sync + 'static,
     U: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Hash + Send + Sync + 'static,
 {
-    fn insert(&mut self, data: &AvroValue, schema: &AvroSchema, n_bytes: usize) -> AnyResult<()> {
-        let v: T = from_avro_value(data, schema)
-            .map_err(|e| anyhow!("error deserializing Avro record: {e}"))?;
+    fn insert(
+        &mut self,
+        data: &AvroValue,
+        schema: &AvroSchema,
+        refs: &AvroSchemaRefs,
+        n_bytes: usize,
+    ) -> AnyResult<()> {
+        let v: T = from_avro_value(data, schema, refs)
+            .map_err(|e| anyhow::anyhow!("error deserializing Avro record: {e}"))?;
         self.updates.push(MockUpdate::Insert(v));
         self.n_bytes += n_bytes;
         Ok(())
     }
 
-    fn delete(&mut self, data: &AvroValue, schema: &AvroSchema, n_bytes: usize) -> AnyResult<()> {
-        let v: T = from_avro_value(data, schema)
-            .map_err(|e| anyhow!("error deserializing Avro record: {e}"))?;
+    fn delete(
+        &mut self,
+        data: &AvroValue,
+        schema: &AvroSchema,
+        refs: &AvroSchemaRefs,
+        n_bytes: usize,
+    ) -> AnyResult<()> {
+        let v: T = from_avro_value(data, schema, refs)
+            .map_err(|e| anyhow::anyhow!("error deserializing Avro record: {e}"))?;
 
         self.updates.push(MockUpdate::Delete(v));
         self.n_bytes += n_bytes;
@@ -550,6 +571,7 @@ where
     }
 }
 
+#[cfg(feature = "with-avro")]
 impl<T, U> InputBuffer for MockAvroStream<T, U>
 where
     T: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Hash + Send + Sync + 'static,

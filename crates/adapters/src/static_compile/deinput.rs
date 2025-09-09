@@ -21,6 +21,8 @@ use dbsp::{
     ZSetHandle, ZWeight,
 };
 use erased_serde::Deserializer as ErasedDeserializer;
+#[cfg(feature = "with-avro")]
+use feldera_adapterlib::catalog::AvroSchemaRefs;
 use feldera_adapterlib::format::BufferSize;
 use feldera_types::format::csv::CsvParserConfig;
 use feldera_types::serde_with_context::{DeserializeWithContext, SqlSerdeConfig};
@@ -753,8 +755,14 @@ where
     K: DBData + From<D>,
     D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + Sync + 'static,
 {
-    fn insert(&mut self, data: &AvroValue, schema: &AvroSchema, n_bytes: usize) -> AnyResult<()> {
-        let v: D = from_avro_value(data, schema)
+    fn insert(
+        &mut self,
+        data: &AvroValue,
+        schema: &AvroSchema,
+        refs: &AvroSchemaRefs,
+        n_bytes: usize,
+    ) -> AnyResult<()> {
+        let v: D = from_avro_value(data, schema, refs)
             .map_err(|e| anyhow!("error deserializing Avro record: {e}"))?;
 
         self.buffer.updates.push_back(Tup2(K::from(v), 1));
@@ -763,8 +771,14 @@ where
         Ok(())
     }
 
-    fn delete(&mut self, data: &AvroValue, schema: &AvroSchema, n_bytes: usize) -> AnyResult<()> {
-        let v: D = from_avro_value(data, schema)
+    fn delete(
+        &mut self,
+        data: &AvroValue,
+        schema: &AvroSchema,
+        refs: &AvroSchemaRefs,
+        n_bytes: usize,
+    ) -> AnyResult<()> {
+        let v: D = from_avro_value(data, schema, refs)
             .map_err(|e| anyhow!("error deserializing Avro record: {e}"))?;
 
         self.buffer.updates.push_back(Tup2(K::from(v), -1));
@@ -1186,8 +1200,14 @@ where
     K: DBData + From<D>,
     D: for<'de> DeserializeWithContext<'de, SqlSerdeConfig> + Send + Sync + 'static,
 {
-    fn insert(&mut self, data: &AvroValue, schema: &AvroSchema, n_bytes: usize) -> AnyResult<()> {
-        let v: D = from_avro_value(data, schema)
+    fn insert(
+        &mut self,
+        data: &AvroValue,
+        schema: &AvroSchema,
+        refs: &AvroSchemaRefs,
+        n_bytes: usize,
+    ) -> AnyResult<()> {
+        let v: D = from_avro_value(data, schema, refs)
             .map_err(|e| anyhow!("error deserializing Avro record: {e}"))?;
 
         self.buffer.updates.push_back(Tup2(K::from(v), true));
@@ -1196,8 +1216,14 @@ where
         Ok(())
     }
 
-    fn delete(&mut self, data: &AvroValue, schema: &AvroSchema, n_bytes: usize) -> AnyResult<()> {
-        let v: D = from_avro_value(data, schema)
+    fn delete(
+        &mut self,
+        data: &AvroValue,
+        schema: &AvroSchema,
+        refs: &AvroSchemaRefs,
+        n_bytes: usize,
+    ) -> AnyResult<()> {
+        let v: D = from_avro_value(data, schema, refs)
             .map_err(|e| anyhow!("error deserializing Avro record: {e}"))?;
 
         self.buffer.updates.push_back(Tup2(K::from(v), false));
@@ -1800,8 +1826,14 @@ where
     U: DBData,
     VF: Fn(&V) -> K + Clone + Send + Sync + 'static,
 {
-    fn insert(&mut self, data: &AvroValue, schema: &AvroSchema, n_bytes: usize) -> AnyResult<()> {
-        let v: VD = from_avro_value(data, schema)
+    fn insert(
+        &mut self,
+        data: &AvroValue,
+        schema: &AvroSchema,
+        refs: &AvroSchemaRefs,
+        n_bytes: usize,
+    ) -> AnyResult<()> {
+        let v: VD = from_avro_value(data, schema, refs)
             .map_err(|e| anyhow!("error deserializing Avro record: {e}"))?;
 
         let val = V::from(v);
@@ -1813,8 +1845,14 @@ where
         Ok(())
     }
 
-    fn delete(&mut self, data: &AvroValue, schema: &AvroSchema, n_bytes: usize) -> AnyResult<()> {
-        let v: VD = from_avro_value(data, schema)
+    fn delete(
+        &mut self,
+        data: &AvroValue,
+        schema: &AvroSchema,
+        refs: &AvroSchemaRefs,
+        n_bytes: usize,
+    ) -> AnyResult<()> {
+        let v: VD = from_avro_value(data, schema, refs)
             .map_err(|e| anyhow!("error deserializing Avro record: {e}"))?;
 
         let val = V::from(v);
