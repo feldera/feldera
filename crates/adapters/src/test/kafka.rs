@@ -133,9 +133,10 @@ impl KafkaResources {
                 NewTopic::new(topic_name, *partitions, TopicReplication::Fixed(1))
             })
             .collect::<Vec<_>>();
-        block_on(admin_client.create_topics(&new_topics, &AdminOptions::new())).unwrap();
-        wait_for_completion(&admin_client, topics);
-
+        if !new_topics.is_empty() {
+            block_on(admin_client.create_topics(&new_topics, &AdminOptions::new())).unwrap();
+            wait_for_completion(&admin_client, topics);
+        }
         Self {
             admin_client,
             topics: topics

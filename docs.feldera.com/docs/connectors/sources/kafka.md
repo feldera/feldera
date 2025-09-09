@@ -17,6 +17,7 @@ tolerance](/pipelines/fault-tolerance).
 | `log_level`                    | string           |         | The log level for the Kafka client. |
 | `group_join_timeout_secs`      | seconds          | 10      | Maximum timeout (in seconds) for the endpoint to join the Kafka consumer group during initialization. |
 | `poller_threads`               | positive integer | 3       | Number of threads used to poll Kafka messages. Setting it to multiple threads can improve performance with small messages. Default is 3. |
+| `resume_earliest_if_data_expires` | boolean       | false   | See [Tolerating missing data on resume](#tolerating-missing-data-on-resume). |
 
 The connector passes additional options directly to [**librdkafka**](https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md).  Some of the relevant options:
 
@@ -261,6 +262,32 @@ CREATE TABLE INPUT (
    ]'
 );
 ```
+
+## Tolerating missing data on resume
+
+The `resume_earliest_if_data_expires` setting controls how the Kafka
+input connector behaves when a pipeline configured with at-least-once
+[fault tolerance](/pipelines/fault-tolerance) resumes from a
+checkpoint and the configured Kafka topic no longer has data at the
+offsets saved in the checkpoints:
+
+- If `resume_earliest_if_data_expires` is false, which is the default,
+  then the connector will report an error and the pipeline will fail
+  to start.  This behavior makes sense because it is no longer
+  possible to continue the pipeline from where it left off.
+
+- If `resume_earliest_if_data_expires` is true, then the connector
+  will log a warning and start reading data from the earliest offsets
+  now available in the topic.  This is reasonable behavior in the
+  special case where some errors were detected in the data in the
+  Kafka topic and the topic was deleted and recreated with correct
+  data starting at the point of an earlier checkpoint, and the
+  pipeline was restarted from that checkpoint.
+
+This setting only has an effect when a Kafka topic cannot be read at
+the checkpointed offsets.  It has no effect if fault tolerance is not
+enabled, or if exactly once fault tolerance is enabled, or at any time
+other than the point of resuming from a checkpoint.
 
 ## Additional resources
 

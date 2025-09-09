@@ -44,7 +44,7 @@ use std::{
 };
 use tokio::sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender};
 use tracing::span::EnteredSpan;
-use tracing::{debug, info_span};
+use tracing::{debug, info_span, warn};
 use xxhash_rust::xxh3::Xxh3Default;
 
 /// Poll timeout must be low, as it bounds the amount of time it takes to resume the connector.
@@ -177,7 +177,55 @@ struct KafkaFtInputReaderInner {
     errors: ArrayQueue<(KafkaError, String)>,
 }
 
+/// Error returned by [KafkaFtInputReaderInner::check_offsets].
+enum OffsetError {
+    /// Error fetching watermarks for Kafka partitions.
+    FetchError(AnyError),
+
+    /// At least one provided partition offset does not exist in the partition
+    /// (probably it was expired).
+    MissingOffset(AnyError),
+}
+
+impl OffsetError {
+    /// Returns the inner [AnyError].
+    fn into_any_error(self) -> AnyError {
+        match self {
+            OffsetError::FetchError(error) => error,
+            OffsetError::MissingOffset(error) => error,
+        }
+    }
+}
+
 impl KafkaFtInputReaderInner {
+    fn check_offsets(
+        &self,
+        config: &KafkaInputConfig,
+        offsets: &[i64],
+    ) -> Result<Vec<Offset>, OffsetError> {
+        let partitions = config
+            .partitions
+            .clone()
+            .unwrap_or((0..offsets.len() as i32).collect());
+
+        for (offset, partition) in offsets.iter().copied().zip(partitions) {
+            let (low, high) = self
+                .kafka_consumer
+                .fetch_watermarks(&config.topic, partition, METADATA_TIMEOUT)
+                .map_err(|e| {
+                    OffsetError::FetchError(anyhow!(
+                        "error fetching metadata for partition '{partition}': {e}"
+                    ))
+                })?;
+
+            // Return an error if the specified offset doesn't exist.
+            if !(low..=high).contains(&offset) {
+                return Err(OffsetError::MissingOffset(anyhow!("configuration error: provided offset '{offset}' not currently in partition '{partition}'")));
+            }
+        }
+        Ok(offsets.iter().copied().map(Offset::Offset).collect())
+    }
+
     #[allow(clippy::borrowed_box)]
     fn poller_thread(
         &self,
@@ -194,11 +242,25 @@ impl KafkaFtInputReaderInner {
         // beginning.
         let mut command_receiver = InputCommandReceiver::<Metadata, ()>::new(command_receiver);
         let initial_offsets = match resume_info {
-            Some(metadata) => metadata
-                .parse(n_partitions)?
-                .into_iter()
-                .map(|range| Offset::Offset(range.end))
-                .collect::<Vec<_>>(),
+            Some(metadata) => {
+                let offsets = metadata
+                    .parse(n_partitions)?
+                    .into_iter()
+                    .map(|range| range.end)
+                    .collect::<Vec<_>>();
+                if config.resume_earliest_if_data_expires {
+                    match self.check_offsets(&config, &offsets) {
+                        Ok(offsets) => offsets,
+                        Err(OffsetError::FetchError(error)) => return Err(error),
+                        Err(OffsetError::MissingOffset(_error)) => {
+                            warn!("Checkpoint for topic {topic} refers to offsets that no longer exist in the topic; as configured, the connector will resume from the earliest offsets now in the topic (checkpointed offsets were {offsets:?})");
+                            iter::repeat_n(Offset::Beginning, n_partitions).collect()
+                        }
+                    }
+                } else {
+                    offsets.into_iter().map(Offset::Offset).collect()
+                }
+            }
             None => match &config.start_from {
                 KafkaStartFromConfig::Earliest => {
                     iter::repeat_n(Offset::Beginning, n_partitions).collect()
@@ -209,26 +271,8 @@ impl KafkaFtInputReaderInner {
                         bail!("Topic {topic} has {n_partitions} partitions but configuration specifies {} offsets.", offsets.len());
                     }
 
-                    let partitions = config
-                        .partitions
-                        .clone()
-                        .unwrap_or((0..offsets.len() as i32).collect());
-
-                    for (offset, partition) in offsets.iter().copied().zip(partitions) {
-                        let (low, high) = self
-                            .kafka_consumer
-                            .fetch_watermarks(topic, partition, METADATA_TIMEOUT)
-                            .map_err(|e| {
-                                anyhow!("error fetching metadata for partition '{partition}': {e}",)
-                            })?;
-
-                        // Return an error if the specified offset doesn't exist.
-                        if !(low..=high).contains(&offset) {
-                            bail!("configuration error: provided offset '{offset}' not currently in partition '{partition}'");
-                        }
-                    }
-
-                    offsets.iter().copied().map(Offset::Offset).collect()
+                    self.check_offsets(&config, offsets)
+                        .map_err(|e| e.into_any_error())?
                 }
             },
         };
