@@ -61,7 +61,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let asset_path: PathBuf = Path::new("../../web-console/").join(rel_build_dir);
         let mut resource_dir = NpmBuild::new("../../web-console")
             .executable("bun")
-            .install()
+            .run("install --frozen-lockfile")
             .expect(
                 "Could not run `bun install`. Follow set-up instructions in web-console/README.md",
             )
