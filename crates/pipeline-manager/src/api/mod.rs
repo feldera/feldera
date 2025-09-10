@@ -20,6 +20,7 @@ pub mod demo;
 pub mod endpoints;
 pub mod error;
 mod examples;
+pub mod lifecycle_events;
 pub mod main;
 pub mod support_data_collector;
 pub mod util;
