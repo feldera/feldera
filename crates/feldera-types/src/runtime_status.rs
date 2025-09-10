@@ -45,7 +45,7 @@ pub enum RuntimeStatus {
     /// The input connectors are running.
     Running,
 
-    /// TODO: additional description.
+    /// The pipeline finished checkpointing and pausing.
     Suspended,
 }
 
