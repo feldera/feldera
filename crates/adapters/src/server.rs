@@ -929,6 +929,7 @@ async fn state_transition(
         && desired_status.may_transition_to(new_status)
     {
         if new_status != old_status {
+            info!("{action}: Transitioning from {old_status:?} to {new_status:?}");
             *desired_status = new_status;
             state.desired_status_change.notify_waiters();
             match state.controller() {
@@ -1368,6 +1369,7 @@ async fn suspend(state: WebData<ServerState>) -> Result<impl Responder, Pipeline
             return Err(PipelineError::InvalidTransition("suspend", *desired_status))
         }
         RuntimeDesiredStatus::Running | RuntimeDesiredStatus::Paused => {
+            info!("suspend: Transitioning from {desired_status:?} to Suspended");
             *desired_status = RuntimeDesiredStatus::Suspended;
             state.desired_status_change.notify_waiters();
             drop(desired_status);
