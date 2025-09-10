@@ -221,28 +221,30 @@ pub(crate) struct ServerState {
 
 impl ServerState {
     fn new(
+        phase: PipelinePhase,
         md: String,
-        initial: RuntimeDesiredStatus,
+        desired_status: RuntimeDesiredStatus,
         deployment_id: Uuid,
-    ) -> Result<Self, ControllerError> {
-        if !matches!(
-            initial,
-            RuntimeDesiredStatus::Running
-                | RuntimeDesiredStatus::Paused
-                | RuntimeDesiredStatus::Standby,
-        ) {
-            return Err(ControllerError::InvalidInitialStatus(initial));
-        }
-        Ok(Self {
-            phase: Mutex::new(PipelinePhase::Initializing),
+    ) -> Self {
+        Self {
+            phase: Mutex::new(phase),
             desired_status_change: Arc::default(),
             metadata: md,
             controller: Mutex::new(None),
             checkpoint_state: Default::default(),
             sync_checkpoint_state: Default::default(),
-            desired_status: Mutex::new(initial),
+            desired_status: Mutex::new(desired_status),
             deployment_id,
-        })
+        }
+    }
+
+    fn for_error(error: ControllerError, deployment_id: Uuid) -> Self {
+        Self::new(
+            PipelinePhase::InitializationError(Arc::new(error)),
+            String::default(),
+            RuntimeDesiredStatus::Paused,
+            deployment_id,
+        )
     }
 
     /// Generate an appropriate error when `state.controller` is set to
@@ -491,73 +493,139 @@ pub fn run_server(
         }
     }
 
-    #[cfg(not(feature = "feldera-enterprise"))]
-    if config.global.fault_tolerance.is_enabled() {
-        return Err(ControllerError::EnterpriseFeature("fault tolerance"));
+    /// Does all of the fallible work in creating the controller.
+    fn start_controller(
+        args: &ServerArgs,
+        config: &PipelineConfig,
+        circuit_factory: CircuitFactoryFunc,
+        runtime: &actix_web::rt::Runtime,
+    ) -> Result<WebData<ServerState>, ControllerError> {
+        #[cfg(not(feature = "feldera-enterprise"))]
+        if config.global.fault_tolerance.is_enabled() {
+            return Err(ControllerError::EnterpriseFeature("fault tolerance"));
+        }
+
+        // Initiate creating the controller so that we can get access to storage,
+        // which is needed to determine the initial state.
+        let builder = ControllerBuilder::new(&config)?;
+        info!(
+            "Pipeline deployment identifier from arguments: {}",
+            args.deployment_id
+        );
+        info!("Desired status from arguments: {:?}", args.initial);
+        let initial_status = match builder
+            .storage()
+            .and_then(|storage| StoredStatus::read(&*storage))
+            .inspect(|stored| {
+                info!(
+                    "Pipeline deployment identifier from storage: {}",
+                    stored.deployment_id
+                );
+                info!("Desired status from storage: {:?}", stored.desired_status);
+            }) {
+            Some(stored) if stored.deployment_id == args.deployment_id => {
+                // This is an automatic restart (otherwise the deployment ID would
+                // have changed).  Use the stored desired status.
+                stored.desired_status
+            }
+            Some(stored) => {
+                // The pipeline manager restarted us.  Use the desired status it
+                // passed in (if it is a valid transition).
+                if !stored
+                    .desired_status
+                    .may_transition_to_at_startup(args.initial)
+                {
+                    return Err(ControllerError::InvalidStartupTransition {
+                        from: stored.desired_status,
+                        to: args.initial,
+                    });
+                }
+                args.initial
+            }
+            None => {
+                // Initial deployment of this pipeline.  Use the desired status
+                // passed in by the pipeline manager (it's the only one we have,
+                // anyway).
+                args.initial
+            }
+        };
+
+        let md = match &args.metadata_file {
+            None => String::new(),
+            Some(metadata_file) => std::fs::read(metadata_file)
+                .map_err(|e| {
+                    ControllerError::io_error(format!("reading metadata file '{metadata_file}'"), e)
+                })
+                .and_then(|meta| {
+                    String::from_utf8(meta).map_err(|e| {
+                        ControllerError::pipeline_config_parse_error(&format!(
+                            "invalid UTF8 string in the metadata file '{metadata_file}' ({e})"
+                        ))
+                    })
+                })
+                .inspect_err(|error| {
+                    error!("{error}");
+                })
+                .unwrap_or_default(),
+        };
+
+        if !matches!(
+            initial_status,
+            RuntimeDesiredStatus::Running
+                | RuntimeDesiredStatus::Paused
+                | RuntimeDesiredStatus::Standby,
+        ) {
+            return Err(ControllerError::InvalidInitialStatus(initial_status));
+        }
+
+        let state = WebData::new(ServerState::new(
+            PipelinePhase::Initializing,
+            md,
+            initial_status,
+            args.deployment_id,
+        ));
+
+        // Initialize the pipeline in a separate thread.  On success, this thread
+        // will create a `Controller` instance and store it in `state.controller`.
+        let storage = builder.storage().clone();
+        thread::Builder::new()
+            .name("pipeline-init".to_string())
+            .spawn({
+                let state = state.clone();
+                move || bootstrap(builder, circuit_factory, state)
+            })
+            .expect("failed to spawn pipeline initialization thread");
+
+        // Spawn a task to update the stored desired state when it changes.
+        if let Some(storage) = storage {
+            let state = state.clone();
+            runtime.spawn(async move {
+                let mut prev_stored_status = None;
+                loop {
+                    let stored_status = StoredStatus {
+                        desired_status: state.desired_status(),
+                        deployment_id: state.deployment_id,
+                    };
+                    if Some(stored_status) != prev_stored_status {
+                        let storage = storage.clone();
+                        spawn_blocking(move || stored_status.write(&*storage));
+                    }
+                    prev_stored_status = Some(stored_status);
+                    state.desired_status_change.notified().await;
+                }
+            });
+        }
+
+        Ok(state)
     }
 
-    // Initiate creating the controller so that we can get access to storage,
-    // which is needed to determine the initial state.
-    let builder = ControllerBuilder::new(&config)?;
-    let initial_status = match builder
-        .storage()
-        .and_then(|storage| StoredStatus::read(&*storage))
-    {
-        Some(stored) if stored.deployment_id == args.deployment_id => {
-            // This is an automatic restart (otherwise the deployment ID would
-            // have changed).  Use the stored desired status.
-            stored.desired_status
-        }
-        Some(stored) => {
-            // The pipeline manager restarted us.  Use the desired status it
-            // passed in (if it is a valid transition).
-            if !stored
-                .desired_status
-                .may_transition_to_at_startup(args.initial)
-            {
-                return Err(ControllerError::InvalidStartupTransition {
-                    from: stored.desired_status,
-                    to: args.initial,
-                });
-            }
-            args.initial
-        }
-        None => {
-            // Initial deployment of this pipeline.  Use the desired status
-            // passed in by the pipeline manager (it's the only one we have,
-            // anyway).
-            args.initial
-        }
-    };
-    let storage = builder.storage().clone();
+    let system_runner = rt::System::new();
 
-    let md = match &args.metadata_file {
-        None => String::new(),
-        Some(metadata_file) => {
-            let meta = std::fs::read(metadata_file).map_err(|e| {
-                ControllerError::io_error(format!("reading metadata file '{}'", metadata_file), e)
-            })?;
-            String::from_utf8(meta).map_err(|e| {
-                ControllerError::pipeline_config_parse_error(&format!(
-                    "invalid UTF8 string in the metadata file '{}' ({e})",
-                    metadata_file
-                ))
-            })?
-        }
-    };
-
-    let state = WebData::new(ServerState::new(md, initial_status, args.deployment_id)?);
-
-    // Initialize the pipeline in a separate thread.  On success, this thread
-    // will create a `Controller` instance and store it in `state.controller`.
-    thread::Builder::new()
-        .name("pipeline-init".to_string())
-        .spawn({
-            let state = state.clone();
-            move || bootstrap(builder, circuit_factory, state)
-        })
-        .expect("failed to spawn pipeline initialization thread");
-    info!("Pipeline deployment identifier: {}", args.deployment_id);
+    let state = start_controller(&args, &config, circuit_factory, system_runner.runtime())
+        .unwrap_or_else(|error| {
+            error!("Initialization failed: {error}");
+            WebData::new(ServerState::for_error(error, args.deployment_id))
+        });
 
     let workers = if let Some(http_workers) = config.global.http_workers {
         http_workers as usize
@@ -566,7 +634,6 @@ pub fn run_server(
     };
 
     let server = HttpServer::new({
-        let state = state.clone();
         move || {
             let state = state.clone();
             build_app(
@@ -663,26 +730,7 @@ pub fn run_server(
             .run()
     };
 
-    rt::System::new().block_on(async {
-        // Spawn a task to update the stored desired state when it changes.
-        if let Some(storage) = storage {
-            spawn(async move {
-                let mut prev_stored_status = None;
-                loop {
-                    let stored_status = StoredStatus {
-                        desired_status: state.desired_status(),
-                        deployment_id: state.deployment_id,
-                    };
-                    if Some(stored_status) != prev_stored_status {
-                        let storage = storage.clone();
-                        spawn_blocking(move || stored_status.write(&*storage));
-                    }
-                    prev_stored_status = Some(stored_status);
-                    state.desired_status_change.notified().await;
-                }
-            });
-        }
-
+    system_runner.block_on(async {
         info!(
             "Started {} server on port {port}",
             if args.enable_https { "HTTPS" } else { "HTTP" }
@@ -1779,6 +1827,7 @@ mod test_with_kafka {
     use crate::{
         controller::{ControllerBuilder, MAX_API_CONNECTIONS},
         ensure_default_crypto_provider,
+        server::PipelinePhase,
         test::{
             async_wait, generate_test_batches,
             http::{TestHttpReceiver, TestHttpSender},
@@ -1877,14 +1926,12 @@ outputs:
 
         println!("Creating HTTP server");
 
-        let state = WebData::new(
-            ServerState::new(
-                String::from(""),
-                RuntimeDesiredStatus::Paused,
-                Uuid::new_v4(),
-            )
-            .unwrap(),
-        );
+        let state = WebData::new(ServerState::new(
+            PipelinePhase::Initializing,
+            String::new(),
+            RuntimeDesiredStatus::Paused,
+            Uuid::new_v4(),
+        ));
         let state_clone = state.clone();
 
         let args = ServerArgs {
@@ -2166,9 +2213,12 @@ outputs:
 
         println!("Creating HTTP server");
 
-        let state = WebData::new(
-            ServerState::new(String::default(), RuntimeDesiredStatus::Paused).unwrap(),
-        );
+        let state = WebData::new(ServerState::new(
+            PipelinePhase::Initializing,
+            String::default(),
+            RuntimeDesiredStatus::Paused,
+            Uuid::default(),
+        ));
         let state_clone = state.clone();
 
         let args = ServerArgs {
