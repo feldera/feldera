@@ -31,7 +31,7 @@ use crate::server::metrics::{
 use crate::transport::clock::now_endpoint_config;
 use crate::transport::Step;
 use crate::transport::{input_transport_config_to_endpoint, output_transport_config_to_endpoint};
-use crate::util::{run_on_thread_pool, RateLimitCheckResult, TokenBucketRateLimiter};
+use crate::util::run_on_thread_pool;
 use crate::{
     CircuitCatalog, Encoder, InputConsumer, OutputConsumer, OutputEndpoint, ParseError,
     PipelineState, TransportInputEndpoint,
@@ -240,7 +240,7 @@ impl ControllerBuilder {
     pub(crate) fn build<F>(
         self,
         circuit_factory: F,
-        error_cb: Box<dyn Fn(Arc<ControllerError>) + Send + Sync>,
+        error_cb: Box<dyn Fn(Arc<ControllerError>, Option<String>) + Send + Sync>,
     ) -> Result<Controller, ControllerError>
     where
         F: FnOnce(CircuitConfig) -> Result<(DBSPHandle, Box<dyn CircuitCatalog>), ControllerError>
@@ -397,7 +397,7 @@ impl Controller {
     pub(crate) fn with_config<F>(
         circuit_factory: F,
         config: &PipelineConfig,
-        error_cb: Box<dyn Fn(Arc<ControllerError>) + Send + Sync>,
+        error_cb: Box<dyn Fn(Arc<ControllerError>, Option<String>) + Send + Sync>,
     ) -> Result<Self, ControllerError>
     where
         F: FnOnce(CircuitConfig) -> Result<(DBSPHandle, Box<dyn CircuitCatalog>), ControllerError>
@@ -411,7 +411,7 @@ impl Controller {
         config: PipelineConfig,
         storage: Option<CircuitStorageConfig>,
         circuit_factory: F,
-        error_cb: Box<dyn Fn(Arc<ControllerError>) + Send + Sync>,
+        error_cb: Box<dyn Fn(Arc<ControllerError>, Option<String>) + Send + Sync>,
     ) -> Result<Self, ControllerError>
     where
         F: FnOnce(CircuitConfig) -> Result<(DBSPHandle, Box<dyn CircuitCatalog>), ControllerError>
@@ -1270,7 +1270,7 @@ impl CircuitThread {
         circuit_factory: F,
         config: PipelineConfig,
         storage: Option<CircuitStorageConfig>,
-        error_cb: Box<dyn Fn(Arc<ControllerError>) + Send + Sync>,
+        error_cb: Box<dyn Fn(Arc<ControllerError>, Option<String>) + Send + Sync>,
     ) -> Result<Self, ControllerError>
     where
         F: FnOnce(CircuitConfig) -> Result<(DBSPHandle, Box<dyn CircuitCatalog>), ControllerError>,
@@ -1552,7 +1552,7 @@ impl CircuitThread {
             Some(TransactionState::Started(transaction_id)) => {
                 info!("Starting transaction {transaction_id}");
                 self.circuit.start_transaction().unwrap_or_else(|e| {
-                    self.controller.error(Arc::new(e.into()));
+                    self.controller.error(Arc::new(e.into()), None);
                     self.controller
                         .set_transaction_state(TransactionState::None);
                 });
@@ -1560,7 +1560,7 @@ impl CircuitThread {
             Some(TransactionState::Committing(transaction_id)) => {
                 info!("Committing transaction {transaction_id}");
                 self.circuit.start_commit_transaction().unwrap_or_else(|e| {
-                    self.controller.error(Arc::new(e.into()));
+                    self.controller.error(Arc::new(e.into()), None);
                     self.controller
                         .set_transaction_state(TransactionState::Started(transaction_id));
                 });
@@ -1577,7 +1577,7 @@ impl CircuitThread {
             let committed = SamplySpan::new(debug_span!("step"))
                 .in_scope(|| self.circuit.step())
                 .unwrap_or_else(|e| {
-                    self.controller.error(Arc::new(e.into()));
+                    self.controller.error(Arc::new(e.into()), None);
                     false
                 });
 
@@ -1610,7 +1610,7 @@ impl CircuitThread {
             // FIXME: we're using "span" for both step() (above) and transaction() (here).
             SamplySpan::new(debug_span!("step"))
                 .in_scope(|| self.circuit.transaction())
-                .unwrap_or_else(|e| self.controller.error(Arc::new(e.into())));
+                .unwrap_or_else(|e| self.controller.error(Arc::new(e.into()), None));
             debug!("circuit thread: 'circuit.transaction' returned");
         }
     }
@@ -1811,7 +1811,7 @@ impl CircuitThread {
                 CheckpointRequest::SuspendCommand(callback) => {
                     self.controller.status.set_state(PipelineState::Terminated);
                     if let Err(e) = &result {
-                        self.controller.error(e.clone());
+                        self.controller.error(e.clone(), None);
                     }
                     callback(result.clone().map(|_| ()))
                 }
@@ -3318,7 +3318,7 @@ pub struct ControllerInner {
     runtime: WeakRuntime,
     circuit_thread_unparker: Unparker,
     backpressure_thread_unparker: Unparker,
-    error_cb: Box<dyn Fn(Arc<ControllerError>) + Send + Sync>,
+    error_cb: Box<dyn Fn(Arc<ControllerError>, Option<String>) + Send + Sync>,
     session_ctxt: SessionContext,
     fault_tolerance: Option<FtModel>,
     // The mutex is acquired from async context by actix and
@@ -3342,7 +3342,7 @@ impl ControllerInner {
         runtime: &Runtime,
         catalog: Box<dyn CircuitCatalog>,
         lir: LirCircuit,
-        error_cb: Box<dyn Fn(Arc<ControllerError>) + Send + Sync>,
+        error_cb: Box<dyn Fn(Arc<ControllerError>, Option<String>) + Send + Sync>,
         processed_records: u64,
         initial_start_time: Option<DateTime<Utc>>,
         resume_info: &HashMap<String, (JsonValue, CheckpointInputEndpointMetrics)>,
@@ -3851,11 +3851,19 @@ impl ControllerInner {
 
         let encoder = if let Some(mut endpoint) = endpoint {
             endpoint
-                .connect(Box::new(move |fatal: bool, e: AnyError| {
-                    if let Some(controller) = self_weak.upgrade() {
-                        controller.output_transport_error(endpoint_id, &endpoint_name_str, fatal, e)
-                    }
-                }))
+                .connect(Box::new(
+                    move |fatal: bool, e: AnyError, error_tag: Option<&'static str>| {
+                        if let Some(controller) = self_weak.upgrade() {
+                            controller.output_transport_error(
+                                endpoint_id,
+                                &endpoint_name_str,
+                                fatal,
+                                e,
+                                error_tag,
+                            )
+                        }
+                    },
+                ))
                 .map_err(|e| ControllerError::output_transport_error(endpoint_name, true, e))?;
 
             // Create probe.
@@ -3953,9 +3961,9 @@ impl ControllerInner {
         controller: &ControllerInner,
     ) {
         encoder.consumer().batch_start(step);
-        encoder
-            .encode(batch)
-            .unwrap_or_else(|e| controller.encode_error(endpoint_id, endpoint_name, e));
+        encoder.encode(batch).unwrap_or_else(|e| {
+            controller.encode_error(endpoint_id, endpoint_name, e, Some("encoder_error"))
+        });
         encoder.consumer().batch_end();
     }
 
@@ -4163,8 +4171,8 @@ impl ControllerInner {
         }
     }
 
-    fn error(&self, error: Arc<ControllerError>) {
-        (self.error_cb)(error);
+    fn error(&self, error: Arc<ControllerError>, tag: Option<String>) {
+        (self.error_cb)(error, tag);
     }
 
     /// Process an input transport error.
@@ -4176,27 +4184,47 @@ impl ControllerInner {
         endpoint_name: &str,
         fatal: bool,
         error: AnyError,
+        tag: Option<&'static str>,
     ) {
         self.status
             .input_transport_error(endpoint_id, fatal, &error);
-        self.error(Arc::new(ControllerError::input_transport_error(
-            endpoint_name,
-            fatal,
-            error,
-        )));
+        let tag = tag.map(|tag| format!("{endpoint_name}-{tag}"));
+        self.error(
+            Arc::new(ControllerError::input_transport_error(
+                endpoint_name,
+                fatal,
+                error,
+            )),
+            tag,
+        );
     }
 
     pub fn parse_error(&self, endpoint_id: EndpointId, endpoint_name: &str, error: ParseError) {
         self.status.parse_error(endpoint_id);
-        self.error(Arc::new(ControllerError::parse_error(endpoint_name, error)));
+
+        let tag = error
+            .get_error_tag()
+            .map(|tag| format!("{endpoint_name}-{tag}"));
+
+        self.error(
+            Arc::new(ControllerError::parse_error(endpoint_name, error)),
+            tag,
+        );
     }
 
-    pub fn encode_error(&self, endpoint_id: EndpointId, endpoint_name: &str, error: AnyError) {
+    pub fn encode_error(
+        &self,
+        endpoint_id: EndpointId,
+        endpoint_name: &str,
+        error: AnyError,
+        tag: Option<&'static str>,
+    ) {
         self.status.encode_error(endpoint_id);
-        self.error(Arc::new(ControllerError::encode_error(
-            endpoint_name,
-            error,
-        )));
+        let tag = tag.map(|tag| format!("{endpoint_name}-{tag}"));
+        self.error(
+            Arc::new(ControllerError::encode_error(endpoint_name, error)),
+            tag,
+        );
     }
 
     /// Process an output transport error.
@@ -4208,14 +4236,19 @@ impl ControllerInner {
         endpoint_name: &str,
         fatal: bool,
         error: AnyError,
+        tag: Option<&'static str>,
     ) {
         self.status
             .output_transport_error(endpoint_id, fatal, &error);
-        self.error(Arc::new(ControllerError::output_transport_error(
-            endpoint_name,
-            fatal,
-            error,
-        )));
+        let tag = tag.map(|tag| format!("{endpoint_name}-{tag}"));
+        self.error(
+            Arc::new(ControllerError::output_transport_error(
+                endpoint_name,
+                fatal,
+                error,
+            )),
+            tag,
+        );
     }
 
     /// Update counters after receiving a new input batch.
@@ -4537,8 +4570,6 @@ struct InputProbe {
     endpoint_name: String,
     controller: Arc<ControllerInner>,
     max_batch_size: usize,
-    // rate limiter based on tags
-    rate_limiter: TokenBucketRateLimiter<&'static str>,
 }
 
 impl InputProbe {
@@ -4548,15 +4579,11 @@ impl InputProbe {
         connector_config: &ConnectorConfig,
         controller: Arc<ControllerInner>,
     ) -> Self {
-        // Max 10 errors per minute
-        let rate_limiter = TokenBucketRateLimiter::new(10, Duration::from_secs(60));
-
         Self {
             endpoint_id,
             endpoint_name: endpoint_name.to_owned(),
             controller,
             max_batch_size: connector_config.max_batch_size as usize,
-            rate_limiter,
         }
     }
 }
@@ -4636,32 +4663,13 @@ impl InputConsumer for InputProbe {
     }
 
     fn error(&self, fatal: bool, error: AnyError, tag: Option<&'static str>) {
-        // do not rate limit errors without tag
-        let allow = tag.is_none_or(|k| match self.rate_limiter.check(k) {
-            RateLimitCheckResult::Suppressed => false,
-            RateLimitCheckResult::Allowed => true,
-            RateLimitCheckResult::AllowedAfterSuppression{   suppressed,
-                         first_suppression,
-                         last_suppression
-            }=> {
-                let now = self.rate_limiter.now_ms();
-                let first_suppressed_elapsed = (now - first_suppression) as f64 / 1000.0;
-                let last_suppressed_elapsed = (now - last_suppression) as f64 / 1000.0;
-                info!(
-                    "Suppressed {suppressed} errors in last {first_suppressed_elapsed:.2}s (most recently, {last_suppressed_elapsed:.2}s ago) due to excessive rate. ( tag={k} )"
-                );
-                true
-            }
-        });
-
-        if allow {
-            self.controller.input_transport_error(
-                self.endpoint_id,
-                &self.endpoint_name,
-                fatal,
-                error,
-            );
-        }
+        self.controller.input_transport_error(
+            self.endpoint_id,
+            &self.endpoint_name,
+            fatal,
+            error,
+            tag,
+        );
     }
 }
 
@@ -4697,8 +4705,13 @@ impl OutputConsumer for OutputProbe {
 
     fn batch_start(&mut self, step: Step) {
         self.endpoint.batch_start(step).unwrap_or_else(|e| {
-            self.controller
-                .output_transport_error(self.endpoint_id, &self.endpoint_name, false, e);
+            self.controller.output_transport_error(
+                self.endpoint_id,
+                &self.endpoint_name,
+                false,
+                e,
+                Some("outprobe_batch_start"),
+            );
         })
     }
 
@@ -4717,6 +4730,7 @@ impl OutputConsumer for OutputProbe {
                     &self.endpoint_name,
                     false,
                     error,
+                    Some("outprobe_push_buf"),
                 );
             }
         }
@@ -4744,6 +4758,7 @@ impl OutputConsumer for OutputProbe {
                     &self.endpoint_name,
                     false,
                     error,
+                    Some("outprobe_push_key"),
                 );
             }
         }
@@ -4751,8 +4766,13 @@ impl OutputConsumer for OutputProbe {
 
     fn batch_end(&mut self) {
         self.endpoint.batch_end().unwrap_or_else(|e| {
-            self.controller
-                .output_transport_error(self.endpoint_id, &self.endpoint_name, false, e);
+            self.controller.output_transport_error(
+                self.endpoint_id,
+                &self.endpoint_name,
+                false,
+                e,
+                Some("outprobe_batch_end"),
+            );
         })
     }
 }

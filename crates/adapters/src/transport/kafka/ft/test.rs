@@ -108,7 +108,7 @@ outputs:
             ))
         },
         &config,
-        Box::new(|e| panic!("error: {e}")),
+        Box::new(|e, _| panic!("error: {e}")),
     ) {
         Ok(_) => panic!("expected an error"),
         Err(e) => info!("test_kafka_output_errors: error: {e}"),
@@ -618,7 +618,9 @@ config:
     .unwrap();
     assert!(endpoint.is_fault_tolerant());
     endpoint
-        .connect(Box::new(|fatal, error| info!("({fatal:?}, {error:?})")))
+        .connect(Box::new(|fatal, error, tag| {
+            info!("({fatal:?}, {error:?}, {tag:?})")
+        }))
         .unwrap();
     for step in 0..5 {
         endpoint.batch_start(step).unwrap();
@@ -646,7 +648,9 @@ config:
     .unwrap();
     assert!(endpoint.is_fault_tolerant());
     endpoint
-        .connect(Box::new(|fatal, error| info!("({fatal:?}, {error:?})")))
+        .connect(Box::new(|fatal, error, tag| {
+            info!("({fatal:?}, {error:?}, {tag:?})")
+        }))
         .unwrap();
     for step in 0..5 {
         endpoint.batch_start(step).unwrap();
@@ -1008,7 +1012,7 @@ outputs:
                 ))
             },
             &config,
-            Box::new(move |e| panic!("error: {e}")),
+            Box::new(move |e, _| panic!("error: {e}")),
         )
         .unwrap();
         controller.start();
@@ -1504,7 +1508,7 @@ outputs:
     let controller = Controller::with_config(
         |workers| Ok(test_circuit::<TestStruct>(workers, &TestStruct::schema(), &[None])),
         &config,
-        Box::new(move |e| if running_clone.load(Ordering::Acquire) {
+        Box::new(move |e, _| if running_clone.load(Ordering::Acquire) {
             panic!("{test_name_clone}: error: {e}")
         } else {
             info!("{test_name_clone}: error during shutdown (likely caused by Kafka topics being deleted): {e}")
@@ -2085,7 +2089,7 @@ outputs:
     let controller = Controller::with_config(
         |workers| Ok(test_circuit::<TestStruct>(workers, &TestStruct::schema(), &[None])),
         &config,
-        Box::new(move |e| if running_clone.load(Ordering::Acquire) {
+        Box::new(move |e, _| if running_clone.load(Ordering::Acquire) {
             panic!("buffer_test: error: {e}")
         } else {
             info!("buffer_test: error during shutdown (likely caused by Kafka topics being deleted): {e}")

@@ -180,7 +180,7 @@ outputs:
     let controller = Controller::with_config(
         move |workers| Ok(test_circuit::<DeltaTestStruct>(workers, &schema, &[None])),
         &config,
-        Box::new(move |e| {
+        Box::new(move |e, _| {
             let msg = format!("redis_output_test: error: {e}");
             println!("{msg}");
             err_sender.send(msg).unwrap()
@@ -303,7 +303,7 @@ outputs:
     let Err(err) = Controller::with_config(
         move |workers| Ok(test_circuit::<TestStruct>(workers, &schema, &[None])),
         &config,
-        Box::new(move |e| {
+        Box::new(move |e, _| {
             let msg = format!("redis_output_test: error: {e}");
             println!("{msg}");
         }),

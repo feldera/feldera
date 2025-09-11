@@ -338,6 +338,7 @@ impl ParseError {
         invalid_text: Option<&str>,
         invalid_bytes: Option<&[u8]>,
         suggestion: Option<Cow<'static, str>>,
+        error_tag: Option<String>,
     ) -> Self {
         Self(Box::new(ParseErrorInner::new(
             description,
@@ -346,6 +347,7 @@ impl ParseError {
             invalid_text,
             invalid_bytes,
             suggestion,
+            error_tag,
         )))
     }
 
@@ -418,6 +420,10 @@ impl ParseError {
         inner.description = description;
         Self(inner)
     }
+
+    pub fn get_error_tag(&self) -> Option<String> {
+        self.0.get_error_tag()
+    }
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
@@ -454,6 +460,9 @@ pub struct ParseErrorInner {
     /// Any additional information that may help fix the problem, e.g., example
     /// of a valid input.
     suggestion: Option<Cow<'static, str>>,
+
+    /// Used for rate limiting
+    tag: Option<String>,
 }
 
 impl Display for ParseErrorInner {
@@ -494,6 +503,7 @@ impl ParseErrorInner {
         invalid_text: Option<&str>,
         invalid_bytes: Option<&[u8]>,
         suggestion: Option<Cow<'static, str>>,
+        error_tag: Option<String>,
     ) -> Self {
         Self {
             description,
@@ -502,6 +512,7 @@ impl ParseErrorInner {
             invalid_text: invalid_text.map(str::to_string),
             invalid_bytes: invalid_bytes.map(ToOwned::to_owned),
             suggestion,
+            tag: error_tag,
         }
     }
 
@@ -546,6 +557,7 @@ impl ParseErrorInner {
             invalid_text,
             None,
             suggestion,
+            Some("text_event_err".to_string()),
         )
     }
 
@@ -564,6 +576,7 @@ impl ParseErrorInner {
             Some(invalid_text),
             None,
             suggestion,
+            Some("text_envelope_err".to_string()),
         )
     }
 
@@ -582,6 +595,7 @@ impl ParseErrorInner {
             None,
             Some(invalid_bytes),
             suggestion,
+            Some("bin_event_err".to_string()),
         )
     }
 
@@ -600,6 +614,11 @@ impl ParseErrorInner {
             None,
             Some(invalid_bytes),
             suggestion,
+            Some("bin_envelope_err".to_string()),
         )
+    }
+
+    pub fn get_error_tag(&self) -> Option<String> {
+        self.tag.clone()
     }
 }

@@ -3,6 +3,7 @@ use crate::format::{get_input_format, get_output_format};
 use crate::server::metrics::{
     JsonFormatter, LabelStack, MetricsFormatter, MetricsWriter, PrometheusFormatter,
 };
+use crate::util::{RateLimitCheckResult, TokenBucketRateLimiter};
 use crate::{
     adhoc::{adhoc_websocket, stream_adhoc_result},
     controller::ConnectorConfig,
@@ -218,6 +219,11 @@ pub(crate) struct ServerState {
     deployment_id: Uuid,
 
     metadata: String,
+
+    // rate limiter based on tags
+    // NOTE: we assume that there are a finite small number
+    // of tags, so using String is fine.
+    rate_limiter: TokenBucketRateLimiter<String>,
 }
 
 impl ServerState {
@@ -227,6 +233,8 @@ impl ServerState {
         desired_status: RuntimeDesiredStatus,
         deployment_id: Uuid,
     ) -> Self {
+        // Max 10 errors per minute
+        let rate_limiter = TokenBucketRateLimiter::new(10, Duration::from_secs(60));
         Self {
             phase: Mutex::new(phase),
             desired_status_change: Arc::default(),
@@ -236,6 +244,7 @@ impl ServerState {
             sync_checkpoint_state: Default::default(),
             desired_status: Mutex::new(desired_status),
             deployment_id,
+            rate_limiter,
         }
     }
 
@@ -798,13 +807,38 @@ fn is_fatal_controller_error(error: &ControllerError) -> bool {
 }
 
 /// Handle errors from the controller.
-fn error_handler(state: &Weak<ServerState>, error: Arc<ControllerError>) {
-    error!("{error}");
-
+fn error_handler(state: &Weak<ServerState>, error: Arc<ControllerError>, tag: Option<String>) {
     let state = match state.upgrade() {
-        None => return,
+        None => {
+            // if we fail to upgrade state,
+            // log the error anyways without checking for rate limiter
+            error!("{error}");
+            return;
+        }
         Some(state) => state,
     };
+
+    // do not rate limit errors without tag
+    let should_log = tag.is_none_or(|k| match state.rate_limiter.check(k.clone()) {
+        RateLimitCheckResult::Suppressed => false,
+        RateLimitCheckResult::Allowed => true,
+        RateLimitCheckResult::AllowedAfterSuppression{   suppressed,
+                     first_suppression,
+                     last_suppression
+        }=> {
+            let now = state.rate_limiter.now_ms();
+            let first_suppressed_elapsed = (now - first_suppression) as f64 / 1000.0;
+            let last_suppressed_elapsed = (now - last_suppression) as f64 / 1000.0;
+            info!(
+                "Suppressed {suppressed} '{k}' errors in the last {first_suppressed_elapsed:.2}s (most recently, {last_suppressed_elapsed:.2}s ago) due to excessive rate."
+            );
+            true
+        }
+    });
+
+    if should_log {
+        error!("{error}");
+    }
 
     if is_fatal_controller_error(&error) {
         if let Ok(controller) = state.take_controller() {
@@ -891,8 +925,8 @@ fn do_bootstrap(
     }
     let controller = builder.build(
         circuit_factory,
-        Box::new(move |e| error_handler(&weak_state_ref, e))
-            as Box<dyn Fn(Arc<ControllerError>) + Send + Sync>,
+        Box::new(move |e, t| error_handler(&weak_state_ref, e, t))
+            as Box<dyn Fn(Arc<ControllerError>, Option<String>) + Send + Sync>,
     )?;
     let desired_status = state.desired_status.lock().unwrap();
     match *desired_status {

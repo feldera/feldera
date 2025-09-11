@@ -707,7 +707,7 @@ where
             .map_err(|e| anyhow::anyhow!("unable to parse checkpointed connector state (checkpointed state: {metadata}; parse error: {e})"))
 }
 
-pub type AsyncErrorCallback = Box<dyn Fn(bool, AnyError) + Send + Sync>;
+pub type AsyncErrorCallback = Box<dyn Fn(bool, AnyError, Option<&'static str>) + Send + Sync>;
 
 /// A configured output transport endpoint.
 ///

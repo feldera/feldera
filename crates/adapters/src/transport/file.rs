@@ -344,7 +344,7 @@ impl FileOutputEndpoint {
 impl OutputEndpoint for FileOutputEndpoint {
     fn connect(
         &mut self,
-        _async_error_callback: Box<dyn Fn(bool, AnyError) + Send + Sync>,
+        _async_error_callback: Box<dyn Fn(bool, AnyError, Option<&'static str>) + Send + Sync>,
     ) -> AnyResult<()> {
         Ok(())
     }
