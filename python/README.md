@@ -105,6 +105,8 @@ uv run python -m pytest tests/platform/
 uv run python -m pytest tests/platform/test_pipeline_crud.py
 ```
 
+For further information about the tests, please see `tests/README.md`.
+
 ### Documentation
 
 Building documentation requires the `sphinx` package: `uv pip install sphinx`
