@@ -41,6 +41,7 @@ use feldera_types::checkpoint::{
 use feldera_types::completion_token::{
     CompletionStatusArgs, CompletionStatusResponse, CompletionTokenResponse,
 };
+use feldera_types::constants::STATUS_FILE;
 use feldera_types::query_params::{MetricsFormat, MetricsParameters};
 use feldera_types::runtime_status::{
     ExtendedRuntimeStatus, ExtendedRuntimeStatusError, RuntimeDesiredStatus, RuntimeStatus,
@@ -1799,23 +1800,21 @@ struct StoredStatus {
     deployment_id: Uuid,
 }
 
-const STATUS_JSON: &str = "status.json";
-
 impl StoredStatus {
     fn read(storage: &dyn StorageBackend) -> Option<Self> {
-        match storage.read_json::<StoredStatus>(&StoragePath::from(STATUS_JSON)) {
+        match storage.read_json::<StoredStatus>(&StoragePath::from(STATUS_FILE)) {
             Ok(s) => Some(s),
             Err(e) if e.kind() == ErrorKind::NotFound => None,
             Err(e) => {
-                warn!("{STATUS_JSON}: failed to read from storage ({e})");
+                warn!("{STATUS_FILE}: failed to read from storage ({e})");
                 None
             }
         }
     }
 
     fn write(&self, storage: &dyn StorageBackend) {
-        if let Err(e) = storage.write_json(&StoragePath::from(STATUS_JSON), self) {
-            warn!("{STATUS_JSON}: failed to write to storage ({e})");
+        if let Err(e) = storage.write_json(&StoragePath::from(STATUS_FILE), self) {
+            warn!("{STATUS_FILE}: failed to write to storage ({e})");
         }
     }
 }

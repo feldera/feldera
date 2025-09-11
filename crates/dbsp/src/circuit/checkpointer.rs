@@ -5,7 +5,7 @@ use crate::{Error, TypedBox};
 use feldera_types::checkpoint::CheckpointMetadata;
 use feldera_types::constants::{
     ACTIVATION_MARKER_FILE, ADHOC_TEMP_DIR, CHECKPOINT_DEPENDENCIES, CHECKPOINT_FILE_NAME,
-    DBSP_FILE_EXTENSION, STATE_FILE, STEPS_FILE,
+    DBSP_FILE_EXTENSION, STATE_FILE, STATUS_FILE, STEPS_FILE,
 };
 use itertools::Itertools;
 
@@ -135,6 +135,7 @@ impl Checkpointer {
         in_use_paths.insert(CHECKPOINT_FILE_NAME.into());
         in_use_paths.insert(STEPS_FILE.into());
         in_use_paths.insert(STATE_FILE.into());
+        in_use_paths.insert(STATUS_FILE.into());
         in_use_paths.insert(ADHOC_TEMP_DIR.into());
         in_use_paths.insert(ACTIVATION_MARKER_FILE.into());
         for cpm in self.checkpoint_list.iter() {

@@ -4,7 +4,11 @@
 /// name.
 pub const CHECKPOINT_FILE_NAME: &str = "checkpoints.feldera";
 
+/// State of the pipeline.
 pub const STATE_FILE: &str = "state.json";
+
+/// Desired status (running, paused, etc.) of the pipeline.
+pub const STATUS_FILE: &str = "status.json";
 
 pub const STEPS_FILE: &str = "steps.bin";
 
