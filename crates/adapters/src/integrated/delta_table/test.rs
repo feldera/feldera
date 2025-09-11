@@ -301,7 +301,7 @@ inputs:
     Controller::with_config(
         move |workers| Ok(test_circuit::<T>(workers, &schema, &[None])),
         &config,
-        Box::new(move |e| {
+        Box::new(move |e, _| {
             panic!("delta_table_input_test: error: {e}");
         }),
     )
@@ -382,7 +382,7 @@ outputs:
             ))
         },
         &config,
-        Box::new(move |e| panic!("delta_to_delta pipeline: error: {e}")),
+        Box::new(move |e, _| panic!("delta_to_delta pipeline: error: {e}")),
     )
     .unwrap()
 }
@@ -446,7 +446,7 @@ inputs:
             ))
         },
         &config,
-        Box::new(move |e| panic!("delta_read pipeline: error: {e}")),
+        Box::new(move |e, _| panic!("delta_read pipeline: error: {e}")),
     )
     .unwrap()
 }
@@ -527,7 +527,7 @@ outputs:
             ))
         },
         &config,
-        Box::new(move |e| panic!("delta_write pipeline: error: {e}")),
+        Box::new(move |e, _| panic!("delta_write pipeline: error: {e}")),
     )
     .unwrap()
 }
@@ -623,7 +623,7 @@ outputs:
             ))
         },
         &config,
-        Box::new(move |e| panic!("delta_table_output_test: error: {e}")),
+        Box::new(move |e, _| panic!("delta_table_output_test: error: {e}")),
     )
     .unwrap();
 

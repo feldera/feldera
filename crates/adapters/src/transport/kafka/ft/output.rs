@@ -365,7 +365,7 @@ impl ClientContext for DataProducerContext {
             let fatal = error
                 .rdkafka_error_code()
                 .is_some_and(|code| code == RDKafkaErrorCode::Fatal);
-            cb(fatal, anyhow!(reason.to_string()));
+            cb(fatal, anyhow!(reason.to_string()), Some("kakfa_ft_err"));
         } else {
             warn!("{error}");
         }
@@ -391,7 +391,11 @@ impl ProducerContext for DataProducerContext {
     ) {
         if let Err((error, _message)) = delivery_result {
             if let Some(cb) = self.async_error_callback.read().unwrap().as_ref() {
-                cb(false, AnyError::new(error.clone()));
+                cb(
+                    false,
+                    AnyError::new(error.clone()),
+                    Some("kafka_ft_delivery"),
+                );
             }
         }
     }

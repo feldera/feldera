@@ -81,6 +81,7 @@ impl ClientContext for KafkaOutputContext {
             cb(
                 fatal,
                 anyhow!("Kafka producer error: {error}; Reason: {reason}"),
+                Some("kafka_nonft_producer"),
             );
         }
     }
@@ -105,7 +106,11 @@ impl ProducerContext for KafkaOutputContext {
     ) {
         if let Err((error, _message)) = delivery_result {
             if let Some(cb) = self.async_error_callback.read().unwrap().as_ref() {
-                cb(false, AnyError::new(error.clone()));
+                cb(
+                    false,
+                    AnyError::new(error.clone()),
+                    Some("kafka_nonft_delivery"),
+                );
             }
         }
     }
@@ -292,7 +297,7 @@ outputs:
                 ))
             },
             &config,
-            Box::new(|e| panic!("error: {e}")),
+            Box::new(|e, _| panic!("error: {e}")),
         ) {
             Ok(_) => panic!("expected an error"),
             Err(e) => info!("test_kafka_output_errors: error: {e}"),

@@ -143,7 +143,7 @@ inputs:
     let controller = Controller::with_config(
         move |workers| Ok(test_circuit::<T>(workers, &schema, &[None])),
         &config,
-        Box::new(move |e| {
+        Box::new(move |e, _| {
             let msg = format!("iceberg_input_test: error: {e}");
             println!("{}", msg);
             err_sender.send(msg).unwrap()

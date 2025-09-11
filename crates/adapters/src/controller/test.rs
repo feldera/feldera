@@ -74,7 +74,7 @@ inputs:
             ))
         },
         &config,
-        Box::new(|e| panic!("error: {e}")),
+        Box::new(|e, _| panic!("error: {e}")),
     ) else {
         panic!("expected to fail")
     };
@@ -146,7 +146,7 @@ inputs:
             ))
         },
         &config,
-        Box::new(|e| panic!("error: {e}")),
+        Box::new(|e, _| panic!("error: {e}")),
     )
     .unwrap();
 
@@ -237,7 +237,7 @@ outputs:
         let controller = Controller::with_config(
                 |circuit_config| Ok(test_circuit::<TestStruct>(circuit_config, &[], &[None])),
                 &config,
-                Box::new(|e| panic!("error: {e}")),
+                Box::new(|e, _| panic!("error: {e}")),
             )
             .unwrap();
 
@@ -578,7 +578,7 @@ outputs:
                 ))
             },
             &config,
-            Box::new(|e| panic!("error: {e}")),
+            Box::new(|e, _| panic!("error: {e}")),
         )
         .unwrap();
         controller.start();
@@ -756,7 +756,7 @@ inputs:
             ))
         },
         &config,
-        Box::new(|e| panic!("error: {e}")),
+        Box::new(|e, _| panic!("error: {e}")),
     )
     .unwrap();
 
@@ -850,7 +850,7 @@ inputs:
             ))
         },
         &config,
-        Box::new(|e| panic!("error: {e}")),
+        Box::new(|e, _| panic!("error: {e}")),
     );
 
     assert!(result.is_err());
@@ -1058,7 +1058,7 @@ outputs:
                 ))
             },
             &config,
-            Box::new(|e| panic!("error: {e}")),
+            Box::new(|e, _| panic!("error: {e}")),
         )
         .unwrap();
         controller.start();
@@ -1172,7 +1172,7 @@ outputs:
             ))
         },
         &config,
-        Box::new(|e| panic!("error: {e}")),
+        Box::new(|e, _| panic!("error: {e}")),
     )
     .unwrap();
     controller.start();
@@ -1223,7 +1223,7 @@ outputs:
                 ))
             },
             &config,
-            Box::new(|e| panic!("error: {e}")),
+            Box::new(|e, _| panic!("error: {e}")),
         )
         .unwrap();
         controller.start();
@@ -1406,7 +1406,7 @@ inputs:
             ))
         },
         &config,
-        Box::new(|e| panic!("error: {e}")),
+        Box::new(|e, _| panic!("error: {e}")),
     )
     .unwrap();
 
@@ -1715,7 +1715,7 @@ outputs:
             ))
         },
         &config,
-        Box::new(|e| panic!("error: {e}")),
+        Box::new(|e, _| panic!("error: {e}")),
     )
     .unwrap();
 
