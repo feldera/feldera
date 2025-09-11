@@ -380,6 +380,7 @@ impl PostgresOutputEndpoint {
                         &self.endpoint_name,
                         true,
                         e.inner(),
+                        Some("pg_exec"),
                     );
                     if !retry {
                         return;
@@ -555,6 +556,7 @@ These statements were successfully prepared before reconnecting. Does the table 
                         &self.endpoint_name,
                         true,
                         e.inner(),
+                        Some("pg_conn_retry"),
                     );
                     if !retry {
                         return;
@@ -640,6 +642,7 @@ impl OutputConsumer for PostgresOutputEndpoint {
                         &self.endpoint_name,
                         true,
                         anyhow!("postgres: failed to start transaction: {}", err.inner()),
+                        Some("pg_batch_start"),
                     );
                     if !retry {
                         return;
@@ -679,6 +682,7 @@ impl OutputConsumer for PostgresOutputEndpoint {
                         &self.endpoint_name,
                         true,
                         err.inner(),
+                        Some("pg_batch_end"),
                     );
                     if !retry {
                         return;

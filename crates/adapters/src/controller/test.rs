@@ -75,7 +75,7 @@ inputs:
         },
         &config,
         std::sync::Weak::new(),
-        Box::new(|e| panic!("error: {e}")),
+        Box::new(|e, _| panic!("error: {e}")),
     ) else {
         panic!("expected to fail")
     };
@@ -148,7 +148,7 @@ inputs:
         },
         &config,
         std::sync::Weak::new(),
-        Box::new(|e| panic!("error: {e}")),
+        Box::new(|e, _| panic!("error: {e}")),
     )
     .unwrap();
 
@@ -240,7 +240,7 @@ outputs:
                 |circuit_config| Ok(test_circuit::<TestStruct>(circuit_config, &[], &[None])),
                 &config,
                 std::sync::Weak::new(),
-                Box::new(|e| panic!("error: {e}")),
+                Box::new(|e, _| panic!("error: {e}")),
             )
             .unwrap();
 
@@ -582,7 +582,7 @@ outputs:
             },
             &config,
             std::sync::Weak::new(),
-            Box::new(|e| panic!("error: {e}")),
+            Box::new(|e, _| panic!("error: {e}")),
         )
         .unwrap();
         controller.start();
@@ -761,7 +761,7 @@ inputs:
         },
         &config,
         std::sync::Weak::new(),
-        Box::new(|e| panic!("error: {e}")),
+        Box::new(|e, _| panic!("error: {e}")),
     )
     .unwrap();
 
@@ -856,7 +856,7 @@ inputs:
         },
         &config,
         std::sync::Weak::new(),
-        Box::new(|e| panic!("error: {e}")),
+        Box::new(|e, _| panic!("error: {e}")),
     );
 
     assert!(result.is_err());
@@ -1065,7 +1065,7 @@ outputs:
             },
             &config,
             std::sync::Weak::new(),
-            Box::new(|e| panic!("error: {e}")),
+            Box::new(|e, _| panic!("error: {e}")),
         )
         .unwrap();
         controller.start();
@@ -1180,7 +1180,7 @@ outputs:
         },
         &config,
         std::sync::Weak::new(),
-        Box::new(|e| panic!("error: {e}")),
+        Box::new(|e, _| panic!("error: {e}")),
     )
     .unwrap();
     controller.start();
@@ -1232,7 +1232,7 @@ outputs:
             },
             &config,
             std::sync::Weak::new(),
-            Box::new(|e| panic!("error: {e}")),
+            Box::new(|e, _| panic!("error: {e}")),
         )
         .unwrap();
         controller.start();
@@ -1416,7 +1416,7 @@ inputs:
         },
         &config,
         std::sync::Weak::new(),
-        Box::new(|e| panic!("error: {e}")),
+        Box::new(|e, _| panic!("error: {e}")),
     )
     .unwrap();
 
@@ -1726,7 +1726,7 @@ outputs:
         },
         &config,
         std::sync::Weak::new(),
-        Box::new(|e| panic!("error: {e}")),
+        Box::new(|e, _| panic!("error: {e}")),
     )
     .unwrap();
 

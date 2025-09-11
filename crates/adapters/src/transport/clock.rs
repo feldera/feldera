@@ -389,7 +389,7 @@ inputs:
             move |workers| Ok(clock_test_circuit(workers, test_stats_clone)),
             &config,
             std::sync::Weak::new(),
-            Box::new(move |e| panic!("clock_test pipeline 1: error: {e}")),
+            Box::new(move |e, _| panic!("clock_test pipeline 1: error: {e}")),
         )
         .unwrap();
 
@@ -440,7 +440,7 @@ inputs:
             move |workers| Ok(clock_test_circuit(workers, test_stats_clone)),
             &config,
             std::sync::Weak::new(),
-            Box::new(move |e| panic!("clock_test pipeline 2: error: {e}")),
+            Box::new(move |e, _| panic!("clock_test pipeline 2: error: {e}")),
         )
         .unwrap();
 
