@@ -555,11 +555,12 @@ pub(crate) async fn perform_sql_compilation(
     let output_json_schema_file_path = working_dir.join("schema.json");
     let output_dataflow_file_path = working_dir.join("dataflow.json");
     let output_rust_directory_path = working_dir.join("rust");
-    recreate_dir(&output_rust_directory_path)
+    recreate_dir(&output_rust_directory_path.join("crates"))
         .await
         .map_err(|e| SqlCompilationError::SystemError(e.to_string()))?;
     let output_rust_udf_stubs_file_path = working_dir
         .join("rust")
+        .join("crates")
         .join(crate_name_pipeline_globals(pipeline_id))
         .join("src")
         .join("stubs.rs");
@@ -572,6 +573,7 @@ pub(crate) async fn perform_sql_compilation(
         assert!(sql_compiler_executable_file_path.exists());
     }
 
+    let runtime_crates_path = config.dbsp_override_path.clone();
     // Call executable with arguments
     //
     // In the future, it might be that flags can be passed to the SQL compiler through
@@ -591,6 +593,8 @@ pub(crate) async fn perform_sql_compilation(
         .arg("-je")
         .arg("--alltables")
         .arg("--ignoreOrder")
+        .arg("--runtime")
+        .arg(runtime_crates_path)
         .arg("--crates") // Generate multiple crates instead of a single main.rs
         .arg(crate_name_pipeline_base(pipeline_id));
     #[cfg(feature = "feldera-enterprise")]

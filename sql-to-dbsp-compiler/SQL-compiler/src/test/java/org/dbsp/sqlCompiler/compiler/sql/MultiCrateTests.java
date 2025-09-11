@@ -26,7 +26,7 @@ public class MultiCrateTests extends BaseSQLTests {
     static void compileToMultiCrate(String file, boolean check, boolean noUdfs) throws SQLException, IOException, InterruptedException {
         if (noUdfs) {
             // Make sure there is no stray udf.rs file from a previous test
-            Path path = Paths.get(BaseSQLTests.RUST_CRATES_DIRECTORY,
+            Path path = Paths.get(BaseSQLTests.RUST_MULTI_DIRECTORY + "/crates",
                     MultiCrates.FILE_PREFIX + "x_globals", "src", "udf.rs");
             File udfFile = path.toFile();
             Utilities.deleteFile(udfFile, true);
@@ -35,7 +35,7 @@ public class MultiCrateTests extends BaseSQLTests {
         String jsonFile = PROJECT_DIRECTORY + "/x.json";
         CompilerMessages messages = CompilerMain.execute(
                 "-i", "--alltables", "-q", "--ignoreOrder", "--crates", "x",
-                "-o", BaseSQLTests.RUST_CRATES_DIRECTORY, file, "--dataflow", jsonFile);
+                "-o", BaseSQLTests.RUST_MULTI_DIRECTORY, file, "--dataflow", jsonFile);
         if (messages.errorCount() > 0) {
             messages.print();
             throw new RuntimeException("Error during compilation");
@@ -47,7 +47,7 @@ public class MultiCrateTests extends BaseSQLTests {
         Assert.assertNotNull(parsed);
         Utilities.deleteFile(json, true);
         if (check && !BaseSQLTests.skipRust)
-            Utilities.compileAndCheckRust(BaseSQLTests.RUST_CRATES_DIRECTORY, true);
+            Utilities.compileAndCheckRust(BaseSQLTests.RUST_MULTI_DIRECTORY, true);
     }
 
     static void compileToMultiCrate(String file, boolean check) throws SQLException, IOException, InterruptedException {
@@ -272,13 +272,14 @@ public class MultiCrateTests extends BaseSQLTests {
                 }
             }
             if (!BaseSQLTests.skipRust)
-                Utilities.compileAndCheckRust(BaseSQLTests.RUST_CRATES_DIRECTORY, true);
+                Utilities.compileAndCheckRust(BaseSQLTests.RUST_MULTI_DIRECTORY, true);
             Utilities.deleteFile(udf, true);
         }
     }
 
     void appendCargoDependencies(String source) throws IOException {
-        Path dir = Paths.get(BaseSQLTests.RUST_CRATES_DIRECTORY, MultiCrates.FILE_PREFIX + "x_globals");
+        Path dir = Paths.get(BaseSQLTests.RUST_MULTI_DIRECTORY, MultiCrates.CRATES_DIRECTORY,
+                MultiCrates.FILE_PREFIX + "x_globals");
         File cargo = new File(dir.toFile(), "Cargo.toml");
         FileWriter writer = new FileWriter(cargo, true);
         writer.append(source);
@@ -311,7 +312,7 @@ public class MultiCrateTests extends BaseSQLTests {
 
     File createUdfFile(String contents) throws IOException {
         // "x" is the name for the pipeline used by compileMultiCrate
-        Path dir = Paths.get(BaseSQLTests.RUST_CRATES_DIRECTORY, MultiCrates.FILE_PREFIX + "x_globals", "src");
+        Path dir = Paths.get(BaseSQLTests.RUST_MULTI_DIRECTORY, MultiCrates.CRATES_DIRECTORY, MultiCrates.FILE_PREFIX + "x_globals", "src");
         File dirFile = dir.toFile();
         if (!dirFile.exists()) {
             boolean success = dirFile.mkdirs();
@@ -400,7 +401,7 @@ public class MultiCrateTests extends BaseSQLTests {
                 CREATE VIEW V AS SELECT f(X(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11)), g(2).a;""");
 
         // "x" is the name for the pipeline used by compileMultiCrate
-        Path dir = Paths.get(BaseSQLTests.RUST_CRATES_DIRECTORY, MultiCrates.FILE_PREFIX + "x_globals", "src");
+        Path dir = Paths.get(BaseSQLTests.RUST_MULTI_DIRECTORY, MultiCrates.CRATES_DIRECTORY, MultiCrates.FILE_PREFIX + "x_globals", "src");
         File dirFile = dir.toFile();
         if (!dirFile.exists()) {
             boolean success = dirFile.mkdirs();

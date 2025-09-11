@@ -196,5 +196,33 @@ public final class CircuitWriter extends BaseRustCodeGenerator {
         for (var node: this.toWrite) {
             this.writeCircuit(compiler, node.to(DBSPCircuit.class));
         }
+
+        boolean generateMainFunction = compiler.options.generateMultiCrateMain();
+        if (generateMainFunction) {
+            this.builder().append("""
+                    fn main() {
+                        dbsp_adapters::server::server_main(|cconfig| {
+                            circuit(cconfig)
+                                .map(|(dbsp, catalog)| {
+                                    (
+                                        dbsp,
+                                        Box::new(catalog) as Box<dyn dbsp_adapters::CircuitCatalog>,
+                                    )
+                                })
+                                .map_err(|e| dbsp_adapters::ControllerError::dbsp_error(e))
+                        })
+                        .unwrap_or_else(|e| {
+                            eprintln!("{e}");
+                            std::process::exit(1);
+                        });
+                    }
+                    """);
+            if (compiler.options.ioOptions.enterprise) {
+                this.builder().append("extern crate dbsp_enterprise;")
+                        .newline()
+                        .append("extern crate sync_checkpoint;")
+                        .newline();
+            }
+        }
     }
 }
