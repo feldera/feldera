@@ -76,7 +76,7 @@ export const usePipelineAction = () => {
         .with('pause', () => 'Pausing' as const)
         .with('stop', 'kill', () => 'Stopping' as const)
         .with('clear', () => undefined) // clear updates storageStatus, not status
-        .with('standby', () => 'Standby' as const)
+        .with('standby', () => 'Initializing' as const)
         .with('activate', () => 'Running' as const)
         .exhaustive()
 
@@ -114,11 +114,11 @@ export const usePipelineAction = () => {
         })
 
         await pausedWaiter.waitFor()
+        updatePipeline(pipeline_name, (p) => ({ ...p, status: 'Initializing' }))
         await callbacks?.onPausedReady?.(pipeline_name)
 
         // Then start normally
         await api.postPipelineAction(pipeline_name, 'resume')
-        updatePipeline(pipeline_name, (p) => ({ ...p, status: 'Initializing' }))
       } else {
         await api.postPipelineAction(pipeline_name, action)
       }
