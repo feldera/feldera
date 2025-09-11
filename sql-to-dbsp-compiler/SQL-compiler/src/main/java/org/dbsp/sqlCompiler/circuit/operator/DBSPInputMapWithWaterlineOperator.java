@@ -152,6 +152,18 @@ public class DBSPInputMapWithWaterlineOperator
     public void accept(InnerVisitor visitor) {
         visitor.property("originalRowType");
         this.originalRowType.accept(visitor);
+        visitor.property("outputType");
+        this.outputType.accept(visitor);
+        visitor.property("initializer");
+        this.initializer.accept(visitor);
+        visitor.property("timestamp");
+        this.timestamp.accept(visitor);
+        visitor.property("lub");
+        this.lub.accept(visitor);
+        visitor.property("filter");
+        this.filter.accept(visitor);
+        visitor.property("error");
+        this.error.accept(visitor);
     }
 
     @Override
