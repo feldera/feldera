@@ -10,7 +10,7 @@
   import { useUpdatePipelineList } from '$lib/compositions/pipelines/usePipelineList.svelte'
   import DeleteDialog, { deleteDialogProps } from '$lib/components/dialogs/DeleteDialog.svelte'
   import { useGlobalDialog } from '$lib/compositions/useGlobalDialog.svelte'
-  import { isPipelineCodeEditable } from '$lib/functions/pipelines/status'
+  import { isPipelineCodeEditable, isPipelineShutdown } from '$lib/functions/pipelines/status'
   import { useToast } from '$lib/compositions/useToastNotification'
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
   import { usePremiumFeatures } from '$lib/compositions/usePremiumFeatures.svelte'
@@ -89,8 +89,11 @@
               ),
             availableActions
           )
-
-    if (selected.length === pipelines.length && !actions.includes('stop')) {
+    if (
+      selected.length === pipelines.length &&
+      !actions.includes('stop') &&
+      !actions.includes('start')
+    ) {
       // If every pipeline is selected, add 'stop' action
       actions.splice(-2, 0, ...stop, 'kill')
     }
@@ -226,38 +229,44 @@
 {/snippet}
 
 {#snippet stopDialog()}
+  {@const stoppablePipelines = sortedSelectedPipelines.filter((name) =>
+    ((status) => !isPipelineShutdown(status))(selected.find((p) => p.name === name)!.status)
+  )}
   <DeleteDialog
     {...deleteDialogProps(
       'Stop',
       () =>
-        selectedPipelines.length === 1
+        stoppablePipelines.length === 1
           ? 'You are about to stop 1 pipeline:'
-          : 'You are about to stop ' + selectedPipelines.length.toFixed() + ' pipelines:',
+          : 'You are about to stop ' + stoppablePipelines.length.toFixed() + ' pipelines:',
       () => postPipelinesAction('stop'),
-      selectedPipelines.length === 1
+      stoppablePipelines.length === 1
         ? 'The pipeline will stop processing inputs and make a checkpoint of its state.'
         : 'These pipelines will stop processing inputs and make checkpoints of their states.',
-      sortedSelectedPipelines.join('\n')
+      stoppablePipelines.join('\n')
     )()}
     onClose={() => (globalDialog.dialog = null)}
   ></DeleteDialog>
 {/snippet}
 
 {#snippet killDialog()}
+  {@const stoppablePipelines = sortedSelectedPipelines.filter((name) =>
+    ((status) => !isPipelineShutdown(status))(selected.find((p) => p.name === name)!.status)
+  )}
   <DeleteDialog
     {...deleteDialogProps(
       'Force stop',
       () =>
-        selectedPipelines.length === 1
+        stoppablePipelines.length === 1
           ? 'You are about to forcefully stop 1 pipeline:'
           : 'You are about to forcefully stop ' +
-            selectedPipelines.length.toFixed() +
+            stoppablePipelines.length.toFixed() +
             ' pipelines:',
       () => postPipelinesAction('kill'),
-      selectedPipelines.length === 1
+      stoppablePipelines.length === 1
         ? 'The pipeline will stop processing inputs without making a checkpoint, leaving only a previous one, if any.'
         : 'These pipelines will stop processing inputs without making checkpoints, leaving only previous ones, if any.',
-      sortedSelectedPipelines.join('\n')
+      stoppablePipelines.join('\n')
     )()}
     onClose={() => (globalDialog.dialog = null)}
   ></DeleteDialog>
