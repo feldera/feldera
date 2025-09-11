@@ -210,6 +210,9 @@ public class CompilerOptions implements IDiff<CompilerOptions>, IValidate {
         @Parameter(names = "--crates", description = "Followed by a program name. Generates code using multiple crates; " +
                 "`outputFile` is interpreted as a directory.")
         public String crates = "";
+        @Parameter(names = "--runtime", description = "Followed by a path.  Path to the runtime to use.  " +
+                "Used in conjunction with '--crates'.")
+        public String runtimePath = "";
         @Parameter(hidden = true, names = "--input_circuit",
                 description = "Do not process the circuit, return immediately after creation.  Used for testing")
         public boolean inputCircuit = false;
@@ -254,6 +257,7 @@ public class CompilerOptions implements IDiff<CompilerOptions>, IValidate {
                     ",\n\temitJsonErrors=" + this.emitJsonErrors +
                     ",\n\temitJsonSchema=" + Utilities.singleQuote(this.emitJsonSchema) +
                     ",\n\tinputFile=" + Utilities.singleQuote(this.inputFile) +
+                    ",\n\truntime=" + Utilities.singleQuote(this.runtimePath) +
                     ",\n\ttrimInputs=" + this.trimInputs +
                     ",\n\tverbosity=" + this.verbosity +
                     ",\n\tquiet=" + this.quiet +
@@ -307,6 +311,11 @@ public class CompilerOptions implements IDiff<CompilerOptions>, IValidate {
 
     public static CompilerOptions getDefault() {
         return new CompilerOptions();
+    }
+
+    public boolean generateMultiCrateMain() {
+        return this.ioOptions.multiCrates() &&
+                !this.ioOptions.runtimePath.isEmpty();
     }
 
     @Override

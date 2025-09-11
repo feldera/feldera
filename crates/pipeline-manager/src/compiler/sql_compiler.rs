@@ -514,6 +514,7 @@ pub(crate) async fn perform_sql_compilation(
         assert!(sql_compiler_executable_file_path.exists());
     }
 
+    let runtime_sources = config.dbsp_override_path.clone();
     // Call executable with arguments
     //
     // In the future, it might be that flags can be passed to the SQL compiler through
@@ -534,6 +535,8 @@ pub(crate) async fn perform_sql_compilation(
         .arg("--alltables")
         .arg("--ignoreOrder")
         .arg("--nowstream")
+        .arg("--runtime")
+        .arg(runtime_sources)
         .arg("--crates") // Generate multiple crates instead of a single main.rs
         .arg(crate_name_pipeline_base(pipeline_id));
     #[cfg(feature = "feldera-enterprise")]
