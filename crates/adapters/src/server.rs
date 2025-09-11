@@ -508,7 +508,7 @@ pub fn run_server(
 
         // Initiate creating the controller so that we can get access to storage,
         // which is needed to determine the initial state.
-        let builder = ControllerBuilder::new(&config)?;
+        let builder = ControllerBuilder::new(config)?;
         info!(
             "Pipeline deployment identifier from arguments: {}",
             args.deployment_id
