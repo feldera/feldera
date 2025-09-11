@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.compiler.visitors.outer;
 
+import org.dbsp.sqlCompiler.circuit.IMultiOutput;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAsofJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateLinearPostprocessRetainKeysOperator;
@@ -36,6 +37,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPControlledKeyFilterOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIndexedTopKOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPInputMapWithWaterlineOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPInternOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinFilterMapOperator;
@@ -148,6 +150,31 @@ public class CircuitRewriter extends CircuitCloneVisitor {
         } else {
             super.replace(operator);
         }
+    }
+
+    @Override
+    public void postorder(DBSPInputMapWithWaterlineOperator operator) {
+        IMultiOutput result = operator;
+        DBSPTypeStruct originalRowType = this.transform(operator.originalRowType).to(DBSPTypeStruct.class);
+        DBSPTypeIndexedZSet outputType = this.transform(operator.outputType(0)).to(DBSPTypeIndexedZSet.class);
+        DBSPClosureExpression initializer = this.transform(operator.initializer).to(DBSPClosureExpression.class);
+        DBSPClosureExpression timestamp = this.transform(operator.timestamp).to(DBSPClosureExpression.class);
+        DBSPClosureExpression lub = this.transform(operator.lub).to(DBSPClosureExpression.class);
+        DBSPClosureExpression filter = this.transform(operator.filter).to(DBSPClosureExpression.class);
+        DBSPClosureExpression error = this.transform(operator.error).to(DBSPClosureExpression.class);
+        if (!originalRowType.sameType(operator.originalRowType) ||
+            !outputType.sameType(operator.outputType(0)) ||
+            initializer != operator.initializer ||
+            timestamp != operator.timestamp ||
+            lub != operator.lub ||
+            filter != operator.filter ||
+            error != operator.error) {
+            result = new DBSPInputMapWithWaterlineOperator(
+                    operator.getRelNode(), operator.sourceName, operator.keyFields,
+                    outputType, originalRowType, operator.metadata,
+                    operator.tableName, initializer, timestamp, lub, filter, error);
+        }
+        this.map(operator, result, true);
     }
 
     @Override

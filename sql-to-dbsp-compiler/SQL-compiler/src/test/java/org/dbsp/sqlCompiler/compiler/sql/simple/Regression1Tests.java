@@ -912,4 +912,9 @@ public class Regression1Tests extends SqlIoTest {
                  true | 1
                  false | 1""");
     }
+
+    @Test
+    public void issue4729() {
+        this.getCCS("CREATE TABLE t (ts BIGINT NOT NULL PRIMARY KEY LATENESS 5);");
+    }
 }
