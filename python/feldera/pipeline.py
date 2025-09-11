@@ -21,7 +21,7 @@ from feldera.enums import (
     DeploymentResourcesDesiredStatus,
     DeploymentResourcesStatus,
     DeploymentRuntimeDesiredStatus,
-    DeploymentRuntimeStatus
+    DeploymentRuntimeStatus,
 )
 from feldera.rest.pipeline import Pipeline as InnerPipeline
 from feldera.rest.feldera_client import FelderaClient
