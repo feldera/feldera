@@ -102,6 +102,10 @@ Usage: sql-to-dbsp [options] Input file to compile
     --png, -png
       Emit a png image of the circuit instead of Rust
       Default: false
+    --runtime
+      Followed by a path.  Path to the runtime to use.  Used in conjunction
+      with '--crates'.
+      Default: <empty string>
     --streaming
       Compiling a streaming program, where only inserts are allowed
       Default: false
