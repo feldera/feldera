@@ -48,6 +48,7 @@ public class MultiCrates {
     final RustWriter.StructuresUsed used;
     final String pipelineName;
     public final static String FILE_PREFIX = "feldera_pipe_";
+    public final static String CRATES_DIRECTORY = "crates";
 
     public String getGlobalsName() {
         return FILE_PREFIX + this.pipelineName + "_globals";
@@ -78,7 +79,7 @@ public class MultiCrates {
             t.tupleSizesUsed.add(i);
             BaseRustCodeGenerator tWriter = new RustFileWriter().setUsed(t).withUdf(false).withMalloc(false);
             CrateGenerator tuple = new CrateGenerator(
-                    this.rootDirectory, FILE_PREFIX + "tuple" + i, tWriter, enterprise);
+                    this.rootDirectory, CRATES_DIRECTORY, FILE_PREFIX + "tuple" + i, tWriter, enterprise, true);
             Utilities.putNew(this.tupleCrates, i, tuple);
         }
 
@@ -88,7 +89,7 @@ public class MultiCrates {
             t.semigroupSizesUsed.add(i);
             BaseRustCodeGenerator tWriter = new RustFileWriter().setUsed(t).withUdf(false).withMalloc(false);
             CrateGenerator semi = new CrateGenerator(
-                    this.rootDirectory, FILE_PREFIX + "semi" + i, tWriter, enterprise);
+                    this.rootDirectory, CRATES_DIRECTORY, FILE_PREFIX + "semi" + i, tWriter, enterprise, true);
             if (!used.isPredefined(i)) {
                 CrateGenerator tuple = Utilities.getExists(this.tupleCrates, i);
                 semi.addDependency(tuple);
@@ -100,16 +101,17 @@ public class MultiCrates {
         BaseRustCodeGenerator globalsWriter = new RustFileWriter()
                 .withUdf(true).withMalloc(false).withGenerateTuples(false).withDeclareSourceMap(true);
         // Main crate contains the circuit
-        this.main = new CrateGenerator(this.rootDirectory, this.getMainName(), mainWriter, enterprise);
+        this.main = new CrateGenerator(this.rootDirectory, CRATES_DIRECTORY, this.getMainName(),
+                mainWriter, enterprise, !compiler.options.generateMultiCrateMain());
         // Crate with global variables
-        this.globals = new CrateGenerator(this.rootDirectory, this.getGlobalsName(), globalsWriter, enterprise);
+        this.globals = new CrateGenerator(this.rootDirectory, CRATES_DIRECTORY, this.getGlobalsName(), globalsWriter, enterprise, true);
         this.main.addDependency(this.globals);
     }
 
     CrateGenerator createOperatorCrate(DBSPCircuit circuit, DBSPOperator operator, ICircuit parent, boolean enterprise) {
         String name = FILE_PREFIX + operator.getNodeName(true);
         SingleOperatorWriter single = new SingleOperatorWriter(operator, circuit, parent);
-        return new CrateGenerator(this.rootDirectory, name, single, enterprise);
+        return new CrateGenerator(this.rootDirectory, CRATES_DIRECTORY, name, single, enterprise, true);
     }
 
     static class UsesComparator extends InnerVisitor {
@@ -216,7 +218,7 @@ public class MultiCrates {
                         DBSPNestedOperator nested = operator.to(DBSPNestedOperator.class);
                         NestedOperatorWriter writer = new NestedOperatorWriter(nested, circuit);
                         String name = FILE_PREFIX + operator.getNodeName(true);
-                        op = new CrateGenerator(this.rootDirectory, name, writer, this.enterprise());
+                        op = new CrateGenerator(this.rootDirectory, CRATES_DIRECTORY, name, writer, this.enterprise(), true);
                         op.add(nested);
                         for (DBSPOperator inside: nested.getAllOperators()) {
                             if (inside.is(DBSPViewDeclarationOperator.class))
@@ -260,7 +262,8 @@ public class MultiCrates {
 
     void write() throws IOException {
         this.globals.write(this.compiler);
-        File file = new File(new File(new File(globals.baseDirectory, globals.crateName), "src"),
+        File file = new File(new File(
+                new File(new File(globals.baseDirectory, MultiCrates.CRATES_DIRECTORY), globals.crateName), "src"),
                 DBSPCompiler.UDF_FILE_NAME);
         if (!file.exists())
             Utilities.createEmptyFile(file.toPath());
