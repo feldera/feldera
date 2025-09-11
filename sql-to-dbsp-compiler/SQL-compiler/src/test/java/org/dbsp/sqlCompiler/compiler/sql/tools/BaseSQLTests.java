@@ -205,7 +205,7 @@ public class BaseSQLTests {
 
     public static final String PROJECT_DIRECTORY = "..";
     public static final String RUST_DIRECTORY = PROJECT_DIRECTORY + "/temp/src";
-    public static final String RUST_CRATES_DIRECTORY = PROJECT_DIRECTORY + "/multi";
+    public static final String RUST_MULTI_DIRECTORY = PROJECT_DIRECTORY + "/multi";
     public static final String TEST_FILE_PATH = RUST_DIRECTORY + "/lib.rs";
 
     public static int testsExecuted = 0;
@@ -278,12 +278,11 @@ public class BaseSQLTests {
             stubsDir = Paths.get(directory);
             createEmptyStubs();
         } else {
-            directory = RUST_CRATES_DIRECTORY;
+            directory = RUST_MULTI_DIRECTORY;
             MultiCratesWriter multiWriter = new MultiCratesWriter(directory, "x", true);
             testCrate = MultiCratesWriter.getTestName();
-            String globals = multiWriter.getGlobalsName();
             writer = multiWriter;
-            stubsDir = Paths.get(directory).resolve(globals).resolve("src");
+            stubsDir = multiWriter.stubsDirectory();
         }
         StubsWriter stubsWriter = new StubsWriter(stubsDir.resolve(DBSPCompiler.STUBS_FILE_NAME));
 
