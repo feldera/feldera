@@ -13,7 +13,7 @@ from .helper import (
     api_url,
     post_no_body,
     start_pipeline,
-    pause_pipeline,
+    start_pipeline_as_paused,
     stop_pipeline,
     connector_paused,
     connector_action,
@@ -75,7 +75,7 @@ def test_checkpoint_enterprise(pipeline_name):
     r = post_json(api_url("/pipelines"), {"name": pipeline_name, "program_code": sql})
     assert r.status_code == HTTPStatus.CREATED, r.text
     wait_for_program_success(pipeline_name, 1)
-    pause_pipeline(pipeline_name)
+    start_pipeline_as_paused(pipeline_name)
 
     for _ in range(5):
         resp = post_no_body(api_url(f"/pipelines/{pipeline_name}/checkpoint"))
