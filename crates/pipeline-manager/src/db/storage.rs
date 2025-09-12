@@ -74,6 +74,9 @@ pub(crate) trait Storage {
         provider: String,
     ) -> Result<TenantId, DBError>;
 
+    /// Retrieves the tenant name for a given tenant ID.
+    async fn get_tenant_name(&self, tenant_id: TenantId) -> Result<String, DBError>;
+
     /// Retrieves the list of all API keys.
     async fn list_api_keys(&self, tenant_id: TenantId) -> Result<Vec<ApiKeyDescr>, DBError>;
 

@@ -59,6 +59,14 @@ jobs:
     if: ${{ !contains(vars.CI_SKIP_JOBS, 'manager-https') }}
     name: Make sure manager runs with HTTPS
     runs-on: ubuntu-latest-amd64
+
+    # Environment variables for OIDC authentication (if available)
+    env:
+      OIDC_TEST_ISSUER: ${{ vars.OIDC_TEST_ISSUER }}
+      OIDC_TEST_CLIENT_ID: ${{ vars.OIDC_TEST_CLIENT_ID }}
+      OIDC_TEST_CLIENT_SECRET: ${{ secrets.OIDC_TEST_CLIENT_SECRET }}
+      OIDC_TEST_USERNAME: ${{ secrets.OIDC_TEST_USERNAME }}
+      OIDC_TEST_PASSWORD: ${{ secrets.OIDC_TEST_PASSWORD }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -85,6 +93,11 @@ jobs:
             --health-retries=5 \
             --mount type=bind,src=./test-tls,dst=/home/ubuntu/test-tls,readonly \
             -p 8080:8080 \
+            -e AUTH_PROVIDER="${{ vars.OIDC_TEST_ISSUER && 'generic-oidc' || 'none' }}" \
+            -e AUTH_CLIENT_ID="${{ vars.OIDC_TEST_CLIENT_ID }}" \
+            -e AUTH_ISSUER="${{ vars.OIDC_TEST_ISSUER }}" \
+            -e RUST_LOG=info \
+            -e RUST_BACKTRACE=1 \
             ${{ vars.FELDERA_IMAGE_NAME }}:sha-${{ github.sha }} \
             --enable-https \
             --https-tls-cert-path /home/ubuntu/test-tls/tls_test.crt \
@@ -115,6 +128,12 @@ jobs:
           FELDERA_HOST: https://localhost:8080
           PYTHONPATH: ${{ github.workspace }}/python
           IN_CI: 1 # We use this flag to skip some kafka tests in the python code base
+          # OIDC environment variables for authentication
+          OIDC_TEST_ISSUER: ${{ vars.OIDC_TEST_ISSUER }}
+          OIDC_TEST_CLIENT_ID: ${{ vars.OIDC_TEST_CLIENT_ID }}
+          OIDC_TEST_CLIENT_SECRET: ${{ secrets.OIDC_TEST_CLIENT_SECRET }}
+          OIDC_TEST_USERNAME: ${{ secrets.OIDC_TEST_USERNAME }}
+          OIDC_TEST_PASSWORD: ${{ secrets.OIDC_TEST_PASSWORD }}
       - name: Logs & Cleanup
         if: always()
         run: |
@@ -137,11 +156,26 @@ jobs:
           #  target: aarch64-unknown-linux-gnu
     runs-on: ${{ matrix.runner }}
 
+    # Environment variables for OIDC authentication (if available)
+    env:
+      OIDC_TEST_ISSUER: ${{ vars.OIDC_TEST_ISSUER }}
+      OIDC_TEST_CLIENT_ID: ${{ vars.OIDC_TEST_CLIENT_ID }}
+      OIDC_TEST_CLIENT_SECRET: ${{ secrets.OIDC_TEST_CLIENT_SECRET }}
+      OIDC_TEST_USERNAME: ${{ secrets.OIDC_TEST_USERNAME }}
+      OIDC_TEST_PASSWORD: ${{ secrets.OIDC_TEST_PASSWORD }}
+
     container:
       image: ghcr.io/feldera/feldera-dev:sha-9a54a381bb958ba78da125976a2f7731db3d7a4f
     services:
       pipeline-manager:
         image: ${{ vars.FELDERA_IMAGE_NAME }}:sha-${{ github.sha }}
+        env:
+          # Configure OIDC authentication if available, otherwise use no auth
+          AUTH_PROVIDER: ${{ vars.OIDC_TEST_ISSUER && 'generic-oidc' || 'none' }}
+          AUTH_CLIENT_ID: ${{ vars.OIDC_TEST_CLIENT_ID }}
+          AUTH_ISSUER: ${{ vars.OIDC_TEST_ISSUER }}
+          RUST_LOG: info
+          RUST_BACKTRACE: 1
         options: >-
           --health-cmd "curl --fail --request GET --url http://localhost:8080/healthz || exit 1"
           --health-interval 10s
@@ -151,6 +185,16 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Check OIDC configuration and connectivity
+        if: vars.OIDC_TEST_ISSUER != '' && vars.OIDC_TEST_CLIENT_ID != ''
+        run: |
+          echo "OIDC configuration detected, verifying connectivity..."
+          echo "Testing OIDC discovery endpoint: ${{ vars.OIDC_TEST_ISSUER }}"
+          ISSUER_URL="${{ vars.OIDC_TEST_ISSUER }}"
+          ISSUER_URL="${ISSUER_URL%/}" # Strip trailing slash
+          curl -f -s "${ISSUER_URL}/.well-known/openid-configuration" > /dev/null
+          echo "OIDC discovery endpoint is accessible"
 
       - name: Validate and run packaged demos
         if: ${{ vars.CI_DRY_RUN != 'true' }}
@@ -170,3 +214,9 @@ jobs:
           PYTHONPATH: ${{ github.workspace }}/python
           IN_CI: 1 # We use this flag to skip some kafka tests in the python code base
           FELDERA_HTTPS_TLS_CERT: /home/ubuntu/test-tls/tls_test.crt
+          # OIDC environment variables for authentication
+          OIDC_TEST_ISSUER: ${{ vars.OIDC_TEST_ISSUER }}
+          OIDC_TEST_CLIENT_ID: ${{ vars.OIDC_TEST_CLIENT_ID }}
+          OIDC_TEST_CLIENT_SECRET: ${{ secrets.OIDC_TEST_CLIENT_SECRET }}
+          OIDC_TEST_USERNAME: ${{ secrets.OIDC_TEST_USERNAME }}
+          OIDC_TEST_PASSWORD: ${{ secrets.OIDC_TEST_PASSWORD }}

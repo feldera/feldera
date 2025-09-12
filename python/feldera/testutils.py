@@ -15,6 +15,28 @@ from feldera.runtime_config import Resources, RuntimeConfig
 from feldera.rest import FelderaClient
 
 API_KEY = os.environ.get("FELDERA_API_KEY")
+
+
+# OIDC authentication support
+def _get_oidc_token():
+    """Get OIDC token if environment is configured, otherwise return None"""
+    try:
+        from tests.platform.oidc_test_helper import get_oidc_test_helper
+
+        oidc_helper = get_oidc_test_helper()
+        if oidc_helper is not None:
+            return oidc_helper.obtain_access_token()
+    except ImportError:
+        pass
+    return None
+
+
+def _get_effective_api_key():
+    """Get effective API key - OIDC token takes precedence over static API key"""
+    oidc_token = _get_oidc_token()
+    return oidc_token if oidc_token else API_KEY
+
+
 BASE_URL = (
     os.environ.get("FELDERA_HOST")
     or os.environ.get("FELDERA_BASE_URL")
@@ -44,6 +66,7 @@ class _LazyClient:
         if self._client is None:
             self._client = FelderaClient(
                 connection_timeout=10,
+                api_key=_get_effective_api_key(),
             )
         return self._client
 

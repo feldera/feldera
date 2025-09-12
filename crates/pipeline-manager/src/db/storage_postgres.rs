@@ -74,6 +74,14 @@ impl Storage for StoragePostgres {
         Ok(tenant_id)
     }
 
+    async fn get_tenant_name(&self, tenant_id: TenantId) -> Result<String, DBError> {
+        let mut client = self.pool.get().await?;
+        let txn = client.transaction().await?;
+        let tenant_name = operations::tenant::get_tenant_name(&txn, tenant_id).await?;
+        txn.commit().await?;
+        Ok(tenant_name)
+    }
+
     async fn list_api_keys(&self, tenant_id: TenantId) -> Result<Vec<ApiKeyDescr>, DBError> {
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;

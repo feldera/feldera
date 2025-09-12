@@ -218,6 +218,7 @@ It contains the following fields:
         // Configuration
         endpoints::config::get_config_authentication,
         endpoints::config::get_config_demos,
+        endpoints::config::get_config_session,
         endpoints::config::get_config,
 
         // Metrics
@@ -230,14 +231,18 @@ It contains the following fields:
         // Authentication
         crate::auth::AuthProvider,
         crate::auth::ProviderAwsCognito,
-        crate::auth::ProviderGoogleIdentity,
+        crate::auth::ProviderGenericOidc,
 
         // Common
         crate::db::types::version::Version,
+        crate::db::types::tenant::TenantId,
+        crate::license::DisplaySchedule,
+        crate::license::LicenseInformation,
         crate::license::LicenseValidity,
         crate::api::endpoints::config::UpdateInformation,
         crate::api::endpoints::config::Configuration,
         crate::api::endpoints::config::BuildInformation,
+        crate::api::endpoints::config::SessionInfo,
 
         // Pipeline
         crate::db::types::pipeline::PipelineId,
@@ -490,6 +495,7 @@ fn api_scope() -> Scope {
         // Configuration endpoints
         .service(endpoints::config::get_config)
         .service(endpoints::config::get_config_demos)
+        .service(endpoints::config::get_config_session)
         // Metrics of all pipelines belonging to this tenant
         .service(endpoints::metrics::get_metrics)
         // Cluster health check
@@ -643,7 +649,18 @@ pub async fn run(
     let auth_configuration = match api_config.auth_provider {
         crate::config::AuthProviderType::None => None,
         crate::config::AuthProviderType::AwsCognito => Some(crate::auth::aws_auth_config()),
-        crate::config::AuthProviderType::GoogleIdentity => Some(crate::auth::google_auth_config()),
+        crate::config::AuthProviderType::GenericOidc => {
+            match crate::auth::generic_oidc_auth_config(&api_config).await {
+                Ok(config) => Some(config),
+                Err(e) => {
+                    error!("Failed to configure generic OIDC authentication: {}", e);
+                    return Err(anyhow::anyhow!(
+                        "Authentication configuration failed: {}",
+                        e
+                    ));
+                }
+            }
+        }
     };
     let server = match auth_configuration {
         // We instantiate an awc::Client that can be used if the api-server needs to

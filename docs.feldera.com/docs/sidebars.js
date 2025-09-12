@@ -57,7 +57,18 @@ const installation = {
                         },
                     ]
                 },
-                'get-started/enterprise/authentication',
+                {
+                    type: 'category',
+                    label: 'Authentication',
+                    link: {
+                        type: 'doc',
+                        id: 'get-started/enterprise/authentication/index',
+                    },
+                    items: [
+                        'get-started/enterprise/authentication/aws-cognito',
+                        'get-started/enterprise/authentication/okta-sso',
+                    ]
+                },
                 'get-started/enterprise/https',
             ]
         }

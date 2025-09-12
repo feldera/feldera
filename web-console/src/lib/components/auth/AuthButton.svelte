@@ -6,6 +6,7 @@
   import AuthPopupMenu from './AuthPopupMenu.svelte'
   import type { AuthDetails } from '$lib/types/auth'
   import DarkModeSwitch from '$lib/components/layout/userPopup/DarkModeSwitch.svelte'
+  import CurrentTenant from '$lib/components/auth/CurrentTenant.svelte'
 
   const { compactBreakpoint = '' }: { compactBreakpoint?: string } = $props()
   const auth = page.data.auth as AuthDetails | undefined
@@ -54,6 +55,8 @@
         class="bg-white-dark absolute right-0 z-30 flex max-h-[400px] w-[calc(100vw-16px)] max-w-[360px] flex-col justify-end gap-4 rounded-container p-4 shadow-md scrollbar sm:max-w-[400px]"
       >
         <div class="text-surface-700-300">Authentication is disabled</div>
+
+        <CurrentTenant></CurrentTenant>
         <div class="hr"></div>
         <DarkModeSwitch></DarkModeSwitch>
         <VersionDisplay></VersionDisplay>

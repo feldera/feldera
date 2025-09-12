@@ -1,10 +1,16 @@
 // Configuration API to retrieve the current authentication configuration and list of demos
-use actix_web::{get, web::Data as WebData, HttpRequest, HttpResponse};
+use actix_web::{
+    get,
+    web::{Data as WebData, ReqData},
+    HttpRequest, HttpResponse,
+};
 use feldera_types::license::DisplaySchedule;
 use serde::Serialize;
 use utoipa::ToSchema;
 
 use crate::api::main::ServerState;
+use crate::db::storage::Storage;
+use crate::db::types::tenant::TenantId;
 use crate::error::ManagerError;
 use crate::license::{LicenseCheck, LicenseValidity};
 use crate::unstable_features;
@@ -140,7 +146,8 @@ impl Configuration {
 #[get("/config")]
 pub(crate) async fn get_config(
     state: WebData<ServerState>,
-    _req: HttpRequest,
+    _client: WebData<awc::Client>,
+    _tenant_id: ReqData<TenantId>,
 ) -> Result<HttpResponse, ManagerError> {
     let config = Configuration::gather(&state).await;
     Ok(HttpResponse::Ok().json(config))
@@ -193,6 +200,53 @@ pub(crate) async fn get_config_demos(
     state: WebData<ServerState>,
 ) -> Result<HttpResponse, ManagerError> {
     Ok(HttpResponse::Ok().json(&state.demos))
+}
+
+#[derive(Serialize, ToSchema)]
+pub(crate) struct SessionInfo {
+    /// Current user's tenant ID
+    pub tenant_id: TenantId,
+    /// Current user's tenant name
+    pub tenant_name: String,
+}
+
+impl SessionInfo {
+    pub(crate) async fn gather(state: &ServerState, tenant_id: TenantId) -> Self {
+        let db = state.db.lock().await;
+        let tenant_name = db
+            .get_tenant_name(tenant_id)
+            .await
+            .unwrap_or_else(|_| "unknown".to_string());
+
+        SessionInfo {
+            tenant_id,
+            tenant_name,
+        }
+    }
+}
+
+/// Retrieve current session information.
+#[utoipa::path(
+    context_path = "/v0",
+    security(("JSON web token (JWT) or API key" = [])),
+    responses(
+        (status = OK
+            , description = "The response body contains current session information including tenant details."
+            , content_type = "application/json"
+            , body = SessionInfo),
+        (status = INTERNAL_SERVER_ERROR
+            , description = "Request failed."
+            , body = ErrorResponse),
+    ),
+    tag = "Configuration"
+)]
+#[get("/config/session")]
+pub(crate) async fn get_config_session(
+    state: WebData<ServerState>,
+    tenant_id: ReqData<TenantId>,
+) -> Result<HttpResponse, ManagerError> {
+    let session_info = SessionInfo::gather(&state, *tenant_id).await;
+    Ok(HttpResponse::Ok().json(session_info))
 }
 
 #[derive(Serialize, ToSchema)]

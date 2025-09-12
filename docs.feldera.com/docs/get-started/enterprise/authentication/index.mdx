@@ -1,0 +1,123 @@
+# Authentication and Authorization
+
+This guide describes how to configure authentication providers and tenant assignment for **Feldera Enterprise**.
+
+Feldera supports authentication through OIDC/OAuth2 providers, enabling secure multi-tenant deployments with flexible tenant assignment strategies.
+
+## Authentication model
+
+Feldera API supports two authentication types:
+
+- OIDC: Requests should include a valid OIDC Access token in the `Authorization` HTTP header in the shape `Bearer <token>`
+
+- API key: Authorized Feldera users can generate API keys to be included in the `Authorization` HTTP header in the shape `Bearer <token>`
+
+## Authorization model
+
+In Feldera, a tenant is a scope of shared access to platform data that can be assigned to one or more users.
+The users of one tenant cannot access the data in another tenant.
+Interaction with Feldera is only performed with a tenant assigned, so authorization to the platform implies assigning tenant to the user.
+For OIDC authentication, the tenant is derived from claims in the OIDC Access token.
+For API key authentication, the key is associated with the tenant through which the key was generated.
+
+As an orthogonal feature, the authorized_groups startup parameter can be used to limit access to the users who are a member of at least one of the groups in this list. The membership is determined based on the `groups` claim of an OIDC Access token.
+
+## Tenant Assignment Strategies
+
+Feldera provides three different tenant assignment strategies to support different deployment patterns:
+
+### Individual Tenancy (Enabled by default)
+
+Each authenticated user gets their own private tenant based on the `sub` claim of the OIDC Access token. Does not require authentication provider configuration. Configured with --individual-tenant startup flag.
+
+### Organization-wide Tenancy
+
+Users from the same organization share a tenant, derived from the issuer hostname of the authentication token. Does not require authentication provider configuration. Configured with --issuer-tenant startup flag.
+
+### User Group Tenancy
+
+Multiple teams can use the same Feldera instance with complete tenant isolation. Each team's users should be assigned to a corresponding tenant with the proper configuration of a dynamic tenant claim. Requires configuring a custom claim in OIDC Access token. It is always enabled
+
+## Tenant Assignment use cases
+
+Configure tenant assignment behavior using a combination of the following strategies:
+
+### Development environment - no authentication
+
+```bash
+# Default settings - each user gets individual tenant
+pipeline-manager ... --auth-provider=none
+```
+
+### Individual tenancy
+
+Every user gets their individual tenant
+
+**Feldera Configuration:**
+```bash
+pipeline-manager ... --auth-provider=<provider> --individual-tenant=true
+```
+
+### Organization tenancy
+
+Lets all users in your organization share the same tenant based on the organization domain.
+
+The tenant name is extracted from OIDC issuer domain:
+- `https://acme-corp.okta.com/oauth2/default` → `acme-corp.okta.com` tenant
+
+**Feldera Configuration:**
+```bash
+pipeline-manager ... --auth-provider=<provider> --issuer-tenant=true --individual-tenant=false
+```
+
+Example tenant names:
+- `https://acme-corp.okta.com/oauth2/default` → `acme-corp` tenant
+- `https://company.auth.us-west-2.amazoncognito.com` → `company` tenant
+
+### Whitelisted organization tenancy
+
+**Feldera Configuration:**
+```bash
+pipeline-manager ... --auth-provider=<provider> --authorized_groups=feldera_qa,feldera_rnd --issuer-tenant=true --individual-tenant=false
+```
+
+### User group tenancy
+
+**Feldera Configuration:**
+```bash
+pipeline-manager ... --auth-provider=<provider> --individual-tenant=false
+```
+
+### User group tenancy with individual users
+
+**Feldera Configuration:**
+```bash
+pipeline-manager ... --auth-provider=<provider> --individual-tenant=true
+```
+
+## Tenant Resolution Priority
+
+Feldera resolves tenant assignment using the following priority order:
+
+1. **`tenant` claim** - Explicit tenant assignment via OIDC provider
+2. **Issuer domain `iss` claim** (when `--issuer-tenant=true`)
+3. **User `sub` claim** (when `--individual-tenant=true`)
+
+If no valid tenant is found and `--individual-tenant=false` the user will be denied authorization.
+
+## Provider-Specific Setup
+
+Feldera supports the following authentication providers:
+
+- AWS Cognito
+- Okta
+- Google Identity
+- Generic OIDC
+
+Each authentication provider requires specific configuration. Choose your provider below:
+
+```mdx-code-block
+import DocCardList from '@theme/DocCardList';
+
+<DocCardList />
+```

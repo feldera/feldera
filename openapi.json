@@ -342,6 +342,42 @@
         ]
       }
     },
+    "/v0/config/session": {
+      "get": {
+        "tags": [
+          "Configuration"
+        ],
+        "summary": "Retrieve current session information.",
+        "operationId": "get_config_session",
+        "responses": {
+          "200": {
+            "description": "The response body contains current session information including tenant details.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionInfo"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Request failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JSON web token (JWT) or API key": []
+          }
+        ]
+      }
+    },
     "/v0/metrics": {
       "get": {
         "tags": [
@@ -5001,11 +5037,11 @@
           {
             "type": "object",
             "required": [
-              "GoogleIdentity"
+              "GenericOidc"
             ],
             "properties": {
-              "GoogleIdentity": {
-                "$ref": "#/components/schemas/ProviderGoogleIdentity"
+              "GenericOidc": {
+                "$ref": "#/components/schemas/ProviderGenericOidc"
               }
             }
           }
@@ -7548,12 +7584,12 @@
       "ProviderAwsCognito": {
         "type": "object",
         "required": [
-          "jwk_uri",
+          "issuer",
           "login_url",
           "logout_url"
         ],
         "properties": {
-          "jwk_uri": {
+          "issuer": {
             "type": "string"
           },
           "login_url": {
@@ -7564,17 +7600,24 @@
           }
         }
       },
-      "ProviderGoogleIdentity": {
+      "ProviderGenericOidc": {
         "type": "object",
         "required": [
-          "jwk_uri",
-          "client_id"
+          "issuer",
+          "client_id",
+          "extra_oidc_scopes"
         ],
         "properties": {
           "client_id": {
             "type": "string"
           },
-          "jwk_uri": {
+          "extra_oidc_scopes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "issuer": {
             "type": "string"
           }
         }
@@ -8215,6 +8258,22 @@
           }
         }
       },
+      "SessionInfo": {
+        "type": "object",
+        "required": [
+          "tenant_id",
+          "tenant_name"
+        ],
+        "properties": {
+          "tenant_id": {
+            "$ref": "#/components/schemas/TenantId"
+          },
+          "tenant_name": {
+            "type": "string",
+            "description": "Current user's tenant name"
+          }
+        }
+      },
       "SourcePosition": {
         "type": "object",
         "required": [
@@ -8809,6 +8868,10 @@
             "minimum": 0
           }
         }
+      },
+      "TenantId": {
+        "type": "string",
+        "format": "uuid"
       },
       "TimeSeries": {
         "type": "object",

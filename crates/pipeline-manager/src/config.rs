@@ -92,6 +92,16 @@ fn default_demos_dir() -> Vec<String> {
     vec!["demo/packaged/sql".to_string()]
 }
 
+/// Default value for individual_tenant flag.
+fn default_individual_tenant() -> bool {
+    true
+}
+
+/// Default audience claim value for OIDC authentication.
+fn default_auth_audience() -> String {
+    "feldera-api".to_string()
+}
+
 /// Determines the default amount of worker threads to spawn.
 fn default_http_workers() -> usize {
     thread::available_parallelism()
@@ -535,7 +545,7 @@ pub enum AuthProviderType {
     #[default]
     None,
     AwsCognito,
-    GoogleIdentity,
+    GenericOidc,
 }
 
 impl std::fmt::Display for AuthProviderType {
@@ -543,7 +553,7 @@ impl std::fmt::Display for AuthProviderType {
         match *self {
             AuthProviderType::None => write!(f, "none"),
             AuthProviderType::AwsCognito => write!(f, "aws-cognito"),
-            AuthProviderType::GoogleIdentity => write!(f, "google-identity"),
+            AuthProviderType::GenericOidc => write!(f, "generic-oidc"),
         }
     }
 }
@@ -576,6 +586,20 @@ pub struct ApiServerConfig {
     ///
     /// We also only support implicit grants for now. We expect to
     /// support PKCE soon.
+    ///
+    /// ** Okta provider **
+    /// If the auth_provider is okta, the AUTH_ISSUER should be your Okta domain
+    /// including the authorization server ID (e.g., "<https://your-domain.okta.com/oauth2/default>").
+    /// The AUTH_CLIENT_ID should be the client ID from your Okta application configuration.
+    ///
+    /// ** Tenant Assignment **
+    /// Tenant assignment follows this priority order:
+    /// 1. 'tenant' claim in JWT (if configured by Okta admin)
+    /// 2. Issuer domain extraction (if --issuer-tenant flag is set)
+    /// 3. Individual user tenant from 'sub' claim (if --individual-tenant=true)
+    ///
+    /// Use --individual-tenant=false for enterprise deployments requiring explicit tenant assignment.
+    /// Use --issuer-tenant for simple multi-user access using organization domain as tenant.
     #[serde(default)]
     #[arg(long, action = clap::ArgAction::Set, default_value_t=AuthProviderType::None)]
     pub auth_provider: AuthProviderType,
@@ -643,6 +667,42 @@ pub struct ApiServerConfig {
     /// the 6th collection is made.
     #[arg(long, default_value_t = 3, env = "FELDERA_SUPPORT_DATA_RETENTION")]
     pub support_data_retention: u64,
+
+    /// Use the issuer domain as tenant identifier for multi-user deployments.
+    ///
+    /// When enabled, extracts the subdomain from the JWT issuer claim as the tenant.
+    /// For example, "<https://acme-corp.okta.com/oauth2/default>" becomes "acme-corp".
+    /// Useful for simple multi-user access without requiring custom tenant claims.
+    #[serde(default)]
+    #[arg(long, env = "FELDERA_AUTH_ISSUER_TENANT")]
+    pub issuer_tenant: bool,
+
+    /// Allow individual user tenants based on the 'sub' claim.
+    ///
+    /// When true (default), users without explicit tenant or issuer-based tenant
+    /// assignment get individual tenants based on their 'sub' claim.
+    /// When false, users must have explicit tenant assignment or access is denied.
+    /// Set to false for enterprise deployments requiring explicit tenant assignment.
+    #[serde(default = "default_individual_tenant")]
+    #[arg(long, action = clap::ArgAction::Set, default_value_t = true, env = "FELDERA_AUTH_INDIVIDUAL_TENANT")]
+    pub individual_tenant: bool,
+
+    /// Comma-separated list of group names that users must belong to for access.
+    /// When specified, a user must have at least one group from the authorized_groups list
+    /// present in the `groups` claim of the Access OIDC token to access the platform.
+    /// If empty, no group restrictions are applied.
+    /// Example: "feldera-users,analytics-team"
+    #[serde(default)]
+    #[arg(long, value_delimiter = ',', env = "FELDERA_AUTH_AUTHORIZED_GROUPS")]
+    pub authorized_groups: Vec<String>,
+
+    /// Expected audience claim value in OIDC Access tokens.
+    /// This value must match the 'aud' claim in JWT tokens for successful authentication.
+    /// For Okta custom authorization servers, this is typically the API identifier.
+    /// Default: "feldera-api"
+    #[serde(default = "default_auth_audience")]
+    #[arg(long, default_value = "feldera-api", env = "FELDERA_AUTH_AUDIENCE")]
+    pub auth_audience: String,
 }
 
 impl ApiServerConfig {
@@ -679,6 +739,10 @@ impl ApiServerConfig {
             telemetry: "test".to_string(),
             demos_dir: vec!["demos".to_string()],
             dump_openapi: false,
+            issuer_tenant: false,
+            individual_tenant: true,
+            authorized_groups: vec![],
+            auth_audience: "feldera-api".to_string(),
         }
     }
 }
