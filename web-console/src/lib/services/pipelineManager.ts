@@ -432,7 +432,7 @@ export const relationEgressStream = async (pipelineName: string, relationName: s
   // const result = await httpOutput({path: {pipeline_name: pipelineName, table_name: relationName}, query: {'format': 'json', 'mode': 'watch', 'array': false, 'query': 'table'}})
   return streamingFetch(
     getAuthenticatedFetch(),
-    `${felderaEndpoint}/v0/pipelines/${pipelineName}/egress/${relationName}?format=json&array=false`,
+    `${felderaEndpoint}/v0/pipelines/${pipelineName}/egress/${encodeURIComponent(relationName)}?format=json&array=false`,
     {
       method: 'POST'
     },
