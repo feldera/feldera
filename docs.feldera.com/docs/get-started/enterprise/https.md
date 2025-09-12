@@ -5,7 +5,7 @@ runner, pipelines) to serve HTTPS in the Enterprise edition.
 
 - The same certificate (and thus private key) are used by all components
 - Authentication (e.g., mTLS) is currently not yet supported (besides for the
-  [existing authentication methods of the API server](authentication.md))
+  [existing authentication methods of the API server](authentication/index.mdx))
 
 This document does not apply to the connection to the Postgres database used by the control plane,
 which can be [configured separately](helm-guide.md).

@@ -17,7 +17,7 @@ export type AdHocInputConfig = {
 /**
  * URL-encoded `format` argument to the `/query` endpoint.
  */
-export type AdHocResultFormat = 'text' | 'json' | 'parquet' | 'arrow_ipc'
+export type AdHocResultFormat = 'text' | 'json' | 'parquet' | 'arrow_ipc' | 'hash'
 
 /**
  * Arguments to the `/query` endpoint.
@@ -63,7 +63,7 @@ export type AuthProvider =
       AwsCognito: ProviderAwsCognito
     }
   | {
-      GoogleIdentity: ProviderGoogleIdentity
+      GenericOidc: ProviderGenericOidc
     }
 
 /**
@@ -2227,14 +2227,15 @@ export type PropertyValue = {
 }
 
 export type ProviderAwsCognito = {
-  jwk_uri: string
+  issuer: string
   login_url: string
   logout_url: string
 }
 
-export type ProviderGoogleIdentity = {
+export type ProviderGenericOidc = {
   client_id: string
-  jwk_uri: string
+  extra_oidc_scopes: Array<string>
+  issuer: string
 }
 
 /**
@@ -2743,6 +2744,14 @@ export type ServiceStatus = {
   unchanged_since: string
 }
 
+export type SessionInfo = {
+  tenant_id: TenantId
+  /**
+   * Current user's tenant name
+   */
+  tenant_name: string
+}
+
 export type SourcePosition = {
   end_column: number
   end_line_number: number
@@ -3043,6 +3052,20 @@ export type SyncConfig = {
    */
   region?: string | null
   /**
+   * The minimum age (in days) a checkpoint must reach before it becomes
+   * eligible for deletion. All younger checkpoints will be preserved.
+   *
+   * Default: 30
+   */
+  retention_min_age?: number
+  /**
+   * The minimum number of checkpoints to retain in object store.
+   * No checkpoints will be deleted if the total count is below this threshold.
+   *
+   * Default: 10
+   */
+  retention_min_count?: number
+  /**
    * The secret key used together with the access key for authentication.
    *
    * If not provided, rclone will fall back to environment-based credentials, such as
@@ -3078,6 +3101,8 @@ export type SyncConfig = {
    */
   upload_concurrency?: number | null
 }
+
+export type TenantId = string
 
 /**
  * Time series to make graphs in the web console easier.
@@ -3274,6 +3299,10 @@ export type GetConfigError = ErrorResponse
 export type GetConfigDemosResponse = Array<Demo>
 
 export type GetConfigDemosError = ErrorResponse
+
+export type GetConfigSessionResponse = SessionInfo
+
+export type GetConfigSessionError = ErrorResponse
 
 export type GetMetricsResponse = Blob | File
 
@@ -3968,6 +3997,20 @@ export type $OpenApiTs = {
         '200': Array<Demo>
         /**
          * Failed to read demos from the demos directories
+         */
+        '500': ErrorResponse
+      }
+    }
+  }
+  '/v0/config/session': {
+    get: {
+      res: {
+        /**
+         * The response body contains current session information including tenant details.
+         */
+        '200': SessionInfo
+        /**
+         * Request failed.
          */
         '500': ErrorResponse
       }
