@@ -181,7 +181,7 @@ outputs:
         move |workers| Ok(test_circuit::<DeltaTestStruct>(workers, &schema, &[None])),
         &config,
         std::sync::Weak::new(),
-        Box::new(move |e| {
+        Box::new(move |e, _| {
             let msg = format!("redis_output_test: error: {e}");
             println!("{msg}");
             err_sender.send(msg).unwrap()
@@ -305,7 +305,7 @@ outputs:
         move |workers| Ok(test_circuit::<TestStruct>(workers, &schema, &[None])),
         &config,
         std::sync::Weak::new(),
-        Box::new(move |e| {
+        Box::new(move |e, _| {
             let msg = format!("redis_output_test: error: {e}");
             println!("{msg}");
         }),

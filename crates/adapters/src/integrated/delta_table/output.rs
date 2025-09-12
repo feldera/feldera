@@ -421,6 +421,7 @@ impl OutputConsumer for DeltaTableWriter {
                         &self.inner.endpoint_name,
                         fatal,
                         e,
+                        Some("delta_batch_start"),
                     )
                 };
             });
@@ -449,6 +450,7 @@ impl OutputConsumer for DeltaTableWriter {
                         &self.inner.endpoint_name,
                         fatal,
                         e,
+                        Some("delta_batch_end"),
                     )
                 };
             });

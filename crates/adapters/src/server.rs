@@ -3,6 +3,7 @@ use crate::format::{get_input_format, get_output_format};
 use crate::server::metrics::{
     JsonFormatter, LabelStack, MetricsFormatter, MetricsWriter, PrometheusFormatter,
 };
+use crate::util::{RateLimitCheckResult, TokenBucketRateLimiter};
 use crate::{
     adhoc::{adhoc_websocket, stream_adhoc_result},
     controller::ConnectorConfig,
@@ -57,6 +58,7 @@ use std::collections::HashMap;
 use std::hash::{BuildHasherDefault, DefaultHasher};
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
+use std::time::Duration;
 use std::{
     borrow::Cow,
     net::TcpListener,
@@ -211,10 +213,15 @@ pub(crate) struct ServerState {
     /// the self-destruct task when shutting down
     /// the server.
     terminate_sender: Option<Sender<()>>,
+    // rate limiter based on tags
+    rate_limiter: TokenBucketRateLimiter<&'static str>,
 }
 
 impl ServerState {
     fn new(terminate_sender: Option<Sender<()>>) -> Self {
+        // Max 10 errors per minute
+        let rate_limiter = TokenBucketRateLimiter::new(10, Duration::from_secs(60));
+
         Self {
             phase: Arc::new(RwLock::new(PipelinePhase::Initializing)),
             metadata: RwLock::new(String::new()),
@@ -223,6 +230,7 @@ impl ServerState {
             sync_checkpoint_state: Arc::new(Mutex::new(CheckpointSyncState::default())),
             activated: Arc::new(AtomicBool::new(false)),
             terminate_sender,
+            rate_limiter,
         }
     }
 
@@ -577,13 +585,42 @@ fn is_fatal_controller_error(error: &ControllerError) -> bool {
 }
 
 /// Handle errors from the controller.
-fn error_handler(state: &Weak<ServerState>, error: Arc<ControllerError>) {
-    error!("{error}");
-
+fn error_handler(
+    state: &Weak<ServerState>,
+    error: Arc<ControllerError>,
+    tag: Option<&'static str>,
+) {
     let state = match state.upgrade() {
-        None => return,
+        None => {
+            // if we fail to upgrade state,
+            // log the error anyways without checking for rate limiter
+            error!("{error}");
+            return;
+        }
         Some(state) => state,
     };
+
+    // do not rate limit errors without tag
+    let should_log = tag.is_none_or(|k| match state.rate_limiter.check(k) {
+        RateLimitCheckResult::Suppressed => false,
+        RateLimitCheckResult::Allowed => true,
+        RateLimitCheckResult::AllowedAfterSuppression{   suppressed,
+                     first_suppression,
+                     last_suppression
+        }=> {
+            let now = state.rate_limiter.now_ms();
+            let first_suppressed_elapsed = (now - first_suppression) as f64 / 1000.0;
+            let last_suppressed_elapsed = (now - last_suppression) as f64 / 1000.0;
+            info!(
+                "Suppressed {suppressed} errors in last {first_suppressed_elapsed:.2}s (most recently, {last_suppressed_elapsed:.2}s ago) due to excessive rate. ( tag={k} )"
+            );
+            true
+        }
+    });
+
+    if should_log {
+        error!("{error}");
+    }
 
     if is_fatal_controller_error(&error) {
         // Prepare to handle poisoned locks in the following code.
@@ -725,8 +762,8 @@ fn do_bootstrap(
         circuit_factory,
         &config,
         weak_state_ref.clone(),
-        Box::new(move |e| error_handler(&weak_state_ref, e))
-            as Box<dyn Fn(Arc<ControllerError>) + Send + Sync>,
+        Box::new(move |e, t| error_handler(&weak_state_ref, e, t))
+            as Box<dyn Fn(Arc<ControllerError>, Option<&'static str>) + Send + Sync>,
     )?;
 
     *state.controller.write().unwrap() = Some(controller);
