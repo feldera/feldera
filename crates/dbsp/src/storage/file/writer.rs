@@ -1108,6 +1108,14 @@ impl Writer {
     ) -> Result<Self, StorageError> {
         assert_eq!(factories.len(), n_columns);
 
+        let bloom_filter = BloomFilter::with_false_pos(BLOOM_FILTER_FALSE_POSITIVE_RATE)
+            .seed(&BLOOM_FILTER_SEED)
+            .expected_items({
+                // `.max(64)` works around a fastbloom bug that hangs when the
+                // expected number of items is zero (see
+                // https://github.com/tomtomwombat/fastbloom/issues/17).
+                estimated_keys.max(64)
+            });
         let parameters = Arc::new(parameters);
         let cws = factories
             .iter()
@@ -1118,9 +1126,7 @@ impl Writer {
         let writer = Self {
             cache,
             writer: BlockWriter::new(cache(), storage_backend.create_with_prefix(&worker.into())?),
-            bloom_filter: BloomFilter::with_false_pos(BLOOM_FILTER_FALSE_POSITIVE_RATE)
-                .seed(&BLOOM_FILTER_SEED)
-                .expected_items(estimated_keys),
+            bloom_filter,
             cws,
             finished_columns,
         };
@@ -1142,8 +1148,7 @@ impl Writer {
 
         if column == 0 {
             // Add `key` to bloom filter.
-            self.bloom_filter
-                .insert(&item.0.default_hash().to_le_bytes());
+            self.bloom_filter.insert_hash(item.0.default_hash());
         }
 
         // Add `value` to row group for column.
