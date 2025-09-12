@@ -238,3 +238,38 @@ def test_suspend_enterprise(pipeline_name):
     assert _adhoc_count(pipeline_name) == final_count, (
         "Received new records after all connectors reached EOI"
     )
+
+@gen_pipeline_name
+def test_stop_start(pipeline_name):
+    sql = r"""
+    CREATE TABLE t1 (
+        x int
+    ) WITH (
+        'materialized' = 'true',
+        'connectors' = '[{
+            "name": "c1",
+            "paused": true,
+            "transport": {
+                "name": "datagen",
+                "config": {
+                    "plan": [{
+                        "limit": 1,
+                        "fields": { "x": { "values": [1] } }
+                    }]
+                }
+            }
+        }]'
+    );
+    """.strip()
+
+    r = post_json(api_url("/pipelines"), {"name": pipeline_name, "program_code": sql})
+    assert r.status_code == HTTPStatus.CREATED, r.text
+    wait_for_program_success(pipeline_name, 1)
+
+    for _i in range(0, 10):
+        stop_pipeline(pipeline_name, force=False)
+        start_pipeline(pipeline_name)
+        final_count = _adhoc_count(pipeline_name)
+        assert _adhoc_count(pipeline_name) == final_count, (
+            "Received new records after all connectors reached EOI"
+        )
