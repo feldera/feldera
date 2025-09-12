@@ -47,6 +47,7 @@ use std::{
     sync::Arc,
 };
 use thiserror::Error as ThisError;
+use tracing::warn;
 
 mod bulk_rows;
 pub use bulk_rows::BulkRows;
@@ -1404,7 +1405,7 @@ where
 #[derive(Debug)]
 pub struct Reader<T> {
     file: ImmutableFileRef,
-    bloom_filter: BloomFilter,
+    bloom_filter: Option<BloomFilter>,
     columns: Vec<Column>,
 
     /// `fn() -> T` is `Send` and `Sync` regardless of `T`.  See
@@ -1436,13 +1437,23 @@ where
             BlockLocation::new(file_size - 512, 512).unwrap(),
             &stats,
         )?;
-        if file_trailer.version != VERSION_NUMBER {
-            return Err(CorruptionError::InvalidVersion {
-                version: file_trailer.version,
-                expected_version: VERSION_NUMBER,
+        let has_compatible_bloom_filter = match file_trailer.version {
+            1 => {
+                // Old, incompatible version.
+                None
             }
-            .into());
+            2 => {
+                // Version before [fastbloom] crate was upgraded to one with an incompatible format.
+                warn!("{path}: reading old format storage file, performance may be reduced due to incompatible Bloom filters");
+                Some(false)
+            }
+            VERSION_NUMBER => Some(true),
+            _ => None,
         }
+        .ok_or_else(|| CorruptionError::InvalidVersion {
+            version: file_trailer.version,
+            expected_version: VERSION_NUMBER,
+        })?;
 
         assert_eq!(factories.len(), file_trailer.columns.len());
 
@@ -1475,18 +1486,21 @@ where
         }
 
         let bloom_filter = match bloom_filter {
-            Some(bloom_filter) => bloom_filter,
-            None => FilterBlock::new(
-                &*file_handle,
-                BlockLocation::new(
-                    file_trailer.filter_offset,
-                    file_trailer.filter_size as usize,
-                )
-                .map_err(|error: InvalidBlockLocation| {
-                    Error::Corruption(CorruptionError::InvalidFilterLocation(error))
-                })?,
-            )?
-            .into(),
+            Some(bloom_filter) => Some(bloom_filter),
+            None if has_compatible_bloom_filter => Some(
+                FilterBlock::new(
+                    &*file_handle,
+                    BlockLocation::new(
+                        file_trailer.filter_offset,
+                        file_trailer.filter_size as usize,
+                    )
+                    .map_err(|error: InvalidBlockLocation| {
+                        Error::Corruption(CorruptionError::InvalidFilterLocation(error))
+                    })?,
+                )?
+                .into(),
+            ),
+            None => None,
         };
 
         Ok(Self {
@@ -1571,7 +1585,9 @@ where
 {
     /// Asks the bloom filter of the reader if we have the key.
     pub fn maybe_contains_key(&self, hash: u64) -> bool {
-        self.bloom_filter.contains_hash(hash)
+        self.bloom_filter
+            .as_ref()
+            .is_none_or(|b| b.contains_hash(hash))
     }
 
     /// Returns a [`RowGroup`] for all of the rows in column 0.
