@@ -1212,8 +1212,8 @@ impl<B: Batch> Cursor<B::Key, B::Val, B::Time, B::R> for SpineCursor<B> {
         self.with_cursor_mut(|cursor| cursor.seek_key(key));
     }
 
-    fn seek_key_exact(&mut self, key: &B::Key) -> bool {
-        self.with_cursor_mut(|cursor| cursor.seek_key_exact(key))
+    fn seek_key_exact(&mut self, key: &B::Key, hash: Option<u64>) -> bool {
+        self.with_cursor_mut(|cursor| cursor.seek_key_exact(key, hash))
     }
 
     fn seek_key_with(&mut self, predicate: &dyn Fn(&B::Key) -> bool) {

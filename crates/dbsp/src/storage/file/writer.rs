@@ -1142,8 +1142,7 @@ impl Writer {
 
         if column == 0 {
             // Add `key` to bloom filter.
-            self.bloom_filter
-                .insert(&item.0.default_hash().to_le_bytes());
+            self.bloom_filter.insert_hash(item.0.default_hash());
         }
 
         // Add `value` to row group for column.
@@ -1184,6 +1183,8 @@ impl Writer {
             compression: self.cws[0].parameters.compression,
             filter_offset: filter_location.offset,
             filter_size: filter_location.size.try_into().unwrap(),
+            compatible_features: 0,
+            incompatible_features: 0,
         };
         let (_block, location) = self
             .writer

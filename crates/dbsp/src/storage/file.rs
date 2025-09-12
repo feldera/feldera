@@ -99,7 +99,7 @@ use crate::{
 pub use item::{ArchivedItem, Item, ItemFactory, WithItemFactory};
 
 const BLOOM_FILTER_SEED: u128 = 42;
-const BLOOM_FILTER_FALSE_POSITIVE_RATE: f64 = 0.001;
+const BLOOM_FILTER_FALSE_POSITIVE_RATE: f64 = 0.0001;
 
 /// Factory objects used by file reader and writer.
 pub struct Factories<K, A>

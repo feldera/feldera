@@ -93,7 +93,7 @@ where
         self.cursor.seek_key_reverse(key)
     }
 
-    fn seek_key_exact(&mut self, _key: &K) -> bool {
+    fn seek_key_exact(&mut self, _key: &K, _hash: Option<u64>) -> bool {
         todo!()
     }
 

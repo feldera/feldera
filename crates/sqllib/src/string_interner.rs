@@ -203,7 +203,7 @@ pub fn unintern_string(id: &InternedStringId) -> Option<SqlString> {
         cache.get(id).map(|(string, _step)| string).or_else(|| {
             INTERNED_STRING_BY_ID.with_borrow(|spine| {
                 let mut cursor = spine.read().unwrap().cursor();
-                if cursor.seek_key_exact(id) {
+                if cursor.seek_key_exact(id, None) {
                     let val = unsafe { cursor.val().downcast::<Tup1<SqlString>>().0.clone() };
                     // Insert the string into the cache with pinned flag set to false, so it can be evicted.
                     cache.insert(id.clone(), (val.clone(), false));

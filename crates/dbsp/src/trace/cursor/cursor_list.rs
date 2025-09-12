@@ -396,13 +396,14 @@ where
         self.skip_zero_weight_keys_forward();
     }
 
-    fn seek_key_exact(&mut self, key: &K) -> bool {
+    fn seek_key_exact(&mut self, key: &K, hash: Option<u64>) -> bool {
+        let hash = hash.unwrap_or_else(|| key.default_hash());
         self.current_key.clear();
 
         let mut result = false;
 
         for (index, cursor) in self.cursors.iter_mut().enumerate() {
-            if cursor.seek_key_exact(key) {
+            if cursor.seek_key_exact(key, Some(hash)) {
                 self.current_key.push(index);
                 result = true;
             }

@@ -47,6 +47,7 @@ use std::{
     sync::Arc,
 };
 use thiserror::Error as ThisError;
+use tracing::{info, warn};
 
 mod bulk_rows;
 pub use bulk_rows::BulkRows;
@@ -120,6 +121,13 @@ pub enum CorruptionError {
         /// Expected version ([`VERSION_NUMBER`]).
         expected_version: u32,
     },
+
+    /// Invalid version number in file trailer.
+    #[error("File uses unsupported incompatible features {0:#x}")]
+    UnsupportedIncompatibleFeatures(
+        /// Unsupported incompatible features
+        u64,
+    ),
 
     /// [`mod@binrw`] reported a format violation.
     #[error("Binary read/write error reading {block_type} block ({location}): {inner}")]
@@ -1404,7 +1412,7 @@ where
 #[derive(Debug)]
 pub struct Reader<T> {
     file: ImmutableFileRef,
-    bloom_filter: BloomFilter,
+    bloom_filter: Option<BloomFilter>,
     columns: Vec<Column>,
 
     /// `fn() -> T` is `Send` and `Sync` regardless of `T`.  See
@@ -1436,11 +1444,35 @@ where
             BlockLocation::new(file_size - 512, 512).unwrap(),
             &stats,
         )?;
-        if file_trailer.version != VERSION_NUMBER {
-            return Err(CorruptionError::InvalidVersion {
-                version: file_trailer.version,
-                expected_version: VERSION_NUMBER,
+        let has_compatible_bloom_filter = match file_trailer.version {
+            1 => {
+                // Old, incompatible version.
+                None
             }
+            2 => {
+                // Version before [fastbloom] crate was upgraded to one with an incompatible format.
+                warn!("{path}: reading old format storage file, performance may be reduced due to incompatible Bloom filters");
+                Some(false)
+            }
+            VERSION_NUMBER => Some(true),
+            _ => None,
+        }
+        .ok_or_else(|| CorruptionError::InvalidVersion {
+            version: file_trailer.version,
+            expected_version: VERSION_NUMBER,
+        })?;
+
+        if file_trailer.compatible_features != 0 {
+            info!(
+                "{path}: storage file uses unsupported compatible features {:#x}",
+                file_trailer.compatible_features
+            );
+        }
+
+        if file_trailer.incompatible_features != 0 {
+            return Err(CorruptionError::UnsupportedIncompatibleFeatures(
+                file_trailer.incompatible_features,
+            )
             .into());
         }
 
@@ -1475,18 +1507,21 @@ where
         }
 
         let bloom_filter = match bloom_filter {
-            Some(bloom_filter) => bloom_filter,
-            None => FilterBlock::new(
-                &*file_handle,
-                BlockLocation::new(
-                    file_trailer.filter_offset,
-                    file_trailer.filter_size as usize,
-                )
-                .map_err(|error: InvalidBlockLocation| {
-                    Error::Corruption(CorruptionError::InvalidFilterLocation(error))
-                })?,
-            )?
-            .into(),
+            Some(bloom_filter) => Some(bloom_filter),
+            None if has_compatible_bloom_filter && file_trailer.filter_offset != 0 => Some(
+                FilterBlock::new(
+                    &*file_handle,
+                    BlockLocation::new(
+                        file_trailer.filter_offset,
+                        file_trailer.filter_size as usize,
+                    )
+                    .map_err(|error: InvalidBlockLocation| {
+                        Error::Corruption(CorruptionError::InvalidFilterLocation(error))
+                    })?,
+                )?
+                .into(),
+            ),
+            None => None,
         };
 
         Ok(Self {
@@ -1570,9 +1605,10 @@ where
     (&'static K, &'static A, N): ColumnSpec,
 {
     /// Asks the bloom filter of the reader if we have the key.
-    pub fn maybe_contains_key(&self, key: &K) -> bool {
+    pub fn maybe_contains_key(&self, hash: u64) -> bool {
         self.bloom_filter
-            .contains(&key.default_hash().to_le_bytes())
+            .as_ref()
+            .is_none_or(|b| b.contains_hash(hash))
     }
 
     /// Returns a [`RowGroup`] for all of the rows in column 0.
@@ -2825,7 +2861,7 @@ where
         // to deserialize them anyhow later.
         let mut bloom_keys = SmallVec::<[_; 50]>::new();
         for (index, key) in keys.dyn_iter().enumerate() {
-            if reader.maybe_contains_key(key) {
+            if reader.maybe_contains_key(key.default_hash()) {
                 bloom_keys.push(index);
                 if bloom_keys.len() >= keys.len() / 300 {
                     return Self {

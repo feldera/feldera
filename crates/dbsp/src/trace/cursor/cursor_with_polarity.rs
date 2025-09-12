@@ -107,8 +107,8 @@ where
         self.cursor.seek_key(key);
     }
 
-    fn seek_key_exact(&mut self, key: &K) -> bool {
-        self.cursor.seek_key_exact(key)
+    fn seek_key_exact(&mut self, key: &K, hash: Option<u64>) -> bool {
+        self.cursor.seek_key_exact(key, hash)
     }
 
     fn seek_key_with(&mut self, predicate: &dyn Fn(&K) -> bool) {

@@ -368,8 +368,8 @@ where
         self.file.cache_stats()
     }
 
-    fn maybe_contains_key(&self, key: &K) -> bool {
-        self.file.maybe_contains_key(key)
+    fn maybe_contains_key(&self, hash: u64) -> bool {
+        self.file.maybe_contains_key(hash)
     }
 
     fn sample_keys<RG>(&self, rng: &mut RG, sample_size: usize, output: &mut DynVec<Self::Key>)
@@ -752,8 +752,9 @@ where
         self.move_key(|key_cursor| unsafe { key_cursor.advance_to_value_or_larger(key) });
     }
 
-    fn seek_key_exact(&mut self, key: &K) -> bool {
-        if !self.wset.maybe_contains_key(key) {
+    fn seek_key_exact(&mut self, key: &K, hash: Option<u64>) -> bool {
+        let hash = hash.unwrap_or_else(|| key.default_hash());
+        if !self.wset.maybe_contains_key(hash) {
             return false;
         }
         self.seek_key(key);
