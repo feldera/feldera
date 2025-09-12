@@ -350,6 +350,7 @@ pub struct Controller {
     inner: Arc<ControllerInner>,
 
     /// The circuit thread handle (see module-level docs).
+    #[allow(clippy::type_complexity)]
     circuit_thread_handle: Arc<Mutex<Option<JoinHandle<Result<(), ControllerError>>>>>,
 }
 
