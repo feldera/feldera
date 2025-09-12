@@ -1318,6 +1318,7 @@ async fn create_http_input_endpoint(
 #[post("/ingress/{table_name}")]
 async fn input_endpoint(
     state: WebData<ServerState>,
+    path: web::Path<String>,
     req: HttpRequest,
     args: Query<IngressArgs>,
     payload: Payload,
@@ -1329,14 +1330,7 @@ async fn input_endpoint(
     }
     debug!("{req:?}");
 
-    let table_name = match req.match_info().get("table_name") {
-        None => {
-            return Err(PipelineError::MissingUrlEncodedParam {
-                param: "table_name",
-            });
-        }
-        Some(table_name) => table_name.to_string(),
-    };
+    let table_name = path.into_inner();
 
     // Generate endpoint name.
     let endpoint_name = format!("api-ingress-{table_name}-{}", Uuid::new_v4());
@@ -1446,21 +1440,13 @@ struct EgressArgs {
 #[post("/egress/{table_name}")]
 async fn output_endpoint(
     state: WebData<ServerState>,
+    path: web::Path<String>,
     req: HttpRequest,
     args: Query<EgressArgs>,
 ) -> impl Responder {
     debug!("/egress request:{req:?}");
 
-    let state = state.into_inner();
-
-    let table_name = match req.match_info().get("table_name") {
-        None => {
-            return Err(PipelineError::MissingUrlEncodedParam {
-                param: "table_name",
-            });
-        }
-        Some(table_name) => table_name.to_string(),
-    };
+    let table_name = path.into_inner();
 
     // Generate endpoint name depending on the query and output mode.
     let endpoint_name = format!("api-{}-{table_name}", Uuid::new_v4());

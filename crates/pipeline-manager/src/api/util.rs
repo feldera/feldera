@@ -13,6 +13,13 @@ pub(crate) fn parse_url_parameter(
         None => Err(ManagerError::from(ApiError::MissingUrlEncodedParam {
             param: param_name,
         })),
-        Some(value) => Ok(value.to_string()),
+        Some(value) => Ok(urlencoding::decode(value)
+            .map_err(|e| {
+                ManagerError::from(ApiError::InvalidNameParam {
+                    value: value.to_string(),
+                    error: format!("Failed to URL-decode parameter '{}': {}", param_name, e),
+                })
+            })?
+            .to_string()),
     }
 }

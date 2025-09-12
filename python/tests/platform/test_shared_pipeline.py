@@ -668,6 +668,55 @@ class TestPipeline(SharedTestPipeline):
             assert len(file_list) >= 2
             assert "manifest.txt" in file_list
 
+    def test_url_encoding_ingress_egress_table_name(self):
+        """
+        CREATE TABLE "t1#a1" (
+            c1 TEXT NOT NULL
+        ) WITH ('materialized' = 'true');
+        """
+        # Test egress with URL encoding - listen directly to table with special characters
+        out = self.pipeline.listen("t1#a1")
+
+        # Test ingress with URL encoding
+        self.pipeline.start()
+        data = [{"c1": "test_value"}]
+
+        # Test pushing data to table with special characters in name
+        TEST_CLIENT.push_to_pipeline(
+            pipeline_name=self.pipeline.name,
+            table_name="t1#a1",
+            format="json",
+            array=True,
+            data=data,
+        )
+
+        self.pipeline.wait_for_completion(False)
+
+        # Verify data was inserted correctly via query
+        result = list(self.pipeline.query('SELECT * FROM "t1#a1"'))
+        expected = [{"c1": "test_value"}]
+        self.assertCountEqual(result, expected)
+
+        # Insert another value to test egress
+        additional_data = [{"c1": "test_value_2"}]
+        TEST_CLIENT.push_to_pipeline(
+            pipeline_name=self.pipeline.name,
+            table_name="t1#a1",
+            format="json",
+            array=True,
+            data=additional_data,
+        )
+
+        self.pipeline.wait_for_completion(False)
+
+        # Verify egress data includes both values with insert_delete markers
+        egress_result = out.to_dict()
+        expected_egress = [
+            {"c1": "test_value", "insert_delete": 1},
+            {"c1": "test_value_2", "insert_delete": 1},
+        ]
+        self.assertCountEqual(egress_result, expected_egress)
+
 
 if __name__ == "__main__":
     unittest.main()
