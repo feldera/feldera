@@ -131,8 +131,6 @@ only the program-related core fields, and is used by the compiler to discern whe
 
         // Common
         crate::db::types::version::Version,
-        crate::license::DisplaySchedule,
-        crate::license::LicenseInformation,
         crate::license::LicenseValidity,
         crate::api::endpoints::config::UpdateInformation,
         crate::api::endpoints::config::Configuration,
@@ -257,6 +255,8 @@ only the program-related core fields, and is used by the compiler to discern whe
         feldera_types::transaction::StartTransactionResponse,
         feldera_types::time_series::TimeSeries,
         feldera_types::time_series::SampleStatistics,
+        feldera_types::license::DisplaySchedule,
+        feldera_types::license::LicenseInformation,
 
         // Cluster health check
         crate::cluster_health::HealthStatus,
