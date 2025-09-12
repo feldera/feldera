@@ -14,15 +14,17 @@ export const toAxaOidcConfig = (c: OidcConfig): OidcConfiguration => ({
   authority: c.authority,
   // authority_time_cache_wellknowurl_in_second: undefined,
   // authority_timeout_wellknowurl_in_millisecond: undefined,
-  authority_configuration: {
-    authorization_endpoint: c.metadata.authorization_endpoint,
-    token_endpoint: c.metadata.token_endpoint,
-    revocation_endpoint: c.metadata.revocation_endpoint,
-    end_session_endpoint: c.metadata.end_session_endpoint,
-    userinfo_endpoint: c.metadata.userinfo_endpoint,
-    // check_session_iframe: undefined,
-    issuer: c.metadata.issuer
-  },
+  authority_configuration: c.authority_configuration
+    ? {
+        authorization_endpoint: c.authority_configuration.authorization_endpoint,
+        token_endpoint: c.authority_configuration.token_endpoint,
+        revocation_endpoint: c.authority_configuration.revocation_endpoint,
+        userinfo_endpoint: c.authority_configuration.userinfo_endpoint,
+        end_session_endpoint: c.authority_configuration.end_session_endpoint,
+        // check_session_iframe: undefined,
+        issuer: c.authority_configuration.issuer
+      }
+    : undefined,
   // refresh_time_before_tokens_expiration_in_second: undefined,
   // token_automatic_renew_mode: TokenAutomaticRenewMode.AutomaticOnlyWhenFetchExecuted,
   // token_request_timeout: undefined,
@@ -37,7 +39,7 @@ export const toAxaOidcConfig = (c: OidcConfig): OidcConfiguration => ({
   // token_request_extras: undefined,
   storage: c.storage,
   // monitor_session: undefined,
-  // token_renew_mode: undefined,
+  // token_renew_mode: 'access_token_or_id_token_invalid' // "access_token_or_id_token_invalid" (default), "access_token_invalid", "id_token_invalid"
   logout_tokens_to_invalidate: []
   // demonstrating_proof_of_possession: undefined,
   // demonstrating_proof_of_possession_configuration: undefined,

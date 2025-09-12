@@ -3,7 +3,8 @@
   import ApiKeyMenu from '$lib/components/other/ApiKeyMenu.svelte'
   import type { UserProfile } from '$lib/types/auth'
   import DarkModeSwitch from '$lib/components/layout/userPopup/DarkModeSwitch.svelte'
-  import VersionDisplay from '../version/VersionDisplay.svelte'
+  import VersionDisplay from '$lib/components/version/VersionDisplay.svelte'
+  import CurrentTenant from '$lib/components/auth/CurrentTenant.svelte'
 
   const globalDialog = useGlobalDialog()
   let {
@@ -32,17 +33,20 @@
       {:else}
         <div class="fd fd-circle-user h-10 w-10 rounded-full text-[40px]"></div>
       {/if}
-      <div>
-        <div class="h4 font-normal" class:italic={!user.name}>{user.name || 'anonymous'}</div>
+      <div class="">
+        <div class="h4 break-all font-normal" class:italic={!user.name}>
+          {user.name || 'anonymous'}
+        </div>
         <div class="">{user.email}</div>
       </div>
     </div>
+    <CurrentTenant></CurrentTenant>
     <div class="">
       <button
         class=" btn px-8 text-surface-800-200 preset-filled-surface-50-950 hover:preset-filled-surface-50-950"
         onclick={async () => {
           await signOut({ callbackUrl: undefined! })
-        }}>Log Out</button
+        }}>Sign Out</button
       >
     </div>
   </div>
