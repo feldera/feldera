@@ -379,6 +379,11 @@ const pipelines = {
         formats,
         {
             type: 'doc',
+            label: "Lifecycle",
+            id: "pipelines/lifecycle",
+        },
+        {
+            type: 'doc',
             label: "Settings",
             id: "pipelines/configuration",
         },
