@@ -1,4 +1,4 @@
-use crate::controller::CompletionToken;
+use crate::controller::{CompletionToken, ControllerBuilder};
 use crate::format::{get_input_format, get_output_format};
 use crate::server::metrics::{
     JsonFormatter, LabelStack, MetricsFormatter, MetricsWriter, PrometheusFormatter,
@@ -20,9 +20,10 @@ use actix_web::{
     dev::{ServiceFactory, ServiceRequest},
     get,
     http::header,
+    http::StatusCode,
     post, rt,
     web::{self, Data as WebData, Payload, Query},
-    App, Error as ActixError, HttpRequest, HttpResponse, HttpServer, Responder,
+    App, Error as ActixError, HttpRequest, HttpResponse, HttpServer, Responder, ResponseError,
 };
 use async_stream;
 use chrono::Utc;
@@ -31,6 +32,8 @@ use colored::{ColoredString, Colorize};
 use dbsp::{circuit::CircuitConfig, DBSPHandle};
 use dbsp::{RootCircuit, Runtime};
 use dyn_clone::DynClone;
+use feldera_adapterlib::PipelineState;
+use feldera_storage::{StorageBackend, StoragePath};
 use feldera_types::checkpoint::{
     CheckpointFailure, CheckpointResponse, CheckpointStatus, CheckpointSyncFailure,
     CheckpointSyncResponse, CheckpointSyncStatus,
@@ -38,7 +41,11 @@ use feldera_types::checkpoint::{
 use feldera_types::completion_token::{
     CompletionStatusArgs, CompletionStatusResponse, CompletionTokenResponse,
 };
+use feldera_types::constants::STATUS_FILE;
 use feldera_types::query_params::{MetricsFormat, MetricsParameters};
+use feldera_types::runtime_status::{
+    ExtendedRuntimeStatus, ExtendedRuntimeStatusError, RuntimeDesiredStatus, RuntimeStatus,
+};
 use feldera_types::suspend::{SuspendError, SuspendableResponse};
 use feldera_types::time_series::TimeSeries;
 use feldera_types::{
@@ -51,28 +58,24 @@ use futures_util::FutureExt;
 use minitrace::collector::Config;
 use rustls::pki_types::pem::PemObject;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+use serde_json::json;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::hash::{BuildHasherDefault, DefaultHasher};
+use std::io::ErrorKind;
+use std::ops::{Deref, DerefMut};
 use std::path::PathBuf;
-use std::sync::atomic::AtomicBool;
+use std::time::Duration;
 use std::{
     borrow::Cow,
     net::TcpListener,
-    sync::{
-        mpsc::{self, Sender as StdSender},
-        Arc, Mutex, RwLock, Weak,
-    },
+    sync::{Arc, Mutex, Weak},
     thread,
 };
-use tokio::{
-    spawn,
-    sync::{
-        mpsc::{channel, Sender},
-        oneshot,
-    },
-};
+use tokio::spawn;
+use tokio::sync::Notify;
+use tokio::task::spawn_blocking;
 use tokio_stream::{wrappers::BroadcastStream, StreamExt};
 use tracing::{debug, error, info, info_span, trace, warn, Instrument, Level, Subscriber};
 use tracing_subscriber::fmt::format::Format;
@@ -95,6 +98,7 @@ pub use self::error::{ErrorResponse, PipelineError, MAX_REPORTED_PARSE_ERRORS};
 ///
 /// Enables the server to report the state of the pipeline while it is
 /// initializing, when it has failed to initialize, failed, or been suspended.
+#[derive(Clone)]
 enum PipelinePhase {
     /// Initialization in progress.
     Initializing,
@@ -111,21 +115,6 @@ enum PipelinePhase {
 
     /// Pipeline was successfully suspended to storage.
     Suspended,
-}
-
-/// Generate an appropriate error when `state.controller` is set to
-/// `None`, which can mean that the pipeline is initializing, failed to
-/// initialize, has been shut down or failed.
-fn missing_controller_error(state: &ServerState) -> PipelineError {
-    match &*state.phase.read().unwrap() {
-        PipelinePhase::Initializing => PipelineError::Initializing,
-        PipelinePhase::InitializationError(e) => {
-            PipelineError::InitializationError { error: e.clone() }
-        }
-        PipelinePhase::InitializationComplete => PipelineError::Terminating,
-        PipelinePhase::Failed(e) => PipelineError::ControllerError { error: e.clone() },
-        PipelinePhase::Suspended => PipelineError::Suspended,
-    }
 }
 
 #[derive(Clone, Debug, Default)]
@@ -199,40 +188,123 @@ impl CheckpointState {
 }
 
 pub(crate) struct ServerState {
-    phase: Arc<RwLock<PipelinePhase>>,
-    metadata: RwLock<String>,
-    controller: RwLock<Option<Controller>>,
-    checkpoint_state: Arc<Mutex<CheckpointState>>,
-    sync_checkpoint_state: Arc<Mutex<CheckpointSyncState>>,
-    /// Indicates whether the pipeline has been activated from standby mode via
-    /// a call to the `/activate` endpoint.
-    activated: Arc<AtomicBool>,
-    /// Channel used to send a `kill` command to
-    /// the self-destruct task when shutting down
-    /// the server.
-    terminate_sender: Option<Sender<()>>,
+    /// The other locks in this structure nest inside `desired_status`.
+    desired_status: Mutex<RuntimeDesiredStatus>,
+
+    /// Notified when `desired_status` changes.
+    desired_status_change: Arc<Notify>,
+
+    /// `phase` nests inside `controller`.
+    ///
+    /// Use `controller()`, `take_controller()`, `set_controller()` to access.
+    ///
+    /// This lock is only held momentarily.
+    controller: Mutex<Option<Controller>>,
+
+    /// Leaf lock (no more locks may be taken while holding it).
+    ///
+    /// Use `phase()` and `set_phase()` to access.
+    ///
+    /// This lock is only held momentarily.
+    phase: Mutex<PipelinePhase>,
+
+    /// Leaf lock.
+    checkpoint_state: Mutex<CheckpointState>,
+
+    /// Leaf lock.
+    sync_checkpoint_state: Mutex<CheckpointSyncState>,
+
+    /// Deployment ID.
+    deployment_id: Uuid,
+
+    metadata: String,
 }
 
 impl ServerState {
-    fn new(terminate_sender: Option<Sender<()>>) -> Self {
+    fn new(
+        phase: PipelinePhase,
+        md: String,
+        desired_status: RuntimeDesiredStatus,
+        deployment_id: Uuid,
+    ) -> Self {
         Self {
-            phase: Arc::new(RwLock::new(PipelinePhase::Initializing)),
-            metadata: RwLock::new(String::new()),
-            controller: RwLock::new(None),
-            checkpoint_state: Arc::new(Mutex::new(CheckpointState::default())),
-            sync_checkpoint_state: Arc::new(Mutex::new(CheckpointSyncState::default())),
-            activated: Arc::new(AtomicBool::new(false)),
-            terminate_sender,
+            phase: Mutex::new(phase),
+            desired_status_change: Arc::default(),
+            metadata: md,
+            controller: Mutex::new(None),
+            checkpoint_state: Default::default(),
+            sync_checkpoint_state: Default::default(),
+            desired_status: Mutex::new(desired_status),
+            deployment_id,
         }
     }
 
-    #[allow(unused)]
-    pub(crate) fn activated(&self) -> bool {
-        self.activated.load(std::sync::atomic::Ordering::Relaxed)
+    fn for_error(error: ControllerError, deployment_id: Uuid) -> Self {
+        Self::new(
+            PipelinePhase::InitializationError(Arc::new(error)),
+            String::default(),
+            RuntimeDesiredStatus::Paused,
+            deployment_id,
+        )
+    }
+
+    /// Generate an appropriate error when `state.controller` is set to
+    /// `None`, which can mean that the pipeline is initializing, failed to
+    /// initialize, has been shut down or failed.
+    fn missing_controller_error(&self) -> PipelineError {
+        match self.phase() {
+            PipelinePhase::Initializing => PipelineError::Initializing,
+            PipelinePhase::InitializationError(e) => {
+                PipelineError::InitializationError { error: e.clone() }
+            }
+            PipelinePhase::InitializationComplete => PipelineError::Terminating,
+            PipelinePhase::Failed(e) => PipelineError::ControllerError { error: e.clone() },
+            PipelinePhase::Suspended => PipelineError::Suspended,
+        }
+    }
+
+    /// Grabs a clone of the controller, or an error if there isn't one.
+    fn controller(&self) -> Result<Controller, PipelineError> {
+        self.controller
+            .lock()
+            .unwrap()
+            .deref()
+            .as_ref()
+            .cloned()
+            .ok_or_else(|| self.missing_controller_error())
+    }
+
+    /// Removes the controller and returns it, or an error if there wasn't one.
+    ///
+    /// This only makes sense when we're terminating.
+    fn take_controller(&self) -> Result<Controller, PipelineError> {
+        self.controller
+            .lock()
+            .unwrap()
+            .deref_mut()
+            .take()
+            .ok_or_else(|| self.missing_controller_error())
+    }
+
+    /// Sets the controller.  This should only be done once.
+    fn set_controller(&self, controller: Controller) {
+        *self.controller.lock().unwrap() = Some(controller);
+    }
+
+    fn desired_status(&self) -> RuntimeDesiredStatus {
+        *self.desired_status.lock().unwrap()
+    }
+
+    fn phase(&self) -> PipelinePhase {
+        self.phase.lock().unwrap().clone()
+    }
+
+    fn set_phase(&self, phase: PipelinePhase) {
+        *self.phase.lock().unwrap() = phase;
     }
 }
 
-#[derive(Parser, Debug, Default, Clone)]
+#[derive(Parser, Debug, Clone)]
 #[command(author, version, about, long_about = None)]
 pub struct ServerArgs {
     /// Pipeline configuration YAML file
@@ -271,6 +343,17 @@ pub struct ServerArgs {
     /// Path to the TLS key PEM file corresponding to the x509 certificate (e.g., `/path/to/tls.key`).
     #[arg(long)]
     pub https_tls_key_path: Option<String>,
+
+    /// Initial runtime desired status.
+    #[arg(long)]
+    pub initial: RuntimeDesiredStatus,
+
+    /// UUID generated by the runner for the compute resources that were provisioned to keep this
+    /// pipeline process running. It will thus only change if the pipeline is stopped and started
+    /// again. If stored in persistent storage, it can be used to determine upon initialization
+    /// whether it is a new start (id changed) or an automatic restart (id remains the same).
+    #[arg(long)]
+    pub deployment_id: Uuid,
 }
 
 pub trait CircuitBuilderFunc:
@@ -356,20 +439,43 @@ pub fn run_server(
         })?
         .port();
 
-    let (terminate_sender, mut terminate_receiver) = channel(1);
-
-    let state = WebData::new(ServerState::new(Some(terminate_sender)));
-    let state_clone = state.clone();
-
-    // The bootstrap thread initialize the logger.
-    // Use this channel to wait for the log to be ready, so that the first few
-    // messages from the server don't get lost.
-    let (loginit_sender, loginit_receiver) = mpsc::channel();
-    let config = parse_config(&args.config_file).map_err(|e| {
-        // Print to stderr until logging is initialized.
+    let config = parse_config(&args.config_file).inspect_err(|e| {
+        // Logging isn't initialized and we can't initialize it until we have
+        // the configuration, so just print the message to stderr for now.
         eprintln!("{e}");
-        e
     })?;
+
+    // Initialize the logger by setting its filter and template.
+    let pipeline_name = format!("[{}]", config.name.clone().unwrap_or_default()).cyan();
+    tracing_subscriber::registry()
+        .with(tracing_subscriber::fmt::layer().event_format(PipelineFormat::new(pipeline_name)))
+        .with(get_env_filter(&config))
+        .try_init()
+        .unwrap_or_else(|e| {
+            // This happens in unit tests when another test has initialized logging.
+            eprintln!("Failed to initialize logging: {e}.")
+        });
+
+    if config.global.tracing {
+        use std::net::{SocketAddr, ToSocketAddrs};
+        let socket_addrs: Vec<SocketAddr> = config
+            .global
+            .tracing_endpoint_jaeger
+            .to_socket_addrs()
+            .expect("Valid `tracing_endpoint_jaeger` value (e.g., localhost:6831)")
+            .collect();
+        let reporter = minitrace_jaeger::JaegerReporter::new(
+            *socket_addrs
+                .first()
+                .expect("Valid `tracing_endpoint_jaeger` value (e.g., localhost:6831)"),
+            config
+                .name
+                .clone()
+                .unwrap_or("unknown pipeline".to_string()),
+        )
+        .unwrap();
+        minitrace::set_reporter(reporter, Config::default());
+    }
 
     // Install stack overflow handler early, before creating the controller and parsing DevTweaks.
     #[cfg(target_family = "unix")]
@@ -388,17 +494,139 @@ pub fn run_server(
         }
     }
 
-    // Initialize the pipeline in a separate thread.  On success, this thread
-    // will create a `Controller` instance and store it in `state.controller`.
-    {
-        let args = args.clone();
-        let config = config.clone();
+    /// Does all of the fallible work in creating the controller.
+    fn start_controller(
+        args: &ServerArgs,
+        config: &PipelineConfig,
+        circuit_factory: CircuitFactoryFunc,
+        runtime: &actix_web::rt::Runtime,
+    ) -> Result<WebData<ServerState>, ControllerError> {
+        #[cfg(not(feature = "feldera-enterprise"))]
+        if config.global.fault_tolerance.is_enabled() {
+            return Err(ControllerError::EnterpriseFeature("fault tolerance"));
+        }
+
+        // Initiate creating the controller so that we can get access to storage,
+        // which is needed to determine the initial state.
+        let builder = ControllerBuilder::new(config)?;
+        info!(
+            "Pipeline deployment identifier from arguments: {}",
+            args.deployment_id
+        );
+        info!("Desired status from arguments: {:?}", args.initial);
+        let initial_status = match builder
+            .storage()
+            .and_then(|storage| StoredStatus::read(&*storage))
+            .inspect(|stored| {
+                info!(
+                    "Pipeline deployment identifier from storage: {}",
+                    stored.deployment_id
+                );
+                info!("Desired status from storage: {:?}", stored.desired_status);
+            }) {
+            Some(stored) if stored.deployment_id == args.deployment_id => {
+                // This is an automatic restart (otherwise the deployment ID would
+                // have changed).  Use the stored desired status.
+                stored.desired_status
+            }
+            Some(stored) => {
+                // The pipeline manager restarted us.  Use the desired status it
+                // passed in (if it is a valid transition).
+                if !stored
+                    .desired_status
+                    .may_transition_to_at_startup(args.initial)
+                {
+                    return Err(ControllerError::InvalidStartupTransition {
+                        from: stored.desired_status,
+                        to: args.initial,
+                    });
+                }
+                args.initial
+            }
+            None => {
+                // Initial deployment of this pipeline.  Use the desired status
+                // passed in by the pipeline manager (it's the only one we have,
+                // anyway).
+                args.initial
+            }
+        };
+
+        let md = match &args.metadata_file {
+            None => String::new(),
+            Some(metadata_file) => std::fs::read(metadata_file)
+                .map_err(|e| {
+                    ControllerError::io_error(format!("reading metadata file '{metadata_file}'"), e)
+                })
+                .and_then(|meta| {
+                    String::from_utf8(meta).map_err(|e| {
+                        ControllerError::pipeline_config_parse_error(&format!(
+                            "invalid UTF8 string in the metadata file '{metadata_file}' ({e})"
+                        ))
+                    })
+                })
+                .inspect_err(|error| {
+                    error!("{error}");
+                })
+                .unwrap_or_default(),
+        };
+
+        if !matches!(
+            initial_status,
+            RuntimeDesiredStatus::Running
+                | RuntimeDesiredStatus::Paused
+                | RuntimeDesiredStatus::Standby,
+        ) {
+            return Err(ControllerError::InvalidInitialStatus(initial_status));
+        }
+
+        let state = WebData::new(ServerState::new(
+            PipelinePhase::Initializing,
+            md,
+            initial_status,
+            args.deployment_id,
+        ));
+
+        // Initialize the pipeline in a separate thread.  On success, this thread
+        // will create a `Controller` instance and store it in `state.controller`.
+        let storage = builder.storage().clone();
         thread::Builder::new()
             .name("pipeline-init".to_string())
-            .spawn(move || bootstrap(args, config, circuit_factory, state_clone, loginit_sender))
+            .spawn({
+                let state = state.clone();
+                move || bootstrap(builder, circuit_factory, state)
+            })
             .expect("failed to spawn pipeline initialization thread");
-        let _ = loginit_receiver.recv();
+
+        // Spawn a task to update the stored desired state when it changes.
+        if let Some(storage) = storage {
+            let state = state.clone();
+            runtime.spawn(async move {
+                let mut prev_stored_status = None;
+                loop {
+                    let stored_status = StoredStatus {
+                        desired_status: state.desired_status(),
+                        deployment_id: state.deployment_id,
+                    };
+                    if Some(stored_status) != prev_stored_status {
+                        let storage = storage.clone();
+                        spawn_blocking(move || stored_status.write(&*storage));
+                    }
+                    prev_stored_status = Some(stored_status);
+                    state.desired_status_change.notified().await;
+                }
+            });
+        }
+
+        Ok(state)
     }
+
+    let system_runner = rt::System::new();
+
+    let state = start_controller(&args, &config, circuit_factory, system_runner.runtime())
+        .unwrap_or_else(|error| {
+            error!("Initialization failed: {error}");
+            WebData::new(ServerState::for_error(error, args.deployment_id))
+        });
 
     let workers = if let Some(http_workers) = config.global.http_workers {
         http_workers as usize
@@ -406,41 +634,43 @@ pub fn run_server(
         config.global.workers as usize
     };
 
-    let server = HttpServer::new(move || {
-        let state = state.clone();
-        build_app(
-            App::new().wrap_fn(|req, srv| {
-                trace!("Request: {} {}", req.method(), req.path());
-                srv.call(req).map(|res| {
-                    match &res {
-                        Ok(response) => {
-                            let level = if response.status().is_success()
-                                || response.status().is_redirection()
-                                || response.status().is_informational()
-                            {
-                                Level::DEBUG
-                            } else {
-                                Level::ERROR
-                            };
-                            let req = response.request();
-                            dyn_event!(
-                                level,
-                                "Response: {} (size: {:?}) to request {} {}",
-                                response.status(),
-                                response.response().body().size(),
-                                req.method(),
-                                req.path()
-                            );
+    let server = HttpServer::new({
+        move || {
+            let state = state.clone();
+            build_app(
+                App::new().wrap_fn(|req, srv| {
+                    trace!("Request: {} {}", req.method(), req.path());
+                    srv.call(req).map(|res| {
+                        match &res {
+                            Ok(response) => {
+                                let level = if response.status().is_success()
+                                    || response.status().is_redirection()
+                                    || response.status().is_informational()
+                                {
+                                    Level::DEBUG
+                                } else {
+                                    Level::ERROR
+                                };
+                                let req = response.request();
+                                dyn_event!(
+                                    level,
+                                    "Response: {} (size: {:?}) to request {} {}",
+                                    response.status(),
+                                    response.response().body().size(),
+                                    req.method(),
+                                    req.path()
+                                );
+                            }
+                            Err(e) => {
+                                error!("Service response error: {e}");
+                            }
                         }
-                        Err(e) => {
-                            error!("Service response error: {e}");
-                        }
-                    }
-                    res
-                })
-            }),
-            state,
-        )
+                        res
+                    })
+                }),
+                state,
+            )
+        }
     })
     // The next two settings work around the issue that std::thread::available_parallelism()
     // which is what actix uses internally can't determine the number of threads available
@@ -501,14 +731,7 @@ pub fn run_server(
             .run()
     };
 
-    rt::System::new().block_on(async {
-        // Spawn a task that will shut down the server on `/kill`.
-        let server_handle = server.handle();
-        spawn(async move {
-            terminate_receiver.recv().await;
-            server_handle.stop(true).await
-        });
-
+    system_runner.block_on(async {
         info!(
             "Started {} server on port {port}",
             if args.enable_https { "HTTPS" } else { "HTTP" }
@@ -554,17 +777,15 @@ fn parse_config(config_file: &str) -> Result<PipelineConfig, ControllerError> {
 
 // Initialization thread function.
 fn bootstrap(
-    args: ServerArgs,
-    config: PipelineConfig,
+    builder: ControllerBuilder,
     circuit_factory: CircuitFactoryFunc,
     state: WebData<ServerState>,
-    loginit_sender: StdSender<()>,
 ) {
-    do_bootstrap(args, config, circuit_factory, &state, loginit_sender).unwrap_or_else(|e| {
+    do_bootstrap(builder, circuit_factory, &state).unwrap_or_else(|e| {
         // Store error in `state.phase`, so that it can be
         // reported by the server.
         error!("Error initializing the pipeline: {e}.");
-        *state.phase.write().unwrap() = PipelinePhase::InitializationError(Arc::new(e));
+        state.set_phase(PipelinePhase::InitializationError(Arc::new(e)));
     })
 }
 
@@ -586,24 +807,10 @@ fn error_handler(state: &Weak<ServerState>, error: Arc<ControllerError>) {
     };
 
     if is_fatal_controller_error(&error) {
-        // Prepare to handle poisoned locks in the following code.
-
-        if let Ok(mut controller) = state.controller.write() {
-            if let Some(controller) = controller.take() {
-                if let Ok(mut phase) = state.phase.write() {
-                    *phase = PipelinePhase::Failed(error);
-                }
-
-                controller.initiate_stop();
-            }
+        if let Ok(controller) = state.take_controller() {
+            state.set_phase(PipelinePhase::Failed(error));
+            controller.initiate_stop();
         }
-
-        /*if let Some(sender) = &state.terminate_sender {
-            let _ = sender.try_send(());
-        }
-        if let Err(e) = std::fs::remove_file(SERVER_PORT_FILE) {
-            warn!("Failed to remove server port file: {e}");
-        }*/
     }
 }
 
@@ -661,75 +868,40 @@ fn get_env_filter(config: &PipelineConfig) -> EnvFilter {
 }
 
 fn do_bootstrap(
-    args: ServerArgs,
-    config: PipelineConfig,
+    builder: ControllerBuilder,
     circuit_factory: CircuitFactoryFunc,
     state: &WebData<ServerState>,
-    loginit_sender: StdSender<()>,
 ) -> Result<(), ControllerError> {
-    #[cfg(not(feature = "feldera-enterprise"))]
-    if config.global.fault_tolerance.is_enabled() {
-        return Err(ControllerError::EnterpriseFeature("fault tolerance"));
-    }
-
-    // Initializes the logger by setting its filter and template.
-    let pipeline_name = format!("[{}]", config.name.clone().unwrap_or_default()).cyan();
-    tracing_subscriber::registry()
-        .with(tracing_subscriber::fmt::layer().event_format(PipelineFormat::new(pipeline_name)))
-        .with(get_env_filter(&config))
-        .try_init()
-        .unwrap_or_else(|e| {
-            // This happens in unit tests when another test has initialized logging.
-            eprintln!("Failed to initialize logging: {e}.")
-        });
-    let _ = loginit_sender.send(());
-
-    if config.global.tracing {
-        use std::net::{SocketAddr, ToSocketAddrs};
-        let socket_addrs: Vec<SocketAddr> = config
-            .global
-            .tracing_endpoint_jaeger
-            .to_socket_addrs()
-            .expect("Valid `tracing_endpoint_jaeger` value (e.g., localhost:6831)")
-            .collect();
-        let reporter = minitrace_jaeger::JaegerReporter::new(
-            *socket_addrs
-                .first()
-                .expect("Valid `tracing_endpoint_jaeger` value (e.g., localhost:6831)"),
-            config
-                .name
-                .clone()
-                .unwrap_or("unknown pipeline".to_string()),
-        )
-        .unwrap();
-        minitrace::set_reporter(reporter, Config::default());
-    }
-
-    *state.metadata.write().unwrap() = match &args.metadata_file {
-        None => String::new(),
-        Some(metadata_file) => {
-            let meta = std::fs::read(metadata_file).map_err(|e| {
-                ControllerError::io_error(format!("reading metadata file '{}'", metadata_file), e)
-            })?;
-            String::from_utf8(meta).map_err(|e| {
-                ControllerError::pipeline_config_parse_error(&format!(
-                    "invalid UTF8 string in the metadata file '{}' ({e})",
-                    metadata_file
-                ))
-            })?
-        }
-    };
-
     let weak_state_ref = Arc::downgrade(state);
-    let controller = Controller::with_config(
+    match state.desired_status() {
+        RuntimeDesiredStatus::Unavailable => unreachable!(),
+        RuntimeDesiredStatus::Running
+        | RuntimeDesiredStatus::Paused
+        | RuntimeDesiredStatus::Suspended => (),
+        RuntimeDesiredStatus::Standby => {
+            builder.continuous_pull(|| state.desired_status() != RuntimeDesiredStatus::Standby)?;
+
+            let mut desired_status = state.desired_status.lock().unwrap();
+            if *desired_status == RuntimeDesiredStatus::Standby {
+                warn!("Exited standby mode without specifying a new desired state, defaulting to paused");
+                *desired_status = RuntimeDesiredStatus::Paused;
+                state.desired_status_change.notify_waiters();
+            }
+        }
+    }
+    let controller = builder.build(
         circuit_factory,
-        &config,
-        weak_state_ref.clone(),
         Box::new(move |e| error_handler(&weak_state_ref, e))
             as Box<dyn Fn(Arc<ControllerError>) + Send + Sync>,
     )?;
-
-    *state.controller.write().unwrap() = Some(controller);
+    let desired_status = state.desired_status.lock().unwrap();
+    match *desired_status {
+        RuntimeDesiredStatus::Unavailable | RuntimeDesiredStatus::Standby => unreachable!(),
+        RuntimeDesiredStatus::Paused | RuntimeDesiredStatus::Suspended => controller.pause(),
+        RuntimeDesiredStatus::Running => controller.start(),
+    };
+    state.set_controller(controller);
+    drop(desired_status);
 
     info!("Pipeline initialization complete");
     if let Some(runtime_override) = option_env!("FELDERA_RUNTIME_OVERRIDE") {
@@ -738,7 +910,7 @@ fn do_bootstrap(
             runtime_override
         );
     }
-    *state.phase.write().unwrap() = PipelinePhase::InitializationComplete;
+    state.set_phase(PipelinePhase::InitializationComplete);
 
     Ok(())
 }
@@ -758,7 +930,6 @@ where
         .service(start)
         .service(pause)
         .service(activate)
-        .service(shutdown)
         .service(status)
         .service(suspendable)
         .service(start_transaction)
@@ -786,71 +957,215 @@ where
         .service(output_endpoint_status)
 }
 
-#[get("/start")]
-async fn start(state: WebData<ServerState>) -> impl Responder {
-    match &*state.controller.read().unwrap() {
-        Some(controller) => {
-            controller.start();
-            Ok(HttpResponse::Ok().json("The pipeline is running"))
+/// Implements `/start`, `/pause`, `/activate`:
+///
+/// - `action` is the desired action, used in error messages.
+///
+/// - `new_status` must be [RuntimeDesiredStatus::Paused] or
+///   [RuntimeDesiredStatus::Running], as appropriate.
+///
+/// - `may_activate` is true to allow transitioning out of
+///   [RuntimeDesiredStatus::Standby].
+async fn state_transition(
+    state: WebData<ServerState>,
+    action: &'static str,
+    new_status: RuntimeDesiredStatus,
+    may_activate: bool,
+) -> Result<HttpResponse, PipelineError> {
+    let mut desired_status = state.desired_status.lock().unwrap();
+    let old_status = *desired_status;
+    if (may_activate || old_status != RuntimeDesiredStatus::Standby)
+        && desired_status.may_transition_to(new_status)
+    {
+        if new_status != old_status {
+            info!("{action}: Transitioning from {old_status:?} to {new_status:?}");
+            *desired_status = new_status;
+            state.desired_status_change.notify_waiters();
+            match state.controller() {
+                Ok(controller) => {
+                    match (old_status, new_status) {
+                        (RuntimeDesiredStatus::Standby, _) => {
+                            // `do_bootstrap` will set the new status.
+                        }
+                        (_, RuntimeDesiredStatus::Paused) => controller.pause(),
+                        (_, RuntimeDesiredStatus::Running) => controller.start(),
+                        _ => unreachable!(),
+                    }
+                }
+                Err(PipelineError::Initializing) => (),
+                Err(error) => return Err(error),
+            }
         }
-        None => Err(missing_controller_error(&state)),
+        Ok(HttpResponse::Accepted().json(format!(
+            "Pipeline transitioning from {old_status:?} to {new_status:?}"
+        )))
+    } else {
+        Err(PipelineError::InvalidTransition(action, *desired_status))
     }
+}
+
+#[get("/start")]
+async fn start(state: WebData<ServerState>) -> Result<HttpResponse, PipelineError> {
+    state_transition(state, "start", RuntimeDesiredStatus::Running, false).await
 }
 
 #[get("/pause")]
-async fn pause(state: WebData<ServerState>) -> impl Responder {
-    match &*state.controller.read().unwrap() {
-        Some(controller) => {
-            controller.pause();
-            Ok(HttpResponse::Ok().json("Pipeline paused"))
-        }
-        None => Err(missing_controller_error(&state)),
-    }
+async fn pause(state: WebData<ServerState>) -> Result<HttpResponse, PipelineError> {
+    state_transition(state, "pause", RuntimeDesiredStatus::Paused, false).await
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct ActivateArgs {
+    #[serde(default)]
+    initial: RuntimeDesiredStatus,
 }
 
 #[post("/activate")]
-async fn activate(state: WebData<ServerState>) -> impl Responder {
-    state
-        .activated
-        .store(true, std::sync::atomic::Ordering::Relaxed);
-    HttpResponse::Accepted()
+async fn activate(
+    state: WebData<ServerState>,
+    args: Query<ActivateArgs>,
+) -> Result<HttpResponse, PipelineError> {
+    match args.initial {
+        RuntimeDesiredStatus::Running | RuntimeDesiredStatus::Paused => {
+            state_transition(state, "activate", args.initial, true).await
+        }
+        _ => Err(PipelineError::InvalidActivateStatus(args.initial)),
+    }
 }
 
-/// Retrieve pipeline status.
+/// Retrieve pipeline runtime status.
 ///
-/// The status is either `Paused`, `Running` or `Terminated`.
+/// This endpoint is used by the pipeline runner to observe the pipeline in order to determine
+/// whether (1) it is healthy, and (2) what it is doing. The endpoint either returns:
+///
+/// - A `200 OK` with as body [ExtendedRuntimeStatus], containing the current pipeline runtime
+///   status and details regarding it. The runner will store this as the observation.
+/// - A `503 Service Unavailable` with as body `ErrorResponse`. This indicates a lock cannot be
+///   acquired in order to read the runtime status. The runner will observe it as unavailable.
+/// - Any other status code with as body `ErrorResponse`. The runner will forcefully stop the
+///   pipeline.
+///
+/// This endpoint is designed to be non-blocking.
 #[get("/status")]
-async fn status(state: WebData<ServerState>) -> impl Responder {
-    match &*state.controller.read().unwrap() {
-        Some(controller) => {
-            let status = controller.status().global_metrics.get_state();
-            Ok(HttpResponse::Ok().json(status))
+async fn status(
+    state: WebData<ServerState>,
+) -> Result<ExtendedRuntimeStatus, ExtendedRuntimeStatusError> {
+    let runtime_desired_status = state.desired_status();
+    match state.controller() {
+        Ok(controller) => {
+            return match controller.status().global_metrics.get_state() {
+                PipelineState::Paused => Ok(ExtendedRuntimeStatus {
+                    runtime_status: RuntimeStatus::Paused,
+                    runtime_status_details: "".to_string(),
+                    runtime_desired_status,
+                }),
+                PipelineState::Running => Ok(ExtendedRuntimeStatus {
+                    runtime_status: RuntimeStatus::Running,
+                    runtime_status_details: "".to_string(),
+                    runtime_desired_status,
+                }),
+                PipelineState::Terminated => Err(ExtendedRuntimeStatusError {
+                    status_code: StatusCode::INTERNAL_SERVER_ERROR,
+                    error: feldera_types::error::ErrorResponse {
+                        message: "Pipeline has been terminated.".to_string(),
+                        error_code: Cow::from("PipelineTerminated"),
+                        details: json!({}),
+                    },
+                }),
+            }
         }
-        None => match *state.phase.read().unwrap() {
-            PipelinePhase::Initializing => Ok(HttpResponse::Ok().json("Initializing")),
-            _ => Err(missing_controller_error(&state)),
-        },
+        Err(_) => {
+            // Controller isn't set.
+        }
+    };
+
+    // The controller is not set: acquire the phase read lock
+    match state.phase() {
+        PipelinePhase::Initializing => Ok(ExtendedRuntimeStatus {
+            runtime_status: RuntimeStatus::Initializing,
+            runtime_status_details: "".to_string(),
+            runtime_desired_status,
+        }),
+        PipelinePhase::InitializationError(e) => {
+            let e = PipelineError::InitializationError { error: e.clone() };
+            let status_code = e.status_code();
+            let e = ErrorResponse::from_error(&e);
+            Err(ExtendedRuntimeStatusError {
+                status_code,
+                error: feldera_types::error::ErrorResponse {
+                    message: e.message,
+                    error_code: e.error_code,
+                    details: e.details,
+                },
+            })
+        }
+        PipelinePhase::InitializationComplete => Err(ExtendedRuntimeStatusError {
+            status_code: StatusCode::INTERNAL_SERVER_ERROR,
+            error: feldera_types::error::ErrorResponse {
+                message: "Pipeline initialization was completed but the controller was not set."
+                    .to_string(),
+                error_code: Cow::from("ControllerMissingAfterInitialization"),
+                details: json!({}),
+            },
+        }),
+        PipelinePhase::Failed(e) => {
+            let e = e.clone();
+            if matches!(*e, ControllerError::RestoreInProgress) {
+                Ok(ExtendedRuntimeStatus {
+                    runtime_status: RuntimeStatus::Replaying,
+                    runtime_status_details: "".to_string(),
+                    runtime_desired_status,
+                })
+            } else if matches!(*e, ControllerError::BootstrapInProgress) {
+                Ok(ExtendedRuntimeStatus {
+                    runtime_status: RuntimeStatus::Bootstrapping,
+                    runtime_status_details: "".to_string(),
+                    runtime_desired_status,
+                })
+            } else {
+                let mut status_code = e.status_code();
+                if status_code == StatusCode::SERVICE_UNAVAILABLE {
+                    error!("Endpoint /status: unexpected status code {status_code} has been converted into {} for error {e}", StatusCode::SERVICE_UNAVAILABLE);
+                    status_code = StatusCode::INTERNAL_SERVER_ERROR;
+                }
+                let e = PipelineError::ControllerError { error: e };
+                let e = ErrorResponse::from_error(&e);
+                Err(ExtendedRuntimeStatusError {
+                    status_code,
+                    error: feldera_types::error::ErrorResponse {
+                        message: e.message,
+                        error_code: e.error_code,
+                        details: e.details,
+                    },
+                })
+            }
+        }
+        PipelinePhase::Suspended => Ok(ExtendedRuntimeStatus {
+            runtime_status: RuntimeStatus::Suspended,
+            runtime_status_details: "".to_string(),
+            runtime_desired_status,
+        }),
     }
 }
 
 /// Retrieve whether a pipeline is suspendable or not.
 #[get("/suspendable")]
-async fn suspendable(state: WebData<ServerState>) -> impl Responder {
-    match &*state.controller.read().unwrap() {
-        Some(controller) => {
-            let suspend_error = controller.status().suspend_error.lock().unwrap().clone();
-
-            let reasons = match suspend_error {
-                Some(SuspendError::Permanent(errors)) => Some(errors.clone()),
-                _ => None,
-            };
-            Ok(HttpResponse::Ok().json(SuspendableResponse::new(
-                reasons.is_none(),
-                reasons.unwrap_or_default(),
-            )))
-        }
-        None => Err(missing_controller_error(&state)),
-    }
+async fn suspendable(state: WebData<ServerState>) -> Result<HttpResponse, PipelineError> {
+    let suspend_error = state
+        .controller()?
+        .status()
+        .suspend_error
+        .lock()
+        .unwrap()
+        .clone();
+    let reasons = match suspend_error {
+        Some(SuspendError::Permanent(errors)) => Some(errors.clone()),
+        _ => None,
+    };
+    Ok(HttpResponse::Ok().json(SuspendableResponse::new(
+        reasons.is_none(),
+        reasons.unwrap_or_default(),
+    )))
 }
 
 fn request_is_websocket(request: &HttpRequest) -> bool {
@@ -873,29 +1188,17 @@ async fn query(
     request: HttpRequest,
     stream: web::Payload,
 ) -> impl Responder {
-    let session_ctxt = {
-        let controller = state.controller.read().unwrap();
-        controller.as_ref().map(|c| c.session_context())
-    };
-
-    match session_ctxt.transpose()? {
-        Some(session) => {
-            if !request_is_websocket(&request) {
-                stream_adhoc_result(args.into_inner(), session).await
-            } else {
-                adhoc_websocket(session, request, stream).await
-            }
-        }
-        None => Err(missing_controller_error(&state)),
+    let session_ctxt = state.controller()?.session_context()?;
+    if !request_is_websocket(&request) {
+        stream_adhoc_result(args.into_inner(), session_ctxt).await
+    } else {
+        adhoc_websocket(session_ctxt, request, stream).await
     }
 }
 
 #[get("/stats")]
-async fn stats(state: WebData<ServerState>) -> impl Responder {
-    match &*state.controller.read().unwrap() {
-        Some(controller) => Ok(HttpResponse::Ok().json(controller.status())),
-        None => Err(missing_controller_error(&state)),
-    }
+async fn stats(state: WebData<ServerState>) -> Result<HttpResponse, PipelineError> {
+    Ok(HttpResponse::Ok().json(state.controller()?.status()))
 }
 
 /// Retrieve circuit metrics.
@@ -903,7 +1206,7 @@ async fn stats(state: WebData<ServerState>) -> impl Responder {
 async fn metrics_handler(
     state: WebData<ServerState>,
     query_params: web::Query<MetricsParameters>,
-) -> impl Responder {
+) -> Result<HttpResponse, PipelineError> {
     fn serialize_metrics<F>(controller: &Controller) -> String
     where
         F: MetricsFormatter,
@@ -923,39 +1226,33 @@ async fn metrics_handler(
         metrics_writer.into_output()
     }
 
-    match &*state.controller.read().unwrap() {
-        Some(controller) => match &query_params.format {
-            MetricsFormat::Prometheus => Ok(HttpResponse::Ok()
-                .content_type(mime::TEXT_PLAIN)
-                .body(serialize_metrics::<PrometheusFormatter>(controller))),
-            MetricsFormat::Json => Ok(HttpResponse::Ok()
-                .content_type(mime::APPLICATION_JSON)
-                .body(serialize_metrics::<JsonFormatter>(controller))),
-        },
-        None => Err(missing_controller_error(&state)),
+    let controller = state.controller()?;
+    match &query_params.format {
+        MetricsFormat::Prometheus => Ok(HttpResponse::Ok()
+            .content_type(mime::TEXT_PLAIN)
+            .body(serialize_metrics::<PrometheusFormatter>(&controller))),
+        MetricsFormat::Json => Ok(HttpResponse::Ok()
+            .content_type(mime::APPLICATION_JSON)
+            .body(serialize_metrics::<JsonFormatter>(&controller))),
     }
 }
 
 /// Retrieve time series for basic statistics.
 #[get("/time_series")]
-async fn time_series(state: WebData<ServerState>) -> impl Responder {
-    match &*state.controller.read().unwrap() {
-        Some(controller) => {
-            let time_series = TimeSeries {
-                now: Utc::now(),
-                samples: controller
-                    .status()
-                    .time_series
-                    .lock()
-                    .unwrap()
-                    .iter()
-                    .cloned()
-                    .collect(),
-            };
-            Ok(HttpResponse::Ok().json(time_series))
-        }
-        None => Err(missing_controller_error(&state)),
-    }
+async fn time_series(state: WebData<ServerState>) -> Result<HttpResponse, PipelineError> {
+    let time_series = TimeSeries {
+        now: Utc::now(),
+        samples: state
+            .controller()?
+            .status()
+            .time_series
+            .lock()
+            .unwrap()
+            .iter()
+            .cloned()
+            .collect(),
+    };
+    Ok(HttpResponse::Ok().json(time_series))
 }
 
 /// Stream time series for basic statistics.
@@ -964,47 +1261,43 @@ async fn time_series(state: WebData<ServerState>) -> impl Responder {
 /// new time series data points as they become available. Each line in the response
 /// is a JSON object representing a single time series data point.
 #[get("/time_series_stream")]
-async fn time_series_stream(state: WebData<ServerState>) -> impl Responder {
-    match &*state.controller.read().unwrap() {
-        Some(controller) => {
-            let controller_status = controller.status();
+async fn time_series_stream(state: WebData<ServerState>) -> Result<HttpResponse, PipelineError> {
+    let controller = state.controller()?;
+    let controller_status = controller.status();
 
-            // Get existing time series data as snapshot
-            let existing_samples: Vec<_> = controller_status
-                .time_series
-                .lock()
-                .unwrap()
-                .iter()
-                .cloned()
-                .collect();
+    // Get existing time series data as snapshot
+    let existing_samples: Vec<_> = controller_status
+        .time_series
+        .lock()
+        .unwrap()
+        .iter()
+        .cloned()
+        .collect();
 
-            // Subscribe to future updates
-            let receiver = controller_status.time_series_notifier.subscribe();
-            let stream = BroadcastStream::new(receiver);
+    // Subscribe to future updates
+    let receiver = controller_status.time_series_notifier.subscribe();
+    let stream = BroadcastStream::new(receiver);
 
-            let response_stream = async_stream::stream! {
-                // First, yield all existing samples
-                for sample in existing_samples {
-                    let line = format!("{}\n", serde_json::to_string(&sample).unwrap());
-                    yield Ok::<_, actix_web::Error>(web::Bytes::from(line));
-                }
-
-                // Then yield new samples as they arrive
-                let mut stream = stream;
-                while let Some(result) = stream.next().await {
-                    if let Ok(sample) = result {
-                        let line = format!("{}\n", serde_json::to_string(&sample).unwrap());
-                        yield Ok::<_, actix_web::Error>(web::Bytes::from(line));
-                    }
-                }
-            };
-
-            Ok(HttpResponse::Ok()
-                .content_type("application/x-ndjson")
-                .streaming(response_stream))
+    let response_stream = async_stream::stream! {
+        // First, yield all existing samples
+        for sample in existing_samples {
+            let line = format!("{}\n", serde_json::to_string(&sample).unwrap());
+            yield Ok::<_, actix_web::Error>(web::Bytes::from(line));
         }
-        None => Err(missing_controller_error(&state)),
-    }
+
+        // Then yield new samples as they arrive
+        let mut stream = stream;
+        while let Some(result) = stream.next().await {
+            if let Ok(sample) = result {
+                let line = format!("{}\n", serde_json::to_string(&sample).unwrap());
+                yield Ok::<_, actix_web::Error>(web::Bytes::from(line));
+            }
+        }
+    };
+
+    Ok(HttpResponse::Ok()
+        .content_type("application/x-ndjson")
+        .streaming(response_stream))
 }
 
 /// Returns static metadata associated with the circuit.  Can contain any
@@ -1014,7 +1307,7 @@ async fn time_series_stream(state: WebData<ServerState>) -> impl Responder {
 async fn metadata(state: WebData<ServerState>) -> impl Responder {
     HttpResponse::Ok()
         .content_type(mime::APPLICATION_JSON)
-        .body(state.metadata.read().unwrap().clone())
+        .body(state.metadata.clone())
 }
 
 #[get("/heap_profile")]
@@ -1045,67 +1338,42 @@ async fn heap_profile() -> impl Responder {
 }
 
 #[get("/dump_profile")]
-async fn dump_profile(state: WebData<ServerState>) -> impl Responder {
-    let (sender, receiver) = oneshot::channel();
-    match &*state.controller.read().unwrap() {
-        None => return Err(missing_controller_error(&state)),
-        Some(controller) => {
-            controller.start_graph_profile(Box::new(move |profile| {
-                if sender.send(profile).is_err() {
-                    error!("`/dump_profile` result could not be sent");
-                }
-            }));
-        }
-    };
-    let profile = receiver.await.unwrap()?;
-
+async fn dump_profile(state: WebData<ServerState>) -> Result<HttpResponse, PipelineError> {
     Ok(HttpResponse::Ok()
         .insert_header(header::ContentType("application/zip".parse().unwrap()))
         .insert_header(header::ContentDisposition::attachment("profile.zip"))
-        .body(profile.as_zip()))
+        .body(state.controller()?.async_graph_profile().await?.as_zip()))
 }
 
 /// Dump the low-level IR of the circuit.
 #[get("/lir")]
-async fn lir(state: WebData<ServerState>) -> impl Responder {
-    let lir = match &*state.controller.read().unwrap() {
-        None => return Err(missing_controller_error(&state)),
-        Some(controller) => controller.lir().clone(),
-    };
-
+async fn lir(state: WebData<ServerState>) -> Result<HttpResponse, PipelineError> {
     Ok(HttpResponse::Ok()
         .insert_header(header::ContentType("application/zip".parse().unwrap()))
         .insert_header(header::ContentDisposition::attachment("lir.zip"))
-        .body(lir.as_zip()))
+        .body(state.controller()?.lir().as_zip()))
 }
 
 #[post("/checkpoint/sync")]
-async fn checkpoint_sync(state: WebData<ServerState>) -> Result<impl Responder, PipelineError> {
-    let last_checkpoint = match &*state.controller.read().unwrap() {
-        None => return Err(missing_controller_error(&state)),
-        Some(controller) => {
-            let Some(last_checkpoint) = ({
-                let state = state.checkpoint_state.clone();
-                let chk = state.lock().unwrap().last_checkpoint;
-                chk
-            }) else {
-                return Ok(HttpResponse::BadRequest().json(ErrorResponse {
+async fn checkpoint_sync(state: WebData<ServerState>) -> Result<HttpResponse, PipelineError> {
+    let controller = state.controller()?;
+
+    let Some(last_checkpoint) = state.checkpoint_state.lock().unwrap().last_checkpoint else {
+        return Ok(HttpResponse::BadRequest().json(ErrorResponse {
                     message: "no checkpoints found; make a POST request to `/checkpoint` to make a new checkpoint".to_string(),
                     error_code: "400".into(),
                     details: serde_json::Value::Null,
                 }));
-            };
-
-            let state = state.sync_checkpoint_state.clone();
-            controller.start_sync_checkpoint(
-                last_checkpoint,
-                Box::new(move |result| {
-                    state.lock().unwrap().completed(last_checkpoint, result);
-                }),
-            );
-            last_checkpoint
-        }
     };
+
+    spawn(async move {
+        let result = controller.async_sync_checkpoint(last_checkpoint).await;
+        state
+            .sync_checkpoint_state
+            .lock()
+            .unwrap()
+            .completed(last_checkpoint, result);
+    });
 
     Ok(HttpResponse::Accepted().json(CheckpointSyncResponse::new(last_checkpoint)))
 }
@@ -1113,21 +1381,17 @@ async fn checkpoint_sync(state: WebData<ServerState>) -> Result<impl Responder, 
 /// Initiates a checkpoint and returns its sequence number.  The caller may poll
 /// `/checkpoint_status` to determine when the checkpoint completes.
 #[post("/checkpoint")]
-async fn checkpoint(state: WebData<ServerState>) -> impl Responder {
-    let seq = match &*state.controller.read().unwrap() {
-        None => return Err(missing_controller_error(&state)),
-        Some(controller) => {
-            let state = state.checkpoint_state.clone();
-            let seq = state.lock().unwrap().next_seq();
-            controller.start_checkpoint(Box::new(move |result| {
-                state
-                    .lock()
-                    .unwrap()
-                    .completed(seq, result.map(|c| c.circuit));
-            }));
-            seq
-        }
-    };
+async fn checkpoint(state: WebData<ServerState>) -> Result<HttpResponse, PipelineError> {
+    let controller = state.controller()?;
+    let seq = state.checkpoint_state.lock().unwrap().next_seq();
+    spawn(async move {
+        let result = controller.async_checkpoint().await;
+        state
+            .checkpoint_state
+            .lock()
+            .unwrap()
+            .completed(seq, result.map(|c| c.circuit));
+    });
     Ok(HttpResponse::Ok().json(CheckpointResponse::new(seq)))
 }
 
@@ -1141,112 +1405,68 @@ async fn sync_checkpoint_status(state: WebData<ServerState>) -> impl Responder {
     HttpResponse::Ok().json(state.sync_checkpoint_state.lock().unwrap().status.clone())
 }
 
-/// Suspends the pipeline (but only a later call to `/shutdown` will shut down
-/// the webserver or terminate the process).
+/// Suspends the pipeline and terminate the process.
 ///
 /// This implementation is designed to be idempotent, so that any number of
 /// suspend requests act like just one.
 #[post("/suspend")]
 async fn suspend(state: WebData<ServerState>) -> Result<impl Responder, PipelineError> {
-    fn success() -> Result<impl Responder, PipelineError> {
-        Ok(HttpResponse::Ok().json("Pipeline suspended"))
-    }
-
-    let receiver = match &*state.controller.read().unwrap() {
-        Some(controller) => {
-            let (sender, receiver) = oneshot::channel();
-            let phase = state.phase.clone();
-            controller.start_suspend(Box::new(move |suspend| {
-                if suspend.is_ok() {
-                    *phase.write().unwrap() = PipelinePhase::Suspended;
-                }
-                if sender.send(suspend).is_err() {
-                    error!("`/suspend` result could not be sent");
-                }
-            }));
-            receiver
+    let mut desired_status = state.desired_status.lock().unwrap();
+    match *desired_status {
+        RuntimeDesiredStatus::Unavailable => unreachable!(),
+        RuntimeDesiredStatus::Standby => {
+            return Err(PipelineError::InvalidTransition("suspend", *desired_status))
         }
-        None => {
-            match missing_controller_error(&state) {
-                PipelineError::Suspended => {
-                    // Ensure idempotence.
-                    return success();
+        RuntimeDesiredStatus::Running | RuntimeDesiredStatus::Paused => {
+            info!("suspend: Transitioning from {desired_status:?} to Suspended");
+            *desired_status = RuntimeDesiredStatus::Suspended;
+            state.desired_status_change.notify_waiters();
+            drop(desired_status);
+
+            async fn suspend(state: WebData<ServerState>) {
+                loop {
+                    if let Ok(controller) = state.controller() {
+                        if let Err(error) = controller.async_suspend().await {
+                            error!("controller suspend failed ({error})");
+                        }
+                        break;
+                    }
+
+                    match state.phase() {
+                        PipelinePhase::Initializing | PipelinePhase::InitializationComplete => (),
+                        PipelinePhase::InitializationError(_)
+                        | PipelinePhase::Failed(_)
+                        | PipelinePhase::Suspended => break,
+                    };
+                    tokio::time::sleep(Duration::from_millis(50)).await;
                 }
-                other => {
-                    return Err(other);
+                state.set_phase(PipelinePhase::Suspended);
+                if let Ok(controller) = state.take_controller() {
+                    if let Err(error) = controller.async_stop().await {
+                        error!("stopping controller failed ({error})");
+                    }
                 }
             }
+
+            // This can only be spawned once, because we only transition to
+            // [RuntimeDesiredStatus::Suspended] once and we never transition
+            // out of it.
+            tokio::spawn(async move { suspend(state).await });
         }
+        RuntimeDesiredStatus::Suspended => (),
     };
-
-    let result = receiver.await.unwrap();
-
-    // If the pipeline is already suspended, ignore the error. The controller
-    // can return a ControllerExit error when flushing any remaining suspend requests after
-    // the first successful suspend operation.
-    if !matches!(*state.phase.read().unwrap(), PipelinePhase::Suspended) {
-        result?;
-    }
-
-    let Some(controller) = state.controller.write().unwrap().take() else {
-        match missing_controller_error(&state) {
-            PipelineError::Suspended => {
-                // Ensure idempotence.
-                return success();
-            }
-            other => return Err(other),
-        }
-    };
-
-    controller.stop()?;
-    success()
-}
-
-#[get("/shutdown")]
-async fn shutdown(state: WebData<ServerState>) -> impl Responder {
-    do_shutdown(state).await
+    Ok(HttpResponse::Accepted().json("Pipeline is suspending"))
 }
 
 #[post("/start_transaction")]
 async fn start_transaction(state: WebData<ServerState>) -> Result<impl Responder, PipelineError> {
-    match &*state.controller.read().unwrap() {
-        Some(controller) => {
-            let response = controller.start_transaction()?;
-            Ok(HttpResponse::Ok().json(response))
-        }
-        None => Err(missing_controller_error(&state)),
-    }
+    Ok(HttpResponse::Ok().json(state.controller()?.start_transaction()?))
 }
 
 #[post("/commit_transaction")]
-async fn commit_transaction(state: WebData<ServerState>) -> impl Responder {
-    match &*state.controller.read().unwrap() {
-        Some(controller) => {
-            controller.start_commit_transaction()?;
-            Ok(HttpResponse::Ok().json("Transaction commit initiated"))
-        }
-        None => Err(missing_controller_error(&state)),
-    }
-}
-
-async fn do_shutdown(state: WebData<ServerState>) -> Result<impl Responder, PipelineError> {
-    let retval = if let Some(controller) = state.controller.write().unwrap().take() {
-        controller.stop()?;
-        Ok(HttpResponse::Ok().json("Pipeline terminated"))
-    } else if let PipelinePhase::Initializing = &*state.phase.read().unwrap() {
-        return Err(PipelineError::Initializing);
-    } else {
-        Ok(HttpResponse::Ok().json("Pipeline already terminated"))
-    };
-
-    if let Some(sender) = &state.terminate_sender {
-        let _ = sender.send(()).await;
-    }
-    if let Err(e) = tokio::fs::remove_file(SERVER_PORT_FILE).await {
-        warn!("Failed to remove server port file: {e}");
-    }
-
-    retval
+async fn commit_transaction(state: WebData<ServerState>) -> Result<impl Responder, PipelineError> {
+    state.controller()?.start_commit_transaction()?;
+    Ok(HttpResponse::Ok().json("Transaction commit initiated"))
 }
 
 #[derive(Debug, Deserialize)]
@@ -1287,30 +1507,22 @@ async fn create_http_input_endpoint(
     };
 
     // Connect endpoint.
-    let _endpoint_id = match &*state.controller.read().unwrap() {
-        Some(controller) => {
-            if controller.register_api_connection().is_err() {
-                return Err(PipelineError::ApiConnectionLimit);
-            }
+    let controller = state.controller()?;
+    if controller.register_api_connection().is_err() {
+        return Err(PipelineError::ApiConnectionLimit);
+    }
 
-            match controller.add_input_endpoint(
-                &endpoint_name,
-                config,
-                Box::new(endpoint.clone()) as Box<dyn TransportInputEndpoint>,
-                None,
-            ) {
-                Ok(endpoint_id) => endpoint_id,
-                Err(e) => {
-                    controller.unregister_api_connection();
-                    debug!("Failed to create API endpoint: '{e}'");
-                    Err(e)?
-                }
-            }
-        }
-        None => {
-            return Err(missing_controller_error(state));
-        }
-    };
+    controller
+        .add_input_endpoint(
+            &endpoint_name,
+            config,
+            Box::new(endpoint.clone()) as Box<dyn TransportInputEndpoint>,
+            None,
+        )
+        .inspect_err(|e| {
+            controller.unregister_api_connection();
+            debug!("Failed to create API endpoint: '{e}'");
+        })?;
 
     Ok(endpoint)
 }
@@ -1321,7 +1533,7 @@ async fn input_endpoint(
     req: HttpRequest,
     args: Query<IngressArgs>,
     payload: Payload,
-) -> impl Responder {
+) -> Result<HttpResponse, PipelineError> {
     thread_local! {
         static TABLE_ENDPOINTS: RefCell<HashMap<(String, FormatConfig), HttpInputEndpoint, BuildHasherDefault<DefaultHasher>>> = const {
             RefCell::new(HashMap::with_hasher(BuildHasherDefault::new()))
@@ -1371,13 +1583,11 @@ async fn input_endpoint(
         .instrument(info_span!("http_input"))
         .await?;
 
-    match &*state.controller.read().unwrap() {
-        None => Err(missing_controller_error(&state)),
-        Some(controller) => {
-            let token = controller.completion_token(endpoint.name())?.encode();
-            Ok(HttpResponse::Ok().json(CompletionTokenResponse::new(token)))
-        }
-    }
+    let token = state
+        .controller()?
+        .completion_token(endpoint.name())?
+        .encode();
+    Ok(HttpResponse::Ok().json(CompletionTokenResponse::new(token)))
 }
 
 /// Create an instance of `FormatConfig` from format name and
@@ -1448,10 +1658,8 @@ async fn output_endpoint(
     state: WebData<ServerState>,
     req: HttpRequest,
     args: Query<EgressArgs>,
-) -> impl Responder {
+) -> Result<HttpResponse, PipelineError> {
     debug!("/egress request:{req:?}");
-
-    let state = state.into_inner();
 
     let table_name = match req.match_info().get("table_name") {
         None => {
@@ -1491,55 +1699,42 @@ async fn output_endpoint(
     };
 
     // Connect endpoint.
-    let response = match &*state.controller.read().unwrap() {
-        Some(controller) => {
-            if controller.register_api_connection().is_err() {
-                return Err(PipelineError::ApiConnectionLimit);
+    let controller = state.controller()?;
+    if controller.register_api_connection().is_err() {
+        return Err(PipelineError::ApiConnectionLimit);
+    }
+
+    let endpoint_id = controller
+        .add_output_endpoint(
+            &endpoint_name,
+            &config,
+            Box::new(endpoint.clone()) as Box<dyn OutputEndpoint>,
+            None,
+        )
+        .inspect_err(|_| {
+            controller.unregister_api_connection();
+        })?;
+
+    // We need to pass a callback to `request` to disconnect the endpoint when the
+    // request completes.  Use a downgraded reference to `state`, so
+    // this closure doesn't prevent the controller from shutting down.
+    let weak_state = Arc::downgrade(&state);
+
+    // Call endpoint to create a response with a streaming body, which will be
+    // evaluated after we return the response object to actix.
+    Ok(endpoint.request(Box::new(move || {
+        // Delete endpoint on completion/error.
+        // We don't control the lifetime of the response object after
+        // returning it to actix, so the only way to run cleanup code
+        // when the HTTP request terminates is to piggyback on the
+        // destructor.
+        if let Some(state) = weak_state.upgrade() {
+            if let Ok(controller) = state.controller() {
+                controller.disconnect_output(&endpoint_id);
+                controller.unregister_api_connection();
             }
-
-            let endpoint_id = match controller.add_output_endpoint(
-                &endpoint_name,
-                &config,
-                Box::new(endpoint.clone()) as Box<dyn OutputEndpoint>,
-                None,
-            ) {
-                Ok(endpoint_id) => endpoint_id,
-                Err(e) => {
-                    controller.unregister_api_connection();
-                    Err(e)?
-                }
-            };
-
-            // We need to pass a callback to `request` to disconnect the endpoint when the
-            // request completes.  Use a downgraded reference to `state`, so
-            // this closure doesn't prevent the controller from shutting down.
-            let weak_state = Arc::downgrade(&state);
-
-            // Call endpoint to create a response with a streaming body, which will be
-            // evaluated after we return the response object to actix.
-            endpoint.request(Box::new(move || {
-                // Delete endpoint on completion/error.
-                // We don't control the lifetime of the response object after
-                // returning it to actix, so the only way to run cleanup code
-                // when the HTTP request terminates is to piggyback on the
-                // destructor.
-                if let Some(state) = weak_state.upgrade() {
-                    // This code will be invoked from `drop`, which means that
-                    // it can run as part of a panic handler, so we need to
-                    // handle a poisoned lock without causing a nested panic.
-                    if let Ok(guard) = state.controller.read() {
-                        if let Some(controller) = guard.as_ref() {
-                            controller.disconnect_output(&endpoint_id);
-                            controller.unregister_api_connection();
-                        }
-                    }
-                }
-            }))
         }
-        None => return Err(missing_controller_error(&state)),
-    };
-
-    Ok(response)
+    })))
 }
 
 /// This service journals the paused state, but it does not wait for the journal
@@ -1548,49 +1743,26 @@ async fn output_endpoint(
 async fn pause_input_endpoint(
     state: WebData<ServerState>,
     path: web::Path<String>,
-) -> impl Responder {
-    let endpoint_name = path.into_inner();
-
-    match &*state.controller.read().unwrap() {
-        Some(controller) => controller.pause_input_endpoint(&endpoint_name)?,
-        None => {
-            return Err(missing_controller_error(&state));
-        }
-    };
-
-    Ok(HttpResponse::Ok())
+) -> Result<HttpResponse, PipelineError> {
+    state.controller()?.pause_input_endpoint(&path)?;
+    Ok(HttpResponse::Ok().into())
 }
 
 #[get("/input_endpoints/{endpoint_name}/stats")]
 async fn input_endpoint_status(
     state: WebData<ServerState>,
     path: web::Path<String>,
-) -> impl Responder {
-    let endpoint_name = path.into_inner();
-
-    match &*state.controller.read().unwrap() {
-        Some(controller) => {
-            let ep_stats = controller.input_endpoint_status(&endpoint_name)?;
-            Ok(HttpResponse::Ok().json(ep_stats))
-        }
-        None => Err(missing_controller_error(&state)),
-    }
+) -> Result<HttpResponse, PipelineError> {
+    let ep_stats = state.controller()?.input_endpoint_status(&path)?;
+    Ok(HttpResponse::Ok().json(ep_stats))
 }
 
 #[get("/output_endpoints/{endpoint_name}/stats")]
 async fn output_endpoint_status(
     state: WebData<ServerState>,
     path: web::Path<String>,
-) -> impl Responder {
-    let endpoint_name = path.into_inner();
-
-    match &*state.controller.read().unwrap() {
-        Some(controller) => {
-            let ep_stats = controller.output_endpoint_status(&endpoint_name)?;
-            Ok(HttpResponse::Ok().json(ep_stats))
-        }
-        None => Err(missing_controller_error(&state)),
-    }
+) -> Result<HttpResponse, PipelineError> {
+    Ok(HttpResponse::Ok().json(state.controller()?.output_endpoint_status(&path)?))
 }
 
 /// This service journals the paused state, but it does not wait for the journal
@@ -1599,32 +1771,20 @@ async fn output_endpoint_status(
 async fn start_input_endpoint(
     state: WebData<ServerState>,
     path: web::Path<String>,
-) -> impl Responder {
-    let endpoint_name = path.into_inner();
-
-    match &*state.controller.read().unwrap() {
-        Some(controller) => controller.start_input_endpoint(&endpoint_name)?,
-        None => {
-            return Err(missing_controller_error(&state));
-        }
-    };
-
-    Ok(HttpResponse::Ok())
+) -> Result<HttpResponse, PipelineError> {
+    state.controller()?.start_input_endpoint(&path)?;
+    Ok(HttpResponse::Ok().into())
 }
 
 /// Generate a completion token for the endpoint.
 #[get("/input_endpoints/{endpoint_name}/completion_token")]
-async fn completion_token(state: WebData<ServerState>, path: web::Path<String>) -> impl Responder {
-    let endpoint_name = path.into_inner();
-
-    match &*state.controller.read().unwrap() {
-        Some(controller) => {
-            let token = controller.completion_token(&endpoint_name)?.encode();
-            let response = CompletionTokenResponse::new(token);
-            Ok(HttpResponse::Ok().json(response))
-        }
-        None => Err(missing_controller_error(&state)),
-    }
+async fn completion_token(
+    state: WebData<ServerState>,
+    path: web::Path<String>,
+) -> Result<HttpResponse, PipelineError> {
+    Ok(HttpResponse::Ok().json(CompletionTokenResponse::new(
+        state.controller()?.completion_token(&path)?.encode(),
+    )))
 }
 
 /// Check the status of a completion token.
@@ -1632,21 +1792,42 @@ async fn completion_token(state: WebData<ServerState>, path: web::Path<String>) 
 async fn completion_status(
     state: WebData<ServerState>,
     args: Query<CompletionStatusArgs>,
-) -> impl Responder {
-    match &*state.controller.read().unwrap() {
-        Some(controller) => {
-            let token = CompletionToken::decode(&args.into_inner().token).map_err(|e| {
-                PipelineError::InvalidParam {
-                    error: format!("invalid completion token: {e}"),
-                }
-            })?;
-            if controller.completion_status(&token)? {
-                Ok(HttpResponse::Ok().json(CompletionStatusResponse::complete()))
-            } else {
-                Ok(HttpResponse::Accepted().json(CompletionStatusResponse::inprogress()))
+) -> Result<HttpResponse, PipelineError> {
+    let token = CompletionToken::decode(&args.token).map_err(|e| PipelineError::InvalidParam {
+        error: format!("invalid completion token: {e}"),
+    })?;
+    if state.controller()?.completion_status(&token)? {
+        Ok(HttpResponse::Ok().json(CompletionStatusResponse::complete()))
+    } else {
+        Ok(HttpResponse::Accepted().json(CompletionStatusResponse::inprogress()))
+    }
+}
+
+#[derive(Copy, Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+struct StoredStatus {
+    /// Desired status.
+    desired_status: RuntimeDesiredStatus,
+
+    // Deployment ID.
+    deployment_id: Uuid,
+}
+
+impl StoredStatus {
+    fn read(storage: &dyn StorageBackend) -> Option<Self> {
+        match storage.read_json::<StoredStatus>(&StoragePath::from(STATUS_FILE)) {
+            Ok(s) => Some(s),
+            Err(e) if e.kind() == ErrorKind::NotFound => None,
+            Err(e) => {
+                warn!("{STATUS_FILE}: failed to read from storage ({e})");
+                None
             }
         }
-        None => Err(missing_controller_error(&state)),
+    }
+
+    fn write(&self, storage: &dyn StorageBackend) {
+        if let Err(e) = storage.write_json(&StoragePath::from(STATUS_FILE), self) {
+            warn!("{STATUS_FILE}: failed to write to storage ({e})");
+        }
     }
 }
 
@@ -1655,8 +1836,9 @@ async fn completion_status(
 mod test_with_kafka {
     use super::{bootstrap, build_app, parse_config, ServerArgs, ServerState};
     use crate::{
-        controller::MAX_API_CONNECTIONS,
+        controller::{ControllerBuilder, MAX_API_CONNECTIONS},
         ensure_default_crypto_provider,
+        server::PipelinePhase,
         test::{
             async_wait, generate_test_batches,
             http::{TestHttpReceiver, TestHttpSender},
@@ -1669,6 +1851,7 @@ mod test_with_kafka {
     use feldera_types::completion_token::{
         CompletionStatus, CompletionStatusResponse, CompletionTokenResponse,
     };
+    use feldera_types::runtime_status::RuntimeDesiredStatus;
     use proptest::{
         strategy::{Strategy, ValueTree},
         test_runner::TestRunner,
@@ -1681,6 +1864,7 @@ mod test_with_kafka {
         time::{Duration, Instant},
     };
     use tempfile::NamedTempFile;
+    use uuid::Uuid;
 
     async fn print_stats(server: &TestServer) {
         let stats = serde_json::to_string_pretty(
@@ -1753,7 +1937,12 @@ outputs:
 
         println!("Creating HTTP server");
 
-        let state = WebData::new(ServerState::new(None));
+        let state = WebData::new(ServerState::new(
+            PipelinePhase::Initializing,
+            String::new(),
+            RuntimeDesiredStatus::Paused,
+            Uuid::new_v4(),
+        ));
         let state_clone = state.clone();
 
         let args = ServerArgs {
@@ -1765,13 +1954,15 @@ outputs:
             enable_https: false,
             https_tls_cert_path: None,
             https_tls_key_path: None,
+            initial: RuntimeDesiredStatus::Paused,
+            deployment_id: uuid::Uuid::nil(),
         };
 
         let config = parse_config(&args.config_file).unwrap();
+        let builder = ControllerBuilder::new(&config).unwrap();
         thread::spawn(move || {
             bootstrap(
-                args,
-                config,
+                builder,
                 Box::new(|workers| {
                     Ok(test_circuit::<TestStruct>(
                         workers,
@@ -1780,7 +1971,6 @@ outputs:
                     ))
                 }),
                 state_clone,
-                std::sync::mpsc::channel().0,
             )
         });
 
@@ -2006,17 +2196,6 @@ outputs:
         assert!(resp.status().is_success());
         sleep(Duration::from_millis(1000));
 
-        // Shutdown
-        println!("/shutdown");
-        let resp = server.get("/shutdown").send().await.unwrap();
-        // println!("Response: {resp:?}");
-        assert!(resp.status().is_success());
-
-        // Start after shutdown must fail.
-        println!("/start");
-        let resp = server.get("/start").send().await.unwrap();
-        assert_eq!(resp.status(), StatusCode::GONE);
-
         drop(buffer_consumer);
         drop(kafka_resources);
     }
@@ -2045,7 +2224,12 @@ outputs:
 
         println!("Creating HTTP server");
 
-        let state = WebData::new(ServerState::new(None));
+        let state = WebData::new(ServerState::new(
+            PipelinePhase::Initializing,
+            String::default(),
+            RuntimeDesiredStatus::Paused,
+            Uuid::default(),
+        ));
         let state_clone = state.clone();
 
         let args = ServerArgs {
@@ -2057,13 +2241,15 @@ outputs:
             enable_https: false,
             https_tls_cert_path: None,
             https_tls_key_path: None,
+            initial: RuntimeDesiredStatus::Paused,
+            deployment_id: Uuid::default(),
         };
 
         let config = parse_config(&args.config_file).unwrap();
+        let builder = ControllerBuilder::new(&config).unwrap();
         thread::spawn(move || {
             bootstrap(
-                args,
-                config,
+                builder,
                 Box::new(|workers| {
                     Ok(test_circuit::<TestStruct>(
                         workers,
@@ -2072,7 +2258,6 @@ outputs:
                     ))
                 }),
                 state_clone,
-                std::sync::mpsc::channel().0,
             )
         });
 
@@ -2112,11 +2297,5 @@ outputs:
         assert!(resp.status().is_success());
 
         TestHttpReceiver::wait_for_output_unordered(&mut egress_resp, &data).await;
-
-        // Shutdown
-        println!("/shutdown");
-        let resp = server.get("/shutdown").send().await.unwrap();
-        // println!("Response: {resp:?}");
-        assert!(resp.status().is_success());
     }
 }

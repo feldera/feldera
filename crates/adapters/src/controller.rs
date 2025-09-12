@@ -23,15 +23,11 @@ use crate::controller::checkpoint::{
 };
 use crate::controller::journal::Journal;
 use crate::controller::stats::{InputEndpointMetrics, OutputEndpointMetrics, TransactionStatus};
-#[cfg(feature = "feldera-enterprise")]
-use crate::controller::sync::continuous_pull;
-use crate::controller::sync::SYNCHRONIZER;
 use crate::create_integrated_output_endpoint;
 use crate::samply::SamplySpan;
 use crate::server::metrics::{
     HistogramDiv, LabelStack, MetricsFormatter, MetricsWriter, ValueType,
 };
-use crate::server::ServerState;
 use crate::transport::clock::now_endpoint_config;
 use crate::transport::Step;
 use crate::transport::{input_transport_config_to_endpoint, output_transport_config_to_endpoint};
@@ -68,6 +64,7 @@ use feldera_adapterlib::format::BufferSize;
 use feldera_adapterlib::transport::Resume;
 use feldera_adapterlib::utils::datafusion::execute_query_text;
 use feldera_ir::LirCircuit;
+use feldera_storage::checkpoint_synchronizer::SYNCHRONIZER;
 use feldera_storage::histogram::ExponentialHistogram;
 use feldera_storage::metrics::{
     READ_BLOCKS_BYTES, READ_LATENCY_MICROSECONDS, SYNC_LATENCY_MICROSECONDS, WRITE_BLOCKS_BYTES,
@@ -95,7 +92,7 @@ use std::io::ErrorKind;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::PathBuf;
 use std::sync::mpsc::{channel, sync_channel, Receiver, SendError, Sender};
-use std::sync::{LazyLock, Mutex, Weak};
+use std::sync::{LazyLock, Mutex};
 use std::thread;
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -109,6 +106,7 @@ use std::{
 };
 use tokio::sync::oneshot;
 use tokio::sync::Mutex as TokioMutex;
+use tokio::task::spawn_blocking;
 use tracing::{debug, debug_span, error, info, trace, warn};
 use validate::validate_config;
 
@@ -116,6 +114,7 @@ mod checkpoint;
 mod error;
 mod journal;
 mod stats;
+#[cfg(feature = "feldera-enterprise")]
 mod sync;
 mod validate;
 
@@ -155,6 +154,107 @@ static CHECKPOINT_PROCESSED_RECORDS: AtomicU64 = AtomicU64::new(0);
 
 static COMMIT_UPDATE_INTERVAL: Duration = Duration::from_secs(10);
 
+/// Creates a [Controller].
+pub struct ControllerBuilder {
+    config: PipelineConfig,
+    storage: Option<CircuitStorageConfig>,
+}
+
+impl ControllerBuilder {
+    /// Prepares to create a new [Controller] configured with `config`.
+    ///
+    /// If `config` includes storage configuration, this opens the storage
+    /// backend, so that it can be used before building the controller.
+    ///
+    /// Use [build](Self::build) to finish building the controller.
+    pub(crate) fn new(config: &PipelineConfig) -> Result<Self, ControllerError> {
+        validate_config(config)?;
+
+        let storage = config
+            .storage()
+            .map(|(storage_config, storage_options)| {
+                CircuitStorageConfig::for_config(storage_config.clone(), storage_options.clone())
+                    .map_err(|error| {
+                        ControllerError::storage_error("failed to initialize storage", error)
+                    })
+            })
+            .transpose()?;
+        if storage.is_none() {
+            if config.global.fault_tolerance.is_enabled() {
+                return Err(ControllerError::Config {
+                    config_error: Box::new(ConfigError::FtRequiresStorage),
+                });
+            }
+            info!("storage not configured, so suspend-and-resume and fault tolerance will not be available");
+        }
+        Ok(Self {
+            config: config.clone(),
+            storage,
+        })
+    }
+
+    pub(crate) fn continuous_pull<F>(&self, _is_activated: F) -> Result<(), ControllerError>
+    where
+        F: Fn() -> bool,
+    {
+        #[cfg(feature = "feldera-enterprise")]
+        if let Some(storage) = &self.storage {
+            return sync::continuous_pull(storage, _is_activated);
+        } else {
+            return Err(ControllerError::InvalidStandby(
+                "standby mode requires storage configuration",
+            ));
+        }
+
+        #[cfg(not(feature = "feldera-enterprise"))]
+        Err(ControllerError::EnterpriseFeature("standby"))
+    }
+
+    /// Create a new I/O controller for a circuit.
+    ///
+    /// Creates a new instance of `Controller` that wraps `circuit`, with input
+    /// and output endpoints specified by the configuration passed to
+    /// [new](Self:new)`.  The controller is created with all endpoints in a
+    /// paused state.  Call [`Self::start`] to unpause the endpoints and start
+    /// ingesting data.
+    ///
+    /// # Arguments
+    ///
+    /// * `circuit` - A handle to a DBSP circuit managed by this controller. The
+    ///   controller takes ownership of the circuit.
+    ///
+    /// * `catalog` - A catalog of input and output streams of the circuit.
+    ///
+    /// * `error_cb` - Error callback.  The controller doesn't implement its own
+    ///   error handling policy, but simply forwards most errors to this
+    ///   callback.
+    ///
+    /// # Errors
+    ///
+    /// The method may fail for the following reasons:
+    ///
+    /// * The input configuration is invalid, e.g., specifies an unknown
+    ///   transport or data format.
+    ///
+    /// * One or more of the endpoints fails to initialize.
+    pub(crate) fn build<F>(
+        self,
+        circuit_factory: F,
+        error_cb: Box<dyn Fn(Arc<ControllerError>) + Send + Sync>,
+    ) -> Result<Controller, ControllerError>
+    where
+        F: FnOnce(CircuitConfig) -> Result<(DBSPHandle, Box<dyn CircuitCatalog>), ControllerError>
+            + Send
+            + 'static,
+    {
+        Controller::build(self.config, self.storage, circuit_factory, error_cb)
+    }
+
+    pub(crate) fn storage(&self) -> Option<Arc<dyn StorageBackend>> {
+        self.storage.as_ref().map(|storage| storage.backend.clone())
+    }
+}
+
 /// Controller that coordinates the creation, reconfiguration, teardown of
 /// input/output adapters, and implements runtime flow control.
 ///
@@ -166,11 +266,10 @@ static COMMIT_UPDATE_INTERVAL: Duration = Duration::from_secs(10);
 ///
 /// A pipeline process has a [PipelineState], which is the state requested by
 /// the client, one of [Running], [Paused], or [Terminated]. This state is
-/// initially [Paused].  Calls to [start], [pause], [initiate_stop], and [stop]
-/// change the client-requested state.  Once the state is set to [Terminated],
-/// it can never be changed back to [Running] or [Paused].  Since the pipeline
-/// process always starts up paused, it is the pipeline manager's job to ensure
-/// continuity when the process restarts.
+/// initially as set by the `ControllerBuilder`, which defaults to [Paused].
+/// Calls to [start], [pause], [initiate_stop], and [stop] change the
+/// client-requested state.  Once the state is set to [Terminated], it can never
+/// be changed back to [Running] or [Paused].
 ///
 /// The following diagram illustrates internal pipeline process states and their
 /// possible transitions:
@@ -246,11 +345,13 @@ static COMMIT_UPDATE_INTERVAL: Duration = Duration::from_secs(10);
 /// [pause]: Controller::pause
 /// [initiate_stop]: Controller::initiate_stop
 /// [is_replaying]: Controller::is_replaying
+#[derive(Clone)]
 pub struct Controller {
     inner: Arc<ControllerInner>,
 
     /// The circuit thread handle (see module-level docs).
-    circuit_thread_handle: JoinHandle<Result<(), ControllerError>>,
+    #[allow(clippy::type_complexity)]
+    circuit_thread_handle: Arc<Mutex<Option<JoinHandle<Result<(), ControllerError>>>>>,
 }
 
 /// Type of the callback argument to [`Controller::start_graph_profile`].
@@ -292,39 +393,10 @@ impl Command {
 }
 
 impl Controller {
-    /// Create a new I/O controller for a circuit.
-    ///
-    /// Creates a new instance of `Controller` that wraps `circuit`,  with
-    /// input and output endpoints specified by `config`.  The controller is
-    /// created with all endpoints in a paused state.  Call [`Self::start`]
-    /// to unpause the endpoints and start ingesting data.
-    ///
-    /// # Arguments
-    ///
-    /// * `circuit` - A handle to a DBSP circuit managed by this controller. The
-    ///   controller takes ownership of the circuit.
-    ///
-    /// * `catalog` - A catalog of input and output streams of the circuit.
-    ///
-    /// * `config` - Controller configuration, including global config settings
-    ///   and individual endpoint configs.
-    ///
-    /// * `error_cb` - Error callback.  The controller doesn't implement its own
-    ///   error handling policy, but simply forwards most errors to this
-    ///   callback.
-    ///
-    /// # Errors
-    ///
-    /// The method may fail for the following reasons:
-    ///
-    /// * The input configuration is invalid, e.g., specifies an unknown
-    ///   transport or data format.
-    ///
-    /// * One or more of the endpoints fails to initialize.
+    #[cfg(test)]
     pub(crate) fn with_config<F>(
         circuit_factory: F,
         config: &PipelineConfig,
-        weak_state_ref: Weak<ServerState>,
         error_cb: Box<dyn Fn(Arc<ControllerError>) + Send + Sync>,
     ) -> Result<Self, ControllerError>
     where
@@ -332,8 +404,20 @@ impl Controller {
             + Send
             + 'static,
     {
-        validate_config(config)?;
+        ControllerBuilder::new(config)?.build(circuit_factory, error_cb)
+    }
 
+    fn build<F>(
+        config: PipelineConfig,
+        storage: Option<CircuitStorageConfig>,
+        circuit_factory: F,
+        error_cb: Box<dyn Fn(Arc<ControllerError>) + Send + Sync>,
+    ) -> Result<Self, ControllerError>
+    where
+        F: FnOnce(CircuitConfig) -> Result<(DBSPHandle, Box<dyn CircuitCatalog>), ControllerError>
+            + Send
+            + 'static,
+    {
         let (circuit_thread_handle, inner) = {
             // A channel to communicate circuit initialization status.
             // The `circuit_factory` closure must be invoked in the context of
@@ -343,11 +427,10 @@ impl Controller {
             // thread adds a catalog to `inner`, and returns it wrapped in an `Arc`.
             let (init_status_sender, init_status_receiver) =
                 sync_channel::<Result<Arc<ControllerInner>, ControllerError>>(0);
-            let config = config.clone();
             let handle = thread::Builder::new()
                 .name("circuit-thread".to_string())
                 .spawn(move || {
-                    match CircuitThread::new(circuit_factory, config, weak_state_ref, error_cb) {
+                    match CircuitThread::new(circuit_factory, config, storage, error_cb) {
                         Err(error) => {
                             let _ = init_status_sender.send(Err(error));
                             Ok(())
@@ -370,7 +453,7 @@ impl Controller {
                 .recv()
                 .map_err(|_| ControllerError::dbsp_panic())??;
 
-            (handle, inner)
+            (Arc::new(Mutex::new(Some(handle))), inner)
         };
 
         Ok(Self {
@@ -586,6 +669,11 @@ impl Controller {
         &self.inner.status
     }
 
+    /// Returns the pipeline state.
+    pub fn state(&self) -> PipelineState {
+        self.inner.state()
+    }
+
     pub fn catalog(&self) -> &Arc<Box<dyn CircuitCatalog>> {
         &self.inner.catalog
     }
@@ -625,6 +713,26 @@ impl Controller {
         self.inner.send_command(Command::Checkpoint(cb));
     }
 
+    pub async fn async_checkpoint(&self) -> Result<Checkpoint, Arc<ControllerError>> {
+        let (sender, receiver) = oneshot::channel();
+        self.start_checkpoint(Box::new(move |profile| {
+            if sender.send(profile).is_err() {
+                error!("checkpoint result could not be sent");
+            }
+        }));
+        receiver.await.unwrap()
+    }
+
+    pub async fn async_graph_profile(&self) -> Result<GraphProfile, ControllerError> {
+        let (sender, receiver) = oneshot::channel();
+        self.start_graph_profile(Box::new(move |profile| {
+            if sender.send(profile).is_err() {
+                error!("`/dump_profile` result could not be sent");
+            }
+        }));
+        receiver.await.unwrap()
+    }
+
     /// Triggers a sync checkpoint operation. `cb` will be called when it
     /// completes.
     ///
@@ -633,6 +741,22 @@ impl Controller {
     pub fn start_sync_checkpoint(&self, checkpoint: uuid::Uuid, cb: SyncCheckpointCallbackFn) {
         self.inner
             .send_command(Command::SyncCheckpoint((checkpoint, cb)));
+    }
+
+    pub async fn async_sync_checkpoint(
+        &self,
+        checkpoint: uuid::Uuid,
+    ) -> Result<(), Arc<ControllerError>> {
+        let (sender, receiver) = oneshot::channel();
+        self.start_sync_checkpoint(
+            checkpoint,
+            Box::new(move |result| {
+                if sender.send(result).is_err() {
+                    error!("sync_checkpoint result could not be sent");
+                }
+            }),
+        );
+        receiver.await.unwrap()
     }
 
     /// Checkpoints the pipeline.
@@ -661,6 +785,16 @@ impl Controller {
         receiver.blocking_recv().unwrap()
     }
 
+    pub async fn async_suspend(&self) -> Result<(), Arc<ControllerError>> {
+        let (sender, receiver) = oneshot::channel();
+        self.start_suspend(Box::new(move |suspend| {
+            if sender.send(suspend).is_err() {
+                error!("suspend result could not be sent");
+            }
+        }));
+        receiver.await.unwrap()
+    }
+
     /// Returns whether this pipeline supports suspend-and-resume.  The result
     /// can change over time; see [SuspendError] for details.
     pub fn can_suspend(&self) -> Result<(), SuspendError> {
@@ -679,9 +813,11 @@ impl Controller {
         debug!("Stopping the circuit");
 
         self.initiate_stop();
-        self.circuit_thread_handle
-            .join()
-            .map_err(|_| ControllerError::controller_panic())??;
+        if let Some(handle) = self.circuit_thread_handle.lock().unwrap().take() {
+            handle
+                .join()
+                .map_err(|_| ControllerError::controller_panic())??;
+        }
         Ok(())
     }
 
@@ -696,6 +832,10 @@ impl Controller {
         self.inner.fail_if_bootstrapping_or_restoring()?;
 
         self.inner.start_commit_transaction()
+    }
+
+    pub async fn async_stop(self) -> Result<(), ControllerError> {
+        spawn_blocking(|| self.stop()).await.unwrap()
     }
 
     /// Check whether the pipeline has processed all input data to completion.
@@ -1129,7 +1269,7 @@ impl CircuitThread {
     fn new<F>(
         circuit_factory: F,
         config: PipelineConfig,
-        weak_state_ref: Weak<ServerState>,
+        storage: Option<CircuitStorageConfig>,
         error_cb: Box<dyn Fn(Arc<ControllerError>) + Send + Sync>,
     ) -> Result<Self, ControllerError>
     where
@@ -1145,7 +1285,7 @@ impl CircuitThread {
             input_metadata,
             input_statistics,
             output_statistics,
-        } = ControllerInit::new(config.clone(), weak_state_ref)?;
+        } = ControllerInit::new(config.clone(), storage)?;
         let storage = circuit_config
             .storage
             .as_ref()
@@ -2604,26 +2744,11 @@ impl ControllerInit {
 
     fn new(
         config: PipelineConfig,
-        _weak_state_ref: Weak<ServerState>,
+        storage: Option<CircuitStorageConfig>,
     ) -> Result<Self, ControllerError> {
-        let Some((storage_config, storage_options)) = config.storage() else {
-            if !config.global.fault_tolerance.is_enabled() {
-                info!("storage not configured, so suspend-and-resume and fault tolerance will not be available");
-                return Self::without_resume(config, None);
-            } else {
-                return Err(ControllerError::Config {
-                    config_error: Box::new(ConfigError::FtRequiresStorage),
-                });
-            }
+        let Some(storage) = storage else {
+            return Self::without_resume(config, None);
         };
-        let storage =
-            CircuitStorageConfig::for_config(storage_config.clone(), storage_options.clone())
-                .map_err(|error| {
-                    ControllerError::storage_error("failed to initialize storage", error)
-                })?;
-
-        #[cfg(feature = "feldera-enterprise")]
-        continuous_pull(&storage, _weak_state_ref)?;
 
         // Try to read a checkpoint.
         let checkpoint = match Checkpoint::read(&*storage.backend, &StoragePath::from(STATE_FILE)) {

@@ -289,7 +289,7 @@ class TestPipeline(SharedTestPipeline):
         self.pipeline.wait_for_completion(True)
 
     def test_issue2142(self):
-        self.pipeline.pause()
+        self.pipeline.start_paused()
         data = [{"id": None}, {"id": 1}]
         out = self.pipeline.listen("v0")
         self.pipeline.resume()

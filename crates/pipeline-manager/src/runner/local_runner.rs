@@ -3,7 +3,7 @@
 
 use crate::common_error::CommonError;
 use crate::config::{CommonConfig, LocalRunnerConfig};
-use crate::db::types::pipeline::PipelineId;
+use crate::db::types::pipeline::{runtime_desired_status_to_string, PipelineId};
 use crate::db::types::version::Version;
 use crate::error::{source_error, ManagerError};
 use crate::runner::error::RunnerError;
@@ -11,6 +11,7 @@ use crate::runner::pipeline_executor::PipelineExecutor;
 use crate::runner::pipeline_logs::{LogMessage, LogsSender};
 use async_trait::async_trait;
 use feldera_types::config::{PipelineConfig, StorageCacheConfig, StorageConfig};
+use feldera_types::runtime_status::RuntimeDesiredStatus;
 use log::{error, warn, Level};
 use reqwest::StatusCode;
 use std::path::Path;
@@ -23,6 +24,7 @@ use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 use tokio::time::sleep;
 use tokio::{fs, fs::create_dir_all, select, spawn};
+use uuid::Uuid;
 
 /// How many times to attempt to retrieve the pipeline binary.
 const BINARY_RETRIEVAL_ATTEMPTS: u64 = 5;
@@ -299,13 +301,13 @@ impl LocalRunner {
         // Write to both runner and pipeline logs
         for error in &errors {
             error!(
-                "Resource error for pipeline {}: {}",
+                "Resources error for pipeline {}: {}",
                 self.pipeline_id, error
             );
             self.logs_sender
                 .send(LogMessage::new_from_control_plane(
                     Level::Error,
-                    &format!("Resource error: {error}"),
+                    &format!("Resources error: {error}"),
                 ))
                 .await;
         }
@@ -364,6 +366,8 @@ impl PipelineExecutor for LocalRunner {
     /// - Switches to operational logging following the stdout/stderr of the process
     async fn provision(
         &mut self,
+        deployment_initial: RuntimeDesiredStatus,
+        deployment_id: &Uuid,
         deployment_config: &PipelineConfig,
         program_binary_url: &str,
         program_version: Version,
@@ -437,6 +441,10 @@ impl PipelineExecutor for LocalRunner {
             .arg(&config_file_path)
             .arg("--bind-address")
             .arg(&self.common_config.bind_address)
+            .arg("--initial")
+            .arg(runtime_desired_status_to_string(deployment_initial))
+            .arg("--deployment-id")
+            .arg(deployment_id.to_string())
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());

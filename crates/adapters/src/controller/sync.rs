@@ -5,7 +5,8 @@ use std::sync::{Arc, LazyLock, Weak};
 use dbsp::circuit::{checkpointer::Checkpointer, CircuitStorageConfig};
 use feldera_adapterlib::errors::journal::ControllerError;
 use feldera_storage::{
-    checkpoint_synchronizer::CheckpointSynchronizer, StorageBackend, StoragePath,
+    checkpoint_synchronizer::{CheckpointSynchronizer, SYNCHRONIZER},
+    StorageBackend, StoragePath,
 };
 use feldera_types::{
     checkpoint::CheckpointMetadata,
@@ -15,33 +16,8 @@ use feldera_types::{
 
 use crate::server::ServerState;
 
-/// Lazily resolves the checkpoint synchronizer.
-///
-/// This panic is safe as all enterprise builds must include the checkpoint-sync
-/// crate.
-pub(super) static SYNCHRONIZER: LazyLock<&'static dyn CheckpointSynchronizer> =
-    LazyLock::new(|| {
-        let Some(synchronizer) = inventory::iter::<&dyn CheckpointSynchronizer>
-            .into_iter()
-            .next()
-        else {
-            unreachable!("no checkpoint synchronizer found; are enterprise features enabled?");
-        };
-
-        *synchronizer
-    });
-
-#[cfg(feature = "feldera-enterprise")]
-fn upgrade_state(weak: Weak<ServerState>) -> Result<Arc<ServerState>, ControllerError> {
-    weak.upgrade()
-        .ok_or(ControllerError::checkpoint_fetch_error(
-            "unreachable: failed to upgrade server state".to_owned(),
-        ))
-}
-
 /// Pulls the checkpoint specified by the sync config and garbage collects all
 /// older checkpoints.
-#[cfg(feature = "feldera-enterprise")]
 fn pull_and_gc(
     storage: Arc<dyn StorageBackend>,
     sync: &SyncConfig,
@@ -63,13 +39,17 @@ fn pull_and_gc(
     }
 }
 
-#[cfg(feature = "feldera-enterprise")]
-pub fn continuous_pull(
+pub fn continuous_pull<F>(
     storage: &CircuitStorageConfig,
-    weak: Weak<ServerState>,
-) -> Result<(), ControllerError> {
+    is_activated: F,
+) -> Result<(), ControllerError>
+where
+    F: Fn() -> bool,
+{
     let StorageBackendConfig::File(ref file_cfg) = storage.options.backend else {
-        return Ok(());
+        return Err(ControllerError::InvalidStandby(
+            "standby mode requires file storage backend",
+        ));
     };
 
     let FileBackendConfig {
@@ -77,17 +57,20 @@ pub fn continuous_pull(
         ..
     } = **file_cfg
     else {
-        return Ok(());
+        return Err(ControllerError::InvalidStandby(
+            "standby mode requires file storage backend to have synchronization configured",
+        ));
     };
 
     sync.validate()
         .map_err(ControllerError::checkpoint_fetch_error)?;
 
     if sync.start_from_checkpoint.is_none() {
-        return Ok(());
+        return Err(ControllerError::InvalidStandby(
+            "standby mode requires file storage backend to have synchronization configured to start from a checkpoint",
+        ));
     }
 
-    let state = upgrade_state(weak)?;
     let mut cpm = None;
     let activation_file = StoragePath::from(ACTIVATION_MARKER_FILE);
     let previously_activated = storage.backend.exists(&activation_file).unwrap_or(false);
@@ -108,7 +91,7 @@ pub fn continuous_pull(
         return Ok(());
     }
 
-    while !state.activated() {
+    while !is_activated() {
         match pull_and_gc(storage.backend.clone(), sync) {
             Err(err) => {
                 if sync.fail_if_no_checkpoint {

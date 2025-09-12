@@ -113,7 +113,7 @@
         </div>
       </div>
     {/if}
-    <div class="">
+    <div class="flex flex-col">
       <div class="flex flex-nowrap items-center gap-4 text-xl font-semibold">
         <span class="fd fd-network text-surface-500"></span><span>Your pipelines</span>
       </div>

@@ -5,6 +5,7 @@ use crate::api::main::ServerState;
 use crate::api::util::parse_url_parameter;
 #[cfg(not(feature = "feldera-enterprise"))]
 use crate::common_error::CommonError;
+use crate::db::storage::Storage;
 use crate::db::types::tenant::TenantId;
 use crate::error::ManagerError;
 use actix_http::StatusCode;
@@ -1016,10 +1017,133 @@ pub(crate) async fn get_pipeline_heap_profile(
         .await
 }
 
-/// Activates the pipeline if it is currently in standby mode.
+/// Requests the pipeline to pause, which it will do asynchronously.
+///
+/// Progress should be monitored by polling the pipeline `GET` endpoints.
+#[utoipa::path(
+    context_path = "/v0",
+    security(("JSON web token (JWT) or API key" = [])),
+    params(
+        ("pipeline_name" = String, Path, description = "Unique pipeline name")
+    ),
+    responses(
+        (status = ACCEPTED
+            , description = "Action is accepted and is being performed"),
+        (status = NOT_FOUND
+            , description = "Pipeline with that name does not exist"
+            , body = ErrorResponse
+            , example = json!(examples::error_unknown_pipeline_name())),
+        (status = BAD_REQUEST
+            , description = "Action could not be performed"
+            , body = ErrorResponse
+            , example = json!(examples::error_illegal_pipeline_action())),
+        (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
+    ),
+    tag = "Pipeline management"
+)]
+#[post("/pipelines/{pipeline_name}/pause")]
+pub(crate) async fn post_pipeline_pause(
+    state: WebData<ServerState>,
+    client: WebData<awc::Client>,
+    tenant_id: ReqData<TenantId>,
+    path: web::Path<String>,
+) -> Result<HttpResponse, ManagerError> {
+    let pipeline_name = path.into_inner();
+    let response = state
+        .runner
+        .forward_http_request_to_pipeline_by_name(
+            client.as_ref(),
+            *tenant_id,
+            &pipeline_name,
+            Method::GET,
+            "pause",
+            "",
+            Some(Duration::from_secs(120)),
+        )
+        .await?;
+    state
+        .db
+        .lock()
+        .await
+        .increment_notify_counter(*tenant_id, &pipeline_name)
+        .await?;
+
+    if response.status() == StatusCode::ACCEPTED {
+        info!(
+            "Accepted action: pausing pipeline (tenant: {})", // {pipeline_id}
+            *tenant_id
+        );
+    }
+    Ok(response)
+}
+
+/// Requests the pipeline to resume, which it will do asynchronously.
+///
+/// Progress should be monitored by polling the pipeline `GET` endpoints.
+#[utoipa::path(
+    context_path = "/v0",
+    security(("JSON web token (JWT) or API key" = [])),
+    params(
+        ("pipeline_name" = String, Path, description = "Unique pipeline name")
+    ),
+    responses(
+        (status = ACCEPTED
+            , description = "Action is accepted and is being performed"),
+        (status = NOT_FOUND
+            , description = "Pipeline with that name does not exist"
+            , body = ErrorResponse
+            , example = json!(examples::error_unknown_pipeline_name())),
+        (status = BAD_REQUEST
+            , description = "Action could not be performed"
+            , body = ErrorResponse
+            , example = json!(examples::error_illegal_pipeline_action())),
+        (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
+    ),
+    tag = "Pipeline management"
+)]
+#[post("/pipelines/{pipeline_name}/resume")]
+pub(crate) async fn post_pipeline_resume(
+    state: WebData<ServerState>,
+    client: WebData<awc::Client>,
+    tenant_id: ReqData<TenantId>,
+    path: web::Path<String>,
+) -> Result<HttpResponse, ManagerError> {
+    let pipeline_name = path.into_inner();
+    let response = state
+        .runner
+        .forward_http_request_to_pipeline_by_name(
+            client.as_ref(),
+            *tenant_id,
+            &pipeline_name,
+            Method::GET,
+            "start", // For backward compatibility this is not changed
+            "",
+            Some(Duration::from_secs(120)),
+        )
+        .await?;
+    state
+        .db
+        .lock()
+        .await
+        .increment_notify_counter(*tenant_id, &pipeline_name)
+        .await?;
+
+    if response.status() == StatusCode::ACCEPTED {
+        info!(
+            "Accepted action: resuming pipeline (tenant: {})", // {pipeline_id}
+            *tenant_id
+        );
+    }
+    Ok(response)
+}
+
+/// Requests the pipeline to activate if it is currently in standby mode, which it will do
+/// asynchronously.
+///
+/// Progress should be monitored by polling the pipeline `GET` endpoints.
 ///
 /// This endpoint is only applicable when the pipeline is configured to start
-/// from object store and launched in standby mode (`sync.standby: true`).
+/// from object store and started as standby.
 #[utoipa::path(
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
@@ -1048,7 +1172,7 @@ pub(crate) async fn get_pipeline_heap_profile(
     tag = "Pipeline interaction"
 )]
 #[post("/pipelines/{pipeline_name}/activate")]
-pub(crate) async fn activate_pipeline(
+pub(crate) async fn post_pipeline_activate(
     state: WebData<ServerState>,
     _client: WebData<awc::Client>,
     tenant_id: ReqData<TenantId>,
@@ -1067,7 +1191,7 @@ pub(crate) async fn activate_pipeline(
     #[cfg(feature = "feldera-enterprise")]
     {
         let pipeline_name = path.into_inner();
-        state
+        let response = state
             .runner
             .forward_http_request_to_pipeline_by_name(
                 _client.as_ref(),
@@ -1078,7 +1202,21 @@ pub(crate) async fn activate_pipeline(
                 request.query_string(),
                 Some(Duration::from_secs(120)),
             )
+            .await?;
+        state
+            .db
+            .lock()
             .await
+            .increment_notify_counter(*tenant_id, &pipeline_name)
+            .await?;
+
+        if response.status() == StatusCode::ACCEPTED {
+            info!(
+                "Accepted action: activating pipeline (tenant: {})", // {pipeline_id}
+                *tenant_id
+            );
+        }
+        Ok(response)
     }
 }
 

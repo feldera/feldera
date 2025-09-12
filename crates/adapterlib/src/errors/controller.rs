@@ -14,6 +14,7 @@ use anyhow::Error as AnyError;
 use dbsp::{storage::backend::StorageError, Error as DbspError};
 use feldera_types::{
     error::{DetailedError, ErrorResponse},
+    runtime_status::RuntimeDesiredStatus,
     suspend::SuspendError,
 };
 use serde::{ser::SerializeStruct, Serialize, Serializer};
@@ -734,6 +735,18 @@ pub enum ControllerError {
 
     TransactionInProgress,
     NoTransactionInProgress,
+
+    /// Invalid initial desired status.
+    InvalidInitialStatus(RuntimeDesiredStatus),
+
+    /// Invalid standby configuration,
+    InvalidStandby(&'static str),
+
+    /// Invalid startup status transition.
+    InvalidStartupTransition {
+        from: RuntimeDesiredStatus,
+        to: RuntimeDesiredStatus,
+    },
 }
 
 impl ResponseError for ControllerError {
@@ -761,6 +774,7 @@ impl ResponseError for ControllerError {
             Self::UnknownEndpointInCompletionToken { .. } => StatusCode::GONE,
             Self::TransactionInProgress => StatusCode::CONFLICT,
             Self::NoTransactionInProgress => StatusCode::BAD_REQUEST,
+            Self::InvalidInitialStatus(_) => StatusCode::GONE,
             _ => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
@@ -895,6 +909,9 @@ impl DbspDetailedError for ControllerError {
             Self::CheckpointPushError { .. } => Cow::from("CheckpointPushError"),
             Self::TransactionInProgress => Cow::from("TransactionInProgress"),
             Self::NoTransactionInProgress => Cow::from("NoTransactionInProgress"),
+            Self::InvalidInitialStatus(_) => Cow::from("InvalidInitialStatus"),
+            Self::InvalidStandby(_) => Cow::from("InvalidStandby"),
+            Self::InvalidStartupTransition { .. } => Cow::from("InvalidStartupTransition"),
         }
     }
 }
@@ -1054,6 +1071,18 @@ impl Display for ControllerError {
                 write!(
                     f,
                     "This operation requires an active transaction, but none is currently in progress"
+                )
+            }
+            Self::InvalidInitialStatus(status) => {
+                write!(f, "Invalid initial status {status:?} provided on command line or read from storage (only running, paused, and standby are valid)")
+            }
+            Self::InvalidStandby(standby) => {
+                write!(f, "Cannot enter standby mode: {standby}")
+            }
+            Self::InvalidStartupTransition { from, to } => {
+                write!(
+                    f,
+                    "Invalid pipeline startup transition from {from:?} to {to:?}"
                 )
             }
         }
@@ -1427,7 +1456,10 @@ impl ControllerError {
             | Self::CheckpointFetchError { .. }
             | Self::CheckpointPushError { .. }
             | Self::PipelineRestarted { .. }
-            | Self::NoTransactionInProgress => ErrorKind::Other,
+            | Self::NoTransactionInProgress
+            | Self::InvalidInitialStatus(_)
+            | Self::InvalidStandby(_)
+            | Self::InvalidStartupTransition { .. } => ErrorKind::Other,
         }
     }
 }

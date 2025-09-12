@@ -143,7 +143,6 @@ inputs:
     let controller = Controller::with_config(
         move |workers| Ok(test_circuit::<T>(workers, &schema, &[None])),
         &config,
-        std::sync::Weak::new(),
         Box::new(move |e| {
             let msg = format!("iceberg_input_test: error: {e}");
             println!("{}", msg);

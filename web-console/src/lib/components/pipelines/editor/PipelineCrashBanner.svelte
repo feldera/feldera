@@ -1,11 +1,15 @@
 <script lang="ts">
   import type { ErrorResponse } from '$lib/services/manager'
+  import { slide } from 'svelte/transition'
 
   let { error, showActions = false }: { error: ErrorResponse; showActions?: boolean } = $props()
   let showMore = $state(false)
 </script>
 
-<div class="flex max-w-[1600px] flex-nowrap gap-2 rounded-container border border-error-500 p-4">
+<div
+  transition:slide
+  class="flex max-w-[1600px] flex-nowrap gap-2 rounded-container border border-error-500 p-4"
+>
   <div class=" fd fd-circle-alert text-[20px] text-error-500"></div>
   <div class="flex flex-col {showMore ? 'gap-2' : 'sm:flex-row'} w-full overflow-hidden">
     <div class=" flex flex-col {showMore ? '' : ''} ">

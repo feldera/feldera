@@ -8,7 +8,9 @@ from .helper import (
     gen_pipeline_name,
     get_pipeline,
     start_pipeline,
+    start_pipeline_as_paused,
     pause_pipeline,
+    resume_pipeline,
     stop_pipeline,
     clear_pipeline,
     delete_pipeline,
@@ -69,7 +71,7 @@ def test_deploy_pipeline(pipeline_name):
     got = adhoc_query_json(pipeline_name, "select * from t1 order by c1")
     assert got == [{"c1": i} for i in range(1, 7)]
 
-    start_pipeline(pipeline_name)
+    resume_pipeline(pipeline_name)
     got = adhoc_query_json(pipeline_name, "select * from t1 order by c1")
     assert got == [{"c1": i} for i in range(1, 7)]
 
@@ -222,7 +224,7 @@ def test_pipeline_stop_with_force(pipeline_name):
     stop_pipeline(pipeline_name, force=True)
 
     # Start paused then stop (simulate by pausing immediately)
-    pause_pipeline(pipeline_name)
+    start_pipeline_as_paused(pipeline_name)
     wait_for_deployment_status(pipeline_name, "Paused", 30)
     stop_pipeline(pipeline_name, force=True)
 
@@ -254,7 +256,7 @@ def test_pipeline_stop_without_force(pipeline_name):
     stop_pipeline(pipeline_name, force=False)
 
     # Start paused (pause right away), stop
-    pause_pipeline(pipeline_name)
+    start_pipeline_as_paused(pipeline_name)
     stop_pipeline(pipeline_name, force=False)
 
     # Start, stop twice in a row
