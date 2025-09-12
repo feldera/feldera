@@ -3,13 +3,15 @@
   import Tooltip from '$lib/components/common/Tooltip.svelte'
   import ClipboardCopyButton from '$lib/components/other/ClipboardCopyButton.svelte'
 
-  let versionText = `Feldera ${page.data.feldera.edition} v${page.data.feldera.version} `
-  let revisionText = `(rev. ${page.data.feldera.revision})`
+  let versionText = page.data.feldera
+    ? `Feldera ${page.data.feldera.edition} v${page.data.feldera.version} `
+    : undefined
+  let revisionText = page.data.feldera ? `(rev. ${page.data.feldera.revision})` : undefined
 </script>
 
 <div class="hr flex justify-between pt-4 text-surface-500">
   <span>{versionText}</span>
-  {#if page.data.feldera.revision}
+  {#if revisionText}
     <Tooltip
       class="z-10 -ml-4 mt-16 w-full rounded-container bg-white p-4 text-base font-normal text-surface-950-50 dark:bg-black"
       placement="top-start"
@@ -22,7 +24,7 @@
       <span class="text-nowrap">{revisionText}</span>
     </Tooltip>
   {/if}
-  {#if page.data.feldera.update?.version}
+  {#if page.data.feldera?.update?.version}
     <span>latest: v{page.data.feldera.update.version}</span>
   {/if}
 </div>

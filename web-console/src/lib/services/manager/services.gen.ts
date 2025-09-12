@@ -21,6 +21,8 @@ import type {
   GetConfigResponse,
   GetConfigDemosError,
   GetConfigDemosResponse,
+  GetConfigSessionError,
+  GetConfigSessionResponse,
   GetMetricsError,
   GetMetricsResponse,
   ListPipelinesData,
@@ -204,6 +206,16 @@ export const getConfigDemos = (options?: Options) => {
   return (options?.client ?? client).get<GetConfigDemosResponse, GetConfigDemosError>({
     ...options,
     url: '/v0/config/demos'
+  })
+}
+
+/**
+ * Retrieve current session information.
+ */
+export const getConfigSession = (options?: Options) => {
+  return (options?.client ?? client).get<GetConfigSessionResponse, GetConfigSessionError>({
+    ...options,
+    url: '/v0/config/session'
   })
 }
 

@@ -8,7 +8,7 @@ import { authRequestMiddleware, authResponseMiddleware } from '$lib/services/aut
 import type { AuthDetails } from '$lib/types/auth'
 import { goto } from '$app/navigation'
 import posthog from 'posthog-js'
-import { getConfig } from '$lib/services/pipelineManager'
+import { getConfig, getConfigSession } from '$lib/services/pipelineManager'
 import type { Configuration } from '$lib/services/manager'
 import Dayjs from 'dayjs'
 import duration from 'dayjs/plugin/duration'
@@ -35,32 +35,34 @@ const initPosthog = async (config: Configuration) => {
   })
 }
 
-type LayoutData = {
+export type LayoutData = {
   auth: AuthDetails
-  feldera: {
-    version: string
-    edition: string
-    changelog?: string
-    revision: string
-    update?: {
-      version: string
-      url: string
-    }
-    config: Configuration
-  }
+  feldera:
+    | {
+        version: string
+        edition: string
+        changelog?: string
+        revision: string
+        update?: {
+          version: string
+          url: string
+        }
+        tenantId: string
+        tenantName: string
+        config: Configuration
+      }
+    | undefined
+  error?: Error
+}
+
+const emptyLayoutData: LayoutData = {
+  auth: 'none',
+  feldera: undefined
 }
 
 export const load = async ({ fetch, url }): Promise<LayoutData> => {
   if (!('window' in globalThis)) {
-    return {
-      auth: 'none',
-      feldera: {
-        version: '',
-        edition: '',
-        revision: '',
-        config: undefined!
-      }
-    }
+    return emptyLayoutData
   }
 
   const authConfig = await loadAuthConfig()
@@ -88,12 +90,38 @@ export const load = async ({ fetch, url }): Promise<LayoutData> => {
 
   if (typeof auth === 'object' && 'login' in auth) {
     return {
-      auth,
-      feldera: undefined!
+      ...emptyLayoutData,
+      auth
     }
   }
 
-  const config = await getConfig()
+  let config: Configuration | undefined = undefined
+
+  try {
+    config = await getConfig()
+  } catch (e: any) {
+    if (e.cause.response.status === 401 || e.cause.response.status === 403) {
+      return {
+        ...emptyLayoutData,
+        auth,
+        error: e
+      }
+    }
+  }
+
+  if (!config) {
+    console.error('Failed to load configuration')
+    return emptyLayoutData
+  }
+
+  // Fetch session config for tenant information (only available if authenticated)
+  let sessionConfig = undefined
+  try {
+    sessionConfig = await getConfigSession()
+  } catch (e: any) {
+    // Session config might not be available if not authenticated, which is fine
+    console.warn('Failed to load session configuration:', e)
+  }
 
   if (typeof auth === 'object' && 'logout' in auth) {
     initPosthog(config).then(() => {
@@ -150,6 +178,8 @@ export const load = async ({ fetch, url }): Promise<LayoutData> => {
           : undefined,
       changelog: config.changelog_url,
       revision: config.revision,
+      tenantId: sessionConfig?.tenant_id || '',
+      tenantName: sessionConfig?.tenant_name || '',
       config
     }
   }

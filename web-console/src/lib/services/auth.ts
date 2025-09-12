@@ -3,7 +3,7 @@ const { OidcClient, OidcLocation } = AxaOidc
 
 export const authRequestMiddleware = (request: Request) => {
   const oidcClient = OidcClient.get()
-  if (oidcClient.tokens.accessToken) {
+  if (oidcClient.tokens?.accessToken) {
     request.headers.set('Authorization', `Bearer ${oidcClient.tokens.accessToken}`)
   }
   return request
@@ -15,8 +15,12 @@ export const authRequestMiddleware = (request: Request) => {
 export const authResponseMiddleware = async (response: Response, request: Request) => {
   if (response.status === 401) {
     const client = OidcClient.get()
-    await client.renewTokensAsync()
-    return fetch(request)
+    // Use getValidTokenAsync which only renews tokens if they're actually expired,
+    // preserving ID token (thus, id_token_hint on logout) when 401 is due to authorization issues rather than token expiry
+    const validToken = await client.getValidTokenAsync()
+    if (validToken?.isTokensValid) {
+      return fetch(request)
+    }
   }
   return response
 }

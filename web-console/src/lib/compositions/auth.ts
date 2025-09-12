@@ -201,7 +201,7 @@ export type OidcConfig = {
   authority: string
   response_type: 'code'
   scope: string
-  metadata: {
+  authority_configuration?: {
     issuer: string
     authorization_endpoint: string
     token_endpoint: string
@@ -218,6 +218,8 @@ export type OidcConfig = {
 
 type AuthConfig = { oidc: OidcConfig; logoutExtras?: Record<string, string> }
 
+const redirectUri = 'window' in globalThis ? `${window.location.origin}${base}/auth/callback/` : ''
+
 export const loadAuthConfig = async () => {
   const authConfig = await getAuthConfig()
   return (
@@ -226,18 +228,18 @@ export const loadAuthConfig = async () => {
       .with({ AwsCognito: P.select() }, (config) => {
         const clientId = /client_id=(\w+)/.exec(config.login_url)?.[1]
         const endpoint = /^(.*)login\?/.exec(config.login_url)?.[1]
-        const issuer = /(.*)\/.well-known\/jwks.json/.exec(config.jwk_uri)?.[1]
+        const issuer = config.issuer
         invariant(clientId, 'Cognito clientId is not valid')
         invariant(endpoint, 'Cognito endpoint is not valid')
         invariant(issuer, 'Cognito issuer is not valid')
         const storage = sessionStorage
         return {
           oidc: {
-            authority: endpoint,
+            authority: endpoint.replace(/\/+$/g, ''),
             client_id: clientId,
             response_type: 'code',
             scope: 'openid profile email',
-            metadata: {
+            authority_configuration: {
               issuer,
               authorization_endpoint: `${endpoint}authorize`,
               token_endpoint: `${endpoint}token`,
@@ -245,7 +247,7 @@ export const loadAuthConfig = async () => {
               userinfo_endpoint: `${endpoint}oauth2/userInfo`,
               end_session_endpoint: `${endpoint}logout` // signOutUrlCognito({client_id: clientId, authority: endpoint, redirect_uri: window.location.origin + base})
             },
-            redirect_uri: `${window.location.origin}${base}/auth/callback/`,
+            redirect_uri: redirectUri,
             post_logout_redirect_uri: `${base}/`,
             client_authentication: 'client_secret_basic',
             loadUserInfo: true,
@@ -255,7 +257,7 @@ export const loadAuthConfig = async () => {
             ...{
               client_id: clientId,
               id_token_hint: undefined!,
-              redirect_uri: `${window.location.origin}${base}/auth/callback/`,
+              redirect_uri: redirectUri,
               response_type: 'code'
             },
             // With AWS Cognito, when logging out and logging in via thrird party IDP (e.g. Google) - nonce is required
@@ -263,7 +265,31 @@ export const loadAuthConfig = async () => {
           } as StringMap
         }
       })
-      .with({ GoogleIdentity: P.select() }, (config) => ({}) as any)
+      .with({ GenericOidc: P.select() }, (config) => {
+        const authority = config.issuer.replace(/\/$/g, '')
+        invariant(authority, 'Generic OIDC authority is not valid')
+        const storage = sessionStorage
+
+        // Build scope string: always include openid, profile, email, and any extra scopes
+        const baseScopes = 'openid profile email'
+        const extraScopes = config.extra_oidc_scopes.join(' ')
+        const scope = extraScopes ? `${baseScopes} ${extraScopes}` : baseScopes
+
+        return {
+          oidc: {
+            authority,
+            client_id: config.client_id,
+            response_type: 'code',
+            scope,
+            // Use OIDC discovery - don't hardcode endpoints
+            redirect_uri: redirectUri,
+            post_logout_redirect_uri: `${base}/`,
+            client_authentication: 'client_secret_basic',
+            loadUserInfo: true,
+            storage
+          }
+        }
+      })
       // .with({ Auth0: P.select() }, (config) => [
       //   {
       //     provider: providerAuth0({clientId: config.client_id, endpoint: config.endpoint}),
