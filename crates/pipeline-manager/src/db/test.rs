@@ -3349,6 +3349,8 @@ impl Storage for Mutex<DbModel> {
             system_error: None,
         };
         pipeline.program_info = None;
+        pipeline.program_binary_source_checksum = None;
+        pipeline.program_binary_integrity_checksum = None;
         pipeline.refresh_version = Version(pipeline.refresh_version.0 + 1);
         self.lock()
             .await
