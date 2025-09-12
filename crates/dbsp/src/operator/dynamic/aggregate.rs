@@ -921,7 +921,7 @@ where
 
         // If found, compute `agg` using formula (1) above; otherwise the aggregate is
         // `0`.
-        if input_cursor.seek_key_exact(key) {
+        if input_cursor.seek_key_exact(key, None) {
             // Apply aggregator to a `CursorGroup` that iterates over the nested
             // Z-set associated with `input_cursor.key()` at time `time`.
             self.aggregator.aggregate_and_finalize(

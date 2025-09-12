@@ -294,10 +294,10 @@ where
         }
     }
 
-    fn maybe_contains_key(&self, key: &Self::Key) -> bool {
+    fn maybe_contains_key(&self, hash: u64) -> bool {
         match &self.inner {
-            Inner::Vec(vec) => vec.maybe_contains_key(key),
-            Inner::File(file) => file.maybe_contains_key(key),
+            Inner::Vec(vec) => vec.maybe_contains_key(hash),
+            Inner::File(file) => file.maybe_contains_key(hash),
         }
     }
 

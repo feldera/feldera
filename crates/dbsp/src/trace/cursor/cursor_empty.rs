@@ -76,7 +76,7 @@ where
 
     fn seek_key(&mut self, _key: &K) {}
 
-    fn seek_key_exact(&mut self, _key: &K) -> bool {
+    fn seek_key_exact(&mut self, _key: &K, _hash: Option<u64>) -> bool {
         false
     }
 

@@ -6,8 +6,8 @@ use crate::{
         splitter_output_chunk_size, Scope,
     },
     dynamic::{
-        ClonableTrait, DataTrait, DowncastTrait, DynDataTyped, DynOpt, DynPair, DynUnit, Erase,
-        Factory, WeightTrait, WithFactory,
+        ClonableTrait, Data, DataTrait, DowncastTrait, DynDataTyped, DynOpt, DynPair, DynUnit,
+        Erase, Factory, WeightTrait, WithFactory,
     },
     operator::{
         async_stream_operators::{StreamingQuaternaryOperator, StreamingQuaternaryWrapper},
@@ -914,7 +914,8 @@ where
                 // println!("affected_ranges: {ranges:?}");
 
                 // Clear old outputs.
-                if output_trace_cursor.seek_key_exact(delta_cursor.key()) {
+                let hash = delta_cursor.key().default_hash();
+                if output_trace_cursor.seek_key_exact(delta_cursor.key(), Some(hash)) {
                     let mut range_cursor = RangeCursor::new(
                         PartitionCursor::new(&mut output_trace_cursor),
                         ranges.clone(),
@@ -946,10 +947,10 @@ where
                 };
 
                 // Compute new outputs.
-                if input_trace_cursor.seek_key_exact(delta_cursor.key())
+                if input_trace_cursor.seek_key_exact(delta_cursor.key(), Some(hash))
                     // It's possible that the key is in the input trace with weight 0, but it's no longer in the tree, which
                     // caused `test_empty_tree()` to fail without this check.
-                    && tree_cursor.seek_key_exact(delta_cursor.key())
+                    && tree_cursor.seek_key_exact(delta_cursor.key(), Some(hash))
                 {
                     let mut tree_partition_cursor = PartitionCursor::new(&mut tree_cursor);
                     let mut input_range_cursor =

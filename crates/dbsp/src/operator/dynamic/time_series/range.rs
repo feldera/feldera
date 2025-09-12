@@ -356,7 +356,7 @@ where
         unimplemented!()
     }
 
-    fn seek_key_exact(&mut self, _key: &DynDataTyped<TS>) -> bool {
+    fn seek_key_exact(&mut self, _key: &DynDataTyped<TS>, _hash: Option<u64>) -> bool {
         unimplemented!()
     }
 

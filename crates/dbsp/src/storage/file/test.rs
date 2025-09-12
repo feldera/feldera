@@ -1,7 +1,7 @@
 use std::{marker::PhantomData, sync::Arc};
 
 use crate::{
-    dynamic::{DynWeight, Factory, LeanVec, Vector, WithFactory},
+    dynamic::{Data, DynWeight, Factory, LeanVec, Vector, WithFactory},
     storage::{
         backend::StorageBackend,
         buffer_cache::BufferCache,
@@ -474,11 +474,11 @@ fn test_bloom<K, A, N>(
     let mut false_positives = 0;
     for row in 0..n {
         let (before, key, after, _aux) = expected(row);
-        assert!(reader.maybe_contains_key(&key));
-        if reader.maybe_contains_key(&before) {
+        assert!(reader.maybe_contains_key(key.default_hash()));
+        if reader.maybe_contains_key(before.default_hash()) {
             false_positives += 1;
         }
-        if reader.maybe_contains_key(&after) {
+        if reader.maybe_contains_key(after.default_hash()) {
             false_positives += 1;
         }
     }

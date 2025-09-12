@@ -386,11 +386,12 @@ where
         self.skip_zero_weight_keys_forward();
     }
 
-    fn seek_key_exact(&mut self, key: &K) -> bool {
+    fn seek_key_exact(&mut self, key: &K, hash: Option<u64>) -> bool {
         debug_assert_eq!(self.key_direction, Direction::Forward);
 
-        let result1 = self.cursor1.seek_key_exact(key);
-        let result2 = self.cursor2.seek_key_exact(key);
+        let hash = hash.unwrap_or_else(|| key.default_hash());
+        let result1 = self.cursor1.seek_key_exact(key, Some(hash));
+        let result2 = self.cursor2.seek_key_exact(key, Some(hash));
 
         self.val_direction = Direction::Forward;
         self.update_key_order_forward();

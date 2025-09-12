@@ -1570,8 +1570,8 @@ where
     (&'static K, &'static A, N): ColumnSpec,
 {
     /// Asks the bloom filter of the reader if we have the key.
-    pub fn maybe_contains_key(&self, key: &K) -> bool {
-        self.bloom_filter.contains_hash(key.default_hash())
+    pub fn maybe_contains_key(&self, hash: u64) -> bool {
+        self.bloom_filter.contains_hash(hash)
     }
 
     /// Returns a [`RowGroup`] for all of the rows in column 0.
@@ -2824,7 +2824,7 @@ where
         // to deserialize them anyhow later.
         let mut bloom_keys = SmallVec::<[_; 50]>::new();
         for (index, key) in keys.dyn_iter().enumerate() {
-            if reader.maybe_contains_key(key) {
+            if reader.maybe_contains_key(key.default_hash()) {
                 bloom_keys.push(index);
                 if bloom_keys.len() >= keys.len() / 300 {
                     return Self {
