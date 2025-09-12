@@ -154,10 +154,35 @@ pub struct FileTrailer {
     pub columns: Vec<FileTrailerColumn>,
 
     /// File offset in bytes of the [FilterBlock].
+    ///
+    /// This is 0 if there is no filter block.
     pub filter_offset: u64,
 
     /// Size in bytes of the [FilterBlock].
     pub filter_size: u32,
+
+    /// Compatible feature bitmap.
+    ///
+    /// Each 1-bit in this bitmap indicates that a particular feature is
+    /// enabled.  A reader that does not support a feature in this bitmap can
+    /// still read the file (and log that a feature that it does not support is
+    /// in use).
+    ///
+    /// No compatible features are currently defined.  This bitmap is for future
+    /// expansion.
+    pub compatible_features: u64,
+
+    /// Incompatible feature bitmap.
+    ///
+    /// Each 1-bit in this bitmap indicates that a particular feature is
+    /// enabled.  A reader that does not support a feature in this bitmap must
+    /// not attempt to read the file.
+    ///
+    /// If any of these bits are set, the version number must be at least 3.
+    ///
+    /// No incompatible features are currently defined.  This bitmap is for
+    /// future expansion.
+    pub incompatible_features: u64,
 }
 
 /// Information about a column.
