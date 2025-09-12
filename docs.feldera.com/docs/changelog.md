@@ -15,6 +15,15 @@ import TabItem from '@theme/TabItem';
 
         ## Unreleased
 
+        The Bloom filter implementation in Feldera storage has been replaced
+        with a faster version that is incompatible with the previous version.
+        This means that a checkpoint written by an older version may not
+        perform as well when resumed with this or a later version, and
+        checkpoints made with this or a later version cannot be resumed with
+        earlier versions.
+
+        ## 0.138.0
+
         [Transaction (also known as huge-step) support](/pipelines/transactions).
 
         TIMESTAMP is now the same as TIMESTAMP(3); TIME is now the same as
@@ -23,15 +32,19 @@ import TabItem from '@theme/TabItem';
         that differ from the default ones are ignored (and the compiler
         gives a warning).
 
-        The following change doesn't affect the external Feldera API, only the
-        pipeline's API available from a sidecar container. The `/status`
-        endpoint no longer returns HTTP status 503 (SERVICE_UNAVAILABLE) while
-        the pipeline is initializing. Instead it returns status OK with message
-        body containing the "Initializing" string.
+        ## 0.136.0
 
-        ### Changes to Python SDK `feldera`:
-        - `Pipeline.sync_checkpoint` will now raise a runtime error if `wait`
-          is set to `True` and pushing this checkpoint fails.
+        In the Feldera Python SDK, `Pipeline.sync_checkpoint` will now raise a
+        runtime error if `wait` is set to `True` and pushing this checkpoint
+        fails.
+
+        ## 0.135.0
+
+        In the pipeline API available from a sidecar container only (not the
+        external Feldera API), the `/status` endpoint no longer returns HTTP
+        status 503 (SERVICE_UNAVAILABLE) while the pipeline is initializing.
+        Instead, it returns status OK with message body containing the
+        "Initializing" string.
 
         ## 0.129.0
 
