@@ -266,7 +266,7 @@ impl ControllerBuilder {
 ///
 /// A pipeline process has a [PipelineState], which is the state requested by
 /// the client, one of [Running], [Paused], or [Terminated]. This state is
-/// initially as set by the [ControllerBuilder], which defaults to [Paused].
+/// initially as set by the `ControllerBuilder`, which defaults to [Paused].
 /// Calls to [start], [pause], [initiate_stop], and [stop] change the
 /// client-requested state.  Once the state is set to [Terminated], it can never
 /// be changed back to [Running] or [Paused].
