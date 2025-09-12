@@ -1,11 +1,12 @@
 // Configuration API to retrieve the current authentication configuration and list of demos
 use actix_web::{get, web::Data as WebData, HttpRequest, HttpResponse};
+use feldera_types::license::DisplaySchedule;
 use serde::Serialize;
 use utoipa::ToSchema;
 
 use crate::api::main::ServerState;
 use crate::error::ManagerError;
-use crate::license::{DisplaySchedule, LicenseCheck, LicenseValidity};
+use crate::license::{LicenseCheck, LicenseValidity};
 use crate::unstable_features;
 
 #[derive(Serialize, ToSchema)]
