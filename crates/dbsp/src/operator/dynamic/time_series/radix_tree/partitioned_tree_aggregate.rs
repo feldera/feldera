@@ -9,7 +9,7 @@ use crate::{
         operator_traits::Operator,
         splitter_output_chunk_size, Scope,
     },
-    dynamic::{ClonableTrait, DataTrait, DynDataTyped, DynPair, Erase},
+    dynamic::{ClonableTrait, Data, DataTrait, DynDataTyped, DynPair, Erase},
     operator::{
         async_stream_operators::{StreamingTernaryOperator, StreamingTernaryWrapper},
         dynamic::{
@@ -448,8 +448,9 @@ where
 
                 let delta_partition_cursor = PartitionCursor::new(&mut delta_cursor);
 
-                let found_input = input_cursor.seek_key_exact(&key);
-                let found_output = output_cursor.seek_key_exact(&key);
+                let hash = key.default_hash();
+                let found_input = input_cursor.seek_key_exact(&key, Some(hash));
+                let found_output = output_cursor.seek_key_exact(&key, Some(hash));
 
                 updates.clear();
 

@@ -466,7 +466,7 @@ impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> Cursor<K, DynUnit, (), R>
         self.valid = true;
     }
 
-    fn seek_key_exact(&mut self, key: &K) -> bool {
+    fn seek_key_exact(&mut self, key: &K, _hash: Option<u64>) -> bool {
         self.seek_key(key);
         self.key_valid() && self.key().eq(key)
     }
