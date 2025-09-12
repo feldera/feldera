@@ -1571,8 +1571,7 @@ where
 {
     /// Asks the bloom filter of the reader if we have the key.
     pub fn maybe_contains_key(&self, key: &K) -> bool {
-        self.bloom_filter
-            .contains(&key.default_hash().to_le_bytes())
+        self.bloom_filter.contains_hash(key.default_hash())
     }
 
     /// Returns a [`RowGroup`] for all of the rows in column 0.
