@@ -1,6 +1,6 @@
 # Pipeline lifecycle
 
-The status of a pipeline consists out of four related yet separate statuses:
+The status of a pipeline consists of four related yet separate statuses:
 
 - **Resources status:** whether compute and storage resources are provisioned to run the pipeline.
 - **Storage status:** whether storage resources are in use or are (being) cleared.
@@ -110,7 +110,6 @@ returns immediately. The actual cleanup runs asynchronously, and once finished t
 becomes `Cleared`.
 
 **Relevant API fields:**
-
 - `storage_status`
 
 ### Storage status table
@@ -142,7 +141,6 @@ The one exception to this is `/stop?force=false`, which will result in a forcefu
 `Provisioned`.
 
 **Relevant API fields:**
-
 - `deployment_runtime_status`
 - `deployment_runtime_status_since`
 - `deployment_runtime_desired_status`
@@ -178,10 +176,12 @@ The diagram will be added in the future.
 The program status only varies during the pipeline `Stopped` resources status, as the pipeline
 can only be edited in that status, and it must have successfully compiled before being started.
 
-### Program status API fields
+### Program status API
+
+Whenever the fields relevant to the pipeline program are edited, the program will be automatically
+recompiled.
 
 **Relevant API fields:**
-
 - `program_status`
 - `program_status_since`
 - `program_code`
@@ -212,8 +212,8 @@ can only be edited in that status, and it must have successfully compiled before
 
 **Program status diagram notes:**
 
-- **Automatic compilation:** Whenever the fields relevant to the pipeline program are edited,
-  the program will be recompiled.
+- **Resets:** If the SQL or Rust compiler goes down during compilation, upon restart it
+  will reset the compilation status before picking up a new job.
 - **Rust caching:** Rust compilation makes use of multiple crates to enable faster compilation
   through parallelism and caching of already prior compiled crates.
 
@@ -222,8 +222,9 @@ can only be edited in that status, and it must have successfully compiled before
 Because runtime status is not only set if the resources status is `Provisioned`, the API for
 convenience has a combination status which combines resources status and runtime status
 
-### Combined status API fields
+### Combined status API
 
+**Relevant API fields:**
 - `deployment_status`
 - `deployment_status_since`
 - `deployment_desired_status`
