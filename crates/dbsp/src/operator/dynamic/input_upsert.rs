@@ -549,17 +549,18 @@ where
                 }
             })
             .collect::<Vec<_>>();
+        let n_updates = updates.iter().map(|updates| updates.0.len()).sum();
         debug_assert!(updates
             .iter()
             .all(|updates| updates.0.is_sorted_by(&|u1, u2| u1.fst().cmp(u2.fst()))));
 
-        self.input_batch_stats.add_batch(updates.len());
+        self.input_batch_stats.add_batch(n_updates);
 
         let mut key_updates = self.batch_factories.weighted_vals_factory().default_box();
 
         let mut trace_cursor = trace.cursor();
 
-        let mut builder = B::Builder::with_capacity(&self.batch_factories, updates.len() * 2);
+        let mut builder = B::Builder::with_capacity(&self.batch_factories, n_updates * 2);
 
         // Current key for which we are processing updates.
         let mut cur_key: Box<DynOpt<T::Key>> = self.opt_key_factory.default_box();
@@ -790,11 +791,12 @@ where
                 }
             })
             .collect::<Vec<_>>();
+        let n_updates = updates.iter().map(|updates| updates.0.len()).sum();
         debug_assert!(updates
             .iter()
             .all(|updates| updates.0.is_sorted_by(&|u1, u2| u1.fst().cmp(u2.fst()))));
 
-        self.input_batch_stats.add_batch(updates.len());
+        self.input_batch_stats.add_batch(n_updates);
 
         let mut errors = self
             .factories
@@ -811,8 +813,7 @@ where
 
         let mut trace_cursor = trace.deref().cursor();
 
-        let mut builder =
-            B::Builder::with_capacity(&self.factories.batch_factories, updates.len() * 2);
+        let mut builder = B::Builder::with_capacity(&self.factories.batch_factories, n_updates * 2);
 
         // Current key for which we are processing updates.
         let mut cur_key: Box<DynOpt<T::Key>> = self.factories.opt_key_factory.default_box();
