@@ -18,7 +18,7 @@ The backing that provides these resources depends on the Feldera edition:
 - **OSS edition:**
   - Storage resources: a local directory
   - Compute resources: a local process
-  
+
 - **Enterprise edition:**
   - Storage resources: Kubernetes PersistentVolumeClaim (PVC)
   - Compute resources: Kubernetes StatefulSet, Service and ConfigMap
@@ -171,7 +171,7 @@ There are several transition restrictions:
 - **Suspended can only be cleared by stop-and-start:** Once a pipeline has been suspended, it can only again become
   `Paused` or `Running` again by stopping (which will happen automatically) and starting the pipeline.
 
-The diagram will be added in the future. 
+The diagram will be added in the future.
 
 ## Program status (compilation status)
 
