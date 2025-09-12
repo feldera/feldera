@@ -47,7 +47,7 @@ use std::{
     sync::Arc,
 };
 use thiserror::Error as ThisError;
-use tracing::warn;
+use tracing::{info, warn};
 
 mod bulk_rows;
 pub use bulk_rows::BulkRows;
@@ -121,6 +121,13 @@ pub enum CorruptionError {
         /// Expected version ([`VERSION_NUMBER`]).
         expected_version: u32,
     },
+
+    /// Invalid version number in file trailer.
+    #[error("File uses unsupported incompatible features {0:#x}")]
+    UnsupportedIncompatibleFeatures(
+        /// Unsupported incompatible features
+        u64,
+    ),
 
     /// [`mod@binrw`] reported a format violation.
     #[error("Binary read/write error reading {block_type} block ({location}): {inner}")]
@@ -1455,6 +1462,20 @@ where
             expected_version: VERSION_NUMBER,
         })?;
 
+        if file_trailer.compatible_features != 0 {
+            info!(
+                "{path}: storage file uses unsupported compatible features {:#x}",
+                file_trailer.compatible_features
+            );
+        }
+
+        if file_trailer.incompatible_features != 0 {
+            return Err(CorruptionError::UnsupportedIncompatibleFeatures(
+                file_trailer.incompatible_features,
+            )
+            .into());
+        }
+
         assert_eq!(factories.len(), file_trailer.columns.len());
 
         let columns: Vec<_> = file_trailer
@@ -1487,7 +1508,7 @@ where
 
         let bloom_filter = match bloom_filter {
             Some(bloom_filter) => Some(bloom_filter),
-            None if has_compatible_bloom_filter => Some(
+            None if has_compatible_bloom_filter && file_trailer.filter_offset != 0 => Some(
                 FilterBlock::new(
                     &*file_handle,
                     BlockLocation::new(

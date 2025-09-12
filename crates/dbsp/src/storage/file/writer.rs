@@ -1189,6 +1189,8 @@ impl Writer {
             compression: self.cws[0].parameters.compression,
             filter_offset: filter_location.offset,
             filter_size: filter_location.size.try_into().unwrap(),
+            compatible_features: 0,
+            incompatible_features: 0,
         };
         let (_block, location) = self
             .writer
