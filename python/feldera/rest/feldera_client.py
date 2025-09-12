@@ -5,6 +5,7 @@ import time
 import json
 from decimal import Decimal
 from typing import Generator, Mapping
+from urllib.parse import quote
 
 from feldera.rest.config import Config
 from feldera.rest.feldera_config import FelderaConfig
@@ -750,7 +751,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             data = bytes(str(data), "utf-8")
 
         resp = self.http.post(
-            path=f"/pipelines/{pipeline_name}/ingress/{table_name}",
+            path=f"/pipelines/{quote(pipeline_name, safe='')}/ingress/{quote(table_name, safe='')}",
             params=params,
             content_type=content_type,
             body=data,
@@ -863,7 +864,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         table_name = f'"{table_name}"' if case_sensitive else table_name
 
         resp = self.http.post(
-            path=f"/pipelines/{pipeline_name}/egress/{table_name}",
+            path=f"/pipelines/{quote(pipeline_name, safe='')}/egress/{quote(table_name, safe='')}",
             params=params,
             stream=True,
         )

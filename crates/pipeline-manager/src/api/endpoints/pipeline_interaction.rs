@@ -2,7 +2,6 @@
 use crate::api::error::ApiError;
 use crate::api::examples;
 use crate::api::main::ServerState;
-use crate::api::util::parse_url_parameter;
 #[cfg(not(feature = "feldera-enterprise"))]
 use crate::common_error::CommonError;
 use crate::db::types::tenant::TenantId;
@@ -91,21 +90,14 @@ pub(crate) async fn http_input(
     state: WebData<ServerState>,
     client: WebData<awc::Client>,
     tenant_id: ReqData<TenantId>,
+    path: web::Path<(String, String)>,
     req: HttpRequest,
     body: web::Payload,
 ) -> Result<HttpResponse, ManagerError> {
-    let pipeline_name = parse_url_parameter(&req, "pipeline_name")?;
-    let table_name = match req.match_info().get("table_name") {
-        None => {
-            return Err(ManagerError::from(ApiError::MissingUrlEncodedParam {
-                param: "table_name",
-            }));
-        }
-        Some(table_name) => table_name,
-    };
+    let (pipeline_name, table_name) = path.into_inner();
     debug!("Table name {table_name:?}");
 
-    let endpoint = format!("ingress/{table_name}");
+    let endpoint = format!("ingress/{}", urlencoding::encode(&table_name));
 
     state
         .runner
@@ -179,19 +171,12 @@ pub(crate) async fn http_output(
     state: WebData<ServerState>,
     client: WebData<awc::Client>,
     tenant_id: ReqData<TenantId>,
+    path: web::Path<(String, String)>,
     req: HttpRequest,
     body: web::Payload,
 ) -> Result<HttpResponse, ManagerError> {
-    let pipeline_name = parse_url_parameter(&req, "pipeline_name")?;
-    let table_name = match req.match_info().get("table_name") {
-        None => {
-            return Err(ManagerError::from(ApiError::MissingUrlEncodedParam {
-                param: "table_name",
-            }));
-        }
-        Some(table_name) => table_name,
-    };
-    let endpoint = format!("egress/{table_name}");
+    let (pipeline_name, table_name) = path.into_inner();
+    let endpoint = format!("egress/{}", urlencoding::encode(&table_name));
     state
         .runner
         .forward_streaming_http_request_to_pipeline_by_name(
