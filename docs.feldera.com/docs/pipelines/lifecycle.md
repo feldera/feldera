@@ -195,7 +195,7 @@ recompiled.
 
 ### Program status table
 
-| Runtime status    | Description                                                                                                    |
+| Program status    | Description                                                                                                    |
 |-------------------|----------------------------------------------------------------------------------------------------------------|
 | **Pending**       | Pipeline program is not compiled, and is awaiting being picked up for SQL compilation.                         |
 | **CompilingSql**  | A compiler is compiling the pipeline program SQL.                                                              |
