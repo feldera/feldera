@@ -86,7 +86,7 @@ use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
 
 /// Increment this on each incompatible change.
-pub const VERSION_NUMBER: u32 = 2;
+pub const VERSION_NUMBER: u32 = 3;
 
 /// Magic number for data blocks.
 pub const DATA_BLOCK_MAGIC: [u8; 4] = *b"LFDB";
