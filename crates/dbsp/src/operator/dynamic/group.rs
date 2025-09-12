@@ -513,10 +513,10 @@ where
                 // empty/non-empty cursors.  Since the cursors have different types
                 // (`CursorEmpty` and `CursorGroup`), we can't bind them to the same
                 // variable.
-                if input_trace_cursor.seek_key_exact(&key) {
+                if input_trace_cursor.seek_key_exact(&key, None) {
                     let mut input_group_cursor = CursorGroup::new(&mut input_trace_cursor, ());
 
-                    if output_trace_cursor.seek_key_exact(&key) {
+                    if output_trace_cursor.seek_key_exact(&key, None) {
                         let mut output_group_cursor = CursorGroup::new(&mut output_trace_cursor, ());
 
                         self.transformer.borrow_mut().transform(
@@ -540,7 +540,7 @@ where
                     let mut input_group_cursor =
                         CursorEmpty::new(self.output_factories.weight_factory());
 
-                    if output_trace_cursor.seek_key_exact(&key) {
+                    if output_trace_cursor.seek_key_exact(&key, None) {
                         let mut output_group_cursor = CursorGroup::new(&mut output_trace_cursor, ());
 
                         self.transformer.borrow_mut().transform(

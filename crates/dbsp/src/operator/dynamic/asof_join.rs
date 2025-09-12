@@ -7,7 +7,7 @@ use crate::{
         operator_traits::{Operator, QuaternaryOperator},
     },
     dynamic::{
-        ClonableTrait, DataTrait, DowncastTrait, DynData, DynPair, DynUnit, DynVec,
+        ClonableTrait, Data, DataTrait, DowncastTrait, DynData, DynPair, DynUnit, DynVec,
         DynWeightedPairs, Erase, Factory, LeanVec, WeightTrait, WithFactory,
     },
     trace::{
@@ -268,14 +268,14 @@ where
     }
 
     /// Seek to a key; return `None` if exact match was not found.
-    fn try_seek<'a, C, K, V, T, R>(cursor: &'a mut C, key: &K) -> Option<&'a mut C>
+    fn try_seek<'a, C, K, V, T, R>(cursor: &'a mut C, key: &K, hash: u64) -> Option<&'a mut C>
     where
         K: DataTrait + ?Sized,
         V: DataTrait + ?Sized,
         R: WeightTrait + ?Sized,
         C: Cursor<K, V, T, R>,
     {
-        if cursor.seek_key_exact(key) {
+        if cursor.seek_key_exact(key, Some(hash)) {
             Some(cursor)
         } else {
             None
@@ -453,10 +453,11 @@ where
         // println!("key: {key:?}");
 
         // Make sure that all cursors point to the same key or are None.
-        let mut delayed_cursor1 = Self::try_seek(delayed_cursor1, key);
-        let mut delayed_cursor2 = Self::try_seek(delayed_cursor2, key);
-        let mut cursor1 = Self::try_seek(cursor1, key);
-        let mut cursor2 = Self::try_seek(cursor2, key);
+        let hash = key.default_hash();
+        let mut delayed_cursor1 = Self::try_seek(delayed_cursor1, key, hash);
+        let mut delayed_cursor2 = Self::try_seek(delayed_cursor2, key, hash);
+        let mut cursor1 = Self::try_seek(cursor1, key, hash);
+        let mut cursor2 = Self::try_seek(cursor2, key, hash);
 
         let mut empty_cursor = CursorEmpty::new(WithFactory::<ZWeight>::FACTORY);
 

@@ -109,7 +109,7 @@ where
         self.val_valid = true;
     }
 
-    fn seek_key_exact(&mut self, val: &V) -> bool {
+    fn seek_key_exact(&mut self, val: &V, _hash: Option<u64>) -> bool {
         self.seek_key(val);
         self.key_valid() && self.key().eq(val)
     }

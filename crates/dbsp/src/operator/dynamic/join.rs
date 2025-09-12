@@ -1361,14 +1361,20 @@ where
     pub fn next(&mut self) -> bool {
         if self.swap {
             while self.trace_cursor.key_valid() {
-                if self.delta_cursor.seek_key_exact(self.trace_cursor.key()) {
+                if self
+                    .delta_cursor
+                    .seek_key_exact(self.trace_cursor.key(), None)
+                {
                     return true;
                 }
                 self.trace_cursor.step_key();
             }
         } else {
             while self.delta_cursor.key_valid() {
-                if self.trace_cursor.seek_key_exact(self.delta_cursor.key()) {
+                if self
+                    .trace_cursor
+                    .seek_key_exact(self.delta_cursor.key(), None)
+                {
                     return true;
                 }
                 self.delta_cursor.step_key();

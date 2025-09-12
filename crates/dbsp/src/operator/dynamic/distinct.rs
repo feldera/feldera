@@ -527,7 +527,7 @@ where
 
             while delta_cursor.key_valid() {
                 let mut any_values = false;
-                if integral_cursor.seek_key_exact(delta_cursor.key()) {
+                if integral_cursor.seek_key_exact(delta_cursor.key(), None) {
                     while delta_cursor.val_valid() {
                         let w = **delta_cursor.weight();
                         let v = delta_cursor.val();
@@ -1020,7 +1020,7 @@ where
                 match delta_cursor.key().cmp(keys_of_interest_cursor.key()) {
                     // Key only appears in `delta`.
                     Ordering::Less => {
-                        if trace_cursor.seek_key_exact(delta_cursor.key()) {
+                        if trace_cursor.seek_key_exact(delta_cursor.key(), None) {
                             while delta_cursor.val_valid() {
                                 self.eval_keyval(
                                     &time,
@@ -1040,7 +1040,7 @@ where
                     }
                     // Key only appears in `keys_of_interest`.
                     Ordering::Greater => {
-                        if trace_cursor.seek_key_exact(keys_of_interest_cursor.key()) {
+                        if trace_cursor.seek_key_exact(keys_of_interest_cursor.key(), None) {
                             while keys_of_interest_cursor.val_valid() {
                                 self.eval_keyval(
                                     &time,
@@ -1061,7 +1061,7 @@ where
                     // Key appears in both `delta` and `keys_of_interest`:
                     // Iterate over all values in both cursors.
                     Ordering::Equal => {
-                        if trace_cursor.seek_key_exact(keys_of_interest_cursor.key()) {
+                        if trace_cursor.seek_key_exact(keys_of_interest_cursor.key(), None) {
                             while delta_cursor.val_valid() && keys_of_interest_cursor.val_valid() {
                                 match delta_cursor.val().cmp(keys_of_interest_cursor.val()) {
                                     Ordering::Less => {
@@ -1144,7 +1144,7 @@ where
 
             // Iterate over remaining `delta_cursor` keys.
             while delta_cursor.key_valid() {
-                if trace_cursor.seek_key_exact(delta_cursor.key()) {
+                if trace_cursor.seek_key_exact(delta_cursor.key(), None) {
                     while delta_cursor.val_valid() {
                         self.eval_keyval(
                             &time,
@@ -1165,7 +1165,7 @@ where
 
             // Iterate over remaining `keys_of_interest_cursor` keys.
             while keys_of_interest_cursor.key_valid() {
-                if trace_cursor.seek_key_exact(keys_of_interest_cursor.key()) {
+                if trace_cursor.seek_key_exact(keys_of_interest_cursor.key(), None) {
                     while keys_of_interest_cursor.val_valid() {
                         self.eval_keyval(
                             &time,

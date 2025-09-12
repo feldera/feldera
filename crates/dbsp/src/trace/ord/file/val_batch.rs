@@ -330,8 +330,8 @@ where
         })
     }
 
-    fn maybe_contains_key(&self, key: &Self::Key) -> bool {
-        self.file.maybe_contains_key(key)
+    fn maybe_contains_key(&self, hash: u64) -> bool {
+        self.file.maybe_contains_key(hash)
     }
 }
 
@@ -582,8 +582,9 @@ where
         });
     }
 
-    fn seek_key_exact(&mut self, key: &K) -> bool {
-        if !self.batch.maybe_contains_key(key) {
+    fn seek_key_exact(&mut self, key: &K, hash: Option<u64>) -> bool {
+        let hash = hash.unwrap_or_else(|| key.default_hash());
+        if !self.batch.maybe_contains_key(hash) {
             return false;
         }
         self.seek_key(key);
