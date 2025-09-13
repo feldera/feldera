@@ -23,6 +23,7 @@ from http import HTTPStatus
 from urllib.parse import quote, quote_plus
 
 from tests import FELDERA_TLS_INSECURE, API_KEY, BASE_URL, unique_pipeline_name
+from .oidc_test_helper import get_oidc_test_helper
 
 API_PREFIX = "/v0"
 
@@ -31,8 +32,15 @@ def _base_headers() -> Dict[str, str]:
     headers = {
         "Accept": "application/json",
     }
-    if API_KEY:
+
+    # Try OIDC authentication first, then fall back to API_KEY
+    oidc_helper = get_oidc_test_helper()
+    if oidc_helper is not None:
+        token = oidc_helper.obtain_access_token()
+        headers["Authorization"] = f"Bearer {token}"
+    elif API_KEY:
         headers["Authorization"] = f"Bearer {API_KEY}"
+
     return headers
 
 

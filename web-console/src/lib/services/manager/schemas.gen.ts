@@ -19,7 +19,7 @@ the \`fda\` command-line tool.`,
 export const $AdHocResultFormat = {
   type: 'string',
   description: 'URL-encoded `format` argument to the `/query` endpoint.',
-  enum: ['text', 'json', 'parquet', 'arrow_ipc']
+  enum: ['text', 'json', 'parquet', 'arrow_ipc', 'hash']
 } as const
 
 export const $AdhocQueryArgs = {
@@ -90,10 +90,10 @@ export const $AuthProvider = {
     },
     {
       type: 'object',
-      required: ['GoogleIdentity'],
+      required: ['GenericOidc'],
       properties: {
-        GoogleIdentity: {
-          $ref: '#/components/schemas/ProviderGoogleIdentity'
+        GenericOidc: {
+          $ref: '#/components/schemas/ProviderGenericOidc'
         }
       }
     }
@@ -3208,9 +3208,9 @@ export const $PropertyValue = {
 
 export const $ProviderAwsCognito = {
   type: 'object',
-  required: ['jwk_uri', 'login_url', 'logout_url'],
+  required: ['issuer', 'login_url', 'logout_url'],
   properties: {
-    jwk_uri: {
+    issuer: {
       type: 'string'
     },
     login_url: {
@@ -3222,14 +3222,20 @@ export const $ProviderAwsCognito = {
   }
 } as const
 
-export const $ProviderGoogleIdentity = {
+export const $ProviderGenericOidc = {
   type: 'object',
-  required: ['jwk_uri', 'client_id'],
+  required: ['issuer', 'client_id', 'extra_oidc_scopes'],
   properties: {
     client_id: {
       type: 'string'
     },
-    jwk_uri: {
+    extra_oidc_scopes: {
+      type: 'array',
+      items: {
+        type: 'string'
+      }
+    },
+    issuer: {
       type: 'string'
     }
   }
@@ -3986,6 +3992,20 @@ export const $ServiceStatus = {
   }
 } as const
 
+export const $SessionInfo = {
+  type: 'object',
+  required: ['tenant_id', 'tenant_name'],
+  properties: {
+    tenant_id: {
+      $ref: '#/components/schemas/TenantId'
+    },
+    tenant_name: {
+      type: 'string',
+      description: "Current user's tenant name"
+    }
+  }
+} as const
+
 export const $SourcePosition = {
   type: 'object',
   required: ['start_line_number', 'start_column', 'end_line_number', 'end_column'],
@@ -4551,6 +4571,26 @@ Default: 10 seconds`,
 Leave empty for Minio or the default region (\`us-east-1\` for AWS).`,
       nullable: true
     },
+    retention_min_age: {
+      type: 'integer',
+      format: 'int32',
+      description: `The minimum age (in days) a checkpoint must reach before it becomes
+eligible for deletion. All younger checkpoints will be preserved.
+
+Default: 30`,
+      default: 30,
+      minimum: 0
+    },
+    retention_min_count: {
+      type: 'integer',
+      format: 'int32',
+      description: `The minimum number of checkpoints to retain in object store.
+No checkpoints will be deleted if the total count is below this threshold.
+
+Default: 10`,
+      default: 10,
+      minimum: 0
+    },
     secret_key: {
       type: 'string',
       description: `The secret key used together with the access key for authentication.
@@ -4602,6 +4642,11 @@ Default: 10`,
       minimum: 0
     }
   }
+} as const
+
+export const $TenantId = {
+  type: 'string',
+  format: 'uuid'
 } as const
 
 export const $TimeSeries = {
