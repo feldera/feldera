@@ -45,6 +45,9 @@ import org.apache.calcite.rel.core.TableScan;
 import org.apache.calcite.rel.logical.LogicalProject;
 import org.apache.calcite.rel.logical.LogicalTableScan;
 import org.apache.calcite.rel.logical.LogicalValues;
+import org.apache.calcite.rel.metadata.ChainedRelMetadataProvider;
+import org.apache.calcite.rel.metadata.DefaultRelMetadataProvider;
+import org.apache.calcite.rel.metadata.RelMdRowCount;
 import org.apache.calcite.rel.type.RelDataType;
 import org.apache.calcite.rel.type.RelDataTypeFactory;
 import org.apache.calcite.rel.type.RelDataTypeField;
@@ -277,6 +280,9 @@ public class SqlToRelCompiler implements IWritesLogs {
         RelOptPlanner planner = new HepPlanner(new HepProgramBuilder().build());
         planner.setExecutor(RexUtil.EXECUTOR);
         this.cluster = RelOptCluster.create(planner, new RexBuilder(typeFactory));
+        var metadataProvider = ChainedRelMetadataProvider.of(List.of(RelMdRowCount.SOURCE,
+                DefaultRelMetadataProvider.INSTANCE));
+        this.cluster.setMetadataProvider(metadataProvider);
         this.converterConfig = SqlToRelConverter.config()
                 // Calcite recommends not using withExpand, but there are no
                 // rules to decorrelate some queries that withExpand will produce,
@@ -1866,6 +1872,16 @@ public class SqlToRelCompiler implements IWritesLogs {
                 Utilities.singleQuote(key.getString()), node);
     }
 
+    void validateNumericProperty(CalciteObject node, SqlFragment key, SqlFragment value) {
+        String vs = value.getString();
+        try {
+            Long.parseLong(vs);
+        } catch (NumberFormatException ex) {
+            throw new CompilationError("Expected a numeric value for property " +
+                    Utilities.singleQuote(key.getString()), node);
+        }
+    }
+
     @SuppressWarnings("unused")
     void validateConnectorsProperty(CalciteObject node, SqlFragment key, SqlFragment value) {
         // Nothing right now.
@@ -1883,6 +1899,9 @@ public class SqlToRelCompiler implements IWritesLogs {
                 break;
             case "connectors":
                 this.validateConnectorsProperty(node, key, value);
+                break;
+            case "expected_size":
+                this.validateNumericProperty(node, key, value);
                 break;
             default:
                 throw new CompilationError("Unknown property " + Utilities.singleQuote(keyString), node);

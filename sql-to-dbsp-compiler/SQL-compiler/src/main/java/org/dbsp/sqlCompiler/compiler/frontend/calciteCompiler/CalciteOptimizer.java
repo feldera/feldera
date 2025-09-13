@@ -105,6 +105,11 @@ public class CalciteOptimizer implements IWritesLogs {
                 this.builder.addRuleInstance(rule);
             }
         }
+
+        @Override
+        public String toString() {
+            return this.getName();
+        }
     }
 
     public class SimpleOptimizerStep extends BaseOptimizerStep {
@@ -123,13 +128,20 @@ public class CalciteOptimizer implements IWritesLogs {
     }
 
     RelNode apply(RelNode rel, CompilerOptions options) {
+        final RelNode finalRel = rel;
+        Logger.INSTANCE.belowLevel(CalciteOptimizer.this, 1)
+                .append("Initial plan ")
+                .increase()
+                .appendSupplier(() -> SqlToRelCompiler.getPlan(finalRel))
+                .decrease()
+                .newline();
         for (CalciteOptimizerStep step: this.steps) {
             if (step.getName().matches(options.ioOptions.skipCalciteOptimizations))
                 continue;
             RelNode optimized;
             try {
                 optimized = step.optimize(rel, this.level);
-                if (rel != optimized) {
+                if (rel != optimized && !rel.deepEquals(optimized)) {
                     Logger.INSTANCE.belowLevel(CalciteOptimizer.this, 1)
                             .append("After ")
                             .appendSupplier(step::getName)
@@ -137,8 +149,8 @@ public class CalciteOptimizer implements IWritesLogs {
                             .appendSupplier(() -> SqlToRelCompiler.getPlan(optimized))
                             .decrease()
                             .newline();
+                    rel = optimized;
                 }
-                rel = optimized;
             } catch (Throwable ex) {
                 this.reporter.reportWarning(
                         SourcePositionRange.INVALID, "Calcite optimizer exception caught",
@@ -160,6 +172,23 @@ public class CalciteOptimizer implements IWritesLogs {
                 ++joinCount;
                 if (join.getJoinType().isOuterJoin())
                     ++outerJoinCount;
+            }
+            super.visit(node, ordinal, parent);
+        }
+
+        void run(RelNode node) {
+            this.go(node);
+        }
+    }
+
+    /** Helper class to discover whether a query contains correlates */
+    static class CorrelateFinder extends RelVisitor {
+        public int correlateCount = 0;
+        @Override public void visit(
+                RelNode node, int ordinal,
+                @org.checkerframework.checker.nullness.qual.Nullable RelNode parent) {
+            if (node instanceof Correlate join) {
+                ++correlateCount;
             }
             super.visit(node, ordinal, parent);
         }
@@ -210,48 +239,18 @@ public class CalciteOptimizer implements IWritesLogs {
                 CoreRules.SORT_REMOVE,
                 CoreRules.SORT_REMOVE_REDUNDANT,
                 CoreRules.SORT_REMOVE_CONSTANT_KEYS));
-        this.addStep(new SimpleOptimizerStep("Decorrelate inner queries 1", 2,
-                new InnerDecorrelator(InnerDecorrelator.Config.DEFAULT)));
-        this.addStep(new SimpleOptimizerStep("Correlate/Union", 2,
-                new CorrelateUnionSwap(CorrelateUnionSwap.Config.DEFAULT)));
-        this.addStep(new SimpleOptimizerStep("Decorrelate inner queries 2", 2,
-                new InnerDecorrelator(InnerDecorrelator.Config.DEFAULT)));
-        this.addStep(new SimpleOptimizerStep("Desugar EXCEPT", 2,
-                new ExceptOptimizerRule(ExceptOptimizerRule.ExceptOptimizerRuleConfig.DEFAULT)));
+        this.addStep(new SimpleOptimizerStep("Simplify correlates", 0,
+                CoreRules.PROJECT_CORRELATE_TRANSPOSE,
+                FilterCorrelateRule.FILTER_CORRELATE));
 
-        this.addStep(new CalciteOptimizerStep() {
-            @Override
-            public String getName() {
-                return "Decorrelate";
-            }
-
-            @Override
-            public RelNode optimize(RelNode rel, int level) {
-                return RelDecorrelator.decorrelateQuery(rel, CalciteOptimizer.this.builder);
-            }
-        });
-
-        this.addStep(new SimpleOptimizerStep("Expand windows", 0,
-                CoreRules.PROJECT_OVER_SUM_TO_SUM0_RULE,
-                // I suspect that in the absence of the above rule
-                // there is a bug in Calcite in RexOVer which causes
-                // the following rule to crash the ComplexQueriesTest.calcite6020issueTest().
-                // See discussion in https://issues.apache.org/jira/browse/CALCITE-6020
-                CoreRules.PROJECT_TO_LOGICAL_PROJECT_AND_WINDOW
-        ));
-        this.addStep(new SimpleOptimizerStep("Isolate DISTINCT aggregates", 0,
-                CoreRules.AGGREGATE_EXPAND_DISTINCT_AGGREGATES_TO_JOIN,
-                // Rule is unsound https://issues.apache.org/jira/browse/CALCITE-6403
-                CoreRules.AGGREGATE_EXPAND_DISTINCT_AGGREGATES));
-        this.addStep(new BaseOptimizerStep("Join order", 2) {
+        var joinOrder = new BaseOptimizerStep("Join order", 2) {
             @Override
             HepProgram getProgram(RelNode node, int level) {
+                this.builder.addMatchOrder(HepMatchOrder.BOTTOM_UP);
                 this.addRules(level,
                         CoreRules.JOIN_CONDITION_PUSH,
                         CoreRules.JOIN_PUSH_EXPRESSIONS,
-                        CoreRules.FILTER_INTO_JOIN
-                );
-                this.addRules(level,
+                        CoreRules.FILTER_INTO_JOIN,
                         CoreRules.EXPAND_FILTER_DISJUNCTION_GLOBAL,
                         CoreRules.EXPAND_JOIN_DISJUNCTION_GLOBAL,
                         CoreRules.JOIN_EXPAND_OR_TO_UNION_RULE,
@@ -284,7 +283,62 @@ public class CalciteOptimizer implements IWritesLogs {
                 }
                 return this.builder.build();
             }
+        };
+        this.addStep(joinOrder);
+
+        this.addStep(new SimpleOptimizerStep("Decorrelate inner queries 1", 2,
+                new InnerDecorrelator(InnerDecorrelator.Config.DEFAULT)));
+        this.addStep(new SimpleOptimizerStep("Correlate/Union", 2,
+                new CorrelateUnionSwap(CorrelateUnionSwap.Config.DEFAULT)));
+        this.addStep(new SimpleOptimizerStep("Decorrelate inner queries 2", 2,
+                new InnerDecorrelator(InnerDecorrelator.Config.DEFAULT)));
+        this.addStep(new SimpleOptimizerStep("Desugar EXCEPT", 2,
+                new ExceptOptimizerRule(ExceptOptimizerRule.ExceptOptimizerRuleConfig.DEFAULT)));
+        this.addStep(new CalciteOptimizerStep() {
+            @Override
+            public String getName() {
+                return "Decorrelate";
+            }
+
+            @Override
+            public RelNode optimize(RelNode rel, int level) {
+                return RelDecorrelator.decorrelateQuery(rel, CalciteOptimizer.this.builder);
+            }
+
+            @Override
+            public String toString() {
+                return this.getName();
+            }
         });
+
+        this.addStep(new SimpleOptimizerStep("Expand windows", 0,
+                CoreRules.PROJECT_OVER_SUM_TO_SUM0_RULE,
+                // I suspect that in the absence of the above rule
+                // there is a bug in Calcite in RexOVer which causes
+                // the following rule to crash the ComplexQueriesTest.calcite6020issueTest().
+                // See discussion in https://issues.apache.org/jira/browse/CALCITE-6020
+                CoreRules.PROJECT_TO_LOGICAL_PROJECT_AND_WINDOW
+        ));
+        this.addStep(new SimpleOptimizerStep("Isolate DISTINCT aggregates", 0,
+                CoreRules.AGGREGATE_EXPAND_DISTINCT_AGGREGATES_TO_JOIN,
+                // Rule is unsound https://issues.apache.org/jira/browse/CALCITE-6403
+                CoreRules.AGGREGATE_EXPAND_DISTINCT_AGGREGATES
+        ));
+        var hyper = new BaseOptimizerStep("Hypergraph", 0) {
+            HepProgram getProgram(RelNode node, int level) {
+                // only call this if there are no Correlates
+                CorrelateFinder finder = new CorrelateFinder();
+                finder.run(node);
+                if (finder.correlateCount == 0) {
+                    this.addRules(level,
+                            CoreRules.JOIN_TO_HYPER_GRAPH,
+                            CoreRules.HYPER_GRAPH_OPTIMIZE);
+                }
+                return this.builder.build();
+            }
+        };
+        this.addStep(hyper);
+        this.addStep(joinOrder);
 
         SimpleOptimizerStep merge = new SimpleOptimizerStep(
                 "Merge identical operations", 0,
@@ -321,6 +375,7 @@ public class CalciteOptimizer implements IWritesLogs {
         this.addStep(new BaseOptimizerStep("Pushdown", 2) {
             @Override
             HepProgram getProgram(RelNode node, int level) {
+                this.builder.addMatchOrder(HepMatchOrder.BOTTOM_UP);
                 this.addRules(level,
                         CoreRules.JOIN_CONDITION_PUSH,
                         CoreRules.JOIN_PUSH_EXPRESSIONS,
@@ -331,7 +386,6 @@ public class CalciteOptimizer implements IWritesLogs {
                         // https://github.com/feldera/feldera/issues/1702
                         CoreRules.FILTER_INTO_JOIN
                 );
-                this.builder.addMatchOrder(HepMatchOrder.BOTTOM_UP);
                 return this.builder.build();
             }
         });
