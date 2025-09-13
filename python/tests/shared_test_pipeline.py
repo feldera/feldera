@@ -1,4 +1,5 @@
 import unittest
+from feldera.testutils import unique_pipeline_name
 from tests import TEST_CLIENT
 from feldera import PipelineBuilder, Pipeline
 
@@ -20,7 +21,7 @@ class SharedTestPipeline(unittest.TestCase):
     def setUpClass(cls):
         cls._ddls = []
         cls.client = TEST_CLIENT
-        cls.pipeline_name = cls.__name__
+        cls.pipeline_name = unique_pipeline_name(cls.__name__)
         for attr in dir(cls):
             if not attr.startswith("test_"):
                 continue
@@ -62,5 +63,5 @@ class SharedTestPipeline(unittest.TestCase):
 
     def new_pipeline_with_suffix(self, suffix: str) -> Pipeline:
         return PipelineBuilder(
-            self.client, f"{self._testMethodName}_{suffix}", sql=self.ddl
+            self.client, unique_pipeline_name(f"{self._testMethodName}_{suffix}"), sql=self.ddl
         ).create_or_replace()
