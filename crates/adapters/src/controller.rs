@@ -23,6 +23,15 @@ use crate::controller::checkpoint::{
 };
 use crate::controller::journal::Journal;
 use crate::controller::stats::{InputEndpointMetrics, OutputEndpointMetrics, TransactionStatus};
+#[cfg(feature = "feldera-enterprise")]
+use crate::controller::sync::continuous_pull;
+use crate::controller::sync::{
+    CHECKPOINT_SYNC_PULL_DURATION_SECONDS, CHECKPOINT_SYNC_PULL_FAILURES,
+    CHECKPOINT_SYNC_PULL_SUCCESS, CHECKPOINT_SYNC_PULL_TRANSFERRED_BYTES,
+    CHECKPOINT_SYNC_PULL_TRANSFER_SPEED, CHECKPOINT_SYNC_PUSH_DURATION_SECONDS,
+    CHECKPOINT_SYNC_PUSH_FAILURES, CHECKPOINT_SYNC_PUSH_SUCCESS,
+    CHECKPOINT_SYNC_PUSH_TRANSFERRED_BYTES, CHECKPOINT_SYNC_PUSH_TRANSFER_SPEED, SYNCHRONIZER,
+};
 use crate::create_integrated_output_endpoint;
 use crate::samply::SamplySpan;
 use crate::server::metrics::{
@@ -64,7 +73,6 @@ use feldera_adapterlib::format::BufferSize;
 use feldera_adapterlib::transport::{Resume, Watermark};
 use feldera_adapterlib::utils::datafusion::execute_query_text;
 use feldera_ir::LirCircuit;
-use feldera_storage::checkpoint_synchronizer::SYNCHRONIZER;
 use feldera_storage::histogram::{ExponentialHistogram, ExponentialHistogramSnapshot};
 use feldera_storage::metrics::{
     READ_BLOCKS_BYTES, READ_LATENCY_MICROSECONDS, SYNC_LATENCY_MICROSECONDS, WRITE_BLOCKS_BYTES,
@@ -114,7 +122,6 @@ mod checkpoint;
 mod error;
 mod journal;
 mod stats;
-#[cfg(feature = "feldera-enterprise")]
 mod sync;
 mod validate;
 
@@ -1029,6 +1036,67 @@ impl Controller {
             "Sizes in bytes of blocks written to storage.",
             labels,
             &WRITE_BLOCKS_BYTES.snapshot(),
+        );
+
+        metrics.histogram(
+            "checkpoint_sync_push_transferred_bytes",
+            "Bytes transferred when pushing a checkpoint.",
+            labels,
+            &CHECKPOINT_SYNC_PUSH_TRANSFERRED_BYTES.snapshot(),
+        );
+        metrics.histogram(
+            "checkpoint_sync_pull_transferred_bytes",
+            "Bytes transferred when pulling a checkpoint.",
+            labels,
+            &CHECKPOINT_SYNC_PULL_TRANSFERRED_BYTES.snapshot(),
+        );
+        metrics.histogram(
+            "checkpoint_sync_push_duration_seconds",
+            "Time taken to push a checkpoint to object store in seconds.",
+            labels,
+            &CHECKPOINT_SYNC_PUSH_DURATION_SECONDS.snapshot(),
+        );
+        metrics.histogram(
+            "checkpoint_sync_pull_duration_seconds",
+            "Time taken to pull a checkpoint from object store in seconds.",
+            labels,
+            &CHECKPOINT_SYNC_PULL_DURATION_SECONDS.snapshot(),
+        );
+        metrics.histogram(
+            "checkpoint_sync_push_transfer_speed_bytes_per_second",
+            "Transfer speed when pushing a checkpoint, in bytes per second.",
+            labels,
+            &CHECKPOINT_SYNC_PUSH_TRANSFER_SPEED.snapshot(),
+        );
+        metrics.histogram(
+            "checkpoint_sync_pull_transfer_speed_bytes_per_second",
+            "Transfer speed when pulling a checkpoint, in bytes per second.",
+            labels,
+            &CHECKPOINT_SYNC_PULL_TRANSFER_SPEED.snapshot(),
+        );
+        metrics.counter(
+            "checkpoint_sync_push_success",
+            "Number of checkpoints pushed successfully.",
+            labels,
+            &CHECKPOINT_SYNC_PUSH_SUCCESS,
+        );
+        metrics.counter(
+            "checkpoint_sync_push_failures",
+            "Number of failures when pushing a checkpoint.",
+            labels,
+            &CHECKPOINT_SYNC_PUSH_FAILURES,
+        );
+        metrics.counter(
+            "checkpoint_sync_pull_success",
+            "Number of checkpoints pulled successfully.",
+            labels,
+            &CHECKPOINT_SYNC_PULL_SUCCESS,
+        );
+        metrics.counter(
+            "checkpoint_sync_pull_failures",
+            "Number of failures when pulling a checkpoint.",
+            labels,
+            &CHECKPOINT_SYNC_PULL_FAILURES,
         );
 
         fn write_input_metric<F, M>(
@@ -2292,12 +2360,23 @@ impl CircuitThread {
         thread::Builder::new()
             .name("s3-synchronizer".to_string())
             .spawn(move || {
-                if let Err(err) = SYNCHRONIZER.push(uuid, storage.clone(), config.clone()) {
-                    cb(Err(Arc::new(ControllerError::checkpoint_push_error(
-                        err.to_string(),
-                    ))));
-                } else {
-                    cb(Ok(()))
+                match SYNCHRONIZER.push(uuid, storage.clone(), config.clone()) {
+                    Err(err) => {
+                        CHECKPOINT_SYNC_PUSH_FAILURES.fetch_add(1, Ordering::Relaxed);
+                        cb(Err(Arc::new(ControllerError::checkpoint_push_error(
+                            err.to_string(),
+                        ))));
+                    }
+                    Ok(metrics) => {
+                        CHECKPOINT_SYNC_PUSH_SUCCESS.fetch_add(1, Ordering::Relaxed);
+                        if let Some(metrics) = metrics {
+                            CHECKPOINT_SYNC_PUSH_TRANSFER_SPEED.record(metrics.speed);
+                            CHECKPOINT_SYNC_PUSH_DURATION_SECONDS
+                                .record(metrics.duration.as_secs());
+                            CHECKPOINT_SYNC_PUSH_TRANSFERRED_BYTES.record(metrics.bytes);
+                        }
+                        cb(Ok(()))
+                    }
                 }
 
                 uuid_lock.blocking_lock().take()

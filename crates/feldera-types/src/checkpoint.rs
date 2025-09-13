@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use uuid::Uuid;
@@ -96,4 +98,11 @@ pub struct CheckpointMetadata {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PSpineBatches {
     pub files: Vec<String>,
+}
+
+#[derive(Debug)]
+pub struct CheckpointSyncMetrics {
+    pub duration: Duration,
+    pub speed: u64,
+    pub bytes: u64,
 }
