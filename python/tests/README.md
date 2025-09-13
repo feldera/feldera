@@ -55,7 +55,7 @@ uv run python -m pytest tests/platform/test_shared_pipeline.py::TestPipeline::te
 To reduce redundant compilation cycles during testing:
 
 * **Inherit from `SharedTestPipeline`** instead of `unittest.TestCase`.
-* **Define DDLs** (e.g., `CREATE TABLE`, `CREATE VIEW`) in the **docstring** of each test method.
+* **Define DDLs** (e.g., `CREATE TABLE`, `CREATE VIEW`) using the **@SQL** annotation for each test method.
   * All DDLs from all test functions in the class are combined and compiled into a single pipeline.
   * If a table or view is already defined in one test, it can be used directly in others without redefinition.
   * Ensure that all table and view names are unique within the class.
@@ -63,6 +63,11 @@ To reduce redundant compilation cycles during testing:
 * Use `self.set_runtime_config(...)` to override the default pipeline config.
   * Reset it at the end using `self.reset_runtime_config()`.
 * Access the shared pipeline via `self.pipeline`.
+
+If a test ever need to create a pipeline manually, e.g., by using `PipelineBuilder`
+directly, make sure to generate a unique pipeline name to avoid any conflicts in CI.
+You can use the `unique_pipeline_name` helper function from `feldera.testutils` for this
+purpose.
 
 #### Example
 
@@ -82,7 +87,6 @@ class TestAverage(SharedTestPipeline):
         ...
 ```
 
-
 ## Running `runtime_aggtest` Tests
 
 These tests run with a different testing framework. To execute them, use:
@@ -90,4 +94,20 @@ These tests run with a different testing framework. To execute them, use:
 ```bash
 cd python
 PYTHONPATH=`pwd` ./tests/runtime_aggtest/run.sh
+```
+
+## Standard pytests
+
+If a test doesn't fit cleanly into the previous models, you can write it
+as an ordinary pytest. Make sure the test is self-contained and does not
+interfere with other tests.
+
+You can use the `gen_pipeline_name` decorator to generate a unique pipeline name
+for each test run. It will also try to shutdown and clean the state of the pipeline
+after the test completed.
+
+```python
+@gen_pipeline_name
+def test_some_property(pipeline_name):
+    pass
 ```
