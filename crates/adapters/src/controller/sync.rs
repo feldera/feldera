@@ -1,11 +1,14 @@
 #![allow(unused_imports)]
 use anyhow::Context;
-use std::sync::{Arc, LazyLock, Weak};
+use std::sync::{
+    atomic::{AtomicU64, Ordering},
+    Arc, LazyLock, Mutex, Weak,
+};
 
 use dbsp::circuit::{checkpointer::Checkpointer, CircuitStorageConfig};
 use feldera_adapterlib::errors::journal::ControllerError;
 use feldera_storage::{
-    checkpoint_synchronizer::{CheckpointSynchronizer, SYNCHRONIZER},
+    checkpoint_synchronizer::CheckpointSynchronizer, histogram::ExponentialHistogram,
     StorageBackend, StoragePath,
 };
 use feldera_types::{
@@ -16,11 +19,73 @@ use feldera_types::{
 
 use crate::server::ServerState;
 
+// Pull metrics
+/// Bytes transferred when pulling a checkpoint.
+pub static CHECKPOINT_SYNC_PULL_TRANSFERRED_BYTES: ExponentialHistogram =
+    ExponentialHistogram::new();
+
+/// Transfer speed when pulling a checkpoint, in bytes per second.
+pub static CHECKPOINT_SYNC_PULL_TRANSFER_SPEED: ExponentialHistogram = ExponentialHistogram::new();
+
+/// Number of checkpoints pulled successfully.
+pub static CHECKPOINT_SYNC_PULL_SUCCESS: AtomicU64 = AtomicU64::new(0);
+
+/// Number of failures when pulling a checkpoint.
+pub static CHECKPOINT_SYNC_PULL_FAILURES: AtomicU64 = AtomicU64::new(0);
+
+/// Time taken to pull a checkpoint from object store in seconds.
+pub static CHECKPOINT_SYNC_PULL_DURATION_SECONDS: ExponentialHistogram =
+    ExponentialHistogram::new();
+
+// Push metrics
+/// Bytes transferred when pushing a checkpoint.
+pub static CHECKPOINT_SYNC_PUSH_TRANSFERRED_BYTES: ExponentialHistogram =
+    ExponentialHistogram::new();
+
+/// Transfer speed when pushing a checkpoint, in bytes per second.
+pub static CHECKPOINT_SYNC_PUSH_TRANSFER_SPEED: ExponentialHistogram = ExponentialHistogram::new();
+
+/// Number of checkpoints pushed successfully.
+pub static CHECKPOINT_SYNC_PUSH_SUCCESS: AtomicU64 = AtomicU64::new(0);
+
+/// Number of failures when pushing a checkpoint.
+pub static CHECKPOINT_SYNC_PUSH_FAILURES: AtomicU64 = AtomicU64::new(0);
+
+/// Time taken to push a checkpoint to object store in seconds.
+pub static CHECKPOINT_SYNC_PUSH_DURATION_SECONDS: ExponentialHistogram =
+    ExponentialHistogram::new();
+
+/// Lazily resolves the checkpoint synchronizer.
+///
+/// This panic is safe as all enterprise builds must include the checkpoint-sync
+/// crate.
+pub(super) static SYNCHRONIZER: LazyLock<&'static dyn CheckpointSynchronizer> =
+    LazyLock::new(|| {
+        let Some(synchronizer) = inventory::iter::<&dyn CheckpointSynchronizer>
+            .into_iter()
+            .next()
+        else {
+            unreachable!("no checkpoint synchronizer found; are enterprise features enabled?");
+        };
+
+        *synchronizer
+    });
+
+#[cfg(feature = "feldera-enterprise")]
+fn upgrade_state(weak: Weak<ServerState>) -> Result<Arc<ServerState>, ControllerError> {
+    weak.upgrade()
+        .ok_or(ControllerError::checkpoint_fetch_error(
+            "unreachable: failed to upgrade server state".to_owned(),
+        ))
+}
+
 /// Pulls the checkpoint specified by the sync config and garbage collects all
 /// older checkpoints.
+#[cfg(feature = "feldera-enterprise")]
 fn pull_and_gc(
     storage: Arc<dyn StorageBackend>,
     sync: &SyncConfig,
+    prev: &mut uuid::Uuid,
 ) -> Result<CheckpointMetadata, ControllerError> {
     match SYNCHRONIZER
         .pull(storage.clone(), sync.to_owned())
@@ -28,9 +93,20 @@ fn pull_and_gc(
     {
         Err(err) => {
             tracing::error!("{:?}", err.to_string());
-            return Err(err);
+            CHECKPOINT_SYNC_PULL_FAILURES.fetch_add(1, Ordering::Relaxed);
+            Err(err)
         }
-        Ok(cpm) => {
+        Ok((cpm, metrics)) => {
+            if cpm.uuid != *prev {
+                CHECKPOINT_SYNC_PULL_SUCCESS.fetch_add(1, Ordering::Relaxed);
+                *prev = cpm.uuid;
+                if let Some(metrics) = metrics {
+                    CHECKPOINT_SYNC_PULL_TRANSFER_SPEED.record(metrics.speed);
+                    CHECKPOINT_SYNC_PULL_DURATION_SECONDS.record(metrics.duration.as_secs());
+                    CHECKPOINT_SYNC_PULL_TRANSFERRED_BYTES.record(metrics.bytes);
+                }
+            }
+
             let checkpointer = Checkpointer::new(storage.clone(), 0, false)?;
             checkpointer.gc_startup()?;
 
@@ -39,6 +115,7 @@ fn pull_and_gc(
     }
 }
 
+#[cfg(feature = "feldera-enterprise")]
 pub fn continuous_pull<F>(
     storage: &CircuitStorageConfig,
     is_activated: F,
@@ -91,8 +168,9 @@ where
         return Ok(());
     }
 
+    let mut prev = uuid::Uuid::nil();
     while !is_activated() {
-        match pull_and_gc(storage.backend.clone(), sync) {
+        match pull_and_gc(storage.backend.clone(), sync, &mut prev) {
             Err(err) => {
                 if sync.fail_if_no_checkpoint {
                     return Err(err);
