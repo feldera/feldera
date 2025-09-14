@@ -196,11 +196,11 @@ def validate_view(pipeline: Pipeline, view: ViewSpec):
 
             if extra_rows:
                 log("Extra rows in Feldera output, but not in the ad hoc query output")
-                log(json.dumps(extra_rows))
+                log(json.dumps(extra_rows, default=str))
 
             if missing_rows:
                 log("Extra rows in the ad hoc query output, but not in Feldera output")
-                log(json.dumps(missing_rows))
+                log(json.dumps(missing_rows, default=str))
         except Exception as e:
             log(f"Error querying view '{view.name}': {e}")
             log(f"Ad-hoc Query: {view_query}")
