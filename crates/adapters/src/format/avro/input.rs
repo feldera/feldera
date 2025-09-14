@@ -115,7 +115,7 @@ struct AvroParser {
     endpoint_name: String,
     sr_settings: Option<SrSettings>,
     input_handle: Box<dyn DeCollectionHandle>,
-    input_stream: Option<Box<dyn AvroStream>>,
+    input_stream: Box<dyn AvroStream>,
     config: AvroParserConfig,
     relation_schema: Relation,
 
@@ -180,11 +180,12 @@ impl AvroParser {
             AvroUpdateFormat::Debezium | AvroUpdateFormat::Raw => (),
         }
 
+        let input_stream = input_handle.configure_avro_deserializer()?;
         let mut parser = Self {
             endpoint_name: endpoint_name.to_string(),
             input_handle,
             sr_settings,
-            input_stream: None,
+            input_stream,
             config: config.clone(),
             schema_id: None,
             relation_schema: relation_schema.clone(),
@@ -255,8 +256,6 @@ impl AvroParser {
         self.refs = refs;
         self.schema = Some(schema);
         self.value_schema = Some(value_schema);
-
-        self.input_stream = Some(self.input_handle.configure_avro_deserializer()?);
 
         Ok(())
     }
@@ -376,19 +375,17 @@ impl AvroParser {
 
         // At this point we should either have a statically configured schema or a successfully installed schema from
         // the schema registry.
-        assert!(self.input_stream.is_some());
         assert!(self.schema.is_some());
         let schema = self.schema.as_ref().unwrap();
         let value_schema = self.value_schema.as_ref().unwrap();
-
-        let input_stream = self.input_stream.as_mut().unwrap();
 
         let avro_value = from_avro_datum(schema, &mut record, None).map_err(|e| {
             ParseError::bin_envelope_error(format!("error parsing avro record: {e}"), record, None)
         })?;
 
         match self.config.update_format {
-            AvroUpdateFormat::Raw => input_stream
+            AvroUpdateFormat::Raw => self
+                .input_stream
                 .insert(&avro_value, schema, &self.refs, record.len())
                 .map_err(|e| {
                     ParseError::bin_event_error(
@@ -403,7 +400,7 @@ impl AvroParser {
             AvroUpdateFormat::Debezium => {
                 let (before, after) = Self::extract_debezium_values(&avro_value)?;
                 if let Some(before) = before {
-                    input_stream.delete(before, value_schema, &self.refs, record.len()).map_err(|e| {
+                    self.input_stream.delete(before, value_schema, &self.refs, record.len()).map_err(|e| {
                         ParseError::bin_event_error(
                             format!(
                                 "error converting 'before' record to table row (record: {before:?}): {e}"
@@ -415,7 +412,7 @@ impl AvroParser {
                     })?;
                 }
                 if let Some(after) = after {
-                    input_stream.insert(after, value_schema, &self.refs, record.len()).map_err(|e| {
+                    self.input_stream.insert(after, value_schema, &self.refs, record.len()).map_err(|e| {
                             ParseError::bin_event_error(
                                 format!(
                                     "error converting 'after' record to table row (record: {after:?}): {e}"
@@ -496,7 +493,7 @@ impl Parser for AvroParser {
     }
     fn parse(&mut self, data: &[u8]) -> (Option<Box<dyn InputBuffer>>, Vec<ParseError>) {
         let errors = self.input(data).map_or_else(|e| vec![e], |_| Vec::new());
-        let buffer = self.input_stream.as_mut().and_then(|avro| avro.take_all());
+        let buffer = self.input_stream.take_all();
         (buffer, errors)
     }
 
@@ -505,7 +502,7 @@ impl Parser for AvroParser {
             endpoint_name: self.endpoint_name.clone(),
             input_handle: self.input_handle.fork(),
             sr_settings: self.sr_settings.clone(),
-            input_stream: self.input_stream.as_ref().map(|s| s.fork()),
+            input_stream: self.input_stream.fork(),
             config: self.config.clone(),
             schema_id: self.schema_id,
             relation_schema: self.relation_schema.clone(),
@@ -518,6 +515,6 @@ impl Parser for AvroParser {
     }
 
     fn stage(&self, buffers: Vec<Box<dyn InputBuffer>>) -> Box<dyn StagedBuffers> {
-        self.input_stream.as_ref().unwrap().stage(buffers)
+        self.input_stream.stage(buffers)
     }
 }
