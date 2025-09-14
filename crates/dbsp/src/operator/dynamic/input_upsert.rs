@@ -17,16 +17,20 @@ use crate::{
         Z1,
     },
     trace::{
-        cursor::Cursor, Batch, BatchFactories, BatchReader, BatchReaderFactories, Builder, Rkyv,
-        Spine,
+        cursor::{Cursor, CursorFactory, CursorList},
+        ord::vec::wset_batch::VecWSetBuilder,
+        spine_async::FetchList,
+        Batch, BatchFactories, BatchLocation, BatchReader, BatchReaderFactories, Builder,
+        ListMerger, MergeCursor, Rkyv, Spine, VecWSetFactories,
     },
-    Circuit, DBData, NumEntries, RootCircuit, Stream, ZWeight,
+    Circuit, DBData, DynZWeight, NumEntries, RootCircuit, Stream, ZWeight,
 };
 use minitrace::trace;
 use rkyv::{Archive, Deserialize, Serialize};
 use size_of::SizeOf;
 use std::{
     borrow::Cow,
+    fmt::Debug,
     marker::PhantomData,
     mem::take,
     ops::{Deref, Neg},
@@ -130,6 +134,7 @@ pub type PatchFunc<V, U> = Box<dyn Fn(&mut V, &U)>;
 
 pub struct InputUpsertFactories<B: IndexedZSet> {
     pub batch_factories: B::Factories,
+    pub keys_factories: VecWSetFactories<B::Key, DynZWeight>,
     pub opt_key_factory: &'static dyn Factory<DynOpt<B::Key>>,
     pub opt_val_factory: &'static dyn Factory<DynOpt<B::Val>>,
 }
@@ -138,6 +143,7 @@ impl<B: IndexedZSet> Clone for InputUpsertFactories<B> {
     fn clone(&self) -> Self {
         Self {
             batch_factories: self.batch_factories.clone(),
+            keys_factories: self.keys_factories.clone(),
             opt_key_factory: self.opt_key_factory,
             opt_val_factory: self.opt_val_factory,
         }
@@ -155,6 +161,7 @@ where
     {
         Self {
             batch_factories: BatchReaderFactories::new::<KType, VType, ZWeight>(),
+            keys_factories: VecWSetFactories::new::<KType, (), ZWeight>(),
             opt_key_factory: WithFactory::<Option<KType>>::FACTORY,
             opt_val_factory: WithFactory::<Option<VType>>::FACTORY,
         }
@@ -292,6 +299,7 @@ where
                         factories.batch_factories.clone(),
                         factories.opt_key_factory,
                         factories.opt_val_factory,
+                        factories.keys_factories.clone(),
                         patch_func,
                     ),
                     &delayed_trace,
@@ -468,6 +476,7 @@ where
     batch_factories: B::Factories,
     opt_key_factory: &'static dyn Factory<DynOpt<B::Key>>,
     opt_val_factory: &'static dyn Factory<DynOpt<B::Val>>,
+    keys_factories: VecWSetFactories<B::Key, DynZWeight>,
     patch_func: PatchFunc<T::Val, U>,
 
     // Input batch sizes.
@@ -489,12 +498,14 @@ where
         batch_factories: B::Factories,
         opt_key_factory: &'static dyn Factory<DynOpt<B::Key>>,
         opt_val_factory: &'static dyn Factory<DynOpt<B::Val>>,
+        keys_factories: VecWSetFactories<B::Key, DynZWeight>,
         patch_func: PatchFunc<T::Val, U>,
     ) -> Self {
         Self {
             batch_factories,
             opt_key_factory,
             opt_val_factory,
+            keys_factories,
             patch_func,
             input_batch_stats: BatchSizeStats::new(),
             output_batch_stats: BatchSizeStats::new(),
@@ -556,11 +567,80 @@ where
 
         self.input_batch_stats.add_batch(n_updates);
 
+        // # Overview
+        //
+        // We divide processing upserts for a given key in our input stream into
+        // two parts:
+        //
+        // 1. Inserting the key's new value.
+        //
+        // 2. Deleting the key's old value (a retraction).
+        //
+        // A truly new key has only #1, a key that existed and is being deleted
+        // has only #2, a key that existed and is being inserted has both #1 and
+        // #2.  A key that existed and is being inserted with the same value is
+        // a no-op and we have to make it cancel out one way or another, as
+        // described below.
+        //
+        // # Strategy
+        //
+        // The original and simplest approach here is to generate retractions at
+        // the same time we process the updates.  For each key, we find in the
+        // trace the original value of the key, if there is one, and add it,
+        // negated, to `key_updates`.  We also add the final value of the key to
+        // `key_updates`.  Then we consolidate to get the overall update (which
+        // will be empty if the old and new value are the same).
+        //
+        // A different strategy is to add the keys that are being updated to a
+        // collection of keys (`keys_builder`), and then later look them all up
+        // in the trace in batch using [BatchReader::fetch].  If we find any (we
+        // often will not), then we can negate the results of the lookup to form
+        // the retractions, and merge it with the insertions.  Batch lookup is
+        // optimized such that this yields up to about 15% better performance.
+        //
+        // # Problem
+        //
+        // However, [BatchReader::fetch] introduces another complication, in
+        // that it only does the lookup for on-storage batches; for in-memory
+        // batches, it does nothing.  [Spine::fetch] makes this a bigger problem
+        // because it mixes full original in-memory batches with fetched
+        // on-storage batches.  That means that if we use [Spine::fetch] to
+        // generate our retractions, we will retract all of the keys in the
+        // in-memory batches.
+        //
+        // We solve this problem by breaking the spine into `memory_batches` and
+        // `storage_batches`.  If a key appears in the former, then we generate
+        // a retraction for it immediately[^1]; otherwise, we add the key to
+        // `keys_builder` and later attempt fetch it from the on-storage
+        // batches.  This also improves performance in the common case.
+        //
+        // [^1]: We do have to look it up in the on-storage batches in that case
+        //   since it's possible that there's a canceling tuple there.
+        //
+        // [Spine::fetch]: crate::trace::spine_async::Spine
+
         let mut key_updates = self.batch_factories.weighted_vals_factory().default_box();
 
         let mut trace_cursor = trace.cursor();
 
-        let mut builder = B::Builder::with_capacity(&self.batch_factories, n_updates * 2);
+        // Get batches from the trace and break them into in-memory and
+        // on-storage batches.
+        let (memory_batches, storage_batches) = trace
+            .batches()
+            .into_iter()
+            .partition::<Vec<_>, _>(|b| b.location() == BatchLocation::Memory);
+
+        // Create a cursor for looking up just the in-memory batches.
+        let mut memory_cursor = CursorList::new(
+            trace_cursor.weight_factory(),
+            memory_batches.iter().map(|b| b.cursor()).collect(),
+        );
+
+        // Create a builder for accumulating the keys to fetch from
+        // `storage_batches` later to generate retractions.
+        let mut keys_builder = VecWSetBuilder::with_capacity(&self.keys_factories, n_updates);
+
+        let mut builder = B::Builder::with_capacity(&self.batch_factories, n_updates);
 
         // Current key for which we are processing updates.
         let mut cur_key: Box<DynOpt<T::Key>> = self.opt_key_factory.default_box();
@@ -610,26 +690,62 @@ where
                 cur_key.from_ref(key);
                 cur_val.set_none();
 
-                // Generate retraction if `key` is present in the trace.
-                if trace_cursor.seek_key_exact(key, None) {
-                    // println!("{}: found key in trace_cursor", Runtime::worker_index());
-                    while trace_cursor.val_valid() {
-                        let weight = **trace_cursor.weight();
-
-                        if !weight.is_zero() {
-                            let val = trace_cursor.val();
-
-                            key_updates.push_with(&mut |item| {
-                                let (v, w) = item.split_mut();
-
-                                val.clone_to(v);
-                                **w = weight.neg()
-                            });
-                            cur_val.from_ref(val);
+                // If `key` is in the in-memory trace, then get it from the
+                // overall trace and generate a retraction.
+                //
+                // Otherwise, it might be in the on-disk trace, so append it to
+                // `keys_builder`.
+                enum Action {
+                    GenerateRetraction,
+                    FetchFromStorage,
+                }
+                let action = match (memory_batches.is_empty(), storage_batches.is_empty()) {
+                    (true, true) => None,
+                    (false, true) => trace_cursor
+                        .seek_key_exact(key, None)
+                        .then_some(Action::GenerateRetraction),
+                    (true, false) => Some(Action::FetchFromStorage),
+                    (false, false) => {
+                        let hash = key.default_hash();
+                        if !memory_cursor.seek_key_exact(key, Some(hash)) {
+                            // `key` is not in memory but it could be in storage.
+                            Some(Action::FetchFromStorage)
+                        } else if trace_cursor.seek_key_exact(key, Some(hash)) {
+                            // `key` is in memory and it is not cancelled out by
+                            // keys in storage.
+                            Some(Action::GenerateRetraction)
+                        } else {
+                            // `key` is in memory but it is cancelled out by
+                            // on-storage keys.
+                            None
                         }
-
-                        trace_cursor.step_val();
                     }
+                };
+                match action {
+                    Some(Action::FetchFromStorage) => {
+                        keys_builder.push_val_diff(&(), &1);
+                        keys_builder.push_key(key);
+                    }
+                    Some(Action::GenerateRetraction) => {
+                        while trace_cursor.val_valid() {
+                            let weight = **trace_cursor.weight();
+
+                            if !weight.is_zero() {
+                                let val = trace_cursor.val();
+
+                                key_updates.push_with(&mut |item| {
+                                    let (v, w) = item.split_mut();
+
+                                    val.clone_to(v);
+                                    **w = weight.neg()
+                                });
+                                cur_val.from_ref(val);
+                            }
+
+                            trace_cursor.step_val();
+                        }
+                    }
+                    None => (),
                 }
             }
 
@@ -673,7 +789,30 @@ where
             key_updates.clear();
         }
 
-        builder.done()
+        let mut insertions = builder.done();
+
+        // Fetch retraction values from the on-storage batches.
+        let retractions = FetchList::new(
+            storage_batches,
+            &keys_builder.done(),
+            trace_cursor.weight_factory(),
+        )
+        .await;
+
+        // If there are any values to retract, then generate retractions and
+        // merge them with insertions.  Otherwise, the result is just the
+        // insertions.
+        let retraction_cursor = retractions.get_cursor();
+        if retraction_cursor.key_valid() {
+            let builder = B::Builder::with_capacity(&self.batch_factories, n_updates * 2);
+            let insertion_cursor = insertions.consuming_cursor(None, None);
+            let retraction_cursor = Box::new(NegatedMergeCursor::new(retraction_cursor));
+            let vec: Vec<Box<dyn MergeCursor<_, _, _, _>>> =
+                vec![insertion_cursor, retraction_cursor];
+            ListMerger::merge(&self.batch_factories, builder, vec)
+        } else {
+            insertions
+        }
     }
 
     fn input_preference(&self) -> (OwnershipPreference, OwnershipPreference) {
@@ -988,5 +1127,70 @@ where
             OwnershipPreference::PREFER_OWNED,
             OwnershipPreference::INDIFFERENT,
         )
+    }
+}
+
+/// Wraps any [Cursor] with a [MergeCursor] that negates its weights.
+pub struct NegatedMergeCursor<K, V, T, C>
+where
+    K: ?Sized,
+    V: ?Sized,
+    C: Cursor<K, V, T, DynZWeight>,
+{
+    cursor: C,
+    weight: Box<DynZWeight>,
+    phantom: PhantomData<(Box<K>, Box<V>, T)>,
+}
+
+impl<K, V, T, C> NegatedMergeCursor<K, V, T, C>
+where
+    K: ?Sized,
+    V: ?Sized,
+    C: Cursor<K, V, T, DynZWeight>,
+{
+    pub fn new(cursor: C) -> Self {
+        Self {
+            weight: cursor.weight_factory().default_box(),
+            cursor,
+            phantom: PhantomData,
+        }
+    }
+}
+
+impl<K, V, T, C> MergeCursor<K, V, T, DynZWeight> for NegatedMergeCursor<K, V, T, C>
+where
+    K: ?Sized + Debug,
+    V: ?Sized + Debug,
+    C: Cursor<K, V, T, DynZWeight>,
+{
+    fn key_valid(&self) -> bool {
+        self.cursor.key_valid()
+    }
+    fn val_valid(&self) -> bool {
+        self.cursor.val_valid()
+    }
+    fn val(&self) -> &V {
+        self.cursor.val()
+    }
+    fn key(&self) -> &K {
+        self.cursor.key()
+    }
+    fn step_key(&mut self) {
+        self.cursor.step_key()
+    }
+    fn step_val(&mut self) {
+        self.cursor.step_val()
+    }
+    fn map_times(&mut self, logic: &mut dyn FnMut(&T, &DynZWeight)) {
+        self.cursor.map_times(&mut |t, r| {
+            logic(t, &r.neg());
+        });
+    }
+    fn weight(&mut self) -> &DynZWeight
+    where
+        T: PartialEq<()>,
+    {
+        **self.weight = self.cursor.weight().neg();
+        &*self.weight
     }
 }
