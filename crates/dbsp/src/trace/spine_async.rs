@@ -38,9 +38,7 @@ use crate::{
         merge_batches,
         ord::fallback::pick_insert_destination,
         sample_keys_from_batches,
-        spine_async::{
-            list_merger::ArcListMerger, push_merger::ArcPushMerger, snapshot::FetchList,
-        },
+        spine_async::{list_merger::ArcListMerger, push_merger::ArcPushMerger},
     },
 };
 
@@ -87,7 +85,7 @@ mod index_set;
 mod list_merger;
 mod push_merger;
 mod snapshot;
-pub use snapshot::{BatchReaderWithSnapshot, SpineSnapshot, WithSnapshot};
+pub use snapshot::{BatchReaderWithSnapshot, FetchList, SpineSnapshot, WithSnapshot};
 
 use super::{BatchLocation, cursor::CursorFactory};
 
