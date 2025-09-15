@@ -9,10 +9,11 @@ use crate::{InputBuffer, ParseError, Parser};
 use actix_web::web::Payload;
 use anyhow::{anyhow, Error as AnyError, Result as AnyResult};
 use atomic::Atomic;
+use chrono::{DateTime, Utc};
 use circular_queue::CircularQueue;
 use dbsp::circuit::tokio::TOKIO;
 use feldera_adapterlib::format::BufferSize;
-use feldera_adapterlib::transport::Resume;
+use feldera_adapterlib::transport::{Resume, Watermark};
 use feldera_types::config::FtModel;
 use feldera_types::program_schema::Relation;
 use feldera_types::transport::http::HttpInputConfig;
@@ -117,6 +118,7 @@ impl HttpInputEndpointInner {
                     let mut guard = self.details.lock().unwrap();
                     let details = guard.as_mut().unwrap();
                     let (num_records, hasher, chunks) = details.queue.flush_with_aux();
+                    let (timestamps, chunks) = chunks.into_iter().unzip::<_, _, Vec<_>, Vec<_>>();
                     let resume = Resume::new_data_only(
                         || {
                             rmpv::ext::to_value(Data {
@@ -126,7 +128,14 @@ impl HttpInputEndpointInner {
                         },
                         hasher.map(|h| h.finish()),
                     );
-                    details.consumer.extended(num_records, Some(resume));
+                    details.consumer.extended(
+                        num_records,
+                        Some(resume),
+                        timestamps
+                            .into_iter()
+                            .map(|t| Watermark::new(t, None))
+                            .collect(),
+                    );
                 }
                 InputReaderCommand::Disconnect => self.set_state(PipelineState::Terminated),
             });
@@ -167,7 +176,12 @@ impl HttpInputEndpoint {
         &self.inner.name
     }
 
-    fn push(&self, bytes: Option<&[u8]>, errors: &mut CircularQueue<ParseError>) -> usize {
+    fn push(
+        &self,
+        bytes: Option<&[u8]>,
+        errors: &mut CircularQueue<ParseError>,
+        timestamp: DateTime<Utc>,
+    ) -> usize {
         let mut guard = self.inner.details.lock().unwrap();
         let details = guard.as_mut().unwrap();
         if let Some(bytes) = bytes {
@@ -183,7 +197,7 @@ impl HttpInputEndpoint {
             };
             details
                 .queue
-                .push_with_aux((buffer, new_errors.clone()), aux);
+                .push_with_aux((buffer, new_errors.clone()), timestamp, aux);
             total_errors += new_errors.len();
             for error in new_errors {
                 errors.push(error);
@@ -249,12 +263,17 @@ impl HttpInputEndpoint {
                     return Err(PipelineError::Terminating);
                 }
                 PipelineState::Running => {
+                    // Use the time when we started reading the next chunk of the payload as the
+                    // ingestion timestamp.
+                    let timestamp = Utc::now();
+
                     // Check pipeline status at least every second.
+
                     match timeout(Duration::from_millis(1_000), payload.next()).await {
                         Err(_elapsed) => (),
                         Ok(Some(Ok(bytes))) => {
                             num_bytes += bytes.len();
-                            num_errors += self.push(Some(&bytes), &mut errors);
+                            num_errors += self.push(Some(&bytes), &mut errors, timestamp);
                         }
                         Ok(Some(Err(e))) => {
                             self.error(true, anyhow!(e.to_string()), None);
@@ -265,7 +284,7 @@ impl HttpInputEndpoint {
                             ))?
                         }
                         Ok(None) => {
-                            num_errors += self.push(None, &mut errors);
+                            num_errors += self.push(None, &mut errors, timestamp);
                             break;
                         }
                     }

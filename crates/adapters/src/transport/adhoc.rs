@@ -10,9 +10,10 @@ use arrow::array::RecordBatch;
 use arrow::datatypes::Schema;
 use atomic::Atomic;
 use bytes::Bytes;
+use chrono::Utc;
 use datafusion::execution::SendableRecordBatchStream;
 use feldera_adapterlib::format::BufferSize;
-use feldera_adapterlib::transport::Resume;
+use feldera_adapterlib::transport::{Resume, Watermark};
 use feldera_types::config::FtModel;
 use feldera_types::program_schema::Relation;
 use feldera_types::transport::adhoc::AdHocInputConfig;
@@ -126,6 +127,8 @@ impl AdHocInputEndpoint {
         schema: &Arc<Schema>,
         arrow_inserter: &mut Box<dyn ArrowStream>,
     ) -> AnyResult<u64> {
+        let timestamp = Utc::now();
+
         arrow_inserter.insert(&batch)?;
         let buffer = arrow_inserter.take_all();
         let size = buffer.len();
@@ -148,7 +151,9 @@ impl AdHocInputEndpoint {
 
             let mut guard = self.inner.details.lock().unwrap();
             let details = guard.as_mut().unwrap();
-            details.queue.push_with_aux((buffer, Vec::new()), aux);
+            details
+                .queue
+                .push_with_aux((buffer, Vec::new()), timestamp, aux);
         }
 
         Ok(size.records as u64)
@@ -287,6 +292,8 @@ impl InputReader for AdHocInputEndpoint {
                 let mut guard = self.inner.details.lock().unwrap();
                 let details = guard.as_mut().unwrap();
                 let (num_records, hasher, batches) = details.queue.flush_with_aux();
+                let (timestamps, batches): (Vec<_>, Vec<_>) = batches.into_iter().unzip();
+
                 let resume = Resume::new_data_only(
                     || {
                         rmpv::ext::to_value(Metadata {
@@ -296,7 +303,14 @@ impl InputReader for AdHocInputEndpoint {
                     },
                     hasher.map(|h| h.finish()),
                 );
-                details.consumer.extended(num_records, Some(resume));
+                details.consumer.extended(
+                    num_records,
+                    Some(resume),
+                    timestamps
+                        .into_iter()
+                        .map(|ts| Watermark::new(ts, None))
+                        .collect(),
+                );
             }
             InputReaderCommand::Disconnect => self.set_state(PipelineState::Terminated),
         }

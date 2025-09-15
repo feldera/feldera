@@ -49,8 +49,9 @@ use crossbeam::sync::Unparker;
 use feldera_adapterlib::{
     errors::journal::ControllerError,
     format::BufferSize,
-    transport::{InputReader, Resume},
+    transport::{InputReader, Resume, Watermark},
 };
+use feldera_storage::histogram::SlidingHistogram;
 use feldera_types::{
     config::{FtModel, PipelineConfig},
     suspend::SuspendError,
@@ -59,7 +60,8 @@ use feldera_types::{
 };
 use memory_stats::memory_stats;
 use parking_lot::{RwLock, RwLockReadGuard};
-use serde::{Deserialize, Serialize, Serializer};
+use serde::{ser::SerializeStruct, Deserialize, Serialize, Serializer};
+use serde_json::Value as JsonValue;
 use std::{
     cmp::min,
     collections::{BTreeMap, BTreeSet, VecDeque},
@@ -67,6 +69,7 @@ use std::{
         atomic::{AtomicBool, AtomicU64, Ordering},
         Mutex,
     },
+    time::Duration,
 };
 use tokio::sync::broadcast;
 use tracing::{debug, error, info, warn};
@@ -657,6 +660,17 @@ impl ControllerStatus {
         self.global_metrics.num_total_processed_bytes()
     }
 
+    pub fn processed_data(&self, amt: BufferSize) -> u64 {
+        let new_processed_records = self.global_metrics.processed_data(amt);
+        let ts = Utc::now();
+        self.inputs.read().values().for_each(|input| {
+            input
+                .completed_frontier
+                .update_processed(new_processed_records, ts);
+        });
+        new_processed_records
+    }
+
     pub fn unset_step_requested(&self) -> bool {
         self.global_metrics.unset_step_requested()
     }
@@ -721,22 +735,53 @@ impl ControllerStatus {
     /// Computes `total_completed_records` as the minimum `total_processed_input_records` across
     /// all output connectors. In case there are no output connectors attached to the pipeline,
     /// returns `total_processed_records`.
+    ///
+    /// Also updates watermark trackers in input endpoints.
     pub fn update_total_completed_records(&self) {
+        // Compute new `total_completed_records` atomically, protected by the output status lock.
+        // However we don't want to call `watermarks_update_completed` while holding the lock, as that
+        // will take the input status lock. This is not necessarily a bug, but it will complicate
+        // reasoning about potential deadlocks.
+        //
+        // So we call `watermarks_update_completed` outside the atomic section, but use compare_exchange to
+        // ensure that the biggest value wins among multiple writers (`total_completed_records` increases
+        // monotonically).
+
+        let output_status = self.output_status();
+
         let mut total_completed_records = self
             .global_metrics
             .total_processed_records
             .load(Ordering::Acquire);
 
-        for output_ep in self.output_status().values() {
+        for output_ep in output_status.values() {
             total_completed_records = min(
                 total_completed_records,
                 output_ep.num_total_processed_input_records(),
             );
         }
 
-        self.global_metrics
+        drop(output_status);
+
+        // Use `fetch_max` to ensure that the biggest value wins among multiple writers.
+        let old = self
+            .global_metrics
             .total_completed_records
-            .store(total_completed_records, Ordering::Release);
+            .fetch_max(total_completed_records, Ordering::SeqCst);
+
+        if total_completed_records > old {
+            self.watermarks_update_completed(total_completed_records);
+        }
+    }
+
+    /// Notify all watermark trackers about a new value for `total_completed_records`.
+    pub fn watermarks_update_completed(&self, total_completed_records: u64) {
+        let ts = Utc::now();
+        self.inputs.read().values().for_each(|input| {
+            input
+                .completed_frontier
+                .update_completed(total_completed_records, ts, &input.metrics);
+        })
     }
 
     /// Generate completion token for an endpoint based on the current number of records ingested by this endpoint.
@@ -880,6 +925,7 @@ impl ControllerStatus {
         &self,
         endpoint_id: EndpointId,
         step_results: StepResults,
+        watermarks: Vec<Watermark>,
         backpressure_thread_unparker: &Unparker,
     ) {
         let inputs = self.input_status();
@@ -891,6 +937,7 @@ impl ControllerStatus {
         if let Some(endpoint_stats) = inputs.get(&endpoint_id) {
             endpoint_stats.extended(
                 step_results,
+                watermarks,
                 self.num_total_circuit_input_records(),
                 self.num_total_completed_records(),
             );
@@ -938,21 +985,23 @@ impl ControllerStatus {
         circuit_thread_unparker: &Unparker,
     ) {
         if let Some(endpoint_stats) = self.output_status().get(&endpoint_id) {
+            let threshold = endpoint_stats.config.connector_config.max_queued_records;
+
             let old = endpoint_stats.output_batch(total_processed_records, num_records);
-            self.update_total_completed_records();
 
             let new = old - (num_records as u64);
-            let threshold = endpoint_stats.config.connector_config.max_queued_records;
             if (old >= threshold && new <= threshold) || new == 0 {
                 circuit_thread_unparker.unpark();
             }
         };
+        self.update_total_completed_records();
     }
 
     pub fn output_buffered_batches(&self, endpoint_id: EndpointId, total_processed_records: u64) {
         if let Some(endpoint_stats) = self.output_status().get(&endpoint_id) {
             endpoint_stats.output_buffered_batches(total_processed_records);
         }
+        self.update_total_completed_records();
     }
 
     pub fn output_buffer(&self, endpoint_id: EndpointId, num_bytes: usize, num_records: usize) {
@@ -1058,7 +1107,7 @@ impl ControllerStatus {
     }
 }
 
-#[derive(Default, Serialize)]
+#[derive(Serialize)]
 pub struct InputEndpointMetrics {
     /// Total bytes pushed to the endpoint since it was created.
     pub total_bytes: AtomicU64,
@@ -1091,6 +1140,41 @@ pub struct InputEndpointMetrics {
     pub num_parse_errors: AtomicU64,
 
     pub end_of_input: AtomicBool,
+
+    #[serde(skip)]
+    pub processing_latency_micros_histogram: Mutex<SlidingHistogram>,
+
+    #[serde(skip)]
+    pub completion_latency_micros_histogram: Mutex<SlidingHistogram>,
+}
+
+impl Default for InputEndpointMetrics {
+    fn default() -> Self {
+        Self {
+            total_bytes: AtomicU64::new(0),
+            total_records: AtomicU64::new(0),
+            buffered_records: AtomicU64::new(0),
+            buffered_bytes: AtomicU64::new(0),
+            circuit_input_records: AtomicU64::new(0),
+            circuit_input_bytes: AtomicU64::new(0),
+            num_transport_errors: AtomicU64::new(0),
+            num_parse_errors: AtomicU64::new(0),
+            end_of_input: AtomicBool::new(false),
+            processing_latency_micros_histogram: Mutex::new(Self::processing_latency_histogram()),
+            completion_latency_micros_histogram: Mutex::new(Self::completion_latency_histogram()),
+        }
+    }
+}
+
+// Latency histogram creation functions.
+impl InputEndpointMetrics {
+    pub fn processing_latency_histogram() -> SlidingHistogram {
+        SlidingHistogram::new(10_000, Duration::from_secs(600))
+    }
+
+    pub fn completion_latency_histogram() -> SlidingHistogram {
+        SlidingHistogram::new(10_000, Duration::from_secs(600))
+    }
 }
 
 pub struct StepResults {
@@ -1310,6 +1394,252 @@ impl TokenList {
     }
 }
 
+/// Tracks how records ingested by the endpoint are processed by the pipeline.
+///
+/// ## Watermarks
+///
+/// A watermark is a marker associated with a batch of records ingested by the endpoint.
+/// It consists of the timestamp when the connector started receiving data from the wire
+/// and optional transport-specific metadata that identifies the position in the input
+/// data stream, e.g., Kafka offset.
+///
+/// ## Processing latency and completion latency
+///
+/// **Processing latency** is the time it takes the pipeline to process a batch of records from
+/// when they are ingested from the wire to when the circuit completes processing these records.
+/// This includes: parsing, queuing, and processing by the circuit.
+///
+/// **Completion latency** includes processing latency plus the time it takes the pipeline to push
+/// outputs to all output endpoints (this includes output buffering delay if
+/// output buffers are enabled for some endpoints).
+///
+/// ```text
+///             ┌──────────────────────────────────────────────────────────────────────────────┐
+///             │                               Feldera                                        │
+///             │                                                                              │
+///          ┌──│──►input connector──────┐                              ┌────►output connector─│───┐
+///          │  │                        │                              │                      │   │
+///          │  │                        │                              │                      │   │
+///          │  │                        │                              │                      │   │
+///          │  │                        ▼                              │                      │   ▼
+/// data source │                   input queue ──────►circuit─────►output queue               │ data sink
+///             │                                                                              │
+///             │                                                                              │
+///             └──────────────────────────────────────────────────────────────────────────────┘
+///
+///                        1. end-to-end latency
+/// ────────────────────────────────────────────────────────────────────────────────────────────►
+///
+///                        2. processing latency
+///               ──────────────────────────────────────────────────────►
+///
+///                        3. completion latency
+///               ──────────────────────────────────────────────────────────────────────────────►
+/// ```
+///
+/// ## Tracking
+///
+/// Watermark tracking starts when the connector pushes a batch of records to the circuit before
+/// the circuit performs a step. It notifies the circuit about the number of ingested records
+/// via `extended()` call, and provides a list of watermarks, which indicate what input data will
+/// be processed when the step completes, e.g.,:
+/// * 100 records ingested at time t1, that corresponds to Kafka offsets 12000
+/// * 100 records ingested at time t2, that corresponds to Kafka offsets 12100
+/// * ...
+///
+/// When the step completes, the controller marks all watermarks belonging to the data processed in this step
+/// as processed and adds the processed_at timestamp to them.
+///
+/// Later, when the outputs produced by this step have been pushed to all output endpoints,
+/// the controller marks these watermarks as completed and updates two histograms: processing latency
+/// and completion latency.
+///
+/// In addition, the controller keeps track of the latest watermark whose metadata is not `None`
+/// and reports it via the `/status` API. This allows clients to track how far their input data
+/// has been processed by the pipeline.
+#[repr(transparent)]
+pub(crate) struct WatermarkTracker(Mutex<WatermarkTrackerInner>);
+
+impl WatermarkTracker {
+    fn new() -> Self {
+        Self(Mutex::new(WatermarkTrackerInner::new()))
+    }
+
+    fn append(&self, watermarks: Vec<Watermark>, global_offset: u64) {
+        self.0.lock().unwrap().append(watermarks, global_offset);
+    }
+
+    /// Called when `total_processed_records` changes. Updates processed_at timestamps.
+    fn update_processed(&self, processed_records: u64, ts: DateTime<Utc>) {
+        self.0
+            .lock()
+            .unwrap()
+            .update_processed(processed_records, ts);
+    }
+
+    /// Called when `total_completed_records` changes. Updates histograms, `completed_watermark`,
+    /// and removes completed watermarks from the list.
+    fn update_completed(
+        &self,
+        completed_records: u64,
+        ts: DateTime<Utc>,
+        metrics: &InputEndpointMetrics,
+    ) {
+        self.0
+            .lock()
+            .unwrap()
+            .update_completed(completed_records, ts, metrics);
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn debug(&self) -> String {
+        format!("{:?}", self.0.lock().unwrap())
+    }
+
+    #[allow(dead_code)]
+    pub fn completed_watermark(&self) -> Option<CompletedWatermark> {
+        self.0.lock().unwrap().completed_watermark.clone()
+    }
+}
+
+/// Bound the number of tracked watermarks to avoid unbounded memory growth.
+const MAX_TRACKED_WATERMARKS: usize = 10_000;
+
+#[derive(Debug)]
+struct WatermarkTrackerInner {
+    /// The last `total_completed_records` value reported by the controller.
+    total_completed_records: u64,
+
+    /// The last `total_processed_records` value reported by the controller.
+    total_processed_records: u64,
+
+    /// Not-yet-completed watermarks, in the order they were added.
+    watermark_list: VecDeque<WatermarkListEntry>,
+
+    /// The latest completed watermark with non-empty metadata, if any.
+    completed_watermark: Option<CompletedWatermark>,
+}
+
+impl WatermarkTrackerInner {
+    fn new() -> Self {
+        Self {
+            total_completed_records: 0,
+            total_processed_records: 0,
+            watermark_list: VecDeque::new(),
+            completed_watermark: None,
+        }
+    }
+
+    fn append(&mut self, watermarks: Vec<Watermark>, global_offset: u64) {
+        for watermark in watermarks {
+            // Keep the queue bounded. This gives older watermarks
+            // a chance to complete; otherwise we risk always evicting all watermarks before the complete
+            // and never reporting any completed watermarks.
+            if self.watermark_list.len() >= MAX_TRACKED_WATERMARKS {
+                break;
+            }
+            self.watermark_list.push_back(WatermarkListEntry {
+                watermark,
+                global_offset,
+                processed_at: None,
+            });
+        }
+    }
+
+    fn update_processed(&mut self, processed_records: u64, ts: DateTime<Utc>) {
+        self.total_processed_records = processed_records;
+
+        for entry in self.watermark_list.iter_mut() {
+            if entry.global_offset <= processed_records && entry.processed_at.is_none() {
+                entry.processed_at = Some(ts);
+            } else {
+                break;
+            }
+        }
+    }
+
+    fn update_completed(
+        &mut self,
+        completed_records: u64,
+        ts: DateTime<Utc>,
+        metrics: &InputEndpointMetrics,
+    ) {
+        if self.total_completed_records >= completed_records {
+            return;
+        }
+        self.total_completed_records = completed_records;
+
+        while let Some(entry) = self.watermark_list.front() {
+            if entry.global_offset <= completed_records {
+                let entry = self.watermark_list.pop_front().unwrap();
+
+                let processed_at = entry.processed_at.unwrap_or(ts);
+
+                if let Ok(mut histogram) = metrics.processing_latency_micros_histogram.lock() {
+                    histogram.record(
+                        processed_at.timestamp_micros()
+                            - entry.watermark.timestamp.timestamp_micros(),
+                    )
+                };
+
+                if let Ok(mut histogram) = metrics.completion_latency_micros_histogram.lock() {
+                    histogram.record(
+                        ts.timestamp_micros() - entry.watermark.timestamp.timestamp_micros(),
+                    )
+                };
+
+                if let Some(metadata) = entry.watermark.metadata {
+                    self.completed_watermark = Some(CompletedWatermark {
+                        metadata,
+                        ingested_at: entry.watermark.timestamp,
+                        processed_at,
+                        completed_at: ts,
+                    })
+                };
+            } else {
+                break;
+            }
+        }
+    }
+}
+
+/// A watermark that has been fully processed by the pipeline.
+#[derive(Clone, Debug)]
+pub(crate) struct CompletedWatermark {
+    /// Metadata that describes the position in the input stream, e.g., Kafka partition/offset pairs.
+    pub metadata: JsonValue,
+
+    /// Timestamp when the data was ingested from the wire.
+    pub ingested_at: DateTime<Utc>,
+
+    /// Timestamp when the data was processed by the circuit.
+    pub processed_at: DateTime<Utc>,
+
+    /// Timestamp when all outputs produced from this input have been pushed to all output endpoints.
+    pub completed_at: DateTime<Utc>,
+}
+
+impl Serialize for CompletedWatermark {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut state = serializer.serialize_struct("CompletedWatermark", 4)?;
+        state.serialize_field("metadata", &self.metadata)?;
+        state.serialize_field("ingested_at", &self.ingested_at.to_rfc3339())?;
+        state.serialize_field("processed_at", &self.processed_at.to_rfc3339())?;
+        state.serialize_field("completed_at", &self.completed_at.to_rfc3339())?;
+        state.end()
+    }
+}
+
+#[derive(Debug)]
+struct WatermarkListEntry {
+    watermark: Watermark,
+    global_offset: u64,
+    processed_at: Option<DateTime<Utc>>,
+}
+
 /// Input endpoint status information.
 #[derive(Serialize)]
 pub struct InputEndpointStatus {
@@ -1359,6 +1689,24 @@ pub struct InputEndpointStatus {
     /// Completion tokens associated with the endpoint.
     #[serde(skip)]
     completion_tokens: TokenList,
+
+    #[serde(serialize_with = "serialize_watermark_tracker")]
+    pub(crate) completed_frontier: WatermarkTracker,
+}
+
+fn serialize_watermark_tracker<S>(
+    watermark: &WatermarkTracker,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    watermark
+        .0
+        .lock()
+        .unwrap()
+        .completed_watermark
+        .serialize(serializer)
 }
 
 #[derive(Serialize)]
@@ -1404,6 +1752,7 @@ impl InputEndpointStatus {
             reader: None,
             fault_tolerance,
             completion_tokens: TokenList::new(),
+            completed_frontier: WatermarkTracker::new(),
         }
     }
 
@@ -1487,6 +1836,7 @@ impl InputEndpointStatus {
     fn extended(
         &self,
         step_results: StepResults,
+        watermarks: Vec<Watermark>,
         total_circuit_input_records: u64,
         total_completed_records: u64,
     ) {
@@ -1511,6 +1861,8 @@ impl InputEndpointStatus {
             total_circuit_input_records,
             total_completed_records,
         );
+        self.completed_frontier
+            .append(watermarks, total_circuit_input_records);
     }
 
     /// Push a new completion token that corresponds to the current input offset to the

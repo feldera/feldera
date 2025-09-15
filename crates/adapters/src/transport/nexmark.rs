@@ -1,7 +1,8 @@
 //! An input adapter that generates Nexmark event input data.
 
+use chrono::{DateTime, Utc};
 use feldera_adapterlib::format::BufferSize;
-use feldera_adapterlib::transport::{parse_resume_info, InputReaderCommand, Resume};
+use feldera_adapterlib::transport::{parse_resume_info, InputReaderCommand, Resume, Watermark};
 use feldera_types::config::FtModel;
 use std::cmp::min;
 use std::collections::VecDeque;
@@ -120,6 +121,7 @@ impl InputReader for InputGenerator {
                             replay: rmpv::Value::Nil,
                             hash: 0,
                         }),
+                        Vec::new(),
                     );
                 }
                 InputReaderCommand::Disconnect => (),
@@ -329,7 +331,7 @@ fn worker_thread(
         barrier.wait();
         let mut total = BufferSize::empty();
         let mut hasher = Xxh3Default::new();
-        for (_events, mut buffer) in queue.lock().unwrap().drain(..) {
+        for (_events, mut buffer, _timestamp) in queue.lock().unwrap().drain(..) {
             total += buffer.len();
             buffer.hash(&mut hasher);
             buffer.flush();
@@ -358,13 +360,16 @@ fn worker_thread(
                 let mut hasher = consumers[NexmarkTable::Bid].hasher();
                 let n = options.max_step_size_per_thread as usize * options.threads;
                 let mut events: Option<Range<u64>> = None;
+                let mut watermarks = Vec::new();
+
                 while total.records < n {
                     let mut queue = queue.lock().unwrap();
                     if queue.is_empty() {
                         break;
                     }
                     for _ in 0..3 * options.threads {
-                        let (range, mut buffer) = queue.pop_front().unwrap();
+                        let (range, mut buffer, timestamp) = queue.pop_front().unwrap();
+                        watermarks.push(Watermark::new(timestamp, None));
                         events = match events {
                             Some(events) => Some(events.start..range.end),
                             None => Some(range),
@@ -383,7 +388,7 @@ fn worker_thread(
                     .unwrap(),
                     hasher.map(|h| h.finish()),
                 );
-                consumers[NexmarkTable::Bid].extended(total, Some(resume));
+                consumers[NexmarkTable::Bid].extended(total, Some(resume), watermarks);
             }
             Some(InputReaderCommand::Disconnect) => break,
             None => (),
@@ -418,7 +423,7 @@ fn generate_thread(
     options: NexmarkInputOptions,
     mut parsers: EnumMap<NexmarkTable, Box<dyn Parser>>,
     consumer: Box<dyn InputConsumer>,
-    queue: Arc<Mutex<VecDeque<(Range<u64>, Option<Box<dyn InputBuffer>>)>>>,
+    queue: Arc<Mutex<VecDeque<(Range<u64>, Option<Box<dyn InputBuffer>>, DateTime<Utc>)>>>,
     index: usize,
     barrier: Arc<Barrier>,
     mut command_receiver: BroadcastReceiver<Range<u64>>,
@@ -460,10 +465,13 @@ fn generate_thread(
                 buffer
             })
             .collect::<Vec<_>>();
-        queue
-            .lock()
-            .unwrap()
-            .extend(buffers.into_iter().map(|buffer| (events.clone(), buffer)));
+        let timestamp = Utc::now();
+
+        queue.lock().unwrap().extend(
+            buffers
+                .into_iter()
+                .map(|buffer| (events.clone(), buffer, timestamp)),
+        );
         barrier.wait();
     }
 }

@@ -61,11 +61,11 @@ use dbsp::{
 use dbsp::{Runtime, WeakRuntime};
 use enum_map::EnumMap;
 use feldera_adapterlib::format::BufferSize;
-use feldera_adapterlib::transport::Resume;
+use feldera_adapterlib::transport::{Resume, Watermark};
 use feldera_adapterlib::utils::datafusion::execute_query_text;
 use feldera_ir::LirCircuit;
 use feldera_storage::checkpoint_synchronizer::SYNCHRONIZER;
-use feldera_storage::histogram::ExponentialHistogram;
+use feldera_storage::histogram::{ExponentialHistogram, ExponentialHistogramSnapshot};
 use feldera_storage::metrics::{
     READ_BLOCKS_BYTES, READ_LATENCY_MICROSECONDS, SYNC_LATENCY_MICROSECONDS, WRITE_BLOCKS_BYTES,
     WRITE_LATENCY_MICROSECONDS,
@@ -1107,6 +1107,61 @@ impl Controller {
             |m| &m.num_parse_errors,
         );
 
+        fn write_input_histogram<F, M>(
+            metrics: &mut MetricsWriter<F>,
+            labels: &LabelStack,
+            status: &ControllerStatus,
+            name: &str,
+            help: &str,
+            func: M,
+        ) where
+            F: MetricsFormatter,
+            M: Fn(&InputEndpointMetrics) -> HistogramDiv<ExponentialHistogramSnapshot>,
+        {
+            metrics.histograms(name, help, |w| {
+                for input in status.input_status().values() {
+                    w.write_histogram(
+                        &labels.with("endpoint", &input.endpoint_name),
+                        &func(&input.metrics),
+                    );
+                }
+            });
+        }
+
+        write_input_histogram(
+            metrics,
+            labels,
+            status,
+            "input_connector_processing_latency_seconds",
+            "Time between when the connector receives new data and when the pipeline processes this data and computes output updates, over the last 600 seconds or 10,000 samples.",
+            |m| {
+                HistogramDiv::new(
+                    m.processing_latency_micros_histogram
+                        .lock()
+                        .unwrap()
+                        .snapshot(),
+                    1_000_000.0,
+                )
+            },
+        );
+
+        write_input_histogram(
+            metrics,
+            labels,
+            status,
+            "input_connector_completion_latency_seconds",
+            "Time between when the connector receives new data and when the pipeline processes this data, computes output updates, and sends these updates to all output connectors, over the last 600 seconds or 10,000 samples.",
+            |m| {
+                HistogramDiv::new(
+                    m.completion_latency_micros_histogram
+                        .lock()
+                        .unwrap()
+                        .snapshot(),
+                    1_000_000.0,
+                )
+            },
+        );
+
         fn write_output_metric<F, M>(
             metrics: &mut MetricsWriter<F>,
             labels: &LabelStack,
@@ -2117,11 +2172,8 @@ impl CircuitThread {
     ///
     /// Returns the total number of records processed.
     fn processed_records(&mut self, total_consumed: BufferSize) -> u64 {
-        let processed_records = self
-            .controller
-            .status
-            .global_metrics
-            .processed_data(total_consumed);
+        let processed_records = self.controller.status.processed_data(total_consumed);
+        // If there are no output connectors, completed records can only get updated here.
         self.controller.status.update_total_completed_records();
         processed_records
     }
@@ -4634,12 +4686,13 @@ impl InputConsumer for InputProbe {
                     hash,
                 }),
             },
+            vec![],
             &self.controller.backpressure_thread_unparker,
         );
         self.controller.unpark_circuit();
     }
 
-    fn extended(&self, amt: BufferSize, resume: Option<Resume>) {
+    fn extended(&self, amt: BufferSize, resume: Option<Resume>, watermarks: Vec<Watermark>) {
         #[cfg(debug_assertions)]
         {
             let resume_ft = resume.as_ref().map(Resume::fault_tolerance);
@@ -4649,6 +4702,7 @@ impl InputConsumer for InputProbe {
         self.controller.status.extended(
             self.endpoint_id,
             StepResults { amt, resume },
+            watermarks,
             &self.controller.backpressure_thread_unparker,
         );
         self.controller.unpark_circuit();

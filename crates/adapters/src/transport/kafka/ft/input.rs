@@ -11,10 +11,13 @@ use crate::{
 };
 use crate::{InputBuffer, Parser};
 use anyhow::{anyhow, bail, Error as AnyError, Result as AnyResult};
+use chrono::Utc;
 use crossbeam::queue::ArrayQueue;
 use crossbeam::sync::{Parker, Unparker};
 use feldera_adapterlib::format::BufferSize;
-use feldera_adapterlib::transport::{parse_resume_info, InputEndpoint, InputReaderCommand, Resume};
+use feldera_adapterlib::transport::{
+    parse_resume_info, InputEndpoint, InputReaderCommand, Resume, Watermark,
+};
 use feldera_types::config::FtModel;
 use feldera_types::program_schema::Relation;
 use feldera_types::transport::kafka::{KafkaInputConfig, KafkaStartFromConfig};
@@ -453,6 +456,8 @@ impl KafkaFtInputReaderInner {
         let mut staged_hasher = KafkaFtHasher::new(&partitions);
         let mut staged_inputs = Vec::new();
         let mut staged_amt = BufferSize::default();
+        let mut timestamp = None;
+
         loop {
             let was_running = running;
             while let Some(command) = command_receiver.try_recv()? {
@@ -466,6 +471,7 @@ impl KafkaFtInputReaderInner {
                         if staged_buffers.is_empty() {
                             staged_buffers.push_back((
                                 parser.stage(std::mem::take(&mut staged_inputs)),
+                                timestamp.unwrap_or_else(Utc::now),
                                 std::mem::take(&mut staged_amt),
                                 staged_hasher.finish(),
                                 staged_offsets.clone(),
@@ -476,16 +482,18 @@ impl KafkaFtInputReaderInner {
                             staged_hasher.reset();
                         }
 
-                        let (mut staged_buffers, amt, hash, offsets) =
+                        let (mut staged_buffers, timestamp, amt, hash, offsets) =
                             staged_buffers.pop_front().unwrap();
                         staged_buffers.flush();
+                        let metadata = serde_json::to_value(&Metadata { offsets }).unwrap();
                         consumer.extended(
                             amt,
                             Some(Resume::Replay {
                                 hash,
-                                seek: serde_json::to_value(&Metadata { offsets }).unwrap(),
+                                seek: metadata.clone(),
                                 replay: rmpv::Value::Nil,
                             }),
+                            vec![Watermark::new(timestamp, Some(metadata))],
                         );
                     }
                     InputReaderCommand::Disconnect => return Ok(()),
@@ -519,10 +527,15 @@ impl KafkaFtInputReaderInner {
 
             let read_data = running && {
                 let mut read_data = false;
+
                 for ((partition, receiver), range) in
                     receivers.iter().zip(staged_offsets.iter_mut())
                 {
                     if let Some(msg) = receiver.read(i64::MAX) {
+                        // Set the time when we start getting new data to be staged as ingestion timestamp.
+                        if timestamp.is_none() {
+                            timestamp = Some(Utc::now());
+                        }
                         let amt = msg.buffer.len();
                         consumer.buffered(amt);
                         staged_amt += amt;
@@ -543,10 +556,12 @@ impl KafkaFtInputReaderInner {
                 if staged_amt.records >= consumer.max_batch_size() {
                     staged_buffers.push_back((
                         parser.stage(std::mem::take(&mut staged_inputs)),
+                        timestamp.unwrap_or_else(Utc::now),
                         std::mem::take(&mut staged_amt),
                         staged_hasher.finish(),
                         staged_offsets.clone(),
                     ));
+                    timestamp = None;
                     for partition_offsets in &mut staged_offsets {
                         partition_offsets.start = partition_offsets.end;
                     }
