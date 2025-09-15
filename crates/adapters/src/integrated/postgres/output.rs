@@ -1,5 +1,6 @@
 use std::{io::Write, marker::PhantomPinned, str::FromStr, sync::Weak, time::Duration};
 
+use super::{error::BackoffError, prepared_statements::PreparedStatements};
 use crate::{
     buffer_op,
     catalog::{RecordFormat, SerBatchReader},
@@ -28,115 +29,6 @@ use postgres_openssl::MakeTlsConnector;
 use tempfile::NamedTempFile;
 use tracing::{info_span, span::EnteredSpan};
 
-enum BackoffError {
-    Temporary(anyhow::Error),
-    Permanent(anyhow::Error),
-}
-
-impl BackoffError {
-    fn should_retry(&self) -> bool {
-        match self {
-            BackoffError::Temporary(_) => true,
-            BackoffError::Permanent(_) => false,
-        }
-    }
-
-    fn inner(self) -> anyhow::Error {
-        match self {
-            BackoffError::Permanent(error) | BackoffError::Temporary(error) => {
-                // include the context info
-                anyhow!("{error:?}")
-            }
-        }
-    }
-
-    fn context(self, context: String) -> Self {
-        match self {
-            BackoffError::Temporary(error) => BackoffError::Temporary(error.context(context)),
-            BackoffError::Permanent(error) => BackoffError::Permanent(error.context(context)),
-        }
-    }
-}
-
-impl From<postgres::Error> for BackoffError {
-    fn from(value: postgres::Error) -> Self {
-        use postgres::error::SqlState;
-
-        if value.is_closed()
-            || value.code().is_some_and(|c| {
-                [
-                    SqlState::CONNECTION_FAILURE,
-                    SqlState::CONNECTION_DOES_NOT_EXIST,
-                    SqlState::CONNECTION_EXCEPTION,
-                    SqlState::SQLCLIENT_UNABLE_TO_ESTABLISH_SQLCONNECTION,
-                    SqlState::ADMIN_SHUTDOWN,
-                ]
-                .contains(c)
-            })
-            // value.code() is none when connection is refused by the OS
-            || value.code().is_none()
-        {
-            Self::Temporary(anyhow!("failed to connect to postgres: {value}"))
-        } else {
-            Self::Permanent(anyhow!(
-                "postgres error: permanent: SqlState: {:?}: {value}",
-                value.code()
-            ))
-        }
-    }
-}
-
-#[derive(Debug, Default)]
-struct RawQueries {
-    insert: String,
-    upsert: String,
-    delete: String,
-}
-
-#[derive(Debug)]
-struct PreparedStatements {
-    insert: Statement,
-    upsert: Statement,
-    delete: Statement,
-}
-
-impl PreparedStatements {
-    fn new(raw_queries: &RawQueries, client: &mut postgres::Client) -> Result<Self, BackoffError> {
-        let err_msg = "\nPlease ensure all field names that are quoted in PostgreSQL are quoted correctly in Feldera as well";
-
-        let insert = client
-            .prepare_typed(&raw_queries.insert, &[postgres::types::Type::VARCHAR])
-            .map_err(|e| {
-                BackoffError::from(e).context(format!(
-                    "failed to prepare insert statement: `{}`: {err_msg}",
-                    &raw_queries.insert
-                ))
-            })?;
-        let upsert = client
-            .prepare_typed(&raw_queries.upsert, &[postgres::types::Type::VARCHAR])
-            .map_err(|e| {
-                BackoffError::from(e).context(format!(
-                    "failed to prepare update statement: `{}`: {err_msg}",
-                    &raw_queries.upsert
-                ))
-            })?;
-        let delete = client
-            .prepare_typed(&raw_queries.delete, &[postgres::types::Type::VARCHAR])
-            .map_err(|e| {
-                BackoffError::from(e).context(format!(
-                    "failed to prepare delete statement: `{}`: {err_msg}",
-                    raw_queries.delete
-                ))
-            })?;
-
-        Ok(PreparedStatements {
-            insert,
-            upsert,
-            delete,
-        })
-    }
-}
-
 pub struct PostgresOutputEndpoint {
     endpoint_id: EndpointId,
     endpoint_name: String,
@@ -144,7 +36,6 @@ pub struct PostgresOutputEndpoint {
     client: postgres::Client,
     config: PostgresWriterConfig,
     transaction: Option<postgres::Transaction<'static>>,
-    raw_queries: RawQueries,
     prepared_statements: PreparedStatements,
     insert_buf: Vec<u8>,
     upsert_buf: Vec<u8>,
@@ -157,6 +48,7 @@ pub struct PostgresOutputEndpoint {
     controller: Weak<ControllerInner>,
     num_bytes: usize,
     num_rows: usize,
+    txn_start: std::time::Instant,
     _pin: PhantomPinned,
 }
 
@@ -265,63 +157,10 @@ impl PostgresOutputEndpoint {
                 "Postgres output connector requires the view to have a unique key. Please specify the `index` property in the connector configuration. For more details, see: https://docs.feldera.com/connectors/unique_keys"
             ))?;
 
-        let keys: Vec<String> = key_schema
-            .fields
-            .iter()
-            .map(|f| f.name.sql_name())
-            .collect();
-
-        let mut raw_queries = RawQueries::default();
-
-        {
-            raw_queries.insert = format!(
-                r#"INSERT INTO "{table}" SELECT * FROM jsonb_populate_recordset(NULL::"{table}", $1::jsonb)"#
-            );
-        }
-
-        {
-            let (table_keys, d_keys): (Vec<_>, Vec<_>) = keys
-                .iter()
-                .map(|k| (format!(r#" "{table}".{k} "#), format!("d.{k}")))
-                .unzip();
-
-            raw_queries.delete = format!(
-                r#"DELETE FROM "{table}" USING (SELECT {} FROM jsonb_populate_recordset(NULL::"{table}", $1::jsonb)) as d where ({}) = ({})"#,
-                keys.iter()
-                    .map(|k| k.as_str())
-                    .collect::<Vec<_>>()
-                    .join(", "),
-                table_keys.join(", "),
-                d_keys.join(", "),
-            );
-        }
-
-        {
-            let table_alias = "t";
-            let new_alias = "n";
-            let columns = value_schema
-                .fields
-                .iter()
-                .map(|f| {
-                    let f = f.name.sql_name();
-                    format!("{f} = {new_alias}.{f}")
-                })
-                .collect::<Vec<_>>()
-                .join(", ");
-
-            let (table_fields, new_fields): (Vec<_>, Vec<_>) = keys
-                .iter()
-                .map(|f| (format!("{table_alias}.{f}"), format!("{new_alias}.{f}")))
-                .unzip();
-
-            raw_queries.upsert = format!(
-                r#"UPDATE "{table}" AS {table_alias} SET {columns} FROM (SELECT * FROM jsonb_populate_recordset(NULL::"{table}", $1::jsonb)) AS {new_alias} WHERE ({}) = ({})"#,
-                table_fields.join(", "),
-                new_fields.join(", ")
-            );
-        }
-        let prepared_statements = PreparedStatements::new(&raw_queries, &mut client)
-            .map_err(|e| ControllerError::output_transport_error(endpoint_name, true, e.inner()))?;
+        let prepared_statements =
+            PreparedStatements::new(&key_schema, value_schema, &config, &mut client).map_err(
+                |e| ControllerError::output_transport_error(endpoint_name, true, e.inner()),
+            )?;
 
         let out = Self {
             endpoint_id,
@@ -331,7 +170,6 @@ impl PostgresOutputEndpoint {
             config: config.clone(),
             client,
             transaction: None,
-            raw_queries,
             prepared_statements,
             key_schema,
             num_rows: 0,
@@ -343,6 +181,7 @@ impl PostgresOutputEndpoint {
             upsert_buf: Vec::with_capacity(config.max_buffer_size_bytes),
             delete_buf: Vec::with_capacity(config.max_buffer_size_bytes),
             value_schema: value_schema.to_owned(),
+            txn_start: std::time::Instant::now(),
             _pin: PhantomPinned,
         };
 
@@ -522,14 +361,19 @@ impl PostgresOutputEndpoint {
         self.transaction = None;
         self.client = connect(&self.config, &self.endpoint_name)?;
 
-        self.prepared_statements = PreparedStatements::new(&self.raw_queries, &mut self.client)
-            .map_err(|e| {
-                e.context(format!(
-                    "postgres: error preparing statements after reconnecting to postgres
+        self.prepared_statements = PreparedStatements::new(
+            &self.key_schema,
+            &self.value_schema,
+            &self.config,
+            &mut self.client,
+        )
+        .map_err(|e| {
+            e.context(format!(
+                "postgres: error preparing statements after reconnecting to postgres
 These statements were successfully prepared before reconnecting. Does the table {} still exist?",
-                    self.table
-                ))
-            })?;
+                self.table
+            ))
+        })?;
 
         tracing::info!("postgres: successfully reconnected to postgres");
 
@@ -577,6 +421,7 @@ These statements were successfully prepared before reconnecting. Does the table 
             return Ok(());
         }
 
+        self.txn_start = std::time::Instant::now();
         let txn = self.client.transaction()?;
 
         // Safety
@@ -609,6 +454,13 @@ These statements were successfully prepared before reconnecting. Does the table 
             )))?;
 
         transaction.commit()?;
+
+        let elapsed = self.txn_start.elapsed();
+        tracing::debug!(
+            "postgres: flushed {} rows and {} bytes in {elapsed:?}",
+            self.num_rows,
+            self.num_bytes
+        );
 
         if let Some(controller) = self.controller.upgrade() {
             controller.status.output_buffer(
@@ -844,6 +696,7 @@ mod tests {
             verify_hostname: None,
             max_records_in_buffer: None,
             max_buffer_size_bytes: usize::pow(2, 20),
+            on_conflict_do_nothing: false,
         }
     }
 

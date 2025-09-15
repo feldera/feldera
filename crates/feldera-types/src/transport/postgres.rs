@@ -44,6 +44,13 @@ pub struct PostgresWriterConfig {
     #[schema(default = default_max_buffer_size)]
     #[serde(default = "default_max_buffer_size")]
     pub max_buffer_size_bytes: usize,
+
+    /// By default, the Postgres output connector overwrites (updates) the
+    /// records on a duplicate entry for the primary key. Setting this to True
+    /// will do nothing instead.
+    /// Default: False
+    #[serde(default)]
+    pub on_conflict_do_nothing: bool,
 }
 
 fn default_max_buffer_size() -> usize {

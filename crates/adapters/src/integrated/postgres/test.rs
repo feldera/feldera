@@ -10,7 +10,7 @@ use pg::PostgresTestStruct;
 use postgres::NoTls;
 use serde_json::json;
 use serial_test::serial;
-use std::{collections::BTreeMap, io::Write};
+use std::{collections::BTreeMap, io::Write, path::Path};
 use tempfile::NamedTempFile;
 
 use crate::{
@@ -171,7 +171,7 @@ CREATE TABLE {name} (
     tinyint_      SMALLINT,
     smallint_     SMALLINT,
     int_          INTEGER,
-    bigint_       BIGINT,
+    bigint_       BIGINT PRIMARY KEY,
     decimal_      DECIMAL,
     float_        REAL,
     double_       DOUBLE PRECISION,
@@ -432,6 +432,156 @@ CREATE TABLE {name} (
             }
         }
     }
+}
+
+fn test_pg_on_conflict(on_conflict_do_nothing: bool) {
+    let table_name = "test_pg_on_conflict";
+    let url = postgres_url();
+    let max_buffer_size_bytes = 1024;
+
+    let mut data: Vec<PostgresTestStruct> = (0..10000).map(|_| rand::random()).collect();
+    let mut insert_file = NamedTempFile::new().unwrap();
+
+    for datum in data.iter() {
+        let buffer: Vec<u8> = Vec::new();
+        let mut serializer = serde_json::Serializer::new(buffer);
+        datum
+            .serialize_with_context(&mut serializer, &SqlSerdeConfig::default())
+            .unwrap();
+        insert_file
+            .as_file_mut()
+            .write_all(&serializer.into_inner())
+            .unwrap();
+        insert_file.write_all(b"\n").unwrap();
+    }
+
+    let mut upsert_data = data
+        .clone()
+        .into_iter()
+        .map(|mut d| {
+            d.varchar_ = "updated".into();
+            d
+        })
+        .collect::<Vec<_>>();
+
+    let mut upsert_file = NamedTempFile::new().unwrap();
+
+    for new in upsert_data.iter() {
+        let buffer: Vec<u8> = Vec::new();
+        let mut serializer = serde_json::Serializer::new(buffer);
+        new.serialize_with_context(&mut serializer, &SqlSerdeConfig::default())
+            .unwrap();
+        upsert_file
+            .as_file_mut()
+            .write_all(&serializer.into_inner())
+            .unwrap();
+    }
+
+    let url_clone = url.clone();
+
+    let get_config = |in_file: &Path| {
+        let config_str = format!(
+            r#"
+name: test
+workers: 4
+inputs:
+  ins:
+    stream: test_input1
+    transport:
+      name: file_input
+      config:
+        path: {}
+    format:
+      name: json
+      config:
+        update_format: raw
+        array: false
+outputs:
+  test_output1:
+    stream: test_output1
+    transport:
+      name: postgres_output
+      config:
+        uri: {url_clone}
+        table: {table_name}
+        max_buffer_size_bytes: {max_buffer_size_bytes}
+        on_conflict_do_nothing: {on_conflict_do_nothing}
+    index: idx
+"#,
+            in_file.display(),
+        );
+        config_str
+    };
+
+    let mut table = PostgresTestStruct::create_table(table_name, url);
+
+    let config: PipelineConfig = serde_yaml::from_str(&get_config(insert_file.path())).unwrap();
+    let (controller, err_receiver) = PostgresTestStruct::test_circuit(config.clone());
+
+    controller.start();
+    data.sort();
+
+    wait(
+        || {
+            let rows = table.query();
+
+            let mut got = rows
+                .into_iter()
+                .map(PostgresTestStruct::from)
+                .collect::<Vec<_>>();
+
+            got.sort();
+
+            data == got || !err_receiver.is_empty()
+        },
+        40_000,
+    )
+    .expect("timeout: failed to insert data into postgres");
+
+    controller.stop().unwrap();
+
+    let config: PipelineConfig = serde_yaml::from_str(&get_config(upsert_file.path())).unwrap();
+    let (controller, err_receiver) = PostgresTestStruct::test_circuit(config);
+
+    controller.start();
+    upsert_data.sort();
+
+    let expected = if on_conflict_do_nothing {
+        data
+    } else {
+        upsert_data
+    };
+
+    wait(
+        || {
+            let rows = table.query();
+
+            let mut got = rows
+                .into_iter()
+                .map(PostgresTestStruct::from)
+                .collect::<Vec<_>>();
+
+            got.sort();
+
+            got == expected || !err_receiver.is_empty()
+        },
+        40_000,
+    )
+    .expect("timeout: failed to update data into postgres");
+
+    controller.stop().unwrap();
+}
+
+#[test]
+#[serial]
+fn test_pg_on_conflict_do_update() {
+    test_pg_on_conflict(false);
+}
+
+#[test]
+#[serial]
+fn test_pg_on_conflict_do_nothing() {
+    test_pg_on_conflict(true);
 }
 
 #[test]
