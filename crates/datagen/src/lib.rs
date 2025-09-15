@@ -13,7 +13,7 @@ use std::time::Duration as StdDuration;
 use anyhow::{anyhow, bail, Result as AnyResult};
 use async_channel::Receiver as AsyncReceiver;
 use chrono::format::{Item, StrftimeItems};
-use chrono::{DateTime, Days, Duration, NaiveDate, NaiveTime, Timelike};
+use chrono::{DateTime, Days, Duration, NaiveDate, NaiveTime, Timelike, Utc};
 use crossbeam::sync::{Parker, Unparker};
 use feldera_fxp::{pow10, DynamicDecimal, UniformDecimal};
 use feldera_types::config::FtModel;
@@ -36,7 +36,7 @@ use dbsp::circuit::tokio::TOKIO;
 use feldera_adapterlib::format::{BufferSize, InputBuffer, Parser};
 use feldera_adapterlib::transport::{
     parse_resume_info, InputCommandReceiver, InputConsumer, InputEndpoint, InputReader,
-    InputReaderCommand, Resume, TransportInputEndpoint,
+    InputReaderCommand, Resume, TransportInputEndpoint, Watermark,
 };
 use feldera_types::program_schema::{ColumnType, Field, Relation, SqlIdentifier, SqlType};
 use feldera_types::transport::datagen::{
@@ -573,7 +573,11 @@ impl InputGenerator {
                 consumer: &dyn InputConsumer,
                 hasher: &mut Xxh3Default,
             ) -> BufferSize {
-                let Completion { batch, mut buffer } = completion;
+                let Completion {
+                    batch,
+                    mut buffer,
+                    timestamp: _timestamp,
+                } = completion;
                 in_flight[batch.plan_idx].remove_range(batch.rows.start..=batch.rows.end - 1);
                 let size = buffer.len();
                 consumer.buffered(size);
@@ -613,15 +617,20 @@ impl InputGenerator {
                     let mut hasher = consumer.hasher();
                     let n = consumer.max_batch_size();
                     let mut consumed = vec![RowRangeSet::new(); config.plan.len()];
+                    let mut watermarks = Vec::new();
+
                     while total.records < n {
                         let Some(Completion {
                             batch: Batch { plan_idx, rows },
                             mut buffer,
+                            timestamp,
                         }) = completed.pop_front()
                         else {
                             break;
                         };
                         let mut taken = buffer.take_some(n - total.records);
+                        watermarks.push(Watermark::new(timestamp, None));
+
                         let flushed = taken.len();
                         if flushed.records > 0 {
                             total += flushed;
@@ -639,6 +648,7 @@ impl InputGenerator {
                                     rows: rows.start + flushed.records..rows.end,
                                 },
                                 buffer,
+                                timestamp,
                             });
                             break;
                         }
@@ -664,7 +674,7 @@ impl InputGenerator {
                         serde_json::to_value(metadata).unwrap(),
                         hasher.map(|h| h.finish()),
                     );
-                    consumer.extended(total, Some(resume));
+                    consumer.extended(total, Some(resume), watermarks);
                 }
                 Some(InputReaderCommand::Disconnect) => break,
                 None => (),
@@ -752,6 +762,8 @@ impl InputGenerator {
                             || batch_creation_duration.elapsed() > BATCH_CREATION_TIMEOUT
                         {
                             buffer.extend(END_ARR);
+
+                            let timestamp = Utc::now();
                             let (buffer, errors) = parser.parse(&buffer);
                             consumer.parse_errors(errors);
                             let _ = completion_sender.send(Completion {
@@ -760,6 +772,7 @@ impl InputGenerator {
                                     rows: buffer_start..idx + 1,
                                 },
                                 buffer,
+                                timestamp,
                             });
                             datagen_unparker.unpark();
                             n_records = 0;
@@ -780,6 +793,8 @@ impl InputGenerator {
             }
             if n_records > 0 {
                 buffer.extend(END_ARR);
+                let timestamp = Utc::now();
+
                 let (buffer, errors) = parser.parse(&buffer);
                 consumer.parse_errors(errors);
                 let _ = completion_sender.send(Completion {
@@ -788,6 +803,7 @@ impl InputGenerator {
                         rows: buffer_start..rows.end,
                     },
                     buffer,
+                    timestamp,
                 });
                 datagen_unparker.unpark();
             }
@@ -804,6 +820,7 @@ struct Work {
 struct Completion {
     batch: Batch,
     buffer: Option<Box<dyn InputBuffer>>,
+    timestamp: DateTime<Utc>,
 }
 
 struct Batch {

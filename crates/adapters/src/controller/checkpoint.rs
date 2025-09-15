@@ -8,7 +8,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::{
     collections::HashMap,
-    sync::atomic::{AtomicBool, AtomicU64, Ordering},
+    sync::{
+        atomic::{AtomicBool, AtomicU64, Ordering},
+        Mutex,
+    },
 };
 
 use crate::{
@@ -100,6 +103,12 @@ impl From<&CheckpointInputEndpointMetrics> for InputEndpointMetrics {
             num_transport_errors: AtomicU64::new(value.num_transport_errors),
             num_parse_errors: AtomicU64::new(value.num_parse_errors),
             end_of_input: AtomicBool::new(false),
+            processing_latency_micros_histogram: Mutex::new(
+                InputEndpointMetrics::processing_latency_histogram(),
+            ),
+            completion_latency_micros_histogram: Mutex::new(
+                InputEndpointMetrics::completion_latency_histogram(),
+            ),
         }
     }
 }

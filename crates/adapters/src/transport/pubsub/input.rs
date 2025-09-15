@@ -3,7 +3,7 @@ use crate::{
     InputConsumer, InputEndpoint, InputReader, Parser, PipelineState, TransportInputEndpoint,
 };
 use anyhow::{anyhow, bail, Error as AnyError, Result as AnyResult};
-use chrono::DateTime;
+use chrono::{DateTime, Utc};
 use dbsp::circuit::tokio::TOKIO;
 use feldera_types::{
     config::FtModel, program_schema::Relation, transport::pubsub::PubSubInputConfig,
@@ -165,7 +165,10 @@ impl PubSubReader {
                                         // None if the stream is cancelled
                                         while let Some(message) = stream.next().await {
                                             let data = message.message.data.as_slice();
-                                            queue.push(parser.parse(data));
+                                            // Use the time when we start processing the message as the ingestion timestamp,
+                                            // since we don't have a way to get the time we _start_ reading the message.
+                                            let timestamp = Utc::now();
+                                            queue.push(parser.parse(data), timestamp);
                                             message.ack().await.unwrap_or_else(|e| {
                                                 consumer.error(false, anyhow!("gRPC error acknowledging Pub/Sub message: {e}"), Some("pubsub"))
                                             });

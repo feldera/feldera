@@ -4,7 +4,7 @@ use crate::{controller::FormatConfig, InputConsumer, ParseError, Parser};
 use anyhow::{anyhow, Error as AnyError};
 use dbsp::operator::StagedBuffers;
 use feldera_adapterlib::format::BufferSize;
-use feldera_adapterlib::transport::Resume;
+use feldera_adapterlib::transport::{Resume, Watermark};
 use feldera_types::config::FtModel;
 use std::sync::{Arc, Mutex, MutexGuard};
 
@@ -113,7 +113,7 @@ impl InputConsumer for MockInputConsumer {
 
     fn request_step(&self) {}
 
-    fn extended(&self, _amt: BufferSize, _resume: Option<Resume>) {
+    fn extended(&self, _amt: BufferSize, _resume: Option<Resume>, _watermark: Vec<Watermark>) {
         self.state().n_extended += 1;
     }
 }
