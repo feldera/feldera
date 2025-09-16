@@ -85,29 +85,9 @@ but always return a Boolean value (sometimes nullable):
     <td></td>
   </tr>
   <tr>
-    <td><code>&lt;OP&gt; ANY _set_or_subquery_</code></td>
-    <td>check if any of the values in a set compares properly</td>
-    <td>Example: 10 &lt;= ANY (VALUES 10, 20, 30) is true</td>
-  </tr>
-  <tr>
-    <td><code>&lt;OP&gt; SOME _set_or_subquery_</code></td>
-    <td>A synonym for `ANY`</td>
-    <td>Example: 10 &lt;= SOME (VALUES 10, 20, 30) is true</td>
-  </tr>
-  <tr>
-    <td><code>&lt;OP&gt; ALL _set_or_subquery_</code></td>
-    <td>check if all the values in a set compare properly</td>
-    <td>Example: 10 &lt;= ALL (VALUES 10, 20, 30) is true</td>
-  </tr>
-  <tr>
     <td><a id="exists"></a><code>EXISTS query</code></td>
     <td>check whether query results have at least one row</td>
     <td></td>
-  </tr>
-  <tr>
-    <td><a id="unique"></a><code>UNIQUE query</code></td>
-    <td>check whether the result of a query contains no duplicates</td>
-    <td>ignores <code>NULL</code> values</td>
   </tr>
 </table>
 
