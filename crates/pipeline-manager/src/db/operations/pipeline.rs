@@ -1116,6 +1116,28 @@ pub(crate) async fn set_deployment_resources_desired_status(
         }
     }
 
+    // Desired status cannot be set to standby if no file backend is configured
+    let is_file_backend = current
+        .runtime_config
+        .get("storage")
+        .and_then(|v| v.get("backend"))
+        .and_then(|v| v.get("name"))
+        .map(|v| v.as_str() == Some("file"))
+        .unwrap_or(false);
+    let is_sync_configured = current
+        .runtime_config
+        .get("storage")
+        .and_then(|v| v.get("backend"))
+        .and_then(|v| v.get("config"))
+        .and_then(|v| v.get("sync"))
+        .map(|v| !v.is_null())
+        .unwrap_or(false);
+    if final_deployment_initial == Some(RuntimeDesiredStatus::Standby)
+        && (!is_file_backend || !is_sync_configured)
+    {
+        return Err(DBError::InitialStandbyNotAllowed);
+    }
+
     let stmt = txn
         .prepare_cached(
             "UPDATE pipeline

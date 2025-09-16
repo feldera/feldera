@@ -192,6 +192,7 @@ pub enum DBError {
     NoRuntimeStatusWhileProvisioned,
     PreconditionViolation(String),
     InitialImmutableUnlessStopped,
+    InitialStandbyNotAllowed,
 }
 
 impl DBError {
@@ -631,6 +632,14 @@ impl Display for DBError {
                     "Initial desired runtime status cannot be changed unless the pipeline is Stopped."
                 )
             }
+            DBError::InitialStandbyNotAllowed => {
+                write!(
+                    f,
+                    "Initial desired runtime status can only be set to Standby if: \
+                    (1) `runtime_config.storage.backend.name` is set to `file`, and \
+                    (2) `runtime_config.storage.backend.config.sync` is configured."
+                )
+            }
         }
     }
 }
@@ -721,6 +730,7 @@ impl DetailedError for DBError {
             Self::PreconditionViolation(..) => Cow::from("PreconditionViolation"),
             Self::ResumeWhileNotProvisioned => Cow::from("ResumeWhileNotProvisioned"),
             Self::InitialImmutableUnlessStopped => Cow::from("InitialImmutableUnlessStopped"),
+            Self::InitialStandbyNotAllowed => Cow::from("InitialStandbyNotAllowed"),
         }
     }
 }
@@ -784,7 +794,8 @@ impl ResponseError for DBError {
             Self::InvalidRuntimeDesiredStatus(..) => StatusCode::INTERNAL_SERVER_ERROR,
             Self::NoRuntimeStatusWhileProvisioned => StatusCode::INTERNAL_SERVER_ERROR,
             Self::PreconditionViolation(..) => StatusCode::INTERNAL_SERVER_ERROR,
-            Self::InitialImmutableUnlessStopped => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::InitialImmutableUnlessStopped => StatusCode::BAD_REQUEST,
+            Self::InitialStandbyNotAllowed => StatusCode::BAD_REQUEST,
         }
     }
 

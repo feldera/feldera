@@ -18,6 +18,7 @@ from .helper import (
     wait_for_deployment_status,
     api_url,
     adhoc_query_json,
+    post_no_body,
 )
 from tests import enterprise_only
 
@@ -319,3 +320,17 @@ def test_pipeline_clear(pipeline_name):
     second = clear_pipeline(pipeline_name, wait=True)
     assert second.status_code == HTTPStatus.ACCEPTED
     assert get_pipeline(pipeline_name).json().get("storage_status") == "Cleared"
+
+
+@gen_pipeline_name
+def test_start_as_standby_fails(pipeline_name):
+    """
+    Unable to start as standby if runtime configuration requirements are not met.
+    """
+    r = post_json(api_url("/pipelines"), {"name": pipeline_name, "program_code": ""})
+    assert r.status_code == HTTPStatus.CREATED
+    r = post_no_body(
+        api_url(f"/pipelines/{pipeline_name}/start"), params={"initial": "standby"}
+    )
+    assert r.status_code == HTTPStatus.BAD_REQUEST
+    assert r.json()["error_code"] == "InitialStandbyNotAllowed"
