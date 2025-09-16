@@ -27,7 +27,11 @@ def requests_verify_from_env() -> str | bool:
     if env_feldera_tls_insecure is None:
         FELDERA_TLS_INSECURE = False
     else:
-        FELDERA_TLS_INSECURE = env_feldera_tls_insecure.strip().lower() in ("1", "true", "yes")
+        FELDERA_TLS_INSECURE = env_feldera_tls_insecure.strip().lower() in (
+            "1",
+            "true",
+            "yes",
+        )
 
     requests_verify = not FELDERA_TLS_INSECURE
     if FELDERA_HTTPS_TLS_CERT is not None:
