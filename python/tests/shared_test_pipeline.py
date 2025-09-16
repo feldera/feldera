@@ -49,7 +49,7 @@ class SharedTestPipeline(unittest.TestCase):
 
     def setUp(self):
         p = PipelineBuilder(
-            self.client, self._testMethodName, sql=self.ddl
+            self.client, unique_pipeline_name(self._testMethodName), sql=self.ddl
         ).create_or_replace()
         self.p = p
 
