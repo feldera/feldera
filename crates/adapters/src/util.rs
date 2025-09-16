@@ -663,7 +663,11 @@ impl<K: Eq + Hash> TokenBucketRateLimiter<K> {
 mod test {
     #[cfg(feature = "with-deltalake")]
     use std::sync::Mutex;
-    use std::{sync::Arc, thread, time::Duration};
+    use std::{
+        sync::{Arc, Barrier},
+        thread,
+        time::Duration,
+    };
 
     use crate::util::{RateLimitCheckResult, TokenBucketRateLimiter};
 
@@ -799,17 +803,44 @@ mod test {
 
     // -------- Concurrency tests -------- //
 
+    // These tests verify that the TokenBucketRateLimiter correctly tracks and reports
+    // the number and timing of suppressed attempts across multiple threads.
+    //
+    // Steps:
+    // 1. Burn all available tokens for a key.
+    // 2. Spawn multiple threads, synchronizing their start so all attempt to consume a token
+    //    while the bucket is empty, ensuring all are suppressed.
+    // 3. After all threads have attempted and been suppressed, sleep to allow a token to refill.
+    // 4. The next check should succeed and return AllowedAfterSuppression, reporting the total
+    //    number of suppressed attempts and their timing.
+    //
+    // The use of a barrier ensures all threads hit the suppressed state before any refill occurs,
+    // making the test robust against timing and scheduling variations.
     #[test]
     fn test_concurrent_token_consumption() {
         let limiter = Arc::new(TokenBucketRateLimiter::new(5, Duration::from_secs(60)));
         let key = "concurrent";
-        let mut handles = vec![];
 
-        for _ in 0..10 {
+        let num_threads = 10;
+
+        // create a barrier that can block a given number of threads.
+        // A barrier will block n-1 threads which call wait()
+        // and then wake up all threads at once when the nth thread calls wait().
+        let barrier = Arc::new(Barrier::new(num_threads + 1));
+
+        let mut handles = vec![];
+        for _ in 0..num_threads {
             let limiter = limiter.clone();
-            let key = key.to_string();
-            handles.push(thread::spawn(move || limiter.check(key)));
+            let barrier = barrier.clone();
+            handles.push(thread::spawn(move || {
+                // Synchronize thread start so all hit suppressed state before refill
+                barrier.wait();
+                limiter.check(key)
+            }));
         }
+
+        // Wait for all threads to be ready, then release them
+        barrier.wait();
 
         let results: Vec<_> = handles.into_iter().map(|h| h.join().unwrap()).collect();
 
@@ -835,25 +866,32 @@ mod test {
     #[test]
     fn test_suppressed_count_and_timing_across_threads() {
         let limiter = Arc::new(TokenBucketRateLimiter::new(2, Duration::from_millis(600)));
-        let key = "threaded_suppress".to_string();
+        let key = "threaded_suppress";
 
         // Burn 2 tokens
-        assert!(matches!(
-            limiter.check(key.clone()),
-            RateLimitCheckResult::Allowed
-        ));
-        assert!(matches!(
-            limiter.check(key.clone()),
-            RateLimitCheckResult::Allowed
-        ));
+        assert!(matches!(limiter.check(key), RateLimitCheckResult::Allowed));
+        assert!(matches!(limiter.check(key), RateLimitCheckResult::Allowed));
 
-        // 5 threads, all suppressed
+        let num_threads = 5;
+
+        // create a barrier that can block a given number of threads.
+        // A barrier will block n-1 threads which call wait()
+        // and then wake up all threads at once when the nth thread calls wait().
+        let barrier = Arc::new(Barrier::new(num_threads + 1));
+
         let mut handles = vec![];
-        for _ in 0..5 {
+        for _ in 0..num_threads {
             let limiter = limiter.clone();
-            let key = key.to_string();
-            handles.push(thread::spawn(move || limiter.check(key)));
+            let barrier = barrier.clone();
+            handles.push(thread::spawn(move || {
+                // Synchronize thread start so all hit suppressed state before refill
+                barrier.wait();
+                limiter.check(key)
+            }));
         }
+
+        // Wait for all threads to be ready, then release them
+        barrier.wait();
 
         for res in handles {
             assert!(matches!(
@@ -865,13 +903,13 @@ mod test {
         thread::sleep(Duration::from_millis(320)); // refill 1
 
         // This call should flush suppressed info
-        match limiter.check(key.clone()) {
+        match limiter.check(key) {
             RateLimitCheckResult::AllowedAfterSuppression {
                 suppressed,
                 first_suppression,
                 last_suppression,
             } => {
-                assert!(suppressed >= 5);
+                assert!(suppressed >= num_threads as u64);
                 assert!(last_suppression >= first_suppression);
                 let now = limiter.now_ms();
                 let first_suppressed_elapsed = (now - first_suppression) as f64 / 1000.0;
