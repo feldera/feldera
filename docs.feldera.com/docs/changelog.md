@@ -70,7 +70,7 @@ import TabItem from '@theme/TabItem';
         **API pipeline runtime configuration:**
         - Deprecated: `storage.backend.config.sync.standby`.
           It no longer has an effect, and is replaced by starting with `initial`.
-        
+
         **Python**
         - Important: update your Python clients to the latest version, prior versions will not work properly
           (in particular, pipelines won't start because it used `/pause` to start them)
@@ -87,7 +87,7 @@ import TabItem from '@theme/TabItem';
 
         BACKWARD COMPATIBLE
         ===================
-        
+
         **API pipeline field additions:**
         - `deployment_id`
         - `deployment_initial`
