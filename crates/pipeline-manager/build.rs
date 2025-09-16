@@ -1,5 +1,5 @@
 use change_detection::ChangeDetection;
-use static_files::{resource_dir, NpmBuild};
+use static_files::resource_dir;
 use std::env;
 use std::path::{Path, PathBuf};
 use vergen_gitcl::*;
@@ -12,6 +12,43 @@ const EXCLUDE_LIST: [&str; 4] = [
     "../../web-console/.svelte-kit",
     "../../web-console/pipeline-manager-",
 ];
+
+/// Run bun install with --frozen-lockfile option
+fn run_bun_install() -> Result<(), Box<dyn std::error::Error>> {
+    let install_output = std::process::Command::new("bun")
+        .current_dir("../../web-console")
+        .args(&["install", "--frozen-lockfile"])
+        .output()
+        .expect("Failed to execute bun install");
+
+    if !install_output.status.success() {
+        return Err(format!(
+            "Could not run `bun install --frozen-lockfile`. Follow set-up instructions in web-console/README.md\nStderr: {}",
+            String::from_utf8_lossy(&install_output.stderr)
+        ).into());
+    }
+
+    Ok(())
+}
+
+/// Run bun build with the specified build directory
+fn run_bun_build(build_dir: &PathBuf) -> Result<(), Box<dyn std::error::Error>> {
+    let build_output = std::process::Command::new("bun")
+        .current_dir("../../web-console")
+        .env("BUILD_DIR", build_dir)
+        .args(&["run", "build"])
+        .output()
+        .expect("Failed to execute bun build");
+
+    if !build_output.status.success() {
+        return Err(format!(
+            "Could not run `bun run build`. Run it manually in web-console/ to debug.\nStderr: {}",
+            String::from_utf8_lossy(&build_output.stderr)
+        ).into());
+    }
+
+    Ok(())
+}
 
 /// The build script has two modes:
 ///
@@ -58,17 +95,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         unsafe {
             env::set_var("BUILD_DIR", rel_build_dir.clone());
         }
-        let asset_path: PathBuf = Path::new("../../web-console/").join(rel_build_dir);
-        let mut resource_dir = NpmBuild::new("../../web-console")
-            .executable("bun")
-            .run("install --frozen-lockfile")
-            .expect(
-                "Could not run `bun install`. Follow set-up instructions in web-console/README.md",
-            )
-            .run("build")
-            .expect("Could not run `bun run build`. Run it manually in web-console/ to debug.")
-            .target(asset_path.clone())
-            .to_resource_dir();
+        let asset_path: PathBuf = Path::new("../../web-console/").join(&rel_build_dir);
+
+        run_bun_install()?;
+        run_bun_build(&rel_build_dir)?;
+
+        let mut resource_dir = resource_dir(asset_path.clone());
         let _ = resource_dir.with_generated_filename(out_dir.join("generated.rs"));
         resource_dir.build().expect("SvelteKit app failed to build");
     }
