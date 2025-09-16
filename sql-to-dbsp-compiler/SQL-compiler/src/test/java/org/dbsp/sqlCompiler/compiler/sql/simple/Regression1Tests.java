@@ -917,4 +917,19 @@ public class Regression1Tests extends SqlIoTest {
     public void issue4729() {
         this.getCCS("CREATE TABLE t (ts BIGINT NOT NULL PRIMARY KEY LATENESS 5);");
     }
+
+    @Test
+    public void issue4752() {
+        var ccs = this.getCCS("""
+                CREATE TABLE tbl(arr VARCHAR ARRAY);
+                
+                CREATE MATERIALIZED VIEW v1 AS SELECT
+                arr BETWEEN ARRAY['bye', '14'] AND ARRAY['bye', '14'] AS arr
+                FROM tbl;""");
+        ccs.step("INSERT INTO tbl VALUES(ARRAY()), (ARRAY['bye', '14'])", """
+                 arr | weight
+                --------------
+                 false | 1
+                 true  | 1""");
+    }
 }
