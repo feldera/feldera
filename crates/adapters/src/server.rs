@@ -1405,7 +1405,7 @@ async fn sync_checkpoint_status(state: WebData<ServerState>) -> impl Responder {
     HttpResponse::Ok().json(state.sync_checkpoint_state.lock().unwrap().status.clone())
 }
 
-/// Suspends the pipeline and terminate the process.
+/// Suspends the pipeline and terminate the circuit.
 ///
 /// This implementation is designed to be idempotent, so that any number of
 /// suspend requests act like just one.
