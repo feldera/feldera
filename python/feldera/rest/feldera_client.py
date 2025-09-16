@@ -419,11 +419,9 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         timeout_s: Optional[float] = 300,
     ):
         """
-        Pause a pipeline
+        Resume a pipeline
 
         :param pipeline_name: The name of the pipeline to stop
-        :param error_message: The error message to show if the pipeline is in
-             STOPPED state due to a failure.
         :param wait: Set True to wait for the pipeline to pause. True by default
         :param timeout_s: The amount of time in seconds to wait for the pipeline
             to pause. 300 seconds by default.
