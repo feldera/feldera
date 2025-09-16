@@ -49,6 +49,58 @@ import TabItem from '@theme/TabItem';
         Instead, it returns status OK with message body containing the
         "Initializing" string.
 
+        ## Unreleased: pipeline status rework
+
+        BACKWARD INCOMPATIBLE
+        =====================
+
+        **API pipeline endpoints**
+        - `/v0/pipelines/<name>/start`: no longer resumes a pipeline (instead use `/resume`)
+        - `/v0/pipelines/<name>/start`: new parameter `?initial=running/paused/standby` (default: `running`)
+        - `/v0/pipelines/<name>/pause`: no longer starts a pipeline as paused (instead use `/start?initial=paused`)
+        - `/v0/pipelines/<name>/resume`: newly added
+
+        **API pipeline field changes:**
+        - `deployment_status`:
+          - 1 removed variant: `Suspending`
+          - 4 new variants: `Suspended`, `Replaying`, `Standby`, `Bootstrapping`
+        - `deployment_desired_status`:
+          - 2 new variants: `Standby`, `Unavailable`
+
+        **API pipeline runtime configuration:**
+        - Deprecated: `storage.backend.config.sync.standby`.
+          It no longer has an effect, and is replaced by starting with `initial`.
+        
+        **Python**
+        - Important: update your Python clients to the latest version, prior versions will not work properly
+          (in particular, pipelines won't start because it used `/pause` to start them)
+        - `Pipeline.start()`: no longer resumes a pipeline (instead use `Pipeline.resume()`)
+        - `Pipeline.pause()`: no longer starts a pipeline as paused
+        - `Pipeline.resume()`: no longer starts a pipeline as running (instead use `Pipeline.start()`)
+        - The Python API currently does not yet support starting in different initial statuses
+          because of its internal listening mechanism
+
+        **fda**
+        - `fda start`: no longer resumes a pipeline (instead use `fda resume`)
+        - `fda pause`: no longer starts a pipeline as paused (instead use `fda start -i paused`)
+        - `fda resume`: newly added
+
+        BACKWARD COMPATIBLE
+        ===================
+        
+        **API pipeline field additions:**
+        - `deployment_id`
+        - `deployment_initial`
+        - `deployment_desired_status_since`
+        - `deployment_resources_status`
+        - `deployment_resources_status_since`
+        - `deployment_resources_desired_status`
+        - `deployment_resources_desired_status_since`
+        - `deployment_runtime_status`
+        - `deployment_runtime_status_since`
+        - `deployment_runtime_desired_status`
+        - `deployment_runtime_desired_status_since`
+
         ## 0.129.0
 
         Values that are late in the NOW stream are no longer logged to the
