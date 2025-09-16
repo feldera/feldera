@@ -3569,6 +3569,24 @@ impl Storage for Mutex<DbModel> {
         if pipeline.deployment_initial.is_some_and(|v| v != initial) {
             return Err(DBError::InitialImmutableUnlessStopped);
         }
+        let is_file_backend = pipeline
+            .runtime_config
+            .get("storage")
+            .and_then(|v| v.get("backend"))
+            .and_then(|v| v.get("name"))
+            .map(|v| v.as_str() == Some("file"))
+            .unwrap_or(false);
+        let is_sync_configured = pipeline
+            .runtime_config
+            .get("storage")
+            .and_then(|v| v.get("backend"))
+            .and_then(|v| v.get("config"))
+            .and_then(|v| v.get("sync"))
+            .map(|v| !v.is_null())
+            .unwrap_or(false);
+        if initial == RuntimeDesiredStatus::Standby && (!is_file_backend || !is_sync_configured) {
+            return Err(DBError::InitialStandbyNotAllowed);
+        }
 
         // Apply changes: update
         pipeline.deployment_initial = Some(initial);
