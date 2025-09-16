@@ -528,6 +528,7 @@ pub(crate) async fn bench(client: Client, format: OutputFormat, args: BenchmarkA
             name: pipeline_name.clone(),
             recompile,
             no_wait: false,
+            initial: "running".to_string(),
         },
         client.clone(),
     ))
@@ -559,7 +560,7 @@ pub(crate) async fn bench(client: Client, format: OutputFormat, args: BenchmarkA
     let metrics = collect_metrics(&client, &pipeline_name, args.duration, need_commit).await;
     let end_time: chrono::DateTime<chrono::Utc> = chrono::Utc::now();
 
-    // Shutdown the pipeline after collecting metrics
+    // Stop the pipeline after collecting metrics
     let _ = Box::pin(crate::pipeline(
         OutputFormat::Text,
         PipelineAction::Stop {

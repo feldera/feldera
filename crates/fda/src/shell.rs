@@ -25,6 +25,7 @@ Type:  \h for help with fda shell commands
        - SQL commands: SELECT or INSERT
        - start
        - pause
+       - resume
        - restart [-r, --recompile]
        - shutdown / stop
        - program
@@ -109,6 +110,7 @@ pub async fn shell(format: OutputFormat, name: String, client: Client) {
                     }
                     line if line.starts_with("start")
                         || line.starts_with("pause")
+                        || line.starts_with("resume")
                         || line.starts_with("stop")
                         || line.starts_with("restart")
                         || line.starts_with("shutdown")

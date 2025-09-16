@@ -292,6 +292,9 @@ pub enum PipelineAction {
         /// Don't wait for pipeline to reach the status before returning.
         #[arg(long, short = 'n', default_value_t = false)]
         no_wait: bool,
+        /// Initial desired runtime status once the pipeline is started.
+        #[arg(long, short = 'i', default_value = "running")]
+        initial: String,
     },
     /// Checkpoint a fault-tolerant pipeline.
     Checkpoint {
@@ -311,9 +314,18 @@ pub enum PipelineAction {
         #[arg(long, short = 'n', default_value_t = false)]
         no_wait: bool,
     },
-    /// Shutdown a pipeline, then restart it.
+    /// Resume a pipeline.
+    Resume {
+        /// The name of the pipeline.
+        #[arg(value_hint = ValueHint::Other, add = ArgValueCompleter::new(pipeline_names))]
+        name: String,
+        /// Don't wait for pipeline to reach the status before returning.
+        #[arg(long, short = 'n', default_value_t = false)]
+        no_wait: bool,
+    },
+    /// Stop a pipeline, then start it again.
     ///
-    /// This is a shortcut for calling `fda shutdown p1 && fda start p1`.
+    /// This is a shortcut for calling `fda stop p1 && fda start p1`.
     Restart {
         /// The name of the pipeline.
         #[arg(value_hint = ValueHint::Other, add = ArgValueCompleter::new(pipeline_names))]
@@ -329,6 +341,9 @@ pub enum PipelineAction {
         /// Don't wait for pipeline to reach the status before returning.
         #[arg(long, short = 'n', default_value_t = false)]
         no_wait: bool,
+        /// Initial desired runtime status once the pipeline is restarted.
+        #[arg(long, short = 'i', default_value = "running")]
+        initial: String,
     },
     /// Stop a pipeline.
     #[clap(aliases = &["shutdown"])]
@@ -508,6 +523,10 @@ pub enum PipelineAction {
         /// Start the pipeline before entering the shell.
         #[arg(long, short = 's', default_value_t = false)]
         start: bool,
+        /// Initial desired runtime status once the pipeline is started
+        /// (ignored unless `--start` is provided).
+        #[arg(long, short = 'i', default_value = "running")]
+        initial: String,
     },
     /// Execute an ad-hoc query against a pipeline and return the result.
     #[clap(aliases = &["exec"])]

@@ -701,7 +701,13 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
             name,
             recompile,
             no_wait,
+            initial,
         } => {
+            if initial != "standby" && initial != "paused" && initial != "running" {
+                eprintln!("Unsupported `--initial`: {}", initial);
+                std::process::exit(1);
+            }
+
             // Force recompilation by adding/removing a space at the end of the program code
             // and disabling the compilation cache
             let pc = client
@@ -787,6 +793,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
             let response = client
                 .post_pipeline_start()
                 .pipeline_name(name.clone())
+                .initial(&initial)
                 .send()
                 .await
                 .map_err(handle_errors_fatal(
@@ -800,7 +807,13 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                 wait_for_status(
                     &client,
                     name.clone(),
-                    CombinedStatus::Running,
+                    if initial == "running" {
+                        CombinedStatus::Running
+                    } else if initial == "paused" {
+                        CombinedStatus::Paused
+                    } else {
+                        CombinedStatus::Standby
+                    },
                     "Starting the pipeline...",
                 )
                 .await;
@@ -862,11 +875,37 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
             }
             trace!("{:#?}", response);
         }
+        PipelineAction::Resume { name, no_wait } => {
+            let response = client
+                .post_pipeline_resume()
+                .pipeline_name(name.clone())
+                .send()
+                .await
+                .map_err(handle_errors_fatal(
+                    client.baseurl().clone(),
+                    "Failed to resume pipeline",
+                    1,
+                ))
+                .unwrap();
+
+            if !no_wait {
+                wait_for_status(
+                    &client,
+                    name.clone(),
+                    CombinedStatus::Running,
+                    "Resuming the pipeline...",
+                )
+                .await;
+                println!("Pipeline resumed successfully.");
+            }
+            trace!("{:#?}", response);
+        }
         PipelineAction::Restart {
             name,
             recompile,
             checkpoint,
             no_wait,
+            initial,
         } => {
             let current_status = client
                 .get_pipeline()
@@ -896,12 +935,12 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                 &client,
                 name.clone(),
                 CombinedStatus::Stopped,
-                "Shutting down the pipeline...",
+                "Stopping the pipeline...",
             )
             .await;
 
             if current_status.deployment_status != CombinedStatus::Stopped {
-                println!("Pipeline shutdown successful.");
+                println!("Pipeline stop successful.");
             }
 
             let _ = Box::pin(pipeline(
@@ -910,6 +949,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                     name,
                     recompile,
                     no_wait,
+                    initial,
                 },
                 client,
             ))
@@ -1466,7 +1506,11 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                 }
             }
         }
-        PipelineAction::Shell { name, start } => {
+        PipelineAction::Shell {
+            name,
+            start,
+            initial,
+        } => {
             let client2 = client.clone();
             if start {
                 let _ = Box::pin(pipeline(
@@ -1475,6 +1519,7 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                         name: name.clone(),
                         recompile: false,
                         no_wait: false,
+                        initial,
                     },
                     client,
                 ))
