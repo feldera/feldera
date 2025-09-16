@@ -931,5 +931,12 @@ public class Regression1Tests extends SqlIoTest {
                 --------------
                  false | 1
                  true  | 1""");
+
+        this.getCCS("""
+                CREATE TABLE tbl(bin BINARY);
+                
+                CREATE MATERIALIZED VIEW v2 AS SELECT
+                bin BETWEEN X'0B1620' AND X'0B1620' AS bin
+                FROM tbl;""");
     }
 }

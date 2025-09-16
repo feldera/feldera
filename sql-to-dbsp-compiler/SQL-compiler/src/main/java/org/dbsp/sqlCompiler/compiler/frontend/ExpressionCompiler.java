@@ -432,7 +432,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
         DBSPType expressionResultType;
         if (needCommonType(opcode, type, leftType, rightType)) {
             // Need to cast both operands to a common type.  Find out what it is.
-            DBSPType commonBase = TypeCompiler.reduceType(node, leftType, rightType, "", false);
+            DBSPType commonBase = TypeCompiler.reduceType(node, leftType, rightType, "", opcode.isComparison());
             expressionResultType = commonBase.withMayBeNull(anyNull);
             if (commonBase.is(DBSPTypeDecimal.class))
                 expressionResultType = DBSPTypeDecimal.getDefault().withMayBeNull(anyNull);  // no limits
@@ -1351,7 +1351,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                         return compileFunction(call, node, type, ops, 0);
                     case "gunzip":
                         DBSPExpression arg = ops.get(0);
-                        ops.set(0, arg.cast(node, new DBSPTypeBinary(arg.getNode(), arg.type.mayBeNull), false));
+                        ops.set(0, arg.cast(node, new DBSPTypeBinary(arg.getNode(), false, arg.type.mayBeNull), false));
                         return compileStrictFunction(call, node, type, ops, 1);
                     case "to_int":
                     case "typeof":
