@@ -3,6 +3,7 @@
   "version": "0.0.1",
   "private": true,
   "scripts": {
+    "clean-install": "bun ci",
     "dev": "vite dev --host",
     "build": "svelte-kit sync && svelte-check --threshold error && vite build",
     "preview": "vite preview --host",

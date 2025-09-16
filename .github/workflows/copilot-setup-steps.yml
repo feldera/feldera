@@ -47,5 +47,5 @@ jobs:
           node-version: 20
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.2.2
+          bun-version: 1.2.22
       - uses: taiki-e/install-action@just
