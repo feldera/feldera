@@ -692,6 +692,10 @@ where
     fn seek_key_exact(&mut self, key: &K, hash: Option<u64>) -> bool {
         self.set_key_direction(None);
 
+        if self.cursors.is_empty() {
+            return false;
+        }
+
         let hash = hash.unwrap_or_else(|| key.default_hash());
         self.current_key.clear();
 
