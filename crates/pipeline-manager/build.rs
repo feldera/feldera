@@ -17,7 +17,7 @@ const EXCLUDE_LIST: [&str; 4] = [
 fn run_bun_install() -> Result<(), Box<dyn std::error::Error>> {
     let install_output = std::process::Command::new("bun")
         .current_dir("../../web-console")
-        .args(&["install", "--frozen-lockfile"])
+        .args(["install", "--frozen-lockfile"])
         .output()
         .expect("Failed to execute bun install");
 
@@ -36,7 +36,7 @@ fn run_bun_build(build_dir: &PathBuf) -> Result<(), Box<dyn std::error::Error>> 
     let build_output = std::process::Command::new("bun")
         .current_dir("../../web-console")
         .env("BUILD_DIR", build_dir)
-        .args(&["run", "build"])
+        .args(["run", "build"])
         .output()
         .expect("Failed to execute bun build");
 
@@ -44,7 +44,8 @@ fn run_bun_build(build_dir: &PathBuf) -> Result<(), Box<dyn std::error::Error>> 
         return Err(format!(
             "Could not run `bun run build`. Run it manually in web-console/ to debug.\nStderr: {}",
             String::from_utf8_lossy(&build_output.stderr)
-        ).into());
+        )
+        .into());
     }
 
     Ok(())
