@@ -8398,6 +8398,93 @@ pipeline = client.create_pipeline("my_pipeline")
 
 ---
 
+## Context: python/tests/CLAUDE.md
+<!-- SECTION:python/tests/CLAUDE.md START -->
+# Python Tests
+
+This directory contains the comprehensive test suite for the Feldera platform.
+
+## Authentication Setup for Platform Tests (`python/`)
+
+This directory contains integration tests for the Feldera Python SDK and platform integration.
+
+### OIDC Authentication (Recommended for CI)
+
+Platform tests in the `platform/` subdirectory support OIDC authentication via environment variables. This is the primary authentication method used in CI environments.
+
+#### Environment Variables
+
+```bash
+export OIDC_TEST_ISSUER="https://your-oidc-provider.com"
+export OIDC_TEST_CLIENT_ID="your-client-id"
+export OIDC_TEST_CLIENT_SECRET="your-client-secret"
+export OIDC_TEST_USERNAME="testuser@example.com"
+export OIDC_TEST_PASSWORD="test-password"
+export OIDC_TEST_SCOPE="openid profile email"  # Optional, defaults shown
+```
+
+#### Token Caching
+
+The OIDC test helper implements **cross-process token caching** to minimize auth server requests during parallel test execution:
+
+- **In-memory cache**: Tokens cached within the same process/helper instance
+- **Cross-process cache**: Tokens cached in temporary files shared across pytest workers
+- **Automatic expiration**: Cached tokens include 30-second buffer before expiration
+- **Thread-safe**: File locking ensures safe concurrent access across processes
+
+This prevents the frequency limit issues that occur when multiple CI runners make simultaneous ROPG (Resource Owner Password Grant) requests to the auth server.
+
+#### Authentication Flow
+
+1. Tests call `get_oidc_test_helper()` to get a global helper instance
+2. Helper checks in-memory cache first, then cross-process cache
+3. If no valid cached token exists, makes ROPG request to auth server
+4. New tokens are cached both in-memory and to temporary file
+5. Subsequent requests use cached token until expiration
+
+### API Key Authentication (Fallback)
+
+If OIDC environment variables are not configured, tests fall back to API key authentication:
+
+```bash
+export FELDERA_API_KEY="your-api-key"
+```
+
+### Usage in Tests
+
+Platform tests automatically detect and use the appropriate authentication method:
+
+```python
+from tests.platform.helper import _base_headers
+
+# Headers automatically include OIDC token or API key
+headers = _base_headers()
+response = requests.get(url, headers=headers)
+```
+
+The authentication selection follows this priority:
+1. **OIDC** (if `OIDC_TEST_ISSUER` and related vars are set)
+2. **API Key** (if `FELDERA_API_KEY` is set)
+3. **No Auth** (for local testing without authentication)
+
+### CI Configuration
+
+In GitHub Actions workflows, OIDC authentication is configured via repository variables and secrets:
+
+```yaml
+env:
+  OIDC_TEST_ISSUER: ${{ vars.OIDC_TEST_ISSUER }}
+  OIDC_TEST_CLIENT_ID: ${{ vars.OIDC_TEST_CLIENT_ID }}
+  OIDC_TEST_CLIENT_SECRET: ${{ secrets.OIDC_TEST_CLIENT_SECRET }}
+  OIDC_TEST_USERNAME: ${{ secrets.OIDC_TEST_USERNAME }}
+  OIDC_TEST_PASSWORD: ${{ secrets.OIDC_TEST_PASSWORD }}
+```
+
+This ensures consistent authentication across both "Runtime Integration Tests" and "Platform Integration Tests (OSS Docker Image)" workflows that run in parallel.
+<!-- SECTION:python/tests/CLAUDE.md END -->
+
+---
+
 ## Context: scripts/CLAUDE.md
 <!-- SECTION:scripts/CLAUDE.md START -->
 ## Overview
