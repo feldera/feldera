@@ -6,6 +6,7 @@ use crate::db::operations::pipeline::{
     cleanup_old_support_data_collections, store_support_data_collection,
 };
 use crate::db::storage::Storage;
+use crate::db::types::combined_status::CombinedStatus;
 use crate::db::types::pipeline::PipelineId;
 use crate::db::types::tenant::TenantId;
 use crate::error::ManagerError;
@@ -15,7 +16,6 @@ use actix_web::HttpResponse;
 use awc::Client;
 use chrono::{DateTime, Utc};
 use feldera_types::error::ErrorResponse;
-use feldera_types::runtime_status::RuntimeStatus;
 use futures_util::StreamExt;
 use log::{debug, error, info};
 use serde::Deserialize;
@@ -717,7 +717,11 @@ impl SupportDataCollector {
 
         for (tenant_id, pipeline) in running_pipelines {
             // Only collect data for pipelines that are actually running
-            if pipeline.deployment_runtime_status == Some(RuntimeStatus::Running) {
+            let combined_status = CombinedStatus::new(
+                pipeline.deployment_resources_status,
+                pipeline.deployment_runtime_status,
+            );
+            if combined_status == CombinedStatus::Running {
                 let pipeline_id = pipeline.id;
 
                 // Check if this pipeline is already scheduled
@@ -829,10 +833,14 @@ impl SupportDataCollector {
         };
 
         // Only collect data for running pipelines
-        if pipeline.deployment_runtime_status != Some(RuntimeStatus::Running) {
+        let combined_status = CombinedStatus::new(
+            pipeline.deployment_resources_status,
+            pipeline.deployment_runtime_status,
+        );
+        if combined_status != CombinedStatus::Running {
             debug!(
                 "Removing {} from support data collection schedule (status change to: {:?})",
-                entry.pipeline_id, pipeline.deployment_runtime_status
+                entry.pipeline_id, combined_status
             );
             return Ok(PostCollectionAction::Remove);
         }
