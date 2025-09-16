@@ -324,6 +324,7 @@ impl AvroParser {
     fn input(&mut self, data: &[u8]) -> Result<(), ParseError> {
         self.last_event_number += 1;
 
+        let n_bytes = data.len();
         let mut record = if !self.config.skip_schema_id {
             if data.len() < 5 {
                 return Err(ParseError::bin_event_error(
@@ -386,7 +387,7 @@ impl AvroParser {
         match self.config.update_format {
             AvroUpdateFormat::Raw => self
                 .input_stream
-                .insert(&avro_value, schema, &self.refs, record.len())
+                .insert(&avro_value, schema, &self.refs, n_bytes)
                 .map_err(|e| {
                     ParseError::bin_event_error(
                         format!(
@@ -399,8 +400,16 @@ impl AvroParser {
                 })?,
             AvroUpdateFormat::Debezium => {
                 let (before, after) = Self::extract_debezium_values(&avro_value)?;
+                let (before_bytes, after_bytes) = match (before.is_some(), after.is_some()) {
+                    (true, true) => {
+                        let half = n_bytes / 2;
+                        (half, n_bytes - half)
+                    }
+                    (_, false) => (n_bytes, 0),
+                    (false, true) => (0, n_bytes),
+                };
                 if let Some(before) = before {
-                    self.input_stream.delete(before, value_schema, &self.refs, record.len()).map_err(|e| {
+                    self.input_stream.delete(before, value_schema, &self.refs, before_bytes).map_err(|e| {
                         ParseError::bin_event_error(
                             format!(
                                 "error converting 'before' record to table row (record: {before:?}): {e}"
@@ -412,7 +421,7 @@ impl AvroParser {
                     })?;
                 }
                 if let Some(after) = after {
-                    self.input_stream.insert(after, value_schema, &self.refs, record.len()).map_err(|e| {
+                    self.input_stream.insert(after, value_schema, &self.refs, after_bytes).map_err(|e| {
                             ParseError::bin_event_error(
                                 format!(
                                     "error converting 'after' record to table row (record: {after:?}): {e}"
