@@ -25,7 +25,7 @@ default = [
     "with-redis",
 ]
 with-kafka = ["rdkafka"]
-with-deltalake = ["deltalake"]
+with-deltalake = ["deltalake", "deltalake-catalog-unity"]
 with-iceberg = ["feldera-iceberg"]
 with-pubsub = ["google-cloud-pubsub", "google-cloud-gax"]
 with-avro = [
@@ -124,6 +124,7 @@ deltalake = { workspace = true, features = [
     "azure",
     "unity-experimental",
 ], optional = true }
+deltalake-catalog-unity = { workspace = true, features = ["aws", "azure", "gcp"], optional = true}
 apache-avro = { workspace = true, optional = true }
 schema_registry_converter = { workspace = true, features = [
     "avro",

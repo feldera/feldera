@@ -95,6 +95,7 @@ dbsp_nexmark = { path = "crates/nexmark" }
 deadpool-postgres = "0.10.5"
 #deltalake = "0.26.2"
 deltalake = { git = "https://github.com/ryzhyk/delta-rs.git", rev = "77ef46e" }
+deltalake-catalog-unity = { git = "https://github.com/ryzhyk/delta-rs.git", rev = "77ef46e" }
 directories = "6.0"
 dirs = "5.0"
 dyn-clone = "1.0.17"
