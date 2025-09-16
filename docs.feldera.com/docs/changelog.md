@@ -75,10 +75,8 @@ import TabItem from '@theme/TabItem';
         - Important: update your Python clients to the latest version, prior versions will not work properly
           (in particular, pipelines won't start because it used `/pause` to start them)
         - `Pipeline.start()`: no longer resumes a pipeline (instead use `Pipeline.resume()`)
-        - `Pipeline.pause()`: no longer starts a pipeline as paused
+        - `Pipeline.pause()`: no longer starts a pipeline as paused (instead use `Pipeline.start_paused()`)
         - `Pipeline.resume()`: no longer starts a pipeline as running (instead use `Pipeline.start()`)
-        - The Python API currently does not yet support starting in different initial statuses
-          because of its internal listening mechanism
 
         **fda**
         - `fda start`: no longer resumes a pipeline (instead use `fda resume`)
