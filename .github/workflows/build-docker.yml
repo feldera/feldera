@@ -34,7 +34,7 @@ jobs:
             docker_platform: linux/arm64
     runs-on: ${{ matrix.runner }}
     container:
-      image: ghcr.io/feldera/feldera-dev:sha-8781162739b57966b50e89e85730d522d08d3d87
+      image: ghcr.io/feldera/feldera-dev:sha-9a54a381bb958ba78da125976a2f7731db3d7a4f
 
     steps:
       - name: Checkout Repository

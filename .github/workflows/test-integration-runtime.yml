@@ -28,7 +28,7 @@ jobs:
       FELDERA_API_KEY: ${{ secrets[matrix.feldera_api_key] }}
       FELDERA_RUNTIME_VERSION: ${{ github.sha }}
     container:
-      image: ghcr.io/feldera/feldera-dev:sha-8781162739b57966b50e89e85730d522d08d3d87
+      image: ghcr.io/feldera/feldera-dev:sha-9a54a381bb958ba78da125976a2f7731db3d7a4f
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
