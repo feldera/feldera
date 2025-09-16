@@ -268,6 +268,10 @@ pub trait Trace: BatchReader {
     /// a batch and calling `insert`.
     fn insert_arc(&mut self, batch: Arc<Self::Batch>);
 
+    /// Returns the batches currently inside the trace.  The trace is the merge
+    /// of these batches.
+    fn batches(&self) -> Vec<Arc<Self::Batch>>;
+
     /// Clears the value of the "dirty" flag to `false`.
     ///
     /// The "dirty" flag is used to efficiently track changes to the trace,

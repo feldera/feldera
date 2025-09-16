@@ -18,9 +18,7 @@ use crate::{
         cursor::{CursorList, Position},
         merge_batches,
         ord::fallback::pick_merge_destination,
-        spine_async::{
-            list_merger::ArcListMerger, push_merger::ArcPushMerger, snapshot::FetchList,
-        },
+        spine_async::{list_merger::ArcListMerger, push_merger::ArcPushMerger},
         Batch, BatchReader, BatchReaderFactories, Builder, Cursor, Filter, Trace,
     },
     Error, NumEntries, Runtime,
@@ -54,7 +52,7 @@ mod list_merger;
 mod push_merger;
 mod snapshot;
 use self::thread::{BackgroundThread, WorkerStatus};
-pub use snapshot::{BatchReaderWithSnapshot, SpineSnapshot, WithSnapshot};
+pub use snapshot::{BatchReaderWithSnapshot, FetchList, SpineSnapshot, WithSnapshot};
 
 use super::{cursor::CursorFactory, BatchLocation};
 
@@ -1383,6 +1381,10 @@ where
             self.dirty = true;
             self.merger.add_batch(batch);
         }
+    }
+
+    fn batches(&self) -> Vec<Arc<Self::Batch>> {
+        self.merger.get_batches()
     }
 
     fn clear_dirty_flag(&mut self) {

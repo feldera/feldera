@@ -23,6 +23,7 @@ use std::{
     collections::{btree_map::Entry, BTreeMap, BTreeSet},
     fmt::{self, Debug},
     marker::PhantomData,
+    sync::Arc,
 };
 
 pub struct TestBatchFactories<K, V, T, R>
@@ -1247,8 +1248,12 @@ where
         self.data = Self::merge(self, &batch, &self.key_filter, &self.value_filter).data;
     }
 
-    fn insert_arc(&mut self, batch: std::sync::Arc<Self::Batch>) {
+    fn insert_arc(&mut self, batch: Arc<Self::Batch>) {
         self.data = Self::merge(self, batch.as_ref(), &self.key_filter, &self.value_filter).data;
+    }
+
+    fn batches(&self) -> Vec<Arc<Self::Batch>> {
+        vec![Arc::new(self.clone())]
     }
 
     fn clear_dirty_flag(&mut self) {}
