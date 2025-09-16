@@ -133,6 +133,29 @@ public class TypeCompiler implements ICompilerComponent {
             return lTuple.makeRelatedTupleType(fields);
         }
 
+        if (left.is(DBSPTypeArray.class)) {
+            if (!right.is(DBSPTypeArray.class)) {
+                throw new CompilationError(error + "Implicit conversion between " +
+                        left.asSqlString() + " and " + right.asSqlString() + " not supported", node);
+            }
+            DBSPTypeArray lArr = left.to(DBSPTypeArray.class);
+            DBSPTypeArray rArr = right.to(DBSPTypeArray.class);
+            DBSPType common = reduceType(node, lArr.getElementType(), rArr.getElementType(), error, true);
+            return new DBSPTypeArray(common, anyNull);
+        }
+
+        if (left.is(DBSPTypeMap.class)) {
+            if (!right.is(DBSPTypeMap.class)) {
+                throw new CompilationError(error + "Implicit conversion between " +
+                        left.asSqlString() + " and " + right.asSqlString() + " not supported", node);
+            }
+            DBSPTypeMap lMap = left.to(DBSPTypeMap.class);
+            DBSPTypeMap rMap = right.to(DBSPTypeMap.class);
+            DBSPType commonKey = reduceType(node, lMap.getKeyType(), rMap.getKeyType(), error, true);
+            DBSPType commonValue = reduceType(node, lMap.getElementType(), rMap.getElementType(), error, true);
+            return new DBSPTypeMap(commonKey, commonValue, anyNull);
+        }
+
         if (acceptStrings) {
             if (left.code == DBSPTypeCode.STRING && right.code == DBSPTypeCode.STRING) {
                 DBSPTypeString ls = left.to(DBSPTypeString.class);
