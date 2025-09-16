@@ -1,5 +1,7 @@
 from typing import Optional
 import os
+from feldera.rest._helpers import requests_verify_from_env
+import logging
 
 
 class Config:
@@ -14,7 +16,7 @@ class Config:
         version: Optional[str] = None,
         timeout: Optional[float] = None,
         connection_timeout: Optional[float] = None,
-        requests_verify: bool | str = True,
+        requests_verify: Optional[bool | str] = None,
     ) -> None:
         """
         :param url: The url to the Feldera API (ex: https://try.feldera.com)
@@ -23,7 +25,10 @@ class Config:
         :param timeout: The timeout for the HTTP requests
         :param connection_timeout: The connection timeout for the HTTP requests
         :param requests_verify: The `verify` parameter passed to the requests
-            library. `True` by default.
+            library. `True` by default. Can also be set using environment
+            variables `FELDERA_TLS_INSECURE` to disable TLS and
+            `FELDERA_HTTPS_TLS_CERT` to set the certificate path. The latter
+            takes priority.
         """
 
         BASE_URL = (
@@ -37,11 +42,10 @@ class Config:
         self.version: Optional[str] = version or "v0"
         self.timeout: Optional[float] = timeout
         self.connection_timeout: Optional[float] = connection_timeout
+        env_verify = requests_verify_from_env()
+        self.requests_verify: bool | str = (
+            requests_verify if requests_verify is not None else env_verify
+        )
 
-        FELDERA_TLS_INSECURE = True if os.environ.get("FELDERA_TLS_INSECURE") else False
-        FELDERA_HTTPS_TLS_CERT = os.environ.get("FELDERA_HTTPS_TLS_CERT")
-        requests_verify = not FELDERA_TLS_INSECURE
-        if requests_verify and FELDERA_HTTPS_TLS_CERT is not None:
-            requests_verify = FELDERA_HTTPS_TLS_CERT
-
-        self.requests_verify: bool | str = requests_verify
+        if self.requests_verify is False:
+            logging.warning("TLS verification is disabled.")

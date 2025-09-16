@@ -22,8 +22,8 @@ from typing import Any, Dict, Iterable, Optional
 from http import HTTPStatus
 from urllib.parse import quote, quote_plus
 
-from tests import FELDERA_TLS_INSECURE, API_KEY, BASE_URL, unique_pipeline_name
 from feldera.testutils_oidc import get_oidc_test_helper
+from tests import FELDERA_REQUESTS_VERIFY, API_KEY, BASE_URL, unique_pipeline_name
 
 API_PREFIX = "/v0"
 
@@ -80,7 +80,7 @@ def http_request(method: str, path: str, **kwargs) -> requests.Response:
 
     # Provide a default timeout to avoid hanging tests.
     timeout = kwargs.pop("timeout", 30)
-    kwargs["verify"] = not FELDERA_TLS_INSECURE
+    kwargs["verify"] = FELDERA_REQUESTS_VERIFY
     resp = requests.request(
         method.upper(), url, headers=headers, timeout=timeout, **kwargs
     )
