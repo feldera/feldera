@@ -224,9 +224,20 @@ where
     O: OrdOffset,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("VecIndexedWSet")
-            .field("layer", &self.layer)
-            .finish()
+        writeln!(f, "VecIndexedWSet:")?;
+        let mut cursor = self.cursor();
+        while let Some(key) = cursor.get_key() {
+            writeln!(f, "    key {key:?}:")?;
+            while let Some(val) = cursor.get_val() {
+                writeln!(f, "        value {val:?}:")?;
+                cursor.map_times(&mut |time, diff| {
+                    let _ = writeln!(f, "            ({time:?}, {diff:?})");
+                });
+                cursor.step_val();
+            }
+            cursor.step_key();
+        }
+        Ok(())
     }
 }
 
