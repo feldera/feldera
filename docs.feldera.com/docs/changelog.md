@@ -77,6 +77,8 @@ import TabItem from '@theme/TabItem';
         - `Pipeline.start()`: no longer resumes a pipeline (instead use `Pipeline.resume()`)
         - `Pipeline.pause()`: no longer starts a pipeline as paused (instead use `Pipeline.start_paused()`)
         - `Pipeline.resume()`: no longer starts a pipeline as running (instead use `Pipeline.start()`)
+        - `Pipeline.start_paused()`: newly added
+        - `Pipeline.start_standby()`: newly added
 
         **fda**
         - `fda start`: no longer resumes a pipeline (instead use `fda resume`)
