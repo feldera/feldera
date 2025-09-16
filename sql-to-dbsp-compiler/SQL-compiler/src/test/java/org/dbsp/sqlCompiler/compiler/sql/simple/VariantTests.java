@@ -31,6 +31,7 @@ import org.dbsp.sqlCompiler.ir.expression.literal.DBSPVariantNullLiteral;
 import org.dbsp.sqlCompiler.ir.expression.DBSPArrayExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBinary;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMillisInterval;
@@ -183,10 +184,12 @@ public class VariantTests extends BaseSQLTests {
                         DBSPTypeMillisInterval.Units.SECONDS, 1000L * (4 * 86400 + 10 * 3600 + 60), false)));
         this.testQuery("SELECT CAST(CAST(1 AS VARIANT) AS VARIANT)",
                 new DBSPVariantExpression(new DBSPI32Literal(1)));
+        DBSPTypeBinary binary = new DBSPTypeBinary(CalciteObject.EMPTY, 2, false, false);
+        DBSPBinaryLiteral lit = new DBSPBinaryLiteral(CalciteObject.EMPTY, binary, new byte[] { 1, 2 });
         this.testQuery("SELECT CAST(x'0102' AS VARIANT)",
-                new DBSPVariantExpression(new DBSPBinaryLiteral(new byte[] { 1, 2 })));
+                new DBSPVariantExpression(lit));
         this.testQuery("SELECT CAST(CAST(x'0102' AS VARBINARY) AS VARIANT)",
-                new DBSPVariantExpression(new DBSPBinaryLiteral(new byte[] { 1, 2 })));
+                new DBSPVariantExpression(lit));
     }
 
     @Test

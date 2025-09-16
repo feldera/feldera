@@ -11,34 +11,40 @@ import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Utilities;
 
+import javax.annotation.Nullable;
+
 import static org.dbsp.sqlCompiler.ir.type.DBSPTypeCode.BYTES;
 
 /** Represents a byte array. */
 public class DBSPTypeBinary extends DBSPTypeBaseType implements IHasPrecision {
+    /** If true the width is fixed, i.e., this is a CHAR type.
+     * Otherwise, this is a VARCHAR. */
+    public final boolean fixed;
+    /** Number of bytes; this may be UNLIMITED_PRECISION */
     public final int precision;
 
-    public DBSPTypeBinary(CalciteObject node, int precision, boolean mayBeNull) {
+    public DBSPTypeBinary(CalciteObject node, int precision, boolean fixed, boolean mayBeNull) {
         super(node, BYTES, mayBeNull);
+        this.fixed = fixed;
         this.precision = precision;
     }
 
-    public DBSPTypeBinary(CalciteObject node, boolean mayBeNull) {
-        super(node, BYTES, mayBeNull);
-        this.precision = UNLIMITED_PRECISION;
+    public DBSPTypeBinary(CalciteObject node, boolean fixed, boolean mayBeNull) {
+        this(node, UNLIMITED_PRECISION, fixed, mayBeNull);
     }
 
     @Override
     public DBSPType withMayBeNull(boolean mayBeNull) {
         if (this.mayBeNull == mayBeNull)
             return this;
-        return new DBSPTypeBinary(this.getNode(), this.precision, mayBeNull);
+        return new DBSPTypeBinary(this.getNode(), this.precision, this.fixed, mayBeNull);
     }
 
     @Override
     public DBSPExpression defaultValue() {
         if (this.mayBeNull)
             return this.none();
-        return new DBSPBinaryLiteral(new byte[] {}, false);
+        return new DBSPBinaryLiteral(this.getNode(), this, new byte[] {});
     }
 
     @Override
@@ -48,7 +54,7 @@ public class DBSPTypeBinary extends DBSPTypeBaseType implements IHasPrecision {
             return false;
         if (!super.sameNullability(type))
             return false;
-        return this.precision == other.precision;
+        return this.precision == other.precision && this.fixed == other.fixed;
     }
 
     @Override
@@ -76,6 +82,15 @@ public class DBSPTypeBinary extends DBSPTypeBaseType implements IHasPrecision {
                 .append(this.mayBeNull ? "?" : "");
     }
 
+    @Nullable
+    public String asSqlString() {
+        String result = this.fixed ? "BINARY" : "VARBINARY";
+        if (this.precision != UNLIMITED_PRECISION) {
+            result += "(" + this.precision + ")";
+        }
+        return result;
+    }
+
     @Override
     public int getPrecision() {
         return this.precision;
@@ -85,6 +100,7 @@ public class DBSPTypeBinary extends DBSPTypeBaseType implements IHasPrecision {
     public static DBSPTypeBinary fromJson(JsonNode node, JsonDecoder decoder) {
         boolean mayBeNull = DBSPType.fromJsonMayBeNull(node);
         int precision = Utilities.getIntProperty(node, "precision");
-        return new DBSPTypeBinary(CalciteObject.EMPTY, precision, mayBeNull);
+        boolean fixed = Utilities.getBooleanProperty(node, "fixed");
+        return new DBSPTypeBinary(CalciteObject.EMPTY, precision, fixed, mayBeNull);
     }
 }

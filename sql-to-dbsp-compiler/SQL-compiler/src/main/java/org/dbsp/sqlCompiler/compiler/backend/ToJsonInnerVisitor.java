@@ -431,6 +431,8 @@ public class ToJsonInnerVisitor extends InnerVisitor {
     public void postorder(DBSPTypeBinary node) {
         this.property("precision");
         this.stream.append(node.precision);
+        this.property("fixed");
+        this.stream.append(node.fixed);
         super.postorder(node);
     }
 

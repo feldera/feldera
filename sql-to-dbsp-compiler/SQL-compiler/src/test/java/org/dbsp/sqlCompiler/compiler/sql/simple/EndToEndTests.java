@@ -48,6 +48,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU32Literal;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
+import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBinary;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDouble;
@@ -789,7 +790,9 @@ public class EndToEndTests extends BaseSQLTests {
     public void testByteArray() {
         String query = "SELECT x'012345ab'";
         this.testConstantOutput(query, new DBSPZSetExpression(
-                new DBSPTupleExpression(new DBSPBinaryLiteral(new byte[]{ 0x01, 0x23, 0x45, (byte)0xAB }))));
+                new DBSPTupleExpression(new DBSPBinaryLiteral(
+                        CalciteObject.EMPTY, new DBSPTypeBinary(CalciteObject.EMPTY, 3, true, false),
+                        new byte[]{ 0x01, 0x23, 0x45, (byte)0xAB }))));
     }
 
     @Test

@@ -167,6 +167,16 @@ public class TypeCompiler implements ICompilerComponent {
                     precision = IHasPrecision.UNLIMITED_PRECISION;
                 return DBSPTypeString.create(left.getNode(), precision, fixed, anyNull);
             }
+            if (left.code == DBSPTypeCode.BYTES && right.code == DBSPTypeCode.BYTES) {
+                DBSPTypeBinary ls = left.to(DBSPTypeBinary.class);
+                DBSPTypeBinary rs = right.to(DBSPTypeBinary.class);
+                boolean fixed = ls.fixed && rs.fixed;
+                int precision = Math.max(ls.precision, rs.precision);
+                if (ls.precision == IHasPrecision.UNLIMITED_PRECISION ||
+                        rs.precision == IHasPrecision.UNLIMITED_PRECISION)
+                    precision = IHasPrecision.UNLIMITED_PRECISION;
+                return new DBSPTypeBinary(left.getNode(), precision, fixed, anyNull);
+            }
         }
 
         IsNumericType ln = left.as(IsNumericType.class);
@@ -392,11 +402,12 @@ public class TypeCompiler implements ICompilerComponent {
                 }
                 case VARBINARY:
                 case BINARY: {
+                    boolean fixed = tn == SqlTypeName.BINARY;
                     int precision = dt.getPrecision();
                     if (precision == RelDataType.PRECISION_NOT_SPECIFIED)
                         //noinspection ReassignedVariable,DataFlowIssue
                         precision = DBSPTypeBinary.UNLIMITED_PRECISION;
-                    return new DBSPTypeBinary(node, precision, nullable);
+                    return new DBSPTypeBinary(node, precision, fixed, nullable);
                 }
                 case NULL:
                     return DBSPTypeNull.INSTANCE;
