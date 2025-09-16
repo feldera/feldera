@@ -118,7 +118,7 @@ def start_pipeline(name: str, wait: bool = True):
 def resume_pipeline(name: str, wait: bool = True):
     r = post_no_body(api_url(f"/pipelines/{name}/resume"))
     assert r.status_code == HTTPStatus.ACCEPTED, (
-        f"Unexpected start response: {r.status_code} {r.text}"
+        f"Unexpected resume response: {r.status_code} {r.text}"
     )
     if wait:
         wait_for_deployment_status(name, "Running", 30)
