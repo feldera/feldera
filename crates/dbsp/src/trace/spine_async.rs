@@ -87,7 +87,7 @@ mod index_set;
 mod list_merger;
 mod push_merger;
 mod snapshot;
-pub use snapshot::{BatchReaderWithSnapshot, SpineSnapshot, WithSnapshot};
+pub use snapshot::{BatchReaderWithSnapshot, FetchList, SpineSnapshot, WithSnapshot};
 
 use super::{BatchLocation, cursor::CursorFactory};
 
@@ -2062,6 +2062,10 @@ where
     /// which we impose backpressure.
     async fn backpressure_wait(&self) {
         self.merger.backpressure_wait().await;
+    }
+
+    fn batches(&self) -> Vec<Arc<Self::Batch>> {
+        self.merger.get_batches()
     }
 
     fn clear_dirty_flag(&mut self) {

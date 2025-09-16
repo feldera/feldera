@@ -27,6 +27,7 @@ use std::{
     collections::{BTreeMap, BTreeSet, btree_map::Entry},
     fmt::{self, Debug},
     marker::PhantomData,
+    sync::Arc,
 };
 
 pub struct TestBatchFactories<K, V, T, R>
@@ -1376,6 +1377,10 @@ where
     }
 
     async fn backpressure_wait(&self) {}
+
+    fn batches(&self) -> Vec<Arc<Self::Batch>> {
+        vec![Arc::new(self.clone())]
+    }
 
     fn clear_dirty_flag(&mut self) {}
 
