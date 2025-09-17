@@ -7,13 +7,10 @@ Provides token generation, validation helpers, and test configuration.
 
 import os
 import time
+import json
 import requests
 import jwt
 import logging
-import json
-import tempfile
-import fcntl
-from pathlib import Path
 from typing import Optional, Dict, Any
 from dataclasses import dataclass
 
@@ -61,8 +58,6 @@ class OidcTestHelper:
         self._jwks = None
         self._access_token = None
         self._token_expires_at = 0
-        # Cross-process token cache file path
-        self._token_cache_file = Path(tempfile.gettempdir()) / f"feldera_oidc_token_{hash(self.config.issuer + self.config.client_id + self.config.username)}.json"
 
     def get_discovery_document(self) -> Dict[str, Any]:
         """Fetch and cache the OIDC discovery document"""
@@ -93,146 +88,70 @@ class OidcTestHelper:
             raise ValueError("Token endpoint not found in OIDC discovery document")
         return token_endpoint
 
-    def _load_cached_token(self) -> Optional[str]:
-        """Load token from cross-process cache if still valid"""
-        try:
-            if not self._token_cache_file.exists():
-                return None
-
-            with open(self._token_cache_file, 'r') as f:
-                # Use file locking for thread/process safety
-                fcntl.flock(f.fileno(), fcntl.LOCK_SH)
-                cache_data = json.load(f)
-
-            token = cache_data.get('access_token')
-            expires_at = cache_data.get('expires_at', 0)
-
-            # Check if token is still valid (with 30s buffer)
-            if token and time.time() < expires_at - 30:
-                return token
-
-        except (FileNotFoundError, json.JSONDecodeError, KeyError, OSError):
-            # If any error reading cache, just return None to fetch new token
-            pass
-
-        return None
-
-    def _save_token_to_file_cache(self, token: str, expires_in: int):
-        """Save token to cross-process cache"""
-        try:
-            cache_data = {
-                'access_token': token,
-                'expires_at': time.time() + expires_in,
-                'cached_at': time.time()
-            }
-
-            # Create directory if it doesn't exist
-            self._token_cache_file.parent.mkdir(exist_ok=True)
-
-            # Use atomic write with file locking
-            temp_file = self._token_cache_file.with_suffix('.tmp')
-            with open(temp_file, 'w') as f:
-                fcntl.flock(f.fileno(), fcntl.LOCK_EX)
-                json.dump(cache_data, f)
-
-            # Atomic move
-            temp_file.rename(self._token_cache_file)
-
-        except (OSError, IOError) as e:
-            # Log warning but don't fail - we can still use the token without caching
-            logging.warning(f"Failed to save OIDC token to cache: {e}")
-
-    def obtain_access_token(self) -> str:
+    def obtain_access_token(self, pytest_cache=None) -> str:
         """
-        Obtain access token using Resource Owner Password Flow
-        Returns cached token if still valid (checks both in-memory and cross-process cache)
+        Obtain access token using global cache shared across all helper instances.
+        
+        The actual token fetching is handled by the session-scoped oidc_token_fixture
+        in conftest.py, which guarantees only one auth request per test session.
+        
+        If OIDC is configured but no token is available, this will fail fast.
         """
+        global _global_token_cache
         logger = logging.getLogger(__name__)
 
-        # First check in-memory cache
-        if self._access_token and time.time() < self._token_expires_at - 30:
-            logger.info("Using in-memory cached access token")
-            logger.debug(f"Cached token (first 20 chars): {self._access_token[:20]}...")
+        # First check environment variable for cross-process token sharing
+        current_time = time.time()
+        env_token = os.getenv('FELDERA_PYTEST_OIDC_TOKEN')
+        if env_token:
+            try:
+                import base64
+                token_json = base64.b64decode(env_token.encode()).decode()
+                token_data = json.loads(token_json)
+                
+                if token_data.get('access_token') and current_time < token_data.get('expires_at', 0) - 30:
+                    print("🔐 AUTH: Using token from environment variable")
+                    logger.info("Using environment variable cached access token")
+                    # Cache in global and instance for future calls
+                    _global_token_cache['access_token'] = token_data['access_token']
+                    _global_token_cache['expires_at'] = token_data['expires_at']
+                    self._access_token = token_data['access_token']
+                    self._token_expires_at = token_data['expires_at']
+                    return token_data['access_token']
+            except Exception as e:
+                print(f"🔐 AUTH: Failed to parse environment token: {e}")
+
+        # Second check global cache (shared across all instances)
+        if _global_token_cache['access_token'] and current_time < _global_token_cache['expires_at'] - 30:
+            logger.info("Using global cached access token")
+            logger.debug(f"Global cached token (first 20 chars): {_global_token_cache['access_token'][:20]}...")
+            return _global_token_cache['access_token']
+
+        # Fallback: Check instance-specific cache
+        if self._access_token and current_time < self._token_expires_at - 30:
+            logger.info("Using instance cached access token")
+            logger.debug(f"Instance cached token (first 20 chars): {self._access_token[:20]}...")
+            # Copy to global cache for other instances
+            _global_token_cache['access_token'] = self._access_token
+            _global_token_cache['expires_at'] = self._token_expires_at
             return self._access_token
 
-        # Then check cross-process cache
-        cached_token = self._load_cached_token()
-        if cached_token:
-            logger.info("Using cross-process cached access token")
-            logger.debug(f"Cross-process cached token (first 20 chars): {cached_token[:20]}...")
-            # Update in-memory cache with the token from cross-process cache
-            self._access_token = cached_token
-            return cached_token
+        # Debug information for troubleshooting
+        print(f"🔐 AUTH: DEBUG - Token check failed for instance {id(self)}")
+        print(f"🔐 AUTH: DEBUG - Global cache ID: {id(_global_token_cache)}")
+        print(f"🔐 AUTH: DEBUG - Global cache token: {_global_token_cache['access_token'] is not None}")
+        print(f"🔐 AUTH: DEBUG - Global cache expires_at: {_global_token_cache['expires_at']}")
+        print(f"🔐 AUTH: DEBUG - Instance _access_token: {self._access_token is not None}")
+        print(f"🔐 AUTH: DEBUG - Instance _token_expires_at: {self._token_expires_at}")
+        print(f"🔐 AUTH: DEBUG - Current time: {current_time}")
 
-        token_endpoint = self.get_token_endpoint()
-        logger.info(f"Requesting new access token from: {token_endpoint}")
-
-        data = {
-            "grant_type": "password",
-            "username": self.config.username,
-            "password": self.config.password,
-            "client_id": self.config.client_id,
-            "client_secret": self.config.client_secret,
-            "scope": self.config.scope,
-            "audience": "feldera-api",
-        }
-
-        # Log request details (without sensitive data)
-        logger.info(f"Token request - username: {self.config.username}")
-        logger.info(f"Token request - client_id: {self.config.client_id}")
-        logger.info(f"Token request - scope: {self.config.scope}")
-        logger.info("Token request - audience: feldera-api")
-
-        headers = {
-            "Content-Type": "application/x-www-form-urlencoded",
-            "Accept": "application/json",
-        }
-
-        response = requests.post(token_endpoint, data=data, headers=headers, timeout=30)
-
-        if not response.ok:
-            logger.error(f"Token request failed: {response.status_code}")
-            logger.error(f"Response headers: {dict(response.headers)}")
-            logger.error(f"Response body: {response.text}")
-            raise Exception(
-                f"Token request failed: {response.status_code} - {response.text}"
-            )
-
-        token_response = response.json()
-        logger.info("Successfully obtained access token")
-
-        # Cache the token both in-memory and cross-process
-        self._access_token = token_response["access_token"]
-        expires_in = token_response.get("expires_in", 3600)  # Default to 1 hour if not provided
-        self._token_expires_at = time.time() + expires_in
-        logger.info(f"Token expires in {expires_in} seconds")
-
-        # Save to cross-process cache
-        self._save_token_to_file_cache(self._access_token, expires_in)
-
-        # Log token details (safely)
-        logger.info(f"Access token type: {token_response.get('token_type', 'unknown')}")
-        logger.info(
-            f"Access token scope: {token_response.get('scope', 'not provided')}"
+        # If OIDC is configured but no token is available, this is a critical failure
+        raise RuntimeError(
+            f"OIDC authentication is configured but no valid token is available. "
+            f"This indicates the oidc_token_fixture failed to retrieve a token. "
+            f"Helper instance ID: {id(self)}, global_cache_token: {_global_token_cache['access_token'] is not None}, "
+            f"instance_token: {self._access_token is not None}, current_time: {current_time}"
         )
-        logger.info(f"Access token (first 20 chars): {self._access_token[:20]}...")
-        logger.info(f"Full access token: {self._access_token}")
-
-        # Decode and log token claims for debugging
-        try:
-            claims = self.decode_token_claims(self._access_token)
-            logger.info(f"Token issuer: {claims.get('iss', 'unknown')}")
-            logger.info(f"Token audience: {claims.get('aud', 'unknown')}")
-            logger.info(f"Token subject: {claims.get('sub', 'unknown')}")
-            if "exp" in claims:
-                exp_time = time.strftime(
-                    "%Y-%m-%d %H:%M:%S UTC", time.gmtime(claims["exp"])
-                )
-                logger.info(f"Token expires at: {exp_time}")
-        except Exception as e:
-            logger.warning(f"Failed to decode token claims: {e}")
-
-        return self._access_token
 
     def decode_token_claims(self, token: str) -> Dict[str, Any]:
         """Decode JWT token claims without signature verification (for testing)"""
@@ -286,6 +205,12 @@ def skip_if_oidc_not_configured():
 
 # Global test helper instance (lazy loaded)
 _test_helper = None
+
+# Global token cache shared across all helper instances
+_global_token_cache = {
+    'access_token': None,
+    'expires_at': 0
+}
 
 
 def get_oidc_test_helper() -> Optional[OidcTestHelper]:

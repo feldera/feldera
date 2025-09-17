@@ -115,7 +115,7 @@ def test_unauthenticated_request_rejection():
     """Test that requests without authentication are rejected"""
     headers = {"Accept": "application/json"}
 
-    response = http_request("GET", f"{API_PREFIX}/pipelines", headers=headers)
+    response = http_request("GET", f"{API_PREFIX}/pipelines", headers=headers, base_headers={})
     assert response.status_code == HTTPStatus.UNAUTHORIZED
 
 
@@ -132,7 +132,7 @@ def test_malformed_token_rejection():
             "Accept": "application/json",
         }
 
-        response = http_request("GET", f"{API_PREFIX}/pipelines", headers=headers)
+        response = http_request("GET", f"{API_PREFIX}/pipelines", headers=headers, base_headers={})
         assert response.status_code == HTTPStatus.UNAUTHORIZED, (
             f"Token type {token_type} should be rejected"
         )

@@ -8423,24 +8423,76 @@ export OIDC_TEST_PASSWORD="test-password"
 export OIDC_TEST_SCOPE="openid profile email"  # Optional, defaults shown
 ```
 
-#### Token Caching
+#### Token Caching Architecture
 
-The OIDC test helper implements **cross-process token caching** to minimize auth server requests during parallel test execution:
+The OIDC authentication system uses **pytest-xdist hooks** and **environment variables** to guarantee exactly one ROPG authentication request per test session, regardless of the number of parallel workers (`pytest -n 24`).
 
-- **In-memory cache**: Tokens cached within the same process/helper instance
-- **Cross-process cache**: Tokens cached in temporary files shared across pytest workers
-- **Automatic expiration**: Cached tokens include 30-second buffer before expiration
-- **Thread-safe**: File locking ensures safe concurrent access across processes
+##### Master-Worker Token Distribution
 
-This prevents the frequency limit issues that occur when multiple CI runners make simultaneous ROPG (Resource Owner Password Grant) requests to the auth server.
+The implementation leverages pytest-xdist's master/worker communication and cross-process environment variables:
 
-#### Authentication Flow
+- **Master Node Only**: OIDC token fetching occurs exclusively on the pytest master node via `pytest_configure` hook
+- **Environment Variable Storage**: Token data is stored in `FELDERA_PYTEST_OIDC_TOKEN` environment variable for cross-process access
+- **Zero Race Conditions**: No file locking or inter-process synchronization needed - environment variables are inherited by child processes
+- **Guaranteed Once-Only**: Exactly one auth request per test session, even with unlimited parallel workers
 
-1. Tests call `get_oidc_test_helper()` to get a global helper instance
-2. Helper checks in-memory cache first, then cross-process cache
-3. If no valid cached token exists, makes ROPG request to auth server
-4. New tokens are cached both in-memory and to temporary file
-5. Subsequent requests use cached token until expiration
+This completely eliminates auth server rate limiting issues and cross-process token sharing problems that occurred with previous approaches.
+
+##### Authentication Flow
+
+1. **Master Hook Execution**: `pytest_configure()` runs only on master node and fetches OIDC token once
+2. **Environment Storage**: Token data is base64-encoded and stored in `FELDERA_PYTEST_OIDC_TOKEN` environment variable
+3. **Cross-Process Access**: All worker processes inherit the environment variable automatically
+4. **Token Retrieval**: `obtain_access_token()` reads and parses token from environment variable
+5. **Fail-Fast**: Authentication failures prevent all tests from running with clear error messages
+
+##### Implementation Details
+
+**Master-Only Token Fetching**:
+```python
+def pytest_configure(config):
+    """Fetch OIDC token on master node only."""
+    if is_master(config):
+        token_data = _fetch_oidc_token()
+        # Store in environment variable for cross-process access
+        import base64
+        token_json = json.dumps(token_data)
+        token_b64 = base64.b64encode(token_json.encode()).decode()
+        os.environ['FELDERA_PYTEST_OIDC_TOKEN'] = token_b64
+```
+
+**Cross-Process Token Access**:
+```python
+def obtain_access_token(self):
+    """Get token from environment variable set by master node."""
+    env_token = os.getenv('FELDERA_PYTEST_OIDC_TOKEN')
+    if env_token:
+        import base64
+        token_json = base64.b64decode(env_token.encode()).decode()
+        token_data = json.loads(token_json)
+        return token_data['access_token']
+```
+
+**Session Fixture Verification**:
+- Session-scoped `oidc_token_fixture` verifies token is available and valid
+- Validates token expiration with 30-second buffer
+- Serves as early validation that authentication is properly set up
+
+**Header Merging for Custom Requests**:
+```python
+def http_request(method: str, path: str, **kwargs):
+    """Merge authentication headers with custom headers."""
+    base_headers = _base_headers()  # Contains Authorization token
+    custom_headers = kwargs.pop("headers", None) or {}
+    headers = {**base_headers, **custom_headers}  # Merge both
+```
+
+**Key Components**:
+- **`pytest_configure()` (conftest.py)**: Master-only hook that fetches OIDC token once and stores in environment
+- **`pytest_configure_node()` (conftest.py)**: xdist hook that passes token data via workerinput (backup mechanism)
+- **`oidc_token_fixture()` (conftest.py)**: Session fixture that verifies token setup
+- **`obtain_access_token()` (oidc_test_helper.py)**: Returns token from environment variable or fails fast
+- **`http_request()` (helper.py)**: Merges authentication headers with custom headers for ingress/egress requests
 
 ### API Key Authentication (Fallback)
 
