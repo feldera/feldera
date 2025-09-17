@@ -34,13 +34,13 @@ fn build_circuit(
     input_stream.inspect(|records| {
         println!("{}", records.weighted_count());
     });
-    let filtered = input_stream.filter(|r| {
+    let subset = input_stream.filter(|r| {
         r.location == "England"
             || r.location == "Northern Ireland"
             || r.location == "Scotland"
             || r.location == "Wales"
     });
-    Ok((input_handle, filtered.output()))
+    Ok((input_handle, subset.output()))
 }
 
 fn main() -> Result<()> {
