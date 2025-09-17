@@ -4,7 +4,7 @@ use csv::Reader;
 use dbsp::{
     operator::time_series::{RelOffset, RelRange},
     utils::{Tup2, Tup3},
-    IndexedZSetHandle, OrdIndexedZSet, OutputHandle, RootCircuit, ZSetHandle,
+    IndexedZSetHandle, OrdIndexedZSet, OutputHandle, RootCircuit, ZSetHandle, ZWeight,
 };
 use rkyv::{Archive, Serialize};
 use size_of::SizeOf;
@@ -54,7 +54,7 @@ fn build_circuit(
                 r.daily_vaccinations.unwrap_or(0),
             )
         })
-        .aggregate_linear(|v| *v as i64);
+        .aggregate_linear(|v| *v as ZWeight);
     let running_monthly_totals = monthly_totals
         .map_index(|(Tup3(l, y, m), v)| (*y as u32 * 12 + (*m as u32 - 1), Tup2(l.clone(), *v)))
         .partitioned_rolling_aggregate_linear(
@@ -86,7 +86,7 @@ fn main() -> Result<()> {
     let mut vax_records = Reader::from_path(path)?
         .deserialize()
         .map(|result| result.map(|record| Tup2(record, 1)))
-        .collect::<Result<Vec<Tup2<Record, i64>>, _>>()?;
+        .collect::<Result<Vec<Tup2<Record, ZWeight>>, _>>()?;
     vax_handle.append(&mut vax_records);
 
     let mut pop_records = vec![

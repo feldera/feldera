@@ -2,7 +2,7 @@ use anyhow::Result;
 use chrono::{Datelike, NaiveDate};
 use csv::Reader;
 use dbsp::utils::{Tup2, Tup3};
-use dbsp::{OrdIndexedZSet, OutputHandle, RootCircuit, ZSetHandle};
+use dbsp::{OrdIndexedZSet, OutputHandle, RootCircuit, ZSetHandle, ZWeight};
 use rkyv::{Archive, Serialize};
 use size_of::SizeOf;
 
@@ -33,7 +33,7 @@ fn build_circuit(
     circuit: &mut RootCircuit,
 ) -> Result<(
     ZSetHandle<Record>,
-    OutputHandle<OrdIndexedZSet<Tup3<String, i32, u8>, i64>>,
+    OutputHandle<OrdIndexedZSet<Tup3<String, i32, u8>, ZWeight>>,
 )> {
     let (input_stream, input_handle) = circuit.add_input_zset::<Record>();
     let subset = input_stream.filter(|r| {
@@ -49,7 +49,7 @@ fn build_circuit(
                 r.daily_vaccinations.unwrap_or(0),
             )
         })
-        .aggregate_linear(|v| *v as i64);
+        .aggregate_linear(|v| *v as ZWeight);
     Ok((input_handle, monthly_totals.output()))
 }
 
@@ -63,7 +63,7 @@ fn main() -> Result<()> {
     let mut input_records = Reader::from_path(path)?
         .deserialize()
         .map(|result| result.map(|record| Tup2(record, 1)))
-        .collect::<Result<Vec<Tup2<Record, i64>>, _>>()?;
+        .collect::<Result<Vec<Tup2<Record, ZWeight>>, _>>()?;
     input_handle.append(&mut input_records);
 
     circuit.transaction()?;

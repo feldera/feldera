@@ -219,10 +219,10 @@
 //! ```
 //!
 //! The best way to feed the records into `input_handle` is to collect them into
-//! a `Vec<(Record, i64)>`, where `i64` is the Z-set weight.  All the
-//! weights can be 1, since we are inserting each of them.  We feed them in with
-//! [`ZSetHandle::append`].  So, we can fill in `// ...feed data into
-//! circuit...` with:
+//! a `Vec<(Record, ZWeight)>`, where `ZWeight` (an alias for `i64`) is the
+//! Z-set weight.  All the weights can be 1, since we are inserting each of
+//! them.  We feed them in with [`ZSetHandle::append`].  So, we can fill in `//
+//! ...feed data into circuit...` with:
 //!
 //! ```rust
 //! # use anyhow::Result;
@@ -230,6 +230,7 @@
 //! # use csv::Reader;
 //! # use dbsp::utils::Tup2;
 //! # use dbsp::{RootCircuit, ZSet, ZSetHandle};
+//! # use dbsp::algebra::zset::ZWeight;
 //! # use rkyv::{Archive, Serialize};
 //! # use size_of::SizeOf;
 //! #
@@ -275,7 +276,7 @@
 //!    let mut input_records = Reader::from_path(path)?
 //!        .deserialize()
 //!        .map(|result| result.map(|record| Tup2(record, 1)))
-//!        .collect::<Result<Vec<Tup2<Record, i64>>, _>>()?;
+//!        .collect::<Result<Vec<Tup2<Record, ZWeight>>, _>>()?;
 //!    input_handle.append(&mut input_records);
 //!
 //! #   // Execute circuit.
@@ -286,10 +287,10 @@
 //!}
 //! ```
 //!
-//! > 💡 The code above uses `Tup2<Record, i64>` where `(Record, i64)` would be
-//! the obvious type.  DBSP has its own tuple-like types [Tup0], [Tup1], ...,
-//! [Tup10] because Rust does not allow DBSP to [implement foreign traits] on
-//! the standard tuple types.
+//! > 💡 The code above uses `Tup2<Record, ZWeight>` where `(Record, ZWeight)`
+//! would be the obvious type.  DBSP has its own tuple-like types [Tup0],
+//! [Tup1], ..., [Tup10] because Rust does not allow DBSP to [implement foreign
+//! traits] on the standard tuple types.
 //!
 //! [implement foreign traits]: https://doc.rust-lang.org/reference/items/implementations.html#r-items.impl.trait.orphan-rule
 //!
@@ -341,6 +342,7 @@
 //! # use anyhow::Result;
 //! # use chrono::NaiveDate;
 //! # use csv::Reader;
+//! # use dbsp::algebra::zset::ZWeight;
 //! # use dbsp::utils::Tup2;
 //! # use dbsp::{RootCircuit, ZSet, ZSetHandle};
 //! # use rkyv::{Archive, Serialize};
@@ -388,7 +390,7 @@
 //! #     let mut input_records = Reader::from_path(path)?
 //! #         .deserialize()
 //! #         .map(|result| result.map(|record| Tup2(record, 1)))
-//! #         .collect::<Result<Vec<Tup2<Record, i64>>, _>>()?;
+//! #         .collect::<Result<Vec<Tup2<Record, ZWeight>>, _>>()?;
 //! #     input_handle.append(&mut input_records);
 //! #
 //!      // Execute circuit.
@@ -421,6 +423,7 @@
 //! # use anyhow::Result;
 //! # use chrono::NaiveDate;
 //! # use csv::Reader;
+//! # use dbsp::algebra::zset::ZWeight;
 //! # use dbsp::utils::Tup2;
 //! # use dbsp::{OrdZSet, OutputHandle, RootCircuit, ZSet, ZSetHandle};
 //! # use rkyv::{Archive, Serialize};
@@ -475,7 +478,7 @@
 //! #     let mut input_records = Reader::from_path(path)?
 //! #         .deserialize()
 //! #         .map(|result| result.map(|record| Tup2(record, 1)))
-//! #         .collect::<Result<Vec<Tup2<Record, i64>>, _>>()?;
+//! #         .collect::<Result<Vec<Tup2<Record, ZWeight>>, _>>()?;
 //! #     input_handle.append(&mut input_records);
 //! #
 //! #     // Execute circuit.
@@ -498,6 +501,7 @@
 //! # use anyhow::Result;
 //! # use chrono::NaiveDate;
 //! # use csv::Reader;
+//! # use dbsp::algebra::zset::ZWeight;
 //! # use dbsp::utils::Tup2;
 //! # use dbsp::{OrdZSet, OutputHandle, RootCircuit, ZSet, ZSetHandle};
 //! # use rkyv::{Archive, Serialize};
@@ -552,7 +556,7 @@
 //! #     let mut input_records = Reader::from_path(path)?
 //! #         .deserialize()
 //! #         .map(|result| result.map(|record| Tup2(record, 1)))
-//! #         .collect::<Result<Vec<Tup2<Record, i64>>, _>>()?;
+//! #         .collect::<Result<Vec<Tup2<Record, ZWeight>>, _>>()?;
 //! #     input_handle.append(&mut input_records);
 //! #
 //! #     // Execute circuit.
@@ -578,6 +582,7 @@
 //! # use anyhow::Result;
 //! # use chrono::NaiveDate;
 //! # use csv::Reader;
+//! # use dbsp::algebra::zset::ZWeight;
 //! # use dbsp::utils::Tup2;
 //! # use dbsp::{OrdZSet, OutputHandle, RootCircuit, ZSet, ZSetHandle};
 //! # use rkyv::{Archive, Serialize};
@@ -632,7 +637,7 @@
 //! #     let mut input_records = Reader::from_path(path)?
 //! #         .deserialize()
 //! #         .map(|result| result.map(|record| Tup2(record, 1)))
-//! #         .collect::<Result<Vec<Tup2<Record, i64>>, _>>()?;
+//! #         .collect::<Result<Vec<Tup2<Record, ZWeight>>, _>>()?;
 //! #     input_handle.append(&mut input_records);
 //! #
 //! #     // Execute circuit.
@@ -697,13 +702,12 @@
 //!
 //! Then we can call [`Stream::aggregate_linear`], the simplest form of
 //! aggregation in DBSP, to sum across months.  This function sums the output of
-//! a function.  To get monthly
-//! vaccinations, we just sum the values from our indexed Z-set (we have to
-//! convert to `i64` because aggregation implicitly multiplies by record
-//! weights):
+//! a function.  To get monthly vaccinations, we just sum the values from our
+//! indexed Z-set (we have to convert to `ZWeight` because aggregation
+//! implicitly multiplies by record weights):
 //!
 //! ```ignore
-//!         .aggregate_linear(|v| *v as i64);
+//!         .aggregate_linear(|v| *v as ZWeight);
 //! ```
 //!
 //! We output the indexed Z-set as before, and then in `main` print it record by
@@ -714,7 +718,7 @@
 //! # use chrono::{Datelike, NaiveDate};
 //! # use csv::Reader;
 //! # use dbsp::utils::{Tup2, Tup3};
-//! # use dbsp::{OrdIndexedZSet, OutputHandle, RootCircuit, ZSetHandle};
+//! # use dbsp::{OrdIndexedZSet, OutputHandle, RootCircuit, ZSetHandle, ZWeight};
 //! # use rkyv::{Archive, Serialize};
 //! # use size_of::SizeOf;
 //! #
@@ -744,7 +748,7 @@
 //!     circuit: &mut RootCircuit,
 //! ) -> Result<(
 //!     ZSetHandle<Record>,
-//!     OutputHandle<OrdIndexedZSet<Tup3<String, i32, u8>, i64>>,
+//!     OutputHandle<OrdIndexedZSet<Tup3<String, i32, u8>, ZWeight>>,
 //! )> {
 //! #     let (input_stream, input_handle) = circuit.add_input_zset::<Record>();
 //! #     let subset = input_stream.filter(|r| {
@@ -760,7 +764,7 @@
 //! #                 r.daily_vaccinations.unwrap_or(0),
 //! #             )
 //! #         })
-//! #         .aggregate_linear(|v| *v as i64);
+//! #         .aggregate_linear(|v| *v as ZWeight);
 //!     // ...
 //!     Ok((input_handle, monthly_totals.output()))
 //!   }
@@ -775,7 +779,7 @@
 //! #     let mut input_records = Reader::from_path(path)?
 //! #         .deserialize()
 //! #         .map(|result| result.map(|record| Tup2(record, 1)))
-//! #         .collect::<Result<Vec<Tup2<Record, i64>>, _>>()?;
+//! #         .collect::<Result<Vec<Tup2<Record, ZWeight>>, _>>()?;
 //! #     input_handle.append(&mut input_records);
 //! #
 //! #     circuit.transaction()?;
@@ -870,7 +874,7 @@
 //! # use dbsp::{
 //! #     operator::time_series::{RelOffset, RelRange},
 //! #     utils::{Tup2, Tup3},
-//! #     OrdIndexedZSet, OutputHandle, RootCircuit, ZSetHandle,
+//! #     OrdIndexedZSet, OutputHandle, RootCircuit, ZSetHandle, ZWeight,
 //! # };
 //! # use rkyv::{Archive, Serialize};
 //! # use size_of::SizeOf;
@@ -901,7 +905,7 @@
 //!     circuit: &mut RootCircuit,
 //! ) -> Result<(
 //!     ZSetHandle<Record>,
-//!     OutputHandle<OrdIndexedZSet<Tup3<String, u32, u32>, i64>>,
+//!     OutputHandle<OrdIndexedZSet<Tup3<String, u32, u32>, ZWeight>>,
 //! )> {
 //! #     let (input_stream, input_handle) = circuit.add_input_zset::<Record>();
 //! #     let subset = input_stream.filter(|r| {
@@ -917,7 +921,7 @@
 //! #                 r.daily_vaccinations.unwrap_or(0),
 //! #             )
 //! #         })
-//! #         .aggregate_linear(|v| *v as i64);
+//! #         .aggregate_linear(|v| *v as ZWeight);
 //! #     let moving_averages = monthly_totals
 //! #         .map_index(|(Tup3(l, y, m), v)| (*y as u32 * 12 + (*m as u32 - 1), Tup2(l.clone(), *v)))
 //! #         .partitioned_rolling_average(
@@ -940,7 +944,7 @@
 //! #     let mut input_records = Reader::from_path(path)?
 //! #         .deserialize()
 //! #         .map(|result| result.map(|record| Tup2(record, 1)))
-//! #         .collect::<Result<Vec<Tup2<Record, i64>>, _>>()?;
+//! #         .collect::<Result<Vec<Tup2<Record, ZWeight>>, _>>()?;
 //! #     input_handle.append(&mut input_records);
 //! #
 //! #     circuit.transaction()?;
@@ -1026,7 +1030,7 @@
 //! # use dbsp::{
 //! #     operator::time_series::{RelOffset, RelRange},
 //! #     utils::{Tup2, Tup3},
-//! #     OrdIndexedZSet, OutputHandle, RootCircuit, ZSetHandle,
+//! #     OrdIndexedZSet, OutputHandle, RootCircuit, ZSetHandle, ZWeight,
 //! # };
 //! # use rkyv::{Archive, Serialize};
 //! # use size_of::SizeOf;
@@ -1073,7 +1077,7 @@
 //! #                 r.daily_vaccinations.unwrap_or(0),
 //! #             )
 //! #         })
-//! #         .aggregate_linear(|v| *v as i64);
+//! #         .aggregate_linear(|v| *v as ZWeight);
 //! #     let moving_averages = monthly_totals
 //! #         .map_index(|(Tup3(l, y, m), v)| (*y as u32 * 12 + (*m as u32 - 1), Tup2(l.clone(), *v)))
 //! #         .partitioned_rolling_average(
@@ -1101,7 +1105,7 @@
 //! #     let mut input_records = Reader::from_path(path)?
 //! #         .deserialize()
 //! #         .map(|result| result.map(|record| Tup2(record, 1)))
-//! #         .collect::<Result<Vec<Tup2<Record, i64>>, _>>()?;
+//! #         .collect::<Result<Vec<Tup2<Record, ZWeight>>, _>>()?;
 //! #     input_handle.append(&mut input_records);
 //! #
 //! #     circuit.transaction()?;
@@ -1205,7 +1209,7 @@
 //! # use csv::Reader;
 //! # use dbsp::{
 //! #     utils::{Tup2, Tup3},
-//! #     OrdIndexedZSet, OutputHandle, RootCircuit, ZSetHandle,
+//! #     OrdIndexedZSet, OutputHandle, RootCircuit, ZSetHandle, ZWeight,
 //! # };
 //! # use rkyv::{Archive, Serialize};
 //! # use size_of::SizeOf;
@@ -1274,7 +1278,7 @@
 //! #                 r.daily_vaccinations.unwrap_or(0),
 //! #             )
 //! #         })
-//! #         .aggregate_linear(|v| *v as isize);
+//! #         .aggregate_linear(|v| *v as ZWeight);
 //! #     let most_vax = monthly_totals
 //! #         .map_index(|(Tup3(l, y, m), sum)| {
 //! #             (
@@ -1301,7 +1305,7 @@
 //! #     let mut input_records = Reader::from_path(path)?
 //! #         .deserialize()
 //! #         .map(|result| result.map(|record| Tup2(record, 1)))
-//! #         .collect::<Result<Vec<Tup2<Record, i64>>, _>>()?;
+//! #         .collect::<Result<Vec<Tup2<Record, ZWeight>>, _>>()?;
 //! #     input_handle.append(&mut input_records);
 //! #
 //! #     circuit.transaction()?;
@@ -1361,7 +1365,7 @@
 //! # use dbsp::{
 //! #     operator::time_series::{RelOffset, RelRange},
 //! #     utils::{Tup2, Tup3},
-//! #     IndexedZSetHandle, OrdIndexedZSet, OutputHandle, RootCircuit, ZSetHandle,
+//! #     IndexedZSetHandle, OrdIndexedZSet, OutputHandle, RootCircuit, ZSetHandle, ZWeight,
 //! # };
 //! # use rkyv::{Archive, Serialize};
 //! # use size_of::SizeOf;
@@ -1410,7 +1414,7 @@
 //! #                 r.daily_vaccinations.unwrap_or(0),
 //! #             )
 //! #         })
-//! #         .aggregate_linear(|v| *v as i64);
+//! #         .aggregate_linear(|v| *v as ZWeight);
 //! #     let running_monthly_totals = monthly_totals
 //! #         .map_index(|(Tup3(l, y, m), v)| (*y as u32 * 12 + (*m as u32 - 1), Tup2(l.clone(), *v)))
 //! #         .partitioned_rolling_aggregate_linear(
@@ -1443,7 +1447,7 @@
 //! #     let mut vax_records = Reader::from_path(path)?
 //! #         .deserialize()
 //! #         .map(|result| result.map(|record| Tup2(record, 1)))
-//! #         .collect::<Result<Vec<Tup2<Record, i64>>, _>>()?;
+//! #         .collect::<Result<Vec<Tup2<Record, ZWeight>>, _>>()?;
 //! #     vax_handle.append(&mut vax_records);
 //! #
 //! #     let mut pop_records = vec![
@@ -1477,7 +1481,7 @@
 //! # use dbsp::{
 //! #     operator::time_series::{RelOffset, RelRange},
 //! #     utils::{Tup2, Tup3},
-//! #     IndexedZSetHandle, OrdIndexedZSet, OutputHandle, RootCircuit, ZSetHandle,
+//! #     IndexedZSetHandle, OrdIndexedZSet, OutputHandle, RootCircuit, ZSetHandle, ZWeight,
 //! # };
 //! # use rkyv::{Archive, Serialize};
 //! # use size_of::SizeOf;
@@ -1526,7 +1530,7 @@
 //! #                 r.daily_vaccinations.unwrap_or(0),
 //! #             )
 //! #         })
-//! #         .aggregate_linear(|v| *v as i64);
+//! #         .aggregate_linear(|v| *v as ZWeight);
 //! #     let running_monthly_totals = monthly_totals
 //! #         .map_index(|(Tup3(l, y, m), v)| (*y as u32 * 12 + (*m as u32 - 1), Tup2(l.clone(), *v)))
 //! #         .partitioned_rolling_aggregate_linear(
@@ -1558,7 +1562,7 @@
 //! #     let mut vax_records = Reader::from_path(path)?
 //! #         .deserialize()
 //! #         .map(|result| result.map(|record| Tup2(record, 1)))
-//! #         .collect::<Result<Vec<Tup2<Record, i64>>, _>>()?;
+//! #         .collect::<Result<Vec<Tup2<Record, ZWeight>>, _>>()?;
 //! #     vax_handle.append(&mut vax_records);
 //!
 //!     // ...
@@ -1596,7 +1600,7 @@
 //! # use dbsp::{
 //! #     operator::time_series::{RelOffset, RelRange},
 //! #     utils::{Tup2, Tup3},
-//! #     IndexedZSetHandle, OrdIndexedZSet, OutputHandle, RootCircuit, ZSetHandle,
+//! #     IndexedZSetHandle, OrdIndexedZSet, OutputHandle, RootCircuit, ZSetHandle, ZWeight,
 //! # };
 //! # use rkyv::{Archive, Serialize};
 //! # use size_of::SizeOf;
@@ -1645,7 +1649,7 @@
 //! #                 r.daily_vaccinations.unwrap_or(0),
 //! #             )
 //! #         })
-//! #         .aggregate_linear(|v| *v as i64);
+//! #         .aggregate_linear(|v| *v as ZWeight);
 //!     let running_monthly_totals = monthly_totals
 //!         .map_index(|(Tup3(l, y, m), v)| (*y as u32 * 12 + (*m as u32 - 1), Tup2(l.clone(), *v)))
 //!         .partitioned_rolling_aggregate_linear(
@@ -1677,7 +1681,7 @@
 //! # use dbsp::{
 //! #     operator::time_series::{RelOffset, RelRange},
 //! #     utils::{Tup2, Tup3},
-//! #     IndexedZSetHandle, OrdIndexedZSet, OutputHandle, RootCircuit, ZSetHandle,
+//! #     IndexedZSetHandle, OrdIndexedZSet, OutputHandle, RootCircuit, ZSetHandle, ZWeight,
 //! # };
 //! # use rkyv::{Archive, Serialize};
 //! # use size_of::SizeOf;
@@ -1726,7 +1730,7 @@
 //! #                 r.daily_vaccinations.unwrap_or(0),
 //! #             )
 //! #         })
-//! #         .aggregate_linear(|v| *v as i64);
+//! #         .aggregate_linear(|v| *v as ZWeight);
 //! #     let running_monthly_totals = monthly_totals
 //! #         .map_index(|(Tup3(l, y, m), v)| (*y as u32 * 12 + (*m as u32 - 1), Tup2(l.clone(), *v)))
 //! #         .partitioned_rolling_aggregate_linear(
@@ -1758,7 +1762,7 @@
 //! #     let mut vax_records = Reader::from_path(path)?
 //! #         .deserialize()
 //! #         .map(|result| result.map(|record| Tup2(record, 1)))
-//! #         .collect::<Result<Vec<Tup2<Record, i64>>, _>>()?;
+//! #         .collect::<Result<Vec<Tup2<Record, ZWeight>>, _>>()?;
 //! #     vax_handle.append(&mut vax_records);
 //! #
 //! #     let mut pop_records = vec![
@@ -1818,7 +1822,7 @@
 //! # use csv::Reader;
 //! # use dbsp::{
 //! #     utils::{Tup2, Tup3},
-//! #     OrdIndexedZSet, OutputHandle, RootCircuit, ZSetHandle,
+//! #     OrdIndexedZSet, OutputHandle, RootCircuit, ZSetHandle, ZWeight,
 //! # };
 //! # use rkyv::{Archive, Serialize};
 //! # use size_of::SizeOf;
@@ -1887,7 +1891,7 @@
 //! #                 r.daily_vaccinations.unwrap_or(0),
 //! #             )
 //! #         })
-//! #         .aggregate_linear(|v| *v as i64);
+//! #         .aggregate_linear(|v| *v as ZWeight);
 //! #     let most_vax = monthly_totals
 //! #         .map_index(|(Tup3(l, y, m), sum)| {
 //! #             (
