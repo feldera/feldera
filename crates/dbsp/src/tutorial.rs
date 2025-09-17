@@ -335,7 +335,7 @@
 //!
 //! Our program now builds a circuit and feeds data into it.  To execute it, we
 //! just replace `// ...execute circuit...` with a call to
-//! [`CircuitHandle::step`]:
+//! [`CircuitHandle::transaction`]:
 //!
 //! ```
 //! # use anyhow::Result;
