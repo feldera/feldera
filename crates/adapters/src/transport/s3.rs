@@ -588,6 +588,17 @@ impl S3InputReader {
                                         break;
                                     };
                                     let (buffer, errors) = parser.parse(chunk);
+                                    let errors = errors
+                                        .into_iter()
+                                        .map(|e| {
+                                            e.map_description(|desc| {
+                                                format!(
+                                                    "error parsing object '{}': {desc}",
+                                                    &partially_processed_key.key
+                                                )
+                                            })
+                                        })
+                                        .collect::<Vec<_>>();
                                     consumer.buffered(buffer.len());
                                     let end_offset = splitter.position();
 
