@@ -405,6 +405,19 @@ impl ParseError {
             suggestion,
         )))
     }
+
+    /// Returns a new `ParseError` with the description modified by `f`.
+    ///
+    /// Can be used, e.g., to prepend context to the description.
+    pub fn map_description<F>(self, f: F) -> Self
+    where
+        F: FnOnce(&str) -> String,
+    {
+        let mut inner = self.0;
+        let description = f(&inner.description);
+        inner.description = description;
+        Self(inner)
+    }
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
