@@ -1043,7 +1043,7 @@ pub(crate) async fn post_pipeline_pause(
             Method::GET,
             "pause",
             "",
-            Some(Duration::from_secs(120)),
+            None,
         )
         .await?;
     state
@@ -1103,7 +1103,7 @@ pub(crate) async fn post_pipeline_resume(
             Method::GET,
             "start", // For backward compatibility this is not changed
             "",
-            Some(Duration::from_secs(120)),
+            None,
         )
         .await?;
     state
@@ -1185,7 +1185,7 @@ pub(crate) async fn post_pipeline_activate(
                 Method::POST,
                 "activate",
                 request.query_string(),
-                Some(Duration::from_secs(120)),
+                None,
             )
             .await?;
         state
