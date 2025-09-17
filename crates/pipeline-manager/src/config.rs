@@ -601,7 +601,7 @@ pub struct ApiServerConfig {
     /// Use --individual-tenant=false for enterprise deployments requiring explicit tenant assignment.
     /// Use --issuer-tenant for simple multi-user access using organization domain as tenant.
     #[serde(default)]
-    #[arg(long, action = clap::ArgAction::Set, default_value_t=AuthProviderType::None)]
+    #[arg(long, action = clap::ArgAction::Set, env = "AUTH_PROVIDER", default_value_t=AuthProviderType::None)]
     pub auth_provider: AuthProviderType,
 
     /// [Developers only] dump OpenAPI specification to `openapi.json` file and
