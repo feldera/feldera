@@ -4,7 +4,7 @@ use csv::Reader;
 use dbsp::{
     operator::time_series::{RelOffset, RelRange},
     utils::{Tup2, Tup3},
-    OrdIndexedZSet, OutputHandle, RootCircuit, ZSetHandle,
+    OrdIndexedZSet, OutputHandle, RootCircuit, ZSetHandle, ZWeight,
 };
 use rkyv::{Archive, Serialize};
 use size_of::SizeOf;
@@ -36,7 +36,7 @@ fn build_circuit(
     circuit: &mut RootCircuit,
 ) -> Result<(
     ZSetHandle<Record>,
-    OutputHandle<OrdIndexedZSet<Tup3<String, u32, u32>, i64>>,
+    OutputHandle<OrdIndexedZSet<Tup3<String, u32, u32>, ZWeight>>,
 )> {
     let (input_stream, input_handle) = circuit.add_input_zset::<Record>();
     let subset = input_stream.filter(|r| {
@@ -52,7 +52,7 @@ fn build_circuit(
                 r.daily_vaccinations.unwrap_or(0),
             )
         })
-        .aggregate_linear(|v| *v as i64);
+        .aggregate_linear(|v| *v as ZWeight);
     let moving_averages = monthly_totals
         .map_index(|(Tup3(l, y, m), v)| (*y as u32 * 12 + (*m as u32 - 1), Tup2(l.clone(), *v)))
         .partitioned_rolling_average(
@@ -75,7 +75,7 @@ fn main() -> Result<()> {
     let mut input_records = Reader::from_path(path)?
         .deserialize()
         .map(|result| result.map(|record| Tup2(record, 1)))
-        .collect::<Result<Vec<Tup2<Record, i64>>, _>>()?;
+        .collect::<Result<Vec<Tup2<Record, ZWeight>>, _>>()?;
     input_handle.append(&mut input_records);
 
     circuit.transaction()?;

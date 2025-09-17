@@ -2,7 +2,7 @@ use anyhow::Result;
 use chrono::NaiveDate;
 use csv::Reader;
 use dbsp::utils::Tup2;
-use dbsp::{OrdZSet, OutputHandle, RootCircuit, ZSet, ZSetHandle};
+use dbsp::{OrdZSet, OutputHandle, RootCircuit, ZSet, ZSetHandle, ZWeight};
 use rkyv::{Archive, Serialize};
 use size_of::SizeOf;
 
@@ -55,7 +55,7 @@ fn main() -> Result<()> {
     let mut input_records = Reader::from_path(path)?
         .deserialize()
         .map(|result| result.map(|record| Tup2(record, 1)))
-        .collect::<Result<Vec<Tup2<Record, i64>>, _>>()?;
+        .collect::<Result<Vec<Tup2<Record, ZWeight>>, _>>()?;
     input_handle.append(&mut input_records);
 
     // Execute circuit.

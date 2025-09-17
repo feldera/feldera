@@ -3,7 +3,7 @@ use chrono::{Datelike, NaiveDate};
 use csv::Reader;
 use dbsp::{
     utils::{Tup2, Tup3},
-    OrdIndexedZSet, OutputHandle, RootCircuit, ZSetHandle,
+    OrdIndexedZSet, OutputHandle, RootCircuit, ZSetHandle, ZWeight,
 };
 use rkyv::{Archive, Serialize};
 use size_of::SizeOf;
@@ -74,7 +74,7 @@ fn build_circuit(
                 r.daily_vaccinations.unwrap_or(0),
             )
         })
-        .aggregate_linear(|v| *v as i64);
+        .aggregate_linear(|v| *v as ZWeight);
     let most_vax = monthly_totals
         .map_index(|(Tup3(l, y, m), sum)| {
             (
