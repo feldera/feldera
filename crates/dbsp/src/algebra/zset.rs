@@ -88,8 +88,8 @@ impl<T> ZTrace for T where T: Trace<R = DynZWeight> {}
 ///
 /// Each pair has a weight drawn from the ring of
 /// integers ℤ (hence the name "Z-set").  Weights are often
-/// interpreted as the number of times that the pair appears in the
-/// set.  Negative weights are allowed, because of an important secondary
+/// interpreted as the number of times that the pair appears in a
+/// multiset represented by the Z-set.  Negative weights are allowed, because of an important secondary
 /// interpretation as an "update" or "delta" to be added to some other Z-set:
 /// for this use, a positive weight represents adding copies of a pair and a
 /// negative weight represents removing them.
