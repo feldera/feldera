@@ -90,67 +90,47 @@ class OidcTestHelper:
 
     def obtain_access_token(self, pytest_cache=None) -> str:
         """
-        Obtain access token using global cache shared across all helper instances.
-        
-        The actual token fetching is handled by the session-scoped oidc_token_fixture
-        in conftest.py, which guarantees only one auth request per test session.
-        
+        Obtain access token using environment variable set by pytest master node.
+
+        The actual token fetching is handled by pytest_configure hooks in conftest.py,
+        which guarantees only one auth request per test session across all workers.
+
         If OIDC is configured but no token is available, this will fail fast.
         """
-        global _global_token_cache
         logger = logging.getLogger(__name__)
-
-        # First check environment variable for cross-process token sharing
         current_time = time.time()
-        env_token = os.getenv('FELDERA_PYTEST_OIDC_TOKEN')
+
+        # Check environment variable for cross-process token sharing
+        env_token = os.getenv("FELDERA_PYTEST_OIDC_TOKEN")
         if env_token:
             try:
                 import base64
+
                 token_json = base64.b64decode(env_token.encode()).decode()
                 token_data = json.loads(token_json)
-                
-                if token_data.get('access_token') and current_time < token_data.get('expires_at', 0) - 30:
-                    print("🔐 AUTH: Using token from environment variable")
+
+                if (
+                    token_data.get("access_token")
+                    and current_time < token_data.get("expires_at", 0) - 30
+                ):
                     logger.info("Using environment variable cached access token")
-                    # Cache in global and instance for future calls
-                    _global_token_cache['access_token'] = token_data['access_token']
-                    _global_token_cache['expires_at'] = token_data['expires_at']
-                    self._access_token = token_data['access_token']
-                    self._token_expires_at = token_data['expires_at']
-                    return token_data['access_token']
+                    # Cache in instance for future calls to avoid repeated parsing
+                    self._access_token = token_data["access_token"]
+                    self._token_expires_at = token_data["expires_at"]
+                    return token_data["access_token"]
             except Exception as e:
-                print(f"🔐 AUTH: Failed to parse environment token: {e}")
+                logger.warning(f"Failed to parse environment token: {e}")
 
-        # Second check global cache (shared across all instances)
-        if _global_token_cache['access_token'] and current_time < _global_token_cache['expires_at'] - 30:
-            logger.info("Using global cached access token")
-            logger.debug(f"Global cached token (first 20 chars): {_global_token_cache['access_token'][:20]}...")
-            return _global_token_cache['access_token']
-
-        # Fallback: Check instance-specific cache
+        # Fallback: Check instance cache
         if self._access_token and current_time < self._token_expires_at - 30:
             logger.info("Using instance cached access token")
-            logger.debug(f"Instance cached token (first 20 chars): {self._access_token[:20]}...")
-            # Copy to global cache for other instances
-            _global_token_cache['access_token'] = self._access_token
-            _global_token_cache['expires_at'] = self._token_expires_at
             return self._access_token
-
-        # Debug information for troubleshooting
-        print(f"🔐 AUTH: DEBUG - Token check failed for instance {id(self)}")
-        print(f"🔐 AUTH: DEBUG - Global cache ID: {id(_global_token_cache)}")
-        print(f"🔐 AUTH: DEBUG - Global cache token: {_global_token_cache['access_token'] is not None}")
-        print(f"🔐 AUTH: DEBUG - Global cache expires_at: {_global_token_cache['expires_at']}")
-        print(f"🔐 AUTH: DEBUG - Instance _access_token: {self._access_token is not None}")
-        print(f"🔐 AUTH: DEBUG - Instance _token_expires_at: {self._token_expires_at}")
-        print(f"🔐 AUTH: DEBUG - Current time: {current_time}")
 
         # If OIDC is configured but no token is available, this is a critical failure
         raise RuntimeError(
-            f"OIDC authentication is configured but no valid token is available. "
-            f"This indicates the oidc_token_fixture failed to retrieve a token. "
-            f"Helper instance ID: {id(self)}, global_cache_token: {_global_token_cache['access_token'] is not None}, "
-            f"instance_token: {self._access_token is not None}, current_time: {current_time}"
+            "OIDC authentication is configured but no valid token is available. "
+            "This indicates the oidc_token_fixture failed to retrieve a token. "
+            "Check OIDC configuration and ensure pytest hooks ran properly."
         )
 
     def decode_token_claims(self, token: str) -> Dict[str, Any]:
@@ -205,12 +185,6 @@ def skip_if_oidc_not_configured():
 
 # Global test helper instance (lazy loaded)
 _test_helper = None
-
-# Global token cache shared across all helper instances
-_global_token_cache = {
-    'access_token': None,
-    'expires_at': 0
-}
 
 
 def get_oidc_test_helper() -> Optional[OidcTestHelper]:

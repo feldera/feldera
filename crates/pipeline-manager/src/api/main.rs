@@ -134,8 +134,6 @@ only the program-related core fields, and is used by the compiler to discern whe
         // Common
         crate::db::types::version::Version,
         crate::db::types::tenant::TenantId,
-        crate::license::DisplaySchedule,
-        crate::license::LicenseInformation,
         crate::license::LicenseValidity,
         crate::api::endpoints::config::UpdateInformation,
         crate::api::endpoints::config::Configuration,
@@ -203,6 +201,8 @@ only the program-related core fields, and is used by the compiler to discern whe
         feldera_types::config::ResourceConfig,
         feldera_types::config::ObjectStorageConfig,
         feldera_types::config::FtModel,
+        feldera_types::license::DisplaySchedule,
+        feldera_types::license::LicenseInformation,
         feldera_types::transport::adhoc::AdHocInputConfig,
         feldera_types::transport::clock::ClockConfig,
         feldera_types::transport::file::FileInputConfig,

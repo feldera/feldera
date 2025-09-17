@@ -53,7 +53,7 @@ def api_url(fragment: str) -> str:
 def http_request(method: str, path: str, **kwargs) -> requests.Response:
     """
     Low-level request wrapper (no retries). Raises only on network errors.
-    
+
     Args:
         method: HTTP method (GET, POST, etc.)
         path: URL path
@@ -64,17 +64,20 @@ def http_request(method: str, path: str, **kwargs) -> requests.Response:
     if not path.startswith("/"):
         path = "/" + path
     url = BASE_URL.rstrip("/") + path
-    
+
     # Allow override of base headers for testing unauthenticated requests
     base_headers_arg = kwargs.pop("base_headers", None)
     if base_headers_arg is None:
         base_headers = _base_headers()  # Default: include auth headers
     else:
         base_headers = base_headers_arg  # Override: could be {} for no auth
-    
+
     custom_headers = kwargs.pop("headers", None) or {}
-    headers = {**base_headers, **custom_headers}  # Merge, with custom headers taking precedence
-    
+    headers = {
+        **base_headers,
+        **custom_headers,
+    }  # Merge, with custom headers taking precedence
+
     # Provide a default timeout to avoid hanging tests.
     timeout = kwargs.pop("timeout", 30)
     kwargs["verify"] = not FELDERA_TLS_INSECURE
