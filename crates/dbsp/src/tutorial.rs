@@ -27,12 +27,16 @@
 //!
 //! # Introduction
 //!
-//! Computation in DBSP is a two-stage process.  First, create a DBSP "circuit"
-//! and fix its computational structure, including its inputs and outputs.
-//! Second, any number of times, feed in input changes, tell DBSP to run the
-//! circuits, and then read out the output changes.  A skeleton for a DBSP
-//! program might look like this (the second and later steps could iterate any
-//! number of times):
+//! Computation in DBSP is a two-stage process.  First, create a DBSP "circuit",
+//! which defines the computation's structure, including its inputs and
+//! outputs[^1].  Second, any number of times, feed in input changes, tell DBSP
+//! to run the circuits, and then read out the output changes.  A skeleton for a
+//! DBSP program might look like this (the second and later steps could iterate
+//! any number of times):
+//!
+//! [^1]: The term "circuit" is used because diagrams of DBSP computation
+//! resemble those for electrical circuits.  DBSP circuits are not necessarily
+//! closed loops like electrical circuits.
 //!
 //! ```
 //! fn main() {
@@ -146,13 +150,15 @@
 //! ```
 //!
 //! The natural way to bring our data into the circuit is through a "Z-set"
-//! ([`ZSet`]) input stream.  A "Z-set" is a set in which each item is
+//! ([`ZSet`]) input stream.  A ["Z-set"] is a set in which each item is
 //! associated with an integer weight.  In the context of changes to a data set,
 //! positive weights represent insertions and negative weights represent
 //! deletions.  The magnitude of the weight represents a count, so that a weight
 //! of 1 represents an insertion of a single copy of a record, 2 represents two
 //! copies, and so on, and similarly for negative weights and deletions.  Thus,
 //! a Z-set represents changes to a multiset.
+//!
+//! ["Z-set"]: https://www.feldera.com/blog/z-sets-representing-database-changes
 //!
 //! We create the Z-set input stream inside `build_circuit` using
 //! [`RootCircuit::add_input_zset`], which returns a [`Stream`] for further use
@@ -213,7 +219,7 @@
 //! ```
 //!
 //! The best way to feed the records into `input_handle` is to collect them into
-//! a `Vec<(Record, isize)>`, where `isize` is the Z-set weight.  All the
+//! a `Vec<(Record, i64)>`, where `i64` is the Z-set weight.  All the
 //! weights can be 1, since we are inserting each of them.  We feed them in with
 //! [`ZSetHandle::append`].  So, we can fill in `// ...feed data into
 //! circuit...` with:
@@ -279,6 +285,13 @@
 //! #   Ok(())
 //!}
 //! ```
+//!
+//! > 💡 The code above uses `Tup2<Record, i64>` where `(Record, i64)` would be
+//! the obvious type.  DBSP has its own tuple-like types [Tup0], [Tup1], ...,
+//! [Tup10] because Rust does not allow DBSP to [implement foreign traits] on
+//! the standard tuple types.
+//!
+//! [implement foreign traits]: https://doc.rust-lang.org/reference/items/implementations.html#r-items.impl.trait.orphan-rule
 //!
 //! The compiler will point out a problem: `Record` lacks several traits
 //! required for the record type of the "Z-sets".  We need `SizeOf` from the
@@ -441,13 +454,13 @@
 //! #     input_stream.inspect(|records| {
 //! #         println!("{}", records.weighted_count());
 //! #     });
-//!     let filtered = input_stream.filter(|r| {
+//!     let subset = input_stream.filter(|r| {
 //!         r.location == "England"
 //!             || r.location == "Northern Ireland"
 //!             || r.location == "Scotland"
 //!             || r.location == "Wales"
 //!     });
-//! #     Ok((input_handle, filtered.output()))
+//! #     Ok((input_handle, subset.output()))
 //! # }
 //! #
 //! # fn main() -> Result<()> {
@@ -518,13 +531,13 @@
 //!     input_stream.inspect(|records| {
 //!         println!("{}", records.weighted_count());
 //!     });
-//!     let filtered = input_stream.filter(|r| {
+//!     let subset = input_stream.filter(|r| {
 //!         r.location == "England"
 //!             || r.location == "Northern Ireland"
 //!             || r.location == "Scotland"
 //!             || r.location == "Wales"
 //!     });
-//!     Ok((input_handle, filtered.output()))
+//!     Ok((input_handle, subset.output()))
 //! }
 //! #
 //! # fn main() -> Result<()> {
@@ -598,13 +611,13 @@
 //! #     input_stream.inspect(|records| {
 //! #         println!("{}", records.weighted_count());
 //! #     });
-//! #     let filtered = input_stream.filter(|r| {
+//! #     let subset = input_stream.filter(|r| {
 //! #         r.location == "England"
 //! #             || r.location == "Northern Ireland"
 //! #             || r.location == "Scotland"
 //! #             || r.location == "Wales"
 //! #     });
-//! #     Ok((input_handle, filtered.output()))
+//! #     Ok((input_handle, subset.output()))
 //! # }
 //! #
 //! # fn main() -> Result<()> {
@@ -666,7 +679,7 @@
 //! transform our Z-set into an indexed Z-set where the key (the index) has the
 //! form `(location, year, month)` and the value is daily vaccinations (we could
 //! keep the whole record but we'd just throw away most of it later).
-//! To do this, we call [`Stream::index_with`], passing in a function that maps
+//! To do this, we call [`Stream::map_index`], passing in a function that maps
 //! a record into a key-value tuple:
 //!
 //! ```ignore
@@ -750,9 +763,9 @@
 //! #         .aggregate_linear(|v| *v as i64);
 //!     // ...
 //!     Ok((input_handle, monthly_totals.output()))
-//! # }
-//! #
-//! # fn main() -> Result<()> {
+//!   }
+//!
+//!   fn main() -> Result<()> {
 //! #     let (circuit, (input_handle, output_handle)) = RootCircuit::build(build_circuit)?;
 //! #
 //! #     let path = format!(
@@ -834,7 +847,7 @@
 //! within which averaging occurs (for us, this is the country), and the
 //! value is a tuple of a "timestamp" and a value.  Note that the value
 //! type has an `Option` wrapped around it.  In our case, for example, the
-//! input value type was `isize`, so the output value type is `Option<isize>`.
+//! input value type was `i64`, so the output value type is `Option<i64>`.
 //! The output for a given row is `None` if there are no rows in the window,
 //! which can only happen if the range passed in does not include the 0 relative
 //! offset (i.e. the current row).  Ours does include 0, so `None` will never
@@ -2260,6 +2273,7 @@
 //! ```
 use crate::{
     operator::{Aggregator, Max},
+    utils::{Tup0, Tup1, Tup10},
     CircuitHandle, IndexedZSet, OrdPartitionedIndexedZSet, OutputHandle, RootCircuit, Runtime,
     Stream, ZSet, ZSetHandle,
 };
