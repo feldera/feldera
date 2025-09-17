@@ -1014,10 +1014,15 @@ async fn pause(state: WebData<ServerState>) -> Result<HttpResponse, PipelineErro
     state_transition(state, "pause", RuntimeDesiredStatus::Paused, false).await
 }
 
-#[derive(Debug, Default, Deserialize)]
+/// Default for the `initial` query parameter when POST a pipeline activate.
+fn default_pipeline_activate_initial() -> String {
+    "running".to_string()
+}
+
+#[derive(Debug, Deserialize)]
 struct ActivateArgs {
-    #[serde(default)]
-    initial: RuntimeDesiredStatus,
+    #[serde(default = "default_pipeline_activate_initial")]
+    initial: String,
 }
 
 #[post("/activate")]
@@ -1025,11 +1030,20 @@ async fn activate(
     state: WebData<ServerState>,
     args: Query<ActivateArgs>,
 ) -> Result<HttpResponse, PipelineError> {
-    match args.initial {
-        RuntimeDesiredStatus::Running | RuntimeDesiredStatus::Paused => {
-            state_transition(state, "activate", args.initial, true).await
+    let args_initial_parsed = match args.initial.as_str() {
+        "paused" => RuntimeDesiredStatus::Paused,
+        "running" => RuntimeDesiredStatus::Running,
+        _ => {
+            return Err(PipelineError::InvalidActivateStatusString(
+                args.initial.clone(),
+            ))
         }
-        _ => Err(PipelineError::InvalidActivateStatus(args.initial)),
+    };
+    match args_initial_parsed {
+        RuntimeDesiredStatus::Running | RuntimeDesiredStatus::Paused => {
+            state_transition(state, "activate", args_initial_parsed, true).await
+        }
+        _ => Err(PipelineError::InvalidActivateStatus(args_initial_parsed)),
     }
 }
 
