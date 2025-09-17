@@ -14,6 +14,7 @@ use feldera_types::format::parquet::ParquetEncoderConfig;
 use feldera_types::program_schema::Relation;
 use feldera_types::serde_with_context::{DeserializeWithContext, SqlSerdeConfig};
 use parquet::arrow::ArrowWriter;
+use parquet::basic::Compression;
 use parquet::file::properties::WriterProperties;
 use parquet::file::serialized_reader::SerializedFileReader;
 use pretty_assertions::assert_eq;
@@ -56,8 +57,7 @@ fn rel_to_schema() {
     relation_to_parquet_schema(&TestStruct2::schema(), false).expect("Can convert");
 }
 
-#[test]
-fn parquet_input() {
+fn parquet_input_test(compression: Compression) {
     // Prepare input data & pipeline
     let test_data = TestStruct2::data();
     let temp_file = NamedTempFile::new().unwrap();
@@ -80,7 +80,9 @@ format:
         TestStruct2::make_arrow_array(&test_data),
     )
     .expect("RecordBatch creation should succeed");
-    let props = WriterProperties::builder().build();
+    let props = WriterProperties::builder()
+        .set_compression(compression)
+        .build();
     let mut writer = ArrowWriter::try_new(&temp_file, TestStruct2::arrow_schema(), Some(props))
         .expect("Writer creation should succeed");
     writer
@@ -111,6 +113,16 @@ format:
     for (i, upd) in zset.state().flushed.iter().enumerate() {
         assert_eq!(upd.unwrap_insert(), &test_data[i]);
     }
+}
+
+#[test]
+fn parquet_input_uncompressed() {
+    parquet_input_test(Compression::UNCOMPRESSED);
+}
+
+#[test]
+fn parquet_input_snappy() {
+    parquet_input_test(Compression::SNAPPY);
 }
 
 #[test]
