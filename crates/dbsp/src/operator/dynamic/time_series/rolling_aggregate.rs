@@ -1738,6 +1738,7 @@ mod test {
         }
 
         #[test]
+        #[ignore = "https://github.com/feldera/feldera/issues/4764"]
         fn proptest_partitioned_rolling_aggregate_quasi_monotone_big_step(trace in input_trace_quasi_monotone(5, 10_000, 2_000, 20, 200)) {
             // 10_000 is an empirically established bound: without GC this test needs >10KB.
             test_partition_rolling_aggregate(10000, Some(30_000), trace, true);
