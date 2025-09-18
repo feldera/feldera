@@ -23,7 +23,7 @@ from feldera.testutils_oidc import setup_token_cache
 def main():
     # Initialize OIDC token cache before any API calls (reuses pytest logic)
     setup_token_cache()
-    
+
     # Parse command-line arguments
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -34,7 +34,7 @@ def main():
     # Create Feldera client using the API URL with OIDC token caching support
     api_url = args.api_url
     print(f"Feldera API URL: {api_url}")
-    
+
     # Get effective API key (OIDC token takes precedence over static API key)
     # This reuses the same token caching infrastructure as the Python test suite
     effective_api_key = _get_effective_api_key()
@@ -50,7 +50,7 @@ def main():
     headers = {"Accept": "application/json"}
     if effective_api_key:
         headers["Authorization"] = f"Bearer {effective_api_key}"
-    
+
     demos = requests.get(f"{api_url}/v0/config/demos", headers=headers).json()
     print(f"Total {len(demos)} packages demos were found and will be run")
     for demo in demos:
