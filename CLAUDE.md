@@ -8279,6 +8279,7 @@ make clean
 - **Pipeline**: Main interface for pipeline operations and data I/O
 - **PipelineBuilder**: Declarative pipeline construction
 - **Output Handlers**: Stream processors for pipeline outputs
+- **OIDC Authentication**: `testutils_oidc.py` - OIDC token management and authentication utilities (see `tests/CLAUDE.md` for details)
 
 ## Important Implementation Details
 
@@ -8375,10 +8376,12 @@ pipeline = client.create_pipeline("my_pipeline")
 - `pandas>=2.1.2` - DataFrame operations and data manipulation
 - `numpy>=2.2.4` - Numerical computing support
 - `typing-extensions` - Enhanced type annotations
+- `PyJWT>=2.8.0` - JWT token handling for OIDC authentication
+- `pretty-errors` - Enhanced error formatting
+- `ruff>=0.6.9` - Fast Python linter and formatter
 
 #### Development Dependencies
 - `pytest>=8.3.5` - Testing framework with timeout support
-- `ruff>=0.6.9` - Fast Python linter and formatter
 - `sphinx==7.3.7` - Documentation generation
 - `kafka-python-ng==2.2.2` - Kafka integration for testing
 
@@ -8448,51 +8451,26 @@ This completely eliminates auth server rate limiting issues and cross-process to
 
 ##### Implementation Details
 
-**Master-Only Token Fetching**:
-```python
-def pytest_configure(config):
-    """Fetch OIDC token on master node only."""
-    if is_master(config):
-        token_data = _fetch_oidc_token()
-        # Store in environment variable for cross-process access
-        import base64
-        token_json = json.dumps(token_data)
-        token_b64 = base64.b64encode(token_json.encode()).decode()
-        os.environ['FELDERA_PYTEST_OIDC_TOKEN'] = token_b64
-```
+The OIDC token caching system uses pytest-xdist hooks and environment variables for cross-process token sharing:
 
-**Cross-Process Token Access**:
-```python
-def obtain_access_token(self):
-    """Get token from environment variable set by master node."""
-    env_token = os.getenv('FELDERA_PYTEST_OIDC_TOKEN')
-    if env_token:
-        import base64
-        token_json = base64.b64decode(env_token.encode()).decode()
-        token_data = json.loads(token_json)
-        return token_data['access_token']
-```
-
-**Session Fixture Verification**:
-- Session-scoped `oidc_token_fixture` verifies token is available and valid
-- Validates token expiration with 30-second buffer
-- Serves as early validation that authentication is properly set up
-
-**Header Merging for Custom Requests**:
-```python
-def http_request(method: str, path: str, **kwargs):
-    """Merge authentication headers with custom headers."""
-    base_headers = _base_headers()  # Contains Authorization token
-    custom_headers = kwargs.pop("headers", None) or {}
-    headers = {**base_headers, **custom_headers}  # Merge both
-```
+- **Master-Only Fetching**: `pytest_configure()` hook fetches OIDC token once on master node
+- **Environment Storage**: Token cached in `FELDERA_PYTEST_OIDC_TOKEN` with base64 encoding
+- **Cross-Process Access**: Worker processes inherit environment variable automatically
+- **Session Validation**: `oidc_token_fixture` verifies token setup with 30-second expiration buffer
+- **Header Integration**: `http_request()` merges authentication headers with custom headers
 
 **Key Components**:
 - **`pytest_configure()` (conftest.py)**: Master-only hook that fetches OIDC token once and stores in environment
 - **`pytest_configure_node()` (conftest.py)**: xdist hook that passes token data via workerinput (backup mechanism)
 - **`oidc_token_fixture()` (conftest.py)**: Session fixture that verifies token setup
-- **`obtain_access_token()` (oidc_test_helper.py)**: Returns token from environment variable or fails fast
+- **`obtain_access_token()` (testutils_oidc.py)**: Returns token from environment variable or fails fast
 - **`http_request()` (helper.py)**: Merges authentication headers with custom headers for ingress/egress requests
+- **Reusable Token Functions (testutils_oidc.py)**:
+  - `setup_token_cache()`: High-level function that sets up token caching (used by both pytest and demo runners)
+  - `get_cached_token_from_env()`: Retrieves and validates cached tokens
+  - `parse_cached_token()`: Parses base64-encoded token data
+  - `is_token_valid()`: Checks token expiration with configurable buffer
+  - `encode_token_for_env()`: Encodes tokens for environment storage
 
 ### API Key Authentication (Fallback)
 
@@ -8504,17 +8482,9 @@ export FELDERA_API_KEY="your-api-key"
 
 ### Usage in Tests
 
-Platform tests automatically detect and use the appropriate authentication method:
+Platform tests automatically detect and use the appropriate authentication method via `_base_headers()` helper function.
 
-```python
-from tests.platform.helper import _base_headers
-
-# Headers automatically include OIDC token or API key
-headers = _base_headers()
-response = requests.get(url, headers=headers)
-```
-
-The authentication selection follows this priority:
+Authentication priority:
 1. **OIDC** (if `OIDC_TEST_ISSUER` and related vars are set)
 2. **API Key** (if `FELDERA_API_KEY` is set)
 3. **No Auth** (for local testing without authentication)
@@ -8533,6 +8503,27 @@ env:
 ```
 
 This ensures consistent authentication across both "Runtime Integration Tests" and "Platform Integration Tests (OSS Docker Image)" workflows that run in parallel.
+
+### OIDC Usage Beyond Testing
+
+The OIDC infrastructure is designed to be reusable outside of the test suite:
+
+#### Demo Runners and External Tools
+
+External tools can reuse the OIDC infrastructure by calling `setup_token_cache()` followed by `_get_effective_api_key()` to get cached tokens or fallback API keys.
+
+#### Token Caching for Multiple Processes
+
+The token caching system is designed to work across multiple processes:
+
+1. **First Process**: Calls `setup_token_cache()` → fetches and caches token in environment
+2. **Subsequent Processes**: Call `setup_token_cache()` → reuses cached token if still valid
+3. **Automatic Refresh**: Fetches new token only when cached token expires
+
+This pattern is used by:
+- **Pytest Test Runs**: Master node fetches token, workers reuse it
+- **Demo Runners**: `demo/all-packaged/run.py` uses the same caching mechanism
+- **CI Workflows**: Multiple demos in sequence reuse the same token
 <!-- SECTION:python/tests/CLAUDE.md END -->
 
 ---

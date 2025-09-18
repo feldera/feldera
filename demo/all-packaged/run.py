@@ -16,9 +16,14 @@ import requests
 import argparse
 from feldera import FelderaClient, PipelineBuilder
 from feldera.enums import PipelineStatus
+from feldera.testutils import _get_effective_api_key
+from feldera.testutils_oidc import setup_token_cache
 
 
 def main():
+    # Initialize OIDC token cache before any API calls (reuses pytest logic)
+    setup_token_cache()
+    
     # Parse command-line arguments
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -26,13 +31,27 @@ def main():
     )
     args = parser.parse_args()
 
-    # Create Feldera client using the API URL
+    # Create Feldera client using the API URL with OIDC token caching support
     api_url = args.api_url
     print(f"Feldera API URL: {api_url}")
-    client = FelderaClient(api_url)
+    
+    # Get effective API key (OIDC token takes precedence over static API key)
+    # This reuses the same token caching infrastructure as the Python test suite
+    effective_api_key = _get_effective_api_key()
+    if effective_api_key:
+        print("🔐 AUTH: Using cached OIDC authentication")
+        client = FelderaClient(api_url, api_key=effective_api_key)
+    else:
+        print("🔐 AUTH: Using no authentication")
+        client = FelderaClient(api_url)
 
     # Retrieve and run all packaged demos
-    demos = requests.get(f"{api_url}/v0/config/demos").json()
+    # Use the same authentication headers for the demos request
+    headers = {"Accept": "application/json"}
+    if effective_api_key:
+        headers["Authorization"] = f"Bearer {effective_api_key}"
+    
+    demos = requests.get(f"{api_url}/v0/config/demos", headers=headers).json()
     print(f"Total {len(demos)} packages demos were found and will be run")
     for demo in demos:
         print(f"Running packaged demo: {demo['name']}...")
