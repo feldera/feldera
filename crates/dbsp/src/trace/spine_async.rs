@@ -11,7 +11,7 @@ use crate::{
         metadata::{MetaItem, OperatorMeta},
         metrics::COMPACTION_STALL_TIME_NANOSECONDS,
     },
-    dynamic::{DynVec, Factory, Weight},
+    dynamic::{Data, DynVec, Factory, Weight},
     storage::buffer_cache::CacheStats,
     time::Timestamp,
     trace::{
@@ -31,6 +31,7 @@ use crate::trace::CommittedSpine;
 use enum_map::EnumMap;
 use feldera_storage::StoragePath;
 use feldera_types::checkpoint::PSpineBatches;
+use hashbrown::HashSet;
 use ouroboros::self_referencing;
 use rand::Rng;
 use rkyv::{
@@ -879,6 +880,7 @@ where
     dirty: bool,
     key_filter: Option<Filter<B::Key>>,
     value_filter: Option<Filter<B::Val>>,
+    keys: HashSet<u64>,
 
     /// The asynchronous merger.
     merger: AsyncMerger<B>,
@@ -1283,6 +1285,10 @@ where
         Self::with_effort(factories, 1)
     }
 
+    fn maybe_contains_hash(&self, hash: u64) -> bool {
+        self.keys.contains(&hash)
+    }
+
     fn set_frontier(&mut self, frontier: &B::Time) {
         self.merger.set_frontier(frontier)
     }
@@ -1310,6 +1316,13 @@ where
 
     fn insert(&mut self, mut batch: Self::Batch) {
         if !batch.is_empty() {
+            let mut cursor = batch.cursor();
+            while let Some(key) = cursor.get_key() {
+                self.keys.insert(key.default_hash());
+                cursor.step_key();
+            }
+            drop(cursor);
+
             // If `batch` is in memory and it's got a fair number of records
             // (level 2 or higher), and we'll write it to storage on first
             // merge, then write it to storage right away.
@@ -1523,6 +1536,7 @@ where
     pub fn with_effort(factories: &B::Factories, _effort: usize) -> Self {
         Spine {
             factories: factories.clone(),
+            keys: HashSet::new(),
             dirty: false,
             key_filter: None,
             value_filter: None,
