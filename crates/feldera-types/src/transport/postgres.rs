@@ -45,10 +45,15 @@ pub struct PostgresWriterConfig {
     #[serde(default = "default_max_buffer_size")]
     pub max_buffer_size_bytes: usize,
 
-    /// By default, the Postgres output connector overwrites (updates) the
-    /// records on a duplicate entry for the primary key. Setting this to True
-    /// will do nothing instead.
-    /// Default: False
+    /// Specifies how the connector handles conflicts when executing an `INSERT`
+    /// into a table with a primary key. By default, an existing row with the same
+    /// key is overwritten. Setting this flag to `true` preserves the existing row
+    /// and ignores the new insert.
+    ///
+    /// This setting does not affect `UPDATE` statements, which always replace the
+    /// value associated with the key.
+    ///
+    /// Default: `false`
     #[serde(default)]
     pub on_conflict_do_nothing: bool,
 }
