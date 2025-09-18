@@ -2108,6 +2108,79 @@ public class RegressionTests extends SqlIoTest {
     }
 
     @Test
+    public void issue3769() {
+        this.getCCS("""
+                CREATE TABLE telemetry_pipeline_statistics (
+                    account_id UUID NOT NULL,
+                    pipeline_id_hash BYTEA NOT NULL,
+                    event_timestamp TIMESTAMP NOT NULL,
+                    pipeline_started_at TIMESTAMP NOT NULL,
+                    runtime_elapsed_msecs INTEGER NOT NULL
+                );
+                
+                CREATE VIEW pipeline_runtime_summary AS
+                WITH ranked_events AS (
+                    SELECT
+                        account_id,
+                        pipeline_id_hash,
+                        pipeline_started_at,
+                        runtime_elapsed_msecs,
+                        event_timestamp,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY account_id, pipeline_id_hash, pipeline_started_at\s
+                            ORDER BY event_timestamp DESC
+                        ) AS event_rank
+                    FROM telemetry_pipeline_statistics
+                )
+                SELECT
+                    account_id,
+                    pipeline_id_hash,
+                    SUM(runtime_elapsed_msecs) AS total_runtime_msecs,
+                    COUNT(*) AS number_of_pipeline_runs
+                FROM ranked_events
+                WHERE event_rank = 1
+                GROUP BY account_id, pipeline_id_hash;
+                
+                CREATE VIEW pipeline_runtime_by_day AS
+                WITH ranked_events AS (
+                    SELECT
+                        account_id,
+                        pipeline_id_hash,
+                        pipeline_started_at,
+                        event_timestamp,
+                        DATE_TRUNC(event_timestamp, day) AS event_day,
+                        runtime_elapsed_msecs,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY account_id, pipeline_id_hash, pipeline_started_at\s
+                            ORDER BY event_timestamp DESC
+                        ) AS event_rank,
+                        runtime_elapsed_msecs - COALESCE(
+                            LAG(runtime_elapsed_msecs) OVER (
+                                PARTITION BY account_id, pipeline_id_hash, pipeline_started_at\s
+                                ORDER BY event_timestamp
+                            ),
+                            0
+                        ) AS daily_runtime_increment
+                    FROM telemetry_pipeline_statistics
+                ),
+                daily_increments AS (
+                    SELECT
+                        account_id,
+                        pipeline_id_hash,
+                        event_day,
+                        daily_runtime_increment
+                    FROM ranked_events
+                    WHERE event_rank = 1
+                )
+                SELECT
+                    event_day,
+                    SUM(daily_runtime_increment) AS daily_runtime_msecs
+                FROM daily_increments
+                GROUP BY event_day
+                ORDER BY event_day;""");
+    }
+
+    @Test
     public void issue3770() {
         this.statementsFailingInCompilation("""
                 CREATE TABLE row_of_map_tbl(

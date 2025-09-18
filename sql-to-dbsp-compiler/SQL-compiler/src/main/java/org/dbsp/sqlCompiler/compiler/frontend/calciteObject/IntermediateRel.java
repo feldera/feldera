@@ -22,6 +22,12 @@ public class IntermediateRel extends CalciteRelNode {
         return new LastRel(this.relNode);
     }
 
+    public CalciteRelNode maybeFinal(boolean isFinal) {
+        if (isFinal)
+            return this.getFinal();
+        return this;
+    }
+
     @Override
     public String toString() {
         return this.getId() + " PartOf(" + this.relNode.getDigest() + ")";
