@@ -19,7 +19,7 @@ def is_master(config) -> bool:
 
 def _fetch_oidc_token():
     """Fetch OIDC token using Resource Owner Password Grant flow."""
-    from .oidc_test_helper import get_oidc_test_helper
+    from feldera.testutils_oidc import get_oidc_test_helper
 
     oidc_helper = get_oidc_test_helper()
     if oidc_helper is None:
@@ -118,13 +118,13 @@ def oidc_token_fixture(request):
             token_json = base64.b64decode(env_token.encode()).decode()
             token_data = json.loads(token_json)
 
+            access_token = token_data.get("access_token")
             if (
-                token_data.get("access_token")
-                and time.time() < token_data.get("expires_at", 0) - 30
+                access_token is None
+                or time.time() >= token_data.get("expires_at", 0) - 30
             ):
-                return token_data["access_token"]
-            else:
                 raise RuntimeError("OIDC token expired before test execution")
+            return access_token
         except Exception as e:
             raise RuntimeError(f"Failed to parse OIDC token from environment: {e}")
 

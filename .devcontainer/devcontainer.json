@@ -23,7 +23,8 @@
 				"ms-playwright.playwright",
 				"svelte.svelte-vscode",
 				"bradlc.vscode-tailwindcss",
-				"esbenp.prettier-vscode"
+				"esbenp.prettier-vscode",
+				"ms-python.python"
 			],
 			"settings": {
 				"editor.formatOnSave": true,

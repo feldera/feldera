@@ -158,5 +158,5 @@ OIDC_TEST_PASSWORD=test-password
 
 - `helper.py` - Main test utilities with unified authentication support
 - `test_oidc_auth_simple.py` - OIDC-specific authentication tests
-- `oidc_test_helper.py` - OIDC token management utilities
+- `testutils_oidc.py` - OIDC token management utilities
 - All other `test_*.py` files - Platform tests that use unified authentication
