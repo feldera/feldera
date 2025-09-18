@@ -12,7 +12,7 @@
   import { useIsScreenXl } from '$lib/compositions/layout/useIsMobile.svelte'
   import PipelineStorageGraph from '$lib/components/layout/pipelines/PipelineStorageGraph.svelte'
   import Tooltip from '$lib/components/common/Tooltip.svelte'
-  import { useElapsedTime } from '$lib/functions/format'
+  import { formatDateTime, useElapsedTime } from '$lib/functions/format'
   import {
     usePipelineManager,
     type PipelineManagerApi
@@ -189,7 +189,7 @@
         {#snippet age()}
           <div class="w-64 pt-2">
             {#if global.start_time > 0}
-              Deployed on {Dayjs(global.start_time * 1000).format('MMM D, YYYY h:mm A')}
+              Deployed on {formatDateTime({ ms: global.start_time * 1000 })}
             {:else}
               Not deployed
             {/if}
