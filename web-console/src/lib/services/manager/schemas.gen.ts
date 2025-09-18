@@ -1689,7 +1689,7 @@ export const $KafkaHeaderValue = {
 export const $KafkaInputConfig = {
   type: 'object',
   description: 'Configuration for reading data from Kafka topics with `InputTransport`.',
-  required: ['topic'],
+  required: ['topic', 'resume_earliest_if_data_expires'],
   properties: {
     group_join_timeout_secs: {
       type: 'integer',
@@ -1740,6 +1740,16 @@ messagee`,
       description:
         'The AWS region to use while connecting to AWS Managed Streaming for Kafka (MSK).',
       nullable: true
+    },
+    resume_earliest_if_data_expires: {
+      type: 'boolean',
+      description: `By default, if the input connector resumes from a checkpoint and the
+data where it needs to resume has expired from the Kafka topic, the
+input connector fails initialization and the pipeline will fail to start.
+
+Set this to true to change the behavior so that, if data is not
+available on resume, the input connector starts from the earliest
+offsets that are now available.`
     },
     start_from: {
       $ref: '#/components/schemas/KafkaStartFromConfig'
