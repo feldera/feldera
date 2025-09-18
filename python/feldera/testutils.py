@@ -21,7 +21,7 @@ API_KEY = os.environ.get("FELDERA_API_KEY")
 def _get_oidc_token():
     """Get OIDC token if environment is configured, otherwise return None"""
     try:
-        from tests.platform.oidc_test_helper import get_oidc_test_helper
+        from feldera.testutils_oidc import get_oidc_test_helper
 
         oidc_helper = get_oidc_test_helper()
         if oidc_helper is not None:

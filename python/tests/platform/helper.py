@@ -23,7 +23,7 @@ from http import HTTPStatus
 from urllib.parse import quote, quote_plus
 
 from tests import FELDERA_TLS_INSECURE, API_KEY, BASE_URL, unique_pipeline_name
-from .oidc_test_helper import get_oidc_test_helper
+from feldera.testutils_oidc import get_oidc_test_helper
 
 API_PREFIX = "/v0"
 
