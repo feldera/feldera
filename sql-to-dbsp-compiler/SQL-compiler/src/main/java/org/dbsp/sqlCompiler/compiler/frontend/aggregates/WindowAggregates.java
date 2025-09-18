@@ -2,16 +2,24 @@ package org.dbsp.sqlCompiler.compiler.frontend.aggregates;
 
 import org.apache.calcite.rel.core.AggregateCall;
 import org.apache.calcite.rel.core.Window;
+import org.dbsp.sqlCompiler.circuit.OutputPort;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPDeindexOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.frontend.CalciteToDBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.ExpressionCompiler;
+import org.dbsp.sqlCompiler.compiler.frontend.TypeCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.IntermediateRel;
+import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
+import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
+import org.dbsp.util.ICastable;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
 
@@ -25,13 +33,13 @@ import java.util.List;
  * divide some group/window combinations into multiple
  * combinations.
  */
-public abstract class WindowAggregates {
+public abstract class WindowAggregates implements ICastable {
     final CalciteToDBSPCompiler compiler;
     final IntermediateRel node;
     final Window window;
     final Window.Group group;
     final List<AggregateCall> aggregateCalls;
-    final int windowFieldIndex;
+    public final int windowFieldIndex;
     final DBSPTypeTuple windowResultType;
     final DBSPTypeTuple inputRowType;
     final List<Integer> partitionKeys;
@@ -63,6 +71,31 @@ public abstract class WindowAggregates {
         this.eComp = new ExpressionCompiler(window, this.inputRowRefVar, window.constants, this.compiler.compiler());
     }
 
+    public CalciteObject getNode() {
+        return CalciteObject.create(this.window);
+    }
+
+    OutputPort indexInput(DBSPSimpleOperator lastOperator) {
+        if (!lastOperator.is(DBSPDeindexOperator.class)) {
+            DBSPType inputRowType = lastOperator.getOutputZSetElementType();
+            DBSPVariablePath firstInputVar = inputRowType.ref().var();
+            List<DBSPExpression> expressions = Linq.map(this.partitionKeys,
+                    f -> firstInputVar.deref().field(f).applyCloneIfNeeded());
+            DBSPTupleExpression partition = new DBSPTupleExpression(this.node, expressions);
+            DBSPExpression row = DBSPTupleExpression.flatten(firstInputVar.deref());
+            DBSPExpression mapExpr = new DBSPRawTupleExpression(partition, row);
+            DBSPClosureExpression mapClo = mapExpr.closure(firstInputVar);
+            DBSPSimpleOperator index = new DBSPMapIndexOperator(this.node, mapClo,
+                    TypeCompiler.makeIndexedZSet(
+                            partition.getType(), row.getType()), lastOperator.outputPort());
+            this.compiler.addOperator(index);
+            return index.outputPort();
+        } else {
+            // avoid a deindex->index chain which does nothing
+            return lastOperator.inputs.get(0);
+        }
+    }
+
     public abstract DBSPSimpleOperator implement(DBSPSimpleOperator input, DBSPSimpleOperator lastOperator, boolean isLast);
 
     public void addAggregate(AggregateCall call) {
@@ -84,6 +117,8 @@ public abstract class WindowAggregates {
     public static WindowAggregates newGroup(CalciteToDBSPCompiler compiler, Window window, Window.Group group,
                                             int windowFieldIndex, AggregateCall call) {
         WindowAggregates result = switch (call.getAggregation().getKind()) {
+            case RANK, DENSE_RANK, ROW_NUMBER -> new RankAggregate(
+                    compiler, window, group, windowFieldIndex, call);
             case FIRST_VALUE, LAST_VALUE -> new FirstLastAggregate(
                     compiler, window, group, windowFieldIndex, call);
             case LAG, LEAD -> {

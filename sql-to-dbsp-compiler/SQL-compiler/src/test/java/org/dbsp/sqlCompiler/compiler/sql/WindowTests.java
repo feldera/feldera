@@ -193,4 +193,59 @@ public class WindowTests extends ScottBaseTests {
             }
         }
     }
+
+    @Test
+    public void issue3769() {
+        // Validated on postgres
+        String preamble = """
+                CREATE TABLE T (
+                    account_id VARCHAR NOT NULL,
+                    event_timestamp TIMESTAMP NOT NULL,
+                    runtime_elapsed_msecs INTEGER NOT NULL
+                );
+                
+                CREATE VIEW pipeline_runtime_by_day AS
+                WITH ranked_events AS (
+                SELECT""";
+        String[] aggregates = new String[] {
+                "account_id", """
+                LAG(runtime_elapsed_msecs) OVER (
+                            PARTITION BY account_id
+                            ORDER BY event_timestamp
+                        ) AS daily_runtime_increment""", """
+                ROW_NUMBER() OVER (
+                            PARTITION BY account_id
+                            ORDER BY event_timestamp DESC
+                        ) AS event_rank"""
+        };
+        String tail = """
+                  FROM T
+                ),
+                daily_increments AS (
+                    SELECT daily_runtime_increment, account_id
+                    FROM ranked_events
+                    WHERE event_rank = 1
+                )
+                SELECT daily_runtime_increment, account_id FROM daily_increments;""";
+
+        for (var l: generatePermutations(3)) {
+            String query = preamble;
+            query += " " + aggregates[l.get(0)] + ", " + aggregates[l.get(1)] + ", " + aggregates[l.get(2)];
+            query += tail;
+
+            var ccs = this.getCCS(query);
+            ccs.step("""
+                INSERT INTO T VALUES('00', '2020-01-01 00:00:00', 100);
+                INSERT INTO T VALUES('00', '2020-01-01 00:10:00', 110);""", """
+                 daily_runtime_increment | account_id | weight
+                -----------------------------------------------
+                 100                     | 00|          1""");
+            ccs.step("""
+                INSERT INTO T VALUES('01', '2020-01-01 00:00:00', 200);
+                INSERT INTO T VALUES('01', '2020-01-01 00:10:00', 210);""", """
+                 daily_runtime_increment | account_id | weight
+                -----------------------------------------------
+                 200                     | 01|          1""");
+        }
+    }
 }

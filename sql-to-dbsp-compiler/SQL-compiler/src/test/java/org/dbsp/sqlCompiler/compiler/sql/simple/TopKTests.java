@@ -3,7 +3,6 @@ package org.dbsp.sqlCompiler.compiler.sql.simple;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
 import org.junit.Assert;
-import org.junit.Ignore;
 import org.junit.Test;
 
 public class TopKTests extends SqlIoTest {
@@ -255,22 +254,25 @@ public class TopKTests extends SqlIoTest {
                 WHERE   rnum % 2 = 1 AND rnum <= 3;""");
     }
 
-    @Test @Ignore("RANK aggregate not implemented without TopK")
-    public void testRank() {
+    @Test
+    public void top3() {
+        // Validated on Postgres
         this.qs("""
-                WITH cte AS
-                (
+                WITH cte AS (
                 SELECT *,
-                         RANK() OVER (PARTITION BY DocumentID ORDER BY DateCreated) AS rn
+                   RANK() OVER (PARTITION BY DocumentID ORDER BY DateCreated) AS rn
                    FROM DocumentStatusLog
                 )
                 SELECT DocumentId, Status, DateCreated, rn
-                FROM cte;
+                FROM cte
+                WHERE rn < 3;
                  DocumentID | Status | DateCreated | rn
                 ---------------------------------------
-                 1          | S1| 2011-09-02       | 1
-                 2          | S3| 2011-08-01       | 2
-                 3          | S1| 2011-08-02       | 3
-                (3 rows)""");
+                 1          | S1| 2011-07-29       | 1
+                 1          | S2| 2011-07-30       | 2
+                 2          | S1| 2011-07-28       | 1
+                 2          | S2| 2011-07-30       | 2
+                 3          | S1| 2011-08-02       | 1
+                (5 rows)""");
     }
 }
