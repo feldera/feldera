@@ -197,6 +197,7 @@ def parse_cached_token(env_token: str) -> Optional[Dict[str, Any]]:
     """
     try:
         import base64
+
         token_json = base64.b64decode(env_token.encode()).decode()
         token_data = json.loads(token_json)
         return token_data
@@ -240,11 +241,14 @@ def encode_token_for_env(token_data: Dict[str, Any]) -> str:
         Base64-encoded JSON string suitable for environment variable storage
     """
     import base64
+
     token_json = json.dumps(token_data)
     return base64.b64encode(token_json.encode()).decode()
 
 
-def get_cached_token_from_env(env_var_name: str = "FELDERA_PYTEST_OIDC_TOKEN") -> Optional[Dict[str, Any]]:
+def get_cached_token_from_env(
+    env_var_name: str = "FELDERA_PYTEST_OIDC_TOKEN",
+) -> Optional[Dict[str, Any]]:
     """
     Retrieve and validate cached token from environment variable.
 
