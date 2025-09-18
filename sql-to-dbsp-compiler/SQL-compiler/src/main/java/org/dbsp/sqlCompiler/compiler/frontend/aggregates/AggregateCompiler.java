@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.compiler.frontend.aggregates;
 
+import org.apache.calcite.rel.RelFieldCollation;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.rel.core.AggregateCall;
 import org.apache.calcite.rel.logical.LogicalAggregate;
@@ -43,6 +44,7 @@ import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.ICompilerComponent;
 import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
+import org.dbsp.sqlCompiler.compiler.frontend.CalciteToDBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.ExpressionCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.SqlUserDefinedAggregationFunction;
@@ -94,7 +96,9 @@ import org.dbsp.util.Utilities;
 import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.function.Consumer;
 
@@ -117,7 +121,7 @@ public class AggregateCompiler implements ICompilerComponent {
      * it is nullableResultType. */
     public final DBSPType partialResultType;
 
-    /** Expression that stands for the whole input row in the input zset. */
+    /** Expression that stands as a reference to the whole input row in the input zset. */
     private final DBSPVariablePath v;
     private final SqlAggFunction aggFunction;
     private final int filterArgument;
@@ -128,6 +132,7 @@ public class AggregateCompiler implements ICompilerComponent {
     private final ImmutableBitSet groups;
     private final AggregateCall call;
     private final boolean linearAllowed;
+    private final ExpressionCompiler eComp;
 
     public AggregateCompiler(
             RelNode node,
@@ -154,19 +159,19 @@ public class AggregateCompiler implements ICompilerComponent {
         this.filterArgument = call.filterArg;
         this.partialResultType = computePartialResultType(this.nullableResultType);
         List<Integer> argList = call.getArgList();
-        ExpressionCompiler eComp = new ExpressionCompiler(this.aggregateNode, this.v, constants, this.compiler);
+        this.eComp = new ExpressionCompiler(this.aggregateNode, this.v, constants, this.compiler);
         if (argList.isEmpty()) {
             this.aggArgument = null;
         } else if (argList.size() == 1) {
             int fieldNumber = call.getArgList().get(0);
-            this.aggArgument = eComp.inputIndex(this.node, fieldNumber).applyCloneIfNeeded();
+            this.aggArgument = this.eComp.inputIndex(this.node, fieldNumber).applyCloneIfNeeded();
             if (this.aggArgument.getType().is(DBSPTypeNull.class)) {
                 throw new CompilationError("Argument of aggregate has NULL type",
                         CalciteObject.create(call.getParserPosition()));
             }
         } else {
             List<DBSPExpression> fields = Linq.map(call.getArgList(),
-                    a -> eComp.inputIndex(this.node, a).applyCloneIfNeeded());
+                    a -> this.eComp.inputIndex(this.node, a).applyCloneIfNeeded());
             this.aggArgument = new DBSPTupleExpression(fields, false);
         }
     }
@@ -349,13 +354,69 @@ public class AggregateCompiler implements ICompilerComponent {
 
         boolean ignoreNulls = this.call.ignoreNulls();
         boolean distinct = this.call.isDistinct();
+        // The result type is ARRAY, but the accumulator is just Vec.
         DBSPTypeArray arrayType = this.resultType.to(DBSPTypeArray.class).to(DBSPTypeArray.class);
         DBSPType elementType = arrayType.getElementType();
-        DBSPTypeVec accumulatorType = arrayType.innerType();
+        DBSPTypeTuple rowType = this.v.getType().deref().to(DBSPTypeTuple.class);
 
+        // ORDER BY information for the ARRAY_AGG
+        List<RelFieldCollation> collations = this.call.getCollation().getFieldCollations();
+        // The accumulator array will only contain some fields from the source collection.
+        // Rewrite the collations to be relative to these fields.
+        List<RelFieldCollation> compressedCollations = new ArrayList<>();
+
+        // We need to preserve all the fields that are being sorted on or which are in the output
+        DBSPType vecElementType;
+        DBSPExpression aggregatedValue;
+        // Tracks the fields of the accumulator that have to be emitted in the output
+        List<Integer> fieldProj = new ArrayList<>();
+        if (collations.isEmpty()) {
+            // No sorting: just accumulate the field that is in the result.
+            vecElementType = arrayType.innerType().getElementType();
+            aggregatedValue = this.getAggregatedValue();
+        } else {
+            Map<Integer, Integer> fieldMap = new HashMap<>();
+            List<Integer> accumulatorFields = new ArrayList<>();
+            List<DBSPType> fieldTypes = new ArrayList<>();
+            // First add to accumulator the fields that are sorted on
+            for (RelFieldCollation col: collations) {
+                int index = col.getFieldIndex();
+                if (fieldMap.containsKey(index))
+                    // Sorting the second time on a field is a no-op
+                    continue;
+
+                int newIndex = fieldMap.size();
+                RelFieldCollation newCollation = new RelFieldCollation(newIndex, col.direction, col.nullDirection);
+                compressedCollations.add(newCollation);
+                Utilities.putNew(fieldMap, index, newIndex);
+
+                accumulatorFields.add(index);
+                fieldTypes.add(rowType.tupFields[index]);
+            }
+
+            // Then add the fields that are in the output, if they aren't there already
+            for (int index: call.getArgList()) {
+                if (fieldMap.containsKey(index)) {
+                    fieldProj.add(Utilities.getExists(fieldMap, index));
+                    continue;
+                }
+
+                int newIndex = fieldMap.size();
+                Utilities.putNew(fieldMap, index, newIndex);
+                accumulatorFields.add(index);
+                fieldTypes.add(rowType.tupFields[index]);
+                fieldProj.add(newIndex);
+            }
+
+            vecElementType = new DBSPTypeTuple(fieldTypes);
+            List<DBSPExpression> eFields = Linq.map(accumulatorFields,
+                    a -> this.eComp.inputIndex(this.node, a).applyCloneIfNeeded());
+            aggregatedValue = new DBSPTupleExpression(eFields, false);
+        }
+
+        DBSPTypeVec accumulatorType = new DBSPTypeVec(vecElementType, arrayType.mayBeNull);
         DBSPExpression empty = DBSPArrayExpression.emptyWithElementType(elementType, this.resultType.mayBeNull);
         DBSPExpression zero = accumulatorType.emptyVector();
-        DBSPExpression aggregatedValue = this.getAggregatedValue();
         DBSPVariablePath accumulator = accumulatorType.var();
         String functionName;
         DBSPExpression[] arguments;
@@ -367,7 +428,7 @@ public class AggregateCompiler implements ICompilerComponent {
             arguments = new DBSPExpression[5];
         }
         arguments[0] = accumulator.borrow(true);
-        arguments[1] = ExpressionCompiler.expandTupleCast(this.node, aggregatedValue, aggregatedValue.getType());
+        arguments[1] = ExpressionCompiler.expandTuple(this.node, aggregatedValue);
         arguments[2] = this.compiler.weightVar;
         arguments[3] = new DBSPBoolLiteral(distinct);
         arguments[4] = this.filterArgument >= 0 ? this.filterArgument() : new DBSPBoolLiteral(true);
@@ -379,10 +440,32 @@ public class AggregateCompiler implements ICompilerComponent {
         DBSPTypeUser semigroup = new DBSPTypeUser(
                 node, SEMIGROUP, "ConcatSemigroup", false, accumulatorType);
         DBSPVariablePath p = accumulatorType.var();
-        String convertName = "to_array";
-        if (arrayType.mayBeNull)
-            convertName += "N";
-        DBSPClosureExpression post = new DBSPApplyExpression(convertName, arrayType, p).closure(p);
+        DBSPClosureExpression post;
+        if (collations.isEmpty()) {
+            String convertName = "to_array";
+            if (arrayType.mayBeNull)
+                convertName += "N";
+            post = new DBSPApplyExpression(convertName, arrayType, p).closure(p);
+        } else {
+            String convertName = "sort_to_array";
+            if (arrayType.mayBeNull)
+                convertName += "N";
+            DBSPExpression comparator = CalciteToDBSPCompiler.generateComparator(
+                    this.node, compressedCollations, vecElementType, false);
+            DBSPVariablePath var = vecElementType.var();
+            DBSPClosureExpression projector;
+            Utilities.enforce(!fieldProj.isEmpty());
+            if (fieldProj.size() > 1) {
+                List<DBSPExpression> fields = new ArrayList<>();
+                for (Integer f : fieldProj) {
+                    fields.add(var.field(f));
+                }
+                projector = new DBSPTupleExpression(fields, elementType.mayBeNull).closure(var);
+            } else {
+                projector = var.field(fieldProj.get(0)).closure(var);
+            }
+            post = new DBSPApplyExpression(convertName, arrayType, p, comparator, projector).closure(p);
+        }
         this.setResult(new NonLinearAggregate(
                 node, zero, this.makeRowClosure(increment, accumulator), post, empty, semigroup));
     }

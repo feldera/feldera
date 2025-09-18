@@ -38,8 +38,8 @@ DECIMAL(10, 4))` if you expect 10-digit results to be possible.
     <th>Description</th>
   </tr>
   <tr>
-     <td><a id="array_agg"></a><code>ARRAY_AGG([ ALL | DISTINCT ] value [ RESPECT NULLS | IGNORE NULLS ] )</code></td>
-     <td>Gathers all values in an array.  The order of the values in the array is unspecified (but it is deterministic).</td>
+     <td><a id="array_agg"></a><code>ARRAY_AGG([ ALL | DISTINCT ] value [ RESPECT NULLS | IGNORE NULLS ] [ORDER BY orderItem [, orderItem]*] )</code></td>
+     <td>Gathers all values in an array.  If `ORDER BY` is not present, the order of the values in the array is unspecified (but it is deterministic).</td>
   </tr>
   <tr>
      <td><a id="avg"></a><code>AVG( [ ALL | DISTINCT ] numeric)</code></td>
