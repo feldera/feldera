@@ -104,7 +104,7 @@ impl PreparedStatements {
         config: &PostgresWriterConfig,
         client: &mut postgres::Client,
     ) -> Result<Self, BackoffError> {
-        let raw_queries = RawQueries::new(key_schema, value_schema, &config);
+        let raw_queries = RawQueries::new(key_schema, value_schema, config);
 
         let err_msg = "\nPlease ensure all field names that are quoted in PostgreSQL are quoted correctly in Feldera as well";
 
