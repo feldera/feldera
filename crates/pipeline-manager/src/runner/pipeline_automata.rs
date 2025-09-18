@@ -1138,6 +1138,11 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                                     runtime_status_details: "".to_string(),
                                     runtime_desired_status: RuntimeDesiredStatus::Paused
                                 }),
+                                "Suspended" => Ok(ExtendedRuntimeStatus { // For backward compatibility
+                                    runtime_status: RuntimeStatus::Suspended,
+                                    runtime_status_details: "".to_string(),
+                                    runtime_desired_status: RuntimeDesiredStatus::Suspended
+                                }),
                                 _ => {
                                     warn!(
                                         "Pipeline {pipeline_id} status is unavailable because the endpoint responded with 503 Service Unavailable:\n{error_response:?}"
