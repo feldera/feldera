@@ -109,6 +109,53 @@ public class AggregateTests extends SqlIoTest {
     }
 
     @Test
+    public void issue4777() {
+        // validated using Postgres, but second result is not deterministic
+        this.qs("""
+                SELECT ARRAY_AGG(parentId ORDER BY id)
+                FROM warehouse;
+                  array
+                ----------
+                 { 5, 3, 5, 20, 20, 20 }
+                (1 row)
+                
+                SELECT ARRAY_AGG(id ORDER BY parentId)
+                FROM warehouse;
+                  array
+                ----------
+                 { 3, 1, 5, 10, 20, 30 }
+                (1 row)
+                
+                SELECT ARRAY_AGG(id ORDER BY parentId, id)
+                FROM warehouse;
+                  array
+                ----------
+                 { 3, 1, 5, 10, 20, 30 }
+                (1 row)
+                
+                SELECT ARRAY_AGG(id ORDER BY parentId, id, id DESC)
+                FROM warehouse;
+                  array
+                ----------
+                 { 3, 1, 5, 10, 20, 30 }
+                (1 row)
+                
+                SELECT ARRAY_AGG(id ORDER BY parentId, parentId DESC, id)
+                FROM warehouse;
+                  array
+                ----------
+                 { 3, 1, 5, 10, 20, 30 }
+                (1 row)
+                
+                SELECT ARRAY_AGG(id ORDER BY parentId, id DESC)
+                FROM warehouse;
+                  array
+                ----------
+                 { 3, 5, 1, 30, 20, 10 }
+                (1 row)""");
+    }
+
+    @Test
     public void nullTumble() {
         this.compileRustTestCase("""
                 create table PRICE (ts TIMESTAMP);
@@ -177,6 +224,25 @@ public class AggregateTests extends SqlIoTest {
                  20 | { 3, 5, 20 }
                  30 | { 3, 5, 20 }
                 (6 rows)""");
+
+        this.qs("""
+                SELECT
+                  id,
+                  (SELECT ARRAY(
+                    SELECT id FROM warehouse WHERE parentId = warehouse.id
+                    LIMIT 2
+                  )) AS first_children
+                FROM warehouse;
+                 id |  array
+                ---------------
+                 1  | { 3, 5 }
+                 3  | { 3, 5 }
+                 5  | { 3, 5 }
+                 10 | { 3, 5 }
+                 20 | { 3, 5 }
+                 30 | { 3, 5 }
+                (6 rows)""");
+
     }
 
     @Test

@@ -60,6 +60,22 @@ public class IncrementalRegressionTests extends SqlIoTest {
     }
 
     @Test
+    public void issue4447() {
+        var ccs = this.getCCS("""
+            CREATE TABLE TT(id INT, pid INT);
+            CREATE VIEW V AS SELECT ARRAY_AGG(id ORDER BY pid) FROM TT;""");
+        ccs.step("INSERT INTO TT VALUES(10, 10);", """
+                 array  | weight
+                ----------------
+                 { 10 } | 1""");
+        ccs.step("INSERT INTO TT VALUES(5, 5);", """
+                 array  | weight
+                ----------------
+                 { 10 } | -1
+                 { 5, 10 } | 1""");
+    }
+
+    @Test
     public void internalIssue143() {
         this.compileRustTestCase("""
                 CREATE TABLE T(x INT);

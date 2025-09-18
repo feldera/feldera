@@ -1,6 +1,7 @@
 // Array operations
 
 use crate::{some_function2, ConcatSemigroup, Semigroup, Weight};
+use dbsp::CmpFunc;
 use itertools::Itertools;
 use std::{collections::HashSet, fmt::Debug, hash::Hash, sync::Arc};
 
@@ -14,6 +15,25 @@ pub fn to_array<T>(data: Vec<T>) -> Array<T> {
 #[doc(hidden)]
 pub fn to_arrayN<T>(data: Option<Vec<T>>) -> Option<Array<T>> {
     data.map(|data| to_array(data))
+}
+
+#[doc(hidden)]
+pub fn sort_to_array<F, G, T, D>(mut data: Vec<T>, _cmp: F, proj: G) -> Array<D>
+where
+    F: CmpFunc<T>,
+    G: FnMut(T) -> D,
+{
+    data.sort_unstable_by(|a, b| F::cmp(a, b));
+    Arc::new(data.into_iter().map(proj).collect::<Vec<D>>())
+}
+
+#[doc(hidden)]
+pub fn sort_to_arrayN<F, G, T, D>(data: Option<Vec<T>>, cmp: F, proj: G) -> Option<Array<D>>
+where
+    F: CmpFunc<T>,
+    G: FnMut(T) -> D,
+{
+    data.map(|data| sort_to_array(data, cmp, proj))
 }
 
 /// Convert a SQL array to a Rust Vec

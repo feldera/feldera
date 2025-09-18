@@ -38,6 +38,9 @@ import org.dbsp.util.IIndentStream;
 public final class DBSPNoComparatorExpression extends DBSPComparatorExpression {
     public final DBSPType tupleType;
 
+    /** Create a comparator that compares no fields
+     * @param tupleType Type of the data that is being compared.
+     */
     public DBSPNoComparatorExpression(CalciteObject node, DBSPType tupleType) {
         super(node, DBSPComparatorType.generateType(tupleType));
         this.tupleType = tupleType;
