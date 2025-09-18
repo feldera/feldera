@@ -6,7 +6,6 @@ Uses pytest-xdist hooks to ensure OIDC token fetching happens only once on the m
 """
 
 import pytest
-import os
 
 
 def is_master(config) -> bool:
@@ -14,13 +13,12 @@ def is_master(config) -> bool:
     return not hasattr(config, "workerinput")
 
 
-
-
 def pytest_configure(config):
     """Configure hook: fetch OIDC token on master node only."""
     if is_master(config):
         # This runs only on the master node (or in single-node mode)
         from feldera.testutils_oidc import setup_token_cache
+
         token_data = setup_token_cache()
         if token_data:
             print("🔐 AUTH: Master node cached OIDC token for distribution to workers")
@@ -46,7 +44,7 @@ def oidc_token_fixture(request):
     in environment variables for cross-process access.
     """
     from feldera.testutils_oidc import get_cached_token_from_env
-    
+
     # Token is accessed via environment variable - this fixture just verifies setup
     token_data = get_cached_token_from_env()
     if token_data:
