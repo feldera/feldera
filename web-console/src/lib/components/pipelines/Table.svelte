@@ -7,7 +7,7 @@
   } from '$lib/services/pipelineManager'
   import { type Snippet } from 'svelte'
   import ThSort from '$lib/components/pipelines/table/ThSort.svelte'
-  import { useElapsedTime } from '$lib/functions/format'
+  import { formatDateTime, useElapsedTime } from '$lib/functions/format'
   import { dateMax } from '$lib/functions/common/date'
   import { match } from 'ts-pattern'
   import { Tooltip } from '$lib/components/common/Tooltip.svelte'
@@ -108,6 +108,9 @@
         <ThSort {table} class="px-1 py-1 " field="lastStatusSince"
           ><span class="text-base font-normal text-surface-950-50">Status changed</span></ThSort
         >
+        <ThSort {table} class="px-1 py-1 " field="lastStatusSince"
+          ><span class="text-base font-normal text-surface-950-50">Deployed on</span></ThSort
+        >
       </tr>
     </thead>
     <tbody>
@@ -164,6 +167,13 @@
           <td class="relative w-28 border-surface-100-900 group-hover:bg-surface-50-950">
             <div class="w-32 text-nowrap text-right">
               {formatElapsedTime(pipeline.lastStatusSince, 'dhm')} ago
+            </div>
+          </td>
+          <td class="relative w-40 border-surface-100-900 group-hover:bg-surface-50-950">
+            <div class="text-nowrap pr-1 text-right">
+              {pipeline.deploymentResourcesStatus === 'Provisioned'
+                ? formatDateTime(pipeline.deploymentResourcesStatusSince)
+                : ''}
             </div>
           </td>
         </tr>

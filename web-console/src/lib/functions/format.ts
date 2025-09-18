@@ -19,3 +19,7 @@ export const useElapsedTime = () => {
   }
   return { formatElapsedTime }
 }
+
+export const formatDateTime = (timestamp: Date | { ms: number }) => {
+  return Dayjs('ms' in timestamp ? timestamp.ms : timestamp).format('MMM D, YYYY h:mm A')
+}
