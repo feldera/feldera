@@ -1,5 +1,6 @@
 use super::error::BackoffError;
 use feldera_types::{program_schema::Relation, transport::postgres::PostgresWriterConfig};
+use itertools::Itertools;
 use postgres::Statement;
 
 #[derive(Debug, Default)]
@@ -24,11 +25,7 @@ impl RawQueries {
             let on_conflict = if config.on_conflict_do_nothing {
                 " DO NOTHING".to_owned()
             } else {
-                let keys = keys
-                    .iter()
-                    .map(|k| k.as_str())
-                    .collect::<Vec<_>>()
-                    .join(", ");
+                let keys = keys.join(", ");
 
                 let columns: String = value_schema
                     .fields
@@ -37,7 +34,6 @@ impl RawQueries {
                         let f = f.name.sql_name();
                         format!(r#" {f} = EXCLUDED.{f} "#)
                     })
-                    .collect::<Vec<_>>()
                     .join(", ");
 
                 format!(" ({keys}) DO UPDATE SET {columns}")
