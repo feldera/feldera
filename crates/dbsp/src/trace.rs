@@ -262,7 +262,9 @@ pub trait Trace: BatchReader {
     fn consolidate(self) -> Option<Self::Batch>;
 
     /// Introduces a batch of updates to the trace.
-    fn insert(&mut self, batch: Self::Batch);
+    fn insert(&mut self, batch: Self::Batch) {
+        self.insert_arc(Arc::new(batch))
+    }
 
     /// Introduces a batch of updates to the trace. More efficient that cloning
     /// a batch and calling `insert`.

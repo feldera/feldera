@@ -135,19 +135,7 @@ where
     B: Batch,
 {
     async fn eval(&mut self, batch: &B) -> Option<Spine<B>> {
-        self.input_batch_stats.add_batch(batch.len());
-
-        self.state.insert(batch.clone());
-        if self.flush {
-            self.flush = false;
-            let mut spine = Spine::<B>::new(&self.factories);
-            std::mem::swap(&mut self.state, &mut spine);
-
-            self.output_batch_stats.add_batch(spine.len());
-            Some(spine)
-        } else {
-            None
-        }
+        self.eval_owned(batch.clone()).await
     }
 
     async fn eval_owned(&mut self, batch: B) -> Option<Spine<B>> {

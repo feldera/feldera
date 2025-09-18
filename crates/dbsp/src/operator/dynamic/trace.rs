@@ -739,10 +739,8 @@ where
     }
 
     #[trace]
-    async fn eval_owned_and_ref(&mut self, mut trace: T, batch: &T::Batch) -> T {
-        self.num_inputs += batch.len();
-        trace.insert(batch.clone());
-        trace
+    async fn eval_owned_and_ref(&mut self, trace: T, batch: &T::Batch) -> T {
+        self.eval_owned(trace, batch.clone()).await
     }
 
     async fn eval_ref_and_owned(&mut self, _trace: &T, _batch: T::Batch) -> T {
