@@ -158,7 +158,7 @@ impl PostgresOutputEndpoint {
             ))?;
 
         let prepared_statements =
-            PreparedStatements::new(&key_schema, value_schema, &config, &mut client).map_err(
+            PreparedStatements::new(&key_schema, value_schema, config, &mut client).map_err(
                 |e| ControllerError::output_transport_error(endpoint_name, true, e.inner()),
             )?;
 
