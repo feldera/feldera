@@ -28,6 +28,7 @@ dependencies = [
     "numpy>=2.2.4",
     "pretty-errors",
     "ruff>=0.6.9",
+    "PyJWT>=2.8.0",
 ]
 [project.urls]
 Homepage = "https://www.feldera.com"
@@ -44,7 +45,6 @@ dev-dependencies = [
     "sphinx-rtd-theme==2.0.0",
     "sphinx==7.3.7",
     "simplejson==3.20.1",
-    "PyJWT>=2.8.0",
 ]
 
 [tool.pytest.ini_options]
