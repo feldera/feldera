@@ -20,10 +20,6 @@ BASE_URL = (
     or os.environ.get("FELDERA_BASE_URL")
     or "http://localhost:8080"
 )
-KAFKA_SERVER = os.environ.get("FELDERA_KAFKA_SERVER", "localhost:19092")
-PIPELINE_TO_KAFKA_SERVER = os.environ.get(
-    "FELDERA_PIPELINE_TO_KAFKA_SERVER", "redpanda:9092"
-)
 FELDERA_TLS_INSECURE = True if os.environ.get("FELDERA_TLS_INSECURE") else False
 FELDERA_HTTPS_TLS_CERT = os.environ.get("FELDERA_HTTPS_TLS_CERT")
 if not FELDERA_TLS_INSECURE and FELDERA_HTTPS_TLS_CERT is not None:
