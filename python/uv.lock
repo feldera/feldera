@@ -143,6 +143,7 @@ dependencies = [
     { name = "numpy", version = "2.3.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "pandas" },
     { name = "pretty-errors" },
+    { name = "pyjwt" },
     { name = "requests" },
     { name = "ruff" },
     { name = "typing-extensions" },
@@ -151,7 +152,6 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "kafka-python-ng" },
-    { name = "pyjwt" },
     { name = "pytest" },
     { name = "pytest-timeout" },
     { name = "pytest-xdist" },
@@ -165,6 +165,7 @@ requires-dist = [
     { name = "numpy", specifier = ">=2.2.4" },
     { name = "pandas", specifier = ">=2.1.2" },
     { name = "pretty-errors" },
+    { name = "pyjwt", specifier = ">=2.8.0" },
     { name = "requests" },
     { name = "ruff", specifier = ">=0.6.9" },
     { name = "typing-extensions" },
@@ -173,7 +174,6 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [
     { name = "kafka-python-ng", specifier = "==2.2.2" },
-    { name = "pyjwt", specifier = ">=2.8.0" },
     { name = "pytest", specifier = ">=8.3.5" },
     { name = "pytest-timeout", specifier = ">=2.3.1" },
     { name = "pytest-xdist", specifier = ">=3.8.0" },
