@@ -50,28 +50,7 @@ public class LeadLagAggregates extends WindowAggregates {
         AggregateCall lastCall = Utilities.last(this.aggregateCalls);
         SqlKind kind = lastCall.getAggregation().getKind();
         int offset = kind == SqlKind.LEAD ? -1 : +1;
-        OutputPort inputIndexed;
-
-        if (!lastOperator.is(DBSPDeindexOperator.class)) {
-            DBSPType inputRowType = lastOperator.getOutputZSetElementType();
-            DBSPVariablePath firstInputVar = inputRowType.ref().var();
-            List<DBSPExpression> expressions = Linq.map(this.partitionKeys,
-                    f -> firstInputVar.deref().field(f).applyCloneIfNeeded());
-            DBSPTupleExpression partition = new DBSPTupleExpression(this.node, expressions);
-            // Map each row to an expression of the form: |t| (partition, (*t).clone()))
-            DBSPExpression row = DBSPTupleExpression.flatten(
-                    firstInputVar.deref().applyClone());
-            DBSPExpression mapExpr = new DBSPRawTupleExpression(partition, row);
-            DBSPClosureExpression mapClo = mapExpr.closure(firstInputVar);
-            DBSPSimpleOperator index = new DBSPMapIndexOperator(this.node, mapClo,
-                    TypeCompiler.makeIndexedZSet(
-                            partition.getType(), row.getType()), lastOperator.outputPort());
-            this.compiler.addOperator(index);
-            inputIndexed = index.outputPort();
-        } else {
-            // avoid a deindex->index chain which does nothing
-            inputIndexed = lastOperator.inputs.get(0);
-        }
+        OutputPort inputIndexed = this.indexInput(lastOperator);
 
         // This operator is always incremental, so create the non-incremental version
         // of it by adding a Differentiator and an Integrator around it.
@@ -167,11 +146,7 @@ public class LeadLagAggregates extends WindowAggregates {
 
         DBSPIntegrateOperator integral = new DBSPIntegrateOperator(node, lag.outputPort());
         this.compiler.addOperator(integral);
-
-        CalciteRelNode n = node;
-        if (isLast)
-            n = node.getFinal();
-        return new DBSPDeindexOperator(n, integral.outputPort());
+        return new DBSPDeindexOperator(node.maybeFinal(isLast), integral.outputPort());
     }
 
     @Override

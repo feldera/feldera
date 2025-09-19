@@ -22,7 +22,6 @@ import org.dbsp.sqlCompiler.compiler.frontend.CalciteToDBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.ExpressionCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.TypeCompiler;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Simplify;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.IsNumericLiteral;
@@ -346,10 +345,7 @@ public class RangeAggregates extends WindowAggregates {
             DBSPTupleExpression addExtraFieldBody = new DBSPTupleExpression(allFields);
             DBSPClosureExpression addExtraField =
                     addExtraFieldBody.closure(key, left, right);
-            CalciteRelNode n = node;
-            if (isLast)
-                n = node.getFinal();
-            return new DBSPStreamJoinOperator(n, TypeCompiler.makeZSet(addExtraFieldBody.getType()),
+            return new DBSPStreamJoinOperator(node.maybeFinal(isLast), TypeCompiler.makeZSet(addExtraFieldBody.getType()),
                     addExtraField, indexInput.isMultiset || windowAgg.isMultiset,
                     indexInput.outputPort(), integral.outputPort());
         }
