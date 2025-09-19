@@ -12,6 +12,7 @@ from queue import Queue
 
 from feldera.rest.errors import FelderaAPIError
 from feldera.enums import (
+    PipelineFieldSelector,
     PipelineStatus,
     ProgramStatus,
     CheckpointStatus,
@@ -60,14 +61,16 @@ class Pipeline:
                 # block until the callback runner is ready
                 queue.join()
 
-    def refresh(self):
+    def refresh(self, field_selector: PipelineFieldSelector):
         """
         Calls the backend to get the updated, latest version of the pipeline.
+
+        :param field_selector: Choose what pipeline information to refresh; see PipelineFieldSelector enum definition.
 
         :raises FelderaConnectionError: If there is an issue connecting to the backend.
         """
 
-        self._inner = self.client.get_pipeline(self.name)
+        self._inner = self.client.get_pipeline(self.name, field_selector)
 
     def status(self) -> PipelineStatus:
         """
@@ -75,7 +78,7 @@ class Pipeline:
         """
 
         try:
-            self.refresh()
+            self.refresh(PipelineFieldSelector.STATUS)
             return PipelineStatus.from_str(self._inner.deployment_status)
 
         except FelderaAPIError as err:
@@ -124,7 +127,7 @@ class Pipeline:
 
         ensure_dataframe_has_columns(df)
 
-        pipeline = self.client.get_pipeline(self.name)
+        pipeline = self.client.get_pipeline(self.name, PipelineFieldSelector.ALL)
         if table_name.lower() != "now" and table_name.lower() not in [
             tbl.name.lower() for tbl in pipeline.tables
         ]:
@@ -672,7 +675,7 @@ metrics"""
         """
 
         try:
-            inner = client.get_pipeline(name)
+            inner = client.get_pipeline(name, PipelineFieldSelector.ALL)
             return Pipeline._from_inner(inner, client)
         except FelderaAPIError as err:
             if err.status_code == 404:
@@ -948,7 +951,7 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
         Return the program SQL code of the pipeline.
         """
 
-        self.refresh()
+        self.refresh(PipelineFieldSelector.ALL)
         return self._inner.program_code
 
     def modify(
@@ -988,7 +991,7 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
         Return the storage status of the pipeline.
         """
 
-        self.refresh()
+        self.refresh(PipelineFieldSelector.STATUS)
         return StorageStatus.from_str(self._inner.storage_status)
 
     def program_status(self) -> ProgramStatus:
@@ -1000,7 +1003,7 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
         Rust code to a binary.
         """
 
-        self.refresh()
+        self.refresh(PipelineFieldSelector.STATUS)
         return ProgramStatus.from_value(self._inner.program_status)
 
     def program_status_since(self) -> datetime:
@@ -1008,7 +1011,7 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
         Return the timestamp when the current program status was set.
         """
 
-        self.refresh()
+        self.refresh(PipelineFieldSelector.STATUS)
         return datetime.fromisoformat(self._inner.program_status_since)
 
     def udf_rust(self) -> str:
@@ -1016,7 +1019,7 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
         Return the Rust code for UDFs.
         """
 
-        self.refresh()
+        self.refresh(PipelineFieldSelector.ALL)
         return self._inner.udf_rust
 
     def udf_toml(self) -> str:
@@ -1024,7 +1027,7 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
         Return the Rust dependencies required by UDFs (in the TOML format).
         """
 
-        self.refresh()
+        self.refresh(PipelineFieldSelector.ALL)
         return self._inner.udf_toml
 
     def program_config(self) -> Mapping[str, Any]:
@@ -1032,7 +1035,7 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
         Return the program config of the pipeline.
         """
 
-        self.refresh()
+        self.refresh(PipelineFieldSelector.ALL)
         return self._inner.program_config
 
     def runtime_config(self) -> RuntimeConfig:
@@ -1040,7 +1043,7 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
         Return the runtime config of the pipeline.
         """
 
-        self.refresh()
+        self.refresh(PipelineFieldSelector.ALL)
         return RuntimeConfig.from_dict(self._inner.runtime_config)
 
     def set_runtime_config(self, runtime_config: RuntimeConfig):
@@ -1065,7 +1068,7 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
         Return the ID of the pipeline.
         """
 
-        self.refresh()
+        self.refresh(PipelineFieldSelector.STATUS)
         return self._inner.id
 
     def description(self) -> str:
@@ -1073,7 +1076,7 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
         Return the description of the pipeline.
         """
 
-        self.refresh()
+        self.refresh(PipelineFieldSelector.STATUS)
         return self._inner.description
 
     def tables(self) -> List[SQLTable]:
@@ -1081,7 +1084,7 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
         Return the tables of the pipeline.
         """
 
-        self.refresh()
+        self.refresh(PipelineFieldSelector.ALL)
         return self._inner.tables
 
     def views(self) -> List[SQLView]:
@@ -1089,7 +1092,7 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
         Return the views of the pipeline.
         """
 
-        self.refresh()
+        self.refresh(PipelineFieldSelector.ALL)
         return self._inner.views
 
     def created_at(self) -> datetime:
@@ -1097,7 +1100,7 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
         Return the creation time of the pipeline.
         """
 
-        self.refresh()
+        self.refresh(PipelineFieldSelector.STATUS)
         return datetime.fromisoformat(self._inner.created_at)
 
     def version(self) -> int:
@@ -1105,7 +1108,7 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
         Return the version of the pipeline.
         """
 
-        self.refresh()
+        self.refresh(PipelineFieldSelector.STATUS)
         return self._inner.version
 
     def program_version(self) -> int:
@@ -1113,7 +1116,7 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
         Return the program version of the pipeline.
         """
 
-        self.refresh()
+        self.refresh(PipelineFieldSelector.STATUS)
         return self._inner.program_version
 
     def deployment_status_since(self) -> datetime:
@@ -1122,7 +1125,7 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
         was set.
         """
 
-        self.refresh()
+        self.refresh(PipelineFieldSelector.STATUS)
         return datetime.fromisoformat(self._inner.deployment_status_since)
 
     def deployment_config(self) -> Mapping[str, Any]:
@@ -1130,7 +1133,7 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
         Return the deployment config of the pipeline.
         """
 
-        self.refresh()
+        self.refresh(PipelineFieldSelector.ALL)
         return self._inner.deployment_config
 
     def deployment_desired_status(self) -> DeploymentDesiredStatus:
@@ -1139,7 +1142,7 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
         This is the next state that the pipeline should transition to.
         """
 
-        self.refresh()
+        self.refresh(PipelineFieldSelector.STATUS)
         return DeploymentDesiredStatus.from_str(self._inner.deployment_desired_status)
 
     def deployment_resources_desired_status(self) -> DeploymentResourcesDesiredStatus:
@@ -1147,7 +1150,7 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
         Return the desired status of the the deployment resources.
         """
 
-        self.refresh()
+        self.refresh(PipelineFieldSelector.STATUS)
         return DeploymentResourcesDesiredStatus.from_str(
             self._inner.deployment_resources_desired_status
         )
@@ -1157,7 +1160,7 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
         Return the status of the deployment resources.
         """
 
-        self.refresh()
+        self.refresh(PipelineFieldSelector.STATUS)
         return DeploymentResourcesStatus.from_str(
             self._inner.deployment_resources_status
         )
@@ -1167,7 +1170,7 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
         Return the deployment runtime desired status.
         """
 
-        self.refresh()
+        self.refresh(PipelineFieldSelector.STATUS)
         return DeploymentRuntimeDesiredStatus.from_str(
             self._inner.deployment_runtime_desired_status
         )
@@ -1177,7 +1180,7 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
         Return the deployment runtime status.
         """
 
-        self.refresh()
+        self.refresh(PipelineFieldSelector.STATUS)
         return DeploymentRuntimeStatus.from_str(self._inner.deployment_runtime_status)
 
     def deployment_error(self) -> Mapping[str, Any]:
@@ -1186,7 +1189,7 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
         Returns an empty string if there is no error.
         """
 
-        self.refresh()
+        self.refresh(PipelineFieldSelector.STATUS)
         return self._inner.deployment_error
 
     def deployment_location(self) -> str:
@@ -1196,7 +1199,7 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
         at runtime (a TCP port number or a URI).
         """
 
-        self.refresh()
+        self.refresh(PipelineFieldSelector.STATUS)
         return self._inner.deployment_location
 
     def program_info(self) -> Mapping[str, Any]:
@@ -1207,7 +1210,7 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
         and the SQL program schema.
         """
 
-        self.refresh()
+        self.refresh(PipelineFieldSelector.ALL)
         return self._inner.program_info
 
     def program_error(self) -> Mapping[str, Any]:
@@ -1217,7 +1220,7 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
         `sql_compilation` and `rust_compilation` will be 0.
         """
 
-        self.refresh()
+        self.refresh(PipelineFieldSelector.ALL)
         return self._inner.program_error
 
     def errors(self) -> List[Mapping[str, Any]]:
