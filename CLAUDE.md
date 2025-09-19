@@ -9211,3 +9211,48 @@ Web Console is a dasboard UI app deployed as a static website that is served by 
 <!-- SECTION:web-console/CLAUDE.md END -->
 
 ---
+
+## Context: web-console/src/lib/CLAUDE.md
+<!-- SECTION:web-console/src/lib/CLAUDE.md START -->
+# Web Console Library
+
+## Service Workers
+
+### Authorization Proxy
+
+The web-console uses a Service Worker-based **Authorization Proxy** to enable authenticated file downloads without loading entire files into browser memory.
+
+#### The Problem
+
+Modern web applications face a challenge with authenticated file downloads:
+
+- **Direct anchor downloads** (`<a href="..." download>`) cannot include custom headers like `Authorization: Bearer token`
+- **Fetch API downloads** require loading the entire file into memory as a Blob before triggering download
+- **Large files** (support bundles, exports) can exceed browser memory limits or cause poor performance
+
+#### The Solution
+
+Our Authorization Proxy intercepts download requests in a Service Worker and adds authentication headers transparently:
+
+1. **Client** marks download URLs with ADD_AUTH_HEADER query parameter
+2. **Service Worker** detects the marker and intercepts the request
+3. **Proxy** removes the marker, adds `Authorization` headers, forwards to server
+4. **Browser** receives the authenticated response and streams it directly to disk
+
+#### Benefits
+
+- ✅ **True streaming downloads** - No memory buffering regardless of file size
+- ✅ **Authentication support** - Seamless OIDC token injection
+- ✅ **Graceful fallback** - Falls back to fetch/blob approach when Service Worker unavailable
+- ✅ **Clean URLs** - Server receives clean URLs without proxy markers
+
+#### Implementation
+
+- `$lib/services/serviceWorker/authorizationProxy.ts` - Core proxy logic with dependency injection
+- `$lib/services/serviceWorker/authorizationProxyClient.ts` - Client-side helpers for updating auth headers
+- `$lib/types/serviceWorker.ts` - Shared types and enums
+
+The proxy integrates with the OIDC authentication system to automatically refresh and inject bearer tokens for all marked HTTP requests.
+<!-- SECTION:web-console/src/lib/CLAUDE.md END -->
+
+---

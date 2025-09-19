@@ -13,6 +13,8 @@ import {
   getPipelineStatus,
   getPipelineSupportBundle,
   getPipelineSupportBundleStream,
+  getPipelineSupportBundleUrl,
+  getAuthorizationHeader,
   patchPipeline,
   pipelineLogsStream,
   pipelineTimeSeriesStream,
@@ -30,6 +32,7 @@ import { useToast } from '$lib/compositions/useToastNotification'
 import type { FunctionType } from '$lib/types/common/function'
 import type { NamesInUnion } from '$lib/functions/common/union'
 import { useReactiveWaiter } from './useReactiveWaiter.svelte'
+import { triggerStreamDownload } from '$lib/services/browser'
 
 const networkErrors = ['Failed to fetch', 'Network request failed', 'Timeout']
 const isNetworkError = (e: any): e is TypeError =>
@@ -87,6 +90,16 @@ export const usePipelineManager = () => {
         }
       )
     }
+
+  const downloadPipelineSupportBundle = async (pipelineName: string) => {
+    const url = getPipelineSupportBundleUrl(pipelineName)
+    const headers = {
+      ...(await getAuthorizationHeader()),
+      Accept: 'application/zip'
+    }
+    const fileName = `fda-bundle-${pipelineName}-${new Date().toISOString().replace(/\.\d{3}/, '')}.zip`
+    await triggerStreamDownload(fileName, url, headers)
+  }
 
   return {
     get isNetworkHealthy() {
@@ -153,6 +166,10 @@ export const usePipelineManager = () => {
     getPipelineSupportBundleStream: reportError(
       getPipelineSupportBundleStream,
       (pipelineName) => `Failed to connect to support bundle stream for ${pipelineName} pipeline`
+    ),
+    downloadPipelineSupportBundle: reportError(
+      downloadPipelineSupportBundle,
+      (pipelineName) => `Failed to download support bundle for ${pipelineName} pipeline`
     )
   }
 }

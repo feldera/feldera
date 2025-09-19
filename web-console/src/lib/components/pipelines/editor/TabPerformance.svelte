@@ -23,7 +23,6 @@
     pushAsCircularBuffer
   } from '$lib/functions/pipelines/changeStream'
   import type { TimeSeriesEntry } from '$lib/types/pipelineManager'
-  import { triggerFileDownload } from '$lib/services/browser'
 
   const formatQty = (v: number) => format(',.0f')(v)
 
@@ -344,13 +343,9 @@
         class="btn preset-outlined-surface-200-800"
         onclick={async () => {
           try {
-            const blob = await api.getPipelineSupportBundle(pipelineName)
-            triggerFileDownload(
-              `fda-bundle-${pipelineName}-${new Date().toISOString().replace(/\.\d{3}/, '')}.zip`,
-              blob
-            )
+            await api.downloadPipelineSupportBundle(pipelineName)
           } catch (error) {
-            console.error('Failed to generate support bundle:', error)
+            console.error('Failed to download support bundle:', error)
           }
         }}
       >
