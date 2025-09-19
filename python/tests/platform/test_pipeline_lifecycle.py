@@ -26,7 +26,7 @@ from tests import enterprise_only
 def _wait_for_stopped_with_error(name: str, timeout_s: float = 90.0):
     deadline = time.time() + timeout_s
     while time.time() < deadline:
-        r = get_pipeline(name)
+        r = get_pipeline(name, "status")
         if r.status_code == HTTPStatus.OK:
             obj = r.json()
             if obj.get("deployment_status") == "Stopped":
@@ -142,7 +142,7 @@ def test_pipeline_start_without_compiling(pipeline_name):
     max_deadline = 1800
     deadline = time.time() + max_deadline
     while time.time() < deadline:
-        obj = get_pipeline(pipeline_name).json()
+        obj = get_pipeline(pipeline_name, "status").json()
         status = obj.get("program_status")
         if status not in ("Pending", "CompilingSql"):
             break
@@ -278,7 +278,7 @@ def test_pipeline_clear(pipeline_name):
     assert r.status_code == HTTPStatus.CREATED
     wait_for_program_success(pipeline_name, 1)
 
-    obj = get_pipeline(pipeline_name).json()
+    obj = get_pipeline(pipeline_name, "status").json()
     assert obj.get("storage_status") == "Cleared"
 
     # Calling /clear does not have an effect
@@ -287,7 +287,7 @@ def test_pipeline_clear(pipeline_name):
 
     # Start (becomes InUse)
     start_pipeline(pipeline_name)
-    obj = get_pipeline(pipeline_name).json()
+    obj = get_pipeline(pipeline_name, "status").json()
     assert obj.get("storage_status") == "InUse"
 
     # While running, clear is not possible
@@ -296,13 +296,13 @@ def test_pipeline_clear(pipeline_name):
 
     # Force stop -> still InUse
     stop_pipeline(pipeline_name, force=True)
-    obj = get_pipeline(pipeline_name).json()
+    obj = get_pipeline(pipeline_name, "status").json()
     assert obj.get("storage_status") == "InUse"
 
     # Start then pause
     start_pipeline(pipeline_name)
     pause_pipeline(pipeline_name)
-    obj = get_pipeline(pipeline_name).json()
+    obj = get_pipeline(pipeline_name, "status").json()
     assert obj.get("storage_status") == "InUse"
 
     # Clear while paused -> BAD_REQUEST
@@ -311,7 +311,7 @@ def test_pipeline_clear(pipeline_name):
 
     # Force stop again, it should still be InUse
     stop_pipeline(pipeline_name, force=True)
-    obj = get_pipeline(pipeline_name).json()
+    obj = get_pipeline(pipeline_name, "status").json()
     assert obj.get("storage_status") == "InUse"
 
     # Clear (may go through Clearing then Cleared). Allow two attempts.
@@ -319,7 +319,7 @@ def test_pipeline_clear(pipeline_name):
     assert first.status_code == HTTPStatus.ACCEPTED
     second = clear_pipeline(pipeline_name, wait=True)
     assert second.status_code == HTTPStatus.ACCEPTED
-    assert get_pipeline(pipeline_name).json().get("storage_status") == "Cleared"
+    assert get_pipeline(pipeline_name, "status").json().get("storage_status") == "Cleared"
 
 
 @gen_pipeline_name

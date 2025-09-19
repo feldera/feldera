@@ -63,8 +63,8 @@ def get(path: str, **kw) -> requests.Response:
     return http_request("GET", path, **kw)
 
 
-def get_pipeline(name: str):
-    return get(f"{API_PREFIX}/pipelines/{name}")
+def get_pipeline(name: str, selector: str) -> requests.Response:
+    return get(f"{API_PREFIX}/pipelines/{name}?selector={selector}")
 
 
 def post_no_body(path: str, **kw):
@@ -91,7 +91,7 @@ def wait_for_deployment_status(name: str, desired: str, timeout_s: float = 60.0)
     deadline = time.time() + timeout_s
     last = None
     while time.time() < deadline:
-        r = get_pipeline(name)
+        r = get_pipeline(name, "status")
         if r.status_code != HTTPStatus.OK:
             time.sleep(0.25)
             continue
@@ -160,7 +160,7 @@ def wait_for_cleared_storage(name: str, timeout_s: float = 60.0):
     deadline = time.time() + timeout_s
     last = None
     while time.time() < deadline:
-        r = get_pipeline(name)
+        r = get_pipeline(name, "status")
         if r.status_code != HTTPStatus.OK:
             time.sleep(0.25)
             continue
@@ -182,7 +182,7 @@ def clear_pipeline(name: str, wait: bool = True):
 
 
 def reset_pipeline(name: str):
-    if get_pipeline(name).status_code != HTTPStatus.OK:
+    if get_pipeline(name, "status").status_code != HTTPStatus.OK:
         return
     stop_pipeline(name, force=True)
     clear_pipeline(name)
