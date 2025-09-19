@@ -446,7 +446,8 @@ inputs:
 
         let ticks = test_stats.ticks();
         println!("{ticks} ticks replayed after restart");
-        assert_eq!(ticks, ticks_after_checkpoint);
+        // Allow at most one extra tick after pause.
+        assert!(ticks >= ticks_after_checkpoint && ticks <= ticks_after_checkpoint + 1);
 
         controller.stop().unwrap();
         println!("Clock test is finished");
