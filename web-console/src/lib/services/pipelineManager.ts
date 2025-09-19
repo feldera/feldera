@@ -32,7 +32,8 @@ import {
   type ProgramError,
   type RuntimeDesiredStatus,
   postPipelineResume,
-  postPipelineActivate
+  postPipelineActivate,
+  getPipelineSupportBundle as _getPipelineSupportBundle
 } from '$lib/services/manager'
 export type {
   // PipelineDescr,
@@ -570,3 +571,33 @@ export const getDemos = () =>
       }
     })
   )
+
+export const getPipelineSupportBundle = async (pipeline_name: string) => {
+  const response = await _getPipelineSupportBundle({
+    path: { pipeline_name: encodeURIComponent(pipeline_name) },
+    headers: {
+      Accept: 'application/zip'
+    },
+    parseAs: 'blob'
+  })
+
+  if (response.error) {
+    throw new Error(response.error.message, { cause: response.error })
+  }
+
+  return response.data!
+}
+
+export const getPipelineSupportBundleStream = async (pipelineName: string) => {
+  return streamingFetch(
+    getAuthenticatedFetch(),
+    `${felderaEndpoint}/v0/pipelines/${pipelineName}/support_bundle`,
+    {
+      headers: {
+        Accept: 'application/zip'
+      }
+    },
+    (msg) => new Error(`Failed to download support bundle for ${pipelineName}: \n${msg}`),
+    (e) => new Error(e.details?.error ?? e.message, { cause: e })
+  )
+}
