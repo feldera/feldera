@@ -868,29 +868,30 @@ mod test {
         let limiter = Arc::new(TokenBucketRateLimiter::new(2, Duration::from_millis(600)));
         let key = "threaded_suppress";
 
-        // Burn 2 tokens
-        assert!(matches!(limiter.check(key), RateLimitCheckResult::Allowed));
-        assert!(matches!(limiter.check(key), RateLimitCheckResult::Allowed));
-
         let num_threads = 5;
-
-        // create a barrier that can block a given number of threads.
-        // A barrier will block n-1 threads which call wait()
-        // and then wake up all threads at once when the nth thread calls wait().
         let barrier = Arc::new(Barrier::new(num_threads + 1));
+        let ready_barrier = Arc::new(Barrier::new(num_threads + 1));
 
         let mut handles = vec![];
         for _ in 0..num_threads {
             let limiter = limiter.clone();
             let barrier = barrier.clone();
+            let ready_barrier = ready_barrier.clone();
             handles.push(thread::spawn(move || {
-                // Synchronize thread start so all hit suppressed state before refill
+                // Signal ready
+                ready_barrier.wait();
+                // Wait for main thread to burn tokens
                 barrier.wait();
                 limiter.check(key)
             }));
         }
 
-        // Wait for all threads to be ready, then release them
+        // Wait for all threads to be ready
+        ready_barrier.wait();
+        // Burn 2 tokens immediately before releasing threads
+        assert!(matches!(limiter.check(key), RateLimitCheckResult::Allowed));
+        assert!(matches!(limiter.check(key), RateLimitCheckResult::Allowed));
+        // Release all threads
         barrier.wait();
 
         for res in handles {
