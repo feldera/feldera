@@ -10,6 +10,8 @@ import {
   getPipelines,
   getPipelineStats,
   getPipelineStatus,
+  getPipelineSupportBundle,
+  getPipelineSupportBundleStream,
   patchPipeline,
   pipelineLogsStream,
   pipelineTimeSeriesStream,
@@ -141,6 +143,14 @@ export const usePipelineManager = () => {
       relationIngress,
       (_, tableName) => `Failed to push data to the ${tableName} table`
     ),
-    getDemos: reportError(getDemos, () => `Failed to fetch available demos`)
+    getDemos: reportError(getDemos, () => `Failed to fetch available demos`),
+    getPipelineSupportBundle: reportError(
+      getPipelineSupportBundle,
+      (pipelineName) => `Failed to download support bundle for ${pipelineName} pipeline`
+    ),
+    getPipelineSupportBundleStream: reportError(
+      getPipelineSupportBundleStream,
+      (pipelineName) => `Failed to connect to support bundle stream for ${pipelineName} pipeline`
+    )
   }
 }

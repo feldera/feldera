@@ -23,6 +23,7 @@
     pushAsCircularBuffer
   } from '$lib/functions/pipelines/changeStream'
   import type { TimeSeriesEntry } from '$lib/types/pipelineManager'
+  import { triggerFileDownload } from '$lib/services/browser'
 
   const formatQty = (v: number) => format(',.0f')(v)
 
@@ -161,7 +162,7 @@
     <div>Pipeline is running, but has not reported usage telemetry yet</div>
     {@render pipelineId()}
   </div>
-{:else}<div class="flex h-full flex-col gap-2 overflow-y-auto overflow-x-clip scrollbar">
+{:else}<div class="flex h-full flex-col gap-4 overflow-y-auto overflow-x-clip scrollbar">
     <div class="flex w-full flex-col gap-4">
       <div class="flex flex-wrap gap-4 pt-2">
         <div class="flex flex-col">
@@ -270,71 +271,91 @@
         </div>
       </div>
     </div>
-    <div class="flex flex-wrap gap-4">
-      {#if metrics.current.tables.size}
-        <table class="bg-white-dark table h-min max-w-[1000px] rounded text-base">
-          <thead>
-            <tr>
-              <th class="font-normal text-surface-600-400">Table</th>
-              <th class="!text-end font-normal text-surface-600-400">Ingested records</th>
-              <th class="!text-end font-normal text-surface-600-400">Ingested bytes</th>
-              <th class="!text-end font-normal text-surface-600-400">Parse errors</th>
-              <th class="!text-end font-normal text-surface-600-400">Transport errors</th>
-            </tr>
-          </thead>
-          <tbody>
-            {#each metrics.current.tables.entries() as [relation, stats]}
+    {#if metrics.current.views.size || metrics.current.tables.size}
+      <div class="flex flex-wrap gap-4">
+        {#if metrics.current.tables.size}
+          <table class="bg-white-dark table h-min max-w-[1000px] rounded text-base">
+            <thead>
               <tr>
-                <td>
-                  {relation}
-                </td>
-                <td class="text-end">
-                  {formatQty(stats.total_records)}
-                </td>
-                <td class="text-end">
-                  {humanSize(stats.total_bytes)}
-                </td>
-                <td class="text-end">{formatQty(stats.num_parse_errors)} </td>
-                <td class="text-end">{formatQty(stats.num_transport_errors)} </td>
+                <th class="font-normal text-surface-600-400">Table</th>
+                <th class="!text-end font-normal text-surface-600-400">Ingested records</th>
+                <th class="!text-end font-normal text-surface-600-400">Ingested bytes</th>
+                <th class="!text-end font-normal text-surface-600-400">Parse errors</th>
+                <th class="!text-end font-normal text-surface-600-400">Transport errors</th>
               </tr>
-            {/each}
-          </tbody>
-        </table>
-      {/if}
-      {#if metrics.current.views.size}
-        <table class="bg-white-dark table h-min max-w-[1300px] rounded text-base">
-          <thead>
-            <tr>
-              <th class="font-normal text-surface-600-400">View</th>
-              <th class="!text-end font-normal text-surface-600-400">Transmitted records</th>
-              <th class="!text-end font-normal text-surface-600-400">Transmitted bytes</th>
-              <th class="!text-end font-normal text-surface-600-400">Buffered records</th>
-              <th class="!text-end font-normal text-surface-600-400">Buffered batches</th>
-              <th class="!text-end font-normal text-surface-600-400">Encode errors</th>
-              <th class="!text-end font-normal text-surface-600-400">Transport errors</th>
-            </tr>
-          </thead>
-          <tbody>
-            {#each metrics.current.views.entries() as [relation, stats]}
+            </thead>
+            <tbody>
+              {#each metrics.current.tables.entries() as [relation, stats]}
+                <tr>
+                  <td>
+                    {relation}
+                  </td>
+                  <td class="text-end">
+                    {formatQty(stats.total_records)}
+                  </td>
+                  <td class="text-end">
+                    {humanSize(stats.total_bytes)}
+                  </td>
+                  <td class="text-end">{formatQty(stats.num_parse_errors)} </td>
+                  <td class="text-end">{formatQty(stats.num_transport_errors)} </td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        {/if}
+        {#if metrics.current.views.size}
+          <table class="bg-white-dark table h-min max-w-[1300px] rounded text-base">
+            <thead>
               <tr>
-                <td>
-                  {relation}
-                </td>
-                <td class="text-end">
-                  {formatQty(stats.transmitted_records)}
-                </td>
-                <td class="text-end">
-                  {humanSize(stats.transmitted_bytes)}
-                </td>
-                <td class="text-end">{formatQty(stats.buffered_records)} </td>
-                <td class="text-end">{formatQty(stats.buffered_batches)} </td>
-                <td class="text-end">{formatQty(stats.num_encode_errors)} </td>
-                <td class="text-end">{formatQty(stats.num_transport_errors)} </td>
+                <th class="font-normal text-surface-600-400">View</th>
+                <th class="!text-end font-normal text-surface-600-400">Transmitted records</th>
+                <th class="!text-end font-normal text-surface-600-400">Transmitted bytes</th>
+                <th class="!text-end font-normal text-surface-600-400">Buffered records</th>
+                <th class="!text-end font-normal text-surface-600-400">Buffered batches</th>
+                <th class="!text-end font-normal text-surface-600-400">Encode errors</th>
+                <th class="!text-end font-normal text-surface-600-400">Transport errors</th>
               </tr>
-            {/each}
-          </tbody>
-        </table>
-      {/if}
+            </thead>
+            <tbody>
+              {#each metrics.current.views.entries() as [relation, stats]}
+                <tr>
+                  <td>
+                    {relation}
+                  </td>
+                  <td class="text-end">
+                    {formatQty(stats.transmitted_records)}
+                  </td>
+                  <td class="text-end">
+                    {humanSize(stats.transmitted_bytes)}
+                  </td>
+                  <td class="text-end">{formatQty(stats.buffered_records)} </td>
+                  <td class="text-end">{formatQty(stats.buffered_batches)} </td>
+                  <td class="text-end">{formatQty(stats.num_encode_errors)} </td>
+                  <td class="text-end">{formatQty(stats.num_transport_errors)} </td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        {/if}
+      </div>
+    {/if}
+    <div>
+      <button
+        class="btn preset-outlined-surface-200-800"
+        onclick={async () => {
+          try {
+            const blob = await api.getPipelineSupportBundle(pipelineName)
+            triggerFileDownload(
+              `fda-bundle-${pipelineName}-${new Date().toISOString().replace(/\.\d{3}/, '')}.zip`,
+              blob
+            )
+          } catch (error) {
+            console.error('Failed to generate support bundle:', error)
+          }
+        }}
+      >
+        Download support bundle
+      </button>
     </div>
   </div>
 {/if}
