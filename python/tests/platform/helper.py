@@ -23,6 +23,7 @@ from http import HTTPStatus
 from urllib.parse import quote, quote_plus
 
 from tests import FELDERA_TLS_INSECURE, API_KEY, BASE_URL, unique_pipeline_name
+from feldera.testutils_oidc import get_oidc_test_helper
 
 API_PREFIX = "/v0"
 
@@ -31,8 +32,15 @@ def _base_headers() -> Dict[str, str]:
     headers = {
         "Accept": "application/json",
     }
-    if API_KEY:
+
+    # Try OIDC authentication first, then fall back to API_KEY
+    oidc_helper = get_oidc_test_helper()
+    if oidc_helper is not None:
+        token = oidc_helper.obtain_access_token()
+        headers["Authorization"] = f"Bearer {token}"
+    elif API_KEY:
         headers["Authorization"] = f"Bearer {API_KEY}"
+
     return headers
 
 
@@ -45,11 +53,31 @@ def api_url(fragment: str) -> str:
 def http_request(method: str, path: str, **kwargs) -> requests.Response:
     """
     Low-level request wrapper (no retries). Raises only on network errors.
+
+    Args:
+        method: HTTP method (GET, POST, etc.)
+        path: URL path
+        base_headers: Optional override for base headers. If None (default), uses _base_headers().
+                      If empty dict {}, no base headers are applied (for testing unauthenticated requests).
+        **kwargs: Additional arguments passed to requests.request()
     """
     if not path.startswith("/"):
         path = "/" + path
     url = BASE_URL.rstrip("/") + path
-    headers = kwargs.pop("headers", None) or _base_headers()
+
+    # Allow override of base headers for testing unauthenticated requests
+    base_headers_arg = kwargs.pop("base_headers", None)
+    if base_headers_arg is None:
+        base_headers = _base_headers()  # Default: include auth headers
+    else:
+        base_headers = base_headers_arg  # Override: could be {} for no auth
+
+    custom_headers = kwargs.pop("headers", None) or {}
+    headers = {
+        **base_headers,
+        **custom_headers,
+    }  # Merge, with custom headers taking precedence
+
     # Provide a default timeout to avoid hanging tests.
     timeout = kwargs.pop("timeout", 30)
     kwargs["verify"] = not FELDERA_TLS_INSECURE

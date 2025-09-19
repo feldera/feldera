@@ -24,6 +24,7 @@ import {
   httpOutput,
   getConfig as _getConfig,
   getConfigDemos,
+  getConfigSession as _getConfigSession,
   httpInput,
   type Field,
   type SqlCompilerMessage,
@@ -298,7 +299,9 @@ const mapResponse = <R, T, E extends { message: string }>(
       if (g) {
         return g(response.error)
       }
-      throw new Error(response.error.message, { cause: response.error })
+      throw new Error(response.error.message, {
+        cause: { ...response.error, response: response.response }
+      })
     }
     return f(response.data!)
   })
@@ -430,6 +433,7 @@ export const getAuthConfig = () =>
   mapResponse(getConfigAuthentication({ client: unauthenticatedClient }), (v) => v)
 
 export const getConfig = () => mapResponse(_getConfig(), (v) => v)
+export const getConfigSession = () => mapResponse(_getConfigSession(), (v) => v)
 
 export const getApiKeys = () => mapResponse(listApiKeys(), (v) => v)
 

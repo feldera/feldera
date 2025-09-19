@@ -28,6 +28,9 @@
 
   const { replace } = useSystemMessages()
   useInterval(() => {
+    if (!page.data.feldera) {
+      return
+    }
     replace(/^license_/, getLicenseMessage(page.data.feldera.config, newDate()))
   }, 1000)
 </script>

@@ -2943,6 +2943,14 @@ impl Storage for Mutex<DbModel> {
         panic!("For model-based tests, we generate the TenantID using proptest, as opposed to generating a claim that we then get or create an ID for");
     }
 
+    async fn get_tenant_name(&self, tenant_id: TenantId) -> Result<String, DBError> {
+        let s = self.lock().await;
+        s.tenants
+            .get(&tenant_id)
+            .map(|tenant| tenant.tenant.clone())
+            .ok_or(DBError::UnknownTenant { tenant_id })
+    }
+
     async fn list_api_keys(&self, tenant_id: TenantId) -> DBResult<Vec<ApiKeyDescr>> {
         let s = self.lock().await;
         Ok(s.api_keys
