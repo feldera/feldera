@@ -591,7 +591,7 @@ export const getPipelineSupportBundle = async (pipeline_name: string) => {
 export const getPipelineSupportBundleStream = async (pipelineName: string) => {
   return streamingFetch(
     getAuthenticatedFetch(),
-    `${felderaEndpoint}/v0/pipelines/${pipelineName}/support_bundle`,
+    `${felderaEndpoint}/v0/pipelines/${encodeURIComponent(pipelineName)}/support_bundle`,
     {
       headers: {
         Accept: 'application/zip'
@@ -600,4 +600,20 @@ export const getPipelineSupportBundleStream = async (pipelineName: string) => {
     (msg) => new Error(`Failed to download support bundle for ${pipelineName}: \n${msg}`),
     (e) => new Error(e.details?.error ?? e.message, { cause: e })
   )
+}
+
+export const getPipelineSupportBundleUrl = (pipelineName: string) => {
+  return `${felderaEndpoint}/v0/pipelines/${encodeURIComponent(pipelineName)}/support_bundle`
+}
+
+export const getAuthorizationHeader = async (): Promise<Record<string, string>> => {
+  try {
+    const oidcClient = OidcClient.get()
+    const tokens = await oidcClient.getValidTokenAsync()
+    return {
+      Authorization: `Bearer ${tokens.tokens.accessToken}`
+    }
+  } catch {
+    return {}
+  }
 }

@@ -7,7 +7,7 @@
     usePipelineList,
     useRefreshPipelineList
   } from '$lib/compositions/pipelines/usePipelineList.svelte'
-  import { SvelteKitTopLoader } from 'sveltekit-top-loader'
+  import SvelteKitTopLoader from '$lib/components/common/SvelteKitTopLoader.svelte'
   import { useDrawer } from '$lib/compositions/layout/useDrawer.svelte'
   import ModalDrawer from '$lib/components/layout/ModalDrawer.svelte'
   import NavigationExtras from '$lib/components/layout/NavigationExtras.svelte'
@@ -22,6 +22,7 @@
   import Dayjs from 'dayjs'
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
   import { useToast } from '$lib/compositions/useToastNotification'
+  import { ServiceWorkerMarkers } from '$lib/types/serviceWorker'
 
   const dialog = useGlobalDialog()
 
@@ -67,7 +68,14 @@
   })
 </script>
 
-<SvelteKitTopLoader height={2} color={'rgb(var(--color-primary-500))'} showSpinner={false}
+<SvelteKitTopLoader
+  height={2}
+  color={'rgb(var(--color-primary-500))'}
+  showSpinner={false}
+  ignoreBeforeNavigate={({ to }) =>
+    to?.url?.searchParams?.has(ServiceWorkerMarkers.ADD_AUTH_HEADER) ?? false}
+  ignoreAfterNavigate={({ to }) =>
+    to?.url?.searchParams?.has(ServiceWorkerMarkers.ADD_AUTH_HEADER) ?? false}
 ></SvelteKitTopLoader>
 <div
   class="flex h-full w-full flex-col {api.isNetworkHealthy
