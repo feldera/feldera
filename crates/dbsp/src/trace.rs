@@ -460,10 +460,17 @@ where
         self.len() == 0
     }
 
-    /// A method that returns either true (possibly in the batch) or false
-    /// (definitely not in the batch).
-    fn maybe_contains_key(&self, _hash: u64) -> bool {
-        true
+    /// Returns:
+    ///
+    /// - `Some(true)`: A key that hashes to `hash` might be in the batch.
+    ///
+    /// - `Some(false)`: No key that hashes to `hash` is in the batch.
+    ///
+    /// - `None`: This batch cannot quickly determine whether it contains a key
+    ///   that hashes to `hash`.
+    fn maybe_contains_key(&self, hash: u64) -> Option<bool> {
+        let _ = hash;
+        None
     }
 
     /// Returns a uniform random sample of distincts keys from the batch.
@@ -585,7 +592,7 @@ where
     fn is_empty(&self) -> bool {
         (**self).is_empty()
     }
-    fn maybe_contains_key(&self, hash: u64) -> bool {
+    fn maybe_contains_key(&self, hash: u64) -> Option<bool> {
         (**self).maybe_contains_key(hash)
     }
     fn sample_keys<RG>(&self, rng: &mut RG, sample_size: usize, sample: &mut DynVec<Self::Key>)

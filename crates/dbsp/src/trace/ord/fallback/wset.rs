@@ -294,7 +294,7 @@ where
         }
     }
 
-    fn maybe_contains_key(&self, hash: u64) -> bool {
+    fn maybe_contains_key(&self, hash: u64) -> Option<bool> {
         match &self.inner {
             Inner::Vec(vec) => vec.maybe_contains_key(hash),
             Inner::File(file) => file.maybe_contains_key(hash),

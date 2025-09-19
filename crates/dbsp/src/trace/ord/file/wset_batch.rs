@@ -369,8 +369,8 @@ where
         self.file.cache_stats()
     }
 
-    fn maybe_contains_key(&self, hash: u64) -> bool {
-        self.file.maybe_contains_key(hash)
+    fn maybe_contains_key(&self, hash: u64) -> Option<bool> {
+        Some(self.file.maybe_contains_key(hash))
     }
 
     fn sample_keys<RG>(&self, rng: &mut RG, sample_size: usize, output: &mut DynVec<Self::Key>)
@@ -674,7 +674,7 @@ where
 
     fn seek_key_exact(&mut self, key: &K, hash: Option<u64>) -> bool {
         let hash = hash.unwrap_or_else(|| key.default_hash());
-        if !self.wset.maybe_contains_key(hash) {
+        if self.wset.maybe_contains_key(hash) == Some(false) {
             return false;
         }
         self.seek_key(key);
