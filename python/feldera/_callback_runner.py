@@ -6,6 +6,7 @@ from queue import Queue, Empty
 import pandas as pd
 from feldera import FelderaClient
 from feldera._helpers import dataframe_from_response
+from feldera.enums import PipelineFieldSelector
 
 
 class _CallbackRunnerInstruction(Enum):
@@ -38,7 +39,7 @@ class CallbackRunner(Thread):
         :meta private:
         """
 
-        pipeline = self.client.get_pipeline(self.pipeline_name)
+        pipeline = self.client.get_pipeline(self.pipeline_name, PipelineFieldSelector.ALL)
 
         schemas = pipeline.tables + pipeline.views
         for schema in schemas:

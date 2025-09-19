@@ -7,6 +7,7 @@ from decimal import Decimal
 from typing import Generator, Mapping
 from urllib.parse import quote
 
+from feldera.enums import PipelineFieldSelector
 from feldera.rest.config import Config
 from feldera.rest.feldera_config import FelderaConfig
 from feldera.rest.errors import FelderaTimeoutError, FelderaAPIError
@@ -93,14 +94,15 @@ class FelderaClient:
 
         return FelderaClient(f"http://127.0.0.1:{port}")
 
-    def get_pipeline(self, pipeline_name) -> Pipeline:
+    def get_pipeline(self, pipeline_name: str, field_selector: PipelineFieldSelector) -> Pipeline:
         """
         Get a pipeline by name
 
         :param pipeline_name: The name of the pipeline
+        :param field_selector: Choose what pipeline information to refresh; see PipelineFieldSelector enum definition.
         """
 
-        resp = self.http.get(f"/pipelines/{pipeline_name}")
+        resp = self.http.get(f"/pipelines/{pipeline_name}?selector={field_selector.value}")
 
         return Pipeline.from_dict(resp)
 
@@ -130,12 +132,14 @@ class FelderaClient:
         wait = ["Pending", "CompilingSql", "SqlCompiled", "CompilingRust"]
 
         while True:
-            p = self.get_pipeline(name)
+            p = self.get_pipeline(name, PipelineFieldSelector.STATUS)
             status = p.program_status
 
             if status == "Success":
-                return p
+                return self.get_pipeline(name, PipelineFieldSelector.ALL)
             elif status not in wait:
+                p = self.get_pipeline(name, PipelineFieldSelector.ALL)
+
                 # error handling for SQL compilation errors
                 if status == "SqlError":
                     sql_errors = p.program_error["sql_compilation"]["messages"]
@@ -181,7 +185,7 @@ class FelderaClient:
                         f"transition to '{state}' state"
                     )
 
-            resp = self.get_pipeline(pipeline_name)
+            resp = self.get_pipeline(pipeline_name, PipelineFieldSelector.STATUS)
             status = resp.deployment_status
 
             if status.lower() == state.lower():
@@ -502,7 +506,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         start = time.monotonic()
 
         while time.monotonic() - start < timeout_s:
-            status = self.get_pipeline(pipeline_name).deployment_status
+            status = self.get_pipeline(pipeline_name, PipelineFieldSelector.STATUS).deployment_status
 
             if status == "Stopped":
                 return
@@ -536,7 +540,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         start = time.monotonic()
 
         while time.monotonic() - start < timeout_s:
-            status = self.get_pipeline(pipeline_name).storage_status
+            status = self.get_pipeline(pipeline_name, PipelineFieldSelector.STATUS).storage_status
 
             if status == "Cleared":
                 return

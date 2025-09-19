@@ -9,7 +9,7 @@ import zipfile
 
 from tests.shared_test_pipeline import SharedTestPipeline
 from tests import TEST_CLIENT, enterprise_only
-from feldera.enums import PipelineStatus
+from feldera.enums import PipelineFieldSelector, PipelineStatus
 
 
 class TestPipeline(SharedTestPipeline):
@@ -52,7 +52,7 @@ class TestPipeline(SharedTestPipeline):
         assert self.pipeline.name in [p.name for p in pipelines]
 
     def test_get_pipeline(self):
-        p = TEST_CLIENT.get_pipeline(self.pipeline.name)
+        p = TEST_CLIENT.get_pipeline(self.pipeline.name, PipelineFieldSelector.ALL)
         assert self.pipeline.name == p.name
 
     def test_get_pipeline_config(self):
@@ -586,7 +586,7 @@ class TestPipeline(SharedTestPipeline):
         resources = Resources(config)
         self.pipeline.set_runtime_config(RuntimeConfig(resources=resources))
         self.pipeline.start()
-        got = TEST_CLIENT.get_pipeline(self.pipeline.name).runtime_config["resources"]
+        got = TEST_CLIENT.get_pipeline(self.pipeline.name, PipelineFieldSelector.ALL).runtime_config["resources"]
         assert got == config
 
     def test_support_bundle(self):
