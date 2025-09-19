@@ -27,6 +27,7 @@ in the PostgreSQL table.
 | `verify_hostname`       | boolean | `true`    | True to enable hostname verification when using TLS. True by default.                                                                                                                                                                              |
 | `max_records_in_buffer` | integer |           | The maximum number of records in a single buffer. If not specified, there is no explicit limit on the number of records, but the buffer may still be constrained by `max_buffer_size_bytes`.                                                       |
 | `max_buffer_size_bytes` | integer | `1048576` | The maximum buffer size (in bytes) for a single operation. Buffers for `INSERT`, `UPDATE`, and `DELETE` queries are maintained separately. Default is 1 MiB (`1048576` bytes).                                                                     |
+| `on_conflict_do_nothing` | bool   | `false`   | Specifies how the connector handles conflicts when executing an `INSERT` into a table with a primary key. By default, an existing row with the same key is overwritten. Setting this flag to `true` preserves the existing row and ignores the new insert. <p> This setting does not affect `UPDATE` statements, which always replace the value associated with the key.</p> |
 
 
 [*]: Required fields
