@@ -469,7 +469,6 @@ pub enum PipelineFieldSelector {
     /// - `program_version`
     /// - `program_status`
     /// - `program_status_since`
-    /// - `program_error`
     /// - `deployment_error`
     /// - `refresh_version`
     /// - `storage_status`
