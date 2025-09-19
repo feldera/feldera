@@ -245,6 +245,8 @@ pub trait Trace: BatchReader {
     /// Allocates a new empty trace.
     fn new(factories: &Self::Factories) -> Self;
 
+    fn maybe_contains_hash(&self, hash: u64) -> bool;
+
     /// Sets a compaction frontier, i.e., a timestamp such that timestamps
     /// below the frontier are indistinguishable to DBSP, therefore any `ts`
     /// in the trace can be safely replaced with `ts.join(frontier)` without
