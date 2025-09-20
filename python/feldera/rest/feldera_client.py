@@ -94,7 +94,9 @@ class FelderaClient:
 
         return FelderaClient(f"http://127.0.0.1:{port}")
 
-    def get_pipeline(self, pipeline_name: str, field_selector: PipelineFieldSelector) -> Pipeline:
+    def get_pipeline(
+        self, pipeline_name: str, field_selector: PipelineFieldSelector
+    ) -> Pipeline:
         """
         Get a pipeline by name
 
@@ -102,7 +104,9 @@ class FelderaClient:
         :param field_selector: Choose what pipeline information to refresh; see PipelineFieldSelector enum definition.
         """
 
-        resp = self.http.get(f"/pipelines/{pipeline_name}?selector={field_selector.value}")
+        resp = self.http.get(
+            f"/pipelines/{pipeline_name}?selector={field_selector.value}"
+        )
 
         return Pipeline.from_dict(resp)
 
@@ -506,7 +510,9 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         start = time.monotonic()
 
         while time.monotonic() - start < timeout_s:
-            status = self.get_pipeline(pipeline_name, PipelineFieldSelector.STATUS).deployment_status
+            status = self.get_pipeline(
+                pipeline_name, PipelineFieldSelector.STATUS
+            ).deployment_status
 
             if status == "Stopped":
                 return
@@ -540,7 +546,9 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         start = time.monotonic()
 
         while time.monotonic() - start < timeout_s:
-            status = self.get_pipeline(pipeline_name, PipelineFieldSelector.STATUS).storage_status
+            status = self.get_pipeline(
+                pipeline_name, PipelineFieldSelector.STATUS
+            ).storage_status
 
             if status == "Cleared":
                 return

@@ -586,7 +586,9 @@ class TestPipeline(SharedTestPipeline):
         resources = Resources(config)
         self.pipeline.set_runtime_config(RuntimeConfig(resources=resources))
         self.pipeline.start()
-        got = TEST_CLIENT.get_pipeline(self.pipeline.name, PipelineFieldSelector.ALL).runtime_config["resources"]
+        got = TEST_CLIENT.get_pipeline(
+            self.pipeline.name, PipelineFieldSelector.ALL
+        ).runtime_config["resources"]
         assert got == config
 
     def test_support_bundle(self):

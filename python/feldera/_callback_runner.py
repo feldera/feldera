@@ -39,7 +39,9 @@ class CallbackRunner(Thread):
         :meta private:
         """
 
-        pipeline = self.client.get_pipeline(self.pipeline_name, PipelineFieldSelector.ALL)
+        pipeline = self.client.get_pipeline(
+            self.pipeline_name, PipelineFieldSelector.ALL
+        )
 
         schemas = pipeline.tables + pipeline.views
         for schema in schemas:

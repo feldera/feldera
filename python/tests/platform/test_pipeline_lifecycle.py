@@ -319,7 +319,9 @@ def test_pipeline_clear(pipeline_name):
     assert first.status_code == HTTPStatus.ACCEPTED
     second = clear_pipeline(pipeline_name, wait=True)
     assert second.status_code == HTTPStatus.ACCEPTED
-    assert get_pipeline(pipeline_name, "status").json().get("storage_status") == "Cleared"
+    assert (
+        get_pipeline(pipeline_name, "status").json().get("storage_status") == "Cleared"
+    )
 
 
 @gen_pipeline_name
