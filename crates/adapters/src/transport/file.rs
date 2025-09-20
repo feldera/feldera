@@ -5,9 +5,10 @@ use super::{
 use crate::format::StreamSplitter;
 use crate::{InputBuffer, Parser};
 use anyhow::{bail, Error as AnyError, Result as AnyResult};
+use chrono::Utc;
 use crossbeam::sync::{Parker, Unparker};
 use feldera_adapterlib::format::BufferSize;
-use feldera_adapterlib::transport::{parse_resume_info, Resume};
+use feldera_adapterlib::transport::{parse_resume_info, Resume, Watermark};
 use feldera_types::config::FtModel;
 use feldera_types::program_schema::Relation;
 use feldera_types::transport::file::{FileInputConfig, FileOutputConfig};
@@ -180,6 +181,8 @@ impl FileInputReader {
         let mut extending = false;
         let mut eof = false;
         let mut num_records = 0;
+        let mut timestamp = None;
+
         loop {
             loop {
                 let msg = receiver.try_recv();
@@ -194,6 +197,7 @@ impl FileInputReader {
                         if staged_buffers.is_empty() {
                             staged_buffers.push_back((
                                 parser.stage(std::mem::take(&mut staged_inputs)),
+                                timestamp.unwrap_or_else(Utc::now),
                                 std::mem::take(&mut staged_amt),
                                 staged_hasher.as_ref().map(|h| h.finish()),
                                 staged_range.take().unwrap_or({
@@ -203,7 +207,7 @@ impl FileInputReader {
                             ));
                             staged_hasher = consumer.hasher();
                         }
-                        let (mut staged_buffers, amt, hash, offsets) =
+                        let (mut staged_buffers, timestamp, amt, hash, offsets) =
                             staged_buffers.pop_front().unwrap();
                         let seek = serde_json::to_value(Metadata {
                             offsets: offsets.clone(),
@@ -222,7 +226,7 @@ impl FileInputReader {
                                 }
                             }
                         };
-                        consumer.extended(amt, Some(resume));
+                        consumer.extended(amt, Some(resume), vec![Watermark::new(timestamp, None)]);
                     }
                     Ok(InputReaderCommand::Replay { metadata, .. }) => {
                         let Metadata { offsets } = serde_json_path_to_error::from_value(metadata)?;
@@ -277,6 +281,11 @@ impl FileInputReader {
                 consumer.parse_errors(errors);
 
                 if let Some(buffer) = buffer {
+                    // Set the timestamp we start getting new data to be staged as ingestion timestamp.
+                    if timestamp.is_none() {
+                        timestamp = Some(Utc::now());
+                    }
+
                     let end = splitter.position();
                     let amt = buffer.len();
                     staged_amt += amt;
@@ -293,10 +302,12 @@ impl FileInputReader {
                     if staged_amt.records >= consumer.max_batch_size() {
                         staged_buffers.push_back((
                             parser.stage(std::mem::take(&mut staged_inputs)),
+                            timestamp.unwrap_or_else(Utc::now),
                             std::mem::take(&mut staged_amt),
                             staged_hasher.as_ref().map(|h| h.finish()),
                             staged_range.take().unwrap(),
                         ));
+                        timestamp = None;
                         staged_hasher = consumer.hasher();
                     }
                 }

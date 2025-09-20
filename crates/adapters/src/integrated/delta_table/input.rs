@@ -8,6 +8,7 @@ use anyhow::{anyhow, bail, Error as AnyError, Result as AnyResult};
 use arrow::array::BooleanArray;
 use arrow::datatypes::Schema;
 use arrow::error::ArrowError;
+use chrono::{DateTime, Utc};
 use datafusion::common::arrow::array::{AsArray, RecordBatch};
 use datafusion::datasource::file_format::parquet::ParquetFormat;
 use datafusion::datasource::listing::{
@@ -27,7 +28,7 @@ use deltalake::table::builder::ensure_table_uri;
 use deltalake::table::PeekCommit;
 use deltalake::{datafusion, DeltaTable, DeltaTableBuilder};
 use feldera_adapterlib::format::ParseError;
-use feldera_adapterlib::transport::{parse_resume_info, Resume};
+use feldera_adapterlib::transport::{parse_resume_info, Resume, Watermark};
 use feldera_adapterlib::utils::datafusion::{
     execute_query_collect, execute_singleton_query, timestamp_to_sql_expression,
     validate_sql_expression, validate_timestamp_column,
@@ -304,7 +305,7 @@ impl InputReader for DeltaTableInputReader {
                 let (total, _, resume_info) = self.inner.queue.flush_with_aux_until(stop_at);
                 let resume_status = resume_info
                     .last()
-                    .cloned()
+                    .map(|(_ts, resume_info)| resume_info.clone())
                     .unwrap_or_else(|| self.inner.last_resume_status.lock().unwrap().clone());
                 *self.inner.last_resume_status.lock().unwrap() = resume_status.clone();
 
@@ -314,7 +315,13 @@ impl InputReader for DeltaTableInputReader {
                         seek: serde_json::to_value(delta_resume_info).unwrap(),
                     },
                 };
-                self.inner.consumer.extended(total, Some(resume));
+
+                // We use the same format (DeltaResumeInfo) for resume info and watermark metadata.
+                self.inner.consumer.extended(
+                    total,
+                    Some(resume),
+                    resume_info.into_iter().map(|(timestamp, metadata)| Watermark::new(timestamp, metadata.map(|m|serde_json::to_value(m).unwrap()))).collect(),
+                );
             }
             InputReaderCommand::Disconnect => {
                 let _ = self.sender.send_replace(PipelineState::Terminated);
@@ -528,12 +535,16 @@ impl DeltaTableInputEndpointInner {
             &self.endpoint_name,
         );
 
+        // Use the time when we started reading the snapshot as the ingestion timestamp for the snapshot.
+        let timestamp = Utc::now();
+
         self.execute_snapshot_query(&snapshot_query, "initial snapshot", input_stream, receiver)
             .await;
 
         // Empty buffer to indicate checkpointable state.
         self.queue.push_with_aux(
             (None, Vec::new()),
+            timestamp,
             Some(DeltaResumeInfo::new(
                 Some(table.version()),
                 !self.config.follow(),
@@ -555,6 +566,9 @@ impl DeltaTableInputEndpointInner {
         input_stream: &mut dyn ArrowStream,
         receiver: &mut Receiver<PipelineState>,
     ) {
+        // Use the time when we started reading the snapshot as the ingestion timestamp for the snapshot.
+        let timestamp = Utc::now();
+
         self.read_ordered_snapshot_inner(table, input_stream, receiver)
             .await
             .unwrap_or_else(|e| self.consumer.error(true, e, None));
@@ -562,6 +576,7 @@ impl DeltaTableInputEndpointInner {
         // Empty buffer to indicate checkpointable state.
         self.queue.push_with_aux(
             (None, Vec::new()),
+            timestamp,
             Some(DeltaResumeInfo::new(
                 Some(table.version()),
                 !self.config.follow(),
@@ -765,6 +780,7 @@ impl DeltaTableInputEndpointInner {
                         // Empty buffer to indicate eoi.
                         self.queue.push_with_aux(
                             (None, Vec::new()),
+                            Utc::now(),
                             Some(DeltaResumeInfo::new(Some(new_version), true)),
                         );
 
@@ -1181,34 +1197,41 @@ impl DeltaTableInputEndpointInner {
         let num_parsers = self.config.num_parsers as usize;
 
         // Create a job queue to efficiently parse record batches retrieved by the query.
-        let job_queue =
-            JobQueue::<RecordBatch, (Option<Box<dyn InputBuffer>>, Vec<ParseError>)>::new(
-                num_parsers,
-                move || {
-                    let cdc_delete_filter: Option<Arc<dyn PhysicalExpr>> =
-                        cdc_delete_filter.clone();
-                    let input_stream = input_stream.fork();
+        let job_queue = JobQueue::<
+            (RecordBatch, DateTime<Utc>),
+            (Option<Box<dyn InputBuffer>>, Vec<ParseError>, DateTime<Utc>),
+        >::new(
+            num_parsers,
+            move || {
+                let cdc_delete_filter: Option<Arc<dyn PhysicalExpr>> = cdc_delete_filter.clone();
+                let input_stream = input_stream.fork();
 
-                    Box::new(move |batch| {
-                        Box::pin({
-                            let cdc_delete_filter: Option<Arc<dyn PhysicalExpr>> =
-                                cdc_delete_filter.clone();
-                            let mut input_stream = input_stream.fork();
+                Box::new(move |(batch, timestamp)| {
+                    Box::pin({
+                        let cdc_delete_filter: Option<Arc<dyn PhysicalExpr>> =
+                            cdc_delete_filter.clone();
+                        let mut input_stream = input_stream.fork();
 
-                            async move {
-                                Self::parse_record_batch(
-                                    batch,
-                                    polarity,
-                                    &cdc_delete_filter,
-                                    input_stream.as_mut(),
-                                )
-                                .await
-                            }
-                        })
+                        async move {
+                            let (parsed_buffer, errors) = Self::parse_record_batch(
+                                batch,
+                                polarity,
+                                &cdc_delete_filter,
+                                input_stream.as_mut(),
+                            )
+                            .await;
+                            (parsed_buffer, errors, timestamp)
+                        }
                     })
-                },
-                move |(buffer, errors)| queue.push_with_aux((buffer, errors), None),
-            );
+                })
+            },
+            move |(buffer, errors, timestamp)| {
+                queue.push_with_aux((buffer, errors), timestamp, None)
+            },
+        );
+
+        // Use the timestamp when we start retrieving the next batch as the ingestion timestamp.
+        let mut timestamp = Utc::now();
 
         while let Some(batch) = stream.next().await {
             wait_running(receiver).await;
@@ -1232,7 +1255,10 @@ impl DeltaTableInputEndpointInner {
             };
             // info!("schema: {}", batch.schema());
             num_batches += 1;
-            job_queue.push_job(batch).await;
+
+            // Use the timestamp when the batch was retrieved as the ingestion timestamp.
+            job_queue.push_job((batch, timestamp)).await;
+            timestamp = Utc::now();
         }
 
         job_queue.flush().await
@@ -1294,6 +1320,9 @@ impl DeltaTableInputEndpointInner {
         input_stream: &mut dyn ArrowStream,
         receiver: &mut Receiver<PipelineState>,
     ) {
+        // Use the time when we _started_ reading transaction data as the ingestion timestamp.
+        let timestamp = Utc::now();
+
         if self.config.is_cdc() {
             self.process_cdc_transaction(actions, table, cdc_delete_filter, input_stream, receiver)
                 .await;
@@ -1312,6 +1341,7 @@ impl DeltaTableInputEndpointInner {
         // Empty buffer to indicate checkpointable state.
         self.queue.push_with_aux(
             (None, Vec::new()),
+            timestamp,
             Some(DeltaResumeInfo::new(Some(new_version), false)),
         );
     }

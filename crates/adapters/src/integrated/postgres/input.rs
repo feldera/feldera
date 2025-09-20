@@ -4,7 +4,6 @@ use crate::transport::{
 use crate::{ControllerError, InputConsumer, InputReader, PipelineState, RecordFormat};
 use anyhow::{anyhow, Result as AnyResult};
 use dbsp::circuit::tokio::TOKIO;
-
 use feldera_adapterlib::catalog::{DeCollectionStream, InputCollectionHandle};
 use feldera_adapterlib::format::ParseError;
 use feldera_types::config::FtModel;
@@ -227,6 +226,10 @@ impl PostgresInputEndpointInner {
         let mut last_event_number = 0;
         let mut bytes = 0;
         let mut errors = Vec::new();
+
+        // Set the ingestion timestamp to the time we start reading the next batch.
+        let mut timestamp = Utc::now();
+
         for row in rows {
             let columns = row.columns();
             let mut dynamic_values = serde_json::Map::new();
@@ -396,13 +399,16 @@ impl PostgresInputEndpointInner {
             }
             bytes += value.len();
             if bytes >= 1024 * 1024 * 2 {
-                self.queue.push((input_stream.take_all(), errors));
+                self.queue
+                    .push((input_stream.take_all(), errors), timestamp);
+                timestamp = Utc::now();
                 bytes = 0;
                 errors = Vec::new();
             }
         }
 
-        self.queue.push((input_stream.take_all(), errors));
+        self.queue
+            .push((input_stream.take_all(), errors), timestamp);
         self.consumer.eoi();
     }
 

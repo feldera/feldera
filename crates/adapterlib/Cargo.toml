@@ -36,6 +36,7 @@ xxhash-rust = { workspace = true, features = ["xxh3"] }
 datafusion = { workspace = true }
 thiserror = { workspace = true }
 serde_json_path_to_error = { workspace = true }
+chrono = { workspace = true }
 
 [package.metadata.cargo-machete]
 ignored = ["num-traits"]

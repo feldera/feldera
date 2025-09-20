@@ -1,10 +1,3 @@
-use std::{
-    collections::{BTreeMap, VecDeque},
-    hash::Hasher,
-    sync::Arc,
-    thread,
-};
-
 use super::InputReaderCommand;
 use crate::transport::InputEndpoint;
 use crate::{
@@ -14,10 +7,11 @@ use anyhow::anyhow;
 use anyhow::{bail, Result as AnyResult};
 use async_channel::{bounded, unbounded, Receiver, SendError, Sender};
 use aws_sdk_s3::operation::{get_object::GetObjectOutput, list_objects_v2::ListObjectsV2Error};
+use chrono::{DateTime, Utc};
 use dbsp::circuit::tokio::TOKIO;
 use feldera_adapterlib::{
     format::BufferSize,
-    transport::{parse_resume_info, Resume},
+    transport::{parse_resume_info, Resume, Watermark},
     PipelineState,
 };
 use feldera_types::transport::s3::S3InputConfig;
@@ -26,6 +20,12 @@ use futures::future::join_all;
 #[cfg(test)]
 use mockall::automock;
 use serde::{Deserialize, Serialize};
+use std::{
+    collections::{BTreeMap, VecDeque},
+    hash::Hasher,
+    sync::Arc,
+    thread,
+};
 use tokio::sync::watch::{channel as watch_channel, error::RecvError, Receiver as WatchReceiver};
 use tokio::sync::Mutex;
 use tracing::{error, info_span, Instrument};
@@ -352,6 +352,7 @@ struct QueuedBuffer {
     start_offset: u64,
     end_offset: Option<u64>,
     buffer: Option<Box<dyn InputBuffer>>,
+    timestamp: DateTime<Utc>,
 }
 
 impl S3InputReader {
@@ -570,6 +571,10 @@ impl S3InputReader {
                                     return;
                                 }
 
+                                // Use the time when we start reading the next chunk of the object as the timestamp
+                                // for all buffers derived from this chunk.
+                                let timestamp = Utc::now();
+
                                 match object.body.next().await {
                                     Some(Err(e)) => consumer.error(
                                         false,
@@ -582,6 +587,7 @@ impl S3InputReader {
                                     Some(Ok(bytes)) => splitter.append(&bytes),
                                     None => eoi = true,
                                 };
+
                                 loop {
                                     start_offset = splitter.position();
                                     let Some(chunk) = splitter.next(eoi) else {
@@ -611,6 +617,7 @@ impl S3InputReader {
                                             start_offset,
                                             end_offset: Some(end_offset),
                                             buffer: Some(buffer.unwrap()),
+                                            timestamp,
                                         });
                                     }
                                 }
@@ -622,6 +629,7 @@ impl S3InputReader {
                                 start_offset: splitter.position(),
                                 end_offset: None,
                                 buffer: None,
+                                timestamp: Utc::now(),
                             });
                         }
                         Err(_) => break, // Channel closed
@@ -659,6 +667,8 @@ impl S3InputReader {
                 }) => {
                     let mut total = BufferSize::empty();
                     let mut hasher = consumer.hasher();
+                    let mut watermarks = Vec::new();
+
                     while total.records < consumer.max_batch_size() {
                         let Some(QueuedBuffer {
                             key_index,
@@ -666,6 +676,7 @@ impl S3InputReader {
                             start_offset,
                             end_offset,
                             mut buffer,
+                            timestamp,
                         }) = queue.lock().await.pop_front()
                         else {
                             break;
@@ -683,6 +694,7 @@ impl S3InputReader {
                             prefix.hash(hasher);
                         }
                         prefix.flush();
+                        watermarks.push(Watermark::new(timestamp, None));
 
                         if buffer.is_empty() {
                             partially_processed_keys.update(key_index, end_offset).await;
@@ -696,6 +708,7 @@ impl S3InputReader {
                                 start_offset,
                                 end_offset,
                                 buffer,
+                                timestamp,
                             });
                         }
                     }
@@ -710,6 +723,7 @@ impl S3InputReader {
                             .unwrap(),
                             hasher.map(|h| h.finish()),
                         )),
+                        watermarks,
                     );
                 }
                 Some(InputReaderCommand::Disconnect) | None => return Ok(()),

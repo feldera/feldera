@@ -15,12 +15,13 @@
 //! The connector supports exactly-once FT.
 
 use anyhow::{anyhow, Result as AnyResult};
+use chrono::Utc;
 use dbsp::circuit::tokio::TOKIO;
 use feldera_adapterlib::{
     format::{BufferSize, Parser},
     transport::{
         InputConsumer, InputEndpoint, InputReader, InputReaderCommand, Resume,
-        TransportInputEndpoint,
+        TransportInputEndpoint, Watermark,
     },
     PipelineState,
 };
@@ -222,7 +223,7 @@ impl ClockReader {
                              seek: serde_json::Value::Null,
                              replay: RmpValue::from(now),
                              hash: 0
-                        }));
+                        }), vec![Watermark::new(Utc::now(), None)]);
 
                         // Schedule next tick.
                         next_tick = Some(Self::next_tick_time(&config, &now));

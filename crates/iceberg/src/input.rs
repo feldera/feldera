@@ -822,8 +822,13 @@ impl IcebergInputEndpointInner {
         };
 
         let mut num_batches = 0;
+
+        // Use the timestamp when we start retrieving the next batch as the ingestion timestamp.
+        let mut timestamp = Utc::now();
+
         while let Some(batch) = stream.next().await {
             wait_running(receiver).await;
+
             let batch = match batch {
                 Ok(batch) => batch,
                 Err(e) => {
@@ -852,7 +857,10 @@ impl IcebergInputEndpointInner {
                 },
                 |()| Vec::new(),
             );
-            self.queue.push((input_stream.take_all(), errors));
+            self.queue
+                .push((input_stream.take_all(), errors), timestamp);
+
+            timestamp = Utc::now();
         }
     }
 }

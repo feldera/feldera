@@ -1,9 +1,5 @@
-use std::collections::VecDeque;
-use std::fmt::Display;
-use std::marker::PhantomData;
-use std::sync::Mutex;
-
 use anyhow::{Error as AnyError, Result as AnyResult};
+use chrono::{DateTime, Utc};
 use dyn_clone::DynClone;
 use feldera_types::config::FtModel;
 use feldera_types::program_schema::Relation;
@@ -11,6 +7,10 @@ use rmpv::{ext::Error as RmpDecodeError, Value as RmpValue};
 use serde::de::DeserializeOwned;
 use serde::Deserialize;
 use serde_json::Value as JsonValue;
+use std::collections::VecDeque;
+use std::fmt::Display;
+use std::marker::PhantomData;
+use std::sync::Mutex;
 use tokio::sync::mpsc::error::TryRecvError;
 use tokio::sync::mpsc::UnboundedReceiver;
 use xxhash_rust::xxh3::Xxh3Default;
@@ -273,9 +273,13 @@ pub enum NonFtInputReaderCommand {
 ///
 /// Commonly used by `InputReader` implementations for staging buffers from
 /// worker threads.
+///
+/// The DateTime component of the tuple is the time when data in this buffer
+/// was received from the transport endpoint.  It is used to track the processing
+/// latency in different stages of the pipeline.
 pub struct InputQueue<A = ()> {
     #[allow(clippy::type_complexity)]
-    pub queue: Mutex<VecDeque<(Option<Box<dyn InputBuffer>>, A)>>,
+    pub queue: Mutex<VecDeque<(Option<Box<dyn InputBuffer>>, DateTime<Utc>, A)>>,
     pub consumer: Box<dyn InputConsumer>,
 }
 
@@ -295,13 +299,14 @@ impl<A> InputQueue<A> {
     pub fn push_with_aux(
         &self,
         (buffer, errors): (Option<Box<dyn InputBuffer>>, Vec<ParseError>),
+        timestamp: DateTime<Utc>,
         aux: A,
     ) {
         self.consumer.parse_errors(errors);
         let len = buffer.len();
 
         let mut queue = self.queue.lock().unwrap();
-        queue.push_back((buffer, aux));
+        queue.push_back((buffer, timestamp, aux));
         self.consumer.buffered(len);
 
         // The endpoint pushed an empty buffer. This likely indicates that the accompanying aux data
@@ -320,7 +325,8 @@ impl<A> InputQueue<A> {
     /// since auxiliary data is associated with a whole buffer rather than with
     /// individual records. If the auxiliary data type `A` is `()`, then
     /// [InputQueue<()>::flush] avoids that and so is a better choice.
-    pub fn flush_with_aux(&self) -> (BufferSize, Option<Xxh3Default>, Vec<A>) {
+    #[allow(clippy::type_complexity)]
+    pub fn flush_with_aux(&self) -> (BufferSize, Option<Xxh3Default>, Vec<(DateTime<Utc>, A)>) {
         self.flush_with_aux_until(&|_| false)
     }
 
@@ -335,10 +341,11 @@ impl<A> InputQueue<A> {
     /// since auxiliary data is associated with a whole buffer rather than with
     /// individual records. If the auxiliary data type `A` is `()`, then
     /// [InputQueue<()>::flush] avoids that and so is a better choice.
+    #[allow(clippy::type_complexity)]
     pub fn flush_with_aux_until(
         &self,
         stop_at: &dyn Fn(&A) -> bool,
-    ) -> (BufferSize, Option<Xxh3Default>, Vec<A>) {
+    ) -> (BufferSize, Option<Xxh3Default>, Vec<(DateTime<Utc>, A)>) {
         let mut total = BufferSize::empty();
         let mut hasher = self.consumer.hasher();
         let n = self.consumer.max_batch_size();
@@ -347,7 +354,7 @@ impl<A> InputQueue<A> {
         let mut stop = false;
 
         while !stop && total.records < n {
-            let Some((buffer, aux)) = self.queue.lock().unwrap().pop_front() else {
+            let Some((buffer, timestamp, aux)) = self.queue.lock().unwrap().pop_front() else {
                 break;
             };
 
@@ -360,18 +367,22 @@ impl<A> InputQueue<A> {
             }
 
             stop = stop_at(&aux);
-            consumed_aux.push(aux);
+            consumed_aux.push((timestamp, aux));
         }
 
         // Process any entries with aux data only.
         let mut queue = self.queue.lock().unwrap();
-        while !stop && queue.front().is_some_and(|(buffer, _aux)| buffer.is_none()) {
-            let Some((_buffer, aux)) = queue.pop_front() else {
+        while !stop
+            && queue
+                .front()
+                .is_some_and(|(buffer, _timestamp, _aux)| buffer.is_none())
+        {
+            let Some((_buffer, timestamp, aux)) = queue.pop_front() else {
                 break;
             };
 
             stop = stop_at(&aux);
-            consumed_aux.push(aux);
+            consumed_aux.push((timestamp, aux));
         }
 
         (total, hasher, consumed_aux)
@@ -389,8 +400,12 @@ impl<A> InputQueue<A> {
 impl InputQueue<()> {
     /// Appends `buffer`, if nonempty,` to the queue.  Reports to the controller
     /// that `errors` occurred during parsing.
-    pub fn push(&self, (buffer, errors): (Option<Box<dyn InputBuffer>>, Vec<ParseError>)) {
-        self.push_with_aux((buffer, errors), ())
+    pub fn push(
+        &self,
+        (buffer, errors): (Option<Box<dyn InputBuffer>>, Vec<ParseError>),
+        timestamp: DateTime<Utc>,
+    ) {
+        self.push_with_aux((buffer, errors), timestamp, ())
     }
 
     /// Flushes a batch of records to the circuit and reports to the consumer
@@ -400,23 +415,29 @@ impl InputQueue<()> {
     pub fn queue(&self) {
         let mut total = BufferSize::empty();
         let n = self.consumer.max_batch_size();
+        let mut consumed = Vec::new();
+
         while total.records < n {
-            let Some((buffer, ())) = self.queue.lock().unwrap().pop_front() else {
+            let Some((buffer, timestamp, ())) = self.queue.lock().unwrap().pop_front() else {
                 break;
             };
 
             if let Some(mut buffer) = buffer {
                 let mut taken = buffer.take_some(n - total.records);
                 total += taken.len();
+                consumed.push(Watermark::new(timestamp, None));
                 taken.flush();
                 drop(taken);
                 if !buffer.is_empty() {
-                    self.queue.lock().unwrap().push_front((Some(buffer), ()));
+                    self.queue
+                        .lock()
+                        .unwrap()
+                        .push_front((Some(buffer), timestamp, ()));
                     break;
                 }
             }
         }
-        self.consumer.extended(total, None);
+        self.consumer.extended(total, None, consumed);
     }
 }
 
@@ -457,6 +478,24 @@ pub trait InputReader: Send + Sync {
 
     fn disconnect(&self) {
         self.request(InputReaderCommand::Disconnect);
+    }
+}
+
+/// Position in an input stream, including the timestamp when the data was ingested
+/// from the transport endpoint and transport-specific metadata such as delta table
+/// version or Kafka partition offsets.
+#[derive(Clone, Debug)]
+pub struct Watermark {
+    pub timestamp: DateTime<Utc>,
+    pub metadata: Option<JsonValue>,
+}
+
+impl Watermark {
+    pub fn new(timestamp: DateTime<Utc>, metadata: Option<JsonValue>) -> Self {
+        Self {
+            timestamp,
+            metadata,
+        }
     }
 }
 
@@ -522,7 +561,7 @@ pub trait InputConsumer: Send + Sync + DynClone {
     ///
     /// If the step is one that the input adapter can restart after, or replay,
     /// then it should supply that as `resume` (see [Resume] for details).
-    fn extended(&self, amt: BufferSize, resume: Option<Resume>);
+    fn extended(&self, amt: BufferSize, resume: Option<Resume>, watermarks: Vec<Watermark>);
 
     /// Reports that the endpoint has reached end of input and that no more data
     /// will be received from the endpoint.

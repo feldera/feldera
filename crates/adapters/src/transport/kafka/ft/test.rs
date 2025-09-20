@@ -19,7 +19,7 @@ use crossbeam::sync::{Parker, Unparker};
 use csv::ReaderBuilder as CsvReaderBuilder;
 use dbsp::operator::StagedBuffers;
 use feldera_adapterlib::format::BufferSize;
-use feldera_adapterlib::transport::Resume;
+use feldera_adapterlib::transport::{Resume, Watermark};
 use feldera_types::config::{
     default_max_batch_size, default_max_queued_records, ConnectorConfig, FormatConfig, FtModel,
     InputEndpointConfig, OutputBufferConfig, TransportConfig,
@@ -555,7 +555,7 @@ impl InputConsumer for DummyInputConsumer {
         });
     }
 
-    fn extended(&self, amt: BufferSize, resume: Option<Resume>) {
+    fn extended(&self, amt: BufferSize, resume: Option<Resume>, _watermark: Vec<Watermark>) {
         self.called(ConsumerCall::Extended {
             num_records: amt.records,
             metadata: resume

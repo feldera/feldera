@@ -12,8 +12,9 @@ use anyhow::{anyhow, bail, Result as AnyResult};
 use awc::error::HeaderValue;
 use awc::{http::header::HeaderMap, Client, ClientResponse, Connector};
 use bytes::Bytes;
+use chrono::{DateTime, Utc};
 use feldera_adapterlib::format::BufferSize;
-use feldera_adapterlib::transport::{InputCommandReceiver, Resume};
+use feldera_adapterlib::transport::{InputCommandReceiver, Resume, Watermark};
 use feldera_types::config::FtModel;
 use feldera_types::program_schema::Relation;
 use feldera_types::transport::url::UrlInputConfig;
@@ -335,7 +336,7 @@ impl UrlInputReader {
             consumer.replayed(total, hasher.finish());
         }
 
-        let mut queue = VecDeque::<(Range<u64>, Box<dyn InputBuffer>)>::new();
+        let mut queue = VecDeque::<(Range<u64>, Box<dyn InputBuffer>, DateTime<Utc>)>::new();
 
         // The time at which we will disconnect from the server, if we are
         // paused when this time arrives.
@@ -354,6 +355,10 @@ impl UrlInputReader {
                     Instant::now().checked_add(Duration::from_secs(config.pause_timeout as u64));
             }
             let disconnect: OptionFuture<_> = deadline.map(sleep_until).into();
+
+            // Use timestamp before we start reading data from the stream as ingestion timestamp
+            // for all records derived from the next input chunk.
+            let timestamp = Utc::now();
 
             select! {
                 _ = disconnect, if deadline.is_some() => {
@@ -375,7 +380,9 @@ impl UrlInputReader {
                             let mut hasher = consumer.hasher();
                             let limit = consumer.max_batch_size();
                             let mut range: Option<Range<u64>> = None;
-                            while let Some((offsets, mut buffer)) = queue.pop_front() {
+                            let mut watermarks = Vec::new();
+
+                            while let Some((offsets, mut buffer, timestamp)) = queue.pop_front() {
                                 range = match range {
                                     Some(range) => Some(range.start..offsets.end),
                                     None => Some(offsets),
@@ -385,6 +392,7 @@ impl UrlInputReader {
                                     buffer.hash(hasher);
                                 }
                                 buffer.flush();
+                                watermarks.push(Watermark::new(timestamp, None));
                                 if total.records >= limit {
                                     break;
                                 }
@@ -395,7 +403,7 @@ impl UrlInputReader {
                                         ofs..ofs
                                     }),
                             }).unwrap();
-                            consumer.extended(total, Some(Resume::new_metadata_only(seek, hasher.map(|h| h.finish()))));
+                            consumer.extended(total, Some(Resume::new_metadata_only(seek, hasher.map(|h| h.finish()))), watermarks);
                         }
                         InputReaderCommand::Disconnect => return Ok(()),
                     }
@@ -416,7 +424,7 @@ impl UrlInputReader {
 
                         if let Some(buffer) = buffer {
                             let end = splitter.position();
-                            queue.push_back((start..end, buffer));
+                            queue.push_back((start..end, buffer, timestamp));
                         }
                     }
                     if eof {

@@ -101,6 +101,7 @@ async fn wait_for_output_records<T>(
     table: &mut Arc<DeltaTable>,
     expected_output: &[T],
     datafusion: &SessionContext,
+    timeout_ms: u64,
 ) where
     T: for<'a> DeserializeWithContext<'a, SqlSerdeConfig> + DBData,
 {
@@ -145,7 +146,11 @@ async fn wait_for_output_records<T>(
             break;
         }
 
-        if start.elapsed() > Duration::from_millis(20_000) {
+        if timeout_ms == 0 {
+            panic!("delta table contents does not match expected output");
+        }
+
+        if start.elapsed() >= Duration::from_millis(timeout_ms) {
             panic!("timeout");
         }
 
@@ -309,6 +314,7 @@ inputs:
 }
 
 /// Build a pipeline that reads from a delta table and writes to a delta table.
+#[allow(clippy::too_many_arguments)]
 fn delta_to_delta_pipeline<T>(
     input_table_uri: &str,
     skip_unused_columns: bool,
@@ -753,6 +759,18 @@ async fn test_follow(
         pipeline
     }
 
+    fn completed_version(pipeline: &Controller) -> Option<i64> {
+        pipeline
+            .status()
+            .input_status()
+            .values()
+            .next()
+            .unwrap()
+            .completed_frontier
+            .completed_watermark()
+            .map(|w| w.metadata["version"].as_i64().unwrap())
+    }
+
     init_logging();
 
     let storage_dir = TempDir::new().unwrap();
@@ -833,7 +851,7 @@ async fn test_follow(
 
     // The input connector is paused. Make sure that we can suspend the connector
     // before it started reading the checkpoint.
-    if suspend && suspend {
+    if suspend {
         suspend_pipeline(pipeline).await;
 
         pipeline = start_pipeline(
@@ -865,8 +883,13 @@ async fn test_follow(
         })
         .collect::<Vec<_>>();
 
-    wait_for_output_records::<DeltaTestStruct>(&mut output_table, &expected_output, &datafusion)
-        .await;
+    wait_for_output_records::<DeltaTestStruct>(
+        &mut output_table,
+        &expected_output,
+        &datafusion,
+        20_000,
+    )
+    .await;
 
     // Write remaining data in 10 chunks, wait for it to show up in the output table.
     for chunk in data[split_at..].chunks(std::cmp::max(data[split_at..].len() / 10, 1)) {
@@ -903,15 +926,40 @@ async fn test_follow(
             .await;
         }
 
+        // Test the waterline tracking mechanism.
+        if !suspend {
+            wait(
+                || {
+                    if let Some(version) = completed_version(&pipeline) {
+                        let expected = if test_end_version {
+                            min(input_table.version(), end_version)
+                        } else {
+                            input_table.version()
+                        };
+                        println!("pipeline completed version {version}, expected {expected}");
+                        version == expected
+                    } else {
+                        println!("pipeline completed version: None");
+                        false
+                    }
+                },
+                20_000,
+            )
+            .unwrap();
+        }
+
         // Wait a bit to make sure the pipeline doesn't process data beyond end_version.
         if test_end_version && input_table.version() > end_version {
             sleep(Duration::from_millis(1000)).await;
         }
 
+        // Use timeout of 0: once the pipeline indicates that the completed_version
+        // reached the expected version (see above check), the output table should be up-to-date.
         wait_for_output_records::<DeltaTestStruct>(
             &mut output_table,
             &expected_output,
             &datafusion,
+            if suspend { 200_000 } else { 0 },
         )
         .await;
     }

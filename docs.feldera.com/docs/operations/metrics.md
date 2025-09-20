@@ -138,6 +138,8 @@ invisible to users unless a pause or checkpoint happens mid-batch.
 | `input_connector_errors_parse_total` |counter | Total number of errors encountered parsing records received by the input connector. |
 | `input_connector_errors_transport_total` |counter | Total number of errors encountered by the input connector at the transport layer. |
 | `input_connector_records_total` |counter | Total number of records received by an input connector. |
+| `input_connector_processing_latency_seconds` | histogram | Time elapsed (seconds) between when the connector receives new data and when the pipeline processes this data and computes output updates. The histogram is maintained over at most the last 600 seconds or at most 10,000 samples. This latency includes: (1) parsing the input data, (2) buffering delay while data waits in the connector queue, and (3) processing time in the query engine to evaluate changes and compute outputs. |
+| `input_connector_completion_latency_seconds` | histogram | Time elapsed (seconds) between the connector receives new data and when the pipeline processes this data, computes output updates, and sends these updates to all output connectors. The histogram is maintained over at most the last 600 seconds or at most 10,000 samples. This latency includes `input_connector_processing_latency_seconds` plus the time required for all output connectors to write output updates to their data sinks. |
 
 ## Output Connectors
 

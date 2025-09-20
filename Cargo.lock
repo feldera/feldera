@@ -4736,6 +4736,7 @@ dependencies = [
  "apache-avro 0.18.0",
  "arrow",
  "bytemuck",
+ "chrono",
  "datafusion",
  "dbsp",
  "dyn-clone",
