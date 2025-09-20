@@ -1,6 +1,7 @@
 from enum import Enum
 from typing import Optional
 
+
 class CompilationProfile(Enum):
     """
     The compilation profile to use when compiling the program.
@@ -335,6 +336,7 @@ class FaultToleranceModel(Enum):
         raise ValueError(
             f"Unknown value '{value}' for enum {FaultToleranceModel.__name__}"
         )
+
 
 class PipelineFieldSelector(Enum):
     ALL = "all"

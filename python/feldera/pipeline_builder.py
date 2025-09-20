@@ -60,7 +60,10 @@ class PipelineBuilder:
             raise ValueError("Name and SQL are required to create a pipeline")
 
         try:
-            if self.client.get_pipeline(self.name, PipelineFieldSelector.STATUS) is not None:
+            if (
+                self.client.get_pipeline(self.name, PipelineFieldSelector.STATUS)
+                is not None
+            ):
                 raise RuntimeError(f"Pipeline with name {self.name} already exists")
         except FelderaAPIError as err:
             if err.error_code != "UnknownPipelineName":
