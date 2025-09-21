@@ -768,10 +768,20 @@ impl DeltaTableInputEndpointInner {
                             &mut receiver,
                         )
                         .await;
+
+                        if self.config.end_version == Some(new_version) {
+                            info!(
+                                "delta_table {}: reached table version {} specified as 'end_version' in connector config: stopping the connector",
+                                &self.endpoint_name,
+                                self.config.end_version.unwrap()
+                            );
+                            self.consumer.eoi();
+                            break;
+                        }
                     }
                     Ok(PeekCommit::New(new_version, _actions)) => {
                         info!(
-                            "delta_table {}: reached table version {new_version}, which is greater or equal than the 'end_version' {} specified in connector config: stopping the connector",
+                            "delta_table {}: reached table version {new_version}, which is greater than the 'end_version' {} specified in connector config: stopping the connector",
                             &self.endpoint_name,
                             self.config.end_version.unwrap()
                         );
@@ -781,7 +791,7 @@ impl DeltaTableInputEndpointInner {
                         self.queue.push_with_aux(
                             (None, Vec::new()),
                             Utc::now(),
-                            Some(DeltaResumeInfo::new(Some(new_version), true)),
+                            Some(DeltaResumeInfo::new(None, true)),
                         );
 
                         break;
@@ -1342,7 +1352,10 @@ impl DeltaTableInputEndpointInner {
         self.queue.push_with_aux(
             (None, Vec::new()),
             timestamp,
-            Some(DeltaResumeInfo::new(Some(new_version), false)),
+            Some(DeltaResumeInfo::new(
+                Some(new_version),
+                self.config.end_version == Some(new_version),
+            )),
         );
     }
 
