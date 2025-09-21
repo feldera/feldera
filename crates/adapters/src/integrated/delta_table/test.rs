@@ -936,7 +936,7 @@ async fn test_follow(
                         } else {
                             input_table.version()
                         };
-                        println!("pipeline completed version {version}, expected {expected}");
+                        println!("pipeline completed version {version}, expected {expected}, waterlines: {:?}", pipeline.status().input_status().values().next().unwrap().completed_frontier.debug());
                         version == expected
                     } else {
                         println!("pipeline completed version: None");
