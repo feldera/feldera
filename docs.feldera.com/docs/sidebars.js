@@ -400,7 +400,8 @@ const pipelines = {
         },
         "pipelines/fault-tolerance",
         "pipelines/checkpoint-sync",
-        "pipelines/transactions"
+        "pipelines/transactions",
+        "pipelines/latency",
     ]
 };
 
