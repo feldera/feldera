@@ -769,7 +769,7 @@ impl ControllerStatus {
             .total_completed_records
             .fetch_max(total_completed_records, Ordering::SeqCst);
 
-        if total_completed_records > old {
+        if total_completed_records >= old {
             self.watermarks_update_completed(total_completed_records);
         }
     }
@@ -1564,9 +1564,6 @@ impl WatermarkTrackerInner {
         ts: DateTime<Utc>,
         metrics: &InputEndpointMetrics,
     ) {
-        if self.total_completed_records >= completed_records {
-            return;
-        }
         self.total_completed_records = completed_records;
 
         while let Some(entry) = self.watermark_list.front() {
