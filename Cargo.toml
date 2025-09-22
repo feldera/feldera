@@ -215,7 +215,7 @@ serde_with = "3.0.0"
 serde_yaml = "0.9.34"
 serial_test = "3"
 sha2 = "0.10.8"
-size-of = { version = "0.1.6", features = [
+size-of = { version = "0.1.7", features = [
     "time-std",
     "ordered-float",
 ], package = "feldera-size-of" }
