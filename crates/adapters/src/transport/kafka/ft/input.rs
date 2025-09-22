@@ -21,6 +21,7 @@ use feldera_adapterlib::transport::{
 use feldera_types::config::FtModel;
 use feldera_types::program_schema::Relation;
 use feldera_types::transport::kafka::{KafkaInputConfig, KafkaStartFromConfig};
+use itertools::Itertools;
 use rdkafka::client::OAuthToken;
 use rdkafka::config::RDKafkaLogLevel;
 use rdkafka::consumer::base_consumer::PartitionQueue;
@@ -276,6 +277,45 @@ impl KafkaFtInputReaderInner {
 
                     self.check_offsets(&config, offsets)
                         .map_err(|e| e.into_any_error())?
+                }
+                KafkaStartFromConfig::Timestamp(timestamp) => {
+                    // The partitions that we're reading.
+                    let partitions = config
+                        .partitions
+                        .clone()
+                        .unwrap_or((0..n_partitions as i32).collect());
+
+                    // Assemble a TopicPartitionList with the desired timestamp
+                    // as the "offset" for each partition.
+                    let mut timestamps = TopicPartitionList::new();
+                    for partition in partitions.iter().copied() {
+                        timestamps
+                            .add_partition_offset(&topic, partition, Offset::Offset(*timestamp))
+                            .map_err(|error| self.refine_error(error).1)?;
+                    }
+
+                    // Translate the timestamps to offsets.
+                    let offsets = self
+                        .kafka_consumer
+                        .offsets_for_times(timestamps, METADATA_TIMEOUT)
+                        .map_err(|error| self.refine_error(error).1)?;
+
+                    // Extract the offsets from the returned value.
+                    offsets
+                        .elements()
+                        .into_iter()
+                        .zip_eq(partitions)
+                        .map(|(elem, partition)| {
+                            if elem.partition() == partition {
+                                Ok(elem.offset())
+                            } else {
+                                Err(anyhow!(
+                                    "rdkafka returned partition {} instead of expected {partition}",
+                                    elem.partition()
+                                ))
+                            }
+                        })
+                        .collect::<Result<_, AnyError>>()?
                 }
             },
         };

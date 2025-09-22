@@ -115,6 +115,11 @@ pub enum KafkaStartFromConfig {
     ///
     /// The number of offsets must match the number of partitions in the topic.
     Offsets(Vec<i64>),
+
+    /// Start from a particular timestamp in the topic.
+    ///
+    /// Kafka timestamps are in milliseconds since the epoch.
+    Timestamp(i64),
 }
 
 /// Kafka logging levels.
