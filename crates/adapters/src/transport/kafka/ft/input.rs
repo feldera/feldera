@@ -290,7 +290,7 @@ impl KafkaFtInputReaderInner {
                     let mut timestamps = TopicPartitionList::new();
                     for partition in partitions.iter().copied() {
                         timestamps
-                            .add_partition_offset(&topic, partition, Offset::Offset(*timestamp))
+                            .add_partition_offset(topic, partition, Offset::Offset(*timestamp))
                             .map_err(|error| self.refine_error(error).1)?;
                     }
 
