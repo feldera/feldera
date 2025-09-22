@@ -33,7 +33,7 @@ use feldera_types::transport::kafka::{
 use parquet::data_type::AsBytes;
 use proptest::prelude::*;
 use rdkafka::message::{BorrowedMessage, Header, Headers};
-use rdkafka::Message;
+use rdkafka::{Message, Timestamp};
 use rmpv::Value as RmpValue;
 use serde_json::Value as JsonValue;
 use serde_yaml::Mapping;
@@ -1257,6 +1257,32 @@ fn test_offset(
 ) {
     let _kafka = KafkaResources::create_topics(&[(topic, partitions)]);
 
+    info!("proptest_kafka_input_offset: Building input pipeline");
+
+    let producer = TestProducer::new();
+    let (expected, send_before, mut send_after) = match &start_from {
+        KafkaStartFromConfig::Earliest => (Some(data.as_slice()), Some(data.as_slice()), None),
+        KafkaStartFromConfig::Latest => (Some(data.as_slice()), None, Some(data.as_slice())),
+        KafkaStartFromConfig::Offsets(vec) => {
+            let offset = vec[0] as usize;
+            (data.get(offset..), data.get(..offset), data.get(offset..))
+        }
+        KafkaStartFromConfig::Timestamp(_) => {
+            let half = data.len() / 2;
+            (
+                Some(&data[half..]),
+                Some(&data[..half]),
+                Some(&data[half..]),
+            )
+        }
+    };
+
+    // Front load data if auto.offset.reset: earliest
+    if let Some(send_before) = send_before {
+        producer.send_to_topic(send_before, topic);
+        producer.send_string("", topic);
+    }
+
     let config = InputEndpointConfig {
         stream: Cow::from("test_input"),
         connector_config: ConnectorConfig {
@@ -1266,7 +1292,9 @@ fn test_offset(
                     let auto_offset_reset = match start_from {
                         KafkaStartFromConfig::Earliest => Some("earliest"),
                         KafkaStartFromConfig::Latest => Some("latest"),
-                        KafkaStartFromConfig::Offsets(_) => None,
+                        KafkaStartFromConfig::Offsets(_) | KafkaStartFromConfig::Timestamp(_) => {
+                            None
+                        }
                     };
                     if let Some(auto_offset_reset) = auto_offset_reset {
                         kafka_options.insert("auto.offset.reset".into(), auto_offset_reset.into());
@@ -1279,7 +1307,20 @@ fn test_offset(
                 log_level: Some(KafkaLogLevel::Debug),
                 group_join_timeout_secs: default_group_join_timeout_secs(),
                 poller_threads: None,
-                start_from: start_from.clone(),
+                start_from: match start_from {
+                    KafkaStartFromConfig::Timestamp(_) => {
+                        sleep(Duration::from_secs(2));
+                        let timestamp =
+                            KafkaStartFromConfig::Timestamp(Timestamp::now().to_millis().unwrap());
+                        sleep(Duration::from_secs(2));
+                        if let Some(send_after) = send_after.take() {
+                            producer.send_to_topic(send_after, topic);
+                            producer.send_string("", topic);
+                        }
+                        timestamp
+                    }
+                    other => other,
+                },
                 region: None,
                 partitions: None,
                 resume_earliest_if_data_expires: false,
@@ -1298,20 +1339,6 @@ fn test_offset(
         },
     };
 
-    info!("proptest_kafka_input_offset: Building input pipeline");
-
-    let producer = TestProducer::new();
-    let expected = match &start_from {
-        KafkaStartFromConfig::Earliest | KafkaStartFromConfig::Latest => Some(data.as_slice()),
-        KafkaStartFromConfig::Offsets(vec) => data.get(vec[0] as usize..),
-    };
-
-    // Front load data if auto.offset.reset: earliest
-    if start_from == KafkaStartFromConfig::Earliest {
-        producer.send_to_topic(data.as_slice(), topic);
-        producer.send_string("", topic);
-    }
-
     let (endpoint, consumer, _parser, zset) =
         mock_input_pipeline::<TestStruct, TestStruct>(config, Relation::empty()).unwrap();
 
@@ -1322,8 +1349,8 @@ fn test_offset(
     endpoint.extend();
 
     // If auto.offset.reset: latest, send data after starting the pipeline.
-    if start_from == KafkaStartFromConfig::Latest {
-        producer.send_to_topic(data.as_slice(), topic);
+    if let Some(send_after) = send_after {
+        producer.send_to_topic(send_after, topic);
         producer.send_string("", topic);
     }
 
@@ -1350,6 +1377,26 @@ fn test_offset(
     sleep(Duration::from_millis(1000));
     flush();
     assert_eq!(zset.state().flushed.len(), 0);
+}
+
+#[test]
+fn test_kafka_input_offset() {
+    test_offset(
+        testdata(),
+        "test_kafka_input_offset",
+        1,
+        KafkaStartFromConfig::Offsets(vec![1]),
+    );
+}
+
+#[test]
+fn test_kafka_input_timestamp() {
+    test_offset(
+        testdata2(),
+        "test_kafka_input_timestamp",
+        1,
+        KafkaStartFromConfig::Timestamp(0),
+    );
 }
 
 #[test]
@@ -1403,6 +1450,19 @@ fn testdata() -> Vec<Vec<TestStruct>> {
             },
         ],
     ]
+}
+
+fn testdata2() -> Vec<Vec<TestStruct>> {
+    (0..50)
+        .map(|index| {
+            vec![TestStruct {
+                id: index,
+                b: index >= 25,
+                i: Some(index as i64),
+                s: index.to_string(),
+            }]
+        })
+        .collect()
 }
 
 #[test]
@@ -1673,7 +1733,9 @@ fn test_input_partition(
                     let auto_offset_reset = match start_from {
                         KafkaStartFromConfig::Earliest => Some("earliest"),
                         KafkaStartFromConfig::Latest => Some("latest"),
-                        KafkaStartFromConfig::Offsets(_) => None,
+                        KafkaStartFromConfig::Offsets(_) | KafkaStartFromConfig::Timestamp(_) => {
+                            None
+                        }
                     };
                     if let Some(auto_offset_reset) = auto_offset_reset {
                         kafka_options.insert("auto.offset.reset".into(), auto_offset_reset.into());
@@ -1717,6 +1779,7 @@ fn test_input_partition(
             }
             Some(new)
         }
+        KafkaStartFromConfig::Timestamp(_) => todo!(),
     };
 
     fn load_data_to_topic_partitions(
