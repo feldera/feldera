@@ -154,13 +154,18 @@
               class="absolute top-1.5 w-full overflow-hidden overflow-ellipsis whitespace-nowrap align-middle"
             >
               {#if pipeline.deploymentError}
+                {@const message = pipeline.deploymentError.message}
                 <span class="fd fd-circle-alert pr-2 text-[20px] text-error-500"></span>
-                {pipeline.deploymentError?.message.slice(
-                  0,
-                  ((idx) => (idx > 0 ? idx : undefined))(
-                    pipeline.deploymentError.message.indexOf('\n')
-                  )
-                )}
+                <Tooltip
+                  class="bg-white-dark z-10 whitespace-pre-wrap rounded text-surface-950-50"
+                  strategy="fixed"
+                  activeContent
+                >
+                  <div class="flex max-h-[50vh] max-w-[80vw] overflow-auto whitespace-pre-wrap">
+                    {message}
+                  </div>
+                </Tooltip>
+                {message.slice(0, ((idx) => (idx > 0 ? idx : undefined))(message.indexOf('\n')))}
               {/if}
             </span>
           </td>
