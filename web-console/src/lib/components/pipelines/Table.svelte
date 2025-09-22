@@ -105,10 +105,10 @@
         <th class="px-1 py-1 text-left"
           ><span class="text-base font-normal text-surface-950-50">Message</span></th
         >
-        <ThSort {table} class="px-1 py-1 " field="lastStatusSince"
+        <ThSort {table} class="px-1 py-1" field="lastStatusSince"
           ><span class="text-base font-normal text-surface-950-50">Status changed</span></ThSort
         >
-        <ThSort {table} class="px-1 py-1 " field="lastStatusSince"
+        <ThSort {table} class="px-1 py-1" field="deploymentResourcesStatusSince"
           ><span class="text-base font-normal text-surface-950-50">Deployed on</span></ThSort
         >
       </tr>
