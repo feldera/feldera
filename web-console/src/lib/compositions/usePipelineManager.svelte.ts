@@ -11,8 +11,6 @@ import {
   getPipelines,
   getPipelineStats,
   getPipelineStatus,
-  getPipelineSupportBundle,
-  getPipelineSupportBundleStream,
   getPipelineSupportBundleUrl,
   getAuthorizationHeader,
   patchPipeline,
@@ -163,14 +161,6 @@ export const usePipelineManager = () => {
       (_, tableName) => `Failed to push data to the ${tableName} table`
     ),
     getDemos: reportError(getDemos, () => `Failed to fetch available demos`),
-    getPipelineSupportBundle: reportError(
-      getPipelineSupportBundle,
-      (pipelineName) => `Failed to download support bundle for ${pipelineName} pipeline`
-    ),
-    getPipelineSupportBundleStream: reportError(
-      getPipelineSupportBundleStream,
-      (pipelineName) => `Failed to connect to support bundle stream for ${pipelineName} pipeline`
-    ),
     downloadPipelineSupportBundle: reportError(
       downloadPipelineSupportBundle,
       (pipelineName) => `Failed to download support bundle for ${pipelineName} pipeline`
