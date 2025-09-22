@@ -33,7 +33,6 @@ import {
   type RuntimeDesiredStatus,
   postPipelineResume,
   postPipelineActivate,
-  getPipelineSupportBundle as _getPipelineSupportBundle,
   type GetPipelineSupportBundleData
 } from '$lib/services/manager'
 export type {
@@ -573,85 +572,7 @@ export const getDemos = () =>
     })
   )
 
-// type SupportBundleOptions = {
-//   /**
-//    * Whether to collect circuit profile data (default: true)
-//    */
-//   circuit_profile: boolean
-
-//   /**
-//    * Whether to collect heap profile data (default: true)
-//    */
-//   heap_profile: boolean
-
-//   /**
-//    * Whether to collect metrics data (default: true)
-//    */
-//   metrics: boolean
-
-//   /**
-//    * Whether to collect logs data (default: true)
-//    */
-//   logs: boolean
-
-//   /**
-//    * Whether to collect stats data (default: true)
-//    */
-//   stats: boolean
-
-//   /**
-//    * Whether to collect pipeline configuration data (default: true)
-//    */
-//   pipeline_config: boolean
-
-//   /**
-//    * Whether to collect system configuration data (default: true)
-//    */
-//   system_config: boolean
-// }
-
 export type SupportBundleOptions = NonNullable<Required<GetPipelineSupportBundleData['query']>>
-
-export const getPipelineSupportBundle = async (
-  pipeline_name: string,
-  options: SupportBundleOptions
-) => {
-  const response = await _getPipelineSupportBundle({
-    path: { pipeline_name: encodeURIComponent(pipeline_name) },
-    headers: {
-      Accept: 'application/zip'
-    },
-    query: options,
-    parseAs: 'blob'
-  })
-
-  if (response.error) {
-    throw new Error(response.error.message, { cause: response.error })
-  }
-
-  return response.data!
-}
-
-export const getPipelineSupportBundleStream = async (
-  pipelineName: string,
-  options: SupportBundleOptions
-) => {
-  const query = new URLSearchParams()
-  for (const [key, value] of Object.entries(options)) {
-    query.append(key, String(value))
-  }
-  return streamingFetch(
-    getAuthenticatedFetch(),
-    `${felderaEndpoint}/v0/pipelines/${encodeURIComponent(pipelineName)}/support_bundle?${query.toString()}`,
-    {
-      headers: {
-        Accept: 'application/zip'
-      }
-    },
-    (msg) => new Error(`Failed to download support bundle for ${pipelineName}: \n${msg}`),
-    (e) => new Error(e.details?.error ?? e.message, { cause: e })
-  )
-}
 
 export const getPipelineSupportBundleUrl = (
   pipelineName: string,

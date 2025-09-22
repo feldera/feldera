@@ -2,17 +2,18 @@
   import GenericDialog from '$lib/components/dialogs/GenericDialog.svelte'
   import { useGlobalDialog } from '$lib/compositions/useGlobalDialog.svelte'
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
+  import { useToast } from '$lib/compositions/useToastNotification'
   import type { SupportBundleOptions } from '$lib/services/pipelineManager'
   let { pipelineName }: { pipelineName: string } = $props()
 
   let api = usePipelineManager()
   const globalDialog = useGlobalDialog()
-  // let showSupportBundleDialog = $state(false)
+  const toast = useToast()
   const submitHandler = async () => {
     try {
       await api.downloadPipelineSupportBundle(pipelineName, data)
     } catch (error) {
-      console.error('Failed to download support bundle:', error)
+      toast.toastError(new Error(`Failed to download support bundle: ${error}`))
     }
   }
 
