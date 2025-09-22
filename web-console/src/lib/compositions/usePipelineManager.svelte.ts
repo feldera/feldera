@@ -26,7 +26,8 @@ import {
   relationIngress,
   type PipelineAction,
   type PipelineStatus,
-  type PipelineThumb
+  type PipelineThumb,
+  type SupportBundleOptions
 } from '$lib/services/pipelineManager'
 import { useToast } from '$lib/compositions/useToastNotification'
 import type { FunctionType } from '$lib/types/common/function'
@@ -91,8 +92,11 @@ export const usePipelineManager = () => {
       )
     }
 
-  const downloadPipelineSupportBundle = async (pipelineName: string) => {
-    const url = getPipelineSupportBundleUrl(pipelineName)
+  const downloadPipelineSupportBundle = async (
+    pipelineName: string,
+    options: SupportBundleOptions
+  ) => {
+    const url = getPipelineSupportBundleUrl(pipelineName, options)
     const headers = {
       ...(await getAuthorizationHeader()),
       Accept: 'application/zip'

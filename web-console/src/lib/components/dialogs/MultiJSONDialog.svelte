@@ -47,7 +47,7 @@
   }
 </script>
 
-<GenericDialog onApply={submitResults} {onClose} {title} {disabled}>
+<GenericDialog onApply={submitResults} {onClose} {title} {disabled} confirmLabel="Apply">
   {#each Object.keys(current) as key}
     <span class="font-normal">{metadata?.[key].title ?? ''}</span>
     <div class={metadata?.[key].editorClass}>
