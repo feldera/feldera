@@ -939,4 +939,12 @@ public class Regression1Tests extends SqlIoTest {
                 bin BETWEEN X'0B1620' AND X'0B1620' AS bin
                 FROM tbl;""");
     }
+
+    @Test
+    public void issue4792() {
+        this.getCCS("""
+                CREATE TABLE T(v VARCHAR, x VARCHAR, z INT);
+                CREATE VIEW V0 AS SELECT ARRAY_AGG(v ORDER BY x) FROM T;
+                CREATE VIEW V1 AS SELECT ARRAY_AGG(ROW(v, z) ORDER BY x) FROM T;""");
+    }
 }

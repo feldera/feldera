@@ -458,11 +458,11 @@ public class AggregateCompiler implements ICompilerComponent {
             if (fieldProj.size() > 1) {
                 List<DBSPExpression> fields = new ArrayList<>();
                 for (Integer f : fieldProj) {
-                    fields.add(var.field(f));
+                    fields.add(var.field(f).applyCloneIfNeeded());
                 }
                 projector = new DBSPTupleExpression(fields, elementType.mayBeNull).closure(var);
             } else {
-                projector = var.field(fieldProj.get(0)).closure(var);
+                projector = var.field(fieldProj.get(0)).applyCloneIfNeeded().closure(var);
             }
             post = new DBSPApplyExpression(convertName, arrayType, p, comparator, projector).closure(p);
         }
