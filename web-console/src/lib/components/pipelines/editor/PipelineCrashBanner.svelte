@@ -1,4 +1,5 @@
 <script lang="ts">
+  import ClipboardCopyButton from '$lib/components/other/ClipboardCopyButton.svelte'
   import type { ErrorResponse } from '$lib/services/manager'
   import { slide } from 'svelte/transition'
 
@@ -13,10 +14,11 @@
   <div class=" fd fd-circle-alert text-[20px] text-error-500"></div>
   <div class="flex flex-col {showMore ? 'gap-2' : 'sm:flex-row'} w-full overflow-hidden">
     <div class=" flex flex-col {showMore ? '' : ''} ">
-      <div class="pb-2 font-semibold">
+      <div class="flex justify-between pb-2 font-semibold">
         The last execution of the pipeline failed with the error code: {error.error_code}
+        <ClipboardCopyButton value={error.message} class="-m-2"></ClipboardCopyButton>
       </div>
-      <span class=" whitespace-pre-wrap {showMore ? 'max-h-96 overflow-auto' : 'line-clamp-2'}">
+      <span class=" whitespace-pre-wrap {showMore ? 'max-h-[30vh] overflow-auto' : 'line-clamp-1'}">
         {error.message}
       </span>
       <button
