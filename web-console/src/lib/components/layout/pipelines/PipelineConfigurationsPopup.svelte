@@ -64,7 +64,7 @@
     metadata={{
       runtimeConfig: {
         title: `Runtime configuration`,
-        editorClass: 'h-96',
+        editorClass: 'h-[40vh]',
         filePath: `file://pipelines/${pipeline.current.name}/RuntimeConfig.json`,
         readOnlyMessage: 'Cannot edit config while pipeline is running'
       },

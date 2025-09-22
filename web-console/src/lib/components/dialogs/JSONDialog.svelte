@@ -48,7 +48,7 @@
   }
 </script>
 
-<GenericDialog onApply={submitHandler} {onClose} {title} {disabled}>
+<GenericDialog onApply={submitHandler} {onClose} {title} {disabled} confirmLabel="Apply">
   <div class="h-96">
     <JsonForm {filePath} onSubmit={onApply} bind:value={current} {disabled} {readOnlyMessage}
     ></JsonForm>

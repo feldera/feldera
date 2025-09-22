@@ -23,6 +23,7 @@
     pushAsCircularBuffer
   } from '$lib/functions/pipelines/changeStream'
   import type { TimeSeriesEntry } from '$lib/types/pipelineManager'
+  import DownloadSupportBundle from '$lib/components/pipelines/editor/DownloadSupportBundle.svelte'
 
   const formatQty = (v: number) => format(',.0f')(v)
 
@@ -339,18 +340,7 @@
       </div>
     {/if}
     <div>
-      <button
-        class="btn preset-outlined-surface-200-800"
-        onclick={async () => {
-          try {
-            await api.downloadPipelineSupportBundle(pipelineName)
-          } catch (error) {
-            console.error('Failed to download support bundle:', error)
-          }
-        }}
-      >
-        Download support bundle
-      </button>
+      <DownloadSupportBundle {pipelineName} />
     </div>
   </div>
 {/if}

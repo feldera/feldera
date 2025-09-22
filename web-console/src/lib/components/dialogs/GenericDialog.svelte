@@ -5,12 +5,14 @@
     onApply,
     onClose,
     title,
+    confirmLabel,
     disabled,
     children
   }: {
     onApply: () => void
     onClose: () => void
     title: Snippet
+    confirmLabel: string
     disabled?: boolean
     children?: Snippet
   } = $props()
@@ -26,9 +28,12 @@
     ></button>
   </div>
   {@render children?.()}
-  <div class="flex w-full justify-end">
+  <div class="flex w-full justify-end gap-4">
+    <button onclick={onClose} class="btn preset-outlined-surface-500">Cancel</button>
     <div>
-      <button {disabled} onclick={onApply} class="btn preset-filled-primary-500"> APPLY </button>
+      <button {disabled} onclick={onApply} class="btn preset-filled-primary-500"
+        >{confirmLabel}</button
+      >
     </div>
     {#if disabled}
       <Tooltip class="bg-white-dark z-20 w-64 rounded text-surface-950-50" placement="top">

@@ -33,7 +33,8 @@ import {
   type RuntimeDesiredStatus,
   postPipelineResume,
   postPipelineActivate,
-  getPipelineSupportBundle as _getPipelineSupportBundle
+  getPipelineSupportBundle as _getPipelineSupportBundle,
+  type GetPipelineSupportBundleData
 } from '$lib/services/manager'
 export type {
   // PipelineDescr,
@@ -572,12 +573,55 @@ export const getDemos = () =>
     })
   )
 
-export const getPipelineSupportBundle = async (pipeline_name: string) => {
+// type SupportBundleOptions = {
+//   /**
+//    * Whether to collect circuit profile data (default: true)
+//    */
+//   circuit_profile: boolean
+
+//   /**
+//    * Whether to collect heap profile data (default: true)
+//    */
+//   heap_profile: boolean
+
+//   /**
+//    * Whether to collect metrics data (default: true)
+//    */
+//   metrics: boolean
+
+//   /**
+//    * Whether to collect logs data (default: true)
+//    */
+//   logs: boolean
+
+//   /**
+//    * Whether to collect stats data (default: true)
+//    */
+//   stats: boolean
+
+//   /**
+//    * Whether to collect pipeline configuration data (default: true)
+//    */
+//   pipeline_config: boolean
+
+//   /**
+//    * Whether to collect system configuration data (default: true)
+//    */
+//   system_config: boolean
+// }
+
+export type SupportBundleOptions = NonNullable<Required<GetPipelineSupportBundleData['query']>>
+
+export const getPipelineSupportBundle = async (
+  pipeline_name: string,
+  options: SupportBundleOptions
+) => {
   const response = await _getPipelineSupportBundle({
     path: { pipeline_name: encodeURIComponent(pipeline_name) },
     headers: {
       Accept: 'application/zip'
     },
+    query: options,
     parseAs: 'blob'
   })
 
@@ -588,10 +632,17 @@ export const getPipelineSupportBundle = async (pipeline_name: string) => {
   return response.data!
 }
 
-export const getPipelineSupportBundleStream = async (pipelineName: string) => {
+export const getPipelineSupportBundleStream = async (
+  pipelineName: string,
+  options: SupportBundleOptions
+) => {
+  const query = new URLSearchParams()
+  for (const [key, value] of Object.entries(options)) {
+    query.append(key, String(value))
+  }
   return streamingFetch(
     getAuthenticatedFetch(),
-    `${felderaEndpoint}/v0/pipelines/${encodeURIComponent(pipelineName)}/support_bundle`,
+    `${felderaEndpoint}/v0/pipelines/${encodeURIComponent(pipelineName)}/support_bundle?${query.toString()}`,
     {
       headers: {
         Accept: 'application/zip'
@@ -602,8 +653,15 @@ export const getPipelineSupportBundleStream = async (pipelineName: string) => {
   )
 }
 
-export const getPipelineSupportBundleUrl = (pipelineName: string) => {
-  return `${felderaEndpoint}/v0/pipelines/${encodeURIComponent(pipelineName)}/support_bundle`
+export const getPipelineSupportBundleUrl = (
+  pipelineName: string,
+  options: SupportBundleOptions
+) => {
+  const query = new URLSearchParams()
+  for (const [key, value] of Object.entries(options)) {
+    query.append(key, String(value))
+  }
+  return `${felderaEndpoint}/v0/pipelines/${encodeURIComponent(pipelineName)}/support_bundle?${query.toString()}`
 }
 
 export const getAuthorizationHeader = async (): Promise<Record<string, string>> => {
