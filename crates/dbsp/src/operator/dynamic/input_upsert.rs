@@ -611,7 +611,8 @@ where
                 cur_val.set_none();
 
                 // Generate retraction if `key` is present in the trace.
-                if trace_cursor.seek_key_exact(key, None) {
+                let hash = key.default_hash();
+                if trace.maybe_contains(key, hash) && trace_cursor.seek_key_exact(key, Some(hash)) {
                     // println!("{}: found key in trace_cursor", Runtime::worker_index());
                     while trace_cursor.val_valid() {
                         let weight = **trace_cursor.weight();
@@ -871,7 +872,8 @@ where
                 cur_val.set_none();
 
                 // Generate retraction if `key` is present in the trace.
-                if trace_cursor.seek_key_exact(key, None) {
+                let hash = key.default_hash();
+                if trace.maybe_contains(key, hash) && trace_cursor.seek_key_exact(key, Some(hash)) {
                     // println!("{}: found key in trace_cursor", Runtime::worker_index());
                     while trace_cursor.val_valid() {
                         let weight = **trace_cursor.weight();
