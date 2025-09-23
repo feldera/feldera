@@ -2,6 +2,9 @@
 
 ## Applications
 
+* How Feldera Customers Slash Cloud Spend (10x and beyond)
+  https://www.feldera.com/blog/how-feldera-customers-slash-cloud-spend
+
 * Batch Analytics at Warp Speed: A User Guide
   https://www.feldera.com/blog/warpspeed
 
@@ -30,6 +33,9 @@
   https://www.feldera.com/blog/continuously-analyzing-redpanda-data
 
 ## Platform capabilities
+
+* The Babl tower of SQL dialects
+  https://www.feldera.com/blog/the-babel-tower-of-sql-dialects
 
 * Toward Real-Time Medallion Architecture
   https://www.feldera.com/blog/medallion-architecture
@@ -92,6 +98,15 @@
   https://www.feldera.com/blog/communicating-with-dbsp
 
 ## Principles, Implementation, and engineering
+
+* Constant folding in Calcite
+  https://www.feldera.com/blog/constant-folding-in-calcite
+
+* The Dirty Secret of Incremental View Maintenance: You Still Need Batch
+  https://www.feldera.com/blog/backfill-explained
+
+* Stream integration
+  https://www.feldera.com/blog/stream-integration
 
 * Cutting Down Rust Compile Times From 30 to 2 Minutes With One Thousand Crates
   https://www.feldera.com/blog/cutting-down-rust-compile-times-from-30-to-2-minutes-with-one-thousand-crates
