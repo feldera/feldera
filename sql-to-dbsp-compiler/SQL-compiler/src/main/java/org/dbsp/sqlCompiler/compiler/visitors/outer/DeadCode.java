@@ -9,9 +9,9 @@ public class DeadCode extends Passes {
      * @param keepAllSources  If true keep source operators that have no users.
      * @param warn      If true warn about unused inputs.
      */
-    public DeadCode(DBSPCompiler compiler, boolean keepAllSources, boolean warn) {
+    public DeadCode(DBSPCompiler compiler, boolean keepAllSources) {
         super("DeadCode", compiler);
-        FindDeadCode finder = new FindDeadCode(compiler, keepAllSources, warn);
+        FindDeadCode finder = new FindDeadCode(compiler, keepAllSources);
         super.add(finder);
         super.add(new RemoveOperators(compiler, finder.toKeep));
     }
