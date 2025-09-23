@@ -128,7 +128,7 @@ impl KafkaResources {
         // Now create the topics and wait for the creations to complete.
         let new_topics = topics
             .iter()
-            .filter(|&(_topic_name, partitions)| (*partitions > 0))
+            .filter(|&(_topic_name, partitions)| *partitions > 0)
             .map(|(topic_name, partitions)| {
                 NewTopic::new(topic_name, *partitions, TopicReplication::Fixed(1))
             })
