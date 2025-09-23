@@ -15,8 +15,8 @@ use actix_web::{
     web::{self, Data as WebData, ReqData},
     HttpRequest, HttpResponse,
 };
-use feldera_types::program_schema::SqlIdentifier;
 use feldera_types::query_params::MetricsParameters;
+use feldera_types::{program_schema::SqlIdentifier, query_params::ActivateParams};
 use log::{debug, info};
 use std::time::Duration;
 
@@ -586,7 +586,6 @@ pub(crate) async fn get_pipeline_time_series(
     client: WebData<awc::Client>,
     tenant_id: ReqData<TenantId>,
     path: web::Path<String>,
-    _query: web::Query<MetricsParameters>,
     request: HttpRequest,
 ) -> Result<HttpResponse, ManagerError> {
     let pipeline_name = path.into_inner();
@@ -1061,7 +1060,7 @@ pub(crate) async fn get_pipeline_heap_profile(
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
     params(
-        ("pipeline_name" = String, Path, description = "Unique pipeline name")
+        ("pipeline_name" = String, Path, description = "Unique pipeline name"),
     ),
     responses(
         (status = ACCEPTED
@@ -1186,6 +1185,7 @@ pub(crate) async fn post_pipeline_resume(
     security(("JSON web token (JWT) or API key" = [])),
     params(
         ("pipeline_name" = String, Path, description = "Unique pipeline name"),
+        ActivateParams
     ),
     responses(
         (status = ACCEPTED
@@ -1214,6 +1214,7 @@ pub(crate) async fn post_pipeline_activate(
     _client: WebData<awc::Client>,
     tenant_id: ReqData<TenantId>,
     path: web::Path<String>,
+    _query: web::Query<ActivateParams>,
     request: HttpRequest,
 ) -> Result<HttpResponse, ManagerError> {
     #[cfg(not(feature = "feldera-enterprise"))]
@@ -1250,6 +1251,73 @@ pub(crate) async fn post_pipeline_activate(
         if response.status() == StatusCode::ACCEPTED {
             info!(
                 "Accepted action: activating pipeline (tenant: {})", // {pipeline_id}
+                *tenant_id
+            );
+        }
+        Ok(response)
+    }
+}
+
+/// TODO
+#[utoipa::path(
+    context_path = "/v0",
+    security(("JSON web token (JWT) or API key" = [])),
+    params(
+        ("pipeline_name" = String, Path, description = "Unique pipeline name"),
+    ),
+    responses(
+        (status = ACCEPTED
+            , description = "Pipeline activation initiated"
+            , body = CheckpointResponse),
+        (status = NOT_FOUND
+            , description = "Pipeline with that name does not exist"
+            , body = ErrorResponse
+            , example = json!(examples::error_unknown_pipeline_name())),
+        (status = SERVICE_UNAVAILABLE
+            , body = ErrorResponse
+            , examples(
+                ("Pipeline is not deployed" = (value = json!(examples::error_pipeline_interaction_not_deployed()))),
+                ("Pipeline is currently unavailable" = (value = json!(examples::error_pipeline_interaction_currently_unavailable()))),
+                ("Disconnected during response" = (value = json!(examples::error_pipeline_interaction_disconnected()))),
+                ("Response timeout" = (value = json!(examples::error_pipeline_interaction_timeout())))
+            )
+        ),
+        (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
+    ),
+    tag = "Pipeline interaction"
+)]
+#[post("/pipelines/{pipeline_name}/approve")]
+pub(crate) async fn post_pipeline_approve(
+    state: WebData<ServerState>,
+    _client: WebData<awc::Client>,
+    tenant_id: ReqData<TenantId>,
+    path: web::Path<String>,
+    request: HttpRequest,
+) -> Result<HttpResponse, ManagerError> {
+    {
+        let pipeline_name = path.into_inner();
+        let response = state
+            .runner
+            .forward_http_request_to_pipeline_by_name(
+                _client.as_ref(),
+                *tenant_id,
+                &pipeline_name,
+                Method::POST,
+                "approve",
+                request.query_string(),
+                None,
+            )
+            .await?;
+        state
+            .db
+            .lock()
+            .await
+            .increment_notify_counter(*tenant_id, &pipeline_name)
+            .await?;
+
+        if response.status() == StatusCode::ACCEPTED {
+            info!(
+                "Accepted action: approved pipeline bootstrapping (tenant: {})", // {pipeline_id}
                 *tenant_id
             );
         }

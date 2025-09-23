@@ -204,6 +204,7 @@ It contains the following fields:
         endpoints::pipeline_interaction::post_pipeline_pause,
         endpoints::pipeline_interaction::post_pipeline_resume,
         endpoints::pipeline_interaction::post_pipeline_activate,
+        endpoints::pipeline_interaction::post_pipeline_approve,
         endpoints::pipeline_interaction::completion_token,
         endpoints::pipeline_interaction::completion_status,
         endpoints::pipeline_interaction::start_transaction,
@@ -252,6 +253,7 @@ It contains the following fields:
         crate::db::types::resources_status::ResourcesDesiredStatus,
         feldera_types::runtime_status::RuntimeStatus,
         feldera_types::runtime_status::RuntimeDesiredStatus,
+        feldera_types::runtime_status::BootstrapPolicy,
         crate::api::endpoints::pipeline_management::PipelineInfo,
         crate::api::endpoints::pipeline_management::PipelineSelectedInfo,
         crate::api::endpoints::pipeline_management::PipelineFieldSelector,
@@ -476,6 +478,7 @@ fn api_scope() -> Scope {
         .service(endpoints::pipeline_interaction::post_pipeline_pause)
         .service(endpoints::pipeline_interaction::post_pipeline_resume)
         .service(endpoints::pipeline_interaction::post_pipeline_activate)
+        .service(endpoints::pipeline_interaction::post_pipeline_approve)
         .service(endpoints::pipeline_interaction::post_pipeline_input_connector_action)
         .service(endpoints::pipeline_interaction::get_pipeline_input_connector_status)
         .service(endpoints::pipeline_interaction::get_pipeline_output_connector_status)

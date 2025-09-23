@@ -28,7 +28,9 @@ use chrono::{TimeZone, Utc};
 use feldera_types::config::{FtConfig, PipelineConfig, ResourceConfig, RuntimeConfig};
 use feldera_types::error::ErrorResponse;
 use feldera_types::program_schema::ProgramSchema;
-use feldera_types::runtime_status::{ExtendedRuntimeStatus, RuntimeDesiredStatus, RuntimeStatus};
+use feldera_types::runtime_status::{
+    BootstrapPolicy, ExtendedRuntimeStatus, RuntimeDesiredStatus, RuntimeStatus,
+};
 use log::info;
 use openssl::sha;
 use proptest::prelude::*;
@@ -472,6 +474,7 @@ fn limited_pipeline_config() -> impl Strategy<Value = serde_json::Value> {
                 secrets_dir: None,
                 inputs: program_info.input_connectors,
                 outputs: program_info.output_connectors,
+                dataflow: Some(program_info.dataflow.clone()),
             })
             .unwrap()
         }
@@ -1487,6 +1490,7 @@ async fn pipeline_deployment() {
             tenant_id,
             "example1",
             RuntimeDesiredStatus::Paused,
+            BootstrapPolicy::default(),
         )
         .await
         .unwrap();
@@ -1500,8 +1504,7 @@ async fn pipeline_deployment() {
             serde_json::to_value(generate_pipeline_config(
                 pipeline1.id,
                 &serde_json::from_value(pipeline1.runtime_config.clone()).unwrap(),
-                &BTreeMap::default(),
-                &BTreeMap::default(),
+                &ProgramInfo::default(),
             ))
             .unwrap(),
         )
@@ -1609,6 +1612,7 @@ async fn pipeline_deployment() {
             tenant_id,
             "example1",
             RuntimeDesiredStatus::Paused,
+            BootstrapPolicy::default(),
         )
         .await
         .unwrap();
@@ -1622,8 +1626,7 @@ async fn pipeline_deployment() {
             serde_json::to_value(generate_pipeline_config(
                 pipeline1.id,
                 &serde_json::from_value(pipeline1.runtime_config).unwrap(),
-                &BTreeMap::default(),
-                &BTreeMap::default(),
+                &ProgramInfo::default(),
             ))
             .unwrap(),
         )
@@ -1815,8 +1818,7 @@ async fn pipeline_provision_version_guard() {
                   serde_json::to_value(generate_pipeline_config(
                       pipeline.id,
                       &serde_json::from_value(pipeline.runtime_config.clone()).unwrap(),
-                      &BTreeMap::default(),
-                      &BTreeMap::default(),
+                      &ProgramInfo::default(),
                   )).unwrap(),
               )
               .await.unwrap_err(),
@@ -1875,8 +1877,7 @@ async fn pipeline_provision_version_guard() {
             serde_json::to_value(generate_pipeline_config(
                 pipeline.id,
                 &serde_json::from_value(pipeline.runtime_config.clone()).unwrap(),
-                &BTreeMap::default(),
-                &BTreeMap::default(),
+                &ProgramInfo::default(),
             ))
             .unwrap(),
         )
@@ -2503,8 +2504,8 @@ fn db_impl_behaves_like_model() {
                             }
                             StorageAction::SetDeploymentResourcesDesiredStatusProvisioned(tenant_id, pipeline_name, initial) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
-                                let model_response = model.set_deployment_resources_desired_status_provisioned(tenant_id, &pipeline_name, initial).await;
-                                let impl_response = handle.db.set_deployment_resources_desired_status_provisioned(tenant_id, &pipeline_name, initial).await;
+                                let model_response = model.set_deployment_resources_desired_status_provisioned(tenant_id, &pipeline_name, initial, BootstrapPolicy::default()).await;
+                                let impl_response = handle.db.set_deployment_resources_desired_status_provisioned(tenant_id, &pipeline_name, initial, BootstrapPolicy::default()).await;
                                 check_responses(i, model_response, impl_response);
                             }
                             StorageAction::SetDeploymentResourcesDesiredStatusStoppedIfNotProvisioned(tenant_id, pipeline_name) => {
@@ -2882,8 +2883,10 @@ fn convert_descriptor_to_monitoring(
         deployment_resources_desired_status_since: pipeline
             .deployment_resources_desired_status_since,
         deployment_runtime_status: pipeline.deployment_runtime_status,
+        deployment_runtime_status_details: pipeline.deployment_runtime_status_details,
         deployment_runtime_status_since: pipeline.deployment_runtime_status_since,
         deployment_runtime_desired_status: pipeline.deployment_runtime_desired_status,
+        bootstrap_policy: pipeline.bootstrap_policy,
         deployment_runtime_desired_status_since: pipeline.deployment_runtime_desired_status_since,
     }
 }
@@ -3251,9 +3254,11 @@ impl Storage for Mutex<DbModel> {
             deployment_resources_desired_status: ResourcesDesiredStatus::Stopped,
             deployment_resources_desired_status_since: now,
             deployment_runtime_status: None,
+            deployment_runtime_status_details: None,
             deployment_runtime_status_since: None,
             deployment_runtime_desired_status: None,
             deployment_runtime_desired_status_since: None,
+            bootstrap_policy: None,
         };
 
         // Insert into state
@@ -3606,6 +3611,7 @@ impl Storage for Mutex<DbModel> {
         tenant_id: TenantId,
         pipeline_name: &str,
         initial: RuntimeDesiredStatus,
+        bootstrap_policy: BootstrapPolicy,
     ) -> Result<PipelineId, DBError> {
         // Validate
         let mut pipeline = self.get_pipeline(tenant_id, pipeline_name).await?;
@@ -3639,6 +3645,7 @@ impl Storage for Mutex<DbModel> {
 
         // Apply changes: update
         pipeline.deployment_initial = Some(initial);
+        pipeline.bootstrap_policy = Some(bootstrap_policy);
         pipeline.deployment_resources_desired_status = new_resources_desired_status;
         pipeline.deployment_resources_desired_status_since = Utc::now();
         self.lock()

@@ -189,6 +189,7 @@ pub enum DBError {
     InvalidResourcesDesiredStatus(String),
     InvalidRuntimeStatus(String),
     InvalidRuntimeDesiredStatus(String),
+    InvalidBootstrap(String),
     NoRuntimeStatusWhileProvisioned,
     PreconditionViolation(String),
     InitialImmutableUnlessStopped,
@@ -608,6 +609,9 @@ impl Display for DBError {
             DBError::InvalidRuntimeDesiredStatus(s) => {
                 write!(f, "Invalid runtime desired status: '{s}'")
             }
+            DBError::InvalidBootstrap(s) => {
+                write!(f, "Invalid bootstrap_policy option: '{s}'")
+            }
             DBError::NoRuntimeStatusWhileProvisioned => {
                 write!(
                     f,
@@ -726,6 +730,7 @@ impl DetailedError for DBError {
             Self::InvalidResourcesDesiredStatus(..) => Cow::from("InvalidResourcesDesiredStatus"),
             Self::InvalidRuntimeStatus(..) => Cow::from("InvalidRuntimeStatus"),
             Self::InvalidRuntimeDesiredStatus(..) => Cow::from("InvalidRuntimeDesiredStatus"),
+            Self::InvalidBootstrap(..) => Cow::from("InvalidBootstrap"),
             Self::NoRuntimeStatusWhileProvisioned => Cow::from("NoRuntimeStatusWhileProvisioned"),
             Self::PreconditionViolation(..) => Cow::from("PreconditionViolation"),
             Self::ResumeWhileNotProvisioned => Cow::from("ResumeWhileNotProvisioned"),
@@ -792,6 +797,7 @@ impl ResponseError for DBError {
             Self::InvalidResourcesDesiredStatus(..) => StatusCode::INTERNAL_SERVER_ERROR,
             Self::InvalidRuntimeStatus(..) => StatusCode::INTERNAL_SERVER_ERROR,
             Self::InvalidRuntimeDesiredStatus(..) => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::InvalidBootstrap(..) => StatusCode::INTERNAL_SERVER_ERROR,
             Self::NoRuntimeStatusWhileProvisioned => StatusCode::INTERNAL_SERVER_ERROR,
             Self::PreconditionViolation(..) => StatusCode::INTERNAL_SERVER_ERROR,
             Self::InitialImmutableUnlessStopped => StatusCode::BAD_REQUEST,

@@ -3,7 +3,9 @@
 
 use crate::common_error::CommonError;
 use crate::config::{CommonConfig, LocalRunnerConfig};
-use crate::db::types::pipeline::{runtime_desired_status_to_string, PipelineId};
+use crate::db::types::pipeline::{
+    bootstrap_policy_to_string, runtime_desired_status_to_string, PipelineId,
+};
 use crate::db::types::version::Version;
 use crate::error::{source_error, ManagerError};
 use crate::runner::error::RunnerError;
@@ -11,7 +13,7 @@ use crate::runner::pipeline_executor::PipelineExecutor;
 use crate::runner::pipeline_logs::{LogMessage, LogsSender};
 use async_trait::async_trait;
 use feldera_types::config::{PipelineConfig, StorageCacheConfig, StorageConfig};
-use feldera_types::runtime_status::RuntimeDesiredStatus;
+use feldera_types::runtime_status::{BootstrapPolicy, RuntimeDesiredStatus};
 use log::{error, warn, Level};
 use reqwest::StatusCode;
 use std::path::Path;
@@ -367,6 +369,7 @@ impl PipelineExecutor for LocalRunner {
     async fn provision(
         &mut self,
         deployment_initial: RuntimeDesiredStatus,
+        bootstrap_policy: BootstrapPolicy,
         deployment_id: &Uuid,
         deployment_config: &PipelineConfig,
         program_binary_url: &str,
@@ -449,6 +452,8 @@ impl PipelineExecutor for LocalRunner {
             .arg(&self.common_config.bind_address)
             .arg("--initial")
             .arg(runtime_desired_status_to_string(deployment_initial))
+            .arg("--bootstrap-policy")
+            .arg(bootstrap_policy_to_string(bootstrap_policy))
             .arg("--deployment-id")
             .arg(deployment_id.to_string())
             .stdin(Stdio::null())

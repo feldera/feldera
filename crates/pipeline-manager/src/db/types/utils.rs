@@ -262,6 +262,7 @@ mod tests {
             secrets_dir: None,
             inputs: Default::default(),
             outputs: Default::default(),
+            dataflow: None,
         };
         let value = serde_json::to_value(deployment_config.clone()).unwrap();
         assert_eq!(

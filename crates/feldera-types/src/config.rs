@@ -83,6 +83,9 @@ pub struct PipelineConfig {
     /// Output endpoint configuration.
     #[serde(default)]
     pub outputs: BTreeMap<Cow<'static, str>, OutputEndpointConfig>,
+
+    #[serde(default)]
+    pub dataflow: Option<serde_json::Value>,
 }
 
 impl PipelineConfig {
@@ -120,6 +123,21 @@ impl PipelineConfig {
             Some(dir) => Path::new(dir.as_str()),
             None => default_secrets_directory(),
         }
+    }
+
+    /// Abbreviated config that can be printed in the log on pipeline startup.
+    pub fn display_summary(&self) -> String {
+        // TODO: we may want to further abbreviate connector config.
+        let summary = serde_json::json!({
+            "name": self.name,
+            "global": self.global,
+            "storage_config": self.storage_config,
+            "secrets_dir": self.secrets_dir,
+            "inputs": self.inputs,
+            "outputs": self.outputs
+        });
+
+        serde_json::to_string_pretty(&summary).unwrap_or_else(|_| "{}".to_string())
     }
 }
 
