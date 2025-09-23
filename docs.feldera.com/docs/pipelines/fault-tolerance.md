@@ -76,7 +76,7 @@ The following sections describes these features in more detail.
 
 Feldera implements these features by writing a **checkpoint** to
 storage, that is, a consistent snapshot of the Feldera system's state,
-including computation and the input and output adapters.  On resume,
+including computation and the input and output connectors.  On resume,
 Feldera loads its state from the checkpoint, and then restarts each of
 the connectors at the point where it left off.
 
@@ -96,7 +96,7 @@ continues with new input that has not previously been processed.
 
 For Feldera to checkpoint and resume, or to enable fault-tolerance, all
 of the pipeline's input connectors must support fault tolerance.  Some
-input adapters do not yet support fault tolerance and therefore may
+input connectors do not yet support fault tolerance and therefore may
 not be part of a pipeline that supports these features.  Input
 connectors individually document their support for fault tolerance.
 

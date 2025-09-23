@@ -88,7 +88,7 @@
 * Incremental Computation, a bad case of déjà vu
   https://www.feldera.com/blog/incremental-computation-deja-vu
 
-* Feldera input and output adapters
+* Feldera input and output connectors
   https://www.feldera.com/blog/communicating-with-dbsp
 
 ## Principles, Implementation, and engineering

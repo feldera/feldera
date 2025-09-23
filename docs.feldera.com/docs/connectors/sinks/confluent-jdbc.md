@@ -16,7 +16,7 @@ Avro format expected by this connector.  In this format, the key of the Kafka me
 of the target table. The value component of the message contains the new or updated value for this primary key
 or `null` if the key is to be deleted from the table.
 
-Because this connector uses the [Kafka output adapter](kafka), it
+Because this connector uses the [Kafka output connector](kafka), it
 supports [fault tolerance](/pipelines/fault-tolerance) too.
 
 Setting up a Confluent JDBC Sink Connector integration involves three steps:
