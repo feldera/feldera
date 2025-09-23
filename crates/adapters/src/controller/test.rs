@@ -6,8 +6,12 @@ use crate::{
     Controller, PipelineConfig,
 };
 use csv::{ReaderBuilder as CsvReaderBuilder, WriterBuilder as CsvWriterBuilder};
-use feldera_types::constants::STATE_FILE;
+use feldera_types::{
+    config::{InputEndpointConfig, OutputEndpointConfig},
+    constants::STATE_FILE,
+};
 use std::{
+    borrow::Cow,
     cmp::min,
     fmt::Write as _,
     fs::{create_dir, remove_file, File},
@@ -287,7 +291,13 @@ struct FtTestRound {
     n_records: usize,
     do_checkpoint: bool,
     pause_afterward: bool,
-    immedate_checkpoint: bool,
+    immediate_checkpoint: bool,
+
+    /// Apply function to modify pipeline configuration before starting the pipeline.
+    /// Modified config prevents the pipeline from replaying the journal; however it
+    /// should still produce the same result by replaying inputs from the last checkpointed
+    /// offset.
+    modify_config: Option<fn(PipelineConfig) -> PipelineConfig>,
 }
 
 impl FtTestRound {
@@ -296,7 +306,8 @@ impl FtTestRound {
             n_records,
             do_checkpoint: true,
             pause_afterward: false,
-            immedate_checkpoint: false,
+            immediate_checkpoint: false,
+            modify_config: None,
         }
     }
     fn without_checkpoint(n_records: usize) -> Self {
@@ -304,12 +315,20 @@ impl FtTestRound {
             n_records,
             do_checkpoint: false,
             pause_afterward: false,
-            immedate_checkpoint: false,
+            immediate_checkpoint: false,
+            modify_config: None,
         }
     }
     fn with_pause_afterward(self) -> Self {
         Self {
             pause_afterward: true,
+            ..self
+        }
+    }
+
+    fn with_modify_config(self, f: fn(PipelineConfig) -> PipelineConfig) -> Self {
+        Self {
+            modify_config: Some(f),
             ..self
         }
     }
@@ -323,7 +342,8 @@ impl FtTestRound {
             n_records: 0,
             do_checkpoint: false,
             pause_afterward: false,
-            immedate_checkpoint: true,
+            immediate_checkpoint: true,
+            modify_config: None,
         }
     }
 }
@@ -383,7 +403,7 @@ fn wait_for_records(controller: &Controller, expect_n: &[usize]) {
             let new_n = collect_endpoint_records(controller, n);
             for i in 0..n {
                 if new_n[i] > last_n[i] {
-                    println!("received {n} records on test_output{}", i + 1);
+                    println!("received {} records on test_output{}", new_n[i], i + 1);
                 }
             }
             last_n = new_n;
@@ -471,7 +491,7 @@ outputs:
         "#
     );
 
-    let config: PipelineConfig = serde_yaml::from_str(&config_str).unwrap();
+    let mut config: PipelineConfig = serde_yaml::from_str(&config_str).unwrap();
 
     // Number of records written to the input.
     let mut total_records = 0usize;
@@ -493,7 +513,8 @@ outputs:
             n_records,
             do_checkpoint,
             pause_afterward,
-            immedate_checkpoint,
+            immediate_checkpoint,
+            modify_config,
         },
     ) in rounds.iter().cloned().enumerate()
     {
@@ -535,9 +556,14 @@ outputs:
         .unwrap();
 
         println!(
-            "--- round {round}: {}{}add {n_records} records{}, {} --- ",
+            "--- round {round}: {}{}{}add {n_records} records{}, {} --- ",
+            if modify_config.is_some() {
+                "run pipeline with modified config, "
+            } else {
+                ""
+            },
             if paused { "unpause the input, " } else { "" },
-            if immedate_checkpoint {
+            if immediate_checkpoint {
                 "immediately initiate a checkpoint, "
             } else {
                 ""
@@ -551,7 +577,7 @@ outputs:
                 "and checkpoint"
             } else {
                 "no checkpoint"
-            }
+            },
         );
 
         // Write records to the input file.
@@ -569,6 +595,11 @@ outputs:
 
         // Start pipeline.
         println!("start pipeline");
+
+        if let Some(modify_config) = modify_config {
+            config = modify_config(config);
+        }
+
         let controller = Controller::with_config(
             |circuit_config| {
                 Ok(test_circuit::<TestStruct>(
@@ -584,7 +615,7 @@ outputs:
         controller.start();
 
         let (sender, receiver) = oneshot::channel();
-        if immedate_checkpoint {
+        if immediate_checkpoint {
             println!("start checkpoint in background");
             controller.start_checkpoint(Box::new(move |result| sender.send(result).unwrap()));
         } else {
@@ -632,7 +663,7 @@ outputs:
         }
 
         // Checkpoint, if requested.
-        if immedate_checkpoint {
+        if immediate_checkpoint {
             println!("wait for checkpoint to complete");
             receiver.blocking_recv().unwrap().unwrap();
         } else if do_checkpoint {
@@ -650,7 +681,7 @@ outputs:
         // in `checkpointed_records..total_records`.
         check_file_contents(&output_path, checkpointed_records..total_records);
 
-        if do_checkpoint || immedate_checkpoint {
+        if do_checkpoint || immediate_checkpoint {
             checkpointed_records = total_records;
 
             // Read the checkpoint file and make sure that:
@@ -685,7 +716,6 @@ outputs:
                 OUTPUT_SECRET_REFERENCE.as_bytes()
             ));
         }
-        println!();
 
         prev_input_path = Some(input_path);
         prev_output_path = Some(output_path);
@@ -961,6 +991,73 @@ fn ft_initially_zero_with_checkpoint() {
         FtTestRound::with_checkpoint(2500),
         FtTestRound::without_checkpoint(2500),
         FtTestRound::with_checkpoint(2500),
+    ]);
+}
+
+fn add_output(mut config: PipelineConfig) -> PipelineConfig {
+    let tmpfile = NamedTempFile::new().unwrap();
+    println!("adding output to {}", tmpfile.path().display());
+
+    let config_str = format!(
+        r#"
+        stream: test_output1
+        transport:
+            name: file_output
+            config:
+                path: {}
+        format:
+            name: csv
+            config:
+    "#,
+        tmpfile.path().display()
+    );
+
+    let output_config: OutputEndpointConfig = serde_yaml::from_str(&config_str).unwrap();
+
+    config
+        .outputs
+        .insert(Cow::Borrowed("test_output2"), output_config);
+    config
+}
+
+fn add_input(mut config: PipelineConfig) -> PipelineConfig {
+    let config_str = r#"
+        stream: test_input1
+        transport:
+            name: file_input
+            config:
+                path: /dev/null
+                follow: true
+        format:
+            name: csv
+    "#;
+
+    let input_config: InputEndpointConfig = serde_yaml::from_str(config_str).unwrap();
+
+    config
+        .inputs
+        .insert(Cow::Borrowed("test_input2"), input_config);
+    config
+}
+
+fn remove_output(mut config: PipelineConfig) -> PipelineConfig {
+    config.outputs.remove(&Cow::Borrowed("test_output2"));
+    config
+}
+
+#[test]
+fn ft_modified_connectors() {
+    test_ft(&[
+        FtTestRound::with_checkpoint(2500),
+        FtTestRound::without_checkpoint(2500),
+        FtTestRound::with_checkpoint(2500),
+        FtTestRound::without_checkpoint(2500),
+        FtTestRound::with_checkpoint(2500).with_modify_config(add_output),
+        FtTestRound::without_checkpoint(2500).with_modify_config(remove_output),
+        FtTestRound::with_checkpoint(2500).with_modify_config(add_input),
+        FtTestRound::without_checkpoint(2500),
+        FtTestRound::with_checkpoint(2500),
+        FtTestRound::without_checkpoint(2500),
     ]);
 }
 

@@ -1385,6 +1385,21 @@ struct CircuitThread {
     last_commit_progress_update: Instant,
 }
 
+/// Compare two maps for equality using a custom comparator for values.
+fn maps_equal_with<F, K, V>(a: &BTreeMap<K, V>, b: &BTreeMap<K, V>, mut cmp: F) -> bool
+where
+    K: Ord,
+    F: FnMut(&V, &V) -> bool,
+{
+    if a.len() != b.len() {
+        return false;
+    }
+
+    a.iter()
+        .zip(b.iter())
+        .all(|((ka, va), (kb, vb))| ka == kb && cmp(va, vb))
+}
+
 impl CircuitThread {
     /// Circuit thread function: holds the handle to the circuit, calls `step`
     /// on it whenever input data is available, pushes output batches
@@ -1416,11 +1431,45 @@ impl CircuitThread {
 
         let (mut circuit, catalog) = circuit_factory(circuit_config)?;
 
-        // If the pipeline has been modified, we must pick up the new connector config, which means that we discard
-        // any dynamically added connectors (such as HTTP input and output) from the checkpoint. This is ok because
-        // these connectors are only needed to replay journalled inputs; however bootstrapping and replay cannot happen
-        // at the same time (see below).
-        if circuit.bootstrap_in_progress() {
+        // Determine whether the pipeline has been modified since the checkpoint was taken.
+        //
+        // The pipeline is considered modified if:
+        // 1. The circuit has changed, triggering bootstrapping.
+        // 2. The set of output connectors has changed (modulo transient connectors like HTTP and ad hoc)
+        //
+        // Note that this does not include changes to the circuit that don't trigger bootstrapping. This is
+        // the case for changes that only remove parts of the circuit.
+        //
+        // If the pipeline has been modified, we must pick up the new connector config and disable replay,
+        // since we can't replay into a modified pipeline.
+
+        let old_configured_inputs = pipeline_config
+            .inputs
+            .iter()
+            .filter(|(_, cfg)| !cfg.connector_config.transport.is_transient())
+            .map(|(name, cfg)| (name.clone(), cfg.clone()))
+            .collect::<BTreeMap<_, _>>();
+
+        let old_configured_outputs = pipeline_config
+            .outputs
+            .iter()
+            .filter(|(_, cfg)| !cfg.connector_config.transport.is_transient())
+            .map(|(name, cfg)| (name.clone(), cfg.clone()))
+            .collect::<BTreeMap<_, _>>();
+
+        let inputs_modified = !maps_equal_with(&old_configured_inputs, &config.inputs, |a, b| {
+            a.connector_config.equal_modulo_paused(&b.connector_config)
+        });
+
+        let outputs_modified =
+            !maps_equal_with(&old_configured_outputs, &config.outputs, |a, b| {
+                a.connector_config.equal_modulo_paused(&b.connector_config)
+            });
+
+        let pipeline_modified =
+            circuit.bootstrap_in_progress() || inputs_modified || outputs_modified;
+
+        if pipeline_modified {
             pipeline_config.inputs = config.inputs.clone();
             pipeline_config.outputs = config.outputs.clone();
         }
@@ -1490,19 +1539,17 @@ impl CircuitThread {
         let ft = match ft_model {
             Some(FtModel::ExactlyOnce) => {
                 let backend = storage.clone().unwrap();
-                let mut ft = if input_metadata.is_some() {
+                let mut ft = if input_metadata.is_some() && !pipeline_modified {
                     FtState::open(backend, step, controller.clone())
+                } else if input_metadata.is_some() {
+                    info!("Pipeline has been modified since the checkpoint was taken; replay journal will be discarded");
+                    FtState::open_and_truncate(backend, controller.clone())
                 } else {
                     FtState::create(backend, controller.clone())
                 }?;
 
-                // Normally, the pipeline can be modified between a suspend and a resume, but not between a failure
-                // and a recovery. If the pipeline has been modified (bootstrap_in_progress returns true), and its
-                // replay journal is not empty (is_replaying), we may not be able to recover it reliably, so just
-                // give up now.
-                if ft.is_replaying() && circuit.bootstrap_in_progress() {
-                    return Err(ControllerError::checkpoint_does_not_match_pipeline());
-                }
+                // The above code ensures that replay and bootstrapping cannot happen at the same time.
+                assert!(!(ft.is_replaying() && circuit.bootstrap_in_progress()));
 
                 // Disable journaling while we're bootstrapping the circuit.
                 if circuit.bootstrap_in_progress() {
@@ -2444,6 +2491,24 @@ impl FtState {
             input_endpoints: Self::initial_input_endpoints(&controller),
             controller,
             replay_step,
+            journal,
+        })
+    }
+
+    /// Initializes fault tolerance state from storage, truncating any existing
+    /// journal instead of replaying recorded steps.
+    fn open_and_truncate(
+        backend: Arc<dyn StorageBackend>,
+        controller: Arc<ControllerInner>,
+    ) -> Result<Self, ControllerError> {
+        info!("{STEPS_FILE}: truncating journal");
+
+        let journal = Journal::create(backend, &StoragePath::from(STEPS_FILE))?;
+        Ok(Self {
+            enabled: true,
+            input_endpoints: Self::initial_input_endpoints(&controller),
+            controller,
+            replay_step: None,
             journal,
         })
     }
