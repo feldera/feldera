@@ -83,6 +83,9 @@ pub struct PipelineConfig {
     /// Output endpoint configuration.
     #[serde(default)]
     pub outputs: BTreeMap<Cow<'static, str>, OutputEndpointConfig>,
+
+    #[serde(default)]
+    pub dataflow: Option<String>,
 }
 
 impl PipelineConfig {

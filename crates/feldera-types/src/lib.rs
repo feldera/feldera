@@ -4,6 +4,8 @@ pub mod config;
 pub mod constants;
 pub mod error;
 pub mod format;
+pub mod license;
+pub mod pipeline_diff;
 pub mod program_schema;
 pub mod query;
 pub mod query_params;

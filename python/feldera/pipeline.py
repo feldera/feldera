@@ -11,6 +11,7 @@ from collections import deque
 
 from feldera.rest.errors import FelderaAPIError
 from feldera.enums import (
+    BootstrapPolicy,
     PipelineFieldSelector,
     PipelineStatus,
     ProgramStatus,
@@ -345,7 +346,53 @@ class Pipeline:
 
         return self.stats().global_metrics.pipeline_complete
 
-    def restart(self, timeout_s: Optional[float] = None):
+    def start(self, bootstrap_policy: Optional[BootstrapPolicy] = None, wait: bool = True, timeout_s: Optional[float] = None):
+        """
+        .. _start:
+
+        Starts this pipeline.
+
+        - The pipeline must be in STOPPED state to start.
+        - If the pipeline is in any other state, an error will be raised.
+        - If the pipeline is in PAUSED state, use `.meth:resume` instead.
+
+        :param timeout_s: The maximum time (in seconds) to wait for the
+            pipeline to start.
+        :param wait: Set True to wait for the pipeline to start. True by default
+
+        :raises RuntimeError: If the pipeline is not in STOPPED state.
+        """
+
+        status = self.status()
+        if status != PipelineStatus.STOPPED:
+            raise RuntimeError(
+                f"""Cannot start pipeline '{self.name}' in state \
+'{str(status.name)}'. The pipeline must be in STOPPED state before it can be \
+started. You can either stop the pipeline using the `Pipeline.stop()` \
+method or use `Pipeline.resume()` to resume a paused pipeline."""
+            )
+
+        if not wait:
+            if len(self.views_tx) > 0:
+                raise ValueError(
+                    "cannot start with 'wait=False' when output listeners are configured. Try setting 'wait=True'."
+                )
+
+            self.client.start_pipeline(self.name, bootstrap_policy=bootstrap_policy, wait=wait)
+
+            return
+
+        if len(self.views_tx) == 0:
+            self.client.start_pipeline(self.name, bootstrap_policy=bootstrap_policy, wait=wait, timeout_s=timeout_s)
+        else:
+            self.client.start_pipeline_as_paused(self.name, bootstrap_policy=bootstrap_policy, wait=wait, timeout_s=timeout_s)
+            self.__setup_output_listeners()
+            self.resume(timeout_s=timeout_s)
+
+    def approve(self):
+        self.client.approve_pipeline(self.name)
+
+    def restart(self, bootstrap_policy: Optional[BootstrapPolicy] = None, timeout_s: Optional[float] = None):
         """
         Restarts the pipeline.
 
@@ -358,7 +405,7 @@ class Pipeline:
         """
 
         self.stop(force=True, timeout_s=timeout_s)
-        self.start(timeout_s=timeout_s)
+        self.start(bootstrap_policy=bootstrap_policy, timeout_s=timeout_s)
 
     def wait_for_idle(
         self,
@@ -451,38 +498,19 @@ metrics"""
 
         self.client.activate_pipeline(self.name, wait=wait, timeout_s=timeout_s)
 
-    def start(self, wait: bool = True, timeout_s: Optional[float] = None):
-        """
-        .. _start:
-
-        Starts this pipeline.
-
-        - The pipeline must be in STOPPED state to start.
-        - If the pipeline is in any other state, an error will be raised.
-        - If the pipeline is in PAUSED state, use `.meth:resume` instead.
-
-        :param timeout_s: The maximum time (in seconds) to wait for the
-            pipeline to start.
-        :param wait: Set True to wait for the pipeline to start. True by default
-
-        :raises RuntimeError: If the pipeline is not in STOPPED state.
-        """
-
-        self.client.start_pipeline(self.name, wait=wait, timeout_s=timeout_s)
-
-    def start_paused(self, wait: bool = True, timeout_s: Optional[float] = None):
+    def start_paused(self, bootstrap_policy: Optional[BootstrapPolicy] = None, wait: bool = True, timeout_s: Optional[float] = None):
         """
         Starts the pipeline in the paused state.
         """
 
-        self.client.start_pipeline_as_paused(self.name, wait=wait, timeout_s=timeout_s)
+        self.client.start_pipeline_as_paused(self.name, bootstrap_policy=bootstrap_policy, wait=wait, timeout_s=timeout_s)
 
-    def start_standby(self, wait: bool = True, timeout_s: Optional[float] = None):
+    def start_standby(self, bootstrap_policy: Optional[BootstrapPolicy] = None, wait: bool = True, timeout_s: Optional[float] = None):
         """
         Starts the pipeline in the standby state.
         """
 
-        self.client.start_pipeline_as_standby(self.name, wait=wait, timeout_s=timeout_s)
+        self.client.start_pipeline_as_standby(self.name, bootstrap_policy=bootstrap_policy, wait=wait, timeout_s=timeout_s)
 
     def pause(self, wait: bool = True, timeout_s: Optional[float] = None):
         """

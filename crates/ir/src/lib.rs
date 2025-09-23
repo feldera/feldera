@@ -10,7 +10,7 @@ mod mir;
 
 pub use hir::{CalciteId, CalcitePlan};
 pub use lir::{LirCircuit, LirEdge, LirNode, LirNodeId, LirStreamId};
-pub use mir::{MirInput, MirNode, MirNodeId};
+pub use mir::{program_diff, MirInput, MirNode, MirNodeId};
 
 /// Indicates what relations (views and tables) of a dataflow graph
 /// are different when compared with another dataflow graph.
@@ -29,6 +29,13 @@ pub struct Dataflow {
 }
 
 impl Dataflow {
+    pub fn new(
+        calcite_plan: HashMap<String, CalcitePlan>,
+        mir: HashMap<MirNodeId, MirNode>,
+    ) -> Self {
+        Self { calcite_plan, mir }
+    }
+
     /// Reports the changes to relations (views and tables) of a dataflow graph when
     /// compared with another (newer/updated) dataflow graph.
     ///

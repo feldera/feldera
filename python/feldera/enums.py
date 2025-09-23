@@ -344,3 +344,8 @@ class PipelineFieldSelector(Enum):
 
     STATUS = "status"
     """Select only the fields required to know the status of a pipeline."""
+
+class BootstrapPolicy(Enum):
+    AWAIT_APPROVAL = "await_approval"
+    ALLOW = "allow"
+    REJECT = "reject"

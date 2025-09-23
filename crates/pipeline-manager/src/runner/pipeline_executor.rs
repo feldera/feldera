@@ -5,7 +5,7 @@ use crate::error::ManagerError;
 use crate::runner::pipeline_logs::LogsSender;
 use async_trait::async_trait;
 use feldera_types::config::{PipelineConfig, StorageConfig};
-use feldera_types::runtime_status::RuntimeDesiredStatus;
+use feldera_types::runtime_status::{BootstrapPolicy, RuntimeDesiredStatus};
 use std::time::Duration;
 use uuid::Uuid;
 
@@ -42,6 +42,7 @@ pub trait PipelineExecutor: Sync + Send {
     async fn provision(
         &mut self,
         deployment_initial: RuntimeDesiredStatus,
+        bootstrap_policy: BootstrapPolicy,
         deployment_id: &Uuid,
         deployment_config: &PipelineConfig,
         program_binary_url: &str,

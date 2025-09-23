@@ -5,7 +5,7 @@ use crate::db::types::storage::StorageStatus;
 use crate::db::types::version::Version;
 use chrono::{DateTime, Utc};
 use feldera_types::error::ErrorResponse;
-use feldera_types::runtime_status::{RuntimeDesiredStatus, RuntimeStatus};
+use feldera_types::runtime_status::{BootstrapPolicy, RuntimeDesiredStatus, RuntimeStatus};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::fmt::Display;
@@ -32,6 +32,7 @@ pub fn runtime_status_to_string(runtime_status: RuntimeStatus) -> String {
     match runtime_status {
         RuntimeStatus::Unavailable => "unavailable",
         RuntimeStatus::Standby => "standby",
+        RuntimeStatus::AwaitingApproval => "awaiting_approval",
         RuntimeStatus::Initializing => "initializing",
         RuntimeStatus::Bootstrapping => "bootstrapping",
         RuntimeStatus::Replaying => "replaying",
@@ -82,6 +83,24 @@ pub fn parse_string_as_runtime_desired_status(s: String) -> Result<RuntimeDesire
         "running" => Ok(RuntimeDesiredStatus::Running),
         "suspended" => Ok(RuntimeDesiredStatus::Suspended),
         _ => Err(DBError::InvalidRuntimeDesiredStatus(s)),
+    }
+}
+
+pub fn bootstrap_policy_to_string(bootstrap: BootstrapPolicy) -> String {
+    match bootstrap {
+        BootstrapPolicy::Allow => "allow",
+        BootstrapPolicy::Reject => "reject",
+        BootstrapPolicy::AwaitApproval => "await_approval",
+    }
+    .to_string()
+}
+
+pub fn parse_string_as_bootstrap_policy(s: String) -> Result<BootstrapPolicy, DBError> {
+    match s.as_str() {
+        "allow" => Ok(BootstrapPolicy::Allow),
+        "reject" => Ok(BootstrapPolicy::Reject),
+        "await_approval" => Ok(BootstrapPolicy::AwaitApproval),
+        _ => Err(DBError::InvalidBootstrap(s)),
     }
 }
 
@@ -224,6 +243,8 @@ pub struct ExtendedPipelineDescr {
     /// Initial runtime desired status of the current deployment.
     pub deployment_initial: Option<RuntimeDesiredStatus>,
 
+    pub bootstrap_policy: Option<BootstrapPolicy>,
+
     /// Resources status of the current deployment.
     pub deployment_resources_status: ResourcesStatus,
 
@@ -238,6 +259,8 @@ pub struct ExtendedPipelineDescr {
 
     /// Observed runtime status of the current deployment.
     pub deployment_runtime_status: Option<RuntimeStatus>,
+
+    pub deployment_runtime_status_details: Option<String>,
 
     /// Timestamp when the `deployment_runtime_status` observation last changed.
     pub deployment_runtime_status_since: Option<DateTime<Utc>>,
@@ -277,7 +300,9 @@ pub struct ExtendedPipelineDescrMonitoring {
     pub deployment_resources_desired_status: ResourcesDesiredStatus,
     pub deployment_resources_desired_status_since: DateTime<Utc>,
     pub deployment_runtime_status: Option<RuntimeStatus>,
+    pub deployment_runtime_status_details: Option<String>,
     pub deployment_runtime_status_since: Option<DateTime<Utc>>,
     pub deployment_runtime_desired_status: Option<RuntimeDesiredStatus>,
+    pub bootstrap_policy: Option<BootstrapPolicy>,
     pub deployment_runtime_desired_status_since: Option<DateTime<Utc>>,
 }

@@ -514,9 +514,11 @@
                     "deployment_resources_desired_status": "Stopped",
                     "deployment_resources_desired_status_since": "1970-01-01T00:00:00Z",
                     "deployment_runtime_status": null,
+                    "deployment_runtime_status_details": null,
                     "deployment_runtime_status_since": null,
                     "deployment_runtime_desired_status": null,
-                    "deployment_runtime_desired_status_since": null
+                    "deployment_runtime_desired_status_since": null,
+                    "pipeline_diff": null
                   },
                   {
                     "id": "67e55044-10b1-426f-9247-bb680e5fe0c9",
@@ -595,9 +597,11 @@
                     "deployment_resources_desired_status": "Stopped",
                     "deployment_resources_desired_status_since": "1970-01-01T00:00:00Z",
                     "deployment_runtime_status": null,
+                    "deployment_runtime_status_details": null,
                     "deployment_runtime_status_since": null,
                     "deployment_runtime_desired_status": null,
-                    "deployment_runtime_desired_status_since": null
+                    "deployment_runtime_desired_status_since": null,
+                    "pipeline_diff": null
                   }
                 ]
               }
@@ -946,9 +950,11 @@
                   "deployment_resources_desired_status": "Stopped",
                   "deployment_resources_desired_status_since": "1970-01-01T00:00:00Z",
                   "deployment_runtime_status": null,
+                  "deployment_runtime_status_details": null,
                   "deployment_runtime_status_since": null,
                   "deployment_runtime_desired_status": null,
-                  "deployment_runtime_desired_status_since": null
+                  "deployment_runtime_desired_status_since": null,
+                  "pipeline_diff": null
                 }
               }
             }
@@ -1592,6 +1598,127 @@
         "summary": "Requests the pipeline to activate if it is currently in standby mode, which it will do",
         "description": "asynchronously.\n\nProgress should be monitored by polling the pipeline `GET` endpoints.\n\nThis endpoint is only applicable when the pipeline is configured to start\nfrom object store and started as standby.",
         "operationId": "post_pipeline_activate",
+        "parameters": [
+          {
+            "name": "pipeline_name",
+            "in": "path",
+            "description": "Unique pipeline name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "initial",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Pipeline activation initiated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckpointResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Pipeline with that name does not exist",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "Unknown pipeline name 'non-existent-pipeline'",
+                  "error_code": "UnknownPipelineName",
+                  "details": {
+                    "pipeline_name": "non-existent-pipeline"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "Disconnected during response": {
+                    "value": {
+                      "message": "Unable to reach pipeline to interact due to: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs.",
+                      "error_code": "PipelineInteractionUnreachable",
+                      "details": {
+                        "error": "the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs."
+                      }
+                    }
+                  },
+                  "Pipeline is currently unavailable": {
+                    "value": {
+                      "message": "Unable to reach pipeline to interact due to: deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again",
+                      "error_code": "PipelineInteractionUnreachable",
+                      "details": {
+                        "error": "deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again"
+                      }
+                    }
+                  },
+                  "Pipeline is not deployed": {
+                    "value": {
+                      "message": "Unable to interact with pipeline because the deployment status (stopped) indicates it is not (yet) fully provisioned",
+                      "error_code": "PipelineInteractionNotDeployed",
+                      "details": {
+                        "status": "Stopped",
+                        "desired_status": "Provisioned"
+                      }
+                    }
+                  },
+                  "Response timeout": {
+                    "value": {
+                      "message": "Unable to reach pipeline to interact due to: timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)",
+                      "error_code": "PipelineInteractionUnreachable",
+                      "details": {
+                        "error": "timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JSON web token (JWT) or API key": []
+          }
+        ]
+      }
+    },
+    "/v0/pipelines/{pipeline_name}/approve": {
+      "post": {
+        "tags": [
+          "Pipeline interaction"
+        ],
+        "summary": "TODO",
+        "operationId": "post_pipeline_approve",
         "parameters": [
           {
             "name": "pipeline_name",
@@ -3610,6 +3737,14 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "bootstrap_policy",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/BootstrapPolicy"
+            }
           }
         ],
         "responses": {
@@ -5047,6 +5182,14 @@
           }
         ]
       },
+      "BootstrapPolicy": {
+        "type": "string",
+        "enum": [
+          "allow",
+          "reject",
+          "await_approval"
+        ]
+      },
       "BuildInformation": {
         "type": "object",
         "description": "Information about the build of the platform.",
@@ -5276,6 +5419,7 @@
           "Provisioning",
           "Unavailable",
           "Standby",
+          "AwaitingApproval",
           "Initializing",
           "Bootstrapping",
           "Replaying",
@@ -6926,6 +7070,10 @@
               "inputs"
             ],
             "properties": {
+              "dataflow": {
+                "type": "string",
+                "nullable": true
+              },
               "inputs": {
                 "type": "object",
                 "description": "Input endpoint configuration.",
@@ -7236,6 +7384,10 @@
             ],
             "nullable": true
           },
+          "deployment_runtime_status_details": {
+            "type": "string",
+            "nullable": true
+          },
           "deployment_runtime_status_since": {
             "type": "string",
             "format": "date-time",
@@ -7256,6 +7408,9 @@
           },
           "name": {
             "type": "string"
+          },
+          "pipeline_diff": {
+            "nullable": true
           },
           "platform_version": {
             "type": "string"
@@ -8131,6 +8286,7 @@
           "Unavailable",
           "Standby",
           "Initializing",
+          "AwaitingApproval",
           "Bootstrapping",
           "Replaying",
           "Paused",

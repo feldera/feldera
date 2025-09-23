@@ -4,6 +4,7 @@ use crate::db::operations::utils::{
     maybe_tenant_id_foreign_key_constraint_err, maybe_unique_violation,
 };
 use crate::db::types::pipeline::{
+    bootstrap_policy_to_string, parse_string_as_bootstrap_policy,
     parse_string_as_runtime_desired_status, parse_string_as_runtime_status,
     runtime_desired_status_to_string, runtime_status_to_string, ExtendedPipelineDescr,
     ExtendedPipelineDescrMonitoring, PipelineDescr, PipelineId,
@@ -26,7 +27,7 @@ use crate::db::types::version::Version;
 use chrono::{DateTime, Utc};
 use deadpool_postgres::Transaction;
 use feldera_types::error::ErrorResponse;
-use feldera_types::runtime_status::{RuntimeDesiredStatus, RuntimeStatus};
+use feldera_types::runtime_status::{BootstrapPolicy, RuntimeDesiredStatus, RuntimeStatus};
 use log::{error, warn};
 use rmp_serde::{from_slice, to_vec};
 use tokio_postgres::Row;
@@ -99,8 +100,8 @@ const RETRIEVE_PIPELINE_COLUMNS: &str =
      p.suspend_info, p.storage_status, p.deployment_id, p.deployment_initial,
      p.deployment_resources_status, p.deployment_resources_status_since,
      p.deployment_resources_desired_status, p.deployment_resources_desired_status_since,
-     p.deployment_runtime_status, p.deployment_runtime_status_since,
-     p.deployment_runtime_desired_status, p.deployment_runtime_desired_status_since
+     p.deployment_runtime_status, p.deployment_runtime_status_details, p.deployment_runtime_status_since,
+     p.deployment_runtime_desired_status, p.deployment_runtime_desired_status_since, p.bootstrap_policy,
      ";
 
 /// Converts a pipeline table row to its extended descriptor with all fields.
@@ -168,12 +169,17 @@ fn row_to_extended_pipeline_descriptor(row: &Row) -> Result<ExtendedPipelineDesc
         None => None,
         Some(s) => Some(parse_string_as_runtime_status(s)?),
     };
-    let deployment_runtime_status_since = row.get::<_, Option<DateTime<Utc>>>(32);
+    let deployment_runtime_status_since = row.get::<_, Option<DateTime<Utc>>>(33);
 
     // Deployment runtime desired status
-    let deployment_runtime_desired_status = match row.get::<_, Option<String>>(33) {
+    let deployment_runtime_desired_status = match row.get::<_, Option<String>>(34) {
         None => None,
         Some(s) => Some(parse_string_as_runtime_desired_status(s)?),
+    };
+
+    let bootstrap_policy = match row.get::<_, Option<String>>(36) {
+        None => None,
+        Some(s) => Some(parse_string_as_bootstrap_policy(s)?),
     };
 
     Ok(ExtendedPipelineDescr {
@@ -209,9 +215,11 @@ fn row_to_extended_pipeline_descriptor(row: &Row) -> Result<ExtendedPipelineDesc
         deployment_resources_desired_status: row.get::<_, String>(29).try_into()?,
         deployment_resources_desired_status_since: row.get(30),
         deployment_runtime_status,
+        deployment_runtime_status_details: row.get(32),
         deployment_runtime_status_since,
         deployment_runtime_desired_status,
-        deployment_runtime_desired_status_since: row.get(34),
+        deployment_runtime_desired_status_since: row.get(35),
+        bootstrap_policy,
     })
 }
 
@@ -223,8 +231,8 @@ const RETRIEVE_PIPELINE_MONITORING_COLUMNS: &str =
      p.deployment_id, p.deployment_initial,
      p.deployment_resources_status, p.deployment_resources_status_since,
      p.deployment_resources_desired_status, p.deployment_resources_desired_status_since,
-     p.deployment_runtime_status, p.deployment_runtime_status_since,
-     p.deployment_runtime_desired_status, p.deployment_runtime_desired_status_since
+     p.deployment_runtime_status, p.deployment_runtime_status_details, p.deployment_runtime_status_since,
+     p.deployment_runtime_desired_status, p.deployment_runtime_desired_status_since, p.bootstrap_policy
      ";
 
 /// Converts a pipeline table row to its extended descriptor with only fields relevant to monitoring.
@@ -249,12 +257,17 @@ fn row_to_extended_pipeline_descriptor_monitoring(
         None => None,
         Some(s) => Some(parse_string_as_runtime_status(s)?),
     };
-    let deployment_runtime_status_since = row.get::<_, Option<DateTime<Utc>>>(21);
+    let deployment_runtime_status_since = row.get::<_, Option<DateTime<Utc>>>(22);
 
     // Deployment runtime desired status
-    let deployment_runtime_desired_status = match row.get::<_, Option<String>>(22) {
+    let deployment_runtime_desired_status = match row.get::<_, Option<String>>(23) {
         None => None,
         Some(s) => Some(parse_string_as_runtime_desired_status(s)?),
+    };
+
+    let bootstrap_policy = match row.get::<_, Option<String>>(25) {
+        None => None,
+        Some(s) => Some(parse_string_as_bootstrap_policy(s)?),
     };
 
     Ok(ExtendedPipelineDescrMonitoring {
@@ -279,9 +292,11 @@ fn row_to_extended_pipeline_descriptor_monitoring(
         deployment_resources_desired_status: row.get::<_, String>(18).try_into()?,
         deployment_resources_desired_status_since: row.get(19),
         deployment_runtime_status,
+        deployment_runtime_status_details: row.get(21),
         deployment_runtime_status_since,
         deployment_runtime_desired_status,
-        deployment_runtime_desired_status_since: row.get(23),
+        deployment_runtime_desired_status_since: row.get(24),
+        bootstrap_policy,
     })
 }
 
@@ -1069,6 +1084,7 @@ pub(crate) async fn set_deployment_resources_desired_status(
     pipeline_name: &str,
     new_desired_status: ResourcesDesiredStatus,
     initial_runtime_desired_status: Option<RuntimeDesiredStatus>,
+    bootstrap_policy: Option<BootstrapPolicy>,
 ) -> Result<PipelineId, DBError> {
     let current = get_pipeline(txn, tenant_id, pipeline_name).await?;
 
@@ -1086,16 +1102,16 @@ pub(crate) async fn set_deployment_resources_desired_status(
     //            runner notices. Otherwise, another (not desired) status transition will set it
     //            to NULL.
     // - Provisioned: new value
-    let final_deployment_initial = match new_desired_status {
+    let (final_deployment_initial, final_bootstrap) = match new_desired_status {
         ResourcesDesiredStatus::Stopped => {
             check_precondition(
                 initial_runtime_desired_status.is_none(),
                 "initial_runtime_desired_status should be None when becoming desired Stopped",
             )?;
             if current.deployment_resources_status == ResourcesStatus::Stopped {
-                None
+                (None, None)
             } else {
-                current.deployment_initial
+                (current.deployment_initial, current.bootstrap_policy)
             }
         }
         ResourcesDesiredStatus::Provisioned => {
@@ -1103,14 +1119,16 @@ pub(crate) async fn set_deployment_resources_desired_status(
                 initial_runtime_desired_status.is_some(),
                 "initial_runtime_desired_status should be Some when becoming desired Provisioned",
             )?;
-            initial_runtime_desired_status
+            (initial_runtime_desired_status, bootstrap_policy)
         }
     };
 
     // If the current initial desired runtime status is already set, it cannot be changed
     if let Some(current_desired_status) = current.deployment_initial {
         if let Some(new_desired_status) = final_deployment_initial {
-            if current_desired_status != new_desired_status {
+            if (current_desired_status, current.bootstrap_policy)
+                != (new_desired_status, final_bootstrap)
+            {
                 return Err(DBError::InitialImmutableUnlessStopped);
             }
         }
@@ -1143,8 +1161,9 @@ pub(crate) async fn set_deployment_resources_desired_status(
             "UPDATE pipeline
              SET deployment_resources_desired_status = $1,
                  deployment_resources_desired_status_since = CASE WHEN deployment_resources_desired_status = $1::VARCHAR THEN deployment_resources_desired_status_since ELSE NOW() END,
-                 deployment_initial = $2
-             WHERE tenant_id = $3 AND id = $4",
+                 deployment_initial = $2,
+                 bootstrap_policy = $3
+             WHERE tenant_id = $4 AND id = $5",
         )
         .await?;
     let modified_rows = txn
@@ -1153,6 +1172,7 @@ pub(crate) async fn set_deployment_resources_desired_status(
             &[
                 &new_desired_status.to_string(),
                 &final_deployment_initial.map(runtime_desired_status_to_string),
+                &final_bootstrap.map(bootstrap_policy_to_string),
                 &tenant_id.0,
                 &current.id.0,
             ],
