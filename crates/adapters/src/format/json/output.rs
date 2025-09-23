@@ -511,10 +511,7 @@ mod test {
     use crate::format::json::{DebeziumOp, DebeziumPayload, DebeziumUpdate};
     use crate::{
         catalog::SerBatch,
-        format::{
-            json::{InsDelUpdate, SnowflakeAction, SnowflakeUpdate},
-            Encoder,
-        },
+        format::{json::InsDelUpdate, Encoder},
         static_compile::seroutput::SerBatchImpl,
         test::{generate_test_batches_with_weights, MockOutputConsumer, TestStruct},
     };
@@ -522,11 +519,29 @@ mod test {
     use feldera_types::format::json::JsonUpdateFormat;
     use feldera_types::program_schema::Relation;
     use proptest::prelude::*;
-    use serde::Deserialize;
+    use serde::{Deserialize, Serialize};
     use serde_json::json;
     use std::collections::BTreeMap;
     use std::{cell::RefCell, fmt::Debug, rc::Rc, sync::Arc};
     use tracing::trace;
+
+    #[derive(Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord)]
+    pub enum SnowflakeAction {
+        #[serde(rename = "insert")]
+        Insert,
+        #[serde(rename = "delete")]
+        Delete,
+    }
+
+    #[derive(Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord)]
+    #[serde(deny_unknown_fields)]
+    pub struct SnowflakeUpdate<T> {
+        __stream_id: u64,
+        __seq_number: u64,
+        __action: SnowflakeAction,
+        #[serde(flatten)]
+        value: T,
+    }
 
     trait OutputUpdate: Debug + for<'de> Deserialize<'de> + Eq + Ord {
         type Val;

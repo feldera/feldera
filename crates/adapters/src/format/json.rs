@@ -23,14 +23,6 @@ pub enum DebeziumOp {
     Read,
 }
 
-/// Debezium CDC source specification describes the origin of the record,
-/// including the name of the table the record belongs to.
-#[derive(Debug, Deserialize)]
-pub struct DebeziumSource {
-    #[allow(dead_code)]
-    table: String,
-}
-
 /// A Debezium data change event.
 ///
 /// Only the `payload` field is currently supported; other fields are ignored.
@@ -74,24 +66,6 @@ pub struct InsDelUpdate<T> {
     /// existing record.
     #[serde(skip_serializing_if = "Option::is_none")]
     update: Option<T>,
-}
-
-#[derive(Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord)]
-pub enum SnowflakeAction {
-    #[serde(rename = "insert")]
-    Insert,
-    #[serde(rename = "delete")]
-    Delete,
-}
-
-#[derive(Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord)]
-#[serde(deny_unknown_fields)]
-pub struct SnowflakeUpdate<T> {
-    __stream_id: u64,
-    __seq_number: u64,
-    __action: SnowflakeAction,
-    #[serde(flatten)]
-    value: T,
 }
 
 // TODO: implement support for parsing this format.
