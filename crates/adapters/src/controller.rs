@@ -23,8 +23,6 @@ use crate::controller::checkpoint::{
 };
 use crate::controller::journal::Journal;
 use crate::controller::stats::{InputEndpointMetrics, OutputEndpointMetrics, TransactionStatus};
-#[cfg(feature = "feldera-enterprise")]
-use crate::controller::sync::continuous_pull;
 use crate::controller::sync::{
     CHECKPOINT_SYNC_PULL_DURATION_SECONDS, CHECKPOINT_SYNC_PULL_FAILURES,
     CHECKPOINT_SYNC_PULL_SUCCESS, CHECKPOINT_SYNC_PULL_TRANSFERRED_BYTES,
