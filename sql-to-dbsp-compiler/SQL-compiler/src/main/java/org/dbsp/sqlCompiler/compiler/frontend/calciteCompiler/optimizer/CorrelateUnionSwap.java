@@ -1,4 +1,4 @@
-package org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler;
+package org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.optimizer;
 
 import org.apache.calcite.plan.RelOptRuleCall;
 import org.apache.calcite.plan.RelRule;
@@ -17,12 +17,9 @@ import org.apache.calcite.rex.RexNode;
 import org.apache.calcite.rex.RexShuttle;
 import org.apache.calcite.sql.SqlKind;
 import org.apache.calcite.tools.RelBuilder;
-import org.apache.calcite.tools.RelBuilderFactory;
-import org.checkerframework.checker.nullness.qual.Nullable;
 import org.dbsp.util.Utilities;
 
 import java.util.List;
-import java.util.Objects;
 import java.util.stream.Collectors;
 
 /** Swaps a Correlate call with an inner Union if used to implement an EXISTS pattern.
@@ -53,15 +50,11 @@ import java.util.stream.Collectors;
  *         Input1
  */
 public class CorrelateUnionSwap
-        extends RelRule<CorrelateUnionSwap.Config>
+        extends RelRule<DefaultOptRuleConfig<CorrelateUnionSwap>>
         implements TransformationRule {
 
-    protected CorrelateUnionSwap(Config config) {
-        super(config);
-    }
-
-    @Override public void onMatch(RelOptRuleCall call) {
-        config.matchHandler().accept(this, call);
+    protected CorrelateUnionSwap() {
+        super(CONFIG);
     }
 
     public static class RexFieldAccessReplacer extends RexShuttle {
@@ -97,7 +90,7 @@ public class CorrelateUnionSwap
         }
     }
 
-    private void match(RelOptRuleCall call) {
+    @Override public void onMatch(RelOptRuleCall call) {
         Correlate corr = call.rel(0);
         RelNode leftInput = call.rel(1);
         Aggregate aggregate = call.rel(2);
@@ -129,85 +122,6 @@ public class CorrelateUnionSwap
         call.transformTo(builder.build());
     }
 
-    public static final class CorrelateUnionSwapRuleConfig
-            implements CorrelateUnionSwap.Config {
-        private final GenericRuleConfigState<CorrelateUnionSwap> state;
-
-        private CorrelateUnionSwapRuleConfig(Builder builder) {
-            this.state = new GenericRuleConfigState<>(
-                    CorrelateUnionSwap.Config.super.relBuilderFactory(),
-                    builder.description,
-                    CorrelateUnionSwap.Config.super.operandSupplier(),
-                    builder.matchHandler);
-        }
-
-        private CorrelateUnionSwapRuleConfig(GenericRuleConfigState<CorrelateUnionSwap> state) {
-            this.state = state;
-        }
-
-        public static Builder builder() {
-            return new Builder();
-        }
-
-        @Override
-        public MatchHandler<CorrelateUnionSwap> matchHandler() {
-            return this.state.matchHandler();
-        }
-
-        @Override
-        public Config withMatchHandler(MatchHandler<CorrelateUnionSwap> matchHandler) {
-            return new CorrelateUnionSwapRuleConfig(this.state.withMatchHandler(matchHandler));
-        }
-
-        @Override
-        public RelRule.Config withRelBuilderFactory(RelBuilderFactory factory) {
-            return new CorrelateUnionSwapRuleConfig(this.state.withRelBuilderFactory(factory));
-        }
-
-        @javax.annotation.Nullable
-        @Override
-        public @Nullable String description() {
-            return this.state.description();
-        }
-
-        @Override
-        public RelRule.Config withDescription(@Nullable String description) {
-            return new CorrelateUnionSwapRuleConfig(this.state.withDescription(description));
-        }
-
-        @Override
-        public OperandTransform operandSupplier() {
-            return this.state.operandSupplier();
-        }
-
-        @Override
-        public RelRule.Config withOperandSupplier(OperandTransform transform) {
-            return new CorrelateUnionSwapRuleConfig(this.state.withOperandSupplier(transform));
-        }
-
-        @Override
-        public String toString() {
-            return this.state.toString();
-        }
-
-        public static final class Builder {
-            private final @javax.annotation.Nullable
-            @Nullable String description = null;
-            private @javax.annotation.Nullable MatchHandler<CorrelateUnionSwap> matchHandler;
-
-            private Builder() {}
-
-            public Builder withMatchHandler(MatchHandler<CorrelateUnionSwap> matchHandler) {
-                this.matchHandler = Objects.requireNonNull(matchHandler, "matchHandler");
-                return this;
-            }
-
-            public CorrelateUnionSwapRuleConfig build() {
-                return new CorrelateUnionSwapRuleConfig(this);
-            }
-        }
-    }
-
     static boolean projectsToTrue(Project project) {
         return project.getProjects().size() == 1 &&
                 project.getProjects().get(0).isAlwaysTrue();
@@ -225,10 +139,8 @@ public class CorrelateUnionSwap
     }
 
     /** Rule configuration. */
-    public interface Config extends RelRule.Config {
-        Config DEFAULT = CorrelateUnionSwapRuleConfig.builder()
-                .withMatchHandler(CorrelateUnionSwap::match)
-                .build()
+    private static final DefaultOptRuleConfig<CorrelateUnionSwap> CONFIG =
+            DefaultOptRuleConfig.<CorrelateUnionSwap>create()
                 .withOperandSupplier(
                         b0 -> b0.operand(Correlate.class)
                                 .inputs(b1 -> b1.operand(RelNode.class).anyInputs(),
@@ -240,15 +152,5 @@ public class CorrelateUnionSwap
                                                         .predicate(CorrelateUnionSwap::projectsToTrue)
                                                         .oneInput(b4 -> b4.operand(Union.class)
                                                                 .predicate(CorrelateUnionSwap::allInputsProjectToTrue)
-                                                                .anyInputs()))))
-                .as(Config.class);
-
-        @Override default CorrelateUnionSwap toRule() {
-            return new CorrelateUnionSwap(this);
-        }
-
-        MatchHandler<CorrelateUnionSwap> matchHandler();
-
-        Config withMatchHandler(MatchHandler<CorrelateUnionSwap> matchHandler);
-    }
+                                                                .anyInputs()))));
 }

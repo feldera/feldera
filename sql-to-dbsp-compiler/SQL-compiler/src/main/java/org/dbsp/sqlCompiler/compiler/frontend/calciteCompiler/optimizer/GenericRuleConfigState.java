@@ -1,4 +1,4 @@
-package org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler;
+package org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.optimizer;
 
 import com.google.common.base.MoreObjects;
 import com.google.errorprone.annotations.Var;
