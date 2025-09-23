@@ -57,6 +57,14 @@ be using `kubectl` port forwarding.
 
 3. This will create the `tls.key` and `tls.crt` files.
 
+### Not self-signed
+
+If the certificate is not self-signed, but instead is signed by a root CA or an intermediate CA,
+the `tls.crt` should contain the complete bundle of the entire chain up until the root certificate
+authority. As such, it should contain multiple  `-----BEGIN CERTIFICATE----- (...) -----END CERTIFICATE-----`
+sections, starting with the leaf certificate and ending with the root certificate. The `tls.key`
+should only contain the single private key of the leaf certificate.
+
 ## Configure Kubernetes
 
 1. Create the Kubernetes TLS Secret (e.g., in namespace `feldera`, and named `feldera-https-config`)
