@@ -134,6 +134,7 @@ import org.dbsp.sqlCompiler.compiler.errors.SourceFileContents;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.sqlCompiler.compiler.errors.UnsupportedException;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.optimizer.CalciteOptimizer;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteRelNode;
 import org.dbsp.sqlCompiler.compiler.frontend.parser.PropertyList;
@@ -649,6 +650,7 @@ public class SqlToRelCompiler implements IWritesLogs {
         return false;
     }
 
+    /** aka EXPLAIN */
     public static String getPlan(RelNode rel) {
         return RelOptUtil.dumpPlan("[Logical plan]", rel,
                 SqlExplainFormat.TEXT,

@@ -107,8 +107,7 @@ public class PostgresCaseTests extends SqlIoTest {
     @Test
     public void testCases2() {
         // changed error to null output
-        this.qs(
-                """
+        this.qs("""
                         SELECT CASE WHEN i > 100 THEN 1/0 ELSE 0 END FROM case_tbl;
                         case
                         ------

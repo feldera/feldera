@@ -17,6 +17,10 @@ import org.dbsp.util.Linq;
 
 import java.util.List;
 
+/**
+ * Calcite only supports user-defined aggregates defined in Java.
+ * This is a user-defined aggregation function declaration.
+ */
 public class SqlUserDefinedAggregationFunction extends SqlUserDefinedAggFunction {
     final SqlOperandMetadata operandTypeChecker;
     public final AggregateFunctionDescription description;
