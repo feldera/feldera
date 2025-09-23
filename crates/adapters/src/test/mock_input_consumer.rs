@@ -64,7 +64,7 @@ impl MockInputConsumer {
         self.state().reset();
     }
 
-    pub fn state(&self) -> MutexGuard<MockInputConsumerState> {
+    pub fn state(&self) -> MutexGuard<'_, MockInputConsumerState> {
         self.0.lock().unwrap()
     }
 
@@ -168,7 +168,7 @@ impl MockInputParser {
         state.parser_result = None;
     }
 
-    pub fn state(&self) -> MutexGuard<MockInputParserState> {
+    pub fn state(&self) -> MutexGuard<'_, MockInputParserState> {
         self.0.lock().unwrap()
     }
 

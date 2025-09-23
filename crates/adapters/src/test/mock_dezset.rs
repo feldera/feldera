@@ -121,7 +121,7 @@ impl<T, U> MockDeZSet<T, U> {
         self.0.lock().unwrap().reset();
     }
 
-    pub fn state(&self) -> MutexGuard<MockDeZSetState<T, U>> {
+    pub fn state(&self) -> MutexGuard<'_, MockDeZSetState<T, U>> {
         self.0.lock().unwrap()
     }
 }

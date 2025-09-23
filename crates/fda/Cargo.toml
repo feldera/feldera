@@ -40,6 +40,7 @@ chrono = { workspace = true, features = ["serde"] }
 anyhow = { workspace = true }
 ordered-float.workspace = true
 itertools.workspace = true
+rustversion.workspace = true
 
 [build-dependencies]
 prettyplease = { workspace = true }

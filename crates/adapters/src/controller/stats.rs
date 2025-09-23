@@ -699,12 +699,12 @@ impl ControllerStatus {
     }
 
     /// Input endpoint stats.
-    pub fn input_status(&self) -> RwLockReadGuard<BTreeMap<EndpointId, InputEndpointStatus>> {
+    pub fn input_status(&self) -> RwLockReadGuard<'_, BTreeMap<EndpointId, InputEndpointStatus>> {
         self.inputs.read_recursive()
     }
 
     /// Output endpoint stats.
-    pub fn output_status(&self) -> RwLockReadGuard<BTreeMap<EndpointId, OutputEndpointStatus>> {
+    pub fn output_status(&self) -> RwLockReadGuard<'_, BTreeMap<EndpointId, OutputEndpointStatus>> {
         self.outputs.read_recursive()
     }
 

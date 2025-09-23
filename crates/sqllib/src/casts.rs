@@ -1018,7 +1018,7 @@ struct SizedStringSpec<'a> {
 impl<'a> SizedStringSpec<'a> {
     /// Constructs a string spec from `value` using constraints `n_chars` and
     /// `fixed`, which are interpreted as described in [SizeConstraints::new].
-    pub fn for_character_count(value: &str, n_chars: i32, fixed: bool) -> SizedStringSpec {
+    pub fn for_character_count(value: &str, n_chars: i32, fixed: bool) -> SizedStringSpec<'_> {
         match CharacterCount::new(n_chars, fixed) {
             None => SizedStringSpec::new(value),
             Some(CharacterCount::Exact(n_chars)) => {
