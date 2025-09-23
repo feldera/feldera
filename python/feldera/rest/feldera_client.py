@@ -7,7 +7,7 @@ from decimal import Decimal
 from typing import Generator, Mapping
 from urllib.parse import quote
 
-from feldera.enums import PipelineFieldSelector
+from feldera.enums import BootstrapPolicy, PipelineFieldSelector, PipelineStatus
 from feldera.rest.config import Config
 from feldera.rest.feldera_config import FelderaConfig
 from feldera.rest.errors import FelderaTimeoutError, FelderaAPIError
@@ -211,6 +211,46 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             )
             time.sleep(0.1)
 
+    def __wait_for_pipeline_state_one_of(
+        self,
+        pipeline_name: str,
+        states: list[str],
+        timeout_s: float = 300.0,
+        start: bool = True,
+    ) -> PipelineStatus:
+        start_time = time.monotonic()
+        states = [state.lower() for state in states]
+
+        while True:
+            if timeout_s is not None:
+                elapsed = time.monotonic() - start_time
+                if elapsed > timeout_s:
+                    raise TimeoutError(
+                        f"Timed out waiting for pipeline {pipeline_name} to"
+                        f"transition to one of the states: {states}"
+                    )
+
+            resp = self.get_pipeline(pipeline_name, PipelineFieldSelector.STATUS)
+            status = resp.deployment_status
+
+            if status.lower() in states:
+                return PipelineStatus.from_str(status)
+            elif (
+                status == "Stopped"
+                and len(resp.deployment_error or {}) > 0
+                and resp.deployment_desired_status == "Stopped"
+            ):
+                err_msg = "Unable to START the pipeline:\n" if start else ""
+                raise RuntimeError(
+                    f"""{err_msg}Unable to transition the pipeline to one of the states: {states}.
+Reason: The pipeline is in a STOPPED state due to the following error:
+{resp.deployment_error.get("message", "")}"""
+                )
+            logging.debug(
+                "still starting %s, waiting for 100 more milliseconds", pipeline_name
+            )
+            time.sleep(0.1)
+
     def create_pipeline(self, pipeline: Pipeline) -> Pipeline:
         """
         Create a pipeline if it doesn't exist and wait for it to compile
@@ -328,7 +368,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
 
     def activate_pipeline(
         self, pipeline_name: str, wait: bool = True, timeout_s: Optional[float] = 300
-    ):
+    ) -> Optional[PipelineStatus]:
         """
 
         :param pipeline_name: The name of the pipeline to activate
@@ -346,17 +386,20 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         )
 
         if not wait:
-            return
+            return None
 
-        self.__wait_for_pipeline_state(pipeline_name, "running", timeout_s)
+        return self.__wait_for_pipeline_state_one_of(
+            pipeline_name, ["running", "AwaitingApproval"], timeout_s
+        )
 
     def _inner_start_pipeline(
         self,
         pipeline_name: str,
         initial: str = "running",
+        bootstrap_policy: Optional[BootstrapPolicy] = None,
         wait: bool = True,
         timeout_s: Optional[float] = 300,
-    ):
+    ) -> Optional[PipelineStatus]:
         """
 
         :param pipeline_name: The name of the pipeline to start
@@ -370,19 +413,29 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         if timeout_s is None:
             timeout_s = 300
 
+        params = {"initial": initial}
+        if bootstrap_policy is not None:
+            params["bootstrap_policy"] = bootstrap_policy.value
+
         self.http.post(
             path=f"/pipelines/{pipeline_name}/start",
-            params={"initial": initial},
+            params=params,
         )
 
         if not wait:
-            return
+            return None
 
-        self.__wait_for_pipeline_state(pipeline_name, initial, timeout_s)
+        return self.__wait_for_pipeline_state_one_of(
+            pipeline_name, [initial, "AwaitingApproval"], timeout_s
+        )
 
     def start_pipeline(
-        self, pipeline_name: str, wait: bool = True, timeout_s: Optional[float] = 300
-    ):
+        self,
+        pipeline_name: str,
+        bootstrap_policy: Optional[BootstrapPolicy] = None,
+        wait: bool = True,
+        timeout_s: Optional[float] = 300,
+    ) -> Optional[PipelineStatus]:
         """
 
         :param pipeline_name: The name of the pipeline to start
@@ -392,11 +445,17 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             pipeline to start. 300 seconds by default.
         """
 
-        self._inner_start_pipeline(pipeline_name, "running", wait, timeout_s)
+        return self._inner_start_pipeline(
+            pipeline_name, "running", bootstrap_policy, wait, timeout_s
+        )
 
     def start_pipeline_as_paused(
-        self, pipeline_name: str, wait: bool = True, timeout_s: Optional[float] = 300
-    ):
+        self,
+        pipeline_name: str,
+        bootstrap_policy: Optional[BootstrapPolicy] = None,
+        wait: bool = True,
+        timeout_s: Optional[float] = 300,
+    ) -> Optional[PipelineStatus]:
         """
         :param pipeline_name: The name of the pipeline to start as paused.
         :param wait: Set True to wait for the pipeline to start as pause.
@@ -405,10 +464,16 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             pipeline to start. 300 seconds by default.
         """
 
-        self._inner_start_pipeline(pipeline_name, "paused", wait, timeout_s)
+        return self._inner_start_pipeline(
+            pipeline_name, "paused", bootstrap_policy, wait, timeout_s
+        )
 
     def start_pipeline_as_standby(
-        self, pipeline_name: str, wait: bool = True, timeout_s: Optional[float] = 300
+        self,
+        pipeline_name: str,
+        bootstrap_policy: Optional[BootstrapPolicy] = None,
+        wait: bool = True,
+        timeout_s: Optional[float] = 300,
     ):
         """
         :param pipeline_name: The name of the pipeline to start as standby.
@@ -418,7 +483,9 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             pipeline to start. 300 seconds by default.
         """
 
-        self._inner_start_pipeline(pipeline_name, "standby", wait, timeout_s)
+        self._inner_start_pipeline(
+            pipeline_name, "standby", bootstrap_policy, wait, timeout_s
+        )
 
     def resume_pipeline(
         self,
@@ -475,6 +542,14 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             return
 
         self.__wait_for_pipeline_state(pipeline_name, "paused", timeout_s)
+
+    def approve_pipeline(
+        self,
+        pipeline_name: str,
+    ):
+        self.http.post(
+            path=f"/pipelines/{pipeline_name}/approve",
+        )
 
     def stop_pipeline(
         self,

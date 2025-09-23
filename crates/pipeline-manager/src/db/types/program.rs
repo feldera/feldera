@@ -602,7 +602,7 @@ fn determine_connector_endpoint_names(
 ///
 /// It includes information needed for Rust compilation (e.g., generated Rust code)
 /// as well as only for runtime (e.g., schema, input/output connectors).
-#[derive(Deserialize, Serialize, Eq, PartialEq, Debug, Clone, ToSchema)]
+#[derive(Default, Deserialize, Serialize, Eq, PartialEq, Debug, Clone, ToSchema)]
 pub struct ProgramInfo {
     /// Schema of the compiled SQL.
     pub schema: ProgramSchema,
@@ -748,16 +748,16 @@ pub fn generate_program_info(
 pub fn generate_pipeline_config(
     pipeline_id: PipelineId,
     runtime_config: &RuntimeConfig,
-    inputs: &BTreeMap<Cow<'static, str>, InputEndpointConfig>,
-    outputs: &BTreeMap<Cow<'static, str>, OutputEndpointConfig>,
+    program_info: &ProgramInfo,
 ) -> PipelineConfig {
     PipelineConfig {
         name: Some(format!("pipeline-{pipeline_id}")),
         global: runtime_config.clone(),
         storage_config: None, // Set by the runner based on global field
         secrets_dir: None,
-        inputs: inputs.clone(),
-        outputs: outputs.clone(),
+        inputs: program_info.input_connectors.clone(),
+        outputs: program_info.output_connectors.clone(),
+        dataflow: Some(program_info.dataflow.clone()),
     }
 }
 

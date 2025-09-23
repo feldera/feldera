@@ -31,6 +31,8 @@ pub enum RuntimeStatus {
     /// respectively.
     Initializing,
 
+    AwaitingApproval,
+
     /// The pipeline was modified since the last time it was started, and as such it is currently
     /// computing modified views.
     Bootstrapping,
@@ -95,7 +97,40 @@ impl From<String> for RuntimeDesiredStatus {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Copy, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum BootstrapPolicy {
+    Allow,
+    Reject,
+    #[default]
+    AwaitApproval,
+}
+
+impl TryFrom<Option<String>> for BootstrapPolicy {
+    type Error = ();
+
+    fn try_from(value: Option<String>) -> Result<Self, Self::Error> {
+        match value.as_deref() {
+            Some("allow") => Ok(Self::Allow),
+            Some("reject") => Ok(Self::Reject),
+            Some("await_approval") | None => Ok(Self::AwaitApproval),
+            _ => Err(()),
+        }
+    }
+}
+
+impl From<String> for BootstrapPolicy {
+    fn from(value: String) -> Self {
+        match value.as_str() {
+            "allow" => Self::Allow,
+            "reject" => Self::Reject,
+            "await_approval" => Self::AwaitApproval,
+            _ => panic!("Invalid 'bootstrap_policy' value: {value}"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ExtendedRuntimeStatus {
     /// Runtime status of the pipeline.
     pub runtime_status: RuntimeStatus,

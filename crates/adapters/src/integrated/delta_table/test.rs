@@ -304,7 +304,7 @@ where
     .unwrap();
     let schema = schema.to_vec();
 
-    Controller::with_config(
+    Controller::with_test_config(
         move |workers| Ok(test_circuit::<T>(workers, &schema, &[None])),
         &config,
         Box::new(move |e, _| {
@@ -373,7 +373,7 @@ where
     }))
     .unwrap();
 
-    Controller::with_config(
+    Controller::with_test_config(
         |workers| {
             Ok(test_circuit::<T>(
                 workers,
@@ -431,7 +431,7 @@ where
 
     let key_fields = key_fields.to_vec();
 
-    Controller::with_config(
+    Controller::with_test_config(
         move |workers| {
             Ok(test_circuit_with_index::<T, K, _>(
                 workers,
@@ -512,7 +512,7 @@ where
     .unwrap();
     let key_fields = key_fields.to_vec();
 
-    Controller::with_config(
+    Controller::with_test_config(
         move |workers| {
             Ok(test_circuit_with_index::<T, K, _>(
                 workers,
@@ -609,7 +609,7 @@ fn delta_table_output_test(
     }))
     .unwrap();
 
-    let controller = Controller::with_config(
+    let controller = Controller::with_test_config(
         |workers| {
             Ok(test_circuit::<DeltaTestStruct>(
                 workers,

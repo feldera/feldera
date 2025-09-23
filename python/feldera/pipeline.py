@@ -11,6 +11,7 @@ from collections import deque
 
 from feldera.rest.errors import FelderaAPIError
 from feldera.enums import (
+    BootstrapPolicy,
     PipelineFieldSelector,
     PipelineStatus,
     ProgramStatus,
@@ -70,6 +71,26 @@ class Pipeline:
                 return PipelineStatus.NOT_FOUND
             else:
                 raise err
+
+    def wait_for_status(self, expected_status: PipelineStatus, timeout: Optional[int] = None) -> None:
+        """
+        Wait for the pipeline to reach the specified status.
+
+        :param expected_status: The status to wait for
+        :param timeout: Maximum time to wait in seconds. If None, waits forever (default: None)
+        :raises TimeoutError: If the expected status is not reached within the timeout
+        """
+        start_time = time.time()
+
+        while True:
+            current_status = self.status()
+            if current_status == expected_status:
+                return
+
+            if timeout is not None and time.time() - start_time >= timeout:
+                raise TimeoutError(f"Pipeline did not reach {expected_status.name} status within {timeout} seconds")
+
+            time.sleep(1)
 
     def stats(self) -> PipelineStatistics:
         """Gets the pipeline metrics and performance counters."""
@@ -358,7 +379,7 @@ class Pipeline:
         """
 
         self.stop(force=True, timeout_s=timeout_s)
-        self.start(timeout_s=timeout_s)
+        self.start(bootstrap_policy=bootstrap_policy, timeout_s=timeout_s)
 
     def wait_for_idle(
         self,
@@ -438,7 +459,9 @@ metrics"""
                 raise RuntimeError(f"waiting for idle reached timeout ({timeout_s}s)")
             time.sleep(poll_interval_s)
 
-    def activate(self, wait: bool = True, timeout_s: Optional[float] = None):
+    def activate(
+        self, wait: bool = True, timeout_s: Optional[float] = None
+    ) -> Optional[PipelineStatus]:
         """
         Activates the pipeline when starting from STANDBY mode. Only applicable
         when the pipeline is starting from a checkpoint in object store.
@@ -449,9 +472,14 @@ metrics"""
             pipeline to pause.
         """
 
-        self.client.activate_pipeline(self.name, wait=wait, timeout_s=timeout_s)
+        return self.client.activate_pipeline(self.name, wait=wait, timeout_s=timeout_s)
 
-    def start(self, wait: bool = True, timeout_s: Optional[float] = None):
+    def start(
+            self,
+            bootstrap_policy: Optional[BootstrapPolicy] = None,
+            wait: bool = True,
+            timeout_s: Optional[float] = None
+    ):
         """
         .. _start:
 
@@ -468,21 +496,35 @@ metrics"""
         :raises RuntimeError: If the pipeline is not in STOPPED state.
         """
 
-        self.client.start_pipeline(self.name, wait=wait, timeout_s=timeout_s)
+        self.client.start_pipeline(self.name, bootstrap_policy=bootstrap_policy,wait=wait, timeout_s=timeout_s)
 
-    def start_paused(self, wait: bool = True, timeout_s: Optional[float] = None):
+    def start_paused(
+            self,
+            bootstrap_policy: Optional[BootstrapPolicy] = None,
+            wait: bool = True,
+            timeout_s: Optional[float] = None
+    ):
         """
         Starts the pipeline in the paused state.
         """
 
-        self.client.start_pipeline_as_paused(self.name, wait=wait, timeout_s=timeout_s)
+        return self.client.start_pipeline_as_paused(
+            self.name, bootstrap_policy=bootstrap_policy, wait=wait, timeout_s=timeout_s
+        )
 
-    def start_standby(self, wait: bool = True, timeout_s: Optional[float] = None):
+    def start_standby(
+        self,
+        bootstrap_policy: Optional[BootstrapPolicy] = None,
+        wait: bool = True,
+        timeout_s: Optional[float] = None,
+    ):
         """
         Starts the pipeline in the standby state.
         """
 
-        self.client.start_pipeline_as_standby(self.name, wait=wait, timeout_s=timeout_s)
+        self.client.start_pipeline_as_standby(
+            self.name, bootstrap_policy=bootstrap_policy, wait=wait, timeout_s=timeout_s
+        )
 
     def pause(self, wait: bool = True, timeout_s: Optional[float] = None):
         """
@@ -1127,6 +1169,14 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
 
         self.refresh(PipelineFieldSelector.STATUS)
         return DeploymentRuntimeStatus.from_str(self._inner.deployment_runtime_status)
+
+    def deployment_runtime_status_details(self) -> Optional[str]:
+        """
+        Return the deployment runtime status details.
+        """
+
+        self.refresh(PipelineFieldSelector.STATUS)
+        return self._inner.deployment_runtime_status_details
 
     def deployment_error(self) -> Mapping[str, Any]:
         """

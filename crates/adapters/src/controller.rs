@@ -70,7 +70,7 @@ use enum_map::EnumMap;
 use feldera_adapterlib::format::BufferSize;
 use feldera_adapterlib::transport::{Resume, Watermark};
 use feldera_adapterlib::utils::datafusion::execute_query_text;
-use feldera_ir::LirCircuit;
+use feldera_ir::{program_diff, LirCircuit, MirNode, MirNodeId};
 use feldera_storage::histogram::{ExponentialHistogram, ExponentialHistogramSnapshot};
 use feldera_storage::metrics::{
     READ_BLOCKS_BYTES, READ_LATENCY_MICROSECONDS, SYNC_LATENCY_MICROSECONDS, WRITE_BLOCKS_BYTES,
@@ -78,6 +78,7 @@ use feldera_storage::metrics::{
 };
 use feldera_types::checkpoint::CheckpointMetadata;
 use feldera_types::format::json::JsonLines;
+use feldera_types::pipeline_diff::{PipelineDiff, ProgramDiff};
 use feldera_types::secret_resolver::resolve_secret_references_in_connector_config;
 use feldera_types::suspend::{PermanentSuspendError, SuspendError, TemporarySuspendError};
 use feldera_types::time_series::SampleStatistics;
@@ -89,6 +90,7 @@ use journal::StepMetadata;
 use memory_stats::memory_stats;
 use nonzero_ext::nonzero;
 use rmpv::Value as RmpValue;
+use serde::Deserialize;
 use serde_json::Value as JsonValue;
 use stats::StepResults;
 use std::borrow::Cow;
@@ -240,44 +242,8 @@ impl ControllerBuilder {
         Err(ControllerError::EnterpriseFeature("standby"))
     }
 
-    /// Create a new I/O controller for a circuit.
-    ///
-    /// Creates a new instance of `Controller` that wraps `circuit`, with input
-    /// and output endpoints specified by the configuration passed to
-    /// [new](Self:new)`.  The controller is created with all endpoints in a
-    /// paused state.  Call [`Self::start`] to unpause the endpoints and start
-    /// ingesting data.
-    ///
-    /// # Arguments
-    ///
-    /// * `circuit` - A handle to a DBSP circuit managed by this controller. The
-    ///   controller takes ownership of the circuit.
-    ///
-    /// * `catalog` - A catalog of input and output streams of the circuit.
-    ///
-    /// * `error_cb` - Error callback.  The controller doesn't implement its own
-    ///   error handling policy, but simply forwards most errors to this
-    ///   callback.
-    ///
-    /// # Errors
-    ///
-    /// The method may fail for the following reasons:
-    ///
-    /// * The input configuration is invalid, e.g., specifies an unknown
-    ///   transport or data format.
-    ///
-    /// * One or more of the endpoints fails to initialize.
-    pub(crate) fn build<F>(
-        self,
-        circuit_factory: F,
-        error_cb: Box<dyn Fn(Arc<ControllerError>, Option<String>) + Send + Sync>,
-    ) -> Result<Controller, ControllerError>
-    where
-        F: FnOnce(CircuitConfig) -> Result<(DBSPHandle, Box<dyn CircuitCatalog>), ControllerError>
-            + Send
-            + 'static,
-    {
-        Controller::build(self.config, self.storage, circuit_factory, error_cb)
+    pub(crate) fn open_checkpoint(&self) -> Result<ControllerInit, ControllerError> {
+        ControllerInit::new(self.config.clone(), self.storage.clone())
     }
 
     pub(crate) fn storage(&self) -> Option<Arc<dyn StorageBackend>> {
@@ -429,7 +395,7 @@ impl Command {
 
 impl Controller {
     #[cfg(test)]
-    pub(crate) fn with_config<F>(
+    pub(crate) fn with_test_config<F>(
         circuit_factory: F,
         config: &PipelineConfig,
         error_cb: Box<dyn Fn(Arc<ControllerError>, Option<String>) + Send + Sync>,
@@ -439,12 +405,32 @@ impl Controller {
             + Send
             + 'static,
     {
-        ControllerBuilder::new(config)?.build(circuit_factory, error_cb)
+        let builder = ControllerBuilder::new(config)?;
+        let mut init = builder.open_checkpoint()?;
+        init.pipeline_diff
+            .as_mut()
+            .map(|diff| diff.clear_program_diff());
+        init.init(circuit_factory, error_cb)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn with_test_config_keep_program_diff<F>(
+        circuit_factory: F,
+        config: &PipelineConfig,
+        error_cb: Box<dyn Fn(Arc<ControllerError>, Option<String>) + Send + Sync>,
+    ) -> Result<Self, ControllerError>
+    where
+        F: FnOnce(CircuitConfig) -> Result<(DBSPHandle, Box<dyn CircuitCatalog>), ControllerError>
+            + Send
+            + 'static,
+    {
+        let builder = ControllerBuilder::new(config)?;
+        let init = builder.open_checkpoint()?;
+        init.init(circuit_factory, error_cb)
     }
 
     fn build<F>(
-        config: PipelineConfig,
-        storage: Option<CircuitStorageConfig>,
+        controller_init: ControllerInit,
         circuit_factory: F,
         error_cb: Box<dyn Fn(Arc<ControllerError>, Option<String>) + Send + Sync>,
     ) -> Result<Self, ControllerError>
@@ -465,7 +451,7 @@ impl Controller {
             let handle = thread::Builder::new()
                 .name("circuit-thread".to_string())
                 .spawn(move || {
-                    match CircuitThread::new(circuit_factory, config, storage, error_cb) {
+                    match CircuitThread::new(controller_init, circuit_factory, error_cb) {
                         Err(error) => {
                             let _ = init_status_sender.send(Err(error));
                             Ok(())
@@ -1433,37 +1419,21 @@ struct CircuitThread {
     last_commit_progress_update: Instant,
 }
 
-/// Compare two maps for equality using a custom comparator for values.
-fn maps_equal_with<F, K, V>(a: &BTreeMap<K, V>, b: &BTreeMap<K, V>, mut cmp: F) -> bool
-where
-    K: Ord,
-    F: FnMut(&V, &V) -> bool,
-{
-    if a.len() != b.len() {
-        return false;
-    }
-
-    a.iter()
-        .zip(b.iter())
-        .all(|((ka, va), (kb, vb))| ka == kb && cmp(va, vb))
-}
-
 impl CircuitThread {
     /// Circuit thread function: holds the handle to the circuit, calls `step`
     /// on it whenever input data is available, pushes output batches
     /// produced by the circuit to output pipelines.
     fn new<F>(
+        controller_init: ControllerInit,
         circuit_factory: F,
-        config: PipelineConfig,
-        storage: Option<CircuitStorageConfig>,
         error_cb: Box<dyn Fn(Arc<ControllerError>, Option<String>) + Send + Sync>,
     ) -> Result<Self, ControllerError>
     where
         F: FnOnce(CircuitConfig) -> Result<(DBSPHandle, Box<dyn CircuitCatalog>), ControllerError>,
     {
-        let ft_model = config.global.fault_tolerance.model;
+        let ft_model = controller_init.pipeline_config.global.fault_tolerance.model;
         let ControllerInit {
-            mut pipeline_config,
+            pipeline_config,
             circuit_config,
             processed_records,
             initial_start_time,
@@ -1471,56 +1441,15 @@ impl CircuitThread {
             input_metadata,
             input_statistics,
             output_statistics,
-        } = ControllerInit::new(config.clone(), storage)?;
+            pipeline_diff,
+        } = controller_init;
+
         let storage = circuit_config
             .storage
             .as_ref()
-            .map(|storage| storage.backend.clone());
+            .map(|storage: &CircuitStorageConfig| storage.backend.clone());
 
         let (mut circuit, catalog) = circuit_factory(circuit_config)?;
-
-        // Determine whether the pipeline has been modified since the checkpoint was taken.
-        //
-        // The pipeline is considered modified if:
-        // 1. The circuit has changed, triggering bootstrapping.
-        // 2. The set of output connectors has changed (modulo transient connectors like HTTP and ad hoc)
-        //
-        // Note that this does not include changes to the circuit that don't trigger bootstrapping. This is
-        // the case for changes that only remove parts of the circuit.
-        //
-        // If the pipeline has been modified, we must pick up the new connector config and disable replay,
-        // since we can't replay into a modified pipeline.
-
-        let old_configured_inputs = pipeline_config
-            .inputs
-            .iter()
-            .filter(|(_, cfg)| !cfg.connector_config.transport.is_transient())
-            .map(|(name, cfg)| (name.clone(), cfg.clone()))
-            .collect::<BTreeMap<_, _>>();
-
-        let old_configured_outputs = pipeline_config
-            .outputs
-            .iter()
-            .filter(|(_, cfg)| !cfg.connector_config.transport.is_transient())
-            .map(|(name, cfg)| (name.clone(), cfg.clone()))
-            .collect::<BTreeMap<_, _>>();
-
-        let inputs_modified = !maps_equal_with(&old_configured_inputs, &config.inputs, |a, b| {
-            a.connector_config.equal_modulo_paused(&b.connector_config)
-        });
-
-        let outputs_modified =
-            !maps_equal_with(&old_configured_outputs, &config.outputs, |a, b| {
-                a.connector_config.equal_modulo_paused(&b.connector_config)
-            });
-
-        let pipeline_modified =
-            circuit.bootstrap_in_progress() || inputs_modified || outputs_modified;
-
-        if pipeline_modified {
-            pipeline_config.inputs = config.inputs.clone();
-            pipeline_config.outputs = config.outputs.clone();
-        }
 
         let lir = circuit.lir()?;
 
@@ -1532,7 +1461,8 @@ impl CircuitThread {
             let mut resume_info = HashMap::new();
 
             for (endpoint_name, seek) in input_metadata.iter() {
-                let Some(endpoint_config) = config.inputs.get(endpoint_name.as_str()) else {
+                let Some(endpoint_config) = pipeline_config.inputs.get(endpoint_name.as_str())
+                else {
                     info!("Found checkpointed state for input connector '{endpoint_name}', but the connector is not present in the new pipeline configuration; this connector will not be added to the pipeline");
                     continue;
                 };
@@ -1584,13 +1514,24 @@ impl CircuitThread {
                 .collect()
         });
 
+        let can_replay = pipeline_diff
+            .as_ref()
+            .map(|diff| diff.is_empty())
+            .unwrap_or(false);
+
+        if can_replay && circuit.bootstrap_in_progress() {
+            return Err(ControllerError::UnexpectedBootstrap {
+                bootstrap_info: circuit.bootstrap_info().clone(),
+            });
+        }
+
         let ft = match ft_model {
             Some(FtModel::ExactlyOnce) => {
                 let backend = storage.clone().unwrap();
-                let mut ft = if input_metadata.is_some() && !pipeline_modified {
+                let mut ft = if input_metadata.is_some() && can_replay {
                     FtState::open(backend, step, controller.clone())
                 } else if input_metadata.is_some() {
-                    info!("Pipeline has been modified since the checkpoint was taken; replay journal will be discarded");
+                    warn!("Pipeline has been modified since the checkpoint was taken; replay journal will be discarded");
                     FtState::open_and_truncate(backend, controller.clone())
                 } else {
                     FtState::create(backend, controller.clone())
@@ -2936,7 +2877,7 @@ impl StepTrigger {
 /// - Start a new pipeline without any checkpoint support.
 ///
 /// This structure handles all these cases.
-struct ControllerInit {
+pub struct ControllerInit {
     /// The circuit configuration.
     circuit_config: CircuitConfig,
 
@@ -2972,6 +2913,136 @@ struct ControllerInit {
     /// These will ordinarily be supplied if `input_metadata.is_some()` but old
     /// checkpoints don't have statistics.
     output_statistics: HashMap<String, CheckpointOutputEndpointMetrics>,
+
+    pub pipeline_diff: Option<PipelineDiff>,
+}
+
+pub fn compute_pipeline_diff(
+    old_config: &PipelineConfig,
+    new_config: &PipelineConfig,
+) -> PipelineDiff {
+    let mir_diff = compute_program_diff(old_config, new_config);
+
+    let mut old_configured_inputs = old_config
+        .inputs
+        .iter()
+        .filter(|(_, cfg)| !cfg.connector_config.transport.is_transient())
+        .map(|(name, cfg)| (name.clone(), cfg.clone()))
+        .collect::<BTreeMap<_, _>>();
+
+    old_configured_inputs.remove("now");
+
+    let old_configured_outputs = old_config
+        .outputs
+        .iter()
+        .filter(|(_, cfg)| !cfg.connector_config.transport.is_transient())
+        .map(|(name, cfg)| (name.clone(), cfg.clone()))
+        .collect::<BTreeMap<_, _>>();
+
+    let added_input_connectors = new_config
+        .inputs
+        .keys()
+        .filter(|k| !old_configured_inputs.contains_key(*k))
+        .map(|k| k.to_string())
+        .collect::<Vec<_>>();
+
+    let removed_input_connectors = old_configured_inputs
+        .iter()
+        .filter(|(k, config)| {
+            !new_config.inputs.contains_key(*k)
+                && mir_diff
+                    .as_ref()
+                    .map(|mir_diff| mir_diff.removed_tables.contains(&config.stream.to_string()))
+                    .unwrap_or(true)
+        })
+        .map(|(k, _)| k.to_string())
+        .collect::<Vec<_>>();
+
+    let modified_input_connectors = new_config
+        .inputs
+        .iter()
+        .filter(|(k, v)| {
+            old_configured_inputs.contains_key(*k)
+                && !old_configured_inputs
+                    .get(*k)
+                    .unwrap()
+                    .connector_config
+                    .equal_modulo_paused(&v.connector_config)
+        })
+        .map(|(k, _)| k.to_string())
+        .collect::<Vec<_>>();
+
+    let added_output_connectors = new_config
+        .outputs
+        .keys()
+        .filter(|k| !old_configured_outputs.contains_key(*k))
+        .map(|k| k.to_string())
+        .collect::<Vec<_>>();
+
+    let removed_output_connectors = old_configured_outputs
+        .iter()
+        .filter(|(k, config)| {
+            !new_config.outputs.contains_key(*k)
+                && mir_diff
+                    .as_ref()
+                    .map(|mir_diff| mir_diff.removed_views.contains(&config.stream.to_string()))
+                    .unwrap_or(true)
+        })
+        .map(|(k, _)| k.to_string())
+        .collect::<Vec<_>>();
+
+    let modified_output_connectors = new_config
+        .outputs
+        .iter()
+        .filter(|(k, v)| {
+            old_configured_outputs.contains_key(*k)
+                && !old_configured_outputs
+                    .get(*k)
+                    .unwrap()
+                    .connector_config
+                    .equal_modulo_paused(&v.connector_config)
+        })
+        .map(|(k, _)| k.to_string())
+        .collect::<Vec<_>>();
+
+    PipelineDiff {
+        program_diff: mir_diff.as_ref().ok().cloned(),
+        program_diff_error: mir_diff.err(),
+        added_input_connectors,
+        modified_input_connectors,
+        removed_input_connectors,
+        added_output_connectors,
+        modified_output_connectors,
+        removed_output_connectors,
+    }
+}
+
+#[derive(Deserialize)]
+struct Dataflow {
+    mir: HashMap<MirNodeId, MirNode>,
+}
+
+fn compute_program_diff(
+    old_config: &PipelineConfig,
+    new_config: &PipelineConfig,
+) -> Result<ProgramDiff, String> {
+    // TODO: more useful error messages
+
+    let Some(old_dataflow) = &old_config.dataflow else {
+        return Err("checkpointed pipeline configuration does not contain IR".to_owned());
+    };
+
+    let Some(new_dataflow) = &new_config.dataflow else {
+        return Err("new pipeline configuration does not contain IR".to_owned());
+    };
+
+    let new_dataflow: Dataflow = serde_json::from_value(new_dataflow.clone())
+        .map_err(|e| format!("failed to deserialize new IR: {}", e))?;
+
+    let old_dataflow: Dataflow = serde_json::from_value(old_dataflow.clone())
+        .map_err(|e| format!("failed to deserialize old IR: {}", e))?;
+
+    Ok(program_diff(&old_dataflow.mir, &new_dataflow.mir))
 }
 
 impl ControllerInit {
@@ -2988,11 +3059,12 @@ impl ControllerInit {
             input_metadata: None,
             input_statistics: HashMap::new(),
             output_statistics: HashMap::new(),
+            pipeline_diff: None,
         })
     }
 
     fn new(
-        config: PipelineConfig,
+        mut config: PipelineConfig,
         storage: Option<CircuitStorageConfig>,
     ) -> Result<Self, ControllerError> {
         let Some(storage) = storage else {
@@ -3022,6 +3094,32 @@ impl ControllerInit {
         info!("resuming from checkpoint made at step {step}");
 
         let storage = storage.with_init_checkpoint(circuit.map(|circuit| circuit.uuid));
+
+        let pipeline_diff = compute_pipeline_diff(&checkpoint_config, &config);
+
+        // For any input connectors that have not been modified, and whose associated table haven't been modified,
+        // pick up paused status from the checkpoint.
+        for (connector_name, connector_config) in config.inputs.iter_mut() {
+            let connector_name = connector_name.to_string();
+            if !pipeline_diff.is_affected_connector(connector_name.as_str()) {
+                if pipeline_diff.program_diff.as_ref().map_or(true, |diff| {
+                    !diff.is_affected_relation(&connector_config.stream)
+                }) {
+                    if let Some(checkpointed_connector_config) =
+                        checkpoint_config.inputs.get(connector_name.as_str())
+                    {
+                        connector_config.connector_config.paused =
+                            checkpointed_connector_config.connector_config.paused;
+                    }
+                }
+            }
+        }
+
+        let can_replay = pipeline_diff.is_empty();
+
+        if !can_replay {
+            info!("Pipeline has been modified since the last checkpoint. Summary of changes:\n{pipeline_diff}")
+        }
 
         // Merge `config` (the configuration provided by the pipeline manager)
         // with `checkpoint_config` (the configuration read from the
@@ -3070,15 +3168,25 @@ impl ControllerInit {
                 logging: config.global.logging,
             },
 
+            // If replay is possible, this means that
             // Adapter configuration has to come from the checkpoint, so that we can use it to
             // replay journaled inputs.
-            inputs: checkpoint_config.inputs,
-            outputs: checkpoint_config.outputs,
+            inputs: if can_replay {
+                checkpoint_config.inputs
+            } else {
+                config.inputs
+            },
+            outputs: if can_replay {
+                checkpoint_config.outputs
+            } else {
+                config.outputs
+            },
 
             // Other settings from the pipeline manager.
             secrets_dir: config.secrets_dir,
             name: config.name,
             storage_config: config.storage_config,
+            dataflow: config.dataflow.clone(),
         };
 
         Ok(Self {
@@ -3090,6 +3198,7 @@ impl ControllerInit {
             output_statistics,
             processed_records,
             initial_start_time: Some(initial_start_time),
+            pipeline_diff: Some(pipeline_diff),
         })
     }
 
@@ -3104,6 +3213,44 @@ impl ControllerInit {
             mode: Mode::Persistent,
             dev_tweaks: DevTweaks::from_config(&pipeline_config.global.dev_tweaks),
         })
+    }
+
+    /// Create a new I/O controller using config in `self`.
+    ///
+    /// Creates a new instance of `Controller` that wraps `circuit`, with input
+    /// and output endpoints specified by the configuration passed to
+    /// [new](Self:new)`.  The controller is created with all endpoints in a
+    /// paused state.  Call [`Self::start`] to unpause the endpoints and start
+    /// ingesting data.
+    ///
+    /// # Arguments
+    ///
+    /// * `circuit_factory` - A function that instantiates a DBSP circuit that this
+    ///   controller will run.
+    ///
+    /// * `error_cb` - Error callback.  The controller doesn't implement its own
+    ///   error handling policy, but simply forwards most errors to this
+    ///   callback.
+    ///
+    /// # Errors
+    ///
+    /// The method may fail for the following reasons:
+    ///
+    /// * The input configuration is invalid, e.g., specifies an unknown
+    ///   transport or data format.
+    ///
+    /// * One or more of the endpoints fails to initialize.
+    pub fn init<F>(
+        self,
+        circuit_factory: F,
+        error_cb: Box<dyn Fn(Arc<ControllerError>, Option<String>) + Send + Sync>,
+    ) -> Result<Controller, ControllerError>
+    where
+        F: FnOnce(CircuitConfig) -> Result<(DBSPHandle, Box<dyn CircuitCatalog>), ControllerError>
+            + Send
+            + 'static,
+    {
+        Controller::build(self, circuit_factory, error_cb)
     }
 }
 
