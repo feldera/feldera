@@ -11,7 +11,7 @@ use crate::{
         metadata::{MetaItem, OperatorMeta},
         metrics::COMPACTION_STALL_TIME_NANOSECONDS,
     },
-    dynamic::{DynVec, Factory, Weight},
+    dynamic::{Data, DynVec, Factory, Weight},
     storage::buffer_cache::CacheStats,
     time::Timestamp,
     trace::{
@@ -31,6 +31,7 @@ use crate::trace::CommittedSpine;
 use enum_map::EnumMap;
 use feldera_storage::StoragePath;
 use feldera_types::checkpoint::PSpineBatches;
+use hashbrown::HashSet;
 use ouroboros::self_referencing;
 use rand::Rng;
 use rkyv::{
@@ -38,15 +39,15 @@ use rkyv::{
     Fallible, Serialize,
 };
 use size_of::{Context, SizeOf};
-use std::sync::{Arc, MutexGuard};
+use std::sync::Mutex;
+use std::sync::{atomic::AtomicBool, Arc, MutexGuard};
 use std::time::{Duration, Instant};
-use std::{collections::VecDeque, sync::atomic::Ordering};
 use std::{
     fmt::{self, Debug, Display, Formatter},
     ops::DerefMut,
     sync::Condvar,
 };
-use std::{ops::RangeInclusive, sync::Mutex};
+use std::{mem::take, sync::atomic::Ordering};
 use textwrap::indent;
 
 mod index_set;
@@ -76,22 +77,106 @@ impl<B: Batch + Send + Sync> From<(Vec<String>, &Spine<B>)> for CommittedSpine {
     }
 }
 
-/// A group of batches with similar sizes (as determined by [size_from_level]).
+/// A group of batches.
+///
+/// The batches in a group are either all loose, or all merging.
+///
+/// The batches in a group can share a hash table of their keys, which allows
+/// checking whether the group might contain a particular key in O(1) time
+/// regardless of the number of batches in the group.
 #[derive(Clone, SizeOf)]
-struct Slot<B>
-where
-    B: Batch,
-{
-    /// Optionally, a list of batches that are currently being merged.  These
-    /// batches are not in `loose_batches`.
-    ///
-    /// Invariant: the batches (if present) must be non-empty.
-    merging_batches: Option<Vec<Arc<B>>>,
+struct BatchGroup<B> {
+    /// Are these batches currently being merged?
+    merging: bool,
 
-    /// Zero or more batches not currently being merged.
+    /// A collection of batches.
     ///
-    /// Invariant: the batches must be non-empty.
-    loose_batches: VecDeque<Arc<B>>,
+    /// All of the batches must be non-empty.
+    batches: Vec<Arc<B>>,
+
+    /// If present, the hashes of the keys in `batches`.
+    #[size_of(skip)]
+    keys: Option<HashSet<u64>>,
+}
+
+impl<B> BatchGroup<B> {
+    fn new() -> Self {
+        Self {
+            merging: false,
+            batches: Vec::new(),
+            keys: None,
+        }
+    }
+    fn clone_without_keys(&self) -> Self {
+        Self {
+            merging: self.merging,
+            batches: self.batches.clone(),
+            keys: None,
+        }
+    }
+
+    /// Returns true if batches in this group might contain `key` with the given
+    /// `hash`.
+    fn maybe_contains(&self, key: &B::Key, hash: u64) -> bool
+    where
+        B: BatchReader,
+    {
+        if let Some(keys) = &self.keys {
+            keys.contains(&hash)
+        } else {
+            self.batches.iter().any(|batch| {
+                batch
+                    .maybe_contains_key(hash)
+                    .unwrap_or_else(|| match batch.location() {
+                        BatchLocation::Memory => batch.cursor().seek_key_exact(key, Some(hash)),
+                        BatchLocation::Storage => true,
+                    })
+            })
+        }
+    }
+
+    fn add_keyed_batch(&mut self, batch: Arc<B>)
+    where
+        B: BatchReader,
+    {
+        let keys = self.keys.get_or_insert_default();
+        let mut cursor = batch.cursor();
+        while let Some(key) = cursor.get_key() {
+            keys.insert(key.default_hash());
+            cursor.step_key();
+        }
+        drop(cursor);
+        self.batches.push(batch);
+    }
+}
+
+/// A group of batches with similar sizes (as determined by [size_from_level]).
+#[derive(SizeOf)]
+struct Slot<B> {
+    /// Similar groups of batches.
+    ///
+    /// At the lowest level in use, if `optimize_maybe_contains` is enabled,
+    /// there will ordinarily be at most three groups:
+    ///
+    /// - A group with one or more loose batches that include keys.
+    ///   [Spine::insert_arc] adds to this group.  When we initiate a new merge,
+    ///   we simply mark this as merging.
+    ///
+    /// - A group of several merging batches (that probably include keys).
+    ///
+    /// - A group with a single loose batch, without keys, which was output by
+    ///   the previous merge.  [Spine::insert_arc] takes these batches, adds
+    ///   keys to them, and moves them into the first group.
+    ///
+    /// If `optimize_maybe_contains` is disabled, or at higher levels, there
+    /// will be at most two groups:
+    ///
+    /// - A group with one or more loose batches, without keys.
+    ///   [Spine::insert_arc] adds to this group.  When we initiate a new merge,
+    ///   we simply mark this as merging.
+    ///
+    /// - A group of several merging batches.
+    groups: Vec<BatchGroup<B>>,
 
     /// Amount of time spent merging batches at this level.
     elapsed: Duration,
@@ -106,14 +191,10 @@ where
     n_steps: usize,
 }
 
-impl<B> Default for Slot<B>
-where
-    B: Batch,
-{
+impl<B> Default for Slot<B> {
     fn default() -> Self {
         Self {
-            merging_batches: None,
-            loose_batches: VecDeque::new(),
+            groups: Vec::new(),
             elapsed: Duration::ZERO,
             n_merged: 0,
             n_merged_batches: 0,
@@ -122,43 +203,125 @@ where
     }
 }
 
-impl<B> Slot<B>
-where
-    B: Batch,
-{
+impl<B> Slot<B> {
+    fn clone_without_keys(&self) -> Self {
+        Self {
+            groups: self
+                .groups
+                .iter()
+                .map(|group| group.clone_without_keys())
+                .collect(),
+            elapsed: self.elapsed,
+            n_merged: self.n_merged,
+            n_merged_batches: self.n_merged_batches,
+            n_steps: self.n_steps,
+        }
+    }
+
+    /// Adds `batch` as a loose batch to this group.
+    ///
+    /// The batch is added unkeyed, even if there is a keyed [BatchGroup].  This
+    /// is appropriate if `optimize_maybe_contains` is disabled or to avoid
+    /// holding the shared-state lock for a long time (from the background
+    /// merger thread).
+    fn add_loose_batch(&mut self, batch: Arc<B>) {
+        for group in &mut self.groups {
+            if !group.merging && group.keys.is_none() {
+                group.batches.push(batch);
+                return;
+            }
+        }
+        let mut group = BatchGroup::new();
+        group.batches.push(batch);
+        self.groups.push(group);
+    }
+
+    /// Returns the number of loose (not merging) batches.
+    fn n_loose_batches(&self) -> usize {
+        self.groups
+            .iter()
+            .map(|b| if !b.merging { b.batches.len() } else { 0 })
+            .sum()
+    }
+
+    /// Returns the number of merging batches.
+    fn n_merging_batches(&self) -> usize {
+        self.groups
+            .iter()
+            .map(|b| if b.merging { b.batches.len() } else { 0 })
+            .sum()
+    }
+
+    /// Removes the merging batches and returns them.
+    fn take_merging_batches(&mut self) -> Vec<Arc<B>> {
+        let mut merging = Vec::new();
+        self.groups.retain_mut(|group| {
+            if group.merging {
+                merging.append(&mut group.batches);
+                false
+            } else {
+                true
+            }
+        });
+        merging
+    }
+
     /// If this slot doesn't currently have an ongoing merge, and it does have
-    /// at least two loose batches, picks an upper limit of the loose batches and makes
-    /// them into merging batches, and returns those batches. Otherwise, returns
-    /// `None` without changing anything.
+    /// enough loose batches to merge, picks an upper limit of the loose batches
+    /// and makes them into merging batches, and returns those
+    /// batches. Otherwise, returns `None` without changing anything.
     ///
     /// We merge the least recently added batches (ensuring that batches
     /// eventually get merged).
     fn try_start_merge(&mut self, level: usize) -> Option<Vec<Arc<B>>> {
-        /// Minimum and maximum numbers of batches to merge at each level.
+        // Only one merge per slot.
+        if self.n_merging_batches() > 0 {
+            return None;
+        }
+
+        /// Minimum number of batches to merge at each level.
         ///
         /// The minimum number of batches to merge is key to performance.  The
         /// maximum number seems much less important.
-        const MERGE_COUNTS: [RangeInclusive<usize>; MAX_LEVELS] = [
-            8..=64,
-            8..=64,
-            3..=64,
-            3..=64,
-            3..=64,
-            3..=64,
-            2..=64,
-            2..=64,
-            2..=64,
-        ];
+        const MIN_MERGE: [usize; MAX_LEVELS] = [8, 8, 3, 3, 3, 3, 2, 2, 2];
+        const MAX_MERGE: usize = 64;
 
-        let merge_counts = &MERGE_COUNTS[level];
-        if self.merging_batches.is_none() && self.loose_batches.len() >= *merge_counts.start() {
-            let n = std::cmp::min(*merge_counts.end(), self.loose_batches.len());
-            let batches = self.loose_batches.drain(..n).collect::<Vec<_>>();
-            self.merging_batches = Some(batches.clone());
-            Some(batches)
-        } else {
-            None
+        let mut n = self.n_loose_batches().min(MAX_MERGE);
+        if n < MIN_MERGE[level] {
+            // Not enough batches to merge.
+            return None;
         }
+
+        let mut merge_batches = Vec::with_capacity(n);
+        for (index, group) in self.groups.iter_mut().enumerate() {
+            // Add as many batches from `group` as we can to
+            // `merge_batches`.
+            let chunk = n.min(group.batches.len());
+            merge_batches.extend(group.batches[..chunk].iter().cloned());
+
+            // `group` is now merging.
+            group.merging = true;
+            if chunk < group.batches.len() {
+                // Not all of `group` is merging, so split off a nonmerging
+                // group.
+                group.keys = None;
+                let next = BatchGroup {
+                    merging: false,
+                    batches: group.batches.drain(chunk..).collect(),
+                    keys: None,
+                };
+                self.groups.insert(index + 1, next);
+                break;
+            }
+
+            n -= chunk;
+            if n == 0 {
+                // Usually we will get all of our batches from a single group,
+                // so this is the common case.
+                break;
+            }
+        }
+        Some(merge_batches)
     }
 
     /// Returns the number of batches in the slot, whether loose or merging.
@@ -169,9 +332,18 @@ where
     /// Returns an iterator over all batches in the slot, whether loose or
     /// merging.
     fn all_batches(&self) -> impl Iterator<Item = &Arc<B>> {
-        self.loose_batches
+        self.groups.iter().flat_map(|b| b.batches.iter())
+    }
+
+    /// Returns true if batches in this slot might contain `key` with the given
+    /// `hash`.
+    fn maybe_contains(&self, key: &B::Key, hash: u64) -> bool
+    where
+        B: BatchReader,
+    {
+        self.groups
             .iter()
-            .chain(self.merging_batches.iter().flatten())
+            .any(|group| group.maybe_contains(key, hash))
     }
 }
 
@@ -227,25 +399,21 @@ where
     fn add_batch(&mut self, batch: Arc<B>) {
         debug_assert!(!batch.is_empty());
         let level = Spine::<B>::size_to_level(batch.len());
-        self.slots[level].loose_batches.push_back(batch);
+        self.slots[level].add_loose_batch(batch);
+    }
+
+    fn total_loose_batches(&self) -> usize {
+        self.slots.iter().map(|s| s.n_loose_batches()).sum()
     }
 
     fn should_apply_backpressure(&self) -> bool {
         const HIGH_THRESHOLD: usize = 128;
-        self.slots
-            .iter()
-            .map(|s| s.loose_batches.len())
-            .sum::<usize>()
-            >= HIGH_THRESHOLD
+        self.total_loose_batches() >= HIGH_THRESHOLD
     }
 
     fn should_relieve_backpressure(&self) -> bool {
         const LOWER_THRESHOLD: usize = 127;
-        self.slots
-            .iter()
-            .map(|s| s.loose_batches.len())
-            .sum::<usize>()
-            <= LOWER_THRESHOLD
+        self.total_loose_batches() <= LOWER_THRESHOLD
     }
 
     fn get_filters(&self) -> (Option<Filter<B::Key>>, Option<Filter<B::Val>>) {
@@ -265,9 +433,16 @@ where
     /// merger thread will not initiate any more merges.
     fn take_loose_batches(&mut self) -> Vec<Arc<B>> {
         let mut loose_batches =
-            Vec::with_capacity(self.slots.iter().map(|slot| slot.loose_batches.len()).sum());
+            Vec::with_capacity(self.slots.iter().map(|slot| slot.n_loose_batches()).sum());
         for slot in &mut self.slots {
-            loose_batches.extend(slot.loose_batches.drain(..));
+            slot.groups.retain_mut(|group| {
+                if group.merging {
+                    true
+                } else {
+                    loose_batches.append(&mut group.batches);
+                    false
+                }
+            });
         }
         loose_batches
     }
@@ -277,7 +452,7 @@ where
     /// If this returns false, a new merge might still start without any further
     /// batches being submitted if there are enough loose batches.
     fn is_merging(&self) -> bool {
-        self.slots.iter().any(|slot| slot.merging_batches.is_some())
+        self.slots.iter().any(|slot| slot.n_merging_batches() > 0)
     }
 
     /// Finishes up the ongoing merge at the given `level`, which completed in
@@ -290,16 +465,17 @@ where
         n_steps: usize,
     ) {
         let slot = &mut self.slots[level];
-        let batches = slot.merging_batches.take().unwrap();
+        let merged = slot.take_merging_batches();
+        assert!(!merged.is_empty());
         slot.n_merged += 1;
-        slot.n_merged_batches += batches.len();
+        slot.n_merged_batches += merged.len();
         slot.elapsed += elapsed;
         slot.n_steps += n_steps;
-        let cache_stats = batches.iter().fold(CacheStats::default(), |stats, batch| {
+        let cache_stats = merged.iter().fold(CacheStats::default(), |stats, batch| {
             stats + batch.cache_stats()
         });
         self.spine_stats.report_merge(
-            batches.iter().map(|b| b.len()).sum(),
+            merged.iter().map(|b| b.len()).sum(),
             new_batch.len(),
             cache_stats,
         );
@@ -312,7 +488,10 @@ where
     /// This is better than constructing the report here directly, because part
     /// of that is measuring the size of the batches, which can require I/O.
     fn metadata_snapshot(&self) -> ([Slot<B>; MAX_LEVELS], SpineStats) {
-        (self.slots.clone(), self.spine_stats.clone())
+        (
+            self.slots.each_ref().map(|slot| slot.clone_without_keys()),
+            self.spine_stats.clone(),
+        )
     }
 }
 
@@ -431,10 +610,61 @@ where
     }
 
     /// Adds `batch` to the shared merging state and wakes up the merger.
-    fn add_batch(&self, batch: Arc<B>) {
+    fn add_batch(&self, batch: Arc<B>, optimize_maybe_contains: bool) {
         debug_assert!(!batch.is_empty());
-        let mut state = self.state.lock().unwrap();
-        state.add_batch(batch);
+
+        let level = Spine::<B>::size_to_level(batch.len());
+
+        let state = if optimize_maybe_contains {
+            // Minimizing the time that the shared state lock is held, this
+            // collects loose batches from this slot:
+            //
+            // - All of the unkeyed batches into `unkeyed_batches`.  There will
+            //   ordinarily be at most one of these (produced by a recent
+            //   merge).
+            //
+            // - A keyed [BatchGroup] into `keyed`.  There should be either zero
+            //   or one of these (but this code still works if there's more than
+            //   one).
+            //
+            // Puts back any merging batches.
+            let mut unkeyed_batches = Vec::new();
+            let mut keyed = None;
+            let mut state = self.state.lock().unwrap();
+            for mut group in take(&mut state.slots[level].groups) {
+                if group.merging {
+                    state.slots[level].groups.push(group);
+                } else if group.keys.is_none() || keyed.is_some() {
+                    unkeyed_batches.append(&mut group.batches);
+                } else {
+                    keyed = Some(group);
+                }
+            }
+            drop(state);
+
+            // Add the unkeyed batches, and `batch`, to `keyed`, collecting the
+            // keys.
+            //
+            // It can take some time to iterate and hash all the keys, so we do
+            // this without holding the lock.
+            let mut keyed = keyed.unwrap_or_else(|| BatchGroup::new());
+            for b in unkeyed_batches {
+                keyed.add_keyed_batch(b);
+            }
+            keyed.add_keyed_batch(batch);
+
+            // Add the newly consolidated keyed [BatchGroup] to the shared
+            // state.
+            let mut state = self.state.lock().unwrap();
+            state.slots[level].groups.push(keyed);
+            state
+        } else {
+            // Add `batch` as a loose batch, without keying.
+            let mut state = self.state.lock().unwrap();
+            state.slots[level].add_loose_batch(batch);
+            state
+        };
+
         BackgroundThread::wake();
         if state.should_apply_backpressure() {
             let start = Instant::now();
@@ -495,24 +725,22 @@ where
 
         // Construct per-slot occupancy description.
         for (index, slot) in slots.iter_mut().enumerate() {
-            for (class, batches) in [
-                ("loose", slot.loose_batches.make_contiguous() as &_),
-                (
-                    "merging",
-                    slot.merging_batches
-                        .as_ref()
-                        .unwrap_or(&Vec::new())
-                        .as_slice(),
-                ),
-            ] {
-                if !batches.is_empty() {
-                    let mut tuple_counts = EnumMap::<BatchLocation, usize>::default();
-                    for batch in batches {
-                        tuple_counts[batch.location()] += batch.len();
-                    }
+            for (class, merging) in [("loose", false), ("merging", true)] {
+                let mut tuple_counts = EnumMap::<BatchLocation, usize>::default();
+                let mut n_batches = 0;
+                for batch in slot
+                    .groups
+                    .iter()
+                    .filter(|group| group.merging == merging)
+                    .flat_map(|group| group.batches.iter())
+                {
+                    tuple_counts[batch.location()] += batch.len();
+                    n_batches += 1;
+                }
 
+                if n_batches > 0 {
                     let mut facts = Vec::with_capacity(3);
-                    facts.push(format!("{} batches", batches.len()));
+                    facts.push(format!("{} batches", n_batches));
                     for (location, count) in tuple_counts {
                         if count > 0 {
                             facts.push(format!("{count} {} tuples", location.as_str()));
@@ -542,9 +770,10 @@ where
         // merging.
         let mut batches = Vec::new();
         for slot in slots {
-            batches.extend(slot.loose_batches.into_iter().map(|b| (b, false)));
-            if let Some(merging_batches) = slot.merging_batches {
-                batches.extend(merging_batches.into_iter().map(|b| (b, true)));
+            for group in slot.groups {
+                for batch in group.batches {
+                    batches.push((batch, group.merging));
+                }
             }
         }
 
@@ -879,6 +1108,12 @@ where
     dirty: bool,
     key_filter: Option<Filter<B::Key>>,
     value_filter: Option<Filter<B::Val>>,
+
+    /// The spine can create summary indexes of the hashes within multiple
+    /// batches, to speed up [Spine::maybe_contains], but this wastes time if
+    /// that method doesn't get used.  This flag turns on the feature; it is set
+    /// automatically when [Spine::maybe_contains] is called.
+    optimize_maybe_contains: AtomicBool,
 
     /// The asynchronous merger.
     merger: AsyncMerger<B>,
@@ -1283,6 +1518,25 @@ where
         Self::with_effort(factories, 1)
     }
 
+    // This implementation learns which batches might contain the key, so it
+    // could be used as part of a more efficient implementation of
+    // CursorList::seek_key_exact.  That's a bit difficult because it would need
+    // more information than CursorList has.  Or, it could itself construct and
+    // return a cursor or a CursorList that contains only the possible batches,
+    // which is a little easier but would allocate a lot on each hit.  As-is,
+    // it's pretty simple and makes sense for use in cases where we usually
+    // expect the answer to be false.
+    fn maybe_contains(&self, key: &Self::Key, hash: u64) -> bool {
+        self.optimize_maybe_contains.store(true, Ordering::Relaxed);
+        self.merger
+            .state
+            .lock()
+            .unwrap()
+            .slots
+            .iter()
+            .any(|slot| slot.maybe_contains(key, hash))
+    }
+
     fn set_frontier(&mut self, frontier: &B::Time) {
         self.merger.set_frontier(frontier)
     }
@@ -1357,7 +1611,8 @@ where
             };
 
             self.dirty = true;
-            self.merger.add_batch(batch);
+            self.merger
+                .add_batch(batch, self.optimize_maybe_contains.load(Ordering::Relaxed));
         }
     }
 
@@ -1500,6 +1755,7 @@ where
         Spine {
             factories: factories.clone(),
             dirty: false,
+            optimize_maybe_contains: AtomicBool::new(false),
             key_filter: None,
             value_filter: None,
             merger: AsyncMerger::new(),

@@ -1229,6 +1229,10 @@ where
         }
     }
 
+    fn maybe_contains(&self, _key: &Self::Key, _hash: u64) -> bool {
+        true
+    }
+
     fn set_frontier(&mut self, _frontier: &Self::Time) {
         // Ok to do nothing here, since frontiers are an optimization and are meant to be applied lazily during merging.
     }
