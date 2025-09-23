@@ -43,7 +43,7 @@ public class CreateRuntimeErrorWrappers extends ExpressionTranslator {
         int result;
         if (!this.maxAllocation.containsKey(operatorId)) {
             result = 0;
-            Utilities.putNew(this.maxAllocation, operatorId, 0);
+            Utilities.putNew(this.maxAllocation, operatorId, 1);
         } else {
             result = Utilities.getExists(this.maxAllocation, operatorId);
             this.maxAllocation.put(operatorId, result + 1);

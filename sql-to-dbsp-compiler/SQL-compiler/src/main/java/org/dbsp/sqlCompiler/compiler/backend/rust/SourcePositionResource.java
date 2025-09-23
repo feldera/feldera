@@ -46,6 +46,7 @@ public class SourcePositionResource {
         if (range.isValid()) {
             HashAndIndex key = this.getKey(operator, expression);
             // This may overwrite if the expression processed is not a tree, but that should be benign.
+            // This can occur due to CSE, for example
             this.keyToPosition.put(key, range.start);
         }
     }
