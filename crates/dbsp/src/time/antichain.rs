@@ -132,7 +132,7 @@ impl<T> Antichain<T> {
     /// assert_eq!(&*frontier.as_ref(), &[2]);
     /// ```
     #[inline]
-    pub fn as_ref(&self) -> AntichainRef<T> {
+    pub fn as_ref(&self) -> AntichainRef<'_, T> {
         AntichainRef::new(&self.elements)
     }
 }

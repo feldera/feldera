@@ -584,7 +584,7 @@ where
         &self,
         factories: &Factories<K, A>,
         index: usize,
-    ) -> &dyn ArchivedItem<K, A> {
+    ) -> &dyn ArchivedItem<'_, K, A> {
         factories
             .item_factory
             .archived_value(&self.raw, self.value_map.get(&self.raw, index))
@@ -593,7 +593,7 @@ where
         &self,
         factories: &Factories<K, A>,
         row: u64,
-    ) -> &dyn ArchivedItem<K, A> {
+    ) -> &dyn ArchivedItem<'_, K, A> {
         let index = (row - self.first_row) as usize;
 
         self.archived_item(factories, index)
@@ -1612,12 +1612,12 @@ where
     }
 
     /// Returns a [`RowGroup`] for all of the rows in column 0.
-    pub fn rows(&self) -> RowGroup<K, A, N, (&'static K, &'static A, N)> {
+    pub fn rows(&self) -> RowGroup<'_, K, A, N, (&'static K, &'static A, N)> {
         RowGroup::new(self, 0, 0..self.columns[0].n_rows)
     }
 
     /// Returns a [`BulkRows`] for column 0.
-    pub fn bulk_rows(&self) -> Result<BulkRows<K, A, N, (&'static K, &'static A, N)>, Error> {
+    pub fn bulk_rows(&self) -> Result<BulkRows<'_, K, A, N, (&'static K, &'static A, N)>, Error> {
         BulkRows::new(self, 0)
     }
 }
@@ -2341,7 +2341,7 @@ where
     unsafe fn item(&self, factories: &Factories<K, A>, item: (&mut K, &mut A)) {
         self.data.item_for_row(factories, self.row, item)
     }
-    unsafe fn archived_item(&self, factories: &Factories<K, A>) -> &dyn ArchivedItem<K, A> {
+    unsafe fn archived_item(&self, factories: &Factories<K, A>) -> &dyn ArchivedItem<'_, K, A> {
         self.data.archived_item_for_row(factories, self.row)
     }
 
