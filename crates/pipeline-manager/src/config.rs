@@ -244,11 +244,20 @@ pub struct CommonConfig {
 
     /// Path to the TLS x509 certificate PEM file (e.g., `/path/to/tls.crt`).
     /// The same TLS certificate is used by all HTTP servers.
+    ///
+    /// If the certificate is not self-signed, this PEM file should contain the complete bundle of
+    /// the entire chain up until the root certificate authority (i.e., it should contain multiple
+    /// `-----BEGIN CERTIFICATE----- (...) -----END CERTIFICATE-----` sections, starting with the
+    /// leaf certificate and ending with the root certificate).
     #[arg(long)]
     pub https_tls_cert_path: Option<String>,
 
     /// Path to the TLS key PEM file corresponding to the x509 certificate (e.g.,
     /// `/path/to/tls.key`).
+    ///
+    /// Even if the certificate is not self-signed and the entire chain is provided in
+    /// `https_tls_cert_path`, this PEM file should only contain the single private key of the leaf
+    /// certificate.
     #[arg(long)]
     pub https_tls_key_path: Option<String>,
 }
@@ -322,8 +331,9 @@ impl CommonConfig {
 
     /// Creates `awc` client.
     ///
-    /// - If HTTPS is enabled for Feldera HTTP servers, the client will only have our HTTPS certificate
-    ///   as the only valid one. As such, it will be only able to connect to Feldera HTTPS servers.
+    /// - If HTTPS is enabled for Feldera HTTP servers, the client will only have our root HTTPS
+    ///   certificate as the only valid one. As such, it will be only able to connect to servers
+    ///   that have a certificate signed by the root certificate.
     ///   Unfortunately, it is not possible to configure `awc` to refuse to connect over HTTP at all.
     ///
     /// - If HTTPS is not enabled for Feldera HTTP servers, it will return the default client which can
@@ -334,10 +344,14 @@ impl CommonConfig {
                 .expect("HTTPS TLS certificate should be read")
                 .flatten()
                 .collect();
+            let root_cert = cert_chain
+                .last()
+                .expect("At least one HTTPS TLS certificate should be present")
+                .clone();
             let mut root_cert_store = RootCertStore::empty();
-            for certificate in cert_chain {
-                root_cert_store.add(certificate).unwrap();
-            }
+            root_cert_store
+                .add(root_cert)
+                .expect("Root HTTPS TLS certificate should be parsed");
             let config = ClientConfig::builder()
                 .with_root_certificates(root_cert_store)
                 .with_no_client_auth();
@@ -359,8 +373,9 @@ impl CommonConfig {
 
     /// Creates `reqwest` client.
     ///
-    /// - If HTTPS is enabled for Feldera HTTP servers, the client will only have our HTTPS certificate
-    ///   as the only valid one. As such, it will be only able to connect to Feldera HTTPS servers.
+    /// - If HTTPS is enabled for Feldera HTTP servers, the client will only have our root
+    ///   HTTPS certificate as the only valid one. As such, it will be only able to connect to
+    ///   servers that have a certificate signed by the root certificate.
     ///   It will refuse to connect over HTTP at all.
     ///
     /// - If HTTPS is not enabled for Feldera HTTP servers, it will return the default client which can
@@ -370,11 +385,15 @@ impl CommonConfig {
             let cert_pem = tokio::fs::read_to_string(https_tls_cert_path)
                 .await
                 .expect("HTTPS TLS certificate should be read");
-            let certificate = Certificate::from_pem(cert_pem.as_bytes())
+            let cert_chain = Certificate::from_pem_bundle(cert_pem.as_bytes())
                 .expect("HTTPS TLS certificate should be readable");
+            let root_cert = cert_chain
+                .last()
+                .expect("At least one HTTPS TLS certificate should be present")
+                .clone();
             reqwest::ClientBuilder::new()
                 .https_only(true) // Only connect to HTTPS
-                .add_root_certificate(certificate) // Add our own TLS certificate which is used
+                .add_root_certificate(root_cert) // Add our own TLS certificate which is used
                 .tls_built_in_root_certs(false) // Other TLS certificates are not used
                 .build()
                 .expect("HTTPS client should be built")
