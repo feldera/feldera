@@ -1271,6 +1271,19 @@ pub struct ConnectorConfig {
     pub start_after: Option<Vec<String>>,
 }
 
+impl ConnectorConfig {
+    /// Compare two configs modulo the `paused` field.
+    ///
+    /// Used to compare checkpointed and current connector configs.
+    pub fn equal_modulo_paused(&self, other: &Self) -> bool {
+        let mut a = self.clone();
+        let mut b = other.clone();
+        a.paused = false;
+        b.paused = false;
+        a == b
+    }
+}
+
 #[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, ToSchema)]
 #[serde(default)]
 pub struct OutputBufferConfig {
@@ -1416,6 +1429,18 @@ impl TransportConfig {
             TransportConfig::RedisOutput(_) => "redis_output".to_string(),
             TransportConfig::ClockInput(_) => "clock".to_string(),
         }
+    }
+
+    /// Returns true if the connector is transient, i.e., is created and destroyed
+    /// at runtime on demand, rather than being configured as part of the pipeline.
+    pub fn is_transient(&self) -> bool {
+        matches!(
+            self,
+            TransportConfig::AdHocInput(_)
+                | TransportConfig::HttpInput(_)
+                | TransportConfig::HttpOutput
+                | TransportConfig::ClockInput(_)
+        )
     }
 }
 
