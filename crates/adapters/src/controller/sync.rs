@@ -71,14 +71,6 @@ pub(super) static SYNCHRONIZER: LazyLock<&'static dyn CheckpointSynchronizer> =
         *synchronizer
     });
 
-#[cfg(feature = "feldera-enterprise")]
-fn upgrade_state(weak: Weak<ServerState>) -> Result<Arc<ServerState>, ControllerError> {
-    weak.upgrade()
-        .ok_or(ControllerError::checkpoint_fetch_error(
-            "unreachable: failed to upgrade server state".to_owned(),
-        ))
-}
-
 /// Pulls the checkpoint specified by the sync config and garbage collects all
 /// older checkpoints.
 #[cfg(feature = "feldera-enterprise")]
