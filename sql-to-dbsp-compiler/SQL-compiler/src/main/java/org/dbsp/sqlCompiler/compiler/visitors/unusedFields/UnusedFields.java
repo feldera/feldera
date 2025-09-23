@@ -52,12 +52,12 @@ public class UnusedFields extends Passes {
                 super("UnusedFieldsOnePass", compiler);
                 this.add(new RemoveUnusedFields(compiler, functionsAnalyzed));
                 // Very important, because OptimizeMaps works backward
-                this.add(new DeadCode(compiler, true, false));
+                this.add(new DeadCode(compiler, true));
 
                 Graph graph0 = new Graph(compiler);
                 this.add(graph0);
                 this.add(new OptimizeMaps(compiler, true, graph0.getGraphs(), mapOperators));
-                this.add(new DeadCode(compiler, true, false));
+                this.add(new DeadCode(compiler, true));
 
                 Graph graph = new Graph(compiler);
                 this.add(graph);

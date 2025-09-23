@@ -13,7 +13,9 @@ import org.dbsp.util.Utilities;
 
 import java.io.PrintStream;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 public class CompilerMessages {
     public class Message implements IHasSourcePositionRange {
@@ -64,6 +66,30 @@ public class CompilerMessages {
 
         Message(SourcePositionRange context, BaseCompilerException e) {
             this(context, e.getPositionRange(), false, false, e.getErrorKind(), e.getMessage());
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (o == null || getClass() != o.getClass()) return false;
+
+            Message message1 = (Message) o;
+            return this.warning == message1.warning &&
+                    this.continuation == message1.continuation &&
+                    this.context.equals(message1.context) &&
+                    this.range.equals(message1.range) &&
+                    this.errorType.equals(message1.errorType) &&
+                    this.message.equals(message1.message);
+        }
+
+        @Override
+        public int hashCode() {
+            int result = context.hashCode();
+            result = 31 * result + range.hashCode();
+            result = 31 * result + Boolean.hashCode(warning);
+            result = 31 * result + Boolean.hashCode(continuation);
+            result = 31 * result + errorType.hashCode();
+            result = 31 * result + message.hashCode();
+            return result;
         }
 
         public void format(SourceFileContents contents, StringBuilder output) {
@@ -129,12 +155,14 @@ public class CompilerMessages {
 
     public final DBSPCompiler compiler;
     public final List<Message> messages;
+    final Set<Message> reported;
     public int exitCode = 0;
     public SourcePositionRange errorContext;
 
     public CompilerMessages(DBSPCompiler compiler) {
         this.compiler = compiler;
         this.messages = new ArrayList<>();
+        this.reported = new HashSet<>();
         this.errorContext = SourcePositionRange.INVALID;
     }
 
@@ -151,7 +179,11 @@ public class CompilerMessages {
     }
 
     void reportError(Message message) {
+        if (this.reported.contains(message))
+            // Don't report the same error twice
+            return;
         this.messages.add(message);
+        this.reported.add(message);
         if (!message.warning) {
             this.setExitCode(1);
         }

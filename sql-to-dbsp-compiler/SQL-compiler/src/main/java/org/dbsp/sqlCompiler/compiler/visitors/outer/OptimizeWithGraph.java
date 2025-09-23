@@ -15,7 +15,7 @@ public class OptimizeWithGraph extends Repeat {
         Passes result = new Passes(optimizer.getName(), compiler);
         result.add(graph);
         result.add(optimizer);
-        result.add(new DeadCode(compiler, true, false));
+        result.add(new DeadCode(compiler, true));
         return result;
     }
 

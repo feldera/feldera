@@ -55,17 +55,14 @@ public class FindDeadCode extends CircuitVisitor implements IWritesLogs {
     public final Set<DBSPOperator> toKeep = new HashSet<>();
     /** If true all sources are kept, even if they are dead. */
     public final boolean keepAllSources;
-    public final boolean warn;
 
     /**
      * Run the dead code visitor.
      * @param keepAllSources  If true all sources are kept, even if they are not used.
-     * @param warn      If set warn about unused tables.
      */
-    public FindDeadCode(DBSPCompiler compiler, boolean keepAllSources, boolean warn) {
+    public FindDeadCode(DBSPCompiler compiler, boolean keepAllSources) {
         super(compiler);
         this.keepAllSources = keepAllSources;
-        this.warn = warn;
     }
 
     public void keep(DBSPOperator operator) {
@@ -139,7 +136,7 @@ public class FindDeadCode extends CircuitVisitor implements IWritesLogs {
     @Override
     public void endVisit() {
         for (IInputOperator source: this.getCircuit().sourceOperators.values()) {
-            if (!this.reachable.contains(source.asOperator()) && this.warn && !this.keepAllSources)
+            if (!this.reachable.contains(source.asOperator()) && !this.keepAllSources)
                 this.compiler.reportWarning(source.getSourcePosition(),
                         "Unused", "Table " + source.getTableName().singleQuote() +
                                 " is not used");

@@ -73,7 +73,7 @@ public class CircuitOptimizer extends Passes {
         this.add(new DeterministicFunctions(compiler));
         this.add(new StopOnError(compiler));
         this.add(new RecursiveComponents(compiler));
-        this.add(new DeadCode(compiler, options.languageOptions.generateInputForEveryTable, true));
+        this.add(new DeadCode(compiler, options.languageOptions.generateInputForEveryTable));
         if (options.languageOptions.outputsAreSets)
             this.add(new EnsureDistinctOutputs(compiler));
         this.add(new PropagateEmptySources(compiler));
@@ -87,17 +87,17 @@ public class CircuitOptimizer extends Passes {
         this.add(new CSE(compiler));
         this.add(new ExpandAggregates(compiler, compiler.weightVar));
         this.add(new ExpandAggregateZero(compiler));
-        this.add(new DeadCode(compiler, true, false));
+        this.add(new DeadCode(compiler, true));
         this.add(new OptimizeDistinctVisitor(compiler));
         // This is useful even without incrementalization if we have recursion
         this.add(new OptimizeIncrementalVisitor(compiler));
-        this.add(new DeadCode(compiler, true, false));
+        this.add(new DeadCode(compiler, true));
         if (options.languageOptions.incrementalize) {
             this.add(new IncrementalizeVisitor(compiler));
         }
         this.add(new OptimizeIncrementalVisitor(compiler));
         this.add(new RemoveIAfterD(compiler));
-        this.add(new DeadCode(compiler, true, false));
+        this.add(new DeadCode(compiler, true));
         this.add(new Simplify(compiler).circuitRewriter(true));
         this.add(new RemoveFilters(compiler));
         this.add(new OptimizeWithGraph(compiler, g -> new OptimizeProjectionVisitor(compiler, g)));
@@ -112,7 +112,7 @@ public class CircuitOptimizer extends Passes {
         this.add(new LinearPostprocessRetainKeys(compiler));
         this.add(new IndexedInputs(compiler));
         this.add(new OptimizeWithGraph(compiler, g -> new FilterJoinVisitor(compiler, g)));
-        this.add(new DeadCode(compiler, true, false));
+        this.add(new DeadCode(compiler, true));
         this.add(new Simplify(compiler).circuitRewriter(true));
         if (options.languageOptions.incrementalize)
             this.add(new NoIntegralVisitor(compiler));
