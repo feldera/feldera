@@ -1985,16 +1985,21 @@ async fn pipeline_lifecycle_events() {
     // "Deploy" pipeline1
     handle
         .db
-        .set_deployment_desired_status_paused(tenant_id, "example1")
+        .set_deployment_resources_desired_status_provisioned(
+            tenant_id,
+            "example1",
+            RuntimeDesiredStatus::Paused,
+        )
         .await
         .unwrap();
 
     handle
         .db
-        .transit_deployment_status_to_provisioning(
+        .transit_deployment_resources_status_to_provisioning(
             tenant_id,
             pipeline1.id,
             Version(1),
+            Uuid::nil(),
             serde_json::to_value(generate_pipeline_config(
                 pipeline1.id,
                 &serde_json::from_value(pipeline1.runtime_config.clone()).unwrap(),
@@ -2007,32 +2012,72 @@ async fn pipeline_lifecycle_events() {
         .unwrap();
     handle
         .db
-        .transit_deployment_status_to_initializing(tenant_id, pipeline1.id, Version(1), "location1")
+        .transit_deployment_resources_status_to_provisioned(
+            tenant_id,
+            pipeline1.id,
+            Version(1),
+            "location1",
+            ExtendedRuntimeStatus {
+                runtime_status: RuntimeStatus::Initializing,
+                runtime_status_details: "".to_string(),
+                runtime_desired_status: RuntimeDesiredStatus::Paused,
+            },
+        )
         .await
         .unwrap();
     handle
         .db
-        .transit_deployment_status_to_paused(tenant_id, pipeline1.id, Version(1))
+        .transit_deployment_resources_status_to_provisioned(
+            tenant_id,
+            pipeline1.id,
+            Version(1),
+            "location1",
+            ExtendedRuntimeStatus {
+                runtime_status: RuntimeStatus::Paused,
+                runtime_status_details: "".to_string(),
+                runtime_desired_status: RuntimeDesiredStatus::Paused,
+            },
+        )
         .await
         .unwrap();
     handle
         .db
-        .set_deployment_desired_status_running(tenant_id, "example1")
+        .transit_deployment_resources_status_to_provisioned(
+            tenant_id,
+            pipeline1.id,
+            Version(1),
+            "location1",
+            ExtendedRuntimeStatus {
+                runtime_status: RuntimeStatus::Paused,
+                runtime_status_details: "".to_string(),
+                runtime_desired_status: RuntimeDesiredStatus::Running,
+            },
+        )
         .await
         .unwrap();
     handle
         .db
-        .transit_deployment_status_to_running(tenant_id, pipeline1.id, Version(1))
+        .transit_deployment_resources_status_to_provisioned(
+            tenant_id,
+            pipeline1.id,
+            Version(1),
+            "location1",
+            ExtendedRuntimeStatus {
+                runtime_status: RuntimeStatus::Running,
+                runtime_status_details: "".to_string(),
+                runtime_desired_status: RuntimeDesiredStatus::Running,
+            },
+        )
         .await
         .unwrap();
     handle
         .db
-        .set_deployment_desired_status_suspended_or_stopped(tenant_id, "example1", false)
+        .set_deployment_resources_desired_status_stopped(tenant_id, "example1")
         .await
         .unwrap();
     handle
         .db
-        .transit_deployment_status_to_stopping(
+        .transit_deployment_resources_status_to_stopping(
             tenant_id,
             pipeline1.id,
             Version(1),
@@ -2047,20 +2092,25 @@ async fn pipeline_lifecycle_events() {
         .unwrap();
     handle
         .db
-        .transit_deployment_status_to_stopped(tenant_id, pipeline1.id, Version(1))
+        .transit_deployment_resources_status_to_stopped(tenant_id, pipeline1.id, Version(1))
         .await
         .unwrap();
     handle
         .db
-        .set_deployment_desired_status_paused(tenant_id, "example1")
+        .set_deployment_resources_desired_status_provisioned(
+            tenant_id,
+            "example1",
+            RuntimeDesiredStatus::Paused,
+        )
         .await
         .unwrap();
     handle
         .db
-        .transit_deployment_status_to_provisioning(
+        .transit_deployment_resources_status_to_provisioning(
             tenant_id,
             pipeline1.id,
             Version(1),
+            Uuid::nil(),
             serde_json::to_value(generate_pipeline_config(
                 pipeline1.id,
                 &serde_json::from_value(pipeline1.runtime_config).unwrap(),
@@ -2073,27 +2123,53 @@ async fn pipeline_lifecycle_events() {
         .unwrap();
     handle
         .db
-        .transit_deployment_status_to_initializing(tenant_id, pipeline1.id, Version(1), "location1")
+        .transit_deployment_resources_status_to_provisioned(
+            tenant_id,
+            pipeline1.id,
+            Version(1),
+            "location1",
+            ExtendedRuntimeStatus {
+                runtime_status: RuntimeStatus::Initializing,
+                runtime_status_details: "".to_string(),
+                runtime_desired_status: RuntimeDesiredStatus::Paused,
+            },
+        )
         .await
         .unwrap();
     handle
         .db
-        .transit_deployment_status_to_paused(tenant_id, pipeline1.id, Version(1))
+        .transit_deployment_resources_status_to_provisioned(
+            tenant_id,
+            pipeline1.id,
+            Version(1),
+            "location1",
+            ExtendedRuntimeStatus {
+                runtime_status: RuntimeStatus::Paused,
+                runtime_status_details: "".to_string(),
+                runtime_desired_status: RuntimeDesiredStatus::Paused,
+            },
+        )
         .await
         .unwrap();
     handle
         .db
-        .set_deployment_desired_status_suspended_or_stopped(tenant_id, "example1", true)
+        .set_deployment_resources_desired_status_stopped(tenant_id, "example1")
         .await
         .unwrap();
     handle
         .db
-        .transit_deployment_status_to_stopping(tenant_id, pipeline1.id, Version(1), None, None)
+        .transit_deployment_resources_status_to_stopping(
+            tenant_id,
+            pipeline1.id,
+            Version(1),
+            None,
+            None,
+        )
         .await
         .unwrap();
     handle
         .db
-        .transit_deployment_status_to_stopped(tenant_id, pipeline1.id, Version(1))
+        .transit_deployment_resources_status_to_stopped(tenant_id, pipeline1.id, Version(1))
         .await
         .unwrap();
 
@@ -2104,62 +2180,122 @@ async fn pipeline_lifecycle_events() {
         .unwrap()
         .into_iter();
 
+    // First deployment cycle
     assert_eq!(
-        Some(PipelineStatus::Provisioning),
-        events.next().map(|s| s.deployment_status)
-    );
-    assert_eq!(
-        Some(PipelineStatus::Initializing),
-        events.next().map(|s| s.deployment_status)
-    );
-    assert_eq!(
-        Some(PipelineStatus::Paused),
-        events.next().map(|s| s.deployment_status)
-    );
-    assert_eq!(
-        Some(PipelineStatus::Running),
-        events.next().map(|s| s.deployment_status)
+        Some("provisioning".to_string()),
+        events.next().map(|s| s.deployment_resources_status)
     );
     assert_eq!(
         Some((
-            PipelineStatus::Stopping,
+            "provisioned".to_string(),
+            Some("initializing".to_string()),
+            Some("paused".to_string())
+        )),
+        events.next().map(|s| (
+            s.deployment_resources_status,
+            s.deployment_runtime_status,
+            s.deployment_runtime_desired_status
+        ))
+    );
+    assert_eq!(
+        Some((
+            "provisioned".to_string(),
+            Some("paused".to_string()),
+            Some("paused".to_string())
+        )),
+        events.next().map(|s| (
+            s.deployment_resources_status,
+            s.deployment_runtime_status,
+            s.deployment_runtime_desired_status
+        ))
+    );
+    assert_eq!(
+        Some((
+            "provisioned".to_string(),
+            Some("paused".to_string()),
+            Some("running".to_string())
+        )),
+        events.next().map(|s| (
+            s.deployment_resources_status,
+            s.deployment_runtime_status,
+            s.deployment_runtime_desired_status
+        ))
+    );
+    assert_eq!(
+        Some((
+            "provisioned".to_string(),
+            Some("running".to_string()),
+            Some("running".to_string())
+        )),
+        events.next().map(|s| (
+            s.deployment_resources_status,
+            s.deployment_runtime_status,
+            s.deployment_runtime_desired_status
+        ))
+    );
+    assert_eq!(
+        Some((
+            "stopping".to_string(),
             Some(
                 r#"{"message":"never gonna give you up","error_code":"epic failure","details":{}}"#
                     .to_string()
             )
         )),
-        events.next().map(|s| (s.deployment_status, s.info))
+        events
+            .next()
+            .map(|s| (s.deployment_resources_status, s.info))
     );
     assert_eq!(
         Some((
-            PipelineStatus::Stopped,
+            "stopped".to_string(),
             Some(
                 r#"{"message":"never gonna give you up","error_code":"epic failure","details":{}}"#
                     .to_string()
             )
         )),
-        events.next().map(|s| (s.deployment_status, s.info))
+        events
+            .next()
+            .map(|s| (s.deployment_resources_status, s.info))
     );
 
+    // Second deployment cycle
     assert_eq!(
-        Some(PipelineStatus::Provisioning),
-        events.next().map(|s| s.deployment_status)
+        Some("provisioning".to_string()),
+        events.next().map(|s| s.deployment_resources_status)
     );
     assert_eq!(
-        Some(PipelineStatus::Initializing),
-        events.next().map(|s| s.deployment_status)
+        Some((
+            "provisioned".to_string(),
+            Some("initializing".to_string()),
+            Some("paused".to_string())
+        )),
+        events.next().map(|s| (
+            s.deployment_resources_status,
+            s.deployment_runtime_status,
+            s.deployment_runtime_desired_status
+        ))
     );
     assert_eq!(
-        Some(PipelineStatus::Paused),
-        events.next().map(|s| s.deployment_status)
+        Some((
+            "provisioned".to_string(),
+            Some("paused".to_string()),
+            Some("paused".to_string())
+        )),
+        events.next().map(|s| (
+            s.deployment_resources_status,
+            s.deployment_runtime_status,
+            s.deployment_runtime_desired_status
+        ))
     );
     assert_eq!(
-        Some(PipelineStatus::Stopping),
-        events.next().map(|s| s.deployment_status)
+        Some("stopping".to_string()),
+        events.next().map(|s| s.deployment_resources_status)
     );
     assert_eq!(
-        Some((PipelineStatus::Stopped, None)),
-        events.next().map(|s| (s.deployment_status, s.info))
+        Some(("stopped".to_string(), None)),
+        events
+            .next()
+            .map(|s| (s.deployment_resources_status, s.info))
     );
 
     assert!(handle.db.cleanup_pipeline_lifecycle_events(0).await.is_ok());
@@ -2657,7 +2793,7 @@ fn db_impl_behaves_like_model() {
                                 // remove event_id, recorded_at as they can't be same in db and model
                                 // just verify the events and info is recorded correctly
                                 let extract_relevant_info = |events: Vec<PipelineLifecycleEvent>| {
-                                    events.into_iter().map(|e| (e.deployment_status, e.info)).collect::<Vec<_>>()
+                                    events.into_iter().map(|e| (e.deployment_resources_status, e.deployment_runtime_status, e.deployment_runtime_desired_status, e.info)).collect::<Vec<_>>()
                                 };
 
 
@@ -3171,13 +3307,30 @@ impl ModelHelpers for Mutex<DbModel> {
 
     /// Helper to insert a pipeline lifecycle event into the model.
     async fn record_lifecycle_event(&self, tenant_id: TenantId, pipeline: &ExtendedPipelineDescr) {
+        let deployment_resources_status = pipeline.deployment_resources_status.to_string();
+        let deployment_runtime_status = pipeline
+            .deployment_runtime_status
+            .map(super::types::pipeline::runtime_status_to_string);
+        let deployment_runtime_desired_status = pipeline
+            .deployment_runtime_desired_status
+            .map(super::types::pipeline::runtime_desired_status_to_string);
+
+        let info = pipeline
+            .deployment_error
+            .as_ref()
+            .map(|e| serde_json::to_string(e).unwrap());
+        // .or_else(|| {
+        //     pipeline
+        //         .suspend_info
+        //         .as_ref()
+        //         .map(|e| serde_json::to_string(e).unwrap())
+        // });
         let event = PipelineLifecycleEvent {
             event_id: Uuid::now_v7(),
-            deployment_status: pipeline.deployment_status,
-            info: pipeline
-                .deployment_error
-                .as_ref()
-                .map(|e| serde_json::to_string(e).unwrap()),
+            deployment_resources_status,
+            deployment_runtime_status,
+            deployment_runtime_desired_status,
+            info,
             recorded_at: Utc::now().naive_utc(),
         };
         self.lock()

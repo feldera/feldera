@@ -26,6 +26,7 @@ use async_trait::async_trait;
 use deadpool_postgres::{Manager, Pool, RecyclingMethod};
 use feldera_types::config::{PipelineConfig, RuntimeConfig};
 use feldera_types::error::ErrorResponse;
+use feldera_types::runtime_status::{ExtendedRuntimeStatus, RuntimeDesiredStatus};
 use log::{debug, info, log, warn, Level};
 use tokio_postgres::Row;
 use uuid::Uuid;
