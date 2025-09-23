@@ -7244,12 +7244,20 @@
         "type": "object",
         "required": [
           "event_id",
-          "deployment_status",
+          "deployment_resources_status",
           "recorded_at"
         ],
         "properties": {
-          "deployment_status": {
-            "$ref": "#/components/schemas/PipelineStatus"
+          "deployment_resources_status": {
+            "type": "string"
+          },
+          "deployment_runtime_desired_status": {
+            "type": "string",
+            "nullable": true
+          },
+          "deployment_runtime_status": {
+            "type": "string",
+            "nullable": true
           },
           "event_id": {
             "type": "string",
