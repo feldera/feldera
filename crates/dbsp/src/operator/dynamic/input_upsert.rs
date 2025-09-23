@@ -76,7 +76,7 @@ impl<V: DBData, U: DBData> NumEntries for Update<V, U> {
 }
 
 pub trait UpdateTrait<V: DataTrait + ?Sized, U: DataTrait + ?Sized>: Data {
-    fn get(&self) -> UpdateRef<V, U>;
+    fn get(&self) -> UpdateRef<'_, V, U>;
     fn insert_ref(&mut self, val: &V);
     fn insert_val(&mut self, val: &mut V);
     fn delete(&mut self);
@@ -91,7 +91,7 @@ where
     VType: DBData + Erase<V>,
     UType: DBData + Erase<U>,
 {
-    fn get(&self) -> UpdateRef<V, U> {
+    fn get(&self) -> UpdateRef<'_, V, U> {
         match self {
             Update::Insert(v) => UpdateRef::Insert(v.erase()),
             Update::Delete => UpdateRef::Delete,

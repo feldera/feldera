@@ -21,6 +21,7 @@ uuid = { workspace = true, features = ["serde", "v7"] }
 reqwest = { workspace = true, features = ["json", "stream"] }
 feldera-types = { workspace = true }
 progenitor-client = { workspace = true }
+rustversion.workspace = true
 
 [build-dependencies]
 prettyplease = { workspace = true }

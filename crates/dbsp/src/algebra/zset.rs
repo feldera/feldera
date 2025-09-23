@@ -128,7 +128,7 @@ impl<T> ZTrace for T where T: Trace<R = DynZWeight> {}
 /// (indexed) Z-sets with specified elements.
 pub trait IndexedZSetReader: BatchReader<Time = (), R = DynZWeight> {
     /// Returns an iterator over updates in the indexed Z-set.
-    fn iter(&self) -> IndexedZSetIterator<Self> {
+    fn iter(&self) -> IndexedZSetIterator<'_, Self> {
         IndexedZSetIterator::new(self.cursor())
     }
 }

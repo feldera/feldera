@@ -184,11 +184,11 @@ impl<D> RefStreamValue<D> {
         Self(Rc::new(RefCell::new(StreamValue::empty())))
     }
 
-    fn get_mut(&self) -> RefMut<StreamValue<D>> {
+    fn get_mut(&self) -> RefMut<'_, StreamValue<D>> {
         self.0.borrow_mut()
     }
 
-    fn get(&self) -> Ref<StreamValue<D>> {
+    fn get(&self) -> Ref<'_, StreamValue<D>> {
         self.0.borrow()
     }
 
@@ -885,7 +885,7 @@ impl<C, D> Stream<C, D>
 where
     D: Clone,
 {
-    fn get(&self) -> Ref<StreamValue<D>> {
+    fn get(&self) -> Ref<'_, StreamValue<D>> {
         self.val.get()
     }
 
@@ -5964,7 +5964,7 @@ where
     O: Data,
     C: Circuit,
 {
-    pub fn operator_mut(&self) -> RefMut<Op> {
+    pub fn operator_mut(&self) -> RefMut<'_, Op> {
         self.operator.borrow_mut()
     }
 
