@@ -6211,7 +6211,7 @@ impl Drop for CircuitHandle {
 }
 
 /// Operators involved in the replay phase of a circuit.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct BootstrapInfo {
     /// Operators that will replay their contents during the replay phase.
     pub replay_sources: BTreeMap<NodeId, StreamId>,

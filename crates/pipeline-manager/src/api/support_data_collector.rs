@@ -929,7 +929,7 @@ mod tests {
     use crate::db::types::program::{RustCompilationInfo, SqlCompilationInfo};
     use crate::db::types::version::Version;
     use feldera_types::runtime_status::{
-        ExtendedRuntimeStatus, RuntimeDesiredStatus, RuntimeStatus,
+        BootstrapPolicy, ExtendedRuntimeStatus, RuntimeDesiredStatus, RuntimeStatus,
     };
     use serde_json::json;
     use std::sync::Arc;
@@ -1132,6 +1132,7 @@ mod tests {
                 tenant_id,
                 "test_pipeline",
                 RuntimeDesiredStatus::Running,
+                BootstrapPolicy::default(),
             )
             .await
             .unwrap();
@@ -1328,6 +1329,7 @@ mod tests {
                 tenant_id,
                 "test_pipeline",
                 RuntimeDesiredStatus::Running,
+                BootstrapPolicy::default(),
             )
             .await
             .unwrap();
@@ -1505,6 +1507,7 @@ mod tests {
                 tenant_id,
                 "test_pipeline",
                 RuntimeDesiredStatus::Running,
+                BootstrapPolicy::default(),
             )
             .await
             .unwrap();
@@ -1613,6 +1616,7 @@ mod tests {
                 tenant_id,
                 "test_pipeline",
                 RuntimeDesiredStatus::Running,
+                BootstrapPolicy::default(),
             )
             .await
             .unwrap();

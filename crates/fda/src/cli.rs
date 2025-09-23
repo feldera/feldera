@@ -295,7 +295,19 @@ pub enum PipelineAction {
         /// Initial desired runtime status once the pipeline is started.
         #[arg(long, short = 'i', default_value = "running")]
         initial: String,
+        /// The bootstrap policy to use.
+        // TODO: auto-complete
+        #[arg(long, short = 'b', default_value = "await_approval")]
+        bootstrap_policy: String,
     },
+    /// Approve pipeline changes. Called in the AwaitingApproval state to allow
+    /// the pipeline to proceed with bootstrapping the modified components.
+    Approve {
+        /// The name of the pipeline.
+        #[arg(value_hint = ValueHint::Other, add = ArgValueCompleter::new(pipeline_names))]
+        name: String,
+    },
+
     /// Checkpoint a fault-tolerant pipeline.
     Checkpoint {
         /// The name of the pipeline.
@@ -344,6 +356,9 @@ pub enum PipelineAction {
         /// Initial desired runtime status once the pipeline is restarted.
         #[arg(long, short = 'i', default_value = "running")]
         initial: String,
+        /// The bootstrap policy to use.
+        #[arg(long, short = 'b', default_value = "await_approval")]
+        bootstrap_policy: String,
     },
     /// Stop a pipeline.
     #[clap(aliases = &["shutdown"])]
@@ -527,6 +542,9 @@ pub enum PipelineAction {
         /// (ignored unless `--start` is provided).
         #[arg(long, short = 'i', default_value = "running")]
         initial: String,
+        /// The bootstrap policy to use.
+        #[arg(long, short = 'b', default_value = "await_approval")]
+        bootstrap_policy: String,
     },
     /// Execute an ad-hoc query against a pipeline and return the result.
     #[clap(aliases = &["exec"])]

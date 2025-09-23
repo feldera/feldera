@@ -28,7 +28,7 @@ use chrono::{DateTime, Utc};
 use feldera_types::config::{InputEndpointConfig, OutputEndpointConfig, RuntimeConfig};
 use feldera_types::error::ErrorResponse;
 use feldera_types::program_schema::ProgramSchema;
-use feldera_types::runtime_status::{RuntimeDesiredStatus, RuntimeStatus};
+use feldera_types::runtime_status::{BootstrapPolicy, RuntimeDesiredStatus, RuntimeStatus};
 use log::info;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -249,6 +249,7 @@ pub struct PipelineSelectedInfo {
     pub deployment_resources_desired_status: ResourcesDesiredStatus,
     pub deployment_resources_desired_status_since: DateTime<Utc>,
     pub deployment_runtime_status: Option<RuntimeStatus>,
+    pub deployment_runtime_status_details: Option<String>,
     pub deployment_runtime_status_since: Option<DateTime<Utc>>,
     pub deployment_runtime_desired_status: Option<RuntimeDesiredStatus>,
     pub deployment_runtime_desired_status_since: Option<DateTime<Utc>>,
@@ -300,6 +301,7 @@ pub struct PipelineSelectedInfoInternal {
     pub deployment_resources_desired_status: ResourcesDesiredStatus,
     pub deployment_resources_desired_status_since: DateTime<Utc>,
     pub deployment_runtime_status: Option<RuntimeStatus>,
+    pub deployment_runtime_status_details: Option<String>,
     pub deployment_runtime_status_since: Option<DateTime<Utc>>,
     pub deployment_runtime_desired_status: Option<RuntimeDesiredStatus>,
     pub deployment_runtime_desired_status_since: Option<DateTime<Utc>>,
@@ -355,6 +357,7 @@ impl PipelineSelectedInfoInternal {
             deployment_resources_desired_status_since: extended_pipeline
                 .deployment_resources_desired_status_since,
             deployment_runtime_status: extended_pipeline.deployment_runtime_status,
+            deployment_runtime_status_details: extended_pipeline.deployment_runtime_status_details,
             deployment_runtime_status_since: extended_pipeline.deployment_runtime_status_since,
             deployment_runtime_desired_status: extended_pipeline.deployment_runtime_desired_status,
             deployment_runtime_desired_status_since: extended_pipeline
@@ -409,6 +412,7 @@ impl PipelineSelectedInfoInternal {
             deployment_resources_desired_status_since: extended_pipeline
                 .deployment_resources_desired_status_since,
             deployment_runtime_status: extended_pipeline.deployment_runtime_status,
+            deployment_runtime_status_details: extended_pipeline.deployment_runtime_status_details,
             deployment_runtime_status_since: extended_pipeline.deployment_runtime_status_since,
             deployment_runtime_desired_status: extended_pipeline.deployment_runtime_desired_status,
             deployment_runtime_desired_status_since: extended_pipeline
@@ -597,6 +601,8 @@ pub struct PostStartPipelineParameters {
     /// become `standby`, `paused` or `running` (only valid values).
     #[serde(default = "default_pipeline_start_desired")]
     initial: String,
+    #[serde(default)]
+    bootstrap_policy: BootstrapPolicy,
 }
 
 /// Default for the `force` query parameter when POST a pipeline stop.
@@ -999,7 +1005,11 @@ pub(crate) async fn post_pipeline_start(
     query: web::Query<PostStartPipelineParameters>,
 ) -> Result<HttpResponse, ManagerError> {
     let pipeline_name = path.into_inner();
-    let initial = query.into_inner().initial;
+    let PostStartPipelineParameters {
+        initial,
+        bootstrap_policy,
+    } = query.into_inner();
+
     let pipeline_id = match initial.as_str() {
         "standby" => {
             state
@@ -1010,6 +1020,7 @@ pub(crate) async fn post_pipeline_start(
                     *tenant_id,
                     &pipeline_name,
                     RuntimeDesiredStatus::Standby,
+                    bootstrap_policy,
                 )
                 .await?
         }
@@ -1022,6 +1033,7 @@ pub(crate) async fn post_pipeline_start(
                     *tenant_id,
                     &pipeline_name,
                     RuntimeDesiredStatus::Paused,
+                    bootstrap_policy,
                 )
                 .await?
         }
@@ -1034,6 +1046,7 @@ pub(crate) async fn post_pipeline_start(
                     *tenant_id,
                     &pipeline_name,
                     RuntimeDesiredStatus::Running,
+                    bootstrap_policy,
                 )
                 .await?
         }

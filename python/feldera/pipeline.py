@@ -12,6 +12,7 @@ from queue import Queue
 
 from feldera.rest.errors import FelderaAPIError
 from feldera.enums import (
+    BootstrapPolicy,
     PipelineFieldSelector,
     PipelineStatus,
     ProgramStatus,
@@ -365,7 +366,7 @@ class Pipeline:
 
         return self.stats().global_metrics.pipeline_complete
 
-    def start(self, wait: bool = True, timeout_s: Optional[float] = None):
+    def start(self, bootstrap_policy: Optional[BootstrapPolicy] = None, wait: bool = True, timeout_s: Optional[float] = None):
         """
         .. _start:
 
@@ -397,18 +398,21 @@ method or use `Pipeline.resume()` to resume a paused pipeline."""
                     "cannot start with 'wait=False' when output listeners are configured. Try setting 'wait=True'."
                 )
 
-            self.client.start_pipeline(self.name, wait=wait)
+            self.client.start_pipeline(self.name, bootstrap_policy=bootstrap_policy, wait=wait)
 
             return
 
         if len(self.views_tx) == 0:
-            self.client.start_pipeline(self.name, wait=wait, timeout_s=timeout_s)
+            self.client.start_pipeline(self.name, bootstrap_policy=bootstrap_policy, wait=wait, timeout_s=timeout_s)
         else:
-            self.client.start_pipeline_as_paused(self.name, wait=wait, timeout_s=timeout_s)
+            self.client.start_pipeline_as_paused(self.name, bootstrap_policy=bootstrap_policy, wait=wait, timeout_s=timeout_s)
             self.__setup_output_listeners()
             self.resume(timeout_s=timeout_s)
 
-    def restart(self, timeout_s: Optional[float] = None):
+    def approve(self):
+        self.client.approve_pipeline(self.name)
+
+    def restart(self, bootstrap_policy: Optional[BootstrapPolicy] = None, timeout_s: Optional[float] = None):
         """
         Restarts the pipeline.
 
@@ -421,7 +425,7 @@ method or use `Pipeline.resume()` to resume a paused pipeline."""
         """
 
         self.stop(force=True, timeout_s=timeout_s)
-        self.start(timeout_s=timeout_s)
+        self.start(bootstrap_policy=bootstrap_policy, timeout_s=timeout_s)
 
     def wait_for_idle(
         self,
@@ -514,19 +518,19 @@ metrics"""
 
         self.client.activate_pipeline(self.name, wait=wait, timeout_s=timeout_s)
 
-    def start_paused(self, wait: bool = True, timeout_s: Optional[float] = None):
+    def start_paused(self, bootstrap_policy: Optional[BootstrapPolicy] = None, wait: bool = True, timeout_s: Optional[float] = None):
         """
         Starts the pipeline in the paused state.
         """
 
-        self.client.start_pipeline_as_paused(self.name, wait=wait, timeout_s=timeout_s)
+        self.client.start_pipeline_as_paused(self.name, bootstrap_policy=bootstrap_policy, wait=wait, timeout_s=timeout_s)
 
-    def start_standby(self, wait: bool = True, timeout_s: Optional[float] = None):
+    def start_standby(self, bootstrap_policy: Optional[BootstrapPolicy] = None, wait: bool = True, timeout_s: Optional[float] = None):
         """
         Starts the pipeline in the standby state.
         """
 
-        self.client.start_pipeline_as_standby(self.name, wait=wait, timeout_s=timeout_s)
+        self.client.start_pipeline_as_standby(self.name, bootstrap_policy=bootstrap_policy, wait=wait, timeout_s=timeout_s)
 
     def pause(self, wait: bool = True, timeout_s: Optional[float] = None):
         """

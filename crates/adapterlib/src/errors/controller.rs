@@ -11,7 +11,9 @@ use actix_web::body::BoxBody;
 use actix_web::http::StatusCode;
 use actix_web::{HttpResponse, HttpResponseBuilder, ResponseError};
 use anyhow::Error as AnyError;
-use dbsp::{storage::backend::StorageError, Error as DbspError};
+use dbsp::{
+    circuit::circuit_builder::BootstrapInfo, storage::backend::StorageError, Error as DbspError,
+};
 use feldera_types::{
     error::{DetailedError, ErrorResponse},
     runtime_status::RuntimeDesiredStatus,
@@ -747,6 +749,12 @@ pub enum ControllerError {
         from: RuntimeDesiredStatus,
         to: RuntimeDesiredStatus,
     },
+
+    BootstrapRejected,
+
+    UnexpectedBootstrap {
+        bootstrap_info: Option<BootstrapInfo>,
+    },
 }
 
 impl ResponseError for ControllerError {
@@ -775,6 +783,8 @@ impl ResponseError for ControllerError {
             Self::TransactionInProgress => StatusCode::CONFLICT,
             Self::NoTransactionInProgress => StatusCode::BAD_REQUEST,
             Self::InvalidInitialStatus(_) => StatusCode::GONE,
+            Self::BootstrapRejected => StatusCode::CONFLICT,
+            Self::UnexpectedBootstrap { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             _ => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
@@ -912,6 +922,8 @@ impl DbspDetailedError for ControllerError {
             Self::InvalidInitialStatus(_) => Cow::from("InvalidInitialStatus"),
             Self::InvalidStandby(_) => Cow::from("InvalidStandby"),
             Self::InvalidStartupTransition { .. } => Cow::from("InvalidStartupTransition"),
+            Self::BootstrapRejected => Cow::from("BootstrapRejected"),
+            Self::UnexpectedBootstrap { .. } => Cow::from("UnexpectedBootstrap"),
         }
     }
 }
@@ -1084,6 +1096,15 @@ impl Display for ControllerError {
                     f,
                     "Invalid pipeline startup transition from {from:?} to {to:?}"
                 )
+            }
+            Self::BootstrapRejected => {
+                write!(
+                    f,
+                    "Bootstrapping of the modified pipeline was rejected by the user."
+                )
+            }
+            Self::UnexpectedBootstrap { bootstrap_info } => {
+                write!(f, "The pipeline's query plan was modified since the last checkpoint and requires bootstrapping; however we were not able to detect the changes in the pipeline metadata. This is a bug; please report to the developers. Bootstrap info: {bootstrap_info:?}")
             }
         }
     }
@@ -1458,6 +1479,8 @@ impl ControllerError {
             | Self::PipelineRestarted { .. }
             | Self::NoTransactionInProgress
             | Self::InvalidInitialStatus(_)
+            | Self::BootstrapRejected
+            | Self::UnexpectedBootstrap { .. }
             | Self::InvalidStandby(_)
             | Self::InvalidStartupTransition { .. } => ErrorKind::Other,
         }

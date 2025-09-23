@@ -769,7 +769,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         };
 
         // Input and output connectors from required program_info
-        let (inputs, outputs) = match &pipeline.program_info {
+        let program_info = match &pipeline.program_info {
             None => {
                 return Ok(State::TransitionToStopping {
                     error: Some(ErrorResponse::from_error_nolog(
@@ -778,26 +778,20 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                     suspend_info: None,
                 });
             }
-            Some(program_info) => {
-                let program_info = match validate_program_info(program_info) {
-                    Ok(program_info) => program_info,
-                    Err(e) => {
-                        return Ok(State::TransitionToStopping {
-                            error: Some(ErrorResponse::from_error_nolog(
-                                &RunnerError::AutomatonInvalidProgramInfo {
-                                    value: program_info.clone(),
-                                    error: e,
-                                },
-                            )),
-                            suspend_info: None,
-                        });
-                    }
-                };
-                (
-                    program_info.input_connectors,
-                    program_info.output_connectors,
-                )
-            }
+            Some(program_info) => match validate_program_info(program_info) {
+                Ok(program_info) => program_info,
+                Err(e) => {
+                    return Ok(State::TransitionToStopping {
+                        error: Some(ErrorResponse::from_error_nolog(
+                            &RunnerError::AutomatonInvalidProgramInfo {
+                                value: program_info.clone(),
+                                error: e,
+                            },
+                        )),
+                        suspend_info: None,
+                    });
+                }
+            },
         };
 
         // Deployment identifier
@@ -805,7 +799,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
 
         // Deployment configuration
         let mut deployment_config =
-            generate_pipeline_config(pipeline.id, &runtime_config, &inputs, &outputs);
+            generate_pipeline_config(pipeline.id, &runtime_config, &program_info);
         deployment_config.storage_config =
             Some(self.pipeline_handle.generate_storage_config().await);
         let deployment_config = match serde_json::to_value(&deployment_config) {
@@ -969,6 +963,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             .pipeline_handle
             .provision(
                 deployment_initial,
+                pipeline.bootstrap_policy.unwrap_or_default(),
                 &deployment_id,
                 &deployment_config,
                 &program_binary_url,
@@ -1347,7 +1342,7 @@ mod test {
     use async_trait::async_trait;
     use feldera_types::config::{PipelineConfig, StorageConfig};
     use feldera_types::program_schema::ProgramSchema;
-    use feldera_types::runtime_status::{RuntimeDesiredStatus, RuntimeStatus};
+    use feldera_types::runtime_status::{BootstrapPolicy, RuntimeDesiredStatus, RuntimeStatus};
     use serde_json::json;
     use std::str::FromStr;
     use std::sync::Arc;
@@ -1387,6 +1382,7 @@ mod test {
         async fn provision(
             &mut self,
             _: RuntimeDesiredStatus,
+            _: BootstrapPolicy,
             _: &Uuid,
             _: &PipelineConfig,
             _: &str,
@@ -1436,6 +1432,7 @@ mod test {
                     automaton.tenant_id,
                     &pipeline.name,
                     initial,
+                    BootstrapPolicy::default(),
                 )
                 .await
                 .unwrap();

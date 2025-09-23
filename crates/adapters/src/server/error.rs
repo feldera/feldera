@@ -145,6 +145,7 @@ impl ErrorResponse {
 #[serde(untagged)]
 pub enum PipelineError {
     Initializing,
+    AwaitingApproval,
     Terminating,
     InitializationError {
         error: Arc<ControllerError>,
@@ -227,6 +228,9 @@ impl Display for PipelineError {
             Self::Initializing => {
                 f.write_str("Operation failed because the pipeline has not finished initializing.")
             }
+            Self::AwaitingApproval => {
+                f.write_str("Operation failed because the pipeline is awaiting approval to proceed with bootstrapping modified components.")
+            }
             Self::Terminating => {
                 f.write_str("Operation failed because the pipeline is shutting down.")
             }
@@ -295,6 +299,7 @@ impl DetailedError for PipelineError {
     fn error_code(&self) -> Cow<'static, str> {
         match self {
             Self::Initializing => Cow::from("Initializing"),
+            Self::AwaitingApproval => Cow::from("AwaitingApproval"),
             Self::Terminating => Cow::from("Terminating"),
             Self::InitializationError { .. } => Cow::from("InitializationError"),
             Self::PrometheusError { .. } => Cow::from("PrometheusError"),
@@ -328,6 +333,7 @@ impl ResponseError for PipelineError {
     fn status_code(&self) -> StatusCode {
         match self {
             Self::Initializing => StatusCode::SERVICE_UNAVAILABLE,
+            Self::AwaitingApproval => StatusCode::SERVICE_UNAVAILABLE,
             Self::Terminating => StatusCode::GONE,
             Self::InitializationError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::PrometheusError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
