@@ -180,10 +180,10 @@ where
 /// item factories to `dyn Any`.
 #[derive(Clone)]
 pub struct AnyFactories {
-    key_factory: Arc<(dyn Any + Send + Sync + 'static)>,
-    item_factory: Arc<(dyn Any + Send + Sync + 'static)>,
-    keys_factory: Arc<(dyn Any + Send + Sync + 'static)>,
-    auxes_factory: Arc<(dyn Any + Send + Sync + 'static)>,
+    key_factory: Arc<dyn Any + Send + Sync + 'static>,
+    item_factory: Arc<dyn Any + Send + Sync + 'static>,
+    keys_factory: Arc<dyn Any + Send + Sync + 'static>,
+    auxes_factory: Arc<dyn Any + Send + Sync + 'static>,
 }
 
 impl Debug for AnyFactories {
