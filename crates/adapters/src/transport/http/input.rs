@@ -30,13 +30,6 @@ use tokio::{sync::watch, time::timeout};
 use tracing::{debug, info_span};
 use xxhash_rust::xxh3::Xxh3Default;
 
-#[derive(Clone, Debug, Deserialize)]
-pub(crate) enum HttpIngressMode {
-    Batch,
-    Stream,
-    Chunks,
-}
-
 /// HTTP input transport.
 ///
 /// HTTP endpoints are instantiated via the REST API, so this type doesn't

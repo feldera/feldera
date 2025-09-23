@@ -16,11 +16,3 @@ impl Display for TenantId {
         self.0.fmt(f)
     }
 }
-
-/// Tenant descriptor.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, ToSchema)]
-pub(crate) struct TenantDescr {
-    pub id: TenantId,
-    pub tenant: String,
-    pub provider: String,
-}

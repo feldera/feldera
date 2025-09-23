@@ -72,7 +72,6 @@ macro_rules! impl_test_data {
 }
 
 impl_test_data!(TestData2, 0: T1, 1: T2);
-impl_test_data!(TestData3, 0: T1, 1: T2, 2: T3);
 
 struct TestData1<T1: DBData> {
     phantom: PhantomData<T1>,
