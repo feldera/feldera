@@ -883,7 +883,7 @@ mod test {
             .map(|(k, v, _headers)| {
                 (
                     k.clone()
-                        .map(|k| (serde_json::from_slice::<serde_json::Value>(&k).unwrap())),
+                        .map(|k| serde_json::from_slice::<serde_json::Value>(&k).unwrap()),
                     serde_json::from_slice::<serde_json::Value>(v.as_ref().unwrap()).unwrap(),
                 )
             })

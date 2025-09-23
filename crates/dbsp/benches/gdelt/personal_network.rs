@@ -60,7 +60,7 @@ pub fn personal_network(
         .join_index(&forward_events, |_id, a, people| {
             people
                 .iter()
-                .filter(|&b| (a < b))
+                .filter(|&b| a < b)
                 .map(|b| (Tup2(a.clone(), b.clone()), ()))
                 .collect::<Vec<_>>()
         })
