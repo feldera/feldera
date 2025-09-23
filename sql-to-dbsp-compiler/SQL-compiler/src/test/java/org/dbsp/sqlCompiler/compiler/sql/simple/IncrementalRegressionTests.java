@@ -895,18 +895,34 @@ public class IncrementalRegressionTests extends SqlIoTest {
     }
 
     @Test
-    public void x() {
+    public void testHashes() {
         var cc0 = this.getCC("""
-                    CREATE TABLE t1(x int) WITH ('materialized'='true');
-                    CREATE MATERIALIZED VIEW v1 AS SELECT COUNT(*) AS c FROM t1;""");
+                CREATE TABLE t1(x int) WITH ('materialized'='true');
+                CREATE MATERIALIZED VIEW v1 AS SELECT COUNT(*) AS c FROM t1;""");
         var cc1 = this.getCC("""
-                    CREATE TABLE t1(x int) WITH ('materialized'='true');
-                    CREATE MATERIALIZED VIEW v1 AS SELECT COUNT(*) AS c FROM t1;
-                    CREATE MATERIALIZED VIEW v2 AS SELECT COUNT(*) AS c FROM t1;""");
-        // Check that all hashses from cc1 appear unchanged in cc1
+                CREATE TABLE t1(x int) WITH ('materialized'='true');
+                CREATE MATERIALIZED VIEW v1 AS SELECT COUNT(*) AS c FROM t1;
+                CREATE MATERIALIZED VIEW v2 AS SELECT COUNT(*) AS c FROM t1;""");
+        // Check that all hashes from cc1 appear unchanged in cc1
         Set<String> hash0 = this.collectHashes(cc0);
         Set<String> hash1 = this.collectHashes(cc1);
         Assert.assertTrue(hash1.containsAll(hash0));
         Assert.assertEquals(hash0.size() + 1, hash1.size());
+    }
+
+    @Test
+    public void issue4799() {
+        this.getCCS("""
+                CREATE TABLE T(id INT, s VARCHAR);
+                CREATE VIEW v AS (
+                    SELECT
+                        T.id,
+                        R.sid,
+                        R.o
+                    FROM T
+                    CROSS JOIN UNNEST(split(T.s, '/')) WITH ORDINALITY AS R(sid, o)
+                    WHERE sid <> ''
+                );
+                """);
     }
 }

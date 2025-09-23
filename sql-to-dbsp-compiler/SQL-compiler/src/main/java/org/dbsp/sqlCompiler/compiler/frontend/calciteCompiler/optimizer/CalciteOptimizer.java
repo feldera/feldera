@@ -1,4 +1,4 @@
-package org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler;
+package org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.optimizer;
 
 import org.apache.calcite.plan.RelOptRule;
 import org.apache.calcite.plan.hep.HepMatchOrder;
@@ -16,6 +16,7 @@ import org.apache.calcite.tools.RelBuilder;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.IErrorReporter;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.SqlToRelCompiler;
 import org.dbsp.util.IWritesLogs;
 import org.dbsp.util.Logger;
 
@@ -127,7 +128,7 @@ public class CalciteOptimizer implements IWritesLogs {
         this.createOptimizer();
     }
 
-    RelNode apply(RelNode rel, CompilerOptions options) {
+    public RelNode apply(RelNode rel, CompilerOptions options) {
         final RelNode finalRel = rel;
         Logger.INSTANCE.belowLevel(CalciteOptimizer.this, 1)
                 .append("Initial plan ")
@@ -172,23 +173,6 @@ public class CalciteOptimizer implements IWritesLogs {
                 ++joinCount;
                 if (join.getJoinType().isOuterJoin())
                     ++outerJoinCount;
-            }
-            super.visit(node, ordinal, parent);
-        }
-
-        void run(RelNode node) {
-            this.go(node);
-        }
-    }
-
-    /** Helper class to discover whether a query contains correlates */
-    static class CorrelateFinder extends RelVisitor {
-        public int correlateCount = 0;
-        @Override public void visit(
-                RelNode node, int ordinal,
-                @org.checkerframework.checker.nullness.qual.Nullable RelNode parent) {
-            if (node instanceof Correlate join) {
-                ++correlateCount;
             }
             super.visit(node, ordinal, parent);
         }
@@ -286,14 +270,17 @@ public class CalciteOptimizer implements IWritesLogs {
         };
         this.addStep(joinOrder);
 
+        this.addStep(new SimpleOptimizerStep("Decorrelate UNNEST", 2,
+                new DecorrelateUnnest(),
+                new DecorrelateProjectedUnnest()));
         this.addStep(new SimpleOptimizerStep("Decorrelate inner queries 1", 2,
-                new InnerDecorrelator(InnerDecorrelator.Config.DEFAULT)));
+                new InnerDecorrelator()));
         this.addStep(new SimpleOptimizerStep("Correlate/Union", 2,
-                new CorrelateUnionSwap(CorrelateUnionSwap.Config.DEFAULT)));
+                new CorrelateUnionSwap()));
         this.addStep(new SimpleOptimizerStep("Decorrelate inner queries 2", 2,
-                new InnerDecorrelator(InnerDecorrelator.Config.DEFAULT)));
+                new InnerDecorrelator()));
         this.addStep(new SimpleOptimizerStep("Desugar EXCEPT", 2,
-                new ExceptOptimizerRule(ExceptOptimizerRule.ExceptOptimizerRuleConfig.DEFAULT)));
+                new ExceptOptimizerRule()));
         this.addStep(new CalciteOptimizerStep() {
             @Override
             public String getName() {
@@ -327,9 +314,7 @@ public class CalciteOptimizer implements IWritesLogs {
         var hyper = new BaseOptimizerStep("Hypergraph", 0) {
             HepProgram getProgram(RelNode node, int level) {
                 // only call this if there are no Correlates
-                CorrelateFinder finder = new CorrelateFinder();
-                finder.run(node);
-                if (finder.correlateCount == 0) {
+                if (!containsCorrelate(node)) {
                     this.addRules(level,
                             CoreRules.JOIN_TO_HYPER_GRAPH,
                             CoreRules.HYPER_GRAPH_OPTIMIZE);

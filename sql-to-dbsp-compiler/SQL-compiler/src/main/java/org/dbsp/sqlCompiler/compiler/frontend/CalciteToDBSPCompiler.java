@@ -626,8 +626,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPSimpleOperator opInput = this.getInputAs(input, true);
         DBSPType indexType = null;
         if (uncollect.withOrdinality) {
-            DBSPTypeTuple pair = type.to(DBSPTypeTuple.class);
-            indexType = pair.getFieldType(1);
+            DBSPTypeTuple tuple = type.to(DBSPTypeTuple.class);
+            indexType = tuple.getFieldType(tuple.size() - 1);
         }
         if (inputRowType.size() > 1) {
             throw new UnimplementedException("UNNEST with multiple vectors", node);
