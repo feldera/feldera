@@ -39,13 +39,16 @@ use rkyv::{
     Fallible, Serialize,
 };
 use size_of::{Context, SizeOf};
-use std::sync::Mutex;
-use std::sync::{atomic::AtomicBool, Arc, MutexGuard};
 use std::time::{Duration, Instant};
 use std::{
     fmt::{self, Debug, Display, Formatter},
     ops::DerefMut,
     sync::Condvar,
+};
+use std::{hash::BuildHasher, sync::Mutex};
+use std::{
+    hash::Hasher,
+    sync::{atomic::AtomicBool, Arc, MutexGuard},
 };
 use std::{mem::take, sync::atomic::Ordering};
 use textwrap::indent;
@@ -77,6 +80,32 @@ impl<B: Batch + Send + Sync> From<(Vec<String>, &Spine<B>)> for CommittedSpine {
     }
 }
 
+#[derive(Default)]
+struct TrivialHasher(Option<u64>);
+impl Hasher for TrivialHasher {
+    fn write(&mut self, _bytes: &[u8]) {
+        unreachable!()
+    }
+    fn write_u64(&mut self, i: u64) {
+        debug_assert_eq!(self.0, None);
+        self.0 = Some(i);
+    }
+    fn finish(&self) -> u64 {
+        self.0.unwrap()
+    }
+}
+
+/// A [BuildHasher] that hashes a single `u64` back into itself.
+#[derive(Clone, Default)]
+struct TrivialHashBuilder;
+
+impl BuildHasher for TrivialHashBuilder {
+    type Hasher = TrivialHasher;
+    fn build_hasher(&self) -> Self::Hasher {
+        TrivialHasher::default()
+    }
+}
+
 /// A group of batches.
 ///
 /// The batches in a group are either all loose, or all merging.
@@ -96,7 +125,7 @@ struct BatchGroup<B> {
 
     /// If present, the hashes of the keys in `batches`.
     #[size_of(skip)]
-    keys: Option<HashSet<u64>>,
+    keys: Option<HashSet<u64, TrivialHashBuilder>>,
 }
 
 impl<B> BatchGroup<B> {
