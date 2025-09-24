@@ -201,6 +201,7 @@
       "inputs": [
         { "node": "s11", "output": 0 }
       ],
+      "view": "v",
       "calcite": {
         "final": 3
       },
@@ -211,6 +212,7 @@
       "inputs": [
         { "node": "s0", "output": 0 }
       ],
+      "view": "error_view",
       "calcite": {
         "final": 0
       },
