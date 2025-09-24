@@ -9,6 +9,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperatorWithError;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceTableOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewDeclarationOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
@@ -123,6 +124,10 @@ public class ToJsonVisitor extends CircuitDispatcher {
         } else if (operator.is(DBSPSourceTableOperator.class)) {
             this.builder.appendJsonLabelAndColon("table")
                     .append(Utilities.doubleQuote(operator.to(DBSPSourceTableOperator.class).tableName.toString()))
+                    .append(",").newline();
+        } else if (operator.is(DBSPSinkOperator.class)) {
+            this.builder.appendJsonLabelAndColon("view")
+                    .append(Utilities.doubleQuote(operator.to(DBSPSinkOperator.class).viewName.toString()))
                     .append(",").newline();
         }
 

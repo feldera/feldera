@@ -26,6 +26,9 @@ pub struct MirNode {
     pub table: Option<String>,
 
     #[serde(default)]
+    pub view: Option<String>,
+
+    #[serde(default)]
     pub inputs: Vec<MirInput>,
 
     pub operation: String,
