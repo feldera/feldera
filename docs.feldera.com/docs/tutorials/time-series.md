@@ -28,9 +28,8 @@ with finite memory, making it extremely resource efficient.**
 
 :::warning
 
-Feldera does not automatically garbage collect [materialized tables and views](/sql/materialized),
-as well as tables declared with a primary key.  If such a table stores an unbounded time series,
-it will continue to consume storage without limit.
+Feldera does not automatically garbage collect [materialized tables and views](/sql/materialized).
+If such a table stores an unbounded time series, it will continue to consume storage without limit.
 
 :::
 
