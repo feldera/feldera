@@ -21,7 +21,7 @@ use crate::transport::redis::RedisOutputConfig;
 use crate::transport::s3::S3InputConfig;
 use crate::transport::url::UrlInputConfig;
 use core::fmt;
-use serde::de::{self, DeserializeOwned, Error as _, MapAccess, Visitor};
+use serde::de::{self, MapAccess, Visitor};
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value as JsonValue;
 use serde_yaml::Value as YamlValue;
@@ -1462,12 +1462,12 @@ pub struct FormatConfig {
 pub struct ResourceConfig {
     /// The minimum number of CPU cores to reserve
     /// for an instance of this pipeline
-    #[serde(deserialize_with = "deserialize_via_value")]
+    #[serde(deserialize_with = "crate::serde_via_value::deserialize")]
     pub cpu_cores_min: Option<f64>,
 
     /// The maximum number of CPU cores to reserve
     /// for an instance of this pipeline
-    #[serde(deserialize_with = "deserialize_via_value")]
+    #[serde(deserialize_with = "crate::serde_via_value::deserialize")]
     pub cpu_cores_max: Option<f64>,
 
     /// The minimum memory in Megabytes to reserve
@@ -1485,18 +1485,4 @@ pub struct ResourceConfig {
     /// Storage class to use for an instance of this pipeline.
     /// The class determines storage performance such as IOPS and throughput.
     pub storage_class: Option<String>,
-}
-
-/// Use this as a serde deserialization function to work around `serde_json`
-/// [issues] with nested `f64`.  It works in two steps, first deserializing a
-/// `serde_json::Value` from `deserializer`, then deserializing `T` from that
-/// `serde_json::Value`.
-///
-/// [issues]: https://github.com/serde-rs/json/issues/1157
-fn deserialize_via_value<'de, D, T>(deserializer: D) -> Result<T, D::Error>
-where
-    D: Deserializer<'de>,
-    T: DeserializeOwned,
-{
-    serde_json::from_value(serde_json::Value::deserialize(deserializer)?).map_err(D::Error::custom)
 }
