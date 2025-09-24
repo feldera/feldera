@@ -50,7 +50,7 @@ pub struct KafkaInputConfig {
     pub poller_threads: Option<usize>,
 
     /// Where to begin reading the topic.
-    #[serde(default)]
+    #[serde(default, with = "crate::serde_via_value")]
     pub start_from: KafkaStartFromConfig,
 
     /// The AWS region to use while connecting to AWS Managed Streaming for Kafka (MSK).
@@ -443,6 +443,7 @@ mod compat {
         /// Current configuration option, which changed type in an incompatible
         /// way soon after it was introduced. No backward compatibility for the
         /// initial form.
+        #[serde(default, with = "crate::serde_via_value")]
         start_from: Option<KafkaStartFromConfig>,
 
         /// Current configuration option that replaces the old `topics`
