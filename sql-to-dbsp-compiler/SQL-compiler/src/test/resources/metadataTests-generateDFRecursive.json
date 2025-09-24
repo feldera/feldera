@@ -388,6 +388,7 @@
       "inputs": [
         { "node": "s2", "output": 0 }
       ],
+      "view": "fibonacci",
       "calcite": {
         "final": 8
       },
@@ -398,6 +399,7 @@
       "inputs": [
         { "node": "s0", "output": 0 }
       ],
+      "view": "error_view",
       "calcite": {
         "final": 0
       },
