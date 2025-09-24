@@ -398,18 +398,24 @@ impl PipelineExecutor for LocalRunner {
             })?;
         }
 
-        // Write config.yaml
-        let config_file_path = self.config.config_file_path(self.pipeline_id);
-        let expanded_config = serde_yaml::to_string(&deployment_config)
-            .expect("Deployment configuration serialization failed");
-        fs::write(&config_file_path, &expanded_config)
-            .await
-            .map_err(|e| {
-                ManagerError::from(CommonError::io_error(
-                    format!("write config file '{}'", config_file_path.display()),
-                    e,
-                ))
-            })?;
+        // Write config as YAML and JSON
+        //
+        // Newer pipelines will read the JSON, older ones will read the YAML.
+        let json_config = serde_json::to_string_pretty(&deployment_config)
+            .expect("JSON config serialization failed");
+        let yaml_config =
+            serde_yaml::to_string(&deployment_config).expect("YAML config serialization failed");
+        for (extension, expanded_config) in [("json", json_config), ("yaml", yaml_config)] {
+            let config_file_path = self.config.config_file_path(self.pipeline_id, extension);
+            fs::write(&config_file_path, &expanded_config)
+                .await
+                .map_err(|e| {
+                    ManagerError::from(CommonError::io_error(
+                        format!("write config file '{}'", config_file_path.display()),
+                        e,
+                    ))
+                })?;
+        }
 
         // Delete port file (which will only exist if we are restarting from a
         // checkpoint).
@@ -438,7 +444,7 @@ impl PipelineExecutor for LocalRunner {
             )
             .current_dir(pipeline_dir)
             .arg("--config-file")
-            .arg(&config_file_path)
+            .arg(&self.config.config_file_path(self.pipeline_id, "yaml"))
             .arg("--bind-address")
             .arg(&self.common_config.bind_address)
             .arg("--initial")
