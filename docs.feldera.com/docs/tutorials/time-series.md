@@ -28,9 +28,10 @@ with finite memory, making it extremely resource efficient.**
 
 :::warning
 
-Feldera does not automatically garbage collect [materialized tables and views](/sql/materialized),
-as well as tables declared with a primary key.  If such a table stores an unbounded time series,
-it will continue to consume storage without limit.
+Feldera does not automatically garbage collect [materialized tables and views](/sql/materialized).
+If such a table stores an unbounded time series, it will continue to consume storage without limit.
+In addition, if the table has a primary key (PK), Feldera will maintain a PK index for this table,
+which will only be garbage collected if at least one of the PK columns has a `LATENESS` annotation.
 
 :::
 
