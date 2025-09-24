@@ -936,14 +936,9 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 arguments and even-numbered arguments are predicates, except for the last argument.
                 */
                 DBSPExpression result = ops.get(ops.size() - 1);
+                DBSPType finalType = type;
                 if (ops.size() % 2 == 0) {
                     DBSPExpression value = ops.get(0);
-                    // Compute casts if needed.
-                    DBSPType finalType = result.getType();
-                    for (int i = 1; i < ops.size() - 1; i += 2) {
-                        if (ops.get(i + 1).getType().mayBeNull)
-                            finalType = finalType.withMayBeNull(true);
-                    }
                     if (!result.getType().sameType(finalType))
                         result = result.cast(node, finalType, false);
                     for (int i = 1; i < ops.size() - 1; i += 2) {
@@ -957,15 +952,7 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                         result = new DBSPIfExpression(node, comp, alt, result);
                     }
                 } else {
-                    // Compute casts if needed.
                     // Build this backwards
-                    DBSPType finalType = result.getType();
-                    for (int i = 0; i < ops.size() - 1; i += 2) {
-                        int index = ops.size() - i - 2;
-                        if (ops.get(index).getType().mayBeNull)
-                            finalType = finalType.withMayBeNull(true);
-                    }
-
                     if (!result.getType().sameType(finalType))
                         result = result.applyCloneIfNeeded().cast(node, finalType, false);
                     for (int i = 0; i < ops.size() - 1; i += 2) {

@@ -8,6 +8,7 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
@@ -196,21 +197,22 @@ public class ExpandCasts extends InnerRewriteVisitor {
         }
     }
 
+    DBSPClosureExpression converter(DBSPType source, DBSPType dest, boolean safe) {
+        DBSPVariablePath var = source.ref().var();
+        DBSPExpression convertValue = var.deref();
+        if (convertValue.getType().is(DBSPTypeBaseType.class))
+            convertValue = convertValue.applyCloneIfNeeded();
+        return convertValue.cast(source.getNode(), dest, safe).closure(var);
+    }
+
     @Nullable DBSPExpression convertToMap(DBSPExpression source, DBSPTypeMap type, boolean safe) {
         DBSPType sourceType = source.getType();
         if (sourceType.is(DBSPTypeMap.class)) {
             DBSPTypeMap sourceMap = sourceType.to(DBSPTypeMap.class);
-            if (!type.getKeyType().sameType(sourceMap.getKeyType())) {
-                this.unsupported(source, type);
-            }
-
-            DBSPVariablePath var = sourceMap.getValueType().ref().var();
-            DBSPExpression convert = var.deref();
-            if (convert.getType().is(DBSPTypeBaseType.class))
-                convert = convert.applyCloneIfNeeded();
-            convert = convert.cast(source.getNode(), type.getValueType(), safe).closure(var);
+            DBSPClosureExpression convertKey = converter(sourceMap.getKeyType(), type.getKeyType(), safe);
+            DBSPClosureExpression convertValue = converter(sourceMap.getValueType(), type.getValueType(), safe);
             source = new DBSPBinaryExpression(source.getNode(),
-                    type, DBSPOpcode.MAP_CONVERT, source.borrow(), convert);
+                    type, DBSPOpcode.MAP_CONVERT, source.borrow(), new DBSPRawTupleExpression(convertKey, convertValue));
             return source.cast(source.getNode(), type, safe);
         }
         // Everything else use the default conversion
