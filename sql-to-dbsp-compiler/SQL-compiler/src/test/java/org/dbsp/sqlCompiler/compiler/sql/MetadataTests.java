@@ -1281,27 +1281,6 @@ public class MetadataTests extends BaseSQLTests {
     @Test
     public void issue3904() throws IOException, SQLException {
         String sql = """
-                -- Tutorial: Time Series Analysis with Feldera (time-series-tutorial)
-                --
-                -- Learn to effectively work with time series data in Feldera.
-                --
-                -- This program accompanies the guide to Time Series Analysis with Feldera: https://docs.feldera.com/tutorials/time-series
-                --
-                -- Each view definition demonstrates one concept from the guide.
-                --
-                -- Example inputs:
-                -- Insert the following records in the `purchase` table and observe how
-                -- the views change in response:
-                --
-                --    INSERT INTO purchase VALUES(1, '2020-01-01 01:00:00', 10);
-                --    INSERT INTO purchase VALUES(1, '2020-01-01 02:00:00', 10);
-                --    INSERT INTO purchase VALUES(1, '2020-01-02 00:00:00', 10);
-                --    INSERT INTO purchase VALUES(1, '2020-01-02 01:00:00', 10);
-                
-                
-                -- This table uses two time-series-related annotations:
-                -- `LATENESS` - updates to this table can arrive no more than 1 hour out of order.
-                -- `append_only` - records are only inserted to this table, but never deleted.
                 CREATE TABLE purchase (
                    customer_id INT,
                    ts TIMESTAMP NOT NULL LATENESS INTERVAL 1 HOUR,

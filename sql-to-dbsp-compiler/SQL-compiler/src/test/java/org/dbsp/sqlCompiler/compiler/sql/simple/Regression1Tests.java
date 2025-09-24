@@ -12,6 +12,7 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStaticItem;
 import org.dbsp.util.Linq;
 import org.junit.Assert;
+import org.junit.Ignore;
 import org.junit.Test;
 
 import java.sql.SQLException;
@@ -946,5 +947,48 @@ public class Regression1Tests extends SqlIoTest {
                 CREATE TABLE T(v VARCHAR, x VARCHAR, z INT);
                 CREATE VIEW V0 AS SELECT ARRAY_AGG(v ORDER BY x) FROM T;
                 CREATE VIEW V1 AS SELECT ARRAY_AGG(ROW(v, z) ORDER BY x) FROM T;""");
+    }
+
+    @Test
+    public void issue4797() {
+        var ccs = this.getCCS("""
+                CREATE TABLE tbl(reall REAL, dbl DOUBLE, str VARCHAR);
+                CREATE MATERIALIZED VIEW v1 AS SELECT
+                GREATEST(str, '0.12') AS str, LEAST(reall, -0.1234567) as reall, LEAST(dbl, -0.82711234601246) AS dbl
+                FROM tbl;""");
+        ccs.step("""
+                INSERT INTO tbl VALUES(-57681.18, -38.2711234601246, 'hello ');
+                """, """
+                 str   | reall          | dbl              | weight
+                -----------------------------------------------
+                 hello | -57681.1796875 | -38.271123460125 | 1""");
+    }
+
+    @Test @Ignore("https://issues.apache.org/jira/browse/CALCITE-7195")
+    public void issue4794() {
+        this.getCCS("""
+                CREATE TABLE tbl(
+                arr VARCHAR ARRAY NULL,
+                mapp MAP<VARCHAR, INT> NULL);
+                
+                CREATE MATERIALIZED VIEW v1 AS SELECT
+                COALESCE(NULL, arr, ARRAY ['bye']) AS arr
+                FROM tbl;
+                
+                CREATE MATERIALIZED VIEW v2 AS SELECT
+                COALESCE(NULL, mapp, MAP['a', 15, 'b', NULL]) AS mapp
+                FROM tbl;""");
+    }
+
+    @Test
+    public void issue4794_2() {
+        this.getCCS("""
+                CREATE TABLE tbl(
+                arr VARCHAR ARRAY NULL,
+                mapp MAP<VARCHAR, INT> NULL);
+                
+                CREATE MATERIALIZED VIEW v3 AS SELECT
+                COALESCE(mapp, MAP['a', 15, 'b', NULL]) AS mapp
+                FROM tbl;""");
     }
 }
