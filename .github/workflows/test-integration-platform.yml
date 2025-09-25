@@ -120,7 +120,7 @@ jobs:
           exit 1
       - name: Run platform tests
         if: ${{ vars.CI_DRY_RUN != 'true' }}
-        run: uv run --locked pytest -n ${{ vars.PYTEST_WORKERS }} tests/platform/test_pipeline_crud.py --timeout=600
+        run: uv run --locked pytest -n ${{ vars.PYTEST_WORKERS }} tests/platform/test_pipeline_crud.py --timeout=600 -vv
         working-directory: python
         env:
           FELDERA_HTTPS_TLS_CERT: /home/ubuntu/test-tls/tls_test.crt
@@ -207,7 +207,7 @@ jobs:
 
       - name: Run platform tests
         if: ${{ vars.CI_DRY_RUN != 'true' }}
-        run: uv run --locked pytest -n ${{ vars.PYTEST_WORKERS }} tests/platform --timeout=1500
+        run: uv run --locked pytest -n ${{ vars.PYTEST_WORKERS }} tests/platform --timeout=1500 -vv
         working-directory: python
         env:
           FELDERA_HOST: http://localhost:8080
