@@ -198,10 +198,21 @@ impl ControllerBuilder {
         })
     }
 
-    pub(crate) fn pull_necessary(&self) -> Option<&SyncConfig> {
-        self.storage.as_ref().and_then(|s| sync::pull_necessary(s))
+    /// Checks if we need to pull a checkpoint from S3.
+    /// Useful to set the pipeline `InitializationState` to `DownloadingCheckpoint`.
+    pub(crate) fn is_pull_necessary(&self) -> Option<&SyncConfig> {
+        #[cfg(feature = "feldera-enterprise")]
+        {
+            self.storage
+                .as_ref()
+                .and_then(|s| sync::is_pull_necessary(s))
+        }
+
+        #[cfg(not(feature = "feldera-enterprise"))]
+        None
     }
 
+    /// Pulls the latest checkpoint just once from S3.
     pub(crate) fn pull_once(&self, _sync: &SyncConfig) -> Result<(), ControllerError> {
         #[cfg(feature = "feldera-enterprise")]
         if let Some(storage) = &self.storage {
@@ -211,17 +222,18 @@ impl ControllerBuilder {
         Ok(())
     }
 
+    /// Continuously pull the latest checkpoint from S3.
     pub(crate) fn continuous_pull<F>(&self, _is_activated: F) -> Result<(), ControllerError>
     where
         F: Fn() -> bool,
     {
         #[cfg(feature = "feldera-enterprise")]
         if let Some(storage) = &self.storage {
-            return sync::continuous_pull(storage, _is_activated);
+            sync::continuous_pull(storage, _is_activated)
         } else {
-            return Err(ControllerError::InvalidStandby(
+            Err(ControllerError::InvalidStandby(
                 "standby mode requires storage configuration",
-            ));
+            ))
         }
 
         #[cfg(not(feature = "feldera-enterprise"))]

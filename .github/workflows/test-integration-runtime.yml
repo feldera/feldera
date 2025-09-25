@@ -35,7 +35,7 @@ jobs:
 
       - name: Python runtime tests
         if: ${{ vars.CI_DRY_RUN != 'true' }}
-        run: uv run --locked pytest -n ${{ vars.PYTEST_WORKERS }} tests/runtime --timeout=600
+        run: uv run --locked pytest -n ${{ vars.PYTEST_WORKERS }} tests/runtime --timeout=600 -vv
         working-directory: python
         env:
           PYTHONPATH: ${{ github.workspace }}/python
@@ -51,7 +51,7 @@ jobs:
 
       - name: Python workload tests
         if: ${{ vars.CI_DRY_RUN != 'true' }}
-        run: uv run --locked pytest -n ${{ vars.PYTEST_WORKERS }} tests/workloads --timeout=600
+        run: uv run --locked pytest -n ${{ vars.PYTEST_WORKERS }} tests/workloads --timeout=600 -vv
         working-directory: python
         env:
           PYTHONPATH: ${{ github.workspace }}/python

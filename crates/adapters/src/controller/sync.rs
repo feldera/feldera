@@ -107,7 +107,8 @@ fn pull_and_gc(
     }
 }
 
-pub fn pull_necessary(storage: &CircuitStorageConfig) -> Option<&SyncConfig> {
+#[cfg(feature = "feldera-enterprise")]
+pub fn is_pull_necessary(storage: &CircuitStorageConfig) -> Option<&SyncConfig> {
     let StorageBackendConfig::File(ref file_cfg) = storage.options.backend else {
         return None;
     };

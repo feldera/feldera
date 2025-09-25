@@ -53,7 +53,7 @@ jobs:
 
       - name: Python SDK unit-tests
         if: ${{ vars.CI_DRY_RUN != 'true' }}
-        run: uv run --locked pytest -n ${{ vars.PYTEST_WORKERS }} feldera
+        run: uv run --locked pytest -n ${{ vars.PYTEST_WORKERS }} feldera -vv
         working-directory: python
 
       - name: feldera-types

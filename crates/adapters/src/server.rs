@@ -921,7 +921,7 @@ fn do_bootstrap(
         | RuntimeDesiredStatus::Paused
         | RuntimeDesiredStatus::Suspended => {
             // First, if necessary, download the latest checkpoint from S3.
-            if let Some(sync) = builder.pull_necessary() {
+            if let Some(sync) = builder.is_pull_necessary() {
                 builder.pull_once(sync)?;
             }
         }
