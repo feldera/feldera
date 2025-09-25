@@ -107,6 +107,35 @@ fn pull_and_gc(
     }
 }
 
+pub fn pull_necessary(storage: &CircuitStorageConfig) -> Option<&SyncConfig> {
+    let StorageBackendConfig::File(ref file_cfg) = storage.options.backend else {
+        return None;
+    };
+
+    let FileBackendConfig {
+        sync: Some(ref sync),
+        ..
+    } = **file_cfg
+    else {
+        return None;
+    };
+
+    sync.start_from_checkpoint.as_ref()?;
+
+    Some(sync)
+}
+
+#[cfg(feature = "feldera-enterprise")]
+pub fn pull_once(storage: &CircuitStorageConfig, sync: &SyncConfig) -> Result<(), ControllerError> {
+    if let Err(err) = pull_and_gc(storage.backend.clone(), sync, &mut uuid::Uuid::nil()) {
+        if sync.fail_if_no_checkpoint {
+            return Err(err);
+        }
+    }
+
+    Ok(())
+}
+
 #[cfg(feature = "feldera-enterprise")]
 pub fn continuous_pull<F>(
     storage: &CircuitStorageConfig,

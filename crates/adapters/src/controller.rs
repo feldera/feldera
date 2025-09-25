@@ -134,7 +134,7 @@ pub use feldera_types::config::{
     ConnectorConfig, FormatConfig, InputEndpointConfig, OutputEndpointConfig, PipelineConfig,
     RuntimeConfig, TransportConfig,
 };
-use feldera_types::config::{FileBackendConfig, FtConfig, FtModel, OutputBufferConfig};
+use feldera_types::config::{FileBackendConfig, FtConfig, FtModel, OutputBufferConfig, SyncConfig};
 use feldera_types::constants::{STATE_FILE, STEPS_FILE};
 use feldera_types::format::json::{JsonFlavor, JsonParserConfig, JsonUpdateFormat};
 use feldera_types::program_schema::{canonical_identifier, SqlIdentifier};
@@ -196,6 +196,19 @@ impl ControllerBuilder {
             config: config.clone(),
             storage,
         })
+    }
+
+    pub(crate) fn pull_necessary(&self) -> Option<&SyncConfig> {
+        self.storage.as_ref().and_then(|s| sync::pull_necessary(s))
+    }
+
+    pub(crate) fn pull_once(&self, _sync: &SyncConfig) -> Result<(), ControllerError> {
+        #[cfg(feature = "feldera-enterprise")]
+        if let Some(storage) = &self.storage {
+            return sync::pull_once(storage, _sync);
+        };
+
+        Ok(())
     }
 
     pub(crate) fn continuous_pull<F>(&self, _is_activated: F) -> Result<(), ControllerError>
