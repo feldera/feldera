@@ -10,6 +10,7 @@ use crate::{
     monitor::{visual_graph::Graph, TraceMonitor},
     RootCircuit, Runtime,
 };
+use serde::Serialize;
 use size_of::HumanBytes;
 use std::{
     borrow::Cow,
@@ -39,7 +40,7 @@ pub struct Profiler {
 }
 
 /// Runtime profile of an individual DBSP worker thread.
-#[derive(Clone, Default, Debug)]
+#[derive(Clone, Default, Debug, Serialize)]
 pub struct WorkerProfile {
     metadata: HashMap<GlobalNodeId, OperatorMeta>,
 }
@@ -247,7 +248,7 @@ $(foreach format,$(FORMATS),$(eval $(call format_template,$(format))))
 }
 
 /// Runtime profiles collected from all DBSP worker threads.
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 pub struct DbspProfile {
     pub worker_profiles: Vec<WorkerProfile>,
 }
@@ -255,6 +256,23 @@ pub struct DbspProfile {
 impl DbspProfile {
     pub fn new(worker_profiles: Vec<WorkerProfile>) -> Self {
         Self { worker_profiles }
+    }
+
+    /// Serialize the profile as a JSON string
+    pub fn as_json(&self) -> String {
+        serde_json::to_string(self).unwrap()
+    }
+
+    /// Encode the profile as JSON and then zip
+    pub fn as_json_zip(&self) -> Vec<u8> {
+        let json = self.as_json();
+        let json = json.as_bytes();
+
+        let mut zip = ZipWriter::new(std::io::Cursor::new(Vec::with_capacity(65536)));
+        zip.start_file("profile.json", FileOptions::default())
+            .unwrap();
+        zip.write_all(json).unwrap();
+        zip.finish().unwrap().into_inner()
     }
 
     /// Compute aggregate profile for a specific attribute across all workers.
