@@ -260,6 +260,14 @@ pub struct CommonConfig {
     /// certificate.
     #[arg(long)]
     pub https_tls_key_path: Option<String>,
+
+    /// Retention period for pipeline lifecycle events (in days).
+    #[arg(long, default_value_t = 7)]
+    pub lifecycle_events_retention_days: u16,
+
+    /// Frequency at which pipeline lifecycle events are cleaned up (in seconds).
+    #[arg(long, default_value_t = 60 * 60)]
+    pub lifecycle_events_cleanup_frequency_secs: u64,
 }
 
 impl CommonConfig {
@@ -417,6 +425,8 @@ impl CommonConfig {
             enable_https: false,
             https_tls_cert_path: None,
             https_tls_key_path: None,
+            lifecycle_events_retention_days: 7,
+            lifecycle_events_cleanup_frequency_secs: 60 * 60,
         }
     }
 }

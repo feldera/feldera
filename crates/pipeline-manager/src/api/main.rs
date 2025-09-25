@@ -208,6 +208,7 @@ It contains the following fields:
         endpoints::pipeline_interaction::commit_transaction,
         endpoints::pipeline_interaction::get_pipeline_time_series,
         endpoints::pipeline_interaction::get_pipeline_time_series_stream,
+        endpoints::pipeline_interaction::lifecycle_events::get_pipeline_lifecycle_events,
 
         // API keys
         endpoints::api_key::list_api_keys,
@@ -257,6 +258,8 @@ It contains the following fields:
         crate::api::endpoints::pipeline_management::PostPutPipeline,
         crate::api::endpoints::pipeline_management::PatchPipeline,
         crate::api::endpoints::pipeline_management::PostStopPipelineParameters,
+        // Lifecycle Events
+        crate::api::lifecycle_events::PipelineLifecycleEvent,
 
         // Storage
         crate::db::types::storage::StorageStatus,
@@ -487,6 +490,7 @@ fn api_scope() -> Scope {
         .service(endpoints::pipeline_interaction::completion_status)
         .service(endpoints::pipeline_interaction::start_transaction)
         .service(endpoints::pipeline_interaction::commit_transaction)
+        .service(endpoints::pipeline_interaction::lifecycle_events::get_pipeline_lifecycle_events)
         // API keys endpoints
         .service(endpoints::api_key::list_api_keys)
         .service(endpoints::api_key::get_api_key)
