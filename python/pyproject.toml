@@ -38,7 +38,6 @@ Issues = "https://github.com/feldera/feldera/issues"
 
 [tool.uv]
 dev-dependencies = [
-    "kafka-python-ng==2.2.2",
     "pytest-timeout>=2.3.1",
     "pytest-xdist>=3.8.0",
     "pytest>=8.3.5",
