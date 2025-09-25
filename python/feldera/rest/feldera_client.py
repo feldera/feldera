@@ -418,7 +418,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             pipeline to start. 300 seconds by default.
         """
 
-        self._inner_start_pipeline(pipeline_name, "paused", wait, timeout_s)
+        self._inner_start_pipeline(pipeline_name, "standby", wait, timeout_s)
 
     def resume_pipeline(
         self,

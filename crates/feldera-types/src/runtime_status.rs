@@ -24,7 +24,7 @@ pub enum RuntimeStatus {
     ///    determine whether it is in any of the other runtime statuses.
     Unavailable,
 
-    /// The pipeline constantly pulling the latest checkpoint to S3 but not processing any inputs.
+    /// The pipeline is constantly pulling the latest checkpoint from S3 but not processing any inputs.
     Standby,
 
     /// The input and output connectors are establishing connections to their data sources and sinks

@@ -95,6 +95,14 @@ mod stack_overflow_backtrace;
 
 pub use self::error::{ErrorResponse, PipelineError, MAX_REPORTED_PARSE_ERRORS};
 
+#[derive(Debug, Clone, Default)]
+pub enum InitializationState {
+    #[default]
+    Starting,
+    DownloadingCheckpoint,
+    Standby,
+}
+
 /// Tracks the health of the pipeline.
 ///
 /// Enables the server to report the state of the pipeline while it is
@@ -102,7 +110,7 @@ pub use self::error::{ErrorResponse, PipelineError, MAX_REPORTED_PARSE_ERRORS};
 #[derive(Clone)]
 enum PipelinePhase {
     /// Initialization in progress.
-    Initializing,
+    Initializing(InitializationState),
 
     /// Initialization has failed.
     InitializationError(Arc<ControllerError>),
@@ -262,7 +270,7 @@ impl ServerState {
     /// initialize, has been shut down or failed.
     fn missing_controller_error(&self) -> PipelineError {
         match self.phase() {
-            PipelinePhase::Initializing => PipelineError::Initializing,
+            PipelinePhase::Initializing(_) => PipelineError::Initializing,
             PipelinePhase::InitializationError(e) => {
                 PipelineError::InitializationError { error: e.clone() }
             }
@@ -589,7 +597,7 @@ pub fn run_server(
         }
 
         let state = WebData::new(ServerState::new(
-            PipelinePhase::Initializing,
+            PipelinePhase::Initializing(InitializationState::Starting),
             md,
             initial_status,
             args.deployment_id,
@@ -911,8 +919,15 @@ fn do_bootstrap(
         RuntimeDesiredStatus::Unavailable => unreachable!(),
         RuntimeDesiredStatus::Running
         | RuntimeDesiredStatus::Paused
-        | RuntimeDesiredStatus::Suspended => (),
+        | RuntimeDesiredStatus::Suspended => {
+            // First, if necessary, download the latest checkpoint from S3.
+            if let Some(sync) = builder.pull_necessary() {
+                builder.pull_once(sync)?;
+            }
+        }
         RuntimeDesiredStatus::Standby => {
+            state.set_phase(PipelinePhase::Initializing(InitializationState::Standby));
+
             builder.continuous_pull(|| state.desired_status() != RuntimeDesiredStatus::Standby)?;
 
             let mut desired_status = state.desired_status.lock().unwrap();
@@ -1129,11 +1144,23 @@ async fn status(
 
     // The controller is not set: acquire the phase read lock
     match state.phase() {
-        PipelinePhase::Initializing => Ok(ExtendedRuntimeStatus {
-            runtime_status: RuntimeStatus::Initializing,
-            runtime_status_details: "".to_string(),
-            runtime_desired_status,
-        }),
+        PipelinePhase::Initializing(inner) => match inner {
+            InitializationState::Starting => Ok(ExtendedRuntimeStatus {
+                runtime_status: RuntimeStatus::Initializing,
+                runtime_status_details: "".to_string(),
+                runtime_desired_status,
+            }),
+            InitializationState::DownloadingCheckpoint => Ok(ExtendedRuntimeStatus {
+                runtime_status: RuntimeStatus::Initializing,
+                runtime_status_details: "downloading checkpoint from object storage".to_string(),
+                runtime_desired_status,
+            }),
+            InitializationState::Standby => Ok(ExtendedRuntimeStatus {
+                runtime_status: RuntimeStatus::Standby,
+                runtime_status_details: "".to_string(),
+                runtime_desired_status,
+            }),
+        },
         PipelinePhase::InitializationError(e) => {
             let e = PipelineError::InitializationError { error: e.clone() };
             let status_code = e.status_code();
@@ -1481,7 +1508,7 @@ async fn suspend(state: WebData<ServerState>) -> Result<impl Responder, Pipeline
                     }
 
                     match state.phase() {
-                        PipelinePhase::Initializing | PipelinePhase::InitializationComplete => (),
+                        PipelinePhase::Initializing(_) | PipelinePhase::InitializationComplete => {}
                         PipelinePhase::InitializationError(_)
                         | PipelinePhase::Failed(_)
                         | PipelinePhase::Suspended => break,
@@ -1874,7 +1901,7 @@ mod test_with_kafka {
     use crate::{
         controller::{ControllerBuilder, MAX_API_CONNECTIONS},
         ensure_default_crypto_provider,
-        server::PipelinePhase,
+        server::{InitializationState, PipelinePhase},
         test::{
             async_wait, generate_test_batches,
             http::{TestHttpReceiver, TestHttpSender},
@@ -1974,7 +2001,7 @@ outputs:
         println!("Creating HTTP server");
 
         let state = WebData::new(ServerState::new(
-            PipelinePhase::Initializing,
+            PipelinePhase::Initializing(InitializationState::Starting),
             String::new(),
             RuntimeDesiredStatus::Paused,
             Uuid::new_v4(),
@@ -2261,7 +2288,7 @@ outputs:
         println!("Creating HTTP server");
 
         let state = WebData::new(ServerState::new(
-            PipelinePhase::Initializing,
+            PipelinePhase::Initializing(InitializationState::Starting),
             String::default(),
             RuntimeDesiredStatus::Paused,
             Uuid::default(),
