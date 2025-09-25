@@ -1026,6 +1026,7 @@ where
         .service(metadata)
         .service(heap_profile)
         .service(dump_profile)
+        .service(dump_json_profile)
         .service(lir)
         .service(checkpoint)
         .service(checkpoint_status)
@@ -1451,6 +1452,20 @@ async fn dump_profile(state: WebData<ServerState>) -> Result<HttpResponse, Pipel
         .insert_header(header::ContentType("application/zip".parse().unwrap()))
         .insert_header(header::ContentDisposition::attachment("profile.zip"))
         .body(state.controller()?.async_graph_profile().await?.as_zip()))
+}
+
+#[get("/dump_json_profile")]
+async fn dump_json_profile(state: WebData<ServerState>) -> Result<HttpResponse, PipelineError> {
+    Ok(HttpResponse::Ok()
+        .insert_header(header::ContentType("application/zip".parse().unwrap()))
+        .insert_header(header::ContentDisposition::attachment("profile.zip"))
+        .body(
+            state
+                .controller()?
+                .async_json_profile()
+                .await?
+                .as_json_zip(),
+        ))
 }
 
 /// Dump the low-level IR of the circuit.

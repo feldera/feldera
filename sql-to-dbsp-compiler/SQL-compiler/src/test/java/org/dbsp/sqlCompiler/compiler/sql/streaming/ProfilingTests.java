@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.sql.streaming;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.CompilerMain;
 import org.dbsp.sqlCompiler.compiler.errors.CompilerMessages;
 import org.dbsp.sqlCompiler.compiler.sql.StreamingTestBase;
@@ -130,6 +131,75 @@ public class ProfilingTests extends StreamingTestBase {
     }
 
     @Test
+    public void getJsonProfile() throws IOException, SQLException, InterruptedException {
+        // Test the capability to get a profile in JSON from the circuit
+        String sql = """
+                CREATE TABLE T (x INT);
+                CREATE VIEW V AS SELECT MAX(x) OVER () FROM T;""";
+        String main = """
+                use dbsp::{algebra::F64, circuit::CircuitConfig, utils::Tup1, zset};
+
+                use feldera_sqllib::{
+                    append_to_collection_handle, append_to_map_handle,
+                    casts::{cast_to_Timestamp_s, handle_error},
+                    read_output_handle,
+                    string::SqlString,
+                };
+
+                use std::fs::File;
+                use std::io::Write;
+                use std::ops::Add;
+                use std::sync::atomic::Ordering;
+                use std::time::SystemTime;
+                use temp::circuit;
+
+                #[test]
+                pub fn test() {
+                    let (mut circuit, streams) = circuit(
+                        CircuitConfig::with_workers(2)).expect("could not build circuit");
+                    let _ = circuit.enable_cpu_profiler();
+                    for i in 0..10000 {
+                        let data = zset!(Tup1::new(Some(i)) => 1);
+                        append_to_collection_handle(&data, &streams.0);
+                        if i % 100 == 0 {
+                            let _ = circuit.transaction().expect("could not run circuit");
+                            let _ = &read_output_handle(&streams.2);
+                        }
+                    }
+
+                    let profile = circuit.retrieve_profile().expect("could not get profile");
+                    let mut file = File::create("profile.zip").expect("Could not create file");
+                    file.write_all(&profile.as_json_zip()).expect("Could not write data");
+                }""";
+        File script = createInputScript(sql);
+        CompilerMessages messages = CompilerMain.execute(
+                "-o", BaseSQLTests.TEST_FILE_PATH, "--handles", "-i",
+                script.getPath());
+        messages.print();
+        Assert.assertEquals(0, messages.errorCount());
+
+        String mainFilePath = RUST_DIRECTORY + "/main.rs";
+        File file = new File(mainFilePath);
+        try (PrintWriter mainFile = new PrintWriter(file, StandardCharsets.UTF_8)) {
+            mainFile.print(main);
+        }
+
+        try {
+            Utilities.compileAndTestRust(RUST_DIRECTORY, true);
+            String outFile = "profile.zip";
+            Path outFilePath = Paths.get(RUST_DIRECTORY, "..", outFile);
+            byte[] data = Utilities.extractFileFromZip(outFilePath.toString(), "profile.json");
+            String str = new String(data, StandardCharsets.UTF_8);
+            JsonNode jsonNode = Utilities.deterministicObjectMapper().readTree(str);
+            Assert.assertNotNull(jsonNode);
+            Utilities.deleteFile(outFilePath.toFile(), true);
+        } finally {
+            File mainFile = new File(mainFilePath);
+            Utilities.deleteFile(mainFile, true);
+        }
+    }
+
+    @Test
     public void profileLateness() throws IOException, InterruptedException, SQLException {
         String sql = """
                 CREATE TABLE series (
@@ -152,12 +222,6 @@ public class ProfilingTests extends StreamingTestBase {
                         if i % 1000 == 0 {
                             let _ = circuit.transaction().expect("could not run circuit");
                             let _ = &read_output_handle(&streams.1);
-                            /*
-                            let end = SystemTime::now();
-                            let profile = circuit.retrieve_profile().expect("could not get profile");
-                            let duration = end.duration_since(start).expect("could not get time");
-                            println!("{:?},{:?}", duration.as_millis(), profile.total_used_bytes().unwrap().bytes);
-                            */
                         }
                     }""");
         this.profile(sql, main);
@@ -214,12 +278,6 @@ public class ProfilingTests extends StreamingTestBase {
                         if i % 100 == 0 {
                             let _ = circuit.transaction().expect("could not run circuit");
                             let _ = &read_output_handle(&streams.2);
-                            /*
-                            let end = SystemTime::now();
-                            let profile = circuit.retrieve_profile().expect("could not get profile");
-                            let duration = end.duration_since(start).expect("could not get time");
-                            println!("{:?},{:?}", duration.as_millis(), profile.total_used_bytes().unwrap().bytes);
-                            */
                         }
                     }""");
         this.profile(sql, main);

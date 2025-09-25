@@ -56,7 +56,7 @@ use anyhow::Error as AnyError;
 use dyn_clone::{clone_box, DynClone};
 use feldera_ir::{LirCircuit, LirNodeId};
 use feldera_storage::StoragePath;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, Serializer};
 use std::{
     any::{type_name_of_val, Any, TypeId},
     borrow::Cow,
@@ -1174,9 +1174,27 @@ impl Display for NodeId {
 /// circuit or a sub-circuit nested inside the top-level circuit will have a
 /// path of length 1, e.g., `[5]`, an operator inside the nested circuit
 /// will have a path of length 2, e.g., `[5, 1]`, etc.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[repr(transparent)]
 pub struct GlobalNodeId(Vec<NodeId>);
+
+impl Serialize for GlobalNodeId {
+    /// Serialize as a string containing all node ids
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut s = "[".to_string();
+        for n in self.0.iter() {
+            if s.len() > 1 {
+                s.push(',');
+            }
+            s.push_str(&n.0.to_string());
+        }
+        s.push(']');
+        serializer.serialize_str(&s)
+    }
+}
 
 impl Display for GlobalNodeId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {

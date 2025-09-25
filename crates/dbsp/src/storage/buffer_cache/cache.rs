@@ -12,6 +12,7 @@ use std::time::Duration;
 use std::{collections::BTreeMap, ops::Range};
 
 use enum_map::{Enum, EnumMap};
+use serde::Serialize;
 
 use crate::circuit::metadata::{MetaItem, OperatorMeta};
 use crate::circuit::runtime::ThreadType;
@@ -358,7 +359,7 @@ impl AddAssign for CacheStats {
 }
 
 /// Cache counts.
-#[derive(Copy, Clone, Debug, Default, PartialEq)]
+#[derive(Copy, Clone, Debug, Default, PartialEq, Serialize)]
 pub struct CacheCounts {
     /// Number of accessed blocks.
     pub count: u64,

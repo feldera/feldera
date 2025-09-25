@@ -480,6 +480,7 @@ fn api_scope() -> Scope {
         .service(endpoints::pipeline_interaction::get_pipeline_time_series)
         .service(endpoints::pipeline_interaction::get_pipeline_time_series_stream)
         .service(endpoints::pipeline_interaction::get_pipeline_circuit_profile)
+        .service(endpoints::pipeline_interaction::get_pipeline_circuit_json_profile)
         .service(endpoints::pipeline_interaction::get_pipeline_heap_profile)
         .service(endpoints::pipeline_interaction::support_bundle::get_pipeline_support_bundle)
         .service(endpoints::pipeline_interaction::pipeline_adhoc_sql)

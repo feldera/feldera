@@ -1,4 +1,5 @@
 use num_format::{Locale, ToFormattedString};
+use serde::{ser::SerializeSeq, Serialize, Serializer};
 use size_of::{HumanBytes, TotalSize};
 use std::{
     borrow::Cow,
@@ -114,7 +115,7 @@ impl BatchSizeStats {
 }
 
 /// General metadata about an operator's execution
-#[derive(Debug, Clone, PartialEq, Default)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize)]
 pub struct OperatorMeta {
     entries: Vec<(MetaLabel, MetaItem)>,
 }
@@ -234,6 +235,35 @@ pub enum MetaItem {
     Map(OperatorMeta),
     Bytes(HumanBytes),
     Duration(Duration),
+}
+
+impl Serialize for MetaItem {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match self {
+            MetaItem::Int(x) => serializer.serialize_u64(*x as u64),
+            MetaItem::Count(x) => serializer.serialize_u64(*x as u64),
+            MetaItem::Percent {
+                numerator,
+                denominator,
+            } => {
+                let mut seq = serializer.serialize_seq(Some(2))?;
+                seq.serialize_element(numerator)?;
+                seq.serialize_element(denominator)?;
+                seq.end()
+            }
+            MetaItem::CacheCounts(cache_counts) => cache_counts.serialize(serializer),
+            MetaItem::String(x) => serializer.serialize_str(x),
+            MetaItem::Array(meta_items) => meta_items.serialize(serializer),
+            MetaItem::Map(operator_meta) => operator_meta.serialize(serializer),
+            MetaItem::Bytes(human_bytes) => {
+                serializer.serialize_i128(human_bytes.into_inner() as i128)
+            }
+            MetaItem::Duration(duration) => duration.serialize(serializer),
+        }
+    }
 }
 
 impl MetaItem {
