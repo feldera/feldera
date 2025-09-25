@@ -8,10 +8,10 @@ use crossbeam::channel::Receiver;
 use dbsp::DBData;
 use feldera_sqllib::{ByteArray, F32, F64};
 use feldera_types::{
-    config::PipelineConfig,
     program_schema::Field,
     serde_with_context::{DeserializeWithContext, SerializeWithContext, SqlSerdeConfig},
 };
+use serde_json::json;
 
 use std::{collections::HashMap, time::Instant};
 use tempfile::NamedTempFile;
@@ -103,39 +103,39 @@ where
 {
     init_logging();
 
-    let mut options = String::new();
-    for (key, val) in config.iter() {
-        options += &format!("                {key}: \"{val}\"\n");
-    }
-
     // Create controller.
-    let config_str = format!(
-        r#"
-name: test
-workers: 4
-outputs:
-    test_output1:
-        stream: test_output1
-        transport:
-            name: file_output
-            config:
-                path: "{output_file_path}"
-        format:
-            name: json
-            config:
-                update_format: "insert_delete"
-inputs:
-    test_input1:
-        stream: test_input1
-        transport:
-            name: "iceberg_input"
-            config:
-{}
-"#,
-        options,
-    );
+    let config = serde_json::from_value(json!({
+      "name": "test",
+      "workers": 4,
+      "outputs": {
+        "test_output1": {
+          "stream": "test_output1",
+          "transport": {
+            "name": "file_output",
+            "config": {
+              "path": output_file_path
+            }
+          },
+          "format": {
+            "name": "json",
+            "config": {
+              "update_format": "insert_delete"
+            }
+          }
+        }
+      },
+      "inputs": {
+        "test_input1": {
+          "stream": "test_input1",
+          "transport": {
+              "name": "iceberg_input",
+              "config": config
+          }
+        }
+      }
+    }))
+    .unwrap();
 
-    let config: PipelineConfig = serde_yaml::from_str(&config_str).unwrap();
     let schema = schema.to_vec();
 
     let (err_sender, err_receiver) = crossbeam::channel::unbounded();

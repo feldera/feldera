@@ -258,7 +258,7 @@ mod test {
         test::{init_test_logger, test_circuit, TestStruct},
         Controller,
     };
-    use feldera_types::config::PipelineConfig;
+    use serde_json::json;
     use tracing::info;
 
     #[test]
@@ -267,26 +267,31 @@ mod test {
 
         info!("test_kafka_output_errors: Test invalid Kafka broker address");
 
-        let config_str = r#"
-name: test
-workers: 4
-inputs:
-outputs:
-    test_output:
-        stream: test_output1
-        transport:
-            name: kafka_output
-            config:
-                bootstrap.servers: localhost:11111
-                topic: end_to_end_test_output_topic
-        format:
-            name: csv
-"#;
+        let config = serde_json::from_value(json!({
+            "name": "test",
+            "workers": 4,
+            "inputs": {},
+            "outputs": {
+                "test_output": {
+                    "stream": "test_output1",
+                    "transport": {
+                        "name": "kafka_output",
+                        "config": {
+                            "bootstrap.servers": "localhost:11111",
+                            "topic": "end_to_end_test_output_topic"
+                        }
+                    },
+                    "format": {
+                        "name": "csv"
+                    }
+                }
+            }
+        }))
+        .unwrap();
 
         info!("test_kafka_output_errors: Creating circuit");
 
         info!("test_kafka_output_errors: Starting controller");
-        let config: PipelineConfig = serde_yaml::from_str(config_str).unwrap();
 
         match Controller::with_config(
             |workers| {

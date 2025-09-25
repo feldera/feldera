@@ -1952,7 +1952,7 @@ mod test_with_kafka {
         strategy::{Strategy, ValueTree},
         test_runner::TestRunner,
     };
-    use serde_json::{self, Value as JsonValue};
+    use serde_json::{self, json, Value as JsonValue};
     use std::{
         io::Write,
         thread,
@@ -2000,7 +2000,8 @@ mod test_with_kafka {
         ]);
 
         // Create buffer consumer
-        let buffer_consumer = BufferConsumer::new("test_server_output_topic", "csv", "", None);
+        let buffer_consumer =
+            BufferConsumer::new("test_server_output_topic", "csv", json!({}), None);
 
         // Config string
         let config_str = r#"

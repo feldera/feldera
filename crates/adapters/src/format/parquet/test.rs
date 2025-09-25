@@ -18,6 +18,7 @@ use parquet::basic::Compression;
 use parquet::file::properties::WriterProperties;
 use parquet::file::serialized_reader::SerializedFileReader;
 use pretty_assertions::assert_eq;
+use serde_json::json;
 use tempfile::NamedTempFile;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
@@ -61,19 +62,20 @@ fn parquet_input_test(compression: Compression) {
     // Prepare input data & pipeline
     let test_data = TestStruct2::data();
     let temp_file = NamedTempFile::new().unwrap();
-    let config_str = format!(
-        r#"
-stream: test_input
-transport:
-    name: file_input
-    config:
-        path: {:?}
-        buffer_size_bytes: 5
-format:
-    name: parquet
-"#,
-        temp_file.path().to_str().unwrap()
-    );
+    let config = serde_json::from_value(json!({
+        "stream": "test_input",
+        "transport": {
+            "name": "file_input",
+            "config": {
+                "path": temp_file.path(),
+                "buffer_size_bytes": 5
+            }
+        },
+        "format": {
+            "name": "parquet"
+        }
+    }))
+    .unwrap();
 
     let batch = RecordBatch::try_new(
         TestStruct2::arrow_schema(),
@@ -92,7 +94,7 @@ format:
 
     // Send the data through the mock pipeline
     let (endpoint, consumer, parser, zset) = mock_input_pipeline::<TestStruct2, TestStruct2>(
-        serde_yaml::from_str(&config_str).unwrap(),
+        config,
         Relation::new("test".into(), TestStruct2::schema(), false, BTreeMap::new()),
     )
     .unwrap();

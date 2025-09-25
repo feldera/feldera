@@ -264,11 +264,11 @@ mod test {
     use feldera_adapterlib::catalog::CircuitCatalog;
     use feldera_sqllib::Timestamp;
     use feldera_types::{
-        config::PipelineConfig,
         deserialize_table_record,
         program_schema::{ColumnType, Field, Relation, SqlIdentifier},
         serialize_table_record,
     };
+    use serde_json::json;
     use tempfile::TempDir;
 
     use crate::{Catalog, Controller};
@@ -369,18 +369,17 @@ mod test {
         create_dir(&storage_dir).unwrap();
 
         // Create controller.
-        let config_str = format!(
-            r#"
-name: test
-workers: 4
-storage_config:
-    path: {storage_dir:?}
-fault_tolerance: {{}}
-inputs:
-"#
-        );
+        let config = serde_json::from_value(json!({
+            "name": "test",
+            "workers": 4,
+            "storage_config": {
+                "path": storage_dir,
+            },
+            "fault_tolerance": {},
+            "inputs": {}
+        }))
+        .unwrap();
 
-        let config: PipelineConfig = serde_yaml::from_str(&config_str).unwrap();
         println!("Pipeline config: {config:?}");
 
         let test_stats = Arc::new(ClockStats::new());

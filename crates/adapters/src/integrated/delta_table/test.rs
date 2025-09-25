@@ -32,6 +32,7 @@ use proptest::prelude::{Arbitrary, ProptestConfig, Strategy};
 use proptest::proptest;
 use proptest::strategy::ValueTree;
 use proptest::test_runner::TestRunner;
+use serde_json::{json, Value};
 use std::cmp::min;
 use std::collections::HashMap;
 use std::ffi::OsStr;
@@ -267,40 +268,40 @@ where
 {
     init_logging();
 
-    let mut storage_options = String::new();
-    for (key, val) in config.iter() {
-        storage_options += &format!("                {key}: {val}\n");
-    }
+    let mut storage_options = config.clone();
+    storage_options.insert("uri".into(), table_uri.into());
 
-    // Create controller.
-    let config_str = format!(
-        r#"
-name: test
-workers: 4
-outputs:
-    test_output1:
-        stream: test_output1
-        transport:
-            name: file_output
-            config:
-                path: "{output_file_path}"
-        format:
-            name: json
-            config:
-                update_format: "insert_delete"
-inputs:
-    test_input1:
-        stream: test_input1
-        transport:
-            name: "delta_table_input"
-            config:
-                uri: "{table_uri}"
-{}
-"#,
-        storage_options,
-    );
-
-    let config: PipelineConfig = serde_yaml::from_str(&config_str).unwrap();
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 4,
+        "outputs": {
+            "test_output1": {
+                "stream": "test_output1",
+                "transport": {
+                    "name": "file_output",
+                    "config": {
+                        "path": output_file_path
+                    },
+                },
+                "format": {
+                    "name": "json",
+                    "config": {
+                        "update_format": "insert_delete"
+                    }
+                }
+            }
+        },
+        "inputs": {
+            "test_input1": {
+                "stream": "test_input1",
+                "transport": {
+                    "name": "delta_table_input",
+                    "config": storage_options,
+                }
+            }
+        }
+    }))
+    .unwrap();
     let schema = schema.to_vec();
 
     Controller::with_config(
@@ -318,7 +319,7 @@ inputs:
 fn delta_to_delta_pipeline<T>(
     input_table_uri: &str,
     skip_unused_columns: bool,
-    input_config: &HashMap<String, String>,
+    input_config: &HashMap<String, Value>,
     output_table_uri: &str,
     output_config: &HashMap<String, String>,
     buffer_size: u64,
@@ -334,50 +335,43 @@ where
 {
     info!("creating a pipeline to copy delta table '{input_table_uri}' to '{output_table_uri}'");
 
-    let mut input_storage_options = String::new();
-    for (key, val) in input_config.iter() {
-        input_storage_options += &format!("                {key}: {val}\n");
-    }
+    let mut input_storage_options = input_config.clone();
+    input_storage_options.insert("uri".into(), input_table_uri.into());
+    input_storage_options.insert("skip_unused_columns".into(), skip_unused_columns.into());
 
-    let mut output_storage_options = String::new();
-    for (key, val) in output_config.iter() {
-        output_storage_options += &format!("                {key}: {val}\n");
-    }
+    let mut output_storage_options = output_config.clone();
+    output_storage_options.insert("uri".into(), output_table_uri.into());
 
-    // Create controller.
-    let config_str = format!(
-        r#"
-name: test
-workers: 4
-storage_config:
-    path: {storage_dir:?}
-inputs:
-    test_input1:
-        paused: {paused}
-        stream: test_input1
-        transport:
-            name: "delta_table_input"
-            config:
-                uri: "{input_table_uri}"
-                skip_unused_columns: {skip_unused_columns}
-{}
-outputs:
-    test_output1:
-        stream: test_output1
-        transport:
-            name: "delta_table_output"
-            config:
-                uri: "{output_table_uri}"
-{}
-        enable_output_buffer: true
-        max_output_buffer_size_records: {buffer_size}
-        max_output_buffer_time_millis: {buffer_timeout_ms}
-"#,
-        input_storage_options, output_storage_options,
-    );
-
-    println!("config:\n{config_str}");
-    let config: PipelineConfig = serde_yaml::from_str(&config_str).unwrap();
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 4,
+        "storage_config": {
+            "path": storage_dir,
+        },
+        "inputs": {
+            "test_input1": {
+                "paused": paused,
+                "stream": "test_input1",
+                "transport": {
+                    "name": "delta_table_input",
+                    "config": input_storage_options,
+                }
+            }
+        },
+        "outputs": {
+            "test_output1": {
+                "stream": "test_output1",
+                "transport": {
+                    "name": "delta_table_output",
+                    "config": output_storage_options,
+                },
+                "enable_output_buffer": true,
+                "max_output_buffer_size_records": buffer_size,
+                "max_output_buffer_time_millis": buffer_timeout_ms,
+            }
+        }
+    }))
+    .unwrap();
 
     Controller::with_config(
         |workers| {
@@ -414,30 +408,26 @@ where
 {
     info!("creating a pipeline to read delta table '{input_table_uri}'");
 
-    let mut input_storage_options = String::new();
-    for (key, val) in input_config.iter() {
-        input_storage_options += &format!("                {key}: {val}\n");
-    }
+    let mut input_storage_options = input_config.clone();
+    input_storage_options.insert("uri".into(), input_table_uri.into());
 
-    // Create controller.
-    let config_str = format!(
-        r#"
-name: test
-workers: 4
-storage_config:
-    path: {storage_dir:?}
-inputs:
-    test_input1:
-        stream: test_input1
-        transport:
-            name: "delta_table_input"
-            config:
-                uri: "{input_table_uri}"
-{}"#,
-        input_storage_options,
-    );
-
-    let config: PipelineConfig = serde_yaml::from_str(&config_str).unwrap();
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 4,
+        "storage_config": {
+            "path": storage_dir,
+        },
+        "inputs": {
+            "test_input1": {
+                "stream": "test_input1",
+                "transport": {
+                    "name": "delta_table_input",
+                    "config": input_storage_options,
+                }
+            }
+        }
+    }))
+    .unwrap();
 
     let key_fields = key_fields.to_vec();
 
@@ -480,46 +470,46 @@ where
 {
     info!("creating a pipeline to write delta table '{table_uri}'");
 
-    let mut storage_options = String::new();
-    for (key, val) in config.iter() {
-        storage_options += &format!("                {key}: {val}\n");
+    let mut storage_options = config.clone();
+    storage_options.insert("uri".into(), table_uri.into());
+    if index {
+        storage_options.insert("index".into(), "idx1".into());
     }
 
-    let index = if index { "        index: \"idx1\"" } else { "" };
-
-    // Create controller.
-    let config_str = format!(
-        r#"
-name: test
-workers: 4
-inputs:
-    test_intput1:
-        stream: test_input1
-        transport:
-            name: "file_input"
-            config:
-                path: "{input_file_path}"
-                follow: true
-        format:
-            name: json
-            config:
-                update_format: "insert_delete"
-outputs:
-    test_output1:
-        stream: test_output1
-        enable_output_buffer: true
-        max_output_buffer_time_millis: 1000
-        transport:
-            name: "delta_table_output"
-            config:
-                uri: "{table_uri}"
-{}
-{index}"#,
-        storage_options,
-    );
-
-    println!("config:\n{config_str}");
-    let config: PipelineConfig = serde_yaml::from_str(&config_str).unwrap();
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 4,
+        "inputs": {
+            "test_intput1": {
+                "stream": "test_input1",
+                "transport": {
+                    "name": "file_input",
+                    "config": {
+                        "path": input_file_path,
+                        "follow": true
+                    }
+                },
+                "format": {
+                    "name": "json",
+                    "config": {
+                        "update_format": "insert_delete"
+                    }
+                }
+            }
+        },
+        "outputs": {
+            "test_output1": {
+                "stream": "test_output1",
+                "enable_output_buffer": true,
+                "max_output_buffer_time_millis": 1000,
+                "transport": {
+                    "name": "delta_table_output",
+                    "config": storage_options,
+                }
+            }
+        }
+    }))
+    .unwrap();
     let key_fields = key_fields.to_vec();
 
     Controller::with_config(
@@ -575,50 +565,49 @@ fn delta_table_output_test(
         input_file.write_all(b"\n").unwrap();
     }
 
-    let mut storage_options = String::new();
-    for (key, val) in object_store_config.iter() {
-        storage_options += &format!("                {key}: \"{val}\"\n");
-    }
-
-    // Create controller.
-    let config_str = format!(
-        r#"
-name: test
-workers: 4
-inputs:
-    test_input1:
-        stream: test_input1
-        transport:
-            name: file_input
-            config:
-                path: "{}"
-        format:
-            name: json
-            config:
-                update_format: "raw"
-outputs:
-    test_output1:
-        stream: test_output1
-        transport:
-            name: "delta_table_output"
-            config:
-                uri: "{table_uri}"
-                mode: "truncate"
-{}
-        enable_output_buffer: true
-        max_output_buffer_size_records: {buffer_size}
-        max_output_buffer_time_millis: {buffer_timeout_ms}
-"#,
-        input_file.path().display(),
-        storage_options,
-    );
+    let mut storage_options = object_store_config.clone();
+    storage_options.insert("uri".into(), table_uri.into());
+    storage_options.insert("mode".into(), "truncate".into());
 
     println!(
         "delta_table_output_test: {} records, input file: {}, table uri: {table_uri}",
         data.len(),
         input_file.path().display(),
     );
-    let config: PipelineConfig = serde_yaml::from_str(&config_str).unwrap();
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 4,
+        "inputs": {
+            "test_input1": {
+                "stream": "test_input1",
+                "transport": {
+                    "name": "file_input",
+                    "config": {
+                        "path": input_file.path()
+                    },
+                },
+                "format": {
+                    "name": "json",
+                    "config": {
+                        "update_format": "raw"
+                    }
+                }
+            }
+        },
+        "outputs": {
+            "test_output1": {
+                "stream": "test_output1",
+                "transport": {
+                    "name": "delta_table_output",
+                    "config": storage_options,
+                },
+                "enable_output_buffer": true,
+                "max_output_buffer_size_records": buffer_size,
+                "max_output_buffer_time_millis": buffer_timeout_ms
+            }
+        }
+    }))
+    .unwrap();
 
     let controller = Controller::with_config(
         |workers| {
@@ -726,7 +715,7 @@ async fn test_follow(
     async fn start_pipeline(
         input_table_uri: &str,
         output_table_uri: &str,
-        input_config: &HashMap<String, String>,
+        input_config: &HashMap<String, Value>,
         output_config: &HashMap<String, String>,
         storage_dir: &TempDir,
         buffer_size: u64,
@@ -806,34 +795,30 @@ async fn test_follow(
 
     println!("initial table version: {}", input_table.version());
 
-    let storage_options_quoted = storage_options
-        .iter()
-        .map(|(k, v)| (k.clone(), format!("\"{v}\"")))
-        .collect::<HashMap<_, _>>();
-
     // Start parquet-to-parquet pipeline.
-    let mut input_config = storage_options_quoted.clone();
-
-    if snapshot {
-        input_config.insert("mode".to_string(), "\"snapshot_and_follow\"".to_string());
+    let mut input_config = storage_options
+        .into_iter()
+        .map(|(k, v)| (k.into(), v.clone().into()))
+        .collect::<HashMap<String, Value>>();
+    let mode = if snapshot {
+        "snapshot_and_follow"
     } else {
-        input_config.insert("mode".to_string(), "\"follow\"".to_string());
-    }
+        "follow"
+    };
+    input_config.insert("mode".to_string(), mode.into());
 
     let end_version = 5;
     if test_end_version {
-        input_config.insert("end_version".to_string(), end_version.to_string());
+        input_config.insert("end_version".to_string(), end_version.into());
     }
 
-    input_config.insert("filter".to_string(), "\"bigint % 2 = 0\"".to_string());
-
-    let output_config = storage_options_quoted.clone();
+    input_config.insert("filter".to_string(), "bigint % 2 = 0".into());
 
     let mut pipeline = start_pipeline(
         input_table_uri,
         output_table_uri,
         &input_config,
-        &output_config,
+        &storage_options,
         &storage_dir,
         buffer_size,
         buffer_timeout_ms,
@@ -858,7 +843,7 @@ async fn test_follow(
             input_table_uri,
             output_table_uri,
             &input_config,
-            &output_config,
+            &storage_options,
             &storage_dir,
             buffer_size,
             buffer_timeout_ms,
@@ -918,7 +903,7 @@ async fn test_follow(
                 input_table_uri,
                 output_table_uri,
                 &input_config,
-                &output_config,
+                &storage_options,
                 &storage_dir,
                 buffer_size,
                 buffer_timeout_ms,
@@ -971,7 +956,7 @@ async fn test_follow(
             input_table_uri,
             output_table_uri,
             &input_config,
-            &output_config,
+            &storage_options,
             &storage_dir,
             buffer_size,
             buffer_timeout_ms,
@@ -1094,7 +1079,7 @@ async fn test_cdc(
     // Build pipeline 1.
     let mut output_config = storage_options.clone();
 
-    output_config.insert("mode".to_string(), "\"truncate\"".to_string());
+    output_config.insert("mode".to_string(), "truncate".to_string());
 
     let write_pipeline = tokio::task::spawn_blocking(move || {
         delta_write_pipeline::<DeltaTestStruct, DeltaTestKey, _>(
@@ -1114,13 +1099,13 @@ async fn test_cdc(
     // Build pipeline 2.
     let mut input_config = storage_options.clone();
 
-    input_config.insert("mode".to_string(), "\"cdc\"".to_string());
-    input_config.insert("filter".to_string(), "\"bigint % 2 = 0\"".to_string());
+    input_config.insert("mode".to_string(), "cdc".to_string());
+    input_config.insert("filter".to_string(), "bigint % 2 = 0".to_string());
     input_config.insert(
         "cdc_delete_filter".to_string(),
-        "\"__feldera_op = 'd'\"".to_string(),
+        "__feldera_op = 'd'".to_string(),
     );
-    input_config.insert("cdc_order_by".to_string(), "\"__feldera_ts\"".to_string());
+    input_config.insert("cdc_order_by".to_string(), "__feldera_ts".to_string());
 
     let table_uri_clone = table_uri.to_string();
 
@@ -1419,10 +1404,7 @@ async fn delta_table_cdc_s3_test_suspend() {
         ),
         // AWS region must be specified (see https://github.com/delta-io/delta-rs/issues/1095).
         ("aws_region".to_string(), "us-east-2".to_string()),
-        (
-            "AWS_S3_ALLOW_UNSAFE_RENAME".to_string(),
-            "\"true\"".to_string(),
-        ),
+        ("AWS_S3_ALLOW_UNSAFE_RENAME".to_string(), "true".to_string()),
     ]
     .into_iter()
     .collect::<HashMap<_, _>>();
