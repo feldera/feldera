@@ -829,32 +829,40 @@ mod test {
     deserialize_without_context!(TestStruct);
 
     const MULTI_KEY_CONFIG_STR: &str = r#"
-stream: test_input
-transport:
-    name: s3_input
-    config:
-        aws_access_key_id: FAKE_ACCESS_KEY
-        aws_secret_access_key: FAKE_SECRET
-        bucket_name: test-bucket
-        region: us-west-1
-        prefix: ''
-format:
-    name: csv
-"#;
+{
+  "stream": "test_input",
+  "transport": {
+    "name": "s3_input",
+    "config": {
+      "aws_access_key_id": "FAKE_ACCESS_KEY",
+      "aws_secret_access_key": "FAKE_SECRET",
+      "bucket_name": "test-bucket",
+      "region": "us-west-1",
+      "prefix": ""
+    }
+  },
+  "format": {
+    "name": "csv"
+  }
+}"#;
 
     const SINGLE_KEY_CONFIG_STR: &str = r#"
-stream: test_input
-transport:
-    name: s3_input
-    config:
-        aws_access_key_id: FAKE_ACCESS_KEY
-        aws_secret_access_key: FAKE_SECRET
-        bucket_name: test-bucket
-        region: us-west-1
-        key: obj1
-format:
-    name: csv
-"#;
+{
+  "stream": "test_input",
+  "transport": {
+    "name": "s3_input",
+    "config": {
+      "aws_access_key_id": "FAKE_ACCESS_KEY",
+      "aws_secret_access_key": "FAKE_SECRET",
+      "bucket_name": "test-bucket",
+      "region": "us-west-1",
+      "key": "obj1"
+    }
+  },
+  "format": {
+    "name": "csv"
+  }
+}"#;
 
     fn test_setup(
         config_str: &str,
@@ -865,7 +873,7 @@ format:
         MockInputParser,
         MockDeZSet<TestStruct, TestStruct>,
     ) {
-        let config: InputEndpointConfig = serde_yaml::from_str(config_str).unwrap();
+        let config: InputEndpointConfig = serde_json::from_str(config_str).unwrap();
         let transport_config = config.connector_config.transport.clone();
         let transport_config: Arc<S3InputConfig> = match transport_config {
             TransportConfig::S3Input(config) => Arc::new(config),

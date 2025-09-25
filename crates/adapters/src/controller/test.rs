@@ -10,10 +10,11 @@ use feldera_types::{
     config::{InputEndpointConfig, OutputEndpointConfig},
     constants::STATE_FILE,
 };
+use serde_json::json;
 use std::{
     borrow::Cow,
     cmp::min,
-    fmt::Write as _,
+    collections::BTreeMap,
     fs::{create_dir, remove_file, File},
     io::Write,
     iter::repeat_n,
@@ -33,42 +34,53 @@ use proptest::prelude::*;
 fn test_start_after_cyclic() {
     init_test_logger();
 
-    let config_str = r#"
-name: test
-workers: 4
-inputs:
-    test_input1.endpoint1:
-        stream: test_input1
-        labels:
-            - label1
-        start_after: label2
-        transport:
-            name: file_input
-            config:
-                path: "file1"
-        format:
-            name: json
-            config:
-                array: true
-                update_format: raw
-    test_input1.endpoint2:
-        stream: test_input1
-        labels:
-            - label2
-        start_after: label1
-        transport:
-            name: file_input
-            config:
-                path: file2
-        format:
-            name: json
-            config:
-                array: true
-                update_format: raw
-    "#
-    .to_string();
-
-    let config: PipelineConfig = serde_yaml::from_str(&config_str).unwrap();
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 4,
+        "inputs": {
+            "test_input1.endpoint1": {
+                "stream": "test_input1",
+                "labels": [
+                    "label1"
+                ],
+                "start_after": "label2",
+                "transport": {
+                    "name": "file_input",
+                    "config": {
+                        "path": "file1"
+                    }
+                },
+                "format": {
+                    "name": "json",
+                    "config": {
+                        "array": true,
+                        "update_format": "raw"
+                    }
+                }
+            },
+            "test_input1.endpoint2": {
+                "stream": "test_input1",
+                "labels": [
+                    "label2"
+                ],
+                "start_after": "label1",
+                "transport": {
+                    "name": "file_input",
+                    "config": {
+                        "path": "file2"
+                    }
+                },
+                "format": {
+                    "name": "json",
+                    "config": {
+                        "array": true,
+                        "update_format": "raw"
+                    }
+                }
+            }
+        }
+    }))
+    .unwrap();
     let Err(err) = Controller::with_config(
         |circuit_config| {
             Ok(test_circuit::<TestStruct>(
@@ -105,42 +117,50 @@ fn test_start_after() {
 
     // Controller configuration with two input connectors;
     // the second starts after the first one finishes.
-    let config_str = format!(
-        r#"
-name: test
-workers: 4
-inputs:
-    test_input1.endpoint1:
-        stream: test_input1
-        transport:
-            name: file_input
-            labels:
-                - backfill
-            config:
-                path: {:?}
-        format:
-            name: json
-            config:
-                array: true
-                update_format: raw
-    test_input1.endpoint2:
-        stream: test_input1
-        start_after: backfill
-        transport:
-            name: file_input
-            config:
-                path: {:?}
-        format:
-            name: json
-            config:
-                array: true
-                update_format: raw
-    "#,
-        temp_input_file1.path().to_str().unwrap(),
-        temp_input_file2.path().to_str().unwrap(),
-    );
+    let config: PipelineConfig = serde_json::from_value(json! ({
+        "name": "test",
+        "workers": 4,
+        "inputs": {
+            "test_input1.endpoint1": {
+                "stream": "test_input1",
+                "transport": {
+                    "name": "file_input",
+                    "labels": [
+                        "backfill"
+                    ],
+                    "config": {
+                        "path": temp_input_file1.path(),
+                    }
+                },
+                "format": {
+                    "name": "json",
+                    "config": {
+                        "array": true,
+                        "update_format": "raw"
+                    }
+                }
+            },
+            "test_input1.endpoint2": {
+                "stream": "test_input1",
+                "start_after": "backfill",
+                "transport": {
+                    "name": "file_input",
+                    "config": {
+                        "path": temp_input_file2.path(),
+                    }
+                },
+                "format": {
+                    "name": "json",
+                    "config": {
+                        "array": true,
+                        "update_format": "raw"
+                    }
+                }
+            }
+        }
+    }))
+    .unwrap();
 
-    let config: PipelineConfig = serde_yaml::from_str(&config_str).unwrap();
     let controller = Controller::with_config(
         |circuit_config| {
             Ok(test_circuit::<TestStruct>(
@@ -202,42 +222,49 @@ proptest! {
         std::fs::write(secrets_dir.path().join("kubernetes/paths/input"), temp_input_file.path().as_os_str().as_encoded_bytes()).unwrap();
         std::fs::write(secrets_dir.path().join("kubernetes/paths/output"), &output_path).unwrap();
 
-        let config_str = format!(
-            r#"
-secrets_dir: {:?}
-min_batch_size_records: {min_batch_size_records}
-max_buffering_delay_usecs: {max_buffering_delay_usecs}
-name: test
-workers: 4
-inputs:
-    test_input1:
-        stream: test_input1
-        transport:
-            name: file_input
-            config:
-                path: ${{secret:kubernetes:paths/input}}
-                buffer_size_bytes: {input_buffer_size_bytes}
-                follow: false
-        format:
-            name: csv
-outputs:
-    test_output1:
-        stream: test_output1
-        transport:
-            name: file_output
-            config:
-                path: ${{secret:kubernetes:paths/output}}
-        format:
-            name: csv
-            config:
-                buffer_size_records: {output_buffer_size_records}
-        "#,
-        secrets_dir.path().to_str().unwrap()
-        );
+        let config: PipelineConfig = serde_json::from_value(json!({
+            "secrets_dir": secrets_dir.path(),
+            "min_batch_size_records": min_batch_size_records,
+            "max_buffering_delay_usecs": max_buffering_delay_usecs,
+            "name": "test",
+            "workers": 4,
+            "inputs": {
+                "test_input1": {
+                    "stream": "test_input1",
+                    "transport": {
+                        "name": "file_input",
+                        "config": {
+                            "path": "${secret:kubernetes:paths/input}",
+                            "buffer_size_bytes": input_buffer_size_bytes,
+                            "follow": false
+                        }
+                    },
+                    "format": {
+                        "name": "csv"
+                    }
+                }
+            },
+            "outputs": {
+                "test_output1": {
+                    "stream": "test_output1",
+                    "transport": {
+                        "name": "file_output",
+                        "config": {
+                            "path": "${secret:kubernetes:paths/output}"
+                        }
+                    },
+                    "format": {
+                        "name": "csv",
+                        "config": {
+                            "buffer_size_records": output_buffer_size_records,
+                        }
+                    }
+                }
+            }
+        })).unwrap();
 
-        info!("input file: {}", temp_input_file.path().to_str().unwrap());
+        info!("input file: {}", temp_input_file.path().display());
         info!("output file: {output_path}");
-        let config: PipelineConfig = serde_yaml::from_str(&config_str).unwrap();
         let controller = Controller::with_config(
                 |circuit_config| Ok(test_circuit::<TestStruct>(circuit_config, &[], &[None])),
                 &config,
@@ -458,40 +485,49 @@ fn test_ft(rounds: &[FtTestRound]) {
 
     const INPUT_SECRET_REFERENCE: &str = "${secret:kubernetes:paths/input}";
     const OUTPUT_SECRET_REFERENCE: &str = "${secret:kubernetes:paths/output}";
-    let config_str = format!(
-        r#"
-name: test
-workers: 4
-storage_config:
-    path: {storage_dir:?}
-storage: true
-fault_tolerance: {{}}
-clock_resolution_usecs: null
-secrets_dir: {tempdir_path:?}
-inputs:
-    test_input1:
-        stream: test_input1
-        transport:
-            name: file_input
-            config:
-                path: {INPUT_SECRET_REFERENCE}
-                follow: true
-        format:
-            name: csv
-outputs:
-    test_output1:
-        stream: test_output1
-        transport:
-            name: file_output
-            config:
-                path: {OUTPUT_SECRET_REFERENCE}
-        format:
-            name: csv
-            config:
-        "#
-    );
 
-    let mut config: PipelineConfig = serde_yaml::from_str(&config_str).unwrap();
+    let mut config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 4,
+        "storage_config": {
+            "path": storage_dir,
+        },
+        "storage": true,
+        "fault_tolerance": {},
+        "clock_resolution_usecs": null,
+        "secrets_dir": tempdir_path,
+        "inputs": {
+            "test_input1": {
+                "stream": "test_input1",
+                "transport": {
+                    "name": "file_input",
+                    "config": {
+                        "path": INPUT_SECRET_REFERENCE,
+                        "follow": true
+                    }
+                },
+                "format": {
+                    "name": "csv"
+                }
+            }
+        },
+        "outputs": {
+            "test_output1": {
+                "stream": "test_output1",
+                "transport": {
+                    "name": "file_output",
+                    "config": {
+                        "path": OUTPUT_SECRET_REFERENCE,
+                    }
+                },
+                "format": {
+                    "name": "csv",
+                    "config": null
+                }
+            }
+        }
+    }))
+    .unwrap();
 
     // Number of records written to the input.
     let mut total_records = 0usize;
@@ -732,51 +768,56 @@ fn contains_subslice(haystack: &[u8], needle: &[u8]) -> bool {
         .any(|window| window == needle)
 }
 
+fn multiple_input_files(
+    n: usize,
+) -> (
+    Vec<NamedTempFile>,
+    BTreeMap<Cow<'static, str>, InputEndpointConfig>,
+) {
+    let mut temp_input_files = Vec::new();
+    let mut inputs: BTreeMap<Cow<'static, str>, InputEndpointConfig> = BTreeMap::new();
+    for i in 0..n {
+        let file = NamedTempFile::new().unwrap();
+        file.as_file()
+            .write_all(&format!(r#"[{{"id": {i}, "b": true, "s": "foo"}}]"#).into_bytes())
+            .unwrap();
+        let config: InputEndpointConfig = serde_json::from_value(json!({
+            "stream": "test_input1",
+            "transport": {
+                "name": "file_input",
+                "config": {
+                    "path": file.path(),
+                }
+            },
+            "format": {
+                "name": "json",
+                "config": {
+                    "array": true,
+                    "update_format": "raw"
+                }
+            }
+        }))
+        .unwrap();
+        inputs.insert(format!("test_input1.endpoint{i}").into(), config);
+        temp_input_files.push(file);
+    }
+    (temp_input_files, inputs)
+}
+
 fn _test_concurrent_init(max_parallel_connector_init: u64) {
     init_test_logger();
 
-    // Two JSON files with a few records each.
-    let (_temp_input_files, connectors): (Vec<_>, Vec<_>) = (0..100)
-        .map(|i| {
-            let file = NamedTempFile::new().unwrap();
-            file.as_file()
-                .write_all(&format!(r#"[{{"id": {i}, "b": true, "s": "foo"}}]"#).into_bytes())
-                .unwrap();
-            let path = file.path().to_str().unwrap();
-            let config = format!(
-                r#"
-    test_input1.endpoint{i}:
-        stream: test_input1
-        transport:
-            name: file_input
-            config:
-                path: {path:?}
-        format:
-            name: json
-            config:
-                array: true
-                update_format: raw"#
-            );
-            (file, config)
-        })
-        .unzip();
-
-    let connectors = connectors.join("\n");
+    let (_temp_input_files, inputs) = multiple_input_files(100);
 
     // Controller configuration with 100 input connectors.
-    let config_str = format!(
-        r#"
-name: test
-workers: 4
-max_parallel_connector_init: {max_parallel_connector_init}
-inputs:
-{connectors}
-    "#
-    );
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 4,
+        "max_parallel_connector_init": max_parallel_connector_init,
+        "inputs": inputs,
+    }))
+    .unwrap();
 
-    println!("config: {config_str}");
-
-    let config: PipelineConfig = serde_yaml::from_str(&config_str).unwrap();
     let controller = Controller::with_config(
         |circuit_config| {
             Ok(test_circuit::<TestStruct>(
@@ -819,58 +860,37 @@ fn test_concurrent_init() {
 fn test_connector_init_error() {
     init_test_logger();
 
-    // Two JSON files with a few records each.
-    let (_temp_input_files, connectors): (Vec<_>, Vec<_>) = (0..20)
-        .map(|i| {
-            let file = NamedTempFile::new().unwrap();
-            file.as_file()
-                .write_all(&format!(r#"[{{"id": {i}, "b": true, "s": "foo"}}]"#).into_bytes())
-                .unwrap();
-            let path = file.path().to_str().unwrap();
-            let config = format!(
-                r#"
-    test_input1.endpoint{i}:
-        stream: test_input1
-        transport:
-            name: file_input
-            config:
-                path: {path:?}
-        format:
-            name: json
-            config:
-                array: true
-                update_format: raw"#
-            );
-            (file, config)
-        })
-        .unzip();
-
-    let connectors = connectors.join("\n");
+    let (_temp_input_files, mut connectors) = multiple_input_files(20);
+    connectors.insert(
+        Cow::from("test_input1.error_endpoint"),
+        serde_json::from_value(json!({
+            "stream": "test_input1",
+            "transport": {
+                "name": "file_input",
+                "config": {
+                    "path": "path_does_not_exist"
+                }
+            },
+            "format": {
+                "name": "json",
+                "config": {
+                    "array": true,
+                    "update_format": "raw"
+                }
+            }
+        }))
+        .unwrap(),
+    );
 
     // Controller configuration with two input connectors;
     // the second starts after the first one finishes.
-    let config_str = format!(
-        r#"
-name: test
-workers: 4
-inputs:
-{connectors}
-    test_input1.error_endpoint:
-        stream: test_input1
-        transport:
-            name: file_input
-            config:
-                path: path_does_not_exist
-        format:
-            name: json
-            config:
-                array: true
-                update_format: raw"#
-    );
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 4,
+        "inputs": connectors,
+    }))
+    .unwrap();
 
-    println!("config: {config_str}");
-
-    let config: PipelineConfig = serde_yaml::from_str(&config_str).unwrap();
     let result = Controller::with_config(
         |circuit_config| {
             Ok(test_circuit::<TestStruct>(
@@ -998,21 +1018,20 @@ fn add_output(mut config: PipelineConfig) -> PipelineConfig {
     let tmpfile = NamedTempFile::new().unwrap();
     println!("adding output to {}", tmpfile.path().display());
 
-    let config_str = format!(
-        r#"
-        stream: test_output1
-        transport:
-            name: file_output
-            config:
-                path: {}
-        format:
-            name: csv
-            config:
-    "#,
-        tmpfile.path().display()
-    );
-
-    let output_config: OutputEndpointConfig = serde_yaml::from_str(&config_str).unwrap();
+    let output_config: OutputEndpointConfig = serde_json::from_value(json!({
+        "stream": "test_output1",
+        "transport": {
+            "name": "file_output",
+            "config": {
+                "path": tmpfile.path(),
+            }
+        },
+        "format": {
+            "name": "csv",
+            "config": null
+        }
+    }))
+    .unwrap();
 
     config
         .outputs
@@ -1021,18 +1040,20 @@ fn add_output(mut config: PipelineConfig) -> PipelineConfig {
 }
 
 fn add_input(mut config: PipelineConfig) -> PipelineConfig {
-    let config_str = r#"
-        stream: test_input1
-        transport:
-            name: file_input
-            config:
-                path: /dev/null
-                follow: true
-        format:
-            name: csv
-    "#;
-
-    let input_config: InputEndpointConfig = serde_yaml::from_str(config_str).unwrap();
+    let input_config: InputEndpointConfig = serde_json::from_value(json!({
+        "stream": "test_input1",
+        "transport": {
+            "name": "file_input",
+            "config": {
+                "path": "/dev/null",
+                "follow": true
+            }
+        },
+        "format": {
+            "name": "csv"
+        }
+    }))
+    .unwrap();
 
     config
         .inputs
@@ -1084,38 +1105,46 @@ fn test_suspend(rounds: &[usize]) {
     let input_file = File::create(&input_path).unwrap();
     let output_path = tempdir_path.join("output.csv");
 
-    let config_str = format!(
-        r#"
-name: test
-workers: 4
-storage_config:
-    path: {storage_dir:?}
-storage: true
-clock_resolution_usecs: null
-inputs:
-    test_input1:
-        stream: test_input1
-        transport:
-            name: file_input
-            config:
-                path: {input_path:?}
-                follow: true
-        format:
-            name: csv
-outputs:
-    test_output1:
-        stream: test_output1
-        transport:
-            name: file_output
-            config:
-                path: {output_path:?}
-        format:
-            name: csv
-            config:
-        "#
-    );
-
-    let config: PipelineConfig = serde_yaml::from_str(&config_str).unwrap();
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 4,
+        "storage_config": {
+            "path": storage_dir,
+        },
+        "storage": true,
+        "clock_resolution_usecs": null,
+        "inputs": {
+            "test_input1": {
+                "stream": "test_input1",
+                "transport": {
+                    "name": "file_input",
+                    "config": {
+                        "path": input_path,
+                        "follow": true
+                    }
+                },
+                "format": {
+                    "name": "csv"
+                }
+            }
+        },
+        "outputs": {
+            "test_output1": {
+                "stream": "test_output1",
+                "transport": {
+                    "name": "file_output",
+                    "config": {
+                        "path": output_path,
+                    }
+                },
+                "format": {
+                    "name": "csv",
+                    "config": null
+                }
+            }
+        }
+    }))
+    .unwrap();
 
     let mut writer = CsvWriterBuilder::new()
         .has_headers(false)
@@ -1218,38 +1247,46 @@ fn test_bootstrap(rounds: &[usize]) {
     let input_file = File::create(&input_path).unwrap();
     let output_path = tempdir_path.join("output.csv");
 
-    let config_str = format!(
-        r#"
-name: test
-workers: 4
-storage_config:
-    path: {storage_dir:?}
-storage: true
-clock_resolution_usecs: null
-inputs:
-    test_input1:
-        stream: test_input1
-        transport:
-            name: file_input
-            config:
-                path: {input_path:?}
-                follow: true
-        format:
-            name: csv
-outputs:
-    test_output1:
-        stream: test_output1
-        transport:
-            name: file_output
-            config:
-                path: {output_path:?}
-        format:
-            name: csv
-            config:
-        "#
-    );
-
-    let config: PipelineConfig = serde_yaml::from_str(&config_str).unwrap();
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 4,
+        "storage_config": {
+            "path": storage_dir,
+        },
+        "storage": true,
+        "clock_resolution_usecs": null,
+        "inputs": {
+            "test_input1": {
+                "stream": "test_input1",
+                "transport": {
+                    "name": "file_input",
+                    "config": {
+                        "path": input_path,
+                        "follow": true
+                    }
+                },
+                "format": {
+                    "name": "csv"
+                }
+            }
+        },
+        "outputs": {
+            "test_output1": {
+                "stream": "test_output1",
+                "transport": {
+                    "name": "file_output",
+                    "config": {
+                        "path": output_path,
+                    }
+                },
+                "format": {
+                    "name": "csv",
+                    "config": null
+                }
+            }
+        }
+    }))
+    .unwrap();
 
     let mut writer = CsvWriterBuilder::new()
         .has_headers(false)
@@ -1432,62 +1469,57 @@ fn start_controller(storage_dir: &Path, barriers: &[usize]) -> Controller {
         set_barrier(input_path(storage_dir, i).to_str().unwrap(), barrier);
     }
 
-    let mut config_str = format!(
-        "\
-name: test
-workers: 4
-storage_config:
-    path: {storage_dir:?}
-storage: true
-clock_resolution_usecs: null
-inputs:
-"
-    )
-    .to_string();
+    let mut config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 4,
+        "storage_config": {
+            "path": storage_dir,
+        },
+        "storage": true,
+        "clock_resolution_usecs": null,
+        "inputs": {}
+    }))
+    .unwrap();
 
     for i in 0..n {
-        writeln!(
-            &mut config_str,
-            "    test_input{}:
-        stream: test_input{}
-        transport:
-            name: file_input
-            config:
-                path: {:?}
-                follow: true
-        format:
-            name: csv",
-            i + 1,
-            i + 1,
-            input_path(storage_dir, i).to_str().unwrap()
-        )
-        .unwrap();
-    }
+        config.inputs.insert(
+            format!("test_input{}", i + 1).into(),
+            serde_json::from_value(json!({
+                "stream": format!("test_input{}", i + 1),
+                "transport": {
+                    "name": "file_input",
+                    "config": {
+                        "path": input_path(storage_dir, i),
+                        "follow": true
+                    }
+                },
+                "format": {
+                    "name": "csv"
+                }
+            }))
+            .unwrap(),
+        );
 
-    writeln!(&mut config_str, "outputs:").unwrap();
-    for i in 0..n {
         let output_path = output_path(storage_dir, i);
         let _ = std::fs::remove_file(&output_path);
-        writeln!(
-            &mut config_str,
-            "    test_output{}:
-        stream: test_output{}
-        transport:
-            name: file_output
-            config:
-                path: {:?}
-        format:
-            name: csv
-            config:",
-            i + 1,
-            i + 1,
-            output_path.to_str().unwrap()
-        )
-        .unwrap();
+        config.outputs.insert(
+            format!("test_output{}", i + 1).into(),
+            serde_json::from_value(json!({
+                "stream": format!("test_output{}", i + 1),
+                "transport": {
+                    "name": "file_output",
+                    "config": {
+                        "path": output_path,
+                    }
+                },
+                "format": {
+                    "name": "csv"
+                }
+            }))
+            .unwrap(),
+        );
     }
-    println!("{config_str}");
 
-    let config: PipelineConfig = serde_yaml::from_str(&config_str).unwrap();
     let controller = Controller::with_config(
         move |circuit_config| {
             let persistent_output_ids = (1..=n).map(|i| format!("output{i}")).collect::<Vec<_>>();
@@ -1790,18 +1822,15 @@ fn bootstrap() {
 fn lir() {
     init_test_logger();
 
-    let config_str = r#"
-name: test
-workers: 4
-storage_config: null
-storage: null
-clock_resolution_usecs: null
-inputs:
-outputs:
-        "#
-    .to_string();
-
-    let config: PipelineConfig = serde_yaml::from_str(&config_str).unwrap();
+    let config: PipelineConfig = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 4,
+        "storage_config": null,
+        "storage": null,
+        "clock_resolution_usecs": null,
+        "inputs": {},
+    }))
+    .unwrap();
 
     let controller = Controller::with_config(
         |circuit_config| {

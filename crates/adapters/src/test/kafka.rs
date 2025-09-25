@@ -20,6 +20,7 @@ use rdkafka::{
     util::Timeout,
     ClientConfig, ClientContext, Message,
 };
+use serde_json::Value;
 use std::collections::BTreeMap;
 use std::sync::LazyLock;
 use std::{
@@ -265,7 +266,7 @@ impl BufferConsumer {
     pub fn new(
         topic: &str,
         format: &str,
-        format_config_yaml: &str,
+        format_config: Value,
         message_cb: Option<Box<dyn Fn(&BorrowedMessage) + Send>>,
     ) -> Self {
         let shutdown_flag = Arc::new(AtomicBool::new(false));
@@ -282,7 +283,7 @@ impl BufferConsumer {
             .new_parser(
                 "BaseConsumer",
                 &InputCollectionHandle::new(schema, buffer.clone(), NodeId::new(0)),
-                &serde_yaml::from_str::<serde_yaml::Value>(format_config_yaml).unwrap(),
+                &serde_yaml::to_value(&format_config).unwrap(),
             )
             .unwrap();
 

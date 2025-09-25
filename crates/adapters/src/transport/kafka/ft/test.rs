@@ -11,7 +11,7 @@ use crate::{
         kafka::{KafkaResources, TestProducer},
         test_circuit, TestStruct,
     },
-    Controller, InputConsumer, ParseError, PipelineConfig,
+    Controller, InputConsumer, ParseError,
 };
 use crate::{InputBuffer, InputReader, Parser, TransportInputEndpoint};
 use anyhow::Error as AnyError;
@@ -35,7 +35,7 @@ use proptest::prelude::*;
 use rdkafka::message::{BorrowedMessage, Header, Headers};
 use rdkafka::{Message, Timestamp};
 use rmpv::Value as RmpValue;
-use serde_json::Value as JsonValue;
+use serde_json::{json, Value as JsonValue};
 use serde_yaml::Mapping;
 use std::any::Any;
 use std::borrow::Cow;
@@ -77,27 +77,32 @@ fn test_kafka_output_errors() {
 
     info!("test_kafka_output_errors: Test invalid Kafka broker address");
 
-    let config_str = r#"
-name: test
-workers: 4
-inputs:
-outputs:
-    test_output:
-        stream: test_output1
-        transport:
-            name: kafka_output
-            config:
-                bootstrap.servers: localhost:11111
-                topic: ft_end_to_end_test_output_topic
-                start_from: earliest
-        format:
-            name: csv
-"#;
+    let config = serde_json::from_value(json!({
+      "name": "test",
+      "workers": 4,
+      "inputs": null,
+      "outputs": {
+        "test_output": {
+          "stream": "test_output1",
+          "transport": {
+            "name": "kafka_output",
+            "config": {
+              "bootstrap.servers": "localhost:11111",
+              "topic": "ft_end_to_end_test_output_topic",
+              "start_from": "earliest"
+            }
+          },
+          "format": {
+            "name": "csv"
+          }
+        }
+      }
+    }))
+    .unwrap();
 
     info!("test_kafka_output_errors: Creating circuit");
 
     info!("test_kafka_output_errors: Starting controller");
-    let config: PipelineConfig = serde_yaml::from_str(config_str).unwrap();
 
     match Controller::with_config(
         |workers| {
@@ -123,23 +128,19 @@ fn create_reader(
     DummyInputReceiver,
     Box<dyn InputReader>,
 ) {
-    let config_str = format!(
-        r#"
-name: kafka_input
-config:
-    topic: {topic}
-    log_level: debug
-    start_from: earliest
-"#
-    );
-
-    let endpoint = input_transport_config_to_endpoint(
-        &serde_yaml::from_str(&config_str).unwrap(),
-        "",
-        default_secrets_directory(),
-    )
-    .unwrap()
+    let config = serde_json::from_value(json!({
+      "name": "kafka_input",
+      "config": {
+        "topic": topic,
+        "log_level": "debug",
+        "start_from": "earliest"
+      }
+    }))
     .unwrap();
+
+    let endpoint = input_transport_config_to_endpoint(&config, "", default_secrets_directory())
+        .unwrap()
+        .unwrap();
     assert!(endpoint.fault_tolerance() == Some(FtModel::ExactlyOnce));
 
     let receiver = DummyInputReceiver::new();
@@ -600,22 +601,18 @@ fn kafka_output_test(
     // Create topics.
     let _kafka_resources = KafkaResources::create_topics(&[(&output_topic, 1)]);
 
-    let config_str = format!(
-        r#"
-name: kafka_output
-config:
-    topic: {output_topic}
-"#
-    );
-
-    let mut endpoint = output_transport_config_to_endpoint(
-        &serde_yaml::from_str(&config_str).unwrap(),
-        "",
-        true,
-        default_secrets_directory(),
-    )
-    .unwrap()
+    let config = serde_json::from_value(json!({
+      "name": "kafka_output",
+      "config": {
+        "topic": output_topic
+      }
+    }))
     .unwrap();
+
+    let mut endpoint =
+        output_transport_config_to_endpoint(&config, "", true, default_secrets_directory())
+            .unwrap()
+            .unwrap();
     assert!(endpoint.is_fault_tolerant());
     endpoint
         .connect(Box::new(|fatal, error, tag| {
@@ -632,20 +629,18 @@ config:
 }
 
 fn _test() {
-    let config_str = r#"
-name: kafka_output
-config:
-    topic: my_topic
-"#;
-
-    let mut endpoint = output_transport_config_to_endpoint(
-        &serde_yaml::from_str(config_str).unwrap(),
-        "",
-        true,
-        default_secrets_directory(),
-    )
-    .unwrap()
+    let config = serde_json::from_value(json!({
+      "name": "kafka_output",
+      "config": {
+        "topic": "my_topic"
+      }
+    }))
     .unwrap();
+
+    let mut endpoint =
+        output_transport_config_to_endpoint(&config, "", true, default_secrets_directory())
+            .unwrap()
+            .unwrap();
     assert!(endpoint.is_fault_tolerant());
     endpoint
         .connect(Box::new(|fatal, error, tag| {
@@ -678,22 +673,26 @@ fn test_ft_kafka_input(data: Vec<Vec<TestStruct>>, topic1: &str, topic2: &str) {
 
     info!("proptest_kafka_input: Test: Specify invalid Kafka broker address");
 
-    let config_str = format!(
-        r#"
-stream: test_input
-transport:
-    name: kafka_input
-    config:
-        bootstrap.servers: localhost:11111
-        topics: ["{topic1}", "{topic2}"]
-        log_level: debug
-format:
-    name: csv
-"#
-    );
+    let config = serde_json::from_value(json!({
+      "stream": "test_input",
+      "transport": {
+        "name": "kafka_input",
+        "config": {
+          "bootstrap.servers": "localhost:11111",
+          "topics": [
+            topic1,
+            topci2
+          ],
+          "log_level": "debug"
+        }
+      },
+      "format": {
+        "name": "csv"
+      }
+    })).unwrap();
 
     let (reader, consumer, parser, _input_handle) = mock_input_pipeline::<TestStruct, TestStruct>(
-        serde_yaml::from_str(&config_str).unwrap(),
+        config,
         Relation::empty(),
     )
     .unwrap();
@@ -707,19 +706,24 @@ format:
 
     info!("proptest_kafka_input: Test: Specify invalid Kafka topic name");
 
-    let config_str = r#"
-stream: test_input
-transport:
-    name: kafka_input
-    config:
-        topics: ["this_topic_does_not_exist"]
-        log_level: debug
-format:
-    name: csv
-"#;
+    let config = serde_json::from_value(json!({
+      "stream": "test_input",
+      "transport": {
+        "name": "kafka_input",
+        "config": {
+          "topics": [
+            "this_topic_does_not_exist"
+          ],
+          "log_level": "debug"
+        }
+      },
+      "format": {
+        "name": "csv"
+      }
+    })).unwrap();
 
     let (reader, consumer, _input_handle) = mock_input_pipeline::<TestStruct, TestStruct>(
-        serde_yaml::from_str(config_str).unwrap(),
+        config,
         Relation::empty(),
     )
     .unwrap();
@@ -731,23 +735,24 @@ format:
         consumer.state().endpoint_error.as_ref().unwrap()
     );
 
-    let config_str = format!(
-        r#"
-stream: test_input
-transport:
-    name: kafka_input
-    config:
-        topics: [{topic1}, {topic2}]
-        log_level: debug
-format:
-    name: csv
-"#
-    );
+    let config = serde_json::from_value(json!({
+      "stream": "test_input",
+      "transport": {
+        "name": "kafka_input",
+        "config": {
+          "topics": [topic1, topic2],
+          "log_level": "debug"
+        }
+      },
+      "format": {
+        "name": "csv"
+      }
+    })).unwrap();
 
     info!("proptest_kafka_input: Building input pipeline");
 
     let (endpoint, _consumer, zset) = mock_input_pipeline::<TestStruct, TestStruct>(
-        serde_yaml::from_str(&config_str).unwrap(),
+        config,
         Relation::empty(),
     )
     .unwrap();
@@ -913,46 +918,49 @@ fn test_ft(topic: &str, rounds: &[FtTestRound], resume_earliest_if_data_expires:
     create_dir(&storage_dir).unwrap();
     let output_path = tempdir_path.join("output.csv");
 
-    let config_str = format!(
-        r#"
-name: test
-workers: 4
-storage_config:
-    path: {storage_dir:?}
-storage: true
-fault_tolerance: {{}}
-clock_resolution_usecs: null
-inputs:
-    test_input1:
-        stream: test_input1
-        transport:
-            name: kafka_input
-            config:
-                topic: {topic}
-                start_from: earliest
-                log_level: debug
-                resume_earliest_if_data_expires: {}
-        format:
-            name: csv
-outputs:
-    test_output1:
-        stream: test_output1
-        transport:
-            name: file_output
-            config:
-                path: {output_path:?}
-        format:
-            name: csv
-            config:
-        "#,
-        if resume_earliest_if_data_expires {
-            "true"
-        } else {
-            "false"
+    let config = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 4,
+        "storage_config": {
+            "path": storage_dir,
         },
-    );
-
-    let config: PipelineConfig = serde_yaml::from_str(&config_str).unwrap();
+        "storage": true,
+        "fault_tolerance": {},
+        "clock_resolution_usecs": null,
+        "inputs": {
+            "test_input1": {
+                "stream": "test_input1",
+                "transport": {
+                    "name": "kafka_input",
+                    "config": {
+                        "topic": topic,
+                        "start_from": "earliest",
+                        "log_level": "debug",
+                        "resume_earliest_if_data_expires": resume_earliest_if_data_expires,
+                    }
+                },
+                "format": {
+                    "name": "csv"
+                }
+            }
+        },
+        "outputs": {
+            "test_output1": {
+                "stream": "test_output1",
+                "transport": {
+                    "name": "file_output",
+                    "config": {
+                        "path": output_path
+                    }
+                },
+                "format": {
+                    "name": "csv",
+                    "config": {}
+                }
+            }
+        }
+    }))
+    .unwrap();
 
     // Number of records written to the input.
     let mut total_records = 0usize;
@@ -1508,7 +1516,7 @@ fn test_kafka_input_offset_latest_2() {
 fn kafka_end_to_end_test(
     test_name: &str,
     format: &str,
-    format_config: &str,
+    format_config: JsonValue,
     message_max_bytes: usize,
     data: Vec<Vec<TestStruct>>,
 ) {
@@ -1525,41 +1533,48 @@ fn kafka_end_to_end_test(
     // consumer will observe all messages sent by the producer even if
     // the producer starts earlier (the consumer won't start until the
     // rebalancing protocol kicks in).
-    let config_str = format!(
-        r#"
-name: test
-workers: 4
-inputs:
-    test_input1:
-        stream: test_input1
-        transport:
-            name: kafka_input
-            config:
-                auto.offset.reset: "earliest"
-                group.instance.id: "{test_name}"
-                topics: [{input_topic}]
-                log_level: debug
-        format:
-            name: csv
-outputs:
-    test_output2:
-        stream: test_output1
-        transport:
-            name: kafka_output
-            config:
-                topic: {output_topic}
-                message.max.bytes: "{message_max_bytes}"
-        format:
-            name: {format}
-            config:
-                {format_config}
-"#
-    );
+    let config = serde_json::from_value(json!({
+      "name": "test",
+      "workers": 4,
+      "inputs": {
+        "test_input1": {
+          "stream": "test_input1",
+          "transport": {
+            "name": "kafka_input",
+            "config": {
+              "auto.offset.reset": "earliest",
+              "group.instance.id": test_name,
+              "topics": [input_topic],
+              "log_level": "debug"
+            }
+          },
+          "format": {
+            "name": "csv"
+          }
+        }
+      },
+      "outputs": {
+        "test_output2": {
+          "stream": "test_output1",
+          "transport": {
+            "name": "kafka_output",
+            "config": {
+              "topic": output_topic,
+              "message.max.bytes": message_max_bytes.to_string(),
+            }
+          },
+          "format": {
+            "name": format,
+            "config": format_config,
+          }
+        }
+      }
+    }))
+    .unwrap();
 
-    info!("{test_name}: Creating circuit. Config {config_str}");
+    info!("{test_name}: Creating circuit. Config {config:?}");
 
     info!("{test_name}: Starting controller");
-    let config: PipelineConfig = serde_yaml::from_str(&config_str).unwrap();
 
     let running = Arc::new(AtomicBool::new(true));
     let running_clone = running.clone();
@@ -1576,7 +1591,7 @@ outputs:
     )
     .unwrap();
 
-    let buffer_consumer = BufferConsumer::new(&output_topic, format, format_config, None);
+    let buffer_consumer = BufferConsumer::new(&output_topic, format, json!({}), None);
 
     info!("{test_name}: Sending inputs");
     let producer = TestProducer::new();
@@ -1609,47 +1624,47 @@ fn test_kafka_input(data: Vec<Vec<TestStruct>>, topic: &str, poller_threads: usi
 
     info!("proptest_kafka_input: Test: Specify invalid Kafka broker address");
 
-    let config_str = format!(
-        r#"
-stream: test_input
-transport:
-    name: kafka_input
-    config:
-        topic: {topic}
-        log_level: debug
-        bootstrap.servers: localhost:11111
-        auto.offset.reset: "earliest"
-format:
-    name: csv
-"#
-    );
+    let config = serde_json::from_value(json!({
+      "stream": "test_input",
+      "transport": {
+        "name": "kafka_input",
+        "config": {
+          "topic": topic,
+          "log_level": "debug",
+          "bootstrap.servers": "localhost:11111",
+          "auto.offset.reset": "earliest"
+        }
+      },
+      "format": {
+        "name": "csv"
+      }
+    }))
+    .unwrap();
 
-    match mock_input_pipeline::<TestStruct, TestStruct>(
-        serde_yaml::from_str(&config_str).unwrap(),
-        Relation::empty(),
-    ) {
+    match mock_input_pipeline::<TestStruct, TestStruct>(config, Relation::empty()) {
         Ok(_) => panic!("expected an error"),
         Err(e) => info!("proptest_kafka_input: Error: {e}"),
     };
 
     info!("proptest_kafka_input: Test: Specify invalid Kafka topic name");
 
-    let config_str = r#"
-stream: test_input
-transport:
-    name: kafka_input
-    config:
-        topic: this_topic_does_not_exist
-        log_level: debug
-        auto.offset.reset: "earliest"
-format:
-    name: csv
-"#;
+    let config = serde_json::from_value(json!({
+      "stream": "test_input",
+      "transport": {
+        "name": "kafka_input",
+        "config": {
+          "topic": "this_topic_does_not_exist",
+          "log_level": "debug",
+          "auto.offset.reset": "earliest"
+        }
+      },
+      "format": {
+        "name": "csv"
+      }
+    }))
+    .unwrap();
 
-    match mock_input_pipeline::<TestStruct, TestStruct>(
-        serde_yaml::from_str(config_str).unwrap(),
-        Relation::empty(),
-    ) {
+    match mock_input_pipeline::<TestStruct, TestStruct>(config, Relation::empty()) {
         Ok(_) => panic!("expected an error"),
         Err(e) => info!("proptest_kafka_input: Error: {e}"),
     };
@@ -1658,29 +1673,28 @@ format:
     // consumer will observe all messages sent by the producer even if
     // the producer starts earlier (the consumer won't start until the
     // rebalancing protocol kicks in).
-    let config_str = format!(
-        r#"
-stream: test_input
-transport:
-    name: kafka_input
-    config:
-        topic: {topic}
-        log_level: debug
-        poller_threads: {poller_threads}
-        auto.offset.reset: "earliest"
-format:
-    name: csv
-max_batch_size: 10000000
-"#
-    );
+    let config = serde_json::from_value(json!({
+        "stream": "test_input",
+        "transport": {
+            "name": "kafka_input",
+            "config": {
+                "topic": topic,
+                "log_level": "debug",
+                "poller_threads": poller_threads,
+                "auto.offset.reset": "earliest"
+            }
+        },
+        "format": {
+            "name": "csv"
+        },
+        "max_batch_size": 10000000
+    }))
+    .unwrap();
 
     info!("proptest_kafka_input: Building input pipeline");
 
-    let (endpoint, _consumer, _parser, zset) = mock_input_pipeline::<TestStruct, TestStruct>(
-        serde_yaml::from_str(&config_str).unwrap(),
-        Relation::empty(),
-    )
-    .unwrap();
+    let (endpoint, _consumer, _parser, zset) =
+        mock_input_pipeline::<TestStruct, TestStruct>(config, Relation::empty()).unwrap();
 
     endpoint.extend();
 
@@ -2103,48 +2117,67 @@ fn buffer_test() {
     let _kafka_resources = KafkaResources::create_topics(&[(&input_topic, 1), (&output_topic, 1)]);
 
     // Create controller.
-    let config_str = format!(
-        r#"
-name: test
-workers: 4
-inputs:
-    test_input1:
-        stream: test_input1
-        transport:
-            name: kafka_input
-            config:
-                auto.offset.reset: "earliest"
-                group.instance.id: "buffer_test"
-                topics: [{input_topic}]
-                log_level: debug
-        format:
-            name: csv
-outputs:
-    test_output2:
-        stream: test_output1
-        transport:
-            name: kafka_output
-            config:
-                topic: {output_topic}
-                message.max.bytes: "1000000"
-                headers:
-                    - key: header1
-                      value: "foobar"
-                    - key: header2
-                      value: [1,2,3,4,5]
-        format:
-            name: csv
-            config:
-        enable_output_buffer: true
-        max_output_buffer_size_records: {buffer_size}
-        max_output_buffer_time_millis: {buffer_timeout_ms}
-"#
-    );
+    let config = serde_json::from_value(json!({
+      "name": "test",
+      "workers": 4,
+      "inputs": {
+        "test_input1": {
+          "stream": "test_input1",
+          "transport": {
+            "name": "kafka_input",
+            "config": {
+              "auto.offset.reset": "earliest",
+              "group.instance.id": "buffer_test",
+              "topics": [input_topic],
+              "log_level": "debug"
+            }
+          },
+          "format": {
+            "name": "csv"
+          }
+        }
+      },
+      "outputs": {
+        "test_output2": {
+          "stream": "test_output1",
+          "transport": {
+            "name": "kafka_output",
+            "config": {
+              "topic": output_topic,
+              "message.max.bytes": "1000000",
+              "headers": [
+                {
+                  "key": "header1",
+                  "value": "foobar"
+                },
+                {
+                  "key": "header2",
+                  "value": [
+                    1,
+                    2,
+                    3,
+                    4,
+                    5
+                  ]
+                }
+              ]
+            }
+          },
+          "format": {
+            "name": "csv",
+            "config": null
+          },
+          "enable_output_buffer": true,
+          "max_output_buffer_size_records": buffer_size,
+          "max_output_buffer_time_millis": buffer_timeout_ms
+        }
+      }
+    }))
+    .unwrap();
 
-    info!("buffer_test: Creating circuit. Config {config_str}");
+    info!("buffer_test: Creating circuit. Config {config:?}");
 
     info!("buffer_test: Starting controller");
-    let config: PipelineConfig = serde_yaml::from_str(&config_str).unwrap();
 
     let running = Arc::new(AtomicBool::new(true));
     let running_clone = running.clone();
@@ -2178,7 +2211,7 @@ outputs:
             }
         );
     });
-    let buffer_consumer = BufferConsumer::new(&output_topic, "csv", "", Some(cb));
+    let buffer_consumer = BufferConsumer::new(&output_topic, "csv", json!({}), Some(cb));
 
     info!("buffer_test: Sending inputs");
     let producer = TestProducer::new();
@@ -2241,21 +2274,21 @@ proptest! {
 
     #[test]
     fn proptest_kafka_end_to_end_csv_large(data in generate_test_batches(0, 30, 1000)) {
-        kafka_end_to_end_test("proptest_kafka_end_to_end_csv_large", "csv", "", 1000000, data);
+        kafka_end_to_end_test("proptest_kafka_end_to_end_csv_large", "csv", json!({}), 1000000, data);
     }
 
     #[test]
     fn proptest_kafka_end_to_end_csv_small(data in generate_test_batches(0, 30, 1000)) {
-        kafka_end_to_end_test("proptest_kafka_end_to_end_csv_small", "csv", "", 1500, data);
+        kafka_end_to_end_test("proptest_kafka_end_to_end_csv_small", "csv", json!({}), 1500, data);
     }
 
     #[test]
     fn proptest_kafka_end_to_end_json_small(data in generate_test_batches(0, 30, 1000)) {
-        kafka_end_to_end_test("proptest_kafka_end_to_end_json_small", "json", "", 2048, data);
+        kafka_end_to_end_test("proptest_kafka_end_to_end_json_small", "json", json!({}), 2048, data);
     }
 
     #[test]
     fn proptest_kafka_end_to_end_json_array_small(data in generate_test_batches(0, 30, 1000)) {
-        kafka_end_to_end_test("proptest_kafka_end_to_end_json_array_small", "json", "array: true", 5000, data);
+        kafka_end_to_end_test("proptest_kafka_end_to_end_json_array_small", "json", json!({"array": true}), 5000, data);
     }
 }
