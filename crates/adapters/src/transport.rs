@@ -25,7 +25,7 @@ use std::path::Path;
 use adhoc::AdHocInputEndpoint;
 use anyhow::Result as AnyResult;
 use clock::ClockEndpoint;
-use feldera_types::secret_resolver::resolve_secret_references_via_yaml;
+use feldera_types::secret_resolver::resolve_secret_references_via_json;
 use http::HttpInputEndpoint;
 #[cfg(feature = "with-pubsub")]
 use pubsub::PubSubInputEndpoint;
@@ -80,7 +80,7 @@ pub fn input_transport_config_to_endpoint(
     endpoint_name: &str,
     secrets_dir: &Path,
 ) -> AnyResult<Option<Box<dyn TransportInputEndpoint>>> {
-    let config = resolve_secret_references_via_yaml(secrets_dir, config)?;
+    let config = resolve_secret_references_via_json(secrets_dir, config)?;
     let endpoint: Box<dyn TransportInputEndpoint> = match config {
         TransportConfig::FileInput(config) => Box::new(FileInputEndpoint::new(config)),
         #[cfg(feature = "with-kafka")]
@@ -130,7 +130,7 @@ pub fn output_transport_config_to_endpoint(
     fault_tolerant: bool,
     secrets_dir: &Path,
 ) -> AnyResult<Option<Box<dyn OutputEndpoint>>> {
-    let config = resolve_secret_references_via_yaml(secrets_dir, config)?;
+    let config = resolve_secret_references_via_json(secrets_dir, config)?;
     match config {
         TransportConfig::FileOutput(config) => Ok(Some(Box::new(FileOutputEndpoint::new(config)?))),
         #[cfg(feature = "with-kafka")]

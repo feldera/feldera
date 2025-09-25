@@ -2,7 +2,7 @@ use crate::config::ConnectorConfig;
 use crate::secret_ref::{MaybeSecretRef, MaybeSecretRefParseError, SecretRef};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
-use serde_yaml::{Mapping, Value};
+use serde_json::{Map, Value};
 use std::collections::BTreeSet;
 use std::fmt::Debug;
 use std::fs;
@@ -24,23 +24,23 @@ pub enum SecretRefDiscoveryError {
 pub fn discover_secret_references_in_connector_config(
     connector_config: &ConnectorConfig,
 ) -> Result<BTreeSet<SecretRef>, SecretRefDiscoveryError> {
-    let yaml_value = serde_yaml::to_value(connector_config).map_err(|e| {
+    let json_value = serde_json::to_value(connector_config).map_err(|e| {
         SecretRefDiscoveryError::SerializationFailed {
             error: e.to_string(),
         }
     })?;
     let mut result = BTreeSet::new();
-    if let Some(transport_config_yaml) = yaml_value.get("transport").and_then(|v| v.get("config")) {
-        result.extend(discover_secret_references_in_yaml(transport_config_yaml)?);
+    if let Some(transport_config_json) = json_value.get("transport").and_then(|v| v.get("config")) {
+        result.extend(discover_secret_references_in_json(transport_config_json)?);
     }
-    if let Some(format_config_yaml) = yaml_value.get("format").and_then(|v| v.get("config")) {
-        result.extend(discover_secret_references_in_yaml(format_config_yaml)?);
+    if let Some(format_config_json) = json_value.get("format").and_then(|v| v.get("config")) {
+        result.extend(discover_secret_references_in_json(format_config_json)?);
     }
     Ok(result)
 }
 
-/// Discovers recursively the secret references in the YAML.
-fn discover_secret_references_in_yaml(
+/// Discovers recursively the secret references in the JSON.
+fn discover_secret_references_in_json(
     value: &Value,
 ) -> Result<BTreeSet<SecretRef>, SecretRefDiscoveryError> {
     Ok(match value {
@@ -56,21 +56,20 @@ fn discover_secret_references_in_yaml(
                 BTreeSet::new()
             }
         }
-        Value::Sequence(seq) => {
+        Value::Array(seq) => {
             let mut result = BTreeSet::new();
             for entry in seq.iter() {
-                result.extend(discover_secret_references_in_yaml(entry)?)
+                result.extend(discover_secret_references_in_json(entry)?)
             }
             result
         }
-        Value::Mapping(mapping) => {
+        Value::Object(mapping) => {
             let mut result = BTreeSet::new();
             for (_k, v) in mapping.into_iter() {
-                result.extend(discover_secret_references_in_yaml(v)?);
+                result.extend(discover_secret_references_in_json(v)?);
             }
             result
         }
-        Value::Tagged(tag_val) => discover_secret_references_in_yaml(&tag_val.value)?,
     })
 }
 
@@ -116,31 +115,31 @@ pub fn resolve_secret_references_in_connector_config(
 ) -> Result<ConnectorConfig, SecretRefResolutionError> {
     let connector_config = connector_config.clone();
     Ok(ConnectorConfig {
-        transport: resolve_secret_references_via_yaml(secrets_dir, &connector_config.transport)?,
-        format: resolve_secret_references_via_yaml(secrets_dir, &connector_config.format)?,
+        transport: resolve_secret_references_via_json(secrets_dir, &connector_config.transport)?,
+        format: resolve_secret_references_via_json(secrets_dir, &connector_config.format)?,
         ..connector_config
     })
 }
 
 /// Resolves secret references in `value`.
-pub fn resolve_secret_references_via_yaml<T>(
+pub fn resolve_secret_references_via_json<T>(
     secrets_dir: &Path,
     value: &T,
 ) -> Result<T, SecretRefResolutionError>
 where
     T: Serialize + DeserializeOwned,
 {
-    let yaml_value =
-        serde_yaml::to_value(value).map_err(|e| SecretRefResolutionError::SerializationFailed {
+    let json_value =
+        serde_json::to_value(value).map_err(|e| SecretRefResolutionError::SerializationFailed {
             error: e.to_string(),
         })?;
-    let resolved_yaml = resolve_secret_references_in_yaml(secrets_dir, yaml_value)?;
-    serde_yaml::from_value(resolved_yaml)
+    let resolved_json = resolve_secret_references_in_json(secrets_dir, json_value)?;
+    serde_json::from_value(resolved_json)
         .map_err(|_e| SecretRefResolutionError::DeserializationFailed)
 }
 
-/// Resolves recursively the secret references in the YAML.
-fn resolve_secret_references_in_yaml(
+/// Resolves recursively the secret references in the JSON.
+fn resolve_secret_references_in_json(
     secrets_dir: &Path,
     value: Value,
 ) -> Result<Value, SecretRefResolutionError> {
@@ -151,25 +150,21 @@ fn resolve_secret_references_in_yaml(
         Value::String(s) => {
             Value::String(resolve_potential_secret_reference_string(secrets_dir, s)?)
         }
-        Value::Sequence(seq) => Value::Sequence(
+        Value::Array(seq) => Value::Array(
             seq.into_iter()
-                .map(|v| resolve_secret_references_in_yaml(secrets_dir, v))
+                .map(|v| resolve_secret_references_in_json(secrets_dir, v))
                 .collect::<Result<Vec<Value>, SecretRefResolutionError>>()?,
         ),
-        Value::Mapping(mapping) => {
-            let mut new_mapping = Mapping::new();
+        Value::Object(mapping) => {
+            let mut new_mapping = Map::new();
             for (k, v) in mapping.into_iter() {
                 if let Some(_existing) =
-                    new_mapping.insert(k, resolve_secret_references_in_yaml(secrets_dir, v)?)
+                    new_mapping.insert(k, resolve_secret_references_in_json(secrets_dir, v)?)
                 {
                     return Err(SecretRefResolutionError::DuplicateKeyInMapping);
                 }
             }
-            Value::Mapping(new_mapping)
-        }
-        Value::Tagged(mut tag_val) => {
-            tag_val.value = resolve_secret_references_in_yaml(secrets_dir, tag_val.value)?;
-            Value::Tagged(tag_val)
+            Value::Object(new_mapping)
         }
     })
 }
@@ -238,9 +233,9 @@ mod tests {
     use crate::config::{ConnectorConfig, TransportConfig};
     use crate::secret_ref::{MaybeSecretRef, SecretRef};
     use crate::secret_resolver::{
-        discover_secret_references_in_connector_config, discover_secret_references_in_yaml,
+        discover_secret_references_in_connector_config, discover_secret_references_in_json,
         resolve_potential_secret_reference_string, resolve_secret_references_in_connector_config,
-        resolve_secret_references_in_yaml, SecretRefResolutionError,
+        resolve_secret_references_in_json, SecretRefResolutionError,
     };
     use serde_json::json;
     use std::collections::BTreeSet;
@@ -382,7 +377,7 @@ mod tests {
     }
 
     #[test]
-    fn secret_resolution_yaml() {
+    fn secret_resolution_json() {
         // Create file at:
         // - <tempdir>/kubernetes/a/b
         // - <tempdir>/kubernetes/c/d
@@ -399,52 +394,72 @@ mod tests {
         let mut file = File::create(data_key_file_path).unwrap();
         file.write_all(b"example2").unwrap();
 
-        // Resolve secrets in YAML
-        let input = r#"
-        a: null
-        b: false,
-        c: 123
-        d: "val1"
-        e: [1, "2"]
-        f:
-          f1: 1
-          f2: "val2"
-        g: !str "val3"
-        "${secret:kubernetes:a/b}": 123
-        "${secret:kubernetes:e/f}": 456
-        s1: "${secret:kubernetes:a/b}"
-        s2: ["${secret:kubernetes:a/b}"]
-        s3:
-          s31: "${secret:kubernetes:a/b}"
-          s32: ["${secret:kubernetes:a/b}", "${secret:kubernetes:c/d}"]
-        s4: !str "${secret:kubernetes:c/d}"
-        "#;
-        let expectation = r#"
-        a: null
-        b: false,
-        c: 123
-        d: "val1"
-        e: [1, "2"]
-        f:
-          f1: 1
-          f2: "val2"
-        g: !str "val3"
-        "${secret:kubernetes:a/b}": 123
-        "${secret:kubernetes:e/f}": 456
-        s1: "example1"
-        s2: ["example1"]
-        s3:
-          s31: "example1"
-          s32: ["example1", "example2"]
-        s4: !str "example2"
-        "#;
+        // Resolve secrets in JSON
+        let input = json!({
+            "a": null,
+            "b": "false,",
+            "c": 123,
+            "d": "val1",
+            "e": [
+                1,
+                "2"
+            ],
+            "f": {
+                "f1": 1,
+                "f2": "val2"
+            },
+            "g": "val3",
+            "${secret:kubernetes:a/b}": 123,
+            "${secret:kubernetes:e/f}": 456,
+            "s1": "${secret:kubernetes:a/b}",
+            "s2": [
+                "${secret:kubernetes:a/b}"
+            ],
+            "s3": {
+                "s31": "${secret:kubernetes:a/b}",
+                "s32": [
+                    "${secret:kubernetes:a/b}",
+                    "${secret:kubernetes:c/d}"
+                ]
+            },
+            "s4": "${secret:kubernetes:c/d}"
+        });
+
+        let expectation = json!({
+            "a": null,
+            "b": "false,",
+            "c": 123,
+            "d": "val1",
+            "e": [
+                1,
+                "2"
+            ],
+            "f": {
+                "f1": 1,
+                "f2": "val2"
+            },
+            "g": "val3",
+            "${secret:kubernetes:a/b}": 123,
+            "${secret:kubernetes:e/f}": 456,
+            "s1": "example1",
+            "s2": [
+                "example1"
+            ],
+            "s3": {
+                "s31": "example1",
+                "s32": [
+                    "example1",
+                    "example2"
+                ]
+            },
+            "s4": "example2"
+        });
         assert_eq!(
-            resolve_secret_references_in_yaml(dir_path, serde_yaml::from_str(input).unwrap())
-                .unwrap(),
-            serde_yaml::from_str::<serde_yaml::Value>(expectation).unwrap()
+            resolve_secret_references_in_json(dir_path, input.clone()).unwrap(),
+            expectation
         );
         assert_eq!(
-            discover_secret_references_in_yaml(&serde_yaml::from_str(input).unwrap()).unwrap(),
+            discover_secret_references_in_json(&input).unwrap(),
             BTreeSet::from([
                 SecretRef::Kubernetes {
                     name: "a".to_string(),
@@ -457,8 +472,7 @@ mod tests {
             ])
         );
         assert_eq!(
-            discover_secret_references_in_yaml(&serde_yaml::from_str(expectation).unwrap())
-                .unwrap(),
+            discover_secret_references_in_json(&expectation).unwrap(),
             BTreeSet::from([])
         );
     }
