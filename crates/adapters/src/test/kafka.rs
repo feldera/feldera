@@ -283,7 +283,7 @@ impl BufferConsumer {
             .new_parser(
                 "BaseConsumer",
                 &InputCollectionHandle::new(schema, buffer.clone(), NodeId::new(0)),
-                &serde_json::to_value(&format_config).unwrap(),
+                &format_config,
             )
             .unwrap();
 
