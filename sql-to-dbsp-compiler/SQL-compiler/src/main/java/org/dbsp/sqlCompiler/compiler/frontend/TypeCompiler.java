@@ -152,7 +152,7 @@ public class TypeCompiler implements ICompilerComponent {
             DBSPTypeMap lMap = left.to(DBSPTypeMap.class);
             DBSPTypeMap rMap = right.to(DBSPTypeMap.class);
             DBSPType commonKey = reduceType(node, lMap.getKeyType(), rMap.getKeyType(), error, true);
-            DBSPType commonValue = reduceType(node, lMap.getElementType(), rMap.getElementType(), error, true);
+            DBSPType commonValue = reduceType(node, lMap.getValueType(), rMap.getValueType(), error, true);
             return new DBSPTypeMap(commonKey, commonValue, anyNull);
         }
 

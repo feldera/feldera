@@ -180,7 +180,7 @@ public class NegativeParserTests extends BaseSQLTests {
         Assert.assertFalse(msg.warning);
         TestUtil.assertMessagesContain(messages,
                 "cannot convert GEOMETRY literal to class org.locationtech.jts.geom.Point\n" +
-                "LINESTRING (0 0, 0 0):GEOMETRY");
+                "'LINESTRING (0 0, 0 0)'");
     }
 
     @Test
