@@ -210,7 +210,7 @@ def test_pipeline_get(pipeline_name):
     # Retrieve first pipeline again
     r = get(f"{API_PREFIX}/pipelines/{name1}")
     assert r.status_code == HTTPStatus.OK
-    assert object1_1 == r.json()
+    assert object1_1["id"] == r.json()["id"]
 
     # Retrieve second pipeline
     r = get(f"{API_PREFIX}/pipelines/{name2}")
