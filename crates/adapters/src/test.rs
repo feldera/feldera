@@ -12,6 +12,7 @@ use feldera_types::secret_resolver::default_secrets_directory;
 use feldera_types::serde_with_context::{
     DeserializeWithContext, SerializeWithContext, SqlSerdeConfig,
 };
+use serde_json::json;
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::ffi::OsStr;
@@ -395,15 +396,11 @@ pub fn list_files_recursive(dir: &Path, extension: &OsStr) -> Result<Vec<PathBuf
 }
 
 /// Parse file with data encoded using specified format into a Z-set.
-pub fn file_to_zset<T>(
-    file: &mut File,
-    format: &str,
-    format_config: serde_json::Value,
-) -> OrdZSet<T>
+pub fn file_to_zset<T>(file: &mut File) -> OrdZSet<T>
 where
     T: DBData + for<'de> DeserializeWithContext<'de, SqlSerdeConfig>,
 {
-    let format = get_input_format(format).unwrap();
+    let format = get_input_format("json").unwrap();
     let buffer = MockDeZSet::<T, T>::new();
 
     // Input parsers don't care about schema yet.
@@ -413,7 +410,7 @@ where
         .new_parser(
             "BaseConsumer",
             &InputCollectionHandle::new(schema, buffer.clone(), NodeId::new(0)),
-            &format_config,
+            &json!({"update_format": "insert_delete"}),
         )
         .unwrap();
 
