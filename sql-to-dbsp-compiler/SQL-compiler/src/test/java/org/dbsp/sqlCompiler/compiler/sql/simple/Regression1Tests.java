@@ -964,7 +964,27 @@ public class Regression1Tests extends SqlIoTest {
                  hello | -57681.1796875 | -38.271123460125 | 1""");
     }
 
-    @Test @Ignore("https://issues.apache.org/jira/browse/CALCITE-7195")
+    @Test
+    public void issue4817() {
+        this.getCCS("""
+                CREATE TABLE tbl(mapp MAP<VARCHAR, INT>);
+                
+                CREATE MATERIALIZED VIEW v AS SELECT
+                LEAST_IGNORE_NULLS(mapp, MAP['a', 13, 'b', 17]) AS mapp
+                FROM tbl;""");
+    }
+
+    @Test
+    public void issue4814() {
+        this.getCCS("""
+                CREATE TABLE tbl(mapp MAP<VARCHAR, INT>);
+                
+                CREATE MATERIALIZED VIEW v AS SELECT
+                LEAST(mapp, MAP['a', 13, 'b', 17]) AS mapp
+                FROM tbl;""");
+    }
+
+    @Test
     public void issue4794() {
         this.getCCS("""
                 CREATE TABLE tbl(

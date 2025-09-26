@@ -211,8 +211,9 @@ public class ExpandCasts extends InnerRewriteVisitor {
             DBSPTypeMap sourceMap = sourceType.to(DBSPTypeMap.class);
             DBSPClosureExpression convertKey = converter(sourceMap.getKeyType(), type.getKeyType(), safe);
             DBSPClosureExpression convertValue = converter(sourceMap.getValueType(), type.getValueType(), safe);
+            DBSPType convertedType = new DBSPTypeMap(type.getKeyType(), type.getValueType(), sourceType.mayBeNull);
             source = new DBSPBinaryExpression(source.getNode(),
-                    type, DBSPOpcode.MAP_CONVERT, source.borrow(), new DBSPRawTupleExpression(convertKey, convertValue));
+                    convertedType, DBSPOpcode.MAP_CONVERT, source, new DBSPRawTupleExpression(convertKey, convertValue));
             return source.cast(source.getNode(), type, safe);
         }
         // Everything else use the default conversion

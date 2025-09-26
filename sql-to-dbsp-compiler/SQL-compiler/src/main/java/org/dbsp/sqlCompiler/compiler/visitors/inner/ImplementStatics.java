@@ -5,10 +5,12 @@ import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBaseTupleExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPBinaryExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPBorrowExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPHandleErrorExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPOpcode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPPathExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPStaticExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPDecimalLiteral;
@@ -111,6 +113,13 @@ public class ImplementStatics extends ExpressionTranslator {
     public VisitDecision preorder(DBSPBaseTupleExpression expression) {
         if (expression.fields == null)
             return VisitDecision.CONTINUE;
+        // If any field is a closure, do not generate a static.
+        // This is used mostly for handling the CONVERT_MAP binary expression second argument.
+        for (DBSPExpression field : expression.fields) {
+            if (field.is(DBSPClosureExpression.class)) {
+                return VisitDecision.CONTINUE;
+            }
+        }
         return super.preorder(expression);
     }
 

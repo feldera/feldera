@@ -79,7 +79,7 @@ where
 }
 
 #[doc(hidden)]
-pub fn map_map__<K0, K1, V0, V1, F, G>(map: &Map<K0, V0>, f: (F, G)) -> Map<K1, V1>
+pub fn map_map__<K0, K1, V0, V1, F, G>(map: Map<K0, V0>, f: (F, G)) -> Map<K1, V1>
 where
     K0: Ord + Clone,
     K1: Ord + Clone,
@@ -94,14 +94,14 @@ where
 }
 
 #[doc(hidden)]
-pub fn map_mapN_<K0, K1, V0, V1, F, G>(map: &Option<Map<K0, V0>>, f: (F, G)) -> Option<Map<K1, V1>>
+pub fn map_mapN_<K0, K1, V0, V1, F, G>(map: Option<Map<K0, V0>>, f: (F, G)) -> Option<Map<K1, V1>>
 where
     K0: Ord + Clone,
     K1: Ord + Clone,
     F: Fn(&K0) -> K1,
     G: Fn(&V0) -> V1,
 {
-    map.as_ref().map(|map| map_map__(map, f))
+    map.map(|map| map_map__(map, f))
 }
 
 #[doc(hidden)]
