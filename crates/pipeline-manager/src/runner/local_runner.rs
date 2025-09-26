@@ -444,7 +444,7 @@ impl PipelineExecutor for LocalRunner {
             )
             .current_dir(pipeline_dir)
             .arg("--config-file")
-            .arg(&self.config.config_file_path(self.pipeline_id, "yaml"))
+            .arg(self.config.config_file_path(self.pipeline_id, "yaml"))
             .arg("--bind-address")
             .arg(&self.common_config.bind_address)
             .arg("--initial")

@@ -797,7 +797,7 @@ async fn test_follow(
 
     // Start parquet-to-parquet pipeline.
     let mut input_config = storage_options
-        .into_iter()
+        .iter()
         .map(|(k, v)| (k.into(), v.clone().into()))
         .collect::<HashMap<String, Value>>();
     let mode = if snapshot {
@@ -818,7 +818,7 @@ async fn test_follow(
         input_table_uri,
         output_table_uri,
         &input_config,
-        &storage_options,
+        storage_options,
         &storage_dir,
         buffer_size,
         buffer_timeout_ms,
@@ -843,7 +843,7 @@ async fn test_follow(
             input_table_uri,
             output_table_uri,
             &input_config,
-            &storage_options,
+            storage_options,
             &storage_dir,
             buffer_size,
             buffer_timeout_ms,
@@ -903,7 +903,7 @@ async fn test_follow(
                 input_table_uri,
                 output_table_uri,
                 &input_config,
-                &storage_options,
+                storage_options,
                 &storage_dir,
                 buffer_size,
                 buffer_timeout_ms,
@@ -956,7 +956,7 @@ async fn test_follow(
             input_table_uri,
             output_table_uri,
             &input_config,
-            &storage_options,
+            storage_options,
             &storage_dir,
             buffer_size,
             buffer_timeout_ms,
