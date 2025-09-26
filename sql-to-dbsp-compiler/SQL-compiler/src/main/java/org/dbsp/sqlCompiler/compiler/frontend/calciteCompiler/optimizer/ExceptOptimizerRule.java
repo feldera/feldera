@@ -1,4 +1,4 @@
-package org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler;
+package org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.optimizer;
 
 import org.apache.calcite.plan.RelOptRuleCall;
 import org.apache.calcite.plan.RelRule;
@@ -18,10 +18,7 @@ import org.apache.calcite.rex.RexInputRef;
 import org.apache.calcite.rex.RexNode;
 import org.apache.calcite.sql.SqlKind;
 import org.apache.calcite.tools.RelBuilder;
-import org.apache.calcite.tools.RelBuilderFactory;
-import org.checkerframework.checker.nullness.qual.Nullable;
 
-import java.util.Objects;
 import java.util.function.Predicate;
 
 /** Recognizes EXCEPT written using a LEFT JOIN and reconstructs it.
@@ -45,20 +42,16 @@ import java.util.function.Predicate;
  *       LogicalTableScan(table=[[schema, f]])
  */
 public class ExceptOptimizerRule
-        extends RelRule<ExceptOptimizerRule.Config>
+        extends RelRule<DefaultOptRuleConfig<ExceptOptimizerRule>>
         implements TransformationRule {
 
-    protected ExceptOptimizerRule(Config config) {
-        super(config);
+    protected ExceptOptimizerRule() {
+        super(CONFIG);
     }
 
     //~ Methods ----------------------------------------------------------------
 
     @Override public void onMatch(RelOptRuleCall call) {
-        config.matchHandler().accept(this, call);
-    }
-
-    private void match(RelOptRuleCall call) {
         Project outer = call.rel(0);
         Filter outerFilter = call.rel(1);
         Correlate cor = call.rel(2);
@@ -155,88 +148,11 @@ public class ExceptOptimizerRule
         call.transformTo(builder.build());
     }
 
-    @SuppressWarnings("unused")
-    public static final class ExceptOptimizerRuleConfig implements ExceptOptimizerRule.Config {
-        private final GenericRuleConfigState<ExceptOptimizerRule> state;
-
-        private ExceptOptimizerRuleConfig(Builder builder) {
-            this.state = new GenericRuleConfigState<>(
-                    ExceptOptimizerRule.Config.super.relBuilderFactory(),
-                    builder.description,
-                    ExceptOptimizerRule.Config.super.operandSupplier(),
-                    builder.matchHandler);
-        }
-
-        private ExceptOptimizerRuleConfig(GenericRuleConfigState<ExceptOptimizerRule> state) {
-            this.state = state;
-        }
-
-        @Override @javax.annotation.Nullable
-        public RelBuilderFactory relBuilderFactory() {
-            return this.state.relBuilderFactory();
-        }
-
-        @Override
-        public @javax.annotation.Nullable @Nullable String description() {
-            return this.state.description();
-        }
-
-        @Override
-        public OperandTransform operandSupplier() {
-            return this.state.operandSupplier();
-        }
-
-        @Override
-        public MatchHandler<ExceptOptimizerRule> matchHandler() {
-            return this.state.matchHandler();
-        }
-
-        public ExceptOptimizerRuleConfig withRelBuilderFactory(RelBuilderFactory value) {
-            return new ExceptOptimizerRuleConfig(this.state.withRelBuilderFactory(value));
-        }
-
-        public ExceptOptimizerRuleConfig withDescription(@javax.annotation.Nullable @Nullable String value) {
-            return new ExceptOptimizerRuleConfig(this.state.withDescription(value));
-        }
-
-        public ExceptOptimizerRuleConfig withOperandSupplier(OperandTransform value) {
-            return new ExceptOptimizerRuleConfig(this.state.withOperandSupplier(value));
-        }
-
-        public ExceptOptimizerRuleConfig withMatchHandler(MatchHandler<ExceptOptimizerRule> matchHandler) {
-            return new ExceptOptimizerRuleConfig(this.state.withMatchHandler(matchHandler));
-        }
-
-        public static Builder builder() {
-            return new Builder();
-        }
-
-        public static final class Builder {
-            private final @javax.annotation.Nullable
-            @Nullable String description = null;
-
-            private @javax.annotation.Nullable MatchHandler<ExceptOptimizerRule> matchHandler;
-
-            private Builder() {}
-
-            public Builder withMatchHandler(MatchHandler<ExceptOptimizerRule> matchHandler) {
-                this.matchHandler = Objects.requireNonNull(matchHandler, "matchHandler");
-                return this;
-            }
-
-            public ExceptOptimizerRuleConfig build() {
-                return new ExceptOptimizerRuleConfig(this);
-            }
-        }
-    }
-
     public static final Predicate<Project> PROJECTS_TO_TRUE = p -> p.getProjects().size() == 1 &&
             p.getProjects().get(0).isAlwaysTrue();
 
-    public interface Config extends RelRule.Config {
-        Config DEFAULT = ExceptOptimizerRuleConfig.builder()
-                .withMatchHandler(ExceptOptimizerRule::match)
-                .build()
+    public static final DefaultOptRuleConfig<ExceptOptimizerRule> CONFIG =
+            DefaultOptRuleConfig.<ExceptOptimizerRule>create()
                 .withOperandSupplier(
                         b0 -> b0.operand(Project.class)
                                 .predicate(PROJECTS_TO_TRUE).oneInput(
@@ -251,13 +167,6 @@ public class ExceptOptimizerRule
                                                                         .oneInput(b5 -> b5.operand(Project.class)
                                                                                 .predicate(PROJECTS_TO_TRUE)
                                                                                 .oneInput(b6 -> b6.operand(Filter.class)
-                                                                                        .anyInputs()))))))
-                .as(Config.class);
+                                                                                        .anyInputs()))))));
 
-        @Override default ExceptOptimizerRule toRule() {
-            return new ExceptOptimizerRule(this);
-        }
-
-        MatchHandler<ExceptOptimizerRule> matchHandler();
-    }
 }

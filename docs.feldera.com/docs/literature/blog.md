@@ -34,7 +34,7 @@
 
 ## Platform capabilities
 
-* The Babl tower of SQL dialects
+* The Babel tower of SQL dialects
   https://www.feldera.com/blog/the-babel-tower-of-sql-dialects
 
 * Toward Real-Time Medallion Architecture

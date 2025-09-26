@@ -1772,7 +1772,7 @@ macro_rules! cast_to_i {
                 match value.str().trim().parse::<$result_type>() {
                     Ok(value) => Ok(value),
                     Err(e) => Err(SqlRuntimeError::from_string(
-                        format!("Error converting {value} to {}: {}", tn!($result_type), e)
+                        format!("Error converting '{value}' to {}: {}", tn!($result_type), e)
                     )),
                 }
             }
@@ -3599,7 +3599,7 @@ macro_rules! cast_from_variant_numeric {
                         match result {
                             Ok(value) => Ok(Some(value)),
                             Err(e) => Err(SqlRuntimeError::from_string(format!(
-                                "Error converting {value} to {}: {}",
+                                "Error converting '{value}' to {}: {}",
                                 tn!($result_name), e
                             ))),
                         }

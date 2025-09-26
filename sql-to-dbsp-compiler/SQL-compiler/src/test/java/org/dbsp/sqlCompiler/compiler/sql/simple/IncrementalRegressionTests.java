@@ -878,4 +878,20 @@ public class IncrementalRegressionTests extends SqlIoTest {
               CREATE MATERIALIZED VIEW test_mat AS
               SELECT id FROM test_agg;""");
     }
+
+    @Test @Ignore
+    public void issue4799() {
+        this.getCCS("""
+                CREATE TABLE T(id INT, s VARCHAR);
+                CREATE VIEW v AS (
+                    SELECT
+                        T.id,
+                        R.sid,
+                        R.o
+                    FROM T
+                    CROSS JOIN UNNEST(split(T.s, '/')) WITH ORDINALITY AS R(sid, o)
+                    WHERE sid <> ''
+                );
+                """);
+    }
 }

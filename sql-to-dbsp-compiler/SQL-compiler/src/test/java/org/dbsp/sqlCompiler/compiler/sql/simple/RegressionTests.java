@@ -559,6 +559,29 @@ public class RegressionTests extends SqlIoTest {
     }
 
     @Test
+    public void issue3210() {
+        // validated on Postgres
+        var ccs = this.getCCS("""
+                create table t1(arr STRING ARRAY);
+                create table t2 (id string);
+                
+                CREATE VIEW v AS
+                WITH ids AS (
+                  SELECT array_element.id
+                  FROM t1, UNNEST(t1.arr) AS array_element(id)
+                )
+                SELECT * FROM ids
+                WHERE EXISTS (SELECT 1 FROM t2 WHERE t2.id = ids.id);""");
+        ccs.step("""
+                INSERT INTO t1 VALUES(array['a']), (array['b', 'd']);
+                INSERT INTO t2 VALUES('a'), ('b'), ('c'), ('e');""", """
+                 id | weight
+                -------------
+                 a| 1
+                 b| 1""");
+    }
+
+    @Test
     public void issue457() {
         String sql = """
                 create table t (id int, x int);
@@ -740,7 +763,7 @@ public class RegressionTests extends SqlIoTest {
                     r int,
                     scopeSpans int ARRAY
                 );
-                CREATE TABLE t (resourceSpans ResourceSpans ARRAY);
+                CREATE TABLE t (z INT, resourceSpans ResourceSpans ARRAY);
                 
                 CREATE MATERIALIZED VIEW resource_spans AS
                 SELECT resourceSpans.scopeSpans
