@@ -680,7 +680,7 @@ fn test_ft_kafka_input(data: Vec<Vec<TestStruct>>, topic1: &str, topic2: &str) {
           "bootstrap.servers": "localhost:11111",
           "topics": [
             topic1,
-            topci2
+            topic2
           ],
           "log_level": "debug"
         }
