@@ -40,7 +40,10 @@ import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ProgramIdentifier;
 import org.jetbrains.annotations.Contract;
 
 import javax.annotation.Nullable;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.PrintStream;
@@ -58,6 +61,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
 
 public class Utilities {
     private Utilities() {}
@@ -69,6 +74,24 @@ public class Utilities {
             stackTraceBuilder.append(stackTrace[i].toString()).append("\n");
         }
         return stackTraceBuilder.toString();
+    }
+
+    public static byte[] extractFileFromZip(String zipPath, String targetFileName) throws IOException {
+        try (ZipInputStream zis = new ZipInputStream(new FileInputStream(zipPath))) {
+            ZipEntry entry;
+            while ((entry = zis.getNextEntry()) != null) {
+                if (entry.getName().equals(targetFileName)) {
+                    ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                    byte[] buffer = new byte[4096];
+                    int len;
+                    while ((len = zis.read(buffer)) > 0) {
+                        baos.write(buffer, 0, len);
+                    }
+                    return baos.toByteArray();
+                }
+            }
+        }
+        throw new RuntimeException("Could not find file " + targetFileName + " in zip archive");
     }
 
     /** A custom version of assert.  We would like to use assert,

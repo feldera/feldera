@@ -62,7 +62,7 @@ use dbsp::circuit::{CircuitStorageConfig, DevTweaks, Mode};
 use dbsp::storage::backend::{StorageBackend, StoragePath};
 use dbsp::{
     circuit::{CircuitConfig, Layout},
-    profile::GraphProfile,
+    profile::{DbspProfile, GraphProfile},
     DBSPHandle,
 };
 use dbsp::{Runtime, WeakRuntime};
@@ -387,6 +387,9 @@ pub struct Controller {
 /// Type of the callback argument to [`Controller::start_graph_profile`].
 pub type GraphProfileCallbackFn = Box<dyn FnOnce(Result<GraphProfile, ControllerError>) + Send>;
 
+/// Type of the callback argument to [`Controller::start_json_profile`].
+pub type JsonProfileCallbackFn = Box<dyn FnOnce(Result<DbspProfile, ControllerError>) + Send>;
+
 /// Type of the callback argument to [`Controller::start_checkpoint`].
 pub type CheckpointCallbackFn = Box<dyn FnOnce(Result<Checkpoint, Arc<ControllerError>>) + Send>;
 
@@ -402,6 +405,7 @@ pub type SyncCheckpointCallbackFn = Box<dyn FnOnce(Result<(), Arc<ControllerErro
 /// uses a callback embedded in the command to reply.
 enum Command {
     GraphProfile(GraphProfileCallbackFn),
+    JsonProfile(JsonProfileCallbackFn),
     Checkpoint(CheckpointCallbackFn),
     Suspend(SuspendCallbackFn),
     SyncCheckpoint((uuid::Uuid, SyncCheckpointCallbackFn)),
@@ -411,6 +415,7 @@ impl Command {
     pub fn flush(self) {
         match self {
             Command::GraphProfile(callback) => callback(Err(ControllerError::ControllerExit)),
+            Command::JsonProfile(callback) => callback(Err(ControllerError::ControllerExit)),
             Command::Checkpoint(callback) => {
                 callback(Err(Arc::new(ControllerError::ControllerExit)))
             }
@@ -735,6 +740,16 @@ impl Controller {
         self.inner.send_command(Command::GraphProfile(cb));
     }
 
+    /// Triggers a profiling operation in the running pipeline. `cb` will be
+    /// called with the profile (in JSON format) when it is ready, probably after this
+    /// function returns.
+    ///
+    /// The callback-based nature of this function makes it useful in
+    /// asynchronous contexts.
+    pub fn start_json_profile(&self, cb: JsonProfileCallbackFn) {
+        self.inner.send_command(Command::JsonProfile(cb));
+    }
+
     /// Triggers a checkpoint operation. `cb` will be called when it completes.
     ///
     /// The callback-based nature of this function makes it useful in
@@ -758,6 +773,16 @@ impl Controller {
         self.start_graph_profile(Box::new(move |profile| {
             if sender.send(profile).is_err() {
                 error!("`/dump_profile` result could not be sent");
+            }
+        }));
+        receiver.await.unwrap()
+    }
+
+    pub async fn async_json_profile(&self) -> Result<DbspProfile, ControllerError> {
+        let (sender, receiver) = oneshot::channel();
+        self.start_json_profile(Box::new(move |profile| {
+            if sender.send(profile).is_err() {
+                error!("`/dump_json_profile` result could not be sent");
             }
         }));
         receiver.await.unwrap()
@@ -2023,6 +2048,11 @@ impl CircuitThread {
     fn run_commands(&mut self) {
         while let Ok(command) = self.command_receiver.try_recv() {
             match command {
+                Command::JsonProfile(reply_callback) => reply_callback(
+                    self.circuit
+                        .retrieve_profile()
+                        .map_err(ControllerError::dbsp_error),
+                ),
                 Command::GraphProfile(reply_callback) => reply_callback(
                     self.circuit
                         .graph_profile()
