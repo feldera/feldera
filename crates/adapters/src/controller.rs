@@ -3798,7 +3798,7 @@ impl ControllerInner {
                 ) {
                     (TransportConfig::Datagen(_), None) => FormatConfig {
                         name: Cow::from("json"),
-                        config: serde_yaml::to_value(JsonParserConfig {
+                        config: serde_json::to_value(JsonParserConfig {
                             update_format: JsonUpdateFormat::Raw,
                             json_flavor: JsonFlavor::Datagen,
                             array: true,

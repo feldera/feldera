@@ -522,7 +522,7 @@ fn test_ft(rounds: &[FtTestRound]) {
                 },
                 "format": {
                     "name": "csv",
-                    "config": null
+                    "config": {}
                 }
             }
         }
@@ -1028,7 +1028,7 @@ fn add_output(mut config: PipelineConfig) -> PipelineConfig {
         },
         "format": {
             "name": "csv",
-            "config": null
+            "config": {}
         }
     }))
     .unwrap();
@@ -1139,7 +1139,7 @@ fn test_suspend(rounds: &[usize]) {
                 },
                 "format": {
                     "name": "csv",
-                    "config": null
+                    "config": {}
                 }
             }
         }
@@ -1281,7 +1281,7 @@ fn test_bootstrap(rounds: &[usize]) {
                 },
                 "format": {
                     "name": "csv",
-                    "config": null
+                    "config": {}
                 }
             }
         }

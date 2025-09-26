@@ -553,15 +553,7 @@ mod tests {
         let Some(format_config) = connector_config_secrets_resolved.format else {
             unreachable!();
         };
-        let mut expected_mapping = serde_yaml::Mapping::new();
-        expected_mapping.insert(
-            serde_yaml::Value::String("example".to_string()),
-            serde_yaml::Value::String("example1".to_string()),
-        );
-        assert_eq!(
-            format_config.config,
-            serde_yaml::Value::Mapping(expected_mapping)
-        );
+        assert_eq!(format_config.config, json!({"example": "example1"}));
 
         // Other fields should not be resolved
         assert_eq!(

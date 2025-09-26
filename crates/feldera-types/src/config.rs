@@ -24,7 +24,6 @@ use core::fmt;
 use serde::de::{self, MapAccess, Visitor};
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value as JsonValue;
-use serde_yaml::Value as YamlValue;
 use std::fmt::Display;
 use std::path::Path;
 use std::str::FromStr;
@@ -703,7 +702,7 @@ pub struct RuntimeConfig {
     pub max_parallel_connector_init: Option<u64>,
 
     /// Specification of additional (sidecar) containers.
-    pub init_containers: Option<serde_yaml::Value>,
+    pub init_containers: Option<serde_json::Value>,
 
     /// Deprecated: setting this true or false does not have an effect anymore.
     pub checkpoint_during_suspend: bool,
@@ -1454,7 +1453,7 @@ pub struct FormatConfig {
     /// Format-specific parser or encoder configuration.
     #[serde(default)]
     #[schema(value_type = Object)]
-    pub config: YamlValue,
+    pub config: JsonValue,
 }
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize, ToSchema)]

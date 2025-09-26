@@ -59,7 +59,7 @@ pub fn now_endpoint_config(config: &PipelineConfig) -> InputEndpointConfig {
             }),
             format: Some(FormatConfig {
                 name: Cow::Borrowed("json"),
-                config: serde_yaml::to_value(JsonParserConfig {
+                config: serde_json::to_value(JsonParserConfig {
                     update_format: JsonUpdateFormat::Raw,
                     json_flavor: JsonFlavor::ClockInput,
                     array: false,

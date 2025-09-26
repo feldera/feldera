@@ -36,7 +36,6 @@ use rdkafka::message::{BorrowedMessage, Header, Headers};
 use rdkafka::{Message, Timestamp};
 use rmpv::Value as RmpValue;
 use serde_json::{json, Value as JsonValue};
-use serde_yaml::Mapping;
 use std::any::Any;
 use std::borrow::Cow;
 use std::collections::BTreeMap;
@@ -1335,7 +1334,7 @@ fn test_offset(
             }),
             format: Some(FormatConfig {
                 name: Cow::from("csv"),
-                config: serde_yaml::Value::Mapping(Mapping::default()),
+                config: json!({}),
             }),
             index: None,
             output_buffer_config: OutputBufferConfig::default(),
@@ -1769,7 +1768,7 @@ fn test_input_partition(
             }),
             format: Some(FormatConfig {
                 name: Cow::from("csv"),
-                config: serde_yaml::Value::Mapping(Mapping::default()),
+                config: json!({}),
             }),
             index: None,
             output_buffer_config: OutputBufferConfig::default(),
@@ -2165,7 +2164,7 @@ fn buffer_test() {
           },
           "format": {
             "name": "csv",
-            "config": null
+              "config": {}
           },
           "enable_output_buffer": true,
           "max_output_buffer_size_records": buffer_size,

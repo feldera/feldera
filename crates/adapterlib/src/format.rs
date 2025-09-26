@@ -13,7 +13,6 @@ use feldera_types::program_schema::Relation;
 use feldera_types::serde_with_context::FieldParseError;
 use serde::de::StdError;
 use serde::Serialize;
-use serde_yaml::Value as YamlValue;
 
 use crate::catalog::{InputCollectionHandle, SerBatchReader};
 use crate::errors::controller::ControllerError;
@@ -56,7 +55,7 @@ pub trait InputFormat: Send + Sync {
         &self,
         endpoint_name: &str,
         input_stream: &InputCollectionHandle,
-        config: &YamlValue,
+        config: &serde_json::Value,
     ) -> Result<Box<dyn Parser>, ControllerError>;
 }
 
