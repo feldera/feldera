@@ -1538,7 +1538,7 @@ proptest! {
             &HashMap::new());
 
         let expected_zset = OrdZSet::from_tuples((), data.clone().into_iter().map(|x| Tup2(Tup2(x,()),1)).collect());
-        let zset = file_to_zset::<DeltaTestStruct>(json_file.as_file_mut(), "json", r#"update_format: "insert_delete""#);
+        let zset = file_to_zset::<DeltaTestStruct>(json_file.as_file_mut(), "json", json!({"update_format": "insert_delete"}));
         assert_eq!(zset, expected_zset);
 
         // Order delta table by `bigint` (which should be its natural order).
@@ -1547,7 +1547,7 @@ proptest! {
             &DeltaTestStruct::schema_with_lateness(),
             &HashMap::from([("timestamp_column".to_string(), "bigint".to_string())]));
 
-        let zset = file_to_zset::<DeltaTestStruct>(json_file_ordered_by_id.as_file_mut(), "json", r#"update_format: "insert_delete""#);
+        let zset = file_to_zset::<DeltaTestStruct>(json_file_ordered_by_id.as_file_mut(), "json", json!({"update_format": "insert_delete"}));
         assert_eq!(zset, expected_zset);
 
         // Order delta table by `bigint`, specify range in two differrent ways: using `snapshot_filter` and using `filter`.
@@ -1568,10 +1568,10 @@ proptest! {
                     .map(|x| Tup2(Tup2(x,()),1)).collect()
                 );
 
-        let zset = file_to_zset::<DeltaTestStruct>(json_file_ordered_filtered1.as_file_mut(), "json", r#"update_format: "insert_delete""#);
+        let zset = file_to_zset::<DeltaTestStruct>(json_file_ordered_filtered1.as_file_mut(), "json", json!({"update_format": "insert_delete"}));
         assert_eq!(zset, expected_filtered_zset);
 
-        let zset = file_to_zset::<DeltaTestStruct>(json_file_ordered_filtered2.as_file_mut(), "json", r#"update_format: "insert_delete""#);
+        let zset = file_to_zset::<DeltaTestStruct>(json_file_ordered_filtered2.as_file_mut(), "json", json!({"update_format": "insert_delete"}));
         assert_eq!(zset, expected_filtered_zset);
 
         // Specify both `snapshot_filter` and `filter`.
@@ -1587,7 +1587,7 @@ proptest! {
                     .map(|x| Tup2(Tup2(x,()),1)).collect()
                 );
 
-        let zset = file_to_zset::<DeltaTestStruct>(json_file_filtered.as_file_mut(), "json", r#"update_format: "insert_delete""#);
+        let zset = file_to_zset::<DeltaTestStruct>(json_file_filtered.as_file_mut(), "json", json!({"update_format": "insert_delete"}));
         assert_eq!(zset, expected_filtered_zset);
 
         // Order delta table by `timestamp`.
@@ -1596,7 +1596,7 @@ proptest! {
             &DeltaTestStruct::schema_with_lateness(),
             &HashMap::from([("timestamp_column".to_string(), "timestamp_ntz".to_string())]));
 
-        let zset = file_to_zset::<DeltaTestStruct>(json_file_ordered_by_ts.as_file_mut(), "json", r#"update_format: "insert_delete""#);
+        let zset = file_to_zset::<DeltaTestStruct>(json_file_ordered_by_ts.as_file_mut(), "json", json!({"update_format": "insert_delete"}));
         assert_eq!(zset, expected_zset);
 
         // Order delta table by `timestamp`; specify an empty filter condition
@@ -1605,7 +1605,7 @@ proptest! {
             &DeltaTestStruct::schema_with_lateness(),
             &HashMap::from([("timestamp_column".to_string(), "timestamp_ntz".to_string()), ("snapshot_filter".to_string(), "timestamp_ntz < timestamp '2005-01-01T00:00:00'".to_string())]));
 
-        let zset = file_to_zset::<DeltaTestStruct>(json_file_ordered_by_ts.as_file_mut(), "json", r#"update_format: "insert_delete""#);
+        let zset = file_to_zset::<DeltaTestStruct>(json_file_ordered_by_ts.as_file_mut(), "json", json!({"update_format": "insert_delete"}));
         assert_eq!(zset, OrdZSet::empty());
 
         // Filter delta table by id
@@ -1621,7 +1621,7 @@ proptest! {
                 .map(|x| Tup2(Tup2(x,()),1)).collect()
             );
 
-        let zset = file_to_zset::<DeltaTestStruct>(json_file_filtered_by_id.as_file_mut(), "json", r#"update_format: "insert_delete""#);
+        let zset = file_to_zset::<DeltaTestStruct>(json_file_filtered_by_id.as_file_mut(), "json", json!({"update_format": "insert_delete"}));
         assert_eq!(zset, expected_filtered_zset);
 
         // Filter delta table by timestamp.
@@ -1642,7 +1642,7 @@ proptest! {
                 .map(|x| Tup2(Tup2(x,()),1)).collect()
             );
 
-        let zset = file_to_zset::<DeltaTestStruct>(json_file_filtered_by_ts.as_file_mut(), "json", r#"update_format: "insert_delete""#);
+        let zset = file_to_zset::<DeltaTestStruct>(json_file_filtered_by_ts.as_file_mut(), "json", json!({"update_format": "insert_delete"}));
         assert_eq!(zset, expected_filtered_zset);
 
 
@@ -1680,7 +1680,7 @@ proptest! {
             &object_store_config);
 
         let expected_zset = OrdZSet::from_tuples((), data.into_iter().map(|x| Tup2(Tup2(x,()),1)).collect());
-        let zset = file_to_zset::<DeltaTestStruct>(json_file.as_file_mut(), "json", r#"update_format: "insert_delete""#);
+        let zset = file_to_zset::<DeltaTestStruct>(json_file.as_file_mut(), "json", json!({"update_format": "insert_delete"}));
         assert_eq!(zset, expected_zset);
     }
 }
@@ -1737,7 +1737,7 @@ fn delta_table_s3_people_2m() {
     let zset = file_to_zset::<DatabricksPeople>(
         json_file.as_file_mut(),
         "json",
-        r#"update_format: "insert_delete""#,
+        json!({"update_format": "insert_delete"}),
     );
 
     assert_eq!(zset.len(), 2_000_000);
@@ -1783,7 +1783,7 @@ fn delta_table_unity_people_2m() {
     let zset = file_to_zset::<DatabricksPeople>(
         json_file.as_file_mut(),
         "json",
-        r#"update_format: "insert_delete""#,
+        json!({"update_format": "insert_delete"}),
     );
 
     assert_eq!(zset.len(), 2_000_000);

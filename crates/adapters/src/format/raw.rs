@@ -12,11 +12,11 @@ use feldera_types::{
     serde_with_context::{serde_config::BinaryFormat, SqlSerdeConfig},
 };
 use serde::{de::Error as _, de::SeqAccess, forward_to_deserialize_any, Deserialize, Deserializer};
+use serde_json::json;
 use serde_urlencoded::Deserializer as UrlDeserializer;
 use std::{borrow::Cow, fmt::Display};
 
 use crate::catalog::InputCollectionHandle;
-use serde_yaml::Value as YamlValue;
 
 use super::{InputBuffer, LineSplitter, Sponge};
 
@@ -57,14 +57,11 @@ impl InputFormat for RawInputFormat {
         &self,
         endpoint_name: &str,
         input_stream: &InputCollectionHandle,
-        config: &YamlValue,
+        config: &serde_json::Value,
     ) -> Result<Box<dyn Parser>, ControllerError> {
+        let config = if config.is_null() { &json!({}) } else { config };
         let config = RawParserConfig::deserialize(config).map_err(|e| {
-            ControllerError::parser_config_parse_error(
-                endpoint_name,
-                &e,
-                &serde_yaml::to_string(config).unwrap_or_default(),
-            )
+            ControllerError::parser_config_parse_error(endpoint_name, &e, &config.to_string())
         })?;
 
         let num_columns = input_stream.schema.fields.len();
@@ -432,7 +429,7 @@ mod test {
             println!("test: {test:?}");
             let format_config = FormatConfig {
                 name: Cow::from("raw"),
-                config: serde_yaml::to_value(test.config).unwrap(),
+                config: serde_json::to_value(test.config).unwrap(),
             };
 
             let (consumer, mut parser, outputs) =
