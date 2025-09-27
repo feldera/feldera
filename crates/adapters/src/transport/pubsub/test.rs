@@ -17,6 +17,7 @@ use google_cloud_pubsub::{
 };
 use proptest::prelude::*;
 use serde::Serialize;
+use serde_json::{json, Map};
 use tracing::info;
 
 static EMULATOR_PROJECT_ID: &str = "feldera-test";
@@ -222,32 +223,29 @@ fn test_pubsub_input(
 
     let subscription = publisher.create_subscription(topic, "");
 
-    let mut config_str = String::new();
+    let mut transport_config = Map::new();
+    transport_config.insert("enable_message_ordering".into(), true.into());
+    transport_config.insert("subscription".into(), subscription.into());
     for (k, v) in config {
-        config_str += &format!("            {k}: {v}\n");
+        transport_config.insert((*k).into(), (*v).into());
     }
 
-    let config_str = format!(
-        r#"
-    stream: test_input
-    transport:
-        name: pub_sub_input
-        config:
-            enable_message_ordering: true
-            subscription: {subscription}
-{config_str}
-    format:
-        name: csv
-    "#
-    );
+    let config = serde_json::from_value(json!({
+      "stream": "test_input",
+      "transport": {
+        "name": "pub_sub_input",
+        "config": transport_config
+      },
+      "format": {
+        "name": "csv"
+      }
+    }))
+    .unwrap();
 
     info!("test_pubsub_input: Building input pipeline");
 
-    let (endpoint, _consumer, _parser, zset) = mock_input_pipeline::<TestStruct, TestStruct>(
-        serde_yaml::from_str(&config_str).unwrap(),
-        Relation::empty(),
-    )
-    .unwrap();
+    let (endpoint, _consumer, _parser, zset) =
+        mock_input_pipeline::<TestStruct, TestStruct>(config, Relation::empty()).unwrap();
 
     endpoint.extend();
 
@@ -296,45 +294,43 @@ fn test_pubsub_multiple_subscribers(data: Vec<Vec<TestStruct>>, topic: &str) {
     let subscription1 = publisher.create_subscription(topic, "attributes.flag = \"true\"");
     let subscription2 = publisher.create_subscription(topic, "attributes.flag = \"false\"");
 
-    let config_str1 = format!(
-        r#"
-    stream: test_input
-    transport:
-        name: pub_sub_input
-        config:
-            subscription: {subscription1}
-    format:
-        name: csv
-    "#
-    );
+    let config1 = serde_json::from_value(json!({
+        "stream": "test_input",
+        "transport": {
+            "name": "pub_sub_input",
+            "config": {
+                "subscription": subscription1
+            }
+        },
+        "format": {
+            "name": "csv"
+        }
+    }))
+    .unwrap();
 
-    let config_str2 = format!(
-        r#"
-    stream: test_input
-    transport:
-        name: pub_sub_input
-        config:
-            subscription: {subscription2}
-    format:
-        name: csv
-    "#
-    );
+    let config2 = serde_json::from_value(json!({
+        "stream": "test_input",
+        "transport": {
+            "name": "pub_sub_input",
+            "config": {
+                "subscription": subscription2
+            }
+        },
+        "format": {
+            "name": "csv"
+        }
+    }))
+    .unwrap();
 
     info!("test_pubsub_multiple_subscribers: Creating subscribers");
 
-    let (endpoint1, _consumer, _parser, zset1) = mock_input_pipeline::<TestStruct, TestStruct>(
-        serde_yaml::from_str(&config_str1).unwrap(),
-        Relation::empty(),
-    )
-    .unwrap();
+    let (endpoint1, _consumer, _parser, zset1) =
+        mock_input_pipeline::<TestStruct, TestStruct>(config1, Relation::empty()).unwrap();
 
     endpoint1.extend();
 
-    let (endpoint2, _consumer, _parser, zset2) = mock_input_pipeline::<TestStruct, TestStruct>(
-        serde_yaml::from_str(&config_str2).unwrap(),
-        Relation::empty(),
-    )
-    .unwrap();
+    let (endpoint2, _consumer, _parser, zset2) =
+        mock_input_pipeline::<TestStruct, TestStruct>(config2, Relation::empty()).unwrap();
 
     endpoint2.extend();
 
@@ -387,47 +383,45 @@ fn test_pubsub_input_errors() {
 
     info!("test_pubsub_input: Test: Specify invalid service address");
 
-    let config_str = format!(
-        r#"
-    stream: test_input
-    transport:
-        name: pub_sub_input
-        config:
-            subscription: foo
-            emulator: "not_an_emulator:5678"
-    format:
-        name: csv
-    "#
-    );
+    let config = serde_json::from_value(json!({
+      "stream": "test_input",
+      "transport": {
+        "name": "pub_sub_input",
+        "config": {
+          "subscription": "foo",
+          "emulator": "not_an_emulator:5678"
+        }
+      },
+      "format": {
+        "name": "csv"
+      }
+    }))
+    .unwrap();
 
-    match mock_input_pipeline::<TestStruct, TestStruct>(
-        serde_yaml::from_str(&config_str).unwrap(),
-        Relation::empty(),
-    ) {
+    match mock_input_pipeline::<TestStruct, TestStruct>(config, Relation::empty()) {
         Ok(_) => panic!("expected an error"),
         Err(e) => println!("test_pubsub_input: Error (expected): {e}"),
     };
 
     info!("test_pubsub_input: Test: Specify invalid subscription name");
 
-    let config_str = format!(
-        r#"
-    stream: test_input
-    transport:
-        name: pub_sub_input
-        config:
-            project_id: {EMULATOR_PROJECT_ID}
-            emulator: "{emulator}"
-            subscription: this_subscription_does_not_exist
-    format:
-        name: csv
-    "#
-    );
+    let config = serde_json::from_value(json!({
+      "stream": "test_input",
+      "transport": {
+        "name": "pub_sub_input",
+        "config": {
+          "project_id": EMULATOR_PROJECT_ID,
+          "emulator": emulator,
+          "subscription": "this_subscription_does_not_exist"
+        }
+      },
+      "format": {
+        "name": "csv"
+      }
+    }))
+    .unwrap();
 
-    match mock_input_pipeline::<TestStruct, TestStruct>(
-        serde_yaml::from_str(&config_str).unwrap(),
-        Relation::empty(),
-    ) {
+    match mock_input_pipeline::<TestStruct, TestStruct>(config, Relation::empty()) {
         Ok(_) => panic!("expected an error"),
         Err(e) => println!("test_pubsub_input: Error (expected): {e}"),
     };

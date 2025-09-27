@@ -14,9 +14,9 @@ use erased_serde::Serialize as ErasedSerialize;
 use feldera_adapterlib::format::Splitter;
 use feldera_types::format::json::{JsonLines, JsonParserConfig, JsonUpdateFormat};
 use serde::Deserialize;
+use serde_json::json;
 use serde_json::value::RawValue;
 use serde_urlencoded::Deserializer as UrlDeserializer;
-use serde_yaml::Value as YamlValue;
 use std::borrow::Cow;
 
 /// JSON format parser.
@@ -177,14 +177,11 @@ impl InputFormat for JsonInputFormat {
         &self,
         endpoint_name: &str,
         input_handle: &InputCollectionHandle,
-        config: &YamlValue,
+        config: &serde_json::Value,
     ) -> Result<Box<dyn Parser>, ControllerError> {
+        let config = if config.is_null() { &json!({}) } else { config };
         let config = JsonParserConfig::deserialize(config).map_err(|e| {
-            ControllerError::parser_config_parse_error(
-                endpoint_name,
-                &e,
-                &serde_yaml::to_string(config).unwrap_or_default(),
-            )
+            ControllerError::parser_config_parse_error(endpoint_name, &e, &config.to_string())
         })?;
         validate_parser_config(&config, endpoint_name)?;
         let input_stream = input_handle
@@ -616,7 +613,7 @@ mod test {
             trace!("test: {test:?}");
             let format_config = FormatConfig {
                 name: Cow::from("json"),
-                config: serde_yaml::to_value(test.config).unwrap(),
+                config: serde_json::to_value(test.config).unwrap(),
             };
 
             let (consumer, mut parser, outputs) =

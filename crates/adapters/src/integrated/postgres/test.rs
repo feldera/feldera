@@ -1,6 +1,5 @@
 use dbsp::{utils::Tup1, Runtime};
 use feldera_types::{
-    config::PipelineConfig,
     deserialize_table_record,
     program_schema::{Relation, SqlIdentifier},
     serde_with_context::{SerializeWithContext, SqlSerdeConfig},
@@ -480,43 +479,50 @@ fn test_pg_on_conflict(on_conflict_do_nothing: bool) {
     let url_clone = url.clone();
 
     let get_config = |in_file: &Path| {
-        let config_str = format!(
-            r#"
-name: test
-workers: 4
-inputs:
-  ins:
-    stream: test_input1
-    transport:
-      name: file_input
-      config:
-        path: {}
-    format:
-      name: json
-      config:
-        update_format: raw
-        array: false
-outputs:
-  test_output1:
-    stream: test_output1
-    transport:
-      name: postgres_output
-      config:
-        uri: {url_clone}
-        table: {table_name}
-        max_buffer_size_bytes: {max_buffer_size_bytes}
-        on_conflict_do_nothing: {on_conflict_do_nothing}
-    index: idx
-"#,
-            in_file.display(),
-        );
-        config_str
+        serde_json::from_value(json!({
+            "name": "test",
+            "workers": 4,
+            "inputs": {
+                "ins": {
+                    "stream": "test_input1",
+                    "transport": {
+                        "name": "file_input",
+                        "config": {
+                            "path": in_file,
+                        },
+                    },
+                    "format": {
+                        "name": "json",
+                        "config": {
+                            "update_format": "raw",
+                            "array": false
+                        }
+                    }
+                }
+            },
+            "outputs": {
+                "test_output1": {
+                    "stream": "test_output1",
+                    "transport": {
+                        "name": "postgres_output",
+                        "config": {
+                            "uri": url_clone,
+                            "table": table_name,
+                            "max_buffer_size_bytes": max_buffer_size_bytes,
+                            "on_conflict_do_nothing": on_conflict_do_nothing
+                        }
+                    },
+                    "index": "idx"
+                }
+            }
+        }))
+        .unwrap()
     };
 
     let mut table = PostgresTestStruct::create_table(table_name, url);
 
-    let config: PipelineConfig = serde_yaml::from_str(&get_config(insert_file.path())).unwrap();
-    let (controller, err_receiver) = PostgresTestStruct::test_circuit(config.clone());
+    let (controller, err_receiver) =
+        PostgresTestStruct::test_circuit(get_config(insert_file.path()));
 
     controller.start();
     data.sort();
@@ -540,8 +546,8 @@ outputs:
 
     controller.stop().unwrap();
 
-    let config: PipelineConfig = serde_yaml::from_str(&get_config(upsert_file.path())).unwrap();
-    let (controller, err_receiver) = PostgresTestStruct::test_circuit(config);
+    let (controller, err_receiver) =
+        PostgresTestStruct::test_circuit(get_config(upsert_file.path()));
 
     controller.start();
     upsert_data.sort();
@@ -608,40 +614,47 @@ fn test_pg_insert0() {
         temp_file.write_all(b"\n").unwrap();
     }
 
-    let config_str = format!(
-        r#"
-name: test
-workers: 4
-inputs:
-  ins:
-    stream: test_input1
-    transport:
-      name: file_input
-      config:
-        path: {}
-        byte_size_buffer: 2097152
-    format:
-      name: json
-      config:
-        update_format: raw
-        array: false
-outputs:
-  test_output1:
-    stream: test_output1
-    transport:
-      name: postgres_output
-      config:
-        uri: {url}
-        table: {table_name}
-        max_buffer_size_bytes: {max_buffer_size_bytes}
-    index: idx
-"#,
-        temp_file.path().display(),
-    );
+    let config = serde_json::from_value(json!({
+      "name": "test",
+      "workers": 4,
+      "inputs": {
+        "ins": {
+          "stream": "test_input1",
+          "transport": {
+            "name": "file_input",
+            "config": {
+              "path": temp_file.path(),
+              "byte_size_buffer": 2097152
+            }
+          },
+          "format": {
+            "name": "json",
+            "config": {
+              "update_format": "raw",
+              "array": false
+            }
+          }
+        }
+      },
+      "outputs": {
+        "test_output1": {
+          "stream": "test_output1",
+          "transport": {
+            "name": "postgres_output",
+            "config": {
+              "uri": url,
+              "table": table_name,
+              "max_buffer_size_bytes": max_buffer_size_bytes,
+            }
+          },
+          "index": "idx"
+        }
+      }
+    }))
+    .unwrap();
 
     let mut table = PostgresTestStruct::create_table(table_name, url);
 
-    let config: PipelineConfig = serde_yaml::from_str(&config_str).unwrap();
     let (controller, err_receiver) = PostgresTestStruct::test_circuit(config);
 
     controller.start();
@@ -689,40 +702,47 @@ fn test_pg_insert() {
         temp_file.write_all(b"\n").unwrap();
     }
 
-    let config_str = format!(
-        r#"
-name: test
-workers: 4
-inputs:
-  ins:
-    stream: test_input1
-    transport:
-      name: file_input
-      config:
-        path: {}
-        byte_size_buffer: 2097152
-    format:
-      name: json
-      config:
-        update_format: raw
-        array: false
-outputs:
-  test_output1:
-    stream: test_output1
-    transport:
-      name: postgres_output
-      config:
-        uri: {url}
-        table: {table_name}
-        max_records_in_buffer: {max_records_in_buffer}
-    index: idx
-"#,
-        temp_file.path().display(),
-    );
+    let config = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 4,
+        "inputs": {
+            "ins": {
+                "stream": "test_input1",
+                "transport": {
+                    "name": "file_input",
+                    "config": {
+                        "path": temp_file.path(),
+                        "byte_size_buffer": 2097152
+                    }
+                },
+                "format": {
+                    "name": "json",
+                    "config": {
+                        "update_format": "raw",
+                        "array": false
+                    }
+                }
+            }
+        },
+        "outputs": {
+            "test_output1": {
+                "stream": "test_output1",
+                "transport": {
+                    "name": "postgres_output",
+                    "config": {
+                        "uri": url,
+                        "table": table_name,
+                        "max_records_in_buffer": max_records_in_buffer
+                    }
+                },
+                "index": "idx"
+            }
+        }
+    }))
+    .unwrap();
 
     let mut table = PostgresTestStruct::create_table(table_name, url);
 
-    let config: PipelineConfig = serde_yaml::from_str(&config_str).unwrap();
     let (controller, err_receiver) = PostgresTestStruct::test_circuit(config);
 
     controller.start();
@@ -812,52 +832,63 @@ fn test_pg_upsert0() {
         upsert_file.write_all(b"}\n").unwrap();
     }
 
-    let config_str = format!(
-        r#"
-name: test
-workers: 4
-inputs:
-  ins:
-    stream: test_input1
-    transport:
-      name: file_input
-      config:
-        path: {}
-    format:
-      name: json
-      config:
-        update_format: raw
-        array: false
-  ups:
-    paused: true
-    stream: test_input1
-    transport:
-      name: file_input
-      config:
-        path: {}
-    format:
-      name: json
-      config:
-        update_format: insert_delete
-        array: false
-outputs:
-  test_output1:
-    stream: test_output1
-    transport:
-      name: postgres_output
-      config:
-        uri: {url}
-        table: {table_name}
-        max_buffer_size_bytes: {max_buffer_size_bytes}
-    index: idx
-"#,
-        insert_file.path().display(),
-        upsert_file.path().display(),
-    );
+    let config = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 4,
+        "inputs": {
+            "ins": {
+                "stream": "test_input1",
+                "transport": {
+                    "name": "file_input",
+                    "config": {
+                        "path": insert_file.path(),
+                    }
+                },
+                "format": {
+                    "name": "json",
+                    "config": {
+                        "update_format": "raw",
+                        "array": false
+                    }
+                }
+            },
+            "ups": {
+                "paused": true,
+                "stream": "test_input1",
+                "transport": {
+                    "name": "file_input",
+                    "config": {
+                        "path": upsert_file.path(),
+                    }
+                },
+                "format": {
+                    "name": "json",
+                    "config": {
+                        "update_format": "insert_delete",
+                        "array": false
+                    }
+                }
+            }
+        },
+        "outputs": {
+            "test_output1": {
+                "stream": "test_output1",
+                "transport": {
+                    "name": "postgres_output",
+                    "config": {
+                        "uri": url,
+                        "table": table_name,
+                        "max_buffer_size_bytes": max_buffer_size_bytes
+                    }
+                },
+                "index": "idx"
+            }
+        }
+    }))
+    .unwrap();
 
     let mut table = PostgresTestStruct::create_table(table_name, url);
 
-    let config: PipelineConfig = serde_yaml::from_str(&config_str).unwrap();
     let (controller, err_receiver) = PostgresTestStruct::test_circuit(config);
 
     controller.start();
@@ -969,52 +1000,63 @@ fn test_pg_upsert() {
         upsert_file.write_all(b"}\n").unwrap();
     }
 
-    let config_str = format!(
-        r#"
-name: test
-workers: 4
-inputs:
-  ins:
-    stream: test_input1
-    transport:
-      name: file_input
-      config:
-        path: {}
-    format:
-      name: json
-      config:
-        update_format: raw
-        array: false
-  ups:
-    paused: true
-    stream: test_input1
-    transport:
-      name: file_input
-      config:
-        path: {}
-    format:
-      name: json
-      config:
-        update_format: insert_delete
-        array: false
-outputs:
-  test_output1:
-    stream: test_output1
-    transport:
-      name: postgres_output
-      config:
-        uri: {url}
-        table: {table_name}
-        max_records_in_buffer: {max_records_in_buffer}
-    index: idx
-"#,
-        insert_file.path().display(),
-        upsert_file.path().display(),
-    );
+    let config = serde_json::from_value(json!({
+        "name": "test",
+        "workers": 4,
+        "inputs": {
+            "ins": {
+                "stream": "test_input1",
+                "transport": {
+                    "name": "file_input",
+                    "config": {
+                        "path": insert_file.path(),
+                    }
+                },
+                "format": {
+                    "name": "json",
+                    "config": {
+                        "update_format": "raw",
+                        "array": false
+                    }
+                }
+            },
+            "ups": {
+                "paused": true,
+                "stream": "test_input1",
+                "transport": {
+                    "name": "file_input",
+                    "config": {
+                        "path": upsert_file.path(),
+                    }
+                },
+                "format": {
+                    "name": "json",
+                    "config": {
+                        "update_format": "insert_delete",
+                        "array": false
+                    }
+                }
+            }
+        },
+        "outputs": {
+            "test_output1": {
+                "stream": "test_output1",
+                "transport": {
+                    "name": "postgres_output",
+                    "config": {
+                        "uri": url,
+                        "table": table_name,
+                        "max_records_in_buffer": max_records_in_buffer
+                    }
+                },
+                "index": "idx"
+            }
+        }
+    }))
+    .unwrap();
 
     let mut table = PostgresTestStruct::create_table(table_name, url);
 
-    let config: PipelineConfig = serde_yaml::from_str(&config_str).unwrap();
     let (controller, err_receiver) = PostgresTestStruct::test_circuit(config);
 
     controller.start();
@@ -1100,51 +1142,62 @@ fn test_pg_delete() {
         delete_file.write_all(b"}\n").unwrap();
     }
 
-    let config_str = format!(
-        r#"
-name: test
-workers: 4
-inputs:
-  ins:
-    stream: test_input1
-    transport:
-      name: file_input
-      config:
-        path: {}
-    format:
-      name: json
-      config:
-        update_format: raw
-        array: false
-  dels:
-    paused: true
-    stream: test_input1
-    transport:
-      name: file_input
-      config:
-        path: {}
-    format:
-      name: json
-      config:
-        update_format: insert_delete
-        array: false
-outputs:
-  test_output1:
-    stream: test_output1
-    transport:
-      name: postgres_output
-      config:
-        uri: {url}
-        table: {table_name}
-    index: idx
-"#,
-        insert_file.path().display(),
-        delete_file.path().display(),
-    );
+    let config = serde_json::from_value(json!({
+      "name": "test",
+      "workers": 4,
+      "inputs": {
+        "ins": {
+          "stream": "test_input1",
+          "transport": {
+            "name": "file_input",
+            "config": {
+              "path": insert_file.path()
+            }
+          },
+          "format": {
+            "name": "json",
+            "config": {
+              "update_format": "raw",
+              "array": false
+            }
+          }
+        },
+        "dels": {
+          "paused": true,
+          "stream": "test_input1",
+          "transport": {
+            "name": "file_input",
+            "config": {
+              "path": delete_file.path()
+            }
+          },
+          "format": {
+            "name": "json",
+            "config": {
+              "update_format": "insert_delete",
+              "array": false
+            }
+          }
+        }
+      },
+      "outputs": {
+        "test_output1": {
+          "stream": "test_output1",
+          "transport": {
+            "name": "postgres_output",
+            "config": {
+              "uri": url,
+              "table": table_name
+            }
+          },
+          "index": "idx"
+        }
+      }
+    }))
+    .unwrap();
 
     let mut table = PostgresTestStruct::create_table(table_name, url);
 
-    let config: PipelineConfig = serde_yaml::from_str(&config_str).unwrap();
     let (controller, err_receiver) = PostgresTestStruct::test_circuit(config);
 
     controller.start();
@@ -1276,62 +1329,76 @@ fn test_pg_simple() {
     let idx = "v1_idx";
 
     let schema = TestStruct::schema();
-    let config_str = format!(
-        r#"
-name: test
-workers: 4
-inputs:
-  ins:
-    stream: test_input1
-    transport:
-      name: file_input
-      config:
-        path: {}
-    format:
-      name: json
-      config:
-        update_format: raw
-        array: true
-  ups:
-    paused: true
-    stream: test_input1
-    transport:
-      name: file_input
-      config:
-        path: {}
-    format:
-      name: json
-      config:
-        update_format: insert_delete
-        array: true
-  del:
-    paused: true
-    stream: test_input1
-    transport:
-      name: file_input
-      config:
-        path: {}
-    format:
-      name: json
-      config:
-        update_format: insert_delete
-        array: true
-outputs:
-  test_output1:
-    stream: test_output1
-    transport:
-      name: postgres_output
-      config:
-        uri: {url}
-        table: {table_name}
-    index: {idx}
-"#,
-        input_file.path().display(),
-        upsert_file.path().display(),
-        delete_file.path().display(),
-    );
-
-    let config: PipelineConfig = serde_yaml::from_str(&config_str).unwrap();
+    let config = serde_json::from_value(json!({
+      "name": "test",
+      "workers": 4,
+      "inputs": {
+        "ins": {
+          "stream": "test_input1",
+          "transport": {
+            "name": "file_input",
+            "config": {
+              "path": input_file.path(),
+            }
+          },
+          "format": {
+            "name": "json",
+            "config": {
+              "update_format": "raw",
+              "array": true
+            }
+          }
+        },
+        "ups": {
+          "paused": true,
+          "stream": "test_input1",
+          "transport": {
+            "name": "file_input",
+            "config": {
+              "path": upsert_file.path()
+            }
+          },
+          "format": {
+            "name": "json",
+            "config": {
+              "update_format": "insert_delete",
+              "array": true
+            }
+          }
+        },
+        "del": {
+          "paused": true,
+          "stream": "test_input1",
+          "transport": {
+            "name": "file_input",
+            "config": {
+              "path": delete_file.path()
+            }
+          },
+          "format": {
+            "name": "json",
+            "config": {
+              "update_format": "insert_delete",
+              "array": true
+            }
+          }
+        }
+      },
+      "outputs": {
+        "test_output1": {
+          "stream": "test_output1",
+          "transport": {
+            "name": "postgres_output",
+            "config": {
+              "uri": url,
+              "table": table_name
+            }
+          },
+          "index": idx
+        }
+      }
+    }))
+    .unwrap();
 
     let (err_sender, err_receiver) = crossbeam::channel::unbounded();
     let controller = Controller::with_config(

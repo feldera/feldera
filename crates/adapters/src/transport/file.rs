@@ -395,6 +395,7 @@ mod test {
     use feldera_types::deserialize_without_context;
     use feldera_types::program_schema::Relation;
     use serde::{Deserialize, Serialize};
+    use serde_json::json;
     use std::{io::Write, thread::sleep, time::Duration};
     use tempfile::NamedTempFile;
     use url::Url;
@@ -424,24 +425,24 @@ mod test {
 
         // Create a transport endpoint attached to the file.
         // Use a very small buffer size for testing.
-        let config_str = format!(
-            r#"
-stream: test_input
-transport:
-    name: file_input
-    config:
-        path: {:?}
-        buffer_size_bytes: 5
-format:
-    name: csv
-    config:
-        delimiter: "|"
-        headers: true
-"#,
-            temp_file.path().to_str().unwrap()
-        );
-
-        println!("Config:\n{}", config_str);
+        let config = serde_json::from_value(json!({
+            "stream": "test_input",
+            "transport": {
+                "name": "file_input",
+                "config": {
+                    "path": temp_file.path(),
+                    "buffer_size_bytes": 5
+                }
+            },
+            "format": {
+                "name": "csv",
+                "config": {
+                    "delimiter": "|",
+                    "headers": true
+                }
+            }
+        }))
+        .unwrap();
 
         let mut writer = CsvWriterBuilder::new()
             .has_headers(true)
@@ -452,11 +453,8 @@ format:
         }
         writer.flush().unwrap();
 
-        let (endpoint, consumer, _parser, zset) = mock_input_pipeline::<TestStruct, TestStruct>(
-            serde_yaml::from_str(&config_str).unwrap(),
-            Relation::empty(),
-        )
-        .unwrap();
+        let (endpoint, consumer, _parser, zset) =
+            mock_input_pipeline::<TestStruct, TestStruct>(config, Relation::empty()).unwrap();
 
         sleep(Duration::from_millis(10));
 
@@ -489,31 +487,28 @@ format:
 
         // Create a transport endpoint attached to the file.
         // Use a very small buffer size for testing.
-        let config_str = format!(
-            r#"
-stream: test_input
-transport:
-    name: file_input
-    config:
-        path: "{temp_file_url}"
-        buffer_size_bytes: 5
-        follow: true
-format:
-    name: csv
-"#,
-        );
-
-        println!("Config:\n{}", config_str);
+        let config = serde_json::from_value(json!({
+            "stream": "test_input",
+            "transport": {
+                "name": "file_input",
+                "config": {
+                    "path": temp_file_url,
+                    "buffer_size_bytes": 5,
+                    "follow": true
+                }
+            },
+            "format": {
+                "name": "csv"
+            }
+        }))
+        .unwrap();
 
         let mut writer = CsvWriterBuilder::new()
             .has_headers(false)
             .from_writer(temp_file.as_file());
 
-        let (endpoint, consumer, parser, zset) = mock_input_pipeline::<TestStruct, TestStruct>(
-            serde_yaml::from_str(&config_str).unwrap(),
-            Relation::empty(),
-        )
-        .unwrap();
+        let (endpoint, consumer, parser, zset) =
+            mock_input_pipeline::<TestStruct, TestStruct>(config, Relation::empty()).unwrap();
 
         endpoint.extend();
 

@@ -63,12 +63,17 @@ impl OutputFormat for AvroOutputFormat {
         value_schema: &Relation,
         consumer: Box<dyn OutputConsumer>,
     ) -> Result<Box<dyn Encoder>, ControllerError> {
-        let avro_config = AvroEncoderConfig::deserialize(&config.format.as_ref().unwrap().config)
-            .map_err(|e| {
+        let format_config = &config.format.as_ref().unwrap().config;
+        let format_config = if format_config.is_null() {
+            &serde_json::json!({})
+        } else {
+            format_config
+        };
+        let avro_config = AvroEncoderConfig::deserialize(format_config).map_err(|e| {
             ControllerError::encoder_config_parse_error(
                 endpoint_name,
                 &e,
-                &serde_yaml::to_string(config).unwrap_or_default(),
+                &serde_json::to_string(config).unwrap_or_default(),
             )
         })?;
 
@@ -228,7 +233,7 @@ Consider defining an index with `CREATE INDEX` and setting `index` field in conn
                 ControllerError::encoder_config_parse_error(
                     endpoint_name,
                     &format!("invalid Avro schema: {e}"),
-                    &serde_yaml::to_string(&config).unwrap_or_default(),
+                    &serde_json::to_string(&config).unwrap_or_default(),
                 )
             })?,
         };

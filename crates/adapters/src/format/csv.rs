@@ -13,6 +13,7 @@ use feldera_types::{
     format::csv::{CsvEncoderConfig, CsvParserConfig},
 };
 use serde::Deserialize;
+use serde_json::json;
 use serde_urlencoded::Deserializer as UrlDeserializer;
 use std::{borrow::Cow, mem::take};
 
@@ -21,7 +22,6 @@ use crate::catalog::{InputCollectionHandle, SerBatchReader};
 pub use deserializer::byte_record_deserializer;
 pub use deserializer::string_record_deserializer;
 use feldera_types::program_schema::Relation;
-use serde_yaml::Value as YamlValue;
 
 use super::{InputBuffer, Splitter};
 
@@ -52,13 +52,14 @@ impl InputFormat for CsvInputFormat {
         &self,
         endpoint_name: &str,
         input_stream: &InputCollectionHandle,
-        config: &YamlValue,
+        config: &serde_json::Value,
     ) -> Result<Box<dyn Parser>, ControllerError> {
+        let config = if config.is_null() { &json!({}) } else { config };
         let config = CsvParserConfig::deserialize(config).map_err(|e| {
             ControllerError::parser_config_parse_error(
                 endpoint_name,
                 &e,
-                &serde_yaml::to_string(config).unwrap_or_default(),
+                &serde_json::to_string(config).unwrap_or_default(),
             )
         })?;
 
@@ -250,14 +251,19 @@ impl OutputFormat for CsvOutputFormat {
                 "CSV encoder cannot be attached to an index",
             ));
         }
-        let csv_config = CsvEncoderConfig::deserialize(&config.format.as_ref().unwrap().config)
-            .map_err(|e| {
-                ControllerError::encoder_config_parse_error(
-                    endpoint_name,
-                    &e,
-                    &serde_yaml::to_string(&config).unwrap_or_default(),
-                )
-            })?;
+        let format_config = &config.format.as_ref().unwrap().config;
+        let format_config = if format_config.is_null() {
+            &json!({})
+        } else {
+            format_config
+        };
+        let csv_config = CsvEncoderConfig::deserialize(format_config).map_err(|e| {
+            ControllerError::encoder_config_parse_error(
+                endpoint_name,
+                &e,
+                &serde_json::to_string(&config).unwrap_or_default(),
+            )
+        })?;
 
         if matches!(
             config.transport,

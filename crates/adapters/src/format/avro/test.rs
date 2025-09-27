@@ -337,7 +337,7 @@ where
     for test in test_cases {
         let format_config = FormatConfig {
             name: Cow::from("avro"),
-            config: serde_yaml::to_value(test.config).unwrap(),
+            config: serde_json::to_value(test.config).unwrap(),
         };
 
         let (consumer, mut parser, outputs) =

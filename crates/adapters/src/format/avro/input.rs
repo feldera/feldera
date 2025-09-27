@@ -27,7 +27,6 @@ use feldera_types::{
 use schema_registry_converter::blocking::schema_registry::{get_schema_by_id, SrSettings};
 use serde::Deserialize;
 use serde_urlencoded::Deserializer as UrlDeserializer;
-use serde_yaml::Value as YamlValue;
 use std::{
     borrow::Cow,
     collections::HashMap,
@@ -71,14 +70,10 @@ impl InputFormat for AvroInputFormat {
         &self,
         endpoint_name: &str,
         input_handle: &InputCollectionHandle,
-        config: &YamlValue,
+        config: &serde_json::Value,
     ) -> Result<Box<dyn Parser>, ControllerError> {
         let config = AvroParserConfig::deserialize(config).map_err(|e| {
-            ControllerError::parser_config_parse_error(
-                endpoint_name,
-                &e,
-                &serde_yaml::to_string(config).unwrap_or_default(),
-            )
+            ControllerError::parser_config_parse_error(endpoint_name, &e, &config.to_string())
         })?;
 
         let parser = AvroParser::create(

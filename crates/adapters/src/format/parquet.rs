@@ -23,8 +23,8 @@ use parquet::file::properties::WriterProperties;
 use serde::Deserialize;
 use serde_arrow::schema::SerdeArrowSchema;
 use serde_arrow::ArrayBuilder;
+use serde_json::json;
 use serde_urlencoded::Deserializer as UrlDeserializer;
-use serde_yaml::Value as YamlValue;
 
 use crate::catalog::{CursorWithPolarity, SerBatchReader};
 use crate::format::MAX_DUPLICATES;
@@ -77,7 +77,7 @@ impl InputFormat for ParquetInputFormat {
         &self,
         _endpoint_name: &str,
         input_stream: &InputCollectionHandle,
-        _config: &YamlValue,
+        _config: &serde_json::Value,
     ) -> Result<Box<dyn Parser>, ControllerError> {
         let input_stream = input_stream
             .handle
@@ -218,14 +218,19 @@ impl OutputFormat for ParquetOutputFormat {
             ));
         }
 
-        let config = ParquetEncoderConfig::deserialize(&config.format.as_ref().unwrap().config)
-            .map_err(|e| {
-                ControllerError::encoder_config_parse_error(
-                    endpoint_name,
-                    &e,
-                    &serde_yaml::to_string(&config).unwrap_or_default(),
-                )
-            })?;
+        let format_config = &config.format.as_ref().unwrap().config;
+        let format_config = if format_config.is_null() {
+            &json!({})
+        } else {
+            format_config
+        };
+        let config = ParquetEncoderConfig::deserialize(format_config).map_err(|e| {
+            ControllerError::encoder_config_parse_error(
+                endpoint_name,
+                &e,
+                &serde_json::to_string(&config).unwrap_or_default(),
+            )
+        })?;
         Ok(Box::new(ParquetEncoder::new(
             consumer,
             config,

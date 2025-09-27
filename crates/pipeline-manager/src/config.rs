@@ -874,8 +874,10 @@ impl LocalRunnerConfig {
     }
 
     /// Location to write the pipeline config file.
-    pub(crate) fn config_file_path(&self, pipeline_id: PipelineId) -> PathBuf {
-        self.pipeline_dir(pipeline_id).join("config.yaml")
+    pub(crate) fn config_file_path(&self, pipeline_id: PipelineId, extension: &str) -> PathBuf {
+        self.pipeline_dir(pipeline_id)
+            .join("config")
+            .with_extension(extension)
     }
 
     /// Location for pipeline port file

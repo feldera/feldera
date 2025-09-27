@@ -63,10 +63,11 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::ffi::OsStr;
 use std::hash::{BuildHasherDefault, DefaultHasher};
 use std::io::ErrorKind;
 use std::ops::{Deref, DerefMut};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 use std::{
     borrow::Cow,
@@ -324,7 +325,11 @@ impl ServerState {
 #[derive(Parser, Debug, Clone)]
 #[command(author, version, about, long_about = None)]
 pub struct ServerArgs {
-    /// Pipeline configuration YAML file
+    /// Pipeline configuration YAML or JSON file.
+    ///
+    /// We are transitioning from YAML to JSON for configuration.  If
+    /// `config_file` ends in `.yaml` then the server will first try to read the
+    /// same file with a `.json` extension.
     #[arg(short, long)]
     config_file: String,
 
@@ -772,24 +777,52 @@ pub fn run_server(
     Ok(())
 }
 
-fn parse_config(config_file: &str) -> Result<PipelineConfig, ControllerError> {
-    let yaml_config = std::fs::read(config_file).map_err(|e| {
-        ControllerError::io_error(format!("reading configuration file '{}'", config_file), e)
-    })?;
+fn parse_config(config_file: impl AsRef<Path>) -> Result<PipelineConfig, ControllerError> {
+    fn read_config_file_as_string(path: &Path) -> Result<String, ControllerError> {
+        let string = std::fs::read(path).map_err(|e| {
+            ControllerError::io_error(
+                format!("reading configuration file '{}'", path.display()),
+                e,
+            )
+        })?;
 
-    let yaml_config = String::from_utf8(yaml_config).map_err(|e| {
-        ControllerError::pipeline_config_parse_error(&format!(
-            "invalid UTF8 string in configuration file '{}' ({e})",
-            &config_file
-        ))
-    })?;
+        let string = String::from_utf8(string).map_err(|e| {
+            ControllerError::pipeline_config_parse_error(&format!(
+                "invalid UTF8 string in configuration file '{}' ({e})",
+                path.display()
+            ))
+        })?;
 
-    // Still running without logger here.
-    eprintln!("Pipeline configuration:\n{yaml_config}");
+        // Still running without logger here.
+        eprintln!(
+            "Pipeline configuration read from {}:\n{string}",
+            path.display()
+        );
 
-    // Deserialize the pipeline configuration
-    serde_yaml::from_str(yaml_config.as_str())
-        .map_err(|e| ControllerError::pipeline_config_parse_error(&e))
+        Ok(string)
+    }
+
+    fn parse_yaml_config(config_file: &Path) -> Result<PipelineConfig, ControllerError> {
+        serde_yaml::from_str(&read_config_file_as_string(config_file)?)
+            .map_err(|e| ControllerError::pipeline_config_parse_error(&e))
+    }
+
+    fn parse_json_config(config_file: &Path) -> Result<PipelineConfig, ControllerError> {
+        serde_json::from_str(&read_config_file_as_string(config_file)?)
+            .map_err(|e| ControllerError::pipeline_config_parse_error(&e))
+    }
+
+    let path = config_file.as_ref();
+    if path.extension() == Some(OsStr::new("json")) {
+        parse_json_config(path)
+    } else {
+        let json_path = path.with_extension("json");
+        if json_path.exists() {
+            parse_json_config(&json_path)
+        } else {
+            parse_yaml_config(path)
+        }
+    }
 }
 
 // Initialization thread function.
@@ -1677,7 +1710,7 @@ pub fn parser_config_from_http_request(
     // strongly typed format-specific config.
     Ok(FormatConfig {
         name: Cow::from(format_name.to_string()),
-        config: serde_yaml::to_value(config)
+        config: serde_json::to_value(config)
             .map_err(|e| ControllerError::parser_config_parse_error(endpoint_name, &e, ""))?,
     })
 }
@@ -1696,7 +1729,7 @@ pub fn encoder_config_from_http_request(
 
     Ok(FormatConfig {
         name: Cow::from(format_name.to_string()),
-        config: serde_yaml::to_value(config)
+        config: serde_json::to_value(config)
             .map_err(|e| ControllerError::encoder_config_parse_error(endpoint_name, &e, ""))?,
     })
 }
@@ -1919,7 +1952,7 @@ mod test_with_kafka {
         strategy::{Strategy, ValueTree},
         test_runner::TestRunner,
     };
-    use serde_json::{self, Value as JsonValue};
+    use serde_json::{self, json, Value as JsonValue};
     use std::{
         io::Write,
         thread,
@@ -1967,7 +2000,8 @@ mod test_with_kafka {
         ]);
 
         // Create buffer consumer
-        let buffer_consumer = BufferConsumer::new("test_server_output_topic", "csv", "", None);
+        let buffer_consumer =
+            BufferConsumer::new("test_server_output_topic", "csv", json!({}), None);
 
         // Config string
         let config_str = r#"

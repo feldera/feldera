@@ -40,7 +40,6 @@ use feldera_types::serde_with_context::{DateFormat, SqlSerdeConfig, TimeFormat, 
 use feldera_types::transport::adhoc::AdHocInputConfig;
 use serde_arrow::schema::SerdeArrowSchema;
 use serde_arrow::ArrayBuilder;
-use serde_yaml::Value as YamlValue;
 use tokio::sync::mpsc::Sender;
 use tracing::{info_span, Instrument};
 use uuid::Uuid;
@@ -284,7 +283,7 @@ impl DataSink for AdHocTableSink {
                 transport: TransportConfig::AdHocInput(config),
                 format: Some(FormatConfig {
                     name: Cow::from("parquet"),
-                    config: YamlValue::Null,
+                    config: serde_json::Value::Null,
                 }),
                 index: None,
                 output_buffer_config: Default::default(),

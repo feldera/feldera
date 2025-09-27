@@ -14,6 +14,7 @@ use feldera_types::format::json::{JsonEncoderConfig, JsonFlavor, JsonUpdateForma
 use feldera_types::program_schema::{canonical_identifier, Relation};
 use rand::{rngs::StdRng, Rng, SeedableRng};
 use serde::Deserialize;
+use serde_json::json;
 use serde_urlencoded::Deserializer as UrlDeserializer;
 use std::collections::HashSet;
 use std::{borrow::Cow, io::Write, mem::take};
@@ -56,14 +57,17 @@ impl OutputFormat for JsonOutputFormat {
         value_schema: &Relation,
         consumer: Box<dyn OutputConsumer>,
     ) -> Result<Box<dyn Encoder>, ControllerError> {
-        let mut json_config = JsonEncoderConfig::deserialize(
-            &config.format.as_ref().unwrap().config,
-        )
-        .map_err(|e| {
+        let format_config = &config.format.as_ref().unwrap().config;
+        let format_config = if format_config.is_null() {
+            &json!({})
+        } else {
+            format_config
+        };
+        let mut json_config = JsonEncoderConfig::deserialize(format_config).map_err(|e| {
             ControllerError::encoder_config_parse_error(
                 endpoint_name,
                 &e,
-                &serde_yaml::to_string(config).unwrap_or_default(),
+                &serde_json::to_string(config).unwrap_or_default(),
             )
         })?;
 

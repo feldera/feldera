@@ -478,6 +478,7 @@ mod test {
     use feldera_types::program_schema::Relation;
     use futures_timer::Delay;
     use serde::{Deserialize, Serialize};
+    use serde_json::json;
     use std::{
         io::Error as IoError,
         sync::mpsc::channel,
@@ -542,24 +543,22 @@ mod test {
             .expect("failed to spawn test thread");
         let addr = receiver.recv().unwrap();
         // Create a transport endpoint attached to the file.
-        let config_str = format!(
-            r#"
-stream: test_input
-transport:
-    name: url_input
-    config:
-        path: http://{addr}/{path}
-        pause_timeout: {pause_timeout}
-format:
-    name: csv
-"#
-        );
+        let config = serde_json::from_value(json!({
+            "stream": "test_input",
+            "transport": {
+                "name": "url_input",
+                "config": {
+                    "path": format!("http://{addr}/{path}"),
+                    "pause_timeout": pause_timeout,
+                }
+            },
+            "format": {
+                "name": "csv"
+            }
+        }))
+        .unwrap();
 
-        mock_input_pipeline::<TestStruct, TestStruct>(
-            serde_yaml::from_str(&config_str).unwrap(),
-            Relation::empty(),
-        )
-        .unwrap()
+        mock_input_pipeline::<TestStruct, TestStruct>(config, Relation::empty()).unwrap()
     }
 
     /// Test normal successful data retrieval.
