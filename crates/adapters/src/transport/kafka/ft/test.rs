@@ -1590,7 +1590,7 @@ fn kafka_end_to_end_test(
     )
     .unwrap();
 
-    let buffer_consumer = BufferConsumer::new(&output_topic, format, json!({}), None);
+    let buffer_consumer = BufferConsumer::new(&output_topic, format, format_config, None);
 
     info!("{test_name}: Sending inputs");
     let producer = TestProducer::new();
