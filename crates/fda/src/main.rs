@@ -861,9 +861,9 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                     let diff_str = match diff {
                         // Normally shouldn't happen.
                         None => "<not available>".to_string(),
-                        Some(diff) => match serde_json::from_str::<serde_json::Value>(diff) {
+                        Some(diff) => match serde_json::from_str::<serde_json::Value>(&diff) {
                             Ok(diff_json) => match format {
-                                OutputFormat::Text => json_to_table(diff_json)
+                                OutputFormat::Text => json_to_table(&diff_json)
                                     .collapse()
                                     .into_pool_table()
                                     .to_string(),

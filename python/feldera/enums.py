@@ -149,13 +149,14 @@ class PipelineStatus(Enum):
     PROVISIONING = 2
     UNAVAILABLE = 3
     STANDBY = 4
-    INITIALIZING = 5
-    BOOTSTRAPPING = 6
-    REPLAYING = 7
-    PAUSED = 8
-    RUNNING = 9
-    SUSPENDED = 10
-    STOPPING = 11
+    AWAITINGAPPROVAL = 5
+    INITIALIZING = 6
+    BOOTSTRAPPING = 7
+    REPLAYING = 8
+    PAUSED = 9
+    RUNNING = 10
+    SUSPENDED = 11
+    STOPPING = 12
 
     @staticmethod
     def from_str(value):
