@@ -401,9 +401,12 @@ method or use `Pipeline.resume()` to resume a paused pipeline."""
 
             return
 
-        self.client.start_pipeline_as_paused(self.name, wait=wait, timeout_s=timeout_s)
-        self.__setup_output_listeners()
-        self.resume(timeout_s=timeout_s)
+        if len(self.views_tx) == 0:
+            self.client.start_pipeline(self.name, wait=wait, timeout_s=timeout_s)
+        else:
+            self.client.start_pipeline_as_paused(self.name, wait=wait, timeout_s=timeout_s)
+            self.__setup_output_listeners()
+            self.resume(timeout_s=timeout_s)
 
     def restart(self, timeout_s: Optional[float] = None):
         """
