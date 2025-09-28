@@ -912,7 +912,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
 
     @Test
     public void issue4799() {
-        this.getCCS("""
+        var ccs = this.getCCS("""
                 CREATE TABLE T(id INT, s VARCHAR);
                 CREATE VIEW v AS (
                     SELECT
@@ -924,5 +924,15 @@ public class IncrementalRegressionTests extends SqlIoTest {
                     WHERE sid <> ''
                 );
                 """);
+        // Validated on postgres by replacing 'split' with 'string_to_array'
+        ccs.step("INSERT INTO T VALUES(0, 'a/b/c'), (1, '/a//b'), (2, 'd');", """
+                 id | sid | o | weight
+                -----------------------
+                 0  | a|    1 | 1
+                 0  | b|    2 | 1
+                 0  | c|    3 | 1
+                 1  | a|    2 | 1
+                 1  | b|    4 | 1
+                 2  | d|    1 | 1""");
     }
 }
