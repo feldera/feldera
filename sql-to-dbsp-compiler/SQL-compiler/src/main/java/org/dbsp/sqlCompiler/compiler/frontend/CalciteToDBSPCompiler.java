@@ -33,6 +33,7 @@ import org.apache.calcite.rel.RelRoot;
 import org.apache.calcite.rel.RelVisitor;
 import org.apache.calcite.rel.core.AggregateCall;
 import org.apache.calcite.rel.core.Collect;
+import org.apache.calcite.rel.core.Filter;
 import org.apache.calcite.rel.core.Join;
 import org.apache.calcite.rel.core.JoinRelType;
 import org.apache.calcite.rel.core.Project;
@@ -373,6 +374,13 @@ public class CalciteToDBSPCompiler extends RelVisitor
          or
          LogicalCorrelate(correlation=[$cor0], joinType=[inner], requiredColumns=[{...}])
             LeftSubquery
+            LogicalFilter // rightFilter
+              Uncollect
+                LogicalProject(COL=[$cor0.ARRAY])  // uncollectInput
+                  LogicalValues(tuples=[[{ 0 }]])
+         or
+         LogicalCorrelate(correlation=[$cor0], joinType=[inner], requiredColumns=[{...}])
+            LeftSubquery
             LogicalProject // rightProject
               Uncollect
                 LogicalProject(COL=[$cor0.ARRAY])  // uncollectInput
@@ -405,9 +413,13 @@ public class CalciteToDBSPCompiler extends RelVisitor
 
         RelNode correlateRight = correlate.getRight();
         Project rightProject = null;
+        Filter rightFilter = null;
         if (correlateRight instanceof Project) {
             rightProject = (Project) correlateRight;
-            correlateRight = rightProject.getInput(0);
+            correlateRight = rightProject.getInput();
+        } else if (correlateRight instanceof Filter) {
+            rightFilter = (Filter) correlateRight;
+            correlateRight = rightFilter.getInput();
         }
         if (!(correlateRight instanceof Uncollect uncollect))
             throw this.decorrelateError(node);
@@ -462,10 +474,28 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPTypeFunction functionType = new DBSPTypeFunction(type, leftElementType.ref());
         Utilities.enforce(flatmap.getType().sameType(functionType),
                 "Expected type to be\n" + functionType + "\nbut it is\n" + flatmap.getType());
-        DBSPFlatMapOperator flatMap = new DBSPFlatMapOperator(
+        DBSPSimpleOperator result = new DBSPFlatMapOperator(
                 new LastRel(correlate),
                 flatmap, TypeCompiler.makeZSet(type), left.outputPort());
-        this.assignOperator(correlate, flatMap);
+        if (rightFilter != null) {
+            // This is a specialized version of visit(LogicalFilter)
+            DBSPVariablePath t = type.ref().var();
+            // Here we apply the filter AFTER the flatmap, whereas the original
+            // filter was applied BEFORE the flatmap.  So we need to adjust the
+            // index of RexInputRef expressions in the condition to apply to the
+            // result AFTER the join.
+            ShiftingExpressionCompiler expressionCompiler = new ShiftingExpressionCompiler(
+                    rightFilter, t, this.compiler, -correlate.getLeft().getRowType().getFieldCount());
+            DBSPExpression condition = expressionCompiler.compile(rightFilter.getCondition());
+            condition = condition.wrapBoolIfNeeded();
+            condition = new DBSPClosureExpression(
+                    CalciteObject.create(rightFilter, rightFilter.getCondition()), condition, t.asParameter());
+            this.addOperator(result);
+            result = new DBSPFilterOperator(new LastRel(correlate), condition, result.outputPort());
+        }
+
+        Utilities.enforce(type.sameType(result.getOutputZSetElementType()));
+        this.assignOperator(correlate, result);
     }
 
     /** Given a DESCRIPTOR RexCall, return the reference to the single colum

@@ -10,6 +10,15 @@ import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 
 import java.util.Objects;
 
+/** Calcite optimization rules require a complicated setup to be created and executed,
+ * with a complicated interplay between configuration and rule which are closely coupled.
+ * See also <a href="https://issues.apache.org/jira/browse/CALCITE-6010.">[CALCITE-6010]</a>.
+ * This is our attempt at fixing this problem by providing a generic Config which
+ * can be used in all rules we write.  This configuration only carries some fields
+ * needed by any RelRule that we provide.  Our RelRules are not really configurable.
+ * @param <R> The Rule that this config is applied to.
+ */
+@SuppressWarnings("ALL")
 public class DefaultOptRuleConfig<R extends RelOptRule> implements RelRule.Config {
     @javax.annotation.Nullable @Nullable
     private final RelBuilderFactory relBuilderFactory;
