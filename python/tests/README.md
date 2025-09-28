@@ -27,10 +27,10 @@ The tests are organized into these categories:
 
 ## Running `pytest` Tests
 
-To run unit tests:
+To run unit tests (with 8 parallel processes):
 
 ```bash
-cd python && python3 -m pytest tests/
+cd python && uv run python -m pytest -n 8 tests/
 ```
 
 - This will detect and run all test files that match the pattern `test_*.py` or
@@ -41,7 +41,7 @@ cd python && python3 -m pytest tests/
 To run tests from a specific file:
 
 ```bash
-(cd python && python3 -m pytest ./tests/runtime/path-to-file.py)
+(cd python && uv run python -m pytest ./tests/runtime/path-to-file.py)
 ```
 
 To run a specific test:
@@ -72,14 +72,14 @@ purpose.
 #### Example
 
 ```python
-from tests.shared_test_pipeline import SharedTestPipeline
+from tests.shared_test_pipeline import SharedTestPipeline, sql
 
 class TestAverage(SharedTestPipeline):
-    def test_average(self):
-        """
+    @sql("""
         CREATE TABLE students(id INT, name STRING);
         CREATE MATERIALIZED VIEW v AS SELECT * FROM students;
-        """
+    """)
+    def test_average(self):
         ...
         self.pipeline.start()
         self.pipeline.input_pandas("students", df)
