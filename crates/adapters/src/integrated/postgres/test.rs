@@ -312,7 +312,7 @@ CREATE TABLE {name} (
         ) -> (Controller, crossbeam::channel::Receiver<String>) {
             let schema = PostgresTestStruct::schema();
             let (err_sender, err_receiver) = crossbeam::channel::unbounded();
-            let controller = Controller::with_config(
+            let controller = Controller::with_test_config(
                 move |workers| {
                     Ok({
                         let (circuit, catalog) = Runtime::init_circuit(workers, move |circuit| {
@@ -1401,7 +1401,7 @@ fn test_pg_simple() {
     .unwrap();
 
     let (err_sender, err_receiver) = crossbeam::channel::unbounded();
-    let controller = Controller::with_config(
+    let controller = Controller::with_test_config(
         move |workers| {
             Ok({
                 let (circuit, catalog) = Runtime::init_circuit(workers, move |circuit| {

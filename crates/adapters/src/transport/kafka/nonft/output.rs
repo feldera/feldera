@@ -293,7 +293,7 @@ mod test {
 
         info!("test_kafka_output_errors: Starting controller");
 
-        match Controller::with_config(
+        match Controller::with_test_config(
             |workers| {
                 Ok(test_circuit::<TestStruct>(
                     workers,

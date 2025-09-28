@@ -189,7 +189,7 @@ fn test_redis_output() {
 
     let (err_sender, err_receiver) = crossbeam::channel::unbounded();
 
-    let controller = Controller::with_config(
+    let controller = Controller::with_test_config(
         move |workers| Ok(test_circuit::<DeltaTestStruct>(workers, &schema, &[None])),
         &config,
         Box::new(move |e, _| {
@@ -321,7 +321,7 @@ fn test_redis_output_fail() {
 
     let schema = schema.to_vec();
 
-    let Err(err) = Controller::with_config(
+    let Err(err) = Controller::with_test_config(
         move |workers| Ok(test_circuit::<TestStruct>(workers, &schema, &[None])),
         &config,
         Box::new(move |e, _| {

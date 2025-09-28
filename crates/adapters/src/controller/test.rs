@@ -81,7 +81,7 @@ fn test_start_after_cyclic() {
         }
     }))
     .unwrap();
-    let Err(err) = Controller::with_config(
+    let Err(err) = Controller::with_test_config(
         |circuit_config| {
             Ok(test_circuit::<TestStruct>(
                 circuit_config,
@@ -161,7 +161,7 @@ fn test_start_after() {
     }))
     .unwrap();
 
-    let controller = Controller::with_config(
+    let controller = Controller::with_test_config(
         |circuit_config| {
             Ok(test_circuit::<TestStruct>(
                 circuit_config,
@@ -265,7 +265,7 @@ proptest! {
 
         info!("input file: {}", temp_input_file.path().display());
         info!("output file: {output_path}");
-        let controller = Controller::with_config(
+        let controller = Controller::with_test_config(
                 |circuit_config| Ok(test_circuit::<TestStruct>(circuit_config, &[], &[None])),
                 &config,
                 Box::new(|e, _| panic!("error: {e}")),
@@ -636,7 +636,7 @@ fn test_ft(rounds: &[FtTestRound]) {
             config = modify_config(config);
         }
 
-        let controller = Controller::with_config(
+        let controller = Controller::with_test_config(
             |circuit_config| {
                 Ok(test_circuit::<TestStruct>(
                     circuit_config,
@@ -818,7 +818,7 @@ fn _test_concurrent_init(max_parallel_connector_init: u64) {
     }))
     .unwrap();
 
-    let controller = Controller::with_config(
+    let controller = Controller::with_test_config(
         |circuit_config| {
             Ok(test_circuit::<TestStruct>(
                 circuit_config,
@@ -891,7 +891,7 @@ fn test_connector_init_error() {
     }))
     .unwrap();
 
-    let result = Controller::with_config(
+    let result = Controller::with_test_config(
         |circuit_config| {
             Ok(test_circuit::<TestStruct>(
                 circuit_config,
@@ -1175,7 +1175,7 @@ fn test_suspend(rounds: &[usize]) {
 
         // Start pipeline.
         println!("start pipeline");
-        let controller = Controller::with_config(
+        let controller = Controller::with_test_config(
             |circuit_config| {
                 Ok(test_circuit::<TestStruct>(
                     circuit_config,
@@ -1297,7 +1297,7 @@ fn test_bootstrap(rounds: &[usize]) {
 
     // Start pipeline.
     println!("start pipeline");
-    let mut controller = Controller::with_config(
+    let mut controller = Controller::with_test_config(
         |circuit_config| {
             Ok(test_circuit::<TestStruct>(
                 circuit_config,
@@ -1348,7 +1348,7 @@ fn test_bootstrap(rounds: &[usize]) {
         controller.stop().unwrap();
 
         // Resume modified pipeline.
-        controller = Controller::with_config(
+        controller = Controller::with_test_config(
             move |circuit_config| {
                 Ok(test_circuit::<TestStruct>(
                     circuit_config,
@@ -1520,7 +1520,7 @@ fn start_controller(storage_dir: &Path, barriers: &[usize]) -> Controller {
         );
     }
 
-    let controller = Controller::with_config(
+    let controller = Controller::with_test_config(
         move |circuit_config| {
             let persistent_output_ids = (1..=n).map(|i| format!("output{i}")).collect::<Vec<_>>();
             let persistent_strs = persistent_output_ids
@@ -1832,7 +1832,7 @@ fn lir() {
     }))
     .unwrap();
 
-    let controller = Controller::with_config(
+    let controller = Controller::with_test_config(
         |circuit_config| {
             Ok(test_circuit::<TestStruct>(
                 circuit_config,

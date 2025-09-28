@@ -136,12 +136,16 @@ impl PipelineDiff {
         self.program_diff
             .as_ref()
             .map(|diff| diff.is_empty())
-            .unwrap_or(false)
+            .unwrap_or(true)
             && self.added_input_connectors.is_empty()
             && self.removed_input_connectors.is_empty()
             && self.modified_input_connectors.is_empty()
             && self.added_output_connectors.is_empty()
             && self.removed_output_connectors.is_empty()
             && self.modified_output_connectors.is_empty()
+    }
+
+    pub fn clear_program_diff(&mut self) {
+        self.program_diff = None;
     }
 }
