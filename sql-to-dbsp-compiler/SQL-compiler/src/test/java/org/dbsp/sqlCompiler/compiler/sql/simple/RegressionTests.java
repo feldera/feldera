@@ -627,10 +627,8 @@ public class RegressionTests extends SqlIoTest {
                 CREATE TABLE T(x INT32, y AI);""");
     }
 
-    @Test @Ignore("https://issues.apache.org/jira/browse/CALCITE-6681")
+    @Test
     public void issueLateral() {
-        // This triggers https://issues.apache.org/jira/browse/CALCITE-6681
-        // If we disable PROJECT_CORRELATE_TRANSPOSE, it fails due to the decorrelator
         this.compileRustTestCase("""
                 CREATE TABLE t2 (
                   a VARCHAR,
