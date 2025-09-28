@@ -385,7 +385,7 @@ mod test {
         let test_stats = Arc::new(ClockStats::new());
         let test_stats_clone = test_stats.clone();
 
-        let controller = Controller::with_config(
+        let controller = Controller::with_test_config(
             move |workers| Ok(clock_test_circuit(workers, test_stats_clone)),
             &config,
             Box::new(move |e, _| panic!("clock_test pipeline 1: error: {e}")),
@@ -435,7 +435,7 @@ mod test {
 
         let test_stats_clone = test_stats.clone();
 
-        let controller = Controller::with_config(
+        let controller = Controller::with_test_config(
             move |workers| Ok(clock_test_circuit(workers, test_stats_clone)),
             &config,
             Box::new(move |e, _| panic!("clock_test pipeline 2: error: {e}")),

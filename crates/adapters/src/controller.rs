@@ -394,7 +394,7 @@ impl Command {
 
 impl Controller {
     #[cfg(test)]
-    pub(crate) fn with_config<F>(
+    pub(crate) fn with_test_config<F>(
         circuit_factory: F,
         config: &PipelineConfig,
         error_cb: Box<dyn Fn(Arc<ControllerError>, Option<String>) + Send + Sync>,
@@ -405,7 +405,10 @@ impl Controller {
             + 'static,
     {
         let builder = ControllerBuilder::new(config)?;
-        let init = builder.open_checkpoint()?;
+        let mut init = builder.open_checkpoint()?;
+        init.pipeline_diff
+            .as_mut()
+            .map(|diff| diff.clear_program_diff());
         init.init(circuit_factory, error_cb)
     }
 
@@ -2900,12 +2903,14 @@ pub fn compute_pipeline_diff(
 ) -> PipelineDiff {
     let mir_diff = compute_program_diff(old_config, new_config);
 
-    let old_configured_inputs = old_config
+    let mut old_configured_inputs = old_config
         .inputs
         .iter()
         .filter(|(_, cfg)| !cfg.connector_config.transport.is_transient())
         .map(|(name, cfg)| (name.clone(), cfg.clone()))
         .collect::<BTreeMap<_, _>>();
+
+    old_configured_inputs.remove("now");
 
     let old_configured_outputs = old_config
         .outputs
@@ -3066,7 +3071,12 @@ impl ControllerInit {
         let storage = storage.with_init_checkpoint(circuit.map(|circuit| circuit.uuid));
 
         let pipeline_diff = compute_pipeline_diff(&checkpoint_config, &config);
+
         let can_replay = pipeline_diff.is_empty();
+
+        if !can_replay {
+            info!("Pipeline has been modified since the last checkpoint. Summary of changes:\n{pipeline_diff}")
+        }
 
         // Merge `config` (the configuration provided by the pipeline manager)
         // with `checkpoint_config` (the configuration read from the
