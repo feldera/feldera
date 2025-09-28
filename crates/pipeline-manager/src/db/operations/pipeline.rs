@@ -101,7 +101,7 @@ const RETRIEVE_PIPELINE_COLUMNS: &str =
      p.deployment_resources_status, p.deployment_resources_status_since,
      p.deployment_resources_desired_status, p.deployment_resources_desired_status_since,
      p.deployment_runtime_status, p.deployment_runtime_status_details, p.deployment_runtime_status_since,
-     p.deployment_runtime_desired_status, p.deployment_runtime_desired_status_since, p.bootstrap_policy,
+     p.deployment_runtime_desired_status, p.deployment_runtime_desired_status_since, p.bootstrap_policy
      ";
 
 /// Converts a pipeline table row to its extended descriptor with all fields.
@@ -115,7 +115,7 @@ const RETRIEVE_PIPELINE_COLUMNS: &str =
 ///   Backwards incompatible changes therein will prevent retrieval of pipelines
 ///   because an error will be returned instead.
 fn row_to_extended_pipeline_descriptor(row: &Row) -> Result<ExtendedPipelineDescr, DBError> {
-    assert_eq!(row.len(), 35);
+    assert_eq!(row.len(), 37);
 
     // Runtime configuration: RuntimeConfig
     let runtime_config = deserialize_json_value(row.get(7))?;
@@ -239,7 +239,7 @@ const RETRIEVE_PIPELINE_MONITORING_COLUMNS: &str =
 fn row_to_extended_pipeline_descriptor_monitoring(
     row: &Row,
 ) -> Result<ExtendedPipelineDescrMonitoring, DBError> {
-    assert_eq!(row.len(), 24);
+    assert_eq!(row.len(), 26);
     // Deployment error: ErrorResponse
     let deployment_error = match row.get::<_, Option<String>>(10) {
         None => None,
