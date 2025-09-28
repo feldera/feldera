@@ -36,12 +36,6 @@ source .venv/activate
 uv pip install .
 ```
 
-You also have to install the `pytest` module:
-
-```bash
-python3 -m pip install pytest
-```
-
 ## Documentation
 
 The Python SDK documentation is available at
