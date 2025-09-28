@@ -90,6 +90,7 @@ use journal::StepMetadata;
 use memory_stats::memory_stats;
 use nonzero_ext::nonzero;
 use rmpv::Value as RmpValue;
+use serde::Deserialize;
 use serde_json::Value as JsonValue;
 use stats::StepResults;
 use std::borrow::Cow;
@@ -2997,27 +2998,32 @@ pub fn compute_pipeline_diff(
     }
 }
 
+#[derive(Deserialize)]
+struct Dataflow {
+    mir: HashMap<MirNodeId, MirNode>,
+}
+
 fn compute_program_diff(
     old_config: &PipelineConfig,
     new_config: &PipelineConfig,
 ) -> Result<ProgramDiff, String> {
     // TODO: more useful error messages
 
-    let Some(old_mir) = &old_config.dataflow else {
+    let Some(old_dataflow) = &old_config.dataflow else {
         return Err("checkpointed pipeline configuration does not contain IR".to_owned());
     };
 
-    let Some(new_mir) = &new_config.dataflow else {
+    let Some(new_dataflow) = &new_config.dataflow else {
         return Err("new pipeline configuration does not contain IR".to_owned());
     };
 
-    let new_mir: HashMap<MirNodeId, MirNode> = serde_json::from_str(&new_mir)
+    let new_dataflow: Dataflow = serde_json::from_str(&new_dataflow)
         .map_err(|e| format!("failed to deserialize new IR: {}", e))?;
 
-    let old_mir: HashMap<MirNodeId, MirNode> = serde_json::from_str(&old_mir)
+    let old_dataflow: Dataflow = serde_json::from_str(&old_dataflow)
         .map_err(|e| format!("failed to deserialize old IR: {}", e))?;
 
-    Ok(program_diff(&old_mir, &new_mir))
+    Ok(program_diff(&old_dataflow.mir, &new_dataflow.mir))
 }
 
 impl ControllerInit {

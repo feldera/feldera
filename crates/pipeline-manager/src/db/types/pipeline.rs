@@ -50,6 +50,7 @@ pub fn parse_string_as_runtime_status(s: String) -> Result<RuntimeStatus, DBErro
     match s.as_str() {
         "unavailable" => Ok(RuntimeStatus::Unavailable),
         "standby" => Ok(RuntimeStatus::Standby),
+        "awaiting_approval" => Ok(RuntimeStatus::AwaitingApproval),
         "initializing" => Ok(RuntimeStatus::Initializing),
         "bootstrapping" => Ok(RuntimeStatus::Bootstrapping),
         "replaying" => Ok(RuntimeStatus::Replaying),

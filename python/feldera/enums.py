@@ -149,7 +149,7 @@ class PipelineStatus(Enum):
     PROVISIONING = 2
     UNAVAILABLE = 3
     STANDBY = 4
-    AWAITINGAPPROVAL = 5
+    AWAITING_APPROVAL = 5
     INITIALIZING = 6
     BOOTSTRAPPING = 7
     REPLAYING = 8
@@ -345,6 +345,7 @@ class PipelineFieldSelector(Enum):
 
     STATUS = "status"
     """Select only the fields required to know the status of a pipeline."""
+
 
 class BootstrapPolicy(Enum):
     AWAIT_APPROVAL = "await_approval"

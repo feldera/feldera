@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use std::fmt::Display;
 use utoipa::ToSchema;
 
-#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
 pub struct ProgramDiff {
     pub added_tables: Vec<String>,
     pub removed_tables: Vec<String>,
@@ -136,7 +136,7 @@ impl PipelineDiff {
         self.program_diff
             .as_ref()
             .map(|diff| diff.is_empty())
-            .unwrap_or(true)
+            .unwrap_or(false)
             && self.added_input_connectors.is_empty()
             && self.removed_input_connectors.is_empty()
             && self.modified_input_connectors.is_empty()
@@ -146,6 +146,6 @@ impl PipelineDiff {
     }
 
     pub fn clear_program_diff(&mut self) {
-        self.program_diff = None;
+        self.program_diff = Some(ProgramDiff::default());
     }
 }
