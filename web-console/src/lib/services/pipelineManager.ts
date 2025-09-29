@@ -221,6 +221,7 @@ const toPipelineThumb = (
   deploymentError: pipeline.deployment_error,
   programStatusSince: pipeline.program_status_since,
   refreshVersion: pipeline.refresh_version,
+  platformVersion: pipeline.platform_version,
   deploymentResourcesStatus: pipeline.deployment_resources_status,
   deploymentResourcesStatusSince: new Date(pipeline.deployment_resources_status_since)
 })
@@ -264,6 +265,7 @@ const toExtendedPipeline = ({
   runtimeConfig: pipeline.runtime_config,
   version: pipeline.version,
   refreshVersion: pipeline.refresh_version,
+  platformVersion: pipeline.platform_version,
   storageStatus: pipeline.storage_status,
   ...consolidatePipelineStatus(
     program_status,

@@ -100,6 +100,11 @@ export const $AuthProvider = {
   ]
 } as const
 
+export const $BootstrapPolicy = {
+  type: 'string',
+  enum: ['allow', 'reject', 'await_approval']
+} as const
+
 export const $BuildInformation = {
   type: 'object',
   description: 'Information about the build of the platform.',
@@ -356,6 +361,7 @@ export const $CombinedStatus = {
     'Provisioning',
     'Unavailable',
     'Standby',
+    'AwaitingApproval',
     'Initializing',
     'Bootstrapping',
     'Replaying',
@@ -1905,6 +1911,19 @@ connector initializes.`,
 The number of offsets must match the number of partitions in the topic.`
         }
       }
+    },
+    {
+      type: 'object',
+      required: ['timestamp'],
+      properties: {
+        timestamp: {
+          type: 'integer',
+          format: 'int64',
+          description: `Start from a particular timestamp in the topic.
+
+Kafka timestamps are in milliseconds since the epoch.`
+        }
+      }
     }
   ],
   description: 'Where to begin reading a Kafka topic.'
@@ -2567,6 +2586,10 @@ used during a step.`,
       type: 'object',
       required: ['inputs'],
       properties: {
+        dataflow: {
+          type: 'string',
+          nullable: true
+        },
         inputs: {
           type: 'object',
           description: 'Input endpoint configuration.',
@@ -2887,6 +2910,10 @@ If an optional field is not selected (i.e., is \`None\`), it will not be seriali
       ],
       nullable: true
     },
+    deployment_runtime_status_details: {
+      type: 'string',
+      nullable: true
+    },
     deployment_runtime_status_since: {
       type: 'string',
       format: 'date-time',
@@ -3070,6 +3097,18 @@ Default: 1 MiB`,
       description: 'The maximum number of records in a single buffer.',
       nullable: true,
       minimum: 0
+    },
+    on_conflict_do_nothing: {
+      type: 'boolean',
+      description: `Specifies how the connector handles conflicts when executing an \`INSERT\`
+into a table with a primary key. By default, an existing row with the same
+key is overwritten. Setting this flag to \`true\` preserves the existing row
+and ignores the new insert.
+
+This setting does not affect \`UPDATE\` statements, which always replace the
+value associated with the key.
+
+Default: \`false\``
     },
     ssl_ca_pem: {
       type: 'string',
@@ -3989,6 +4028,7 @@ determined by the pipeline and taken over by the runner.`,
     'Unavailable',
     'Standby',
     'Initializing',
+    'AwaitingApproval',
     'Bootstrapping',
     'Replaying',
     'Paused',
