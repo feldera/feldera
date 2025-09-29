@@ -532,6 +532,7 @@ public class ToRustVisitor extends CircuitVisitor {
         }
         this.tagStream(operator);
         if (!this.useHandles) {
+            this.builder.newline();
             this.generateStructHelpers(operator.originalRowType, operator.metadata);
             String registerFunction = operator.metadata.materialized ?
                     "register_materialized_input_zset" : "register_input_zset";
@@ -550,8 +551,7 @@ public class ToRustVisitor extends CircuitVisitor {
                     .append(", ");
             json.accept(this.innerVisitor);
             this.innerVisitor.setOperatorContext(null);
-            this.builder.append(");")
-                    .newline();
+            this.builder.append(");");
         }
         return VisitDecision.STOP;
     }
