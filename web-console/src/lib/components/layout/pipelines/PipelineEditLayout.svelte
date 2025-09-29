@@ -46,6 +46,8 @@
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
   import PipelineCrashBanner from '$lib/components/pipelines/editor/PipelineCrashBanner.svelte'
   import type { WritablePipeline } from '$lib/compositions/useWritablePipeline.svelte'
+  import PipelineVersion from '$lib/components/pipelines/editor/PipelineVersion.svelte'
+  import { page } from '$app/state'
 
   let {
     preloaded,
@@ -387,7 +389,16 @@ example = "1.0"`
             </div>
           {/snippet}
           {#snippet statusBarCenter()}
-            <ProgramStatus programStatus={programStatusOf(pipeline.current.status)}></ProgramStatus>
+            {@const programStatus = programStatusOf(pipeline.current.status)}
+            <ProgramStatus {programStatus}></ProgramStatus>
+            <div class="flex items-center gap-2 pl-1">
+              <PipelineVersion
+                runtimeVersion={pipeline.current.platformVersion}
+                baseRuntimeVersion={page.data.feldera!.version}
+                configuredRuntimeVersion={(pipeline.current.runtimeConfig as any).platformVersion}
+                {programStatus}
+              ></PipelineVersion>
+            </div>
           {/snippet}
           {#snippet statusBarEnd()}
             <div class="ml-auto flex flex-nowrap items-center gap-1">
