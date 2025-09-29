@@ -122,12 +122,13 @@ class DeploymentRuntimeStatus(Enum):
 
     UNAVAILABLE = 0
     STANDBY = 1
-    INITIALIZING = 2
-    BOOTSTRAPPING = 3
-    REPLAYING = 4
-    PAUSED = 5
-    RUNNING = 6
-    SUSPENDED = 7
+    AWAITINGAPPROVAL = 2
+    INITIALIZING = 3
+    BOOTSTRAPPING = 4
+    REPLAYING = 5
+    PAUSED = 6
+    RUNNING = 7
+    SUSPENDED = 8
 
     @staticmethod
     def from_str(value):
@@ -149,7 +150,7 @@ class PipelineStatus(Enum):
     PROVISIONING = 2
     UNAVAILABLE = 3
     STANDBY = 4
-    AWAITING_APPROVAL = 5
+    AWAITINGAPPROVAL = 5
     INITIALIZING = 6
     BOOTSTRAPPING = 7
     REPLAYING = 8

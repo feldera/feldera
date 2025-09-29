@@ -72,6 +72,26 @@ class Pipeline:
             else:
                 raise err
 
+    def wait_for_status(self, expected_status: PipelineStatus, timeout: Optional[int] = None) -> None:
+        """
+        Wait for the pipeline to reach the specified status.
+
+        :param expected_status: The status to wait for
+        :param timeout: Maximum time to wait in seconds. If None, waits forever (default: None)
+        :raises TimeoutError: If the expected status is not reached within the timeout
+        """
+        start_time = time.time()
+
+        while True:
+            current_status = self.status()
+            if current_status == expected_status:
+                return
+
+            if timeout is not None and time.time() - start_time >= timeout:
+                raise TimeoutError(f"Pipeline did not reach {expected_status.name} status within {timeout} seconds")
+
+            time.sleep(1)
+
     def stats(self) -> PipelineStatistics:
         """Gets the pipeline metrics and performance counters."""
 
@@ -1192,6 +1212,14 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
 
         self.refresh(PipelineFieldSelector.STATUS)
         return DeploymentRuntimeStatus.from_str(self._inner.deployment_runtime_status)
+
+    def deployment_runtime_status_details(self) -> Optional[str]:
+        """
+        Return the deployment runtime status details.
+        """
+
+        self.refresh(PipelineFieldSelector.STATUS)
+        return self._inner.deployment_runtime_status_details
 
     def deployment_error(self) -> Mapping[str, Any]:
         """
