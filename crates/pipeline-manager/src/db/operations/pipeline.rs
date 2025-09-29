@@ -1197,6 +1197,7 @@ pub(crate) async fn set_deployment_resources_status(
     version_guard: Version,
     new_deployment_resources_status: ResourcesStatus,
     new_deployment_runtime_status: Option<RuntimeStatus>,
+    new_deployment_runtime_status_details: Option<String>,
     new_deployment_runtime_desired_status: Option<RuntimeDesiredStatus>,
     new_deployment_error: Option<ErrorResponse>,
     new_deployment_id: Option<Uuid>,
@@ -1314,6 +1315,7 @@ pub(crate) async fn set_deployment_resources_status(
     let (
         final_deployment_location,
         final_deployment_runtime_status,
+        final_deployment_runtime_status_details,
         final_deployment_runtime_desired_status
     ) = match new_deployment_resources_status {
         ResourcesStatus::Stopped | ResourcesStatus::Provisioning | ResourcesStatus::Stopping => {
@@ -1321,14 +1323,14 @@ pub(crate) async fn set_deployment_resources_status(
             check_precondition(new_deployment_location.is_none(), &format!("new_deployment_location should be None when becoming {new_deployment_resources_status}"))?;
             check_precondition(new_deployment_runtime_status.is_none(), &format!("new_deployment_runtime_status should be None when becoming {new_deployment_resources_status}"))?;
             check_precondition(new_deployment_runtime_desired_status.is_none(), &format!("new_deployment_runtime_desired_status should be None when becoming {new_deployment_resources_status}"))?;
-            (None, None, None)
+            (None, None, None, None)
         }
         ResourcesStatus::Provisioned => {
             // Provisioned: new value
             check_precondition(new_deployment_location.is_some(), "new_deployment_location should be Some when becoming Provisioned")?;
             check_precondition(new_deployment_runtime_status.is_some(), "new_deployment_runtime_status should be Some when becoming Provisioned")?;
             check_precondition(new_deployment_runtime_desired_status.is_some(), "new_deployment_runtime_desired_status should be Some when becoming Provisioned")?;
-            (new_deployment_location, new_deployment_runtime_status, new_deployment_runtime_desired_status)
+            (new_deployment_location, new_deployment_runtime_status, new_deployment_runtime_status_details, new_deployment_runtime_desired_status)
         },
     };
 
@@ -1353,10 +1355,11 @@ pub(crate) async fn set_deployment_resources_status(
                      deployment_resources_status = $7,
                      deployment_resources_status_since = CASE WHEN deployment_resources_status = $7::VARCHAR THEN deployment_resources_status_since ELSE NOW() END,
                      deployment_runtime_status = $8::VARCHAR,
+                     deployment_runtime_status_details = $9::VARCHAR,
                      deployment_runtime_status_since = CASE WHEN $8::VARCHAR IS NULL THEN NULL ELSE (CASE WHEN deployment_runtime_status = $8::VARCHAR THEN deployment_runtime_status_since ELSE NOW() END) END,
-                     deployment_runtime_desired_status = $9::VARCHAR,
-                     deployment_runtime_desired_status_since = CASE WHEN $9::VARCHAR IS NULL THEN NULL ELSE (CASE WHEN deployment_runtime_desired_status = $9::VARCHAR THEN deployment_runtime_desired_status_since ELSE NOW() END) END
-                 WHERE tenant_id = $10 AND id = $11",
+                     deployment_runtime_desired_status = $10::VARCHAR,
+                     deployment_runtime_desired_status_since = CASE WHEN $10::VARCHAR IS NULL THEN NULL ELSE (CASE WHEN deployment_runtime_desired_status = $10::VARCHAR THEN deployment_runtime_desired_status_since ELSE NOW() END) END
+                 WHERE tenant_id = $11 AND id = $12",
         )
         .await?;
     let rows_affected = txn
@@ -1374,9 +1377,10 @@ pub(crate) async fn set_deployment_resources_status(
                 &final_deployment_initial.map(runtime_desired_status_to_string), // $6: deployment_initial
                 &new_deployment_resources_status.to_string(), // $7: deployment_resources_status,
                 &final_deployment_runtime_status.map(runtime_status_to_string), // $8: deployment_runtime_status,
-                &final_deployment_runtime_desired_status.map(runtime_desired_status_to_string), // $9: deployment_runtime_desired_status,
-                &tenant_id.0, // $10: tenant_id
-                &pipeline_id.0, // $11: id
+                &final_deployment_runtime_status_details, // $9: deployment_runtime_status_details,
+                &final_deployment_runtime_desired_status.map(runtime_desired_status_to_string), // $10: deployment_runtime_desired_status,
+                &tenant_id.0, // $11: tenant_id
+                &pipeline_id.0, // $12: id
             ],
         )
         .await?;

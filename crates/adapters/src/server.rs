@@ -1249,7 +1249,7 @@ async fn status(
             }),
             InitializationState::AwaitingApproval(diff) => Ok(ExtendedRuntimeStatus {
                 runtime_status: RuntimeStatus::AwaitingApproval,
-                runtime_status_details: serde_json::to_string(& diff).unwrap_or_default(),
+                runtime_status_details: serde_json::to_string(&diff).unwrap_or_default(),
                 runtime_desired_status,
             }),
         },
