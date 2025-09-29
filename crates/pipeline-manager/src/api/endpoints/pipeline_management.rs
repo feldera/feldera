@@ -305,6 +305,7 @@ pub struct PipelineSelectedInfoInternal {
     pub deployment_runtime_status_since: Option<DateTime<Utc>>,
     pub deployment_runtime_desired_status: Option<RuntimeDesiredStatus>,
     pub deployment_runtime_desired_status_since: Option<DateTime<Utc>>,
+    pub bootstrap_policy: Option<BootstrapPolicy>,
 }
 
 impl PipelineSelectedInfoInternal {
@@ -362,6 +363,7 @@ impl PipelineSelectedInfoInternal {
             deployment_runtime_desired_status: extended_pipeline.deployment_runtime_desired_status,
             deployment_runtime_desired_status_since: extended_pipeline
                 .deployment_runtime_desired_status_since,
+            bootstrap_policy: extended_pipeline.bootstrap_policy,
         }
     }
 
@@ -417,6 +419,7 @@ impl PipelineSelectedInfoInternal {
             deployment_runtime_desired_status: extended_pipeline.deployment_runtime_desired_status,
             deployment_runtime_desired_status_since: extended_pipeline
                 .deployment_runtime_desired_status_since,
+            bootstrap_policy: extended_pipeline.bootstrap_policy,
         }
     }
 }
@@ -457,9 +460,11 @@ pub enum PipelineFieldSelector {
     /// - `deployment_resources_desired_status`
     /// - `deployment_resources_desired_status_since`
     /// - `deployment_runtime_status`
+    /// - `deployment_runtime_status_details`
     /// - `deployment_runtime_status_since`
     /// - `deployment_runtime_desired_status`
     /// - `deployment_runtime_desired_status_since`
+    /// - `bootstrap_policy`
     All,
     /// Select only the fields required to know the status of a pipeline.
     ///
@@ -487,9 +492,11 @@ pub enum PipelineFieldSelector {
     /// - `deployment_resources_desired_status`
     /// - `deployment_resources_desired_status_since`
     /// - `deployment_runtime_status`
+    /// - `deployment_runtime_status_details`
     /// - `deployment_runtime_status_since`
     /// - `deployment_runtime_desired_status`
     /// - `deployment_runtime_desired_status_since`
+    /// - `bootstrap_policy`
     Status,
 }
 
