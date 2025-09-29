@@ -1420,9 +1420,11 @@ public class ToRustInnerVisitor extends InnerVisitor {
         }
         DBSPTypeBinary binary = destType.as(DBSPTypeBinary.class);
         if (binary != null) {
-            // pass precision as argument to cast method too
+            // pass precision and fixedness as arguments to cast method
             this.builder.append(",")
-                    .append(binary.precision);
+                    .append(binary.precision)
+                    .append(",")
+                    .append(Boolean.toString(binary.fixed));
         }
         this.builder.append(")");
         this.pop(expression);

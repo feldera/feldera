@@ -941,6 +941,21 @@ public class Regression1Tests extends SqlIoTest {
     }
 
     @Test
+    public void issue4815() {
+        var ccs = this.getCCS("""
+                CREATE TABLE tbl(bin BINARY(3));
+                
+                CREATE VIEW G AS SELECT
+                LEAST(bin, X'1F8B0800') AS res,
+                LEAST(X'0B1620', X'1F8B0800') AS res1
+                FROM tbl;""");
+        ccs.step("INSERT INTO tbl VALUES(x'0B1620')", """
+                 res | res1 | weight
+                ---------------------
+                 0B1620 | 0B1620 | 1""");
+    }
+
+    @Test
     public void issue4792() {
         this.getCCS("""
                 CREATE TABLE T(v VARCHAR, x VARCHAR, z INT);
