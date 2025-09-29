@@ -395,8 +395,8 @@ Reason: The pipeline is in a STOPPED state due to the following error:
     def _inner_start_pipeline(
         self,
         pipeline_name: str,
-        bootstrap_policy: Optional[BootstrapPolicy],
         initial: str = "running",
+        bootstrap_policy: Optional[str] = None,
         wait: bool = True,
         timeout_s: Optional[float] = 300,
     ) -> Optional[PipelineStatus]:
@@ -415,7 +415,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
 
         params = {"initial": initial}
         if bootstrap_policy is not None:
-            params["bootstrap_policy"] = bootstrap_policy.value
+            params["bootstrap_policy"] = bootstrap_policy
 
         self.http.post(
             path=f"/pipelines/{pipeline_name}/start",

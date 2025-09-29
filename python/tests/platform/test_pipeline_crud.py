@@ -42,11 +42,13 @@ PIPELINE_FIELD_SELECTOR_ALL_FIELDS = [
     "deployment_resources_desired_status",
     "deployment_resources_desired_status_since",
     "deployment_runtime_status",
+    "deployment_runtime_status_details",
     "deployment_runtime_status_since",
     "deployment_runtime_desired_status",
     "deployment_runtime_desired_status_since",
     "deployment_initial",
     "deployment_id",
+    "bootstrap_policy",
 ]
 
 PIPELINE_FIELD_SELECTOR_STATUS_FIELDS = [
@@ -68,6 +70,7 @@ PIPELINE_FIELD_SELECTOR_STATUS_FIELDS = [
     "deployment_resources_desired_status",
     "deployment_resources_desired_status_since",
     "deployment_runtime_status",
+    "deployment_runtime_status_details",
     "deployment_runtime_status_since",
     "deployment_runtime_desired_status",
     "deployment_runtime_desired_status_since",
@@ -76,6 +79,7 @@ PIPELINE_FIELD_SELECTOR_STATUS_FIELDS = [
     "deployment_error",
     "refresh_version",
     "storage_status",
+    "bootstrap_policy",
 ]
 
 
