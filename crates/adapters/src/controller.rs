@@ -3017,10 +3017,10 @@ fn compute_program_diff(
         return Err("new pipeline configuration does not contain IR".to_owned());
     };
 
-    let new_dataflow: Dataflow = serde_json::from_str(&new_dataflow)
+    let new_dataflow: Dataflow = serde_json::from_value(new_dataflow.clone())
         .map_err(|e| format!("failed to deserialize new IR: {}", e))?;
 
-    let old_dataflow: Dataflow = serde_json::from_str(&old_dataflow)
+    let old_dataflow: Dataflow = serde_json::from_value(old_dataflow.clone())
         .map_err(|e| format!("failed to deserialize old IR: {}", e))?;
 
     Ok(program_diff(&old_dataflow.mir, &new_dataflow.mir))

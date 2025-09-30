@@ -470,7 +470,7 @@ fn limited_pipeline_config() -> impl Strategy<Value = serde_json::Value> {
                 secrets_dir: None,
                 inputs: program_info.input_connectors,
                 outputs: program_info.output_connectors,
-                dataflow: Some(serde_json::to_string(&program_info.dataflow).unwrap()),
+                dataflow: Some(program_info.dataflow.clone()),
             })
             .unwrap()
         }

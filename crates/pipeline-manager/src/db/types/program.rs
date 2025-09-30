@@ -757,7 +757,7 @@ pub fn generate_pipeline_config(
         secrets_dir: None,
         inputs: program_info.input_connectors.clone(),
         outputs: program_info.output_connectors.clone(),
-        dataflow: Some(serde_json::to_string(&program_info.dataflow).unwrap()),
+        dataflow: Some(program_info.dataflow.clone()),
     }
 }
 

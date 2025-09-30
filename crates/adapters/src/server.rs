@@ -818,10 +818,7 @@ fn parse_config(config_file: impl AsRef<Path>) -> Result<PipelineConfig, Control
         })?;
 
         // Still running without logger here.
-        eprintln!(
-            "Pipeline configuration read from {}:\n{string}",
-            path.display()
-        );
+        eprintln!("Pipeline configuration read from {}.", path.display());
 
         Ok(string)
     }
@@ -837,7 +834,7 @@ fn parse_config(config_file: impl AsRef<Path>) -> Result<PipelineConfig, Control
     }
 
     let path = config_file.as_ref();
-    if path.extension() == Some(OsStr::new("json")) {
+    let config = if path.extension() == Some(OsStr::new("json")) {
         parse_json_config(path)
     } else {
         let json_path = path.with_extension("json");
@@ -846,7 +843,14 @@ fn parse_config(config_file: impl AsRef<Path>) -> Result<PipelineConfig, Control
         } else {
             parse_yaml_config(path)
         }
-    }
+    }?;
+
+    eprintln!(
+        "Pipeline configuration loaded successfully: {}",
+        config.display_summary()
+    );
+
+    Ok(config)
 }
 
 // Initialization thread function.

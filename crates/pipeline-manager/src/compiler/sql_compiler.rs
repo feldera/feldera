@@ -677,7 +677,7 @@ pub(crate) async fn perform_sql_compilation(
 
         // Read dataflow.json
         let dataflow_str = read_file_content(&output_dataflow_file_path).await?;
-        let dataflow: serde_json::Value = serde_json::from_str(&dataflow_str).map_err(|e| {
+        let mut dataflow: serde_json::Value = serde_json::from_str(&dataflow_str).map_err(|e| {
             SqlCompilationError::SystemError(
                 CommonError::json_deserialization_error(
                     "dataflow.json from SQL compiler into JSON".to_string(),
@@ -686,6 +686,12 @@ pub(crate) async fn perform_sql_compilation(
                 .to_string(),
             )
         })?;
+
+        // Remove calcite_plan field from dataflow. It is not currently used
+        // and can be very large, so we omit it from the stored program info.
+        if let serde_json::Value::Object(ref mut map) = dataflow {
+            map.remove("calcite_plan");
+        }
 
         // The base64-encoded gzipped tar archive of the Rust output directory
         let main_rust = encode_dir_as_string(&output_rust_directory_path)?;
