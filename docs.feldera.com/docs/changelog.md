@@ -15,6 +15,8 @@ import TabItem from '@theme/TabItem';
 
         ## Unreleased
 
+        ## 0.148.0
+
         API CHANGES: BACKWARD INCOMPATIBLE
 
         **API pipeline endpoints**
