@@ -32,6 +32,8 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.function.Function;
 
+/** An expression that evaluates to a ZSet.
+ * Most such expressions are constants, but not always. */
 public final class DBSPZSetExpression extends DBSPExpression
         implements IDBSPContainer, ToIndentableString, ISameValue, IConstructor {
     public final Map<DBSPExpression, Long> data;
@@ -114,20 +116,31 @@ public final class DBSPZSetExpression extends DBSPExpression
     }
 
     public void append(DBSPExpression expression, long weight) {
-        // We expect the expression to be a constant value (a literal)
+        // We expect the expression to be a constant value (implements ISameValue)
+        // This produces a canonical representation if all keys are also constant.
         if (!expression.getType().sameType(this.getElementType()))
             throw new InternalCompilerError("Added element type " +
                     expression.getType() + " does not match zset type " + this.getElementType(), expression);
-        if (this.data.containsKey(expression)) {
-            long oldWeight = this.data.get(expression);
-            long newWeight = weight + oldWeight;
-            if (newWeight == 0)
-                this.data.remove(expression);
-            else
-                this.data.put(expression, weight + oldWeight);
-        } else {
-            this.data.put(expression, weight);
+        var it = this.data.entrySet().iterator();
+        ISameValue sv = expression.as(ISameValue.class);
+        while (it.hasNext()) {
+            var entry = it.next();
+            var key = entry.getKey();
+            // This test is more precise than Java equals; that's also
+            // why we need to scan all the keys
+            if (sv != null &&
+                    key.is(ISameValue.class) &&
+                    key.to(ISameValue.class).sameValue(sv)) {
+                long oldWeight = entry.getValue();
+                long newWeight = weight + oldWeight;
+                if (newWeight == 0)
+                    it.remove();
+                else
+                    entry.setValue(weight + oldWeight);
+                return;
+            }
         }
+        this.data.put(expression, weight);
     }
 
     public void append(DBSPZSetExpression other) {
@@ -262,7 +275,10 @@ public final class DBSPZSetExpression extends DBSPExpression
 
     @Override
     public boolean equivalent(EquivalenceContext context, DBSPExpression other) {
-        throw new UnimplementedException();
+        DBSPZSetExpression z = other.as(DBSPZSetExpression.class);
+        if (z == null)
+            return false;
+        return this.sameValue(z);
     }
 
     @Override

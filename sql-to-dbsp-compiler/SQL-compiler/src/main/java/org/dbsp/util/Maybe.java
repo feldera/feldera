@@ -4,5 +4,13 @@ package org.dbsp.util;
 public enum Maybe {
     NO,
     MAYBE,
-    YES
+    YES;
+
+    public boolean toBool() {
+        return switch (this) {
+            case NO -> false;
+            case MAYBE -> throw new RuntimeException("Cannot convert MAYBE to BOOLEAN");
+            case YES -> true;
+        };
+    }
 }
