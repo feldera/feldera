@@ -1,3 +1,4 @@
+use crate::api::lifecycle_events::PipelineLifecycleEvent;
 use crate::api::support_data_collector::SupportBundleData;
 use crate::db::error::DBError;
 use crate::db::types::api_key::{ApiKeyDescr, ApiPermission};
@@ -411,4 +412,22 @@ pub(crate) trait Storage {
         pipeline_name: &str,
         how_many: u64,
     ) -> Result<(ExtendedPipelineDescrMonitoring, Vec<SupportBundleData>), DBError>;
+
+    /// Returns up to `max_events` lifecycle events for the given pipeline, in chronological order.
+    /// An event if recorded when there is change in pipeline status.
+    async fn get_pipeline_lifecycle_events(
+        &self,
+        tenant_id: TenantId,
+        pipeline_name: &str,
+        max_events: u32,
+    ) -> Result<Vec<PipelineLifecycleEvent>, DBError>;
+
+    /// Deletes records from pipeline_lifecycle_events older than the given retention period (in days).
+    ///
+    /// # Arguments
+    /// * `retention_period_in_days` - Number of days to retain records. Records older than this will be deleted.
+    ///
+    /// Records with `recorded_at` timestamp older than (now - retention_period_in_days) will be deleted.
+    /// Returns the number of records deleted, or an error if the operation fails.
+    async fn cleanup_pipeline_lifecycle_events(&self, retention_days: u16) -> Result<u64, DBError>;
 }
