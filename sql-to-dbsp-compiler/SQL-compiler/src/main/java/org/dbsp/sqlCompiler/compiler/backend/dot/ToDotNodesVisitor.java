@@ -1,6 +1,7 @@
 package org.dbsp.sqlCompiler.compiler.backend.dot;
 
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperatorBase;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPChainOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIndexedTopKOperator;
@@ -160,6 +161,8 @@ public class ToDotNodesVisitor extends CircuitVisitor {
             if (aggregate.aggregateList != null) {
                 return aggregate.aggregateList.toString();
             }
+        } else if (node.is(DBSPChainOperator.class)) {
+            return node.to(DBSPChainOperator.class).chain.toString();
         }
         if (expression == null)
             return "";

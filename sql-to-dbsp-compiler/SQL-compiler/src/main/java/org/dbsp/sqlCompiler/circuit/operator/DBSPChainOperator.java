@@ -144,6 +144,12 @@ public class DBSPChainOperator extends DBSPUnaryOperator {
         /** Return a function that is equivalent to the composition of the functions in the chain.
          * If the chain contains any filters the result will have an Option type result. */
         public DBSPClosureExpression collapse(DBSPCompiler compiler) {
+            if (this.computations.size() == 1) {
+                Computation comp = this.computations.get(0);
+                if (comp.kind != ComputationKind.Filter)
+                    return comp.closure;
+            }
+
             DBSPVariablePath inputVar;
             DBSPExpression currentArg;
             if (this.inputType.is(DBSPTypeZSet.class)) {

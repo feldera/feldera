@@ -6,6 +6,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
+import org.dbsp.sqlCompiler.compiler.sql.tools.CompilerCircuit;
 import org.dbsp.sqlCompiler.compiler.sql.tools.CompilerCircuitStream;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
@@ -22,7 +23,9 @@ import java.io.File;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 
 /** Regression tests that failed in incremental mode using the Catalog API */
 public class IncrementalRegressionTests extends SqlIoTest {
@@ -877,5 +880,33 @@ public class IncrementalRegressionTests extends SqlIoTest {
 
               CREATE MATERIALIZED VIEW test_mat AS
               SELECT id FROM test_agg;""");
+    }
+
+    Set<String> collectHashes(CompilerCircuit cc) {
+        HashSet<String> result = new HashSet<>();
+        CircuitVisitor vis = new CircuitVisitor(cc.compiler) {
+            @Override
+            public void postorder(DBSPOperator ignored) {
+                result.add(ignored.getNodeName(true));
+            }
+        };
+        cc.getCircuit().accept(vis);
+        return result;
+    }
+
+    @Test
+    public void x() {
+        var cc0 = this.getCC("""
+                    CREATE TABLE t1(x int) WITH ('materialized'='true');
+                    CREATE MATERIALIZED VIEW v1 AS SELECT COUNT(*) AS c FROM t1;""");
+        var cc1 = this.getCC("""
+                    CREATE TABLE t1(x int) WITH ('materialized'='true');
+                    CREATE MATERIALIZED VIEW v1 AS SELECT COUNT(*) AS c FROM t1;
+                    CREATE MATERIALIZED VIEW v2 AS SELECT COUNT(*) AS c FROM t1;""");
+        // Check that all hashses from cc1 appear unchanged in cc1
+        Set<String> hash0 = this.collectHashes(cc0);
+        Set<String> hash1 = this.collectHashes(cc1);
+        Assert.assertTrue(hash1.containsAll(hash0));
+        Assert.assertEquals(hash0.size() + 1, hash1.size());
     }
 }
