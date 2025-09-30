@@ -244,9 +244,7 @@ where
         let mut cursor = self.cursor();
         while cursor.key_valid() {
             let diff = cursor.diff.neg_by_ref();
-            writer
-                .write0((cursor.key.as_ref(), diff.erase()))
-                .unwrap_storage();
+            writer.write0((cursor.key(), diff.erase())).unwrap_storage();
             cursor.step_key();
         }
         Self {
@@ -392,7 +390,7 @@ where
             let mut indexes = sample(rng, size, sample_size).into_vec();
             indexes.sort_unstable();
             for index in indexes.into_iter() {
-                cursor.move_key(|key_cursor| key_cursor.move_to_row(index as u64));
+                cursor.move_key(|key_cursor| unsafe { key_cursor.move_to_row(index as u64) });
                 output.push_ref(cursor.key());
             }
         }
@@ -564,9 +562,7 @@ where
 {
     wset: &'s FileWSet<K, R>,
     cursor: RawCursor<'s, K, R>,
-    key: Box<K>,
     pub(crate) diff: Box<R>,
-    key_valid: bool,
     val_valid: bool,
 }
 
@@ -579,9 +575,7 @@ where
         Self {
             wset: self.wset,
             cursor: self.cursor.clone(),
-            key: clone_box(&self.key),
             diff: clone_box(&self.diff),
-            key_valid: self.key_valid,
             val_valid: self.val_valid,
         }
     }
@@ -593,17 +587,14 @@ where
     R: WeightTrait + ?Sized,
 {
     fn new(wset: &'s FileWSet<K, R>) -> Self {
-        let cursor = wset.file.rows().first().unwrap_storage();
-        let mut key = wset.factories.key_factory().default_box();
-        let mut diff = wset.factories.weight_factory().default_box();
-        let valid = unsafe { cursor.item((&mut key, &mut diff)) }.is_some();
+        let cursor = unsafe { wset.file.rows().first().unwrap_storage() };
+        let diff = wset.factories.weight_factory().default_box();
+        let valid = cursor.has_value();
 
         Self {
             wset,
             cursor,
-            key,
             diff,
-            key_valid: valid,
             val_valid: valid,
         }
     }
@@ -613,9 +604,7 @@ where
         F: Fn(&mut RawCursor<'s, K, R>) -> Result<(), ReaderError>,
     {
         op(&mut self.cursor).unwrap_storage();
-        let valid = unsafe { self.cursor.item((&mut self.key, &mut self.diff)) }.is_some();
-        self.key_valid = valid;
-        self.val_valid = valid;
+        self.val_valid = self.cursor.has_value();
     }
 }
 
@@ -625,8 +614,7 @@ where
     R: WeightTrait + ?Sized,
 {
     fn key(&self) -> &K {
-        debug_assert!(self.key_valid);
-        self.key.as_ref()
+        self.cursor.key().unwrap()
     }
 
     fn val(&self) -> &DynUnit {
@@ -636,6 +624,7 @@ where
 
     fn map_times(&mut self, logic: &mut dyn FnMut(&(), &R)) {
         if self.val_valid {
+            unsafe { self.cursor.aux(&mut self.diff) };
             logic(&(), self.diff.as_ref());
         }
     }
@@ -646,11 +635,12 @@ where
 
     fn weight(&mut self) -> &R {
         debug_assert!(self.val_valid);
+        unsafe { self.cursor.aux(&mut self.diff) };
         self.diff.as_ref()
     }
 
     fn key_valid(&self) -> bool {
-        self.key_valid
+        self.cursor.has_value()
     }
 
     fn val_valid(&self) -> bool {
@@ -658,14 +648,12 @@ where
     }
 
     fn step_key(&mut self) {
-        self.move_key(|key_cursor| key_cursor.move_next());
-        let valid = unsafe { self.cursor.item((&mut self.key, &mut self.diff)) }.is_some();
-        self.key_valid = valid;
-        self.val_valid = valid;
+        self.move_key(|key_cursor| unsafe { key_cursor.move_next() });
+        self.val_valid = self.cursor.has_value();
     }
 
     fn step_key_reverse(&mut self) {
-        self.move_key(|key_cursor| key_cursor.move_prev());
+        self.move_key(|key_cursor| unsafe { key_cursor.move_prev() });
     }
 
     fn seek_key(&mut self, key: &K) {
@@ -706,11 +694,11 @@ where
     }
 
     fn rewind_keys(&mut self) {
-        self.move_key(|key_cursor| key_cursor.move_first());
+        self.move_key(|key_cursor| unsafe { key_cursor.move_first() });
     }
 
     fn fast_forward_keys(&mut self) {
-        self.move_key(|key_cursor| key_cursor.move_last());
+        self.move_key(|key_cursor| unsafe { key_cursor.move_last() });
     }
 
     fn rewind_vals(&mut self) {
@@ -739,6 +727,7 @@ where
 
     fn map_values(&mut self, logic: &mut dyn FnMut(&DynUnit, &R)) {
         if self.val_valid {
+            unsafe { self.cursor.aux(&mut self.diff) };
             logic(&(), self.diff.as_ref())
         }
     }
