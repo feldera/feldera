@@ -3045,7 +3045,7 @@ impl ControllerInit {
     }
 
     fn new(
-        config: PipelineConfig,
+        mut config: PipelineConfig,
         storage: Option<CircuitStorageConfig>,
     ) -> Result<Self, ControllerError> {
         let Some(storage) = storage else {
@@ -3077,6 +3077,24 @@ impl ControllerInit {
         let storage = storage.with_init_checkpoint(circuit.map(|circuit| circuit.uuid));
 
         let pipeline_diff = compute_pipeline_diff(&checkpoint_config, &config);
+
+        // For any input connectors that have not been modified, and whose associated table haven't been modified,
+        // pick up paused status from the checkpoint.
+        for (connector_name, connector_config) in config.inputs.iter_mut() {
+            let connector_name = connector_name.to_string();
+            if !pipeline_diff.is_affected_connector(connector_name.as_str()) {
+                if pipeline_diff.program_diff.as_ref().map_or(true, |diff| {
+                    !diff.is_affected_relation(&connector_config.stream)
+                }) {
+                    if let Some(checkpointed_connector_config) =
+                        checkpoint_config.inputs.get(connector_name.as_str())
+                    {
+                        connector_config.connector_config.paused =
+                            checkpointed_connector_config.connector_config.paused;
+                    }
+                }
+            }
+        }
 
         let can_replay = pipeline_diff.is_empty();
 

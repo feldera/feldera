@@ -46,6 +46,16 @@ impl ProgramDiff {
             && self.removed_views.is_empty()
             && self.modified_views.is_empty()
     }
+
+    pub fn is_affected_relation(&self, relation_name: &str) -> bool {
+        let relation_name = relation_name.to_string();
+        self.added_tables.contains(&relation_name)
+            || self.removed_tables.contains(&relation_name)
+            || self.modified_tables.contains(&relation_name)
+            || self.added_views.contains(&relation_name)
+            || self.removed_views.contains(&relation_name)
+            || self.modified_views.contains(&relation_name)
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema, Clone, PartialEq, Eq)]
@@ -147,5 +157,15 @@ impl PipelineDiff {
 
     pub fn clear_program_diff(&mut self) {
         self.program_diff = Some(ProgramDiff::default());
+    }
+
+    pub fn is_affected_connector(&self, connector_name: &str) -> bool {
+        let connector_name = connector_name.to_string();
+        self.added_input_connectors.contains(&connector_name)
+            || self.removed_input_connectors.contains(&connector_name)
+            || self.modified_input_connectors.contains(&connector_name)
+            || self.added_output_connectors.contains(&connector_name)
+            || self.removed_output_connectors.contains(&connector_name)
+            || self.modified_output_connectors.contains(&connector_name)
     }
 }
