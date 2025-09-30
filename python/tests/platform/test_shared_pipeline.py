@@ -68,11 +68,13 @@ class TestPipeline(SharedTestPipeline):
         assert stats.get("outputs") is not None
 
     def test_case_sensitive_views_listen(self):
+        self.pipeline.start_paused()
+
         all_stream = self.pipeline.listen("v0")
         odd_stream = self.pipeline.listen("V0")
         even_stream = self.pipeline.listen("DATE")
 
-        self.pipeline.start()
+        self.pipeline.resume()
         self.pipeline.input_json("tbl", [{"id": i} for i in range(10)])
         self.pipeline.wait_for_completion()
 
@@ -159,8 +161,9 @@ class TestPipeline(SharedTestPipeline):
         """
         df_students = pd.read_csv("tests/assets/students.csv")
         df_grades = pd.read_csv("tests/assets/grades.csv")
+        self.pipeline.start_paused()
         out = self.pipeline.listen("average_scores")
-        self.pipeline.start()
+        self.pipeline.resume()
         self.pipeline.input_pandas("students", df_students)
         self.pipeline.input_pandas("grades", df_grades)
         self.pipeline.wait_for_completion(True)
@@ -170,8 +173,9 @@ class TestPipeline(SharedTestPipeline):
     def test_pipeline_get(self):
         df_students = pd.read_csv("tests/assets/students.csv")
         df_grades = pd.read_csv("tests/assets/grades.csv")
+        self.pipeline.start_paused()
         out = self.pipeline.listen("average_scores")
-        self.pipeline.start()
+        self.pipeline.resume()
         self.pipeline.input_pandas("students", df_students)
         self.pipeline.input_pandas("grades", df_grades)
         self.pipeline.wait_for_completion(True)
@@ -196,8 +200,9 @@ class TestPipeline(SharedTestPipeline):
 
         df_students = pd.read_csv("tests/assets/students.csv")
         df_grades = pd.read_csv("tests/assets/grades.csv")
+        self.pipeline.start_paused()
         self.pipeline.foreach_chunk("average_scores", callback)
-        self.pipeline.start()
+        self.pipeline.resume()
         self.pipeline.input_pandas("students", df_students)
         self.pipeline.input_pandas("grades", df_grades)
         self.pipeline.wait_for_completion(True)
@@ -267,11 +272,12 @@ class TestPipeline(SharedTestPipeline):
             {"json": {"name": "John", "scores": [9, 10]}, "insert_delete": 1},
         ]
         # Set up listeners for all output views
+        self.pipeline.start_paused()
         variant_out = self.pipeline.listen("json_view")
         json_out = self.pipeline.listen("json_string_view")
         average_out = self.pipeline.listen("average_view")
         typed_out = self.pipeline.listen("typed_view")
-        self.pipeline.start()
+        self.pipeline.resume()
 
         # Feed JSON as strings, receive output from `average_view` and `json_view`
         self.pipeline.input_json("json_table", input_strings)
@@ -331,8 +337,9 @@ class TestPipeline(SharedTestPipeline):
 
     def test_input_json0(self):
         data = {"insert": {"id": 1}}
+        self.pipeline.start_paused()
         out = self.pipeline.listen("v0")
-        self.pipeline.start()
+        self.pipeline.resume()
         self.pipeline.input_json("tbl", data, update_format="insert_delete")
         self.pipeline.wait_for_completion(True)
         out_data = out.to_dict()
@@ -341,8 +348,9 @@ class TestPipeline(SharedTestPipeline):
 
     def test_input_json1(self):
         data = [{"id": 1}, {"id": 2}]
+        self.pipeline.start_paused()
         out = self.pipeline.listen("v0")
-        self.pipeline.start()
+        self.pipeline.resume()
         self.pipeline.input_json("tbl", data)
         self.pipeline.wait_for_completion(True)
         out_data = out.to_dict()
@@ -352,8 +360,9 @@ class TestPipeline(SharedTestPipeline):
     @enterprise_only
     def test_suspend(self):
         data = {"insert": {"id": 1}}
+        self.pipeline.start_paused()
         out = self.pipeline.listen("v0")
-        self.pipeline.start()
+        self.pipeline.resume()
         self.pipeline.input_json("tbl", data, update_format="insert_delete")
         self.pipeline.wait_for_completion(False)
         self.pipeline.stop(force=False)
@@ -382,8 +391,9 @@ class TestPipeline(SharedTestPipeline):
                 ],
             }
         )
+        self.pipeline.start_paused()
         out = self.pipeline.listen("v_timestamp")
-        self.pipeline.start()
+        self.pipeline.resume()
         self.pipeline.input_pandas("tbl_timestamp", df)
         self.pipeline.wait_for_completion(True)
         df_out = out.to_pandas()
@@ -396,8 +406,9 @@ class TestPipeline(SharedTestPipeline):
         """
         data = [{"c1": [12, 34, 56]}]
         expected_data = [{"c1": [34, 56], "insert_delete": 1}]
+        self.pipeline.start_paused()
         out = self.pipeline.listen("v_binary")
-        self.pipeline.start()
+        self.pipeline.resume()
         self.pipeline.input_json("tbl_binary", data=data)
         self.pipeline.wait_for_completion(True)
         got = out.to_dict()
@@ -412,8 +423,9 @@ class TestPipeline(SharedTestPipeline):
 
         data = [{"c1": 2.25}]
         expected = [{"c1": Decimal("5.00"), "insert_delete": 1}]
+        self.pipeline.start_paused()
         out = self.pipeline.listen("v_decimal")
-        self.pipeline.start()
+        self.pipeline.resume()
         self.pipeline.input_json("tbl_decimal", data=data)
         self.pipeline.wait_for_completion(True)
         got = out.to_dict()
@@ -425,8 +437,9 @@ class TestPipeline(SharedTestPipeline):
         CREATE VIEW v_array AS SELECT c1 FROM tbl_array;
         """
         data = [{"c1": [1, 2, 3]}]
+        self.pipeline.start_paused()
         out = self.pipeline.listen("v_array")
-        self.pipeline.start()
+        self.pipeline.resume()
         self.pipeline.input_json("tbl_array", data=data)
         self.pipeline.wait_for_completion(True)
         got = out.to_dict()
@@ -443,8 +456,9 @@ class TestPipeline(SharedTestPipeline):
         CREATE VIEW v_struct AS SELECT c1 FROM tbl_struct;
         """
         data = [{"c1": {"f1": 1, "f2": "a"}}]
+        self.pipeline.start_paused()
         out = self.pipeline.listen("v_struct")
-        self.pipeline.start()
+        self.pipeline.resume()
         self.pipeline.input_json("tbl_struct", data)
         self.pipeline.wait_for_completion(True)
         got = out.to_dict()
@@ -467,8 +481,9 @@ class TestPipeline(SharedTestPipeline):
                 "insert_delete": 1,
             }
         ]
+        self.pipeline.start_paused()
         out = self.pipeline.listen("v_datetime")
-        self.pipeline.start()
+        self.pipeline.resume()
         self.pipeline.input_json("tbl_datetime", data)
         self.pipeline.wait_for_completion(True)
         got = out.to_dict()
@@ -494,8 +509,9 @@ class TestPipeline(SharedTestPipeline):
                 "c8": "c",
             }
         ]
+        self.pipeline.start_paused()
         out = self.pipeline.listen("v_simple")
-        self.pipeline.start()
+        self.pipeline.resume()
         self.pipeline.input_json("tbl_simple", data)
         self.pipeline.wait_for_completion(True)
         got = out.to_dict()
@@ -513,15 +529,17 @@ class TestPipeline(SharedTestPipeline):
         """
         data = [{"c1": {"a": 1, "b": 2}}]
         expected = [{"c1": {"a": 1, "b": 2}, "insert_delete": 1}]
+        self.pipeline.start_paused()
         out = self.pipeline.listen("v_map")
-        self.pipeline.start()
+        self.pipeline.resume()
         self.pipeline.input_json("tbl_map", data)
         self.pipeline.wait_for_completion(True)
         got = out.to_dict()
         assert expected == got
         # Second round: single dict
+        self.pipeline.start_paused()
         out = self.pipeline.listen("v_map")
-        self.pipeline.start()
+        self.pipeline.resume()
         self.pipeline.input_json("tbl_map", {"c1": {"a": 1, "b": 2}})
         self.pipeline.wait_for_completion(True)
         got = out.to_dict()
@@ -535,8 +553,9 @@ class TestPipeline(SharedTestPipeline):
         import uuid
 
         data = [{"c0": uuid.uuid4()}]
+        self.pipeline.start_paused()
         out = self.pipeline.listen("v_uuid")
-        self.pipeline.start()
+        self.pipeline.resume()
         self.pipeline.input_json("tbl_uuid", data)
         self.pipeline.wait_for_completion(True)
         got = out.to_dict()
@@ -677,10 +696,11 @@ class TestPipeline(SharedTestPipeline):
         ) WITH ('materialized' = 'true');
         """
         # Test egress with URL encoding - listen directly to table with special characters
+        self.pipeline.start_paused()
         out = self.pipeline.listen("t1#a1")
 
         # Test ingress with URL encoding
-        self.pipeline.start()
+        self.pipeline.resume()
         data = [{"c1": "test_value"}]
 
         # Test pushing data to table with special characters in name

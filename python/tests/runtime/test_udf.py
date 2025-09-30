@@ -236,9 +236,9 @@ pub fn nstruct2nstruct(i: Tup2<Option<i32>, Option<SqlString>>) -> Result<Tup2<O
         ).create_or_replace()
 
         # TODO: use .query() instead
+        pipeline.start_paused()
         out = pipeline.listen("v")
-
-        pipeline.start()
+        pipeline.resume()
 
         pipeline.input_json(
             "t",

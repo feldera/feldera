@@ -1,7 +1,5 @@
 import pandas as pd
-from typing import Optional
 
-from queue import Queue
 from feldera import FelderaClient
 from feldera._callback_runner import CallbackRunner
 
@@ -12,7 +10,6 @@ class OutputHandler:
         client: FelderaClient,
         pipeline_name: str,
         view_name: str,
-        queue: Optional[Queue],
     ):
         """
         Initializes the output handler, but doesn't start it.
@@ -22,7 +19,6 @@ class OutputHandler:
         self.client: FelderaClient = client
         self.pipeline_name: str = pipeline_name
         self.view_name: str = view_name
-        self.queue: Optional[Queue] = queue
         self.buffer: list[pd.DataFrame] = []
 
         # the callback that is passed to the `CallbackRunner`
@@ -32,7 +28,7 @@ class OutputHandler:
 
         # sets up the callback runner
         self.handler = CallbackRunner(
-            self.client, self.pipeline_name, self.view_name, callback, queue
+            self.client, self.pipeline_name, self.view_name, callback
         )
 
     def start(self):

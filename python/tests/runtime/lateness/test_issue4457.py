@@ -21,10 +21,11 @@ class TestIssue_4457(unittest.TestCase):
             TEST_CLIENT, name=unique_pipeline_name("test_issue4457"), sql=sql
         ).create_or_replace()
 
+        pipeline.start_paused()
         # TODO: use .query() instead
         out = pipeline.listen("v")
 
-        pipeline.start()
+        pipeline.resume()
 
         pipeline.input_json(
             "test_events",
