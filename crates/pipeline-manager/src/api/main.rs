@@ -303,8 +303,6 @@ It contains the following fields:
         feldera_types::config::ResourceConfig,
         feldera_types::config::ObjectStorageConfig,
         feldera_types::config::FtModel,
-        feldera_types::license::DisplaySchedule,
-        feldera_types::license::LicenseInformation,
         feldera_types::transport::adhoc::AdHocInputConfig,
         feldera_types::transport::clock::ClockConfig,
         feldera_types::transport::file::FileInputConfig,
@@ -367,8 +365,10 @@ It contains the following fields:
         feldera_types::transaction::StartTransactionResponse,
         feldera_types::time_series::TimeSeries,
         feldera_types::time_series::SampleStatistics,
-        feldera_types::license::DisplaySchedule,
-        feldera_types::license::LicenseInformation,
+
+        // Telemetry & License
+        feldera_cloud1_client::license::DisplaySchedule,
+        feldera_cloud1_client::license::LicenseInformation,
 
         // Cluster health check
         crate::cluster_health::HealthStatus,

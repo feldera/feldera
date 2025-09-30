@@ -4,7 +4,7 @@ use actix_web::{
     web::{Data as WebData, ReqData},
     HttpRequest, HttpResponse,
 };
-use feldera_types::license::DisplaySchedule;
+use feldera_cloud1_client::license::DisplaySchedule;
 use serde::Serialize;
 use utoipa::ToSchema;
 
