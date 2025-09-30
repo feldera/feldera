@@ -425,6 +425,23 @@ impl CircuitConfig {
         self.dev_tweaks.splitter_chunk_size_records = records;
         self
     }
+
+    #[cfg(test)]
+    pub fn with_temporary_storage(self, path: impl AsRef<Path>) -> Self {
+        Self {
+            storage: Some(
+                CircuitStorageConfig::for_config(
+                    StorageConfig {
+                        path: path.as_ref().to_string_lossy().into_owned(),
+                        cache: Default::default(),
+                    },
+                    Default::default(),
+                )
+                .unwrap(),
+            ),
+            ..self
+        }
+    }
 }
 
 impl From<&CircuitConfig> for CircuitConfig {
