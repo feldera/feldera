@@ -4758,6 +4758,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "feldera-cloud1-client"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c41ca98fe69d6105563296f7e52552984ae9638ed00e967396b8047264742e81"
+dependencies = [
+ "chrono",
+ "reqwest 0.12.20",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.12",
+ "utoipa",
+]
+
+[[package]]
 name = "feldera-datagen"
 version = "0.156.0"
 dependencies = [
@@ -7912,6 +7926,7 @@ dependencies = [
  "dirs",
  "env_logger",
  "fdlimit",
+ "feldera-cloud1-client",
  "feldera-types",
  "flate2",
  "futures-util",
