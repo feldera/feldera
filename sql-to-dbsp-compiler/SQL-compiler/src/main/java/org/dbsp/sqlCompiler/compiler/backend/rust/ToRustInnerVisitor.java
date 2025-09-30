@@ -1305,7 +1305,9 @@ public class ToRustInnerVisitor extends InnerVisitor {
             if (sourceType.is(DBSPTypeVariant.class)) {
                 // Cast variant to vec
                 functionName = "cast_to_vec" + destType.nullableSuffix() + "_" + sourceType.baseTypeWithSuffix();
-                this.builder.append(functionName).append("(").increase();
+                this.builder.append(functionName).append("::<");
+                destVecType.getElementType().accept(this);
+                this.builder.append(">(").increase();
                 expression.source.accept(this);
                 this.builder.decrease().append(")");
                 this.pop(expression);

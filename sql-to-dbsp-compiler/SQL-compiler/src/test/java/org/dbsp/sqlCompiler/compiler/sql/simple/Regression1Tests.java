@@ -1011,4 +1011,12 @@ public class Regression1Tests extends SqlIoTest {
                 COALESCE(mapp, MAP['a', 15, 'b', NULL]) AS mapp
                 FROM tbl;""");
     }
+
+    @Test
+    public void issue4821() {
+        this.getCCS("""
+                CREATE TABLE t (ids VARIANT NOT NULL);
+                CREATE VIEW v AS SELECT *
+                FROM t WHERE ARRAY_MAX(CAST(t.ids AS BIGINT ARRAY)) < 10;""");
+    }
 }
