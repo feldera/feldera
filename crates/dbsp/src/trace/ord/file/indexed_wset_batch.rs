@@ -21,7 +21,6 @@ use crate::{
     },
     DBData, DBWeight, NumEntries, Runtime,
 };
-use dyn_clone::clone_box;
 use feldera_storage::StoragePath;
 use rand::{seq::index::sample, Rng};
 use rkyv::{ser::Serializer, Archive, Archived, Deserialize, Fallible, Serialize};
@@ -257,13 +256,12 @@ where
         let mut cursor = self.cursor();
         while cursor.key_valid() {
             while cursor.val_valid() {
+                unsafe { cursor.val_cursor.aux(&mut cursor.diff) };
                 let diff = cursor.diff.neg_by_ref();
-                writer
-                    .write1((cursor.val.as_ref(), diff.erase()))
-                    .unwrap_storage();
+                writer.write1((cursor.val(), diff.erase())).unwrap_storage();
                 cursor.step_val();
             }
-            writer.write0((cursor.key.as_ref(), &())).unwrap_storage();
+            writer.write0((cursor.key(), &())).unwrap_storage();
             cursor.step_key();
         }
         Self {
@@ -391,7 +389,7 @@ where
             let mut indexes = sample(rng, size, sample_size).into_vec();
             indexes.sort_unstable();
             for index in indexes.into_iter() {
-                cursor.move_key(|key_cursor| key_cursor.move_to_row(index as u64));
+                cursor.move_key(|key_cursor| unsafe { key_cursor.move_to_row(index as u64) });
                 output.push_ref(cursor.key());
             }
         }
@@ -612,11 +610,9 @@ where
     wset: &'s FileIndexedWSet<K, V, R>,
 
     key_cursor: KeyCursor<'s, K, V, R>,
-    key: Box<K>,
 
     val_cursor: ValCursor<'s, K, V, R>,
-    val: Box<V>,
-    pub(crate) diff: Box<R>,
+    diff: Box<R>,
 }
 
 impl<K, V, R> Clone for FileIndexedWSetCursor<'_, K, V, R>
@@ -629,10 +625,8 @@ where
         Self {
             wset: self.wset,
             key_cursor: self.key_cursor.clone(),
-            key: clone_box(&self.key),
             val_cursor: self.val_cursor.clone(),
-            val: clone_box(&self.val),
-            diff: clone_box(&self.diff),
+            diff: self.weight_factory().default_box(),
         }
     }
 }
@@ -644,25 +638,20 @@ where
     R: WeightTrait + ?Sized,
 {
     pub fn new(wset: &'s FileIndexedWSet<K, V, R>) -> Self {
-        let key_cursor = wset.file.rows().first().unwrap_storage();
-        let mut key = wset.factories.key_factory().default_box();
-        unsafe { key_cursor.key(&mut key) };
+        let key_cursor = unsafe { wset.file.rows().first().unwrap_storage() };
 
-        let val_cursor = key_cursor
-            .next_column()
-            .unwrap_storage()
-            .first()
-            .unwrap_storage();
-        let mut val = wset.factories.val_factory().default_box();
-        let mut diff = wset.factories.weight_factory().default_box();
-        unsafe { val_cursor.item((&mut val, &mut diff)) };
+        let val_cursor = unsafe {
+            key_cursor
+                .next_column()
+                .unwrap_storage()
+                .first()
+                .unwrap_storage()
+        };
         Self {
             wset,
             key_cursor,
-            key,
             val_cursor,
-            val,
-            diff,
+            diff: wset.factories.weight_factory().default_box(),
         }
     }
 
@@ -671,14 +660,13 @@ where
         F: Fn(&mut KeyCursor<'s, K, V, R>) -> Result<(), ReaderError>,
     {
         op(&mut self.key_cursor).unwrap_storage();
-        unsafe { self.key_cursor.key(&mut self.key) };
-        self.val_cursor = self
-            .key_cursor
-            .next_column()
-            .unwrap_storage()
-            .first_with_hint(&self.val_cursor)
-            .unwrap_storage();
-        unsafe { self.val_cursor.item((&mut self.val, &mut self.diff)) };
+        self.val_cursor = unsafe {
+            self.key_cursor
+                .next_column()
+                .unwrap_storage()
+                .first_with_hint(&self.val_cursor)
+                .unwrap_storage()
+        };
     }
 
     fn move_val<F>(&mut self, op: F)
@@ -686,7 +674,6 @@ where
         F: Fn(&mut ValCursor<'s, K, V, R>) -> Result<(), ReaderError>,
     {
         op(&mut self.val_cursor).unwrap_storage();
-        unsafe { self.val_cursor.item((&mut self.val, &mut self.diff)) };
     }
 }
 
@@ -701,17 +688,17 @@ where
     }
 
     fn key(&self) -> &K {
-        debug_assert!(self.key_valid());
-        self.key.as_ref()
+        self.key_cursor.key().unwrap()
     }
 
     fn val(&self) -> &V {
         debug_assert!(self.val_valid());
-        self.val.as_ref()
+        self.val_cursor.key().unwrap()
     }
 
     fn map_times(&mut self, logic: &mut dyn FnMut(&(), &R)) {
         if self.val_valid() {
+            unsafe { self.val_cursor.aux(&mut self.diff) };
             logic(&(), self.diff.as_ref())
         }
     }
@@ -722,6 +709,7 @@ where
 
     fn map_values(&mut self, logic: &mut dyn FnMut(&V, &R)) {
         while self.val_valid() {
+            unsafe { self.val_cursor.aux(&mut self.diff) };
             logic(self.val(), self.diff.as_ref());
             self.step_val();
         }
@@ -729,6 +717,7 @@ where
 
     fn weight(&mut self) -> &R {
         debug_assert!(self.val_valid());
+        unsafe { self.val_cursor.aux(&mut self.diff) };
         self.diff.as_ref()
     }
 
@@ -741,11 +730,11 @@ where
     }
 
     fn step_key(&mut self) {
-        self.move_key(|key_cursor| key_cursor.move_next());
+        self.move_key(|key_cursor| unsafe { key_cursor.move_next() });
     }
 
     fn step_key_reverse(&mut self) {
-        self.move_key(|key_cursor| key_cursor.move_prev());
+        self.move_key(|key_cursor| unsafe { key_cursor.move_prev() });
     }
 
     fn seek_key(&mut self, key: &K) {
@@ -774,7 +763,7 @@ where
     }
 
     fn step_val(&mut self) {
-        self.move_val(|val_cursor| val_cursor.move_next());
+        self.move_val(|val_cursor| unsafe { val_cursor.move_next() });
     }
 
     fn seek_val(&mut self, val: &V) {
@@ -786,19 +775,19 @@ where
     }
 
     fn rewind_keys(&mut self) {
-        self.move_key(|key_cursor| key_cursor.move_first());
+        self.move_key(|key_cursor| unsafe { key_cursor.move_first() });
     }
 
     fn fast_forward_keys(&mut self) {
-        self.move_key(|key_cursor| key_cursor.move_last());
+        self.move_key(|key_cursor| unsafe { key_cursor.move_last() });
     }
 
     fn rewind_vals(&mut self) {
-        self.move_val(|val_cursor| val_cursor.move_first());
+        self.move_val(|val_cursor| unsafe { val_cursor.move_first() });
     }
 
     fn step_val_reverse(&mut self) {
-        self.move_val(|val_cursor| val_cursor.move_prev());
+        self.move_val(|val_cursor| unsafe { val_cursor.move_prev() });
     }
 
     fn seek_val_reverse(&mut self, val: &V) {
@@ -810,7 +799,7 @@ where
     }
 
     fn fast_forward_vals(&mut self) {
-        self.move_val(|val_cursor| val_cursor.move_last());
+        self.move_val(|val_cursor| unsafe { val_cursor.move_last() });
     }
 
     fn position(&self) -> Option<Position> {
