@@ -8,7 +8,6 @@ from uuid import UUID
 
 from typing import List, Dict, Callable, Optional, Generator, Mapping, Any
 from collections import deque
-from queue import Queue
 
 from feldera.rest.errors import FelderaAPIError
 from feldera.enums import (
@@ -26,7 +25,7 @@ from feldera.enums import (
 )
 from feldera.rest.pipeline import Pipeline as InnerPipeline
 from feldera.rest.feldera_client import FelderaClient
-from feldera._callback_runner import _CallbackRunnerInstruction, CallbackRunner
+from feldera._callback_runner import CallbackRunner
 from feldera.output_handler import OutputHandler
 from feldera._helpers import ensure_dataframe_has_columns, chunk_dataframe
 from feldera.rest.sql_table import SQLTable
@@ -39,27 +38,12 @@ class Pipeline:
     def __init__(self, client: FelderaClient):
         self.client: FelderaClient = client
         self._inner: InnerPipeline | None = None
-        self.views_tx: List[Dict[str, Queue]] = []
 
     @staticmethod
     def _from_inner(inner: InnerPipeline, client: FelderaClient) -> "Pipeline":
         pipeline = Pipeline(client)
         pipeline._inner = inner
         return pipeline
-
-    def __setup_output_listeners(self):
-        """
-        Internal function used to set up the output listeners.
-
-        :meta private:
-        """
-
-        for view_queue in self.views_tx:
-            for view_name, queue in view_queue.items():
-                # sends a message to the callback runner to start listening
-                queue.put(_CallbackRunnerInstruction.PipelineStarted)
-                # block until the callback runner is ready
-                queue.join()
 
     def refresh(self, field_selector: PipelineFieldSelector):
         """
@@ -237,23 +221,21 @@ class Pipeline:
     def listen(self, view_name: str) -> OutputHandler:
         """
         Follow the change stream (i.e., the output) of the provided view.
-        Returns an output handler to read the changes.
+        Returns an output handle to read the changes.
 
-        When the pipeline is stopped, these listeners are dropped.
+        When the pipeline is stopped, the handle is dropped.
 
-        You must call this method before starting the pipeline to get the entire output of the view.
-        If this method is called once the pipeline has started, you will only get the output from that point onwards.
+        The handle will only receive changes from the point in time when the listener is created.
+        In order to receive all changes since the pipeline started, you can create the pipeline in the `PAUSED` state
+        using :meth:`start_paused`, attach listeners and unpause the pipeline using :meth:`resume`.
 
         :param view_name: The name of the view to listen to.
         """
 
-        queue: Optional[Queue] = None
-
         if self.status() not in [PipelineStatus.PAUSED, PipelineStatus.RUNNING]:
-            queue = Queue(maxsize=1)
-            self.views_tx.append({view_name: queue})
+            raise RuntimeError("Pipeline must be running or paused to listen to output")
 
-        handler = OutputHandler(self.client, self.name, view_name, queue)
+        handler = OutputHandler(self.client, self.name, view_name)
         handler.start()
 
         return handler
@@ -264,8 +246,9 @@ class Pipeline:
         """
         Run the given callback on each chunk of the output of the specified view.
 
-        You must call this method before starting the pipeline to operate on the entire output.
-        You can call this method after the pipeline has started, but you will only get the output from that point onwards.
+        The callback will only receive changes from the point in time when the listener is created.
+        In order to receive all changes since the pipeline started, you can create the pipeline in the `PAUSED` state
+        using :meth:`start_paused`, attach listeners and unpause the pipeline using :meth:`resume`.
 
         :param view_name: The name of the view.
         :param callback: The callback to run on each chunk. The callback should take two arguments:
@@ -283,13 +266,10 @@ class Pipeline:
 
         """
 
-        queue: Optional[Queue] = None
-
         if self.status() not in [PipelineStatus.RUNNING, PipelineStatus.PAUSED]:
-            queue = Queue(maxsize=1)
-            self.views_tx.append({view_name: queue})
+            raise RuntimeError("Pipeline must be running or paused to listen to output")
 
-        handler = CallbackRunner(self.client, self.name, view_name, callback, queue)
+        handler = CallbackRunner(self.client, self.name, view_name, callback)
         handler.start()
 
     def wait_for_completion(
@@ -364,46 +344,6 @@ class Pipeline:
         """
 
         return self.stats().global_metrics.pipeline_complete
-
-    def start(self, wait: bool = True, timeout_s: Optional[float] = None):
-        """
-        .. _start:
-
-        Starts this pipeline.
-
-        - The pipeline must be in STOPPED state to start.
-        - If the pipeline is in any other state, an error will be raised.
-        - If the pipeline is in PAUSED state, use `.meth:resume` instead.
-
-        :param timeout_s: The maximum time (in seconds) to wait for the
-            pipeline to start.
-        :param wait: Set True to wait for the pipeline to start. True by default
-
-        :raises RuntimeError: If the pipeline is not in STOPPED state.
-        """
-
-        status = self.status()
-        if status != PipelineStatus.STOPPED:
-            raise RuntimeError(
-                f"""Cannot start pipeline '{self.name}' in state \
-'{str(status.name)}'. The pipeline must be in STOPPED state before it can be \
-started. You can either stop the pipeline using the `Pipeline.stop()` \
-method or use `Pipeline.resume()` to resume a paused pipeline."""
-            )
-
-        if not wait:
-            if len(self.views_tx) > 0:
-                raise ValueError(
-                    "cannot start with 'wait=False' when output listeners are configured. Try setting 'wait=True'."
-                )
-
-            self.client.start_pipeline(self.name, wait=wait)
-
-            return
-
-        self.client.start_pipeline_as_paused(self.name, wait=wait, timeout_s=timeout_s)
-        self.__setup_output_listeners()
-        self.resume(timeout_s=timeout_s)
 
     def restart(self, timeout_s: Optional[float] = None):
         """
@@ -511,6 +451,25 @@ metrics"""
 
         self.client.activate_pipeline(self.name, wait=wait, timeout_s=timeout_s)
 
+    def start(self, wait: bool = True, timeout_s: Optional[float] = None):
+        """
+        .. _start:
+
+        Starts this pipeline.
+
+        - The pipeline must be in STOPPED state to start.
+        - If the pipeline is in any other state, an error will be raised.
+        - If the pipeline is in PAUSED state, use `.meth:resume` instead.
+
+        :param timeout_s: The maximum time (in seconds) to wait for the
+            pipeline to start.
+        :param wait: Set True to wait for the pipeline to start. True by default
+
+        :raises RuntimeError: If the pipeline is not in STOPPED state.
+        """
+
+        self.client.start_pipeline(self.name, wait=wait, timeout_s=timeout_s)
+
     def start_paused(self, wait: bool = True, timeout_s: Optional[float] = None):
         """
         Starts the pipeline in the paused state.
@@ -554,20 +513,6 @@ metrics"""
             pipeline to stop.
         """
 
-        if wait:
-            for view_queue in self.views_tx:
-                for _, queue in view_queue.items():
-                    # sends a message to the callback runner to stop listening
-                    queue.put(_CallbackRunnerInstruction.RanToCompletion)
-
-            if len(self.views_tx) > 0:
-                while self.views_tx:
-                    view = self.views_tx.pop()
-                    for view_name, queue in view.items():
-                        # block until the callback runner has been stopped
-                        queue.join()
-
-        time.sleep(3)
         self.client.stop_pipeline(
             self.name, force=force, wait=wait, timeout_s=timeout_s
         )

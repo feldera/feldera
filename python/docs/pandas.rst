@@ -74,11 +74,12 @@ To ensure all data is received start listening before calling
     df_students = pd.read_csv('students.csv')
     df_grades = pd.read_csv('grades.csv')
 
+    pipeline.start()
+
     # listen for the output of the view here in the notebook
     # you do not need to call this if you are forwarding the data to a sink
     out = pipeline.listen("average_scores")
 
-    pipeline.start()
     pipeline.input_pandas("students", df_students)
     pipeline.input_pandas("grades", df_grades)
 
