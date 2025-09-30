@@ -413,6 +413,22 @@ impl Controller {
         init.init(circuit_factory, error_cb)
     }
 
+    #[cfg(test)]
+    pub(crate) fn with_test_config_keep_program_diff<F>(
+        circuit_factory: F,
+        config: &PipelineConfig,
+        error_cb: Box<dyn Fn(Arc<ControllerError>, Option<String>) + Send + Sync>,
+    ) -> Result<Self, ControllerError>
+    where
+        F: FnOnce(CircuitConfig) -> Result<(DBSPHandle, Box<dyn CircuitCatalog>), ControllerError>
+            + Send
+            + 'static,
+    {
+        let builder = ControllerBuilder::new(config)?;
+        let init = builder.open_checkpoint()?;
+        init.init(circuit_factory, error_cb)
+    }
+
     fn build<F>(
         controller_init: ControllerInit,
         circuit_factory: F,
@@ -1498,7 +1514,10 @@ impl CircuitThread {
                 .collect()
         });
 
-        let can_replay = pipeline_diff.map(|diff| diff.is_empty()).unwrap_or(false);
+        let can_replay = pipeline_diff
+            .as_ref()
+            .map(|diff| diff.is_empty())
+            .unwrap_or(false);
 
         if can_replay && circuit.bootstrap_in_progress() {
             return Err(ControllerError::UnexpectedBootstrap {

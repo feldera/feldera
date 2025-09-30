@@ -1297,7 +1297,7 @@ fn test_bootstrap(rounds: &[usize]) {
 
     // Start pipeline.
     println!("start pipeline");
-    let mut controller = Controller::with_test_config(
+    let mut controller = Controller::with_test_config_keep_program_diff(
         |circuit_config| {
             Ok(test_circuit::<TestStruct>(
                 circuit_config,
@@ -1348,7 +1348,7 @@ fn test_bootstrap(rounds: &[usize]) {
         controller.stop().unwrap();
 
         // Resume modified pipeline.
-        controller = Controller::with_test_config(
+        controller = Controller::with_test_config_keep_program_diff(
             move |circuit_config| {
                 Ok(test_circuit::<TestStruct>(
                     circuit_config,
