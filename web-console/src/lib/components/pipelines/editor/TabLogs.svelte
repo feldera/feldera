@@ -103,6 +103,7 @@
         'Standby',
         'Bootstrapping',
         'Replaying',
+        'AwaitingApproval',
         'Running',
         'Pausing',
         'Paused',

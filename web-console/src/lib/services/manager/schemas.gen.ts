@@ -359,6 +359,7 @@ export const $CombinedStatus = {
     'Initializing',
     'Bootstrapping',
     'Replaying',
+    'AwaitingApproval',
     'Paused',
     'Running',
     'Suspended',
@@ -1905,6 +1906,19 @@ connector initializes.`,
 The number of offsets must match the number of partitions in the topic.`
         }
       }
+    },
+    {
+      type: 'object',
+      required: ['timestamp'],
+      properties: {
+        timestamp: {
+          type: 'integer',
+          format: 'int64',
+          description: `Start from a particular timestamp in the topic.
+
+Kafka timestamps are in milliseconds since the epoch.`
+        }
+      }
     }
   ],
   description: 'Where to begin reading a Kafka topic.'
@@ -3070,6 +3084,18 @@ Default: 1 MiB`,
       description: 'The maximum number of records in a single buffer.',
       nullable: true,
       minimum: 0
+    },
+    on_conflict_do_nothing: {
+      type: 'boolean',
+      description: `Specifies how the connector handles conflicts when executing an \`INSERT\`
+into a table with a primary key. By default, an existing row with the same
+key is overwritten. Setting this flag to \`true\` preserves the existing row
+and ignores the new insert.
+
+This setting does not affect \`UPDATE\` statements, which always replace the
+value associated with the key.
+
+Default: \`false\``
     },
     ssl_ca_pem: {
       type: 'string',

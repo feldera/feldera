@@ -244,6 +244,7 @@ export type CombinedStatus =
   | 'Initializing'
   | 'Bootstrapping'
   | 'Replaying'
+  | 'AwaitingApproval'
   | 'Paused'
   | 'Running'
   | 'Suspended'
@@ -1432,6 +1433,14 @@ export type KafkaStartFromConfig =
        */
       offsets: Array<number>
     }
+  | {
+      /**
+       * Start from a particular timestamp in the topic.
+       *
+       * Kafka timestamps are in milliseconds since the epoch.
+       */
+      timestamp: number
+    }
 
 export type LicenseInformation = {
   /**
@@ -2055,6 +2064,18 @@ export type PostgresWriterConfig = {
    * The maximum number of records in a single buffer.
    */
   max_records_in_buffer?: number | null
+  /**
+   * Specifies how the connector handles conflicts when executing an `INSERT`
+   * into a table with a primary key. By default, an existing row with the same
+   * key is overwritten. Setting this flag to `true` preserves the existing row
+   * and ignores the new insert.
+   *
+   * This setting does not affect `UPDATE` statements, which always replace the
+   * value associated with the key.
+   *
+   * Default: `false`
+   */
+  on_conflict_do_nothing?: boolean
   /**
    * The CA certificate in PEM format.
    */
