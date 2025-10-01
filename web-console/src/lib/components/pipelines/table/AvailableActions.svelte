@@ -59,6 +59,7 @@
       .with('Standby', () => ['kill', 'delete'])
       .with('Bootstrapping', () => ['kill', 'delete'])
       .with('Replaying', () => ['kill', 'delete'])
+      .with('AwaitingApproval', () => ['kill', 'delete'])
       .with('Resuming', () => [...stop, 'kill', 'delete'])
       .with('Stopping', () => ['kill'])
       .with('Unavailable', () => [...stop, 'kill', 'delete'])

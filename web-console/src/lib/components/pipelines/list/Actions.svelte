@@ -220,6 +220,14 @@ groups related actions into multi-action dropdowns when multiple options are ava
         '_storage_indicator',
         '_delete'
       ])
+      .with('AwaitingApproval', () => [
+        '_kill',
+        '_spacer_short',
+        '_saveFile',
+        '_configurations',
+        '_storage_indicator',
+        '_delete'
+      ])
       .with('Stopping', () => [
         '_spinner',
         '_saveFile',
