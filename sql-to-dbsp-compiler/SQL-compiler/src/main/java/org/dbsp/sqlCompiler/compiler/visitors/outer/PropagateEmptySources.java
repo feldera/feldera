@@ -14,6 +14,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPNegateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNoopOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAggregateOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamAntiJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamDistinctOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSubtractOperator;
@@ -46,6 +47,10 @@ public class PropagateEmptySources extends CircuitCloneVisitor {
         DBSPExpression expression = operator.getFunction();
         if (expression.is(DBSPZSetExpression.class)) {
             DBSPZSetExpression lit = expression.to(DBSPZSetExpression.class);
+            if (lit.isEmpty())
+                this.emptySources.add(operator);
+        } else if (expression.is(DBSPIndexedZSetExpression.class)) {
+            DBSPIndexedZSetExpression lit = expression.to(DBSPIndexedZSetExpression.class);
             if (lit.isEmpty())
                 this.emptySources.add(operator);
         }
@@ -229,6 +234,27 @@ public class PropagateEmptySources extends CircuitCloneVisitor {
                 this.map(operator, result);
                 return;
             }
+        }
+        super.postorder(operator);
+    }
+
+    @Override
+    public void postorder(DBSPStreamAntiJoinOperator operator) {
+        // Empty left input -> empty result
+        OutputPort left = this.mapped(operator.left());
+        if (this.emptySources.contains(left.node())) {
+            DBSPExpression value = emptySet(operator.getType());
+            DBSPConstantOperator result = new DBSPConstantOperator(
+                    operator.getRelNode(), value, false, operator.isMultiset);
+            this.emptySources.add(result);
+            this.map(operator, result);
+            return;
+        }
+        // Empty right input -> result is left input
+        OutputPort right = this.mapped(operator.right());
+        if (this.emptySources.contains(right.node())) {
+            this.map(operator.outputPort(), operator.left(), false);
+            return;
         }
         super.postorder(operator);
     }

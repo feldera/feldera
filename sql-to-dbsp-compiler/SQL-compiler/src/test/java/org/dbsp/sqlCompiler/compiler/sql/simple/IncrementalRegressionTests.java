@@ -1,8 +1,11 @@
 package org.dbsp.sqlCompiler.compiler.sql.simple;
 
+import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinIndexOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
@@ -934,5 +937,20 @@ public class IncrementalRegressionTests extends SqlIoTest {
                  1  | a|    2 | 1
                  1  | b|    4 | 1
                  2  | d|    1 | 1""");
+    }
+
+    @Test
+    public void outerJoin() {
+        var cc = this.getCC("""
+                CREATE TABLE tab0(x int);
+                CREATE TABLE tab2(x int);
+                CREATE VIEW V AS SELECT ALL * FROM tab2 AS cor0 LEFT OUTER JOIN tab0 AS cor1 ON NULL IS NOT NULL;""");
+        // The optimizer should reduce this to just a Map operator
+        cc.visit(new CircuitVisitor(cc.compiler) {
+            @Override
+            public void postorder(DBSPJoinBaseOperator node) {
+                Assert.fail("Should have been removed");
+            }
+        });
     }
 }
