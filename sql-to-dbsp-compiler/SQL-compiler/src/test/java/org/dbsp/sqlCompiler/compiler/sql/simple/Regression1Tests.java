@@ -12,7 +12,6 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStaticItem;
 import org.dbsp.util.Linq;
 import org.junit.Assert;
-import org.junit.Ignore;
 import org.junit.Test;
 
 import java.sql.SQLException;
@@ -939,6 +938,21 @@ public class Regression1Tests extends SqlIoTest {
                 CREATE MATERIALIZED VIEW v2 AS SELECT
                 bin BETWEEN X'0B1620' AND X'0B1620' AS bin
                 FROM tbl;""");
+    }
+
+    @Test
+    public void issue4815() {
+        var ccs = this.getCCS("""
+                CREATE TABLE tbl(bin BINARY(3));
+                
+                CREATE VIEW G AS SELECT
+                LEAST(bin, X'1F8B0800') AS res,
+                LEAST(X'0B1620', X'1F8B0800') AS res1
+                FROM tbl;""");
+        ccs.step("INSERT INTO tbl VALUES(x'0B1620')", """
+                 res | res1 | weight
+                ---------------------
+                 0B1620 | 0B1620 | 1""");
     }
 
     @Test
