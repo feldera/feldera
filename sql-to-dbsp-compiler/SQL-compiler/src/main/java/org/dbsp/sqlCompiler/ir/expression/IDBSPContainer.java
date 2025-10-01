@@ -25,4 +25,6 @@ package org.dbsp.sqlCompiler.ir.expression;
 
 import org.dbsp.util.ICastable;
 
+/** Base interface for classes representing expressions that have container types,
+ * e.g., Array, Map, ZSet, IndexedZSet. */
 public interface IDBSPContainer extends ICastable  { }

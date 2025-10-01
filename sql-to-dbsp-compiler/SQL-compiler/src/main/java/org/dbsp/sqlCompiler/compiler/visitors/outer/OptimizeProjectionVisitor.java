@@ -19,6 +19,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.Projection;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFlatmap;
+import org.dbsp.sqlCompiler.ir.expression.DBSPIndexedZSetExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeFunction;
@@ -113,6 +114,24 @@ public class OptimizeProjectionVisitor extends CircuitCloneWithGraphsVisitor {
                         this.compiler, source.node().to(DBSPJoinBaseOperator.class), operator);
                 this.map(operator, result);
                 return;
+            } else if (source.node().is(DBSPConstantOperator.class)) {
+                DBSPExpression c = source.node().to(DBSPConstantOperator.class).getFunction();
+                // Currently we can only simplify if the source is an empty ZSet.
+                // In that case the output is also empty.
+                boolean isEmpty = false;
+                if (c.is(DBSPZSetExpression.class)) {
+                    isEmpty = c.to(DBSPZSetExpression.class).isEmpty();
+                } else if (c.is(DBSPIndexedZSetExpression.class)) {
+                    isEmpty = c.to(DBSPIndexedZSetExpression.class).isEmpty();
+                }
+                if (isEmpty) {
+                    DBSPIndexedZSetExpression empty = new DBSPIndexedZSetExpression(
+                            c.getNode(), operator.getOutputIndexedZSetType());
+                    DBSPConstantOperator result = new DBSPConstantOperator(
+                            operator.getRelNode(), empty, false, false);
+                    this.map(operator, result);
+                    return;
+                }
             }
         }
         super.postorder(operator);
