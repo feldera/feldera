@@ -244,6 +244,7 @@ export type CombinedStatus =
   | 'Initializing'
   | 'Bootstrapping'
   | 'Replaying'
+  | 'AwaitingApproval'
   | 'Paused'
   | 'Running'
   | 'Suspended'

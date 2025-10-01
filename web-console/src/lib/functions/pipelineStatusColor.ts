@@ -39,6 +39,11 @@ export const pipelineStatusColor = (status: PipelineStatus): StatusColors => {
       dot: 'preset-filled-secondary-200-800',
       deploymentChip: 'preset-filled-secondary-200-800'
     }))
+    .with('AwaitingApproval', () => ({
+      chip: 'bg-warning-200-800',
+      dot: 'preset-filled-warning-200-800',
+      deploymentChip: 'preset-filled-warning-200-800'
+    }))
     .with('Running', () => ({
       chip: 'preset-filled-success-200-800',
       dot: 'preset-filled-success-400-600',
