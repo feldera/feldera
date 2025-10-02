@@ -231,7 +231,7 @@ const toPipeline = <
   pipeline: P
 ) => ({
   name: pipeline.name,
-  description: pipeline.description,
+  description: pipeline.description ?? '',
   runtimeConfig: pipeline.runtime_config,
   programConfig: pipeline.program_config,
   programCode: pipeline.program_code ?? '',
