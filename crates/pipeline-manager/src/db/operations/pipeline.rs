@@ -509,6 +509,18 @@ pub(crate) async fn new_pipeline(
     Ok((PipelineId(new_id), Version(1)))
 }
 
+/// Modify pipeline.
+///
+/// # Arguments
+///
+/// * `is_compiler_update` - if true, indicates that the update is being performed by the compiler server.
+/// * `platform_version` - the currently running Feldera platform version. If `bump_platform_version` is true,
+///   pipeline's platform_version will be set to this value.
+/// * `bump_platform_version` - if true, the platform_version of the pipeline will be updated to the
+///   provided `platform_version`. In addition, the platform_version will be updated unconditionally
+///   if the program code or program settings are getting updated by this request.
+/// * Other arguments correspond to fields that can be updated. If an argument is `None`, the corresponding
+///   field is not updated.
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn update_pipeline(
     txn: &Transaction<'_>,
@@ -518,6 +530,7 @@ pub(crate) async fn update_pipeline(
     name: &Option<String>,
     description: &Option<String>,
     platform_version: &str,
+    mut bump_platform_version: bool,
     runtime_config: &Option<serde_json::Value>,
     program_code: &Option<String>,
     udf_rust: &Option<String>,
@@ -595,7 +608,7 @@ pub(crate) async fn update_pipeline(
     // If it is a compiler update, then the only thing it must change is the platform_version
     assert!(
         !is_compiler_update
-            || (platform_version != current.platform_version
+            || (bump_platform_version
                 && name.is_none()
                 && description.is_none()
                 && runtime_config.is_none()
@@ -611,7 +624,7 @@ pub(crate) async fn update_pipeline(
             || description
                 .as_ref()
                 .is_some_and(|v| *v == current.description))
-        && (platform_version == current.platform_version)
+        && (!bump_platform_version || platform_version == current.platform_version.as_str())
         && (runtime_config.is_none()
             || runtime_config
                 .as_ref()
@@ -701,13 +714,33 @@ pub(crate) async fn update_pipeline(
         }
     }
 
+    // If the program changed, make the following changes:
+    // - increment program version
+    // - update platform_version to the current version,
+    // - unset the schema
+    // - reset the status back to pending.
+    let program_changed = (bump_platform_version
+        && platform_version != current.platform_version.as_str())
+        || program_code
+            .as_ref()
+            .is_some_and(|v| *v != current.program_code)
+        || udf_rust.as_ref().is_some_and(|v| *v != current.udf_rust)
+        || udf_toml.as_ref().is_some_and(|v| *v != current.udf_toml)
+        || program_config
+            .as_ref()
+            .is_some_and(|v| *v != current.program_config);
+
+    if program_changed {
+        bump_platform_version = true;
+    }
+
     // Otherwise, one of the fields is non-null and different, and as such it should be updated
     let stmt = txn
         .prepare_cached(
             "UPDATE pipeline
                  SET name = COALESCE($1, name),
                      description = COALESCE($2, description),
-                     platform_version = $3,
+                     platform_version = COALESCE($3, platform_version),
                      runtime_config = COALESCE($4, runtime_config),
                      program_code = COALESCE($5, program_code),
                      udf_rust = COALESCE($6, udf_rust),
@@ -724,7 +757,11 @@ pub(crate) async fn update_pipeline(
             &[
                 &name,
                 &description,
-                &platform_version.to_string(),
+                &if bump_platform_version {
+                    Some(platform_version.to_string())
+                } else {
+                    None
+                },
                 &runtime_config.as_ref().map(|v| v.to_string()),
                 &program_code,
                 &udf_rust,
@@ -738,17 +775,6 @@ pub(crate) async fn update_pipeline(
         .map_err(maybe_unique_violation)?;
     assert_eq!(rows_affected, 1); // The row must exist as it has been retrieved before
 
-    // If the program changed, the program version must be incremented,
-    // the schema unset and the status back to pending.
-    let program_changed = (platform_version != current.platform_version)
-        || program_code
-            .as_ref()
-            .is_some_and(|v| *v != current.program_code)
-        || udf_rust.as_ref().is_some_and(|v| *v != current.udf_rust)
-        || udf_toml.as_ref().is_some_and(|v| *v != current.udf_toml)
-        || program_config
-            .as_ref()
-            .is_some_and(|v| *v != current.program_config);
     if program_changed {
         let stmt = txn
             .prepare_cached(

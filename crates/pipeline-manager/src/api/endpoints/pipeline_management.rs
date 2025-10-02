@@ -15,6 +15,7 @@ use crate::db::types::storage::StorageStatus;
 use crate::db::types::tenant::TenantId;
 use crate::db::types::version::Version;
 use crate::error::ManagerError;
+use crate::has_unstable_feature;
 #[cfg(feature = "feldera-enterprise")]
 use actix_web::http::Method;
 use actix_web::{
@@ -824,6 +825,7 @@ pub(crate) async fn put_pipeline(
             Uuid::now_v7(),
             &pipeline_name,
             &state.common_config.platform_version,
+            true,
             pipeline_descr,
         )
         .await?;
@@ -900,6 +902,7 @@ pub(crate) async fn patch_pipeline(
             &body.name,
             &body.description,
             &state.common_config.platform_version,
+            false,
             &body.runtime_config,
             &body.program_code,
             &body.udf_rust,
@@ -912,6 +915,89 @@ pub(crate) async fn patch_pipeline(
     info!(
         "Partially updated pipeline {} to version {} (tenant: {})",
         returned_pipeline.id, returned_pipeline.version, *tenant_id
+    );
+    Ok(HttpResponse::Ok()
+        .insert_header(CacheControl(vec![CacheDirective::NoCache]))
+        .json(returned_pipeline))
+}
+
+/// Recompile a pipeline with the Feldera runtime version included in the
+/// currently installed Feldera platform.
+///
+/// Use this endpoint after upgrading Feldera to rebuild pipelines that were
+/// compiled with older platform versions. In most cases, recompilation is not
+/// required; pipelines compiled with older versions will continue to run on the
+/// upgraded platform.
+///
+/// Situations where recompilation may be necessary:
+/// - To benefit from the latest bug fixes and performance optimizations.
+/// - When backward-incompatible changes are introduced in Feldera. In this case,
+///   attempting to start a pipeline compiled with an unsupported version will
+///   result in an error.
+///
+/// If the pipeline is already compiled with the current platform version,
+/// this operation is a no-op.
+///
+/// Note that recompiling the pipeline with a new platform version may change its
+/// query plan. If the modified pipeline is started from an existing checkpoint,
+/// it may require bootstrapping parts of its state from scratch.  See Feldera
+/// documentation for details on the bootstrapping process.
+#[utoipa::path(
+    context_path = "/v0",
+    security(("JSON web token (JWT) or API key" = [])),
+    params(
+        ("pipeline_name" = String, Path, description = "Unique pipeline name"),
+    ),
+    responses(
+        (status = OK
+            , description = "Pipeline successfully updated"
+            , body = PipelineInfo
+            , example = json!(examples::pipeline_1_info())),
+        (status = NOT_FOUND
+            , description = "Pipeline with that name does not exist"
+            , body = ErrorResponse
+            , example = json!(examples::error_unknown_pipeline_name())),
+        (status = BAD_REQUEST
+            , body = ErrorResponse
+            , examples(
+                ("Name does not match pattern" = (value = json!(examples::error_name_does_not_match_pattern()))),
+                ("Cannot update non-stopped pipeline" = (value = json!(examples::error_update_restricted_to_stopped())))
+            )
+        ),
+        (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
+    ),
+    tag = "Pipeline management"
+)]
+#[post("/pipelines/{pipeline_name}/update_runtime")]
+pub(crate) async fn post_update_runtime(
+    state: WebData<ServerState>,
+    tenant_id: ReqData<TenantId>,
+    path: web::Path<String>,
+) -> Result<HttpResponse, ManagerError> {
+    let pipeline_name = path.into_inner();
+    let pipeline = state
+        .db
+        .lock()
+        .await
+        .update_pipeline(
+            *tenant_id,
+            &pipeline_name,
+            &None,
+            &None,
+            &state.common_config.platform_version,
+            true, // bump platform version.
+            &None,
+            &None,
+            &None,
+            &None,
+            &None,
+        )
+        .await?;
+    let returned_pipeline = PipelineInfoInternal::new(pipeline);
+
+    info!(
+        "Updated pipeline {} platform_version to {} (tenant: {})",
+        returned_pipeline.id, returned_pipeline.platform_version, *tenant_id
     );
     Ok(HttpResponse::Ok()
         .insert_header(CacheControl(vec![CacheDirective::NoCache]))
@@ -1295,4 +1381,61 @@ pub(crate) async fn get_pipeline_logs(
         .runner
         .http_streaming_logs_from_pipeline_by_name(&client, *tenant_id, &pipeline_name)
         .await
+}
+
+#[derive(Debug, Serialize, Deserialize, ToSchema, IntoParams)]
+pub struct PostPipelineTesting {
+    #[serde(default)]
+    pub set_platform_version: Option<String>,
+}
+
+/// This endpoint is used as part of the test harness. Only available if the `testing`
+/// unstable feature is enabled. Do not use in production.
+#[utoipa::path(
+    context_path = "/v0",
+    security(("JSON web token (JWT) or API key" = [])),
+    params(
+        ("pipeline_name" = String, Path, description = "Unique pipeline name"),
+        PostPipelineTesting,
+    ),
+    responses(
+        (status = OK
+            , description = "Request successfully processed"),
+        (status = NOT_FOUND
+            , description = "Pipeline with that name does not exist"
+            , body = ErrorResponse
+            , example = json!(examples::error_unknown_pipeline_name())),
+        (status = METHOD_NOT_ALLOWED
+            , description = "Endpoint is disabled. Set FELDERA_UNSTABLE_FEATURES=\"testing\" to enable."
+            , body = ErrorResponse
+        )
+    ),
+    tag = "Pipeline management"
+)]
+#[post("/pipelines/{pipeline_name}/testing")]
+pub(crate) async fn post_pipeline_testing(
+    state: WebData<ServerState>,
+    tenant_id: ReqData<TenantId>,
+    path: web::Path<String>,
+    query: web::Query<PostPipelineTesting>,
+) -> Result<HttpResponse, ManagerError> {
+    if !has_unstable_feature("testing") {
+        Err(ApiError::UnsupportedPipelineAction {
+            action: "/testing".to_string(),
+            reason: "/testing endpoint is disabled. Set FELDERA_UNSTABLE_FEATURES=\"testing\" to enable.".to_string()
+        })?;
+    };
+
+    let pipeline_name = path.into_inner();
+
+    if let Some(platform_version) = &query.set_platform_version {
+        state
+            .db
+            .lock()
+            .await
+            .testing_force_update_platform_version(*tenant_id, &pipeline_name, platform_version)
+            .await?;
+    }
+
+    Ok(HttpResponse::Ok().finish())
 }

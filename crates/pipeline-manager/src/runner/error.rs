@@ -38,7 +38,7 @@ pub enum RunnerError {
     AutomatonFailedToSerializeDeploymentConfig {
         error: String,
     },
-    AutomatonCannotProvisionDifferentPlatformVersion {
+    AutomatonCannotProvisionUnsupportedPlatformVersion {
         pipeline_platform_version: String,
         runner_platform_version: String,
     },
@@ -117,8 +117,8 @@ impl DetailedError for RunnerError {
             RunnerError::AutomatonFailedToSerializeDeploymentConfig { .. } => {
                 Cow::from("AutomatonFailedToSerializeDeploymentConfig")
             }
-            RunnerError::AutomatonCannotProvisionDifferentPlatformVersion { .. } => {
-                Cow::from("AutomatonCannotProvisionDifferentPlatformVersion")
+            RunnerError::AutomatonCannotProvisionUnsupportedPlatformVersion { .. } => {
+                Cow::from("AutomatonCannotProvisionUnsupportedPlatformVersion")
             }
             RunnerError::AutomatonProvisioningTimeout { .. } => {
                 Cow::from("AutomatonProvisioningTimeout")
@@ -224,14 +224,14 @@ impl Display for RunnerError {
                     "Failed to serialize deployment configuration due to: {error}"
                 )
             }
-            Self::AutomatonCannotProvisionDifferentPlatformVersion {
+            Self::AutomatonCannotProvisionUnsupportedPlatformVersion {
                 pipeline_platform_version,
                 runner_platform_version,
             } => {
                 write!(
                     f,
                     "Unable to provision pipeline because the pipeline platform version ({pipeline_platform_version}) \
-                    differs from the runner platform version ({runner_platform_version}) -- stop and restart the pipeline to resolve this"
+                    is not supported by the installed Feldera platform version ({runner_platform_version}) -- recompile the pipeline with the current platform version to resolve this"
                 )
             }
             Self::AutomatonProvisioningTimeout { timeout } => {
@@ -348,7 +348,7 @@ impl ResponseError for RunnerError {
             Self::AutomatonFailedToSerializeDeploymentConfig { .. } => {
                 StatusCode::INTERNAL_SERVER_ERROR
             }
-            Self::AutomatonCannotProvisionDifferentPlatformVersion { .. } => {
+            Self::AutomatonCannotProvisionUnsupportedPlatformVersion { .. } => {
                 StatusCode::INTERNAL_SERVER_ERROR
             }
             Self::AutomatonProvisioningTimeout { .. } => StatusCode::INTERNAL_SERVER_ERROR,

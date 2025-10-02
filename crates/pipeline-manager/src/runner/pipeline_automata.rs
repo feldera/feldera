@@ -14,6 +14,7 @@ use crate::db::types::utils::{
     validate_deployment_config, validate_program_info, validate_runtime_config,
 };
 use crate::error::source_error;
+use crate::is_supported_runtime;
 use crate::runner::error::RunnerError;
 use crate::runner::interaction::{format_pipeline_url, format_timeout_error_message};
 use crate::runner::pipeline_executor::PipelineExecutor;
@@ -271,13 +272,13 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
     async fn do_run(&mut self) -> Result<Duration, DBError> {
         // Depending on the upcoming transition, it either retrieves the smaller monitoring
         // descriptor, or the larger complete descriptor. It needs the complete descriptor when it
-        // is needs to construct the `deployment_config` (when transitioning to Provisioning) or
+        // needs to construct the `deployment_config` (when transitioning to Provisioning) or
         // to access it (when calling `provision()` during the Provisioning phase).
         //
         // - Stopped but wanting to be provisioned and is compiled at correct platform version:
         //   * status = Stopped
         //   * AND desired_status = Provisioned
-        //   * AND program_status = Success AND platform_version=self.platform_version
+        //   * AND program_status = Success AND is_supported_runtime(self.platform_version, platform_version)
         //
         // - Provisioning but wanting to be provisioned:
         //   * status = Provisioning
@@ -644,7 +645,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
     ) -> Result<State, DBError> {
         let pipeline = pipeline_monitoring_or_complete.only_monitoring();
         if pipeline.program_status == ProgramStatus::Success
-            && pipeline.platform_version == self.platform_version
+            && is_supported_runtime(&self.platform_version, &pipeline.platform_version)
         {
             if let ExtendedPipelineDescrRunner::Complete(pipeline) = pipeline_monitoring_or_complete
             {
@@ -653,7 +654,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             } else {
                 panic!(
                     "For the transit of Stopped towards Running/Paused \
-                    (program successfully compiled at current platform version), \
+                    (program successfully compiled at a compatible platform version), \
                     the complete pipeline descriptor should have been retrieved"
                 );
             }
@@ -671,8 +672,8 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
     ) -> Result<State, DBError> {
         assert!(
             pipeline.program_status != ProgramStatus::Success
-                || self.platform_version != pipeline.platform_version,
-            "Expected to be true: {:?} != {:?} || {} != {}",
+                || !is_supported_runtime(&self.platform_version, &pipeline.platform_version),
+            "Expected to be true: {:?} != {:?} || is_compatible_runtime({:?}, {:?})",
             pipeline.program_status,
             ProgramStatus::Success,
             self.platform_version,
@@ -720,37 +721,37 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             _ => {}
         }
 
-        // The runner is unable to run a pipeline program compiled under an outdated platform.
-        // As such, it requests the compiler to recompile it again by setting the program_status back to `Pending`.
-        // The runner is able to do this as it got ownership of the pipeline when the user set the desired deployment status to `Running`/`Paused`.
-        // It does not do the platform version bump by itself, because it is the compiler's responsibility
-        // to generate only binaries that are of the current platform version.
-        if self.platform_version != pipeline.platform_version
+        // The runner is unable to run a pipeline program compiled under an incompatible platform.
+        if !is_supported_runtime(&self.platform_version, &pipeline.platform_version)
             && pipeline.program_status == ProgramStatus::Success
         {
-            info!("Runner re-initiates program compilation of pipeline {} because its platform version ({}) is outdated by current ({})", pipeline.id, pipeline.platform_version, self.platform_version);
-            self.db
-                .lock()
-                .await
-                .transit_program_status_to_pending(
-                    self.tenant_id,
-                    pipeline.id,
-                    pipeline.program_version,
-                )
-                .await?;
+            info!("Runner cannot start pipeline {} because its runtime version ({}) is incompatible with current ({})", pipeline.id, pipeline.platform_version, self.platform_version);
+
+            return Ok(State::TransitionToStopping {
+                error: Some(ErrorResponse::from_error_nolog(
+                    &RunnerError::AutomatonCannotProvisionUnsupportedPlatformVersion {
+                        runner_platform_version: self.platform_version.clone(),
+                        pipeline_platform_version: pipeline.platform_version.clone(),
+                    },
+                )),
+                suspend_info: None,
+            });
         }
 
         Ok(State::Unchanged)
     }
 
-    /// Transits from `Stopped` towards `Provisioned` when it has successfully compiled at the
-    /// current platform version.
+    /// Transits from `Stopped` towards `Provisioned` when it has successfully compiled at a
+    /// compatible platform version.
     async fn transit_stopped_towards_provisioned_phase_ready(
         &mut self,
         pipeline: &ExtendedPipelineDescr,
     ) -> Result<State, DBError> {
         assert_eq!(pipeline.program_status, ProgramStatus::Success);
-        assert_eq!(self.platform_version, pipeline.platform_version);
+        assert!(is_supported_runtime(
+            &self.platform_version,
+            &pipeline.platform_version
+        ));
 
         // Required runtime_config
         let runtime_config = match validate_runtime_config(&pipeline.runtime_config, true) {
@@ -863,10 +864,10 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
         // The runner is only able to provision a pipeline of the current platform version.
         // If in the meanwhile (e.g., due to runner restart during upgrade) the platform
         // version has changed, provisioning will fail.
-        if pipeline.platform_version != self.platform_version {
+        if !is_supported_runtime(&self.platform_version, &pipeline.platform_version) {
             return State::TransitionToStopping {
                 error: Some(ErrorResponse::from_error_nolog(
-                    &RunnerError::AutomatonCannotProvisionDifferentPlatformVersion {
+                    &RunnerError::AutomatonCannotProvisionUnsupportedPlatformVersion {
                         pipeline_platform_version: pipeline.platform_version.clone(),
                         runner_platform_version: self.platform_version.clone(),
                     },

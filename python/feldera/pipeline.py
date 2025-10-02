@@ -931,6 +931,35 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
             description=description,
         )
 
+    def update_runtime(self):
+        """
+        Recompile a pipeline with the Feldera runtime version included in the
+        currently installed Feldera platform.
+
+        Use this endpoint after upgrading Feldera to rebuild pipelines that were
+        compiled with older platform versions. In most cases, recompilation is not
+        required—pipelines compiled with older versions will continue to run on the
+        upgraded platform.
+
+        Situations where recompilation may be necessary:
+        - To benefit from the latest bug fixes and performance optimizations.
+        - When backward-incompatible changes are introduced in Feldera. In this case,
+        attempting to start a pipeline compiled with an unsupported version will
+        result in an error.
+
+        If the pipeline is already compiled with the current platform version,
+        this operation is a no-op.
+
+        Note that recompiling the pipeline with a new platform version may change its
+        query plan. If the modified pipeline is started from an existing checkpoint,
+        it may require bootstrapping parts of its state from scratch.  See Feldera
+        documentation for details on the bootstrapping process.
+
+        :raises FelderaAPIError: If the pipeline is not in a STOPPED state.
+        """
+
+        self.client.update_pipeline_runtime(self._inner.name)
+
     def storage_status(self) -> StorageStatus:
         """
         Return the storage status of the pipeline.
@@ -951,6 +980,18 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
         self.refresh(PipelineFieldSelector.STATUS)
         return ProgramStatus.from_value(self._inner.program_status)
 
+    def testing_force_update_platform_version(self, platform_version: str):
+        """
+        Used to simulate a pipeline compiled with a different platform version than the one currently in use.
+        This is useful for testing platform upgrade behavior without actually upgrading Feldera.
+
+        This method is only available when Feldera runs with the "testing" unstable feature enabled.
+        """
+
+        self.client.testing_force_update_platform_version(
+            name=self._inner.name, platform_version=platform_version
+        )
+
     def program_status_since(self) -> datetime:
         """
         Return the timestamp when the current program status was set.
@@ -958,6 +999,14 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
 
         self.refresh(PipelineFieldSelector.STATUS)
         return datetime.fromisoformat(self._inner.program_status_since)
+
+    def platform_version(self) -> str:
+        """
+        Return the Feldera platform witch which the program was compiled.
+        """
+
+        self.refresh(PipelineFieldSelector.STATUS)
+        return self._inner.platform_version
 
     def udf_rust(self) -> str:
         """

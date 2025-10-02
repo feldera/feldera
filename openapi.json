@@ -4583,6 +4583,73 @@
         ]
       }
     },
+    "/v0/pipelines/{pipeline_name}/testing": {
+      "post": {
+        "tags": [
+          "Pipeline management"
+        ],
+        "summary": "This endpoint is used as part of the test harness. Only available if the `testing`",
+        "description": "unstable feature is enabled. Do not use in production.",
+        "operationId": "post_pipeline_testing",
+        "parameters": [
+          {
+            "name": "pipeline_name",
+            "in": "path",
+            "description": "Unique pipeline name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "set_platform_version",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "nullable": true
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Request successfully processed"
+          },
+          "404": {
+            "description": "Pipeline with that name does not exist",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "Unknown pipeline name 'non-existent-pipeline'",
+                  "error_code": "UnknownPipelineName",
+                  "details": {
+                    "pipeline_name": "non-existent-pipeline"
+                  }
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Endpoint is disabled. Set FELDERA_UNSTABLE_FEATURES=\"testing\" to enable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JSON web token (JWT) or API key": []
+          }
+        ]
+      }
+    },
     "/v0/pipelines/{pipeline_name}/time_series": {
       "get": {
         "tags": [
@@ -4798,6 +4865,180 @@
                       }
                     }
                   }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JSON web token (JWT) or API key": []
+          }
+        ]
+      }
+    },
+    "/v0/pipelines/{pipeline_name}/update_runtime": {
+      "post": {
+        "tags": [
+          "Pipeline management"
+        ],
+        "summary": "Recompile a pipeline with the Feldera runtime version included in the",
+        "description": "currently installed Feldera platform.\n\nUse this endpoint after upgrading Feldera to rebuild pipelines that were\ncompiled with older platform versions. In most cases, recompilation is not\nrequired; pipelines compiled with older versions will continue to run on the\nupgraded platform.\n\nSituations where recompilation may be necessary:\n- To benefit from the latest bug fixes and performance optimizations.\n- When backward-incompatible changes are introduced in Feldera. In this case,\nattempting to start a pipeline compiled with an unsupported version will\nresult in an error.\n\nIf the pipeline is already compiled with the current platform version,\nthis operation is a no-op.\n\nNote that recompiling the pipeline with a new platform version may change its\nquery plan. If the modified pipeline is started from an existing checkpoint,\nit may require bootstrapping parts of its state from scratch.  See Feldera\ndocumentation for details on the bootstrapping process.",
+        "operationId": "post_update_runtime",
+        "parameters": [
+          {
+            "name": "pipeline_name",
+            "in": "path",
+            "description": "Unique pipeline name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Pipeline successfully updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PipelineInfo"
+                },
+                "example": {
+                  "id": "67e55044-10b1-426f-9247-bb680e5fe0c8",
+                  "name": "example1",
+                  "description": "Description of the pipeline example1",
+                  "created_at": "1970-01-01T00:00:00Z",
+                  "version": 4,
+                  "platform_version": "v0",
+                  "runtime_config": {
+                    "workers": 16,
+                    "storage": {
+                      "backend": {
+                        "name": "default"
+                      },
+                      "min_storage_bytes": null,
+                      "min_step_storage_bytes": null,
+                      "compression": "default",
+                      "cache_mib": null
+                    },
+                    "fault_tolerance": {
+                      "model": "none",
+                      "checkpoint_interval_secs": 60
+                    },
+                    "cpu_profiler": true,
+                    "tracing": false,
+                    "tracing_endpoint_jaeger": "",
+                    "min_batch_size_records": 0,
+                    "max_buffering_delay_usecs": 0,
+                    "resources": {
+                      "cpu_cores_min": null,
+                      "cpu_cores_max": null,
+                      "memory_mb_min": null,
+                      "memory_mb_max": null,
+                      "storage_mb_max": null,
+                      "storage_class": null
+                    },
+                    "clock_resolution_usecs": 1000000,
+                    "pin_cpus": [],
+                    "provisioning_timeout_secs": null,
+                    "max_parallel_connector_init": null,
+                    "init_containers": null,
+                    "checkpoint_during_suspend": true,
+                    "http_workers": null,
+                    "io_workers": null,
+                    "dev_tweaks": {},
+                    "logging": null
+                  },
+                  "program_code": "CREATE TABLE table1 ( col1 INT );",
+                  "udf_rust": "",
+                  "udf_toml": "",
+                  "program_config": {
+                    "profile": "optimized",
+                    "cache": true,
+                    "runtime_version": null
+                  },
+                  "program_version": 2,
+                  "program_status": "Pending",
+                  "program_status_since": "1970-01-01T00:00:00Z",
+                  "program_error": {
+                    "sql_compilation": null,
+                    "rust_compilation": null,
+                    "system_error": null
+                  },
+                  "program_info": null,
+                  "deployment_error": null,
+                  "refresh_version": 4,
+                  "storage_status": "Cleared",
+                  "deployment_id": null,
+                  "deployment_initial": null,
+                  "deployment_status": "Stopped",
+                  "deployment_status_since": "1970-01-01T00:00:00Z",
+                  "deployment_desired_status": "Stopped",
+                  "deployment_desired_status_since": "1970-01-01T00:00:00Z",
+                  "deployment_resources_status": "Stopped",
+                  "deployment_resources_status_since": "1970-01-01T00:00:00Z",
+                  "deployment_resources_desired_status": "Stopped",
+                  "deployment_resources_desired_status_since": "1970-01-01T00:00:00Z",
+                  "deployment_runtime_status": null,
+                  "deployment_runtime_status_since": null,
+                  "deployment_runtime_desired_status": null,
+                  "deployment_runtime_desired_status_since": null
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "Cannot update non-stopped pipeline": {
+                    "value": {
+                      "message": "Pipeline can only be updated while stopped. Stop it first by invoking '/stop'.",
+                      "error_code": "UpdateRestrictedToStopped",
+                      "details": null
+                    }
+                  },
+                  "Name does not match pattern": {
+                    "value": {
+                      "message": "Name 'name-with-invalid-char-#' contains characters which are not lowercase (a-z), uppercase (A-Z), numbers (0-9), underscores (_) or hyphens (-)",
+                      "error_code": "NameDoesNotMatchPattern",
+                      "details": {
+                        "name": "name-with-invalid-char-#"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Pipeline with that name does not exist",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "Unknown pipeline name 'non-existent-pipeline'",
+                  "error_code": "UnknownPipelineName",
+                  "details": {
+                    "pipeline_name": "non-existent-pipeline"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
