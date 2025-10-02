@@ -82,10 +82,8 @@ export const usePipelineAction = () => {
 
       // Apply optimistic updates
       if (optimisticStatus) {
-        // pipeline.optimisticUpdate({ status: optimisticStatus })
         updatePipeline(pipeline_name, (p) => ({ ...p, status: optimisticStatus }))
       } else if (action === 'clear') {
-        // pipeline.optimisticUpdate({ storageStatus: 'Clearing' })
         updatePipeline(pipeline_name, (p) => ({ ...p, storageStatus: 'Clearing' }))
       }
 

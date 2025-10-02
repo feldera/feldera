@@ -7,7 +7,7 @@
   } from '$lib/compositions/useWritablePipeline.svelte.js'
   import { goto } from '$app/navigation'
   import { base } from '$app/paths'
-  import type { ExtendedPipeline } from '$lib/services/pipelineManager.js'
+  import type { ExtendedPipeline, PipelineThumb } from '$lib/services/pipelineManager.js'
   import { usePipelineList } from '$lib/compositions/pipelines/usePipelineList.svelte.js'
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte.js'
 
@@ -22,17 +22,21 @@
   let set = (pipeline: ExtendedPipeline) => {
     pipelineCache.current = pipeline
   }
+  let update = (pipeline: Partial<ExtendedPipeline>) => {
+    pipelineCache.current = { ...pipelineCache.current, ...pipeline }
+  }
   const api = usePipelineManager()
-  let pipeline = $derived(writablePipeline(api, pipelineCache, set))
+  let pipeline = $derived(writablePipeline({ api, pipeline: pipelineCache, set, update }))
   const pipelineList = usePipelineList(data.preloaded)
 
-  useRefreshPipeline(
-    () => pipelineCache,
+  useRefreshPipeline({
+    getPreloaded: () => data.preloadedPipeline,
+    getPipelines: () => pipelineList.pipelines,
+    getPipeline: () => pipelineCache,
     set,
-    () => data.preloadedPipeline,
-    () => pipelineList.pipelines,
-    () => goto(`${base}/`)
-  )
+    update,
+    onNotFound: () => goto(`${base}/`)
+  })
 </script>
 
 <PipelineEditLayout preloaded={data.preloaded} {pipeline}></PipelineEditLayout>

@@ -10,11 +10,17 @@ import {
   type PipelineManagerApi
 } from '$lib/compositions/usePipelineManager.svelte'
 
-export const writablePipeline = (
-  api: PipelineManagerApi,
-  pipeline: { current: ExtendedPipeline },
+export const writablePipeline = ({
+  api,
+  pipeline,
+  set,
+  update
+}: {
+  api: PipelineManagerApi
+  pipeline: { current: ExtendedPipeline }
   set: (pipeline: ExtendedPipeline) => void
-) => {
+  update: (p: Partial<ExtendedPipeline>) => void
+}) => {
   invariant(pipeline, 'useWritablePipeline: pipeline was not preloaded')
   let pipelineName = pipeline.current.name
 
@@ -26,27 +32,39 @@ export const writablePipeline = (
     get current() {
       return pipeline.current
     },
-    async patch(newPipeline: Partial<Pipeline>) {
+    async patch(newPipeline: Partial<Pipeline>, optimistic?: boolean) {
+      if (optimistic) {
+        update(newPipeline)
+      }
       const res = await api.patchPipeline(pipelineName, newPipeline)
-      set(res)
+      if (!optimistic) {
+        set(res)
+      }
       return res
-    },
-    async optimisticUpdate(newPipeline: Partial<ExtendedPipeline>) {
-      set({ ...pipeline.current, ...newPipeline })
     }
   }
 }
 
+export type WritablePipeline = ReturnType<typeof writablePipeline>
+
 /**
  * Refresh pipeline if the refreshVersion field changed
  */
-export const useRefreshPipeline = (
-  getPipeline: () => { current: ExtendedPipeline },
-  set: (p: ExtendedPipeline) => void,
-  getPreloaded: () => ExtendedPipeline,
-  getPipelines: () => PipelineThumb[],
+export const useRefreshPipeline = ({
+  getPipeline,
+  set,
+  update,
+  getPreloaded,
+  getPipelines,
+  onNotFound
+}: {
+  getPipeline: () => { current: ExtendedPipeline }
+  set: (p: ExtendedPipeline) => void
+  update: (p: Partial<ExtendedPipeline>) => void
+  getPreloaded: () => ExtendedPipeline
+  getPipelines: () => PipelineThumb[]
   onNotFound?: () => void
-) => {
+}) => {
   const pipelineName = $derived(getPipeline().current.name)
   const api = usePipelineManager()
   const reload = async () => {
@@ -81,10 +99,7 @@ export const useRefreshPipeline = (
         return
       }
       if (thumb.refreshVersion === pipeline.refreshVersion) {
-        set({
-          ...pipeline,
-          ...thumb
-        })
+        update(thumb)
       } else {
         reload()
       }

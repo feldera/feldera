@@ -63,6 +63,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
   import { useIsMobile } from '$lib/compositions/layout/useIsMobile.svelte'
   import { usePipelineAction } from '$lib/compositions/usePipelineAction.svelte'
   import { usePipelineActionCallbacks } from '$lib/compositions/pipelines/usePipelineActionCallbacks.svelte'
+  import type { WritablePipeline } from '$lib/compositions/useWritablePipeline.svelte'
 
   let {
     pipeline,
@@ -73,11 +74,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
     saveFile,
     class: _class = ''
   }: {
-    pipeline: {
-      current: ExtendedPipeline
-      patch: (pipeline: Partial<Pipeline>) => Promise<ExtendedPipeline>
-      optimisticUpdate: (newPipeline: Partial<ExtendedPipeline>) => Promise<void>
-    }
+    pipeline: WritablePipeline
     onDeletePipeline?: (pipelineName: string) => void
     editConfigDisabled: boolean
     unsavedChanges: boolean
@@ -234,9 +231,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
         { SqlCompiled: P.any },
         { CompilingRust: P.any },
         (cause) => [
-          Object.values(cause)[0].cause === 'upgrade'
-            ? ('_unschedule' as const)
-            : ('_spacer_long' as const),
+          ...(Object.values(cause)[0].cause === 'upgrade' ? ['_unschedule' as const] : []),
           '_start_pending',
           '_saveFile',
           '_configurations',

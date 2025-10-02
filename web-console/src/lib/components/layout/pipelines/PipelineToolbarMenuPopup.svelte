@@ -10,6 +10,7 @@
   import JSONbig from 'true-json-bigint'
   import { Tooltip } from '$lib/components/common/Tooltip.svelte'
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
+  import type { WritablePipeline } from '$lib/compositions/useWritablePipeline.svelte'
 
   let {
     pipelineName,
@@ -20,10 +21,7 @@
     onDeletePipeline
   }: {
     pipelineName: string
-    pipeline: {
-      current: ExtendedPipeline
-      patch: (pipeline: Partial<Pipeline>) => Promise<ExtendedPipeline>
-    }
+    pipeline: WritablePipeline
     saveFile: () => void
     pipelineBusy: boolean
     downstreamChanged: boolean

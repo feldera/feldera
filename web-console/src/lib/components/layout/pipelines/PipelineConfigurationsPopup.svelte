@@ -5,16 +5,13 @@
   import JSONbig from 'true-json-bigint'
   import MultiJSONDialog from '$lib/components/dialogs/MultiJSONDialog.svelte'
   import { useToast } from '$lib/compositions/useToastNotification'
-  import Tooltip from '$lib/components/common/Tooltip.svelte'
+  import type { WritablePipeline } from '$lib/compositions/useWritablePipeline.svelte'
 
   let {
     pipeline,
     pipelineBusy
   }: {
-    pipeline: {
-      current: ExtendedPipeline
-      patch: (pipeline: Partial<Pipeline>) => Promise<ExtendedPipeline>
-    }
+    pipeline: WritablePipeline
     pipelineBusy: boolean
   } = $props()
 

@@ -45,17 +45,14 @@
   import { useLayoutSettings } from '$lib/compositions/layout/useLayoutSettings.svelte'
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
   import PipelineCrashBanner from '$lib/components/pipelines/editor/PipelineCrashBanner.svelte'
+  import type { WritablePipeline } from '$lib/compositions/useWritablePipeline.svelte'
 
   let {
     preloaded,
     pipeline
   }: {
     preloaded: { pipelines: PipelineThumb[] }
-    pipeline: {
-      current: ExtendedPipeline
-      patch: (pipeline: Partial<Pipeline>) => Promise<ExtendedPipeline>
-      optimisticUpdate: (newPipeline: Partial<ExtendedPipeline>) => Promise<void>
-    }
+    pipeline: WritablePipeline
   } = $props()
 
   let editCodeDisabled = $derived(
@@ -102,7 +99,7 @@
             return current.programCode
           },
           set current(programCode: string) {
-            patch({ programCode })
+            patch({ programCode }, true)
           }
         },
         language: 'sql' as const,
@@ -132,7 +129,7 @@
             return current.programUdfRs
           },
           set current(programUdfRs: string) {
-            patch({ programUdfRs })
+            patch({ programUdfRs }, true)
           }
         },
         language: 'rust' as const,
@@ -154,7 +151,7 @@ pub fn my_udf(input: String) -> Result<String, Box<dyn std::error::Error>> {
             return current.programUdfToml
           },
           set current(programUdfToml: string) {
-            patch({ programUdfToml })
+            patch({ programUdfToml }, true)
           }
         },
         language: 'graphql' as const,
