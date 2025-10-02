@@ -903,7 +903,7 @@ async fn pipeline_versioning() {
     handle
         .db
         .update_pipeline(
-            tenant_id, "example", &None, &None, "v0", &None, &None, &None, &None, &None,
+            tenant_id, "example", &None, &None, "v0", false, &None, &None, &None, &None, &None,
         )
         .await
         .unwrap();
@@ -921,6 +921,7 @@ async fn pipeline_versioning() {
             &None,
             &None,
             "v0",
+            false,
             &None,
             &Some("c1".to_string()),
             &Some("r1".to_string()),
@@ -943,6 +944,7 @@ async fn pipeline_versioning() {
             &None,
             &Some("d1".to_string()),
             "v0",
+            false,
             &None,
             &None,
             &None,
@@ -965,6 +967,7 @@ async fn pipeline_versioning() {
             &None,
             &None,
             "v0",
+            false,
             &None,
             &Some("c2".to_string()),
             &None,
@@ -988,6 +991,7 @@ async fn pipeline_versioning() {
             &None,
             &None,
             "v0",
+            false,
             &None,
             &None,
             &Some("r2".to_string()),
@@ -1011,6 +1015,7 @@ async fn pipeline_versioning() {
             &None,
             &None,
             "v0",
+            false,
             &None,
             &None,
             &None,
@@ -1034,6 +1039,7 @@ async fn pipeline_versioning() {
             &None,
             &Some("d2".to_string()),
             "v0",
+            false,
             &None,
             &None,
             &None,
@@ -1063,6 +1069,7 @@ async fn pipeline_versioning() {
             &None,
             &None,
             "v0",
+            false,
             &None,
             &None,
             &None,
@@ -1086,6 +1093,7 @@ async fn pipeline_versioning() {
             &Some("example2".to_string()),
             &None,
             "v0",
+            false,
             &None,
             &None,
             &None,
@@ -1138,6 +1146,7 @@ async fn pipeline_versioning() {
             &None,
             &None,
             "v0",
+            false,
             &Some(new_runtime_config.clone()),
             &None,
             &None,
@@ -1756,6 +1765,7 @@ async fn pipeline_provision_version_guard() {
             &None,
             &None,
             "v0",
+            false,
             &Some(
                 serde_json::to_value(RuntimeConfig {
                     workers: 10,
@@ -2419,14 +2429,14 @@ fn db_impl_behaves_like_model() {
                             }
                             StorageAction::NewOrUpdatePipeline(tenant_id, new_id, original_name, platform_version, pipeline_descr) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
-                                let model_response = model.new_or_update_pipeline(tenant_id, new_id, &original_name, &platform_version, pipeline_descr.clone()).await;
-                                let impl_response = handle.db.new_or_update_pipeline(tenant_id, new_id, &original_name, &platform_version, pipeline_descr.clone()).await;
+                                let model_response = model.new_or_update_pipeline(tenant_id, new_id, &original_name, &platform_version, true, pipeline_descr.clone()).await;
+                                let impl_response = handle.db.new_or_update_pipeline(tenant_id, new_id, &original_name, &platform_version, true, pipeline_descr.clone()).await;
                                 check_response_pipeline_with_created(i, model_response, impl_response);
                             }
                             StorageAction::UpdatePipeline(tenant_id, original_name, name, description, platform_version, runtime_config, program_code, udf_rust, udf_toml, program_config) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
-                                let model_response = model.update_pipeline(tenant_id, &original_name, &name, &description, &platform_version, &runtime_config, &program_code, &udf_rust, &udf_toml, &program_config).await;
-                                let impl_response = handle.db.update_pipeline(tenant_id, &original_name, &name, &description, &platform_version, &runtime_config, &program_code, &udf_rust, &udf_toml, &program_config).await;
+                                let model_response = model.update_pipeline(tenant_id, &original_name, &name, &description, &platform_version, true, &runtime_config, &program_code, &udf_rust, &udf_toml, &program_config).await;
+                                let impl_response = handle.db.update_pipeline(tenant_id, &original_name, &name, &description, &platform_version, true, &runtime_config, &program_code, &udf_rust, &udf_toml, &program_config).await;
                                 check_response_pipeline(i, model_response, impl_response);
                             }
                             StorageAction::DeletePipeline(tenant_id, pipeline_name) => {
@@ -3250,6 +3260,7 @@ impl Storage for Mutex<DbModel> {
         new_id: Uuid,
         original_name: &str,
         platform_version: &str,
+        bump_platform_version: bool,
         pipeline: PipelineDescr,
     ) -> Result<(bool, ExtendedPipelineDescr), DBError> {
         match self.get_pipeline(tenant_id, original_name).await {
@@ -3261,6 +3272,7 @@ impl Storage for Mutex<DbModel> {
                     &Some(pipeline.name),
                     &Some(pipeline.description),
                     platform_version,
+                    bump_platform_version,
                     &Some(pipeline.runtime_config),
                     &Some(pipeline.program_code),
                     &Some(pipeline.udf_rust),
@@ -3292,6 +3304,7 @@ impl Storage for Mutex<DbModel> {
         name: &Option<String>,
         description: &Option<String>,
         platform_version: &str,
+        _bump_platform_version: bool,
         runtime_config: &Option<serde_json::Value>,
         program_code: &Option<String>,
         udf_rust: &Option<String>,
@@ -3312,6 +3325,21 @@ impl Storage for Mutex<DbModel> {
             program_config,
         )
         .await
+    }
+
+    async fn testing_force_update_platform_version(
+        &self,
+        tenant_id: TenantId,
+        pipeline_name: &str,
+        new_platform_version: &str,
+    ) -> Result<(), DBError> {
+        let mut pipeline = self.get_pipeline(tenant_id, pipeline_name).await?;
+        pipeline.platform_version = new_platform_version.to_string();
+        self.lock()
+            .await
+            .pipelines
+            .insert((tenant_id, pipeline.id), pipeline.clone());
+        Ok(())
     }
 
     async fn delete_pipeline(

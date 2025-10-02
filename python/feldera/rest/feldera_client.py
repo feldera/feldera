@@ -287,6 +287,21 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             },
         )
 
+    def testing_force_update_platform_version(self, name: str, platform_version: str):
+        self.http.post(
+            path=f"/pipelines/{name}/testing",
+            params={"set_platform_version": platform_version},
+        )
+
+    def update_pipeline_runtime(self, name: str):
+        """
+        Recompile a pipeline with the Feldera runtime version included in the currently installed Feldera platform.
+
+        :param name: The name of the pipeline
+        """
+
+        self.http.post(path=f"/pipelines/{name}/update_runtime")
+
     def delete_pipeline(self, name: str):
         """
         Deletes a pipeline by name

@@ -415,6 +415,7 @@ mod test {
                 &Some("example-renamed".to_string()),
                 &Some("Description of example2".to_string()),
                 "v0",
+                false,
                 &None,
                 &Some("CREATE TABLE example ( col1 VARCHAR );".to_string()),
                 &None,

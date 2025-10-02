@@ -1292,6 +1292,21 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                 }
             }
         }
+        PipelineAction::UpdateRuntime { name } => {
+            let response = client
+                .post_update_runtime()
+                .pipeline_name(name.clone())
+                .send()
+                .await
+                .map_err(handle_errors_fatal(
+                    client.baseurl().clone(),
+                    "Failed to update pipeline runtime",
+                    1,
+                ))
+                .unwrap();
+            println!("Pipeline runtime updated successfully.");
+            trace!("{:#?}", response);
+        }
         PipelineAction::Program { action } => program(format, action, client).await,
         PipelineAction::Connector {
             name,

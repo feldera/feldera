@@ -426,6 +426,14 @@ pub enum PipelineAction {
         /// The new value for the configuration.
         value: String,
     },
+    /// Recompile a pipeline with the Feldera runtime version included in the
+    /// currently installed Feldera platform.
+    #[clap(aliases = &["update-runtime"])]
+    UpdateRuntime {
+        /// The name of the pipeline.
+        #[arg(value_hint = ValueHint::Other, add = ArgValueCompleter::new(pipeline_names))]
+        name: String,
+    },
     /// Delete a pipeline.
     #[clap(aliases = &["del"])]
     Delete {

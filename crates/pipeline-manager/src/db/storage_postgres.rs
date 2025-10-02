@@ -17,6 +17,7 @@ use crate::db::types::resources_status::{ResourcesDesiredStatus, ResourcesStatus
 use crate::db::types::storage::StorageStatus;
 use crate::db::types::tenant::TenantId;
 use crate::db::types::version::Version;
+use crate::is_supported_runtime;
 use crate::{auth::TenantRecord, config::DatabaseConfig};
 use async_trait::async_trait;
 use deadpool_postgres::{Manager, Pool, RecyclingMethod};
@@ -219,7 +220,7 @@ impl Storage for StoragePostgres {
             operations::pipeline::get_pipeline_by_id_for_monitoring(&txn, tenant_id, pipeline_id)
                 .await?;
         let is_ready_compiled = pipeline_monitoring.program_status == ProgramStatus::Success
-            && pipeline_monitoring.platform_version == platform_version;
+            && is_supported_runtime(platform_version, &pipeline_monitoring.platform_version);
         let pipeline_result = if matches!(
             (
                 pipeline_monitoring.deployment_resources_status,
@@ -283,6 +284,7 @@ impl Storage for StoragePostgres {
         new_id: Uuid,
         original_name: &str,
         platform_version: &str,
+        bump_platform_version: bool,
         pipeline: PipelineDescr,
     ) -> Result<(bool, ExtendedPipelineDescr), DBError> {
         let mut client = self.pool.get().await?;
@@ -301,6 +303,7 @@ impl Storage for StoragePostgres {
                     &Some(pipeline.name.clone()),
                     &Some(pipeline.description.clone()),
                     platform_version,
+                    bump_platform_version,
                     &Some(pipeline.runtime_config.clone()),
                     &Some(pipeline.program_code.clone()),
                     &Some(pipeline.udf_rust.clone()),
@@ -340,6 +343,48 @@ impl Storage for StoragePostgres {
         Ok((is_new, extended_pipeline))
     }
 
+    async fn testing_force_update_platform_version(
+        &self,
+        tenant_id: TenantId,
+        pipeline_name: &str,
+        platform_version: &str,
+    ) -> Result<(), DBError> {
+        let mut client = self.pool.get().await?;
+        let txn = client.transaction().await?;
+
+        // Check if pipeline exists
+        let current =
+            operations::pipeline::get_pipeline_for_monitoring(&txn, tenant_id, pipeline_name)
+                .await?;
+
+        if current.deployment_resources_status != ResourcesStatus::Stopped {
+            return Err(DBError::UpdateRestrictedToStopped);
+        }
+
+        let stmt_update = txn
+            .prepare_cached(
+                "UPDATE pipeline
+                     SET platform_version = $1
+                     WHERE id = $2",
+            )
+            .await?;
+
+        let rows_affected = txn
+            .execute(&stmt_update, &[&platform_version, &current.id.0])
+            .await?;
+
+        assert_eq!(rows_affected, 1);
+
+        info!(
+            "Updated pipeline {} from platform version {} to {}",
+            current.id, current.platform_version, platform_version
+        );
+
+        txn.commit().await?;
+
+        Ok(())
+    }
+
     #[allow(clippy::too_many_arguments)]
     async fn update_pipeline(
         &self,
@@ -348,6 +393,7 @@ impl Storage for StoragePostgres {
         name: &Option<String>,
         description: &Option<String>,
         platform_version: &str,
+        bump_platform_version: bool,
         runtime_config: &Option<serde_json::Value>,
         program_code: &Option<String>,
         udf_rust: &Option<String>,
@@ -366,6 +412,7 @@ impl Storage for StoragePostgres {
             name,
             description,
             platform_version,
+            bump_platform_version,
             runtime_config,
             program_code,
             udf_rust,
@@ -396,6 +443,7 @@ impl Storage for StoragePostgres {
         Ok(pipeline_id)
     }
 
+    #[cfg(test)]
     async fn transit_program_status_to_pending(
         &self,
         tenant_id: TenantId,
@@ -922,6 +970,7 @@ impl Storage for StoragePostgres {
                         &None,
                         &None,
                         platform_version,
+                        true,
                         &None,
                         &None,
                         &None,
@@ -990,6 +1039,7 @@ impl Storage for StoragePostgres {
                         &None,
                         &None,
                         platform_version,
+                        true,
                         &None,
                         &None,
                         &None,

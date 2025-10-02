@@ -172,10 +172,31 @@ pub(crate) trait Storage {
         new_id: Uuid, // Only used if the pipeline happens to not exist
         original_name: &str,
         platform_version: &str,
+        bump_platform_version: bool,
         pipeline: PipelineDescr,
     ) -> Result<(bool, ExtendedPipelineDescr), DBError>;
 
+    /// Testing only: update the platform_version field of a pipeline.
+    ///
+    /// Used to simulate pipelines compiled by a previous version of the platform.
+    async fn testing_force_update_platform_version(
+        &self,
+        tenant_id: TenantId,
+        pipeline_name: &str,
+        platform_version: &str,
+    ) -> Result<(), DBError>;
+
     /// Updates an existing pipeline.
+    ///
+    /// # Arguments
+    ///
+    /// * `platform_version` - the currently running Feldera platform version. If `bump_platform_version` is true,
+    ///    pipeline's platform_version will be set to this value.
+    /// * `bump_platform_version` - if true, the platform_version of the pipeline will be updated to the
+    ///    provided `platform_version`. In addition, the platform_version will be updated unconditionally
+    ///    if the program code or program settings are getting updated by this request.
+    /// * Other arguments correspond to fields that can be updated. If an argument is `None`, the corresponding
+    ///   field is not updated.
     #[allow(clippy::too_many_arguments)]
     async fn update_pipeline(
         &self,
@@ -184,6 +205,7 @@ pub(crate) trait Storage {
         name: &Option<String>,
         description: &Option<String>,
         platform_version: &str,
+        bump_platform_version: bool,
         runtime_config: &Option<serde_json::Value>,
         program_code: &Option<String>,
         udf_rust: &Option<String>,
@@ -199,6 +221,7 @@ pub(crate) trait Storage {
     ) -> Result<PipelineId, DBError>;
 
     /// Transitions program status to `Pending`.
+    #[cfg(test)]
     async fn transit_program_status_to_pending(
         &self,
         tenant_id: TenantId,

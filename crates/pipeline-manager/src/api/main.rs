@@ -177,6 +177,8 @@ It contains the following fields:
         endpoints::pipeline_management::post_pipeline,
         endpoints::pipeline_management::put_pipeline,
         endpoints::pipeline_management::patch_pipeline,
+        endpoints::pipeline_management::post_pipeline_testing,
+        endpoints::pipeline_management::post_update_runtime,
         endpoints::pipeline_management::delete_pipeline,
         endpoints::pipeline_management::post_pipeline_start,
         endpoints::pipeline_management::post_pipeline_stop,
@@ -457,6 +459,8 @@ fn api_scope() -> Scope {
         .service(endpoints::pipeline_management::post_pipeline)
         .service(endpoints::pipeline_management::put_pipeline)
         .service(endpoints::pipeline_management::patch_pipeline)
+        .service(endpoints::pipeline_management::post_pipeline_testing)
+        .service(endpoints::pipeline_management::post_update_runtime)
         .service(endpoints::pipeline_management::delete_pipeline)
         .service(endpoints::pipeline_management::post_pipeline_start)
         .service(endpoints::pipeline_management::post_pipeline_stop)
