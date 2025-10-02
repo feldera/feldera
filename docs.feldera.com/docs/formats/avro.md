@@ -85,7 +85,8 @@ A SQL column and a field in the Avro schema are compatible if the following cond
 | `REAL`                        | `float`        |                                                                     |
 | `DOUBLE`                      | `double`       |                                                                     |
 | `DECIMAL(precision,scale)`    | `decimal`      | Precision and scale of the Avro decimal type must precisely match the SQL type.  |
-| `CHAR`, `VARCHAR`             | `string`       |                                                                     |
+| `CHAR`, `VARCHAR`             | `string`       | SQL string type can be deserialized from Avro strings, including strings whose logical type is set to `uuid`. |
+| `UUID`                        | `string`       | The Avro logical type can be _optionally_ set to `uuid`.            |
 | `BINARY`, `VARBINARY`         | `bytes`        |                                                                     |
 | `DATE`                        | `int`          |                                                                     |
 | `TIME`                        | `long` or `int`| logical type must be set to `time-millis` or `time-micros`          |
