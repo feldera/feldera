@@ -2523,8 +2523,6 @@ where
         T: ColumnSpec,
         C: Fn(&K) -> Ordering,
     {
-        let rows = self.row..row_group.rows.end;
-
         // Check the current position first. We might already be done.
         if compare(key) != Greater {
             return Ok(true);
@@ -2535,9 +2533,10 @@ where
         // block.
         self.data.key_for_row(
             &row_group.factories,
-            min(self.data.rows().end, rows.end) - 1,
+            min(self.data.rows().end, row_group.rows.end) - 1,
             key,
         );
+        let mut rows = self.row + 1..row_group.rows.end;
         if compare(key) != Greater {
             let child_idx = self
                 .data
@@ -2547,6 +2546,7 @@ where
             return Ok(true);
         }
 
+        rows.start = self.data.rows().end;
         while let Some(index_block) = self.indexes.pop() {
             // We need to go up another level if `rows.end` is beyond the end of
             // `index_block` and the greatest value under `index_block` is less
@@ -2554,12 +2554,12 @@ where
             if rows.end > index_block.rows().end
                 && index_block.compare_max(row_group.factories.key_factory, compare) == Greater
             {
+                rows.start = index_block.rows().end;
                 continue;
             }
 
             // Otherwise, our target (if any) must be below `index_block`.
-            let Some(child_idx) = index_block.find_best_match(&row_group.rows, compare, Less, key)
-            else {
+            let Some(child_idx) = index_block.find_best_match(&rows, compare, Less, key) else {
                 // `rows.end` is inside `index_block` but the largest key is
                 // less than the target.
                 return Ok(false);
@@ -2571,7 +2571,7 @@ where
                 match node.read::<K, A>(&row_group.reader.file)? {
                     TreeBlock::Index(index_block) => {
                         let Some(child_idx) =
-                            index_block.find_best_match(&row_group.rows, compare, Less, key)
+                            index_block.find_best_match(&rows, compare, Less, key)
                         else {
                             return Ok(false);
                         };
@@ -2581,7 +2581,7 @@ where
                     TreeBlock::Data(data_block) => {
                         let Some(child_idx) = data_block.find_best_match(
                             &row_group.factories,
-                            &row_group.rows,
+                            &rows,
                             compare,
                             Less,
                             key,
