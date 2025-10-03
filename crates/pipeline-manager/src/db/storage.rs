@@ -32,6 +32,7 @@ impl ExtendedPipelineDescrRunner {
                 created_at: pipeline.created_at,
                 version: pipeline.version,
                 platform_version: pipeline.platform_version.clone(),
+                program_config: pipeline.program_config.clone(),
                 program_version: pipeline.program_version,
                 program_status: pipeline.program_status,
                 program_status_since: pipeline.program_status_since,
