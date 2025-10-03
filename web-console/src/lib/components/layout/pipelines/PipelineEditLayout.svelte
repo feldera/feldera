@@ -395,7 +395,7 @@ example = "1.0"`
               <PipelineVersion
                 runtimeVersion={pipeline.current.platformVersion}
                 baseRuntimeVersion={page.data.feldera!.version}
-                configuredRuntimeVersion={(pipeline.current.runtimeConfig as any).platformVersion}
+                configuredRuntimeVersion={pipeline.current.programConfig?.runtime_version}
                 {programStatus}
               ></PipelineVersion>
             </div>
