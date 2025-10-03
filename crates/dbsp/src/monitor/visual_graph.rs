@@ -1,6 +1,7 @@
 //! Intermediate representation of a circuit graph suitable for
 //! conversion to a visual format like dot.
 
+use serde::{ser::SerializeStruct, Serialize};
 use std::fmt::{self, Debug, Display, Write};
 
 type Id = String;
@@ -8,7 +9,7 @@ type Id = String;
 /// Visual representation of a circuit graph.
 ///
 /// The graph consists of a tree of cluster nodes populated with simple nodes.
-#[derive(Clone, Default)]
+#[derive(Clone, Default, Serialize)]
 pub struct Graph {
     nodes: ClusterNode,
     edges: Vec<Edge>,
@@ -42,6 +43,11 @@ impl Graph {
         output.push_str("}\n");
         output
     }
+
+    /// Convert graph to JSON format.
+    pub fn to_json(&self) -> String {
+        serde_json::to_string(self).unwrap()
+    }
 }
 
 impl Display for Graph {
@@ -55,6 +61,18 @@ pub(super) struct SimpleNode {
     id: Id,
     label: String,
     color: f64,
+}
+
+impl Serialize for SimpleNode {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let mut state = serializer.serialize_struct("SimpleNode", 2)?;
+        state.serialize_field("id", &self.id)?;
+        state.serialize_field("label", &self.label)?;
+        state.end()
+    }
 }
 
 impl SimpleNode {
@@ -84,7 +102,7 @@ impl SimpleNode {
 // TODO:
 // * Visually distinguish subcircuits from regions (e.g., dashed vs solid
 //   boundaries).
-#[derive(Clone, Default)]
+#[derive(Clone, Default, Serialize)]
 pub(super) struct ClusterNode {
     id: Id,
     label: String,
@@ -128,7 +146,7 @@ impl ClusterNode {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Serialize)]
 pub(super) enum Node {
     Simple(SimpleNode),
     Cluster(ClusterNode),
@@ -157,7 +175,7 @@ impl Node {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Serialize)]
 pub(super) struct Edge {
     from_node: Id,
     // Is `from_node` a cluster?

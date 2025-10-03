@@ -248,14 +248,19 @@ $(foreach format,$(FORMATS),$(eval $(call format_template,$(format))))
 }
 
 /// Runtime profiles collected from all DBSP worker threads.
+/// This also includes the circuit graph.
 #[derive(Debug, Serialize)]
 pub struct DbspProfile {
     pub worker_profiles: Vec<WorkerProfile>,
+    pub graph: Option<Graph>,
 }
 
 impl DbspProfile {
-    pub fn new(worker_profiles: Vec<WorkerProfile>) -> Self {
-        Self { worker_profiles }
+    pub fn new(worker_profiles: Vec<WorkerProfile>, graph: Option<Graph>) -> Self {
+        Self {
+            worker_profiles,
+            graph,
+        }
     }
 
     /// Serialize the profile as a JSON string
@@ -547,6 +552,11 @@ impl Profiler {
         }
 
         WorkerProfile::new(metadata)
+    }
+
+    /// Dump the circuit graph without any processing.
+    pub fn dump_graph(&self) -> Graph {
+        self.monitor.get_circuit()
     }
 
     /// Dump profile in graphviz format.

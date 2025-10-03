@@ -1184,14 +1184,7 @@ impl Serialize for GlobalNodeId {
     where
         S: Serializer,
     {
-        let mut s = "[".to_string();
-        for n in self.0.iter() {
-            if s.len() > 1 {
-                s.push(',');
-            }
-            s.push_str(&n.0.to_string());
-        }
-        s.push(']');
+        let s = self.node_identifier();
         serializer.serialize_str(&s)
     }
 }
@@ -1243,6 +1236,19 @@ impl GlobalNodeId {
         let mut ids = circuit.global_node_id().path().to_owned();
         ids.push(node_id);
         Self(ids)
+    }
+
+    /// Generate unique name to use as a node label in a visual graph.
+    pub fn node_identifier(&self) -> String {
+        let mut node_ident = "n".to_string();
+
+        for i in 0..self.path().len() {
+            node_ident.push_str(&self.path()[i].to_string());
+            if i < self.path().len() - 1 {
+                node_ident.push('_');
+            }
+        }
+        node_ident
     }
 
     /// Returns local node id of `self` or `None` if `self` is the root node.

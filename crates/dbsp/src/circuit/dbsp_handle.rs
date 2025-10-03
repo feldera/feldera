@@ -634,6 +634,16 @@ impl Runtime {
                             return;
                         }
                     }
+                    Ok(Command::RetrieveGraph) => {
+                        // This is implemented by just asking the profiler to dump the graph
+                        // without any metadata.
+                        if status_sender
+                            .send(Ok(Response::ProfileDump(profiler.dump_graph())))
+                            .is_err()
+                        {
+                            return;
+                        }
+                    }
                     Ok(Command::RetrieveProfile { runtime_elapsed }) => {
                         if status_sender
                             .send(Ok(Response::Profile(profiler.profile(runtime_elapsed))))
@@ -740,6 +750,8 @@ enum Command {
     DumpProfile {
         runtime_elapsed: Duration,
     },
+    /// Retrieve the circuit graph
+    RetrieveGraph,
     RetrieveProfile {
         runtime_elapsed: Duration,
     },
@@ -759,6 +771,7 @@ impl Debug for Command {
             Command::BootstrapStep(_span) => write!(f, "BootstrapStep"),
             Command::CompleteBootstrap => write!(f, "CompleteBootstrap"),
             Command::EnableProfiler => write!(f, "EnableProfiler"),
+            Command::RetrieveGraph => write!(f, "RetrieveGraph"),
             Command::DumpProfile { runtime_elapsed } => f
                 .debug_struct("DumpProfile")
                 .field("runtime_elapsed", runtime_elapsed)
@@ -1337,6 +1350,7 @@ impl DBSPHandle {
 
     pub fn retrieve_profile(&mut self) -> Result<DbspProfile, DbspError> {
         let mut profiles = vec![Default::default(); self.status_receivers.len()];
+        let mut graphs = vec![Default::default(); self.status_receivers.len()];
 
         self.broadcast_command(
             Command::RetrieveProfile {
@@ -1349,7 +1363,14 @@ impl DBSPHandle {
             },
         )?;
 
-        Ok(DbspProfile::new(profiles))
+        self.broadcast_command(Command::RetrieveGraph, |worker, resp| {
+            // They are all identical, but the command returns one per worker.
+            if let Response::ProfileDump(graph) = resp {
+                graphs[worker] = graph;
+            }
+        })?;
+
+        Ok(DbspProfile::new(profiles, graphs.pop()))
     }
 
     pub fn lir(&mut self) -> Result<LirCircuit, DbspError> {
