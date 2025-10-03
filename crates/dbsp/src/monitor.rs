@@ -168,6 +168,12 @@ impl TraceMonitor {
         self.visualize_circuit_annotate(|_| ("".to_string(), 0f64))
     }
 
+    /// This is almost like visualize_circuit, but it does not merge
+    /// the two halves of strict operators.
+    pub fn get_circuit(&self) -> VisGraph {
+        self.0.borrow().circuit.get_graph()
+    }
+
     pub fn visualize_circuit_annotate<F>(&self, annotate: F) -> VisGraph
     where
         F: Fn(&GlobalNodeId) -> (String, f64),
