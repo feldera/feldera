@@ -100,11 +100,6 @@ export const $AuthProvider = {
   ]
 } as const
 
-export const $BootstrapPolicy = {
-  type: 'string',
-  enum: ['allow', 'reject', 'await_approval']
-} as const
-
 export const $BuildInformation = {
   type: 'object',
   description: 'Information about the build of the platform.',
@@ -361,7 +356,6 @@ export const $CombinedStatus = {
     'Provisioning',
     'Unavailable',
     'Standby',
-    'AwaitingApproval',
     'Initializing',
     'Bootstrapping',
     'Replaying',
@@ -2586,10 +2580,6 @@ used during a step.`,
       type: 'object',
       required: ['inputs'],
       properties: {
-        dataflow: {
-          type: 'string',
-          nullable: true
-        },
         inputs: {
           type: 'object',
           description: 'Input endpoint configuration.',
@@ -2908,10 +2898,6 @@ If an optional field is not selected (i.e., is \`None\`), it will not be seriali
           $ref: '#/components/schemas/RuntimeStatus'
         }
       ],
-      nullable: true
-    },
-    deployment_runtime_status_details: {
-      type: 'string',
       nullable: true
     },
     deployment_runtime_status_since: {
@@ -4028,7 +4014,6 @@ determined by the pipeline and taken over by the runner.`,
     'Unavailable',
     'Standby',
     'Initializing',
-    'AwaitingApproval',
     'Bootstrapping',
     'Replaying',
     'Paused',

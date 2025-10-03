@@ -28,7 +28,7 @@
         rel="noreferrer"
         href={page.data.feldera.changelog}
         class="btn justify-start px-4 hover:bg-surface-50-950"
-        >{page.data.feldera.edition} v{page.data.feldera.version} Changelog</a
+        >{page.data.feldera.edition} {page.data.feldera.version} Changelog</a
       >
     {/if}
     <div class="btn justify-start px-4">© Feldera {new Date().getUTCFullYear()}</div>

@@ -177,10 +177,11 @@
             </span>
           </td>
           <td class="relative border-surface-100-900 group-hover:bg-surface-50-950">
-            <div class="flex flex-nowrap items-center w-full justify-end gap-2 text-nowrap text-right">
+            <div class="flex w-full flex-nowrap items-center gap-2 text-nowrap">
               <PipelineVersion
                 runtimeVersion={pipeline.platformVersion}
                 baseRuntimeVersion={page.data.feldera!.version}
+                configuredRuntimeVersion={pipeline.programConfig.runtime_version}
               ></PipelineVersion>
             </div>
           </td>

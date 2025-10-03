@@ -1,6 +1,9 @@
 <script lang="ts">
   import { Tooltip } from '$lib/components/common/Tooltip.svelte'
-  import { nonNull } from '$lib/functions/common/function'
+  import {
+    getRuntimeVersionStatus,
+    normalizeRuntimeVersion
+  } from '$lib/functions/pipelines/runtimeVersion'
   import type { ProgramStatus } from '$lib/services/pipelineManager'
 
   let {
@@ -16,16 +19,16 @@
   } = $props()
 
   let versionStatus = $derived(
-    runtimeVersion === baseRuntimeVersion
-      ? ('latest' as const)
-      : nonNull(configuredRuntimeVersion)
-        ? ('custom' as const)
-        : ('update_available' as const)
+    getRuntimeVersionStatus({
+      runtime: runtimeVersion,
+      base: baseRuntimeVersion,
+      configured: configuredRuntimeVersion
+    })
   )
 </script>
 
 {#if programStatus === 'Success'}
-  {runtimeVersion}
+  {normalizeRuntimeVersion(runtimeVersion)}
   {#if versionStatus === 'custom'}
     <span class="chip relative h-5 text-sm text-surface-700-300 preset-outlined-surface-200-800">
       Custom
@@ -36,7 +39,7 @@
       placement="bottom-end"
       activeContent
     >
-      <div>This runtime version is set in compilation configuration.</div>
+      <div>This custom runtime version is set in the compilation configuration.</div>
     </Tooltip>
   {:else if versionStatus === 'update_available'}
     <span class="chip h-5 text-sm text-blue-500 !ring-blue-500 preset-outlined">
@@ -47,7 +50,7 @@
       placement="bottom-end"
       activeContent
     >
-      <div>A newer runtime version {baseRuntimeVersion} is available.</div>
+      <div>A newer runtime version {normalizeRuntimeVersion(baseRuntimeVersion)} is available.</div>
       <!-- <button class="btn mt-2 h-6 preset-filled-primary-500">Update</button> -->
     </Tooltip>
   {:else}

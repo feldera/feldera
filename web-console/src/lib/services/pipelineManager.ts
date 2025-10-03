@@ -223,7 +223,8 @@ const toPipelineThumb = (
   refreshVersion: pipeline.refresh_version,
   platformVersion: pipeline.platform_version,
   deploymentResourcesStatus: pipeline.deployment_resources_status,
-  deploymentResourcesStatusSince: new Date(pipeline.deployment_resources_status_since)
+  deploymentResourcesStatusSince: new Date(pipeline.deployment_resources_status_since),
+  programConfig: pipeline.program_config!
 })
 
 const toPipeline = <
