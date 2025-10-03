@@ -161,6 +161,7 @@ const consolidatePipelineStatus = (
     .with(['Replaying', P._, P._], () => 'Replaying' as const)
     .with(['Running', P.any, P._], () => 'Running' as const)
     .with(['Unavailable', P.any, P.any], () => 'Unavailable' as const)
+    .with(['AwaitingApproval' as 'Unavailable', P.any, P._], () => 'AwaitingApproval' as const)
     .with([P._, 'Suspended', P._], () => 'Suspending' as const)
     .otherwise(() => {
       // throw new Error(
@@ -196,6 +197,7 @@ export const programStatusOf = (status: PipelineStatus) =>
       'Standby',
       'Bootstrapping',
       'Replaying',
+      'AwaitingApproval',
       () => 'Success' as const
     )
     .with({ Queued: P.any }, () => 'Pending' as const)
@@ -596,3 +598,27 @@ export const getAuthorizationHeader = async (): Promise<Record<string, string>> 
     return {}
   }
 }
+
+export const getSuspendDiff = () =>
+  mapResponse(
+    Promise.resolve({
+      data: {
+        deleted: {
+          tables: ['customer_profiles', 'users-events-table', 'product_catalog'],
+          views: ['users-events', 'users-events-2']
+        },
+        modified: {
+          tables: ['inventory_snapshot', 'inventory_snapshot'],
+          views: ['transactions_2024', 'inventory_snapshot']
+        },
+        new: {
+          tables: ['transactions_2024', 'inventory_snapshot'],
+          views: ['inventory_snapshot']
+        }
+      },
+      request: undefined!,
+      response: undefined!,
+      error: undefined
+    }),
+    (changes) => changes
+  )
