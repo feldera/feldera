@@ -600,6 +600,8 @@ class TestPipeline(SharedTestPipeline):
             "memory_mb_min": 300,
             "storage_mb_max": None,
             "storage_class": None,
+            "namespace": None,
+            "service_account_name": None,
         }
 
         resources = Resources(config)

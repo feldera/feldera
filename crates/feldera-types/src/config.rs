@@ -1484,4 +1484,15 @@ pub struct ResourceConfig {
     /// Storage class to use for an instance of this pipeline.
     /// The class determines storage performance such as IOPS and throughput.
     pub storage_class: Option<String>,
+
+    /// Kubernetes service account name to use for an instance of this pipeline.
+    /// The account determines permissions and access controls.
+    pub service_account_name: Option<String>,
+
+    /// Kubernetes namespace to use for an instance of this pipeline.
+    /// The namespace determines the scope of names for resources created
+    /// for the pipeline.
+    /// If not set, the pipeline will be deployed in the same namespace
+    /// as the control-plane.
+    pub namespace: Option<String>,
 }

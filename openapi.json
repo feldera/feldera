@@ -470,7 +470,9 @@
                         "memory_mb_min": null,
                         "memory_mb_max": null,
                         "storage_mb_max": null,
-                        "storage_class": null
+                        "storage_class": null,
+                        "service_account_name": null,
+                        "namespace": null
                       },
                       "clock_resolution_usecs": 1000000,
                       "pin_cpus": [],
@@ -551,7 +553,9 @@
                         "memory_mb_min": 1000,
                         "memory_mb_max": null,
                         "storage_mb_max": 10000,
-                        "storage_class": null
+                        "storage_class": null,
+                        "service_account_name": null,
+                        "namespace": null
                       },
                       "clock_resolution_usecs": 100000,
                       "pin_cpus": [],
@@ -661,7 +665,9 @@
                     "memory_mb_min": null,
                     "memory_mb_max": null,
                     "storage_mb_max": null,
-                    "storage_class": null
+                    "storage_class": null,
+                    "service_account_name": null,
+                    "namespace": null
                   },
                   "clock_resolution_usecs": 1000000,
                   "pin_cpus": [],
@@ -728,7 +734,9 @@
                       "memory_mb_min": null,
                       "memory_mb_max": null,
                       "storage_mb_max": null,
-                      "storage_class": null
+                      "storage_class": null,
+                      "service_account_name": null,
+                      "namespace": null
                     },
                     "clock_resolution_usecs": 1000000,
                     "pin_cpus": [],
@@ -902,7 +910,9 @@
                       "memory_mb_min": null,
                       "memory_mb_max": null,
                       "storage_mb_max": null,
-                      "storage_class": null
+                      "storage_class": null,
+                      "service_account_name": null,
+                      "namespace": null
                     },
                     "clock_resolution_usecs": 1000000,
                     "pin_cpus": [],
@@ -1039,7 +1049,9 @@
                     "memory_mb_min": null,
                     "memory_mb_max": null,
                     "storage_mb_max": null,
-                    "storage_class": null
+                    "storage_class": null,
+                    "service_account_name": null,
+                    "namespace": null
                   },
                   "clock_resolution_usecs": 1000000,
                   "pin_cpus": [],
@@ -1106,7 +1118,9 @@
                       "memory_mb_min": null,
                       "memory_mb_max": null,
                       "storage_mb_max": null,
-                      "storage_class": null
+                      "storage_class": null,
+                      "service_account_name": null,
+                      "namespace": null
                     },
                     "clock_resolution_usecs": 1000000,
                     "pin_cpus": [],
@@ -1197,7 +1211,9 @@
                       "memory_mb_min": null,
                       "memory_mb_max": null,
                       "storage_mb_max": null,
-                      "storage_class": null
+                      "storage_class": null,
+                      "service_account_name": null,
+                      "namespace": null
                     },
                     "clock_resolution_usecs": 1000000,
                     "pin_cpus": [],
@@ -1455,7 +1471,9 @@
                       "memory_mb_min": null,
                       "memory_mb_max": null,
                       "storage_mb_max": null,
-                      "storage_class": null
+                      "storage_class": null,
+                      "service_account_name": null,
+                      "namespace": null
                     },
                     "clock_resolution_usecs": 1000000,
                     "pin_cpus": [],
@@ -7122,7 +7140,9 @@
                   "memory_mb_min": null,
                   "memory_mb_max": null,
                   "storage_mb_max": null,
-                  "storage_class": null
+                  "storage_class": null,
+                  "service_account_name": null,
+                  "namespace": null
                 }
               },
               "storage": {
@@ -8025,6 +8045,18 @@
             "nullable": true,
             "minimum": 0
           },
+          "namespace": {
+            "type": "string",
+            "description": "Kubernetes namespace to use for an instance of this pipeline.\nThe namespace determines the scope of names for resources created\nfor the pipeline.\nIf not set, the pipeline will be deployed in the same namespace\nas the control-plane.",
+            "default": null,
+            "nullable": true
+          },
+          "service_account_name": {
+            "type": "string",
+            "description": "Kubernetes service account name to use for an instance of this pipeline.\nThe account determines permissions and access controls.",
+            "default": null,
+            "nullable": true
+          },
           "storage_class": {
             "type": "string",
             "description": "Storage class to use for an instance of this pipeline.\nThe class determines storage performance such as IOPS and throughput.",
@@ -8316,7 +8348,9 @@
               "memory_mb_min": null,
               "memory_mb_max": null,
               "storage_mb_max": null,
-              "storage_class": null
+              "storage_class": null,
+              "service_account_name": null,
+              "namespace": null
             }
           },
           "storage": {
