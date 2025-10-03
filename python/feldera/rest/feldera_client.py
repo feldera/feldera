@@ -49,7 +49,7 @@ class FelderaClient:
         api_key: Optional[str] = None,
         timeout: Optional[float] = None,
         connection_timeout: Optional[float] = None,
-        requests_verify: bool | str = True,
+        requests_verify: Optional[bool | str] = None,
     ) -> None:
         """
         :param url: The url to Feldera API (ex: https://try.feldera.com). If

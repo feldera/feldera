@@ -6,8 +6,7 @@ from feldera.testutils import (
     BASE_URL,
     PIPELINE_TO_KAFKA_SERVER,
     KAFKA_SERVER,
-    FELDERA_TLS_INSECURE,
-    FELDERA_HTTPS_TLS_CERT,
+    FELDERA_REQUESTS_VERIFY,
 )
 
 __all__ = [
@@ -18,6 +17,5 @@ __all__ = [
     "BASE_URL",
     "PIPELINE_TO_KAFKA_SERVER",
     "KAFKA_SERVER",
-    "FELDERA_TLS_INSECURE",
-    "FELDERA_HTTPS_TLS_CERT",
+    "FELDERA_REQUESTS_VERIFY",
 ]
