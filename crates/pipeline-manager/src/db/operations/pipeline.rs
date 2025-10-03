@@ -218,7 +218,7 @@ fn row_to_extended_pipeline_descriptor(row: &Row) -> Result<ExtendedPipelineDesc
 /// Pipeline columns relevant to monitoring.
 const RETRIEVE_PIPELINE_MONITORING_COLUMNS: &str =
     "p.id, p.tenant_id, p.name, p.description, p.created_at, p.version, p.platform_version,
-     p.program_version, p.program_status, p.program_status_since,
+     p.program_config, p.program_version, p.program_status, p.program_status_since,
      p.deployment_error, p.deployment_location, p.refresh_version, p.storage_status,
      p.deployment_id, p.deployment_initial,
      p.deployment_resources_status, p.deployment_resources_status_since,
@@ -231,28 +231,31 @@ const RETRIEVE_PIPELINE_MONITORING_COLUMNS: &str =
 fn row_to_extended_pipeline_descriptor_monitoring(
     row: &Row,
 ) -> Result<ExtendedPipelineDescrMonitoring, DBError> {
-    assert_eq!(row.len(), 24);
+    assert_eq!(row.len(), 25);
+
+    let program_config = deserialize_json_value(row.get(7))?;
+
     // Deployment error: ErrorResponse
-    let deployment_error = match row.get::<_, Option<String>>(10) {
+    let deployment_error = match row.get::<_, Option<String>>(11) {
         None => None,
         Some(s) => Some(deserialize_error_response(&s)?),
     };
 
     // Deployment initial runtime status
-    let deployment_initial = match row.get::<_, Option<String>>(15) {
+    let deployment_initial = match row.get::<_, Option<String>>(16) {
         None => None,
         Some(s) => Some(parse_string_as_runtime_desired_status(s)?),
     };
 
     // Deployment runtime status
-    let deployment_runtime_status = match row.get::<_, Option<String>>(20) {
+    let deployment_runtime_status = match row.get::<_, Option<String>>(21) {
         None => None,
         Some(s) => Some(parse_string_as_runtime_status(s)?),
     };
-    let deployment_runtime_status_since = row.get::<_, Option<DateTime<Utc>>>(21);
+    let deployment_runtime_status_since = row.get::<_, Option<DateTime<Utc>>>(22);
 
     // Deployment runtime desired status
-    let deployment_runtime_desired_status = match row.get::<_, Option<String>>(22) {
+    let deployment_runtime_desired_status = match row.get::<_, Option<String>>(23) {
         None => None,
         Some(s) => Some(parse_string_as_runtime_desired_status(s)?),
     };
@@ -265,23 +268,24 @@ fn row_to_extended_pipeline_descriptor_monitoring(
         created_at: row.get(4),
         version: Version(row.get(5)),
         platform_version: row.get(6),
-        program_version: Version(row.get(7)),
-        program_status: row.get::<_, String>(8).try_into()?,
-        program_status_since: row.get(9),
+        program_config,
+        program_version: Version(row.get(8)),
+        program_status: row.get::<_, String>(9).try_into()?,
+        program_status_since: row.get(10),
         deployment_error,
-        deployment_location: row.get(11),
-        refresh_version: Version(row.get(12)),
-        storage_status: row.get::<_, String>(13).try_into()?,
-        deployment_id: row.get(14),
+        deployment_location: row.get(12),
+        refresh_version: Version(row.get(13)),
+        storage_status: row.get::<_, String>(14).try_into()?,
+        deployment_id: row.get(15),
         deployment_initial,
-        deployment_resources_status: row.get::<_, String>(16).try_into()?,
-        deployment_resources_status_since: row.get(17),
-        deployment_resources_desired_status: row.get::<_, String>(18).try_into()?,
-        deployment_resources_desired_status_since: row.get(19),
+        deployment_resources_status: row.get::<_, String>(17).try_into()?,
+        deployment_resources_status_since: row.get(18),
+        deployment_resources_desired_status: row.get::<_, String>(19).try_into()?,
+        deployment_resources_desired_status_since: row.get(20),
         deployment_runtime_status,
         deployment_runtime_status_since,
         deployment_runtime_desired_status,
-        deployment_runtime_desired_status_since: row.get(23),
+        deployment_runtime_desired_status_since: row.get(24),
     })
 }
 

@@ -25,6 +25,6 @@
     </Tooltip>
   {/if}
   {#if page.data.feldera?.update?.version}
-    <span>latest: v{page.data.feldera.update.version}</span>
+    <span>latest: {page.data.feldera.update.version}</span>
   {/if}
 </div>

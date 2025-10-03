@@ -374,7 +374,7 @@ impl PipelineSelectedInfoInternal {
             program_code: None,
             udf_rust: None,
             udf_toml: None,
-            program_config: None,
+            program_config: Some(extended_pipeline.program_config),
             program_version: extended_pipeline.program_version,
             program_status: extended_pipeline.program_status,
             program_status_since: extended_pipeline.program_status_since,
@@ -466,6 +466,7 @@ pub enum PipelineFieldSelector {
     /// - `created_at`
     /// - `version`
     /// - `platform_version`
+    /// - `program_config`
     /// - `program_version`
     /// - `program_status`
     /// - `program_status_since`
