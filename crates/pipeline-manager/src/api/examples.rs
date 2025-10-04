@@ -105,6 +105,8 @@ fn extended_pipeline_2() -> ExtendedPipelineDescr {
                 memory_mb_max: None,
                 storage_mb_max: Some(10000),
                 storage_class: None,
+                service_account_name: None,
+                namespace: None,
             },
             clock_resolution_usecs: Some(100_000),
             pin_cpus: Vec::new(),
