@@ -48,14 +48,20 @@ use tokio::select;
 use tokio::sync::watch::{channel, Receiver, Sender};
 use tokio::sync::{mpsc, Semaphore};
 use tokio::time::sleep;
-use tracing::{debug, info, trace};
+use tracing::{debug, info, trace, warn};
 use url::Url;
 
 /// Polling interval when following a delta table.
 const POLL_INTERVAL: Duration = Duration::from_millis(1000);
 
-/// Polling delay before retrying an unsuccessful read from a delta log.
-const RETRY_INTERVAL: Duration = Duration::from_millis(2000);
+/// Calculate exponential backoff delay for retrying delta log reads.
+/// Starts at 0.5s, doubles each retry, caps at 32s.
+fn calculate_backoff_delay(retry_count: u32) -> Duration {
+    let base_delay_ms = 500; // 0.5 seconds
+    let max_delay_ms = 32_000; // 32 seconds
+    let delay_ms = std::cmp::min(base_delay_ms << retry_count, max_delay_ms);
+    Duration::from_millis(delay_ms)
+}
 
 /// Default object store timeout. When not explicitly set by the user,
 /// we use a large timeout value to avoid this issue:
@@ -750,6 +756,8 @@ impl DeltaTableInputEndpointInner {
 
         // Start following the table if required by the configuration.
         if self.config.follow() {
+            let mut retry_count = 0;
+
             loop {
                 wait_running(&mut receiver).await;
                 match table.log_store().peek_next_commit(version).await {
@@ -758,6 +766,7 @@ impl DeltaTableInputEndpointInner {
                         if self.config.end_version.is_none()
                             || self.config.end_version.unwrap() >= new_version =>
                     {
+                        retry_count = 0;
                         version = new_version;
                         self.process_log_entry(
                             new_version,
@@ -797,13 +806,25 @@ impl DeltaTableInputEndpointInner {
                         break;
                     }
                     Err(e) => {
-                        self.consumer.error(
-                            false,
-                            anyhow!("error reading the next log entry (current table version: {version}): {e}"),
-                            Some("delta-next-log")
-                        );
+                        // Transient timeouts are common when reading the next log entry from S3.
+                        retry_count += 1;
 
-                        sleep(RETRY_INTERVAL).await;
+                        if retry_count == 20 {
+                            self.consumer.error(
+                                true,
+                                anyhow!("error reading the next log entry after {retry_count} attempts (current table version: {version}): {e}"),
+                                Some("delta-next-log")
+                            );
+                            break;
+                        } else {
+                            let backoff_delay = calculate_backoff_delay(retry_count - 1);
+                            warn!(
+                                "delta_table {}: error reading the next log entry after {retry_count} attempts (current table version: {version}): {e}; retrying in {:?}",
+                                &self.endpoint_name,
+                                backoff_delay
+                            );
+                            sleep(backoff_delay).await;
+                        }
                     }
                 }
             }
