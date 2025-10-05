@@ -39,6 +39,7 @@ use feldera_types::transport::delta_table::DeltaTableReaderConfig;
 use futures_util::StreamExt;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
+use std::cmp::min;
 use std::collections::{BTreeSet, HashMap};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -848,69 +849,129 @@ impl DeltaTableInputEndpointInner {
             )
         })?;
 
-        let table_builder = DeltaTableBuilder::from_valid_uri(&url)
-            .map_err(|e| {
-                ControllerError::invalid_transport_configuration(
-                    &self.endpoint_name,
-                    &format!("invalid Delta table URL '{url}': {e}"),
-                )
-            })?
-            .with_storage_options(self.config.object_store_config.clone());
+        let delta_table = {
+            let mut retry_count = 0;
+            const MAX_RETRIES: u32 = 10;
 
-        let table_builder = if let Some(DeltaResumeInfo {
-            version: Some(version),
-            ..
-        }) = self.last_resume_status.lock().unwrap().clone()
-        {
-            // If we are resuming from a checkpoint, use the version specified in the checkpoint.
-            table_builder.with_version(version)
-        } else {
-            match &self.config {
-                DeltaTableReaderConfig {
-                    version: Some(_),
-                    datetime: Some(_),
-                    ..
-                } => {
-                    return Err(ControllerError::invalid_transport_configuration(
-                        &self.endpoint_name,
-                        "at most one of 'version' and 'datetime' options can be specified",
-                    ));
-                }
-                DeltaTableReaderConfig {
-                    version: None,
-                    datetime: None,
-                    ..
-                } => table_builder,
-                DeltaTableReaderConfig {
+            // We've seen the table builder get stuck forever in S3 authentication for some configurations
+            // (see https://github.com/delta-io/delta-rs/issues/3768). So we add a timeout and retry logic
+            // in that case.
+            //
+            // In other situations, the operation fails returning a timeout error. There is no easy way to
+            // distinguish such errors from permanent failures such as incorrect credentials, we therefore
+            // resort to checking the returned error message for the word "timeout".
+            let mut operation_timeout: Duration = Duration::from_secs(60);
+
+            loop {
+                // DeltaTableBuilder doesn't implement Clone, so we need to create a new instance every time.
+                let table_builder = DeltaTableBuilder::from_valid_uri(&url)
+                    .map_err(|e| {
+                        ControllerError::invalid_transport_configuration(
+                            &self.endpoint_name,
+                            &format!("invalid Delta table URL '{url}': {e}"),
+                        )
+                    })?
+                    .with_storage_options(self.config.object_store_config.clone());
+
+                let table_builder = if let Some(DeltaResumeInfo {
                     version: Some(version),
-                    datetime: None,
                     ..
-                } => table_builder.with_version(*version),
-                DeltaTableReaderConfig {
-                    version: None,
-                    datetime: Some(datetime),
-                    ..
-                } => table_builder.with_datestring(datetime).map_err(|e| {
-                    ControllerError::invalid_transport_configuration(
-                        &self.endpoint_name,
-                        &format!(
+                }) = self.last_resume_status.lock().unwrap().clone()
+                {
+                    // If we are resuming from a checkpoint, use the version specified in the checkpoint.
+                    table_builder.with_version(version)
+                } else {
+                    match &self.config {
+                        DeltaTableReaderConfig {
+                            version: Some(_),
+                            datetime: Some(_),
+                            ..
+                        } => {
+                            return Err(ControllerError::invalid_transport_configuration(
+                                &self.endpoint_name,
+                                "at most one of 'version' and 'datetime' options can be specified",
+                            ));
+                        }
+                        DeltaTableReaderConfig {
+                            version: None,
+                            datetime: None,
+                            ..
+                        } => table_builder,
+                        DeltaTableReaderConfig {
+                            version: Some(version),
+                            datetime: None,
+                            ..
+                        } => table_builder.with_version(*version),
+                        DeltaTableReaderConfig {
+                            version: None,
+                            datetime: Some(datetime),
+                            ..
+                        } => table_builder.with_datestring(datetime).map_err(|e| {
+                            ControllerError::invalid_transport_configuration(
+                                &self.endpoint_name,
+                                &format!(
                             "invalid 'datetime' format (expected ISO-8601/RFC-3339 timestamp): {e}"
                         ),
-                    )
-                })?,
+                            )
+                        })?,
+                    }
+                };
+
+                match tokio::time::timeout(operation_timeout, table_builder.load()).await {
+                    Ok(Ok(table)) => break table,
+                    Ok(Err(e)) => {
+                        // Timeout errors can originate from multiple transitive dependencies. There is no easy
+                        // way to identify them in a strongly-typed fashion. Instead, we check for the "timeout"
+                        // substring in a formatter representaion of the error.
+                        //
+                        // Debug-format `e` as the timeout error is often found toward the end of the error chain.
+                        let is_timeout = format!("{:?}", e).to_lowercase().contains("timeout");
+
+                        if is_timeout && retry_count < MAX_RETRIES {
+                            retry_count += 1;
+                            let backoff_ms = min(1000 * (1 << (retry_count - 1)), 10_000);
+                            warn!(
+                                "delta_table {}: error loading delta table '{}' after {retry_count} attempts (retrying in {backoff_ms} ms): {e:?}",
+                                &self.endpoint_name,
+                                &self.config.uri,
+                            );
+
+                            sleep(Duration::from_millis(backoff_ms)).await;
+                        } else {
+                            return Err(ControllerError::invalid_transport_configuration(
+                                &self.endpoint_name,
+                                &format!(
+                                    "error opening delta table '{}': {e:?} (root cause: {})",
+                                    &self.config.uri,
+                                    root_cause(&e)
+                                ),
+                            ));
+                        }
+                    }
+                    Err(_timeout) => {
+                        if retry_count >= MAX_RETRIES {
+                            return Err(ControllerError::invalid_transport_configuration(
+                                &self.endpoint_name,
+                                &format!(
+                                    "timeout loading delta table '{}' after {retry_count} attempts",
+                                    &self.config.uri,
+                                ),
+                            ));
+                        } else {
+                            warn!(
+                                "delta_table {}: timeout loading delta table '{}' after {retry_count} attempts, retrying",
+                                &self.endpoint_name,
+                                &self.config.uri,
+                            );
+                            retry_count += 1;
+                            if operation_timeout < Duration::from_secs(240) {
+                                operation_timeout *= 2;
+                            }
+                        }
+                    }
+                }
             }
         };
-
-        let delta_table = table_builder.load().await.map_err(|e| {
-            ControllerError::invalid_transport_configuration(
-                &self.endpoint_name,
-                &format!(
-                    "error opening delta table '{}': {e} (root cause: {})",
-                    &self.config.uri,
-                    root_cause(&e)
-                ),
-            )
-        })?;
 
         // If we are about to follow the table, set resume state to the current table version, otherwise
         // the connector will remain in the barrier state until at least one transaction is added to the log.
