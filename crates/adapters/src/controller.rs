@@ -97,7 +97,7 @@ use std::collections::HashSet;
 use std::io::ErrorKind;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::PathBuf;
-use std::sync::mpsc::{channel, sync_channel, Receiver, SendError, Sender};
+use std::sync::mpsc::{channel, sync_channel, Receiver, SendError, Sender, SyncSender};
 use std::sync::{LazyLock, Mutex};
 use std::thread;
 use std::{
@@ -471,8 +471,7 @@ impl Controller {
                             Ok(())
                         }
                         Ok(circuit_thread) => {
-                            let _ = init_status_sender.send(Ok(circuit_thread.controller.clone()));
-                            circuit_thread.run().inspect_err(|error| {
+                            circuit_thread.run(init_status_sender).inspect_err(|error| {
                                 // Log the error before returning it from the
                                 // thread: otherwise, only [Controller::stop]
                                 // will join the thread and report the error.
@@ -1629,7 +1628,17 @@ impl CircuitThread {
     }
 
     /// Main loop of the circuit thread.
-    fn run(mut self) -> Result<(), ControllerError> {
+    ///
+    /// # Arguments
+    ///
+    /// * `init_status_sender` - A channel sender to report the result of the initialization.
+    ///   The circuit is considered fully initialized after executing the first step.
+    fn run(
+        mut self,
+        init_status_sender: SyncSender<Result<Arc<ControllerInner>, ControllerError>>,
+    ) -> Result<(), ControllerError> {
+        let mut init_status_sender = Some(init_status_sender);
+
         let config = &self.controller.status.pipeline_config;
         let mut trigger = StepTrigger::new(self.controller.clone());
         if config.global.cpu_profiler {
@@ -1641,46 +1650,29 @@ impl CircuitThread {
         self.finish_replaying();
 
         loop {
-            // Run received commands.  Commands can initiate checkpoint
-            // requests, so attempt to execute those afterward.  Executing a
-            // checkpoint request can then terminate the pipeline, so check for
-            // that right afterward.
-            self.run_commands();
-            if self.checkpoint_requested() {
-                self.checkpoint();
-            }
+            // This should always perform a step during the first iteration.
+            let result = self.run_once(&mut trigger);
 
-            if self.sync_checkpoint_requested() {
-                self.sync_checkpoint();
-            }
-
-            if self.controller.state() == PipelineState::Terminated {
-                break;
-            }
-
-            // Backpressure in the output pipeline: wait for room in output buffers to
-            // become available.
-            if self.controller.output_buffers_full() {
-                debug!("circuit thread: park waiting for output buffer space");
-                self.parker.park();
-                debug!("circuit thread: unparked");
-                continue;
-            }
-
-            match trigger.trigger(
-                self.last_checkpoint,
-                self.replaying(),
-                self.circuit.bootstrap_in_progress(),
-                self.checkpoint_requested(),
-            ) {
-                Action::Step => {
-                    if !self.step()? {
-                        break;
+            let keep_going = if let Some(sender) = &init_status_sender {
+                let keep_going = match result {
+                    Ok(keep_going) => {
+                        let _ = sender.send(Ok(self.controller.clone()));
+                        keep_going
                     }
-                }
-                Action::Checkpoint => self.checkpoint_requests.push(CheckpointRequest::Scheduled),
-                Action::Park(Some(deadline)) => self.parker.park_deadline(deadline),
-                Action::Park(None) => self.parker.park(),
+                    Err(e) => {
+                        let _ = sender.send(Err(e));
+                        return Ok(());
+                    }
+                };
+
+                init_status_sender = None;
+                keep_going
+            } else {
+                result?
+            };
+
+            if !keep_going {
+                break;
             }
         }
         self.controller.status.set_state(PipelineState::Terminated);
@@ -1688,6 +1680,52 @@ impl CircuitThread {
         self.circuit
             .kill()
             .map_err(|_| ControllerError::dbsp_panic())
+    }
+
+    fn run_once(&mut self, trigger: &mut StepTrigger) -> Result<bool, ControllerError> {
+        // Run received commands.  Commands can initiate checkpoint
+        // requests, so attempt to execute those afterward.  Executing a
+        // checkpoint request can then terminate the pipeline, so check for
+        // that right afterward.
+        self.run_commands();
+        if self.checkpoint_requested() {
+            self.checkpoint();
+        }
+
+        if self.sync_checkpoint_requested() {
+            self.sync_checkpoint();
+        }
+
+        if self.controller.state() == PipelineState::Terminated {
+            return Ok(false);
+        }
+
+        // Backpressure in the output pipeline: wait for room in output buffers to
+        // become available.
+        if self.controller.output_buffers_full() {
+            debug!("circuit thread: park waiting for output buffer space");
+            self.parker.park();
+            debug!("circuit thread: unparked");
+            return Ok(true);
+        }
+
+        match trigger.trigger(
+            self.last_checkpoint,
+            self.replaying(),
+            self.circuit.bootstrap_in_progress(),
+            self.checkpoint_requested(),
+        ) {
+            Action::Step => {
+                if !self.step()? {
+                    return Ok(false);
+                }
+            }
+            Action::Checkpoint => self.checkpoint_requests.push(CheckpointRequest::Scheduled),
+            Action::Park(Some(deadline)) => self.parker.park_deadline(deadline),
+            Action::Park(None) => self.parker.park(),
+        }
+
+        Ok(true)
     }
 
     fn finish_replaying(&mut self) {
@@ -2898,13 +2936,17 @@ impl StepTrigger {
         // operation and makes sure that the circuit performs an extra step in the normal
         // mode in order to initialize output table snapshots of output relations that
         // did not participate in bootstrapping.
-        let result = if replaying || committing || bootstrapping || self.bootstrapping {
+        let result = if replaying
+            || committing
+            || bootstrapping
+            || self.needs_first_step
+            || self.bootstrapping
+        {
             step(self)
         } else if checkpoint.is_some_and(|t| now >= t) && !checkpoint_requested {
             Action::Checkpoint
         } else if self.controller.status.unset_step_requested()
             || buffered_records > self.min_batch_size_records
-            || self.needs_first_step
             || self.buffer_timeout.is_some_and(|t| now >= t)
         {
             step(self)
