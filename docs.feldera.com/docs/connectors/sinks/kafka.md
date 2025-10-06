@@ -7,7 +7,7 @@ tolerance](/pipelines/fault-tolerance).
 
 The Kafka connector uses **librdkafka** in its implementation and
 supports [relevant options for
-consumers](https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md).
+producers](https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md).
 
 ## Example usage
 
