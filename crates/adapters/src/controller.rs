@@ -97,7 +97,7 @@ use std::collections::HashSet;
 use std::io::ErrorKind;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::PathBuf;
-use std::sync::mpsc::{channel, sync_channel, Receiver, SendError, Sender};
+use std::sync::mpsc::{channel, sync_channel, Receiver, SendError, Sender, SyncSender};
 use std::sync::{LazyLock, Mutex};
 use std::thread;
 use std::{
@@ -471,8 +471,7 @@ impl Controller {
                             Ok(())
                         }
                         Ok(circuit_thread) => {
-                            let _ = init_status_sender.send(Ok(circuit_thread.controller.clone()));
-                            circuit_thread.run().inspect_err(|error| {
+                            circuit_thread.run(init_status_sender).inspect_err(|error| {
                                 // Log the error before returning it from the
                                 // thread: otherwise, only [Controller::stop]
                                 // will join the thread and report the error.
@@ -1629,7 +1628,15 @@ impl CircuitThread {
     }
 
     /// Main loop of the circuit thread.
-    fn run(mut self) -> Result<(), ControllerError> {
+    ///
+    /// # Arguments
+    ///
+    /// * `init_status_sender` - A channel sender to report the result of the initialization.
+    ///   The circuit is considered fully initialized after executing the first step.
+    fn run(
+        mut self,
+        init_status_sender: SyncSender<Result<Arc<ControllerInner>, ControllerError>>,
+    ) -> Result<(), ControllerError> {
         let config = &self.controller.status.pipeline_config;
         let mut trigger = StepTrigger::new(self.controller.clone());
         if config.global.cpu_profiler {
@@ -1639,6 +1646,15 @@ impl CircuitThread {
         }
 
         self.finish_replaying();
+
+        // Run a single step, which is probably empty, before reporting that
+        // initialization is complete.  This is needed to make ad-hoc snapshots
+        // up-to-date before making them available to the user.
+        if let Err(error) = self.step() {
+            let _ = init_status_sender.send(Err(error));
+            return Ok(());
+        };
+        let _ = init_status_sender.send(Ok(self.controller.clone()));
 
         loop {
             // Run received commands.  Commands can initiate checkpoint
@@ -2806,10 +2822,6 @@ struct StepTrigger {
     /// Time between automatic checkpoints.
     checkpoint_interval: Option<Duration>,
 
-    /// The circuit needs to perform an initial step even if there are no
-    /// new inputs in order to initialize state snapshot for ad hoc queries.
-    needs_first_step: bool,
-
     /// The circuit is bootstrapping. Used to detect the transition from bootstrapping
     /// to normal mode.
     bootstrapping: bool,
@@ -2841,7 +2853,6 @@ impl StepTrigger {
             max_buffering_delay,
             min_batch_size_records,
             checkpoint_interval,
-            needs_first_step: true,
             bootstrapping: false,
         }
     }
@@ -2887,7 +2898,6 @@ impl StepTrigger {
         let committing = self.controller.transaction_commit_requested();
 
         fn step(trigger: &mut StepTrigger) -> Action {
-            trigger.needs_first_step = false;
             trigger.buffer_timeout = None;
             Action::Step
         }
@@ -2904,7 +2914,6 @@ impl StepTrigger {
             Action::Checkpoint
         } else if self.controller.status.unset_step_requested()
             || buffered_records > self.min_batch_size_records
-            || self.needs_first_step
             || self.buffer_timeout.is_some_and(|t| now >= t)
         {
             step(self)
