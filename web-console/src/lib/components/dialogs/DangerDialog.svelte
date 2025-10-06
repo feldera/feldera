@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { GlobalDialogContent } from '$lib/compositions/useGlobalDialog.svelte'
+  import type { GlobalDialogContent } from '$lib/compositions/layout/useGlobalDialog.svelte'
 
   let { content, onClose }: { content: GlobalDialogContent; onClose?: () => void } = $props()
 </script>

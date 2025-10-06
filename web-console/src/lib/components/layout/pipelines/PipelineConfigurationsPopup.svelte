@@ -1,7 +1,7 @@
 <script lang="ts">
   import { type ExtendedPipeline, type Pipeline } from '$lib/services/pipelineManager'
   import { deletePipeline as _deletePipeline } from '$lib/services/pipelineManager'
-  import { useGlobalDialog } from '$lib/compositions/useGlobalDialog.svelte'
+  import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
   import JSONbig from 'true-json-bigint'
   import MultiJSONDialog from '$lib/components/dialogs/MultiJSONDialog.svelte'
   import { useToast } from '$lib/compositions/useToastNotification'

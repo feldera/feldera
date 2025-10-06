@@ -6,7 +6,7 @@
   import type { PageData } from './$types'
   import AppHeader from '$lib/components/layout/AppHeader.svelte'
   import BookADemo from '$lib/components/other/BookADemo.svelte'
-  import { useDrawer } from '$lib/compositions/layout/useDrawer.svelte'
+  import { useAdaptiveDrawer } from '$lib/compositions/layout/useAdaptiveDrawer.svelte'
   import NavigationExtras from '$lib/components/layout/NavigationExtras.svelte'
   import CreatePipelineButton from '$lib/components/pipelines/CreatePipelineButton.svelte'
   import Footer from '$lib/components/layout/Footer.svelte'
@@ -14,7 +14,7 @@
 
   let { data }: { data: PageData } = $props()
   let demosType = $state('All')
-  const drawer = useDrawer('right')
+  const drawer = useAdaptiveDrawer('right')
   const breadcrumbs = $derived([
     ...(drawer.isMobileDrawer
       ? []

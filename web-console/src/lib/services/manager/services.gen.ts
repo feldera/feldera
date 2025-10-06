@@ -46,6 +46,9 @@ import type {
   PostPipelineActivateData,
   PostPipelineActivateError,
   PostPipelineActivateResponse,
+  PostPipelineApproveData,
+  PostPipelineApproveError,
+  PostPipelineApproveResponse,
   CheckpointPipelineData,
   CheckpointPipelineError,
   CheckpointPipelineResponse,
@@ -313,6 +316,16 @@ export const postPipelineActivate = (options: Options<PostPipelineActivateData>)
   return (options?.client ?? client).post<PostPipelineActivateResponse, PostPipelineActivateError>({
     ...options,
     url: '/v0/pipelines/{pipeline_name}/activate'
+  })
+}
+
+/**
+ * TODO
+ */
+export const postPipelineApprove = (options: Options<PostPipelineApproveData>) => {
+  return (options?.client ?? client).post<PostPipelineApproveResponse, PostPipelineApproveError>({
+    ...options,
+    url: '/v0/pipelines/{pipeline_name}/approve'
   })
 }
 

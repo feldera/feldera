@@ -100,6 +100,11 @@ export const $AuthProvider = {
   ]
 } as const
 
+export const $BootstrapPolicy = {
+  type: 'string',
+  enum: ['allow', 'reject', 'await_approval']
+} as const
+
 export const $BuildInformation = {
   type: 'object',
   description: 'Information about the build of the platform.',
@@ -356,10 +361,10 @@ export const $CombinedStatus = {
     'Provisioning',
     'Unavailable',
     'Standby',
+    'AwaitingApproval',
     'Initializing',
     'Bootstrapping',
     'Replaying',
-    'AwaitingApproval',
     'Paused',
     'Running',
     'Suspended',
@@ -2581,6 +2586,9 @@ used during a step.`,
       type: 'object',
       required: ['inputs'],
       properties: {
+        dataflow: {
+          nullable: true
+        },
         inputs: {
           type: 'object',
           description: 'Input endpoint configuration.',
@@ -2623,6 +2631,68 @@ It represents configuration entries directly provided by the user
 (e.g., runtime configuration) and entries derived from the schema
 of the compiled program (e.g., connectors). Storage configuration,
 if applicable, is set by the runner.`
+} as const
+
+export const $PipelineDiff = {
+  type: 'object',
+  required: [
+    'added_input_connectors',
+    'modified_input_connectors',
+    'removed_input_connectors',
+    'added_output_connectors',
+    'modified_output_connectors',
+    'removed_output_connectors'
+  ],
+  properties: {
+    added_input_connectors: {
+      type: 'array',
+      items: {
+        type: 'string'
+      }
+    },
+    added_output_connectors: {
+      type: 'array',
+      items: {
+        type: 'string'
+      }
+    },
+    modified_input_connectors: {
+      type: 'array',
+      items: {
+        type: 'string'
+      }
+    },
+    modified_output_connectors: {
+      type: 'array',
+      items: {
+        type: 'string'
+      }
+    },
+    program_diff: {
+      allOf: [
+        {
+          $ref: '#/components/schemas/ProgramDiff'
+        }
+      ],
+      nullable: true
+    },
+    program_diff_error: {
+      type: 'string',
+      nullable: true
+    },
+    removed_input_connectors: {
+      type: 'array',
+      items: {
+        type: 'string'
+      }
+    },
+    removed_output_connectors: {
+      type: 'array',
+      items: {
+        type: 'string'
+      }
+    }
+  }
 } as const
 
 export const $PipelineFieldSelector = {
@@ -2901,6 +2971,10 @@ If an optional field is not selected (i.e., is \`None\`), it will not be seriali
       ],
       nullable: true
     },
+    deployment_runtime_status_details: {
+      type: 'string',
+      nullable: true
+    },
     deployment_runtime_status_since: {
       type: 'string',
       format: 'date-time',
@@ -3176,6 +3250,56 @@ the platform.
 If not set (null), the runtime version will be the same as the platform version.`,
       default: null,
       nullable: true
+    }
+  }
+} as const
+
+export const $ProgramDiff = {
+  type: 'object',
+  required: [
+    'added_tables',
+    'removed_tables',
+    'modified_tables',
+    'added_views',
+    'removed_views',
+    'modified_views'
+  ],
+  properties: {
+    added_tables: {
+      type: 'array',
+      items: {
+        type: 'string'
+      }
+    },
+    added_views: {
+      type: 'array',
+      items: {
+        type: 'string'
+      }
+    },
+    modified_tables: {
+      type: 'array',
+      items: {
+        type: 'string'
+      }
+    },
+    modified_views: {
+      type: 'array',
+      items: {
+        type: 'string'
+      }
+    },
+    removed_tables: {
+      type: 'array',
+      items: {
+        type: 'string'
+      }
+    },
+    removed_views: {
+      type: 'array',
+      items: {
+        type: 'string'
+      }
     }
   }
 } as const
@@ -4015,6 +4139,7 @@ determined by the pipeline and taken over by the runner.`,
     'Unavailable',
     'Standby',
     'Initializing',
+    'AwaitingApproval',
     'Bootstrapping',
     'Replaying',
     'Paused',

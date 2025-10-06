@@ -1,6 +1,7 @@
 <script lang="ts">
-  import type { GlobalDialogSnippet } from '$lib/compositions/useGlobalDialog.svelte'
-  let { dialog, onClose }: { dialog: GlobalDialogSnippet | null; onClose: () => void } = $props()
+  import type { Snippet } from 'svelte'
+
+  let { dialog, onClose }: { dialog: Snippet | null; onClose: () => void } = $props()
 
   let contentNode = $state<HTMLElement>()
   const onclick = (e: MouseEvent) => {

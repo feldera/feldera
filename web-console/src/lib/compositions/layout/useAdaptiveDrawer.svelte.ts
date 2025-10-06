@@ -1,7 +1,7 @@
 import { useLocalStorage } from '$lib/compositions/localStore.svelte'
 import { useIsTablet } from './useIsMobile.svelte'
 
-export const useDrawer = (type: 'left' | 'right') => {
+export const useAdaptiveDrawer = (type: 'left' | 'right') => {
   const isTablet = useIsTablet()
 
   const showDrawer = useLocalStorage(`layout/drawer/${type}`, !isTablet)
