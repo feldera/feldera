@@ -1,5 +1,6 @@
 <script lang="ts">
   import { Tooltip } from '$lib/components/common/Tooltip.svelte'
+  import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
   import {
     getRuntimeVersionStatus,
     normalizeRuntimeVersion
@@ -7,11 +8,13 @@
   import type { ProgramStatus } from '$lib/services/pipelineManager'
 
   let {
+    pipelineName,
     runtimeVersion,
     baseRuntimeVersion,
     configuredRuntimeVersion,
     programStatus
   }: {
+    pipelineName: string
     runtimeVersion: string
     baseRuntimeVersion: string
     configuredRuntimeVersion: string | null | undefined
@@ -25,6 +28,8 @@
       configured: configuredRuntimeVersion
     })
   )
+
+  const api = usePipelineManager()
 </script>
 
 {#if programStatus === 'Success'}
@@ -51,7 +56,10 @@
       activeContent
     >
       <div>A newer runtime version {normalizeRuntimeVersion(baseRuntimeVersion)} is available.</div>
-      <!-- <button class="btn mt-2 h-6 preset-filled-primary-500">Update</button> -->
+      <button
+        class="btn mt-2 h-6 preset-filled-primary-500"
+        onclick={() => api.postUpdateRuntime(pipelineName)}>Update</button
+      >
     </Tooltip>
   {:else}
     <span class="chip h-5 text-sm preset-outlined-success-600-400"> Latest </span>
