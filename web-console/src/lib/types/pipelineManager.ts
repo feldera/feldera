@@ -156,13 +156,15 @@ export type TimeSeriesEntry = {
   s: BigNumber
 }
 
-type Relations = {
-  tables: string[]
-  views: string[]
+export type PipelineDiff = {
+  tables: EntityDiff
+  views: EntityDiff
+  inputConnectors: EntityDiff
+  outputConnectors: EntityDiff
 }
 
-export type PipelineChangesDiff = {
-  deleted: Relations
-  modified: Relations
-  new: Relations
+export type EntityDiff = {
+  removed: string[]
+  modified: string[]
+  added: string[]
 }

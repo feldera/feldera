@@ -517,8 +517,7 @@
                     "deployment_runtime_status_details": null,
                     "deployment_runtime_status_since": null,
                     "deployment_runtime_desired_status": null,
-                    "deployment_runtime_desired_status_since": null,
-                    "pipeline_diff": null
+                    "deployment_runtime_desired_status_since": null
                   },
                   {
                     "id": "67e55044-10b1-426f-9247-bb680e5fe0c9",
@@ -600,8 +599,7 @@
                     "deployment_runtime_status_details": null,
                     "deployment_runtime_status_since": null,
                     "deployment_runtime_desired_status": null,
-                    "deployment_runtime_desired_status_since": null,
-                    "pipeline_diff": null
+                    "deployment_runtime_desired_status_since": null
                   }
                 ]
               }
@@ -953,8 +951,7 @@
                   "deployment_runtime_status_details": null,
                   "deployment_runtime_status_since": null,
                   "deployment_runtime_desired_status": null,
-                  "deployment_runtime_desired_status_since": null,
-                  "pipeline_diff": null
+                  "deployment_runtime_desired_status_since": null
                 }
               }
             }
@@ -7071,7 +7068,6 @@
             ],
             "properties": {
               "dataflow": {
-                "type": "string",
                 "nullable": true
               },
               "inputs": {
@@ -7110,6 +7106,67 @@
           }
         ],
         "description": "Pipeline deployment configuration.\nIt represents configuration entries directly provided by the user\n(e.g., runtime configuration) and entries derived from the schema\nof the compiled program (e.g., connectors). Storage configuration,\nif applicable, is set by the runner."
+      },
+      "PipelineDiff": {
+        "type": "object",
+        "required": [
+          "added_input_connectors",
+          "modified_input_connectors",
+          "removed_input_connectors",
+          "added_output_connectors",
+          "modified_output_connectors",
+          "removed_output_connectors"
+        ],
+        "properties": {
+          "added_input_connectors": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "added_output_connectors": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "modified_input_connectors": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "modified_output_connectors": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "program_diff": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ProgramDiff"
+              }
+            ],
+            "nullable": true
+          },
+          "program_diff_error": {
+            "type": "string",
+            "nullable": true
+          },
+          "removed_input_connectors": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "removed_output_connectors": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
       },
       "PipelineFieldSelector": {
         "type": "string",
@@ -7409,9 +7466,6 @@
           "name": {
             "type": "string"
           },
-          "pipeline_diff": {
-            "nullable": true
-          },
           "platform_version": {
             "type": "string"
           },
@@ -7629,6 +7683,55 @@
             "description": "Override runtime version of the pipeline being executed.\n\nWarning: This setting is experimental and may change in the future.\nRequires the platform to run with the unstable feature `runtime_version`\nenabled. Should only be used for testing purposes, and requires\nnetwork access.\n\nA runtime version can be specified in the form of a version\nor SHA taken from the `feldera/feldera` repository main branch.\n\nExamples: `v0.96.0` or `f4dcac0989ca0fda7d2eb93602a49d007cb3b0ae`\n\nA platform of version `0.x.y` may be capable of running future and past\nruntimes with versions `>=0.x.y` and `<=0.x.y` until breaking API changes happen,\nthe exact bounds for each platform version are unspecified until we reach a\nstable version. Compatibility is only guaranteed if platform and runtime version\nare exact matches.\n\nNote that any enterprise features are currently considered to be part of\nthe platform.\n\nIf not set (null), the runtime version will be the same as the platform version.",
             "default": null,
             "nullable": true
+          }
+        }
+      },
+      "ProgramDiff": {
+        "type": "object",
+        "required": [
+          "added_tables",
+          "removed_tables",
+          "modified_tables",
+          "added_views",
+          "removed_views",
+          "modified_views"
+        ],
+        "properties": {
+          "added_tables": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "added_views": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "modified_tables": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "modified_views": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "removed_tables": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "removed_views": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         }
       },

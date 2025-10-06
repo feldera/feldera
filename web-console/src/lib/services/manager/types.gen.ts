@@ -66,6 +66,8 @@ export type AuthProvider =
       GenericOidc: ProviderGenericOidc
     }
 
+export type BootstrapPolicy = 'allow' | 'reject' | 'await_approval'
+
 /**
  * Information about the build of the platform.
  */
@@ -241,10 +243,10 @@ export type CombinedStatus =
   | 'Provisioning'
   | 'Unavailable'
   | 'Standby'
+  | 'AwaitingApproval'
   | 'Initializing'
   | 'Bootstrapping'
   | 'Replaying'
-  | 'AwaitingApproval'
   | 'Paused'
   | 'Running'
   | 'Suspended'
@@ -1894,6 +1896,7 @@ export type PipelineConfig = {
    */
   workers?: number
 } & {
+  dataflow?: unknown
   /**
    * Input endpoint configuration.
    */
@@ -1917,6 +1920,17 @@ export type PipelineConfig = {
    */
   secrets_dir?: string | null
   storage_config?: StorageConfig | null
+}
+
+export type PipelineDiff = {
+  added_input_connectors: Array<string>
+  added_output_connectors: Array<string>
+  modified_input_connectors: Array<string>
+  modified_output_connectors: Array<string>
+  program_diff?: ProgramDiff | null
+  program_diff_error?: string | null
+  removed_input_connectors: Array<string>
+  removed_output_connectors: Array<string>
 }
 
 export type PipelineFieldSelector = 'all' | 'status'
@@ -1985,6 +1999,7 @@ export type PipelineSelectedInfo = {
   deployment_runtime_desired_status?: RuntimeDesiredStatus | null
   deployment_runtime_desired_status_since?: string | null
   deployment_runtime_status?: RuntimeStatus | null
+  deployment_runtime_status_details?: string | null
   deployment_runtime_status_since?: string | null
   deployment_status: CombinedStatus
   deployment_status_since: string
@@ -2140,6 +2155,15 @@ export type ProgramConfig = {
    * If not set (null), the runtime version will be the same as the platform version.
    */
   runtime_version?: string | null
+}
+
+export type ProgramDiff = {
+  added_tables: Array<string>
+  added_views: Array<string>
+  modified_tables: Array<string>
+  modified_views: Array<string>
+  removed_tables: Array<string>
+  removed_views: Array<string>
 }
 
 /**
@@ -2696,6 +2720,7 @@ export type RuntimeStatus =
   | 'Unavailable'
   | 'Standby'
   | 'Initializing'
+  | 'AwaitingApproval'
   | 'Bootstrapping'
   | 'Replaying'
   | 'Paused'
@@ -3455,11 +3480,27 @@ export type PostPipelineActivateData = {
      */
     pipeline_name: string
   }
+  query?: {
+    initial?: string
+  }
 }
 
 export type PostPipelineActivateResponse = CheckpointResponse
 
 export type PostPipelineActivateError = ErrorResponse
+
+export type PostPipelineApproveData = {
+  path: {
+    /**
+     * Unique pipeline name
+     */
+    pipeline_name: string
+  }
+}
+
+export type PostPipelineApproveResponse = CheckpointResponse
+
+export type PostPipelineApproveError = ErrorResponse
 
 export type CheckpointPipelineData = {
   path: {
@@ -3744,6 +3785,7 @@ export type PostPipelineStartData = {
     pipeline_name: string
   }
   query?: {
+    bootstrap_policy?: BootstrapPolicy
     /**
      * The `initial` parameter determines whether to after provisioning the pipeline make it
      * become `standby`, `paused` or `running` (only valid values).
@@ -4197,6 +4239,23 @@ export type $OpenApiTs = {
   '/v0/pipelines/{pipeline_name}/activate': {
     post: {
       req: PostPipelineActivateData
+      res: {
+        /**
+         * Pipeline activation initiated
+         */
+        '202': CheckpointResponse
+        /**
+         * Pipeline with that name does not exist
+         */
+        '404': ErrorResponse
+        '500': ErrorResponse
+        '503': ErrorResponse
+      }
+    }
+  }
+  '/v0/pipelines/{pipeline_name}/approve': {
+    post: {
+      req: PostPipelineApproveData
       res: {
         /**
          * Pipeline activation initiated

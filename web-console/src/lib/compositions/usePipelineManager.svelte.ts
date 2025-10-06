@@ -15,7 +15,6 @@ import {
   getAuthorizationHeader,
   patchPipeline,
   pipelineLogsStream,
-  getSuspendDiff,
   pipelineTimeSeriesStream,
   postApiKey,
   postPipeline,
@@ -23,15 +22,10 @@ import {
   putPipeline,
   relationEgressStream,
   relationIngress,
-  type PipelineAction,
-  type PipelineStatus,
-  type PipelineThumb,
   type SupportBundleOptions
 } from '$lib/services/pipelineManager'
 import { useToast } from '$lib/compositions/useToastNotification'
 import type { FunctionType } from '$lib/types/common/function'
-import type { NamesInUnion } from '$lib/functions/common/union'
-import { useReactiveWaiter } from './useReactiveWaiter.svelte'
 import { triggerStreamDownload } from '$lib/services/browser'
 
 const networkErrors = ['Failed to fetch', 'Network request failed', 'Timeout']
@@ -165,10 +159,6 @@ export const usePipelineManager = () => {
     downloadPipelineSupportBundle: reportError(
       downloadPipelineSupportBundle,
       (pipelineName) => `Failed to download support bundle for ${pipelineName} pipeline`
-    ),
-    getSuspendDiff: reportError(
-      getSuspendDiff,
-      () => `Failed to retrieve the changes required to re-start the pipeline`
     )
   }
 }

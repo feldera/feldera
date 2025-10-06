@@ -249,6 +249,8 @@ It contains the following fields:
         crate::db::types::combined_status::CombinedDesiredStatus,
         crate::db::types::resources_status::ResourcesStatus,
         crate::db::types::resources_status::ResourcesDesiredStatus,
+        feldera_types::pipeline_diff::ProgramDiff,
+        feldera_types::pipeline_diff::PipelineDiff,
         feldera_types::runtime_status::RuntimeStatus,
         feldera_types::runtime_status::RuntimeDesiredStatus,
         feldera_types::runtime_status::BootstrapPolicy,

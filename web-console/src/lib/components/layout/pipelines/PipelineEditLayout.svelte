@@ -36,7 +36,7 @@
   import CreatePipelineButton from '$lib/components/pipelines/CreatePipelineButton.svelte'
   import PipelineList from '$lib/components/pipelines/List.svelte'
   import { usePipelineList } from '$lib/compositions/pipelines/usePipelineList.svelte'
-  import { useDrawer } from '$lib/compositions/layout/useDrawer.svelte'
+  import { useAdaptiveDrawer } from '$lib/compositions/layout/useAdaptiveDrawer.svelte'
   import DoubleClickInput from '$lib/components/input/DoubleClickInput.svelte'
   import { goto } from '$app/navigation'
   import NavigationExtras from '$lib/components/layout/NavigationExtras.svelte'
@@ -44,8 +44,13 @@
   import Tooltip from '$lib/components/common/Tooltip.svelte'
   import { useLayoutSettings } from '$lib/compositions/layout/useLayoutSettings.svelte'
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
-  import PipelineCrashBanner from '$lib/components/pipelines/editor/PipelineCrashBanner.svelte'
   import type { WritablePipeline } from '$lib/compositions/useWritablePipeline.svelte'
+  import PipelineBanner from '$lib/components/pipelines/editor/PipelineBanner.svelte'
+  import { useContextDrawer } from '$lib/compositions/layout/useContextDrawer.svelte'
+  import ReviewPipelineChanges from '$lib/components/pipelines/editor/ReviewPipelineChangesDialog.svelte'
+  import { parsePipelineDiff } from '$lib/functions/pipelines/pipelineDiff'
+  import { useToast } from '$lib/compositions/useToastNotification'
+  import { usePipelineAction } from '$lib/compositions/usePipelineAction.svelte'
 
   let {
     preloaded,
@@ -65,6 +70,7 @@
   )
 
   const { updatePipelines, updatePipeline } = useUpdatePipelineList()
+  const pipelineAction = usePipelineAction()
 
   const api = usePipelineManager()
   const pipelineActionCallbacks = usePipelineActionCallbacks()
@@ -172,7 +178,7 @@ example = "1.0"`
 
   const isTablet = useIsTablet()
   const isScreenLg = useIsScreenLg()
-  const drawer = useDrawer('right')
+  const drawer = useAdaptiveDrawer('right')
   const pipelineList = usePipelineList(preloaded)
 
   let { showPipelinesPanel, showMonitoringPanel, separateAdHocTab } = useLayoutSettings()
@@ -207,7 +213,77 @@ example = "1.0"`
       separateAdHocTab.value = false
     }
   })
+
+  const contextDrawer = useContextDrawer()
+
+  let pipelineBannerMessage = $derived.by(() => {
+    if (pipeline.current.deploymentError) {
+      return {
+        header: `The last execution of the pipeline failed with the error code: ${pipeline.current.deploymentError.error_code}`,
+        message: pipeline.current.deploymentError.message,
+        style: 'error' as const
+      }
+    } else if (pipeline.current.status === 'AwaitingApproval') {
+      return {
+        header:
+          'The pipeline was modified while it was stopped. Approve the changes or stop the pipeline.',
+        style: 'warning' as const,
+        actions: [
+          {
+            label: 'Review Changes',
+            onclick: () => {
+              contextDrawer.content = reviewPipelineChanges
+            }
+          }
+        ]
+      }
+    }
+    return null
+  })
+
+  let toast = useToast()
+  let safeParsePipelineDiff = (pipeline: ExtendedPipeline) => {
+    if (pipeline.status !== 'AwaitingApproval') {
+      return undefined
+    }
+    try {
+      return parsePipelineDiff(pipeline)
+    } catch (e) {
+      if (e instanceof Error) {
+        setTimeout(() => {
+          contextDrawer.content = null
+          toast.toastError(e)
+        })
+      }
+      return undefined
+    }
+  }
 </script>
+
+{#snippet reviewPipelineChanges()}
+  {@const changes = safeParsePipelineDiff(pipeline.current)}
+  {#if changes}
+    <ReviewPipelineChanges
+      {changes}
+      onCancel={() => (contextDrawer.content = null)}
+      onApprove={async () => {
+        const { waitFor } = await pipelineAction.postPipelineAction(
+          pipeline.current.name,
+          'approve_changes'
+        )
+        await waitFor()
+      }}
+    >
+      {#snippet titleEnd()}
+        <button
+          class="fd fd-x btn btn-icon text-[24px]"
+          aria-label="Close"
+          onclick={() => (contextDrawer.content = null)}
+        ></button>
+      {/snippet}
+    </ReviewPipelineChanges>
+  {/if}
+{/snippet}
 
 {#snippet pipelineActions(props?: { class: string })}
   <PipelineActions
@@ -329,9 +405,14 @@ example = "1.0"`
 
     <Pane class="!overflow-visible">
       <PaneGroup direction="vertical" class="!overflow-visible">
-        {#if pipeline.current.deploymentError}
+        {#if pipelineBannerMessage}
           <div class="pb-2 md:pb-4">
-            <PipelineCrashBanner error={pipeline.current.deploymentError}></PipelineCrashBanner>
+            <PipelineBanner
+              header={pipelineBannerMessage.header}
+              message={pipelineBannerMessage.message}
+              actions={pipelineBannerMessage.actions ?? []}
+              style={pipelineBannerMessage.style}
+            ></PipelineBanner>
           </div>
         {/if}
         <CodeEditor
