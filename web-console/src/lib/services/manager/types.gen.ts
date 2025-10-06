@@ -3916,6 +3916,22 @@ export type PostPipelineInputConnectorActionResponse = unknown
 
 export type PostPipelineInputConnectorActionError = ErrorResponse
 
+export type PostPipelineTestingData = {
+  path: {
+    /**
+     * Unique pipeline name
+     */
+    pipeline_name: string
+  }
+  query?: {
+    set_platform_version?: string | null
+  }
+}
+
+export type PostPipelineTestingResponse = unknown
+
+export type PostPipelineTestingError = ErrorResponse
+
 export type GetPipelineTimeSeriesData = {
   path: {
     /**
@@ -3941,6 +3957,19 @@ export type GetPipelineTimeSeriesStreamData = {
 export type GetPipelineTimeSeriesStreamResponse = string
 
 export type GetPipelineTimeSeriesStreamError = ErrorResponse
+
+export type PostUpdateRuntimeData = {
+  path: {
+    /**
+     * Unique pipeline name
+     */
+    pipeline_name: string
+  }
+}
+
+export type PostUpdateRuntimeResponse = PipelineInfo
+
+export type PostUpdateRuntimeError = ErrorResponse
 
 export type GetPipelineOutputConnectorStatusData = {
   path: {
@@ -4669,6 +4698,25 @@ export type $OpenApiTs = {
       }
     }
   }
+  '/v0/pipelines/{pipeline_name}/testing': {
+    post: {
+      req: PostPipelineTestingData
+      res: {
+        /**
+         * Request successfully processed
+         */
+        '200': unknown
+        /**
+         * Pipeline with that name does not exist
+         */
+        '404': ErrorResponse
+        /**
+         * Endpoint is disabled. Set FELDERA_UNSTABLE_FEATURES="testing" to enable.
+         */
+        '405': ErrorResponse
+      }
+    }
+  }
   '/v0/pipelines/{pipeline_name}/time_series': {
     get: {
       req: GetPipelineTimeSeriesData
@@ -4700,6 +4748,23 @@ export type $OpenApiTs = {
         '404': ErrorResponse
         '500': ErrorResponse
         '503': ErrorResponse
+      }
+    }
+  }
+  '/v0/pipelines/{pipeline_name}/update_runtime': {
+    post: {
+      req: PostUpdateRuntimeData
+      res: {
+        /**
+         * Pipeline successfully updated
+         */
+        '200': PipelineInfo
+        '400': ErrorResponse
+        /**
+         * Pipeline with that name does not exist
+         */
+        '404': ErrorResponse
+        '500': ErrorResponse
       }
     }
   }

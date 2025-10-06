@@ -179,6 +179,7 @@
           <td class="relative border-surface-100-900 group-hover:bg-surface-50-950">
             <div class="flex w-full flex-nowrap items-center gap-2 text-nowrap">
               <PipelineVersion
+                pipelineName={pipeline.name}
                 runtimeVersion={pipeline.platformVersion}
                 baseRuntimeVersion={page.data.feldera!.version}
                 configuredRuntimeVersion={pipeline.programConfig.runtime_version}

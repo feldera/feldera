@@ -393,6 +393,7 @@ example = "1.0"`
             <ProgramStatus {programStatus}></ProgramStatus>
             <div class="flex items-center gap-2 pl-1">
               <PipelineVersion
+                pipelineName={pipeline.current.name}
                 runtimeVersion={pipeline.current.platformVersion}
                 baseRuntimeVersion={page.data.feldera!.version}
                 configuredRuntimeVersion={pipeline.current.programConfig?.runtime_version}

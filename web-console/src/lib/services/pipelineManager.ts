@@ -12,6 +12,7 @@ import {
   postPipelinePause,
   postPipelineStop,
   postPipelineClear,
+  postUpdateRuntime as _postUpdateRuntime,
   type ErrorResponse,
   postPipeline as _postPipeline,
   type PipelineInfo,
@@ -431,6 +432,10 @@ export const postPipelineAction = async (pipeline_name: string, action: Pipeline
     }),
     (v) => v
   )
+}
+
+export const postUpdateRuntime = async (pipeline_name: string) => {
+  return mapResponse(_postUpdateRuntime({ path: { pipeline_name } }), (v) => v)
 }
 
 export const getAuthConfig = () =>
