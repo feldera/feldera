@@ -24,8 +24,7 @@ pub use feldera_storage::{
     block::{BlockLocation, InvalidBlockLocation},
     error::StorageError,
     file::FileId,
-    file::HasFileId,
-    FileReader, FileWriter, StorageBackend, StorageFileType, StoragePath, StoragePathPart,
+    FileReader, FileRw, FileWriter, StorageBackend, StorageFileType, StoragePath, StoragePathPart,
 };
 
 /// Extension added to files that are incomplete/being written to.
