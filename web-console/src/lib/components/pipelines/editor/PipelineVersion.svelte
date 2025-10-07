@@ -1,6 +1,7 @@
 <script lang="ts">
   import { page } from '$app/state'
   import { Tooltip } from '$lib/components/common/Tooltip.svelte'
+  import ClipboardCopyButton from '$lib/components/other/ClipboardCopyButton.svelte'
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
   import {
     getRuntimeVersion,
@@ -37,7 +38,15 @@
 </script>
 
 {#if programStatus === 'Success' || programStatus === 'SystemError' || programStatus === 'SqlError' || programStatus === 'SqlCompiled' || programStatus === 'RustError'}
-  {version}
+  {#if version.length < 11}
+    {version}
+  {:else}
+    <div class="flex flex-nowrap items-center">
+      {version.slice(0, 7)}
+      <span class="select-none">...</span>
+      <ClipboardCopyButton value={version}></ClipboardCopyButton>
+    </div>
+  {/if}
   {#if status === 'custom'}
     <span class="chip relative h-5 text-sm text-surface-700-300 preset-outlined-surface-200-800">
       Custom
