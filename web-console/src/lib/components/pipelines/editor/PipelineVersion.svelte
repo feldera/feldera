@@ -1,8 +1,9 @@
 <script lang="ts">
+  import { page } from '$app/state'
   import { Tooltip } from '$lib/components/common/Tooltip.svelte'
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
   import {
-    getRuntimeVersionStatus,
+    getRuntimeVersion,
     normalizeRuntimeVersion
   } from '$lib/functions/pipelines/runtimeVersion'
   import type { ProgramStatus } from '$lib/services/pipelineManager'
@@ -21,20 +22,23 @@
     programStatus: ProgramStatus | undefined
   } = $props()
 
-  let versionStatus = $derived(
-    getRuntimeVersionStatus({
-      runtime: runtimeVersion,
-      base: baseRuntimeVersion,
-      configured: configuredRuntimeVersion
-    })
+  let { version, status } = $derived(
+    getRuntimeVersion(
+      {
+        runtime: runtimeVersion,
+        base: baseRuntimeVersion,
+        configured: configuredRuntimeVersion
+      },
+      page.data.feldera!.unstableFeatures
+    )
   )
 
   const api = usePipelineManager()
 </script>
 
 {#if programStatus === 'Success'}
-  {normalizeRuntimeVersion(runtimeVersion)}
-  {#if versionStatus === 'custom'}
+  {version}
+  {#if status === 'custom'}
     <span class="chip relative h-5 text-sm text-surface-700-300 preset-outlined-surface-200-800">
       Custom
       <div class="fd fd-info pl-2 text-[14px] text-warning-600-400"></div>
@@ -46,7 +50,7 @@
     >
       <div>This custom runtime version is set in the compilation configuration.</div>
     </Tooltip>
-  {:else if versionStatus === 'update_available'}
+  {:else if status === 'update_available'}
     <span class="chip h-5 text-sm text-blue-500 !ring-blue-500 preset-outlined">
       Update available
     </span>

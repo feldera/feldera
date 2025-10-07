@@ -49,6 +49,7 @@ export type LayoutData = {
         }
         tenantId: string
         tenantName: string
+        unstableFeatures: string[]
         config: Configuration
       }
     | undefined
@@ -180,6 +181,7 @@ export const load = async ({ fetch, url }): Promise<LayoutData> => {
       revision: config.revision,
       tenantId: sessionConfig?.tenant_id || '',
       tenantName: sessionConfig?.tenant_name || '',
+      unstableFeatures: config.unstable_features?.split(',').map((f) => f.trim()) || [],
       config
     }
   }
