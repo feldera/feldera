@@ -394,7 +394,7 @@ where
     type Batcher = MergeBatcher<Self>;
     type Builder = VecValBuilder<K, V, T, R, O>;
 
-    fn checkpoint_path(&self) -> Option<StoragePath> {
+    fn checkpoint_path(&self) -> Option<&StoragePath> {
         unimplemented!()
     }
 

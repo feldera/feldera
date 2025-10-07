@@ -763,7 +763,8 @@ where
 
         let reader = if reopen {
             println!("closing writer and reopening as reader");
-            let (_file_handle, path, _bloom_filter) = writer.close().unwrap();
+            let path = writer.path().clone();
+            let (_file_handle, _bloom_filter) = writer.close().unwrap();
             Reader::open(
                 &[&factories.any_factories()],
                 test_buffer_cache,
@@ -817,7 +818,8 @@ fn test_one_column_zset<K, A>(
 
         let reader = if reopen {
             println!("closing writer and reopening as reader");
-            let (_file_handle, path, _bloom_filter) = writer.close().unwrap();
+            let path = writer.path().clone();
+            let (_file_handle, _bloom_filter) = writer.close().unwrap();
             Reader::open(
                 &[&factories.any_factories()],
                 test_buffer_cache,

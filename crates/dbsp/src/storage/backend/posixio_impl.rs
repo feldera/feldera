@@ -1,7 +1,7 @@
 //! [StorageBackend] implementation using POSIX I/O.
 
 use super::{
-    BlockLocation, FileId, FileReader, FileWriter, HasFileId, StorageCacheFlags, StorageError,
+    BlockLocation, FileId, FileReader, FileRw, FileWriter, StorageCacheFlags, StorageError,
     MUTABLE_EXTENSION,
 };
 use crate::circuit::metrics::{FILES_CREATED, FILES_DELETED};
@@ -20,6 +20,7 @@ use feldera_types::config::{
     FileBackendConfig, StorageBackendConfig, StorageCacheConfig, StorageConfig,
 };
 use std::ffi::OsString;
+use std::fmt::Debug;
 use std::fs::{create_dir_all, DirEntry};
 use std::io::{ErrorKind, IoSlice, Write};
 use std::thread::sleep;
@@ -37,6 +38,7 @@ use std::{
 use tracing::warn;
 
 pub(super) struct PosixReader {
+    path: StoragePath,
     file: Arc<File>,
     file_id: FileId,
     drop: DeleteOnDrop,
@@ -48,8 +50,15 @@ pub(super) struct PosixReader {
     ioop_delay: Duration,
 }
 
+impl Debug for PosixReader {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "PosixReader({})", self.path)
+    }
+}
+
 impl PosixReader {
     fn new(
+        path: StoragePath,
         file: Arc<File>,
         file_id: FileId,
         drop: DeleteOnDrop,
@@ -57,6 +66,7 @@ impl PosixReader {
         ioop_delay: Duration,
     ) -> Self {
         Self {
+            path,
             file,
             file_id,
             drop,
@@ -65,7 +75,8 @@ impl PosixReader {
         }
     }
     fn open(
-        path: PathBuf,
+        path: StoragePath,
+        file_name: PathBuf,
         cache: StorageCacheConfig,
         usage: Arc<AtomicI64>,
         async_threads: bool,
@@ -74,26 +85,30 @@ impl PosixReader {
         let file = OpenOptions::new()
             .read(true)
             .cache_flags(&cache)
-            .open(&path)
-            .map_err(|e| StorageError::stdio(e.kind(), "open", path.display()))?;
+            .open(&file_name)
+            .map_err(|e| StorageError::stdio(e.kind(), "open", file_name.display()))?;
         let size = file
             .metadata()
-            .map_err(|e| StorageError::stdio(e.kind(), "fstat", path.display()))?
+            .map_err(|e| StorageError::stdio(e.kind(), "fstat", file_name.display()))?
             .size();
 
         Ok(Arc::new(Self::new(
+            path,
             Arc::new(file),
             FileId::new(),
-            DeleteOnDrop::new(path, true, size, usage),
+            DeleteOnDrop::new(file_name, true, size, usage),
             async_threads,
             ioop_delay,
         )))
     }
 }
 
-impl HasFileId for PosixReader {
+impl FileRw for PosixReader {
     fn file_id(&self) -> FileId {
         self.file_id
+    }
+    fn path(&self) -> &StoragePath {
+        &self.path
     }
 }
 
@@ -219,9 +234,13 @@ struct PosixWriter {
     ioop_delay: Duration,
 }
 
-impl HasFileId for PosixWriter {
+impl FileRw for PosixWriter {
     fn file_id(&self) -> FileId {
         self.file_id
+    }
+
+    fn path(&self) -> &StoragePath {
+        &self.name
     }
 }
 
@@ -232,7 +251,7 @@ impl FileWriter for PosixWriter {
         Ok(block)
     }
 
-    fn complete(mut self: Box<Self>) -> Result<(Arc<dyn FileReader>, StoragePath), StorageError> {
+    fn complete(mut self: Box<Self>) -> Result<Arc<dyn FileReader>, StorageError> {
         if !self.buffers.is_empty() {
             self.flush()?;
         }
@@ -247,16 +266,14 @@ impl FileWriter for PosixWriter {
             fs::rename(&self.drop.path, &finalized_path)
                 .map_err(|e| StorageError::stdio(e.kind(), "rename", self.drop.path.display()))?;
 
-            Ok((
-                Arc::new(PosixReader::new(
-                    Arc::new(self.file),
-                    self.file_id,
-                    self.drop.with_path(finalized_path),
-                    self.async_threads,
-                    self.ioop_delay,
-                )) as Arc<dyn FileReader>,
+            Ok(Arc::new(PosixReader::new(
                 self.name,
-            ))
+                Arc::new(self.file),
+                self.file_id,
+                self.drop.with_path(finalized_path),
+                self.async_threads,
+                self.ioop_delay,
+            )) as Arc<dyn FileReader>)
         })
     }
 }
@@ -452,6 +469,7 @@ impl StorageBackend for PosixBackend {
 
     fn open(&self, name: &StoragePath) -> Result<Arc<dyn FileReader>, StorageError> {
         PosixReader::open(
+            name.clone(),
             self.fs_path(name),
             self.cache,
             self.usage.clone(),

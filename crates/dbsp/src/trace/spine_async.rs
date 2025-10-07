@@ -1446,7 +1446,6 @@ where
                 batch
                     .checkpoint_path()
                     .expect("The batch should have been persisted")
-                    .as_ref()
                     .to_string()
             })
             .collect::<Vec<_>>();
