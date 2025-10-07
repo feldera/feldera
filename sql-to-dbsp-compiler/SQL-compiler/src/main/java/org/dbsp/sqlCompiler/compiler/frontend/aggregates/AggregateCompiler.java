@@ -157,7 +157,7 @@ public class AggregateCompiler implements ICompilerComponent {
         Utilities.enforce(!call.isDistinct());
         this.aggFunction = call.getAggregation();
         this.filterArgument = call.filterArg;
-        this.partialResultType = computePartialResultType(this.nullableResultType);
+        this.partialResultType = this.computePartialResultType(this.nullableResultType);
         List<Integer> argList = call.getArgList();
         this.eComp = new ExpressionCompiler(this.aggregateNode, this.v, constants, this.compiler);
         if (argList.isEmpty()) {

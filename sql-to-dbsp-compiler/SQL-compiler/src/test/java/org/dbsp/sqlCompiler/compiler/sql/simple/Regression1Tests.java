@@ -1018,4 +1018,26 @@ public class Regression1Tests extends SqlIoTest {
                 CREATE VIEW v AS SELECT *
                 FROM t WHERE ARRAY_MAX(CAST(t.ids AS BIGINT ARRAY)) < 10;""");
     }
+
+    @Test
+    public void issue4847() {
+        // Validated on Postgres
+        var ccs = this.getCCS("""
+                CREATE TABLE tbl(id INT, tiny_int TINYINT UNSIGNED);
+                
+                CREATE MATERIALIZED VIEW v AS SELECT
+                STDDEV(tiny_int) AS tiny_int
+                FROM tbl;""");
+        ccs.step("INSERT INTO tbl VALUES (1, 255), (1, 1)", """
+                 tiny_int | weight
+                -------------------
+                 179      | 1""");
+    }
+
+    @Test
+    public void issue4848() {
+        this.runtimeConstantFail(
+                "SELECT STDDEV(x) FROM (VALUES (9223372036854775807), (9223372036854775807)) AS tbl(x)",
+                "'18446744073709551614 * 18446744073709551614' causes overflow for type BIGINT");
+    }
 }
