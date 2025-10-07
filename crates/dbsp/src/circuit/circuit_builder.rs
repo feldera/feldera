@@ -6224,7 +6224,7 @@ pub struct BootstrapInfo {
 
     /// Operators that require backfill from upstream nodes.
     #[allow(dead_code)]
-    pub need_backfill: BTreeSet<NodeId>,
+    pub need_backfill: BTreeMap<NodeId, Option<String>>,
 }
 
 impl CircuitHandle {
@@ -6489,9 +6489,20 @@ impl CircuitHandle {
             // );
             // info!("CircuitHandle::restore: replay circuit is written to replay.dot");
 
+            let need_backfill = nodes_to_backfill
+                .iter()
+                .map(|node_id| {
+                    let pid = self
+                        .circuit
+                        .map_local_node_mut(*node_id, &mut |node| node.persistent_id());
+
+                    (*node_id, pid)
+                })
+                .collect::<BTreeMap<_, _>>();
+
             let replay_info = BootstrapInfo {
                 replay_sources: replay_sources.clone(),
-                need_backfill: nodes_to_backfill.clone(),
+                need_backfill,
             };
 
             self.replay_info = Some(replay_info.clone());
