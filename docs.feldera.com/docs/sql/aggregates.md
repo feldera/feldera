@@ -27,10 +27,13 @@ If `WITHIN DISTINCT` is present, argument values are made distinct
 within each value of specified keys before being passed to the
 aggregate function.
 
-Example:
-
-Instead of `SELECT SUM(col)`, you should write `SELECT SUM(CAST col AS
-DECIMAL(10, 4))` if you expect 10-digit results to be possible.
+Most aggregation functions produce results of the same type as the
+input data, but compute using higher precision intermediate data
+types; aggregation of `UNSIGNED` values uses signed types for
+intermediate results.  If you expect the result to require a higher
+precision than the aggregated data type, we recommend converting the
+data to a wider data type, e.g.: instead of `SELECT SUM(col)`, you
+should write `SELECT SUM(CAST col AS BIGINT)`.
 
 <table>
   <tr>

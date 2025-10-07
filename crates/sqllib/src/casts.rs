@@ -48,14 +48,20 @@ where
 #[doc(hidden)]
 pub(crate) fn type_name(name: &'static str) -> &'static str {
     match name {
+        "b" => "BOOLEAN",
+        "bytes" => "(VAR)BINARY",
         "i8" => "TINYINT",
         "i16" => "SMALLINT",
         "i32" => "INTEGER",
         "i64" => "BIGINT",
+        // i128 is used in generated code, but does not have a SQL equivalent
+        "i128" => "BIGINT",
         "u8" => "TINYINT UNSIGNED",
         "u16" => "SMALLINT UNSIGNED",
         "u32" => "INTEGER UNSIGNED",
         "u64" => "BIGINT UNSIGNED",
+        // u128 is used in generated code, but does not have a SQL equivalent
+        "u128" => "BIGINT UNSIGNED",
         "f" => "REAL",
         "d" => "FLOAT",
         "Timestamp" => "TIMESTAMP",
@@ -65,6 +71,8 @@ pub(crate) fn type_name(name: &'static str) -> &'static str {
         "ShortInterval" => "INTERVAL",
         "LongInterval" => "INTERVAL",
         "s" => "(VAR)CHAR",
+        "V" => "VARIANT",
+        "Uuid" => "UUID",
         _ => "Unexpected type",
     }
 }
@@ -73,14 +81,20 @@ pub(crate) fn type_name(name: &'static str) -> &'static str {
 #[doc(hidden)]
 pub(crate) fn rust_type_name(name: &'static str) -> &'static str {
     match name {
+        "b" => "BOOLEAN",
+        "bytes" => "(VAR)BINARY",
         "i8" => "TINYINT",
         "i16" => "SMALLINT",
         "i32" => "INTEGER",
         "i64" => "BIGINT",
+        // i128 is used in generated code, but does not have a SQL equivalent
+        "i128" => "BIGINT",
         "u8" => "TINYINT UNSIGNED",
         "u16" => "SMALLINT UNSIGNED",
         "u32" => "INTEGER UNSIGNED",
         "u64" => "BIGINT UNSIGNED",
+        // u128 is used in generated code, but does not have a SQL equivalent
+        "u128" => "BIGINT UNSIGNED",
         "F32" => "REAL",
         "F64" => "FLOAT",
         "Timestamp" => "Timestamp",
@@ -90,6 +104,8 @@ pub(crate) fn rust_type_name(name: &'static str) -> &'static str {
         "ShortInterval" => "INTERVAL",
         "LongInterval" => "INTERVAL",
         "String" => "(VAR)CHAR",
+        "Variant" => "VARIANT",
+        "Uuid" => "UUID",
         _ => "Unexpected type",
     }
 }
