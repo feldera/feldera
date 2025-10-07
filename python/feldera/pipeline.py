@@ -72,7 +72,9 @@ class Pipeline:
             else:
                 raise err
 
-    def wait_for_status(self, expected_status: PipelineStatus, timeout: Optional[int] = None) -> None:
+    def wait_for_status(
+        self, expected_status: PipelineStatus, timeout: Optional[int] = None
+    ) -> None:
         """
         Wait for the pipeline to reach the specified status.
 
@@ -88,7 +90,9 @@ class Pipeline:
                 return
 
             if timeout is not None and time.time() - start_time >= timeout:
-                raise TimeoutError(f"Pipeline did not reach {expected_status.name} status within {timeout} seconds")
+                raise TimeoutError(
+                    f"Pipeline did not reach {expected_status.name} status within {timeout} seconds"
+                )
 
             time.sleep(1)
 
@@ -475,10 +479,10 @@ metrics"""
         return self.client.activate_pipeline(self.name, wait=wait, timeout_s=timeout_s)
 
     def start(
-            self,
-            bootstrap_policy: Optional[BootstrapPolicy] = None,
-            wait: bool = True,
-            timeout_s: Optional[float] = None
+        self,
+        bootstrap_policy: Optional[BootstrapPolicy] = None,
+        wait: bool = True,
+        timeout_s: Optional[float] = None,
     ):
         """
         .. _start:
@@ -496,13 +500,15 @@ metrics"""
         :raises RuntimeError: If the pipeline is not in STOPPED state.
         """
 
-        self.client.start_pipeline(self.name, bootstrap_policy=bootstrap_policy,wait=wait, timeout_s=timeout_s)
+        self.client.start_pipeline(
+            self.name, bootstrap_policy=bootstrap_policy, wait=wait, timeout_s=timeout_s
+        )
 
     def start_paused(
-            self,
-            bootstrap_policy: Optional[BootstrapPolicy] = None,
-            wait: bool = True,
-            timeout_s: Optional[float] = None
+        self,
+        bootstrap_policy: Optional[BootstrapPolicy] = None,
+        wait: bool = True,
+        timeout_s: Optional[float] = None,
     ):
         """
         Starts the pipeline in the paused state.

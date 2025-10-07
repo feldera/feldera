@@ -868,11 +868,9 @@ async fn pipeline(format: OutputFormat, action: PipelineAction, client: Client) 
                                     .into_pool_table()
                                     .to_string(),
                                 OutputFormat::Json => {
-                                    format!(
-                                        "{}",
-                                        serde_json::to_string_pretty(response.as_ref())
-                                            .expect("Failed to serialize pipeline diff")
-                                    )
+                                    serde_json::to_string_pretty(response.as_ref())
+                                        .expect("Failed to serialize pipeline diff")
+                                        .to_string()
                                 }
                                 _ => {
                                     format!("<unsupported output format: {}>", format)

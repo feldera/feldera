@@ -1184,7 +1184,7 @@ async fn activate(
 async fn approve(state: WebData<ServerState>) -> Result<HttpResponse, PipelineError> {
     state.set_bootstrap_policy(BootstrapPolicy::Allow);
 
-    Ok(HttpResponse::Ok().json(format!("Bootstrap approved")))
+    Ok(HttpResponse::Ok().json("Bootstrap approved".to_string()))
 }
 
 /// Retrieve pipeline runtime status.

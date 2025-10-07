@@ -1,4 +1,3 @@
-import time
 from feldera.enums import BootstrapPolicy, PipelineStatus
 from feldera.pipeline_builder import PipelineBuilder
 from feldera.runtime_config import RuntimeConfig
@@ -6,6 +5,7 @@ from tests import TEST_CLIENT, enterprise_only
 from .helper import (
     gen_pipeline_name,
 )
+
 
 @enterprise_only
 @gen_pipeline_name
@@ -18,10 +18,17 @@ def test_bootstrap_enterprise(pipeline_name):
 CREATE MATERIALIZED VIEW v1 AS SELECT COUNT(*) AS c FROM t1;
 """
 
-    pipeline = PipelineBuilder(TEST_CLIENT, pipeline_name, sql=sql, runtime_config=RuntimeConfig(
-        fault_tolerance_model=None, # We will make manual checkpoints in this test.
-        dev_tweaks={"backfill_avoidance": True} # This should not be necessary once it is enabled by default.
-    )).create_or_replace()
+    pipeline = PipelineBuilder(
+        TEST_CLIENT,
+        pipeline_name,
+        sql=sql,
+        runtime_config=RuntimeConfig(
+            fault_tolerance_model=None,  # We will make manual checkpoints in this test.
+            dev_tweaks={
+                "backfill_avoidance": True
+            },  # This should not be necessary once it is enabled by default.
+        ),
+    ).create_or_replace()
 
     pipeline.start()
 
@@ -40,7 +47,9 @@ CREATE MATERIALIZED VIEW v1 AS SELECT COUNT(*) AS c FROM t1;
     try:
         pipeline.start(bootstrap_policy=BootstrapPolicy.REJECT)
         # If we reach here, the pipeline started successfully when it should have failed
-        assert False, "Expected pipeline.start() to raise an exception with bootstrap_policy='reject', but it succeeded"
+        assert False, (
+            "Expected pipeline.start() to raise an exception with bootstrap_policy='reject', but it succeeded"
+        )
     except Exception as e:
         # This is expected - the pipeline should fail to start with bootstrap_policy='reject'
         print(f"Expected exception caught: {e}")

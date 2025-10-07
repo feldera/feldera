@@ -315,7 +315,7 @@
   </div>
 {/if}
 <div class="flex-grow"></div>
-<div class="bg-white-dark sticky -bottom-4 -m-4 md:-bottom-6 md:-m-6">
+<div class="bg-white-dark sticky bottom-0 -mx-4 md:-mx-6">
   <hr class="hr" />
   <div class="flex justify-end gap-4 p-4 md:gap-6 md:p-6">
     <button
