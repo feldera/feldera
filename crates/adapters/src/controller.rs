@@ -407,9 +407,9 @@ impl Controller {
     {
         let builder = ControllerBuilder::new(config)?;
         let mut init = builder.open_checkpoint()?;
-        init.pipeline_diff
-            .as_mut()
-            .map(|diff| diff.clear_program_diff());
+        if let Some(diff) = init.pipeline_diff.as_mut() {
+            diff.clear_program_diff()
+        }
         init.init(circuit_factory, error_cb)
     }
 
@@ -3101,16 +3101,17 @@ impl ControllerInit {
         // pick up paused status from the checkpoint.
         for (connector_name, connector_config) in config.inputs.iter_mut() {
             let connector_name = connector_name.to_string();
-            if !pipeline_diff.is_affected_connector(connector_name.as_str()) {
-                if pipeline_diff.program_diff.as_ref().map_or(true, |diff| {
-                    !diff.is_affected_relation(&connector_config.stream)
-                }) {
-                    if let Some(checkpointed_connector_config) =
-                        checkpoint_config.inputs.get(connector_name.as_str())
-                    {
-                        connector_config.connector_config.paused =
-                            checkpointed_connector_config.connector_config.paused;
-                    }
+            if !pipeline_diff.is_affected_connector(connector_name.as_str())
+                && pipeline_diff
+                    .program_diff
+                    .as_ref()
+                    .is_none_or(|diff| !diff.is_affected_relation(&connector_config.stream))
+            {
+                if let Some(checkpointed_connector_config) =
+                    checkpoint_config.inputs.get(connector_name.as_str())
+                {
+                    connector_config.connector_config.paused =
+                        checkpointed_connector_config.connector_config.paused;
                 }
             }
         }
