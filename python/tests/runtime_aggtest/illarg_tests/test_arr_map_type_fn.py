@@ -518,7 +518,7 @@ class illarg_arr_repeat_legal(TstView):
 class illarg_arr_repeat_dtype_legal(TstView):
     def __init__(self):
         # checked manually
-        self.data = [{"str": ["0.12", "0.12"]}, {"str": ["hello ", "hello "]}]
+        self.data = [{"str": ["0.12", "0.12"]}, {"str": ["hello ", "hello "]}, {'str': [None, None]}]
         self.sql = """CREATE MATERIALIZED VIEW arr_repeat_dtype_legal AS SELECT
                       ARRAY_REPEAT(str, 2)  AS str
                       FROM illegal_tbl"""
