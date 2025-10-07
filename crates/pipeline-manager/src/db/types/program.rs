@@ -12,6 +12,7 @@ use log::error;
 use log::warn;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::fmt;
@@ -750,6 +751,11 @@ pub fn generate_pipeline_config(
     runtime_config: &RuntimeConfig,
     program_info: &ProgramInfo,
 ) -> PipelineConfig {
+    let dataflow = json!({
+        "mir": program_info.dataflow.as_object().map(|o| o.get("mir").cloned()).unwrap_or_default(),
+        "program_schema": serde_json::to_value(&program_info.schema).unwrap_or_default(),
+    });
+
     PipelineConfig {
         name: Some(format!("pipeline-{pipeline_id}")),
         global: runtime_config.clone(),
@@ -757,7 +763,7 @@ pub fn generate_pipeline_config(
         secrets_dir: None,
         inputs: program_info.input_connectors.clone(),
         outputs: program_info.output_connectors.clone(),
-        dataflow: Some(program_info.dataflow.clone()),
+        dataflow: Some(dataflow),
     }
 }
 

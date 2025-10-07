@@ -168,6 +168,17 @@ pub struct ProgramSchema {
     pub outputs: Vec<Relation>,
 }
 
+impl ProgramSchema {
+    pub fn relations_with_lateness(&self) -> Vec<SqlIdentifier> {
+        self.inputs
+            .iter()
+            .chain(self.outputs.iter())
+            .filter(|rel| rel.fields.iter().any(|f| f.lateness.is_some()))
+            .map(|rel| rel.name.clone())
+            .collect()
+    }
+}
+
 #[derive(Serialize, Deserialize, ToSchema, Debug, Eq, PartialEq, Clone, Copy)]
 #[cfg_attr(feature = "testing", derive(proptest_derive::Arbitrary))]
 pub struct SourcePosition {

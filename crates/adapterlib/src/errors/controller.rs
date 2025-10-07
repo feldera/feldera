@@ -752,6 +752,10 @@ pub enum ControllerError {
 
     BootstrapRejected,
 
+    BootstrapNotAllowed {
+        error: String,
+    },
+
     UnexpectedBootstrap {
         bootstrap_info: Option<BootstrapInfo>,
     },
@@ -923,6 +927,7 @@ impl DbspDetailedError for ControllerError {
             Self::InvalidStandby(_) => Cow::from("InvalidStandby"),
             Self::InvalidStartupTransition { .. } => Cow::from("InvalidStartupTransition"),
             Self::BootstrapRejected => Cow::from("BootstrapRejected"),
+            Self::BootstrapNotAllowed { .. } => Cow::from("BootstrapNotAllowed"),
             Self::UnexpectedBootstrap { .. } => Cow::from("UnexpectedBootstrap"),
         }
     }
@@ -1101,6 +1106,12 @@ impl Display for ControllerError {
                 write!(
                     f,
                     "Bootstrapping of the modified pipeline was rejected by the user."
+                )
+            }
+            Self::BootstrapNotAllowed { error } => {
+                write!(
+                    f,
+                    "The pipeline has been modified since the last checkpoint; however it cannot be bootstrapped due to the following reasons:\n{error}"
                 )
             }
             Self::UnexpectedBootstrap { bootstrap_info } => {
@@ -1480,6 +1491,7 @@ impl ControllerError {
             | Self::NoTransactionInProgress
             | Self::InvalidInitialStatus(_)
             | Self::BootstrapRejected
+            | Self::BootstrapNotAllowed { .. }
             | Self::UnexpectedBootstrap { .. }
             | Self::InvalidStandby(_)
             | Self::InvalidStartupTransition { .. } => ErrorKind::Other,

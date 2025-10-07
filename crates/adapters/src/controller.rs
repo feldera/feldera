@@ -96,6 +96,7 @@ use stats::StepResults;
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::collections::HashSet;
+use std::fmt::Display;
 use std::io::ErrorKind;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::PathBuf;
@@ -139,7 +140,7 @@ pub use feldera_types::config::{
 use feldera_types::config::{FileBackendConfig, FtConfig, FtModel, OutputBufferConfig, SyncConfig};
 use feldera_types::constants::{STATE_FILE, STEPS_FILE};
 use feldera_types::format::json::{JsonFlavor, JsonParserConfig, JsonUpdateFormat};
-use feldera_types::program_schema::{canonical_identifier, SqlIdentifier};
+use feldera_types::program_schema::{canonical_identifier, ProgramSchema, SqlIdentifier};
 pub use stats::{CompletionToken, ControllerStatus, InputEndpointStatus};
 
 /// Maximal number of concurrent API connections per circuit
@@ -2929,8 +2930,18 @@ pub struct ControllerInit {
 pub fn compute_pipeline_diff(
     old_config: &PipelineConfig,
     new_config: &PipelineConfig,
-) -> PipelineDiff {
-    let mir_diff = compute_program_diff(old_config, new_config);
+) -> Result<PipelineDiff, ControllerError> {
+    let diff = compute_program_diff(old_config, new_config);
+
+    if let Ok((_, blockers)) = &diff {
+        if !blockers.is_empty() {
+            return Err(ControllerError::BootstrapNotAllowed {
+                error: blockers.to_string(),
+            });
+        }
+    };
+
+    let mir_diff = diff.map(|(diff, _)| diff.clone());
 
     let mut old_configured_inputs = old_config
         .inputs
@@ -3014,7 +3025,7 @@ pub fn compute_pipeline_diff(
         .map(|(k, _)| k.to_string())
         .collect::<Vec<_>>();
 
-    PipelineDiff {
+    Ok(PipelineDiff {
         program_diff: mir_diff.as_ref().ok().cloned(),
         program_diff_error: mir_diff.err(),
         added_input_connectors,
@@ -3023,35 +3034,128 @@ pub fn compute_pipeline_diff(
         added_output_connectors,
         modified_output_connectors,
         removed_output_connectors,
-    }
+    })
 }
 
 #[derive(Deserialize)]
 struct Dataflow {
     mir: HashMap<MirNodeId, MirNode>,
+    program_schema: ProgramSchema,
+}
+
+/// Reasons bootstrapping cannot be performed.
+struct BootstrapBlockers {
+    /// The new version of the program has relations with lateness.
+    new_relations_with_lateness: Vec<String>,
+
+    /// The old version of the program has relations with lateness.
+    old_relations_with_lateness: Vec<String>,
+
+    /// The old version of the program has non-materialized input tables.
+    old_non_materialized_tables: Vec<String>,
+
+    /// The new version of the program has non-materialized input tables.
+    new_non_materialized_tables: Vec<String>,
+}
+
+impl BootstrapBlockers {
+    fn is_empty(&self) -> bool {
+        self.new_relations_with_lateness.is_empty()
+            && self.old_relations_with_lateness.is_empty()
+            && self.old_non_materialized_tables.is_empty()
+            && self.new_non_materialized_tables.is_empty()
+    }
+}
+
+impl Display for BootstrapBlockers {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if !self.new_relations_with_lateness.is_empty() {
+            writeln!(
+                f,
+                "- The new version of the program has relations with lateness: {}",
+                self.new_relations_with_lateness.join(", ")
+            )?;
+        }
+        if !self.old_relations_with_lateness.is_empty() {
+            writeln!(
+                f,
+                "- The checkpointed version of the program has relations with lateness: {}",
+                self.old_relations_with_lateness.join(", ")
+            )?;
+        }
+        if !self.new_non_materialized_tables.is_empty() {
+            writeln!(
+                f,
+                "- The new version of the program has non-materialized input tables: {}",
+                self.new_non_materialized_tables.join(", ")
+            )?;
+        }
+        if !self.old_non_materialized_tables.is_empty() {
+            writeln!(
+                f,
+                "- The checkpointed version of the program has non-materialized input tables: {}",
+                self.old_non_materialized_tables.join(", ")
+            )?;
+        }
+        Ok(())
+    }
 }
 
 fn compute_program_diff(
     old_config: &PipelineConfig,
     new_config: &PipelineConfig,
-) -> Result<ProgramDiff, String> {
-    // TODO: more useful error messages
-
+) -> Result<(ProgramDiff, BootstrapBlockers), String> {
     let Some(old_dataflow) = &old_config.dataflow else {
-        return Err("checkpointed pipeline configuration does not contain IR".to_owned());
+        return Err("Unable to compute the diff between the checkpointed and new pipeline configurations: the checkpointed configuration does not contain program information. It was likely created by an old version of Feldera.".to_owned());
     };
 
     let Some(new_dataflow) = &new_config.dataflow else {
-        return Err("new pipeline configuration does not contain IR".to_owned());
+        return Err("Unable to compute the diff between the checkpointed and new pipeline configurations: the new configuration does not contain program information. It was likely created by an old version of Feldera.".to_owned());
     };
 
-    let new_dataflow: Dataflow = serde_json::from_value(new_dataflow.clone())
-        .map_err(|e| format!("failed to deserialize new IR: {}", e))?;
-
     let old_dataflow: Dataflow = serde_json::from_value(old_dataflow.clone())
-        .map_err(|e| format!("failed to deserialize old IR: {}", e))?;
+        .map_err(|e| format!("Unable to compute the diff between the checkpointed and new pipeline configurations: failed to deserialize the checkpointed IR. It was likely created by an old version of Feldera. Deserialization error: {e}"))?;
 
-    Ok(program_diff(&old_dataflow.mir, &new_dataflow.mir))
+    let new_dataflow: Dataflow = serde_json::from_value(new_dataflow.clone())
+        .map_err(|e| format!("Unable to compute the diff between the checkpointed and new pipeline configurations: failed to deserialize the new IR. It was likely created by an old version of Feldera. Deserialization error: {e}"))?;
+
+    let new_relations_with_lateness = new_dataflow
+        .program_schema
+        .relations_with_lateness()
+        .into_iter()
+        .map(|s| s.name())
+        .collect::<Vec<_>>();
+    let old_relations_with_lateness = old_dataflow
+        .program_schema
+        .relations_with_lateness()
+        .into_iter()
+        .map(|s| s.name())
+        .collect::<Vec<_>>();
+
+    let old_non_materialized_tables = old_dataflow
+        .program_schema
+        .inputs
+        .iter()
+        .filter(|relation| !relation.materialized)
+        .map(|relation| relation.name.name())
+        .collect::<Vec<_>>();
+
+    let new_non_materialized_tables = new_dataflow
+        .program_schema
+        .inputs
+        .iter()
+        .filter(|relation| !relation.materialized)
+        .map(|relation| relation.name.name())
+        .collect::<Vec<_>>();
+
+    let blockers = BootstrapBlockers {
+        new_relations_with_lateness,
+        old_relations_with_lateness,
+        old_non_materialized_tables,
+        new_non_materialized_tables,
+    };
+
+    Ok((program_diff(&old_dataflow.mir, &new_dataflow.mir), blockers))
 }
 
 impl ControllerInit {
@@ -3104,7 +3208,7 @@ impl ControllerInit {
 
         let storage = storage.with_init_checkpoint(circuit.map(|circuit| circuit.uuid));
 
-        let pipeline_diff = compute_pipeline_diff(&checkpoint_config, &config);
+        let pipeline_diff = compute_pipeline_diff(&checkpoint_config, &config)?;
 
         // For any input connectors that have not been modified, and whose associated table haven't been modified,
         // pick up paused status from the checkpoint.
