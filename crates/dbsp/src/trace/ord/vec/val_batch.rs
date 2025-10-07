@@ -17,11 +17,12 @@ use crate::{
     utils::{ConsolidatePairedSlices, Tup2},
     DBData, DBWeight, NumEntries, Timestamp,
 };
-use feldera_storage::StoragePath;
+use feldera_storage::FileReader;
 use rand::Rng;
 use rkyv::{Archive, Deserialize, Serialize};
 use size_of::SizeOf;
 use std::fmt::{self, Debug, Display, Formatter};
+use std::sync::Arc;
 
 pub type VecValBatchLayer<K, V, T, R, O> = Layer<K, Layer<V, Leaf<DynDataTyped<T>, R>, O>, O>;
 
@@ -394,7 +395,7 @@ where
     type Batcher = MergeBatcher<Self>;
     type Builder = VecValBuilder<K, V, T, R, O>;
 
-    fn checkpoint_path(&self) -> Option<&StoragePath> {
+    fn file_reader(&self) -> Option<Arc<dyn FileReader>> {
         unimplemented!()
     }
 
