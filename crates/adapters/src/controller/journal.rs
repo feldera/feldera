@@ -1,6 +1,7 @@
 use std::{
     collections::{HashMap, HashSet},
     io::ErrorKind,
+    ops::{Bound, RangeBounds},
     sync::Arc,
 };
 
@@ -34,7 +35,7 @@ impl Journal {
     /// Creates a new journal under `path`, deleting any journal previously there.
     pub fn create(backend: Arc<dyn StorageBackend>, path: &StoragePath) -> Result<Self, StepError> {
         let this = Self::open(backend, path);
-        this.truncate()?;
+        this.delete(..)?;
         Ok(this)
     }
 
@@ -74,10 +75,40 @@ impl Journal {
         Ok(())
     }
 
-    pub fn truncate(&self) -> Result<(), StepError> {
-        self.backend
-            .delete_recursive(&self.path)
-            .map_err(|error| self.storage_error(error))
+    /// Deletes steps in the journal in the range specified by `steps`.
+    pub fn delete<R>(&self, steps: R) -> Result<(), StepError>
+    where
+        R: RangeBounds<Step>,
+    {
+        if steps.start_bound() == Bound::Unbounded && steps.end_bound() == Bound::Unbounded {
+            // We're deleting all steps, so delete everything.  It might be more
+            // efficient on some backends.
+            self.backend
+                .delete_recursive(&self.path)
+                .map_err(|error| self.storage_error(error))
+        } else {
+            let mut result = Ok(());
+            self.backend
+                .list(&self.path, &mut |path, _kind| {
+                    let Some(file_name) = path.filename() else {
+                        return;
+                    };
+                    let Some(number) = file_name.strip_suffix(".bin") else {
+                        return;
+                    };
+                    let Ok(step) = number.parse::<Step>() else {
+                        return;
+                    };
+                    if !steps.contains(&step) {
+                        return;
+                    }
+                    if let Err(error) = self.backend.delete(path) {
+                        result = Err(StepError::storage_error(path, error));
+                    }
+                })
+                .map_err(|error| self.storage_error(error))?;
+            result
+        }
     }
 
     fn storage_error(&self, error: StorageError) -> StepError {

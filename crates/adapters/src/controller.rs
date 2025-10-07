@@ -60,7 +60,7 @@ use dbsp::circuit::metrics::{
     DBSP_STEP_LATENCY_MICROSECONDS, FILES_CREATED, FILES_DELETED, TOTAL_LATE_RECORDS,
 };
 use dbsp::circuit::tokio::TOKIO;
-use dbsp::circuit::{CircuitStorageConfig, DevTweaks, Mode};
+use dbsp::circuit::{CheckpointCommitter, CircuitStorageConfig, DevTweaks, Mode};
 use dbsp::storage::backend::{StorageBackend, StoragePath};
 use dbsp::{
     circuit::{CircuitConfig, Layout},
@@ -99,6 +99,7 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::io::ErrorKind;
+use std::mem::replace;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::PathBuf;
 use std::sync::mpsc::{channel, sync_channel, Receiver, SendError, Sender, SyncSender};
@@ -115,6 +116,7 @@ use std::{
     time::{Duration, Instant},
 };
 use tokio::sync::oneshot;
+use tokio::sync::oneshot::error::TryRecvError;
 use tokio::sync::Mutex as TokioMutex;
 use tokio::task::spawn_blocking;
 use tracing::{debug, debug_span, error, info, trace, warn};
@@ -153,10 +155,19 @@ pub(crate) const MAX_API_CONNECTIONS: u64 = 100;
 
 pub(crate) type EndpointId = u64;
 
-/// Latency of checkpoint operations, in microseconds.
-static CHECKPOINT_LATENCY: ExponentialHistogram = ExponentialHistogram::new();
+/// Runtime of checkpoint operations, in microseconds, including time that the
+/// pipeline could continue executing while the checkpoint completed.
+static CHECKPOINT_RUNTIME: ExponentialHistogram = ExponentialHistogram::new();
+
+/// Sub-duration of [CHECKPOINT_RUNTIME] during which pipeline execution was
+/// blocked.
+static CHECKPOINT_DELAY: ExponentialHistogram = ExponentialHistogram::new();
 
 /// Amount of storage written during checkpoint operations, in megabytes.
+///
+/// These values are approximate because they include all storage writes while a
+/// checkpoint is being written, which means that they include writes from
+/// ongoing background merges.
 static CHECKPOINT_WRITTEN: ExponentialHistogram = ExponentialHistogram::new();
 
 /// Number of records successfully processed at the time of the last successful
@@ -1015,10 +1026,16 @@ impl Controller {
         );
 
         metrics.histogram(
-            "feldera_checkpoint_latency_seconds",
-            "Latency of overall checkpoint operations in seconds",
+            "feldera_checkpoint_runtime_seconds",
+            "Time to run checkpoint operations, in seconds, including time that the pipeline could continue executing along with the checkpoint.",
             labels,
-            &HistogramDiv::new(CHECKPOINT_LATENCY.snapshot(), 1_000_000.0),
+            &HistogramDiv::new(CHECKPOINT_RUNTIME.snapshot(), 1_000_000.0),
+        );
+        metrics.histogram(
+            "feldera_checkpoint_delay_seconds",
+            "Sub-duration of `feldera_checkpoint_runtime_seconds` during which pipeline execution was blocked.",
+            labels,
+            &HistogramDiv::new(CHECKPOINT_DELAY.snapshot(), 1_000_000.0),
         );
         metrics.histogram(
             "feldera_checkpoint_written_bytes",
@@ -1412,6 +1429,7 @@ struct CircuitThread {
 
     checkpoint_delay_warning: Option<LongOperationWarning>,
     checkpoint_requests: Vec<CheckpointRequest>,
+    running_checkpoint: Option<RunningCheckpoint>,
 
     /// Currently only allows one request at a time.
     sync_checkpoint_request: Option<SyncCheckpointRequest>,
@@ -1703,6 +1721,7 @@ impl CircuitThread {
             last_checkpoint: Instant::now(),
             checkpoint_delay_warning: None,
             checkpoint_requests: Vec::new(),
+            running_checkpoint: None,
             sync_checkpoint_request: None,
             step,
             input_metadata: input_metadata.unwrap_or_default(),
@@ -1976,135 +1995,17 @@ impl CircuitThread {
     }
 
     fn checkpoint(&mut self) {
-        fn inner(this: &mut CircuitThread) -> Result<Checkpoint, Arc<ControllerError>> {
-            this.controller
-                .can_suspend()
-                .map_err(|e| Arc::new(ControllerError::SuspendError(e)))?;
+        let mut running_checkpoint = self
+            .running_checkpoint
+            .take()
+            .unwrap_or_else(|| RunningCheckpoint::new(self));
+        let Some(result) = running_checkpoint.poll(self) else {
+            self.running_checkpoint = Some(running_checkpoint);
+            return;
+        };
 
-            // Replace the input adapter configuration in the pipeline configuration
-            // by the current inputs. (HTTP input adapters might have been added or
-            // removed.)
-            let config = PipelineConfig {
-                inputs: this
-                    .controller
-                    .status
-                    .input_status()
-                    .values()
-                    .map(|status| {
-                        (Cow::from(status.endpoint_name.clone()), {
-                            let mut config = status.config.clone();
-                            config.connector_config.paused = status.is_paused_by_user();
-                            config
-                        })
-                    })
-                    .collect(),
-                ..this.controller.status.pipeline_config.clone()
-            };
-
-            let input_metadata = this
-                .input_metadata
-                .iter()
-                .map(|(name, resume)| {
-                    (
-                        name.clone(),
-                        resume.as_ref().unwrap().seek().unwrap().clone(),
-                    )
-                })
-                .collect();
-            let processed_records = this
-                .controller
-                .status
-                .global_metrics
-                .num_total_processed_records();
-            let initial_start_time = this.controller.status.global_metrics.initial_start_time;
-            let input_statistics = this
-                .controller
-                .status
-                .input_status()
-                .values()
-                .map(|endpoint| {
-                    (
-                        endpoint.endpoint_name.clone(),
-                        CheckpointInputEndpointMetrics::from(&endpoint.metrics),
-                    )
-                })
-                .collect();
-            let output_statistics = this
-                .controller
-                .status
-                .output_status()
-                .values()
-                .map(|endpoint| {
-                    (
-                        endpoint.endpoint_name.clone(),
-                        CheckpointOutputEndpointMetrics::from(&endpoint.metrics),
-                    )
-                })
-                .collect();
-            let written_before = WRITE_BLOCKS_BYTES.sum();
-            let checkpoint = CHECKPOINT_LATENCY.record_callback(|| {
-                this.circuit
-                    .checkpoint()
-                    .with_steps(this.step)
-                    .with_processed_records(processed_records)
-                    .run()
-                    .map_err(|e| Arc::new(ControllerError::from(e)))
-                    .and_then(|circuit| {
-                        let uuid = circuit.uuid.to_string();
-                        let checkpoint = Checkpoint {
-                            circuit: Some(circuit),
-                            step: this.step,
-                            config,
-                            processed_records,
-                            initial_start_time,
-                            input_metadata: CheckpointOffsets(input_metadata),
-                            input_statistics,
-                            output_statistics,
-                        };
-                        checkpoint
-                            .write(
-                                &**this.storage.as_ref().unwrap(),
-                                &StoragePath::from(STATE_FILE),
-                            )
-                            .map_err(Arc::new)?;
-                        checkpoint
-                            .write(
-                                &**this.storage.as_ref().unwrap(),
-                                &StoragePath::from(uuid).child(STATE_FILE),
-                            )
-                            .map(|()| checkpoint)
-                            .map_err(Arc::new)
-                    })
-            })?;
-            let written_after = WRITE_BLOCKS_BYTES.sum();
-            CHECKPOINT_WRITTEN.record((written_after - written_before) / 1_000_000);
-            CHECKPOINT_PROCESSED_RECORDS.store(processed_records, Ordering::Relaxed);
-
-            let sync_requested = this.sync_checkpoint_request.as_ref().and_then(|s| s.uuid());
-
-            if sync_requested.is_none() {
-                if let Err(error) = this.circuit.gc_checkpoint() {
-                    warn!("error removing old checkpoints: {error}");
-                }
-            }
-
-            if let Some(ft) = &mut this.ft {
-                ft.checkpointed()?;
-            }
-            Ok(checkpoint)
-        }
-
-        let result = match inner(self) {
-            Err(e)
-                if matches!(
-                    e.as_ref(),
-                    ControllerError::SuspendError(SuspendError::Temporary(_))
-                ) =>
-            {
-                let ControllerError::SuspendError(error) = e.as_ref() else {
-                    unreachable!()
-                };
-
+        let result = match result {
+            Err(error @ ControllerError::SuspendError(SuspendError::Temporary(_))) => {
                 self.checkpoint_delay_warning
                     .get_or_insert_with(|| LongOperationWarning::new(Duration::from_secs(1)))
                     .check(|elapsed| {
@@ -2132,6 +2033,7 @@ impl CircuitThread {
         // a problem and a short checkpoint interval.
         self.last_checkpoint = Instant::now();
 
+        let result = result.map_err(Arc::new);
         for request in self.checkpoint_requests.drain(..) {
             match request {
                 CheckpointRequest::Scheduled => (),
@@ -2887,9 +2789,13 @@ impl FtState {
         Ok(())
     }
 
-    /// Truncates the journal (because we just checkpointed).
-    fn checkpointed(&mut self) -> Result<(), ControllerError> {
-        self.journal.truncate()?;
+    /// Delete journal entries up to, but not including, `step`, because we just
+    /// checkpointed `step`.
+    ///
+    /// We don't delete entries for `step` and beyond because further steps
+    /// might have carried on while the checkpoint was committing.
+    fn checkpointed(&mut self, step: Step) -> Result<(), ControllerError> {
+        self.journal.delete(..step)?;
         Ok(())
     }
 
@@ -4809,13 +4715,6 @@ impl ControllerInner {
                 ));
             }
         }
-        for endpoint_stats in self.status.output_status().values() {
-            if endpoint_stats.is_busy() {
-                temporary.push(TemporarySuspendError::OutputEndpointTx(
-                    endpoint_stats.endpoint_name.clone(),
-                ));
-            }
-        }
         if !temporary.is_empty() {
             Err(SuspendError::Temporary(temporary))
         } else {
@@ -5236,6 +5135,248 @@ impl LongOperationWarning {
             warn(elapsed);
             self.warn_threshold *= 2;
         }
+    }
+}
+
+/// An in-progress checkpoint.
+///
+/// Checkpoints proceed in three phases:
+///
+/// 1. Initial phase, in [RunningCheckpoint::start].  This does everything
+///    that needs to block the pipeline execution.  It also makes sure that the
+///    pipeline is in a state that can start a checkpoint.  It writes the
+///    checkpoint data to storage but it does not wait for it to become stable
+///    on storage.
+///
+/// 2. Background phase.  This runs in a separate [CheckpointThread].
+///    [RunningCheckpoint::Waiting] waits to receive the result.
+///
+/// 3. Finalization phase, in [RunningCheckpoint::finish].  This also blocks
+///    pipeline execution but there isn't much to do so it should not be for
+///    long.
+enum RunningCheckpoint {
+    Error(ControllerError),
+    Waiting(
+        JoinHandle<()>,
+        oneshot::Receiver<Result<Checkpoint, ControllerError>>,
+    ),
+    Done,
+}
+
+impl RunningCheckpoint {
+    fn new(circuit: &mut CircuitThread) -> Self {
+        SamplySpan::new(debug_span!("fg-checkpoint"))
+            .in_scope(|| Self::start(circuit))
+            .unwrap_or_else(Self::Error)
+    }
+
+    fn start(circuit: &mut CircuitThread) -> Result<Self, ControllerError> {
+        circuit
+            .controller
+            .can_suspend()
+            .map_err(ControllerError::SuspendError)?;
+
+        // Replace the input connector configuration in the pipeline
+        // configuration by the current inputs.  (HTTP input connectors might
+        // have been added or removed.)
+        let config = PipelineConfig {
+            inputs: circuit
+                .controller
+                .status
+                .input_status()
+                .values()
+                .map(|status| {
+                    (Cow::from(status.endpoint_name.clone()), {
+                        let mut config = status.config.clone();
+                        config.connector_config.paused = status.is_paused_by_user();
+                        config
+                    })
+                })
+                .collect(),
+            ..circuit.controller.status.pipeline_config.clone()
+        };
+
+        let input_metadata = circuit
+            .input_metadata
+            .iter()
+            .map(|(name, resume)| {
+                (
+                    name.clone(),
+                    resume.as_ref().unwrap().seek().unwrap().clone(),
+                )
+            })
+            .collect();
+        let processed_records = circuit
+            .controller
+            .status
+            .global_metrics
+            .num_total_processed_records();
+        let initial_start_time = circuit.controller.status.global_metrics.initial_start_time;
+        let input_statistics = circuit
+            .controller
+            .status
+            .input_status()
+            .values()
+            .map(|endpoint| {
+                (
+                    endpoint.endpoint_name.clone(),
+                    CheckpointInputEndpointMetrics::from(&endpoint.metrics),
+                )
+            })
+            .collect();
+        let output_statistics = circuit
+            .controller
+            .status
+            .output_status()
+            .values()
+            .map(|endpoint| {
+                (
+                    endpoint.endpoint_name.clone(),
+                    CheckpointOutputEndpointMetrics::from(&endpoint.metrics),
+                )
+            })
+            .collect();
+        let written_before = WRITE_BLOCKS_BYTES.sum();
+        let start_checkpoint = Instant::now();
+        let committer = circuit
+            .circuit
+            .checkpoint()
+            .with_steps(circuit.step)
+            .with_processed_records(processed_records)
+            .prepare()
+            .map_err(ControllerError::from)?;
+        let checkpoint = Checkpoint {
+            circuit: None,
+            step: circuit.step,
+            config,
+            processed_records,
+            initial_start_time,
+            input_metadata: CheckpointOffsets(input_metadata),
+            input_statistics,
+            output_statistics,
+        };
+        let delay = start_checkpoint.elapsed();
+
+        let (sender, receiver) = oneshot::channel();
+        let thread = CheckpointThread {
+            status: circuit.controller.status.clone(),
+            checkpoint,
+            committer,
+            written_before,
+            start_checkpoint,
+            delay,
+            storage: circuit.storage.as_ref().unwrap().clone(),
+        };
+        let unparker = circuit.parker.unparker().clone();
+        let join_handle = std::thread::Builder::new()
+            .name(String::from("feldera-checkpoint"))
+            .spawn(move || {
+                let result =
+                    SamplySpan::new(debug_span!("bg-checkpoint")).in_scope(|| thread.run());
+                let _ = sender.send(result);
+                unparker.unpark();
+            })
+            .unwrap();
+        Ok(Self::Waiting(join_handle, receiver))
+    }
+
+    fn finish(
+        checkpoint: Checkpoint,
+        circuit: &mut CircuitThread,
+    ) -> Result<Checkpoint, ControllerError> {
+        if circuit
+            .sync_checkpoint_request
+            .as_ref()
+            .and_then(|s| s.uuid())
+            .is_none()
+        {
+            if let Err(error) = circuit.circuit.gc_checkpoint() {
+                warn!("error removing old checkpoints: {error}");
+            }
+        }
+
+        if let Some(ft) = &mut circuit.ft {
+            if let Err(error) = ft.checkpointed(checkpoint.step) {
+                warn!("Error truncating journal following checkpoint ({error})");
+            }
+        }
+        Ok(checkpoint)
+    }
+
+    fn poll(&mut self, circuit: &mut CircuitThread) -> Option<Result<Checkpoint, ControllerError>> {
+        match replace(self, Self::Done) {
+            Self::Error(error) => Some(Err(error)),
+            Self::Waiting(join_handle, mut receiver) => match receiver.try_recv() {
+                Ok(result) => {
+                    join_handle.join().unwrap();
+                    Some(result.and_then(|checkpoint| SamplySpan::new(debug_span!("end-checkpoint")).in_scope(||
+Self::finish(checkpoint, circuit))))
+                },
+                Err(TryRecvError::Empty) => {
+                    *self = Self::Waiting(join_handle, receiver);
+                    None
+                },
+                Err(TryRecvError::Closed) => unreachable!("RunningCheckpoint::Waiting should have been replaced by RunningCheckpoint::Done"),
+            },
+            Self::Done => unreachable!("already reported final status"),
+        }
+    }
+}
+
+struct CheckpointThread {
+    checkpoint: Checkpoint,
+    status: Arc<ControllerStatus>,
+    committer: CheckpointCommitter,
+    written_before: u64,
+    start_checkpoint: Instant,
+    delay: Duration,
+    storage: Arc<dyn StorageBackend>,
+}
+
+impl CheckpointThread {
+    fn run(mut self) -> Result<Checkpoint, ControllerError> {
+        // Commit all the operator checkpoints to stable storage.
+        let circuit = self.committer.commit()?;
+        let uuid = circuit.uuid;
+        self.checkpoint.circuit = Some(circuit);
+        let bytes_written = WRITE_BLOCKS_BYTES.sum() - self.written_before;
+
+        // Wait to complete outputs for all the records processed at the time
+        // the checkpoint started.
+        let mut long_wait = LongOperationWarning::new(Duration::from_secs(10));
+        let threshold = self.checkpoint.processed_records;
+        loop {
+            let completed = self.status.num_total_completed_records();
+            if completed >= threshold {
+                break;
+            }
+            sleep(Duration::from_millis(100));
+            long_wait.check(|elapsed| {
+                info!(
+                    "checkpoint completion delayed {} seconds waiting for completed records ({completed}) to reach input records at checkpoint start ({threshold})",
+                    elapsed.as_secs()
+                )
+            });
+        }
+
+        // Finalize the checkpoint on storage.
+        //
+        // [Checkpoint::write] commits to stable storage.
+        self.checkpoint
+            .write(&*self.storage, &StoragePath::from(STATE_FILE))?;
+        self.checkpoint.write(
+            &*self.storage,
+            &StoragePath::from(uuid.to_string()).child(STATE_FILE),
+        )?;
+        dbg!();
+
+        // Record statistics.
+        CHECKPOINT_RUNTIME.record_elapsed(self.start_checkpoint);
+        CHECKPOINT_DELAY.record(self.delay.as_micros());
+        CHECKPOINT_WRITTEN.record(bytes_written / 1_000_000);
+        CHECKPOINT_PROCESSED_RECORDS.store(self.checkpoint.processed_records, Ordering::Relaxed);
+
+        Ok(self.checkpoint)
     }
 }
 
