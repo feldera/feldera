@@ -84,9 +84,6 @@ pub enum TemporarySuspendError {
 
     #[error("Input endpoint {0:?} is blocking suspend")]
     InputEndpointBarrier(String),
-
-    #[error("Output endpoint {0:?} is sending data")]
-    OutputEndpointTx(String),
 }
 
 /// Response to a `/suspendable` request.
