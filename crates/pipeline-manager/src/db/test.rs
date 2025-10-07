@@ -1920,6 +1920,7 @@ enum StorageAction {
         #[proptest(strategy = "limited_uuid()")] Uuid,
         #[proptest(strategy = "limited_pipeline_name()")] String,
         #[proptest(strategy = "limited_platform_version()")] String,
+        bool,
         #[proptest(strategy = "limited_pipeline_descr()")] PipelineDescr,
     ),
     UpdatePipeline(
@@ -1928,6 +1929,7 @@ enum StorageAction {
         #[proptest(strategy = "limited_option_pipeline_name()")] Option<String>,
         Option<String>,
         #[proptest(strategy = "limited_platform_version()")] String,
+        bool,
         #[proptest(strategy = "limited_option_runtime_config()")] Option<serde_json::Value>,
         Option<String>,
         Option<String>,
@@ -2427,16 +2429,16 @@ fn db_impl_behaves_like_model() {
                                 let impl_response = handle.db.new_pipeline(tenant_id, new_id, &platform_version, pipeline_descr.clone()).await;
                                 check_response_pipeline(i, model_response, impl_response);
                             }
-                            StorageAction::NewOrUpdatePipeline(tenant_id, new_id, original_name, platform_version, pipeline_descr) => {
+                            StorageAction::NewOrUpdatePipeline(tenant_id, new_id, original_name, platform_version, bump_platform_version,pipeline_descr) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
-                                let model_response = model.new_or_update_pipeline(tenant_id, new_id, &original_name, &platform_version, true, pipeline_descr.clone()).await;
-                                let impl_response = handle.db.new_or_update_pipeline(tenant_id, new_id, &original_name, &platform_version, true, pipeline_descr.clone()).await;
+                                let model_response = model.new_or_update_pipeline(tenant_id, new_id, &original_name, &platform_version, bump_platform_version, pipeline_descr.clone()).await;
+                                let impl_response = handle.db.new_or_update_pipeline(tenant_id, new_id, &original_name, &platform_version, bump_platform_version, pipeline_descr.clone()).await;
                                 check_response_pipeline_with_created(i, model_response, impl_response);
                             }
-                            StorageAction::UpdatePipeline(tenant_id, original_name, name, description, platform_version, runtime_config, program_code, udf_rust, udf_toml, program_config) => {
+                            StorageAction::UpdatePipeline(tenant_id, original_name, name, description, platform_version, bump_platform_version, runtime_config, program_code, udf_rust, udf_toml, program_config) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
-                                let model_response = model.update_pipeline(tenant_id, &original_name, &name, &description, &platform_version, true, &runtime_config, &program_code, &udf_rust, &udf_toml, &program_config).await;
-                                let impl_response = handle.db.update_pipeline(tenant_id, &original_name, &name, &description, &platform_version, true, &runtime_config, &program_code, &udf_rust, &udf_toml, &program_config).await;
+                                let model_response = model.update_pipeline(tenant_id, &original_name, &name, &description, &platform_version, bump_platform_version, &runtime_config, &program_code, &udf_rust, &udf_toml, &program_config).await;
+                                let impl_response = handle.db.update_pipeline(tenant_id, &original_name, &name, &description, &platform_version, bump_platform_version, &runtime_config, &program_code, &udf_rust, &udf_toml, &program_config).await;
                                 check_response_pipeline(i, model_response, impl_response);
                             }
                             StorageAction::DeletePipeline(tenant_id, pipeline_name) => {
@@ -2613,6 +2615,7 @@ trait ModelHelpers {
         name: &Option<String>,
         description: &Option<String>,
         platform_version: &str,
+        bump_platform_version: bool,
         runtime_config: &Option<serde_json::Value>,
         program_code: &Option<String>,
         udf_rust: &Option<String>,
@@ -2633,6 +2636,7 @@ impl ModelHelpers for Mutex<DbModel> {
         name: &Option<String>,
         description: &Option<String>,
         platform_version: &str,
+        bump_platform_version: bool,
         runtime_config: &Option<serde_json::Value>,
         program_code: &Option<String>,
         udf_rust: &Option<String>,
@@ -2769,11 +2773,10 @@ impl ModelHelpers for Mutex<DbModel> {
             }
             pipeline.description = description.clone();
         }
-        if *platform_version != pipeline.platform_version {
+        if *platform_version != pipeline.platform_version && bump_platform_version {
             version_increment = true;
             program_version_increment = true;
         }
-        pipeline.platform_version = platform_version.to_string();
         if let Some(runtime_config) = runtime_config {
             if *runtime_config != pipeline.runtime_config {
                 version_increment = true;
@@ -2831,6 +2834,8 @@ impl ModelHelpers for Mutex<DbModel> {
             pipeline.program_info = None;
             pipeline.program_binary_source_checksum = None;
             pipeline.program_binary_integrity_checksum = None;
+
+            pipeline.platform_version = platform_version.to_string();
         }
 
         // Insert into state (will overwrite)
@@ -3304,7 +3309,7 @@ impl Storage for Mutex<DbModel> {
         name: &Option<String>,
         description: &Option<String>,
         platform_version: &str,
-        _bump_platform_version: bool,
+        bump_platform_version: bool,
         runtime_config: &Option<serde_json::Value>,
         program_code: &Option<String>,
         udf_rust: &Option<String>,
@@ -3318,6 +3323,7 @@ impl Storage for Mutex<DbModel> {
             name,
             description,
             platform_version,
+            bump_platform_version,
             runtime_config,
             program_code,
             udf_rust,
@@ -3964,6 +3970,7 @@ impl Storage for Mutex<DbModel> {
                         &None,
                         &None,
                         platform_version,
+                        true,
                         &None,
                         &None,
                         &None,
@@ -4031,6 +4038,7 @@ impl Storage for Mutex<DbModel> {
                         &None,
                         &None,
                         platform_version,
+                        true,
                         &None,
                         &None,
                         &None,
