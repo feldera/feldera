@@ -1207,14 +1207,23 @@ async fn status(
     let runtime_desired_status = state.desired_status();
     match state.controller() {
         Ok(controller) => {
+            let bootstrapping = controller.status().bootstrap_in_progress();
             return match controller.status().global_metrics.get_state() {
                 PipelineState::Paused => Ok(ExtendedRuntimeStatus {
-                    runtime_status: RuntimeStatus::Paused,
+                    runtime_status: if bootstrapping {
+                        RuntimeStatus::Bootstrapping
+                    } else {
+                        RuntimeStatus::Paused
+                    },
                     runtime_status_details: "".to_string(),
                     runtime_desired_status,
                 }),
                 PipelineState::Running => Ok(ExtendedRuntimeStatus {
-                    runtime_status: RuntimeStatus::Running,
+                    runtime_status: if bootstrapping {
+                        RuntimeStatus::Bootstrapping
+                    } else {
+                        RuntimeStatus::Running
+                    },
                     runtime_status_details: "".to_string(),
                     runtime_desired_status,
                 }),
@@ -1226,7 +1235,7 @@ async fn status(
                         details: json!({}),
                     },
                 }),
-            }
+            };
         }
         Err(_) => {
             // Controller isn't set.
@@ -1284,12 +1293,6 @@ async fn status(
             if matches!(*e, ControllerError::RestoreInProgress) {
                 Ok(ExtendedRuntimeStatus {
                     runtime_status: RuntimeStatus::Replaying,
-                    runtime_status_details: "".to_string(),
-                    runtime_desired_status,
-                })
-            } else if matches!(*e, ControllerError::BootstrapInProgress) {
-                Ok(ExtendedRuntimeStatus {
-                    runtime_status: RuntimeStatus::Bootstrapping,
                     runtime_status_details: "".to_string(),
                     runtime_desired_status,
                 })
