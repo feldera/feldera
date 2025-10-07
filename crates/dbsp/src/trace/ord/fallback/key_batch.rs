@@ -321,7 +321,7 @@ where
         }
     }
 
-    fn checkpoint_path(&self) -> Option<StoragePath> {
+    fn checkpoint_path(&self) -> Option<&StoragePath> {
         match &self.inner {
             Inner::Vec(vec) => vec.checkpoint_path(),
             Inner::File(file) => file.checkpoint_path(),

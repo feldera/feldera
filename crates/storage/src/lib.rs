@@ -1,6 +1,7 @@
 //! Common Types and Trait Definition for Storage in Feldera.
 
 use std::collections::HashSet;
+use std::fmt::Debug;
 use std::io::{Cursor, ErrorKind};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicI64;
@@ -16,7 +17,7 @@ use uuid::Uuid;
 use crate::block::BlockLocation;
 use crate::error::StorageError;
 use crate::fbuf::FBuf;
-use crate::file::HasFileId;
+use crate::file::FileId;
 
 pub use object_store::path::{Path as StoragePath, PathPart as StoragePathPart};
 
@@ -120,7 +121,7 @@ pub trait StorageBackend: Send + Sync {
     fn write(&self, name: &StoragePath, content: FBuf) -> Result<(), StorageError> {
         let mut writer = self.create_named(name)?;
         writer.write_block(content)?;
-        let (reader, _path) = writer.complete()?;
+        let reader = writer.complete()?;
         reader.mark_for_checkpoint();
         Ok(())
     }
@@ -245,25 +246,33 @@ impl dyn StorageBackend + '_ {
     }
 }
 
+/// A file being read or written.
+pub trait FileRw {
+    /// Returns the file's unique ID.
+    fn file_id(&self) -> FileId;
+
+    /// Returns the file's path.
+    fn path(&self) -> &StoragePath;
+}
+
 /// A file being written.
 ///
 /// The file can't be read until it is completed with
 /// [FileWriter::complete]. Until then, the file is temporary and will be
 /// deleted if it is dropped.
-pub trait FileWriter: Send + Sync + HasFileId {
+pub trait FileWriter: Send + Sync + FileRw {
     /// Writes `data` at the end of the file. len()` must be a multiple of 512.
     /// Returns the data that was written encapsulated in an `Arc`.
     fn write_block(&mut self, data: FBuf) -> Result<Arc<FBuf>, StorageError>;
 
-    /// Completes writing of a file and returns a reader for the file and the
-    /// file's path. The file is treated as temporary and will be deleted if the
-    /// reader is dropped without first calling
-    /// [FileReader::mark_for_checkpoint].
-    fn complete(self: Box<Self>) -> Result<(Arc<dyn FileReader>, StoragePath), StorageError>;
+    /// Completes writing of a file and returns a reader for the file. The file
+    /// is treated as temporary and will be deleted if the reader is dropped
+    /// without first calling [FileReader::mark_for_checkpoint].
+    fn complete(self: Box<Self>) -> Result<Arc<dyn FileReader>, StorageError>;
 }
 
 /// A readable file.
-pub trait FileReader: Send + Sync + HasFileId {
+pub trait FileReader: Send + Sync + Debug + FileRw {
     /// Marks a file to be part of a checkpoint.
     ///
     /// This is used to prevent the file from being deleted when it is dropped.

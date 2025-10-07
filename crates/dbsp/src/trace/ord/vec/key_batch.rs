@@ -331,7 +331,7 @@ where
     type Timed<T2: Timestamp> = VecKeyBatch<K, T2, R, O>;
     type Batcher = MergeBatcher<Self>;
     type Builder = VecKeyBuilder<K, T, R, O>;
-    fn checkpoint_path(&self) -> Option<StoragePath> {
+    fn checkpoint_path(&self) -> Option<&StoragePath> {
         unimplemented!()
     }
 

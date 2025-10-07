@@ -438,7 +438,7 @@ where
     type Batcher = MergeBatcher<Self>;
     type Builder = FileIndexedWSetBuilder<K, V, R>;
 
-    fn checkpoint_path(&self) -> Option<StoragePath> {
+    fn checkpoint_path(&self) -> Option<&StoragePath> {
         self.file.mark_for_checkpoint();
         Some(self.file.path())
     }

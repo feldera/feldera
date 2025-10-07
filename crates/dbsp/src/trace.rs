@@ -775,8 +775,8 @@ where
     /// This functions returns a path to a file that can be used by the checkpoint
     /// mechanism to find the batch again on re-start.
     ///
-    /// If the batch can not be persisted, this function returns None.
-    fn checkpoint_path(&self) -> Option<StoragePath> {
+    /// If the batch cannot be persisted, this function returns None.
+    fn checkpoint_path(&self) -> Option<&StoragePath> {
         None
     }
 

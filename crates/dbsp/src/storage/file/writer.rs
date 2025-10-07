@@ -993,7 +993,7 @@ impl BlockWriter {
         }
     }
 
-    fn complete(self) -> Result<(Arc<dyn FileReader>, StoragePath), StorageError> {
+    fn complete(self) -> Result<Arc<dyn FileReader>, StorageError> {
         self.file_handle.complete()
     }
 
@@ -1159,9 +1159,7 @@ impl Writer {
         Ok(())
     }
 
-    pub fn close(
-        mut self,
-    ) -> Result<(Arc<dyn FileReader>, StoragePath, BloomFilter), StorageError> {
+    pub fn close(mut self) -> Result<(Arc<dyn FileReader>, BloomFilter), StorageError> {
         debug_assert_eq!(self.cws.len(), self.finished_columns.len());
 
         // Write the Bloom filter.
@@ -1186,9 +1184,7 @@ impl Writer {
         self.writer
             .insert_cache_entry(location, Arc::new(file_trailer));
 
-        let (reader, path) = self.writer.complete()?;
-
-        Ok((reader, path, self.bloom_filter))
+        Ok((self.writer.complete()?, self.bloom_filter))
     }
 
     pub fn n_columns(&self) -> usize {
@@ -1201,6 +1197,11 @@ impl Writer {
 
     pub fn storage(&self) -> &Arc<BufferCache> {
         &self.writer.cache
+    }
+
+    /// Returns the path for the file being written.
+    pub fn path(&self) -> &StoragePath {
+        self.writer.file_handle.path()
     }
 }
 
@@ -1302,11 +1303,14 @@ where
 
     /// Finishes writing the layer file and returns the writer passed to
     /// [`new`](Self::new).
-    pub fn close(
-        mut self,
-    ) -> Result<(Arc<dyn FileReader>, StoragePath, BloomFilter), StorageError> {
+    pub fn close(mut self) -> Result<(Arc<dyn FileReader>, BloomFilter), StorageError> {
         self.inner.finish_column::<K0, A0>(0)?;
         self.inner.close()
+    }
+
+    /// Returns the path for the file being written.
+    pub fn path(&self) -> &StoragePath {
+        self.inner.path()
     }
 
     /// Returns the storage used for this writer.
@@ -1321,15 +1325,9 @@ where
         let any_factories = self.factories.any_factories();
 
         let cache = self.inner.cache;
-        let (file_handle, path, bloom_filter) = self.close()?;
+        let (file_handle, bloom_filter) = self.close()?;
 
-        Reader::new(
-            &[&any_factories],
-            path,
-            cache,
-            file_handle,
-            Some(bloom_filter),
-        )
+        Reader::new(&[&any_factories], cache, file_handle, Some(bloom_filter))
     }
 }
 
@@ -1480,9 +1478,7 @@ where
     ///
     /// This function will panic if [`write1`](Self::write1) has been called
     /// without a subsequent call to [`write0`](Self::write0).
-    pub fn close(
-        mut self,
-    ) -> Result<(Arc<dyn FileReader>, StoragePath, BloomFilter), StorageError> {
+    pub fn close(mut self) -> Result<(Arc<dyn FileReader>, BloomFilter), StorageError> {
         self.inner.finish_column::<K0, A0>(0)?;
         self.inner.finish_column::<K1, A1>(1)?;
         self.inner.close()
@@ -1491,6 +1487,11 @@ where
     /// Returns the storage used for this writer.
     pub fn storage(&self) -> &Arc<BufferCache> {
         self.inner.storage()
+    }
+
+    /// Returns the path for the file being written.
+    pub fn path(&self) -> &StoragePath {
+        self.inner.path()
     }
 
     /// Finishes writing the layer file and returns a reader for it.
@@ -1504,10 +1505,9 @@ where
         let any_factories0 = self.factories0.any_factories();
         let any_factories1 = self.factories1.any_factories();
         let cache = self.inner.cache;
-        let (file_handle, path, bloom_filter) = self.close()?;
+        let (file_handle, bloom_filter) = self.close()?;
         Reader::new(
             &[&any_factories0, &any_factories1],
-            path,
             cache,
             file_handle,
             Some(bloom_filter),
