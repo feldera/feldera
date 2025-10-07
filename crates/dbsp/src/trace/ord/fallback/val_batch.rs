@@ -1,4 +1,5 @@
 use std::fmt::{Display, Formatter};
+use std::sync::Arc;
 
 use crate::storage::buffer_cache::CacheStats;
 use crate::trace::cursor::{DelegatingCursor, PushCursor};
@@ -18,7 +19,7 @@ use crate::{
     DBData, DBWeight, NumEntries, Timestamp,
 };
 use derive_more::Debug;
-use feldera_storage::StoragePath;
+use feldera_storage::{FileReader, StoragePath};
 use rand::Rng;
 use rkyv::{ser::Serializer, Archive, Archived, Deserialize, Fallible, Serialize};
 use size_of::SizeOf;
@@ -331,10 +332,10 @@ where
         }
     }
 
-    fn checkpoint_path(&self) -> Option<&StoragePath> {
+    fn file_reader(&self) -> Option<Arc<dyn FileReader>> {
         match &self.inner {
-            Inner::Vec(vec) => vec.checkpoint_path(),
-            Inner::File(file) => file.checkpoint_path(),
+            Inner::Vec(vec) => vec.file_reader(),
+            Inner::File(file) => file.file_reader(),
         }
     }
 

@@ -37,7 +37,7 @@ use crate::{dynamic::ArchivedDBData, storage::buffer_cache::FBuf};
 use cursor::CursorFactory;
 use dyn_clone::DynClone;
 use enum_map::Enum;
-use feldera_storage::StoragePath;
+use feldera_storage::{FileReader, StoragePath};
 use rand::Rng;
 use rkyv::ser::Serializer as _;
 use size_of::SizeOf;
@@ -772,11 +772,11 @@ where
         None
     }
 
-    /// This functions returns a path to a file that can be used by the checkpoint
-    /// mechanism to find the batch again on re-start.
+    /// This functions returns the file that can be used to restore the batch's
+    /// contents.
     ///
-    /// If the batch cannot be persisted, this function returns None.
-    fn checkpoint_path(&self) -> Option<&StoragePath> {
+    /// If the batch can not be persisted, this function returns None.
+    fn file_reader(&self) -> Option<Arc<dyn FileReader>> {
         None
     }
 

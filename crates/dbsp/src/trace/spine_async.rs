@@ -1444,8 +1444,9 @@ where
             .chain(merging.iter())
             .map(|batch| {
                 batch
-                    .checkpoint_path()
+                    .file_reader()
                     .expect("The batch should have been persisted")
+                    .path()
                     .to_string()
             })
             .collect::<Vec<_>>();

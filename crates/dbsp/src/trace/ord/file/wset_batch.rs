@@ -22,7 +22,7 @@ use crate::{
     DBData, DBWeight, NumEntries, Runtime,
 };
 use dyn_clone::clone_box;
-use feldera_storage::StoragePath;
+use feldera_storage::{FileReader, StoragePath};
 use rand::{seq::index::sample, Rng};
 use rkyv::{Archive, Deserialize, Serialize};
 use size_of::SizeOf;
@@ -440,9 +440,9 @@ where
     type Batcher = MergeBatcher<Self>;
     type Builder = FileWSetBuilder<K, R>;
 
-    fn checkpoint_path(&self) -> Option<&StoragePath> {
+    fn file_reader(&self) -> Option<Arc<dyn FileReader>> {
         self.file.mark_for_checkpoint();
-        Some(self.file.path())
+        Some(self.file.file_handle().clone())
     }
 
     fn from_path(factories: &Self::Factories, path: &StoragePath) -> Result<Self, ReaderError> {

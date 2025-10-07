@@ -15,11 +15,14 @@ use crate::{
     utils::{ConsolidatePairedSlices, Tup2},
     DBData, DBWeight, NumEntries, Timestamp,
 };
-use feldera_storage::StoragePath;
+use feldera_storage::FileReader;
 use rand::Rng;
 use rkyv::{Archive, Deserialize, Serialize};
 use size_of::SizeOf;
-use std::fmt::{self, Debug, Display};
+use std::{
+    fmt::{self, Debug, Display},
+    sync::Arc,
+};
 
 use crate::trace::ord::merge_batcher::MergeBatcher;
 
@@ -331,7 +334,7 @@ where
     type Timed<T2: Timestamp> = VecKeyBatch<K, T2, R, O>;
     type Batcher = MergeBatcher<Self>;
     type Builder = VecKeyBuilder<K, T, R, O>;
-    fn checkpoint_path(&self) -> Option<&StoragePath> {
+    fn file_reader(&self) -> Option<Arc<dyn FileReader>> {
         unimplemented!()
     }
 

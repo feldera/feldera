@@ -20,7 +20,7 @@ use crate::{
     utils::Tup2,
     DBData, DBWeight, NumEntries, Runtime, Timestamp,
 };
-use feldera_storage::StoragePath;
+use feldera_storage::{FileReader, StoragePath};
 use rand::{seq::index::sample, Rng};
 use rkyv::{ser::Serializer, Archive, Archived, Deserialize, Fallible, Serialize};
 use size_of::SizeOf;
@@ -319,9 +319,9 @@ where
     type Batcher = MergeBatcher<Self>;
     type Builder = FileKeyBuilder<K, T, R>;
 
-    fn checkpoint_path(&self) -> Option<&StoragePath> {
+    fn file_reader(&self) -> Option<Arc<dyn FileReader>> {
         self.file.mark_for_checkpoint();
-        Some(self.file.path())
+        Some(self.file.file_handle().clone())
     }
 
     fn from_path(factories: &Self::Factories, path: &StoragePath) -> Result<Self, ReaderError> {
