@@ -1,6 +1,7 @@
 <script lang="ts">
   import { page } from '$app/state'
   import { Tooltip } from '$lib/components/common/Tooltip.svelte'
+  import ClipboardCopyButton from '$lib/components/other/ClipboardCopyButton.svelte'
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
   import {
     getRuntimeVersion,
@@ -60,4 +61,12 @@
 {:else}
   <div class="w-5"></div>
 {/if}
-<span class="text-sm">{version}</span>
+{#if version.length < 11}
+  <span class="text-sm">{version}</span>
+{:else}
+  <div class="flex flex-nowrap items-center">
+    {version.slice(0, 7)}
+    <span class="select-none text-sm">...</span>
+    <ClipboardCopyButton value={version}></ClipboardCopyButton>
+  </div>
+{/if}
