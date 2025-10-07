@@ -305,7 +305,7 @@ impl ColumnWriter {
                 rows,
             },
             &block_writer.cache,
-            block_writer.file_handle.as_ref().unwrap().file_id(),
+            block_writer.file_handle.file_id(),
         )
         .unwrap();
 
@@ -341,7 +341,7 @@ impl ColumnWriter {
                     rows,
                 },
                 &block_writer.cache,
-                block_writer.file_handle.as_ref().unwrap().file_id(),
+                block_writer.file_handle.file_id(),
             )
             .unwrap();
 
@@ -978,7 +978,7 @@ impl IndexBlockBuilder {
 
 struct BlockWriter {
     cache: Arc<BufferCache>,
-    file_handle: Option<Box<dyn FileWriter>>,
+    file_handle: Box<dyn FileWriter>,
     encoder: Encoder,
     offset: u64,
 }
@@ -987,14 +987,14 @@ impl BlockWriter {
     fn new(cache: Arc<BufferCache>, file_handle: Box<dyn FileWriter>) -> Self {
         Self {
             cache,
-            file_handle: Some(file_handle),
+            file_handle,
             encoder: Encoder::new(),
             offset: 0,
         }
     }
 
-    fn complete(mut self) -> Result<(Arc<dyn FileReader>, StoragePath), StorageError> {
-        self.file_handle.take().unwrap().complete()
+    fn complete(self) -> Result<(Arc<dyn FileReader>, StoragePath), StorageError> {
+        self.file_handle.complete()
     }
 
     fn write_block(
@@ -1045,11 +1045,7 @@ impl BlockWriter {
 
             // Write the compressed data (and discard it).
             let location = BlockLocation::new(self.offset, padded_len).unwrap();
-            self.file_handle
-                .as_mut()
-                .unwrap()
-                .as_mut()
-                .write_block(compressed)?;
+            self.file_handle.write_block(compressed)?;
 
             (Arc::new(block), location)
         } else {
@@ -1060,12 +1056,7 @@ impl BlockWriter {
 
             // Write the block.
             let location = BlockLocation::new(self.offset, block.len()).unwrap();
-            let block = self
-                .file_handle
-                .as_mut()
-                .unwrap()
-                .as_mut()
-                .write_block(block)?;
+            let block = self.file_handle.write_block(block)?;
             (block, location)
         };
 
@@ -1075,11 +1066,8 @@ impl BlockWriter {
     }
 
     fn insert_cache_entry(&self, location: BlockLocation, entry: Arc<dyn CacheEntry>) {
-        self.cache.insert(
-            self.file_handle.as_ref().unwrap().file_id(),
-            location.offset,
-            entry,
-        );
+        self.cache
+            .insert(self.file_handle.file_id(), location.offset, entry);
     }
 }
 
