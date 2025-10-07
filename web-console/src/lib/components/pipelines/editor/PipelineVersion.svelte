@@ -36,7 +36,7 @@
   const api = usePipelineManager()
 </script>
 
-{#if programStatus === 'Success'}
+{#if programStatus === 'Success' || programStatus === 'SystemError' || programStatus === 'SqlError' || programStatus === 'SqlCompiled' || programStatus === 'RustError'}
   {version}
   {#if status === 'custom'}
     <span class="chip relative h-5 text-sm text-surface-700-300 preset-outlined-surface-200-800">
