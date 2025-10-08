@@ -85,6 +85,7 @@ public class CircuitOptimizer extends Passes {
         this.add(new UnusedFields(compiler));
         this.add(new Intern(compiler));
         this.add(new CSE(compiler));
+        this.add(new OptimizeWithGraph(compiler, g -> new CloneOperatorsWithFanout(compiler, g)));
         this.add(new ExpandAggregates(compiler, compiler.weightVar));
         this.add(new ExpandAggregateZero(compiler));
         this.add(new DeadCode(compiler, true));
