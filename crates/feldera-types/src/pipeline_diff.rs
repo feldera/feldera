@@ -1,5 +1,6 @@
+use feldera_ir::{MirNode, MirNodeId};
 use serde::{Deserialize, Serialize};
-use std::fmt::Display;
+use std::{collections::HashMap, fmt::Display};
 use utoipa::ToSchema;
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
@@ -167,5 +168,109 @@ impl PipelineDiff {
             || self.added_output_connectors.contains(&connector_name)
             || self.removed_output_connectors.contains(&connector_name)
             || self.modified_output_connectors.contains(&connector_name)
+    }
+}
+
+pub fn program_diff(
+    old_mir: &HashMap<MirNodeId, MirNode>,
+    new_mir: &HashMap<MirNodeId, MirNode>,
+) -> ProgramDiff {
+    let old_tables: HashMap<String, String> = old_mir
+        .iter()
+        .filter(|(_, node)| node.persistent_id.is_some())
+        .filter_map(|(_, node)| {
+            node.table
+                .as_ref()
+                .map(|name| (name.clone(), node.persistent_id.clone().unwrap()))
+        })
+        .collect();
+
+    let old_views: HashMap<String, String> = old_mir
+        .iter()
+        .filter(|(_, node)| node.persistent_id.is_some())
+        .filter_map(|(_, node)| {
+            node.view
+                .as_ref()
+                .map(|name| (name.clone(), node.persistent_id.clone().unwrap()))
+        })
+        .collect();
+
+    let new_tables: HashMap<String, String> = new_mir
+        .iter()
+        .filter(|(_, node)| node.persistent_id.is_some())
+        .filter_map(|(_, node)| {
+            node.table
+                .as_ref()
+                .map(|name| (name.clone(), node.persistent_id.clone().unwrap()))
+        })
+        .collect();
+
+    let new_views: HashMap<String, String> = new_mir
+        .iter()
+        .filter(|(_, node)| node.persistent_id.is_some())
+        .filter_map(|(_, node)| {
+            node.view
+                .as_ref()
+                .map(|name| (name.clone(), node.persistent_id.clone().unwrap()))
+        })
+        .collect();
+
+    let added_tables = new_tables
+        .keys()
+        .filter(|k| !old_tables.contains_key(*k))
+        .cloned()
+        .collect();
+    let removed_tables = old_tables
+        .keys()
+        .filter(|k| !new_tables.contains_key(*k))
+        .cloned()
+        .collect();
+    let modified_tables = new_tables
+        .iter()
+        .filter_map(|(name, id)| {
+            if let Some(old_id) = old_tables.get(name) {
+                if old_id != id {
+                    Some(name.clone())
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    let added_views = new_views
+        .keys()
+        .filter(|k| !old_views.contains_key(*k))
+        .cloned()
+        .collect();
+    let removed_views = old_views
+        .keys()
+        .filter(|k| !new_views.contains_key(*k))
+        .cloned()
+        .collect();
+    let modified_views = new_views
+        .iter()
+        .filter_map(|(name, id)| {
+            if let Some(old_id) = old_views.get(name) {
+                if old_id != id {
+                    Some(name.clone())
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    ProgramDiff {
+        added_tables,
+        removed_tables,
+        modified_tables,
+        added_views,
+        removed_views,
+        modified_views,
     }
 }

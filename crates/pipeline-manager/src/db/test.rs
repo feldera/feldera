@@ -25,7 +25,7 @@ use crate::db::types::utils::{
 use crate::db::types::version::Version;
 use async_trait::async_trait;
 use chrono::{TimeZone, Utc};
-use feldera_types::config::{FtConfig, PipelineConfig, ResourceConfig, RuntimeConfig};
+use feldera_types::config::{FtConfig, PipelineConfig, ProgramIr, ResourceConfig, RuntimeConfig};
 use feldera_types::error::ErrorResponse;
 use feldera_types::program_schema::ProgramSchema;
 use feldera_types::runtime_status::{
@@ -353,7 +353,7 @@ fn map_val_to_limited_program_info(val: ProgramInfoPropVal) -> serde_json::Value
             udf_stubs: format!("udf-stubs-{}", val.2),
             input_connectors: BTreeMap::new(),
             output_connectors: BTreeMap::new(),
-            dataflow: serde_json::Value::Null,
+            dataflow: None,
         })
         .unwrap()
     }
@@ -474,7 +474,14 @@ fn limited_pipeline_config() -> impl Strategy<Value = serde_json::Value> {
                 secrets_dir: None,
                 inputs: program_info.input_connectors,
                 outputs: program_info.output_connectors,
-                dataflow: Some(program_info.dataflow.clone()),
+                program_ir: Some(ProgramIr {
+                    mir: program_info
+                        .dataflow
+                        .as_ref()
+                        .map(|dataflow| dataflow.mir.clone())
+                        .unwrap_or_default(),
+                    program_schema: program_info.schema.clone(),
+                }),
             })
             .unwrap()
         }
@@ -1302,7 +1309,7 @@ async fn pipeline_program_compilation() {
                 udf_stubs: "".to_string(),
                 input_connectors: BTreeMap::new(),
                 output_connectors: BTreeMap::new(),
-                dataflow: serde_json::Value::Null,
+                dataflow: None,
             })
             .unwrap(),
         )
@@ -1437,7 +1444,7 @@ async fn pipeline_deployment() {
                 udf_stubs: "".to_string(),
                 input_connectors: BTreeMap::new(),
                 output_connectors: BTreeMap::new(),
-                dataflow: serde_json::Value::Null,
+                dataflow: None,
             })
             .unwrap(),
         )
@@ -1737,7 +1744,7 @@ async fn pipeline_provision_version_guard() {
                 udf_stubs: "".to_string(),
                 input_connectors: BTreeMap::new(),
                 output_connectors: BTreeMap::new(),
-                dataflow: serde_json::Value::Null,
+                dataflow: None,
             })
             .unwrap(),
         )

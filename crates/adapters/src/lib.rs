@@ -168,7 +168,7 @@ pub use integrated::{create_integrated_output_endpoint, IntegratedOutputEndpoint
 pub use dbsp::DetailedError;
 pub use feldera_adapterlib::PipelineState;
 
-pub use server::{ErrorResponse, PipelineError};
+pub use server::{ErrorResponse, PipelineError, PipelinePhase};
 
 pub use catalog::{
     Catalog, CircuitCatalog, DeCollectionHandle, DeCollectionStream, RecordFormat, SerBatch,

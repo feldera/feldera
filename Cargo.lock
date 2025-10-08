@@ -4868,9 +4868,11 @@ dependencies = [
 name = "feldera-ir"
 version = "0.161.0"
 dependencies = [
- "feldera-types",
+ "proptest",
+ "proptest-derive",
  "serde",
  "serde_json",
+ "utoipa",
  "zip 0.6.6",
 ]
 
@@ -4976,6 +4978,7 @@ dependencies = [
  "csv",
  "enum-map",
  "erased-serde",
+ "feldera-ir",
  "libc",
  "log",
  "proptest",
@@ -7939,6 +7942,7 @@ dependencies = [
  "env_logger",
  "fdlimit",
  "feldera-cloud1-client",
+ "feldera-ir",
  "feldera-types",
  "flate2",
  "futures-util",

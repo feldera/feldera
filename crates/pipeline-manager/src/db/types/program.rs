@@ -3,16 +3,16 @@ use crate::db::types::pipeline::PipelineId;
 use crate::db::types::utils::validate_name;
 use crate::has_unstable_feature;
 use clap::Parser;
+use feldera_ir::Dataflow;
 use feldera_types::config::{
-    ConnectorConfig, InputEndpointConfig, OutputEndpointConfig, PipelineConfig, RuntimeConfig,
-    TransportConfig,
+    ConnectorConfig, InputEndpointConfig, OutputEndpointConfig, PipelineConfig, ProgramIr,
+    RuntimeConfig, TransportConfig,
 };
 use feldera_types::program_schema::{ProgramSchema, PropertyValue, SourcePosition, SqlIdentifier};
 use log::error;
 use log::warn;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::fmt;
@@ -618,7 +618,7 @@ pub struct ProgramInfo {
 
     /// Dataflow graph of the program.
     #[serde(default)]
-    pub dataflow: serde_json::Value,
+    pub dataflow: Option<Dataflow>,
 
     /// Input connectors derived from the schema.
     pub input_connectors: BTreeMap<Cow<'static, str>, InputEndpointConfig>,
@@ -633,7 +633,7 @@ pub fn generate_program_info(
     program_schema: ProgramSchema,
     main_rust: String,
     udf_stubs: String,
-    dataflow: serde_json::Value,
+    dataflow: Option<Dataflow>,
 ) -> Result<ProgramInfo, ConnectorGenerationError> {
     // Input connectors
     let mut input_connectors = vec![];
@@ -751,10 +751,14 @@ pub fn generate_pipeline_config(
     runtime_config: &RuntimeConfig,
     program_info: &ProgramInfo,
 ) -> PipelineConfig {
-    let dataflow = json!({
-        "mir": program_info.dataflow.as_object().map(|o| o.get("mir").cloned()).unwrap_or_default(),
-        "program_schema": serde_json::to_value(&program_info.schema).unwrap_or_default(),
-    });
+    let program_ir = ProgramIr {
+        mir: program_info
+            .dataflow
+            .as_ref()
+            .map(|d| d.mir.clone())
+            .unwrap_or_default(),
+        program_schema: program_info.schema.clone(),
+    };
 
     PipelineConfig {
         name: Some(format!("pipeline-{pipeline_id}")),
@@ -763,7 +767,7 @@ pub fn generate_pipeline_config(
         secrets_dir: None,
         inputs: program_info.input_connectors.clone(),
         outputs: program_info.output_connectors.clone(),
-        dataflow: Some(dataflow),
+        program_ir: Some(program_ir),
     }
 }
 

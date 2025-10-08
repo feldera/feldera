@@ -70,7 +70,6 @@ use std::hash::{BuildHasherDefault, DefaultHasher};
 use std::io::ErrorKind;
 use std::ops::{Deref, DerefMut};
 use std::path::{Path, PathBuf};
-use std::thread::sleep;
 use std::time::Duration;
 use std::{
     borrow::Cow,
@@ -113,7 +112,7 @@ pub enum InitializationState {
 /// Enables the server to report the state of the pipeline while it is
 /// initializing, when it has failed to initialize, failed, or been suspended.
 #[derive(Clone)]
-enum PipelinePhase {
+pub enum PipelinePhase {
     /// Initialization in progress.
     Initializing(InitializationState),
     /// Initialization has failed.
@@ -321,7 +320,7 @@ impl ServerState {
         *self.desired_status.lock().unwrap()
     }
 
-    fn bootstrap_policy(&self) -> BootstrapPolicy {
+    pub fn bootstrap_policy(&self) -> BootstrapPolicy {
         *self.bootstrap_policy.lock().unwrap()
     }
 
@@ -333,7 +332,7 @@ impl ServerState {
         self.phase.lock().unwrap().clone()
     }
 
-    fn set_phase(&self, phase: PipelinePhase) {
+    pub fn set_phase(&self, phase: PipelinePhase) {
         *self.phase.lock().unwrap() = phase;
     }
 }
@@ -1002,36 +1001,8 @@ fn do_bootstrap(
 
     let controller_init = builder.open_checkpoint()?;
 
-    if let Some(diff) = &controller_init.pipeline_diff {
-        if !diff.is_empty() {
-            info!("Pipeline changes detected: {diff}");
-            if state.bootstrap_policy() == BootstrapPolicy::Reject {
-                return Err(ControllerError::BootstrapRejected);
-            } else if state.bootstrap_policy() == BootstrapPolicy::AwaitApproval {
-                info!("Awaiting user approval before bootstrapping modified pipeline.");
-                state.set_phase(PipelinePhase::Initializing(
-                    InitializationState::AwaitingApproval(diff.clone()),
-                ));
-            }
-
-            loop {
-                match state.bootstrap_policy() {
-                    BootstrapPolicy::Allow => {
-                        info!("User approved pipeline changes. Proceeding with bootstrap.");
-                        break;
-                    }
-                    BootstrapPolicy::Reject => {
-                        return Err(ControllerError::BootstrapRejected);
-                    }
-                    BootstrapPolicy::AwaitApproval => {
-                        sleep(Duration::from_millis(100));
-                    }
-                }
-            }
-        }
-    }
-
     let controller = controller_init.init(
+        Some((&**state).clone()),
         circuit_factory,
         Box::new(move |e, t| error_handler(&weak_state_ref, e, t))
             as Box<dyn Fn(Arc<ControllerError>, Option<String>) + Send + Sync>,

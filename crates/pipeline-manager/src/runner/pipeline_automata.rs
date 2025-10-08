@@ -1538,7 +1538,7 @@ mod test {
                     udf_stubs: "".to_string(),
                     input_connectors: Default::default(),
                     output_connectors: Default::default(),
-                    dataflow: serde_json::Value::Null,
+                    dataflow: None,
                 })
                 .unwrap(),
             )

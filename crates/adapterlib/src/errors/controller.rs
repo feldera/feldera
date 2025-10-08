@@ -750,7 +750,7 @@ pub enum ControllerError {
         to: RuntimeDesiredStatus,
     },
 
-    BootstrapRejected,
+    BootstrapRejectedByUser,
 
     BootstrapNotAllowed {
         error: String,
@@ -787,7 +787,7 @@ impl ResponseError for ControllerError {
             Self::TransactionInProgress => StatusCode::CONFLICT,
             Self::NoTransactionInProgress => StatusCode::BAD_REQUEST,
             Self::InvalidInitialStatus(_) => StatusCode::GONE,
-            Self::BootstrapRejected => StatusCode::CONFLICT,
+            Self::BootstrapRejectedByUser => StatusCode::CONFLICT,
             Self::UnexpectedBootstrap { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             _ => StatusCode::INTERNAL_SERVER_ERROR,
         }
@@ -926,7 +926,7 @@ impl DbspDetailedError for ControllerError {
             Self::InvalidInitialStatus(_) => Cow::from("InvalidInitialStatus"),
             Self::InvalidStandby(_) => Cow::from("InvalidStandby"),
             Self::InvalidStartupTransition { .. } => Cow::from("InvalidStartupTransition"),
-            Self::BootstrapRejected => Cow::from("BootstrapRejected"),
+            Self::BootstrapRejectedByUser => Cow::from("BootstrapRejected"),
             Self::BootstrapNotAllowed { .. } => Cow::from("BootstrapNotAllowed"),
             Self::UnexpectedBootstrap { .. } => Cow::from("UnexpectedBootstrap"),
         }
@@ -1102,7 +1102,7 @@ impl Display for ControllerError {
                     "Invalid pipeline startup transition from {from:?} to {to:?}"
                 )
             }
-            Self::BootstrapRejected => {
+            Self::BootstrapRejectedByUser => {
                 write!(
                     f,
                     "Bootstrapping of the modified pipeline was rejected by the user."
@@ -1490,7 +1490,7 @@ impl ControllerError {
             | Self::PipelineRestarted { .. }
             | Self::NoTransactionInProgress
             | Self::InvalidInitialStatus(_)
-            | Self::BootstrapRejected
+            | Self::BootstrapRejectedByUser
             | Self::BootstrapNotAllowed { .. }
             | Self::UnexpectedBootstrap { .. }
             | Self::InvalidStandby(_)

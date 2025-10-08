@@ -6492,9 +6492,10 @@ impl CircuitHandle {
             let need_backfill = nodes_to_backfill
                 .iter()
                 .map(|node_id| {
-                    let pid = self
-                        .circuit
-                        .map_local_node_mut(*node_id, &mut |node| node.persistent_id());
+                    let pid = self.circuit.map_local_node_mut(*node_id, &mut |node| {
+                        node.get_label(LABEL_PERSISTENT_OPERATOR_ID)
+                            .map(|s| s.to_string())
+                    });
 
                     (*node_id, pid)
                 })

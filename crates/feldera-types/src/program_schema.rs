@@ -1,3 +1,4 @@
+pub use feldera_ir::SourcePosition;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
@@ -177,15 +178,6 @@ impl ProgramSchema {
             .map(|rel| rel.name.clone())
             .collect()
     }
-}
-
-#[derive(Serialize, Deserialize, ToSchema, Debug, Eq, PartialEq, Clone, Copy)]
-#[cfg_attr(feature = "testing", derive(proptest_derive::Arbitrary))]
-pub struct SourcePosition {
-    pub start_line_number: usize,
-    pub start_column: usize,
-    pub end_line_number: usize,
-    pub end_column: usize,
 }
 
 #[derive(Serialize, Deserialize, ToSchema, Debug, Eq, PartialEq, Clone)]

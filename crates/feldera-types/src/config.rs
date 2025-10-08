@@ -5,6 +5,7 @@
 //! endpoint configs.  We represent these configs as opaque JSON values, so
 //! that the entire configuration tree can be deserialized from a JSON file.
 
+use crate::program_schema::ProgramSchema;
 use crate::secret_resolver::default_secrets_directory;
 use crate::transport::adhoc::AdHocInputConfig;
 use crate::transport::clock::ClockConfig;
@@ -21,9 +22,11 @@ use crate::transport::redis::RedisOutputConfig;
 use crate::transport::s3::S3InputConfig;
 use crate::transport::url::UrlInputConfig;
 use core::fmt;
+use feldera_ir::{MirNode, MirNodeId};
 use serde::de::{self, MapAccess, Visitor};
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value as JsonValue;
+use std::collections::HashMap;
 use std::fmt::Display;
 use std::path::Path;
 use std::str::FromStr;
@@ -49,12 +52,18 @@ pub const fn default_max_batch_size() -> u64 {
 
 pub const DEFAULT_CLOCK_RESOLUTION_USECS: u64 = 1_000_000;
 
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
+pub struct ProgramIr {
+    pub mir: HashMap<MirNodeId, MirNode>,
+    pub program_schema: ProgramSchema,
+}
+
 /// Pipeline deployment configuration.
 /// It represents configuration entries directly provided by the user
 /// (e.g., runtime configuration) and entries derived from the schema
 /// of the compiled program (e.g., connectors). Storage configuration,
 /// if applicable, is set by the runner.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq)]
 pub struct PipelineConfig {
     /// Global controller configuration.
     #[serde(flatten)]
@@ -85,7 +94,7 @@ pub struct PipelineConfig {
     pub outputs: BTreeMap<Cow<'static, str>, OutputEndpointConfig>,
 
     #[serde(default)]
-    pub dataflow: Option<serde_json::Value>,
+    pub program_ir: Option<ProgramIr>,
 }
 
 impl PipelineConfig {

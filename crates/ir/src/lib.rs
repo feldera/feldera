@@ -10,7 +10,17 @@ mod mir;
 
 pub use hir::{CalciteId, CalcitePlan};
 pub use lir::{LirCircuit, LirEdge, LirNode, LirNodeId, LirStreamId};
-pub use mir::{program_diff, MirInput, MirNode, MirNodeId};
+pub use mir::{MirInput, MirNode, MirNodeId};
+use utoipa::ToSchema;
+
+#[derive(Serialize, Deserialize, ToSchema, Debug, Eq, PartialEq, Clone, Copy)]
+#[cfg_attr(feature = "testing", derive(proptest_derive::Arbitrary))]
+pub struct SourcePosition {
+    pub start_line_number: usize,
+    pub start_column: usize,
+    pub end_line_number: usize,
+    pub end_column: usize,
+}
 
 /// Indicates what relations (views and tables) of a dataflow graph
 /// are different when compared with another dataflow graph.
@@ -22,7 +32,7 @@ pub enum Changes {
 }
 
 /// The JSON representation of a dataflow graph.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Clone)]
 pub struct Dataflow {
     pub calcite_plan: HashMap<String, CalcitePlan>,
     pub mir: HashMap<MirNodeId, MirNode>,

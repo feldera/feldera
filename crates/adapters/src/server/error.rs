@@ -235,10 +235,10 @@ impl Display for PipelineError {
                 f.write_str("Operation failed because the pipeline is shutting down.")
             }
             Self::InitializationError{error} => {
-                write!(f, "Operation failed because the pipeline failed to initialize. Error details: '{error}'.")
+                write!(f, "Operation failed because the pipeline failed to initialize. Error details: {error}.")
             }
             Self::PrometheusError{error} => {
-                write!(f, "Error retrieving Prometheus metrics: '{error}'.")
+                write!(f, "Error retrieving Prometheus metrics: {error}.")
             }
             Self::MissingUrlEncodedParam { param } => {
                 write!(f, "Missing URL-encoded parameter '{param}'.")

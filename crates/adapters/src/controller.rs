@@ -30,15 +30,16 @@ use crate::controller::sync::{
     CHECKPOINT_SYNC_PUSH_FAILURES, CHECKPOINT_SYNC_PUSH_SUCCESS,
     CHECKPOINT_SYNC_PUSH_TRANSFERRED_BYTES, CHECKPOINT_SYNC_PUSH_TRANSFER_SPEED, SYNCHRONIZER,
 };
-use crate::create_integrated_output_endpoint;
 use crate::samply::SamplySpan;
 use crate::server::metrics::{
     HistogramDiv, LabelStack, MetricsFormatter, MetricsWriter, ValueType,
 };
+use crate::server::{InitializationState, ServerState};
 use crate::transport::clock::now_endpoint_config;
 use crate::transport::Step;
 use crate::transport::{input_transport_config_to_endpoint, output_transport_config_to_endpoint};
 use crate::util::run_on_thread_pool;
+use crate::{create_integrated_output_endpoint, PipelinePhase};
 use crate::{
     CircuitCatalog, Encoder, InputConsumer, OutputConsumer, OutputEndpoint, ParseError,
     PipelineState, TransportInputEndpoint,
@@ -53,6 +54,7 @@ use crossbeam::{
     sync::{Parker, ShardedLock, Unparker},
 };
 use datafusion::prelude::*;
+use dbsp::circuit::circuit_builder::BootstrapInfo;
 use dbsp::circuit::metrics::{
     COMPACTION_STALL_TIME_NANOSECONDS, DBSP_OPERATOR_COMMIT_LATENCY_MICROSECONDS, DBSP_STEP,
     DBSP_STEP_LATENCY_MICROSECONDS, FILES_CREATED, FILES_DELETED, TOTAL_LATE_RECORDS,
@@ -70,7 +72,7 @@ use enum_map::EnumMap;
 use feldera_adapterlib::format::BufferSize;
 use feldera_adapterlib::transport::{Resume, Watermark};
 use feldera_adapterlib::utils::datafusion::execute_query_text;
-use feldera_ir::{program_diff, LirCircuit, MirNode, MirNodeId};
+use feldera_ir::LirCircuit;
 use feldera_storage::histogram::{ExponentialHistogram, ExponentialHistogramSnapshot};
 use feldera_storage::metrics::{
     READ_BLOCKS_BYTES, READ_LATENCY_MICROSECONDS, SYNC_LATENCY_MICROSECONDS, WRITE_BLOCKS_BYTES,
@@ -78,7 +80,8 @@ use feldera_storage::metrics::{
 };
 use feldera_types::checkpoint::CheckpointMetadata;
 use feldera_types::format::json::JsonLines;
-use feldera_types::pipeline_diff::{PipelineDiff, ProgramDiff};
+use feldera_types::pipeline_diff::{program_diff, PipelineDiff, ProgramDiff};
+use feldera_types::runtime_status::BootstrapPolicy;
 use feldera_types::secret_resolver::resolve_secret_references_in_connector_config;
 use feldera_types::suspend::{PermanentSuspendError, SuspendError, TemporarySuspendError};
 use feldera_types::time_series::SampleStatistics;
@@ -90,7 +93,6 @@ use journal::StepMetadata;
 use memory_stats::memory_stats;
 use nonzero_ext::nonzero;
 use rmpv::Value as RmpValue;
-use serde::Deserialize;
 use serde_json::Value as JsonValue;
 use stats::StepResults;
 use std::borrow::Cow;
@@ -102,7 +104,7 @@ use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::PathBuf;
 use std::sync::mpsc::{channel, sync_channel, Receiver, SendError, Sender, SyncSender};
 use std::sync::{LazyLock, Mutex};
-use std::thread;
+use std::thread::{self, sleep};
 use std::{
     collections::{BTreeMap, BTreeSet},
     mem,
@@ -140,7 +142,7 @@ pub use feldera_types::config::{
 use feldera_types::config::{FileBackendConfig, FtConfig, FtModel, OutputBufferConfig, SyncConfig};
 use feldera_types::constants::{STATE_FILE, STEPS_FILE};
 use feldera_types::format::json::{JsonFlavor, JsonParserConfig, JsonUpdateFormat};
-use feldera_types::program_schema::{canonical_identifier, ProgramSchema, SqlIdentifier};
+use feldera_types::program_schema::{canonical_identifier, SqlIdentifier};
 pub use stats::{CompletionToken, ControllerStatus, InputEndpointStatus};
 
 /// Maximal number of concurrent API connections per circuit
@@ -411,7 +413,7 @@ impl Controller {
         if let Some(diff) = init.pipeline_diff.as_mut() {
             diff.clear_program_diff()
         }
-        init.init(circuit_factory, error_cb)
+        init.init(None, circuit_factory, error_cb)
     }
 
     #[cfg(test)]
@@ -427,11 +429,12 @@ impl Controller {
     {
         let builder = ControllerBuilder::new(config)?;
         let init = builder.open_checkpoint()?;
-        init.init(circuit_factory, error_cb)
+        init.init(None, circuit_factory, error_cb)
     }
 
     fn build<F>(
         controller_init: ControllerInit,
+        state: Option<Arc<ServerState>>,
         circuit_factory: F,
         error_cb: Box<dyn Fn(Arc<ControllerError>, Option<String>) + Send + Sync>,
     ) -> Result<Self, ControllerError>
@@ -452,7 +455,7 @@ impl Controller {
             let handle = thread::Builder::new()
                 .name("circuit-thread".to_string())
                 .spawn(move || {
-                    match CircuitThread::new(controller_init, circuit_factory, error_cb) {
+                    match CircuitThread::new(controller_init, state, circuit_factory, error_cb) {
                         Err(error) => {
                             let _ = init_status_sender.send(Err(error));
                             Ok(())
@@ -1419,12 +1422,78 @@ struct CircuitThread {
     last_commit_progress_update: Instant,
 }
 
+/// Detect the following situation:
+///
+/// - A tables has _NOT_ been modified since the last checkpoint. This means that
+///   potentially some of the view that depend on it have not been modified either
+///   and will not be recomputed as part of the backfill. (NOTE: we don't actually
+///   check whether such views exist)
+/// - The table is marked as needing backfill in `bootstrap_info`. This is possible
+///   if at least one view that depends on this tables _HAS_ changed, however the
+///   table is not materialized, and so the only way to reconstruct that view is to
+///   ingest the contents of the table again.
+///
+/// In this situation we need to reject the pipeline bootstrap, as we don't currently
+/// have a way to replay input connectors UPTO the checkpointed state (we can fast
+/// forward them to this state, but not replay upto it) and then activate the rest of
+/// the circuit.
+///
+/// Is there another way? Yes. We could traverse the graph forward from such a table
+/// and mark all views derived from it for backfill, regardless of whether they have
+/// changed or not. This would ensure that the table is re-ingested, and all views
+/// derived from it are recomputed. We may want to add that later, but it seems like
+/// a good idea to push users towards materializing all tables. In fact I'm wondering
+/// if this should become the default.
+fn non_materialized_replay_sources(
+    bootstrap_info: &BootstrapInfo,
+    pipeline_config: &PipelineConfig,
+    diff: &PipelineDiff,
+) -> Vec<String> {
+    let Some(program_ir) = &pipeline_config.program_ir else {
+        return vec![];
+    };
+
+    // All table names and their persistent ID's.
+    let tables: BTreeMap<String, String> = program_ir
+        .mir
+        .values()
+        .filter_map(|node| {
+            if let (Some(table), Some(persistent_id)) = (&node.table, &node.persistent_id) {
+                Some((persistent_id.clone(), table.clone()))
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    let mut need_backfill_persistent_ids = Vec::new();
+
+    // If this table is in need_backfill but not in diff, return it.
+    for (_, persistent_id) in &bootstrap_info.need_backfill {
+        if let Some(persistent_id) = persistent_id {
+            if let Some(table_name) = tables.get(persistent_id) {
+                if !diff
+                    .program_diff
+                    .as_ref()
+                    .map(|diff| diff.is_affected_relation(table_name))
+                    .unwrap_or(false)
+                {
+                    need_backfill_persistent_ids.push(table_name.clone());
+                }
+            }
+        }
+    }
+
+    need_backfill_persistent_ids
+}
+
 impl CircuitThread {
     /// Circuit thread function: holds the handle to the circuit, calls `step`
     /// on it whenever input data is available, pushes output batches
     /// produced by the circuit to output pipelines.
     fn new<F>(
         controller_init: ControllerInit,
+        state: Option<Arc<ServerState>>,
         circuit_factory: F,
         error_cb: Box<dyn Fn(Arc<ControllerError>, Option<String>) + Send + Sync>,
     ) -> Result<Self, ControllerError>
@@ -1452,6 +1521,50 @@ impl CircuitThread {
         let (mut circuit, catalog) = circuit_factory(circuit_config)?;
 
         let lir = circuit.lir()?;
+
+        if let Some(state) = &state {
+            if let Some(diff) = &pipeline_diff {
+                if let Some(bootstrap_info) = circuit.bootstrap_info() {
+                    let non_materialized_tables =
+                        non_materialized_replay_sources(bootstrap_info, &pipeline_config, &diff);
+                    if !non_materialized_tables.is_empty() {
+                        return Err(ControllerError::BootstrapNotAllowed {
+                            error: format!(
+                                "- The following tables are not materialized, and at least one of the views that depend on each of these tables has changed and requires bootstrapping: {}. We recommend materializing all tables in the program to avoid such errors",
+                                non_materialized_tables.iter().map(|t| format!("'{t}'")).collect::<Vec<_>>().join(", ")
+                            ),
+                        });
+                    }
+                }
+
+                if !diff.is_empty() {
+                    info!("Pipeline changes detected: {diff}");
+                    if state.bootstrap_policy() == BootstrapPolicy::Reject {
+                        return Err(ControllerError::BootstrapRejectedByUser);
+                    } else if state.bootstrap_policy() == BootstrapPolicy::AwaitApproval {
+                        info!("Awaiting user approval before bootstrapping modified pipeline.");
+                        state.set_phase(PipelinePhase::Initializing(
+                            InitializationState::AwaitingApproval(diff.clone()),
+                        ));
+                    }
+
+                    loop {
+                        match state.bootstrap_policy() {
+                            BootstrapPolicy::Allow => {
+                                info!("User approved pipeline changes. Proceeding with bootstrap.");
+                                break;
+                            }
+                            BootstrapPolicy::Reject => {
+                                return Err(ControllerError::BootstrapRejectedByUser);
+                            }
+                            BootstrapPolicy::AwaitApproval => {
+                                sleep(Duration::from_millis(100));
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
         // Seek each input endpoint to its initial offset.
         //
@@ -3037,12 +3150,6 @@ pub fn compute_pipeline_diff(
     })
 }
 
-#[derive(Deserialize)]
-struct Dataflow {
-    mir: HashMap<MirNodeId, MirNode>,
-    program_schema: ProgramSchema,
-}
-
 /// Reasons bootstrapping cannot be performed.
 struct BootstrapBlockers {
     /// The new version of the program has relations with lateness.
@@ -3050,20 +3157,11 @@ struct BootstrapBlockers {
 
     /// The old version of the program has relations with lateness.
     old_relations_with_lateness: Vec<String>,
-
-    /// The old version of the program has non-materialized input tables.
-    old_non_materialized_tables: Vec<String>,
-
-    /// The new version of the program has non-materialized input tables.
-    new_non_materialized_tables: Vec<String>,
 }
 
 impl BootstrapBlockers {
     fn is_empty(&self) -> bool {
-        self.new_relations_with_lateness.is_empty()
-            && self.old_relations_with_lateness.is_empty()
-            && self.old_non_materialized_tables.is_empty()
-            && self.new_non_materialized_tables.is_empty()
+        self.new_relations_with_lateness.is_empty() && self.old_relations_with_lateness.is_empty()
     }
 }
 
@@ -3083,20 +3181,6 @@ impl Display for BootstrapBlockers {
                 self.old_relations_with_lateness.join(", ")
             )?;
         }
-        if !self.new_non_materialized_tables.is_empty() {
-            writeln!(
-                f,
-                "- The new version of the program has non-materialized input tables: {}",
-                self.new_non_materialized_tables.join(", ")
-            )?;
-        }
-        if !self.old_non_materialized_tables.is_empty() {
-            writeln!(
-                f,
-                "- The checkpointed version of the program has non-materialized input tables: {}",
-                self.old_non_materialized_tables.join(", ")
-            )?;
-        }
         Ok(())
     }
 }
@@ -3105,19 +3189,13 @@ fn compute_program_diff(
     old_config: &PipelineConfig,
     new_config: &PipelineConfig,
 ) -> Result<(ProgramDiff, BootstrapBlockers), String> {
-    let Some(old_dataflow) = &old_config.dataflow else {
+    let Some(old_dataflow) = &old_config.program_ir else {
         return Err("Unable to compute the diff between the checkpointed and new pipeline configurations: the checkpointed configuration does not contain program information. It was likely created by an old version of Feldera.".to_owned());
     };
 
-    let Some(new_dataflow) = &new_config.dataflow else {
+    let Some(new_dataflow) = &new_config.program_ir else {
         return Err("Unable to compute the diff between the checkpointed and new pipeline configurations: the new configuration does not contain program information. It was likely created by an old version of Feldera.".to_owned());
     };
-
-    let old_dataflow: Dataflow = serde_json::from_value(old_dataflow.clone())
-        .map_err(|e| format!("Unable to compute the diff between the checkpointed and new pipeline configurations: failed to deserialize the checkpointed IR. It was likely created by an old version of Feldera. Deserialization error: {e}"))?;
-
-    let new_dataflow: Dataflow = serde_json::from_value(new_dataflow.clone())
-        .map_err(|e| format!("Unable to compute the diff between the checkpointed and new pipeline configurations: failed to deserialize the new IR. It was likely created by an old version of Feldera. Deserialization error: {e}"))?;
 
     let new_relations_with_lateness = new_dataflow
         .program_schema
@@ -3132,27 +3210,9 @@ fn compute_program_diff(
         .map(|s| s.name())
         .collect::<Vec<_>>();
 
-    let old_non_materialized_tables = old_dataflow
-        .program_schema
-        .inputs
-        .iter()
-        .filter(|relation| !relation.materialized)
-        .map(|relation| relation.name.name())
-        .collect::<Vec<_>>();
-
-    let new_non_materialized_tables = new_dataflow
-        .program_schema
-        .inputs
-        .iter()
-        .filter(|relation| !relation.materialized)
-        .map(|relation| relation.name.name())
-        .collect::<Vec<_>>();
-
     let blockers = BootstrapBlockers {
         new_relations_with_lateness,
         old_relations_with_lateness,
-        old_non_materialized_tables,
-        new_non_materialized_tables,
     };
 
     Ok((program_diff(&old_dataflow.mir, &new_dataflow.mir), blockers))
@@ -3300,7 +3360,7 @@ impl ControllerInit {
             secrets_dir: config.secrets_dir,
             name: config.name,
             storage_config: config.storage_config,
-            dataflow: config.dataflow.clone(),
+            program_ir: config.program_ir.clone(),
         };
 
         Ok(Self {
@@ -3356,6 +3416,7 @@ impl ControllerInit {
     /// * One or more of the endpoints fails to initialize.
     pub fn init<F>(
         self,
+        state: Option<Arc<ServerState>>,
         circuit_factory: F,
         error_cb: Box<dyn Fn(Arc<ControllerError>, Option<String>) + Send + Sync>,
     ) -> Result<Controller, ControllerError>
@@ -3364,7 +3425,7 @@ impl ControllerInit {
             + Send
             + 'static,
     {
-        Controller::build(self, circuit_factory, error_cb)
+        Controller::build(self, state, circuit_factory, error_cb)
     }
 }
 
