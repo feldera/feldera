@@ -4955,7 +4955,9 @@
                       "memory_mb_min": null,
                       "memory_mb_max": null,
                       "storage_mb_max": null,
-                      "storage_class": null
+                      "storage_class": null,
+                      "service_account_name": null,
+                      "namespace": null
                     },
                     "clock_resolution_usecs": 1000000,
                     "pin_cpus": [],
