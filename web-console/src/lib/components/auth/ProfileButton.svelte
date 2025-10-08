@@ -3,7 +3,7 @@
   import { fade } from 'svelte/transition'
   import Popup from '$lib/components/common/Popup.svelte'
   import VersionDisplay from '$lib/components/version/VersionDisplay.svelte'
-  import AuthPopupMenu from './AuthPopupMenu.svelte'
+  import ProfilePopupMenu from '$lib/components/auth/ProfilePopupMenu.svelte'
   import type { AuthDetails } from '$lib/types/auth'
   import DarkModeSwitch from '$lib/components/layout/userPopup/DarkModeSwitch.svelte'
   import CurrentTenant from '$lib/components/auth/CurrentTenant.svelte'
@@ -28,9 +28,9 @@
     {#snippet content(close)}
       <div
         transition:fade={{ duration: 100 }}
-        class="bg-white-dark absolute right-0 z-30 max-h-[400px] w-[calc(100vw-100px)] max-w-[400px] justify-end rounded-container shadow-md scrollbar"
+        class="bg-white-dark absolute right-0 z-30 w-[calc(100vw-100px)] max-w-[400px] justify-end rounded-container shadow-md scrollbar"
       >
-        <AuthPopupMenu user={auth.profile} signOut={auth.logout}></AuthPopupMenu>
+        <ProfilePopupMenu {...auth}></ProfilePopupMenu>
       </div>
     {/snippet}
   </Popup>

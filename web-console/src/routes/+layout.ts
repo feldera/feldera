@@ -4,7 +4,12 @@ import * as AxaOidc from '@axa-fr/oidc-client'
 import { fromAxaUserInfo, toAxaOidcConfig } from '$lib/compositions/@axa-fr/auth'
 import { client } from '@hey-api/client-fetch'
 import { base } from '$app/paths'
-import { authRequestMiddleware, authResponseMiddleware } from '$lib/services/auth'
+import {
+  authRequestMiddleware,
+  authResponseMiddleware,
+  getSelectedTenant,
+  setSelectedTenant
+} from '$lib/services/auth'
 import type { AuthDetails } from '$lib/types/auth'
 import { goto } from '$app/navigation'
 import posthog from 'posthog-js'
@@ -15,6 +20,7 @@ import duration from 'dayjs/plugin/duration'
 import { initSystemMessages } from '$lib/compositions/initSystemMessages'
 import { newDate, setCurrentTime } from '$lib/compositions/serverTime'
 import { displayScheduleToDismissable, getLicenseMessage } from '$lib/functions/license'
+import { jwtDecode } from 'jwt-decode'
 
 Dayjs.extend(duration)
 
@@ -49,6 +55,10 @@ export type LayoutData = {
         }
         tenantId: string
         tenantName: string
+        /**
+         * Only available if authenticated and using multi-tenant authorization
+         */
+        authorizedTenants?: string[]
         unstableFeatures: string[]
         config: Configuration
       }
@@ -61,6 +71,30 @@ const emptyLayoutData: LayoutData = {
   feldera: undefined
 }
 
+const processTenants = (auth: AuthDetails) => {
+  let authorizedTenants: string[] | undefined = undefined
+
+  if (typeof auth === 'object' && 'logout' in auth) {
+    const tenantsString = auth.accessToken
+      ? jwtDecode<{ tenants?: string[] | string }>(auth.accessToken).tenants
+      : undefined
+    authorizedTenants = tenantsString
+      ? Array.isArray(tenantsString)
+        ? tenantsString
+        : tenantsString.split(',').map((t) => t.trim())
+      : undefined
+    if (authorizedTenants) {
+      const savedTenant = getSelectedTenant()
+      console.log('authorizedTenants', authorizedTenants, savedTenant)
+      if (!savedTenant || !authorizedTenants.includes(savedTenant)) {
+        setSelectedTenant(authorizedTenants[0])
+      }
+    }
+  }
+
+  return authorizedTenants
+}
+
 export const load = async ({ fetch, url }): Promise<LayoutData> => {
   if (!('window' in globalThis)) {
     return emptyLayoutData
@@ -70,7 +104,7 @@ export const load = async ({ fetch, url }): Promise<LayoutData> => {
 
   const auth = authConfig
     ? await axaOidcAuth({
-        oidcConfig: toAxaOidcConfig(authConfig.oidc),
+        oidcConfig: { ...toAxaOidcConfig(authConfig.oidc) },
         logoutExtras: authConfig.logoutExtras,
         onBeforeLogin: () => window.sessionStorage.setItem('redirect_to', window.location.href),
         onAfterLogin: async () => {
@@ -96,6 +130,8 @@ export const load = async ({ fetch, url }): Promise<LayoutData> => {
     }
   }
 
+  const authorizedTenants = processTenants(auth)
+
   let config: Configuration | undefined = undefined
 
   try {
@@ -115,15 +151,6 @@ export const load = async ({ fetch, url }): Promise<LayoutData> => {
     return emptyLayoutData
   }
 
-  // Fetch session config for tenant information (only available if authenticated)
-  let sessionConfig = undefined
-  try {
-    sessionConfig = await getConfigSession()
-  } catch (e: any) {
-    // Session config might not be available if not authenticated, which is fine
-    console.warn('Failed to load session configuration:', e)
-  }
-
   if (typeof auth === 'object' && 'logout' in auth) {
     initPosthog(config).then(() => {
       if (auth.profile.email) {
@@ -134,6 +161,15 @@ export const load = async ({ fetch, url }): Promise<LayoutData> => {
         })
       }
     })
+  }
+
+  // Fetch session config for tenant information (only available if authenticated)
+  let sessionConfig = undefined
+  try {
+    sessionConfig = await getConfigSession()
+  } catch (e: any) {
+    // Session config might not be available if not authenticated, which is fine
+    console.warn('Failed to load session configuration:', e)
   }
 
   {
@@ -181,6 +217,7 @@ export const load = async ({ fetch, url }): Promise<LayoutData> => {
       revision: config.revision,
       tenantId: sessionConfig?.tenant_id || '',
       tenantName: sessionConfig?.tenant_name || '',
+      authorizedTenants,
       unstableFeatures: config.unstable_features?.split(',').map((f) => f.trim()) || [],
       config
     }
@@ -194,7 +231,10 @@ const axaOidcAuth = async (params: {
   onAfterLogin?: (idTokenPayload: any, userInfo: Promise<AxaOidc.OidcUserInfo>) => void
   onBeforeLogout?: () => void
 }) => {
-  const oidcClient = OidcClient.getOrCreate(() => fetch, new OidcLocation())(params.oidcConfig)
+  const oidcClient = OidcClient.getOrCreate(
+    () => fetch,
+    new OidcLocation()
+  )({ ...params.oidcConfig, extras: { audience: 'feldera-api' } })
   const href = window.location.href
   const result: AuthDetails = await oidcClient.tryKeepExistingSessionAsync().then(async () => {
     if (href.includes(params.oidcConfig.redirect_uri)) {
