@@ -200,7 +200,7 @@ REAL '1.23'  -- string style
   <tr>
     <td><a id="power"></a><code>POWER(BASE, EXPONENT)</code></td>
     <td><code>DOUBLE</code></td>
-    <td>The power function, raising <code>BASE</code> to the power <code>EXPONENT</code></td>
+    <td>The power function, raising <code>BASE</code> to the power <code>EXPONENT</code>.  The exponent can have type `DOUBLE` or `INTEGER`.</td>
   </tr>
   <tr>
     <td><a id="radians"></a><code>RADIANS(value)</code></td>
