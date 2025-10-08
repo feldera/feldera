@@ -941,6 +941,15 @@ public class Regression1Tests extends SqlIoTest {
     }
 
     @Test
+    public void issue4834() {
+        this.statementsFailingInCompilation("""
+                CREATE TABLE tbl(str VARCHAR, tmestmp TIMESTAMP, datee DATE, tme TIME);
+                CREATE MATERIALIZED VIEW v AS SELECT
+                LEAST(str, False) AS str FROM tbl;""",
+                "Cannot infer return type for LEAST; operand types: [VARCHAR, BOOLEAN]");
+    }
+
+    @Test
     public void issue4815() {
         var ccs = this.getCCS("""
                 CREATE TABLE tbl(bin BINARY(3));
