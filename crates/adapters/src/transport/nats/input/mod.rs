@@ -13,9 +13,11 @@ use async_nats::{
     jetstream::{self, consumer as nats_consumer},
 };
 use atomic_option::AtomicOptionNonZeroU64;
+use chrono::Utc;
 use config_utils::{translate_connect_options, translate_consumer_options};
 use dbsp::circuit::tokio::TOKIO;
-use feldera_adapterlib::transport::{InputCommandReceiver, Resume};
+use feldera_adapterlib::format::BufferSize;
+use feldera_adapterlib::transport::{InputCommandReceiver, Resume, Watermark};
 use feldera_types::{
     config::FtModel,
     program_schema::Relation,
@@ -116,7 +118,7 @@ impl NatsReader {
             )
             .instrument(span)
             .await
-            .unwrap_or_else(|e| consumer.error(true, e));
+            .unwrap_or_else(|e| consumer.error(true, e, Some("nats-input")));
         });
 
         Ok(Self { command_sender })
@@ -164,7 +166,7 @@ impl NatsReader {
                 .await?;
 
                 let last_message_offset = *sequence_number_range.end();
-                let (hasher, num_records) = consume_nats_messages_until(
+                let (hasher, buffer_size) = consume_nats_messages_until(
                     nats_consumer,
                     last_message_offset,
                     consumer.clone(),
@@ -173,12 +175,12 @@ impl NatsReader {
                 .await
                 .with_context(|| format!("While attempting to replay offsets {first_message_offset}..{last_message_offset}"))?;
 
-                consumer.replayed(num_records, hasher.finish());
+                consumer.replayed(buffer_size, hasher.finish());
 
                 read_sequence.store(NonZeroU64::new(last_message_offset + 1), Ordering::Release);
 
             } else {
-                consumer.replayed(0, Xxh3Default::new().finish());
+                consumer.replayed(BufferSize::default(), Xxh3Default::new().finish());
             }
         }
 
@@ -189,20 +191,30 @@ impl NatsReader {
                     unreachable!("{command:?} must be at the beginning of the command stream")
                 }
                 InputReaderCommand::Queue { .. } => {
-                    let (num_records, hasher, batches) = queue.flush_with_aux();
+                    let (buffer_size, hasher, batches) = queue.flush_with_aux();
                     let sequence_number_range = match (batches.first(), batches.last()) {
-                        (Some(first), Some(last)) => Some(*first..=*last),
+                        (Some((_, first)), Some((_, last))) => Some(*first..=*last),
                         _ => None,
                     };
-                    info!("Queued {} records ({sequence_number_range:?})", num_records);
+                    info!("Queued {:?} records ({sequence_number_range:?})", buffer_size);
                     let seek_metadata = SeekMetadata {
                         sequence_number_range,
                     };
 
-                    let seek = serde_json::to_value(seek_metadata)?;
-                    let resume = Resume::new_metadata_only(seek, hasher);
+                    let seek = serde_json::to_value(&seek_metadata)?;
+                    let timestamp = batches.last().map(|(ts, _)| *ts).unwrap_or_else(Utc::now);
+                    let hash = hasher.map(|h| h.finish()).unwrap_or(0);
+                    let resume = Resume::Replay {
+                        hash,
+                        seek: seek.clone(),
+                        replay: rmpv::Value::Nil,
+                    };
 
-                    consumer.extended(num_records, Some(resume));
+                    consumer.extended(
+                        buffer_size,
+                        Some(resume),
+                        vec![Watermark::new(timestamp, Some(seek))],
+                    );
                 }
                 InputReaderCommand::Pause => {
                     if let Some(canceller) = canceller.take() {
@@ -266,11 +278,11 @@ async fn consume_nats_messages_until(
     last_message_sequence: u64,
     consumer: Box<dyn InputConsumer>,
     mut parser: Box<dyn Parser>,
-) -> AnyResult<(Xxh3Default, usize)> {
+) -> AnyResult<(Xxh3Default, BufferSize)> {
     let mut nats_messages = nats_consumer.messages().await?;
 
     let mut hasher = Xxh3Default::new();
-    let mut num_records = 0;
+    let mut buffer_size = BufferSize::default();
     loop {
         let Some(result) = nats_messages.next().await else {
             return Err(anyhow!("Unexpected end of NATS stream"));
@@ -280,7 +292,7 @@ async fn consume_nats_messages_until(
                 let info = match message.info() {
                     Ok(info) => info,
                     Err(error) => {
-                        consumer.error(false, anyhow!("Failed to get NATS message info: {error}"));
+                        consumer.error(false, anyhow!("Failed to get NATS message info: {error}"), Some("nats-input"));
                         continue;
                     }
                 };
@@ -291,8 +303,12 @@ async fn consume_nats_messages_until(
                     buffer.hash(&mut hasher);
                     buffer.flush();
                 }
-                consumer.buffered(1, data.len());
-                num_records += 1;
+                let amt = BufferSize {
+                    records: 1,
+                    bytes: data.len(),
+                };
+                consumer.buffered(amt);
+                buffer_size += amt;
                 info!("Got message #{}", info.stream_sequence);
 
                 match info.stream_sequence.cmp(&last_message_sequence) {
@@ -303,11 +319,11 @@ async fn consume_nats_messages_until(
                     }
                 }
             }
-            Err(error) => consumer.error(false, anyhow!("NATS error: {error}")),
+            Err(error) => consumer.error(false, anyhow!("NATS error: {error}"), Some("nats-input")),
         }
     }
 
-    Ok((hasher, num_records))
+    Ok((hasher, buffer_size))
 }
 
 async fn spawn_nats_reader(
@@ -330,7 +346,7 @@ async fn spawn_nats_reader(
                     }
                     result = nats_messages.next() => {
                         let Some(result) = result else {
-                            consumer.error(true, anyhow!("Unexpected end of NATS stream"));
+                            consumer.error(true, anyhow!("Unexpected end of NATS stream"), Some("nats-input"));
                             return;
                         };
                         match result {
@@ -338,17 +354,17 @@ async fn spawn_nats_reader(
                                 let info = match message.info() {
                                     Ok(info) => info,
                                     Err(error) => {
-                                        consumer.error(false, anyhow!("Failed to get NATS message info: {error}"));
+                                        consumer.error(false, anyhow!("Failed to get NATS message info: {error}"), Some("nats-input"));
                                         continue;
                                     }
                                 };
                                 info!("Got message #{}", info.stream_sequence);
                                 read_sequence.store(NonZeroU64::new(info.stream_sequence + 1), Ordering::Release);
                                 let data = &message.payload;
-                                queue.push_with_aux(parser.parse(&data), data.len(), info.stream_sequence);
+                                queue.push_with_aux(parser.parse(&data), Utc::now(), info.stream_sequence);
                             }
                             Err(error) => {
-                                consumer.error(false, anyhow!("NATS error: {error}"));
+                                consumer.error(false, anyhow!("NATS error: {error}"), Some("nats-input"));
                             }
                         }
                     }
