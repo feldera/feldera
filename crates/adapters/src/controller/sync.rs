@@ -191,7 +191,13 @@ where
     }
 
     let mut prev = uuid::Uuid::nil();
-    while !is_activated() {
+    let mut pull_once_again_after_activation = false;
+
+    // This should run at least once before checking for activation, to ensure
+    // that we pull a checkpoint if one is available.
+    // Also, if we receive an activation signal, we run one more iteration to
+    // ensure that we have the latest checkpoint before activating.
+    loop {
         match pull_and_gc(storage.backend.clone(), sync, &mut prev) {
             Err(err) => {
                 if sync.fail_if_no_checkpoint {
@@ -205,6 +211,15 @@ where
 
         if !sync.standby {
             return Ok(());
+        }
+
+        if is_activated() {
+            if pull_once_again_after_activation {
+                // We've already done one iteration after activation, now we're done
+                break;
+            }
+            pull_once_again_after_activation = true;
+            // Continue to pull one more time to get the latest checkpoint
         }
 
         std::thread::sleep(std::time::Duration::from_secs(sync.pull_interval));

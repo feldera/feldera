@@ -185,7 +185,7 @@ class FelderaClient:
                 elapsed = time.monotonic() - start_time
                 if elapsed > timeout_s:
                     raise TimeoutError(
-                        f"Timed out waiting for pipeline {pipeline_name} to"
+                        f"Timed out waiting for pipeline {pipeline_name} to "
                         f"transition to '{state}' state"
                     )
 

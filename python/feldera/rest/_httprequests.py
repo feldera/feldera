@@ -56,6 +56,8 @@ class HttpRequests:
         """
         self.headers["Content-Type"] = content_type
 
+        prev_resp: Optional[requests.Response] = None
+
         try:
             conn_timeout = self.config.connection_timeout
             timeout = self.config.timeout
@@ -102,6 +104,8 @@ class HttpRequests:
                         verify=self.requests_verify,
                     )
 
+                prev_resp = request
+
                 try:
                     resp = self.__validate(request, stream=stream)
                     logging.debug("got response: %s", str(resp))
@@ -133,6 +137,10 @@ class HttpRequests:
 
         except requests.exceptions.ConnectionError as err:
             raise FelderaCommunicationError(str(err)) from err
+
+        raise FelderaAPIError(
+            "Max retries exceeded, couldn't successfully connect to Feldera", prev_resp
+        )
 
     def get(
         self,
