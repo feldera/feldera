@@ -565,6 +565,18 @@ metrics"""
             self.name, force=force, wait=wait, timeout_s=timeout_s
         )
 
+    def approve(self):
+        """
+        Approves the pipeline to proceed with bootstrapping.
+
+        This method is used when a pipeline has been started with
+        `bootstrap_policy=BootstrapPolicy.AWAIT_APPROVAL` and is currently in the
+        AWAITINGAPPROVAL state. The pipeline will wait for explicit user approval
+        before proceeding with the bootstrapping process.
+        """
+
+        self.client.approve_pipeline(self.name)
+
     def resume(self, wait: bool = True, timeout_s: Optional[float] = None):
         """
         Resumes the pipeline from the PAUSED state. If the pipeline is already

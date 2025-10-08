@@ -1258,7 +1258,12 @@ pub(crate) async fn post_pipeline_activate(
     }
 }
 
-/// TODO
+/// Approves the pipeline to proceed with bootstrapping.
+///
+/// This endpoint is used when a pipeline has been started with
+/// `bootstrap_policy=await_approval` and is currently in the
+/// `AwaitingApproval` state. The pipeline will wait for explicit
+/// user approval before proceeding with the bootstrapping process.
 #[utoipa::path(
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
