@@ -830,3 +830,17 @@ pub enum ConnectorAction {
     #[clap(aliases = &["status"])]
     Stats,
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::cli::Cli;
+    use clap::Parser;
+
+    /// [clap] will panic inside `try_parse` if it finds anything invalid in the
+    /// parser definition, such as a duplicated command name, so this test keeps
+    /// really basic errors from passing through CI.
+    #[test]
+    fn basic_validation() {
+        let _ = Cli::try_parse();
+    }
+}
