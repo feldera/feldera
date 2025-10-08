@@ -744,7 +744,11 @@ impl ApiServerConfig {
                 cors = cors.allow_any_origin();
             }
             cors.allowed_methods(vec!["GET", "POST", "PATCH", "PUT", "DELETE"])
-                .allowed_headers(vec![header::AUTHORIZATION, header::ACCEPT])
+                .allowed_headers(vec![
+                    header::AUTHORIZATION,
+                    header::ACCEPT,
+                    header::HeaderName::from_static(crate::auth::TENANT_HEADER),
+                ])
                 .supports_credentials()
         }
     }

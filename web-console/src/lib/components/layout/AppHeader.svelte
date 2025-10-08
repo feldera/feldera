@@ -5,7 +5,7 @@
   import FelderaModernLogomarkColorLight from '$assets/images/feldera-modern/Feldera Logomark Color Light.svg?component'
   import { useDarkMode } from '$lib/compositions/useDarkMode.svelte'
   import type { Snippet } from 'svelte'
-  import AuthButton from '$lib/components/auth/AuthButton.svelte'
+  import ProfileButton from '$lib/components/auth/ProfileButton.svelte'
   import { base } from '$app/paths'
 
   let { afterStart, beforeEnd }: { afterStart?: Snippet; beforeEnd?: Snippet } = $props()
@@ -33,5 +33,5 @@
   <!-- <div class="flex flex-1"></div> -->
   <div class="-mr-4 ml-auto"></div>
   {@render beforeEnd?.()}
-  <AuthButton compactBreakpoint="xl:"></AuthButton>
+  <ProfileButton compactBreakpoint="xl:"></ProfileButton>
 </div>

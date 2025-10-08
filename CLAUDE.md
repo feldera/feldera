@@ -6710,17 +6710,35 @@ AWS_COGNITO_LOGOUT_URL=https://your-domain.auth.region.amazoncognito.com/logout
 The authentication system supports flexible tenant assignment strategies across all supported OIDC providers (AWS Cognito, Okta):
 
 **Tenant Assignment Strategies:**
-- `--individual-tenant` (default: true) - Creates individual tenants based on user's `sub` claim
-- `--issuer-tenant` (default: false) - Derives tenant name from auth issuer hostname (e.g., `company.okta.com`)
-- Custom `tenant` claim - enabled by default - If present in OIDC Access token is used to directly determine the authorized tenant
+
+1. **Multi-tenant Access** (new)
+   - OIDC Access token contains `tenants` claim with array of authorized tenant names
+   - User must include `Feldera-Tenant` HTTP header to select which tenant to access
+   - Web console provides tenant selector dropdown
+   - Example token claim: `{"tenants": ["feldera-engineering", "feldera-dev", "feldera-staging"]}`
+   - Alternative format: `{"tenants": "feldera-engineering,feldera-dev,feldera-staging"}`
+
+2. **Single-tenant Access** (traditional)
+   - OIDC Access token contains single `tenant` claim
+   - No header required, tenant is automatically selected
+   - Example token claim: `{"tenant": "feldera-engineering"}`
+
+3. **Fallback Strategies** (when no explicit tenant claims present)
+   - `--individual-tenant` (default: true) - Creates individual tenants based on user's `sub` claim
+   - `--issuer-tenant` (default: false) - Derives tenant name from auth issuer hostname (e.g., `company.okta.com`)
 
 **Tenant Resolution Priority (all providers):**
-1. `tenant` claim (explicit tenant assignment via OIDC provider)
-2. Issuer domain extraction (when `--issuer-tenant` enabled)
-3. User `sub` claim (when `--individual-tenant` enabled)
+1. `tenants` array claim + `Feldera-Tenant` header (multi-tenant access)
+2. `tenant` claim (single tenant assignment via OIDC provider)
+3. Issuer domain extraction (when `--issuer-tenant` enabled)
+4. User `sub` claim (when `--individual-tenant` enabled)
 
-**Group-based authorization**
-If --authorized_groups is configured the user has to have at least one of these groups in `groups` claim of OIDC Access Token
+**Group-based authorization:**
+If `--authorized-groups` is configured, the user must have at least one of these groups in the `groups` claim of the OIDC Access token.
+
+**HTTP Headers:**
+- `Authorization: Bearer <access-token>` - Required for all authenticated requests
+- `Feldera-Tenant: <tenant-name>` - Required only when access token contains `tenants` array with multiple values
 
 #### **Enterprise Features**
 - **Fault tolerance**: Mechanism to recover from a crash by making periodic checkpoints, identifying and replaying lost state
