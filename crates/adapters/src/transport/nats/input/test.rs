@@ -274,7 +274,7 @@ outputs:
                 ))
             },
             &config,
-            Box::new(|e| {
+            Box::new(|e, _tag| {
                 println!("Controller error: {e}");
                 panic!("Controller error: {e}");
             }),
@@ -285,10 +285,9 @@ outputs:
 
         // Wait for the records that are not in the checkpoint to be
         // processed or replayed.
-        let expect_n = total_records - checkpointed_records;
         println!(
             "wait for {} records {checkpointed_records}..{total_records}",
-            expect_n
+            total_records - checkpointed_records
         );
         let mut last_n = 0;
         let result = wait(
@@ -298,13 +297,13 @@ outputs:
                     .output_status()
                     .get(&0)
                     .unwrap()
-                    .transmitted_records();
+                    .transmitted_records() as usize;
 
                 if n > last_n {
-                    println!("received {n} records of {expect_n}");
+                    println!("received {n} records of {total_records}");
                     last_n = n;
                 }
-                n >= expect_n as u64
+                n >= total_records
             },
             10_000,
         );
@@ -322,13 +321,15 @@ outputs:
         sleep(Duration::from_millis(100));
 
         // Then verify that the number is as expected.
-        let total_transmitted = controller
-            .status()
-            .output_status()
-            .get(&0)
-            .unwrap()
-            .transmitted_records();
-        assert_eq!(total_transmitted, expect_n as u64);
+        assert_eq!(
+            controller
+                .status()
+                .output_status()
+                .get(&0)
+                .unwrap()
+                .transmitted_records(),
+            total_records as u64
+        );
 
         if do_checkpoint {
             println!("checkpoint");
@@ -351,7 +352,7 @@ outputs:
             .collect::<Vec<_>>();
         actual.sort_by_key(|item| item.id);
 
-        assert_eq!(actual.len(), expect_n);
+        assert_eq!(actual.len(), total_records - checkpointed_records);
         for (record, expect_record) in
             actual
                 .into_iter()
