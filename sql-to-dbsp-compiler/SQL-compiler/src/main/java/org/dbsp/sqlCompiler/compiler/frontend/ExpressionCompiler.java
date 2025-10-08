@@ -101,8 +101,8 @@ import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRef;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBaseType;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeUuid;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeVariant;
+import org.dbsp.sqlCompiler.ir.type.primitive.IHasPrecision;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeMap;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeResult;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
@@ -272,60 +272,72 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
             DBSPType type = this.typeCompiler.convertType(node.getPositionRange(), literal.getType(), true);
             if (literal.isNull())
                 return DBSPLiteral.none(type);
-            if (type.is(DBSPTypeInteger.class)) {
-                DBSPTypeInteger intType = type.to(DBSPTypeInteger.class);
-                return switch (intType.getWidth()) {
-                    case 8 -> new DBSPI8Literal(Objects.requireNonNull(literal.getValueAs(Byte.class)));
-                    case 16 -> new DBSPI16Literal(Objects.requireNonNull(literal.getValueAs(Short.class)));
-                    case 32 -> new DBSPI32Literal(Objects.requireNonNull(literal.getValueAs(Integer.class)));
-                    case 64 -> new DBSPI64Literal(Objects.requireNonNull(literal.getValueAs(Long.class)));
-                    default ->
-                            throw new UnsupportedOperationException("Unsupported integer width type " +
-                                    intType.getWidth());
-                };
-            } else if (type.is(DBSPTypeDouble.class))
-                return new DBSPDoubleLiteral(Objects.requireNonNull(literal.getValueAs(Double.class)));
-            else if (type.is(DBSPTypeReal.class))
-                return new DBSPRealLiteral(Objects.requireNonNull(literal.getValueAs(Float.class)));
-            else if (type.is(DBSPTypeString.class)) {
-                String str = literal.getValueAs(String.class);
-                RelDataType litType = literal.getType();
-                Charset charset = litType.getCharset();
-                return new DBSPStringLiteral(Objects.requireNonNull(str), Objects.requireNonNull(charset), type);
-            }
-            else if (type.is(DBSPTypeBool.class))
-                return new DBSPBoolLiteral(Objects.requireNonNull(literal.getValueAs(Boolean.class)));
-            else if (type.is(DBSPTypeDecimal.class))
-                return new DBSPDecimalLiteral(
-                        node, type, Objects.requireNonNull(literal.getValueAs(BigDecimal.class)));
-            else if (type.is(DBSPTypeKeyword.class))
-                return new DBSPKeywordLiteral(node, Objects.requireNonNull(literal.getValue()).toString());
-            else if (type.is(DBSPTypeMillisInterval.class)) {
-                long value = Objects.requireNonNull(literal.getValueAs(BigDecimal.class)).longValue();
-                return new DBSPIntervalMillisLiteral(node, type, value);
-            }
-            else if (type.is(DBSPTypeMonthsInterval.class)) {
-                int value = Objects.requireNonNull(literal.getValueAs(Integer.class));
-                return new DBSPIntervalMonthsLiteral(node, type, value);
-            } else if (type.is(DBSPTypeTimestamp.class)) {
-                return new DBSPTimestampLiteral(node, type,
-                        Objects.requireNonNull(literal.getValueAs(TimestampString.class)));
-            } else if (type.is(DBSPTypeDate.class)) {
-                return new DBSPDateLiteral(node, type, Objects.requireNonNull(literal.getValueAs(DateString.class)));
-            } else if (type.is(DBSPTypeGeoPoint.class)) {
-                Point point = literal.getValueAs(Point.class);
-                Coordinate c = Objects.requireNonNull(point).getCoordinate();
-                return new DBSPGeoPointConstructor(node,
-                        new DBSPDoubleLiteral(c.getOrdinate(0)),
-                        new DBSPDoubleLiteral(c.getOrdinate(1)),
-                        type);
-            } else if (type.is(DBSPTypeTime.class)) {
-                return new DBSPTimeLiteral(node, type, Objects.requireNonNull(
-                        literal.getValueAs(TimeString.class)));
-            } else if (type.is(DBSPTypeBinary.class)) {
-                return new DBSPBinaryLiteral(node, type, literal.getValueAs(byte[].class));
-            } else if (type.is(DBSPTypeUuid.class)) {
-                return new DBSPUuidLiteral(node, type, literal.getValueAs(UUID.class));
+            switch (type.code) {
+                case INT8, INT16, INT32, INT64, UINT8, UINT16, UINT32, UINT64:
+                    DBSPTypeInteger intType = type.to(DBSPTypeInteger.class);
+                    return switch (intType.getWidth()) {
+                        case 8 -> new DBSPI8Literal(Objects.requireNonNull(literal.getValueAs(Byte.class)));
+                        case 16 -> new DBSPI16Literal(Objects.requireNonNull(literal.getValueAs(Short.class)));
+                        case 32 -> new DBSPI32Literal(Objects.requireNonNull(literal.getValueAs(Integer.class)));
+                        case 64 -> new DBSPI64Literal(Objects.requireNonNull(literal.getValueAs(Long.class)));
+                        default -> throw new UnsupportedOperationException("Unsupported integer width type " +
+                                intType.getWidth());
+                    };
+                case DOUBLE:
+                    return new DBSPDoubleLiteral(Objects.requireNonNull(literal.getValueAs(Double.class)));
+                case REAL:
+                    return new DBSPRealLiteral(Objects.requireNonNull(literal.getValueAs(Float.class)));
+                case STRING:
+                    String str = literal.getValueAs(String.class);
+                    RelDataType litType = literal.getType();
+                    Charset charset = litType.getCharset();
+                    return new DBSPStringLiteral(Objects.requireNonNull(str), Objects.requireNonNull(charset), type);
+                case BOOL:
+                    return new DBSPBoolLiteral(Objects.requireNonNull(literal.getValueAs(Boolean.class)));
+                case DECIMAL:
+                    return new DBSPDecimalLiteral(
+                            node, type, Objects.requireNonNull(literal.getValueAs(BigDecimal.class)));
+                case KEYWORD:
+                    return new DBSPKeywordLiteral(node, Objects.requireNonNull(literal.getValue()).toString());
+                case INTERVAL_SHORT: {
+                    long value = Objects.requireNonNull(literal.getValueAs(BigDecimal.class)).longValue();
+                    return new DBSPIntervalMillisLiteral(node, type, value);
+                }
+                case INTERVAL_LONG: {
+                    int value = Objects.requireNonNull(literal.getValueAs(Integer.class));
+                    return new DBSPIntervalMonthsLiteral(node, type, value);
+                }
+                case TIMESTAMP:
+                    return new DBSPTimestampLiteral(node, type,
+                            Objects.requireNonNull(literal.getValueAs(TimestampString.class)));
+                case DATE:
+                    return new DBSPDateLiteral(node, type, Objects.requireNonNull(literal.getValueAs(DateString.class)));
+                case GEOPOINT:
+                    Point point = literal.getValueAs(Point.class);
+                    Coordinate c = Objects.requireNonNull(point).getCoordinate();
+                    return new DBSPGeoPointConstructor(node,
+                            new DBSPDoubleLiteral(c.getOrdinate(0)),
+                            new DBSPDoubleLiteral(c.getOrdinate(1)),
+                            type);
+                case TIME:
+                    return new DBSPTimeLiteral(node, type, Objects.requireNonNull(
+                            literal.getValueAs(TimeString.class)));
+                case BYTES:
+                    DBSPTypeBinary bin = type.to(DBSPTypeBinary.class);
+                    byte[] data = literal.getValueAs(byte[].class);
+                    if (bin.precision != IHasPrecision.UNLIMITED_PRECISION && bin.fixed) {
+                        if (data != null && data.length != bin.precision) {
+                            // There is a bug in Calcite where the value does not match the type.
+                            byte[] actual = new byte[bin.precision];
+                            System.arraycopy(data, 0, actual, 0, Math.min(data.length, bin.precision));
+                            data = actual;
+                        }
+                    }
+                    return new DBSPBinaryLiteral(node, type, data);
+                case UUID:
+                    return new DBSPUuidLiteral(node, type, literal.getValueAs(UUID.class));
+                default:
+                    break;
             }
         } catch (BaseCompilerException ex) {
             throw ex;
