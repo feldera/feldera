@@ -150,8 +150,7 @@ class TestCheckpointSync(SharedTestPipeline):
 
             if standby:
                 assert self.pipeline.status() == PipelineStatus.STANDBY
-
-                self.pipeline.activate(timeout_s=10)
+                self.pipeline.activate()
 
         got_after = list(self.pipeline.query("SELECT * FROM v0"))
 
