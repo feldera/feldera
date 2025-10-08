@@ -1005,7 +1005,9 @@ fn do_bootstrap(
     if let Some(diff) = &controller_init.pipeline_diff {
         if !diff.is_empty() {
             info!("Pipeline changes detected: {diff}");
-            if state.bootstrap_policy() != BootstrapPolicy::Allow {
+            if state.bootstrap_policy() == BootstrapPolicy::Reject {
+                return Err(ControllerError::BootstrapRejected);
+            } else if state.bootstrap_policy() == BootstrapPolicy::AwaitApproval {
                 info!("Awaiting user approval before bootstrapping modified pipeline.");
                 state.set_phase(PipelinePhase::Initializing(
                     InitializationState::AwaitingApproval(diff.clone()),
