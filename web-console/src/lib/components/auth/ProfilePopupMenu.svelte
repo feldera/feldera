@@ -1,16 +1,16 @@
 <script lang="ts">
   import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
   import ApiKeyMenu from '$lib/components/other/ApiKeyMenu.svelte'
-  import type { UserProfile } from '$lib/types/auth'
+  import type { SignInDetails, UserProfile } from '$lib/types/auth'
   import DarkModeSwitch from '$lib/components/layout/userPopup/DarkModeSwitch.svelte'
   import VersionDisplay from '$lib/components/version/VersionDisplay.svelte'
   import CurrentTenant from '$lib/components/auth/CurrentTenant.svelte'
 
   const globalDialog = useGlobalDialog()
   let {
-    user,
-    signOut
-  }: { user: UserProfile; signOut: (params: { callbackUrl: string }) => Promise<void> } = $props()
+    profile,
+    logout
+  }: SignInDetails = $props()
 </script>
 
 <div class="flex flex-col gap-4 p-4">
@@ -28,16 +28,16 @@
   <div class="hr"></div>
   <div class="flex flex-col gap-2">
     <div class="flex gap-2">
-      {#if user.picture}
-        <img class="h-10 w-10 rounded-full" src={user.picture} alt="User avatar" />
+      {#if profile.picture}
+        <img class="h-10 w-10 rounded-full" src={profile.picture} alt="User avatar" />
       {:else}
         <div class="fd fd-circle-user h-10 w-10 rounded-full text-[40px]"></div>
       {/if}
       <div class="">
-        <div class="h4 break-all font-normal" class:italic={!user.name}>
-          {user.name || 'anonymous'}
+        <div class="h4 break-all font-normal" class:italic={!profile.name}>
+          {profile.name || 'anonymous'}
         </div>
-        <div class="">{user.email}</div>
+        <div class="">{profile.email}</div>
       </div>
     </div>
     <CurrentTenant></CurrentTenant>
@@ -45,7 +45,9 @@
       <button
         class=" btn px-8 text-surface-800-200 preset-filled-surface-50-950 hover:preset-filled-surface-50-950"
         onclick={async () => {
-          await signOut({ callbackUrl: undefined! })
+          // Redirect to home page, otherwise the auth client inserts the current page
+          // which is not whitelisted by the auth provider
+          await logout({ callbackUrl: '/' })
         }}>Sign Out</button
       >
     </div>

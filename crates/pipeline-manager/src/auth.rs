@@ -130,12 +130,24 @@ async fn bearer_auth(
                 ));
             }
 
-            // Get tenant name using new resolution logic
-            let tenant_name = match claim.tenant_name(&state.config) {
+            // Get tenant name using resolution logic with headers
+            let tenant_name = match claim.tenant_name(&state.config, req.headers()) {
                 Ok(name) => name,
                 Err(AuthError::NoTenantFound) => {
                     return Err((
                         create_authz_json_error("You are not authorized to access any Feldera tenant. Contact your administrator if you need access to Feldera."),
+                        req,
+                    ));
+                }
+                Err(AuthError::MissingTenantHeader) => {
+                    return Err((
+                        create_authz_json_error("Feldera-Tenant header is required when your access token contains multiple tenants."),
+                        req,
+                    ));
+                }
+                Err(AuthError::UnauthorizedTenant(tenant)) => {
+                    return Err((
+                        create_authz_json_error(&format!("You are not authorized to access tenant '{}'. Check your access token's tenants claim.", tenant)),
                         req,
                     ));
                 }
@@ -272,32 +284,80 @@ enum Claim {
 }
 
 impl Claim {
-    fn tenant_name(&self, config: &crate::config::ApiServerConfig) -> Result<String, AuthError> {
-        // Generalized tenant resolution logic for all OIDC providers
-        // Priority: tenant > issuer-domain > sub
-        let (tenant_claim, issuer, sub) = match self {
-            Claim::AwsCognito(t) => (&t.claims.tenant, &t.claims.iss, &t.claims.sub),
-            Claim::GenericOidc(t) => (&t.claims.tenant, &t.claims.iss, &t.claims.sub),
+    /// Get the list of authorized tenants for this claim.
+    /// Returns None if tenants should be resolved via other means (issuer/sub).
+    fn authorized_tenants(&self) -> Option<Vec<String>> {
+        match self {
+            Claim::AwsCognito(t) => {
+                // Priority: tenants array > single tenant claim
+                if let Some(ref tenants) = t.claims.tenants {
+                    Some(tenants.clone())
+                } else {
+                    t.claims.tenant.as_ref().map(|t| vec![t.clone()])
+                }
+            }
+            Claim::GenericOidc(t) => {
+                // Priority: tenants array > single tenant claim
+                if let Some(ref tenants) = t.claims.tenants {
+                    Some(tenants.clone())
+                } else {
+                    t.claims.tenant.as_ref().map(|t| vec![t.clone()])
+                }
+            }
+        }
+    }
+
+    /// Resolve tenant name based on claim, headers, and configuration.
+    ///
+    /// For multi-tenant claims (tenants array), requires Feldera-Tenant header to select one.
+    /// For single-tenant claims, uses fallback logic: tenant > issuer > sub
+    fn tenant_name(
+        &self,
+        config: &crate::config::ApiServerConfig,
+        headers: &actix_web::http::header::HeaderMap,
+    ) -> Result<String, AuthError> {
+        let (issuer, sub) = match self {
+            Claim::AwsCognito(t) => (&t.claims.iss, &t.claims.sub),
+            Claim::GenericOidc(t) => (&t.claims.iss, &t.claims.sub),
         };
 
-        // 1. Check for explicit tenant claim
-        if let Some(ref tenant) = tenant_claim {
-            return Ok(tenant.clone());
+        // Check if we have explicit tenant authorization in the claim
+        if let Some(authorized) = self.authorized_tenants() {
+            if authorized.len() > 1 {
+                // Multi-tenant: require header selection
+                let selected = headers
+                    .get(TENANT_HEADER)
+                    .and_then(|h| h.to_str().ok())
+                    .ok_or(AuthError::MissingTenantHeader)?;
+
+                // Validate selected tenant is authorized
+                if authorized.contains(&selected.to_string()) {
+                    return Ok(selected.to_string());
+                } else {
+                    return Err(AuthError::UnauthorizedTenant(selected.to_string()));
+                }
+            } else if authorized.len() == 1 {
+                // Single tenant in array or single tenant claim
+                return Ok(authorized[0].clone());
+            }
+            // Empty array falls through to fallback logic
         }
 
-        // 2. Extract tenant from issuer domain if enabled
+        // Fallback logic when no explicit tenant/tenants claims
+        // Priority: issuer-domain > sub (if enabled)
+
         if config.issuer_tenant {
             if let Some(issuer_tenant) = extract_tenant_from_issuer(issuer) {
                 return Ok(issuer_tenant);
             }
         }
 
-        // 3. Use individual user tenant if enabled
         if config.individual_tenant {
+            debug!("Using sub claim for tenant resolution: {}", sub);
             return Ok(sub.clone());
         }
 
-        // No valid tenant found and individual tenants disabled
+        // No valid tenant found
         Err(AuthError::NoTenantFound)
     }
 
@@ -502,8 +562,14 @@ struct OidcClaim {
     /// Email address (if available)
     email: Option<String>,
 
-    /// Tenant identifier for multi-user deployments
+    /// Tenant identifier for single-tenant deployments
     tenant: Option<String>,
+
+    /// Tenant identifiers for multi-tenant access
+    /// Can be either an array of strings or a comma-separated string
+    /// When present, user can access any of these tenants
+    #[serde(deserialize_with = "deserialize_list")]
+    tenants: Option<Vec<String>>,
 
     /// User groups for authorization (Okta only)
     groups: Option<Vec<String>>,
@@ -511,6 +577,29 @@ struct OidcClaim {
     /// Additional claims for provider-specific data
     #[serde(flatten)]
     additional_claims: serde_json::Map<String, serde_json::Value>,
+}
+
+/// Deserialize tenants claim which can be either:
+/// - An array of strings: ["tenant1", "tenant2"]
+/// - A comma-separated string: "tenant1,tenant2"
+fn deserialize_list<'de, D>(deserializer: D) -> Result<Option<Vec<String>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::Deserialize;
+
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum TenantsValue {
+        Array(Vec<String>),
+        String(String),
+    }
+
+    let value = Option::<TenantsValue>::deserialize(deserializer)?;
+    Ok(value.map(|v| match v {
+        TenantsValue::Array(arr) => arr,
+        TenantsValue::String(s) => s.split(',').map(|t| t.trim().to_string()).collect(),
+    }))
 }
 
 /// The shape of a claim provided to clients by AwsCognito, following
@@ -551,8 +640,14 @@ struct AwsCognitoClaim {
     /// The sub claim is the appropriate identifier for a user.
     username: String,
 
-    /// Tenant identifier for multi-user deployments
+    /// Tenant identifier for single-tenant deployments
     tenant: Option<String>,
+
+    /// Tenant identifiers for multi-tenant access
+    /// Can be either an array of strings or a comma-separated string
+    /// When present, user can access any of these tenants
+    #[serde(deserialize_with = "deserialize_list")]
+    tenants: Option<Vec<String>>,
 }
 
 #[derive(Debug)]
@@ -564,6 +659,8 @@ enum AuthError {
     JwkShape(String),
     NoTenantFound,
     InsufficientGroups,
+    MissingTenantHeader,
+    UnauthorizedTenant(String),
 }
 
 impl std::fmt::Display for AuthError {
@@ -576,6 +673,8 @@ impl std::fmt::Display for AuthError {
             AuthError::JwkContentType => f.write_str("Content type error"),
             AuthError::NoTenantFound => f.write_str("You are not authorized to access any Feldera tenant. Contact your administrator if you need access to Feldera."),
             AuthError::InsufficientGroups => f.write_str("User does not belong to required groups for access."),
+            AuthError::MissingTenantHeader => f.write_str("Feldera-Tenant header is required when access token contains multiple tenants."),
+            AuthError::UnauthorizedTenant(tenant) => write!(f, "You are not authorized to access tenant '{}'. Check your access token's tenants claim.", tenant),
         }
     }
 }
@@ -856,6 +955,9 @@ async fn validate_api_keys(
 const API_KEY_LENGTH: usize = 128;
 pub const API_KEY_PREFIX: &str = "apikey:";
 
+/// HTTP header name for tenant selection in multi-tenant deployments
+pub const TENANT_HEADER: &str = "Feldera-Tenant";
+
 /// Generates a random 128 character API key
 pub fn generate_api_key() -> String {
     assert_impl_any!(ThreadRng: rand::CryptoRng);
@@ -943,6 +1045,7 @@ mod test {
             token_use: "access".to_owned(),
             username: "some-user".to_owned(),
             tenant: None,
+            tenants: None,
         }
     }
 

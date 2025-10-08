@@ -1,10 +1,31 @@
 import * as AxaOidc from '@axa-fr/oidc-client'
-const { OidcClient, OidcLocation } = AxaOidc
+const { OidcClient } = AxaOidc
+
+let selectedTenant: string | undefined =
+  ('window' in globalThis ? window.localStorage.getItem('session/selected_tenant') : undefined) ??
+  undefined
+
+export const getSelectedTenant = () => {
+  return selectedTenant
+}
+
+export const setSelectedTenant = (tenant?: string) => {
+  selectedTenant = tenant
+  if (tenant === undefined) {
+    window.localStorage.removeItem('session/selected_tenant')
+    return
+  }
+  window.localStorage.setItem('session/selected_tenant', tenant)
+}
 
 export const authRequestMiddleware = (request: Request) => {
   const oidcClient = OidcClient.get()
   if (oidcClient.tokens?.accessToken) {
     request.headers.set('Authorization', `Bearer ${oidcClient.tokens.accessToken}`)
+    const tenant = getSelectedTenant()
+    if (tenant) {
+      request.headers.set('Feldera-Tenant', tenant)
+    }
   }
   return request
 }
