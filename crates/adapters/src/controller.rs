@@ -1473,7 +1473,7 @@ impl CircuitThread {
                     .node_id;
 
                 if let Some(replay_info) = circuit.bootstrap_info() {
-                    if replay_info.need_backfill.contains(&node_id) {
+                    if replay_info.need_backfill.contains_key(&node_id) {
                         info!("Found checkpointed state for input connector '{endpoint_name}', but the table that the connector is attached to has been modified and its state has been cleared; the connector will restart from scratch");
                         continue;
                     }
@@ -2933,8 +2933,8 @@ pub fn compute_pipeline_diff(
 ) -> Result<PipelineDiff, ControllerError> {
     let diff = compute_program_diff(old_config, new_config);
 
-    if let Ok((_, blockers)) = &diff {
-        if !blockers.is_empty() {
+    if let Ok((diff, blockers)) = &diff {
+        if !blockers.is_empty() && !diff.is_empty() {
             return Err(ControllerError::BootstrapNotAllowed {
                 error: blockers.to_string(),
             });
