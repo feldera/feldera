@@ -169,6 +169,12 @@ fn row_to_extended_pipeline_descriptor(row: &Row) -> Result<ExtendedPipelineDesc
         None => None,
         Some(s) => Some(parse_string_as_runtime_status(s)?),
     };
+
+    let deployment_runtime_status_details = match row.get::<_, Option<String>>(32) {
+        None => None,
+        Some(s) => Some(deserialize_json_value(&s)?),
+    };
+
     let deployment_runtime_status_since = row.get::<_, Option<DateTime<Utc>>>(33);
 
     // Deployment runtime desired status
@@ -215,7 +221,7 @@ fn row_to_extended_pipeline_descriptor(row: &Row) -> Result<ExtendedPipelineDesc
         deployment_resources_desired_status: row.get::<_, String>(29).try_into()?,
         deployment_resources_desired_status_since: row.get(30),
         deployment_runtime_status,
-        deployment_runtime_status_details: row.get(32),
+        deployment_runtime_status_details,
         deployment_runtime_status_since,
         deployment_runtime_desired_status,
         deployment_runtime_desired_status_since: row.get(35),
@@ -260,6 +266,12 @@ fn row_to_extended_pipeline_descriptor_monitoring(
         None => None,
         Some(s) => Some(parse_string_as_runtime_status(s)?),
     };
+
+    let deployment_runtime_status_details = match row.get::<_, Option<String>>(22) {
+        None => None,
+        Some(s) => Some(deserialize_json_value(&s)?),
+    };
+
     let deployment_runtime_status_since = row.get::<_, Option<DateTime<Utc>>>(23);
 
     // Deployment runtime desired status
@@ -296,7 +308,7 @@ fn row_to_extended_pipeline_descriptor_monitoring(
         deployment_resources_desired_status: row.get::<_, String>(19).try_into()?,
         deployment_resources_desired_status_since: row.get(20),
         deployment_runtime_status,
-        deployment_runtime_status_details: row.get(22),
+        deployment_runtime_status_details,
         deployment_runtime_status_since,
         deployment_runtime_desired_status,
         deployment_runtime_desired_status_since: row.get(25),
@@ -1227,7 +1239,7 @@ pub(crate) async fn set_deployment_resources_status(
     version_guard: Version,
     new_deployment_resources_status: ResourcesStatus,
     new_deployment_runtime_status: Option<RuntimeStatus>,
-    new_deployment_runtime_status_details: Option<String>,
+    new_deployment_runtime_status_details: Option<serde_json::Value>,
     new_deployment_runtime_desired_status: Option<RuntimeDesiredStatus>,
     new_deployment_error: Option<ErrorResponse>,
     new_deployment_id: Option<Uuid>,
@@ -1407,7 +1419,7 @@ pub(crate) async fn set_deployment_resources_status(
                 &final_deployment_initial.map(runtime_desired_status_to_string), // $6: deployment_initial
                 &new_deployment_resources_status.to_string(), // $7: deployment_resources_status,
                 &final_deployment_runtime_status.map(runtime_status_to_string), // $8: deployment_runtime_status,
-                &final_deployment_runtime_status_details, // $9: deployment_runtime_status_details,
+                &final_deployment_runtime_status_details.map(|v| v.to_string()), // $9: deployment_runtime_status_details,
                 &final_deployment_runtime_desired_status.map(runtime_desired_status_to_string), // $10: deployment_runtime_desired_status,
                 &tenant_id.0, // $11: tenant_id
                 &pipeline_id.0, // $12: id

@@ -556,7 +556,7 @@ fn arbitrary_runtime_desired_status() -> impl Strategy<Value = RuntimeDesiredSta
 fn limited_extended_runtime_status() -> impl Strategy<Value = ExtendedRuntimeStatus> {
     any::<(u64, u16, u64)>().prop_map(|(v1, v2, v3)| {
         let runtime_status = map_val_to_runtime_status(v1);
-        let runtime_status_details = format!("runtime-status-details-{v2}");
+        let runtime_status_details = json!(format!("runtime-status-details-{v2}"));
         let runtime_desired_status = map_val_to_runtime_desired_status(v3);
         ExtendedRuntimeStatus {
             runtime_status,
@@ -1526,7 +1526,7 @@ async fn pipeline_deployment() {
             "location1",
             ExtendedRuntimeStatus {
                 runtime_status: RuntimeStatus::Initializing,
-                runtime_status_details: "".to_string(),
+                runtime_status_details: json!(null),
                 runtime_desired_status: RuntimeDesiredStatus::Paused,
             },
         )
@@ -1541,7 +1541,7 @@ async fn pipeline_deployment() {
             "location1",
             ExtendedRuntimeStatus {
                 runtime_status: RuntimeStatus::Paused,
-                runtime_status_details: "".to_string(),
+                runtime_status_details: json!(null),
                 runtime_desired_status: RuntimeDesiredStatus::Paused,
             },
         )
@@ -1556,7 +1556,7 @@ async fn pipeline_deployment() {
             "location1",
             ExtendedRuntimeStatus {
                 runtime_status: RuntimeStatus::Paused,
-                runtime_status_details: "".to_string(),
+                runtime_status_details: json!(null),
                 runtime_desired_status: RuntimeDesiredStatus::Running,
             },
         )
@@ -1571,7 +1571,7 @@ async fn pipeline_deployment() {
             "location1",
             ExtendedRuntimeStatus {
                 runtime_status: RuntimeStatus::Paused,
-                runtime_status_details: "".to_string(),
+                runtime_status_details: json!(null),
                 runtime_desired_status: RuntimeDesiredStatus::Running,
             },
         )
@@ -1586,7 +1586,7 @@ async fn pipeline_deployment() {
             "location1",
             ExtendedRuntimeStatus {
                 runtime_status: RuntimeStatus::Running,
-                runtime_status_details: "".to_string(),
+                runtime_status_details: json!(null),
                 runtime_desired_status: RuntimeDesiredStatus::Running,
             },
         )
@@ -1648,7 +1648,7 @@ async fn pipeline_deployment() {
             "location1",
             ExtendedRuntimeStatus {
                 runtime_status: RuntimeStatus::Initializing,
-                runtime_status_details: "".to_string(),
+                runtime_status_details: json!(null),
                 runtime_desired_status: RuntimeDesiredStatus::Paused,
             },
         )
@@ -1663,7 +1663,7 @@ async fn pipeline_deployment() {
             "location1",
             ExtendedRuntimeStatus {
                 runtime_status: RuntimeStatus::Paused,
-                runtime_status_details: "".to_string(),
+                runtime_status_details: json!(null),
                 runtime_desired_status: RuntimeDesiredStatus::Paused,
             },
         )
@@ -1834,7 +1834,7 @@ async fn pipeline_provision_version_guard() {
         handle.db
               .transit_deployment_resources_status_to_provisioned(tenant_id, pipeline.id, Version(1), "location1", ExtendedRuntimeStatus {
             runtime_status: RuntimeStatus::Initializing,
-            runtime_status_details: "".to_string(),
+            runtime_status_details: json!(null),
             runtime_desired_status: RuntimeDesiredStatus::Paused,
         })
               .await.unwrap_err(),
@@ -1844,7 +1844,7 @@ async fn pipeline_provision_version_guard() {
         handle.db
               .transit_deployment_resources_status_to_provisioned(tenant_id, pipeline.id, Version(1), "location1", ExtendedRuntimeStatus {
                 runtime_status: RuntimeStatus::Paused,
-                runtime_status_details: "".to_string(),
+                runtime_status_details: json!(null),
                 runtime_desired_status: RuntimeDesiredStatus::Paused,
         })
               .await.unwrap_err(),
@@ -1854,7 +1854,7 @@ async fn pipeline_provision_version_guard() {
         handle.db
               .transit_deployment_resources_status_to_provisioned(tenant_id, pipeline.id, Version(1), "location1", ExtendedRuntimeStatus {
             runtime_status: RuntimeStatus::Paused,
-            runtime_status_details: "".to_string(),
+            runtime_status_details: json!(null),
             runtime_desired_status: RuntimeDesiredStatus::Paused,
         })
               .await.unwrap_err(),

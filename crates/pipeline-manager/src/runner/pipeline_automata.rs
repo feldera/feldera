@@ -1023,7 +1023,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                 deployment_location,
                 extended_runtime_status: ExtendedRuntimeStatus {
                     runtime_status: RuntimeStatus::Initializing,
-                    runtime_status_details: "".to_string(),
+                    runtime_status_details: json!(null),
                     runtime_desired_status: deployment_initial,
                 },
                 is_initial_transition: true,
@@ -1085,17 +1085,17 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                         match response_str {
                             "Paused" => Ok(ExtendedRuntimeStatus {
                                 runtime_status: RuntimeStatus::Paused,
-                                runtime_status_details: "".to_string(),
+                                runtime_status_details: json!(null),
                                 runtime_desired_status: RuntimeDesiredStatus::Paused,
                             }),
                             "Running" => Ok(ExtendedRuntimeStatus {
                                 runtime_status: RuntimeStatus::Running,
-                                runtime_status_details: "".to_string(),
+                                runtime_status_details: json!(null),
                                 runtime_desired_status: RuntimeDesiredStatus::Running,
                             }),
                             "Initializing" => Ok(ExtendedRuntimeStatus { // Backward compatibility: in anticipation of recent change of 503 to 200
                                 runtime_status: RuntimeStatus::Initializing,
-                                runtime_status_details: "".to_string(),
+                                runtime_status_details: json!(null),
                                 runtime_desired_status: RuntimeDesiredStatus::Paused,
                             }),
                             "Terminated" => Err(ErrorResponse::from(&RunnerError::PipelineInteractionInvalidResponse {
@@ -1103,7 +1103,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                             })),
                             _ => Ok(ExtendedRuntimeStatus {
                                 runtime_status: RuntimeStatus::Unavailable,
-                                runtime_status_details: format!("Pipeline status response (200 OK) is an unexpected JSON string: '{response_str}'"),
+                                runtime_status_details: json!(format!("Pipeline status response (200 OK) is an unexpected JSON string: '{response_str}'")),
                                 runtime_desired_status: RuntimeDesiredStatus::Unavailable,
                             }),
                         }
@@ -1113,7 +1113,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                             Ok(response) => Ok(response),
                             Err(e) => Ok(ExtendedRuntimeStatus {
                                 runtime_status: RuntimeStatus::Unavailable,
-                                runtime_status_details: format!("Pipeline status response (200 OK) cannot be deserialized due to: {e}"),
+                                runtime_status_details: json!(format!("Pipeline status response (200 OK) cannot be deserialized due to: {e}")),
                                 runtime_desired_status: RuntimeDesiredStatus::Unavailable,
                             }),
                         }
@@ -1121,7 +1121,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                         // JSON response must be either a string or an object.
                         Ok(ExtendedRuntimeStatus {
                             runtime_status: RuntimeStatus::Unavailable,
-                            runtime_status_details: format!("Pipeline status response (200 OK) is not a string or an object:\n{body:#}"),
+                            runtime_status_details: json!(format!("Pipeline status response (200 OK) is not a string or an object:\n{body:#}")),
                             runtime_desired_status: RuntimeDesiredStatus::Unavailable,
                         })
                     }
@@ -1131,12 +1131,12 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                             match error_response.error_code.as_ref() {
                                 "Initializing" => Ok(ExtendedRuntimeStatus { // For backward compatibility
                                     runtime_status: RuntimeStatus::Initializing,
-                                    runtime_status_details: "".to_string(),
+                                    runtime_status_details: json!(null),
                                     runtime_desired_status: RuntimeDesiredStatus::Paused
                                 }),
                                 "Suspended" => Ok(ExtendedRuntimeStatus { // For backward compatibility
                                     runtime_status: RuntimeStatus::Suspended,
-                                    runtime_status_details: "".to_string(),
+                                    runtime_status_details: json!(null),
                                     runtime_desired_status: RuntimeDesiredStatus::Suspended
                                 }),
                                 _ => {
@@ -1145,7 +1145,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                                     );
                                     Ok(ExtendedRuntimeStatus {
                                         runtime_status: RuntimeStatus::Unavailable,
-                                        runtime_status_details: format!("Pipeline status response (503 Service Unavailable) is an error:\n{error_response:?}"),
+                                        runtime_status_details: json!(format!("Pipeline status response (503 Service Unavailable) is an error:\n{error_response:?}")),
                                         runtime_desired_status: RuntimeDesiredStatus::Unavailable,
                                     })
                                 },
@@ -1153,7 +1153,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                         }
                         Err(e) => Ok(ExtendedRuntimeStatus {
                             runtime_status: RuntimeStatus::Unavailable,
-                            runtime_status_details: format!("Pipeline status response (503 Service Unavailable) cannot be deserialized due to: {e}. Response was:\n{body:#}"),
+                            runtime_status_details: json!(format!("Pipeline status response (503 Service Unavailable) cannot be deserialized due to: {e}. Response was:\n{body:#}")),
                             runtime_desired_status: RuntimeDesiredStatus::Unavailable,
                         })
                     }
@@ -1176,7 +1176,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                 {
                     Ok(ExtendedRuntimeStatus {
                         runtime_status: RuntimeStatus::Initializing,
-                        runtime_status_details: format!("Still in the grace period for initializing. Pipeline status endpoint cannot yet be reached due to: {e}"),
+                        runtime_status_details: json!(format!("Still in the grace period for initializing. Pipeline status endpoint cannot yet be reached due to: {e}")),
                         runtime_desired_status: deployment_initial,
                     })
                 } else {
@@ -1185,9 +1185,9 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                     );
                     Ok(ExtendedRuntimeStatus {
                         runtime_status: RuntimeStatus::Unavailable,
-                        runtime_status_details: format!(
+                        runtime_status_details: json!(format!(
                             "Pipeline status endpoint could not be reached due to: {e}"
-                        ),
+                        )),
                         runtime_desired_status: RuntimeDesiredStatus::Unavailable,
                     })
                 }

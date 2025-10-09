@@ -138,7 +138,7 @@ pub struct ExtendedRuntimeStatus {
     /// Human-readable details about the runtime status. Its content can contain for instance an
     /// explanation why it is in this status and any other additional information about it (e.g.,
     /// progress).
-    pub runtime_status_details: String,
+    pub runtime_status_details: serde_json::Value,
 
     /// Runtime desired status of the pipeline.
     pub runtime_desired_status: RuntimeDesiredStatus,

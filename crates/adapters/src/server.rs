@@ -1188,7 +1188,7 @@ async fn status(
                     } else {
                         RuntimeStatus::Paused
                     },
-                    runtime_status_details: "".to_string(),
+                    runtime_status_details: json!(null),
                     runtime_desired_status,
                 }),
                 PipelineState::Running => Ok(ExtendedRuntimeStatus {
@@ -1197,7 +1197,7 @@ async fn status(
                     } else {
                         RuntimeStatus::Running
                     },
-                    runtime_status_details: "".to_string(),
+                    runtime_status_details: json!(null),
                     runtime_desired_status,
                 }),
                 PipelineState::Terminated => Err(ExtendedRuntimeStatusError {
@@ -1220,22 +1220,22 @@ async fn status(
         PipelinePhase::Initializing(inner) => match inner {
             InitializationState::Starting => Ok(ExtendedRuntimeStatus {
                 runtime_status: RuntimeStatus::Initializing,
-                runtime_status_details: "".to_string(),
+                runtime_status_details: json!(null),
                 runtime_desired_status,
             }),
             InitializationState::DownloadingCheckpoint => Ok(ExtendedRuntimeStatus {
                 runtime_status: RuntimeStatus::Initializing,
-                runtime_status_details: "downloading checkpoint from object storage".to_string(),
+                runtime_status_details: json!("downloading checkpoint from object storage"),
                 runtime_desired_status,
             }),
             InitializationState::Standby => Ok(ExtendedRuntimeStatus {
                 runtime_status: RuntimeStatus::Standby,
-                runtime_status_details: "".to_string(),
+                runtime_status_details: json!(null),
                 runtime_desired_status,
             }),
             InitializationState::AwaitingApproval(diff) => Ok(ExtendedRuntimeStatus {
                 runtime_status: RuntimeStatus::AwaitingApproval,
-                runtime_status_details: serde_json::to_string(&diff).unwrap_or_default(),
+                runtime_status_details: serde_json::to_value(&diff).unwrap_or_default(),
                 runtime_desired_status,
             }),
         },
@@ -1266,7 +1266,7 @@ async fn status(
             if matches!(*e, ControllerError::RestoreInProgress) {
                 Ok(ExtendedRuntimeStatus {
                     runtime_status: RuntimeStatus::Replaying,
-                    runtime_status_details: "".to_string(),
+                    runtime_status_details: json!(null),
                     runtime_desired_status,
                 })
             } else {
@@ -1289,7 +1289,7 @@ async fn status(
         }
         PipelinePhase::Suspended => Ok(ExtendedRuntimeStatus {
             runtime_status: RuntimeStatus::Suspended,
-            runtime_status_details: "".to_string(),
+            runtime_status_details: json!(null),
             runtime_desired_status,
         }),
     }

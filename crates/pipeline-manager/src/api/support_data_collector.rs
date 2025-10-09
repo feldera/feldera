@@ -1158,7 +1158,7 @@ mod tests {
                 "test-location",
                 ExtendedRuntimeStatus {
                     runtime_status: RuntimeStatus::Initializing,
-                    runtime_status_details: "".to_string(),
+                    runtime_status_details: json!(null),
                     runtime_desired_status: RuntimeDesiredStatus::Running,
                 },
             )
@@ -1173,7 +1173,7 @@ mod tests {
                 "test-location",
                 ExtendedRuntimeStatus {
                     runtime_status: RuntimeStatus::Running,
-                    runtime_status_details: "".to_string(),
+                    runtime_status_details: json!(null),
                     runtime_desired_status: RuntimeDesiredStatus::Running,
                 },
             )
@@ -1355,7 +1355,7 @@ mod tests {
                 "test-location",
                 ExtendedRuntimeStatus {
                     runtime_status: RuntimeStatus::Initializing,
-                    runtime_status_details: "".to_string(),
+                    runtime_status_details: json!(null),
                     runtime_desired_status: RuntimeDesiredStatus::Running,
                 },
             )
@@ -1370,7 +1370,7 @@ mod tests {
                 "test-location",
                 ExtendedRuntimeStatus {
                     runtime_status: RuntimeStatus::Running,
-                    runtime_status_details: "".to_string(),
+                    runtime_status_details: json!(null),
                     runtime_desired_status: RuntimeDesiredStatus::Running,
                 },
             )
@@ -1543,7 +1543,7 @@ mod tests {
                 "test-location",
                 ExtendedRuntimeStatus {
                     runtime_status: RuntimeStatus::Initializing,
-                    runtime_status_details: "".to_string(),
+                    runtime_status_details: json!(null),
                     runtime_desired_status: RuntimeDesiredStatus::Running,
                 },
             )
@@ -1563,7 +1563,7 @@ mod tests {
                 "test-location",
                 ExtendedRuntimeStatus {
                     runtime_status: RuntimeStatus::Running,
-                    runtime_status_details: "".to_string(),
+                    runtime_status_details: json!(null),
                     runtime_desired_status: RuntimeDesiredStatus::Running,
                 },
             )
@@ -1642,7 +1642,7 @@ mod tests {
                 "test-location",
                 ExtendedRuntimeStatus {
                     runtime_status: RuntimeStatus::Initializing,
-                    runtime_status_details: "".to_string(),
+                    runtime_status_details: json!(null),
                     runtime_desired_status: RuntimeDesiredStatus::Running,
                 },
             )
@@ -1657,7 +1657,7 @@ mod tests {
                 "test-location",
                 ExtendedRuntimeStatus {
                     runtime_status: RuntimeStatus::Running,
-                    runtime_status_details: "".to_string(),
+                    runtime_status_details: json!(null),
                     runtime_desired_status: RuntimeDesiredStatus::Running,
                 },
             )
