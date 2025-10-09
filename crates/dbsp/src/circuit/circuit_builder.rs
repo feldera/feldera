@@ -4013,14 +4013,22 @@ where
         assert!(self.is_child_of(parent_stream.circuit()));
 
         let output_stream = self.add_node(|id| {
+            let node_id = self.global_node_id().child(id);
             self.log_circuit_event(&CircuitEvent::operator(
-                self.global_node_id().child(id),
+                node_id.clone(),
                 operator.name(),
                 operator.location(),
             ));
             let node = ImportNode::new(operator, self.clone(), parent_stream.clone(), id);
+            // Note: here the edge points to the sub-circuit, and not to the ImportNode itself.
             self.parent()
                 .connect_stream(parent_stream, self.node_id(), input_preference);
+            // Log the actual edge going to the inner node as well
+            self.parent().log_circuit_event(&CircuitEvent::stream(
+                parent_stream.origin_node_id().clone(),
+                node_id.clone(),
+                input_preference,
+            ));
             let output_stream = node.output_stream();
             (node, output_stream)
         });
