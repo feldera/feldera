@@ -18,7 +18,10 @@ export class CircuitSelector {
     private workersVisible: Array<boolean>;
     private readonly allMetrics: Set<string>;
     private selectedMetric: string;
-    private rangeValue: number = 0;
+    // Quantile threshold for hiding nodes; a value between 0 and 100.
+    // The range of the data is mapped to [0, 100], and nodes below the
+    // selected quantile are hidden.
+    private quantile: number = 0;
     private onChange: () => void = () => { };
 
     constructor(private readonly circuit: CircuitProfile) {
@@ -40,6 +43,7 @@ export class CircuitSelector {
         this.onChange = onChange;
     }
 
+    // Display the tool to select circuit nodes
     display(parent: string): void {
         const el = document.getElementById(parent);
         if (!el) {
@@ -65,7 +69,12 @@ export class CircuitSelector {
 
         row = table.insertRow();
         cell = row.insertCell(0);
-        cell.appendChild(document.createTextNode("Workers"));
+        let button = document.createElement("button");
+        button.textContent = "Workers";
+        button.title = "Toggle worker visibility";
+        cell.appendChild(button);
+
+        let allCheckboxes = new Array<HTMLInputElement>();
         cell = row.insertCell(1);
         for (let i = 0; i < this.circuit.getWorkerNames().length; i++) {
             let cb = document.createElement("input");
@@ -75,12 +84,21 @@ export class CircuitSelector {
             cb.style.margin = "0";
             cb.style.padding = "0";
             cell.appendChild(cb);
+            allCheckboxes.push(cb);
             cb.onchange = (ev) => {
                 const target = ev.target as HTMLInputElement;
                 this.workersVisible[i] = target.checked;
                 this.onChange();
             }
         };
+
+        button.onclick = (_) => {
+            for (const cb of allCheckboxes) {
+                cb.checked = !cb.checked;
+                this.workersVisible[Number(cb.title)] = cb.checked;
+            }
+            this.onChange();
+        }
 
         el.appendChild(table);
         select.onchange = (ev) => {
@@ -100,7 +118,7 @@ export class CircuitSelector {
         slider.value = "0";
         slider.step = "5";
         slider.onmouseup = (_) => {
-            this.rangeValue = Number(slider.value);
+            this.quantile = Number(slider.value);
             this.onChange();
         }
     }
@@ -117,6 +135,6 @@ export class CircuitSelector {
         return new CircuitSelection(
             this.selectedMetric,
             workers,
-            this.circuit.nodesAboveThreshold(this.selectedMetric, workers, this.rangeValue));
+            this.circuit.nodesAboveThreshold(this.selectedMetric, workers, this.quantile));
     }
 }

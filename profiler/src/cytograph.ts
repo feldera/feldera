@@ -1,5 +1,5 @@
 import cytoscape, { type EdgeCollection, type EdgeDefinition, type ElementsDefinition, type EventObject, type NodeDefinition, type NodeSingular, type StylesheetJson } from 'cytoscape';
-import { Graph, OMap, Option } from './util.js';
+import { Graph, NumericRange, OMap, Option } from './util.js';
 import { Globals } from './globals.js';
 import { CircuitProfile, type NodeId } from './profile.js';
 import { CircuitSelection } from './navigation.js';
@@ -115,8 +115,6 @@ class GraphEdge {
 export class Cytograph {
     readonly nodes: Array<GraphNode>;
     readonly edges: Array<GraphEdge>;
-    readonly metric: string;
-    readonly graph: Graph<NodeId>;
     cy: cytoscape.Core | null = null;
 
     readonly graph_style: StylesheetJson = [
@@ -148,11 +146,12 @@ export class Cytograph {
             }
         },
         {
-            selector: 'node:parent',
+            selector: 'node[depth]:parent',
             style: {
                 'label': '',
                 'text-opacity': 0,
                 'text-events': 'no',
+                'background-color': 'mapData(depth, 0, 5, #f5f5f5, #d0d0d0)',
             }
         },
         {
@@ -176,7 +175,15 @@ export class Cytograph {
             }
         },
         {
-            selector: 'edge.highlight',
+            selector: 'edge.highlight-backward',
+            style: {
+                'line-color': 'blue',
+                'target-arrow-color': 'blue',
+                'width': 4
+            }
+        },
+        {
+            selector: 'edge.highlight-forward',
             style: {
                 'line-color': 'red',
                 'target-arrow-color': 'red',
@@ -185,11 +192,9 @@ export class Cytograph {
         },
     ];
 
-    constructor(metric: string, graph: Graph<NodeId>) {
+    constructor(readonly metric: string, readonly graph: Graph<NodeId>, readonly propertyRange: OMap<string, NumericRange>) {
         this.nodes = [];
         this.edges = [];
-        this.metric = metric;
-        this.graph = graph;
     }
 
     addNode(node: GraphNode) {
@@ -222,6 +227,11 @@ export class Cytograph {
             style: this.graph_style
         });
 
+        this.cy.nodes().forEach(n => {
+            const depth = n.ancestors().filter(n => n.isNode()).length;
+            n.data('depth', depth);
+        });
+
         const dagreOptions = {
             name: 'dagre',
             rankDir: 'TB',
@@ -244,20 +254,24 @@ export class Cytograph {
     // Set to false to display the tooltip at the mouse position.
     static readonly FIXED_TOOLTIP_POSITION = true;
 
-    reachableFrom(node: NodeSingular): EdgeCollection {
+    reachableFrom(node: NodeSingular, forward: boolean): EdgeCollection {
         let id = node.id();
-        let reachable = this.graph.reachableFrom(id, e => !e.back);
-        let reverseReachable = this.graph.canReach(id, e => !e.back);
-
         let result = this.cy!.collection();
-        for (let n of reachable) {
-            let node = this.cy!.getElementById(n);
-            result = result.union(node.outgoers().edges());
+
+        if (forward) {
+            let reachable = this.graph.reachableFrom(id, e => !e.back);
+            for (let n of reachable) {
+                let node = this.cy!.getElementById(n);
+                result = result.union(node.outgoers().edges());
+            }
+        } else {
+            let reverseReachable = this.graph.canReach(id, e => !e.back);
+            for (let n of reverseReachable) {
+                let node = this.cy!.getElementById(n);
+                result = result.union(node.incomers().edges());
+            }
         }
-        for (let n of reverseReachable) {
-            let node = this.cy!.getElementById(n);
-            result = result.union(node.incomers().edges());
-        }
+
         return result;
     }
 
@@ -268,8 +282,10 @@ export class Cytograph {
 
         const globals = Globals.getInstance();
         let node: NodeSingular = event.target;
-        let reachable = this.reachableFrom(node);
-        reachable.addClass('highlight');
+        let reachable = this.reachableFrom(node, true);
+        reachable.addClass('highlight-forward');
+        reachable = this.reachableFrom(node, false);
+        reachable.addClass('highlight-backward');
 
         let attributes: Attributes = node.data().attributes;
         if (attributes.attributeCount() === 0) {
@@ -284,16 +300,28 @@ export class Cytograph {
             th.innerText = attributes.columnNames[i] || "";
             row.appendChild(th);
         }
+
+        let range = this.propertyRange.get(this.metric);
         for (const [key, values] of attributes.getAttributes().entries()) {
             let row = table.insertRow();
-            if (key === this.metric) {
-                row.style.backgroundColor = "blue";
-            }
             let cell = row.insertCell(0);
             cell.innerText = key;
+            if (key === this.metric) {
+                cell.style.backgroundColor = "blue";
+            }
             let index = 1;
             for (const value of values) {
                 cell = row.insertCell(index++);
+                let v = parseFloat(value);
+                if (range.isSome() && !isNaN(v) &&
+                    !range.unwrap().isEmpty() && !range.unwrap().isPoint()) {
+                    let percent = range.unwrap().percents(v);
+                    let color = `rgb(${255 * percent / 100}, ${255 * ((100 - percent) / 100)}, 0)`
+                    cell.style.backgroundColor = color;
+                } else {
+                    cell.style.backgroundColor = "white";
+                }
+                cell.style.color = "black";
                 cell.innerText = value;
                 cell.style.textAlign = "right";
             }
@@ -308,18 +336,17 @@ export class Cytograph {
         if (!Cytograph.FIXED_TOOLTIP_POSITION) {
             x = (canvasRect.left + event.renderedPosition.x);
             y = (canvasRect.top + event.renderedPosition.y);
-
-            // Make sure the table is fully visible.
         } else {
             x = canvasRect.right;
             y = 0;
         }
 
+        // Make sure the table is fully visible.
         const rect = table.getBoundingClientRect();
-        if (x + rect.width > window.innerWidth) {
-            x -= rect.width;
+        if (x + rect.width > canvasRect.width) {
+            x -= rect.width + 10;
         }
-        if (y + rect.height > window.innerHeight) {
+        if (y + rect.height > canvasRect.height) {
             y -= rect.height;
         }
         globals.tooltip.style.left = x + `px`;
@@ -330,13 +357,15 @@ export class Cytograph {
         const globals = Globals.getInstance();
         globals.tooltip.style.display = 'none';
         let node: NodeSingular = event.target;
-        let reachable = this.reachableFrom(node);
-        reachable.removeClass('highlight');
+        let reachable = this.reachableFrom(node, true);
+        reachable.removeClass('highlight-forward');
+        reachable = this.reachableFrom(node, false);
+        reachable.removeClass('highlight-backward');
     }
 
     // Test example graph.
     static createTestExample(): Cytograph {
-        let graph = new Cytograph("latency", new Graph<NodeId>());
+        let graph = new Cytograph("latency", new Graph<NodeId>(), new OMap<string, NumericRange>());
         const workers = ["0", "1"];
         graph.addNode(new VisibleNode("0", "filter", 100, Option.none(),
             new Attributes(workers, new Map([["latency", ["10ms", "20ms"]]]))));
@@ -371,7 +400,7 @@ export class Cytograph {
         }
         let depth = g.dfs();
 
-        let graph = new Cytograph(selection.metric, g);
+        let graph = new Cytograph(selection.metric, g, profile.dataRange);
         let hiddenNodes = new Map<number, HiddenNode>();
         // Maps each hidden node to its representative.
         let hiddenMap = new OMap<NodeId, HiddenNode>();
@@ -486,8 +515,6 @@ export class Cytograph {
                         continue;
                     }
                 }
-                if (source.includes("106_n23"))
-                    console.log(`Adding edge from ${sourceNode.id} to ${targetNode.id}`);
                 graph.addEdge(sourceNode.id, targetNode.id, edge.back);
             }
         }

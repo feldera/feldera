@@ -341,6 +341,16 @@ export class NumericRange {
         return this.min + percentage / 100 * this.width();
     }
 
+    toString(): string {
+        if (this.isEmpty()) {
+            return "[empty]";
+        }
+        if (this.isPoint()) {
+            return `[${this.min}]`;
+        }
+        return `[${this.min} - ${this.max}]`;
+    }
+
     // Compute the range of a set of numbers.
     static getRange(data: Iterable<number>): NumericRange {
         let min = Number.MAX_VALUE;

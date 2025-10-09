@@ -119,7 +119,7 @@ class PercentValue extends PropertyValue {
     override toString(): string {
         let v = this.getNumericValue();
         if (v.isSome()) {
-            return (v.unwrap() * 100).toFixed(2);
+            return v.unwrap().toFixed(3);
         } else {
             return "N/A";
         }
@@ -219,6 +219,8 @@ class TimeValue extends PropertyValue {
 export class Measurement {
     readonly property: string;
     readonly value: Option<PropertyValue>;
+    // If true generate random data for testing.
+    static readonly RANDOM_DATA = false;
 
     constructor(json: JsonMeasurement) {
         this.property = json[0] as string;
@@ -229,6 +231,10 @@ export class Measurement {
         switch (prop) {
             case "time%":
             case "merge reduction":
+                if (Measurement.RANDOM_DATA) {
+                    let v = Math.random() * 100;
+                    return Option.some(new PercentValue(v, 1));
+                }
                 return Option.some(new PercentValue(value[0][0], value[0][1]));
             case "total size":
             case "invocations":
@@ -240,10 +246,16 @@ export class Measurement {
             case "merging batches":
             case "merging size":
             case "allocations":
+                if (Measurement.RANDOM_DATA) {
+                    return Option.some(new NumberValue(Math.random() * 1000));
+                }
                 return Option.some(new NumberValue(value[0]));
             case "exchange wait time":
             case "merge backpressure wait":
             case "time":
+                if (Measurement.RANDOM_DATA) {
+                    return Option.some(TimeValue.fromSecondsNanos(Math.floor(Math.random() * 100), 0));
+                }
                 return Option.some(TimeValue.fromSecondsNanos(value[0].secs, value[0].nanos));
             case "persistent_id":
                 return Option.some(new StringValue(value[0]));
@@ -334,6 +346,8 @@ export class CircuitProfile {
     // Set of all metrics found in the profile.
     private allMetrics: Set<string> = new Set();
     private workerNames: Array<number> = new Array();
+    // For each measurement the range of values across all nodes.
+    readonly dataRange: OMap<string, NumericRange> = new OMap();
 
     addNode(n: JsonSimpleNodeWrapper | JsonClusterWrapper, parent: Option<NodeId>) {
         if ('Simple' in n) {
@@ -374,6 +388,7 @@ export class CircuitProfile {
             let sourceLabel = source.unwrap().label;
             let targetLabel = target.unwrap().label;
             // Reverse the edge if it's between Z1 (trace) and Z1 (trace) (output)
+            // or between Z1_OUTPUT and Z1
             if ((sourceLabel.includes(CircuitProfile.Z1_TRACE_OUTPUT) && targetLabel.includes(CircuitProfile.Z1_TRACE)) ||
                 (sourceLabel.includes(CircuitProfile.Z1_OUTPUT) && targetLabel === CircuitProfile.Z1)) {
                 let tmp = from;
@@ -430,6 +445,7 @@ export class CircuitProfile {
         result.workerNames = Array.from({ length: json.worker_profiles.length }, (_, i) => i);
         // Merge Z1 (trace) nodes; they are artificially split in the profile.
         result.fixZ1Nodes();
+        result.computePropertyRanges();
         return result;
     }
 
@@ -466,19 +482,25 @@ export class CircuitProfile {
         }
     }
 
-    // Given a property, compute the range of values across all nodes.
-    propertyRange(property: string): NumericRange {
-        // Scan the nodes and compute the range of the displayed value
-        let range = NumericRange.empty();
-        for (const node of this.simpleNodes.values()) {
-            let m = node.getMeasurements(property);
-            let values = m.map(v => v.getNumericValue()).filter(v => v.isSome()).map(v => v.unwrap());
-            range = range.union(NumericRange.getRange(values));
+    computePropertyRanges() {
+        for (const metric of this.allMetrics) {
+            // Scan the nodes and compute the range of the displayed value
+            let range = NumericRange.empty();
+            for (const node of this.simpleNodes.values()) {
+                let m = node.getMeasurements(metric);
+                let values = m.map(v => v.getNumericValue()).filter(v => v.isSome()).map(v => v.unwrap());
+                range = range.union(NumericRange.getRange(values));
+            }
+            this.dataRange.set(metric, range);
         }
-        return range;
     }
 
-    nodesAboveThreshold(property: string, workers: SubList, percentage: number): SubSet<NodeId> {
+    // Given a property, compute the range of values across all nodes.
+    propertyRange(property: string): NumericRange {
+        return this.dataRange.get(property).unwrap();
+    }
+
+    nodesAboveThreshold(property: string, workers: SubList, quantile: number): SubSet<NodeId> {
         let fullSet = new CompleteSet(this.simpleNodes.keys());
         let range = this.propertyRange(property);
         if (range.isEmpty() || range.isPoint()) {
@@ -486,9 +508,15 @@ export class CircuitProfile {
         }
 
         let selected: Set<NodeId> = new Set<NodeId>();
-        let threshold = range.quantile(percentage);
+        let threshold = range.quantile(quantile);
 
         for (const node of this.simpleNodes.values()) {
+            // If quantile is 0, show all nodes
+            if (quantile === 0) {
+                selected.add(node.id);
+                continue;
+            }
+
             let m = node.getMeasurements(property);
             m = m.filter((_, i) => workers.contains(i));
             let values = m.map(v => v.getNumericValue()).filter(v => v.isSome()).map(v => v.unwrap());
