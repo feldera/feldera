@@ -33,7 +33,7 @@ export class Globals {
     }
 
     reportError(message: string): void {
-        const container = document.getElementById('error');
+        const container = document.getElementById('error-message');
         if (container) {
             container.textContent = message;
             container.style.display = 'block';

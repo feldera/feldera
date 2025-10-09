@@ -1,4 +1,4 @@
-import cytoscape, { type EdgeDefinition, type ElementsDefinition, type EventObject, type NodeDefinition, type NodeSingular, type StylesheetJson } from 'cytoscape';
+import cytoscape, { type EdgeCollection, type EdgeDefinition, type ElementsDefinition, type EventObject, type NodeDefinition, type NodeSingular, type StylesheetJson } from 'cytoscape';
 import { Graph, OMap, Option } from './util.js';
 import { Globals } from './globals.js';
 import { CircuitProfile, type NodeId } from './profile.js';
@@ -66,6 +66,7 @@ class VisibleNode implements GraphNode {
 /** A Cytoscape graph node that represents multiple hidden profile nodes. */
 class HiddenNode implements GraphNode {
     assigned: Set<NodeId> = new Set();
+    parent: Option<string> = Option.none();
 
     constructor(
         readonly id: string
@@ -76,11 +77,18 @@ class HiddenNode implements GraphNode {
         return this;
     }
 
+    setParent(parent: string): void {
+        this.parent = Option.some(parent);
+    }
+
     getDefinition(): NodeDefinition {
         let result = { "data": { "id": this.id, "value": 0, "label": this.assigned.size.toString() + " nodes" } };
         let attributes = new Attributes(
             ["hidden"], new Map([["hidden nodes", Array.from(this.assigned).map(n => VisibleNode.normalizeId(n.toString()))]])
         );
+        if (this.parent.isSome()) {
+            (result["data"] as any)["parent"] = this.parent.unwrap();
+        }
         (result["data"] as any)["attributes"] = attributes;
         (result["data"] as any)["hidden"] = true;
         return result;
@@ -105,9 +113,11 @@ class GraphEdge {
 
 /** A directed graph which can be displayed using the Cytoscape rendering library. */
 export class Cytograph {
-    nodes: Array<GraphNode>;
-    edges: Array<GraphEdge>;
-    metric: string;
+    readonly nodes: Array<GraphNode>;
+    readonly edges: Array<GraphEdge>;
+    readonly metric: string;
+    readonly graph: Graph<NodeId>;
+    cy: cytoscape.Core | null = null;
 
     readonly graph_style: StylesheetJson = [
         {
@@ -175,10 +185,11 @@ export class Cytograph {
         },
     ];
 
-    constructor(metric: string) {
+    constructor(metric: string, graph: Graph<NodeId>) {
         this.nodes = [];
         this.edges = [];
         this.metric = metric;
+        this.graph = graph;
     }
 
     addNode(node: GraphNode) {
@@ -205,7 +216,7 @@ export class Cytograph {
         window.onresize = () => {
             this.render()
         };
-        let cy = cytoscape({
+        this.cy = cytoscape({
             container: parent,
             elements: this.getGraphElements(),
             style: this.graph_style
@@ -221,25 +232,50 @@ export class Cytograph {
         };
 
         cytoscape.use(dagre);
-        cy.elements().not('.back').layout(dagreOptions).run();
-        cy
-            .on('mouseover', 'node', event => this.toolTip(cy, event))
+        this.cy.elements().not('.back').layout(dagreOptions).run();
+        this.cy
+            .on('mouseover', 'node', event => this.toolTip(event))
             .on('mouseout', 'node', event => this.hideToolTip(event))
             .center()
             .fit();
     }
 
-    static readonly FIXED_TOOLTIP_POSITION = false;
+    // Set to true to display the tooltip in a fixed position.
+    // Set to false to display the tooltip at the mouse position.
+    static readonly FIXED_TOOLTIP_POSITION = true;
+
+    reachableFrom(node: NodeSingular): EdgeCollection {
+        let id = node.id();
+        let reachable = this.graph.reachableFrom(id, e => !e.back);
+        let reverseReachable = this.graph.canReach(id, e => !e.back);
+
+        let result = this.cy!.collection();
+        for (let n of reachable) {
+            let node = this.cy!.getElementById(n);
+            result = result.union(node.outgoers().edges());
+        }
+        for (let n of reverseReachable) {
+            let node = this.cy!.getElementById(n);
+            result = result.union(node.incomers().edges());
+        }
+        return result;
+    }
 
     // Generate a tooltip to display on hover over a node.
-    toolTip(cy: cytoscape.Core, event: EventObject) {
+    toolTip(event: EventObject) {
+        if (this.cy === null)
+            return;
+
         const globals = Globals.getInstance();
         let node: NodeSingular = event.target;
-        let table = document.createElement("table");
+        let reachable = this.reachableFrom(node);
+        reachable.addClass('highlight');
+
         let attributes: Attributes = node.data().attributes;
         if (attributes.attributeCount() === 0) {
             return;
         }
+        let table = document.createElement("table");
         let row = table.insertRow();
         row.insertCell(0);
         let colCount = attributes.getColumnCount();
@@ -262,14 +298,14 @@ export class Cytograph {
                 cell.style.textAlign = "right";
             }
         }
-        const canvasRect = cy.container()!.getBoundingClientRect();
+        const canvasRect = this.cy.container()!.getBoundingClientRect();
         globals.tooltip.innerHTML = "";  // Clear previous content.
         globals.tooltip.appendChild(table);
         globals.tooltip.style.display = 'block';
 
         let x, y;
 
-        if (Cytograph.FIXED_TOOLTIP_POSITION) {
+        if (!Cytograph.FIXED_TOOLTIP_POSITION) {
             x = (canvasRect.left + event.renderedPosition.x);
             y = (canvasRect.top + event.renderedPosition.y);
 
@@ -288,19 +324,19 @@ export class Cytograph {
         }
         globals.tooltip.style.left = x + `px`;
         globals.tooltip.style.top = y + `px`;
-        node.connectedEdges().addClass('highlight');
     }
 
     hideToolTip(event: EventObject) {
         const globals = Globals.getInstance();
         globals.tooltip.style.display = 'none';
         let node: NodeSingular = event.target;
-        node.connectedEdges().removeClass('highlight');
+        let reachable = this.reachableFrom(node);
+        reachable.removeClass('highlight');
     }
 
     // Test example graph.
     static createTestExample(): Cytograph {
-        let graph = new Cytograph("latency");
+        let graph = new Cytograph("latency", new Graph<NodeId>());
         const workers = ["0", "1"];
         graph.addNode(new VisibleNode("0", "filter", 100, Option.none(),
             new Attributes(workers, new Map([["latency", ["10ms", "20ms"]]]))));
@@ -328,11 +364,14 @@ export class Cytograph {
             let target = edge.target;
             let targetHidden = !selection.nodesVisible.contains(target);
             let weight = (sourceHidden && targetHidden) ? 0 : 1;
+            if (profile.complexNodes.has(target))
+                // Do not add edges to complex nodes.
+                continue;
             g.addEdge(edge.source, edge.target, weight, edge.back);
         }
         let depth = g.dfs();
 
-        let graph = new Cytograph(selection.metric);
+        let graph = new Cytograph(selection.metric, g);
         let hiddenNodes = new Map<number, HiddenNode>();
         // Maps each hidden node to its representative.
         let hiddenMap = new OMap<NodeId, HiddenNode>();
@@ -393,6 +432,21 @@ export class Cytograph {
             }
         }
 
+        // If all nodes in a hidden node have the same parent, make that the parent of the hidden node.
+        for (const hiddenNode of hiddenNodes.values()) {
+            let parents = new Set<Option<string>>();
+            for (const nodeId of hiddenNode.assigned) {
+                let parent = profile.parents.get(nodeId);
+                parents.add(parent);
+            }
+            if (parents.size === 1) {
+                let parent = parents.values().next().value!;
+                if (parent.isSome()) {
+                    hiddenNode.setParent(parent.unwrap());
+                }
+            }
+        }
+
         for (const nodeId of profile.complexNodes.keys()) {
             let parent = profile.parents.get(nodeId);
             if (nodeId !== "n" && visibleParents.has(nodeId)) {
@@ -406,6 +460,9 @@ export class Cytograph {
             let target = edge.target;
             let sourceHidden = !selection.nodesVisible.contains(source);
             let targetHidden = !selection.nodesVisible.contains(target);
+            if (profile.complexNodes.has(target))
+                // Do not add edges to complex nodes.
+                continue;
 
             let sourceNode;
             let targetNode;
@@ -421,7 +478,7 @@ export class Cytograph {
                 targetNode = visibleMap.get(target).expect(`Node ${target} not found in visible map`);
             }
 
-            if (sourceNode.getLabel() !== targetNode.getLabel()) {
+            if (sourceNode !== targetNode) {
                 if (sourceHidden || targetHidden) {
                     // Do not add duplicate edges
                     if (graph.edges.find(
@@ -429,6 +486,8 @@ export class Cytograph {
                         continue;
                     }
                 }
+                if (source.includes("106_n23"))
+                    console.log(`Adding edge from ${sourceNode.id} to ${targetNode.id}`);
                 graph.addEdge(sourceNode.id, targetNode.id, edge.back);
             }
         }
