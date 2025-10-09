@@ -1088,7 +1088,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
         this.builder.append("deserialize_table_record!(");
         this.builder.append(type.sanitizedName)
                 .append("[")
-                .append(Utilities.doubleQuote(type.name.name()))
+                .append(Utilities.doubleQuote(type.name.name(), true))
                 .append(", ")
                 .append(type.fields.size())
                 .append("] {")
@@ -1112,7 +1112,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
             this.builder.append("(")
                     .append(field.getSanitizedName())
                     .append(", ")
-                    .append(Utilities.doubleQuote(simpleName))
+                    .append(Utilities.doubleQuote(simpleName, true))
                     .append(", ")
                     .append(Boolean.toString(name.isQuoted()))
                     .append(", ");
@@ -1161,7 +1161,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
             this.builder
                     .append(field.getSanitizedName())
                     .append("[")
-                    .append(Utilities.doubleQuote(simpleName))
+                    .append(Utilities.doubleQuote(simpleName, true))
                     .append("]")
                     .append(": ");
             field.type.accept(this);
@@ -1211,7 +1211,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
         Objects.requireNonNull(literal.value);
         byte[] bytes = literal.value.getBytes(literal.charset);
         String decoded = new String(bytes, literal.charset);
-        decoded = Utilities.doubleQuote(decoded);
+        decoded = Utilities.doubleQuote(decoded, true);
         this.builder.append(literal.wrapSome(
         DBSPTypeCode.STRING.rustName + "::from(arcstr::literal!(" + decoded + "))"));
         this.pop(literal);
@@ -1230,7 +1230,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
             String contents = "r#\"" + literal.value + "\"#";
             this.builder.append(literal.wrapSome(contents));
         } else {
-            this.builder.append(literal.wrapSome(Utilities.doubleQuote(literal.value)));
+            this.builder.append(literal.wrapSome(Utilities.doubleQuote(literal.value, true)));
         }
         this.pop(literal);
         return VisitDecision.STOP;

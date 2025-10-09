@@ -97,6 +97,17 @@ public interface IIndentStream {
         return this;
     }
 
+    default IIndentStream joinI(String separator, Collection<String> data, Function<String, String> generator) {
+        boolean first = true;
+        for (String d: data) {
+            if (!first)
+                this.append(separator);
+            first = false;
+            this.append(generator.apply(d));
+        }
+        return this;
+    }
+
     default IIndentStream join(String separator, String[] data) {
         boolean first = true;
         for (String d: data) {

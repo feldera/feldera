@@ -172,28 +172,27 @@ public class Utilities {
         return (dotIndex == -1) ? fileName : fileName.substring(0, dotIndex);
     }
 
-    /** Escape special characters in a string. */
-    public static String escape(String value) {
+    /** Escape special characters in a string.
+     * @param unicodeBraces If true write Unicode characters as \\u{}, otherwise just \\u */
+    public static String escape(String value, boolean unicodeBraces) {
         StringBuilder builder = new StringBuilder();
         final int length = value.length();
         for (int offset = 0; offset < length; ) {
             final int c = value.codePointAt(offset);
-            if (c == '\'')
-                builder.append("\\'");
-            else if (c == '\\')
-                builder.append("\\\\");
-            else if (c == '\"' )
-                builder.append("\\\"");
-            else if (c == '\r' )
-                builder.append("\\r");
-            else if (c == '\n' )
-                builder.append("\\n");
-            else if (c == '\t' )
-                builder.append("\\t");
+            //if (c == '\'') builder.append("\\'");
+            // else
+            if (c == '\\') builder.append("\\\\");
+            else if (c == '\"' ) builder.append("\\\"");
+            else if (c == '\r' ) builder.append("\\r");
+            else if (c == '\n' ) builder.append("\\n");
+            else if (c == '\t' ) builder.append("\\t");
             else if (c < 32 || c >= 127) {
-                builder.append("\\u{");
+                builder.append("\\u");
+                if (unicodeBraces)
+                    builder.append("{");
                 builder.append(String.format("%04x", c));
-                builder.append("}");
+                if (unicodeBraces)
+                    builder.append("}");
             } else
                 builder.append((char)c);
             offset += Character.charCount(c);
@@ -235,9 +234,10 @@ public class Utilities {
                 .build();
     }
 
-    /** Add double quotes around string and escape symbols that need it. */
-    public static String doubleQuote(String value) {
-         return "\"" + escape(value) + "\"";
+    /** Add double quotes around string and escape symbols that need it.
+     * @param unicodeBraces If true use \\u{} for Unicode, otherwise use \\u. */
+    public static String doubleQuote(String value, boolean unicodeBraces) {
+         return "\"" + escape(value, unicodeBraces) + "\"";
      }
 
     /** Just adds single quotes around a string.  No escaping is performed. */

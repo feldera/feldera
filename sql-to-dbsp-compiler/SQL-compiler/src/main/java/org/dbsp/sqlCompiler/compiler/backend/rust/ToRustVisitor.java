@@ -488,7 +488,7 @@ public class ToRustVisitor extends CircuitVisitor {
             this.builder.append("None;").newline();
         } else {
             this.builder.append("Some(")
-                    .append(Utilities.doubleQuote(hash.toString()))
+                    .append(Utilities.doubleQuote(hash.toString(), true))
                     .append(");")
                     .newline();
         }

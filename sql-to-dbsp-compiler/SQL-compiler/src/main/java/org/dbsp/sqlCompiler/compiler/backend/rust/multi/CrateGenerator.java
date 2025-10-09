@@ -108,7 +108,7 @@ public final class CrateGenerator {
         List<CrateGenerator> deps = Linq.list(this.dependencies);
         deps.sort(Comparator.comparing(a -> a.crateName));
         for (CrateGenerator dep: deps) {
-            stream.println(dep.crateName + " = { path = " + Utilities.doubleQuote("../" + dep.crateName) + " }");
+            stream.println(dep.crateName + " = { path = " + Utilities.doubleQuote("../" + dep.crateName, false) + " }");
         }
     }
 

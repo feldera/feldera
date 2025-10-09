@@ -220,7 +220,7 @@ public class TestCase {
         List<String> annotations = new ArrayList<>();
         annotations.add("#[test]");
         if (this.message != null)
-            annotations.add("#[should_panic(expected = " + Utilities.doubleQuote(this.message) + ")]");
+            annotations.add("#[should_panic(expected = " + Utilities.doubleQuote(this.message, true) + ")]");
         result.add(new DBSPFunction(CalciteObject.EMPTY, "test" + testNumber, new ArrayList<>(),
                 DBSPTypeVoid.INSTANCE, body, annotations));
         return result;
