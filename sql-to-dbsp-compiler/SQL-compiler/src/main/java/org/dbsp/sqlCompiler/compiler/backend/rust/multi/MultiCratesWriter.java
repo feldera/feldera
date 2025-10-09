@@ -62,7 +62,7 @@ public final class MultiCratesWriter extends RustWriter {
         cargoStream.println("members = [");
         boolean first = true;
         for (CrateGenerator gen: generators) {
-            cargoStream.println((first ? "  " : ", ") + Utilities.doubleQuote(gen.crateName));
+            cargoStream.println((first ? "  " : ", ") + Utilities.doubleQuote(gen.crateName, false));
             first = false;
         }
         cargoStream.println("]");

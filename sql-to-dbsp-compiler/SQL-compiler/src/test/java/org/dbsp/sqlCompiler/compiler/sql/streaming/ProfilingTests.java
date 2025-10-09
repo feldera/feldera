@@ -8,6 +8,7 @@ import org.dbsp.sqlCompiler.compiler.sql.tools.BaseSQLTests;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
 import org.junit.Assert;
+import org.junit.Ignore;
 import org.junit.Test;
 
 import java.io.File;
@@ -197,6 +198,62 @@ public class ProfilingTests extends StreamingTestBase {
             File mainFile = new File(mainFilePath);
             Utilities.deleteFile(mainFile, true);
         }
+    }
+
+    public String getEmptyJsonProfile(File script) throws IOException, SQLException, InterruptedException {
+        // Profile a SQL program from a specified file.
+        // We don't know how to supply inputs, so we do this just to get the graph.
+        String main = """
+                use dbsp::circuit::CircuitConfig;
+
+                use std::fs::File;
+                use std::io::Write;
+                use temp::circuit;
+
+                #[test]
+                pub fn test() {
+                    let (mut circuit, _streams) = circuit(
+                        CircuitConfig::with_workers(16)).expect("could not build circuit");
+                    let _ = circuit.enable_cpu_profiler();
+                    let profile = circuit.retrieve_profile().expect("could not get profile");
+                    let mut file = File::create("profile.zip").expect("Could not create file");
+                    file.write_all(&profile.as_json_zip()).expect("Could not write data");
+                }""";
+        File dataflow = new File("dataflow-" + script.getName().replace(".sql", ".json"));
+        CompilerMessages messages = CompilerMain.execute(
+                "-o", BaseSQLTests.TEST_FILE_PATH, "--handles", "-i", "--ignoreOrder",
+                "--dataflow", dataflow.getPath(), script.getPath());
+        messages.print();
+        Assert.assertEquals(0, messages.errorCount());
+
+        String mainFilePath = RUST_DIRECTORY + "/main.rs";
+        File file = new File(mainFilePath);
+        try (PrintWriter mainFile = new PrintWriter(file, StandardCharsets.UTF_8)) {
+            mainFile.print(main);
+        }
+
+        try {
+            Utilities.compileAndTestRust(RUST_DIRECTORY, true);
+            String outFile = "profile.zip";
+            Path outFilePath = Paths.get(RUST_DIRECTORY, "..", outFile);
+            byte[] data = Utilities.extractFileFromZip(outFilePath.toString(), "profile.json");
+            Utilities.deleteFile(outFilePath.toFile(), true);
+            return new String(data, StandardCharsets.UTF_8);
+        } finally {
+            File mainFile = new File(mainFilePath);
+            Utilities.deleteFile(mainFile, true);
+        }
+    }
+
+    @Test @Ignore("Used to generate data for testing the profile visualization tool")
+    public void emptyJsonProfiles() throws SQLException, IOException, InterruptedException {
+        String name = "rec";
+        String profilerData = "../../profiler/data";
+        File file = new File("../extra/" + name + ".sql");
+        String str = this.getEmptyJsonProfile(file);
+        Utilities.writeFile(Paths.get(profilerData, file.getName().replace(".sql", ".json")), str);
+        String df = "dataflow-" + name + ".json";
+        Files.move(Paths.get(".", df), Paths.get(profilerData, df));
     }
 
     @Test

@@ -215,5 +215,9 @@
       "positions": [],
       "persistent_id": "933ebf782e1fe804fe85c4d0f3688bdb5234b386c2834892776e692acd9781d9"
     }
-  }
+  },
+  "sources": [
+    "CREATE TABLE T (COL1 INT NOT NULL, COL2 DOUBLE NOT NULL);",
+    "CREATE VIEW V AS SELECT SUM(COL1) FROM T;"
+  ]
 }

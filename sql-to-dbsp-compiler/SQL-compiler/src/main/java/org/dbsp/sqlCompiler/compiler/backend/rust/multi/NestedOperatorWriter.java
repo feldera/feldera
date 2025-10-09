@@ -188,7 +188,7 @@ public final class NestedOperatorWriter extends BaseRustCodeGenerator {
                     this.builder().append("None;").newline();
                 } else {
                     this.builder().append("Some(")
-                            .append(Utilities.doubleQuote(hash1.toString()))
+                            .append(Utilities.doubleQuote(hash1.toString(), false))
                             .append(");")
                             .newline();
                 }

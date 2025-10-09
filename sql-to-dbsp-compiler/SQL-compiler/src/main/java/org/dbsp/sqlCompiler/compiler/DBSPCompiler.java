@@ -191,6 +191,9 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         ToJsonVisitor toJson = new ToJsonVisitor(
                 this, result, this.options.ioOptions.verbosity, remap);
         toJson.apply(circuit);
+        result.append(",").newline();
+        result.appendJsonLabelAndColon("sources");
+        this.writeSourcesAsJson(result);
         result.newline().decrease().append("}");
     }
 
@@ -217,6 +220,10 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         }
         stream.newline().decrease().append("}");
         return result;
+    }
+
+    public void writeSourcesAsJson(IIndentStream stream) {
+        this.sources.writeAsJson(stream);
     }
 
     // Will be overwritten in the start() function.

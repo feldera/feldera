@@ -89,7 +89,7 @@ public final class DBSPStrLiteral extends DBSPLiteral {
 
     @Override
     public IIndentStream toString(IIndentStream builder) {
-        return builder.append(Utilities.doubleQuote(this.value));
+        return builder.append(Utilities.doubleQuote(this.value, true));
     }
 
     @Override

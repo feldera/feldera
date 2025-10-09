@@ -75,7 +75,7 @@ public class ToJsonVisitor extends CircuitDispatcher {
         String inputName = port.operator.getCompactName();
         this.builder.append("{ ")
                 .appendJsonLabelAndColon("node")
-                .append(Utilities.doubleQuote(inputName))
+                .append(Utilities.doubleQuote(inputName, false))
                 .append(", ")
                 .appendJsonLabelAndColon("output")
                 .append(port.outputNumber)
@@ -122,7 +122,7 @@ public class ToJsonVisitor extends CircuitDispatcher {
             }
         } else if (operator.is(DBSPSourceTableOperator.class)) {
             this.builder.appendJsonLabelAndColon("table")
-                    .append(Utilities.doubleQuote(operator.to(DBSPSourceTableOperator.class).tableName.toString()))
+                    .append(Utilities.doubleQuote(operator.to(DBSPSourceTableOperator.class).tableName.toString(), false))
                     .append(",").newline();
         }
 
@@ -145,7 +145,7 @@ public class ToJsonVisitor extends CircuitDispatcher {
         HashString hash = OperatorHash.getHash(operator, true);
         if (hash != null) {
             this.builder.appendJsonLabelAndColon("persistent_id");
-            this.builder.append(Utilities.doubleQuote(hash.toString())).newline();
+            this.builder.append(Utilities.doubleQuote(hash.toString(), false)).newline();
         }
         this.builder.decrease().append("}");
     }
@@ -192,7 +192,7 @@ public class ToJsonVisitor extends CircuitDispatcher {
         HashString hash = OperatorHash.getHash(operator, true);
         if (hash != null) {
             this.builder.appendJsonLabelAndColon("persistent_id");
-            this.builder.append(Utilities.doubleQuote(hash.toString())).newline();
+            this.builder.append(Utilities.doubleQuote(hash.toString(), false)).newline();
         }
         this.builder.decrease().append("}");
     }
@@ -239,7 +239,7 @@ public class ToJsonVisitor extends CircuitDispatcher {
         HashString hash = OperatorHash.getHash(operator, true);
         if (hash != null) {
             this.builder.appendJsonLabelAndColon("persistent_id");
-            this.builder.append(Utilities.doubleQuote(hash.toString())).newline();
+            this.builder.append(Utilities.doubleQuote(hash.toString(), false)).newline();
         }
         this.builder.decrease().append("}");
     }

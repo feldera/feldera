@@ -63,7 +63,7 @@ public class ToDotEdgesVisitor extends CircuitVisitor implements IWritesLogs {
             if (this.details >= 2 && !this.edgesLabeled.contains(i)) {
                 String label = this.getEdgeLabel(i);
                 this.stream.append(" [xlabel=")
-                        .append(Utilities.doubleQuote(label))
+                        .append(Utilities.doubleQuote(label, false))
                         .append("]");
                 this.edgesLabeled.add(i);
             }
@@ -83,7 +83,7 @@ public class ToDotEdgesVisitor extends CircuitVisitor implements IWritesLogs {
             if (this.details >= 2 && !this.edgesLabeled.contains(i)) {
                 String label = this.getEdgeLabel(i);
                 this.stream.append(" [xlabel=")
-                        .append(Utilities.doubleQuote(label))
+                        .append(Utilities.doubleQuote(label, false))
                         .append("]");
                 this.edgesLabeled.add(i);
             }
