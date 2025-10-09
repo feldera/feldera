@@ -14,6 +14,7 @@ class CallbackRunner(Thread):
         pipeline_name: str,
         view_name: str,
         callback: Callable[[pd.DataFrame, int], None],
+        exception_callback: Callable[[BaseException], None]
     ):
         super().__init__()
         self.daemon = True
@@ -21,6 +22,7 @@ class CallbackRunner(Thread):
         self.pipeline_name: str = pipeline_name
         self.view_name: str = view_name
         self.callback: Callable[[pd.DataFrame, int], None] = callback
+        self.exception_callback: Callable[[BaseException], None] = exception_callback
         self.schema: Optional[dict] = None
 
     def run(self):
@@ -30,35 +32,38 @@ class CallbackRunner(Thread):
         :meta private:
         """
 
-        pipeline = self.client.get_pipeline(
-            self.pipeline_name, PipelineFieldSelector.ALL
-        )
-
-        schemas = pipeline.tables + pipeline.views
-        for schema in schemas:
-            if schema.name == self.view_name:
-                self.schema = schema
-                break
-
-        if self.schema is None:
-            raise ValueError(
-                f"Table or View {self.view_name} not found in the pipeline schema."
+        try:
+            pipeline = self.client.get_pipeline(
+                self.pipeline_name, PipelineFieldSelector.ALL
             )
 
-        gen_obj = self.client.listen_to_pipeline(
-            self.pipeline_name,
-            self.view_name,
-            format="json",
-            case_sensitive=self.schema.case_sensitive,
-        )
+            schemas = pipeline.tables + pipeline.views
+            for schema in schemas:
+                if schema.name == self.view_name:
+                    self.schema = schema
+                    break
 
-        iterator = gen_obj()
-
-        for chunk in iterator:
-            chunk: dict = chunk
-            data: Optional[list[dict]] = chunk.get("json_data")
-            seq_no: Optional[int] = chunk.get("sequence_number")
-            if data is not None and seq_no is not None:
-                self.callback(
-                    dataframe_from_response([data], self.schema.fields), seq_no
+            if self.schema is None:
+                raise ValueError(
+                    f"Table or View {self.view_name} not found in the pipeline schema."
                 )
+
+            gen_obj = self.client.listen_to_pipeline(
+                self.pipeline_name,
+                self.view_name,
+                format="json",
+                case_sensitive=self.schema.case_sensitive,
+            )
+
+            iterator = gen_obj()
+
+            for chunk in iterator:
+                chunk: dict = chunk
+                data: Optional[list[dict]] = chunk.get("json_data")
+                seq_no: Optional[int] = chunk.get("sequence_number")
+                if data is not None and seq_no is not None:
+                    self.callback(
+                        dataframe_from_response([data], self.schema.fields), seq_no
+                    )
+        except BaseException as e:
+            self.exception_callback(e)
