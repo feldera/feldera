@@ -174,7 +174,7 @@ public class ProfilingTests extends StreamingTestBase {
                 }""";
         File script = createInputScript(sql);
         CompilerMessages messages = CompilerMain.execute(
-                "-o", BaseSQLTests.TEST_FILE_PATH, "--handles", "-i",
+                "-o", BaseSQLTests.TEST_FILE_PATH, "--handles", "-i", "--ignoreOrder",
                 script.getPath());
         messages.print();
         Assert.assertEquals(0, messages.errorCount());
@@ -219,10 +219,16 @@ public class ProfilingTests extends StreamingTestBase {
                     let mut file = File::create("profile.zip").expect("Could not create file");
                     file.write_all(&profile.as_json_zip()).expect("Could not write data");
                 }""";
+<<<<<<< HEAD
         File dataflow = new File("dataflow-" + script.getName().replace(".sql", ".json"));
         CompilerMessages messages = CompilerMain.execute(
                 "-o", BaseSQLTests.TEST_FILE_PATH, "--handles", "-i", "--ignoreOrder",
                 "--dataflow", dataflow.getPath(), script.getPath());
+=======
+        CompilerMessages messages = CompilerMain.execute(
+                "-o", BaseSQLTests.TEST_FILE_PATH, "--handles", "-i", "--ignoreOrder",
+                script.getPath());
+>>>>>>> c51ae0e4b (Fix recursive graph display; full reachabilty highight)
         messages.print();
         Assert.assertEquals(0, messages.errorCount());
 

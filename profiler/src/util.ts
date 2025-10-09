@@ -259,6 +259,44 @@ export class Graph<T> {
         }
         return depth;
     }
+
+    // Set of nodes that are reachable starting from 'node' and following edges that satisfy 'predicate'.
+    reachableFrom(node: T, predicate: (e: Edge<T>) => boolean): Set<T> {
+        let result = new Set<T>();
+        let stack = [node];
+        while (stack.length > 0) {
+            let n = stack.pop()!;
+            if (result.has(n)) {
+                continue;
+            }
+            result.add(n);
+            for (const e of this.outEdges.get(n) || []) {
+                if (predicate(e)) {
+                    stack.push(e.to);
+                }
+            }
+        }
+        return result;
+    }
+
+    // Set of nodes that are backwards reachable starting from 'node' and following edges that satisfy 'predicate'.
+    canReach(node: T, predicate: (e: Edge<T>) => boolean): Set<T> {
+        let result = new Set<T>();
+        let stack = [node];
+        while (stack.length > 0) {
+            let n = stack.pop()!;
+            if (result.has(n)) {
+                continue;
+            }
+            result.add(n);
+            for (const e of this.inEdges.get(n) || []) {
+                if (predicate(e)) {
+                    stack.push(e.from);
+                }
+            }
+        }
+        return result;
+    }
 }
 
 // A range between two numbers (inclusive).
