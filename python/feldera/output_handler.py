@@ -1,5 +1,7 @@
 import pandas as pd
 
+from typing import Optional
+
 from feldera import FelderaClient
 from feldera._callback_runner import CallbackRunner
 
@@ -20,15 +22,20 @@ class OutputHandler:
         self.pipeline_name: str = pipeline_name
         self.view_name: str = view_name
         self.buffer: list[pd.DataFrame] = []
+        self.exception: Optional[BaseException] = None
 
         # the callback that is passed to the `CallbackRunner`
         def callback(df: pd.DataFrame, _: int):
             if not df.empty:
                 self.buffer.append(df)
 
+        def exception_callback(exception: BaseException):
+            self.exception = exception
+
         # sets up the callback runner
         self.handler = CallbackRunner(
-            self.client, self.pipeline_name, self.view_name, callback
+            self.client, self.pipeline_name, self.view_name, callback,
+            exception_callback
         )
 
     def start(self):
@@ -45,6 +52,8 @@ class OutputHandler:
         :param clear_buffer: Whether to clear the buffer after getting the output.
         """
 
+        if self.exception is not None:
+            raise self.exception
         if len(self.buffer) == 0:
             return pd.DataFrame()
         res = pd.concat(self.buffer, ignore_index=True)

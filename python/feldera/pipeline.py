@@ -269,7 +269,7 @@ class Pipeline:
         if self.status() not in [PipelineStatus.RUNNING, PipelineStatus.PAUSED]:
             raise RuntimeError("Pipeline must be running or paused to listen to output")
 
-        handler = CallbackRunner(self.client, self.name, view_name, callback)
+        handler = CallbackRunner(self.client, self.name, view_name, callback, lambda exception: None)
         handler.start()
 
     def wait_for_completion(
