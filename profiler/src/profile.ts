@@ -356,6 +356,8 @@ export class CircuitProfile {
 
     static readonly Z1_TRACE = "Z1 (trace)";
     static readonly Z1_TRACE_OUTPUT = "Z1 (trace) (output)";
+    static readonly Z1 = "Z^-1";
+    static readonly Z1_OUTPUT = "Z^-1 (output)";
     // Name of the property that holds the persistent ID.
     // In the profile graph this is represented in all workers (if present)
     public static readonly PERSISTENT_ID = "persistent_id";
@@ -369,8 +371,11 @@ export class CircuitProfile {
         let target = this.getNode(to);
         let back = false;
         if (source.isSome() && target.isSome()) {
-            if (source.unwrap().label.includes(CircuitProfile.Z1_TRACE_OUTPUT) &&
-                target.unwrap().label.includes(CircuitProfile.Z1_TRACE)) {
+            let sourceLabel = source.unwrap().label;
+            let targetLabel = target.unwrap().label;
+            // Reverse the edge if it's between Z1 (trace) and Z1 (trace) (output)
+            if ((sourceLabel.includes(CircuitProfile.Z1_TRACE_OUTPUT) && targetLabel.includes(CircuitProfile.Z1_TRACE)) ||
+                (sourceLabel.includes(CircuitProfile.Z1_OUTPUT) && targetLabel === CircuitProfile.Z1)) {
                 let tmp = from;
                 from = to;
                 to = tmp;
