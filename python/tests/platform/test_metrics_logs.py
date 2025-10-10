@@ -172,7 +172,9 @@ def test_pipeline_logs(pipeline_name):
     assert r.status_code == HTTPStatus.NOT_FOUND
 
     # Create pipeline
-    create_pipeline(pipeline_name, "CREATE TABLE t1(c1 INTEGER) WITH ('materialized'='true');")
+    create_pipeline(
+        pipeline_name, "CREATE TABLE t1(c1 INTEGER) WITH ('materialized'='true');"
+    )
 
     # Poll for logs availability
     deadline = time.time() + 30

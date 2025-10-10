@@ -132,10 +132,15 @@ def wait_for_deployment_status(name: str, desired: str, timeout_s: float = 60.0)
         f"Timed out waiting for pipeline '{name}' deployment_status={desired} (last={last})"
     )
 
+
 def create_pipeline(name: str, sql: str):
-    r = post_json(api_url("/pipelines"), {"name": name, "program_code": sql, "runtime_config": {"logging": "debug"}})
+    r = post_json(
+        api_url("/pipelines"),
+        {"name": name, "program_code": sql, "runtime_config": {"logging": "debug"}},
+    )
     assert r.status_code == HTTPStatus.CREATED, r.text
     wait_for_program_success(name, 1)
+
 
 def start_pipeline(name: str, wait: bool = True):
     r = post_no_body(api_url(f"/pipelines/{name}/start"))
