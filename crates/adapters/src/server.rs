@@ -79,7 +79,7 @@ use tokio::spawn;
 use tokio::sync::Notify;
 use tokio::task::spawn_blocking;
 use tokio_stream::{wrappers::BroadcastStream, StreamExt};
-use tracing::{debug, error, info, info_span, trace, warn, Instrument, Level, Subscriber};
+use tracing::{debug, error, info, info_span, warn, Instrument, Level, Subscriber};
 use tracing_subscriber::fmt::format::Format;
 use tracing_subscriber::fmt::{FormatEvent, FormatFields};
 use tracing_subscriber::layer::SubscriberExt;
@@ -661,7 +661,7 @@ pub fn run_server(
             let state = state.clone();
             build_app(
                 App::new().wrap_fn(|req, srv| {
-                    trace!("Request: {} {}", req.method(), req.path());
+                    debug!("Request: {} {}", req.method(), req.path());
                     srv.call(req).map(|res| {
                         match &res {
                             Ok(response) => {
