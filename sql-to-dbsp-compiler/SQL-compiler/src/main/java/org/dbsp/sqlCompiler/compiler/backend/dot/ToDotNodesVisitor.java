@@ -18,13 +18,19 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPViewBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWaterlineOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.rust.ToRustInnerVisitor;
+import org.dbsp.sqlCompiler.compiler.errors.SourcePosition;
+import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.LowerCircuitVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.ToJsonVisitor;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFlatmap;
 import org.dbsp.util.IndentStream;
+
+import java.util.HashSet;
+import java.util.Set;
 
 /** Visitor which emits the circuit nodes in a graphviz file */
 public class ToDotNodesVisitor extends CircuitVisitor {
@@ -82,9 +88,12 @@ public class ToDotNodesVisitor extends CircuitVisitor {
                 .append(node.getIdString())
                 .append(isMultiset(node))
                 .append(annotations(node))
-                .append(" ")
-                .append(getFunction(node))
-                .append("\" ]")
+                .append(" ");
+        if (this.details >= 2)
+            this.stream.append(getFunction(node));
+         else
+            this.stream.append("constant ...");
+        this.stream.append("\" ]")
                 .newline();
         return VisitDecision.STOP;
     }
@@ -145,6 +154,14 @@ public class ToDotNodesVisitor extends CircuitVisitor {
         String result = ToRustInnerVisitor.toRustString(this.compiler(), expression, null, true);
         result = escapeString(result);
         result = result.replace("\n", "\\l");
+
+        Set<SourcePositionRange> positions = new HashSet<>();
+        ToJsonVisitor.FindSourcePositions finder = new ToJsonVisitor.FindSourcePositions(this.compiler, positions);
+        finder.apply(expression);
+
+        for (SourcePositionRange r: positions) {
+            result += "#" + r.start.line;
+        }
         return result;
     }
 

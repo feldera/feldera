@@ -4,13 +4,18 @@ import { Globals } from './globals.js';
 import { CircuitProfile, type NodeId } from './profile.js';
 import { CircuitSelection } from './navigation.js';
 import dagre from 'cytoscape-dagre';
+import { Sources, SourcePositionRanges } from './dataflow.js';
 
 /** Cytoscape attributes to be displayed for a node on hover. */
 class Attributes {
     constructor(
         // There should be one column name for each value in the attributes array
-        readonly columnNames: Array<string> = [],
-        private readonly attributes: Map<string, Array<string>> = new Map()
+        readonly columnNames: Array<string>,
+        // Array attributes: one per column
+        private readonly attributes: Map<string, Array<string>>,
+        // Key-value attributes
+        readonly kv: Map<string, string>,
+        readonly sources: string
     ) { };
 
     attributeCount(): number {
@@ -23,6 +28,10 @@ class Attributes {
 
     getColumnCount(): number {
         return this.columnNames.length;
+    }
+
+    getSources(): string {
+        return this.sources;
     }
 }
 
@@ -40,7 +49,7 @@ class VisibleNode implements GraphNode {
         readonly value: number = 0,
         readonly parent: Option<string> = Option.none(),
         // Attributes to display on hover.
-        readonly attributes: Attributes = new Attributes(),
+        readonly attributes: Attributes = new Attributes([], new Map(), new Map(), ""),
         readonly persistent_id: Option<string> = Option.none()
     ) { }
 
@@ -84,7 +93,10 @@ class HiddenNode implements GraphNode {
     getDefinition(): NodeDefinition {
         let result = { "data": { "id": this.id, "value": 0, "label": this.assigned.size.toString() + " nodes" } };
         let attributes = new Attributes(
-            ["hidden"], new Map([["hidden nodes", Array.from(this.assigned).map(n => VisibleNode.normalizeId(n.toString()))]])
+            ["hidden"],
+            new Map([["hidden nodes", Array.from(this.assigned).map(n => VisibleNode.normalizeId(n.toString()))]]),
+            new Map(),
+            ""
         );
         if (this.parent.isSome()) {
             (result["data"] as any)["parent"] = this.parent.unwrap();
@@ -288,51 +300,88 @@ export class Cytograph {
         reachable.addClass('highlight-backward');
 
         let attributes: Attributes = node.data().attributes;
-        if (attributes.attributeCount() === 0) {
-            return;
-        }
         let table = document.createElement("table");
-        let row = table.insertRow();
-        row.insertCell(0);
-        let colCount = attributes.getColumnCount();
-        for (let i = 0; i < colCount; i++) {
-            const th = document.createElement("th");
-            th.innerText = attributes.columnNames[i] || "";
-            row.appendChild(th);
-        }
 
-        let range = this.propertyRange.get(this.metric);
-        for (const [key, values] of attributes.getAttributes().entries()) {
+        let tableWidth = 1;
+        let visible = false;
+        if (attributes.attributeCount() > 0 && attributes.getColumnCount() > 0) {
+            visible = true;
+            let row = table.insertRow();
+            row.insertCell(0);
+            let colCount = attributes.getColumnCount();
+            tableWidth = colCount + 1;
+            for (let i = 0; i < colCount; i++) {
+                const th = document.createElement("th");
+                th.innerText = attributes.columnNames[i] || "";
+                row.appendChild(th);
+            }
+
+            let range = this.propertyRange.get(this.metric);
+            for (const [key, values] of attributes.getAttributes().entries()) {
+                let row = table.insertRow();
+                let cell = row.insertCell(0);
+                cell.innerText = key;
+                if (key === this.metric) {
+                    cell.style.backgroundColor = "blue";
+                }
+                let index = 1;
+                for (const value of values) {
+                    cell = row.insertCell(index++);
+                    let v = parseFloat(value);
+                    if (range.isSome() && !isNaN(v) &&
+                        !range.unwrap().isEmpty() && !range.unwrap().isPoint()) {
+                        let percent = range.unwrap().percents(v);
+                        let color = `rgb(${255 * percent / 100}, ${255 * ((100 - percent) / 100)}, 0)`
+                        cell.style.backgroundColor = color;
+                    } else {
+                        cell.style.backgroundColor = "white";
+                    }
+                    cell.style.color = "black";
+                    cell.innerText = value;
+                    cell.style.textAlign = "right";
+                }
+            }
+        }
+        let sources = attributes.getSources();
+        if (sources.length > 0) {
+            visible = true;
             let row = table.insertRow();
             let cell = row.insertCell(0);
-            cell.innerText = key;
-            if (key === this.metric) {
-                cell.style.backgroundColor = "blue";
-            }
-            let index = 1;
-            for (const value of values) {
-                cell = row.insertCell(index++);
-                let v = parseFloat(value);
-                if (range.isSome() && !isNaN(v) &&
-                    !range.unwrap().isEmpty() && !range.unwrap().isPoint()) {
-                    let percent = range.unwrap().percents(v);
-                    let color = `rgb(${255 * percent / 100}, ${255 * ((100 - percent) / 100)}, 0)`
-                    cell.style.backgroundColor = color;
-                } else {
-                    cell.style.backgroundColor = "white";
-                }
-                cell.style.color = "black";
-                cell.innerText = value;
-                cell.style.textAlign = "right";
+            cell.innerText = "sources";
+
+            cell = row.insertCell(1);
+            cell.colSpan = tableWidth - 1;
+            cell.style.textAlign = "left";
+            cell.style.fontFamily = "monospace";
+            cell.style.whiteSpace = "pre-wrap";
+            cell.style.minWidth = "80ch";
+            cell.innerText = sources;
+        }
+
+        if (attributes.kv.size != 0) {
+            visible = true;
+            for (const kv of attributes.kv.entries()) {
+                let row = table.insertRow();
+                let cell = row.insertCell(0);
+                cell.innerText = kv[0];
+                cell.style.whiteSpace = "nowrap";
+
+                cell = row.insertCell(1);
+                cell.colSpan = tableWidth - 1;
+                cell.style.whiteSpace = "nowrap";
+                cell.innerText = kv[1];
             }
         }
+
+        if (!visible)
+            return;
+
         const canvasRect = this.cy.container()!.getBoundingClientRect();
         globals.tooltip.innerHTML = "";  // Clear previous content.
         globals.tooltip.appendChild(table);
         globals.tooltip.style.display = 'block';
 
         let x, y;
-
         if (!Cytograph.FIXED_TOOLTIP_POSITION) {
             x = (canvasRect.left + event.renderedPosition.x);
             y = (canvasRect.top + event.renderedPosition.y);
@@ -368,7 +417,7 @@ export class Cytograph {
         let graph = new Cytograph("latency", new Graph<NodeId>(), new OMap<string, NumericRange>());
         const workers = ["0", "1"];
         graph.addNode(new VisibleNode("0", "filter", 100, Option.none(),
-            new Attributes(workers, new Map([["latency", ["10ms", "20ms"]]]))));
+            new Attributes(workers, new Map([["latency", ["10ms", "20ms"]]]), new Map(), "")));
         graph.addNode(new VisibleNode("1", "map", 10));
         graph.addNode(new HiddenNode("2").addNode("join").addNode("hidden"));
         graph.addNode(new VisibleNode("3", "sink", 20));
@@ -405,11 +454,13 @@ export class Cytograph {
         // Maps each hidden node to its representative.
         let hiddenMap = new OMap<NodeId, HiddenNode>();
         let visibleMap = new OMap<NodeId, VisibleNode>();
+        let sources = profile.sources.unwrapOr(new Sources([]));
 
         // Scan the nodes and compute the range of the displayed value
         let range = profile.propertyRange(selection.metric);
 
         let visibleParents = new Set<NodeId>();
+        let parentSources = new Map<String, SourcePositionRanges>();
         for (const [nodeId, node] of profile.simpleNodes.entries()) {
             let hidden = !selection.nodesVisible.contains(nodeId);
             let d = depth.get(nodeId)!;
@@ -439,7 +490,18 @@ export class Cytograph {
                     data.set(metric, selected.map(m => m.toString()));
                 }
                 let percents = 0;
-                let attributes = new Attributes(columnNames, data);
+                let src = sources.toString(node.sourcePositions);
+                let kv = new Map();
+                kv.set("id", nodeId);
+                if (persistentId.isSome()) {
+                    kv.set("persistentId", persistentId.unwrap());
+                }
+                /*
+                if (src !== "") {
+                    console.log("Sources found for " + node.id + " " + node.operation);
+                }
+                */
+                let attributes = new Attributes(columnNames, data, kv, src);
                 if (!range.isEmpty() && !range.isPoint()) {
                     let m = node.getMeasurements(selection.metric);
                     m = selection.workersVisible.getSelectedElements(m);
@@ -453,8 +515,18 @@ export class Cytograph {
                     operation = CircuitProfile.Z1_TRACE;
                 let parent = profile.parents.get(nodeId);
                 if (parent.isSome()) {
-                    visibleParents.add(parent.unwrap());
+                    const p = parent.unwrap();
+                    visibleParents.add(p);
+                    kv.set("parent", p);
+                    if (parentSources.has(p)) {
+                        parentSources.get(p)?.append(node.sourcePositions);
+                    } else {
+                        parentSources.set(p, node.sourcePositions);
+                    }
                 }
+                if (!selection.hierarchy)
+                    parent = Option.none();
+                kv.set("operation", operation);
                 let visibleNode = new VisibleNode(nodeId, operation, percents, parent, attributes, persistentId);
                 graph.addNode(visibleNode);
                 visibleMap.set(nodeId, visibleNode);
@@ -470,17 +542,25 @@ export class Cytograph {
             }
             if (parents.size === 1) {
                 let parent = parents.values().next().value!;
-                if (parent.isSome()) {
+                if (parent.isSome() && selection.hierarchy) {
                     hiddenNode.setParent(parent.unwrap());
                 }
             }
         }
 
-        for (const nodeId of profile.complexNodes.keys()) {
-            let parent = profile.parents.get(nodeId);
-            if (nodeId !== "n" && visibleParents.has(nodeId)) {
-                // This avoids adding the top-level graph region
-                graph.addNode(new VisibleNode(nodeId, "region", 0, parent, new Attributes()));
+        if (selection.hierarchy) {
+            for (const nodeId of profile.complexNodes.keys()) {
+                let parent = profile.parents.get(nodeId);
+                if (nodeId !== "n" && // This avoids adding the top-level graph region
+                    visibleParents.has(nodeId)) {
+                    let positions = parentSources.get(nodeId);
+                    let src = "";
+                    if (positions !== undefined) {
+                        src = sources.toString(positions);
+                    }
+                    graph.addNode(new VisibleNode(nodeId, "region", 0, parent,
+                        new Attributes([], new Map(), new Map(), src)));
+                }
             }
         }
 

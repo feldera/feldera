@@ -9,7 +9,9 @@ export class CircuitSelection {
         // Subset of worker thread profiles to display.
         readonly workersVisible: SubList,
         // Subset of nodes to display.
-        readonly nodesVisible: SubSet<NodeId>
+        readonly nodesVisible: SubSet<NodeId>,
+        // Show node hierarchy
+        readonly hierarchy: boolean
     ) { }
 }
 
@@ -22,6 +24,7 @@ export class CircuitSelector {
     // The range of the data is mapped to [0, 100], and nodes below the
     // selected quantile are hidden.
     private quantile: number = 0;
+    private hierarchy: boolean = true;
     private onChange: () => void = () => { };
 
     constructor(private readonly circuit: CircuitProfile) {
@@ -53,6 +56,18 @@ export class CircuitSelector {
         let table = document.createElement("table");
         let row = table.insertRow();
         let cell = row.insertCell(0);
+        cell.innerText = "hierarchy";
+        let hierarchy = document.createElement("input");
+        hierarchy.type = "checkbox";
+        hierarchy.checked = true;
+        hierarchy.onchange = (_) => {
+            this.hierarchy = hierarchy.checked;
+            this.onChange();
+        }
+        row.appendChild(hierarchy);
+
+        row = table.insertRow();
+        cell = row.insertCell(0);
         cell.appendChild(document.createTextNode("Metric"));
         cell = row.insertCell(1);
         let select = document.createElement("select");
@@ -127,7 +142,8 @@ export class CircuitSelector {
         return new CircuitSelection(
             "time",
             new SubList(_ => true),
-            new CompleteSet(this.circuit.simpleNodes.keys()))
+            new CompleteSet(this.circuit.simpleNodes.keys()),
+            true)
     }
 
     getSelection(): CircuitSelection {
@@ -135,6 +151,7 @@ export class CircuitSelector {
         return new CircuitSelection(
             this.selectedMetric,
             workers,
-            this.circuit.nodesAboveThreshold(this.selectedMetric, workers, this.quantile));
+            this.circuit.nodesAboveThreshold(this.selectedMetric, workers, this.quantile),
+            this.hierarchy);
     }
 }

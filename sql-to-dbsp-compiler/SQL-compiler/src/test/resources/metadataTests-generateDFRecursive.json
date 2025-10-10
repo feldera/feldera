@@ -282,8 +282,9 @@
         { "node": "s9", "output": 0 }
       ],
       "s3": {
-        "operation": "Z fibonacci-decl",
+        "operation": "Z",
         "inputs": [],
+        "table": "fibonacci-decl",
         "backedges": [{ "node": "s9", "output": 0 }],
         "calcite": {
           "final": 2
@@ -392,7 +393,9 @@
       "calcite": {
         "final": 8
       },
-      "positions": [],
+      "positions": [
+        {"start_line_number":4,"start_column":1,"end_line_number":21,"end_column":1}
+      ],
       "persistent_id": "bc00b1b56804974a549e5827f4152c910dbdbfd3f97eecd126dc69898bed7c6b"
     }, "s11": {
       "operation": "inspect",
@@ -403,7 +406,9 @@
       "calcite": {
         "final": 0
       },
-      "positions": [],
+      "positions": [
+        {"start_line_number":4,"start_column":1,"end_line_number":4,"end_column":59}
+      ],
       "persistent_id": "933ebf782e1fe804fe85c4d0f3688bdb5234b386c2834892776e692acd9781d9"
     }
   },
