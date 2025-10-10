@@ -1018,3 +1018,315 @@ class illarg_coalesce_illegal(TstView):
                       FROM illegal_tbl
                       WHERE id = 0"""
         self.expected_error = "Parameters must be of the same type"
+
+
+# GREATEST
+class illarg_greatest_legal(TstView):
+    def __init__(self):
+        # checked manually
+        self.data = [
+            {
+                "intt": -1,
+                "decimall": Decimal("-0.52"),
+                "reall": Decimal("-0.1234567"),
+                "dbl": Decimal("-0.82711234601246"),
+                "booll": True,
+                "str": "hello ",
+                "bin": "1f8b080000000000ff4b4bcd49492d4a0400218115ac07000000",
+                "tmestmp": "2020-06-21T14:23:44.123",
+                "datee": "2020-06-21",
+                "tme": "14:23:44.456",
+                "uuidd": "42b8fec7-c7a3-4531-9611-4bde80f9cb4c",
+                "arr": ["ciao"],
+                "mapp": {"a": 13, "b": 17},
+            }
+        ]
+        self.sql = """CREATE MATERIALIZED VIEW greatest_legal AS SELECT
+                        GREATEST(intt, -1) AS intt,
+                        GREATEST(decimall, -0.52) AS decimall,
+                        GREATEST(reall, -0.1234567) AS reall,
+                        GREATEST(dbl, -0.82711234601246) AS dbl,
+                        GREATEST(booll, FALSE) AS booll,
+                        GREATEST(str, '0.12') AS str,
+                        GREATEST(bin, X'1F8B080000000000FF4B4BCD49492D4A0400218115AC07000000') AS bin,
+                        GREATEST(tmestmp, TIMESTAMP '2020-06-21 14:23:44') AS tmestmp,
+                        GREATEST(datee, DATE '2020-06-21') AS datee,
+                        GREATEST(tme, TIME '14:23:44') AS tme,
+                        GREATEST(uuidd, UUID '42b8fec7-c7a3-4531-9611-4bde80f9cb4c') AS uuidd,
+                        GREATEST(arr, ARRAY['ciao']) AS arr,
+                        GREATEST(mapp, MAP['a', 13, 'b', 17]) AS mapp
+                      FROM illegal_tbl
+                      WHERE id = 0"""
+
+
+# Negative Tests
+class illarg_greatest_illegal(TstView):
+    def __init__(self):
+        # checked manually
+        self.sql = """CREATE MATERIALIZED VIEW greatest_illegal AS SELECT
+                      GREATEST(arr, MAP['a', 13, 'b', 17]) AS arr
+                      FROM illegal_tbl
+                      WHERE id = 0"""
+        self.expected_error = "Parameters must be of the same type"
+
+
+class illarg_greatest_illegal1(TstView):
+    def __init__(self):
+        # checked manually
+        self.sql = """CREATE MATERIALIZED VIEW greatest_illegal1 AS SELECT
+                      GREATEST(str, False) AS str
+                      FROM illegal_tbl
+                      WHERE id = 0"""
+        self.expected_error = (
+            "cannot infer return type for greatest; operand types: [varchar, boolean]"
+        )
+
+
+# GREATEST_IGNORE_NULLS
+class illarg_greatest_ignore_nulls_legal(TstView):
+    def __init__(self):
+        # checked manually
+        self.data = [
+            {
+                "intt": -1,
+                "decimall": Decimal("-0.52"),
+                "reall": Decimal("-0.1234567"),
+                "dbl": Decimal("-0.82711234601246"),
+                "booll": True,
+                "str": "hello ",
+                "bin": "1f8b080000000000ff4b4bcd49492d4a0400218115ac07000000",
+                "tmestmp": "2020-06-21T14:23:44.123",
+                "datee": "2020-06-21",
+                "tme": "14:23:44.456",
+                "uuidd": "42b8fec7-c7a3-4531-9611-4bde80f9cb4c",
+                "arr": ["ciao"],
+                "mapp": {"a": 13, "b": 17},
+            }
+        ]
+        self.sql = """CREATE MATERIALIZED VIEW greatest_ignore_nulls_legal AS SELECT
+                        GREATEST_IGNORE_NULLS(NULL, intt, -1) AS intt,
+                        GREATEST_IGNORE_NULLS(NULL, decimall, -0.52) AS decimall,
+                        GREATEST_IGNORE_NULLS(NULL, reall, -0.1234567) AS reall,
+                        GREATEST_IGNORE_NULLS(NULL, dbl, -0.82711234601246) AS dbl,
+                        GREATEST_IGNORE_NULLS(NULL, booll, FALSE) AS booll,
+                        GREATEST_IGNORE_NULLS(NULL, str, '0.12') AS str,
+                        GREATEST_IGNORE_NULLS(NULL, bin, X'1F8B080000000000FF4B4BCD49492D4A0400218115AC07000000') AS bin,
+                        GREATEST_IGNORE_NULLS(NULL, tmestmp, TIMESTAMP '2020-06-21 14:23:44') AS tmestmp,
+                        GREATEST_IGNORE_NULLS(NULL, datee, DATE '2020-06-21') AS datee,
+                        GREATEST_IGNORE_NULLS(NULL, tme, TIME '14:23:44') AS tme,
+                        GREATEST_IGNORE_NULLS(NULL, uuidd, UUID '42b8fec7-c7a3-4531-9611-4bde80f9cb4c') AS uuidd,
+                        GREATEST_IGNORE_NULLS(arr, ARRAY['ciao']) AS arr,
+                        GREATEST_IGNORE_NULLS(mapp, MAP['a', 13, 'b', 17]) AS mapp
+                      FROM illegal_tbl
+                      WHERE id = 0"""
+
+
+# Negative Test
+class illarg_greatest_ignore_nulls_illegal(TstView):
+    def __init__(self):
+        # checked manually
+        self.sql = """CREATE MATERIALIZED VIEW greatest_ignore_nulls_illegal AS SELECT
+                      GREATEST_IGNORE_NULLS(mapp, ARRAY['apple']) AS mapp
+                      FROM illegal_tbl
+                      WHERE id = 0"""
+        self.expected_error = "Parameters must be of the same type"
+
+
+# LEAST
+class illarg_least_legal(TstView):
+    def __init__(self):
+        # checked manually
+        self.data = [
+            {
+                "intt": -12,
+                "decimall": Decimal("-1111.52"),
+                "reall": Decimal("-57681.1796875"),
+                "dbl": Decimal("-38.2711234601246"),
+                "booll": False,
+                "str": "0.12",
+                "bin": "0b1620",
+                "tmestmp": "2020-06-21T14:23:44",
+                "datee": "2020-06-21",
+                "tme": "14:23:44",
+                "uuidd": "42b8fec7-c7a3-4531-9611-4bde80f9cb4c",
+                "arr": ["apple"],
+                "mapp": {"a": 12, "b": 17},
+            }
+        ]
+        self.sql = """CREATE MATERIALIZED VIEW least_legal AS SELECT
+                        LEAST(intt, -1) AS intt,
+                        LEAST(decimall, -0.52) AS decimall,
+                        LEAST(reall, -0.1234567) AS reall,
+                        LEAST(dbl, -0.82711234601246) AS dbl,
+                        LEAST(booll, FALSE) AS booll,
+                        LEAST(str, '0.12') AS str,
+                        LEAST(bin, X'1F8B080000000000FF4B4BCD49492D4A0400218115AC07000000') AS bin,
+                        LEAST(tmestmp, TIMESTAMP '2020-06-21 14:23:44') AS tmestmp,
+                        LEAST(datee, DATE '2020-06-21') AS datee,
+                        LEAST(tme, TIME '14:23:44') AS tme,
+                        LEAST(uuidd, UUID '42b8fec7-c7a3-4531-9611-4bde80f9cb4c') AS uuidd,
+                        LEAST(arr, ARRAY['apple']) AS arr,
+                        LEAST(mapp, MAP['a', 13, 'b', 17]) AS mapp
+                      FROM illegal_tbl
+                      WHERE id = 0"""
+
+
+# Negative Test
+class illarg_least_illegal(TstView):
+    def __init__(self):
+        # checked manually
+        self.sql = """CREATE MATERIALIZED VIEW least_illegal AS SELECT
+                      LEAST(mapp, ARRAY['apple']) AS mapp
+                      FROM illegal_tbl
+                      WHERE id = 0"""
+        self.expected_error = "Parameters must be of the same type"
+
+
+# LEAST_IGNORE_NULLS
+class illarg_least_ignore_nulls_legal(TstView):
+    def __init__(self):
+        # checked manually
+        self.data = [
+            {
+                "intt": -12,
+                "decimall": Decimal("-1111.52"),
+                "reall": Decimal("-57681.1796875"),
+                "dbl": Decimal("-38.2711234601246"),
+                "booll": False,
+                "str": "0.12",
+                "bin": "0b1620",
+                "tmestmp": "2020-06-21T14:23:44",
+                "datee": "2020-06-21",
+                "tme": "14:23:44",
+                "uuidd": "42b8fec7-c7a3-4531-9611-4bde80f9cb4c",
+                "arr": ["apple"],
+                "mapp": {"a": 12, "b": 17},
+            }
+        ]
+        self.sql = """CREATE MATERIALIZED VIEW least_ignore_nulls_legal AS SELECT
+                        LEAST_IGNORE_NULLS(NULL, intt, -1) AS intt,
+                        LEAST_IGNORE_NULLS(NULL, decimall, -0.52) AS decimall,
+                        LEAST_IGNORE_NULLS(NULL, reall, -0.1234567) AS reall,
+                        LEAST_IGNORE_NULLS(NULL, dbl, -0.82711234601246) AS dbl,
+                        LEAST_IGNORE_NULLS(NULL, booll, FALSE) AS booll,
+                        LEAST_IGNORE_NULLS(NULL, str, '0.12') AS str,
+                        LEAST_IGNORE_NULLS(NULL, bin, X'1F8B080000000000FF4B4BCD49492D4A0400218115AC07000000') AS bin,
+                        LEAST_IGNORE_NULLS(NULL, tmestmp, TIMESTAMP '2020-06-21 14:23:44') AS tmestmp,
+                        LEAST_IGNORE_NULLS(NULL, datee, DATE '2020-06-21') AS datee,
+                        LEAST_IGNORE_NULLS(NULL, tme, TIME '14:23:44') AS tme,
+                        LEAST_IGNORE_NULLS(NULL, uuidd, UUID '42b8fec7-c7a3-4531-9611-4bde80f9cb4c') AS uuidd,
+                        LEAST_IGNORE_NULLS(NULL, arr, ARRAY['apple']) AS arr,
+                        LEAST_IGNORE_NULLS(NULL, mapp, MAP['a', 13, 'b', 17]) AS mapp
+                      FROM illegal_tbl
+                      WHERE id = 0"""
+
+
+# Negative Test
+class illarg_least_ignore_nulls_illegal(TstView):
+    def __init__(self):
+        # checked manually
+        self.sql = """CREATE MATERIALIZED VIEW least_ignore_nulls_illegal AS SELECT
+                      LEAST_IGNORE_NULLS(NULL, uuidd, X'0B1620') AS uuidd
+                      FROM illegal_tbl
+                      WHERE id = 0"""
+        self.expected_error = "Parameters must be of the same type"
+
+
+# IF
+class illarg_if_legal(TstView):
+    def __init__(self):
+        # checked manually
+        self.data = [
+            {
+                "intt": "correct",
+                "decimall": "correct",
+                "reall": "correct",
+                "dbl": "correct",
+                "booll": "incorrect",
+                "str": "incorrect",
+                "bin": "correct",
+                "tmestmp": "incorrect",
+                "datee": "correct",
+                "tme": "incorrect",
+                "uuidd": "correct",
+                "arr": "incorrect",
+                "mapp": "correct",
+            }
+        ]
+        self.sql = """CREATE MATERIALIZED VIEW if_legal AS SELECT
+                        IF(intt <= -12, 'correct', 'incorrect') AS intt,
+                        IF(decimall <= -0.52, 'correct', 'incorrect') AS decimall,
+                        IF(reall <= -0.1234567, 'correct', 'incorrect') AS reall,
+                        IF(dbl <= -0.82711234601246, 'correct', 'incorrect') AS dbl,
+                        IF(booll <= FALSE, 'correct', 'incorrect') AS booll,
+                        IF(str <= '0.12', 'correct', 'incorrect') AS str,
+                        IF(bin <= X'1F8B080000000000FF4B4BCD49492D4A0400218115AC07000000', 'correct', 'incorrect') AS bin,
+                        IF(tmestmp <= TIMESTAMP '2020-06-21 14:23:44', 'correct', 'incorrect') AS tmestmp,
+                        IF(datee <= DATE '2020-06-21', 'correct', 'incorrect') AS datee,
+                        IF(tme <= TIME '14:23:44', 'correct', 'incorrect') AS tme,
+                        IF(uuidd  <= UUID'42b8fec7-c7a3-4531-9611-4bde80f9cb4c', 'correct', 'incorrect') AS uuidd,
+                        IF(arr <= ARRAY['apple'], 'correct', 'incorrect') AS arr,
+                        IF(mapp <= MAP['a', 13, 'b', 17], 'correct', 'incorrect') AS mapp
+                      FROM illegal_tbl
+                      WHERE id = 0"""
+
+
+# Negative Test
+class illarg_if_illegal(TstView):
+    def __init__(self):
+        # checked manually
+        self.sql = """CREATE MATERIALIZED VIEW if_illegal AS SELECT
+                        IF(mapp <= ARRAY['apple'], 'correct', 'incorrect') AS mapp
+                      FROM illegal_tbl
+                      WHERE id = 0"""
+        self.expected_error = "Cannot apply '<=' to arguments of type"
+
+
+# NULLIF
+class illarg_nullif_legal(TstView):
+    def __init__(self):
+        # checked manually
+        self.data = [
+            {
+                "intt": None,
+                "decimall": Decimal("-1111.52"),
+                "reall": Decimal("-57681.18"),
+                "dbl": Decimal("-38.2711234601246"),
+                "booll": True,
+                "str": "hello ",
+                "bin": "0b1620",
+                "tmestmp": "2020-06-21T14:23:44.123",
+                "datee": None,
+                "tme": "14:23:44.456",
+                "uuidd": None,
+                "arr": ["bye", "14", "See you!", "-0.52", None, "14", "hello "],
+                "mapp": {"a": 12, "b": 17},
+            }
+        ]
+        self.sql = """CREATE MATERIALIZED VIEW nullif_legal AS SELECT
+                        NULLIF(intt, -12) AS intt,
+                        NULLIF(decimall, -0.52) AS decimall,
+                        NULLIF(reall, -0.1234567) AS reall,
+                        NULLIF(dbl, -0.82711234601246) AS dbl,
+                        NULLIF(booll, FALSE) AS booll,
+                        NULLIF(str, '0.12') AS str,
+                        NULLIF(bin, X'1F8B080000000000FF4B4BCD49492D4A0400218115AC07000000') AS bin,
+                        NULLIF(tmestmp, TIMESTAMP '2020-06-21 14:23:44') AS tmestmp,
+                        NULLIF(datee, DATE '2020-06-21') AS datee,
+                        NULLIF(tme, TIME '14:23:44') AS tme,
+                        NULLIF(uuidd, UUID'42b8fec7-c7a3-4531-9611-4bde80f9cb4c') AS uuidd,
+                        NULLIF(arr, ARRAY['apple']) AS arr,
+                        NULLIF(mapp, MAP['a', 13, 'b', 17]) AS mapp
+                      FROM illegal_tbl
+                      WHERE id = 0"""
+
+
+# Negative Test
+class illarg_nullif_illegal(TstView):
+    def __init__(self):
+        # checked manually
+        self.sql = """CREATE MATERIALIZED VIEW nullif_illegal AS SELECT
+                        NULLIF(mapp, ARRAY['apple']) AS mapp
+                      FROM illegal_tbl
+                      WHERE id = 0"""
+        self.expected_error = "Cannot apply 'NULLIF' to arguments of type"
