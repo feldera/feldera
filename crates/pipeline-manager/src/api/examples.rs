@@ -396,6 +396,7 @@ pub(crate) fn error_illegal_pipeline_storage_action() -> ErrorResponse {
 
 pub(crate) fn error_pipeline_interaction_not_deployed() -> ErrorResponse {
     ErrorResponse::from_error_nolog(&RunnerError::PipelineInteractionNotDeployed {
+        pipeline_name: "my_pipeline".to_string(),
         status: ResourcesStatus::Stopped,
         desired_status: ResourcesDesiredStatus::Provisioned,
     })
@@ -403,18 +404,24 @@ pub(crate) fn error_pipeline_interaction_not_deployed() -> ErrorResponse {
 
 pub(crate) fn error_pipeline_interaction_currently_unavailable() -> ErrorResponse {
     ErrorResponse::from_error_nolog(&RunnerError::PipelineInteractionUnreachable {
+        pipeline_name: "my_pipeline".to_string(),
+        request: "/pause".to_string(),
         error: "deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again".to_string()
     })
 }
 
 pub(crate) fn error_pipeline_interaction_disconnected() -> ErrorResponse {
     ErrorResponse::from_error_nolog(&RunnerError::PipelineInteractionUnreachable {
+        pipeline_name: "my_pipeline".to_string(),
+        request: "/pause".to_string(),
         error: format_disconnected_error_message("".to_string()),
     })
 }
 
 pub(crate) fn error_pipeline_interaction_timeout() -> ErrorResponse {
     ErrorResponse::from_error_nolog(&RunnerError::PipelineInteractionUnreachable {
+        pipeline_name: "my_pipeline".to_string(),
+        request: "/pause".to_string(),
         error: format_timeout_error_message(
             RunnerInteraction::PIPELINE_HTTP_REQUEST_TIMEOUT,
             "Timeout while waiting for response".to_string(),

@@ -1669,27 +1669,32 @@
                 "examples": {
                   "Disconnected during response": {
                     "value": {
-                      "message": "Unable to reach pipeline to interact due to: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs.",
+                      "message": "Error sending HTTP request to pipeline 'my_pipeline': the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs.\nFailed request: /pause",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
                         "error": "the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs."
                       }
                     }
                   },
                   "Pipeline is currently unavailable": {
                     "value": {
-                      "message": "Unable to reach pipeline to interact due to: deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again",
+                      "message": "Error sending HTTP request to pipeline 'my_pipeline': deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again\nFailed request: /pause",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
                         "error": "deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again"
                       }
                     }
                   },
                   "Pipeline is not deployed": {
                     "value": {
-                      "message": "Unable to interact with pipeline because the deployment status (stopped) indicates it is not (yet) fully provisioned",
+                      "message": "Unable to interact with pipeline 'my_pipeline' because the deployment status (stopped) indicates it is not (yet) fully provisioned",
                       "error_code": "PipelineInteractionNotDeployed",
                       "details": {
+                        "pipeline_name": "my_pipeline",
                         "status": "Stopped",
                         "desired_status": "Provisioned"
                       }
@@ -1697,9 +1702,11 @@
                   },
                   "Response timeout": {
                     "value": {
-                      "message": "Unable to reach pipeline to interact due to: timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)",
+                      "message": "Error sending HTTP request to pipeline 'my_pipeline': timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)\nFailed request: /pause",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
                         "error": "timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)"
                       }
                     }
@@ -1783,27 +1790,32 @@
                 "examples": {
                   "Disconnected during response": {
                     "value": {
-                      "message": "Unable to reach pipeline to interact due to: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs.",
+                      "message": "Error sending HTTP request to pipeline 'my_pipeline': the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs.\nFailed request: /pause",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
                         "error": "the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs."
                       }
                     }
                   },
                   "Pipeline is currently unavailable": {
                     "value": {
-                      "message": "Unable to reach pipeline to interact due to: deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again",
+                      "message": "Error sending HTTP request to pipeline 'my_pipeline': deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again\nFailed request: /pause",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
                         "error": "deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again"
                       }
                     }
                   },
                   "Pipeline is not deployed": {
                     "value": {
-                      "message": "Unable to interact with pipeline because the deployment status (stopped) indicates it is not (yet) fully provisioned",
+                      "message": "Unable to interact with pipeline 'my_pipeline' because the deployment status (stopped) indicates it is not (yet) fully provisioned",
                       "error_code": "PipelineInteractionNotDeployed",
                       "details": {
+                        "pipeline_name": "my_pipeline",
                         "status": "Stopped",
                         "desired_status": "Provisioned"
                       }
@@ -1811,9 +1823,11 @@
                   },
                   "Response timeout": {
                     "value": {
-                      "message": "Unable to reach pipeline to interact due to: timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)",
+                      "message": "Error sending HTTP request to pipeline 'my_pipeline': timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)\nFailed request: /pause",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
                         "error": "timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)"
                       }
                     }
@@ -1896,27 +1910,32 @@
                 "examples": {
                   "Disconnected during response": {
                     "value": {
-                      "message": "Unable to reach pipeline to interact due to: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs.",
+                      "message": "Error sending HTTP request to pipeline 'my_pipeline': the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs.\nFailed request: /pause",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
                         "error": "the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs."
                       }
                     }
                   },
                   "Pipeline is currently unavailable": {
                     "value": {
-                      "message": "Unable to reach pipeline to interact due to: deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again",
+                      "message": "Error sending HTTP request to pipeline 'my_pipeline': deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again\nFailed request: /pause",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
                         "error": "deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again"
                       }
                     }
                   },
                   "Pipeline is not deployed": {
                     "value": {
-                      "message": "Unable to interact with pipeline because the deployment status (stopped) indicates it is not (yet) fully provisioned",
+                      "message": "Unable to interact with pipeline 'my_pipeline' because the deployment status (stopped) indicates it is not (yet) fully provisioned",
                       "error_code": "PipelineInteractionNotDeployed",
                       "details": {
+                        "pipeline_name": "my_pipeline",
                         "status": "Stopped",
                         "desired_status": "Provisioned"
                       }
@@ -1924,9 +1943,11 @@
                   },
                   "Response timeout": {
                     "value": {
-                      "message": "Unable to reach pipeline to interact due to: timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)",
+                      "message": "Error sending HTTP request to pipeline 'my_pipeline': timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)\nFailed request: /pause",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
                         "error": "timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)"
                       }
                     }
@@ -2009,27 +2030,32 @@
                 "examples": {
                   "Disconnected during response": {
                     "value": {
-                      "message": "Unable to reach pipeline to interact due to: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs.",
+                      "message": "Error sending HTTP request to pipeline 'my_pipeline': the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs.\nFailed request: /pause",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
                         "error": "the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs."
                       }
                     }
                   },
                   "Pipeline is currently unavailable": {
                     "value": {
-                      "message": "Unable to reach pipeline to interact due to: deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again",
+                      "message": "Error sending HTTP request to pipeline 'my_pipeline': deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again\nFailed request: /pause",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
                         "error": "deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again"
                       }
                     }
                   },
                   "Pipeline is not deployed": {
                     "value": {
-                      "message": "Unable to interact with pipeline because the deployment status (stopped) indicates it is not (yet) fully provisioned",
+                      "message": "Unable to interact with pipeline 'my_pipeline' because the deployment status (stopped) indicates it is not (yet) fully provisioned",
                       "error_code": "PipelineInteractionNotDeployed",
                       "details": {
+                        "pipeline_name": "my_pipeline",
                         "status": "Stopped",
                         "desired_status": "Provisioned"
                       }
@@ -2037,9 +2063,11 @@
                   },
                   "Response timeout": {
                     "value": {
-                      "message": "Unable to reach pipeline to interact due to: timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)",
+                      "message": "Error sending HTTP request to pipeline 'my_pipeline': timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)\nFailed request: /pause",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
                         "error": "timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)"
                       }
                     }
@@ -2122,27 +2150,32 @@
                 "examples": {
                   "Disconnected during response": {
                     "value": {
-                      "message": "Unable to reach pipeline to interact due to: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs.",
+                      "message": "Error sending HTTP request to pipeline 'my_pipeline': the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs.\nFailed request: /pause",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
                         "error": "the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs."
                       }
                     }
                   },
                   "Pipeline is currently unavailable": {
                     "value": {
-                      "message": "Unable to reach pipeline to interact due to: deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again",
+                      "message": "Error sending HTTP request to pipeline 'my_pipeline': deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again\nFailed request: /pause",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
                         "error": "deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again"
                       }
                     }
                   },
                   "Pipeline is not deployed": {
                     "value": {
-                      "message": "Unable to interact with pipeline because the deployment status (stopped) indicates it is not (yet) fully provisioned",
+                      "message": "Unable to interact with pipeline 'my_pipeline' because the deployment status (stopped) indicates it is not (yet) fully provisioned",
                       "error_code": "PipelineInteractionNotDeployed",
                       "details": {
+                        "pipeline_name": "my_pipeline",
                         "status": "Stopped",
                         "desired_status": "Provisioned"
                       }
@@ -2150,9 +2183,11 @@
                   },
                   "Response timeout": {
                     "value": {
-                      "message": "Unable to reach pipeline to interact due to: timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)",
+                      "message": "Error sending HTTP request to pipeline 'my_pipeline': timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)\nFailed request: /pause",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
                         "error": "timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)"
                       }
                     }
@@ -2235,27 +2270,32 @@
                 "examples": {
                   "Disconnected during response": {
                     "value": {
-                      "message": "Unable to reach pipeline to interact due to: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs.",
+                      "message": "Error sending HTTP request to pipeline 'my_pipeline': the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs.\nFailed request: /pause",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
                         "error": "the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs."
                       }
                     }
                   },
                   "Pipeline is currently unavailable": {
                     "value": {
-                      "message": "Unable to reach pipeline to interact due to: deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again",
+                      "message": "Error sending HTTP request to pipeline 'my_pipeline': deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again\nFailed request: /pause",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
                         "error": "deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again"
                       }
                     }
                   },
                   "Pipeline is not deployed": {
                     "value": {
-                      "message": "Unable to interact with pipeline because the deployment status (stopped) indicates it is not (yet) fully provisioned",
+                      "message": "Unable to interact with pipeline 'my_pipeline' because the deployment status (stopped) indicates it is not (yet) fully provisioned",
                       "error_code": "PipelineInteractionNotDeployed",
                       "details": {
+                        "pipeline_name": "my_pipeline",
                         "status": "Stopped",
                         "desired_status": "Provisioned"
                       }
@@ -2263,9 +2303,11 @@
                   },
                   "Response timeout": {
                     "value": {
-                      "message": "Unable to reach pipeline to interact due to: timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)",
+                      "message": "Error sending HTTP request to pipeline 'my_pipeline': timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)\nFailed request: /pause",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
                         "error": "timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)"
                       }
                     }
@@ -2414,27 +2456,32 @@
                 "examples": {
                   "Disconnected during response": {
                     "value": {
-                      "message": "Unable to reach pipeline to interact due to: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs.",
+                      "message": "Error sending HTTP request to pipeline 'my_pipeline': the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs.\nFailed request: /pause",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
                         "error": "the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs."
                       }
                     }
                   },
                   "Pipeline is currently unavailable": {
                     "value": {
-                      "message": "Unable to reach pipeline to interact due to: deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again",
+                      "message": "Error sending HTTP request to pipeline 'my_pipeline': deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again\nFailed request: /pause",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
                         "error": "deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again"
                       }
                     }
                   },
                   "Pipeline is not deployed": {
                     "value": {
-                      "message": "Unable to interact with pipeline because the deployment status (stopped) indicates it is not (yet) fully provisioned",
+                      "message": "Unable to interact with pipeline 'my_pipeline' because the deployment status (stopped) indicates it is not (yet) fully provisioned",
                       "error_code": "PipelineInteractionNotDeployed",
                       "details": {
+                        "pipeline_name": "my_pipeline",
                         "status": "Stopped",
                         "desired_status": "Provisioned"
                       }
@@ -2442,9 +2489,11 @@
                   },
                   "Response timeout": {
                     "value": {
-                      "message": "Unable to reach pipeline to interact due to: timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)",
+                      "message": "Error sending HTTP request to pipeline 'my_pipeline': timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)\nFailed request: /pause",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
                         "error": "timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)"
                       }
                     }
@@ -2567,27 +2616,32 @@
                 "examples": {
                   "Disconnected during response": {
                     "value": {
-                      "message": "Unable to reach pipeline to interact due to: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs.",
+                      "message": "Error sending HTTP request to pipeline 'my_pipeline': the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs.\nFailed request: /pause",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
                         "error": "the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs."
                       }
                     }
                   },
                   "Pipeline is currently unavailable": {
                     "value": {
-                      "message": "Unable to reach pipeline to interact due to: deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again",
+                      "message": "Error sending HTTP request to pipeline 'my_pipeline': deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again\nFailed request: /pause",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
                         "error": "deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again"
                       }
                     }
                   },
                   "Pipeline is not deployed": {
                     "value": {
-                      "message": "Unable to interact with pipeline because the deployment status (stopped) indicates it is not (yet) fully provisioned",
+                      "message": "Unable to interact with pipeline 'my_pipeline' because the deployment status (stopped) indicates it is not (yet) fully provisioned",
                       "error_code": "PipelineInteractionNotDeployed",
                       "details": {
+                        "pipeline_name": "my_pipeline",
                         "status": "Stopped",
                         "desired_status": "Provisioned"
                       }
@@ -2595,9 +2649,11 @@
                   },
                   "Response timeout": {
                     "value": {
-                      "message": "Unable to reach pipeline to interact due to: timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)",
+                      "message": "Error sending HTTP request to pipeline 'my_pipeline': timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)\nFailed request: /pause",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
                         "error": "timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)"
                       }
                     }
@@ -2733,27 +2789,32 @@
                 "examples": {
                   "Disconnected during response": {
                     "value": {
-                      "message": "Unable to reach pipeline to interact due to: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs.",
+                      "message": "Error sending HTTP request to pipeline 'my_pipeline': the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs.\nFailed request: /pause",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
                         "error": "the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs."
                       }
                     }
                   },
                   "Pipeline is currently unavailable": {
                     "value": {
-                      "message": "Unable to reach pipeline to interact due to: deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again",
+                      "message": "Error sending HTTP request to pipeline 'my_pipeline': deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again\nFailed request: /pause",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
                         "error": "deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again"
                       }
                     }
                   },
                   "Pipeline is not deployed": {
                     "value": {
-                      "message": "Unable to interact with pipeline because the deployment status (stopped) indicates it is not (yet) fully provisioned",
+                      "message": "Unable to interact with pipeline 'my_pipeline' because the deployment status (stopped) indicates it is not (yet) fully provisioned",
                       "error_code": "PipelineInteractionNotDeployed",
                       "details": {
+                        "pipeline_name": "my_pipeline",
                         "status": "Stopped",
                         "desired_status": "Provisioned"
                       }
@@ -2761,9 +2822,11 @@
                   },
                   "Response timeout": {
                     "value": {
-                      "message": "Unable to reach pipeline to interact due to: timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)",
+                      "message": "Error sending HTTP request to pipeline 'my_pipeline': timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)\nFailed request: /pause",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
                         "error": "timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)"
                       }
                     }
@@ -2857,27 +2920,32 @@
                 "examples": {
                   "Disconnected during response": {
                     "value": {
-                      "message": "Unable to reach pipeline to interact due to: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs.",
+                      "message": "Error sending HTTP request to pipeline 'my_pipeline': the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs.\nFailed request: /pause",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
                         "error": "the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs."
                       }
                     }
                   },
                   "Pipeline is currently unavailable": {
                     "value": {
-                      "message": "Unable to reach pipeline to interact due to: deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again",
+                      "message": "Error sending HTTP request to pipeline 'my_pipeline': deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again\nFailed request: /pause",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
                         "error": "deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again"
                       }
                     }
                   },
                   "Pipeline is not deployed": {
                     "value": {
-                      "message": "Unable to interact with pipeline because the deployment status (stopped) indicates it is not (yet) fully provisioned",
+                      "message": "Unable to interact with pipeline 'my_pipeline' because the deployment status (stopped) indicates it is not (yet) fully provisioned",
                       "error_code": "PipelineInteractionNotDeployed",
                       "details": {
+                        "pipeline_name": "my_pipeline",
                         "status": "Stopped",
                         "desired_status": "Provisioned"
                       }
@@ -2885,9 +2953,11 @@
                   },
                   "Response timeout": {
                     "value": {
-                      "message": "Unable to reach pipeline to interact due to: timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)",
+                      "message": "Error sending HTTP request to pipeline 'my_pipeline': timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)\nFailed request: /pause",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
                         "error": "timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)"
                       }
                     }
@@ -3047,27 +3117,32 @@
                 "examples": {
                   "Disconnected during response": {
                     "value": {
-                      "message": "Unable to reach pipeline to interact due to: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs.",
+                      "message": "Error sending HTTP request to pipeline 'my_pipeline': the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs.\nFailed request: /pause",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
                         "error": "the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs."
                       }
                     }
                   },
                   "Pipeline is currently unavailable": {
                     "value": {
-                      "message": "Unable to reach pipeline to interact due to: deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again",
+                      "message": "Error sending HTTP request to pipeline 'my_pipeline': deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again\nFailed request: /pause",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
                         "error": "deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again"
                       }
                     }
                   },
                   "Pipeline is not deployed": {
                     "value": {
-                      "message": "Unable to interact with pipeline because the deployment status (stopped) indicates it is not (yet) fully provisioned",
+                      "message": "Unable to interact with pipeline 'my_pipeline' because the deployment status (stopped) indicates it is not (yet) fully provisioned",
                       "error_code": "PipelineInteractionNotDeployed",
                       "details": {
+                        "pipeline_name": "my_pipeline",
                         "status": "Stopped",
                         "desired_status": "Provisioned"
                       }
@@ -3075,9 +3150,11 @@
                   },
                   "Response timeout": {
                     "value": {
-                      "message": "Unable to reach pipeline to interact due to: timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)",
+                      "message": "Error sending HTTP request to pipeline 'my_pipeline': timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)\nFailed request: /pause",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
                         "error": "timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)"
                       }
                     }
@@ -3256,27 +3333,32 @@
                 "examples": {
                   "Disconnected during response": {
                     "value": {
-                      "message": "Unable to reach pipeline to interact due to: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs.",
+                      "message": "Error sending HTTP request to pipeline 'my_pipeline': the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs.\nFailed request: /pause",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
                         "error": "the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs."
                       }
                     }
                   },
                   "Pipeline is currently unavailable": {
                     "value": {
-                      "message": "Unable to reach pipeline to interact due to: deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again",
+                      "message": "Error sending HTTP request to pipeline 'my_pipeline': deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again\nFailed request: /pause",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
                         "error": "deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again"
                       }
                     }
                   },
                   "Pipeline is not deployed": {
                     "value": {
-                      "message": "Unable to interact with pipeline because the deployment status (stopped) indicates it is not (yet) fully provisioned",
+                      "message": "Unable to interact with pipeline 'my_pipeline' because the deployment status (stopped) indicates it is not (yet) fully provisioned",
                       "error_code": "PipelineInteractionNotDeployed",
                       "details": {
+                        "pipeline_name": "my_pipeline",
                         "status": "Stopped",
                         "desired_status": "Provisioned"
                       }
@@ -3284,9 +3366,11 @@
                   },
                   "Response timeout": {
                     "value": {
-                      "message": "Unable to reach pipeline to interact due to: timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)",
+                      "message": "Error sending HTTP request to pipeline 'my_pipeline': timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)\nFailed request: /pause",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
                         "error": "timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)"
                       }
                     }
@@ -3477,27 +3561,32 @@
                 "examples": {
                   "Disconnected during response": {
                     "value": {
-                      "message": "Unable to reach pipeline to interact due to: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs.",
+                      "message": "Error sending HTTP request to pipeline 'my_pipeline': the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs.\nFailed request: /pause",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
                         "error": "the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs."
                       }
                     }
                   },
                   "Pipeline is currently unavailable": {
                     "value": {
-                      "message": "Unable to reach pipeline to interact due to: deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again",
+                      "message": "Error sending HTTP request to pipeline 'my_pipeline': deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again\nFailed request: /pause",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
                         "error": "deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again"
                       }
                     }
                   },
                   "Pipeline is not deployed": {
                     "value": {
-                      "message": "Unable to interact with pipeline because the deployment status (stopped) indicates it is not (yet) fully provisioned",
+                      "message": "Unable to interact with pipeline 'my_pipeline' because the deployment status (stopped) indicates it is not (yet) fully provisioned",
                       "error_code": "PipelineInteractionNotDeployed",
                       "details": {
+                        "pipeline_name": "my_pipeline",
                         "status": "Stopped",
                         "desired_status": "Provisioned"
                       }
@@ -3505,9 +3594,11 @@
                   },
                   "Response timeout": {
                     "value": {
-                      "message": "Unable to reach pipeline to interact due to: timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)",
+                      "message": "Error sending HTTP request to pipeline 'my_pipeline': timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)\nFailed request: /pause",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
                         "error": "timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)"
                       }
                     }
@@ -3748,27 +3839,32 @@
                 "examples": {
                   "Disconnected during response": {
                     "value": {
-                      "message": "Unable to reach pipeline to interact due to: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs.",
+                      "message": "Error sending HTTP request to pipeline 'my_pipeline': the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs.\nFailed request: /pause",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
                         "error": "the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs."
                       }
                     }
                   },
                   "Pipeline is currently unavailable": {
                     "value": {
-                      "message": "Unable to reach pipeline to interact due to: deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again",
+                      "message": "Error sending HTTP request to pipeline 'my_pipeline': deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again\nFailed request: /pause",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
                         "error": "deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again"
                       }
                     }
                   },
                   "Pipeline is not deployed": {
                     "value": {
-                      "message": "Unable to interact with pipeline because the deployment status (stopped) indicates it is not (yet) fully provisioned",
+                      "message": "Unable to interact with pipeline 'my_pipeline' because the deployment status (stopped) indicates it is not (yet) fully provisioned",
                       "error_code": "PipelineInteractionNotDeployed",
                       "details": {
+                        "pipeline_name": "my_pipeline",
                         "status": "Stopped",
                         "desired_status": "Provisioned"
                       }
@@ -3776,9 +3872,11 @@
                   },
                   "Response timeout": {
                     "value": {
-                      "message": "Unable to reach pipeline to interact due to: timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)",
+                      "message": "Error sending HTTP request to pipeline 'my_pipeline': timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)\nFailed request: /pause",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
                         "error": "timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)"
                       }
                     }
@@ -3861,27 +3959,32 @@
                 "examples": {
                   "Disconnected during response": {
                     "value": {
-                      "message": "Unable to reach pipeline to interact due to: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs.",
+                      "message": "Error sending HTTP request to pipeline 'my_pipeline': the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs.\nFailed request: /pause",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
                         "error": "the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs."
                       }
                     }
                   },
                   "Pipeline is currently unavailable": {
                     "value": {
-                      "message": "Unable to reach pipeline to interact due to: deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again",
+                      "message": "Error sending HTTP request to pipeline 'my_pipeline': deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again\nFailed request: /pause",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
                         "error": "deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again"
                       }
                     }
                   },
                   "Pipeline is not deployed": {
                     "value": {
-                      "message": "Unable to interact with pipeline because the deployment status (stopped) indicates it is not (yet) fully provisioned",
+                      "message": "Unable to interact with pipeline 'my_pipeline' because the deployment status (stopped) indicates it is not (yet) fully provisioned",
                       "error_code": "PipelineInteractionNotDeployed",
                       "details": {
+                        "pipeline_name": "my_pipeline",
                         "status": "Stopped",
                         "desired_status": "Provisioned"
                       }
@@ -3889,9 +3992,11 @@
                   },
                   "Response timeout": {
                     "value": {
-                      "message": "Unable to reach pipeline to interact due to: timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)",
+                      "message": "Error sending HTTP request to pipeline 'my_pipeline': timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)\nFailed request: /pause",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
                         "error": "timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)"
                       }
                     }
@@ -4168,18 +4273,22 @@
                 "examples": {
                   "Disconnected during response": {
                     "value": {
-                      "message": "Unable to reach pipeline to interact due to: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs.",
+                      "message": "Error sending HTTP request to pipeline 'my_pipeline': the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs.\nFailed request: /pause",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
                         "error": "the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs."
                       }
                     }
                   },
                   "Response timeout": {
                     "value": {
-                      "message": "Unable to reach pipeline to interact due to: timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)",
+                      "message": "Error sending HTTP request to pipeline 'my_pipeline': timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)\nFailed request: /pause",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
                         "error": "timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)"
                       }
                     }
@@ -4281,27 +4390,32 @@
                 "examples": {
                   "Disconnected during response": {
                     "value": {
-                      "message": "Unable to reach pipeline to interact due to: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs.",
+                      "message": "Error sending HTTP request to pipeline 'my_pipeline': the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs.\nFailed request: /pause",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
                         "error": "the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs."
                       }
                     }
                   },
                   "Pipeline is currently unavailable": {
                     "value": {
-                      "message": "Unable to reach pipeline to interact due to: deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again",
+                      "message": "Error sending HTTP request to pipeline 'my_pipeline': deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again\nFailed request: /pause",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
                         "error": "deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again"
                       }
                     }
                   },
                   "Pipeline is not deployed": {
                     "value": {
-                      "message": "Unable to interact with pipeline because the deployment status (stopped) indicates it is not (yet) fully provisioned",
+                      "message": "Unable to interact with pipeline 'my_pipeline' because the deployment status (stopped) indicates it is not (yet) fully provisioned",
                       "error_code": "PipelineInteractionNotDeployed",
                       "details": {
+                        "pipeline_name": "my_pipeline",
                         "status": "Stopped",
                         "desired_status": "Provisioned"
                       }
@@ -4309,9 +4423,11 @@
                   },
                   "Response timeout": {
                     "value": {
-                      "message": "Unable to reach pipeline to interact due to: timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)",
+                      "message": "Error sending HTTP request to pipeline 'my_pipeline': timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)\nFailed request: /pause",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
                         "error": "timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)"
                       }
                     }
@@ -4416,27 +4532,32 @@
                 "examples": {
                   "Disconnected during response": {
                     "value": {
-                      "message": "Unable to reach pipeline to interact due to: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs.",
+                      "message": "Error sending HTTP request to pipeline 'my_pipeline': the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs.\nFailed request: /pause",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
                         "error": "the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs."
                       }
                     }
                   },
                   "Pipeline is currently unavailable": {
                     "value": {
-                      "message": "Unable to reach pipeline to interact due to: deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again",
+                      "message": "Error sending HTTP request to pipeline 'my_pipeline': deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again\nFailed request: /pause",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
                         "error": "deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again"
                       }
                     }
                   },
                   "Pipeline is not deployed": {
                     "value": {
-                      "message": "Unable to interact with pipeline because the deployment status (stopped) indicates it is not (yet) fully provisioned",
+                      "message": "Unable to interact with pipeline 'my_pipeline' because the deployment status (stopped) indicates it is not (yet) fully provisioned",
                       "error_code": "PipelineInteractionNotDeployed",
                       "details": {
+                        "pipeline_name": "my_pipeline",
                         "status": "Stopped",
                         "desired_status": "Provisioned"
                       }
@@ -4444,9 +4565,11 @@
                   },
                   "Response timeout": {
                     "value": {
-                      "message": "Unable to reach pipeline to interact due to: timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)",
+                      "message": "Error sending HTTP request to pipeline 'my_pipeline': timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)\nFailed request: /pause",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
                         "error": "timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)"
                       }
                     }
@@ -4554,27 +4677,32 @@
                 "examples": {
                   "Disconnected during response": {
                     "value": {
-                      "message": "Unable to reach pipeline to interact due to: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs.",
+                      "message": "Error sending HTTP request to pipeline 'my_pipeline': the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs.\nFailed request: /pause",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
                         "error": "the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs."
                       }
                     }
                   },
                   "Pipeline is currently unavailable": {
                     "value": {
-                      "message": "Unable to reach pipeline to interact due to: deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again",
+                      "message": "Error sending HTTP request to pipeline 'my_pipeline': deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again\nFailed request: /pause",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
                         "error": "deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again"
                       }
                     }
                   },
                   "Pipeline is not deployed": {
                     "value": {
-                      "message": "Unable to interact with pipeline because the deployment status (stopped) indicates it is not (yet) fully provisioned",
+                      "message": "Unable to interact with pipeline 'my_pipeline' because the deployment status (stopped) indicates it is not (yet) fully provisioned",
                       "error_code": "PipelineInteractionNotDeployed",
                       "details": {
+                        "pipeline_name": "my_pipeline",
                         "status": "Stopped",
                         "desired_status": "Provisioned"
                       }
@@ -4582,9 +4710,11 @@
                   },
                   "Response timeout": {
                     "value": {
-                      "message": "Unable to reach pipeline to interact due to: timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)",
+                      "message": "Error sending HTTP request to pipeline 'my_pipeline': timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)\nFailed request: /pause",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
                         "error": "timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)"
                       }
                     }
@@ -4734,27 +4864,32 @@
                 "examples": {
                   "Disconnected during response": {
                     "value": {
-                      "message": "Unable to reach pipeline to interact due to: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs.",
+                      "message": "Error sending HTTP request to pipeline 'my_pipeline': the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs.\nFailed request: /pause",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
                         "error": "the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs."
                       }
                     }
                   },
                   "Pipeline is currently unavailable": {
                     "value": {
-                      "message": "Unable to reach pipeline to interact due to: deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again",
+                      "message": "Error sending HTTP request to pipeline 'my_pipeline': deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again\nFailed request: /pause",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
                         "error": "deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again"
                       }
                     }
                   },
                   "Pipeline is not deployed": {
                     "value": {
-                      "message": "Unable to interact with pipeline because the deployment status (stopped) indicates it is not (yet) fully provisioned",
+                      "message": "Unable to interact with pipeline 'my_pipeline' because the deployment status (stopped) indicates it is not (yet) fully provisioned",
                       "error_code": "PipelineInteractionNotDeployed",
                       "details": {
+                        "pipeline_name": "my_pipeline",
                         "status": "Stopped",
                         "desired_status": "Provisioned"
                       }
@@ -4762,9 +4897,11 @@
                   },
                   "Response timeout": {
                     "value": {
-                      "message": "Unable to reach pipeline to interact due to: timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)",
+                      "message": "Error sending HTTP request to pipeline 'my_pipeline': timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)\nFailed request: /pause",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
                         "error": "timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)"
                       }
                     }
@@ -4848,27 +4985,32 @@
                 "examples": {
                   "Disconnected during response": {
                     "value": {
-                      "message": "Unable to reach pipeline to interact due to: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs.",
+                      "message": "Error sending HTTP request to pipeline 'my_pipeline': the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs.\nFailed request: /pause",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
                         "error": "the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs."
                       }
                     }
                   },
                   "Pipeline is currently unavailable": {
                     "value": {
-                      "message": "Unable to reach pipeline to interact due to: deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again",
+                      "message": "Error sending HTTP request to pipeline 'my_pipeline': deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again\nFailed request: /pause",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
                         "error": "deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again"
                       }
                     }
                   },
                   "Pipeline is not deployed": {
                     "value": {
-                      "message": "Unable to interact with pipeline because the deployment status (stopped) indicates it is not (yet) fully provisioned",
+                      "message": "Unable to interact with pipeline 'my_pipeline' because the deployment status (stopped) indicates it is not (yet) fully provisioned",
                       "error_code": "PipelineInteractionNotDeployed",
                       "details": {
+                        "pipeline_name": "my_pipeline",
                         "status": "Stopped",
                         "desired_status": "Provisioned"
                       }
@@ -4876,9 +5018,11 @@
                   },
                   "Response timeout": {
                     "value": {
-                      "message": "Unable to reach pipeline to interact due to: timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)",
+                      "message": "Error sending HTTP request to pipeline 'my_pipeline': timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)\nFailed request: /pause",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
                         "error": "timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)"
                       }
                     }
@@ -5159,27 +5303,32 @@
                 "examples": {
                   "Disconnected during response": {
                     "value": {
-                      "message": "Unable to reach pipeline to interact due to: the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs.",
+                      "message": "Error sending HTTP request to pipeline 'my_pipeline': the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs.\nFailed request: /pause",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
                         "error": "the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs."
                       }
                     }
                   },
                   "Pipeline is currently unavailable": {
                     "value": {
-                      "message": "Unable to reach pipeline to interact due to: deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again",
+                      "message": "Error sending HTTP request to pipeline 'my_pipeline': deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again\nFailed request: /pause",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
                         "error": "deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again"
                       }
                     }
                   },
                   "Pipeline is not deployed": {
                     "value": {
-                      "message": "Unable to interact with pipeline because the deployment status (stopped) indicates it is not (yet) fully provisioned",
+                      "message": "Unable to interact with pipeline 'my_pipeline' because the deployment status (stopped) indicates it is not (yet) fully provisioned",
                       "error_code": "PipelineInteractionNotDeployed",
                       "details": {
+                        "pipeline_name": "my_pipeline",
                         "status": "Stopped",
                         "desired_status": "Provisioned"
                       }
@@ -5187,9 +5336,11 @@
                   },
                   "Response timeout": {
                     "value": {
-                      "message": "Unable to reach pipeline to interact due to: timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)",
+                      "message": "Error sending HTTP request to pipeline 'my_pipeline': timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)\nFailed request: /pause",
                       "error_code": "PipelineInteractionUnreachable",
                       "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
                         "error": "timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)"
                       }
                     }

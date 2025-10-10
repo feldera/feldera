@@ -1104,6 +1104,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                                 runtime_desired_status: RuntimeDesiredStatus::Paused,
                             }),
                             "Terminated" => Err(ErrorResponse::from(&RunnerError::PipelineInteractionInvalidResponse {
+                                pipeline_name: self.pipeline_id.to_string(),
                                 error: "Pipeline responded that it is Terminated".to_string(),
                             })),
                             _ => Ok(ExtendedRuntimeStatus {
@@ -1167,6 +1168,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
                     // running, but the circuit has failed
                     let error_response = serde_json::from_value(body.clone()).unwrap_or_else(|e| {
                         ErrorResponse::from(&RunnerError::PipelineInteractionInvalidResponse {
+                            pipeline_name: self.pipeline_id.to_string(),
                             error: format!("Error response cannot be deserialized due to: {e}. Response was:\n{body:#}"),
                         })
                     });
