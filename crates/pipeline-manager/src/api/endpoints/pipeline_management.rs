@@ -834,7 +834,7 @@ pub(crate) async fn put_pipeline(
 
     if is_new {
         info!(
-            "Created pipeline {} (tenant: {})",
+            "Created pipeline {pipeline_name:?} ({}) (tenant: {})",
             returned_pipeline.id, *tenant_id
         );
         Ok(HttpResponse::Created()
@@ -842,7 +842,7 @@ pub(crate) async fn put_pipeline(
             .json(returned_pipeline))
     } else {
         info!(
-            "Fully updated pipeline {} to version {} (tenant: {})",
+            "Fully updated pipeline {pipeline_name:?} ({}) to version {} (tenant: {})",
             returned_pipeline.id, returned_pipeline.version, *tenant_id
         );
         Ok(HttpResponse::Ok()
@@ -914,7 +914,7 @@ pub(crate) async fn patch_pipeline(
     let returned_pipeline = PipelineInfoInternal::new(pipeline);
 
     info!(
-        "Partially updated pipeline {} to version {} (tenant: {})",
+        "Partially updated pipeline {pipeline_name:?} ({}) to version {} (tenant: {})",
         returned_pipeline.id, returned_pipeline.version, *tenant_id
     );
     Ok(HttpResponse::Ok()
@@ -997,7 +997,7 @@ pub(crate) async fn post_update_runtime(
     let returned_pipeline = PipelineInfoInternal::new(pipeline);
 
     info!(
-        "Updated pipeline {} platform_version to {} (tenant: {})",
+        "Updated pipeline {pipeline_name:?} ({}) platform_version to {} (tenant: {})",
         returned_pipeline.id, returned_pipeline.platform_version, *tenant_id
     );
     Ok(HttpResponse::Ok()
@@ -1041,7 +1041,10 @@ pub(crate) async fn delete_pipeline(
         .delete_pipeline(*tenant_id, &pipeline_name)
         .await?;
 
-    info!("Deleted pipeline {} (tenant: {})", pipeline_id, *tenant_id);
+    info!(
+        "Deleted pipeline {pipeline_name:?} ({}) (tenant: {})",
+        pipeline_id, *tenant_id
+    );
     Ok(HttpResponse::Ok().finish())
 }
 
