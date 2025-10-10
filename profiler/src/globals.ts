@@ -1,5 +1,6 @@
 import { Option } from './util';
 import { CircuitProfile, type JsonProfiles } from "./profile.js";
+import { type Dataflow } from "./dataflow.js";
 import { Cytograph } from "./cytograph.js";
 import { CircuitSelector } from "./navigation.js";
 
@@ -71,7 +72,7 @@ export class Globals {
     }
 
     // Main function of the profile visualization code.
-    start(profileUrl: string) {
+    start(profileUrl: string, dataflowUrl: string): void {
         this.fetchJson<JsonProfiles>(profileUrl)
             .then((data: Option<JsonProfiles>) => {
                 if (data.isNone()) {
@@ -79,27 +80,36 @@ export class Globals {
                     return;
                 }
 
-                let circuit;
-                try {
-                    circuit = CircuitProfile.fromJson(data.unwrap());
-                } catch (e) {
-                    this.reportError("Error decoding JSON profile data: " + e);
-                    return;
-                }
-                try {
-                    // The main event loop.  When the selector changes,
-                    // it causes the circuit graph to be recomputed and redrawn.
-                    let selector = new CircuitSelector(circuit);
-                    selector.display("selector");
-                    selector.setOnChange(() => {
-                        let graph = Cytograph.fromProfile(circuit, selector.getSelection());
-                        graph.render();
+                this.fetchJson<Dataflow>(dataflowUrl)
+                    .then((dfData: Option<Dataflow>) => {
+                        if (dfData.isNone()) {
+                            // Error already reported.
+                            return;
+                        }
+
+                        let circuit;
+                        try {
+                            circuit = CircuitProfile.fromJson(data.unwrap());
+                            circuit.setDataflow(dfData.unwrap());
+                        } catch (e) {
+                            this.reportError("Error decoding JSON profile data: " + e);
+                            return;
+                        }
+                        try {
+                            // The main event loop.  When the selector changes,
+                            // it causes the circuit graph to be recomputed and redrawn.
+                            let selector = new CircuitSelector(circuit);
+                            selector.display("selector");
+                            selector.setOnChange(() => {
+                                let graph = Cytograph.fromProfile(circuit, selector.getSelection());
+                                graph.render();
+                            });
+                            // Initial display.
+                            selector.changed();
+                        } catch (e) {
+                            this.reportError("Error displaying circuit profile: " + e);
+                        }
                     });
-                    // Initial display.
-                    selector.changed();
-                } catch (e) {
-                    this.reportError("Error displaying circuit profile: " + e);
-                }
             });
     }
 }

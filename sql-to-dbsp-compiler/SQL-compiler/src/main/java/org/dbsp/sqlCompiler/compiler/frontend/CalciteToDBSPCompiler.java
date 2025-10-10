@@ -73,6 +73,7 @@ import org.apache.calcite.sql.ddl.SqlAttributeDefinition;
 import org.apache.calcite.sql.ddl.SqlCreateType;
 import org.apache.calcite.sql.type.SqlTypeName;
 import org.apache.calcite.util.ImmutableBitSet;
+import org.apache.calcite.util.Source;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAsofJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAggregateOperator;
@@ -475,7 +476,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         Utilities.enforce(flatmap.getType().sameType(functionType),
                 "Expected type to be\n" + functionType + "\nbut it is\n" + flatmap.getType());
         DBSPSimpleOperator result = new DBSPFlatMapOperator(
-                new LastRel(correlate),
+                new LastRel(correlate, SourcePositionRange.INVALID),
                 flatmap, TypeCompiler.makeZSet(type), left.outputPort());
         if (rightFilter != null) {
             // This is a specialized version of visit(LogicalFilter)
@@ -491,7 +492,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
             condition = new DBSPClosureExpression(
                     CalciteObject.create(rightFilter, rightFilter.getCondition()), condition, t.asParameter());
             this.addOperator(result);
-            result = new DBSPFilterOperator(new LastRel(correlate), condition, result.outputPort());
+            result = new DBSPFilterOperator(
+                    new LastRel(correlate, SourcePositionRange.INVALID), condition, result.outputPort());
         }
 
         Utilities.enforce(type.sameType(result.getOutputZSetElementType()));
@@ -2828,7 +2830,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         } else {
             tuple = elemType.to(DBSPTypeTupleBase.class);
         }
-        IntermediateRel node = CalciteObject.create(root.rel);
+        IntermediateRel node = CalciteObject.create(root.rel, new SourcePositionRange(view.getParserPosition()));
         if (root.fields.size() != tuple.size()) {
             DBSPVariablePath t = tuple.ref().var();
             List<DBSPExpression> resultFields = new ArrayList<>();

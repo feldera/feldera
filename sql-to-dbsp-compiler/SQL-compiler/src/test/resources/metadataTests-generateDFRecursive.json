@@ -388,20 +388,26 @@
       "inputs": [
         { "node": "s2", "output": 0 }
       ],
+      "view": "fibonacci",
       "calcite": {
         "final": 8
       },
-      "positions": [],
+      "positions": [
+        {"start_line_number":4,"start_column":1,"end_line_number":21,"end_column":1}
+      ],
       "persistent_id": "bf8f6c7cffaadfddd8c7fe702709e02e786220624bccf9d3296c7997186a9242"
     }, "s11": {
       "operation": "inspect",
       "inputs": [
         { "node": "s0", "output": 0 }
       ],
+      "view": "error_view",
       "calcite": {
         "final": 0
       },
-      "positions": [],
+      "positions": [
+        {"start_line_number":4,"start_column":1,"end_line_number":4,"end_column":59}
+      ],
       "persistent_id": "933ebf782e1fe804fe85c4d0f3688bdb5234b386c2834892776e692acd9781d9"
     }
   },

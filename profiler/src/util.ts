@@ -72,10 +72,6 @@ export function assert(condition: any, message: string): asserts condition {
     }
 }
 
-export interface Comparable<T> {
-    compareTo(other: T): number;
-}
-
 // A Map with an Option return type in the API.
 export class OMap<K, V> {
     private map = new Map<K, V>();
@@ -363,4 +359,28 @@ export class NumericRange {
     }
     // Create an empty range.
     static empty(): NumericRange { return new NumericRange(Number.MAX_VALUE, Number.MIN_VALUE); }
+}
+
+export interface Comparable<T> {
+    compareTo(other: T): number;
+}
+
+export namespace Comparable {
+    export function compareTo<T>(a: T, b: T): number {
+        if (a < b) {
+            return -1;
+        } else if (a > b) {
+            return 1;
+        } else {
+            return 0;
+        }
+    }
+
+    export function max<T extends Comparable<T>>(a: T, b: T): T {
+        return a.compareTo(b) >= 0 ? a : b;
+    }
+
+    export function min<T extends Comparable<T>>(a: T, b: T): T {
+        return a.compareTo(b) <= 0 ? a : b;
+    }
 }

@@ -9,6 +9,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperatorWithError;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSinkOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceTableOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewDeclarationOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
@@ -124,6 +125,10 @@ public class ToJsonVisitor extends CircuitDispatcher {
             this.builder.appendJsonLabelAndColon("table")
                     .append(Utilities.doubleQuote(operator.to(DBSPSourceTableOperator.class).tableName.toString(), false))
                     .append(",").newline();
+        } else if (operator.is(DBSPSinkOperator.class)) {
+            this.builder.appendJsonLabelAndColon("view")
+                    .append(Utilities.doubleQuote(operator.to(DBSPSinkOperator.class).viewName.toString(), false))
+                    .append(",").newline();
         }
 
         this.builder.appendJsonLabelAndColon("calcite");
@@ -133,6 +138,10 @@ public class ToJsonVisitor extends CircuitDispatcher {
         this.builder.appendJsonLabelAndColon("positions")
                 .append("[");
         var list = Linq.list(this.getPositions());
+        if (operator.is(DBSPSourceTableOperator.class) || operator.is(DBSPSinkOperator.class)) {
+            if (operator.getSourcePosition().isValid())
+                list.add(operator.getSourcePosition());
+        }
         List<String> strings = Linq.map(list, p -> p.asJson().toString());
         if (!strings.isEmpty()) {
             this.builder

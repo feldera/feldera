@@ -1,0 +1,1017 @@
+{
+  "calcite_plan": {
+    "error_view": {
+      "rels": [
+        {
+          "id": 0,
+          "relOp": "LogicalTableScan",
+          "table": [
+            "schema",
+            "feldera_error_table"
+          ],
+          "inputs": []
+        }
+      ]
+    },
+    "has_permission_2_e6d71768f13be1c9": {
+      "rels": [
+        {
+          "id": 1,
+          "relOp": "LogicalTableScan",
+          "table": [
+            "schema",
+            "fact_2"
+          ],
+          "inputs": []
+        },
+        {
+          "id": 2,
+          "relOp": "LogicalFilter",
+          "condition": {
+            "op": {
+              "name": "=",
+              "kind": "EQUALS",
+              "syntax": "BINARY"
+            },
+            "operands": [
+              {
+                "input": 1,
+                "name": "$1"
+              },
+              {
+                "literal": "member",
+                "type": {
+                  "type": "VARCHAR",
+                  "nullable": false,
+                  "precision": -1
+                }
+              }
+            ]
+          },
+          "inputs": [
+            1
+          ]
+        },
+        {
+          "id": 3,
+          "relOp": "LogicalTableScan",
+          "table": [
+            "schema",
+            "fact_3"
+          ],
+          "inputs": []
+        },
+        {
+          "id": 4,
+          "relOp": "LogicalFilter",
+          "condition": {
+            "op": {
+              "name": "=",
+              "kind": "EQUALS",
+              "syntax": "BINARY"
+            },
+            "operands": [
+              {
+                "input": 1,
+                "name": "$1"
+              },
+              {
+                "literal": "manager",
+                "type": {
+                  "type": "VARCHAR",
+                  "nullable": false,
+                  "precision": -1
+                }
+              }
+            ]
+          },
+          "inputs": [
+            3
+          ]
+        },
+        {
+          "id": 5,
+          "relOp": "LogicalJoin",
+          "condition": {
+            "op": {
+              "name": "=",
+              "kind": "EQUALS",
+              "syntax": "BINARY"
+            },
+            "operands": [
+              {
+                "input": 0,
+                "name": "$0"
+              },
+              {
+                "input": 3,
+                "name": "$3"
+              }
+            ]
+          },
+          "joinType": "inner",
+          "inputs": [
+            2,
+            4
+          ]
+        },
+        {
+          "id": 6,
+          "relOp": "LogicalProject",
+          "fields": [
+            "arg00",
+            "arg10",
+            "arg20",
+            "arg0",
+            "arg1",
+            "arg2"
+          ],
+          "exprs": [
+            {
+              "input": 3,
+              "name": "$3"
+            },
+            {
+              "input": 4,
+              "name": "$4"
+            },
+            {
+              "input": 5,
+              "name": "$5"
+            },
+            {
+              "input": 0,
+              "name": "$0"
+            },
+            {
+              "input": 1,
+              "name": "$1"
+            },
+            {
+              "input": 2,
+              "name": "$2"
+            }
+          ],
+          "inputs": [
+            5
+          ]
+        },
+        {
+          "id": 7,
+          "relOp": "LogicalTableScan",
+          "table": [
+            "schema",
+            "fact_1"
+          ],
+          "inputs": []
+        },
+        {
+          "id": 8,
+          "relOp": "LogicalProject",
+          "fields": [
+            "arg0",
+            "$f0"
+          ],
+          "exprs": [
+            {
+              "input": 0,
+              "name": "$0"
+            },
+            {
+              "literal": true,
+              "type": {
+                "type": "BOOLEAN",
+                "nullable": false
+              }
+            }
+          ],
+          "inputs": [
+            7
+          ]
+        },
+        {
+          "id": 9,
+          "relOp": "LogicalAggregate",
+          "group": [
+            0
+          ],
+          "aggs": [
+            {
+              "agg": {
+                "name": "MIN",
+                "kind": "MIN",
+                "syntax": "FUNCTION"
+              },
+              "type": {
+                "type": "BOOLEAN",
+                "nullable": false
+              },
+              "distinct": false,
+              "operands": [
+                1
+              ],
+              "name": null
+            }
+          ],
+          "inputs": [
+            8
+          ]
+        },
+        {
+          "id": 10,
+          "relOp": "LogicalJoin",
+          "condition": {
+            "op": {
+              "name": "=",
+              "kind": "EQUALS",
+              "syntax": "BINARY"
+            },
+            "operands": [
+              {
+                "input": 2,
+                "name": "$2"
+              },
+              {
+                "input": 6,
+                "name": "$6"
+              }
+            ]
+          },
+          "joinType": "left",
+          "inputs": [
+            6,
+            9
+          ]
+        },
+        {
+          "id": 11,
+          "relOp": "LogicalFilter",
+          "condition": {
+            "op": {
+              "name": "IS NULL",
+              "kind": "IS_NULL",
+              "syntax": "POSTFIX"
+            },
+            "operands": [
+              {
+                "input": 7,
+                "name": "$7"
+              }
+            ]
+          },
+          "inputs": [
+            10
+          ]
+        },
+        {
+          "id": 12,
+          "relOp": "LogicalProject",
+          "fields": [
+            "out0_type",
+            "out0_val",
+            "out1_type",
+            "out1_val"
+          ],
+          "exprs": [
+            {
+              "literal": "User",
+              "type": {
+                "type": "VARCHAR",
+                "nullable": false,
+                "precision": -1
+              }
+            },
+            {
+              "input": 2,
+              "name": "$2"
+            },
+            {
+              "literal": "Foo",
+              "type": {
+                "type": "VARCHAR",
+                "nullable": false,
+                "precision": -1
+              }
+            },
+            {
+              "input": 5,
+              "name": "$5"
+            }
+          ],
+          "inputs": [
+            11
+          ]
+        },
+        {
+          "id": 13,
+          "relOp": "LogicalTableScan",
+          "table": [
+            "schema",
+            "has_permission_2_e6d71768f13be1c9-decl"
+          ],
+          "inputs": []
+        },
+        {
+          "id": 14,
+          "relOp": "LogicalJoin",
+          "condition": {
+            "op": {
+              "name": "=",
+              "kind": "EQUALS",
+              "syntax": "BINARY"
+            },
+            "operands": [
+              {
+                "input": 1,
+                "name": "$1"
+              },
+              {
+                "input": 4,
+                "name": "$4"
+              }
+            ]
+          },
+          "joinType": "inner",
+          "inputs": [
+            13,
+            4
+          ]
+        },
+        {
+          "id": 15,
+          "relOp": "LogicalProject",
+          "fields": [
+            "arg0",
+            "arg1",
+            "arg2",
+            "out0_type",
+            "out0_val",
+            "out1_type",
+            "out1_val"
+          ],
+          "exprs": [
+            {
+              "input": 4,
+              "name": "$4"
+            },
+            {
+              "input": 5,
+              "name": "$5"
+            },
+            {
+              "input": 6,
+              "name": "$6"
+            },
+            {
+              "input": 0,
+              "name": "$0"
+            },
+            {
+              "input": 1,
+              "name": "$1"
+            },
+            {
+              "input": 2,
+              "name": "$2"
+            },
+            {
+              "input": 3,
+              "name": "$3"
+            }
+          ],
+          "inputs": [
+            14
+          ]
+        },
+        {
+          "id": 16,
+          "relOp": "LogicalJoin",
+          "condition": {
+            "op": {
+              "name": "=",
+              "kind": "EQUALS",
+              "syntax": "BINARY"
+            },
+            "operands": [
+              {
+                "input": 2,
+                "name": "$2"
+              },
+              {
+                "input": 7,
+                "name": "$7"
+              }
+            ]
+          },
+          "joinType": "left",
+          "inputs": [
+            15,
+            9
+          ]
+        },
+        {
+          "id": 17,
+          "relOp": "LogicalFilter",
+          "condition": {
+            "op": {
+              "name": "IS NULL",
+              "kind": "IS_NULL",
+              "syntax": "POSTFIX"
+            },
+            "operands": [
+              {
+                "input": 8,
+                "name": "$8"
+              }
+            ]
+          },
+          "inputs": [
+            16
+          ]
+        },
+        {
+          "id": 18,
+          "relOp": "LogicalProject",
+          "fields": [
+            "out0_type",
+            "out0_val",
+            "out1_type",
+            "out1_val"
+          ],
+          "exprs": [
+            {
+              "literal": "User",
+              "type": {
+                "type": "VARCHAR",
+                "nullable": false,
+                "precision": -1
+              }
+            },
+            {
+              "input": 2,
+              "name": "$2"
+            },
+            {
+              "literal": "Foo",
+              "type": {
+                "type": "VARCHAR",
+                "nullable": false,
+                "precision": -1
+              }
+            },
+            {
+              "input": 6,
+              "name": "$6"
+            }
+          ],
+          "inputs": [
+            17
+          ]
+        },
+        {
+          "id": 19,
+          "relOp": "LogicalUnion",
+          "all": false,
+          "inputs": [
+            12,
+            18
+          ]
+        }
+      ]
+    }
+  },
+  "mir": {
+    "s0": {
+      "operation": "constant",
+      "inputs": [],
+      "calcite": {
+        "partial": 0
+      },
+      "positions": [],
+      "persistent_id": "8b384059bdb44ad811ab341cc5e2a59697f39aac7b463cab027b185db8105e73"
+    }, "s1": {
+      "operation": "source_map",
+      "inputs": [],
+      "table": "fact_1",
+      "calcite": {
+        "final": 7
+      },
+      "positions": [
+        {"start_line_number":1,"start_column":14,"end_line_number":1,"end_column":19}
+      ],
+      "persistent_id": "83a85e15c8630d3441fc671c4709f1f7d0cfc2b7ab04523dbcabe890cc3d5cad"
+    }, "s2": {
+      "operation": "source_map",
+      "inputs": [],
+      "table": "fact_2",
+      "calcite": {
+        "final": 1
+      },
+      "positions": [
+        {"start_line_number":5,"start_column":14,"end_line_number":5,"end_column":19}
+      ],
+      "persistent_id": "3cda12d5d1d044577139075781f6f8b926cde9d6a558adf3e71fe7c27a0f1f27"
+    }, "s3": {
+      "operation": "source_map",
+      "inputs": [],
+      "table": "fact_3",
+      "calcite": {
+        "final": 3
+      },
+      "positions": [
+        {"start_line_number":11,"start_column":14,"end_line_number":11,"end_column":19}
+      ],
+      "persistent_id": "1b602714afaba7ebecd97777175155db48069aa5a4e6792de3c98e080eb4e04f"
+    }, "s4": {
+      "operation": "map",
+      "inputs": [
+        { "node": "s3", "output": 0 }
+      ],
+      "calcite": {
+        "final": 3
+      },
+      "positions": [],
+      "persistent_id": "1d80d44d3a5f74ab0b0ab6a028de9907112768c06ee7696bda604d23bdf3fb0e"
+    }, "s5": {
+      "operation": "flat_map_index",
+      "inputs": [
+        { "node": "s4", "output": 0 }
+      ],
+      "calcite": {
+        "seq": [
+          {
+            "final": 4
+          },{
+            "partial": 5
+          },{
+            "partial": 10
+          }]
+      },
+      "positions": [
+        {"start_line_number":31,"start_column":7,"end_line_number":31,"end_column":42},
+        {"start_line_number":11,"start_column":1,"end_line_number":16,"end_column":1}
+      ],
+      "persistent_id": "d8c1037ed481c265a067711a77d260080ecc6b23c68c86e509059b9a13cde63e"
+    }, "s6": {
+      "operation": "flat_map_index",
+      "inputs": [
+        { "node": "s4", "output": 0 }
+      ],
+      "calcite": {
+        "seq": [
+          {
+            "final": 4
+          },{
+            "partial": 5
+          }]
+      },
+      "positions": [
+        {"start_line_number":31,"start_column":7,"end_line_number":31,"end_column":42},
+        {"start_line_number":11,"start_column":1,"end_line_number":16,"end_column":1}
+      ],
+      "persistent_id": "c3b149be2618a94c49c0c6d46bd32826f0fb2e6888ea785eed6eaac4b35403f6"
+    }, "s7": {
+      "operation": "flat_map_index",
+      "inputs": [
+        { "node": "s2", "output": 0 }
+      ],
+      "calcite": {
+        "seq": [
+          {
+            "final": 2
+          },{
+            "partial": 5
+          },{
+            "partial": 10
+          }]
+      },
+      "positions": [
+        {"start_line_number":25,"start_column":71,"end_line_number":25,"end_column":105},
+        {"start_line_number":5,"start_column":1,"end_line_number":10,"end_column":1}
+      ],
+      "persistent_id": "0b12f8499737f68031abe5d4e7717c593a949402a6e34f4ed871e950c54c6d27"
+    }, "s8": {
+      "operation": "join_index",
+      "inputs": [
+        { "node": "s7", "output": 0 },
+        { "node": "s5", "output": 0 }
+      ],
+      "calcite": {
+        "seq": [
+          {
+            "partial": 5
+          },{
+            "partial": 10
+          }]
+      },
+      "positions": [],
+      "persistent_id": "61b1ddfb0469a4b956122467e4def0c1a492d7b59fa812e96b2121e5c6753cbb"
+    }, "s9": {
+      "operation": "map_index",
+      "inputs": [
+        { "node": "s8", "output": 0 }
+      ],
+      "calcite": {
+        "partial": 10
+      },
+      "positions": [],
+      "persistent_id": "f7dcede6c8a81290568a8a9380a8bae98463c99e2978a66c81077fcb7af23d15"
+    }, "s10": {
+      "operation": "map_index",
+      "inputs": [
+        { "node": "s1", "output": 0 }
+      ],
+      "calcite": {
+        "seq": [
+          {
+            "final": 8
+          },{
+            "partial": 9
+          }]
+      },
+      "positions": [],
+      "persistent_id": "7e5faeda2f225cb85b36db69b493021b2562df6ff97937c92de2fb548d2fba57"
+    }, "s11": {
+      "operation": "aggregate",
+      "inputs": [
+        { "node": "s10", "output": 0 }
+      ],
+      "calcite": {
+        "partial": 9
+      },
+      "positions": [],
+      "persistent_id": "01dce016e57fc992400aaa4e127d3397c66692a866f25a0ecee2c939e3b2b4b6"
+    }, "s12": {
+      "operation": "map_index",
+      "inputs": [
+        { "node": "s11", "output": 0 }
+      ],
+      "calcite": {
+        "seq": [
+          {
+            "partial": 9
+          },{
+            "partial": 10
+          }]
+      },
+      "positions": [],
+      "persistent_id": "bd1af3f83d85675bad979a47097dbd68ea89da710c1895fb68f4a91fe043256f"
+    }, "s13": {
+      "operation": "antijoin",
+      "inputs": [
+        { "node": "s9", "output": 0 },
+        { "node": "s12", "output": 0 }
+      ],
+      "calcite": {
+        "partial": 10
+      },
+      "positions": [],
+      "persistent_id": "6b9d16e9c4de197696afe58fdc7b3eb73c0699b792323b8c1e6afa35873f4174"
+    }, "s14": {
+      "operation": "map",
+      "inputs": [
+        { "node": "s13", "output": 0 }
+      ],
+      "calcite": {
+        "partial": 10
+      },
+      "positions": [],
+      "persistent_id": "b5f87bba9920b028ea7afe7090efe888254fd0feffc4d9a76401417da70e2953"
+    }, "s15": {
+      "operation": "map_index",
+      "inputs": [
+        { "node": "s11", "output": 0 }
+      ],
+      "calcite": {
+        "seq": [
+          {
+            "partial": 9
+          },{
+            "partial": 10
+          }]
+      },
+      "positions": [],
+      "persistent_id": "c1bf3e39683b4d43f192ac17eae50903fa68975a1b207118a2eab5ceb887533e"
+    }, "s16": {
+      "operation": "join",
+      "inputs": [
+        { "node": "s8", "output": 0 },
+        { "node": "s15", "output": 0 }
+      ],
+      "calcite": {
+        "partial": 10
+      },
+      "positions": [],
+      "persistent_id": "5c1da5771bea72202c5723a07231ca655d237cea19a98bd9636b7f1317597963"
+    }, "s17": {
+      "operation": "sum",
+      "inputs": [
+        { "node": "s16", "output": 0 },
+        { "node": "s14", "output": 0 }
+      ],
+      "calcite": {
+        "final": 10
+      },
+      "positions": [],
+      "persistent_id": "e88239b119a6aa89e9b2b2b185b113a8565c8703e61ec4f2dfd09932731dc5d5"
+    }, "s18": {
+      "operation": "flat_map",
+      "inputs": [
+        { "node": "s17", "output": 0 }
+      ],
+      "calcite": {
+        "seq": [
+          {
+            "final": 11
+          },{
+            "final": 12
+          }]
+      },
+      "positions": [],
+      "persistent_id": "fd4b2853f471e9a8b94514459c1159d60b1177d3d7545569f290263db260df0e"
+    }, "s19": {
+      "operation": "nested",
+      "outputs": [
+        { "node": "s36", "output": 0 }
+      ],
+      "s20": {
+        "operation": "Z has_permission_2_e6d71768f13be1c9-decl",
+        "inputs": [],
+        "backedges": [{ "node": "s36", "output": 0 }],
+        "calcite": {
+          "final": 13
+        },
+        "positions": [],
+        "persistent_id": "2a6b14a48c46f418786f83819c14246f3c0fb8e55320cc549fada171ba524159"
+      },
+      "s21": {
+        "operation": "delta0",
+        "inputs": [
+          { "node": "s6", "output": 0 }
+        ],
+        "calcite": {
+          "partial": 14
+        },
+        "positions": [],
+        "persistent_id": "d2cda3ef27feb143424e9f4eae9171f2877c17d14f542dca6afa4d178beda076"
+      },
+      "s22": {
+        "operation": "map_index",
+        "inputs": [
+          { "node": "s20", "output": 0 }
+        ],
+        "calcite": {
+          "seq": [
+            {
+              "partial": 14
+            },{
+              "partial": 16
+            }]
+        },
+        "positions": [
+          {"start_line_number":17,"start_column":1,"end_line_number":22,"end_column":1}
+        ],
+        "persistent_id": "6cc8efdea8c429cd89207614f9c76e6c5e265e31fc6f5a0f0aab52a724beb511"
+      },
+      "s23": {
+        "operation": "map_index",
+        "inputs": [
+          { "node": "s21", "output": 0 }
+        ],
+        "calcite": {
+          "seq": [
+            {
+              "partial": 14
+            },{
+              "partial": 16
+            }]
+        },
+        "positions": [],
+        "persistent_id": "55b4f6782bd09c32a53fcf2f83d320fe2ea6dfc5283974713d8315085250aa37"
+      },
+      "s24": {
+        "operation": "join_index",
+        "inputs": [
+          { "node": "s22", "output": 0 },
+          { "node": "s23", "output": 0 }
+        ],
+        "calcite": {
+          "seq": [
+            {
+              "partial": 14
+            },{
+              "partial": 16
+            }]
+        },
+        "positions": [],
+        "persistent_id": "be88673dbe132560e586c3416113c904ef9f529e6fb588d0ffcb309a90fe9c5b"
+      },
+      "s25": {
+        "operation": "delta0",
+        "inputs": [
+          { "node": "s15", "output": 0 }
+        ],
+        "calcite": {
+          "partial": 16
+        },
+        "positions": [],
+        "persistent_id": "eb131d37e7e859cbc180a16eb824f977fbc6d72aee4baf3aba4419a35958edac"
+      },
+      "s26": {
+        "operation": "map_index",
+        "inputs": [
+          { "node": "s25", "output": 0 }
+        ],
+        "calcite": {
+          "partial": 16
+        },
+        "positions": [],
+        "persistent_id": "5777d4ef5d35bccfc6c46a7f10d22cbdadab35ed6571b503ff60004379fafc4a"
+      },
+      "s27": {
+        "operation": "join",
+        "inputs": [
+          { "node": "s24", "output": 0 },
+          { "node": "s25", "output": 0 }
+        ],
+        "calcite": {
+          "partial": 16
+        },
+        "positions": [],
+        "persistent_id": "6e4518ee82a279403ed4fd3b308aa83ac88caaa2fe08f4d408d5d6df7b3ac434"
+      },
+      "s28": {
+        "operation": "map_index",
+        "inputs": [
+          { "node": "s24", "output": 0 }
+        ],
+        "calcite": {
+          "partial": 16
+        },
+        "positions": [],
+        "persistent_id": "5eea50aec1e04284ab166d6e0aada05cbaae2be2941564cd0375b42fb8ff2e18"
+      },
+      "s29": {
+        "operation": "antijoin",
+        "inputs": [
+          { "node": "s28", "output": 0 },
+          { "node": "s26", "output": 0 }
+        ],
+        "calcite": {
+          "partial": 16
+        },
+        "positions": [],
+        "persistent_id": "0a80591dc34990e725e91a6281a15e0acae3543a954ec3b6f09fdd61bfa5a045"
+      },
+      "s30": {
+        "operation": "map",
+        "inputs": [
+          { "node": "s29", "output": 0 }
+        ],
+        "calcite": {
+          "partial": 16
+        },
+        "positions": [],
+        "persistent_id": "cf9265400f6184ae3fcb09dffda37008910c73863d1656728dc0fa81a5595fd2"
+      },
+      "s31": {
+        "operation": "sum",
+        "inputs": [
+          { "node": "s27", "output": 0 },
+          { "node": "s30", "output": 0 }
+        ],
+        "calcite": {
+          "final": 16
+        },
+        "positions": [],
+        "persistent_id": "efa6698162d4d87e9417c0dbdf12103feb6f796e847f72b5fc9242709e0afe9b"
+      },
+      "s32": {
+        "operation": "flat_map",
+        "inputs": [
+          { "node": "s31", "output": 0 }
+        ],
+        "calcite": {
+          "seq": [
+            {
+              "final": 17
+            },{
+              "final": 18
+            }]
+        },
+        "positions": [],
+        "persistent_id": "e3f6308a16a5f0738db3d6d5a8f242282b0e87dfb826a9ba174c98b508f4771b"
+      },
+      "s33": {
+        "operation": "delta0",
+        "inputs": [
+          { "node": "s18", "output": 0 }
+        ],
+        "calcite": {
+          "partial": 19
+        },
+        "positions": [],
+        "persistent_id": "6a51c85861d6519e15ca6c5208e7656b2be99616f642f5d753e17fe596708a14"
+      },
+      "s34": {
+        "operation": "sum",
+        "inputs": [
+          { "node": "s33", "output": 0 },
+          { "node": "s32", "output": 0 }
+        ],
+        "calcite": {
+          "partial": 19
+        },
+        "positions": [],
+        "persistent_id": "a76ef7569ff23adecbdb67ba78633e797fae41583bbc5a46deab23cea58976c2"
+      },
+      "s35": {
+        "operation": "distinct",
+        "inputs": [
+          { "node": "s34", "output": 0 }
+        ],
+        "calcite": {
+          "final": 19
+        },
+        "positions": [],
+        "persistent_id": "8a35671fec2f9666def392ccccfc105ee669505e2c6478951b3c94cb1f783c98"
+      },
+      "s36": {
+        "operation": "map",
+        "inputs": [
+          { "node": "s35", "output": 0 }
+        ],
+        "calcite": {
+          "partial": 19
+        },
+        "positions": [
+          {"start_line_number":23,"start_column":1,"end_line_number":35,"end_column":1}
+        ],
+        "persistent_id": "0efaae5b7e2555528e68c762419c500f197d5ac9062e2e606bbc383545c33b27"
+      }
+    }, "s37": {
+      "operation": "inspect",
+      "inputs": [
+        { "node": "s19", "output": 0 }
+      ],
+      "view": "has_permission_2_e6d71768f13be1c9",
+      "calcite": {
+        "final": 19
+      },
+      "positions": [
+        {"start_line_number":23,"start_column":1,"end_line_number":35,"end_column":1}
+      ],
+      "persistent_id": "820cecd50d9c8b296b1ea4fbe5a6da389f617901cb3e8dec260a87791e75b527"
+    }, "s38": {
+      "operation": "inspect",
+      "inputs": [
+        { "node": "s0", "output": 0 }
+      ],
+      "view": "error_view",
+      "calcite": {
+        "final": 0
+      },
+      "positions": [
+        {"start_line_number":4,"start_column":1,"end_line_number":4,"end_column":59}
+      ],
+      "persistent_id": "933ebf782e1fe804fe85c4d0f3688bdb5234b386c2834892776e692acd9781d9"
+    }
+  },
+  "sources": [
+    "CREATE TABLE fact_1 (",
+    "    arg0 text not null,",
+    "    PRIMARY KEY (arg0)",
+    ");",
+    "CREATE TABLE fact_2 (",
+    "    arg0 text not null,",
+    "    arg1 text not null,",
+    "    arg2 text not null,",
+    "    PRIMARY KEY (arg0, arg1, arg2)",
+    ");",
+    "CREATE TABLE fact_3 (",
+    "    arg0 text not null,",
+    "    arg1 text not null,",
+    "    arg2 text not null,",
+    "    PRIMARY KEY (arg0, arg1, arg2)",
+    ");",
+    "DECLARE RECURSIVE VIEW has_permission_2_e6d71768f13be1c9(",
+    "    out0_type text not null,",
+    "    out0_val text not null,",
+    "    out1_type text not null,",
+    "    out1_val text not null",
+    ");",
+    "CREATE MATERIALIZED VIEW has_permission_2_e6d71768f13be1c9(out0_type, out0_val, out1_type, out1_val) as (SELECT CAST('User' as VARCHAR)  out0_type, f0.arg2 out0_val, CAST('Foo' as VARCHAR)  out1_type, f1.arg2 out1_val",
+    "FROM fact_3 f0, fact_2 f1",
+    "WHERE f0.arg1 = CAST('manager' as VARCHAR)  and f1.arg0 = f0.arg0 and f1.arg1 = CAST('member' as VARCHAR)  and NOT EXISTS (SELECT true",
+    "FROM fact_1 f2",
+    "WHERE f0.arg2 = f2.arg0",
+    ")",
+    " union SELECT CAST('User' as VARCHAR)  out0_type, f0.arg2 out0_val, CAST('Foo' as VARCHAR)  out1_type, t1.out1_val out1_val",
+    "FROM fact_3 f0, has_permission_2_e6d71768f13be1c9 t1",
+    "WHERE f0.arg1 = CAST('manager' as VARCHAR)  and t1.out0_val = f0.arg0 and NOT EXISTS (SELECT true",
+    "FROM fact_1 f2",
+    "WHERE f0.arg2 = f2.arg0",
+    ")",
+    ");"
+  ]
+}
