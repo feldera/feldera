@@ -4,11 +4,10 @@ from http import HTTPStatus
 from urllib.parse import quote_plus
 
 from .helper import (
+    create_pipeline,
     get,
-    post_json,
     post_no_body,
     http_request,
-    wait_for_program_success,
     api_url,
     start_pipeline,
     start_pipeline_as_paused,
@@ -52,9 +51,7 @@ def test_pipeline_metrics(pipeline_name):
     """
     Tests that circuit metrics can be retrieved from the pipeline.
     """
-    r = post_json(api_url("/pipelines"), {"name": pipeline_name, "program_code": ""})
-    assert r.status_code == HTTPStatus.CREATED
-    wait_for_program_success(pipeline_name, 1)
+    create_pipeline(pipeline_name, "")
     start_pipeline_as_paused(pipeline_name)
 
     # Default
@@ -102,9 +99,8 @@ def test_pipeline_stats(pipeline_name):
     );
     CREATE MATERIALIZED VIEW v1 AS SELECT * FROM t1;
     """.strip()
-    r = post_json(api_url("/pipelines"), {"name": pipeline_name, "program_code": sql})
-    assert r.status_code == HTTPStatus.CREATED, r.text
-    wait_for_program_success(pipeline_name, 1)
+
+    create_pipeline(pipeline_name, sql)
     start_pipeline(pipeline_name)
 
     # Create output connector on v1 (egress)
@@ -176,15 +172,7 @@ def test_pipeline_logs(pipeline_name):
     assert r.status_code == HTTPStatus.NOT_FOUND
 
     # Create pipeline
-    r = post_json(
-        api_url("/pipelines"),
-        {
-            "name": pipeline_name,
-            "program_code": "CREATE TABLE t1(c1 INTEGER) WITH ('materialized'='true');",
-        },
-    )
-    assert r.status_code == HTTPStatus.CREATED, r.text
-    wait_for_program_success(pipeline_name, 1)
+    create_pipeline(pipeline_name, "CREATE TABLE t1(c1 INTEGER) WITH ('materialized'='true');")
 
     # Poll for logs availability
     deadline = time.time() + 30

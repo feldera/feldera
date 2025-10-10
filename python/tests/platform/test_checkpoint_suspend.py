@@ -6,8 +6,8 @@ from urllib.parse import quote_plus
 import pytest
 
 from tests import TEST_CLIENT, enterprise_only
+from tests.platform.test_ingress_formats import create_pipeline
 from .helper import (
-    post_json,
     get,
     wait_for_program_success,
     api_url,
@@ -55,9 +55,7 @@ def test_checkpoint_oss(pipeline_name):
         pytest.skip("Enterprise edition: use enterprise checkpoint test instead")
 
     sql = "CREATE TABLE t1(x int) WITH ('materialized'='true');"
-    r = post_json(api_url("/pipelines"), {"name": pipeline_name, "program_code": sql})
-    assert r.status_code == HTTPStatus.CREATED, r.text
-    wait_for_program_success(pipeline_name, 1)
+    create_pipeline(pipeline_name, sql)
 
     resp = post_no_body(api_url(f"/pipelines/{pipeline_name}/checkpoint"))
     assert resp.status_code == HTTPStatus.NOT_IMPLEMENTED, resp.text
@@ -72,9 +70,7 @@ def test_checkpoint_enterprise(pipeline_name):
     Enterprise: invoke /checkpoint multiple times, poll /checkpoint_status for completion.
     """
     sql = "CREATE TABLE t1(x int) WITH ('materialized'='true');"
-    r = post_json(api_url("/pipelines"), {"name": pipeline_name, "program_code": sql})
-    assert r.status_code == HTTPStatus.CREATED, r.text
-    wait_for_program_success(pipeline_name, 1)
+    create_pipeline(pipeline_name, sql)
     start_pipeline_as_paused(pipeline_name)
 
     for _ in range(5):
@@ -112,9 +108,7 @@ def test_suspend_oss(pipeline_name):
         pytest.skip("Enterprise edition: use enterprise suspend test instead")
 
     sql = "CREATE TABLE t1(x int) WITH ('materialized'='true');"
-    r = post_json(api_url("/pipelines"), {"name": pipeline_name, "program_code": sql})
-    assert r.status_code == HTTPStatus.CREATED
-    wait_for_program_success(pipeline_name, 1)
+    create_pipeline(pipeline_name, sql)
 
     resp = post_no_body(api_url(f"/pipelines/{pipeline_name}/stop?force=false"))
     assert resp.status_code == HTTPStatus.NOT_IMPLEMENTED, (
@@ -187,9 +181,7 @@ def test_suspend_enterprise(pipeline_name):
     );
     """.strip()
 
-    r = post_json(api_url("/pipelines"), {"name": pipeline_name, "program_code": sql})
-    assert r.status_code == HTTPStatus.CREATED, r.text
-    wait_for_program_success(pipeline_name, 1)
+    create_pipeline(pipeline_name, sql)
 
     # Start pipeline (all connectors remain paused)
     start_pipeline(pipeline_name)
