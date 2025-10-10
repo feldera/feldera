@@ -78,5 +78,4 @@ class SharedTestPipeline(unittest.TestCase):
             runtime_config=RuntimeConfig(
                 logging="debug",
             ),
-
         ).create_or_replace()

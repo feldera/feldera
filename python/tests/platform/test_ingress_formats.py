@@ -11,7 +11,7 @@ from .helper import (
     start_pipeline,
     gen_pipeline_name,
     adhoc_query_json,
-    create_pipeline
+    create_pipeline,
 )
 
 

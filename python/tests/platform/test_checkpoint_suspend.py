@@ -9,7 +9,6 @@ from tests import TEST_CLIENT, enterprise_only
 from tests.platform.test_ingress_formats import create_pipeline
 from .helper import (
     get,
-    wait_for_program_success,
     api_url,
     post_no_body,
     start_pipeline,
