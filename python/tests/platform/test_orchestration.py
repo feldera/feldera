@@ -2,8 +2,7 @@ import time
 from http import HTTPStatus
 
 from .helper import (
-    post_json,
-    wait_for_program_success,
+    create_pipeline,
     post_no_body,
     api_url,
     start_pipeline,
@@ -63,11 +62,7 @@ def test_pipeline_orchestration_basic(pipeline_name):
         );
         """.strip()
 
-        r = post_json(
-            api_url("/pipelines"), {"name": cur_pipeline_name, "program_code": sql}
-        )
-        assert r.status_code == HTTPStatus.CREATED, r.text
-        wait_for_program_success(cur_pipeline_name, 1)
+        create_pipeline(cur_pipeline_name, sql)
         start_pipeline_as_paused(cur_pipeline_name)
 
         # Initial: pipeline paused, connector running, processed=0
@@ -130,9 +125,8 @@ def test_pipeline_orchestration_errors(pipeline_name):
         }]'
     );
     """.strip()
-    r = post_json(api_url("/pipelines"), {"name": pipeline_name, "program_code": sql})
-    assert r.status_code == HTTPStatus.CREATED, r.text
-    wait_for_program_success(pipeline_name, 1)
+
+    create_pipeline(pipeline_name, sql)
     start_pipeline_as_paused(pipeline_name)
 
     # ACCEPTED endpoints
@@ -206,9 +200,7 @@ def test_pipeline_orchestration_scenarios(pipeline_name):
         ]'
     );
     """.strip()
-    r = post_json(api_url("/pipelines"), {"name": pipeline_name, "program_code": sql})
-    assert r.status_code == HTTPStatus.CREATED, r.text
-    wait_for_program_success(pipeline_name, 1)
+    create_pipeline(pipeline_name, sql)
     stop_pipeline(pipeline_name, force=True)
 
     class Step:
