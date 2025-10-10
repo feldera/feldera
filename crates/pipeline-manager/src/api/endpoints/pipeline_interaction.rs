@@ -1107,7 +1107,7 @@ pub(crate) async fn post_pipeline_pause(
 
     if response.status() == StatusCode::ACCEPTED {
         info!(
-            "Accepted action: pausing pipeline (tenant: {})", // {pipeline_id}
+            "Accepted action: pausing pipeline {pipeline_name:?} (tenant: {})", // {pipeline_id}
             *tenant_id
         );
     }
@@ -1167,7 +1167,7 @@ pub(crate) async fn post_pipeline_resume(
 
     if response.status() == StatusCode::ACCEPTED {
         info!(
-            "Accepted action: resuming pipeline (tenant: {})", // {pipeline_id}
+            "Accepted action: resuming pipeline {pipeline_name:?} (tenant: {})", // {pipeline_id}
             *tenant_id
         );
     }
@@ -1249,7 +1249,7 @@ pub(crate) async fn post_pipeline_activate(
 
         if response.status() == StatusCode::ACCEPTED {
             info!(
-                "Accepted action: activating pipeline (tenant: {})", // {pipeline_id}
+                "Accepted action: activating pipeline {pipeline_name:?} (tenant: {})", // {pipeline_id}
                 *tenant_id
             );
         }
