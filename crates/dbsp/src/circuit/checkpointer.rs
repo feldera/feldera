@@ -135,7 +135,11 @@ impl Checkpointer {
         in_use_paths.insert(CHECKPOINT_FILE_NAME.into());
         in_use_paths.insert(STEPS_FILE.into());
         in_use_paths.insert(STATE_FILE.into());
+        // Don't delete either `status.json` or `status.json.mut` either because
+        // these files get updated asynchronously and we must not interfere with
+        // it.
         in_use_paths.insert(STATUS_FILE.into());
+        in_use_paths.insert(format!("{}.mut", STATUS_FILE).into());
         in_use_paths.insert(ADHOC_TEMP_DIR.into());
         in_use_paths.insert(ACTIVATION_MARKER_FILE.into());
         for cpm in self.checkpoint_list.iter() {
