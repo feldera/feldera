@@ -751,6 +751,7 @@ pub(crate) async fn post_pipeline(
     body: web::Json<PostPutPipelineInternal>,
 ) -> Result<HttpResponse, ManagerError> {
     let pipeline_descr: PipelineDescr = body.into_inner().into();
+    let name = pipeline_descr.name.clone();
     let pipeline = state
         .db
         .lock()
@@ -765,7 +766,7 @@ pub(crate) async fn post_pipeline(
     let returned_pipeline = PipelineInfoInternal::new(pipeline);
 
     info!(
-        "Created pipeline {} (tenant: {})",
+        "Created pipeline {name:?} ({}) (tenant: {})",
         returned_pipeline.id, *tenant_id
     );
     Ok(HttpResponse::Created()
@@ -1131,7 +1132,7 @@ pub(crate) async fn post_pipeline_start(
     };
 
     info!(
-        "Accepted action: going to start pipeline {pipeline_id} as {} (tenant: {})",
+        "Accepted action: going to start pipeline {pipeline_name:?} ({pipeline_id}) as {} (tenant: {})",
         initial, *tenant_id
     );
     Ok(HttpResponse::Accepted().json(json!("Pipeline is starting")))
@@ -1216,7 +1217,7 @@ pub(crate) async fn post_pipeline_stop(
             .set_deployment_resources_desired_status_stopped(*tenant_id, &pipeline_name)
             .await?;
         info!(
-            "Accepted action: going to forcefully stop pipeline {pipeline_id} (tenant: {})",
+            "Accepted action: going to forcefully stop pipeline {pipeline_name:?} ({pipeline_id}) (tenant: {})",
             *tenant_id
         );
         Ok(HttpResponse::Accepted().json(json!("Pipeline is forcefully stopping")))
@@ -1240,7 +1241,7 @@ pub(crate) async fn post_pipeline_stop(
                 .await?;
             if was_set {
                 info!(
-                    "Accepted action: going to forcefully stop pipeline {pipeline_id} (tenant: {}) because it is not provisioned",
+                    "Accepted action: going to forcefully stop pipeline {pipeline_name:?} ({pipeline_id}) (tenant: {}) because it is not provisioned",
                     *tenant_id
                 );
                 Ok(HttpResponse::Accepted().json(json!("Pipeline is forcefully stopping")))
@@ -1268,7 +1269,7 @@ pub(crate) async fn post_pipeline_stop(
                     .is_ok_and(|v| v.status() == actix_web::http::StatusCode::ACCEPTED)
                 {
                     info!(
-                        "Accepted action: going to non-forcefully stop pipeline {pipeline_id} (tenant: {})",
+                        "Accepted action: going to non-forcefully stop pipeline {pipeline_name:?} ({pipeline_id}) (tenant: {})",
                         *tenant_id
                     );
                 }
@@ -1325,7 +1326,7 @@ pub(crate) async fn post_pipeline_clear(
         .await?;
 
     info!(
-        "Accepted storage action: going to clear storage of pipeline {pipeline_id} (tenant: {})",
+        "Accepted storage action: going to clear storage of pipeline {pipeline_name:?} ({pipeline_id}) (tenant: {})",
         *tenant_id
     );
     Ok(HttpResponse::Accepted().json(json!("Pipeline storage is being cleared")))
