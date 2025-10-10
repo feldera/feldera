@@ -110,6 +110,31 @@ export type BuildInformation = {
   rustc_version: string
 }
 
+export type CalciteId =
+  | {
+      partial: number
+    }
+  | {
+      final: number
+    }
+  | {
+      and: Array<CalciteId>
+    }
+  | {
+      seq: Array<CalciteId>
+    }
+  | {
+      [key: string]: unknown
+    }
+  | null
+
+/**
+ * The Calcite plan representation of a dataflow graph.
+ */
+export type CalcitePlan = {
+  rels: Array<Rel>
+}
+
 /**
  * Information about a failed checkpoint.
  */
@@ -298,6 +323,13 @@ export type CompletionTokenResponse = {
   token: string
 }
 
+export type Condition = {
+  literal?: boolean
+  op?: Op | null
+  operands?: Array<Operand> | null
+  '[key: string]': (unknown | boolean | Operand) | undefined
+}
+
 export type Configuration = {
   build_info: BuildInformation
   /**
@@ -416,6 +448,18 @@ export type ConnectorConfig = OutputBufferConfig & {
    */
   start_after?: Array<string> | null
   transport: TransportConfig
+}
+
+/**
+ * The JSON representation of a dataflow graph.
+ */
+export type Dataflow = {
+  calcite_plan: {
+    [key: string]: CalcitePlan
+  }
+  mir: {
+    [key: string]: MirNode
+  }
 }
 
 /**
@@ -1498,6 +1542,24 @@ export type MetricsParameters = {
   format?: MetricsFormat
 }
 
+export type MirInput = {
+  node: string
+  output: number
+  '[key: string]': (unknown | string | number) | undefined
+}
+
+export type MirNode = {
+  calcite?: CalciteId | null
+  inputs?: Array<MirInput>
+  operation: string
+  outputs?: Array<MirInput> | null
+  persistent_id?: string | null
+  positions?: Array<SourcePosition>
+  table?: string | null
+  view?: string | null
+  '[key: string]': (unknown | MirInput | string | SourcePosition) | undefined
+}
+
 /**
  * Request to create a new API key.
  */
@@ -1642,6 +1704,19 @@ export type ObjectStorageConfig = {
    * options.
    */
   '[key: string]': string | undefined
+}
+
+export type Op = {
+  kind: string
+  name: string
+  syntax: string
+  '[key: string]': (unknown | string) | undefined
+}
+
+export type Operand = {
+  input?: number | null
+  name?: string | null
+  '[key: string]': (unknown | number | string) | undefined
 }
 
 export type OutputBufferConfig = {
@@ -1896,7 +1971,6 @@ export type PipelineConfig = {
    */
   workers?: number
 } & {
-  dataflow?: unknown
   /**
    * Input endpoint configuration.
    */
@@ -1913,6 +1987,7 @@ export type PipelineConfig = {
   outputs?: {
     [key: string]: OutputEndpointConfig
   }
+  program_ir?: ProgramIr | null
   /**
    * Directory containing values of secrets.
    *
@@ -1999,7 +2074,7 @@ export type PipelineSelectedInfo = {
   deployment_runtime_desired_status?: RuntimeDesiredStatus | null
   deployment_runtime_desired_status_since?: string | null
   deployment_runtime_status?: RuntimeStatus | null
-  deployment_runtime_status_details?: string | null
+  deployment_runtime_status_details?: unknown
   deployment_runtime_status_since?: string | null
   deployment_status: CombinedStatus
   deployment_status_since: string
@@ -2187,10 +2262,7 @@ export type ProgramError = {
  * as well as only for runtime (e.g., schema, input/output connectors).
  */
 export type ProgramInfo = {
-  /**
-   * Dataflow graph of the program.
-   */
-  dataflow?: unknown
+  dataflow?: Dataflow | null
   /**
    * Input connectors derived from the schema.
    */
@@ -2212,6 +2284,13 @@ export type ProgramInfo = {
    * Generated user defined function (UDF) stubs Rust code: stubs.rs
    */
   udf_stubs?: string
+}
+
+export type ProgramIr = {
+  mir: {
+    [key: string]: MirNode
+  }
+  program_schema: ProgramSchema
 }
 
 /**
@@ -2342,6 +2421,26 @@ export type RedisOutputConfig = {
   key_separator?: string
 }
 
+export type Rel = {
+  aggs?: Array<unknown> | null
+  all?: boolean | null
+  condition?: Condition | null
+  exprs?: Array<Operand> | null
+  fields?: Array<string> | null
+  group?: Array<number> | null
+  id: number
+  inputs?: Array<number>
+  joinType?: string | null
+  relOp: string
+  /**
+   * This is a vector where the elements concatenated form a fully qualified table name.
+   *
+   * e.g., usually is of the form `[$namespace, $table] / [schema, table]`
+   */
+  table?: Array<string> | null
+  '[key: string]': (unknown | boolean | Operand | string | number) | undefined
+}
+
 /**
  * A SQL table or view. It has a name and a list of fields.
  *
@@ -2376,6 +2475,19 @@ export type ResourceConfig = {
    * for an instance of this pipeline
    */
   memory_mb_min?: number | null
+  /**
+   * Kubernetes namespace to use for an instance of this pipeline.
+   * The namespace determines the scope of names for resources created
+   * for the pipeline.
+   * If not set, the pipeline will be deployed in the same namespace
+   * as the control-plane.
+   */
+  namespace?: string | null
+  /**
+   * Kubernetes service account name to use for an instance of this pipeline.
+   * The account determines permissions and access controls.
+   */
+  service_account_name?: string | null
   /**
    * Storage class to use for an instance of this pipeline.
    * The class determines storage performance such as IOPS and throughput.

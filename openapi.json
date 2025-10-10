@@ -1732,7 +1732,8 @@
         "tags": [
           "Pipeline interaction"
         ],
-        "summary": "TODO",
+        "summary": "Approves the pipeline to proceed with bootstrapping.",
+        "description": "This endpoint is used when a pipeline has been started with\n`bootstrap_policy=await_approval` and is currently in the\n`AwaitingApproval` state. The pipeline will wait for explicit\nuser approval before proceeding with the bootstrapping process.",
         "operationId": "post_pipeline_approve",
         "parameters": [
           {
@@ -5501,6 +5502,82 @@
           }
         }
       },
+      "CalciteId": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "partial"
+            ],
+            "properties": {
+              "partial": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "final"
+            ],
+            "properties": {
+              "final": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "and"
+            ],
+            "properties": {
+              "and": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/CalciteId"
+                }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "seq"
+            ],
+            "properties": {
+              "seq": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/CalciteId"
+                }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "default": null,
+            "nullable": true
+          }
+        ]
+      },
+      "CalcitePlan": {
+        "type": "object",
+        "description": "The Calcite plan representation of a dataflow graph.",
+        "required": [
+          "rels"
+        ],
+        "properties": {
+          "rels": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Rel"
+            }
+          }
+        }
+      },
       "CheckpointFailure": {
         "type": "object",
         "description": "Information about a failed checkpoint.",
@@ -5742,6 +5819,30 @@
           }
         }
       },
+      "Condition": {
+        "type": "object",
+        "properties": {
+          "literal": {
+            "type": "boolean"
+          },
+          "op": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Op"
+              }
+            ],
+            "nullable": true
+          },
+          "operands": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Operand"
+            },
+            "nullable": true
+          }
+        },
+        "additionalProperties": {}
+      },
       "Configuration": {
         "type": "object",
         "required": [
@@ -5866,6 +5967,28 @@
           }
         ],
         "description": "A data connector's configuration"
+      },
+      "Dataflow": {
+        "type": "object",
+        "description": "The JSON representation of a dataflow graph.",
+        "required": [
+          "calcite_plan",
+          "mir"
+        ],
+        "properties": {
+          "calcite_plan": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/CalcitePlan"
+            }
+          },
+          "mir": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/MirNode"
+            }
+          }
+        }
       },
       "DatagenInputConfig": {
         "type": "object",
@@ -6932,6 +7055,74 @@
           }
         }
       },
+      "MirInput": {
+        "type": "object",
+        "required": [
+          "node",
+          "output"
+        ],
+        "properties": {
+          "node": {
+            "type": "string"
+          },
+          "output": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": {}
+      },
+      "MirNode": {
+        "type": "object",
+        "required": [
+          "operation"
+        ],
+        "properties": {
+          "calcite": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CalciteId"
+              }
+            ],
+            "nullable": true
+          },
+          "inputs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MirInput"
+            }
+          },
+          "operation": {
+            "type": "string"
+          },
+          "outputs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MirInput"
+            },
+            "nullable": true
+          },
+          "persistent_id": {
+            "type": "string",
+            "nullable": true
+          },
+          "positions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SourcePosition"
+            }
+          },
+          "table": {
+            "type": "string",
+            "nullable": true
+          },
+          "view": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": {}
+      },
       "NewApiKeyRequest": {
         "type": "object",
         "description": "Request to create a new API key.",
@@ -7047,6 +7238,41 @@
           "type": "string",
           "description": "Additional options as key-value pairs.\n\nThe following keys are supported:\n\n* S3:\n- `access_key_id`: AWS Access Key.\n- `secret_access_key`: AWS Secret Access Key.\n- `region`: Region.\n- `default_region`: Default region.\n- `endpoint`: Custom endpoint for communicating with S3,\ne.g. `https://localhost:4566` for testing against a localstack\ninstance.\n- `token`: Token to use for requests (passed to underlying provider).\n- [Other keys](https://docs.rs/object_store/latest/object_store/aws/enum.AmazonS3ConfigKey.html#variants).\n* Google Cloud Storage:\n- `service_account`: Path to the service account file.\n- `service_account_key`: The serialized service account key.\n- `google_application_credentials`: Application credentials path.\n- [Other keys](https://docs.rs/object_store/latest/object_store/gcp/enum.GoogleConfigKey.html).\n* Microsoft Azure Blob Storage:\n- `access_key`: Azure Access Key.\n- `container_name`: Azure Container Name.\n- `account`: Azure Account.\n- `bearer_token_authorization`: Static bearer token for authorizing requests.\n- `client_id`: Client ID for use in client secret or Kubernetes federated credential flow.\n- `client_secret`: Client secret for use in client secret flow.\n- `tenant_id`: Tenant ID for use in client secret or Kubernetes federated credential flow.\n- `endpoint`: Override the endpoint for communicating with blob storage.\n- [Other keys](https://docs.rs/object_store/latest/object_store/azure/enum.AzureConfigKey.html#variants).\n\nOptions set through the URL take precedence over those set with these\noptions."
         }
+      },
+      "Op": {
+        "type": "object",
+        "required": [
+          "kind",
+          "name",
+          "syntax"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "syntax": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": {}
+      },
+      "Operand": {
+        "type": "object",
+        "properties": {
+          "input": {
+            "type": "integer",
+            "nullable": true,
+            "minimum": 0
+          },
+          "name": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": {}
       },
       "OutputBufferConfig": {
         "type": "object",
@@ -7330,9 +7556,6 @@
               "inputs"
             ],
             "properties": {
-              "dataflow": {
-                "nullable": true
-              },
               "inputs": {
                 "type": "object",
                 "description": "Input endpoint configuration.",
@@ -7351,6 +7574,14 @@
                 "additionalProperties": {
                   "$ref": "#/components/schemas/OutputEndpointConfig"
                 }
+              },
+              "program_ir": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/ProgramIr"
+                  }
+                ],
+                "nullable": true
               },
               "secrets_dir": {
                 "type": "string",
@@ -7705,7 +7936,6 @@
             "nullable": true
           },
           "deployment_runtime_status_details": {
-            "type": "string",
             "nullable": true
           },
           "deployment_runtime_status_since": {
@@ -8035,7 +8265,12 @@
         ],
         "properties": {
           "dataflow": {
-            "description": "Dataflow graph of the program."
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Dataflow"
+              }
+            ],
+            "nullable": true
           },
           "input_connectors": {
             "type": "object",
@@ -8061,6 +8296,24 @@
           "udf_stubs": {
             "type": "string",
             "description": "Generated user defined function (UDF) stubs Rust code: stubs.rs"
+          }
+        }
+      },
+      "ProgramIr": {
+        "type": "object",
+        "required": [
+          "mir",
+          "program_schema"
+        ],
+        "properties": {
+          "mir": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/MirNode"
+            }
+          },
+          "program_schema": {
+            "$ref": "#/components/schemas/ProgramSchema"
           }
         }
       },
@@ -8240,6 +8493,81 @@
             "description": "Separator used to join multiple components into a single key.\n\":\" by default."
           }
         }
+      },
+      "Rel": {
+        "type": "object",
+        "required": [
+          "id",
+          "relOp"
+        ],
+        "properties": {
+          "aggs": {
+            "type": "array",
+            "items": {},
+            "nullable": true
+          },
+          "all": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "condition": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Condition"
+              }
+            ],
+            "nullable": true
+          },
+          "exprs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Operand"
+            },
+            "nullable": true
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true
+          },
+          "group": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "nullable": true
+          },
+          "id": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "inputs": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "joinType": {
+            "type": "string",
+            "nullable": true
+          },
+          "relOp": {
+            "type": "string"
+          },
+          "table": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "This is a vector where the elements concatenated form a fully qualified table name.\n\ne.g., usually is of the form `[$namespace, $table] / [schema, table]`",
+            "nullable": true
+          }
+        },
+        "additionalProperties": {}
       },
       "Relation": {
         "allOf": [

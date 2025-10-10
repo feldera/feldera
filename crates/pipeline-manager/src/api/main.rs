@@ -264,6 +264,18 @@ It contains the following fields:
         crate::api::endpoints::pipeline_management::PatchPipeline,
         crate::api::endpoints::pipeline_management::PostStopPipelineParameters,
 
+        // Dataflow IR
+        feldera_ir::Dataflow,
+        feldera_ir::MirNode,
+        feldera_ir::CalcitePlan,
+        feldera_ir::CalciteId,
+        feldera_ir::MirInput,
+        feldera_ir::Rel,
+        feldera_ir::Operand,
+        feldera_ir::Op,
+        feldera_ir::Condition,
+        feldera_types::config::ProgramIr,
+
         // Storage
         crate::db::types::storage::StorageStatus,
 

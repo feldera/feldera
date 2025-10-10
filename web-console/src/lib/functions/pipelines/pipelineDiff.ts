@@ -37,8 +37,7 @@ export const parsePipelineDiff = (
   }
 
   try {
-    const parsedDetails = JSON.parse(pipeline.deploymentRuntimeStatusDetails)
-    const rawDiff = va.parse(pipelineDiffSchema, parsedDetails)
+    const rawDiff = va.parse(pipelineDiffSchema, pipeline.deploymentRuntimeStatusDetails)
     return {
       tables: rawDiff.program_diff
         ? {

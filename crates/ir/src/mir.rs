@@ -2,12 +2,13 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use utoipa::ToSchema;
 
 use crate::{CalciteId, SourcePosition};
 
 pub type MirNodeId = String;
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
 pub struct MirInput {
     pub node: String,
     pub output: usize,
@@ -16,7 +17,7 @@ pub struct MirInput {
     pub extra: HashMap<String, Value>,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
 pub struct MirNode {
     #[serde(default)]
     pub calcite: Option<CalciteId>,

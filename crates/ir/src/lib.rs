@@ -8,7 +8,7 @@ mod hir;
 mod lir;
 mod mir;
 
-pub use hir::{CalciteId, CalcitePlan};
+pub use hir::{CalciteId, CalcitePlan, Rel, Operand, Op, Condition};
 pub use lir::{LirCircuit, LirEdge, LirNode, LirNodeId, LirStreamId};
 pub use mir::{MirInput, MirNode, MirNodeId};
 use utoipa::ToSchema;
@@ -32,7 +32,7 @@ pub enum Changes {
 }
 
 /// The JSON representation of a dataflow graph.
-#[derive(Debug, Deserialize, Serialize, PartialEq, Eq, Clone)]
+#[derive(Debug, Deserialize, Serialize, ToSchema, PartialEq, Eq, Clone)]
 pub struct Dataflow {
     pub calcite_plan: HashMap<String, CalcitePlan>,
     pub mir: HashMap<MirNodeId, MirNode>,

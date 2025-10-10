@@ -159,6 +159,74 @@ export const $BuildInformation = {
   }
 } as const
 
+export const $CalciteId = {
+  oneOf: [
+    {
+      type: 'object',
+      required: ['partial'],
+      properties: {
+        partial: {
+          type: 'integer',
+          minimum: 0
+        }
+      }
+    },
+    {
+      type: 'object',
+      required: ['final'],
+      properties: {
+        final: {
+          type: 'integer',
+          minimum: 0
+        }
+      }
+    },
+    {
+      type: 'object',
+      required: ['and'],
+      properties: {
+        and: {
+          type: 'array',
+          items: {
+            $ref: '#/components/schemas/CalciteId'
+          }
+        }
+      }
+    },
+    {
+      type: 'object',
+      required: ['seq'],
+      properties: {
+        seq: {
+          type: 'array',
+          items: {
+            $ref: '#/components/schemas/CalciteId'
+          }
+        }
+      }
+    },
+    {
+      type: 'object',
+      default: null,
+      nullable: true
+    }
+  ]
+} as const
+
+export const $CalcitePlan = {
+  type: 'object',
+  description: 'The Calcite plan representation of a dataflow graph.',
+  required: ['rels'],
+  properties: {
+    rels: {
+      type: 'array',
+      items: {
+        $ref: '#/components/schemas/Rel'
+      }
+    }
+  }
+} as const
+
 export const $CheckpointFailure = {
   type: 'object',
   description: 'Information about a failed checkpoint.',
@@ -428,6 +496,31 @@ inputs associated with the token have been fully processed by the pipeline.`
   }
 } as const
 
+export const $Condition = {
+  type: 'object',
+  properties: {
+    literal: {
+      type: 'boolean'
+    },
+    op: {
+      allOf: [
+        {
+          $ref: '#/components/schemas/Op'
+        }
+      ],
+      nullable: true
+    },
+    operands: {
+      type: 'array',
+      items: {
+        $ref: '#/components/schemas/Operand'
+      },
+      nullable: true
+    }
+  },
+  additionalProperties: {}
+} as const
+
 export const $Configuration = {
   type: 'object',
   required: [
@@ -607,6 +700,26 @@ labels have finished processing all inputs.`,
     }
   ],
   description: "A data connector's configuration"
+} as const
+
+export const $Dataflow = {
+  type: 'object',
+  description: 'The JSON representation of a dataflow graph.',
+  required: ['calcite_plan', 'mir'],
+  properties: {
+    calcite_plan: {
+      type: 'object',
+      additionalProperties: {
+        $ref: '#/components/schemas/CalcitePlan'
+      }
+    },
+    mir: {
+      type: 'object',
+      additionalProperties: {
+        $ref: '#/components/schemas/MirNode'
+      }
+    }
+  }
 } as const
 
 export const $DatagenInputConfig = {
@@ -2013,6 +2126,71 @@ export const $MetricsParameters = {
   }
 } as const
 
+export const $MirInput = {
+  type: 'object',
+  required: ['node', 'output'],
+  properties: {
+    node: {
+      type: 'string'
+    },
+    output: {
+      type: 'integer',
+      minimum: 0
+    }
+  },
+  additionalProperties: {}
+} as const
+
+export const $MirNode = {
+  type: 'object',
+  required: ['operation'],
+  properties: {
+    calcite: {
+      allOf: [
+        {
+          $ref: '#/components/schemas/CalciteId'
+        }
+      ],
+      nullable: true
+    },
+    inputs: {
+      type: 'array',
+      items: {
+        $ref: '#/components/schemas/MirInput'
+      }
+    },
+    operation: {
+      type: 'string'
+    },
+    outputs: {
+      type: 'array',
+      items: {
+        $ref: '#/components/schemas/MirInput'
+      },
+      nullable: true
+    },
+    persistent_id: {
+      type: 'string',
+      nullable: true
+    },
+    positions: {
+      type: 'array',
+      items: {
+        $ref: '#/components/schemas/SourcePosition'
+      }
+    },
+    table: {
+      type: 'string',
+      nullable: true
+    },
+    view: {
+      type: 'string',
+      nullable: true
+    }
+  },
+  additionalProperties: {}
+} as const
+
 export const $NewApiKeyRequest = {
   type: 'object',
   description: 'Request to create a new API key.',
@@ -2195,6 +2373,39 @@ instance.
 Options set through the URL take precedence over those set with these
 options.`
   }
+} as const
+
+export const $Op = {
+  type: 'object',
+  required: ['kind', 'name', 'syntax'],
+  properties: {
+    kind: {
+      type: 'string'
+    },
+    name: {
+      type: 'string'
+    },
+    syntax: {
+      type: 'string'
+    }
+  },
+  additionalProperties: {}
+} as const
+
+export const $Operand = {
+  type: 'object',
+  properties: {
+    input: {
+      type: 'integer',
+      nullable: true,
+      minimum: 0
+    },
+    name: {
+      type: 'string',
+      nullable: true
+    }
+  },
+  additionalProperties: {}
 } as const
 
 export const $OutputBufferConfig = {
@@ -2535,7 +2746,9 @@ Setting this value will override the default of the runner.`,
             memory_mb_min: null,
             memory_mb_max: null,
             storage_mb_max: null,
-            storage_class: null
+            storage_class: null,
+            service_account_name: null,
+            namespace: null
           }
         },
         storage: {
@@ -2586,9 +2799,6 @@ used during a step.`,
       type: 'object',
       required: ['inputs'],
       properties: {
-        dataflow: {
-          nullable: true
-        },
         inputs: {
           type: 'object',
           description: 'Input endpoint configuration.',
@@ -2607,6 +2817,14 @@ used during a step.`,
           additionalProperties: {
             $ref: '#/components/schemas/OutputEndpointConfig'
           }
+        },
+        program_ir: {
+          allOf: [
+            {
+              $ref: '#/components/schemas/ProgramIr'
+            }
+          ],
+          nullable: true
         },
         secrets_dir: {
           type: 'string',
@@ -2972,7 +3190,6 @@ If an optional field is not selected (i.e., is \`None\`), it will not be seriali
       nullable: true
     },
     deployment_runtime_status_details: {
-      type: 'string',
       nullable: true
     },
     deployment_runtime_status_since: {
@@ -3343,7 +3560,12 @@ as well as only for runtime (e.g., schema, input/output connectors).`,
   required: ['schema', 'input_connectors', 'output_connectors'],
   properties: {
     dataflow: {
-      description: 'Dataflow graph of the program.'
+      allOf: [
+        {
+          $ref: '#/components/schemas/Dataflow'
+        }
+      ],
+      nullable: true
     },
     input_connectors: {
       type: 'object',
@@ -3369,6 +3591,22 @@ as well as only for runtime (e.g., schema, input/output connectors).`,
     udf_stubs: {
       type: 'string',
       description: 'Generated user defined function (UDF) stubs Rust code: stubs.rs'
+    }
+  }
+} as const
+
+export const $ProgramIr = {
+  type: 'object',
+  required: ['mir', 'program_schema'],
+  properties: {
+    mir: {
+      type: 'object',
+      additionalProperties: {
+        $ref: '#/components/schemas/MirNode'
+      }
+    },
+    program_schema: {
+      $ref: '#/components/schemas/ProgramSchema'
     }
   }
 } as const
@@ -3567,6 +3805,81 @@ This is parsed by the [redis](https://docs.rs/redis/latest/redis/#connection-par
   }
 } as const
 
+export const $Rel = {
+  type: 'object',
+  required: ['id', 'relOp'],
+  properties: {
+    aggs: {
+      type: 'array',
+      items: {},
+      nullable: true
+    },
+    all: {
+      type: 'boolean',
+      nullable: true
+    },
+    condition: {
+      allOf: [
+        {
+          $ref: '#/components/schemas/Condition'
+        }
+      ],
+      nullable: true
+    },
+    exprs: {
+      type: 'array',
+      items: {
+        $ref: '#/components/schemas/Operand'
+      },
+      nullable: true
+    },
+    fields: {
+      type: 'array',
+      items: {
+        type: 'string'
+      },
+      nullable: true
+    },
+    group: {
+      type: 'array',
+      items: {
+        type: 'integer',
+        minimum: 0
+      },
+      nullable: true
+    },
+    id: {
+      type: 'integer',
+      minimum: 0
+    },
+    inputs: {
+      type: 'array',
+      items: {
+        type: 'integer',
+        minimum: 0
+      }
+    },
+    joinType: {
+      type: 'string',
+      nullable: true
+    },
+    relOp: {
+      type: 'string'
+    },
+    table: {
+      type: 'array',
+      items: {
+        type: 'string'
+      },
+      description: `This is a vector where the elements concatenated form a fully qualified table name.
+
+e.g., usually is of the form \`[$namespace, $table] / [schema, table]\``,
+      nullable: true
+    }
+  },
+  additionalProperties: {}
+} as const
+
 export const $Relation = {
   allOf: [
     {
@@ -3635,6 +3948,23 @@ for an instance of this pipeline`,
       default: null,
       nullable: true,
       minimum: 0
+    },
+    namespace: {
+      type: 'string',
+      description: `Kubernetes namespace to use for an instance of this pipeline.
+The namespace determines the scope of names for resources created
+for the pipeline.
+If not set, the pipeline will be deployed in the same namespace
+as the control-plane.`,
+      default: null,
+      nullable: true
+    },
+    service_account_name: {
+      type: 'string',
+      description: `Kubernetes service account name to use for an instance of this pipeline.
+The account determines permissions and access controls.`,
+      default: null,
+      nullable: true
     },
     storage_class: {
       type: 'string',
@@ -4076,7 +4406,9 @@ Setting this value will override the default of the runner.`,
         memory_mb_min: null,
         memory_mb_max: null,
         storage_mb_max: null,
-        storage_class: null
+        storage_class: null,
+        service_account_name: null,
+        namespace: null
       }
     },
     storage: {
