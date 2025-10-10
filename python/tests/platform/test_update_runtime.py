@@ -29,6 +29,7 @@ CREATE MATERIALIZED VIEW v0 AS SELECT * FROM tbl;
             sql=sql,
             runtime_config=RuntimeConfig(
                 dev_tweaks={"backfill_avoidance": True},
+                logging="debug",
             ),
         ).create_or_replace()
 

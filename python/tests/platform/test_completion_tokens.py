@@ -7,6 +7,7 @@ import tempfile
 from http import HTTPStatus
 
 from .helper import (
+    create_pipeline,
     get,
     post_json,
     http_request,
@@ -84,9 +85,7 @@ def test_completion_tokens(pipeline_name):
         "WITH ('materialized' = 'true'); "
         "CREATE MATERIALIZED VIEW v1 AS SELECT * FROM t1;"
     )
-    r = post_json(api_url("/pipelines"), {"name": pipeline_name, "program_code": sql})
-    assert r.status_code == HTTPStatus.CREATED, r.text
-    wait_for_program_success(pipeline_name, 1)
+    create_pipeline(pipeline_name, sql)
     start_pipeline(pipeline_name)
 
     for i in range(0, 200):

@@ -1,4 +1,5 @@
 import unittest
+from feldera.runtime_config import RuntimeConfig
 from feldera.testutils import unique_pipeline_name
 from tests import TEST_CLIENT
 from feldera import PipelineBuilder, Pipeline
@@ -45,11 +46,19 @@ class SharedTestPipeline(unittest.TestCase):
                 cls.client,
                 cls.pipeline_name,
                 cls.ddl,
+                runtime_config=RuntimeConfig(
+                    logging="debug",
+                ),
             ).create_or_replace()
 
     def setUp(self):
         p = PipelineBuilder(
-            self.client, unique_pipeline_name(self._testMethodName), sql=self.ddl
+            self.client,
+            unique_pipeline_name(self._testMethodName),
+            sql=self.ddl,
+            runtime_config=RuntimeConfig(
+                logging="debug",
+            ),
         ).create_or_replace()
         self.p = p
 
@@ -66,4 +75,7 @@ class SharedTestPipeline(unittest.TestCase):
             self.client,
             unique_pipeline_name(f"{self._testMethodName}_{suffix}"),
             sql=self.ddl,
+            runtime_config=RuntimeConfig(
+                logging="debug",
+            ),
         ).create_or_replace()
