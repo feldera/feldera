@@ -348,8 +348,8 @@ impl PosixBackend {
     }
 
     /// Returns the filesystem path to `name` in this storage.
-    fn fs_path(&self, name: &StoragePath) -> Result<PathBuf, StorageError> {
-        Ok(self.base.join(name.as_ref()))
+    fn fs_path(&self, name: &StoragePath) -> PathBuf {
+        self.base.join(name.as_ref())
     }
 
     fn remove_dir_all(&self, path: &Path) -> Result<(), IoError> {
@@ -402,7 +402,7 @@ impl StorageBackend for PosixBackend {
                 .open(path)
         }
 
-        let path = append_to_path(self.fs_path(name)?, MUTABLE_EXTENSION);
+        let path = append_to_path(self.fs_path(name), MUTABLE_EXTENSION);
         let file = match try_create_named(self, &path) {
             Err(error) if error.kind() == ErrorKind::NotFound => {
                 if let Some(parent) = path.parent() {
@@ -425,7 +425,7 @@ impl StorageBackend for PosixBackend {
 
     fn open(&self, name: &StoragePath) -> Result<Arc<dyn FileReader>, StorageError> {
         PosixReader::open(
-            self.fs_path(name)?,
+            self.fs_path(name),
             self.cache,
             self.usage.clone(),
             self.async_threads,
@@ -453,7 +453,7 @@ impl StorageBackend for PosixBackend {
         }
 
         let mut result = Ok(());
-        for entry in self.fs_path(parent)?.read_dir()? {
+        for entry in self.fs_path(parent).read_dir()? {
             match entry.and_then(parse_entry) {
                 Err(e) => {
                     result = Err(e.into());
@@ -468,7 +468,7 @@ impl StorageBackend for PosixBackend {
     }
 
     fn delete(&self, name: &StoragePath) -> Result<(), StorageError> {
-        let path = self.fs_path(name)?;
+        let path = self.fs_path(name);
         let metadata = fs::metadata(&path)?;
         fs::remove_file(&path)?;
         if metadata.file_type().is_file() {
@@ -479,7 +479,7 @@ impl StorageBackend for PosixBackend {
     }
 
     fn delete_recursive(&self, name: &StoragePath) -> Result<(), StorageError> {
-        let path = self.fs_path(name)?;
+        let path = self.fs_path(name);
         match self.remove_dir_all(&path) {
             Err(error) if error.kind() == ErrorKind::NotFound => (),
             Err(error) if error.kind() == ErrorKind::NotADirectory => self.delete(name)?,
