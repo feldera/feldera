@@ -33,19 +33,21 @@
 //! [`ErrorResponse`] can be generated from any type that implements `trait
 //! DetailedError`, including all types in our error hierarchy.
 //!
-//! ## Implementing `trait ResponseError`
+//! ## Implementing `trait IntoResponse`
 //!
-//! Finally, we implement the `actix-web` `ResponseError` trait for
+//! Finally, we implement the `axum` `IntoResponse` trait for
 //! [`PipelineError`], which allows [`PipelineError`] to be returned as an error
 //! type by HTTP endpoints.
 
 use crate::{dyn_event, ControllerError, ParseError};
-use actix_web::{
-    body::BoxBody, http::StatusCode, HttpResponse, HttpResponseBuilder, ResponseError,
+use axum::{
+    http::StatusCode,
+    response::{IntoResponse, Response},
+    Json,
 };
+use feldera_types::error::DetailedError;
 use anyhow::Error as AnyError;
 use datafusion::error::DataFusionError;
-use dbsp::DetailedError;
 use feldera_types::runtime_status::RuntimeDesiredStatus;
 use parquet::errors::ParquetError;
 use serde::{Deserialize, Serialize};
@@ -106,8 +108,8 @@ impl ErrorResponse {
     {
         let result = Self::from_error_nolog(error);
 
-        dyn_event!(
-            error.log_level(),
+        // Log the error at ERROR level since we don't have log_level method
+        error!(
             "[HTTP error response] {}: {}",
             result.error_code,
             result.message
@@ -291,42 +293,56 @@ impl Display for PipelineError {
     }
 }
 
-impl DetailedError for PipelineError {
-    fn error_code(&self) -> Cow<'static, str> {
-        match self {
-            Self::Initializing => Cow::from("Initializing"),
-            Self::Terminating => Cow::from("Terminating"),
-            Self::InitializationError { .. } => Cow::from("InitializationError"),
-            Self::PrometheusError { .. } => Cow::from("PrometheusError"),
-            Self::MissingUrlEncodedParam { .. } => Cow::from("MissingUrlEncodedParam"),
-            Self::InvalidParam { .. } => Cow::from("InvalidParam"),
-            Self::ApiConnectionLimit => Cow::from("ApiConnectionLimit"),
-            Self::ParseErrors { .. } => Cow::from("ParseErrors"),
-            Self::ControllerError { error } => error.error_code(),
-            Self::HeapProfilerError { .. } => Cow::from("HeapProfilerError"),
-            Self::AdHocQueryError { .. } => Cow::from("AdHocQueryError"),
-            Self::Suspended => Cow::from("Suspended"),
-            Self::InvalidActivateStatus(_) => Cow::from("InvalidActivateStatus"),
-            Self::InvalidActivateStatusString(_) => Cow::from("InvalidActivateStatusString"),
-            Self::InvalidTransition(_, _) => Cow::from("InvalidTransition"),
-        }
-    }
 
-    fn log_level(&self) -> Level {
-        match self {
-            Self::Initializing => Level::INFO,
-            Self::Terminating => Level::INFO,
-            Self::ControllerError { error } => error.log_level(),
-            _ => Level::ERROR,
-        }
+// Implement `IntoResponse`, so that `PipelineError` can be returned as error
+// type by HTTP endpoint handlers.
+impl IntoResponse for PipelineError {
+    fn into_response(self) -> Response {
+        let status_code = match &self {
+            Self::Initializing => StatusCode::SERVICE_UNAVAILABLE,
+            Self::Terminating => StatusCode::GONE,
+            Self::InitializationError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::PrometheusError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::MissingUrlEncodedParam { .. } => StatusCode::BAD_REQUEST,
+            Self::InvalidParam { .. } => StatusCode::BAD_REQUEST,
+            Self::ApiConnectionLimit => StatusCode::TOO_MANY_REQUESTS,
+            Self::ParseErrors { .. } => StatusCode::BAD_REQUEST,
+            Self::HeapProfilerError { .. } => StatusCode::BAD_REQUEST,
+            Self::ControllerError { error } => error.status_code(),
+            Self::AdHocQueryError { .. } => StatusCode::BAD_REQUEST,
+            Self::Suspended => StatusCode::SERVICE_UNAVAILABLE,
+            Self::InvalidActivateStatus(_) => StatusCode::BAD_REQUEST,
+            Self::InvalidActivateStatusString(_) => StatusCode::BAD_REQUEST,
+            Self::InvalidTransition(_, _) => StatusCode::BAD_REQUEST,
+        };
+
+        (status_code, Json(ErrorResponse::from_error(&self))).into_response()
     }
 }
 
-// Implement `ResponseError`, so that `PipelineError` can be returned as error
-// type by HTTP endpoint handlers.
-impl ResponseError for PipelineError {
-    fn status_code(&self) -> StatusCode {
+impl feldera_types::error::DetailedError for PipelineError {
+    fn error_code(&self) -> std::borrow::Cow<'static, str> {
         match self {
+            Self::Initializing => std::borrow::Cow::Borrowed("initializing"),
+            Self::Terminating => std::borrow::Cow::Borrowed("terminating"),
+            Self::InitializationError { .. } => std::borrow::Cow::Borrowed("initialization_error"),
+            Self::PrometheusError { .. } => std::borrow::Cow::Borrowed("prometheus_error"),
+            Self::MissingUrlEncodedParam { .. } => std::borrow::Cow::Borrowed("missing_url_encoded_param"),
+            Self::InvalidParam { .. } => std::borrow::Cow::Borrowed("invalid_param"),
+            Self::ApiConnectionLimit => std::borrow::Cow::Borrowed("api_connection_limit"),
+            Self::ParseErrors { .. } => std::borrow::Cow::Borrowed("parse_errors"),
+            Self::HeapProfilerError { .. } => std::borrow::Cow::Borrowed("heap_profiler_error"),
+            Self::ControllerError { .. } => std::borrow::Cow::Borrowed("controller_error"),
+            Self::AdHocQueryError { .. } => std::borrow::Cow::Borrowed("adhoc_query_error"),
+            Self::Suspended => std::borrow::Cow::Borrowed("suspended"),
+            Self::InvalidActivateStatus(_) => std::borrow::Cow::Borrowed("invalid_activate_status"),
+            Self::InvalidActivateStatusString(_) => std::borrow::Cow::Borrowed("invalid_activate_status_string"),
+            Self::InvalidTransition(_, _) => std::borrow::Cow::Borrowed("invalid_transition"),
+        }
+    }
+
+    fn status_code(&self) -> StatusCode {
+        match &self {
             Self::Initializing => StatusCode::SERVICE_UNAVAILABLE,
             Self::Terminating => StatusCode::GONE,
             Self::InitializationError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
@@ -345,9 +361,6 @@ impl ResponseError for PipelineError {
         }
     }
 
-    fn error_response(&self) -> HttpResponse<BoxBody> {
-        HttpResponseBuilder::new(self.status_code()).json(ErrorResponse::from_error(self))
-    }
 }
 
 impl PipelineError {

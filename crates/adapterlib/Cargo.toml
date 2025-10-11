@@ -18,7 +18,7 @@ feldera-types = { workspace = true }
 dbsp = { workspace = true }
 anyhow = { workspace = true, features = ["backtrace"] }
 serde_yaml = { workspace = true }
-actix-web = { workspace = true, features = ["cookies", "macros", "compress-gzip", "compress-brotli"] }
+axum = { workspace = true, features = ["ws", "macros", "json"] }
 erased-serde = { workspace = true }
 dyn-clone = { workspace = true }
 arrow = { workspace = true, features = ["chrono-tz"] }

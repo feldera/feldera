@@ -32,7 +32,13 @@ use serde::de::{
     DeserializeSeed, Deserializer, EnumAccess, Error as SerdeError, IntoDeserializer, MapAccess,
     SeqAccess, Unexpected, VariantAccess, Visitor,
 };
-use serde::serde_if_integer128;
+// serde_if_integer128 is no longer needed in modern serde versions
+// The macro calls below are now no-ops but left for compatibility
+
+// Define a replacement macro that just expands the content
+macro_rules! serde_if_integer128 {
+    ($($tt:tt)*) => { $($tt)* };
+}
 
 use csv::StringRecordIter;
 use csv::{ByteRecord, ByteRecordIter, StringRecord};
@@ -759,7 +765,7 @@ mod tests {
 
     use bstr::BString;
     use csv::StringRecord;
-    use serde::{de::DeserializeOwned, serde_if_integer128, Deserialize};
+    use serde::{de::DeserializeOwned, Deserialize};
 
     use super::byte_record_deserializer;
     use super::string_record_deserializer;

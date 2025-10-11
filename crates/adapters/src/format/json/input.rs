@@ -8,7 +8,8 @@ use crate::{
     format::{InputFormat, ParseError, Parser},
     ControllerError,
 };
-use actix_web::HttpRequest;
+use axum::http::Request;
+use axum::body::Body;
 use dbsp::operator::StagedBuffers;
 use erased_serde::Serialize as ErasedSerialize;
 use feldera_adapterlib::format::Splitter;
@@ -193,17 +194,18 @@ impl InputFormat for JsonInputFormat {
     fn config_from_http_request(
         &self,
         endpoint_name: &str,
-        request: &HttpRequest,
+        request: &Request<Body>,
     ) -> Result<Box<dyn ErasedSerialize>, ControllerError> {
+        let query_string = request.uri().query().unwrap_or("");
         Ok(Box::new(
             JsonParserConfig::deserialize(UrlDeserializer::new(form_urlencoded::parse(
-                request.query_string().as_bytes(),
+                query_string.as_bytes(),
             )))
             .map_err(|e| {
                 ControllerError::parser_config_parse_error(
                     endpoint_name,
                     &e,
-                    request.query_string(),
+                    query_string,
                 )
             })?,
         ))

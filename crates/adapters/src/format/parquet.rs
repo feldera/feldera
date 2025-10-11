@@ -2,7 +2,8 @@ use std::io::Cursor;
 use std::mem::take;
 use std::{borrow::Cow, sync::Arc};
 
-use actix_web::HttpRequest;
+use axum::http::Request;
+use axum::body::Body;
 use anyhow::{bail, Result as AnyResult};
 use arrow::datatypes::{
     DataType, Field as ArrowField, FieldRef, Fields, IntervalUnit as ArrowIntervalUnit, Schema,
@@ -68,7 +69,7 @@ impl InputFormat for ParquetInputFormat {
     fn config_from_http_request(
         &self,
         _endpoint_name: &str,
-        _request: &HttpRequest,
+        _request: &Request<Body>,
     ) -> Result<Box<dyn ErasedSerialize>, ControllerError> {
         Ok(Box::new(ParquetParserConfig {}))
     }
@@ -177,17 +178,17 @@ impl OutputFormat for ParquetOutputFormat {
     fn config_from_http_request(
         &self,
         endpoint_name: &str,
-        request: &HttpRequest,
+        request: &Request<Body>,
     ) -> Result<Box<dyn ErasedSerialize>, ControllerError> {
         Ok(Box::new(
             ParquetEncoderConfig::deserialize(UrlDeserializer::new(form_urlencoded::parse(
-                request.query_string().as_bytes(),
+                request.uri().query().unwrap_or("").as_bytes(),
             )))
             .map_err(|e| {
                 ControllerError::encoder_config_parse_error(
                     endpoint_name,
                     &e,
-                    request.query_string(),
+                    request.uri().query().unwrap_or(""),
                 )
             })?,
         ))

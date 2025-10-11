@@ -3,7 +3,8 @@ use crate::{
     format::{InputFormat, ParseError, Parser},
     ControllerError,
 };
-use actix_web::HttpRequest;
+use axum::http::Request;
+use axum::body::Body;
 use core::str;
 use dbsp::operator::StagedBuffers;
 use erased_serde::Serialize as ErasedSerialize;
@@ -37,17 +38,17 @@ impl InputFormat for RawInputFormat {
     fn config_from_http_request(
         &self,
         endpoint_name: &str,
-        request: &HttpRequest,
+        request: &Request<Body>,
     ) -> Result<Box<dyn ErasedSerialize>, ControllerError> {
         Ok(Box::new(
             RawParserConfig::deserialize(UrlDeserializer::new(form_urlencoded::parse(
-                request.query_string().as_bytes(),
+                request.uri().query().unwrap_or("").as_bytes(),
             )))
             .map_err(|e| {
                 ControllerError::parser_config_parse_error(
                     endpoint_name,
                     &e,
-                    request.query_string(),
+                    request.uri().query().unwrap_or(""),
                 )
             })?,
         ))

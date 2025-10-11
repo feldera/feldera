@@ -4,7 +4,8 @@ use crate::format::avro::schema_registry_settings;
 use crate::format::MAX_DUPLICATES;
 use crate::util::{indexed_operation_type, IndexedOperationType};
 use crate::{ControllerError, Encoder, OutputConsumer, OutputFormat, RecordFormat, SerCursor};
-use actix_web::HttpRequest;
+use axum::http::Request;
+use axum::body::Body;
 use anyhow::{anyhow, bail, Result as AnyResult};
 use apache_avro::schema::RecordField;
 use apache_avro::Schema;
@@ -43,13 +44,13 @@ impl OutputFormat for AvroOutputFormat {
     fn config_from_http_request(
         &self,
         endpoint_name: &str,
-        request: &HttpRequest,
+        request: &Request<Body>,
     ) -> Result<Box<dyn ErasedSerialize>, ControllerError> {
         let config = AvroEncoderConfig::deserialize(UrlDeserializer::new(form_urlencoded::parse(
-            request.query_string().as_bytes(),
+            request.uri().query().unwrap_or("").as_bytes(),
         )))
         .map_err(|e| {
-            ControllerError::encoder_config_parse_error(endpoint_name, &e, request.query_string())
+            ControllerError::encoder_config_parse_error(endpoint_name, &e, request.uri().query().unwrap_or(""))
         })?;
 
         Ok(Box::new(config))

@@ -6,7 +6,8 @@ use crate::{
     util::truncate_ellipse,
     ControllerError, Encoder, OutputConsumer, OutputFormat,
 };
-use actix_web::HttpRequest;
+use axum::http::Request;
+use axum::body::Body;
 use anyhow::{bail, Result as AnyResult};
 use erased_serde::Serialize as ErasedSerialize;
 use feldera_types::config::{ConnectorConfig, TransportConfig};
@@ -30,13 +31,14 @@ impl OutputFormat for JsonOutputFormat {
     fn config_from_http_request(
         &self,
         endpoint_name: &str,
-        request: &HttpRequest,
+        request: &Request<Body>,
     ) -> Result<Box<dyn ErasedSerialize>, ControllerError> {
+        let query_string = request.uri().query().unwrap_or("");
         let mut config = JsonEncoderConfig::deserialize(UrlDeserializer::new(
-            form_urlencoded::parse(request.query_string().as_bytes()),
+            form_urlencoded::parse(query_string.as_bytes()),
         ))
         .map_err(|e| {
-            ControllerError::encoder_config_parse_error(endpoint_name, &e, request.query_string())
+            ControllerError::encoder_config_parse_error(endpoint_name, &e, query_string)
         })?;
 
         // We currently always break output into chunks, which requires encoding

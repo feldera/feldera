@@ -1,7 +1,9 @@
 use crate::error::ErrorResponse;
-use actix_web::body::BoxBody;
-use actix_web::http::StatusCode;
-use actix_web::{HttpRequest, HttpResponse, HttpResponseBuilder, Responder, ResponseError};
+use axum::{
+    http::StatusCode,
+    response::{IntoResponse, Response},
+    Json,
+};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::fmt::Display;
@@ -109,17 +111,9 @@ pub struct ExtendedRuntimeStatus {
     pub runtime_desired_status: RuntimeDesiredStatus,
 }
 
-impl Responder for ExtendedRuntimeStatus {
-    type Body = BoxBody;
-
-    fn respond_to(self, _req: &HttpRequest) -> HttpResponse<Self::Body> {
-        HttpResponseBuilder::new(StatusCode::OK).json(self)
-    }
-}
-
-impl From<ExtendedRuntimeStatus> for HttpResponse<BoxBody> {
-    fn from(value: ExtendedRuntimeStatus) -> Self {
-        HttpResponseBuilder::new(StatusCode::OK).json(value)
+impl IntoResponse for ExtendedRuntimeStatus {
+    fn into_response(self) -> Response {
+        (StatusCode::OK, Json(self)).into_response()
     }
 }
 
@@ -134,18 +128,39 @@ pub struct ExtendedRuntimeStatusError {
     pub error: ErrorResponse,
 }
 
+impl Serialize for ExtendedRuntimeStatusError {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut state = serializer.serialize_struct("ExtendedRuntimeStatusError", 2)?;
+        state.serialize_field("status_code", &self.status_code.as_u16())?;
+        state.serialize_field("error", &self.error)?;
+        state.end()
+    }
+}
+
+impl std::error::Error for ExtendedRuntimeStatusError {}
+
 impl Display for ExtendedRuntimeStatusError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}: {:?}", self.status_code, self.error)
     }
 }
 
-impl ResponseError for ExtendedRuntimeStatusError {
-    fn status_code(&self) -> StatusCode {
-        self.status_code
+impl IntoResponse for ExtendedRuntimeStatusError {
+    fn into_response(self) -> Response {
+        (self.status_code, Json(self.error)).into_response()
+    }
+}
+
+impl crate::error::DetailedError for ExtendedRuntimeStatusError {
+    fn error_code(&self) -> std::borrow::Cow<'static, str> {
+        std::borrow::Cow::Borrowed("runtime_status_error")
     }
 
-    fn error_response(&self) -> HttpResponse<BoxBody> {
-        HttpResponseBuilder::new(self.status_code()).json(self.error.clone())
+    fn status_code(&self) -> StatusCode {
+        self.status_code
     }
 }

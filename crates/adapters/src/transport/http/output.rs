@@ -1,5 +1,10 @@
 use crate::{AsyncErrorCallback, OutputEndpoint, TransportConfig};
-use actix_web::{http::header::ContentType, web::Bytes, HttpResponse};
+use axum::{
+    http::header,
+    response::Response,
+    body::Body,
+};
+use bytes::Bytes;
 use anyhow::{anyhow, bail, Result as AnyResult};
 use async_stream::stream;
 use crossbeam::sync::ShardedLock;
@@ -163,11 +168,11 @@ impl HttpOutputEndpointInner {
 }
 
 struct RequestGuard {
-    finalizer: Box<dyn FnMut()>,
+    finalizer: Box<dyn FnMut() + Send>,
 }
 
 impl RequestGuard {
-    fn new(finalizer: Box<dyn FnMut()>) -> Self {
+    fn new(finalizer: Box<dyn FnMut() + Send>) -> Self {
         Self { finalizer }
     }
 }
@@ -218,16 +223,17 @@ impl HttpOutputEndpoint {
     /// This method returns instantly.  The resulting `HttpResponse`
     /// object can be returned to the actix framework, which will
     /// run its streaming body and invoke `finalizer` upon completion.
-    pub(crate) fn request(&self, finalizer: Box<dyn FnMut()>) -> HttpResponse {
+    pub(crate) fn request(&self, finalizer: Box<dyn FnMut() + Send>) -> Response {
         let mut receiver = self.connect();
         let name = self.name().to_string();
         let guard = RequestGuard::new(finalizer);
 
         let inner = self.inner.clone();
 
-        HttpResponse::Ok()
-            .insert_header(ContentType::json())
-            .streaming(stream! {
+        Response::builder()
+            .status(200)
+            .header("Content-Type", "application/json")
+            .body(Body::from_stream(stream! {
                 let _guard = guard;
                 loop {
                     // There is a bug in actix (https://github.com/actix/actix-web/issues/1313)
@@ -257,7 +263,8 @@ impl HttpOutputEndpoint {
                         },
                     }
                 }
-            })
+            }))
+            .expect("Failed to build response")
     }
 }
 

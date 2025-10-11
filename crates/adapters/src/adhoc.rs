@@ -1,6 +1,11 @@
 use crate::PipelineError;
-use actix_web::{http::header, web::Payload, HttpRequest, HttpResponse};
-use actix_ws::{AggregatedMessage, CloseCode, CloseReason, Closed, Session as WsSession};
+use axum::{
+    extract::ws::{Message, WebSocket, WebSocketUpgrade},
+    http::{header, StatusCode},
+    response::Response,
+    body::Body,
+};
+use futures_util::SinkExt;
 use datafusion::common::ScalarValue;
 use datafusion::execution::memory_pool::FairSpillPool;
 use datafusion::execution::runtime_env::RuntimeEnvBuilder;
@@ -12,10 +17,10 @@ use executor::{
 };
 use feldera_adapterlib::errors::journal::ControllerError;
 use feldera_types::config::PipelineConfig;
-use feldera_types::query::{AdHocResultFormat, AdhocQueryArgs, MAX_WS_FRAME_SIZE};
+use feldera_types::query::{AdHocResultFormat, AdhocQueryArgs};
 use futures_util::StreamExt;
 use serde_json::json;
-use std::convert::Infallible;
+use mime;
 use std::fs::create_dir_all;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -67,38 +72,27 @@ pub(crate) fn create_session_context(
     Ok(SessionContext::from(state))
 }
 
-/// Helper for for closing the websocket session
-///
-/// Note that adding a `description` to the `CloseReason` is currently
-/// buggy https://github.com/actix/actix-extras/issues/508
-///
-/// (It's actually very bad to add it because
-/// websocket packets will be corrupted, don't.)
-async fn ws_close(ws_session: WsSession, code: CloseCode) {
-    let _r = ws_session
-        .close(Some(CloseReason {
-            code,
-            description: None, // Must be None for now!
-        }))
-        .await;
+/// Helper for closing the websocket session
+async fn ws_close(ws: &mut WebSocket, _code: u16) {
+    let _ = ws.close().await;
 }
 
 async fn adhoc_query_handler(
     df: DataFrame,
-    mut ws_session: WsSession,
+    mut ws: &mut WebSocket,
     args: AdhocQueryArgs,
-) -> Result<(), Closed> {
+) -> Result<(), axum::Error> {
     match args.format {
         AdHocResultFormat::Text => {
             let mut stream = Box::pin(stream_text_query(df));
             while let Some(res) = stream.next().await {
                 match res {
                     Ok(text) => {
-                        ws_session.text(text).await?;
+                        ws.send(Message::Text(text.to_string().into())).await?;
                     }
                     Err(e) => {
-                        ws_session.text(format!("ERROR: {}", e)).await?;
-                        ws_close(ws_session, CloseCode::Error).await;
+                        ws.send(Message::Text(format!("ERROR: {}", e).into())).await?;
+                        ws_close(ws, 1011).await; // 1011 = Internal Error
                         break;
                     }
                 }
@@ -109,13 +103,11 @@ async fn adhoc_query_handler(
             while let Some(res) = stream.next().await {
                 match res {
                     Ok(byte_string) => {
-                        ws_session.text(byte_string).await?;
+                        ws.send(Message::Text(byte_string.to_string().into())).await?;
                     }
                     Err(json_err) => {
-                        ws_session
-                            .text(serde_json::to_string(&json_err).unwrap())
-                            .await?;
-                        ws_close(ws_session, CloseCode::Error).await;
+                        ws.send(Message::Text(serde_json::to_string(&json_err).unwrap().into())).await?;
+                        ws_close(ws, 1011).await; // 1011 = Internal Error
                         break;
                     }
                 }
@@ -126,19 +118,17 @@ async fn adhoc_query_handler(
             while let Some(res) = stream.next().await {
                 match res {
                     Ok(bytes) => {
-                        ws_session.binary(bytes).await?;
+                        ws.send(Message::Binary(bytes)).await?;
                     }
                     Err(err) => {
-                        ws_session
-                            .text(
-                                serde_json::to_string(&PipelineError::AdHocQueryError {
-                                    error: err.to_string(),
-                                    df: Some(Box::new(err)),
-                                })
-                                .unwrap(),
-                            )
-                            .await?;
-                        ws_close(ws_session, CloseCode::Error).await;
+                        ws.send(Message::Text(
+                            serde_json::to_string(&PipelineError::AdHocQueryError {
+                                error: err.to_string(),
+                                df: Some(Box::new(err)),
+                            })
+                            .unwrap().into(),
+                        )).await?;
+                        ws_close(ws, 1011).await; // 1011 = Internal Error
                         break;
                     }
                 }
@@ -148,18 +138,16 @@ async fn adhoc_query_handler(
             let mut stream = Box::pin(stream_parquet_query(df));
             while let Some(res) = stream.next().await {
                 match res {
-                    Ok(bytes) => ws_session.binary(bytes).await?,
+                    Ok(bytes) => ws.send(Message::Binary(bytes)).await?,
                     Err(err) => {
-                        ws_session
-                            .text(
-                                serde_json::to_string(&PipelineError::AdHocQueryError {
-                                    error: err.to_string(),
-                                    df: Some(Box::new(err)),
-                                })
-                                .unwrap(),
-                            )
-                            .await?;
-                        ws_close(ws_session, CloseCode::Error).await;
+                        ws.send(Message::Text(
+                            serde_json::to_string(&PipelineError::AdHocQueryError {
+                                error: err.to_string(),
+                                df: Some(Box::new(err)),
+                            })
+                            .unwrap().into(),
+                        )).await?;
+                        ws_close(ws, 1011).await; // 1011 = Internal Error
                         break;
                     }
                 }
@@ -169,13 +157,11 @@ async fn adhoc_query_handler(
             let hash_result = hash_query_result(df).await;
             match hash_result {
                 Ok(hash) => {
-                    ws_session.text(hash).await?;
+                    ws.send(Message::Text(hash.into())).await?;
                 }
                 Err(e) => {
-                    ws_session
-                        .text(serde_json::to_string(&e).unwrap_or(e.to_string()))
-                        .await?;
-                    ws_close(ws_session, CloseCode::Error).await;
+                    ws.send(Message::Text(serde_json::to_string(&e).unwrap_or(e.to_string()).into())).await?;
+                    ws_close(ws, 1011).await; // 1011 = Internal Error
                 }
             }
         }
@@ -186,23 +172,12 @@ async fn adhoc_query_handler(
 
 pub async fn adhoc_websocket(
     df_session: SessionContext,
-    req: HttpRequest,
-    stream: Payload,
-) -> Result<HttpResponse, PipelineError> {
-    let (res, mut ws_session, stream) =
-        actix_ws::handle(&req, stream).map_err(|e| PipelineError::AdHocQueryError {
-            error: format!("Unable to intialize websocket connection: {}", e),
-            df: None,
-        })?;
-    let mut stream = stream
-        .max_frame_size(MAX_WS_FRAME_SIZE)
-        .aggregate_continuations()
-        .max_continuation_size(4 * MAX_WS_FRAME_SIZE);
-
-    actix_web::rt::spawn(async move {
-        while let Some(msg) = stream.next().await {
+    ws: WebSocketUpgrade,
+) -> Response {
+    ws.on_upgrade(move |mut socket| async move {
+        while let Some(msg) = socket.recv().await {
             match msg {
-                Ok(AggregatedMessage::Text(text)) => {
+                Ok(Message::Text(text)) => {
                     let sql_request = text.to_string();
                     let maybe_args = serde_json_path_to_error::from_str::<AdhocQueryArgs>(
                         &sql_request,
@@ -227,62 +202,66 @@ pub async fn adhoc_websocket(
                             match df {
                                 Ok(df) => {
                                     // If the query is successful, we handle it based on the format.
-                                    if adhoc_query_handler(df, ws_session.clone(), args)
+                                    if adhoc_query_handler(df, &mut socket, args)
                                         .await
                                         .is_err()
                                     {
                                         // Connection was closed, we exit the loop.
                                         return;
                                     } else {
-                                        ws_close(ws_session, CloseCode::Normal).await;
+                                        ws_close(&mut socket, 1000).await; // 1000 = Normal Closure
                                         return;
                                     }
                                 }
                                 Err(e) => {
-                                    let _r = ws_session
-                                        .text(serde_json::to_string(&e).unwrap_or(e.to_string()))
-                                        .await;
-                                    ws_close(ws_session, CloseCode::Error).await;
+                                    let _ = socket.send(Message::Text(serde_json::to_string(&e).unwrap_or(e.to_string()).into())).await;
+                                    ws_close(&mut socket, 1011).await; // 1011 = Internal Error
                                     return;
                                 }
                             }
                         }
                         Err(e) => {
-                            let _r = ws_session
-                                .text(serde_json::to_string(&e).unwrap_or(e.to_string()))
-                                .await;
-                            ws_close(ws_session, CloseCode::Error).await;
+                            let _ = socket.send(Message::Text(serde_json::to_string(&e).unwrap_or(e.to_string()).into())).await;
+                            ws_close(&mut socket, 1011).await; // 1011 = Internal Error
                             return;
                         }
                     }
                 }
-                Ok(AggregatedMessage::Binary(_)) => {
-                    let _r = ws_session
-                        .text(json!({
-                            "error": "Binary requests are not supported. Please use text messages."
-                        }).to_string())
-                        .await;
-                    ws_close(ws_session, CloseCode::Error).await;
-                    break;
+                Ok(Message::Binary(_)) => {
+                    let _ = socket.send(Message::Text(json!({
+                        "error": "Binary requests are not supported. Please use text messages."
+                    }).to_string().into())).await;
+                    ws_close(&mut socket, 1011).await; // 1011 = Internal Error
+                    return;
                 }
-                Ok(AggregatedMessage::Ping(msg)) => {
-                    if ws_session.pong(&msg).await.is_err() {
-                        break;
-                    }
+                Ok(Message::Ping(_)) => {
+                    // Ignore ping messages
                 }
-                _ => {}
+                Ok(Message::Pong(_)) => {
+                    // Ignore pong messages
+                }
+                Ok(Message::Close(_)) => {
+                    return;
+                }
+                Err(e) => {
+                    let _ = socket.send(Message::Text(serde_json::to_string(&PipelineError::AdHocQueryError {
+                        error: format!("WebSocket error: {}", e),
+                        df: None,
+                    })
+                    .unwrap().into())).await;
+                    ws_close(&mut socket, 1011).await; // 1011 = Internal Error
+                    return;
+                }
             }
         }
-    });
-
-    Ok(res)
+    })
 }
 
 /// Stream the result of an ad-hoc query using a HTTP streaming response.
 pub(crate) async fn stream_adhoc_result(
     args: AdhocQueryArgs,
     session: SessionContext,
-) -> Result<HttpResponse, PipelineError> {
+) -> Result<Response, PipelineError> {
     let df = session.sql(&args.sql).await?;
     // Note that once we are in the stream!{} macros any error that occurs will lead to the connection
     // in the manager being terminated and a 500 error being returned to the client.
@@ -292,32 +271,53 @@ pub(crate) async fn stream_adhoc_result(
     // division by zero error during query execution. So we return errors according to the chosen
     // format for text and json, and for parquet we return the 500 error.
     match args.format {
-        AdHocResultFormat::Text => Ok(HttpResponse::Ok()
-            .content_type(mime::TEXT_PLAIN)
-            .streaming::<_, Infallible>(infallible_from_bytestring(stream_text_query(df), |e| {
+        AdHocResultFormat::Text => {
+            let stream = infallible_from_bytestring(stream_text_query(df), |e| {
                 format!("ERROR: {}", e).into()
-            }))),
-        AdHocResultFormat::Json => Ok(HttpResponse::Ok()
-            .content_type(mime::APPLICATION_JSON)
-            .streaming::<_, Infallible>(infallible_from_bytestring(
-            stream_json_query(df),
-            |e| serde_json::to_string(&e).unwrap().into(),
-        ))),
-        AdHocResultFormat::ArrowIpc => Ok(HttpResponse::Ok()
-            .content_type(mime::APPLICATION_OCTET_STREAM)
-            .streaming(stream_arrow_query(df))),
+            });
+            Ok(Response::builder()
+                .status(StatusCode::OK)
+                .header(header::CONTENT_TYPE, mime::TEXT_PLAIN.as_ref())
+                .body(Body::from_stream(stream))
+                .unwrap())
+        }
+        AdHocResultFormat::Json => {
+            let stream = infallible_from_bytestring(
+                stream_json_query(df),
+                |e| serde_json::to_string(&e).unwrap().into(),
+            );
+            Ok(Response::builder()
+                .status(StatusCode::OK)
+                .header(header::CONTENT_TYPE, mime::APPLICATION_JSON.as_ref())
+                .body(Body::from_stream(stream))
+                .unwrap())
+        }
+        AdHocResultFormat::ArrowIpc => {
+            Ok(Response::builder()
+                .status(StatusCode::OK)
+                .header(header::CONTENT_TYPE, mime::APPLICATION_OCTET_STREAM.as_ref())
+                .body(Body::from_stream(stream_arrow_query(df)))
+                .unwrap())
+        }
         AdHocResultFormat::Parquet => {
             let file_name = format!(
                 "results_{}.parquet",
                 chrono::Utc::now().format("%Y%m%d_%H%M%S")
             );
-            Ok(HttpResponse::Ok()
-                .insert_header(header::ContentDisposition::attachment(file_name))
-                .content_type(mime::APPLICATION_OCTET_STREAM)
-                .streaming(stream_parquet_query(df)))
+            Ok(Response::builder()
+                .status(StatusCode::OK)
+                .header(header::CONTENT_DISPOSITION, format!("attachment; filename=\"{}\"", file_name))
+                .header(header::CONTENT_TYPE, mime::APPLICATION_OCTET_STREAM.as_ref())
+                .body(Body::from_stream(stream_parquet_query(df)))
+                .unwrap())
         }
-        AdHocResultFormat::Hash => Ok(HttpResponse::Ok()
-            .content_type(mime::TEXT_PLAIN)
-            .body(hash_query_result(df).await?)),
+        AdHocResultFormat::Hash => {
+            let hash = hash_query_result(df).await?;
+            Ok(Response::builder()
+                .status(StatusCode::OK)
+                .header(header::CONTENT_TYPE, mime::TEXT_PLAIN.as_ref())
+                .body(Body::from(hash))
+                .unwrap())
+        }
     }
 }

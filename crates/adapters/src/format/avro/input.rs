@@ -6,7 +6,8 @@ use crate::{
     },
     ControllerError, DeCollectionHandle, InputBuffer, InputFormat, ParseError, Parser,
 };
-use actix_web::HttpRequest;
+use axum::http::Request;
+use axum::body::Body;
 use apache_avro::{
     from_avro_datum,
     schema::{Name as AvroName, ResolvedSchema},
@@ -89,17 +90,17 @@ impl InputFormat for AvroInputFormat {
     fn config_from_http_request(
         &self,
         endpoint_name: &str,
-        request: &HttpRequest,
+        request: &Request<Body>,
     ) -> Result<Box<dyn ErasedSerialize>, ControllerError> {
         Ok(Box::new(
             AvroParserConfig::deserialize(UrlDeserializer::new(form_urlencoded::parse(
-                request.query_string().as_bytes(),
+                request.uri().query().unwrap_or("").as_bytes(),
             )))
             .map_err(|e| {
                 ControllerError::parser_config_parse_error(
                     endpoint_name,
                     &e,
-                    request.query_string(),
+                    request.uri().query().unwrap_or(""),
                 )
             })?,
         ))

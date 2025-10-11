@@ -4,7 +4,8 @@ use std::fmt::{Display, Error as FmtError, Formatter};
 use std::hash::Hasher;
 use std::ops::{Add, AddAssign};
 
-use actix_web::HttpRequest;
+use axum::http::Request;
+use axum::body::Body;
 use anyhow::Result as AnyResult;
 use dbsp::operator::input::StagedBuffers;
 use erased_serde::Serialize as ErasedSerialize;
@@ -41,7 +42,7 @@ pub trait InputFormat: Send + Sync {
     fn config_from_http_request(
         &self,
         endpoint_name: &str,
-        request: &HttpRequest,
+        request: &Request<Body>,
     ) -> Result<Box<dyn ErasedSerialize>, ControllerError>;
 
     /// Create a new parser for the format.
@@ -254,7 +255,7 @@ pub trait OutputFormat: Send + Sync {
     fn config_from_http_request(
         &self,
         endpoint_name: &str,
-        request: &HttpRequest,
+        request: &Request<Body>,
     ) -> Result<Box<dyn ErasedSerialize>, ControllerError>;
 
     /// Create a new encoder for the format.

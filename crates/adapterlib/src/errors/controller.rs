@@ -7,9 +7,11 @@ use std::{
     string::ToString,
 };
 
-use actix_web::body::BoxBody;
-use actix_web::http::StatusCode;
-use actix_web::{HttpResponse, HttpResponseBuilder, ResponseError};
+use axum::{
+    http::StatusCode,
+    response::{IntoResponse, Response},
+    Json,
+};
 use anyhow::Error as AnyError;
 use dbsp::{storage::backend::StorageError, Error as DbspError};
 use feldera_types::{
@@ -749,9 +751,35 @@ pub enum ControllerError {
     },
 }
 
-impl ResponseError for ControllerError {
-    fn status_code(&self) -> StatusCode {
+impl IntoResponse for ControllerError {
+    fn into_response(self) -> Response {
+        let status_code = self.status_code();
+        (status_code, Json(ErrorResponse::from_error(&self))).into_response()
+    }
+}
+
+impl feldera_types::error::DetailedError for ControllerError {
+    fn error_code(&self) -> Cow<'static, str> {
         match self {
+            Self::Config { .. } => Cow::Borrowed("config_error"),
+            Self::UnknownInputEndpoint { .. } => Cow::Borrowed("unknown_input_endpoint"),
+            Self::UnknownOutputEndpoint { .. } => Cow::Borrowed("unknown_output_endpoint"),
+            Self::ParseError { .. } => Cow::Borrowed("parse_error"),
+            Self::NotSupported { .. } => Cow::Borrowed("not_supported"),
+            Self::EnterpriseFeature(_) => Cow::Borrowed("enterprise_feature"),
+            Self::RestoreInProgress => Cow::Borrowed("restore_in_progress"),
+            Self::BootstrapInProgress => Cow::Borrowed("bootstrap_in_progress"),
+            Self::PipelineRestarted { .. } => Cow::Borrowed("pipeline_restarted"),
+            Self::UnknownEndpointInCompletionToken { .. } => Cow::Borrowed("unknown_endpoint_in_completion_token"),
+            Self::TransactionInProgress => Cow::Borrowed("transaction_in_progress"),
+            Self::NoTransactionInProgress => Cow::Borrowed("no_transaction_in_progress"),
+            Self::InvalidInitialStatus(_) => Cow::Borrowed("invalid_initial_status"),
+            _ => Cow::Borrowed("internal_error"),
+        }
+    }
+
+    fn status_code(&self) -> StatusCode {
+        match &self {
             Self::Config { config_error }
                 if matches!(**config_error, ConfigError::UnknownInputStream { .. }) =>
             {
@@ -777,10 +805,6 @@ impl ResponseError for ControllerError {
             Self::InvalidInitialStatus(_) => StatusCode::GONE,
             _ => StatusCode::INTERNAL_SERVER_ERROR,
         }
-    }
-
-    fn error_response(&self) -> HttpResponse<BoxBody> {
-        HttpResponseBuilder::new(self.status_code()).json(ErrorResponse::from_error(self))
     }
 }
 
@@ -916,12 +940,6 @@ impl DbspDetailedError for ControllerError {
     }
 }
 
-impl DetailedError for ControllerError {
-    // TODO: attempts to cast `AnyError` to `DetailedError`.
-    fn error_code(&self) -> Cow<'static, str> {
-        DbspDetailedError::error_code(self)
-    }
-}
 
 impl StdError for ControllerError {}
 

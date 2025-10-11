@@ -4,7 +4,8 @@ use crate::{
     util::truncate_ellipse,
     ControllerError, OutputConsumer,
 };
-use actix_web::HttpRequest;
+use axum::http::Request;
+use axum::body::Body;
 use anyhow::{bail, Result as AnyResult};
 use dbsp::operator::StagedBuffers;
 use erased_serde::Serialize as ErasedSerialize;
@@ -43,7 +44,7 @@ impl InputFormat for CsvInputFormat {
     fn config_from_http_request(
         &self,
         _endpoint_name: &str,
-        _request: &HttpRequest,
+        _request: &Request<Body>,
     ) -> Result<Box<dyn ErasedSerialize>, ControllerError> {
         Ok(Box::new(CsvParserConfig::default()))
     }
@@ -221,17 +222,18 @@ impl OutputFormat for CsvOutputFormat {
     fn config_from_http_request(
         &self,
         endpoint_name: &str,
-        request: &HttpRequest,
+        request: &Request<Body>,
     ) -> Result<Box<dyn ErasedSerialize>, ControllerError> {
+        let query_string = request.uri().query().unwrap_or("");
         Ok(Box::new(
             CsvEncoderConfig::deserialize(UrlDeserializer::new(form_urlencoded::parse(
-                request.query_string().as_bytes(),
+                query_string.as_bytes(),
             )))
             .map_err(|e| {
                 ControllerError::encoder_config_parse_error(
                     endpoint_name,
                     &e,
-                    request.query_string(),
+                    query_string,
                 )
             })?,
         ))

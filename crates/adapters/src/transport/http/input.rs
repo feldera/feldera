@@ -6,7 +6,6 @@ use crate::{
     ControllerError, InputConsumer, PipelineState, TransportInputEndpoint,
 };
 use crate::{InputBuffer, ParseError, Parser};
-use actix_web::web::Payload;
 use anyhow::{anyhow, Error as AnyError, Result as AnyResult};
 use atomic::Atomic;
 use chrono::{DateTime, Utc};
@@ -229,7 +228,7 @@ impl HttpInputEndpoint {
     /// (if any) or when the pipeline terminates.
     pub(crate) async fn complete_request(
         &self,
-        mut payload: Payload,
+        mut payload: axum::body::Body,
         force: bool,
     ) -> Result<(), PipelineError> {
         debug!("HTTP input endpoint '{}': start of request", self.name());
@@ -262,25 +261,13 @@ impl HttpInputEndpoint {
 
                     // Check pipeline status at least every second.
 
-                    match timeout(Duration::from_millis(1_000), payload.next()).await {
-                        Err(_elapsed) => (),
-                        Ok(Some(Ok(bytes))) => {
-                            num_bytes += bytes.len();
-                            num_errors += self.push(Some(&bytes), &mut errors, timestamp);
-                        }
-                        Ok(Some(Err(e))) => {
-                            self.error(true, anyhow!(e.to_string()), None);
-                            Err(ControllerError::input_transport_error(
-                                self.name(),
-                                true,
-                                anyhow!(e),
-                            ))?
-                        }
-                        Ok(None) => {
-                            num_errors += self.push(None, &mut errors, timestamp);
-                            break;
-                        }
-                    }
+                    // Read the entire body at once
+                    let bytes = axum::body::to_bytes(payload, usize::MAX).await
+                        .map_err(|e| ControllerError::io_error("failed to read request body".to_string(), std::io::Error::new(std::io::ErrorKind::Other, e)))?;
+
+                    num_bytes += bytes.len();
+                    num_errors += self.push(Some(&bytes), &mut errors, timestamp);
+                    break; // We've read the entire body
                 }
             }
         }

@@ -358,6 +358,7 @@ impl BufferConsumer {
     }
 
     pub fn wait_for_output_unordered(&self, data: &[Vec<TestStruct>]) {
+        println!("wait_for_output_unordered");
         let num_records: usize = data.iter().map(Vec::len).sum();
 
         let mut n_received = 0;
@@ -376,8 +377,7 @@ impl BufferConsumer {
             DEFAULT_TIMEOUT_MS,
         )
         .unwrap();
-        //println!("{num_records} records received: {:?}",
-        // received_data.lock().unwrap().iter().map(|r| r.id).collect::<Vec<_>>());
+        println!("{num_records} records received");
 
         let mut expected = data
             .iter()

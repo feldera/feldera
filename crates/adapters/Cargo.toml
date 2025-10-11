@@ -84,15 +84,12 @@ rdkafka = { workspace = true, features = [
 ], optional = true }
 aws-sdk-s3 = { workspace = true, features = ["behavior-version-latest"] }
 aws-types = { workspace = true }
-actix = { workspace = true }
-actix-web = { workspace = true, features = [
-    "cookies",
-    "macros",
-    "compress-gzip",
-    "compress-brotli",
-    "rustls-0_23",
-] }
-actix-ws = { workspace = true }
+axum = { workspace = true, features = ["ws", "macros", "json"] }
+tower = { workspace = true }
+tower-http = { workspace = true, features = ["cors", "compression-gzip", "trace"] }
+hyper = { workspace = true }
+hyper-util = { workspace = true }
+tokio-rustls = "0.26.0"
 mime = { workspace = true }
 size-of = { workspace = true }
 futures = { workspace = true }
@@ -203,7 +200,7 @@ libc = { workspace = true }
 nix = { workspace = true, features = ["signal", "mman", "time", "feature"] }
 
 [dev-dependencies]
-actix-test = { workspace = true }
+axum-test = "18.0.0"
 bstr = { workspace = true, features = ["serde1"] }
 serde_json = { workspace = true }
 size-of = { workspace = true }
@@ -212,7 +209,6 @@ proptest = { workspace = true }
 proptest-derive = { workspace = true }
 futures = { workspace = true }
 bytestring = { workspace = true }
-actix-codec = { workspace = true }
 async-stream = { workspace = true }
 futures-timer = { workspace = true }
 test_bin = { workspace = true }

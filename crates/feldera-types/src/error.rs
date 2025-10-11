@@ -1,5 +1,4 @@
-use actix_web::http::StatusCode;
-use actix_web::ResponseError;
+use axum::http::StatusCode;
 use log::{error, info};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
@@ -24,9 +23,12 @@ pub struct ErrorResponse {
 
 /// Error trait which internal errors must implement such that it
 /// can be transformed to a complete JSON error response.
-pub trait DetailedError: StdError + ResponseError + Serialize {
+pub trait DetailedError: StdError + Serialize {
     /// Identifying name of the error.
     fn error_code(&self) -> Cow<'static, str>;
+
+    /// HTTP status code for this error.
+    fn status_code(&self) -> StatusCode;
 }
 
 impl<E> From<&E> for ErrorResponse
@@ -36,7 +38,7 @@ where
     /// Transform the detailed error to a complete JSON error response.
     /// - The message is retrieved using `to_string()` (available due to trait `StdError`)
     /// - The status code determines the level of the log statement during this function
-    ///   (available due to trait `ResponseError`)
+    ///   (available due to trait `DetailedError::status_code()`)
     /// - The details are retrieved by serializing to JSON (available due to trait `Serialize`)
     fn from(error: &E) -> ErrorResponse {
         Self::from_error(error)
