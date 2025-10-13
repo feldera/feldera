@@ -223,7 +223,7 @@ impl RunnerInteraction {
             query_string,
         );
         let timeout = timeout.unwrap_or(Self::PIPELINE_HTTP_REQUEST_TIMEOUT);
-        let request = client.request(method, &url).timeout(timeout);
+        let request = client.request(method, &url).timeout(timeout).force_close();
         let request_str = Self::format_request(&request);
 
         let mut original_response = request.send().await.map_err(|e| match e {
@@ -484,7 +484,8 @@ impl RunnerInteraction {
         let timeout = timeout.unwrap_or(Self::PIPELINE_HTTP_REQUEST_TIMEOUT);
         let mut new_request = client
             .request(request.method().clone(), &url)
-            .timeout(timeout);
+            .timeout(timeout)
+            .force_close();
 
         // Add headers of the original request
         for header in request
