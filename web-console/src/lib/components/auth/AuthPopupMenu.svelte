@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { useGlobalDialog } from '$lib/compositions/useGlobalDialog.svelte'
+  import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
   import ApiKeyMenu from '$lib/components/other/ApiKeyMenu.svelte'
   import type { UserProfile } from '$lib/types/auth'
   import DarkModeSwitch from '$lib/components/layout/userPopup/DarkModeSwitch.svelte'

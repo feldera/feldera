@@ -30,8 +30,6 @@ import {
 } from '$lib/services/pipelineManager'
 import { useToast } from '$lib/compositions/useToastNotification'
 import type { FunctionType } from '$lib/types/common/function'
-import type { NamesInUnion } from '$lib/functions/common/union'
-import { useReactiveWaiter } from './useReactiveWaiter.svelte'
 import { triggerStreamDownload } from '$lib/services/browser'
 
 const networkErrors = ['Failed to fetch', 'Network request failed', 'Timeout']
