@@ -1371,4 +1371,36 @@ public class IncrementalRegressionTests extends SqlIoTest {
             }
         });
     }
+
+    @Test @Ignore("https://issues.apache.org/jira/browse/CALCITE-7225")
+    public void issue4876() {
+        this.statementsFailingInCompilation("""
+                CREATE TABLE tbl(roww ROW(i1 INT, v1 VARCHAR NULL));
+                CREATE VIEW v AS SELECT
+                roww = ROW(4, 'cat', 'dog') AS roww
+                FROM tbl;""", "Unequal number of entries in ROW expressions");
+    }
+
+    @Test
+    public void issue4877() {
+        this.getCC("""
+                CREATE TABLE tbl(roww ROW(i1 INT, v1 VARCHAR NULL));
+                
+                CREATE MATERIALIZED VIEW v AS SELECT
+                roww < ROW(3, 'cat') AS roww
+                FROM tbl;""");
+    }
+
+    @Test
+    public void issue4880() {
+        var ccs = this.getCCS("""
+                CREATE TABLE tbl(roww ROW(i1 INT, v1 VARCHAR NULL));
+                
+                CREATE MATERIALIZED VIEW v AS SELECT
+                roww <=> NULL AS roww FROM tbl;""");
+        ccs.step("INSERT INTO tbl VALUES(ROW(ROW(4, 'var')));", """
+                 roww | weight
+                ---------------
+                 false | 1""");
+    }
 }
