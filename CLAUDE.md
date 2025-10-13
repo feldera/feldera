@@ -8586,9 +8586,6 @@ The comment markers ensure that:
 
 # Build with next/unreleased Calcite version
 ./build.sh -n
-
-# Run all tests (includes building)
-./run-tests.sh
 ```
 
 ### Maven Commands
@@ -8737,7 +8734,6 @@ cargo test
 - `pom.xml` - Maven project configuration with Calcite dependencies
 - `build.sh` - Main build script with Calcite version management
 - `calcite_version.env` - Environment overrides for Calcite versions
-- `run-tests.sh` - Test execution script
 - `temp/Cargo.toml` - Rust project configuration for generated code
 
 ### Dependencies
