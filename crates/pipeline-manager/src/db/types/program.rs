@@ -3,9 +3,10 @@ use crate::db::types::pipeline::PipelineId;
 use crate::db::types::utils::validate_name;
 use crate::has_unstable_feature;
 use clap::Parser;
+use feldera_ir::Dataflow;
 use feldera_types::config::{
-    ConnectorConfig, InputEndpointConfig, OutputEndpointConfig, PipelineConfig, RuntimeConfig,
-    TransportConfig,
+    ConnectorConfig, InputEndpointConfig, OutputEndpointConfig, PipelineConfig, ProgramIr,
+    RuntimeConfig, TransportConfig,
 };
 use feldera_types::program_schema::{ProgramSchema, PropertyValue, SourcePosition, SqlIdentifier};
 use log::error;
@@ -602,7 +603,7 @@ fn determine_connector_endpoint_names(
 ///
 /// It includes information needed for Rust compilation (e.g., generated Rust code)
 /// as well as only for runtime (e.g., schema, input/output connectors).
-#[derive(Deserialize, Serialize, Eq, PartialEq, Debug, Clone, ToSchema)]
+#[derive(Default, Deserialize, Serialize, Eq, PartialEq, Debug, Clone, ToSchema)]
 pub struct ProgramInfo {
     /// Schema of the compiled SQL.
     pub schema: ProgramSchema,
@@ -617,7 +618,7 @@ pub struct ProgramInfo {
 
     /// Dataflow graph of the program.
     #[serde(default)]
-    pub dataflow: serde_json::Value,
+    pub dataflow: Option<Dataflow>,
 
     /// Input connectors derived from the schema.
     pub input_connectors: BTreeMap<Cow<'static, str>, InputEndpointConfig>,
@@ -632,7 +633,7 @@ pub fn generate_program_info(
     program_schema: ProgramSchema,
     main_rust: String,
     udf_stubs: String,
-    dataflow: serde_json::Value,
+    dataflow: Option<Dataflow>,
 ) -> Result<ProgramInfo, ConnectorGenerationError> {
     // Input connectors
     let mut input_connectors = vec![];
@@ -748,16 +749,25 @@ pub fn generate_program_info(
 pub fn generate_pipeline_config(
     pipeline_id: PipelineId,
     runtime_config: &RuntimeConfig,
-    inputs: &BTreeMap<Cow<'static, str>, InputEndpointConfig>,
-    outputs: &BTreeMap<Cow<'static, str>, OutputEndpointConfig>,
+    program_info: &ProgramInfo,
 ) -> PipelineConfig {
+    let program_ir = ProgramIr {
+        mir: program_info
+            .dataflow
+            .as_ref()
+            .map(|d| d.mir.clone())
+            .unwrap_or_default(),
+        program_schema: program_info.schema.clone(),
+    };
+
     PipelineConfig {
         name: Some(format!("pipeline-{pipeline_id}")),
         global: runtime_config.clone(),
         storage_config: None, // Set by the runner based on global field
         secrets_dir: None,
-        inputs: inputs.clone(),
-        outputs: outputs.clone(),
+        inputs: program_info.input_connectors.clone(),
+        outputs: program_info.output_connectors.clone(),
+        program_ir: Some(program_ir),
     }
 }
 

@@ -855,7 +855,7 @@ some_polymorphic_function1!(ceil_year, Timestamp, Timestamp, Timestamp);
 #[doc(hidden)]
 pub fn ceil_quarter_Timestamp(value: Timestamp) -> Timestamp {
     let ts = value.to_dateTime();
-    if (ts.month() - 1) % 3 == 0 && ts.day() == 1 && is_midnight(ts) {
+    if (ts.month() - 1).is_multiple_of(3) && ts.day() == 1 && is_midnight(ts) {
         return value;
     }
     let next_quarter_month = match ts.month() {
@@ -1489,7 +1489,7 @@ some_polymorphic_function1!(ceil_year, Date, Date, Date);
 #[doc(hidden)]
 pub fn ceil_quarter_Date(value: Date) -> Date {
     let d = value.to_date();
-    if ((d.month() - 1) % 3) == 0 && d.day() == 1 {
+    if (d.month() - 1).is_multiple_of(3) && d.day() == 1 {
         return value;
     }
     let next_quarter_month = match d.month() {

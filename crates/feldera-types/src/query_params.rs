@@ -24,3 +24,14 @@ pub struct MetricsParameters {
     #[serde(default = "default_metrics_format")]
     pub format: MetricsFormat,
 }
+
+/// Default for the `initial` query parameter when POST a pipeline activate.
+fn default_pipeline_activate_initial() -> String {
+    "running".to_string()
+}
+
+#[derive(Debug, Deserialize, IntoParams, ToSchema)]
+pub struct ActivateParams {
+    #[serde(default = "default_pipeline_activate_initial")]
+    pub initial: String,
+}

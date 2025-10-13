@@ -21,6 +21,7 @@ development = ["pg-client-config"]
 # Feldera
 feldera-types = { workspace = true }
 feldera-cloud1-client = { workspace = true }
+feldera-ir = { workspace = true }
 
 # Cryptography provider
 # Make sure this is the same rustls version used by other crates in the dependency tree.
@@ -62,6 +63,7 @@ tar = { workspace = true }
 flate2 = { workspace = true }
 base64 = { workspace = true }
 zip = { workspace = true }
+semver = { workspace = true }
 
 # Command-line interaction
 clap = { workspace = true }

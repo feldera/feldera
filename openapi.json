@@ -516,6 +516,7 @@
                     "deployment_resources_desired_status": "Stopped",
                     "deployment_resources_desired_status_since": "1970-01-01T00:00:00Z",
                     "deployment_runtime_status": null,
+                    "deployment_runtime_status_details": null,
                     "deployment_runtime_status_since": null,
                     "deployment_runtime_desired_status": null,
                     "deployment_runtime_desired_status_since": null
@@ -599,6 +600,7 @@
                     "deployment_resources_desired_status": "Stopped",
                     "deployment_resources_desired_status_since": "1970-01-01T00:00:00Z",
                     "deployment_runtime_status": null,
+                    "deployment_runtime_status_details": null,
                     "deployment_runtime_status_since": null,
                     "deployment_runtime_desired_status": null,
                     "deployment_runtime_desired_status_since": null
@@ -956,6 +958,7 @@
                   "deployment_resources_desired_status": "Stopped",
                   "deployment_resources_desired_status_since": "1970-01-01T00:00:00Z",
                   "deployment_runtime_status": null,
+                  "deployment_runtime_status_details": null,
                   "deployment_runtime_status_since": null,
                   "deployment_runtime_desired_status": null,
                   "deployment_runtime_desired_status_since": null
@@ -1610,6 +1613,135 @@
         "summary": "Requests the pipeline to activate if it is currently in standby mode, which it will do",
         "description": "asynchronously.\n\nProgress should be monitored by polling the pipeline `GET` endpoints.\n\nThis endpoint is only applicable when the pipeline is configured to start\nfrom object store and started as standby.",
         "operationId": "post_pipeline_activate",
+        "parameters": [
+          {
+            "name": "pipeline_name",
+            "in": "path",
+            "description": "Unique pipeline name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "initial",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Pipeline activation initiated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CheckpointResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Pipeline with that name does not exist",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "message": "Unknown pipeline name 'non-existent-pipeline'",
+                  "error_code": "UnknownPipelineName",
+                  "details": {
+                    "pipeline_name": "non-existent-pipeline"
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "examples": {
+                  "Disconnected during response": {
+                    "value": {
+                      "message": "Error sending HTTP request to pipeline 'my_pipeline': the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs.\nFailed request: /pause",
+                      "error_code": "PipelineInteractionUnreachable",
+                      "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
+                        "error": "the pipeline disconnected while it was processing this HTTP request. This could be because the pipeline either (a) encountered a fatal error or panic, (b) was stopped, or (c) experienced network issues -- retrying might help in the last case. Alternatively, check the pipeline logs."
+                      }
+                    }
+                  },
+                  "Pipeline is currently unavailable": {
+                    "value": {
+                      "message": "Error sending HTTP request to pipeline 'my_pipeline': deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again\nFailed request: /pause",
+                      "error_code": "PipelineInteractionUnreachable",
+                      "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
+                        "error": "deployment status is currently 'unavailable' -- wait for it to become 'running' or 'paused' again"
+                      }
+                    }
+                  },
+                  "Pipeline is not deployed": {
+                    "value": {
+                      "message": "Unable to interact with pipeline 'my_pipeline' because the deployment status (stopped) indicates it is not (yet) fully provisioned",
+                      "error_code": "PipelineInteractionNotDeployed",
+                      "details": {
+                        "pipeline_name": "my_pipeline",
+                        "status": "Stopped",
+                        "desired_status": "Provisioned"
+                      }
+                    }
+                  },
+                  "Response timeout": {
+                    "value": {
+                      "message": "Error sending HTTP request to pipeline 'my_pipeline': timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)\nFailed request: /pause",
+                      "error_code": "PipelineInteractionUnreachable",
+                      "details": {
+                        "pipeline_name": "my_pipeline",
+                        "request": "/pause",
+                        "error": "timeout (10s) was reached: this means the pipeline took too long to respond -- this can simply be because the request was too difficult to process in time, or other reasons (e.g., deadlock): the pipeline logs might contain additional information (original send request error: Timeout while waiting for response)"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "JSON web token (JWT) or API key": []
+          }
+        ]
+      }
+    },
+    "/v0/pipelines/{pipeline_name}/approve": {
+      "post": {
+        "tags": [
+          "Pipeline interaction"
+        ],
+        "summary": "Approves the pipeline to proceed with bootstrapping.",
+        "description": "This endpoint is used when a pipeline has been started with\n`bootstrap_policy=await_approval`, it is resuming from an existing checkpoint,\nbut the pipeline has been modified since the checkpoint was made and is\ncurrently in the `AwaitingApproval` state awaiting user approval to proceed\nwith bootstrapping.",
+        "operationId": "post_pipeline_approve",
         "parameters": [
           {
             "name": "pipeline_name",
@@ -3719,6 +3851,14 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "bootstrap_policy",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/BootstrapPolicy"
+            }
           }
         ],
         "responses": {
@@ -5459,6 +5599,14 @@
           }
         ]
       },
+      "BootstrapPolicy": {
+        "type": "string",
+        "enum": [
+          "allow",
+          "reject",
+          "await_approval"
+        ]
+      },
       "BuildInformation": {
         "type": "object",
         "description": "Information about the build of the platform.",
@@ -5509,6 +5657,82 @@
           "rustc_version": {
             "type": "string",
             "description": "Rust version of the build used."
+          }
+        }
+      },
+      "CalciteId": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "partial"
+            ],
+            "properties": {
+              "partial": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "final"
+            ],
+            "properties": {
+              "final": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "and"
+            ],
+            "properties": {
+              "and": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/CalciteId"
+                }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "seq"
+            ],
+            "properties": {
+              "seq": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/CalciteId"
+                }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "default": null,
+            "nullable": true
+          }
+        ]
+      },
+      "CalcitePlan": {
+        "type": "object",
+        "description": "The Calcite plan representation of a dataflow graph.",
+        "required": [
+          "rels"
+        ],
+        "properties": {
+          "rels": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Rel"
+            }
           }
         }
       },
@@ -5688,6 +5912,7 @@
           "Provisioning",
           "Unavailable",
           "Standby",
+          "AwaitingApproval",
           "Initializing",
           "Bootstrapping",
           "Replaying",
@@ -5751,6 +5976,30 @@
             "description": "Completion token.\n\nAn opaque string associated with the current position in the input stream\ngenerated by an input connector.\nPass this string to the `/completion_status` endpoint to check whether all\ninputs associated with the token have been fully processed by the pipeline."
           }
         }
+      },
+      "Condition": {
+        "type": "object",
+        "properties": {
+          "literal": {
+            "type": "boolean"
+          },
+          "op": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Op"
+              }
+            ],
+            "nullable": true
+          },
+          "operands": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Operand"
+            },
+            "nullable": true
+          }
+        },
+        "additionalProperties": {}
       },
       "Configuration": {
         "type": "object",
@@ -5876,6 +6125,28 @@
           }
         ],
         "description": "A data connector's configuration"
+      },
+      "Dataflow": {
+        "type": "object",
+        "description": "The JSON representation of a dataflow graph.",
+        "required": [
+          "calcite_plan",
+          "mir"
+        ],
+        "properties": {
+          "calcite_plan": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/CalcitePlan"
+            }
+          },
+          "mir": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/MirNode"
+            }
+          }
+        }
       },
       "DatagenInputConfig": {
         "type": "object",
@@ -6942,6 +7213,79 @@
           }
         }
       },
+      "MirInput": {
+        "type": "object",
+        "required": [
+          "node",
+          "output"
+        ],
+        "properties": {
+          "node": {
+            "type": "string"
+          },
+          "output": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "additionalProperties": {}
+      },
+      "MirNode": {
+        "type": "object",
+        "required": [
+          "operation"
+        ],
+        "properties": {
+          "calcite": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CalciteId"
+              }
+            ],
+            "nullable": true
+          },
+          "inputs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MirInput"
+            }
+          },
+          "operation": {
+            "type": "string"
+          },
+          "outputs": {
+            "type": "array",
+            "items": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/MirInput"
+                }
+              ],
+              "nullable": true
+            },
+            "nullable": true
+          },
+          "persistent_id": {
+            "type": "string",
+            "nullable": true
+          },
+          "positions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SourcePosition"
+            }
+          },
+          "table": {
+            "type": "string",
+            "nullable": true
+          },
+          "view": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": {}
+      },
       "NewApiKeyRequest": {
         "type": "object",
         "description": "Request to create a new API key.",
@@ -7057,6 +7401,41 @@
           "type": "string",
           "description": "Additional options as key-value pairs.\n\nThe following keys are supported:\n\n* S3:\n- `access_key_id`: AWS Access Key.\n- `secret_access_key`: AWS Secret Access Key.\n- `region`: Region.\n- `default_region`: Default region.\n- `endpoint`: Custom endpoint for communicating with S3,\ne.g. `https://localhost:4566` for testing against a localstack\ninstance.\n- `token`: Token to use for requests (passed to underlying provider).\n- [Other keys](https://docs.rs/object_store/latest/object_store/aws/enum.AmazonS3ConfigKey.html#variants).\n* Google Cloud Storage:\n- `service_account`: Path to the service account file.\n- `service_account_key`: The serialized service account key.\n- `google_application_credentials`: Application credentials path.\n- [Other keys](https://docs.rs/object_store/latest/object_store/gcp/enum.GoogleConfigKey.html).\n* Microsoft Azure Blob Storage:\n- `access_key`: Azure Access Key.\n- `container_name`: Azure Container Name.\n- `account`: Azure Account.\n- `bearer_token_authorization`: Static bearer token for authorizing requests.\n- `client_id`: Client ID for use in client secret or Kubernetes federated credential flow.\n- `client_secret`: Client secret for use in client secret flow.\n- `tenant_id`: Tenant ID for use in client secret or Kubernetes federated credential flow.\n- `endpoint`: Override the endpoint for communicating with blob storage.\n- [Other keys](https://docs.rs/object_store/latest/object_store/azure/enum.AzureConfigKey.html#variants).\n\nOptions set through the URL take precedence over those set with these\noptions."
         }
+      },
+      "Op": {
+        "type": "object",
+        "required": [
+          "kind",
+          "name",
+          "syntax"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "syntax": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": {}
+      },
+      "Operand": {
+        "type": "object",
+        "properties": {
+          "input": {
+            "type": "integer",
+            "nullable": true,
+            "minimum": 0
+          },
+          "name": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": {}
       },
       "OutputBufferConfig": {
         "type": "object",
@@ -7359,6 +7738,14 @@
                   "$ref": "#/components/schemas/OutputEndpointConfig"
                 }
               },
+              "program_ir": {
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/ProgramIr"
+                  }
+                ],
+                "nullable": true
+              },
               "secrets_dir": {
                 "type": "string",
                 "description": "Directory containing values of secrets.\n\nIf this is not set, a default directory is used.",
@@ -7376,6 +7763,68 @@
           }
         ],
         "description": "Pipeline deployment configuration.\nIt represents configuration entries directly provided by the user\n(e.g., runtime configuration) and entries derived from the schema\nof the compiled program (e.g., connectors). Storage configuration,\nif applicable, is set by the runner."
+      },
+      "PipelineDiff": {
+        "type": "object",
+        "description": "Summary of changes in the pipeline between checkpointed and new versions.",
+        "required": [
+          "added_input_connectors",
+          "modified_input_connectors",
+          "removed_input_connectors",
+          "added_output_connectors",
+          "modified_output_connectors",
+          "removed_output_connectors"
+        ],
+        "properties": {
+          "added_input_connectors": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "added_output_connectors": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "modified_input_connectors": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "modified_output_connectors": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "program_diff": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ProgramDiff"
+              }
+            ],
+            "nullable": true
+          },
+          "program_diff_error": {
+            "type": "string",
+            "nullable": true
+          },
+          "removed_input_connectors": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "removed_output_connectors": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
       },
       "PipelineFieldSelector": {
         "type": "string",
@@ -7650,6 +8099,9 @@
             ],
             "nullable": true
           },
+          "deployment_runtime_status_details": {
+            "nullable": true
+          },
           "deployment_runtime_status_since": {
             "type": "string",
             "format": "date-time",
@@ -7891,6 +8343,56 @@
           }
         }
       },
+      "ProgramDiff": {
+        "type": "object",
+        "description": "Summary of changes in the program between checkpointed and new versions.",
+        "required": [
+          "added_tables",
+          "removed_tables",
+          "modified_tables",
+          "added_views",
+          "removed_views",
+          "modified_views"
+        ],
+        "properties": {
+          "added_tables": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "added_views": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "modified_tables": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "modified_views": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "removed_tables": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "removed_views": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
       "ProgramError": {
         "type": "object",
         "description": "Log, warning and error information about the program compilation.",
@@ -7928,7 +8430,12 @@
         ],
         "properties": {
           "dataflow": {
-            "description": "Dataflow graph of the program."
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Dataflow"
+              }
+            ],
+            "nullable": true
           },
           "input_connectors": {
             "type": "object",
@@ -7954,6 +8461,26 @@
           "udf_stubs": {
             "type": "string",
             "description": "Generated user defined function (UDF) stubs Rust code: stubs.rs"
+          }
+        }
+      },
+      "ProgramIr": {
+        "type": "object",
+        "description": "Program information included in the pipeline configuration.",
+        "required": [
+          "mir",
+          "program_schema"
+        ],
+        "properties": {
+          "mir": {
+            "type": "object",
+            "description": "The MIR of the program.",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/MirNode"
+            }
+          },
+          "program_schema": {
+            "$ref": "#/components/schemas/ProgramSchema"
           }
         }
       },
@@ -8133,6 +8660,81 @@
             "description": "Separator used to join multiple components into a single key.\n\":\" by default."
           }
         }
+      },
+      "Rel": {
+        "type": "object",
+        "required": [
+          "id",
+          "relOp"
+        ],
+        "properties": {
+          "aggs": {
+            "type": "array",
+            "items": {},
+            "nullable": true
+          },
+          "all": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "condition": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Condition"
+              }
+            ],
+            "nullable": true
+          },
+          "exprs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Operand"
+            },
+            "nullable": true
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true
+          },
+          "group": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "nullable": true
+          },
+          "id": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "inputs": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "joinType": {
+            "type": "string",
+            "nullable": true
+          },
+          "relOp": {
+            "type": "string"
+          },
+          "table": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "This is a vector where the elements concatenated form a fully qualified table name.\n\ne.g., usually is of the form `[$namespace, $table] / [schema, table]`",
+            "nullable": true
+          }
+        },
+        "additionalProperties": {}
       },
       "Relation": {
         "allOf": [
@@ -8559,6 +9161,7 @@
           "Unavailable",
           "Standby",
           "Initializing",
+          "AwaitingApproval",
           "Bootstrapping",
           "Replaying",
           "Paused",
