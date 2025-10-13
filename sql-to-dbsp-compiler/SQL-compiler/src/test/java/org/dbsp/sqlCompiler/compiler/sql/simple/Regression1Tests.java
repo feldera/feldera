@@ -1064,4 +1064,16 @@ public class Regression1Tests extends SqlIoTest {
                 "SELECT STDDEV(x) FROM (VALUES (9223372036854775807), (9223372036854775807)) AS tbl(x)",
                 "'18446744073709551614 * 18446744073709551614' causes overflow for type BIGINT");
     }
+
+    @Test
+    public void ifnullTest() {
+        var ccs = this.getCCS("""
+            CREATE TABLE T(x INT);
+            CREATE VIEW V AS SELECT IFNULL(x, 2) FROM T;""");
+        ccs.step("INSERT INTO T VALUES(3), (NULL)", """
+                 x | weight
+                ------------
+                 3 | 1
+                 2 | 1""");
+    }
 }
