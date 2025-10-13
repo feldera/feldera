@@ -9,7 +9,7 @@ use crate::db::types::tenant::TenantId;
 use crate::db::types::version::Version;
 use async_trait::async_trait;
 use feldera_types::error::ErrorResponse;
-use feldera_types::runtime_status::{ExtendedRuntimeStatus, RuntimeDesiredStatus};
+use feldera_types::runtime_status::{BootstrapPolicy, ExtendedRuntimeStatus, RuntimeDesiredStatus};
 use uuid::Uuid;
 
 #[derive(Debug, PartialEq, Eq)]
@@ -48,8 +48,12 @@ impl ExtendedPipelineDescrRunner {
                 deployment_resources_desired_status_since: pipeline
                     .deployment_resources_desired_status_since,
                 deployment_runtime_status: pipeline.deployment_runtime_status,
+                deployment_runtime_status_details: pipeline
+                    .deployment_runtime_status_details
+                    .clone(),
                 deployment_runtime_status_since: pipeline.deployment_runtime_status_since,
                 deployment_runtime_desired_status: pipeline.deployment_runtime_desired_status,
+                bootstrap_policy: pipeline.bootstrap_policy,
                 deployment_runtime_desired_status_since: pipeline
                     .deployment_runtime_desired_status_since,
             },
@@ -300,6 +304,7 @@ pub(crate) trait Storage {
         tenant_id: TenantId,
         pipeline_name: &str,
         initial: RuntimeDesiredStatus,
+        bootstrap_policy: BootstrapPolicy,
     ) -> Result<PipelineId, DBError>;
 
     /// Sets deployment desired status to `Stopped` if it is not in currently `Provisioned`.

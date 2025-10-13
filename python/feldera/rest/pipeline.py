@@ -69,6 +69,7 @@ class Pipeline:
         self.deployment_runtime_desired_status: Optional[str] = None
         self.deployment_runtime_desired_status_since: Optional[str] = None
         self.deployment_runtime_status: Optional[str] = None
+        self.deployment_runtime_status_details: Optional[dict] = None
         self.deployment_runtime_status_since: Optional[str] = None
 
     @classmethod

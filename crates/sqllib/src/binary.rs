@@ -109,7 +109,7 @@ impl<'de> DeserializeWithContext<'de, SqlSerdeConfig> for ByteArray {
     {
         fn parse_hex_string(s: &str, prefix: &str) -> Option<CompactVec> {
             let s = s.strip_prefix(prefix).unwrap_or(s).as_bytes();
-            if s.len() % 2 != 0 || !s.iter().all(u8::is_ascii_hexdigit) {
+            if !s.len().is_multiple_of(2) || !s.iter().all(u8::is_ascii_hexdigit) {
                 None
             } else {
                 let mut result = CompactVec::with_capacity(s.len() / 2);

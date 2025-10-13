@@ -1,15 +1,16 @@
 use std::collections::HashMap;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use utoipa::ToSchema;
 
 /// The Calcite plan representation of a dataflow graph.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize, ToSchema, PartialEq, Eq, Clone)]
 pub struct CalcitePlan {
     pub rels: Vec<Rel>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize, ToSchema, PartialEq, Eq, Clone)]
 pub struct Rel {
     pub id: usize,
     #[serde(default)]
@@ -49,7 +50,7 @@ pub struct Rel {
     pub extra: HashMap<String, Value>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize, ToSchema, PartialEq, Eq, Clone)]
 pub struct Condition {
     pub op: Option<Op>,
     pub operands: Option<Vec<Operand>>,
@@ -60,7 +61,7 @@ pub struct Condition {
     pub extra: HashMap<String, Value>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize, ToSchema, PartialEq, Eq, Clone)]
 pub struct Op {
     pub kind: String,
     pub name: String,
@@ -70,7 +71,7 @@ pub struct Op {
     pub extra: HashMap<String, Value>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize, ToSchema, PartialEq, Eq, Clone)]
 pub struct Operand {
     pub input: Option<usize>,
     pub name: Option<String>,
@@ -79,7 +80,7 @@ pub struct Operand {
     pub extra: HashMap<String, Value>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, PartialEq, Eq)]
 #[serde(untagged)]
 pub enum CalciteId {
     Partial {

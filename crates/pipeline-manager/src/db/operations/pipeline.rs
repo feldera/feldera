@@ -4,6 +4,7 @@ use crate::db::operations::utils::{
     maybe_tenant_id_foreign_key_constraint_err, maybe_unique_violation,
 };
 use crate::db::types::pipeline::{
+    bootstrap_policy_to_string, parse_string_as_bootstrap_policy,
     parse_string_as_runtime_desired_status, parse_string_as_runtime_status,
     runtime_desired_status_to_string, runtime_status_to_string, ExtendedPipelineDescr,
     ExtendedPipelineDescrMonitoring, PipelineDescr, PipelineId,
@@ -26,7 +27,7 @@ use crate::db::types::version::Version;
 use chrono::{DateTime, Utc};
 use deadpool_postgres::Transaction;
 use feldera_types::error::ErrorResponse;
-use feldera_types::runtime_status::{RuntimeDesiredStatus, RuntimeStatus};
+use feldera_types::runtime_status::{BootstrapPolicy, RuntimeDesiredStatus, RuntimeStatus};
 use log::{error, warn};
 use rmp_serde::{from_slice, to_vec};
 use tokio_postgres::Row;
@@ -99,8 +100,8 @@ const RETRIEVE_PIPELINE_COLUMNS: &str =
      p.suspend_info, p.storage_status, p.deployment_id, p.deployment_initial,
      p.deployment_resources_status, p.deployment_resources_status_since,
      p.deployment_resources_desired_status, p.deployment_resources_desired_status_since,
-     p.deployment_runtime_status, p.deployment_runtime_status_since,
-     p.deployment_runtime_desired_status, p.deployment_runtime_desired_status_since
+     p.deployment_runtime_status, p.deployment_runtime_status_details, p.deployment_runtime_status_since,
+     p.deployment_runtime_desired_status, p.deployment_runtime_desired_status_since, p.bootstrap_policy
      ";
 
 /// Converts a pipeline table row to its extended descriptor with all fields.
@@ -114,7 +115,7 @@ const RETRIEVE_PIPELINE_COLUMNS: &str =
 ///   Backwards incompatible changes therein will prevent retrieval of pipelines
 ///   because an error will be returned instead.
 fn row_to_extended_pipeline_descriptor(row: &Row) -> Result<ExtendedPipelineDescr, DBError> {
-    assert_eq!(row.len(), 35);
+    assert_eq!(row.len(), 37);
 
     // Runtime configuration: RuntimeConfig
     let runtime_config = deserialize_json_value(row.get(7))?;
@@ -168,12 +169,23 @@ fn row_to_extended_pipeline_descriptor(row: &Row) -> Result<ExtendedPipelineDesc
         None => None,
         Some(s) => Some(parse_string_as_runtime_status(s)?),
     };
-    let deployment_runtime_status_since = row.get::<_, Option<DateTime<Utc>>>(32);
+
+    let deployment_runtime_status_details = match row.get::<_, Option<String>>(32) {
+        None => None,
+        Some(s) => Some(deserialize_json_value(&s)?),
+    };
+
+    let deployment_runtime_status_since = row.get::<_, Option<DateTime<Utc>>>(33);
 
     // Deployment runtime desired status
-    let deployment_runtime_desired_status = match row.get::<_, Option<String>>(33) {
+    let deployment_runtime_desired_status = match row.get::<_, Option<String>>(34) {
         None => None,
         Some(s) => Some(parse_string_as_runtime_desired_status(s)?),
+    };
+
+    let bootstrap_policy = match row.get::<_, Option<String>>(36) {
+        None => None,
+        Some(s) => Some(parse_string_as_bootstrap_policy(s)?),
     };
 
     Ok(ExtendedPipelineDescr {
@@ -209,9 +221,11 @@ fn row_to_extended_pipeline_descriptor(row: &Row) -> Result<ExtendedPipelineDesc
         deployment_resources_desired_status: row.get::<_, String>(29).try_into()?,
         deployment_resources_desired_status_since: row.get(30),
         deployment_runtime_status,
+        deployment_runtime_status_details,
         deployment_runtime_status_since,
         deployment_runtime_desired_status,
-        deployment_runtime_desired_status_since: row.get(34),
+        deployment_runtime_desired_status_since: row.get(35),
+        bootstrap_policy,
     })
 }
 
@@ -223,15 +237,15 @@ const RETRIEVE_PIPELINE_MONITORING_COLUMNS: &str =
      p.deployment_id, p.deployment_initial,
      p.deployment_resources_status, p.deployment_resources_status_since,
      p.deployment_resources_desired_status, p.deployment_resources_desired_status_since,
-     p.deployment_runtime_status, p.deployment_runtime_status_since,
-     p.deployment_runtime_desired_status, p.deployment_runtime_desired_status_since
+     p.deployment_runtime_status, p.deployment_runtime_status_details, p.deployment_runtime_status_since,
+     p.deployment_runtime_desired_status, p.deployment_runtime_desired_status_since, p.bootstrap_policy
      ";
 
 /// Converts a pipeline table row to its extended descriptor with only fields relevant to monitoring.
 fn row_to_extended_pipeline_descriptor_monitoring(
     row: &Row,
 ) -> Result<ExtendedPipelineDescrMonitoring, DBError> {
-    assert_eq!(row.len(), 25);
+    assert_eq!(row.len(), 27);
 
     let program_config = deserialize_json_value(row.get(7))?;
 
@@ -252,12 +266,23 @@ fn row_to_extended_pipeline_descriptor_monitoring(
         None => None,
         Some(s) => Some(parse_string_as_runtime_status(s)?),
     };
-    let deployment_runtime_status_since = row.get::<_, Option<DateTime<Utc>>>(22);
+
+    let deployment_runtime_status_details = match row.get::<_, Option<String>>(22) {
+        None => None,
+        Some(s) => Some(deserialize_json_value(&s)?),
+    };
+
+    let deployment_runtime_status_since = row.get::<_, Option<DateTime<Utc>>>(23);
 
     // Deployment runtime desired status
-    let deployment_runtime_desired_status = match row.get::<_, Option<String>>(23) {
+    let deployment_runtime_desired_status = match row.get::<_, Option<String>>(24) {
         None => None,
         Some(s) => Some(parse_string_as_runtime_desired_status(s)?),
+    };
+
+    let bootstrap_policy = match row.get::<_, Option<String>>(26) {
+        None => None,
+        Some(s) => Some(parse_string_as_bootstrap_policy(s)?),
     };
 
     Ok(ExtendedPipelineDescrMonitoring {
@@ -283,9 +308,11 @@ fn row_to_extended_pipeline_descriptor_monitoring(
         deployment_resources_desired_status: row.get::<_, String>(19).try_into()?,
         deployment_resources_desired_status_since: row.get(20),
         deployment_runtime_status,
+        deployment_runtime_status_details,
         deployment_runtime_status_since,
         deployment_runtime_desired_status,
-        deployment_runtime_desired_status_since: row.get(24),
+        deployment_runtime_desired_status_since: row.get(25),
+        bootstrap_policy,
     })
 }
 
@@ -1099,6 +1126,7 @@ pub(crate) async fn set_deployment_resources_desired_status(
     pipeline_name: &str,
     new_desired_status: ResourcesDesiredStatus,
     initial_runtime_desired_status: Option<RuntimeDesiredStatus>,
+    bootstrap_policy: Option<BootstrapPolicy>,
 ) -> Result<PipelineId, DBError> {
     let current = get_pipeline(txn, tenant_id, pipeline_name).await?;
 
@@ -1116,16 +1144,16 @@ pub(crate) async fn set_deployment_resources_desired_status(
     //            runner notices. Otherwise, another (not desired) status transition will set it
     //            to NULL.
     // - Provisioned: new value
-    let final_deployment_initial = match new_desired_status {
+    let (final_deployment_initial, final_bootstrap) = match new_desired_status {
         ResourcesDesiredStatus::Stopped => {
             check_precondition(
                 initial_runtime_desired_status.is_none(),
                 "initial_runtime_desired_status should be None when becoming desired Stopped",
             )?;
             if current.deployment_resources_status == ResourcesStatus::Stopped {
-                None
+                (None, None)
             } else {
-                current.deployment_initial
+                (current.deployment_initial, current.bootstrap_policy)
             }
         }
         ResourcesDesiredStatus::Provisioned => {
@@ -1133,14 +1161,16 @@ pub(crate) async fn set_deployment_resources_desired_status(
                 initial_runtime_desired_status.is_some(),
                 "initial_runtime_desired_status should be Some when becoming desired Provisioned",
             )?;
-            initial_runtime_desired_status
+            (initial_runtime_desired_status, bootstrap_policy)
         }
     };
 
     // If the current initial desired runtime status is already set, it cannot be changed
     if let Some(current_desired_status) = current.deployment_initial {
         if let Some(new_desired_status) = final_deployment_initial {
-            if current_desired_status != new_desired_status {
+            if (current_desired_status, current.bootstrap_policy)
+                != (new_desired_status, final_bootstrap)
+            {
                 return Err(DBError::InitialImmutableUnlessStopped);
             }
         }
@@ -1173,8 +1203,9 @@ pub(crate) async fn set_deployment_resources_desired_status(
             "UPDATE pipeline
              SET deployment_resources_desired_status = $1,
                  deployment_resources_desired_status_since = CASE WHEN deployment_resources_desired_status = $1::VARCHAR THEN deployment_resources_desired_status_since ELSE NOW() END,
-                 deployment_initial = $2
-             WHERE tenant_id = $3 AND id = $4",
+                 deployment_initial = $2,
+                 bootstrap_policy = $3
+             WHERE tenant_id = $4 AND id = $5",
         )
         .await?;
     let modified_rows = txn
@@ -1183,6 +1214,7 @@ pub(crate) async fn set_deployment_resources_desired_status(
             &[
                 &new_desired_status.to_string(),
                 &final_deployment_initial.map(runtime_desired_status_to_string),
+                &final_bootstrap.map(bootstrap_policy_to_string),
                 &tenant_id.0,
                 &current.id.0,
             ],
@@ -1207,6 +1239,7 @@ pub(crate) async fn set_deployment_resources_status(
     version_guard: Version,
     new_deployment_resources_status: ResourcesStatus,
     new_deployment_runtime_status: Option<RuntimeStatus>,
+    new_deployment_runtime_status_details: Option<serde_json::Value>,
     new_deployment_runtime_desired_status: Option<RuntimeDesiredStatus>,
     new_deployment_error: Option<ErrorResponse>,
     new_deployment_id: Option<Uuid>,
@@ -1324,6 +1357,7 @@ pub(crate) async fn set_deployment_resources_status(
     let (
         final_deployment_location,
         final_deployment_runtime_status,
+        final_deployment_runtime_status_details,
         final_deployment_runtime_desired_status
     ) = match new_deployment_resources_status {
         ResourcesStatus::Stopped | ResourcesStatus::Provisioning | ResourcesStatus::Stopping => {
@@ -1331,14 +1365,14 @@ pub(crate) async fn set_deployment_resources_status(
             check_precondition(new_deployment_location.is_none(), &format!("new_deployment_location should be None when becoming {new_deployment_resources_status}"))?;
             check_precondition(new_deployment_runtime_status.is_none(), &format!("new_deployment_runtime_status should be None when becoming {new_deployment_resources_status}"))?;
             check_precondition(new_deployment_runtime_desired_status.is_none(), &format!("new_deployment_runtime_desired_status should be None when becoming {new_deployment_resources_status}"))?;
-            (None, None, None)
+            (None, None, None, None)
         }
         ResourcesStatus::Provisioned => {
             // Provisioned: new value
             check_precondition(new_deployment_location.is_some(), "new_deployment_location should be Some when becoming Provisioned")?;
             check_precondition(new_deployment_runtime_status.is_some(), "new_deployment_runtime_status should be Some when becoming Provisioned")?;
             check_precondition(new_deployment_runtime_desired_status.is_some(), "new_deployment_runtime_desired_status should be Some when becoming Provisioned")?;
-            (new_deployment_location, new_deployment_runtime_status, new_deployment_runtime_desired_status)
+            (new_deployment_location, new_deployment_runtime_status, new_deployment_runtime_status_details, new_deployment_runtime_desired_status)
         },
     };
 
@@ -1363,10 +1397,11 @@ pub(crate) async fn set_deployment_resources_status(
                      deployment_resources_status = $7,
                      deployment_resources_status_since = CASE WHEN deployment_resources_status = $7::VARCHAR THEN deployment_resources_status_since ELSE NOW() END,
                      deployment_runtime_status = $8::VARCHAR,
+                     deployment_runtime_status_details = $9::VARCHAR,
                      deployment_runtime_status_since = CASE WHEN $8::VARCHAR IS NULL THEN NULL ELSE (CASE WHEN deployment_runtime_status = $8::VARCHAR THEN deployment_runtime_status_since ELSE NOW() END) END,
-                     deployment_runtime_desired_status = $9::VARCHAR,
-                     deployment_runtime_desired_status_since = CASE WHEN $9::VARCHAR IS NULL THEN NULL ELSE (CASE WHEN deployment_runtime_desired_status = $9::VARCHAR THEN deployment_runtime_desired_status_since ELSE NOW() END) END
-                 WHERE tenant_id = $10 AND id = $11",
+                     deployment_runtime_desired_status = $10::VARCHAR,
+                     deployment_runtime_desired_status_since = CASE WHEN $10::VARCHAR IS NULL THEN NULL ELSE (CASE WHEN deployment_runtime_desired_status = $10::VARCHAR THEN deployment_runtime_desired_status_since ELSE NOW() END) END
+                 WHERE tenant_id = $11 AND id = $12",
         )
         .await?;
     let rows_affected = txn
@@ -1384,9 +1419,10 @@ pub(crate) async fn set_deployment_resources_status(
                 &final_deployment_initial.map(runtime_desired_status_to_string), // $6: deployment_initial
                 &new_deployment_resources_status.to_string(), // $7: deployment_resources_status,
                 &final_deployment_runtime_status.map(runtime_status_to_string), // $8: deployment_runtime_status,
-                &final_deployment_runtime_desired_status.map(runtime_desired_status_to_string), // $9: deployment_runtime_desired_status,
-                &tenant_id.0, // $10: tenant_id
-                &pipeline_id.0, // $11: id
+                &final_deployment_runtime_status_details.map(|v| v.to_string()), // $9: deployment_runtime_status_details,
+                &final_deployment_runtime_desired_status.map(runtime_desired_status_to_string), // $10: deployment_runtime_desired_status,
+                &tenant_id.0, // $11: tenant_id
+                &pipeline_id.0, // $12: id
             ],
         )
         .await?;

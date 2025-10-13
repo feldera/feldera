@@ -103,7 +103,7 @@ fn test_kafka_output_errors() {
 
     info!("test_kafka_output_errors: Starting controller");
 
-    match Controller::with_config(
+    match Controller::with_test_config(
         |workers| {
             Ok(test_circuit::<TestStruct>(
                 workers,
@@ -1010,7 +1010,7 @@ fn test_ft(topic: &str, rounds: &[FtTestRound], resume_earliest_if_data_expires:
 
         // Start pipeline.
         println!("start pipeline");
-        let controller = Controller::with_config(
+        let controller = Controller::with_test_config(
             |circuit_config| {
                 Ok(test_circuit::<TestStruct>(
                     circuit_config,
@@ -1579,7 +1579,7 @@ fn kafka_end_to_end_test(
     let running_clone = running.clone();
     let test_name_clone = test_name.to_string();
 
-    let controller = Controller::with_config(
+    let controller = Controller::with_test_config(
         |workers| Ok(test_circuit::<TestStruct>(workers, &TestStruct::schema(), &[None])),
         &config,
         Box::new(move |e, _| if running_clone.load(Ordering::Acquire) {
@@ -2181,7 +2181,7 @@ fn buffer_test() {
     let running = Arc::new(AtomicBool::new(true));
     let running_clone = running.clone();
 
-    let controller = Controller::with_config(
+    let controller = Controller::with_test_config(
         |workers| Ok(test_circuit::<TestStruct>(workers, &TestStruct::schema(), &[None])),
         &config,
         Box::new(move |e, _| if running_clone.load(Ordering::Acquire) {

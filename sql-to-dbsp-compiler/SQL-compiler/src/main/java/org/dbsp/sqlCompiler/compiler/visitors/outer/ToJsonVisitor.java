@@ -127,7 +127,7 @@ public class ToJsonVisitor extends CircuitDispatcher {
                     .append(",").newline();
         } else if (operator.is(DBSPSinkOperator.class)) {
             this.builder.appendJsonLabelAndColon("view")
-                    .append(Utilities.doubleQuote(operator.to(DBSPSinkOperator.class).viewName.toString()))
+                    .append(Utilities.doubleQuote(operator.to(DBSPSinkOperator.class).viewName.toString(), false))
                     .append(",").newline();
         }
 

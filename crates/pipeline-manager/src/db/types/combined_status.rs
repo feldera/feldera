@@ -15,6 +15,8 @@ pub enum CombinedStatus {
     Unavailable,
     /// See `RuntimeStatus::Standby`.
     Standby,
+    /// See `RuntimeStatus::AwaitingApproval`.
+    AwaitingApproval,
     /// See `RuntimeStatus::Initializing`.
     Initializing,
     /// See `RuntimeStatus::Bootstrapping`.
@@ -40,6 +42,7 @@ impl CombinedStatus {
                 if let Some(runtime_status) = runtime_status {
                     match runtime_status {
                         RuntimeStatus::Unavailable => Self::Unavailable,
+                        RuntimeStatus::AwaitingApproval => Self::AwaitingApproval,
                         RuntimeStatus::Standby => Self::Standby,
                         RuntimeStatus::Initializing => Self::Initializing,
                         RuntimeStatus::Bootstrapping => Self::Bootstrapping,

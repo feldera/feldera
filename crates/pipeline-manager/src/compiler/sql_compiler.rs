@@ -18,6 +18,7 @@ use crate::db::types::utils::validate_program_config;
 use crate::db::types::version::Version;
 use crate::error::source_error;
 use crate::has_unstable_feature;
+use feldera_ir::Dataflow;
 use feldera_types::program_schema::ProgramSchema;
 use futures_util::StreamExt;
 use indoc::formatdoc;
@@ -677,10 +678,10 @@ pub(crate) async fn perform_sql_compilation(
 
         // Read dataflow.json
         let dataflow_str = read_file_content(&output_dataflow_file_path).await?;
-        let dataflow: serde_json::Value = serde_json::from_str(&dataflow_str).map_err(|e| {
+        let dataflow: Dataflow = serde_json::from_str(&dataflow_str).map_err(|e| {
             SqlCompilationError::SystemError(
                 CommonError::json_deserialization_error(
-                    "dataflow.json from SQL compiler into JSON".to_string(),
+                    "dataflow.json from SQL compiler into struct Dataflow".to_string(),
                     e,
                 )
                 .to_string(),
@@ -694,7 +695,7 @@ pub(crate) async fn perform_sql_compilation(
         let stubs = read_file_content(&output_rust_udf_stubs_file_path).await?;
 
         // Generate the program information
-        match generate_program_info(schema, main_rust, stubs, dataflow) {
+        match generate_program_info(schema, main_rust, stubs, Some(dataflow)) {
             Ok(program_info) => {
                 let program_info = match serde_json::to_value(program_info) {
                     Ok(value) => value,

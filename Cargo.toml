@@ -208,6 +208,7 @@ rustversion = "1.0"
 rustyline = "15.0"
 ryu = "1.0.20"
 schema_registry_converter = "4.2.0"
+semver = "1.0.27"
 serde = "1.0.213"
 serde_arrow = { version = "0.13.4", features = ["arrow-55"] }
 serde_bytes = "0.11.15"

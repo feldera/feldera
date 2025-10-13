@@ -6225,14 +6225,14 @@ impl Drop for CircuitHandle {
 }
 
 /// Operators involved in the replay phase of a circuit.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct BootstrapInfo {
     /// Operators that will replay their contents during the replay phase.
     pub replay_sources: BTreeMap<NodeId, StreamId>,
 
-    /// Operators that require backfill from upstream nodes.
+    /// Operators that require backfill from upstream nodes, including their persistent IDs.
     #[allow(dead_code)]
-    pub need_backfill: BTreeSet<NodeId>,
+    pub need_backfill: BTreeMap<NodeId, Option<String>>,
 }
 
 impl CircuitHandle {
@@ -6497,9 +6497,22 @@ impl CircuitHandle {
             // );
             // info!("CircuitHandle::restore: replay circuit is written to replay.dot");
 
+            // Add persistent IDs to the need_backfill set.
+            let need_backfill = nodes_to_backfill
+                .iter()
+                .map(|node_id| {
+                    let pid = self.circuit.map_local_node_mut(*node_id, &mut |node| {
+                        node.get_label(LABEL_PERSISTENT_OPERATOR_ID)
+                            .map(|s| s.to_string())
+                    });
+
+                    (*node_id, pid)
+                })
+                .collect::<BTreeMap<_, _>>();
+
             let replay_info = BootstrapInfo {
                 replay_sources: replay_sources.clone(),
-                need_backfill: nodes_to_backfill.clone(),
+                need_backfill,
             };
 
             self.replay_info = Some(replay_info.clone());

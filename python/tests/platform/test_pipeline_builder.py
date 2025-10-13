@@ -3,6 +3,7 @@ from feldera.testutils import unique_pipeline_name
 from tests import TEST_CLIENT
 from feldera import PipelineBuilder
 
+
 class TestPipelineBuilder(unittest.TestCase):
     def test_connector_orchestration(self):
         sql = """
@@ -24,7 +25,9 @@ class TestPipelineBuilder(unittest.TestCase):
 
         pipeline_name = unique_pipeline_name("test_connector_orchestration")
 
-        pipeline = PipelineBuilder(TEST_CLIENT, pipeline_name, sql=sql).create_or_replace()
+        pipeline = PipelineBuilder(
+            TEST_CLIENT, pipeline_name, sql=sql
+        ).create_or_replace()
         pipeline.start()
 
         pipeline.resume_connector("numbers", "c1")

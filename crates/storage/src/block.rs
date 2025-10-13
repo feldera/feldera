@@ -16,7 +16,10 @@ pub struct BlockLocation {
 impl BlockLocation {
     /// Constructs a new [BlockLocation], validating `offset` and `size`.
     pub fn new(offset: u64, size: usize) -> Result<Self, InvalidBlockLocation> {
-        if (offset % 512) != 0 || !(512..1 << 31).contains(&size) || (size % 512) != 0 {
+        if !offset.is_multiple_of(512)
+            || !(512..1 << 31).contains(&size)
+            || !size.is_multiple_of(512)
+        {
             Err(InvalidBlockLocation { offset, size })
         } else {
             Ok(Self { offset, size })

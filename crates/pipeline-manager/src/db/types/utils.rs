@@ -240,7 +240,7 @@ mod tests {
             udf_stubs: "".to_string(),
             input_connectors: Default::default(),
             output_connectors: Default::default(),
-            dataflow: serde_json::Value::Null,
+            dataflow: None,
         };
         let value = serde_json::to_value(program_info.clone()).unwrap();
         assert_eq!(program_info, validate_program_info(&value).unwrap());
@@ -262,6 +262,7 @@ mod tests {
             secrets_dir: None,
             inputs: Default::default(),
             outputs: Default::default(),
+            program_ir: None,
         };
         let value = serde_json::to_value(deployment_config.clone()).unwrap();
         assert_eq!(

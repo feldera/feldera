@@ -140,7 +140,7 @@ where
 
     let (err_sender, err_receiver) = crossbeam::channel::unbounded();
 
-    let controller = Controller::with_config(
+    let controller = Controller::with_test_config(
         move |workers| Ok(test_circuit::<T>(workers, &schema, &[None])),
         &config,
         Box::new(move |e, _| {
