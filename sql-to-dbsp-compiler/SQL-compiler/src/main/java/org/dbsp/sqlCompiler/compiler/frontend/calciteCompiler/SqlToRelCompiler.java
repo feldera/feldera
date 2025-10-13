@@ -123,7 +123,6 @@ import org.apache.calcite.sql.validate.SqlValidator;
 import org.apache.calcite.sql.validate.SqlValidatorUtil;
 import org.apache.calcite.sql2rel.ConvertToChecked;
 import org.apache.calcite.sql2rel.SqlToRelConverter;
-import org.apache.calcite.sql2rel.StandardConvertletTable;
 import org.apache.calcite.tools.RelBuilder;
 import org.dbsp.generated.parser.DbspParserImpl;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
@@ -627,7 +626,7 @@ public class SqlToRelCompiler implements IWritesLogs {
                 this.validator,
                 catalogReader,
                 this.cluster,
-                StandardConvertletTable.INSTANCE,
+                ConvertletTable.INSTANCE,
                 this.converterConfig
         );
     }
@@ -1804,7 +1803,7 @@ public class SqlToRelCompiler implements IWritesLogs {
         return table;
     }
 
-    public CreateAggregateStatement compileCreateAggregate(ParsedStatement node, SourceFileContents sources) {
+    public CreateAggregateStatement compileCreateAggregate(ParsedStatement node, SourceFileContents ignoredSources) {
         SqlCreateAggregate decl = (SqlCreateAggregate) node.statement();
         List<Map.Entry<String, RelDataType>> parameters = Linq.map(
                 decl.getParameters(), param -> {

@@ -114,19 +114,14 @@ import org.dbsp.sqlCompiler.ir.type.IsTimeRelatedType;
 import org.dbsp.sqlCompiler.ir.type.IsNumericType;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBinary;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDate;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDecimal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeDouble;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeGeoPoint;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeInteger;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeKeyword;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMillisInterval;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeMonthsInterval;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeNull;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeReal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeString;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTime;
-import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeTimestamp;
 import org.dbsp.util.IWritesLogs;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Logger;
@@ -547,6 +542,10 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
             if (opcode.isComparison()) {
                 expressionResultType = DBSPTypeBool.create(anyNull);
             }
+            if (opcode == DBSPOpcode.IS_DISTINCT) {
+                // Never null
+                expressionResultType = DBSPTypeBool.create(false);
+            }
         }
         DBSPExpression call = new DBSPBinaryExpression(node, expressionResultType, opcode, left, right);
         return call.cast(node, type, false);
@@ -948,15 +947,14 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 arguments and even-numbered arguments are predicates, except for the last argument.
                 */
                 DBSPExpression result = ops.get(ops.size() - 1);
-                DBSPType finalType = type;
                 if (ops.size() % 2 == 0) {
                     DBSPExpression value = ops.get(0);
-                    if (!result.getType().sameType(finalType))
-                        result = result.cast(node, finalType, false);
+                    if (!result.getType().sameType(type))
+                        result = result.cast(node, type, false);
                     for (int i = 1; i < ops.size() - 1; i += 2) {
                         DBSPExpression alt = ops.get(i + 1);
-                        if (!alt.getType().sameType(finalType))
-                            alt = alt.cast(node, finalType, false);
+                        if (!alt.getType().sameType(type))
+                            alt = alt.cast(node, type, false);
                         DBSPExpression comp = makeBinaryExpression(
                                 node, new DBSPTypeBool(CalciteObject.EMPTY, false), DBSPOpcode.EQ,
                                 value, ops.get(i));
@@ -965,13 +963,13 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                     }
                 } else {
                     // Build this backwards
-                    if (!result.getType().sameType(finalType))
-                        result = result.applyCloneIfNeeded().cast(node, finalType, false);
+                    if (!result.getType().sameType(type))
+                        result = result.applyCloneIfNeeded().cast(node, type, false);
                     for (int i = 0; i < ops.size() - 1; i += 2) {
                         int index = ops.size() - i - 2;
                         DBSPExpression alt = ops.get(index);
-                        if (!alt.getType().sameType(finalType))
-                            alt = alt.applyCloneIfNeeded().cast(node, finalType, false);
+                        if (!alt.getType().sameType(type))
+                            alt = alt.applyCloneIfNeeded().cast(node, type, false);
                         DBSPExpression condition = ops.get(index - 1).wrapBoolIfNeeded();
                         result = new DBSPIfExpression(node, condition, alt, result);
                     }
@@ -1112,6 +1110,12 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                             this.ensureDouble(node, ops, i);
                         return compilePolymorphicFunction(true, call, node, type, ops, 1, 2);
                     }
+                    case "sqrt": {
+                        validateArgCount(node, operationName, ops.size(), 1);
+                        this.ensureDouble(node, ops, 0);
+                        return compilePolymorphicFunction(
+                                true, "sqrt", node, type, ops, 1);
+                    }
                     case "power": {
                         validateArgCount(node, operationName, ops.size(), 2);
                         DBSPExpression expr = this.strictnessCheck(ops, type);
@@ -1123,24 +1127,6 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                             this.ensureDouble(node, ops, 0);
                         if (ops.get(1).type.is(DBSPTypeInteger.class))
                             this.ensureInteger(node, ops, 1);
-
-                        DBSPExpression argument = ops.get(1);
-                        if (argument.is(DBSPDecimalLiteral.class)) {
-                            // power(a, .5) -> sqrt(a).  This is more precise.
-                            // Calcite does the opposite conversion.
-                            DBSPDecimalLiteral dec = argument.to(DBSPDecimalLiteral.class);
-                            BigDecimal pointFive = new BigDecimal(5).movePointLeft(1);
-                            if (!dec.isNull() && Objects.requireNonNull(dec.value).equals(pointFive)) {
-                                ops = Linq.list(ops.get(0));
-                                if (ops.get(0).getType().is(DBSPTypeNull.class)) {
-                                    ops.set(0, ops.get(0).cast(node, type, false));
-                                }
-                                this.ensureDouble(node, ops, 0);
-                                return compilePolymorphicFunction(
-                                        true, "sqrt", node, type, ops, 1);
-                            }
-                        }
-
                         // Cast real or decimal to double
                         for (int i = 0; i < ops.size(); i++) {
                             if (ops.get(i).type.code == REAL || ops.get(i).type.code == DECIMAL) {

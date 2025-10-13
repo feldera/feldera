@@ -1076,4 +1076,13 @@ public class Regression1Tests extends SqlIoTest {
                  3 | 1
                  2 | 1""");
     }
+
+    @Test
+    public void notDistinctFromTest() {
+        this.getCCS("""
+                CREATE TABLE illegal_tbl(tmestmp TIMESTAMP);
+                
+                CREATE MATERIALIZED VIEW equality_null_legal AS SELECT
+                tmestmp <=> NULL AS tmestmp FROM illegal_tbl;""");
+    }
 }
