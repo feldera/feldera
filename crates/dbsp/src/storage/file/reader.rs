@@ -83,12 +83,6 @@ pub enum Error {
     Unsupported,
 }
 
-impl From<io::Error> for Error {
-    fn from(source: io::Error) -> Self {
-        Error::Storage(StorageError::StdIo(source.kind()))
-    }
-}
-
 /// Errors that indicate a problem with the layer file contents.
 #[derive(ThisError, Clone, Debug)]
 pub enum CorruptionError {
