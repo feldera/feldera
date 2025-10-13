@@ -1,7 +1,7 @@
 <script lang="ts">
   import Tooltip from '$lib/components/common/Tooltip.svelte'
   import GenericDialog from '$lib/components/dialogs/GenericDialog.svelte'
-  import { useGlobalDialog } from '$lib/compositions/useGlobalDialog.svelte'
+  import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
   import { useToast } from '$lib/compositions/useToastNotification'
   import type { SupportBundleOptions } from '$lib/services/pipelineManager'

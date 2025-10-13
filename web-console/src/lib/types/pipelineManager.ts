@@ -155,3 +155,16 @@ export type TimeSeriesEntry = {
    */
   s: BigNumber
 }
+
+export type PipelineDiff = {
+  tables: EntityDiff
+  views: EntityDiff
+  inputConnectors: EntityDiff
+  outputConnectors: EntityDiff
+}
+
+export type EntityDiff = {
+  removed: string[]
+  modified: string[]
+  added: string[]
+}

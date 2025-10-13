@@ -34,7 +34,8 @@ import {
   type RuntimeDesiredStatus,
   postPipelineResume,
   postPipelineActivate,
-  type GetPipelineSupportBundleData
+  type GetPipelineSupportBundleData,
+  postPipelineApprove
 } from '$lib/services/manager'
 export type {
   // PipelineDescr,
@@ -88,29 +89,27 @@ const _postPipelineAction = ({
 }: {
   path: {
     pipeline_name: string
-    action:
-      | 'start'
-      | 'start_paused'
-      | 'pause'
-      | 'resume'
-      | 'standby'
-      | 'activate'
-      | 'stop'
-      | 'kill'
-      | 'clear'
+    action: PipelineAction
   }
 }) =>
   match(path.action)
-    .with('start', () => postPipelineStart({ path, query: { initial: 'running' } }))
+    .with('start', () =>
+      postPipelineStart({ path, query: { initial: 'running', bootstrap_policy: 'await_approval' } })
+    )
     .with('resume', () => postPipelineResume({ path }))
     .with('pause', () => postPipelinePause({ path }))
     .with('stop', 'kill', (action) =>
       postPipelineStop({ path, query: { force: action === 'kill' } })
     )
-    .with('standby', () => postPipelineStart({ path, query: { initial: 'standby' } }))
+    .with('standby', () =>
+      postPipelineStart({ path, query: { initial: 'standby', bootstrap_policy: 'await_approval' } })
+    )
     .with('activate', () => postPipelineActivate({ path }))
-    .with('start_paused', () => postPipelineStart({ path, query: { initial: 'paused' } }))
+    .with('start_paused', () =>
+      postPipelineStart({ path, query: { initial: 'paused', bootstrap_policy: 'await_approval' } })
+    )
     .with('clear', () => postPipelineClear({ path }))
+    .with('approve_changes', () => postPipelineApprove({ path }))
     .exhaustive()
 
 export type PipelineStatus = ReturnType<typeof consolidatePipelineStatus>['status']
@@ -162,6 +161,7 @@ const consolidatePipelineStatus = (
     .with(['Replaying', P._, P._], () => 'Replaying' as const)
     .with(['Running', P.any, P._], () => 'Running' as const)
     .with(['Unavailable', P.any, P.any], () => 'Unavailable' as const)
+    .with(['AwaitingApproval', P.any, P._], () => 'AwaitingApproval' as const)
     .with([P._, 'Suspended', P._], () => 'Suspending' as const)
     .otherwise(() => {
       // throw new Error(
@@ -197,6 +197,7 @@ export const programStatusOf = (status: PipelineStatus) =>
       'Standby',
       'Bootstrapping',
       'Replaying',
+      'AwaitingApproval',
       () => 'Success' as const
     )
     .with({ Queued: P.any }, () => 'Pending' as const)
@@ -225,7 +226,8 @@ const toPipelineThumb = (
   platformVersion: pipeline.platform_version,
   deploymentResourcesStatus: pipeline.deployment_resources_status,
   deploymentResourcesStatusSince: new Date(pipeline.deployment_resources_status_since),
-  programConfig: pipeline.program_config!
+  programConfig: pipeline.program_config!,
+  deploymentRuntimeStatusDetails: pipeline.deployment_runtime_status_details
 })
 
 const toPipeline = <
@@ -277,7 +279,8 @@ const toExtendedPipeline = ({
   ),
   compilerOutput: toCompilerOutput(pipeline.program_error),
   deploymentResourcesStatus: pipeline.deployment_resources_status,
-  deploymentResourcesStatusSince: new Date(pipeline.deployment_resources_status_since)
+  deploymentResourcesStatusSince: new Date(pipeline.deployment_resources_status_since),
+  deploymentRuntimeStatusDetails: pipeline.deployment_runtime_status_details
 })
 
 const fromPipeline = <T extends Partial<Pipeline>>(pipeline: T) => ({
@@ -421,6 +424,7 @@ export type PipelineAction =
   | 'stop'
   | 'kill'
   | 'clear'
+  | 'approve_changes'
 
 export const postPipelineAction = async (pipeline_name: string, action: PipelineAction) => {
   return mapResponse(

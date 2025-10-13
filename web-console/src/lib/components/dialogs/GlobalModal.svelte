@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { Snippet } from 'svelte'
+
   let { dialog, onClose }: { dialog: Snippet | null; onClose: () => void } = $props()
 
   let contentNode = $state<HTMLElement>()

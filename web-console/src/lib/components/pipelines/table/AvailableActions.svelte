@@ -9,13 +9,11 @@
   import { intersect2 } from '$lib/functions/common/array'
   import { useUpdatePipelineList } from '$lib/compositions/pipelines/usePipelineList.svelte'
   import DeleteDialog, { deleteDialogProps } from '$lib/components/dialogs/DeleteDialog.svelte'
-  import { useGlobalDialog } from '$lib/compositions/useGlobalDialog.svelte'
+  import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
   import { isPipelineCodeEditable, isPipelineShutdown } from '$lib/functions/pipelines/status'
   import { useToast } from '$lib/compositions/useToastNotification'
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
   import { usePremiumFeatures } from '$lib/compositions/usePremiumFeatures.svelte'
-  import { tuple } from '$lib/functions/common/tuple'
-  import type { StorageStatus } from '$lib/services/manager'
   import { usePipelineAction } from '$lib/compositions/usePipelineAction.svelte'
   let {
     pipelines,
@@ -59,6 +57,7 @@
       .with('Standby', () => ['kill', 'delete'])
       .with('Bootstrapping', () => ['kill', 'delete'])
       .with('Replaying', () => ['kill', 'delete'])
+      .with('AwaitingApproval', () => ['kill', 'delete'])
       .with('Resuming', () => [...stop, 'kill', 'delete'])
       .with('Stopping', () => ['kill'])
       .with('Unavailable', () => [...stop, 'kill', 'delete'])

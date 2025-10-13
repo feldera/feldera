@@ -66,6 +66,8 @@ export type AuthProvider =
       GenericOidc: ProviderGenericOidc
     }
 
+export type BootstrapPolicy = 'allow' | 'reject' | 'await_approval'
+
 /**
  * Information about the build of the platform.
  */
@@ -106,6 +108,31 @@ export type BuildInformation = {
    * Rust version of the build used.
    */
   rustc_version: string
+}
+
+export type CalciteId =
+  | {
+      partial: number
+    }
+  | {
+      final: number
+    }
+  | {
+      and: Array<CalciteId>
+    }
+  | {
+      seq: Array<CalciteId>
+    }
+  | {
+      [key: string]: unknown
+    }
+  | null
+
+/**
+ * The Calcite plan representation of a dataflow graph.
+ */
+export type CalcitePlan = {
+  rels: Array<Rel>
 }
 
 /**
@@ -241,6 +268,7 @@ export type CombinedStatus =
   | 'Provisioning'
   | 'Unavailable'
   | 'Standby'
+  | 'AwaitingApproval'
   | 'Initializing'
   | 'Bootstrapping'
   | 'Replaying'
@@ -293,6 +321,13 @@ export type CompletionTokenResponse = {
    * inputs associated with the token have been fully processed by the pipeline.
    */
   token: string
+}
+
+export type Condition = {
+  literal?: boolean
+  op?: Op | null
+  operands?: Array<Operand> | null
+  '[key: string]': (unknown | boolean | Operand) | undefined
 }
 
 export type Configuration = {
@@ -413,6 +448,18 @@ export type ConnectorConfig = OutputBufferConfig & {
    */
   start_after?: Array<string> | null
   transport: TransportConfig
+}
+
+/**
+ * The JSON representation of a dataflow graph.
+ */
+export type Dataflow = {
+  calcite_plan: {
+    [key: string]: CalcitePlan
+  }
+  mir: {
+    [key: string]: MirNode
+  }
 }
 
 /**
@@ -1495,6 +1542,24 @@ export type MetricsParameters = {
   format?: MetricsFormat
 }
 
+export type MirInput = {
+  node: string
+  output: number
+  '[key: string]': (unknown | string | number) | undefined
+}
+
+export type MirNode = {
+  calcite?: CalciteId | null
+  inputs?: Array<MirInput>
+  operation: string
+  outputs?: Array<MirInput> | null
+  persistent_id?: string | null
+  positions?: Array<SourcePosition>
+  table?: string | null
+  view?: string | null
+  '[key: string]': (unknown | MirInput | string | SourcePosition) | undefined
+}
+
 /**
  * Request to create a new API key.
  */
@@ -1639,6 +1704,19 @@ export type ObjectStorageConfig = {
    * options.
    */
   '[key: string]': string | undefined
+}
+
+export type Op = {
+  kind: string
+  name: string
+  syntax: string
+  '[key: string]': (unknown | string) | undefined
+}
+
+export type Operand = {
+  input?: number | null
+  name?: string | null
+  '[key: string]': (unknown | number | string) | undefined
 }
 
 export type OutputBufferConfig = {
@@ -1909,6 +1987,7 @@ export type PipelineConfig = {
   outputs?: {
     [key: string]: OutputEndpointConfig
   }
+  program_ir?: ProgramIr | null
   /**
    * Directory containing values of secrets.
    *
@@ -1916,6 +1995,17 @@ export type PipelineConfig = {
    */
   secrets_dir?: string | null
   storage_config?: StorageConfig | null
+}
+
+export type PipelineDiff = {
+  added_input_connectors: Array<string>
+  added_output_connectors: Array<string>
+  modified_input_connectors: Array<string>
+  modified_output_connectors: Array<string>
+  program_diff?: ProgramDiff | null
+  program_diff_error?: string | null
+  removed_input_connectors: Array<string>
+  removed_output_connectors: Array<string>
 }
 
 export type PipelineFieldSelector = 'all' | 'status'
@@ -1984,6 +2074,7 @@ export type PipelineSelectedInfo = {
   deployment_runtime_desired_status?: RuntimeDesiredStatus | null
   deployment_runtime_desired_status_since?: string | null
   deployment_runtime_status?: RuntimeStatus | null
+  deployment_runtime_status_details?: unknown
   deployment_runtime_status_since?: string | null
   deployment_status: CombinedStatus
   deployment_status_since: string
@@ -2141,6 +2232,15 @@ export type ProgramConfig = {
   runtime_version?: string | null
 }
 
+export type ProgramDiff = {
+  added_tables: Array<string>
+  added_views: Array<string>
+  modified_tables: Array<string>
+  modified_views: Array<string>
+  removed_tables: Array<string>
+  removed_views: Array<string>
+}
+
 /**
  * Log, warning and error information about the program compilation.
  */
@@ -2162,10 +2262,7 @@ export type ProgramError = {
  * as well as only for runtime (e.g., schema, input/output connectors).
  */
 export type ProgramInfo = {
-  /**
-   * Dataflow graph of the program.
-   */
-  dataflow?: unknown
+  dataflow?: Dataflow | null
   /**
    * Input connectors derived from the schema.
    */
@@ -2187,6 +2284,13 @@ export type ProgramInfo = {
    * Generated user defined function (UDF) stubs Rust code: stubs.rs
    */
   udf_stubs?: string
+}
+
+export type ProgramIr = {
+  mir: {
+    [key: string]: MirNode
+  }
+  program_schema: ProgramSchema
 }
 
 /**
@@ -2317,6 +2421,26 @@ export type RedisOutputConfig = {
   key_separator?: string
 }
 
+export type Rel = {
+  aggs?: Array<unknown> | null
+  all?: boolean | null
+  condition?: Condition | null
+  exprs?: Array<Operand> | null
+  fields?: Array<string> | null
+  group?: Array<number> | null
+  id: number
+  inputs?: Array<number>
+  joinType?: string | null
+  relOp: string
+  /**
+   * This is a vector where the elements concatenated form a fully qualified table name.
+   *
+   * e.g., usually is of the form `[$namespace, $table] / [schema, table]`
+   */
+  table?: Array<string> | null
+  '[key: string]': (unknown | boolean | Operand | string | number) | undefined
+}
+
 /**
  * A SQL table or view. It has a name and a list of fields.
  *
@@ -2351,6 +2475,19 @@ export type ResourceConfig = {
    * for an instance of this pipeline
    */
   memory_mb_min?: number | null
+  /**
+   * Kubernetes namespace to use for an instance of this pipeline.
+   * The namespace determines the scope of names for resources created
+   * for the pipeline.
+   * If not set, the pipeline will be deployed in the same namespace
+   * as the control-plane.
+   */
+  namespace?: string | null
+  /**
+   * Kubernetes service account name to use for an instance of this pipeline.
+   * The account determines permissions and access controls.
+   */
+  service_account_name?: string | null
   /**
    * Storage class to use for an instance of this pipeline.
    * The class determines storage performance such as IOPS and throughput.
@@ -2695,6 +2832,7 @@ export type RuntimeStatus =
   | 'Unavailable'
   | 'Standby'
   | 'Initializing'
+  | 'AwaitingApproval'
   | 'Bootstrapping'
   | 'Replaying'
   | 'Paused'
@@ -3454,11 +3592,27 @@ export type PostPipelineActivateData = {
      */
     pipeline_name: string
   }
+  query?: {
+    initial?: string
+  }
 }
 
 export type PostPipelineActivateResponse = CheckpointResponse
 
 export type PostPipelineActivateError = ErrorResponse
+
+export type PostPipelineApproveData = {
+  path: {
+    /**
+     * Unique pipeline name
+     */
+    pipeline_name: string
+  }
+}
+
+export type PostPipelineApproveResponse = CheckpointResponse
+
+export type PostPipelineApproveError = ErrorResponse
 
 export type CheckpointPipelineData = {
   path: {
@@ -3743,6 +3897,7 @@ export type PostPipelineStartData = {
     pipeline_name: string
   }
   query?: {
+    bootstrap_policy?: BootstrapPolicy
     /**
      * The `initial` parameter determines whether to after provisioning the pipeline make it
      * become `standby`, `paused` or `running` (only valid values).
@@ -4225,6 +4380,23 @@ export type $OpenApiTs = {
   '/v0/pipelines/{pipeline_name}/activate': {
     post: {
       req: PostPipelineActivateData
+      res: {
+        /**
+         * Pipeline activation initiated
+         */
+        '202': CheckpointResponse
+        /**
+         * Pipeline with that name does not exist
+         */
+        '404': ErrorResponse
+        '500': ErrorResponse
+        '503': ErrorResponse
+      }
+    }
+  }
+  '/v0/pipelines/{pipeline_name}/approve': {
+    post: {
+      req: PostPipelineApproveData
       res: {
         /**
          * Pipeline activation initiated

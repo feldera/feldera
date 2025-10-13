@@ -1,12 +1,8 @@
 <script lang="ts">
   import { page } from '$app/state'
-  import { Tooltip } from '$lib/components/common/Tooltip.svelte'
   import ClipboardCopyButton from '$lib/components/other/ClipboardCopyButton.svelte'
-  import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
-  import {
-    getRuntimeVersion,
-    normalizeRuntimeVersion
-  } from '$lib/functions/pipelines/runtimeVersion'
+  import { getRuntimeVersion } from '$lib/functions/pipelines/runtimeVersion'
+  import PipelineVersionTooltip from '$lib/components/pipelines/table/PipelineVersionTooltip.svelte'
 
   let {
     pipelineName,
@@ -30,37 +26,17 @@
       page.data.feldera!.unstableFeatures
     )
   )
-
-  let api = usePipelineManager()
 </script>
 
 {#if status === 'update_available'}
   <div class="fd fd-info pb-0.5 text-[16px] text-blue-500 !ring-blue-500"></div>
-  <Tooltip
-    class="bg-white-dark z-20 rounded-container p-4 text-base text-surface-950-50"
-    placement="bottom-end"
-    strategy="fixed"
-    activeContent
-  >
-    <div>A newer runtime version {normalizeRuntimeVersion(baseRuntimeVersion)} is available.</div>
-    <button
-      class="btn mt-2 h-6 preset-filled-primary-500"
-      onclick={() => api.postUpdateRuntime(pipelineName)}>Update</button
-    >
-  </Tooltip>
 {:else if status === 'custom'}
   <div class="fd fd-info pb-0.5 text-[16px] text-warning-500 !ring-warning-500"></div>
-  <Tooltip
-    class="bg-white-dark z-20 rounded-container p-4 text-base text-surface-950-50"
-    placement="bottom-end"
-    strategy="fixed"
-    activeContent
-  >
-    <div>This custom runtime version is set in the compilation configuration.</div>
-  </Tooltip>
 {:else}
-  <div class="w-5"></div>
+  <div class="w-4"></div>
 {/if}
+<PipelineVersionTooltip {pipelineName} {status} {baseRuntimeVersion} />
+
 {#if version.length < 11}
   <span class="text-sm">{version}</span>
 {:else}

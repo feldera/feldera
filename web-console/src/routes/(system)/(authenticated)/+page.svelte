@@ -20,7 +20,7 @@
   import AvailableActions from '$lib/components/pipelines/table/AvailableActions.svelte'
   import AppHeader from '$lib/components/layout/AppHeader.svelte'
   import NavigationExtras from '$lib/components/layout/NavigationExtras.svelte'
-  import { useDrawer } from '$lib/compositions/layout/useDrawer.svelte'
+  import { useAdaptiveDrawer } from '$lib/compositions/layout/useAdaptiveDrawer.svelte'
   import BookADemo from '$lib/components/other/BookADemo.svelte'
   import Footer from '$lib/components/layout/Footer.svelte'
 
@@ -54,7 +54,7 @@
   let showSuggestedDemos = useLocalStorage('home/hideSuggestedDemos', true)
   let darkMode = useDarkMode()
   let selectedPipelines = $state([]) as string[]
-  const drawer = useDrawer('right')
+  const drawer = useAdaptiveDrawer('right')
 </script>
 
 <AppHeader>
