@@ -87,7 +87,6 @@ public class CalciteFunctions implements FunctionDocumentation.FunctionRegistry 
             new Func(SqlStdOperatorTable.IS_EMPTY, "IS EMPTY", SqlLibrary.STANDARD, "", false),
 
             new Func(SqlStdOperatorTable.EXISTS, "EXISTS", SqlLibrary.STANDARD, "comparisons#exists", false),
-            new Func(SqlStdOperatorTable.UNIQUE, "UNIQUE", SqlLibrary.STANDARD, "comparisons#unique", false),
             new Func(SqlStdOperatorTable.NOT, "NOT", SqlLibrary.STANDARD, "boolean#not", false),
             new Func(SqlStdOperatorTable.UNARY_MINUS, "-", SqlLibrary.STANDARD, "operators#plusminus", false),
             new Func(SqlStdOperatorTable.UNARY_PLUS, "+", SqlLibrary.STANDARD, "operators#plusminus", false),
@@ -232,7 +231,7 @@ public class CalciteFunctions implements FunctionDocumentation.FunctionRegistry 
             new Func(SqlStdOperatorTable.HOP, "HOP", SqlLibrary.STANDARD, "table#hop", false),
 
             // SqlLibraryOperators operators
-            // Not implemented, but give a better error message
+            // DATEADD is not implemented, but give a better error message
             new Func(SqlLibraryOperators.DATEADD, "DATEADD", SqlLibrary.POSTGRESQL, "", false),
             new Func(SqlLibraryOperators.DATEDIFF, "DATEDIFF", SqlLibrary.POSTGRESQL,
                     "datetime#date_timestampdiff,datetime#timestamp_timestampdiff", false),
@@ -320,6 +319,8 @@ public class CalciteFunctions implements FunctionDocumentation.FunctionRegistry 
                     "map#map_contains_key", false),
             new Func(SqlLibraryOperators.MD5, "MD5", SqlLibrary.SPARK,
                     "string#md5,binary#md5", false),
+            new Func(SqlLibraryOperators.IFNULL, "IFNULL", SqlLibrary.BIG_QUERY,
+                    "comparisons#ifnull", false)
 
             // new Func(SqlLibraryOperators.SAFE_ORDINAL, "SAFE_ORDINAL", SqlLibrary.BIG_QUERY, "array", false),
     };
