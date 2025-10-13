@@ -124,7 +124,13 @@ impl LockedDirectory {
                     }
                 }
                 Err(error) if error.kind() == ErrorKind::NotFound => (),
-                Err(error) => return Err(error.into()),
+                Err(error) => {
+                    return Err(StorageError::stdio(
+                        error.kind(),
+                        "stat",
+                        pid_file.display(),
+                    ))
+                }
             }
 
             let file = File::options()
@@ -132,8 +138,11 @@ impl LockedDirectory {
                 .write(true)
                 .create(true)
                 .truncate(false)
-                .open(&pid_file)?;
-            let metadata = file.metadata()?;
+                .open(&pid_file)
+                .map_err(|e| StorageError::stdio(e.kind(), "create", pid_file.display()))?;
+            let metadata = file
+                .metadata()
+                .map_err(|e| StorageError::stdio(e.kind(), "fstat", pid_file.display()))?;
             let dev_ino = (metadata.dev(), metadata.ino());
 
             match write_lock(&file) {
@@ -159,7 +168,13 @@ impl LockedDirectory {
                     }
                     sleep(Duration::from_millis(100));
                 }
-                Err(error) => return Err(error.into()),
+                Err(error) => {
+                    return Err(StorageError::stdio(
+                        error.kind(),
+                        "exclusive lock",
+                        pid_file.display(),
+                    ))
+                }
                 Ok(()) => {
                     if blocked {
                         info!(

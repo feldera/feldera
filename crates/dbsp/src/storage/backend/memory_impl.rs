@@ -11,7 +11,7 @@ use feldera_storage::{StorageFileType, StoragePath};
 use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 use std::{
     collections::HashMap,
-    io::{Error as IoError, ErrorKind},
+    io::ErrorKind,
     sync::{Arc, RwLock},
 };
 
@@ -150,7 +150,11 @@ impl FileReader for MemoryReader {
 
     fn read_block(&self, location: BlockLocation) -> Result<Arc<FBuf>, StorageError> {
         if location.after() > self.file.size {
-            return Err(IoError::from(ErrorKind::UnexpectedEof).into());
+            return Err(StorageError::stdio(
+                ErrorKind::UnexpectedEof,
+                "read",
+                &self.file.path,
+            ));
         }
 
         let index = self
@@ -209,7 +213,7 @@ impl StorageBackend for MemoryBackend {
                 file: file.clone(),
                 keep: AtomicBool::new(true),
             })),
-            None => Err(StorageError::StdIo(ErrorKind::NotFound)),
+            None => Err(StorageError::stdio(ErrorKind::NotFound, "open", name)),
         }
     }
 
@@ -240,7 +244,7 @@ impl StorageBackend for MemoryBackend {
                 self.0.usage.fetch_sub(file.size as i64, Ordering::Relaxed);
                 Ok(())
             }
-            None => Err(StorageError::StdIo(ErrorKind::NotFound)),
+            None => Err(StorageError::stdio(ErrorKind::NotFound, "delete", name)),
         }
     }
 
