@@ -698,7 +698,7 @@ pub enum ControllerError {
         /// Describes the context where the error occurred.
         context: String,
         error: StorageError,
-        backtrace: Backtrace,
+        backtrace: Box<Backtrace>,
     },
 
     /// Enterprise-only feature.
@@ -1401,7 +1401,7 @@ impl ControllerError {
         Self::StorageError {
             context: context.into(),
             error,
-            backtrace: Backtrace::capture(),
+            backtrace: Box::new(Backtrace::capture()),
         }
     }
 
