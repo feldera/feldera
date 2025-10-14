@@ -2067,9 +2067,9 @@ public class CalciteToDBSPCompiler extends RelVisitor
         List<DBSPExpression> lrFields = new ArrayList<>();
         // Don't forget to drop the added field
         for (int i = 0; i < leftElementType.size() - (needsLeftCast ? 1 : 0); i++)
-            lrFields.add(l0.deref().field(i));
+            lrFields.add(l0.deref().field(i).applyCloneIfNeeded());
         for (int i = 0; i < rightElementType.size() - (needsRightCast ? 1 : 0); i++)
-            lrFields.add(r0.deref().field(i));
+            lrFields.add(r0.deref().field(i).applyCloneIfNeeded());
         DBSPTupleExpression lr = new DBSPTupleExpression(lrFields, false);
         DBSPClosureExpression makeTuple = lr.closure(k, l0, r0);
         DBSPSimpleOperator result = new DBSPAsofJoinOperator(node, TypeCompiler.makeZSet(resultType),

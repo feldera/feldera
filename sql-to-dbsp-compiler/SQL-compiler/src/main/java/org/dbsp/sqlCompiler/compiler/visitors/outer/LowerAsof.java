@@ -114,7 +114,7 @@ public class LowerAsof implements CircuitTransform {
             // operators have no successors, we know that the graph will not change
             // anywhere else, including the ConcreteAsofJoinOperator
             DBSPIntegrateTraceRetainValuesOperator original = this.original.get(operator);
-            if (original == null) {
+            if (original == null || !this.gces.containsKey(original)) {
                 super.postorder(operator);
                 return;
             }
