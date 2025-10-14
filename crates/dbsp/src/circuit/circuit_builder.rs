@@ -55,7 +55,7 @@ use crate::{
 use anyhow::Error as AnyError;
 use dyn_clone::{clone_box, DynClone};
 use feldera_ir::{LirCircuit, LirNodeId};
-use feldera_storage::StoragePath;
+use feldera_storage::{FileCommitter, StoragePath};
 use serde::{Deserialize, Serialize, Serializer};
 use std::{
     any::{type_name_of_val, Any, TypeId},
@@ -71,6 +71,7 @@ use std::{
     panic::Location,
     pin::Pin,
     rc::Rc,
+    sync::Arc,
     thread::panicking,
 };
 use tokio::{runtime::Runtime as TokioRuntime, task::LocalSet};
@@ -1046,9 +1047,16 @@ pub trait Node: Any {
         Ok(())
     }
 
-    /// Instructs the node to commit the state of its inner operator to
+    /// Instructs the node to write the state of its inner operator to
     /// persistent storage within directory `base`.
-    fn checkpoint(&mut self, base: &StoragePath) -> Result<(), DbspError>;
+    ///
+    /// The node shouldn't commit the state to stable storage; rather, it should
+    /// append the files to be committed to `files` for later commit.
+    fn checkpoint(
+        &mut self,
+        base: &StoragePath,
+        files: &mut Vec<Arc<dyn FileCommitter>>,
+    ) -> Result<(), DbspError>;
 
     /// Instructs the node to restore the state of its inner operator to
     /// the given checkpoint in directory `base`.
@@ -4185,9 +4193,13 @@ where
         self.operator.fixedpoint(scope)
     }
 
-    fn checkpoint(&mut self, base: &StoragePath) -> Result<(), DbspError> {
+    fn checkpoint(
+        &mut self,
+        base: &StoragePath,
+        files: &mut Vec<Arc<dyn FileCommitter>>,
+    ) -> Result<(), DbspError> {
         self.operator
-            .checkpoint(base, self.persistent_id().as_deref())
+            .checkpoint(base, self.persistent_id().as_deref(), files)
     }
 
     fn restore(&mut self, base: &StoragePath) -> Result<(), DbspError> {
@@ -4324,9 +4336,13 @@ where
         self.operator.fixedpoint(scope)
     }
 
-    fn checkpoint(&mut self, base: &StoragePath) -> Result<(), DbspError> {
+    fn checkpoint(
+        &mut self,
+        base: &StoragePath,
+        files: &mut Vec<Arc<dyn FileCommitter>>,
+    ) -> Result<(), DbspError> {
         self.operator
-            .checkpoint(base, self.persistent_id().as_deref())
+            .checkpoint(base, self.persistent_id().as_deref(), files)
     }
 
     fn restore(&mut self, base: &StoragePath) -> Result<(), DbspError> {
@@ -4477,9 +4493,13 @@ where
         self.operator.fixedpoint(scope)
     }
 
-    fn checkpoint(&mut self, base: &StoragePath) -> Result<(), DbspError> {
+    fn checkpoint(
+        &mut self,
+        base: &StoragePath,
+        files: &mut Vec<Arc<dyn FileCommitter>>,
+    ) -> Result<(), DbspError> {
         self.operator
-            .checkpoint(base, self.persistent_id().as_deref())
+            .checkpoint(base, self.persistent_id().as_deref(), files)
     }
 
     fn restore(&mut self, base: &StoragePath) -> Result<(), DbspError> {
@@ -4623,9 +4643,13 @@ where
         self.operator.fixedpoint(scope)
     }
 
-    fn checkpoint(&mut self, base: &StoragePath) -> Result<(), DbspError> {
+    fn checkpoint(
+        &mut self,
+        base: &StoragePath,
+        files: &mut Vec<Arc<dyn FileCommitter>>,
+    ) -> Result<(), DbspError> {
         self.operator
-            .checkpoint(base, self.persistent_id().as_deref())
+            .checkpoint(base, self.persistent_id().as_deref(), files)
     }
 
     fn restore(&mut self, base: &StoragePath) -> Result<(), DbspError> {
@@ -4826,9 +4850,13 @@ where
         self.operator.fixedpoint(scope)
     }
 
-    fn checkpoint(&mut self, base: &StoragePath) -> Result<(), DbspError> {
+    fn checkpoint(
+        &mut self,
+        base: &StoragePath,
+        files: &mut Vec<Arc<dyn FileCommitter>>,
+    ) -> Result<(), DbspError> {
         self.operator
-            .checkpoint(base, self.persistent_id().as_deref())
+            .checkpoint(base, self.persistent_id().as_deref(), files)
     }
 
     fn restore(&mut self, base: &StoragePath) -> Result<(), DbspError> {
@@ -5029,9 +5057,13 @@ where
         self.operator.fixedpoint(scope)
     }
 
-    fn checkpoint(&mut self, base: &StoragePath) -> Result<(), DbspError> {
+    fn checkpoint(
+        &mut self,
+        base: &StoragePath,
+        files: &mut Vec<Arc<dyn FileCommitter>>,
+    ) -> Result<(), DbspError> {
         self.operator
-            .checkpoint(base, self.persistent_id().as_deref())
+            .checkpoint(base, self.persistent_id().as_deref(), files)
     }
 
     fn restore(&mut self, base: &StoragePath) -> Result<(), DbspError> {
@@ -5206,9 +5238,13 @@ where
         self.operator.fixedpoint(scope)
     }
 
-    fn checkpoint(&mut self, base: &StoragePath) -> Result<(), DbspError> {
+    fn checkpoint(
+        &mut self,
+        base: &StoragePath,
+        files: &mut Vec<Arc<dyn FileCommitter>>,
+    ) -> Result<(), DbspError> {
         self.operator
-            .checkpoint(base, self.persistent_id().as_deref())
+            .checkpoint(base, self.persistent_id().as_deref(), files)
     }
 
     fn restore(&mut self, base: &StoragePath) -> Result<(), DbspError> {
@@ -5404,9 +5440,13 @@ where
         self.operator.fixedpoint(scope)
     }
 
-    fn checkpoint(&mut self, base: &StoragePath) -> Result<(), DbspError> {
+    fn checkpoint(
+        &mut self,
+        base: &StoragePath,
+        files: &mut Vec<Arc<dyn FileCommitter>>,
+    ) -> Result<(), DbspError> {
         self.operator
-            .checkpoint(base, self.persistent_id().as_deref())
+            .checkpoint(base, self.persistent_id().as_deref(), files)
     }
 
     fn restore(&mut self, base: &StoragePath) -> Result<(), DbspError> {
@@ -5587,9 +5627,13 @@ where
         self.operator.fixedpoint(scope)
     }
 
-    fn checkpoint(&mut self, base: &StoragePath) -> Result<(), DbspError> {
+    fn checkpoint(
+        &mut self,
+        base: &StoragePath,
+        files: &mut Vec<Arc<dyn FileCommitter>>,
+    ) -> Result<(), DbspError> {
         self.operator
-            .checkpoint(base, self.persistent_id().as_deref())
+            .checkpoint(base, self.persistent_id().as_deref(), files)
     }
 
     fn restore(&mut self, base: &StoragePath) -> Result<(), DbspError> {
@@ -5757,10 +5801,14 @@ where
         self.operator.borrow().fixedpoint(scope)
     }
 
-    fn checkpoint(&mut self, base: &StoragePath) -> Result<(), DbspError> {
+    fn checkpoint(
+        &mut self,
+        base: &StoragePath,
+        files: &mut Vec<Arc<dyn FileCommitter>>,
+    ) -> Result<(), DbspError> {
         self.operator
             .borrow_mut()
-            .checkpoint(base, self.persistent_id().as_deref())
+            .checkpoint(base, self.persistent_id().as_deref(), files)
     }
 
     fn restore(&mut self, base: &StoragePath) -> Result<(), DbspError> {
@@ -5911,7 +5959,11 @@ where
         self.operator.borrow().fixedpoint(scope)
     }
 
-    fn checkpoint(&mut self, _base: &StoragePath) -> Result<(), DbspError> {
+    fn checkpoint(
+        &mut self,
+        _base: &StoragePath,
+        _files: &mut Vec<Arc<dyn FileCommitter>>,
+    ) -> Result<(), DbspError> {
         // The Z-1 operator consists of two logical parts.
         // The first part gets invoked at the start of a clock cycle to retrieve the
         // state stored at the previous clock tick. The second one gets invoked
@@ -6138,7 +6190,11 @@ where
         self.circuit.map_nodes_recursive(f)
     }
 
-    fn checkpoint(&mut self, _base: &StoragePath) -> Result<(), DbspError> {
+    fn checkpoint(
+        &mut self,
+        _base: &StoragePath,
+        _files: &mut Vec<Arc<dyn FileCommitter>>,
+    ) -> Result<(), DbspError> {
         Ok(())
     }
 
@@ -6293,7 +6349,11 @@ impl CircuitHandle {
             .map_err(DbspError::Scheduler)
     }
 
-    pub fn checkpoint(&mut self, base: &StoragePath) -> Result<(), DbspError> {
+    pub fn checkpoint(
+        &mut self,
+        base: &StoragePath,
+        files: &mut Vec<Arc<dyn FileCommitter>>,
+    ) -> Result<(), DbspError> {
         // if Runtime::worker_index() == 0 {
         //     self.circuit.to_dot_file(
         //         |node| {
@@ -6328,7 +6388,8 @@ impl CircuitHandle {
 
         self.circuit
             .map_nodes_recursive_mut(&mut |node: &mut dyn Node| {
-                DBSP_OPERATOR_COMMIT_LATENCY_MICROSECONDS.record_callback(|| node.checkpoint(base))
+                DBSP_OPERATOR_COMMIT_LATENCY_MICROSECONDS
+                    .record_callback(|| node.checkpoint(base, files))
             })
     }
 

@@ -29,7 +29,7 @@ use crate::{
 use crate::storage::file::to_bytes;
 use crate::trace::CommittedSpine;
 use enum_map::EnumMap;
-use feldera_storage::StoragePath;
+use feldera_storage::{FileCommitter, StoragePath};
 use feldera_types::checkpoint::PSpineBatches;
 use ouroboros::self_referencing;
 use rand::Rng;
@@ -1411,7 +1411,12 @@ where
         &self.value_filter
     }
 
-    fn commit(&mut self, base: &StoragePath, persistent_id: &str) -> Result<(), Error> {
+    fn commit(
+        &mut self,
+        base: &StoragePath,
+        persistent_id: &str,
+        files: &mut Vec<Arc<dyn FileCommitter>>,
+    ) -> Result<(), Error> {
         fn persist_batches<B>(batches: Vec<Arc<B>>) -> Vec<Arc<B>>
         where
             B: Batch,
@@ -1443,11 +1448,12 @@ where
             .iter()
             .chain(merging.iter())
             .map(|batch| {
-                batch
+                let file = batch
                     .file_reader()
-                    .expect("The batch should have been persisted")
-                    .path()
-                    .to_string()
+                    .expect("The batch should have been persisted");
+                let path = file.path().to_string();
+                files.push(file);
+                path
             })
             .collect::<Vec<_>>();
 

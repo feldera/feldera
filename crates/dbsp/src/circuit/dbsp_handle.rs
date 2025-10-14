@@ -12,7 +12,7 @@ use crate::{
 use anyhow::Error as AnyError;
 use crossbeam::channel::{bounded, Receiver, Select, Sender, TryRecvError};
 use feldera_ir::LirCircuit;
-use feldera_storage::{StorageBackend, StoragePath};
+use feldera_storage::{FileCommitter, StorageBackend, StoragePath};
 use feldera_types::checkpoint::CheckpointMetadata;
 pub use feldera_types::config::{StorageCacheConfig, StorageConfig, StorageOptions};
 use itertools::Either;
@@ -677,9 +677,10 @@ impl Runtime {
                         }
                     }
                     Ok(Command::Checkpoint(base)) => {
+                        let mut files = Vec::new();
                         let response = circuit
-                            .checkpoint(&base)
-                            .map(|_| Response::CheckpointCreated);
+                            .checkpoint(&base, &mut files)
+                            .map(|_| Response::CheckpointCreated(files));
                         if status_sender.send(response).is_err() {
                             return;
                         }
@@ -819,7 +820,7 @@ enum Response {
     CommitProgress(CommitProgress),
     ProfileDump(Graph),
     Profile(WorkerProfile),
-    CheckpointCreated,
+    CheckpointCreated(Vec<Arc<dyn FileCommitter>>),
     CheckpointRestored(Option<BootstrapInfo>),
     Lir(LirCircuit),
 }
@@ -1219,33 +1220,6 @@ impl DBSPHandle {
             .map(|checkpointer| checkpointer.fingerprint())
     }
 
-    /// Create a new checkpoint by taking consistent snapshot of the state in
-    /// dbsp.
-    pub fn checkpoint_with_metadata(
-        &mut self,
-        steps: u64,
-        processed_records: u64,
-    ) -> Result<CheckpointMetadata, DbspError> {
-        self.checkpoint_as(Uuid::now_v7(), None, Some(steps), Some(processed_records))
-    }
-
-    /// TODO: take params steps and processed_records
-    /// Create a new checkpoint by taking consistent snapshot of the state in
-    /// dbsp.
-    pub fn checkpoint(&mut self) -> Result<CheckpointMetadata, DbspError> {
-        self.checkpoint_as(Uuid::now_v7(), None, None, None)
-    }
-
-    /// TODO: take params steps and processed_records
-    /// Create a new named checkpoint by taking consistent snapshot of the state
-    /// in dbsp.
-    pub fn checkpoint_named<S: Into<String> + AsRef<str>>(
-        &mut self,
-        name: S,
-    ) -> Result<CheckpointMetadata, DbspError> {
-        self.checkpoint_as(Uuid::now_v7(), Some(name.into()), None, None)
-    }
-
     /// Reset circuit state to the point of the given Commit.
     ///
     /// If the circuit needs bootstrapping new operators, put it in the bootstrap mode.
@@ -1299,15 +1273,26 @@ impl DBSPHandle {
             .ok_or(DbspError::Storage(StorageError::StorageDisabled))
     }
 
-    fn checkpoint_as(
+    /// Create a new checkpoint by taking a consistent snapshot of the state in
+    /// dbsp.
+    pub fn checkpoint(
         &mut self,
-        uuid: Uuid,
         identifier: Option<String>,
         steps: Option<u64>,
         processed_records: Option<u64>,
     ) -> Result<CheckpointMetadata, DbspError> {
+        let uuid = Uuid::now_v7();
         let checkpoint_dir = Checkpointer::checkpoint_dir(uuid);
-        self.broadcast_command(Command::Checkpoint(checkpoint_dir), |_, _| {})?;
+        let mut readers = Vec::new();
+        self.broadcast_command(Command::Checkpoint(checkpoint_dir), |_worker, resp| {
+            let Response::CheckpointCreated(r) = resp else {
+                panic!("Expected checkpoint response, got {resp:?}");
+            };
+            readers.push(r);
+        })?;
+        for reader in readers.into_iter().flatten() {
+            reader.commit()?;
+        }
         self.checkpointer()
             .unwrap()
             .commit(uuid, identifier, steps, processed_records)
@@ -1744,7 +1729,9 @@ pub(crate) mod tests {
             let (mut dbsp, (input_handle, output_handle, sample_size_handle)) =
                 circuit_fun(&cconf).unwrap();
             for mut batch in input.clone() {
-                let cpm = dbsp.checkpoint().expect("commit shouldn't fail");
+                let cpm = dbsp
+                    .checkpoint(None, None, None)
+                    .expect("commit shouldn't fail");
                 checkpoints.push(cpm);
 
                 sample_size_handle.set_for_all(SAMPLE_SIZE);
@@ -1782,7 +1769,7 @@ pub(crate) mod tests {
         let mut batch = vec![Tup2(1, Tup2(2, 1))];
         input_handle.append(&mut batch);
         dbsp.transaction().unwrap();
-        let cpm = dbsp.checkpoint().expect("commit failed");
+        let cpm = dbsp.checkpoint(None, None, None).expect("commit failed");
         let batchfiles = dbsp
             .checkpointer
             .as_ref()
@@ -1803,9 +1790,10 @@ pub(crate) mod tests {
                 mkcircuit(&cconf).unwrap();
             sample_size_handle.set_for_all(2);
             dbsp.transaction().unwrap();
-            dbsp.checkpoint_named("test-commit").expect("commit failed");
+            dbsp.checkpoint(Some("test-commit".into()), None, None)
+                .expect("commit failed");
             dbsp.transaction().unwrap();
-            dbsp.checkpoint().expect("commit failed");
+            dbsp.checkpoint(None, None, None).expect("commit failed");
         }
 
         {
@@ -1903,7 +1891,7 @@ pub(crate) mod tests {
 
         let (mut dbsp, (input_handle, _, _)) = mkcircuit(&cconf).unwrap();
 
-        let _cpm = dbsp.checkpoint().expect("commit failed");
+        let _cpm = dbsp.checkpoint(None, None, None).expect("commit failed");
         let mut batches: Vec<Vec<Tup2<i32, Tup2<i32, i64>>>> = vec![
             vec![Tup2(1, Tup2(2, 1))],
             vec![Tup2(2, Tup2(3, 1))],
@@ -1918,7 +1906,7 @@ pub(crate) mod tests {
             input_handle.append(&mut chunk[0]);
             input_handle.append(&mut chunk[1]);
             dbsp.transaction().unwrap();
-            let _cpm = dbsp.checkpoint().expect("commit failed");
+            let _cpm = dbsp.checkpoint(None, None, None).expect("commit failed");
         }
 
         let mut prev_count = count_directory_entries(temp.path()).unwrap();
@@ -1943,7 +1931,8 @@ pub(crate) mod tests {
 
         let mut batch: Vec<Tup2<i32, Tup2<i32, i64>>> = vec![Tup2(1, Tup2(2, 1))];
         input_handle.append(&mut batch);
-        dbsp.checkpoint().expect("commit shouldn't fail");
+        dbsp.checkpoint(None, None, None)
+            .expect("commit shouldn't fail");
         drop(dbsp);
 
         let incomplete_batch_path = temp.path().join("incomplete_batch.mut");
@@ -2032,7 +2021,9 @@ pub(crate) mod tests {
         let (mut dbsp, (input_handle, _, _)) = mkcircuit(&cconf).unwrap();
         let mut batch: Vec<Tup2<i32, Tup2<i32, i64>>> = vec![Tup2(1, Tup2(2, 1))];
         input_handle.append(&mut batch);
-        let cpi = dbsp.checkpoint().expect("commit shouldn't fail");
+        let cpi = dbsp
+            .checkpoint(None, None, None)
+            .expect("commit shouldn't fail");
         drop(dbsp);
 
         cconf.storage.as_mut().unwrap().init_checkpoint = Some(cpi.uuid);
@@ -2084,7 +2075,7 @@ pub(crate) mod tests {
             let (mut dbsp, input_handle) = mkcircuit(&cconf, expected_waterlines.into_iter());
             input_handle.append(&mut batch);
             dbsp.transaction().unwrap();
-            let cpm = dbsp.checkpoint().unwrap();
+            let cpm = dbsp.checkpoint(None, None, None).unwrap();
             cconf.storage.as_mut().unwrap().init_checkpoint = Some(cpm.uuid);
             dbsp.kill().unwrap();
         }

@@ -1,6 +1,6 @@
-use std::borrow::Cow;
+use std::{borrow::Cow, sync::Arc};
 
-use feldera_storage::StoragePath;
+use feldera_storage::{FileCommitter, StoragePath};
 use size_of::SizeOf;
 
 use crate::{
@@ -119,15 +119,22 @@ where
         }
     }
 
-    fn checkpoint(&mut self, base: &StoragePath, persistent_id: Option<&str>) -> Result<(), Error> {
+    fn checkpoint(
+        &mut self,
+        base: &StoragePath,
+        persistent_id: Option<&str>,
+        files: &mut Vec<Arc<dyn FileCommitter>>,
+    ) -> Result<(), Error> {
         let persistent_id = require_persistent_id(persistent_id, &self.global_id)?;
 
         let committed: CommittedTransactionZ1 = (self as &Self).try_into()?;
         let as_bytes =
             to_bytes(&committed).expect("Serializing CommittedTransactionZ1 should work.");
-        Runtime::storage_backend()
-            .unwrap()
-            .write(&Self::checkpoint_file(base, persistent_id), as_bytes)?;
+        files.push(
+            Runtime::storage_backend()
+                .unwrap()
+                .write(&Self::checkpoint_file(base, persistent_id), as_bytes)?,
+        );
         Ok(())
     }
 
