@@ -34,8 +34,11 @@ class OutputHandler:
 
         # sets up the callback runner
         self.handler = CallbackRunner(
-            self.client, self.pipeline_name, self.view_name, callback,
-            exception_callback
+            self.client,
+            self.pipeline_name,
+            self.view_name,
+            callback,
+            exception_callback,
         )
 
     def start(self):

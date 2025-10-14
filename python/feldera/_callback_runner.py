@@ -14,7 +14,7 @@ class CallbackRunner(Thread):
         pipeline_name: str,
         view_name: str,
         callback: Callable[[pd.DataFrame, int], None],
-        exception_callback: Callable[[BaseException], None]
+        exception_callback: Callable[[BaseException], None],
     ):
         super().__init__()
         self.daemon = True
