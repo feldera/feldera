@@ -1,11 +1,9 @@
 package org.dbsp.sqlCompiler.compiler.sql.simple;
 
-import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainKeysOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinIndexOperator;
-import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
@@ -1372,7 +1370,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
         });
     }
 
-    @Test @Ignore("https://issues.apache.org/jira/browse/CALCITE-7225")
+    @Test
     public void issue4876() {
         this.statementsFailingInCompilation("""
                 CREATE TABLE tbl(roww ROW(i1 INT, v1 VARCHAR NULL));
@@ -1402,5 +1400,133 @@ public class IncrementalRegressionTests extends SqlIoTest {
                  roww | weight
                 ---------------
                  false | 1""");
+    }
+
+    @Test
+    public void asofTest() {
+        this.getCCS("""
+                CREATE TABLE data_entity_1 (
+                    unique_id_a VARCHAR NOT NULL PRIMARY KEY,
+                    join_key_a VARCHAR NOT NULL,
+                    event_timestamp TIMESTAMP
+                );
+                
+                CREATE TABLE data_entity_2 (
+                    key_part_1 VARCHAR NOT NULL,
+                    join_key_b VARCHAR NOT NULL,
+                    record_timestamp TIMESTAMP,
+                    PRIMARY KEY (key_part_1, join_key_b)
+                );
+                
+                CREATE VIEW combined_view AS
+                SELECT "t1".*, "t2".* FROM data_entity_1 as t1
+                LEFT ASOF JOIN "data_entity_2" AS "t2"
+                MATCH_CONDITION ( t1.event_timestamp >= t2.record_timestamp )
+                ON "t1"."join_key_a" = "t2"."join_key_b";""");
+    }
+
+    @Test @Ignore("https://github.com/feldera/feldera/issues/4899 https://issues.apache.org/jira/browse/CALCITE-7228")
+    public void asof2Test() {
+        this.getCCS("""
+                CREATE TABLE source_stream_a (
+                    common_join_attribute SMALLINT,
+                    join_key_a2 VARCHAR,
+                    join_key_a1 VARCHAR,
+                    event_timestamp TIMESTAMP
+                );
+                
+                CREATE TABLE reference_table_b (
+                    join_key_b1 VARCHAR NOT NULL PRIMARY KEY,
+                    common_join_attribute SMALLINT,
+                    event_timestamp TIMESTAMP
+                );
+                
+                CREATE TABLE source_stream_c (
+                    join_key_b1 VARCHAR NOT NULL,
+                    join_key_c2 VARCHAR NOT NULL,
+                    common_join_attribute SMALLINT,
+                    epoch_ts_c BIGINT LATENESS 10::BIGINT,
+                    timestamp_c TIMESTAMP,
+                    event_timestamp TIMESTAMP,
+                    PRIMARY KEY (join_key_b1, join_key_c2)
+                );
+                
+                CREATE VIEW combined_view
+                AS
+                SELECT t1.* FROM source_stream_a AS t1
+                LEFT JOIN reference_table_b AS t2
+                ON t1.common_join_attribute = t2.common_join_attribute AND t1.join_key_a1 = t2.join_key_b1
+                LEFT ASOF JOIN source_stream_c AS t3
+                MATCH_CONDITION ( t1.event_timestamp >= t3.event_timestamp )
+                ON t1.common_join_attribute = t3.common_join_attribute AND t1.join_key_a2 = t3.join_key_c2
+                 AND t1.join_key_a1 = t3.join_key_b1;""");
+    }
+
+    @Test
+    public void asof3Test() {
+        this.getCCS("""
+                CREATE TABLE source_table_a (
+                    join_key_1 SMALLINT,
+                    timestamp_key_a BIGINT LATENESS 10::BIGINT,
+                    join_key_2 VARCHAR,
+                    join_key_3 VARCHAR
+                );
+                
+                CREATE TABLE source_table_b (
+                    join_key_2 VARCHAR NOT NULL,
+                    join_key_3 VARCHAR NOT NULL,
+                    join_key_1 SMALLINT,
+                    timestamp_key_b BIGINT LATENESS 10::BIGINT,
+                    PRIMARY KEY (join_key_2, join_key_3)
+                );
+                
+                CREATE VIEW combined_view
+                AS SELECT "t1".*
+                 FROM "source_table_a" AS "t1"
+                 LEFT ASOF JOIN "source_table_b" AS "t2"
+                 MATCH_CONDITION ( t1.timestamp_key_a >= t2.timestamp_key_b )
+                  ON "t1"."join_key_1" = "t2"."join_key_1" AND "t1"."join_key_3" = "t2"."join_key_3" AND "t1"."join_key_2" = "t2"."join_key_2";
+                
+                LATENESS combined_view.timestamp_key_a 10::BIGINT;
+                LATENESS combined_view.timestamp_key_b 10::BIGINT;""");
+    }
+
+    @Test
+    public void asof4Test() {
+        this.getCCS("""
+                CREATE TABLE source_stream_a (
+                    join_key_1 SMALLINT,
+                    join_key_2 VARCHAR,
+                    join_key_3 VARCHAR,
+                    event_timestamp TIMESTAMP
+                );
+                
+                CREATE TABLE reference_table_b (
+                    join_key_1 SMALLINT,
+                    event_timestamp TIMESTAMP
+                );
+                
+                CREATE TABLE source_stream_c (
+                    join_key_3 VARCHAR NOT NULL,
+                    join_key_2 VARCHAR NOT NULL,
+                    join_key_1 SMALLINT,
+                    event_timestamp TIMESTAMP,
+                    PRIMARY KEY (join_key_3, join_key_2)
+                );
+                
+                CREATE VIEW intermediate_view_1 AS
+                SELECT * from source_stream_c;
+                
+                CREATE VIEW intermediate_view_2
+                AS SELECT "t1".* FROM "source_stream_a" AS "t1"
+                LEFT ASOF JOIN "intermediate_view_1" AS "t2"
+                MATCH_CONDITION ( t1.event_timestamp >= t2.event_timestamp )
+                ON "t1"."join_key_1" = "t2"."join_key_1" AND "t1"."join_key_2" = "t2"."join_key_2" AND "t1"."join_key_3" = "t2"."join_key_3";
+                
+                CREATE VIEW final_view
+                AS SELECT * from intermediate_view_2 as v1
+                LEFT ASOF JOIN "reference_table_b" AS "t3"
+                MATCH_CONDITION ( v1.event_timestamp >= t3.event_timestamp )
+                ON "v1"."join_key_1" = "t3"."join_key_1" ;""");
     }
 }
