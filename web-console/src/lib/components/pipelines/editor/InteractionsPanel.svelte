@@ -16,6 +16,9 @@
   import { usePipelineActionCallbacks } from '$lib/compositions/pipelines/usePipelineActionCallbacks.svelte'
   import { count } from '$lib/functions/common/array'
   import { untrack } from 'svelte'
+  import ClipboardCopyButton from '$lib/components/other/ClipboardCopyButton.svelte'
+  import Tooltip from '$lib/components/common/Tooltip.svelte'
+  import DownloadSupportBundle from '$lib/components/pipelines/editor/DownloadSupportBundle.svelte'
   import {
     extractPipelineErrors,
     extractPipelineXgressErrors,
@@ -125,7 +128,7 @@
   classes="flex flex-col flex-1 !space-y-0 bg-surface-50-950 rounded-container p-4 pt-3"
 >
   {#snippet list()}
-    <div class="w-full">
+    <div class="flex w-full flex-wrap text-nowrap lg:flex-nowrap">
       {#each tabs as [tabName, tabControl]}
         <Tabs.Control
           value={tabName}
@@ -143,6 +146,18 @@
           {/if}
         </Tabs.Control>
       {/each}
+      <div class="ml-auto flex">
+        <ClipboardCopyButton value={pipeline.current.id} class="h-8 w-auto preset-tonal-surface">
+          <span class="text-base font-normal text-surface-950-50"> Pipeline ID </span>
+        </ClipboardCopyButton>
+        <Tooltip
+          placement="top"
+          class="z-10 text-nowrap rounded bg-white text-base text-surface-950-50 dark:bg-black"
+        >
+          {pipeline.current.id}
+        </Tooltip>
+        <DownloadSupportBundle {pipelineName} />
+      </div>
     </div>
   {/snippet}
 

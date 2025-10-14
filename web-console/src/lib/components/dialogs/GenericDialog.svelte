@@ -20,7 +20,9 @@
 
 <div class="flex flex-col gap-4 p-4">
   <div class="flex flex-nowrap justify-between">
-    {@render title()}
+    <div class="h4 font-semibold">
+      {@render title()}
+    </div>
     <button
       onclick={onClose}
       class="preset-grayout-surface fd fd-x text-[20px]"

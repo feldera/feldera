@@ -86,9 +86,7 @@
     onClose={() => (globalDialog.dialog = null)}
   >
     {#snippet title()}
-      <div class="h5 font-normal">
-        Configure {pipeline.current.name} pipeline
-      </div>
+      Configure {pipeline.current.name} pipeline
     {/snippet}
   </MultiJSONDialog>
 {/snippet}

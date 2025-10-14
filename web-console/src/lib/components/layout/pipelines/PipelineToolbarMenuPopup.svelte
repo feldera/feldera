@@ -140,9 +140,7 @@
     onClose={() => (globalDialog.dialog = null)}
   >
     {#snippet title()}
-      <div class="h5 text-center font-normal">
-        {dialogTitle}
-      </div>
+      {dialogTitle}
     {/snippet}
   </JSONDialog>
 {/snippet}
