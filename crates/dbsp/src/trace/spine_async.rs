@@ -1460,7 +1460,9 @@ where
         let pspine_batches = PSpineBatches {
             files: committed.batches,
         };
-        backend.write_json(&self.batchlist_file(base, persistent_id), &pspine_batches)?;
+        backend
+            .write_json(&self.batchlist_file(base, persistent_id), &pspine_batches)
+            .and_then(|reader| reader.commit())?;
 
         Ok(())
     }

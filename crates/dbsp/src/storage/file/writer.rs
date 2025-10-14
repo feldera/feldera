@@ -994,7 +994,9 @@ impl BlockWriter {
     }
 
     fn complete(self) -> Result<Arc<dyn FileReader>, StorageError> {
-        self.file_handle.complete()
+        let reader = self.file_handle.complete()?;
+        reader.commit()?;
+        Ok(reader)
     }
 
     fn write_block(
