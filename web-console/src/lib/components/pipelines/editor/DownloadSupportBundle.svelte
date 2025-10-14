@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Tooltip from '$lib/components/common/Tooltip.svelte'
   import GenericDialog from '$lib/components/dialogs/GenericDialog.svelte'
   import { useGlobalDialog } from '$lib/compositions/useGlobalDialog.svelte'
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
@@ -61,14 +62,21 @@
 </script>
 
 <button
-  class="btn preset-outlined-surface-200-800"
+  class="btn preset-tonal-surface"
   onclick={async () => {
     data = defaultData
     globalDialog.dialog = supportBundleDialog
   }}
 >
-  Download support bundle
+  <span class="fd fd-file-down text-[20px] text-primary-500"></span>
+  Support bundle
 </button>
+<Tooltip
+  placement="top"
+  class="z-10 w-[204px] text-wrap rounded-container bg-white text-base text-surface-950-50 dark:bg-black"
+>
+  Generate a bundle with logs, metrics, and configs to help troubleshoot issues
+</Tooltip>
 
 {#snippet supportBundleDialog()}
   <GenericDialog
@@ -79,30 +87,30 @@
     confirmLabel="Download"
   >
     {#snippet title()}
-      Download Support Bundle for {pipelineName}
+      Download Support Bundle
     {/snippet}
+    <div class="-mt-2 pb-2 font-semibold">{pipelineName}</div>
+    Select the details you want to include in the bundle
     {@render supportBundleForm()}
   </GenericDialog>
 {/snippet}
 
 {#snippet supportBundleForm()}
-  <div class="flex flex-col gap-4 p-4">
-    <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-    <form class="flex flex-col gap-2">
-      {#each Object.entries(fields) as [key, { label, description }]}
-        <div class="flex items-center gap-4">
-          <input
-            type="checkbox"
-            id={key}
-            bind:checked={data[key as keyof SupportBundleOptions]}
-            class="checkbox"
-          />
-          <div class="flex flex-col">
-            <label for={key} class="cursor-pointer font-medium">{label}</label>
-            <label for={key} class="cursor-pointer text-sm text-surface-500">{description}</label>
-          </div>
+  <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+  <form class="flex flex-col gap-3">
+    {#each Object.entries(fields) as [key, { label, description }]}
+      <div class="flex items-center gap-4">
+        <input
+          type="checkbox"
+          id={key}
+          bind:checked={data[key as keyof SupportBundleOptions]}
+          class="checkbox"
+        />
+        <div class="flex flex-col">
+          <label for={key} class="cursor-pointer font-medium">{label}</label>
+          <!-- <label for={key} class="cursor-pointer text-sm text-surface-500">{description}</label> -->
         </div>
-      {/each}
-    </form>
-  </div>
+      </div>
+    {/each}
+  </form>
 {/snippet}

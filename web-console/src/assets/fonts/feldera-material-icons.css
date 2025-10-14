@@ -1,8 +1,8 @@
 @font-face {
 	font-family: "feldera-material-icons";
 	font-display: block;
-	src: url("feldera-material-icons.woff2?5d5da8e0ff19ae707177e477e1f95a32") format("woff2"),
-url("feldera-material-icons.woff?5d5da8e0ff19ae707177e477e1f95a32") format("woff");
+	src: url("feldera-material-icons.woff2?d11423bd845b9195457c87333496db99") format("woff2"),
+url("feldera-material-icons.woff?d11423bd845b9195457c87333496db99") format("woff");
 }
 
 .fd {
@@ -172,15 +172,18 @@ url("feldera-material-icons.woff?5d5da8e0ff19ae707177e477e1f95a32") format("woff
 .fd-play:before {
 	content: "\f134";
 }
-.fd-menu:before {
+.fd-file-down:before {
 	content: "\f135";
 }
-.fd-database:before {
+.fd-menu:before {
 	content: "\f136";
 }
-.fd-arrow-right:before {
+.fd-database:before {
 	content: "\f137";
 }
-.fd-rocket:before {
+.fd-arrow-right:before {
 	content: "\f138";
+}
+.fd-rocket:before {
+	content: "\f139";
 }
