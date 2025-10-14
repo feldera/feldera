@@ -24,11 +24,11 @@ use crate::{
     Error, Position, RootCircuit, Runtime,
 };
 use async_stream::stream;
-use feldera_storage::StoragePath;
+use feldera_storage::{FileCommitter, StoragePath};
 use futures::Stream as AsyncStream;
 use minitrace::trace;
 use rkyv::Deserialize;
-use std::{borrow::Cow, cell::RefCell, marker::PhantomData, rc::Rc};
+use std::{borrow::Cow, cell::RefCell, marker::PhantomData, rc::Rc, sync::Arc};
 
 impl Stream<RootCircuit, MonoIndexedZSet> {
     pub fn dyn_window_mono(
@@ -173,15 +173,22 @@ where
         panic!("'Window' operator used in fixedpoint iteration")
     }
 
-    fn checkpoint(&mut self, base: &StoragePath, persistent_id: Option<&str>) -> Result<(), Error> {
+    fn checkpoint(
+        &mut self,
+        base: &StoragePath,
+        persistent_id: Option<&str>,
+        files: &mut Vec<Arc<dyn FileCommitter>>,
+    ) -> Result<(), Error> {
         let persistent_id = require_persistent_id(persistent_id, &self.global_id)?;
         let window_path = Self::checkpoint_file(base, persistent_id);
 
         let committed: CommittedWindow = (self as &Self).into();
         let as_bytes = to_bytes(&committed).expect("Serializing CommittedWindow should work.");
-        Runtime::storage_backend()
-            .unwrap()
-            .write(&window_path, as_bytes)?;
+        files.push(
+            Runtime::storage_backend()
+                .unwrap()
+                .write(&window_path, as_bytes)?,
+        );
         Ok(())
     }
 
@@ -1035,7 +1042,7 @@ mod test {
                 expected_outputs.next().unwrap().iter().collect::<Vec<_>>()
             );
 
-            let cpm = circuit.checkpoint().unwrap();
+            let cpm = circuit.checkpoint(None, None, None).unwrap();
             cconf.storage.as_mut().unwrap().init_checkpoint = Some(cpm.uuid);
             circuit.kill().unwrap();
         }
