@@ -176,8 +176,14 @@ impl Checkpoint {
     ) -> Result<(), ControllerError> {
         let mut content = FBuf::with_capacity(4096);
         serde_json::to_writer(&mut content, self).unwrap();
-        storage.write(path, content).map_err(|error| {
-            ControllerError::storage_error(format!("{path}: failed to write pipeline state"), error)
-        })
+        storage
+            .write(path, content)
+            .and_then(|file| file.commit())
+            .map_err(|error| {
+                ControllerError::storage_error(
+                    format!("{path}: failed to write pipeline state"),
+                    error,
+                )
+            })
     }
 }

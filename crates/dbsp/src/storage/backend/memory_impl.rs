@@ -162,6 +162,10 @@ impl FileReader for MemoryReader {
         self.keep.store(true, Ordering::Relaxed);
     }
 
+    fn commit(&self) -> Result<(), StorageError> {
+        Ok(())
+    }
+
     fn read_block(&self, location: BlockLocation) -> Result<Arc<FBuf>, StorageError> {
         if location.after() > self.file.size {
             return Err(StorageError::stdio(

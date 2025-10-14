@@ -282,6 +282,7 @@ fn benchmark<T: Storage>(backend: &T, barrier: Arc<Barrier>) -> ThreadBenchResul
             .expect("write failed");
     }
     let (ih, _path) = backend.complete(file).expect("complete failed");
+    ih.commit().unwrap();
     let write_time = start_write.elapsed();
 
     barrier.wait();
