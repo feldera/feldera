@@ -47,6 +47,13 @@ import java.util.List;
 
 /** Tests about table and view metadata */
 public class MetadataTests extends BaseSQLTests {
+    @Override
+    public CompilerOptions testOptions() {
+        CompilerOptions options = super.testOptions();
+        options.ioOptions.trimInputs = true;
+        return options;
+    }
+
     File createTempJsonFile() throws IOException {
         File file = File.createTempFile("out", ".json", new File("."));
         file.deleteOnExit();
@@ -455,8 +462,6 @@ public class MetadataTests extends BaseSQLTests {
     @Test
     public void trimUnusedInputColumns() {
         DBSPCompiler compiler = this.testCompiler();
-        compiler.options.languageOptions.throwOnError = false;
-        compiler.options.ioOptions.trimInputs = true;
         compiler.submitStatementsForCompilation("""
                 CREATE TABLE T(used INTEGER, unused INTEGER);
                 CREATE TABLE T1(used INTEGER, unused INTEGER) with ('materialized' = 'true');
@@ -474,13 +479,21 @@ public class MetadataTests extends BaseSQLTests {
         tuple = input.getDataOutputType().to(DBSPTypeZSet.class).elementType.to(DBSPTypeTuple.class);
         // Field 'unused' is not dropped from materialized tables
         Assert.assertEquals(2, tuple.size());
+
+        ObjectNode json = compiler.getIOMetadataAsJson();
+        JsonNode t1 = json.get("inputs").get(1);
+        Assert.assertEquals("t1", t1.get("name").asText());
+
+        JsonNode unused = t1.get("fields").get(1);
+        Assert.assertTrue(unused.get("unused").asBoolean());
+        JsonNode used = t1.get("fields").get(0);
+        Assert.assertFalse(used.get("unused").asBoolean());
     }
 
     @Test
     public void issue3427() {
         DBSPCompiler compiler = this.testCompiler();
         compiler.options.languageOptions.throwOnError = false;
-        compiler.options.ioOptions.trimInputs = true;
         compiler.options.ioOptions.quiet = false;
         compiler.submitStatementsForCompilation("""
                 CREATE TABLE t1(c1 INTEGER);

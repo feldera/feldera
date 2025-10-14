@@ -96,7 +96,7 @@ public class UnusedFields extends Passes {
                 Utilities.enforce(function.parameters.length == 1);
                 unused.apply(function.ensureTree(this.compiler));
 
-                if (unused.foundUnusedFields(1) && !src.metadata.materialized) {
+                if (unused.foundUnusedFields(1)) {
                     FieldUseMap map = unused.parameterFieldMap.get(function.parameters[0]).deref();
                     Utilities.putNew(this.finders, src, unused);
                     Utilities.putNew(this.fieldsUsed, src, map);
@@ -115,7 +115,9 @@ public class UnusedFields extends Passes {
                         }
                     }
                 }
-                Utilities.putNew(this.successor, src, operator);
+                if (!src.metadata.materialized)
+                    // If the table is materialized do not replace the operator
+                    Utilities.putNew(this.successor, src, operator);
             }
         }
     }
