@@ -465,11 +465,18 @@ impl StorageBackend for PosixBackend {
         parent: &StoragePath,
         cb: &mut dyn FnMut(&StoragePath, StorageFileType),
     ) -> Result<(), StorageError> {
-        fn parse_entry(entry: &DirEntry) -> Result<(OsString, StorageFileType), IoError> {
-            let file_type = entry.file_type()?;
+        fn parse_entry(entry: &DirEntry) -> Result<(OsString, StorageFileType), StorageError> {
+            let file_type = entry.file_type().map_err(|e| {
+                StorageError::stdio(e.kind(), "readdir type", entry.path().display())
+            })?;
             let file_type = if file_type.is_file() {
                 StorageFileType::File {
-                    size: entry.metadata()?.size(),
+                    size: entry
+                        .metadata()
+                        .map_err(|e| {
+                            StorageError::stdio(e.kind(), "readdir fstat", entry.path().display())
+                        })?
+                        .size(),
                 }
             } else if file_type.is_dir() {
                 StorageFileType::Directory
@@ -485,14 +492,11 @@ impl StorageBackend for PosixBackend {
             .read_dir()
             .map_err(|e| StorageError::stdio(e.kind(), "readdir", self.fs_path(parent).display()))?
         {
-            match entry.and_then(|entry| parse_entry(&entry)) {
-                Err(e) => {
-                    result = Err(StorageError::stdio(
-                        e.kind(),
-                        "readdir entry",
-                        path.display(),
-                    ));
-                }
+            match entry
+                .map_err(|e| StorageError::stdio(e.kind(), "readdir entry", path.display()))
+                .and_then(|entry| parse_entry(&entry))
+            {
+                Err(e) => result = Err(e),
                 Ok((name, file_type)) => cb(
                     &parent.child(StoragePathPart::from(name.as_encoded_bytes())),
                     file_type,
