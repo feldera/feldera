@@ -117,6 +117,12 @@ impl FileReader for PosixReader {
         self.drop.keep();
     }
 
+    fn commit(&self) -> Result<(), StorageError> {
+        self.file
+            .sync_all()
+            .map_err(|e| StorageError::stdio(e.kind(), "fsync", self.drop.path.display()))
+    }
+
     fn read_block(&self, location: BlockLocation) -> Result<Arc<FBuf>, StorageError> {
         READ_BLOCKS_BYTES.record(location.size);
         READ_LATENCY_MICROSECONDS.record_callback(|| {

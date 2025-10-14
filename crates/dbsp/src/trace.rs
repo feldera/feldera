@@ -309,7 +309,12 @@ pub trait Trace: BatchReader {
 
     fn key_filter(&self) -> &Option<Filter<Self::Key>>;
     fn value_filter(&self) -> &Option<Filter<Self::Val>>;
-    fn commit(&mut self, _base: &StoragePath, _pid: &str) -> Result<(), Error> {
+    fn commit(
+        &mut self,
+        _base: &StoragePath,
+        _pid: &str,
+        _files: &mut Vec<Arc<dyn FileReader>>,
+    ) -> Result<(), Error> {
         Ok(())
     }
     fn restore(&mut self, _base: &StoragePath, _pid: &str) -> Result<(), Error> {

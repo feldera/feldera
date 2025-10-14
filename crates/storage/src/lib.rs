@@ -118,12 +118,19 @@ pub trait StorageBackend: Send + Sync {
 
     /// Writes `content` to `name`, automatically creating any parent
     /// directories within `name` that don't already exist.
-    fn write(&self, name: &StoragePath, content: FBuf) -> Result<(), StorageError> {
+    ///
+    /// The caller must call [FileReader::commit] if it wants to make sure that
+    /// the file is committed to stable storage.
+    fn write(
+        &self,
+        name: &StoragePath,
+        content: FBuf,
+    ) -> Result<Arc<dyn FileReader>, StorageError> {
         let mut writer = self.create_named(name)?;
         writer.write_block(content)?;
         let reader = writer.complete()?;
         reader.mark_for_checkpoint();
-        Ok(())
+        Ok(reader)
     }
 
     /// Returns a value that represents the number of bytes of storage in use.
@@ -226,7 +233,14 @@ impl dyn StorageBackend {
 impl dyn StorageBackend + '_ {
     /// Writes `content` to `name` as JSON, automatically creating any parent
     /// directories within `name` that don't already exist.
-    pub fn write_json<V>(&self, name: &StoragePath, value: &V) -> Result<(), StorageError>
+    ///
+    /// The caller must call [FileReader::commit] if it wants to make sure that
+    /// the file is committed to stable storage.
+    pub fn write_json<V>(
+        &self,
+        name: &StoragePath,
+        value: &V,
+    ) -> Result<Arc<dyn FileReader>, StorageError>
     where
         V: serde::Serialize,
     {
@@ -265,9 +279,13 @@ pub trait FileWriter: Send + Sync + FileRw {
     /// Returns the data that was written encapsulated in an `Arc`.
     fn write_block(&mut self, data: FBuf) -> Result<Arc<FBuf>, StorageError>;
 
-    /// Completes writing of a file and returns a reader for the file. The file
-    /// is treated as temporary and will be deleted if the reader is dropped
-    /// without first calling [FileReader::mark_for_checkpoint].
+    /// Completes writing of a file and returns a reader for the file.
+    ///
+    /// The file will be deleted if the reader is dropped without calling
+    /// [FileReader::mark_for_checkpoint].
+    ///
+    /// The file is not necessarily committed to stable storage before calling
+    /// [FileReader::commit].
     fn complete(self: Box<Self>) -> Result<Arc<dyn FileReader>, StorageError>;
 }
 
@@ -280,6 +298,9 @@ pub trait FileReader: Send + Sync + Debug + FileRw {
     /// because files that were opened with [StorageBackend::open] are never
     /// deleted on drop.
     fn mark_for_checkpoint(&self);
+
+    /// Commits the file to stable storage.
+    fn commit(&self) -> Result<(), StorageError>;
 
     /// Reads data at `location` from the file.  If successful, the result will
     /// be exactly the requested length; that is, this API treats read past EOF

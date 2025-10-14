@@ -1993,7 +1993,10 @@ impl StoredStatus {
     }
 
     fn write(&self, storage: &dyn StorageBackend) {
-        if let Err(e) = storage.write_json(&StoragePath::from(STATUS_FILE), self) {
+        if let Err(e) = storage
+            .write_json(&StoragePath::from(STATUS_FILE), self)
+            .and_then(|reader| reader.commit())
+        {
             warn!("{STATUS_FILE}: failed to write to storage ({e})");
         }
     }
