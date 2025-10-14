@@ -1,8 +1,5 @@
 use chrono::{DateTime, Utc};
-use dbsp::storage::{
-    backend::{StorageBackend, StoragePath},
-    buffer_cache::FBuf,
-};
+use dbsp::storage::backend::{StorageBackend, StoragePath};
 use feldera_types::{checkpoint::CheckpointMetadata, config::PipelineConfig};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
@@ -174,10 +171,8 @@ impl Checkpoint {
         storage: &dyn StorageBackend,
         path: &StoragePath,
     ) -> Result<(), ControllerError> {
-        let mut content = FBuf::with_capacity(4096);
-        serde_json::to_writer(&mut content, self).unwrap();
         storage
-            .write(path, content)
+            .write_json(path, self)
             .and_then(|file| file.commit())
             .map_err(|error| {
                 ControllerError::storage_error(
