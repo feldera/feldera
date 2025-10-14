@@ -55,23 +55,20 @@ export class AuthorizationProxy {
       const url = new URL(request.url)
       url.searchParams.delete(ServiceWorkerMarkers.ADD_AUTH_HEADER)
 
-      // Create new request with authentication headers
-      const authenticatedRequest = new Request(url.toString(), {
+      // Forward the request with authentication headers
+      const response = await fetch(url.toString(), {
         method: request.method,
         headers: {
           ...Object.fromEntries(request.headers.entries()),
           ...this.authHeaders
         },
         body: request.body,
-        mode: request.mode,
+        mode: 'same-origin',
         credentials: request.credentials,
         cache: request.cache,
         redirect: request.redirect,
         referrer: request.referrer
       })
-
-      // Forward the request with authentication
-      const response = await fetch(authenticatedRequest)
 
       if (!response.ok) {
         throw new Error(`Request failed: ${response.status} ${response.statusText}`)
