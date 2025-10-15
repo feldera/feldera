@@ -23,7 +23,7 @@ use serde::Deserialize;
 use serde_json::Value;
 use std::collections::BTreeMap;
 use std::sync::atomic::Ordering;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use std::{
     collections::HashSet,
@@ -848,7 +848,7 @@ pub struct DBSPHandle {
     status_receivers: Vec<Receiver<Result<Response, DbspError>>>,
 
     /// For creating checkpoints, if we can.
-    checkpointer: Option<Checkpointer>,
+    checkpointer: Option<Arc<Mutex<Checkpointer>>>,
 
     /// Information about operators that participate in bootstrapping the new parts of the circuit.
     bootstrap_info: Option<BootstrapInfo>,
@@ -904,7 +904,8 @@ impl DBSPHandle {
                     runtime.runtime().get_mode() == Mode::Ephemeral,
                 )
             })
-            .transpose()?;
+            .transpose()?
+            .map(|checkpointer| Arc::new(Mutex::new(checkpointer)));
         Ok(Self {
             start_time: Instant::now(),
             runtime: Some(runtime),
@@ -1217,7 +1218,7 @@ impl DBSPHandle {
     pub fn fingerprint(&self) -> Option<u64> {
         self.checkpointer
             .as_ref()
-            .map(|checkpointer| checkpointer.fingerprint())
+            .map(|checkpointer| checkpointer.lock().unwrap().fingerprint())
     }
 
     /// Reset circuit state to the point of the given Commit.
@@ -1267,40 +1268,21 @@ impl DBSPHandle {
         Ok(())
     }
 
-    fn checkpointer(&mut self) -> Result<&mut Checkpointer, DbspError> {
+    fn checkpointer(&self) -> Result<&Arc<Mutex<Checkpointer>>, DbspError> {
         self.checkpointer
-            .as_mut()
+            .as_ref()
             .ok_or(DbspError::Storage(StorageError::StorageDisabled))
     }
 
-    /// Create a new checkpoint by taking a consistent snapshot of the state in
-    /// dbsp.
-    pub fn checkpoint(
-        &mut self,
-        identifier: Option<String>,
-        steps: Option<u64>,
-        processed_records: Option<u64>,
-    ) -> Result<CheckpointMetadata, DbspError> {
-        let uuid = Uuid::now_v7();
-        let checkpoint_dir = Checkpointer::checkpoint_dir(uuid);
-        let mut readers = Vec::new();
-        self.broadcast_command(Command::Checkpoint(checkpoint_dir), |_worker, resp| {
-            let Response::CheckpointCreated(r) = resp else {
-                panic!("Expected checkpoint response, got {resp:?}");
-            };
-            readers.push(r);
-        })?;
-        for reader in readers.into_iter().flatten() {
-            reader.commit()?;
-        }
-        self.checkpointer()
-            .unwrap()
-            .commit(uuid, identifier, steps, processed_records)
+    /// Allows creating a new checkpoint by taking a consistent snapshot of the
+    /// state in dbsp.
+    pub fn checkpoint(&mut self) -> CheckpointBuilder<'_> {
+        CheckpointBuilder::new(self)
     }
 
     /// List all currently available checkpoints.
     pub fn list_checkpoints(&mut self) -> Result<Vec<CheckpointMetadata>, DbspError> {
-        self.checkpointer()?.list_checkpoints()
+        self.checkpointer()?.lock().unwrap().list_checkpoints()
     }
 
     /// Remove the oldest checkpoint from the list.
@@ -1309,7 +1291,7 @@ impl DBSPHandle {
     /// - Metadata of the removed checkpoint, if one was removed.
     /// - None otherwise.
     pub fn gc_checkpoint(&mut self) -> Result<Option<CheckpointMetadata>, DbspError> {
-        self.checkpointer()?.gc_checkpoint()
+        self.checkpointer()?.lock().unwrap().gc_checkpoint()
     }
 
     /// Enable CPU profiler.
@@ -1416,6 +1398,107 @@ impl Drop for DBSPHandle {
         if self.runtime.is_some() {
             let _ = self.kill_inner();
         }
+    }
+}
+
+/// Checkpoint builder.
+#[derive(Debug)]
+pub struct CheckpointBuilder<'a> {
+    handle: &'a mut DBSPHandle,
+    name: Option<String>,
+    steps: Option<u64>,
+    processed_records: Option<u64>,
+}
+
+impl<'a> CheckpointBuilder<'a> {
+    fn new(handle: &'a mut DBSPHandle) -> Self {
+        Self {
+            handle,
+            name: None,
+            steps: None,
+            processed_records: None,
+        }
+    }
+
+    /// Gives the checkpoint a name.
+    pub fn with_name(self, name: impl Into<String>) -> Self {
+        Self {
+            name: Some(name.into()),
+            ..self
+        }
+    }
+
+    /// Adds `steps` to the checkpoint to be created.
+    pub fn with_steps(self, steps: u64) -> Self {
+        Self {
+            steps: Some(steps),
+            ..self
+        }
+    }
+
+    /// Adds `processed_records` to the checkpoint to be created.
+    pub fn with_processed_records(self, processed_records: u64) -> Self {
+        Self {
+            processed_records: Some(processed_records),
+            ..self
+        }
+    }
+
+    /// Prepares and commits the checkpoint.
+    pub fn run(self) -> Result<CheckpointMetadata, DbspError> {
+        self.prepare().and_then(CheckpointCommitter::commit)
+    }
+
+    /// Prepares the checkpoint and returns a committer that can be used to
+    /// commit it later.
+    pub fn prepare(self) -> Result<CheckpointCommitter, DbspError> {
+        let checkpointer = self.handle.checkpointer()?.clone();
+        let uuid = Uuid::now_v7();
+        let checkpoint_dir = Checkpointer::checkpoint_dir(uuid);
+        let mut readers = Vec::new();
+        self.handle
+            .broadcast_command(Command::Checkpoint(checkpoint_dir), |_worker, resp| {
+                let Response::CheckpointCreated(r) = resp else {
+                    panic!("Expected checkpoint response, got {resp:?}");
+                };
+                readers.push(r);
+            })?;
+        Ok(CheckpointCommitter {
+            checkpointer,
+            uuid,
+            readers,
+            name: self.name,
+            steps: self.steps,
+            processed_records: self.processed_records,
+        })
+    }
+}
+
+/// Committer for a checkpoint.
+pub struct CheckpointCommitter {
+    checkpointer: Arc<Mutex<Checkpointer>>,
+    uuid: Uuid,
+    readers: Vec<Vec<Arc<dyn FileCommitter>>>,
+    name: Option<String>,
+    steps: Option<u64>,
+    processed_records: Option<u64>,
+}
+
+impl CheckpointCommitter {
+    /// Commits the checkpoint.
+    ///
+    /// Committing a checkpoint ensures that its data is on stable storage.  It
+    /// can run in the background while the circuit processes more steps.
+    pub fn commit(self) -> Result<CheckpointMetadata, DbspError> {
+        for reader in self.readers.into_iter().flatten() {
+            reader.commit()?;
+        }
+        self.checkpointer.lock().unwrap().commit(
+            self.uuid,
+            self.name,
+            self.steps,
+            self.processed_records,
+        )
     }
 }
 
@@ -1729,9 +1812,7 @@ pub(crate) mod tests {
             let (mut dbsp, (input_handle, output_handle, sample_size_handle)) =
                 circuit_fun(&cconf).unwrap();
             for mut batch in input.clone() {
-                let cpm = dbsp
-                    .checkpoint(None, None, None)
-                    .expect("commit shouldn't fail");
+                let cpm = dbsp.checkpoint().run().expect("commit shouldn't fail");
                 checkpoints.push(cpm);
 
                 sample_size_handle.set_for_all(SAMPLE_SIZE);
@@ -1769,10 +1850,12 @@ pub(crate) mod tests {
         let mut batch = vec![Tup2(1, Tup2(2, 1))];
         input_handle.append(&mut batch);
         dbsp.transaction().unwrap();
-        let cpm = dbsp.checkpoint(None, None, None).expect("commit failed");
+        let cpm = dbsp.checkpoint().run().expect("commit failed");
         let batchfiles = dbsp
             .checkpointer
             .as_ref()
+            .unwrap()
+            .lock()
             .unwrap()
             .gather_batches_for_checkpoint(&cpm)
             .expect("failed to gather batches");
@@ -1790,10 +1873,12 @@ pub(crate) mod tests {
                 mkcircuit(&cconf).unwrap();
             sample_size_handle.set_for_all(2);
             dbsp.transaction().unwrap();
-            dbsp.checkpoint(Some("test-commit".into()), None, None)
+            dbsp.checkpoint()
+                .with_name("test-commit")
+                .run()
                 .expect("commit failed");
             dbsp.transaction().unwrap();
-            dbsp.checkpoint(None, None, None).expect("commit failed");
+            dbsp.checkpoint().run().expect("commit failed");
         }
 
         {
@@ -1801,6 +1886,8 @@ pub(crate) mod tests {
             let cpm = &dbsp
                 .checkpointer
                 .as_ref()
+                .unwrap()
+                .lock()
                 .unwrap()
                 .list_checkpoints()
                 .unwrap()[0];
@@ -1810,6 +1897,8 @@ pub(crate) mod tests {
             let cpm2 = &dbsp
                 .checkpointer
                 .as_ref()
+                .unwrap()
+                .lock()
                 .unwrap()
                 .list_checkpoints()
                 .unwrap()[1];
@@ -1891,7 +1980,7 @@ pub(crate) mod tests {
 
         let (mut dbsp, (input_handle, _, _)) = mkcircuit(&cconf).unwrap();
 
-        let _cpm = dbsp.checkpoint(None, None, None).expect("commit failed");
+        let _cpm = dbsp.checkpoint().run().expect("commit failed");
         let mut batches: Vec<Vec<Tup2<i32, Tup2<i32, i64>>>> = vec![
             vec![Tup2(1, Tup2(2, 1))],
             vec![Tup2(2, Tup2(3, 1))],
@@ -1906,7 +1995,7 @@ pub(crate) mod tests {
             input_handle.append(&mut chunk[0]);
             input_handle.append(&mut chunk[1]);
             dbsp.transaction().unwrap();
-            let _cpm = dbsp.checkpoint(None, None, None).expect("commit failed");
+            let _cpm = dbsp.checkpoint().run().expect("commit failed");
         }
 
         let mut prev_count = count_directory_entries(temp.path()).unwrap();
@@ -1931,8 +2020,7 @@ pub(crate) mod tests {
 
         let mut batch: Vec<Tup2<i32, Tup2<i32, i64>>> = vec![Tup2(1, Tup2(2, 1))];
         input_handle.append(&mut batch);
-        dbsp.checkpoint(None, None, None)
-            .expect("commit shouldn't fail");
+        dbsp.checkpoint().run().expect("commit shouldn't fail");
         drop(dbsp);
 
         let incomplete_batch_path = temp.path().join("incomplete_batch.mut");
@@ -2021,9 +2109,7 @@ pub(crate) mod tests {
         let (mut dbsp, (input_handle, _, _)) = mkcircuit(&cconf).unwrap();
         let mut batch: Vec<Tup2<i32, Tup2<i32, i64>>> = vec![Tup2(1, Tup2(2, 1))];
         input_handle.append(&mut batch);
-        let cpi = dbsp
-            .checkpoint(None, None, None)
-            .expect("commit shouldn't fail");
+        let cpi = dbsp.checkpoint().run().expect("commit shouldn't fail");
         drop(dbsp);
 
         cconf.storage.as_mut().unwrap().init_checkpoint = Some(cpi.uuid);
@@ -2075,7 +2161,7 @@ pub(crate) mod tests {
             let (mut dbsp, input_handle) = mkcircuit(&cconf, expected_waterlines.into_iter());
             input_handle.append(&mut batch);
             dbsp.transaction().unwrap();
-            let cpm = dbsp.checkpoint(None, None, None).unwrap();
+            let cpm = dbsp.checkpoint().run().unwrap();
             cconf.storage.as_mut().unwrap().init_checkpoint = Some(cpm.uuid);
             dbsp.kill().unwrap();
         }

@@ -2044,7 +2044,10 @@ impl CircuitThread {
             let written_before = WRITE_BLOCKS_BYTES.sum();
             let checkpoint = CHECKPOINT_LATENCY.record_callback(|| {
                 this.circuit
-                    .checkpoint(None, Some(this.step), Some(processed_records))
+                    .checkpoint()
+                    .with_steps(this.step)
+                    .with_processed_records(processed_records)
+                    .run()
                     .map_err(|e| Arc::new(ControllerError::from(e)))
                     .and_then(|circuit| {
                         let uuid = circuit.uuid.to_string();
