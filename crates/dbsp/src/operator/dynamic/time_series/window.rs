@@ -1042,7 +1042,7 @@ mod test {
                 expected_outputs.next().unwrap().iter().collect::<Vec<_>>()
             );
 
-            let cpm = circuit.checkpoint(None, None, None).unwrap();
+            let cpm = circuit.checkpoint().run().unwrap();
             cconf.storage.as_mut().unwrap().init_checkpoint = Some(cpm.uuid);
             circuit.kill().unwrap();
         }
