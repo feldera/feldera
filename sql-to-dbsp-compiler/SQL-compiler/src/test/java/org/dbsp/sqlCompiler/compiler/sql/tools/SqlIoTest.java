@@ -60,6 +60,7 @@ public abstract class SqlIoTest extends BaseSQLTests {
         options.languageOptions.incrementalize = false;
         options.languageOptions.unrestrictedIOTypes = true;
         options.ioOptions.verbosity = 2;
+        options.ioOptions.nowStream = true;
         return options;
     }
 

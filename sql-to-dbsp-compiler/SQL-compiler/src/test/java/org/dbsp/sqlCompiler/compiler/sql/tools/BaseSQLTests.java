@@ -359,6 +359,7 @@ public class BaseSQLTests {
         options.languageOptions.incrementalize = false;
         options.languageOptions.unrestrictedIOTypes = true;
         options.languageOptions.optimizationLevel = 2;
+        options.ioOptions.nowStream = true;
         return options;
     }
 

@@ -929,7 +929,7 @@ public class MetadataTests extends BaseSQLTests {
                       Default: false
                     --nowstream
                       Implement NOW as a stream (true) or as an internal operator (false)
-                      Default: false
+                      Default: true
                     --outputsAreSets
                       Ensure that outputs never contain duplicates
                       Default: false
