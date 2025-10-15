@@ -491,7 +491,7 @@ mod interned_string_test {
             ["1", "2", "3", "4", "5"],
         );
 
-        let checkpoint = circuit.checkpoint(None, None, None).unwrap();
+        let checkpoint = circuit.checkpoint().run().unwrap();
         circuit.kill().unwrap();
 
         let (mut circuit, (hinput_strings, hqueries, houtput_strings)) =
@@ -540,7 +540,7 @@ mod interned_string_test {
             );
         }
 
-        let checkpoint = circuit.checkpoint(None, None, None).unwrap();
+        let checkpoint = circuit.checkpoint().run().unwrap();
         circuit.kill().unwrap();
 
         let (mut circuit, (_hinput_strings, hqueries, houtput_strings)) =
@@ -605,7 +605,7 @@ mod interned_string_test {
             );
         }
 
-        let checkpoint = circuit.checkpoint(None, None, None).unwrap();
+        let checkpoint = circuit.checkpoint().run().unwrap();
         circuit.kill().unwrap();
 
         let (mut circuit, (hinput_strings, _hqueries, _houtput_strings)) =
@@ -664,7 +664,7 @@ mod interned_string_test {
             );
         }
 
-        let checkpoint = circuit.checkpoint(None, None, None).unwrap();
+        let checkpoint = circuit.checkpoint().run().unwrap();
         circuit.kill().unwrap();
 
         let (mut circuit, (_hinput_strings, hqueries, houtput_strings)) =
