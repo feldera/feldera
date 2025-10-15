@@ -10,11 +10,9 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateTraceRetainValuesOpera
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateWithWaterlineOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWaterlineOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
-import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.TestUtil;
 import org.dbsp.sqlCompiler.compiler.frontend.TableData;
-import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.sql.OtherTests;
 import org.dbsp.sqlCompiler.compiler.sql.StreamingTestBase;
 import org.dbsp.sqlCompiler.compiler.sql.tools.Change;
@@ -40,14 +38,6 @@ import org.junit.Test;
 
 /** Tests that exercise streaming features. */
 public class StreamingTests extends StreamingTestBase {
-    @Override
-    public CompilerOptions testOptions() {
-        CompilerOptions options = super.testOptions();
-        // Used by some tests for NOW
-        options.ioOptions.nowStream = true;
-        return options;
-    }
-
     @Test
     public void issue2846() {
         String sql = """
@@ -1210,7 +1200,7 @@ public class StreamingTests extends StreamingTestBase {
                 WHERE id >= EXTRACT(CENTURY FROM now()) * 20 AND
                       EXTRACT(CENTURY FROM now()) % 10 = 0;""";
         CompilerCircuit cc = this.getCC(sql);
-        CircuitVisitor visitor = new Inspector(cc.compiler, 1, 1, 2);
+        CircuitVisitor visitor = new Inspector(cc.compiler, 1, 1, 1);
         cc.visit(visitor);
     }
 
@@ -2322,5 +2312,52 @@ public class StreamingTests extends StreamingTestBase {
                 SELECT DATE_TRUNC(ts, MONTH), MIN(price), item
                 FROM data
                 GROUP BY DATE_TRUNC(ts, MONTH), item;""");
+    }
+
+    @Test
+    public void issue4904() {
+        String sql = """
+                create table T (
+                  x TIMESTAMP,
+                  y TIMESTAMP,
+                  site_id varchar
+                );
+                
+                create view V
+                as select site_id from T
+                where ( x >= NOW() + INTERVAL 30 DAYS
+                    OR
+                    y  >=  NOW() - INTERVAL 30 DAYS);""";
+        var ccs = this.getCCS(sql);
+        ccs.step("""
+                INSERT INTO NOW VALUES('2019-01-01 00:00:00');
+                INSERT INTO T VALUES('2020-01-11 00:00:00', '2020-01-11 00:00:00', 'z');""", """
+                 site_id | weight
+                ------------------
+                 z|1""");
+        ccs.step("INSERT INTO NOW VALUES('2020-01-01 00:00:00')", """
+                 site_id | weight
+                ------------------""");
+        ccs.step("INSERT INTO NOW VALUES('2020-03-01 00:00:00')", """
+                 site_id | weight
+                ------------------
+                 z| -1""");
+    }
+
+    @Test
+    public void issue4904_alternate() {
+        String sql = """
+                create table T (
+                  properties variant,
+                  site_id varchar
+                );
+                
+                create view V
+                as (select site_id from T
+                    where CAST(properties['x'] AS TIMESTAMP) >= NOW() + INTERVAL 30 DAYS)
+                UNION ALL
+                (select site_id from T
+                 where CAST(properties['y'] AS TIMESTAMP)  >=  NOW() - INTERVAL 30 DAYS);""";
+        this.getCCS(sql);
     }
 }

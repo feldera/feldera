@@ -89,7 +89,7 @@ Usage: sql-to-dbsp [options] Input file to compile
       Default: false
     --nowstream
       Implement NOW as a stream (true) or as an internal operator (false)
-      Default: false
+      Default: true
     --outputsAreSets
       Ensure that outputs never contain duplicates
       Default: false

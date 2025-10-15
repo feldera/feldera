@@ -2,6 +2,7 @@ package org.dbsp.sqlCompiler.compiler.sql.streaming;
 
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWaterlineOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
+import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.sql.StreamingTestBase;
 import org.dbsp.sqlCompiler.compiler.sql.tools.CompilerCircuit;
 import org.dbsp.sqlCompiler.compiler.sql.tools.CompilerCircuitStream;
@@ -11,6 +12,13 @@ import org.junit.Test;
 
 /** Tests that exercise the internal implementation of NOW as a source operator */
 public class InternalNowTests extends StreamingTestBase {
+    @Override
+    public CompilerOptions testOptions() {
+        CompilerOptions options = super.testOptions();
+        options.ioOptions.nowStream = false;
+        return options;
+    }
+
     @Test
     public void testNow() {
         String sql = """

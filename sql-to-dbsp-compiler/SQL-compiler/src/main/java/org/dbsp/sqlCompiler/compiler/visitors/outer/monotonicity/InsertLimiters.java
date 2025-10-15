@@ -413,12 +413,16 @@ public class InsertLimiters extends CircuitCloneVisitor {
         }
 
         ReplacementExpansion ae = expanded.to(ReplacementExpansion.class);
-
         if (aggregator.annotations.first(AlwaysMonotone.class) != null) {
             // This operator computes its own waterline.
             // This treatment is similar to the ImplementNow.scalarNow function.
 
-            DBSPDeindexOperator deindex = new DBSPDeindexOperator(aggregator.getRelNode(), aggregator.outputPort());
+            DBSPSimpleOperator filteredAggregator = aggregator
+                    .withInputs(Linq.list(source), false)
+                    .to(DBSPSimpleOperator.class);
+            this.map(aggregator.outputPort(), filteredAggregator.outputPort());
+            DBSPDeindexOperator deindex = new DBSPDeindexOperator(aggregator.getRelNode(), filteredAggregator.outputPort());
+            this.addOperator(deindex);
             DBSPTypeTuple tuple = deindex.getOutputZSetElementType().to(DBSPTypeTuple.class);
             DBSPVariablePath t = tuple.ref().var();
 
@@ -429,8 +433,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
             DBSPWaterlineOperator waterline = new DBSPWaterlineOperator(
                     aggregator.getRelNode(), min.closure(),
                     timestampTuple.closure(t, DBSPTypeRawTuple.EMPTY.ref().var()),
-                    max, aggregator.outputPort());
-            this.map(aggregator.outputPort(), aggregator.outputPort());
+                    max, deindex.outputPort());
             this.addOperator(waterline);
 
             // An apply operator to add a Boolean bit to the waterline.

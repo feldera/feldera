@@ -198,7 +198,7 @@ public class CompilerOptions implements IDiff<CompilerOptions>, IValidate {
         // The pipeline manager uses --nowstream
         @Parameter(names = "--nowstream",
                 description = "Implement NOW as a stream (true) or as an internal operator (false)")
-        public boolean nowStream = false;
+        public boolean nowStream = true;
         @Parameter(names = "--sqlnames", hidden = true,
                 description = "Use the table names as identifiers in the generated code")
         public boolean sqlNames = false;
@@ -258,6 +258,7 @@ public class CompilerOptions implements IDiff<CompilerOptions>, IValidate {
                     ",\n\tverbosity=" + this.verbosity +
                     ",\n\tquiet=" + this.quiet +
                     ",\n\tnoRust=" + this.noRust +
+                    ",\n\tnowStream=" + this.nowStream +
                     '}';
         }
 
