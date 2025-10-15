@@ -35,6 +35,20 @@ which will only be garbage collected if at least one of the PK columns has a `LA
 
 :::
 
+:::warning
+
+Feldera implements an `INSERT` or `UPDATE` in a table with a primary
+key as a pair of `INSERT` and `DELETE` operations: a new record is
+inserted, and the old record with the same primary key (if present) is
+deleted.  For tables with `LATENESS` this may cause surprising
+effects: the `DELETE` needs to delete the previous version of the
+record, with the old timestamp; if this timestamp is behind the
+`LATENESS` threshold, the entire INSERT or UPDATE is considered late
+and is thus ignored.  This effectivelly means that "old" records in
+such a table can never be updated or deleted.
+
+:::
+
 Users can further take advantage of `LATENESS` annotations to control
 **when** the output of a query is produced by Feldera using
 [`emit_final`](#emitting-final-values-of-a-view-with-emit_final)
