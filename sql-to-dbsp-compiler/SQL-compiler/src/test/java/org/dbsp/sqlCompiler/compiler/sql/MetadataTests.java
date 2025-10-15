@@ -338,6 +338,48 @@ public class MetadataTests extends BaseSQLTests {
     }
 
     @Test
+    public void issue4896() {
+        String sql = """
+               CREATE TABLE T (COL1 INT) WITH (
+                  'connectors' = '[{
+                    "url": "localhost"
+                  }]'
+               );""";
+        DBSPCompiler compiler = this.testCompiler();
+        compiler.options.ioOptions.quiet = false;
+        compiler.submitStatementsForCompilation(sql);
+        // Force compilation
+        compiler.getFinalCircuit(true);
+        Assert.assertTrue(compiler.messages.toString().contains(
+                "warning: Unnamed connector: Connector nr. 1 for Table 't' does not have a name.\n" +
+                "It is recommended to name all connectors using the \"name\" property; " +
+                        "names will be required in the future."));
+
+        sql = """
+               CREATE TABLE T (COL1 INT) WITH (
+                  'connectors' = '[{
+                    "name": [],
+                    "url": "localhost"
+                  }]'
+               );""";
+        this.statementsFailingInCompilation(sql,
+                "Expected a string value for the connector \"name\" property");
+
+        sql = """
+               CREATE TABLE T (COL1 INT) WITH (
+                  'connectors' = '[{
+                    "name": "Bob",
+                    "url": "localhost"
+                  }, {
+                    "name": "Bob",
+                    "url": "localhost:8080"
+                  }]'
+               );""";
+        this.statementsFailingInCompilation(sql,
+                "Connector 'Bob' for Table 't' must have a unique name per table/view");
+    }
+
+    @Test
     public void stripProperties() throws IOException, SQLException {
         // Test that the properties are stripped from the generated Rust
         String sql = """

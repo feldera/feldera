@@ -62,12 +62,6 @@ public class PropertyList implements Iterable<Map.Entry<SqlFragment, SqlFragment
         }
     }
 
-    public void checkKnownProperties(BiConsumer<SqlFragment, SqlFragment> validator) {
-        for (Map.Entry<SqlFragment, SqlFragment> p: this.propertyValue) {
-            validator.accept(p.getKey(), p.getValue());
-        }
-    }
-
     public void addProperty(SqlFragment key, SqlFragment value) {
         this.propertyValue.add(new MapEntry<>(key, value));
     }

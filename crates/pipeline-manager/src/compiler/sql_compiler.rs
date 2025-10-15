@@ -1273,7 +1273,7 @@ mod test {
             CREATE TABLE t1 (
                 val INT
             ) WITH (
-                'connectors' = 'These are not valid connectors.'
+                'connectors' = '["These are not valid connectors."]'
             )
         "#};
         let pipeline_id = test
@@ -1282,11 +1282,13 @@ mod test {
         test.sql_compiler_tick().await;
         let pipeline_descr = test.get_pipeline(tenant_id, pipeline_id).await;
         assert_eq!(pipeline_descr.program_status, ProgramStatus::SqlError);
+        // First message is a warning about the connector missing a name
+        // Second message is an error
         assert!(pipeline_descr
             .program_error
             .sql_compilation
-            .is_some_and(|info| info.messages.len() == 1
-                && info.messages[0].to_owned().error_type == "ConnectorGenerationError"));
+            .is_some_and(|info| info.messages.len() == 2
+                && info.messages[1].to_owned().error_type == "ConnectorGenerationError"));
     }
 
     /// Tests that the cleanup ignores files and directories that do not follow the pattern.
