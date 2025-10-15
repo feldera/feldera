@@ -23,6 +23,8 @@
 
 package org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.google.common.base.Charsets;
 import org.apache.calcite.avatica.util.Casing;
 import org.apache.calcite.config.CalciteConnectionConfig;
@@ -179,6 +181,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -1792,7 +1795,9 @@ public class SqlToRelCompiler implements IWritesLogs {
         Properties props = null;
         if (properties != null) {
             properties.checkDuplicates(this.errorReporter);
-            properties.checkKnownProperties(this::validateTableProperty);
+            for (var prop: properties) {
+                this.validateTableProperty(tableName, prop.getKey(), prop.getValue());
+            }
             props = new Properties(properties);
         }
         List<ForeignKey> fk = this.createForeignKeys(ct);
@@ -1849,7 +1854,7 @@ public class SqlToRelCompiler implements IWritesLogs {
         return converter.convertQuery(node, true, true);
     }
 
-    void validateViewProperty(SqlFragment key, SqlFragment value) {
+    void validateViewProperty(ProgramIdentifier view, SqlFragment key, SqlFragment value) {
         CalciteObject node = CalciteObject.create(key.getParserPosition());
         String keyString = key.getString();
         switch (keyString) {
@@ -1858,7 +1863,7 @@ public class SqlToRelCompiler implements IWritesLogs {
                 break;
             case "rust":
             case "connectors":
-                this.validateConnectorsProperty(node, key, value);
+                this.validateConnectorsProperty(node, false, view, key, value);
                 break;
             default:
                 throw new CompilationError("Unknown property " + Utilities.singleQuote(keyString), node);
@@ -1883,14 +1888,40 @@ public class SqlToRelCompiler implements IWritesLogs {
         }
     }
 
-    @SuppressWarnings("unused")
-    void validateConnectorsProperty(CalciteObject node, SqlFragment key, SqlFragment value) {
-        // Nothing right now.
-        // This is validated by the pipeline_manager, and it's relatively fast.
-        // Checking that this is legal JSON may make interactive editing of the SQL program annoying.
+    void validateConnectorsProperty(CalciteObject node, boolean isTable, ProgramIdentifier tableView, SqlFragment key, SqlFragment value) {
+        try {
+            JsonNode jsonNode = Utilities.deterministicObjectMapper().readTree(value.getString());
+            if (!jsonNode.isArray()) {
+                throw new CompilationError("Expected an array value for 'connectors'", value.getSourcePosition());
+            }
+            int index = 1;
+            Set<String> names = new HashSet<>();
+            String objectName = (isTable ? "Table " : "View ") + tableView.singleQuote();
+            for (Iterator<JsonNode> it = jsonNode.elements(); it.hasNext(); index++) {
+                JsonNode connector = it.next();
+                JsonNode name = connector.get("name");
+                if (name == null) {
+                    this.errorReporter.reportWarning(value.getSourcePosition(), "Unnamed connector",
+                            "Connector nr. " + index + " for " + objectName + " does not have a name.\n" +
+                                    "It is recommended to name all connectors using the \"name\" property; names will be required in the future.");
+                } else {
+                    if (!name.isTextual()) {
+                        throw new CompilationError("Expected a string value for the connector \"name\" property",
+                                value.getSourcePosition());
+                    }
+                    if (names.contains(name.asText())) {
+                        throw new CompilationError("Connector " + Utilities.singleQuote(name.asText())  + " for " +
+                                 objectName + " must have a unique name per table/view", value.getSourcePosition());
+                    }
+                    names.add(name.asText());
+                }
+            }
+        } catch (JsonProcessingException e) {
+            throw new CompilationError("'connectors' is not legal JSON:" + e.getMessage(), value.getSourcePosition());
+        }
     }
 
-    void validateTableProperty(SqlFragment key, SqlFragment value) {
+    void validateTableProperty(ProgramIdentifier table, SqlFragment key, SqlFragment value) {
         CalciteObject node = CalciteObject.create(key.getParserPosition());
         String keyString = key.getString();
         switch (key.getString()) {
@@ -1899,7 +1930,7 @@ public class SqlToRelCompiler implements IWritesLogs {
                 this.validateBooleanProperty(node, key, value);
                 break;
             case "connectors":
-                this.validateConnectorsProperty(node, key, value);
+                this.validateConnectorsProperty(node, true, table, key, value);
                 break;
             case "expected_size":
                 this.validateNumericProperty(node, key, value);
@@ -1973,7 +2004,9 @@ public class SqlToRelCompiler implements IWritesLogs {
                 }
             }
 
-            viewProperties.checkKnownProperties(this::validateViewProperty);
+            for (var prop: viewProperties) {
+                this.validateViewProperty(viewName, prop.getKey(), prop.getValue());
+            }
             props = new Properties(viewProperties);
         }
 
