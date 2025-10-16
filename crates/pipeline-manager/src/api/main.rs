@@ -318,6 +318,7 @@ It contains the following fields:
         feldera_types::transport::kafka::KafkaOutputConfig,
         feldera_types::transport::kafka::KafkaOutputFtConfig,
         feldera_types::transport::kafka::KafkaStartFromConfig,
+        feldera_types::transport::nats::NatsInputConfig,
         feldera_types::transport::pubsub::PubSubInputConfig,
         feldera_types::transport::s3::S3InputConfig,
         feldera_types::transport::datagen::DatagenStrategy,
