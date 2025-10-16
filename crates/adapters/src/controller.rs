@@ -5353,7 +5353,7 @@ impl CheckpointThread {
             sleep(Duration::from_millis(100));
             long_wait.check(|elapsed| {
                 info!(
-                    "checkpoint completion delayed {} seconds waiting for completed records ({completed}) to reach input records at checkpoint start ({threshold})",
+                    "Cannot complete checkpoint until all {threshold} records computed before the checkpoint started have been transmitted to their output connectors. After {} seconds, only {completed} records have been transmitted. Continuing to wait for completion...",
                     elapsed.as_secs()
                 )
             });
