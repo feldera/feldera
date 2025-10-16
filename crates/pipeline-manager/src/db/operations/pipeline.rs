@@ -1,3 +1,4 @@
+use crate::api::lifecycle_events::PipelineLifecycleEvent;
 use crate::api::support_data_collector::SupportBundleData;
 use crate::db::error::DBError;
 use crate::db::operations::utils::{
@@ -1350,6 +1351,15 @@ pub(crate) async fn set_deployment_resources_status(
         ResourcesStatus::Provisioning | ResourcesStatus::Provisioned => current.deployment_initial,
     };
 
+    let final_deployment_error = match final_deployment_error {
+        None => None,
+        Some(ref v) => Some(serialize_error_response(v)?),
+    };
+
+    let deployment_resources_status = new_deployment_resources_status.to_string(); // $7: deployment_resources_status,
+    let deployment_runtime_status =  final_deployment_runtime_status.map(runtime_status_to_string); // $8: deployment_runtime_status,
+    let deployment_runtime_desired_status =  final_deployment_runtime_desired_status.map(runtime_desired_status_to_string); // $9: deployment_runtime_desired_status,
+
     // Execute query
     let stmt = txn
         .prepare_cached(
@@ -1373,24 +1383,33 @@ pub(crate) async fn set_deployment_resources_status(
         .execute(
             &stmt,
             &[
-                &match final_deployment_error {
-                    None => None,
-                    Some(v) => Some(serialize_error_response(&v)?),
-                }, // $1: deployment_error
+                &final_deployment_error, // $1: deployment_error
                 &final_deployment_config.map(|v| v.to_string()), // $2: deployment_config
                 &final_deployment_location, // $3: deployment_location
                 &final_suspend_info.map(|v| v.to_string()), // $4: suspend_info
                 &final_deployment_id, // $5: deployment_id
                 &final_deployment_initial.map(runtime_desired_status_to_string), // $6: deployment_initial
-                &new_deployment_resources_status.to_string(), // $7: deployment_resources_status,
-                &final_deployment_runtime_status.map(runtime_status_to_string), // $8: deployment_runtime_status,
-                &final_deployment_runtime_desired_status.map(runtime_desired_status_to_string), // $9: deployment_runtime_desired_status,
+                &deployment_resources_status, // $7: deployment_resources_status,
+                &deployment_runtime_status, // $8: deployment_runtime_status,
+                &deployment_runtime_desired_status, // $9: deployment_runtime_desired_status,
                 &tenant_id.0, // $10: tenant_id
                 &pipeline_id.0, // $11: id
             ],
         )
         .await?;
+
     if rows_affected > 0 {
+        // store the event in lifecycle events
+        store_pipeline_lifecycle_event(
+            txn,
+            tenant_id,
+            pipeline_id,
+                &deployment_resources_status, // $7: deployment_resources_status,
+                &deployment_runtime_status, // $8: deployment_runtime_status,
+                &deployment_runtime_desired_status, // $9: deployment_runtime_desired_status,
+            &final_deployment_error,
+        )
+        .await?;
         Ok(())
     } else {
         Err(DBError::UnknownPipeline { pipeline_id })
@@ -1699,6 +1718,74 @@ pub(crate) async fn get_support_bundle_data(
     }
 
     Ok(bundles)
+}
+
+/// Store a pipeline lifecycle event entry
+pub(crate) async fn store_pipeline_lifecycle_event(
+    transaction: &Transaction<'_>,
+    tenant_id: TenantId,
+    pipeline_id: PipelineId,
+    deployment_resources_status: &str,
+    deployment_runtime_status: &Option<String>,
+    deployment_runtime_desired_status: &Option<String>,
+    info: &Option<impl AsRef<str>>,
+) -> Result<(), DBError> {
+    let query = r#"
+        INSERT INTO pipeline_lifecycle_events
+        (tenant_id, pipeline_id, deployment_resources_status, deployment_runtime_status, deployment_runtime_desired_status, info)
+        VALUES ($1, $2, $3, $4, $5, $6)
+    "#;
+
+    transaction
+        .execute(
+            query,
+            &[
+                &tenant_id.0,
+                &pipeline_id.0,
+                &deployment_resources_status,
+                &deployment_runtime_status,
+                &deployment_runtime_desired_status,
+                &info.as_ref().map(|v| v.as_ref()),
+            ],
+        )
+        .await?;
+
+    Ok(())
+}
+
+/// Get lifecycle events for a pipeline.
+pub(crate) async fn get_pipeline_lifecycle_events(
+    txn: &Transaction<'_>,
+    tenant_id: TenantId,
+    pipeline_id: PipelineId,
+    limit: u32,
+) -> Result<Vec<PipelineLifecycleEvent>, DBError> {
+    let stmt = r#"
+        SELECT p.event_id, p.deployment_resources_status, p.deployment_runtime_status, p.deployment_runtime_desired_status, p.info, p.recorded_at
+        FROM pipeline_lifecycle_events as p
+        WHERE p.tenant_id = $1 AND p.pipeline_id = $2
+        ORDER BY p.recorded_at ASC
+        LIMIT $3
+    "#;
+
+    // case limit to i64 so postgres doesn't complain
+    let limit: i64 = limit as i64;
+    let rows = txn
+        .query(stmt, &[&tenant_id.0, &pipeline_id.0, &limit])
+        .await?;
+
+    let ret: Vec<PipelineLifecycleEvent> = rows
+        .into_iter()
+        .map(|row| PipelineLifecycleEvent {
+            event_id: row.get(0),
+            deployment_resources_status: row.get(1),
+            deployment_runtime_status: row.get(2),
+            deployment_runtime_desired_status: row.get(3),
+            info: row.get(4),
+            recorded_at: row.get(5),
+        })
+        .collect();
+    Ok(ret)
 }
 
 #[cfg(test)]
