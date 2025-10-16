@@ -205,6 +205,7 @@ impl FileInputReader {
                                     ofs..ofs
                                 }),
                             ));
+                            timestamp = None;
                             staged_hasher = consumer.hasher();
                         }
                         let (mut staged_buffers, timestamp, amt, hash, offsets) =
