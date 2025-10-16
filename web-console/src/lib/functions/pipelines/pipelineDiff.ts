@@ -62,7 +62,8 @@ export const parsePipelineDiff = (
         added: rawDiff.added_output_connectors,
         removed: rawDiff.removed_output_connectors,
         modified: rawDiff.modified_output_connectors
-      }
+      },
+      error: rawDiff.program_diff_error || undefined
     }
   } catch (error) {
     throw new Error(

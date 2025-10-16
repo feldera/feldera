@@ -161,6 +161,7 @@ export type PipelineDiff = {
   views: EntityDiff
   inputConnectors: EntityDiff
   outputConnectors: EntityDiff
+  error: string | undefined
 }
 
 export type EntityDiff = {

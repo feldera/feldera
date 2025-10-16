@@ -17,6 +17,13 @@
     style: 'info' | 'warning' | 'error'
   } = $props()
   let showMore = $state(false)
+  let textClass = $derived(
+    style === 'info'
+      ? 'text-surface-950-50'
+      : style === 'warning'
+        ? 'text-warning-950-50'
+        : 'text-error-950-50'
+  )
 </script>
 
 <div
@@ -37,12 +44,16 @@
   <div class="flex flex-col {showMore ? 'gap-2' : 'sm:flex-row'} w-full overflow-hidden">
     <div class=" flex w-full flex-col">
       <div class="flex justify-between pb-2 font-semibold">
-        {header}
+        <span class={textClass}>{header}</span>
         {#if message}
           <ClipboardCopyButton value={message} class="-m-2"></ClipboardCopyButton>
         {/if}
       </div>
-      <span class=" whitespace-pre-wrap {showMore ? 'max-h-[30vh] overflow-auto' : 'line-clamp-1'}">
+      <span
+        class="{textClass} whitespace-pre-wrap {showMore
+          ? 'max-h-[30vh] overflow-auto'
+          : 'line-clamp-1'}"
+      >
         {message}
       </span>
       {#if message && message.indexOf('\n') !== -1}

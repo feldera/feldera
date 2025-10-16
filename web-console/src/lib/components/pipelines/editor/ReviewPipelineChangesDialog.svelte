@@ -46,6 +46,17 @@
   <div class="text-2xl font-semibold">Review Pipeline Changes</div>
   {@render titleEnd?.()}
 </div>
+
+{#if changes.error}
+  <div class="mb-4 rounded-container border border-warning-500 p-4 text-warning-950-50">
+    <div class="flex items-center gap-2">
+      <span class="fd fd-circle-alert text-[20px] text-warning-500"></span>
+      <span class="font-semibold">Error Computing Changes</span>
+    </div>
+    <div class="mt-2">{changes.error}</div>
+  </div>
+{/if}
+
 <div>
   This pipeline has been modified while it was suspended. Please review the following updates before
   resuming.
