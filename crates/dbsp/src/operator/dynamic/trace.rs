@@ -1044,7 +1044,7 @@ where
         let pid = require_persistent_id(pid, &self.global_id)?;
         self.trace
             .as_mut()
-            .map(|trace| trace.commit(base, pid, files))
+            .map(|trace| trace.save(base, pid, files))
             .unwrap_or(Ok(()))
     }
 
