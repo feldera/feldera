@@ -20,20 +20,20 @@ def requests_verify_from_env() -> str | bool:
     if env_feldera_tls_insecure is not None and FELDERA_HTTPS_TLS_CERT is not None:
         logging.warning(
             "environment variables FELDERA_HTTPS_TLS_CERT and "
-            "FELDERA_TLS_INSECURE both are set."
-            "\nFELDERA_HTTPS_TLS_CERT takes priority."
+            + "FELDERA_TLS_INSECURE both are set."
+            + "\nFELDERA_HTTPS_TLS_CERT takes priority."
         )
 
     if env_feldera_tls_insecure is None:
-        FELDERA_TLS_INSECURE = False
+        feldera_tls_insecure = False
     else:
-        FELDERA_TLS_INSECURE = env_feldera_tls_insecure.strip().lower() in (
+        feldera_tls_insecure = env_feldera_tls_insecure.strip().lower() in (
             "1",
             "true",
             "yes",
         )
 
-    requests_verify = not FELDERA_TLS_INSECURE
+    requests_verify = not feldera_tls_insecure
     if FELDERA_HTTPS_TLS_CERT is not None:
         requests_verify = FELDERA_HTTPS_TLS_CERT
 

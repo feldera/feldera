@@ -39,7 +39,7 @@ class Config:
         )
         self.url: str = BASE_URL
         self.api_key: Optional[str] = os.environ.get("FELDERA_API_KEY", api_key)
-        self.version: Optional[str] = version or "v0"
+        self.version: str = version or "v0"
         self.timeout: Optional[float] = timeout
         self.connection_timeout: Optional[float] = connection_timeout
         env_verify = requests_verify_from_env()
