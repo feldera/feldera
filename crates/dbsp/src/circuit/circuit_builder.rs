@@ -2601,10 +2601,15 @@ where
 
     fn check_fixedpoint(&self, scope: Scope) -> bool {
         self.nodes.borrow().iter().all(|node| {
-            node.borrow().fixedpoint(scope)
-            /*if !res {
-                eprintln!("node {} ({})", node.global_id(), node.name());
-            }*/
+            let res = node.borrow().fixedpoint(scope);
+            /*
+            if !res {
+                let n = node.borrow();
+                let n1 = n.deref();
+                eprintln!("not fixed {:?} {}", n1.global_id(), n1.name());
+            };
+            */
+            res
         })
     }
 }

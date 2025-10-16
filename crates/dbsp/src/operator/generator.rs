@@ -3,7 +3,7 @@
 
 use crate::circuit::{
     operator_traits::{Data, Operator, SourceOperator},
-    Scope,
+    Runtime, Scope,
 };
 use std::{borrow::Cow, marker::PhantomData};
 
@@ -164,6 +164,49 @@ where
             (self.generator.as_mut().unwrap())()
         } else {
             self.empty.clone()
+        }
+    }
+}
+
+/// A source operator that yields an infinite output stream
+/// from a constant value.  Note: only worker 0 generates the data;
+/// the other workers generate empty streams.
+pub struct ConstantGenerator<T> {
+    generator: T,
+}
+
+impl<T> ConstantGenerator<T>
+where
+    T: Clone,
+{
+    /// Creates a constant generator
+    pub fn new(g: T) -> Self {
+        Self { generator: g }
+    }
+}
+
+impl<T> Operator for ConstantGenerator<T>
+where
+    T: Data + 'static,
+{
+    fn name(&self) -> Cow<'static, str> {
+        Cow::from("ConstantGenerator")
+    }
+    fn fixedpoint(&self, _scope: Scope) -> bool {
+        // Always a fixed-point
+        true
+    }
+}
+
+impl<T> SourceOperator<T> for ConstantGenerator<T>
+where
+    T: Data + 'static + Clone + Default,
+{
+    async fn eval(&mut self) -> T {
+        if Runtime::worker_index() == 0 {
+            self.generator.clone()
+        } else {
+            T::default()
         }
     }
 }

@@ -36,7 +36,7 @@ public class RemoveFilters extends CircuitCloneVisitor {
                 DBSPType outputType = operator.getType();
                 DBSPExpression value = PropagateEmptySources.emptySet(outputType);
                 DBSPConstantOperator result = new DBSPConstantOperator(
-                        operator.getRelNode(), value, false, operator.isMultiset);
+                        operator.getRelNode(), value, operator.isMultiset);
                 this.map(operator, result);
             }
         }

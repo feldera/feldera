@@ -138,7 +138,7 @@ public class OptimizeProjectionVisitor extends CircuitCloneWithGraphsVisitor {
                     DBSPIndexedZSetExpression empty = new DBSPIndexedZSetExpression(
                             c.getNode(), operator.getOutputIndexedZSetType());
                     DBSPConstantOperator result = new DBSPConstantOperator(
-                            operator.getRelNode(), empty, false, false);
+                            operator.getRelNode(), empty, false);
                     this.map(operator, result);
                     return;
                 }

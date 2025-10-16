@@ -1798,7 +1798,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
             OutputPort collected;
             if (this.errorStreams.isEmpty()) {
                 DBSPSimpleOperator c = new DBSPConstantOperator(operator.getRelNode(),
-                        DBSPZSetExpression.emptyWithElementType(operator.getOutputZSetElementType()), false, false);
+                        DBSPZSetExpression.emptyWithElementType(operator.getOutputZSetElementType()), false);
                 this.addOperator(c);
                 collected = c.outputPort();
             } else if (this.errorStreams.size() > 1) {

@@ -565,4 +565,33 @@ public class IncrementalRecursiveTests extends BaseSQLTests {
                      10 |          4 | Kunal|         2 | 1
                      11 |          5 | Pranav|        2 | 1""");
     }
+
+    @Test
+    public void issue4926() {
+        var ccs = this.getCCS("""
+                declare recursive view state(
+                    id varchar not null,
+                    version bigint not null
+                );
+                
+                create table action(
+                    id varchar not null,
+                    version bigint not null
+                ) with ('materialized' = 'true');
+                
+                create local view next_state(id, version) as
+                select action.id as id, action.version as version from state
+                join action on action.id = state.id and action.version = state.version + 1;
+                
+                create materialized view state as
+                select id, 0 as version from action where version = 0 and not exists (select 1 from state where id = state.id)
+                union
+                select * from next_state
+                union
+                select * from state where not exists (select 1 from next_state where id = state.id);""");
+        // We are checking that recursion actually terminates on an empty input
+        ccs.step("", """
+                 v | weight
+                ------------""");
+    }
 }

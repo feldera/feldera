@@ -34,7 +34,7 @@ public class ExpandAggregateZero extends CircuitCloneVisitor {
         DBSPSimpleOperator neg = new DBSPNegateOperator(node.intermediate(), map1.outputPort());
         this.addOperator(neg);
         DBSPSimpleOperator constant = new DBSPConstantOperator(
-                node.intermediate(), new DBSPZSetExpression(emptySetResult), false, false);
+                node.intermediate(), new DBSPZSetExpression(emptySetResult), false);
         this.addOperator(constant);
         DBSPSimpleOperator sum = new DBSPSumOperator(node, Linq.list(constant.outputPort(), neg.outputPort(), input));
         this.map(operator, sum);
