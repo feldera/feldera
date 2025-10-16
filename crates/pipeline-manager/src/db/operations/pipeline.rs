@@ -1134,7 +1134,7 @@ pub(crate) async fn set_program_status(
                 &final_program_info.as_ref().map(|v| v.to_string()), // $3: program_info
                 &final_program_binary_source_checksum, // $4: program_binary_source_checksum
                 &final_program_binary_integrity_checksum, // $5: program_binary_integrity_checksum
-                &final_program_binary_udf_checksum, // $6: program_binary_udf_checksum
+                &final_program_binary_udf_checksum,    // $6: program_binary_udf_checksum
                 &final_refresh_version.0,              // $7: refresh_version
                 &tenant_id.0,                          // $8: tenant_id
                 &pipeline_id.0,                        // $9: id

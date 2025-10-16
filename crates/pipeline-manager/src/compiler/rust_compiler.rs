@@ -198,7 +198,14 @@ async fn attempt_end_to_end_rust_compilation(
 
     // (5) Update database that Rust compilation is finished
     match compilation_result {
-        Ok((source_checksum, integrity_checksum, udf_checksum, duration, compilation_info, test_info)) => {
+        Ok((
+            source_checksum,
+            integrity_checksum,
+            udf_checksum,
+            duration,
+            compilation_info,
+            test_info,
+        )) => {
             info!(
                 "Rust compilation success: pipeline {} (program version: {}) (took {:.2}s; source checksum: {}; integrity checksum: {})",
                 pipeline.id,
