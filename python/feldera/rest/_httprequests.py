@@ -56,7 +56,7 @@ class HttpRequests:
         """
         self.headers["Content-Type"] = content_type
 
-        prev_resp: Optional[requests.Response] = None
+        prev_resp: requests.Response | None = None
 
         try:
             conn_timeout = self.config.connection_timeout
@@ -156,7 +156,7 @@ class HttpRequests:
         body: Optional[
             Union[Mapping[str, Any], Sequence[Mapping[str, Any]], List[str], str]
         ] = None,
-        content_type: Optional[str] = "application/json",
+        content_type: str = "application/json",
         params: Optional[Mapping[str, Any]] = None,
         stream: bool = False,
         serialize: bool = True,
@@ -177,7 +177,7 @@ class HttpRequests:
         body: Optional[
             Union[Mapping[str, Any], Sequence[Mapping[str, Any]], List[str], str]
         ] = None,
-        content_type: Optional[str] = "application/json",
+        content_type: str = "application/json",
         params: Optional[Mapping[str, Any]] = None,
     ) -> Any:
         return self.send_request(requests.patch, path, body, content_type, params)
@@ -188,7 +188,7 @@ class HttpRequests:
         body: Optional[
             Union[Mapping[str, Any], Sequence[Mapping[str, Any]], List[str], str]
         ] = None,
-        content_type: Optional[str] = "application/json",
+        content_type: str = "application/json",
         params: Optional[Mapping[str, Any]] = None,
     ) -> Any:
         return self.send_request(requests.put, path, body, content_type, params)

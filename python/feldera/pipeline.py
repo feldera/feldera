@@ -300,7 +300,7 @@ class Pipeline:
         handler.start()
 
     def wait_for_completion(
-        self, force_stop: bool = False, timeout_s: Optional[float] = None
+        self, force_stop: bool = False, timeout_s: float | None = None
     ):
         """
         Block until the pipeline has completed processing all input records.
@@ -376,7 +376,7 @@ class Pipeline:
     def wait_for_idle(
         self,
         idle_interval_s: float = 5.0,
-        timeout_s: float = 600.0,
+        timeout_s: float | None = None,
         poll_interval_s: float = 0.2,
     ):
         """
@@ -396,12 +396,12 @@ class Pipeline:
         :raises RuntimeError: If the metrics are missing or the timeout was
             reached.
         """
-        if idle_interval_s > timeout_s:
+        if timeout_s is not None and idle_interval_s > timeout_s:
             raise ValueError(
                 f"idle interval ({idle_interval_s}s) cannot be larger than"
                 f" timeout ({timeout_s}s)"
             )
-        if poll_interval_s > timeout_s:
+        if timeout_s is not None and poll_interval_s > timeout_s:
             raise ValueError(
                 f"poll interval ({poll_interval_s}s) cannot be larger than"
                 f" timeout ({timeout_s}s)"
@@ -447,7 +447,7 @@ metrics"""
                 return
 
             # Timeout
-            if now_s - start_time_s >= timeout_s:
+            if timeout_s is not None and now_s - start_time_s >= timeout_s:
                 raise RuntimeError(f"waiting for idle reached timeout ({timeout_s}s)")
             time.sleep(poll_interval_s)
 
@@ -696,7 +696,7 @@ metrics"""
                 err.message = f"Pipeline with name {name} not found"
                 raise err
 
-    def checkpoint(self, wait: bool = False, timeout_s=300) -> int:
+    def checkpoint(self, wait: bool = False, timeout_s: Optional[float] = None) -> int:
         """
         Checkpoints this pipeline.
 
@@ -718,7 +718,7 @@ metrics"""
 
         while True:
             elapsed = time.monotonic() - start
-            if elapsed > timeout_s:
+            if timeout_s is not None and elapsed > timeout_s:
                 raise TimeoutError(
                     f"""timeout ({timeout_s}s) reached while waiting for \
 pipeline '{self.name}' to make checkpoint '{seq}'"""
@@ -754,7 +754,9 @@ pipeline '{self.name}' to make checkpoint '{seq}'"""
         if seq < success:
             return CheckpointStatus.Unknown
 
-    def sync_checkpoint(self, wait: bool = False, timeout_s=300) -> str:
+    def sync_checkpoint(
+        self, wait: bool = False, timeout_s: Optional[float] = None
+    ) -> str:
         """
         Syncs this checkpoint to object store.
 
@@ -776,7 +778,7 @@ pipeline '{self.name}' to make checkpoint '{seq}'"""
 
         while True:
             elapsed = time.monotonic() - start
-            if elapsed > timeout_s:
+            if timeout_s is not None and elapsed > timeout_s:
                 raise TimeoutError(
                     f"""timeout ({timeout_s}s) reached while waiting for \
 pipeline '{self.name}' to sync checkpoint '{uuid}'"""
