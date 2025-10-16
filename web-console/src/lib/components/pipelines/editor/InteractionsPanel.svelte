@@ -146,18 +146,20 @@
           {/if}
         </Tabs.Control>
       {/each}
-      <div class="ml-auto flex">
-        <ClipboardCopyButton value={pipeline.current.id} class="h-8 w-auto preset-tonal-surface">
-          <span class="text-base font-normal text-surface-950-50"> Pipeline ID </span>
-        </ClipboardCopyButton>
-        <Tooltip
-          placement="top"
-          class="z-10 text-nowrap rounded bg-white text-base text-surface-950-50 dark:bg-black"
-        >
-          {pipeline.current.id}
-        </Tooltip>
-        <DownloadSupportBundle {pipelineName} />
-      </div>
+      {#if currentTab.value !== 'Errors'}
+        <div class="ml-auto flex">
+          <ClipboardCopyButton value={pipeline.current.id} class="h-8 w-auto preset-tonal-surface">
+            <span class="text-base font-normal text-surface-950-50"> Pipeline ID </span>
+          </ClipboardCopyButton>
+          <Tooltip
+            placement="top"
+            class="z-10 text-nowrap rounded bg-white text-base text-surface-950-50 dark:bg-black"
+          >
+            {pipeline.current.id}
+          </Tooltip>
+          <DownloadSupportBundle {pipelineName} />
+        </div>
+      {/if}
     </div>
   {/snippet}
 
