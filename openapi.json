@@ -499,6 +499,7 @@
                     "program_error": {
                       "sql_compilation": null,
                       "rust_compilation": null,
+                      "rust_test": null,
                       "system_error": null
                     },
                     "program_info": null,
@@ -583,6 +584,7 @@
                     "program_error": {
                       "sql_compilation": null,
                       "rust_compilation": null,
+                      "rust_test": null,
                       "system_error": null
                     },
                     "program_info": null,
@@ -765,6 +767,7 @@
                   "program_error": {
                     "sql_compilation": null,
                     "rust_compilation": null,
+                    "rust_test": null,
                     "system_error": null
                   },
                   "program_info": null,
@@ -941,6 +944,7 @@
                   "program_error": {
                     "sql_compilation": null,
                     "rust_compilation": null,
+                    "rust_test": null,
                     "system_error": null
                   },
                   "program_info": null,
@@ -1150,6 +1154,7 @@
                   "program_error": {
                     "sql_compilation": null,
                     "rust_compilation": null,
+                    "rust_test": null,
                     "system_error": null
                   },
                   "program_info": null,
@@ -1243,6 +1248,7 @@
                   "program_error": {
                     "sql_compilation": null,
                     "rust_compilation": null,
+                    "rust_test": null,
                     "system_error": null
                   },
                   "program_info": null,
@@ -1503,6 +1509,7 @@
                   "program_error": {
                     "sql_compilation": null,
                     "rust_compilation": null,
+                    "rust_test": null,
                     "system_error": null
                   },
                   "program_info": null,
@@ -5268,6 +5275,7 @@
                   "program_error": {
                     "sql_compilation": null,
                     "rust_compilation": null,
+                    "rust_test": null,
                     "system_error": null
                   },
                   "program_info": null,
@@ -8398,6 +8406,14 @@
         "description": "Log, warning and error information about the program compilation.",
         "properties": {
           "rust_compilation": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RustCompilationInfo"
+              }
+            ],
+            "nullable": true
+          },
+          "rust_test": {
             "allOf": [
               {
                 "$ref": "#/components/schemas/RustCompilationInfo"

@@ -67,6 +67,7 @@ fn deserialize_program_error_with_default(s: &str) -> ProgramError {
         ProgramError {
             sql_compilation: None,
             rust_compilation: None,
+            rust_test: None,
             system_error: None,
         }
     })
@@ -522,6 +523,7 @@ pub(crate) async fn new_pipeline(
             &serialize_program_error(&ProgramError {
                 sql_compilation: None,
                 rust_compilation: None,
+                rust_test: None,
                 system_error: None,
             })?,
             &Version(1).0,                                // $15: refresh_version
@@ -824,6 +826,7 @@ pub(crate) async fn update_pipeline(
                     &serialize_program_error(&ProgramError {
                         sql_compilation: None,
                         rust_compilation: None,
+                        rust_test: None,
                         system_error: None,
                     })?,
                     &tenant_id.0,
@@ -877,6 +880,7 @@ pub(crate) async fn set_program_status(
     new_program_status: &ProgramStatus,
     new_program_error_sql_compilation: &Option<SqlCompilationInfo>,
     new_program_error_rust_compilation: &Option<RustCompilationInfo>,
+    new_program_error_rust_test: &Option<RustCompilationInfo>,
     new_program_error_system_error: &Option<String>,
     new_program_info: &Option<serde_json::Value>,
     new_program_binary_source_checksum: &Option<String>,
@@ -907,6 +911,7 @@ pub(crate) async fn set_program_status(
     let (
         final_program_error_sql_compilation,
         final_program_error_rust_compilation,
+        final_program_error_rust_test,
         final_program_error_system_error,
         final_program_info,
         final_program_binary_source_checksum,
@@ -917,28 +922,31 @@ pub(crate) async fn set_program_status(
             assert!(
                 new_program_error_sql_compilation.is_none()
                     && new_program_error_rust_compilation.is_none()
+                    && new_program_error_rust_test.is_none()
                     && new_program_error_system_error.is_none()
                     && new_program_info.is_none()
                     && new_program_binary_source_checksum.is_none()
                     && new_program_binary_integrity_checksum.is_none()
             );
-            (None, None, None, None, None, None, true)
+            (None, None, None, None, None, None, None, true)
         }
         ProgramStatus::CompilingSql => {
             assert!(
                 new_program_error_sql_compilation.is_none()
                     && new_program_error_rust_compilation.is_none()
+                    && new_program_error_rust_test.is_none()
                     && new_program_error_system_error.is_none()
                     && new_program_info.is_none()
                     && new_program_binary_source_checksum.is_none()
                     && new_program_binary_integrity_checksum.is_none()
             );
-            (None, None, None, None, None, None, false)
+            (None, None, None, None, None, None, None, false)
         }
         ProgramStatus::SqlCompiled => {
             assert!(
                 new_program_error_sql_compilation.is_some()
                     && new_program_error_rust_compilation.is_none()
+                    && new_program_error_rust_test.is_none()
                     && new_program_error_system_error.is_none()
                     && new_program_info.is_some()
                     && new_program_binary_source_checksum.is_none()
@@ -946,6 +954,7 @@ pub(crate) async fn set_program_status(
             );
             (
                 new_program_error_sql_compilation.clone(),
+                None,
                 None,
                 None,
                 new_program_info.clone(),
@@ -958,6 +967,7 @@ pub(crate) async fn set_program_status(
             assert!(
                 new_program_error_sql_compilation.is_none()
                     && new_program_error_rust_compilation.is_none()
+                    && new_program_error_rust_test.is_none()
                     && new_program_error_system_error.is_none()
                     && new_program_info.is_none()
                     && new_program_binary_source_checksum.is_none()
@@ -965,6 +975,7 @@ pub(crate) async fn set_program_status(
             );
             (
                 current.program_error.sql_compilation,
+                None,
                 None,
                 None,
                 current.program_info,
@@ -985,6 +996,7 @@ pub(crate) async fn set_program_status(
             (
                 current.program_error.sql_compilation,
                 new_program_error_rust_compilation.clone(),
+                new_program_error_rust_test.clone(),
                 None,
                 current.program_info,
                 new_program_binary_source_checksum.clone(),
@@ -996,6 +1008,7 @@ pub(crate) async fn set_program_status(
             assert!(
                 new_program_error_sql_compilation.is_some()
                     && new_program_error_rust_compilation.is_none()
+                    && new_program_error_rust_test.is_none()
                     && new_program_error_system_error.is_none()
                     && new_program_info.is_none()
                     && new_program_binary_source_checksum.is_none()
@@ -1008,6 +1021,7 @@ pub(crate) async fn set_program_status(
                 None,
                 None,
                 None,
+                None,
                 true,
             )
         }
@@ -1015,6 +1029,7 @@ pub(crate) async fn set_program_status(
             assert!(
                 new_program_error_sql_compilation.is_none()
                     && new_program_error_rust_compilation.is_some()
+                    && new_program_error_rust_test.is_none()
                     && new_program_error_system_error.is_none()
                     && new_program_info.is_none()
                     && new_program_binary_source_checksum.is_none()
@@ -1023,6 +1038,7 @@ pub(crate) async fn set_program_status(
             (
                 current.program_error.sql_compilation,
                 new_program_error_rust_compilation.clone(),
+                None,
                 None,
                 current.program_info,
                 None,
@@ -1034,6 +1050,7 @@ pub(crate) async fn set_program_status(
             assert!(
                 new_program_error_sql_compilation.is_none()
                     && new_program_error_rust_compilation.is_none()
+                    && new_program_error_rust_test.is_none()
                     && new_program_error_system_error.is_some()
                     && new_program_info.is_none()
                     && new_program_binary_source_checksum.is_none()
@@ -1042,6 +1059,7 @@ pub(crate) async fn set_program_status(
             (
                 current.program_error.sql_compilation,
                 current.program_error.rust_compilation,
+                current.program_error.rust_test,
                 new_program_error_system_error.clone(),
                 current.program_info,
                 None,
@@ -1055,6 +1073,7 @@ pub(crate) async fn set_program_status(
     let final_program_error = ProgramError {
         sql_compilation: final_program_error_sql_compilation,
         rust_compilation: final_program_error_rust_compilation,
+        rust_test: final_program_error_rust_test,
         system_error: final_program_error_system_error,
     };
 
@@ -1850,6 +1869,7 @@ mod tests {
                 stdout: "stdout-example".to_string(),
                 stderr: "stderr-example".to_string(),
             }),
+            rust_test: None,
             system_error: Some("system-error-example".to_string()),
         };
         let data = serialize_program_error(&program_error).unwrap();
@@ -1861,6 +1881,7 @@ mod tests {
             ProgramError {
                 sql_compilation: None,
                 rust_compilation: None,
+                rust_test: None,
                 system_error: None,
             }
         );
@@ -1875,6 +1896,7 @@ mod tests {
                     messages: vec![],
                 }),
                 rust_compilation: None,
+                rust_test: None,
                 system_error: None,
             }
         );
@@ -1889,6 +1911,7 @@ mod tests {
                     messages: vec![],
                 }),
                 rust_compilation: None,
+                rust_test: None,
                 system_error: None,
             }
         );
@@ -1907,6 +1930,7 @@ mod tests {
                     stdout: "".to_string(),
                     stderr: "".to_string(),
                 }),
+                rust_test: None,
                 system_error: None,
             }
         );
@@ -1925,6 +1949,7 @@ mod tests {
                     stdout: "a".to_string(),
                     stderr: "b".to_string(),
                 }),
+                rust_test: None,
                 system_error: None,
             }
         );
@@ -1933,6 +1958,7 @@ mod tests {
             ProgramError {
                 sql_compilation: None,
                 rust_compilation: None,
+                rust_test: None,
                 system_error: Some("example".to_string()),
             }
         );
@@ -1941,6 +1967,7 @@ mod tests {
             ProgramError {
                 sql_compilation: None,
                 rust_compilation: None,
+                rust_test: None,
                 system_error: Some("c".to_string()),
             }
         );
@@ -1955,6 +1982,7 @@ mod tests {
                     messages: vec![],
                 }),
                 rust_compilation: None,
+                rust_test: None,
                 system_error: Some("example".to_string()),
             }
         );
@@ -1969,6 +1997,7 @@ mod tests {
                     messages: vec![],
                 }),
                 rust_compilation: None,
+                rust_test: None,
                 system_error: Some("abc".to_string()),
             }
         );
@@ -1991,6 +2020,7 @@ mod tests {
         let default_program_error = ProgramError {
             sql_compilation: None,
             rust_compilation: None,
+            rust_test: None,
             system_error: None,
         };
         assert_eq!(

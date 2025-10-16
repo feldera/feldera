@@ -267,6 +267,7 @@ pub(crate) trait Storage {
         pipeline_id: PipelineId,
         program_version_guard: Version,
         rust_compilation: &RustCompilationInfo,
+        rust_test: &Option<RustCompilationInfo>,
         program_binary_source_checksum: &str,
         program_binary_integrity_checksum: &str,
     ) -> Result<(), DBError>;

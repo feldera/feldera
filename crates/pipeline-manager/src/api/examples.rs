@@ -57,6 +57,7 @@ fn extended_pipeline_1() -> ExtendedPipelineDescr {
         program_error: ProgramError {
             sql_compilation: None,
             rust_compilation: None,
+            rust_test: None,
             system_error: None,
         },
         program_binary_source_checksum: None,
@@ -138,6 +139,7 @@ fn extended_pipeline_2() -> ExtendedPipelineDescr {
         program_error: ProgramError {
             sql_compilation: None,
             rust_compilation: None,
+            rust_test: None,
             system_error: None,
         },
         program_binary_source_checksum: None,

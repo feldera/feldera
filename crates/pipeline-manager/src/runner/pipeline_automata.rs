@@ -1587,6 +1587,7 @@ mod test {
                     stdout: "".to_string(),
                     stderr: "".to_string(),
                 },
+                &None,
                 "not-used-program-binary-source-checksum",
                 "not-used-program-binary-integrity-checksum",
             )

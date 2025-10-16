@@ -464,6 +464,7 @@ impl Storage for StoragePostgres {
             &None,
             &None,
             &None,
+            &None,
         )
         .await?;
         txn.commit().await?;
@@ -484,6 +485,7 @@ impl Storage for StoragePostgres {
             pipeline_id,
             program_version_guard,
             &ProgramStatus::CompilingSql,
+            &None,
             &None,
             &None,
             &None,
@@ -515,6 +517,7 @@ impl Storage for StoragePostgres {
             &Some(sql_compilation.clone()),
             &None,
             &None,
+            &None,
             &Some(program_info.clone()),
             &None,
             &None,
@@ -544,6 +547,7 @@ impl Storage for StoragePostgres {
             &None,
             &None,
             &None,
+            &None,
         )
         .await?;
         txn.commit().await?;
@@ -556,6 +560,7 @@ impl Storage for StoragePostgres {
         pipeline_id: PipelineId,
         program_version_guard: Version,
         rust_compilation: &RustCompilationInfo,
+        rust_test: &Option<RustCompilationInfo>,
         program_binary_source_checksum: &str,
         program_binary_integrity_checksum: &str,
     ) -> Result<(), DBError> {
@@ -569,6 +574,7 @@ impl Storage for StoragePostgres {
             &ProgramStatus::Success,
             &None,
             &Some(rust_compilation.clone()),
+            rust_test,
             &None,
             &None,
             &Some(program_binary_source_checksum.to_string()),
@@ -595,6 +601,7 @@ impl Storage for StoragePostgres {
             program_version_guard,
             &ProgramStatus::SqlError,
             &Some(sql_compilation.clone()),
+            &None,
             &None,
             &None,
             &None,
@@ -627,6 +634,7 @@ impl Storage for StoragePostgres {
             &None,
             &None,
             &None,
+            &None,
         )
         .await?;
         txn.commit().await?;
@@ -648,6 +656,7 @@ impl Storage for StoragePostgres {
             pipeline_id,
             program_version_guard,
             &ProgramStatus::SystemError,
+            &None,
             &None,
             &None,
             &Some(system_error.to_string()),
@@ -965,6 +974,7 @@ impl Storage for StoragePostgres {
                             &None,
                             &None,
                             &None,
+                            &None,
                         )
                         .await?;
                     }
@@ -1027,6 +1037,7 @@ impl Storage for StoragePostgres {
                             pipeline.program_version,
                             &ProgramStatus::SqlCompiled,
                             &Some(pipeline_complete.program_error.sql_compilation.clone().expect("program_error.sql_compilation must be present if current status is CompilingRust")),
+                            &None,
                             &None,
                             &None,
                             &Some(pipeline_complete.program_info.clone().expect(

@@ -1342,6 +1342,7 @@ async fn pipeline_program_compilation() {
                 stdout: "".to_string(),
                 stderr: "".to_string(),
             },
+            &None,
             "abc",
             "123",
         )
@@ -1475,6 +1476,7 @@ async fn pipeline_deployment() {
                 stdout: "".to_string(),
                 stderr: "".to_string(),
             },
+            &None,
             "def",
             "123",
         )
@@ -1766,6 +1768,7 @@ async fn pipeline_provision_version_guard() {
                 stdout: "".to_string(),
                 stderr: "".to_string(),
             },
+            &None,
             "def",
             "123",
         )
@@ -2487,8 +2490,8 @@ fn db_impl_behaves_like_model() {
                             }
                             StorageAction::TransitProgramStatusToSuccess(tenant_id, pipeline_id, program_version_guard, rust_compilation, program_binary_source_checksum, program_binary_integrity_checksum) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
-                                let model_response = model.transit_program_status_to_success(tenant_id, pipeline_id, program_version_guard, &rust_compilation, &program_binary_source_checksum, &program_binary_integrity_checksum).await;
-                                let impl_response = handle.db.transit_program_status_to_success(tenant_id, pipeline_id, program_version_guard, &rust_compilation, &program_binary_source_checksum, &program_binary_integrity_checksum).await;
+                                let model_response = model.transit_program_status_to_success(tenant_id, pipeline_id, program_version_guard, &rust_compilation, &None, &program_binary_source_checksum, &program_binary_integrity_checksum).await;
+                                let impl_response = handle.db.transit_program_status_to_success(tenant_id, pipeline_id, program_version_guard, &rust_compilation, &None, &program_binary_source_checksum, &program_binary_integrity_checksum).await;
                                 check_responses(i, model_response, impl_response);
                             }
                             StorageAction::TransitProgramStatusToSqlError(tenant_id, pipeline_id, program_version_guard, sql_compilation) => {
@@ -2843,6 +2846,7 @@ impl ModelHelpers for Mutex<DbModel> {
             pipeline.program_error = ProgramError {
                 sql_compilation: None,
                 rust_compilation: None,
+                rust_test: None,
                 system_error: None,
             };
             pipeline.program_info = None;
@@ -3243,6 +3247,7 @@ impl Storage for Mutex<DbModel> {
             program_error: ProgramError {
                 sql_compilation: None,
                 rust_compilation: None,
+                rust_test: None,
                 system_error: None,
             },
             program_info: None,
@@ -3407,6 +3412,7 @@ impl Storage for Mutex<DbModel> {
         pipeline.program_error = ProgramError {
             sql_compilation: None,
             rust_compilation: None,
+            rust_test: None,
             system_error: None,
         };
         pipeline.program_info = None;
@@ -3464,6 +3470,7 @@ impl Storage for Mutex<DbModel> {
         pipeline.program_error = ProgramError {
             sql_compilation: Some(sql_compilation.clone()),
             rust_compilation: None,
+            rust_test: None,
             system_error: None,
         };
         pipeline.program_info = Some(program_info.clone());
@@ -3502,6 +3509,7 @@ impl Storage for Mutex<DbModel> {
         pipeline_id: PipelineId,
         program_version_guard: Version,
         rust_compilation: &RustCompilationInfo,
+        rust_test: &Option<RustCompilationInfo>,
         program_binary_source_checksum: &str,
         program_binary_integrity_checksum: &str,
     ) -> Result<(), DBError> {
@@ -3516,6 +3524,7 @@ impl Storage for Mutex<DbModel> {
         pipeline.program_error = ProgramError {
             sql_compilation: pipeline.program_error.sql_compilation,
             rust_compilation: Some(rust_compilation.clone()),
+            rust_test: rust_test.clone(),
             system_error: None,
         };
         pipeline.program_binary_source_checksum = Some(program_binary_source_checksum.to_string());
@@ -3547,6 +3556,7 @@ impl Storage for Mutex<DbModel> {
         pipeline.program_error = ProgramError {
             sql_compilation: Some(sql_compilation.clone()),
             rust_compilation: None,
+            rust_test: None,
             system_error: None,
         };
         pipeline.refresh_version = Version(pipeline.refresh_version.0 + 1);
@@ -3575,6 +3585,7 @@ impl Storage for Mutex<DbModel> {
         pipeline.program_error = ProgramError {
             sql_compilation: pipeline.program_error.sql_compilation,
             rust_compilation: Some(rust_compilation.clone()),
+            rust_test: None,
             system_error: None,
         };
         pipeline.refresh_version = Version(pipeline.refresh_version.0 + 1);
@@ -3603,6 +3614,7 @@ impl Storage for Mutex<DbModel> {
         pipeline.program_error = ProgramError {
             sql_compilation: pipeline.program_error.sql_compilation,
             rust_compilation: pipeline.program_error.rust_compilation,
+            rust_test: None,
             system_error: Some(system_error.to_string()),
         };
         pipeline.refresh_version = Version(pipeline.refresh_version.0 + 1);
