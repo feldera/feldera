@@ -1,6 +1,6 @@
 use std::{borrow::Cow, sync::Arc};
 
-use feldera_storage::{FileReader, StoragePath};
+use feldera_storage::{FileCommitter, StoragePath};
 use size_of::SizeOf;
 
 use crate::{
@@ -123,7 +123,7 @@ where
         &mut self,
         base: &StoragePath,
         persistent_id: Option<&str>,
-        files: &mut Vec<Arc<dyn FileReader>>,
+        files: &mut Vec<Arc<dyn FileCommitter>>,
     ) -> Result<(), Error> {
         let persistent_id = require_persistent_id(persistent_id, &self.global_id)?;
 

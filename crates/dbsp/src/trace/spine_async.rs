@@ -29,7 +29,7 @@ use crate::{
 use crate::storage::file::to_bytes;
 use crate::trace::CommittedSpine;
 use enum_map::EnumMap;
-use feldera_storage::{FileReader, StoragePath};
+use feldera_storage::{FileCommitter, StoragePath};
 use feldera_types::checkpoint::PSpineBatches;
 use ouroboros::self_referencing;
 use rand::Rng;
@@ -1415,7 +1415,7 @@ where
         &mut self,
         base: &StoragePath,
         persistent_id: &str,
-        files: &mut Vec<Arc<dyn FileReader>>,
+        files: &mut Vec<Arc<dyn FileCommitter>>,
     ) -> Result<(), Error> {
         fn persist_batches<B>(batches: Vec<Arc<B>>) -> Vec<Arc<B>>
         where

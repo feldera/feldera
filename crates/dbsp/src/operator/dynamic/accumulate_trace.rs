@@ -21,7 +21,7 @@ use crate::{
     trace::{Batch, BatchReader, Filter, Spine, SpineSnapshot, Trace},
     Error, Timestamp,
 };
-use feldera_storage::{FileReader, StoragePath};
+use feldera_storage::{FileCommitter, StoragePath};
 use minitrace::trace;
 use ouroboros::self_referencing;
 use size_of::SizeOf;
@@ -803,7 +803,7 @@ where
         &mut self,
         base: &StoragePath,
         pid: Option<&str>,
-        files: &mut Vec<Arc<dyn FileReader>>,
+        files: &mut Vec<Arc<dyn FileCommitter>>,
     ) -> Result<(), Error> {
         let pid = require_persistent_id(pid, &self.global_id)?;
         self.trace

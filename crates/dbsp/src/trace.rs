@@ -37,7 +37,7 @@ use crate::{dynamic::ArchivedDBData, storage::buffer_cache::FBuf};
 use cursor::CursorFactory;
 use dyn_clone::DynClone;
 use enum_map::Enum;
-use feldera_storage::{FileReader, StoragePath};
+use feldera_storage::{FileCommitter, FileReader, StoragePath};
 use rand::Rng;
 use rkyv::ser::Serializer as _;
 use size_of::SizeOf;
@@ -313,7 +313,7 @@ pub trait Trace: BatchReader {
         &mut self,
         _base: &StoragePath,
         _pid: &str,
-        _files: &mut Vec<Arc<dyn FileReader>>,
+        _files: &mut Vec<Arc<dyn FileCommitter>>,
     ) -> Result<(), Error> {
         Ok(())
     }

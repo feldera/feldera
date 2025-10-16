@@ -119,13 +119,13 @@ pub trait StorageBackend: Send + Sync {
     /// Writes `content` to `name`, automatically creating any parent
     /// directories within `name` that don't already exist.
     ///
-    /// The caller must call [FileReader::commit] if it wants to make sure that
-    /// the file is committed to stable storage.
+    /// The caller must call `commit` on the returned file if it wants to make
+    /// sure that the file is committed to stable storage.
     fn write(
         &self,
         name: &StoragePath,
         content: FBuf,
-    ) -> Result<Arc<dyn FileReader>, StorageError> {
+    ) -> Result<Arc<dyn FileCommitter>, StorageError> {
         let mut writer = self.create_named(name)?;
         writer.write_block(content)?;
         let reader = writer.complete()?;
@@ -234,13 +234,13 @@ impl dyn StorageBackend + '_ {
     /// Writes `content` to `name` as JSON, automatically creating any parent
     /// directories within `name` that don't already exist.
     ///
-    /// The caller must call [FileReader::commit] if it wants to make sure that
-    /// the file is committed to stable storage.
+    /// The caller must call `commit` on the returned file if it wants to make
+    /// sure that the file is committed to stable storage.
     pub fn write_json<V>(
         &self,
         name: &StoragePath,
         value: &V,
-    ) -> Result<Arc<dyn FileReader>, StorageError>
+    ) -> Result<Arc<dyn FileCommitter>, StorageError>
     where
         V: serde::Serialize,
     {
@@ -285,12 +285,25 @@ pub trait FileWriter: Send + Sync + FileRw {
     /// [FileReader::mark_for_checkpoint].
     ///
     /// The file is not necessarily committed to stable storage before calling
-    /// [FileReader::commit].
+    /// `commit` on the returned file.
     fn complete(self: Box<Self>) -> Result<Arc<dyn FileReader>, StorageError>;
 }
 
+/// Allows a file to be committed to stable storage.
+///
+/// This is a supertrait of [FileReader] that only allows the commit operation.
+/// It's somewhat surprising that a file that can't be written can be committed,
+/// but it makes sense in the context of [FileWriter::complete] returning a
+/// [FileReader] that isn't necessarily committed yet.  Making this a separate
+/// trait allows code to split off a `FileCommitter` to hand to a piece of code
+/// that only needs to be able to commit it.
+pub trait FileCommitter: Send + Sync + Debug + FileRw {
+    /// Commits the file to stable storage.
+    fn commit(&self) -> Result<(), StorageError>;
+}
+
 /// A readable file.
-pub trait FileReader: Send + Sync + Debug + FileRw {
+pub trait FileReader: Send + Sync + Debug + FileRw + FileCommitter {
     /// Marks a file to be part of a checkpoint.
     ///
     /// This is used to prevent the file from being deleted when it is dropped.
@@ -298,9 +311,6 @@ pub trait FileReader: Send + Sync + Debug + FileRw {
     /// because files that were opened with [StorageBackend::open] are never
     /// deleted on drop.
     fn mark_for_checkpoint(&self);
-
-    /// Commits the file to stable storage.
-    fn commit(&self) -> Result<(), StorageError>;
 
     /// Reads data at `location` from the file.  If successful, the result will
     /// be exactly the requested length; that is, this API treats read past EOF

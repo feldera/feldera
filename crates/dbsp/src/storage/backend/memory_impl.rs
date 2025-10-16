@@ -5,7 +5,7 @@
 use super::{BlockLocation, FileId, FileReader, FileRw, FileWriter, StorageBackend, StorageError};
 use crate::circuit::metrics::FILES_CREATED;
 use crate::storage::buffer_cache::FBuf;
-use feldera_storage::{StorageFileType, StoragePath};
+use feldera_storage::{FileCommitter, StorageFileType, StoragePath};
 use std::fmt::Debug;
 use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 use std::{
@@ -157,13 +157,15 @@ impl FileRw for MemoryReader {
     }
 }
 
+impl FileCommitter for MemoryReader {
+    fn commit(&self) -> Result<(), StorageError> {
+        Ok(())
+    }
+}
+
 impl FileReader for MemoryReader {
     fn mark_for_checkpoint(&self) {
         self.keep.store(true, Ordering::Relaxed);
-    }
-
-    fn commit(&self) -> Result<(), StorageError> {
-        Ok(())
     }
 
     fn read_block(&self, location: BlockLocation) -> Result<Arc<FBuf>, StorageError> {

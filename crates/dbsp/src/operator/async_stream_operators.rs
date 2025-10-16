@@ -28,7 +28,7 @@ use crate::{
     },
     Error, Position, Scope,
 };
-use feldera_storage::{FileReader, StoragePath};
+use feldera_storage::{FileCommitter, StoragePath};
 use futures::Stream as AsyncStream;
 use futures_util::StreamExt;
 
@@ -119,7 +119,7 @@ where
         &mut self,
         base: &StoragePath,
         persistent_id: Option<&str>,
-        files: &mut Vec<Arc<dyn FileReader>>,
+        files: &mut Vec<Arc<dyn FileCommitter>>,
     ) -> Result<(), Error> {
         Rc::get_mut(&mut self.operator)
             .unwrap()
@@ -287,7 +287,7 @@ where
         &mut self,
         base: &StoragePath,
         persistent_id: Option<&str>,
-        files: &mut Vec<Arc<dyn FileReader>>,
+        files: &mut Vec<Arc<dyn FileCommitter>>,
     ) -> Result<(), Error> {
         Rc::get_mut(&mut self.operator)
             .unwrap()
@@ -460,7 +460,7 @@ where
         &mut self,
         base: &StoragePath,
         persistent_id: Option<&str>,
-        files: &mut Vec<Arc<dyn FileReader>>,
+        files: &mut Vec<Arc<dyn FileCommitter>>,
     ) -> Result<(), Error> {
         Rc::get_mut(&mut self.operator)
             .unwrap()
@@ -631,7 +631,7 @@ where
         &mut self,
         base: &StoragePath,
         persistent_id: Option<&str>,
-        files: &mut Vec<Arc<dyn FileReader>>,
+        files: &mut Vec<Arc<dyn FileCommitter>>,
     ) -> Result<(), Error> {
         Rc::get_mut(&mut self.operator)
             .unwrap()

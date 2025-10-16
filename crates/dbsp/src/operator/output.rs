@@ -13,7 +13,7 @@ use crate::{
     typed_batch::{Spine, SpineSnapshot, TypedBatch},
     Batch, BatchReader, Circuit, Error, Runtime, Stream,
 };
-use feldera_storage::{FileReader, StoragePath};
+use feldera_storage::{FileCommitter, StoragePath};
 use std::{
     borrow::Cow,
     fmt::Debug,
@@ -383,7 +383,7 @@ where
         &mut self,
         base: &StoragePath,
         pid: Option<&str>,
-        files: &mut Vec<Arc<dyn FileReader>>,
+        files: &mut Vec<Arc<dyn FileCommitter>>,
     ) -> Result<(), Error> {
         let pid = require_persistent_id(pid, &self.global_id)?;
         let as_bytes = to_bytes(&()).expect("Serializing () should work.");
@@ -475,7 +475,7 @@ where
         &mut self,
         base: &StoragePath,
         pid: Option<&str>,
-        files: &mut Vec<Arc<dyn FileReader>>,
+        files: &mut Vec<Arc<dyn FileCommitter>>,
     ) -> Result<(), Error> {
         let pid = require_persistent_id(pid, &self.global_id)?;
         let as_bytes = to_bytes(&()).expect("Serializing () should work.");

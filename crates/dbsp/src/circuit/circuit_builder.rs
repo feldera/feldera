@@ -55,7 +55,7 @@ use crate::{
 use anyhow::Error as AnyError;
 use dyn_clone::{clone_box, DynClone};
 use feldera_ir::{LirCircuit, LirNodeId};
-use feldera_storage::{FileReader, StoragePath};
+use feldera_storage::{FileCommitter, StoragePath};
 use serde::{Deserialize, Serialize, Serializer};
 use std::{
     any::{type_name_of_val, Any, TypeId},
@@ -1055,7 +1055,7 @@ pub trait Node: Any {
     fn checkpoint(
         &mut self,
         base: &StoragePath,
-        files: &mut Vec<Arc<dyn FileReader>>,
+        files: &mut Vec<Arc<dyn FileCommitter>>,
     ) -> Result<(), DbspError>;
 
     /// Instructs the node to restore the state of its inner operator to
@@ -4196,7 +4196,7 @@ where
     fn checkpoint(
         &mut self,
         base: &StoragePath,
-        files: &mut Vec<Arc<dyn FileReader>>,
+        files: &mut Vec<Arc<dyn FileCommitter>>,
     ) -> Result<(), DbspError> {
         self.operator
             .checkpoint(base, self.persistent_id().as_deref(), files)
@@ -4339,7 +4339,7 @@ where
     fn checkpoint(
         &mut self,
         base: &StoragePath,
-        files: &mut Vec<Arc<dyn FileReader>>,
+        files: &mut Vec<Arc<dyn FileCommitter>>,
     ) -> Result<(), DbspError> {
         self.operator
             .checkpoint(base, self.persistent_id().as_deref(), files)
@@ -4496,7 +4496,7 @@ where
     fn checkpoint(
         &mut self,
         base: &StoragePath,
-        files: &mut Vec<Arc<dyn FileReader>>,
+        files: &mut Vec<Arc<dyn FileCommitter>>,
     ) -> Result<(), DbspError> {
         self.operator
             .checkpoint(base, self.persistent_id().as_deref(), files)
@@ -4646,7 +4646,7 @@ where
     fn checkpoint(
         &mut self,
         base: &StoragePath,
-        files: &mut Vec<Arc<dyn FileReader>>,
+        files: &mut Vec<Arc<dyn FileCommitter>>,
     ) -> Result<(), DbspError> {
         self.operator
             .checkpoint(base, self.persistent_id().as_deref(), files)
@@ -4853,7 +4853,7 @@ where
     fn checkpoint(
         &mut self,
         base: &StoragePath,
-        files: &mut Vec<Arc<dyn FileReader>>,
+        files: &mut Vec<Arc<dyn FileCommitter>>,
     ) -> Result<(), DbspError> {
         self.operator
             .checkpoint(base, self.persistent_id().as_deref(), files)
@@ -5060,7 +5060,7 @@ where
     fn checkpoint(
         &mut self,
         base: &StoragePath,
-        files: &mut Vec<Arc<dyn FileReader>>,
+        files: &mut Vec<Arc<dyn FileCommitter>>,
     ) -> Result<(), DbspError> {
         self.operator
             .checkpoint(base, self.persistent_id().as_deref(), files)
@@ -5241,7 +5241,7 @@ where
     fn checkpoint(
         &mut self,
         base: &StoragePath,
-        files: &mut Vec<Arc<dyn FileReader>>,
+        files: &mut Vec<Arc<dyn FileCommitter>>,
     ) -> Result<(), DbspError> {
         self.operator
             .checkpoint(base, self.persistent_id().as_deref(), files)
@@ -5443,7 +5443,7 @@ where
     fn checkpoint(
         &mut self,
         base: &StoragePath,
-        files: &mut Vec<Arc<dyn FileReader>>,
+        files: &mut Vec<Arc<dyn FileCommitter>>,
     ) -> Result<(), DbspError> {
         self.operator
             .checkpoint(base, self.persistent_id().as_deref(), files)
@@ -5630,7 +5630,7 @@ where
     fn checkpoint(
         &mut self,
         base: &StoragePath,
-        files: &mut Vec<Arc<dyn FileReader>>,
+        files: &mut Vec<Arc<dyn FileCommitter>>,
     ) -> Result<(), DbspError> {
         self.operator
             .checkpoint(base, self.persistent_id().as_deref(), files)
@@ -5804,7 +5804,7 @@ where
     fn checkpoint(
         &mut self,
         base: &StoragePath,
-        files: &mut Vec<Arc<dyn FileReader>>,
+        files: &mut Vec<Arc<dyn FileCommitter>>,
     ) -> Result<(), DbspError> {
         self.operator
             .borrow_mut()
@@ -5962,7 +5962,7 @@ where
     fn checkpoint(
         &mut self,
         _base: &StoragePath,
-        _files: &mut Vec<Arc<dyn FileReader>>,
+        _files: &mut Vec<Arc<dyn FileCommitter>>,
     ) -> Result<(), DbspError> {
         // The Z-1 operator consists of two logical parts.
         // The first part gets invoked at the start of a clock cycle to retrieve the
@@ -6193,7 +6193,7 @@ where
     fn checkpoint(
         &mut self,
         _base: &StoragePath,
-        _files: &mut Vec<Arc<dyn FileReader>>,
+        _files: &mut Vec<Arc<dyn FileCommitter>>,
     ) -> Result<(), DbspError> {
         Ok(())
     }
@@ -6352,7 +6352,7 @@ impl CircuitHandle {
     pub fn checkpoint(
         &mut self,
         base: &StoragePath,
-        files: &mut Vec<Arc<dyn FileReader>>,
+        files: &mut Vec<Arc<dyn FileCommitter>>,
     ) -> Result<(), DbspError> {
         // if Runtime::worker_index() == 0 {
         //     self.circuit.to_dot_file(

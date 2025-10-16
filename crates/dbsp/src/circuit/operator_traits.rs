@@ -5,7 +5,7 @@
 
 #![allow(async_fn_in_trait)]
 
-use feldera_storage::{FileReader, StoragePath};
+use feldera_storage::{FileCommitter, StoragePath};
 
 use crate::Error;
 use crate::{
@@ -233,7 +233,7 @@ pub trait Operator: 'static {
         &mut self,
         base: &StoragePath,
         persistent_id: Option<&str>,
-        files: &mut Vec<Arc<dyn FileReader>>,
+        files: &mut Vec<Arc<dyn FileCommitter>>,
     ) -> Result<(), Error> {
         Ok(())
     }

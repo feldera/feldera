@@ -13,8 +13,8 @@ use feldera_storage::metrics::{
 };
 use feldera_storage::tokio::TOKIO;
 use feldera_storage::{
-    append_to_path, default_read_async, StorageBackend, StorageBackendFactory, StorageFileType,
-    StoragePath, StoragePathPart,
+    append_to_path, default_read_async, FileCommitter, StorageBackend, StorageBackendFactory,
+    StorageFileType, StoragePath, StoragePathPart,
 };
 use feldera_types::config::{
     FileBackendConfig, StorageBackendConfig, StorageCacheConfig, StorageConfig,
@@ -112,15 +112,17 @@ impl FileRw for PosixReader {
     }
 }
 
-impl FileReader for PosixReader {
-    fn mark_for_checkpoint(&self) {
-        self.drop.keep();
-    }
-
+impl FileCommitter for PosixReader {
     fn commit(&self) -> Result<(), StorageError> {
         self.file
             .sync_all()
             .map_err(|e| StorageError::stdio(e.kind(), "fsync", self.drop.path.display()))
+    }
+}
+
+impl FileReader for PosixReader {
+    fn mark_for_checkpoint(&self) {
+        self.drop.keep();
     }
 
     fn read_block(&self, location: BlockLocation) -> Result<Arc<FBuf>, StorageError> {

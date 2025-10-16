@@ -24,7 +24,7 @@ use crate::{
     Error, Position, RootCircuit, Runtime,
 };
 use async_stream::stream;
-use feldera_storage::{FileReader, StoragePath};
+use feldera_storage::{FileCommitter, StoragePath};
 use futures::Stream as AsyncStream;
 use minitrace::trace;
 use rkyv::Deserialize;
@@ -177,7 +177,7 @@ where
         &mut self,
         base: &StoragePath,
         persistent_id: Option<&str>,
-        files: &mut Vec<Arc<dyn FileReader>>,
+        files: &mut Vec<Arc<dyn FileCommitter>>,
     ) -> Result<(), Error> {
         let persistent_id = require_persistent_id(persistent_id, &self.global_id)?;
         let window_path = Self::checkpoint_file(base, persistent_id);

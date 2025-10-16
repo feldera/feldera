@@ -12,7 +12,7 @@ use crate::{
 use anyhow::Error as AnyError;
 use crossbeam::channel::{bounded, Receiver, Select, Sender, TryRecvError};
 use feldera_ir::LirCircuit;
-use feldera_storage::{FileReader, StorageBackend, StoragePath};
+use feldera_storage::{FileCommitter, StorageBackend, StoragePath};
 use feldera_types::checkpoint::CheckpointMetadata;
 pub use feldera_types::config::{StorageCacheConfig, StorageConfig, StorageOptions};
 use itertools::Either;
@@ -813,7 +813,7 @@ enum Response {
     CommitProgress(CommitProgress),
     ProfileDump(Graph),
     Profile(WorkerProfile),
-    CheckpointCreated(Vec<Arc<dyn FileReader>>),
+    CheckpointCreated(Vec<Arc<dyn FileCommitter>>),
     CheckpointRestored(Option<BootstrapInfo>),
     Lir(LirCircuit),
 }
@@ -1471,7 +1471,7 @@ impl<'a> CheckpointBuilder<'a> {
 pub struct CheckpointCommitter {
     checkpointer: Arc<Mutex<Checkpointer>>,
     uuid: Uuid,
-    readers: Vec<Vec<Arc<dyn FileReader>>>,
+    readers: Vec<Vec<Arc<dyn FileCommitter>>>,
     name: Option<String>,
     steps: Option<u64>,
     processed_records: Option<u64>,
