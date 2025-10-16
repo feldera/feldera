@@ -1119,8 +1119,10 @@ mod tests {
                 pipeline_id,
                 Version(1),
                 &RustCompilationInfo::success(),
+                &None,
                 "test-checksum",
                 "test-integrity-checksum",
+                "test-udf-checksum",
             )
             .await
             .unwrap();
@@ -1317,8 +1319,10 @@ mod tests {
                 pipeline_id,
                 Version(1),
                 &RustCompilationInfo::success(),
+                &None,
                 "checksum1",
                 "checksum2",
+                "checksum3",
             )
             .await
             .unwrap();
@@ -1484,8 +1488,10 @@ mod tests {
                 pipeline_id,
                 Version(1),
                 &RustCompilationInfo::success(),
+                &None,
                 "checksum1",
                 "checksum2",
+                "checksum3",
             )
             .await
             .unwrap();

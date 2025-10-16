@@ -266,6 +266,11 @@ pub struct ProgramError {
     /// - Set `None` upon transition to `Pending` or `SqlCompiled`
     pub rust_compilation: Option<RustCompilationInfo>,
 
+    /// Information about the Rust test execution.
+    /// - Set `Some(...)` upon transition to `Success` or `RustError`
+    /// - Set `None` upon transition to `Pending` or `SqlCompiled`
+    pub rust_test: Option<RustCompilationInfo>,
+
     /// System error that occurred.
     /// - Set `Some(...)` upon transition to `SystemError`
     /// - Set `None` upon transition to `Pending`

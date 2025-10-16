@@ -2246,6 +2246,7 @@ export type ProgramDiff = {
  */
 export type ProgramError = {
   rust_compilation?: RustCompilationInfo | null
+  rust_test?: RustCompilationInfo | null
   sql_compilation?: SqlCompilationInfo | null
   /**
    * System error that occurred.

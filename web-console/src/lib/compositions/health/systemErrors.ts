@@ -203,7 +203,10 @@ export const extractRustCompilerError = <Report>(
   }
 }
 
-const ignoredRustErrors = ['warning: patch for the non root package will be ignored']
+const ignoredRustErrors = [
+  'warning: patch for the non root package will be ignored',
+  'error: could not compile '
+]
 
 /**
  * @returns Errors associated with source files
@@ -265,6 +268,43 @@ export const extractProgramErrors =
         })(pipeline.compilerOutput.rust.stderr)
       )
     }
+    if (pipeline.compilerOutput.rustTest && pipeline.compilerOutput.rustTest.exit_code !== 0) {
+      if (pipeline.compilerOutput.rustTest.stdout.length > 0) {
+        result.push.apply(
+          result,
+          ((stderr) => {
+            const rustTestErrorRegex =
+              /^---- ([^\n]+) std(?:out|err) ----\n([\s\S]*?)(?=^---- |\Z|^failures:)/gm
+            const rustStderrPart: string[] = Array.from(stderr.matchAll(rustTestErrorRegex)).map(
+              (match) => match[0].trim()
+            )
+            const rustCompilerErrors = rustStderrPart.map(
+              extractRustCompilerError(pipeline.name, source, getReport)
+            )
+            return rustCompilerErrors
+          })(pipeline.compilerOutput.rustTest.stdout)
+        )
+      } else {
+        result.push.apply(
+          result,
+          ((stderr) => {
+            // $(?![\r\n]) - RegEx for the end of a string with multiline flag (/gm)
+            const rustCompilerErrorRegex =
+              /^((warning:(?! `)|error(\[[\w]+\])?:)([\s\S])+?)\n(\n|(?=error|warning))/gm
+
+            const rustStderrPart: string[] = Array.from(stderr.matchAll(rustCompilerErrorRegex))
+              .map((match) => match[1])
+              .filter(
+                (stderrPart) => !ignoredRustErrors.some((ignored) => stderrPart.startsWith(ignored))
+              )
+            const rustCompilerErrors = rustStderrPart.map(
+              extractRustCompilerError(pipeline.name, source, getReport)
+            )
+            return rustCompilerErrors
+          })(pipeline.compilerOutput.rustTest.stderr)
+        )
+      }
+    }
     if (pipeline.compilerOutput.systemError) {
       result.push.apply(
         result,
@@ -302,7 +342,15 @@ export const extractProgramStderr = (pipeline: { compilerOutput: CompilerOutput 
   if (pipeline.compilerOutput.rust) {
     result.push(pipeline.compilerOutput.rust.stdout)
     result.push(pipeline.compilerOutput.rust.stderr)
-    result.push(`Rust compiler exit code: ${pipeline.compilerOutput.rust.exit_code}`)
+    result.push(`Rust compiler exit code: ${pipeline.compilerOutput.rust.exit_code}\n`)
+  }
+  if (pipeline.compilerOutput.rustTest) {
+    if (pipeline.compilerOutput.rustTest.stdout.length > 0) {
+      result.push(pipeline.compilerOutput.rustTest.stdout)
+    } else {
+      result.push(pipeline.compilerOutput.rustTest.stderr)
+    }
+    result.push(`Rust test exit code: ${pipeline.compilerOutput.rustTest.exit_code}`)
   }
   if (pipeline.compilerOutput.systemError) {
     result.push(pipeline.compilerOutput.systemError)

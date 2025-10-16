@@ -80,6 +80,7 @@ const toCompilerOutput = (programError: ProgramError | null | undefined) => {
   return {
     sql: programError?.sql_compilation,
     rust: programError?.rust_compilation,
+    rustTest: programError?.rust_test,
     systemError: programError?.system_error
   }
 }

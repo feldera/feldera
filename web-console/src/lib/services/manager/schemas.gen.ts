@@ -3533,6 +3533,14 @@ export const $ProgramError = {
       ],
       nullable: true
     },
+    rust_test: {
+      allOf: [
+        {
+          $ref: '#/components/schemas/RustCompilationInfo'
+        }
+      ],
+      nullable: true
+    },
     sql_compilation: {
       allOf: [
         {

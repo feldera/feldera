@@ -182,35 +182,41 @@ pub async fn compiler_precompile(
     })?;
 
     // Rust
-    let (source_checksum, integrity_checksum, rust_duration, _) = perform_rust_compilation(
-        &common_config,
-        &config,
-        None,
-        tenant_id,
-        pipeline_id,
-        platform_version,
-        program_version,
-        &program_config,
-        &Some(program_info),
-        udf_rust,
-        udf_toml,
-    )
-    .await
-    .map_err(|e| match e {
-        RustCompilationError::NoLongerExists => CompilerError::PrecompilationError {
-            error: "Rust compilation no longer relevant as pipeline no longer exists".to_string(),
-        },
-        RustCompilationError::Outdated => CompilerError::PrecompilationError {
-            error: "Outdated Rust compilation".to_string(),
-        },
-        RustCompilationError::TerminatedBySignal => CompilerError::PrecompilationError {
-            error: "Rust compilation terminated by signal".to_string(),
-        },
-        RustCompilationError::RustError(compilation_info) => CompilerError::PrecompilationError {
-            error: compilation_info.to_string(),
-        },
-        RustCompilationError::SystemError(error) => CompilerError::PrecompilationError { error },
-    })?;
+    let (source_checksum, integrity_checksum, _udf_checksum, rust_duration, _, _) =
+        perform_rust_compilation(
+            &common_config,
+            &config,
+            None,
+            tenant_id,
+            pipeline_id,
+            platform_version,
+            program_version,
+            &program_config,
+            &Some(program_info),
+            udf_rust,
+            udf_toml,
+        )
+        .await
+        .map_err(|e| match e {
+            RustCompilationError::NoLongerExists => CompilerError::PrecompilationError {
+                error: "Rust compilation no longer relevant as pipeline no longer exists"
+                    .to_string(),
+            },
+            RustCompilationError::Outdated => CompilerError::PrecompilationError {
+                error: "Outdated Rust compilation".to_string(),
+            },
+            RustCompilationError::TerminatedBySignal => CompilerError::PrecompilationError {
+                error: "Rust compilation terminated by signal".to_string(),
+            },
+            RustCompilationError::RustError(compilation_info) => {
+                CompilerError::PrecompilationError {
+                    error: compilation_info.to_string(),
+                }
+            }
+            RustCompilationError::SystemError(error) => {
+                CompilerError::PrecompilationError { error }
+            }
+        })?;
 
     // Success
     info!(

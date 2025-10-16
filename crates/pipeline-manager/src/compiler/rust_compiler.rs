@@ -59,6 +59,10 @@ const CLEANUP_INTERVAL: Duration = Duration::from_secs(120);
 /// a significant amount of time.
 const CLEANUP_RETENTION: Duration = Duration::from_secs(3600);
 
+/// Rust compiler stack size in bytes (20MB).
+/// Set to 10x the default to prevent SIGSEGV when the compiler runs out of stack on large programs.
+const RUST_COMPILER_STACK_SIZE: &str = "20971520";
+
 /// Rust compilation task that wakes up periodically.
 /// Sleeps inbetween ticks which affects the response time of Rust compilation.
 /// Note that the logic in this task assumes only one is run at a time.
@@ -194,7 +198,14 @@ async fn attempt_end_to_end_rust_compilation(
 
     // (5) Update database that Rust compilation is finished
     match compilation_result {
-        Ok((source_checksum, integrity_checksum, duration, compilation_info)) => {
+        Ok((
+            source_checksum,
+            integrity_checksum,
+            udf_checksum,
+            duration,
+            compilation_info,
+            test_info,
+        )) => {
             info!(
                 "Rust compilation success: pipeline {} (program version: {}) (took {:.2}s; source checksum: {}; integrity checksum: {})",
                 pipeline.id,
@@ -210,8 +221,10 @@ async fn attempt_end_to_end_rust_compilation(
                     pipeline.id,
                     pipeline.program_version,
                     &compilation_info,
+                    &test_info,
                     &source_checksum,
                     &integrity_checksum,
+                    &udf_checksum,
                 )
                 .await?;
         }
@@ -271,6 +284,26 @@ async fn attempt_end_to_end_rust_compilation(
 /// `H(x)` is the hashing function. `||` represents concatenation.
 /// The order of the fields is always the same.
 #[allow(clippy::too_many_arguments)]
+/// Calculates a checksum only for UDF-related content (udf_rust and udf_toml).
+/// This is used to determine if tests need to be re-run.
+fn calculate_udf_checksum(udf_rust: &str, udf_toml: &str) -> String {
+    let mut hasher = sha::Sha256::new();
+    let to_hash = vec![
+        ("udf_rust", udf_rust.as_bytes()),
+        ("udf_toml", udf_toml.as_bytes()),
+    ];
+
+    for (name, data) in to_hash {
+        let checksum = sha256(data);
+        hasher.update(&checksum);
+        trace!(
+            "Rust compilation: checksum of {name}: {}",
+            hex::encode(checksum)
+        );
+    }
+    hex::encode(hasher.finish())
+}
+
 fn calculate_source_checksum(
     platform_version: &str,
     runtime_version: &RuntimeSelector,
@@ -340,8 +373,8 @@ impl From<UtilError> for RustCompilationError {
 
 /// Performs the Rust compilation.
 ///
-/// Returns the program binary URL, source checksum, integrity checksum,
-/// duration, and compilation information.
+/// Returns the source checksum, integrity checksum, UDF checksum,
+/// duration, compilation information, and test information.
 #[allow(clippy::too_many_arguments)]
 pub async fn perform_rust_compilation(
     common_config: &CommonConfig,
@@ -355,7 +388,17 @@ pub async fn perform_rust_compilation(
     program_info: &Option<serde_json::Value>,
     udf_rust: &str,
     udf_toml: &str,
-) -> Result<(String, String, Duration, RustCompilationInfo), RustCompilationError> {
+) -> Result<
+    (
+        String,
+        String,
+        String,
+        Duration,
+        RustCompilationInfo,
+        Option<RustCompilationInfo>,
+    ),
+    RustCompilationError,
+> {
     let start = Instant::now();
 
     // These must always be the same, the Rust compiler should never pick up
@@ -434,6 +477,10 @@ pub async fn perform_rust_compilation(
     );
     trace!("Rust compilation: calculated source checksum: {source_checksum}");
 
+    // Calculate UDF checksum separately to determine if tests need to be re-run
+    let udf_checksum = calculate_udf_checksum(udf_rust, udf_toml);
+    trace!("Rust compilation: calculated UDF checksum: {udf_checksum}");
+
     // Prepare the workspace for the compilation of this specific pipeline
     prepare_workspace(
         config,
@@ -446,13 +493,14 @@ pub async fn perform_rust_compilation(
     .await?;
 
     // Perform the compilation in the workspace
-    let (compilation_info, integrity_checksum) = call_compiler(
+    let (compilation_info, test_info, integrity_checksum) = call_compiler(
         db,
         tenant_id,
         pipeline_id,
         program_version,
         config,
         &source_checksum,
+        &udf_checksum,
         &profile,
         &runtime_selector,
     )
@@ -461,8 +509,10 @@ pub async fn perform_rust_compilation(
     Ok((
         source_checksum,
         integrity_checksum.clone(),
+        udf_checksum,
         start.elapsed(),
         compilation_info,
+        test_info,
     ))
 }
 
@@ -984,6 +1034,69 @@ extern crate sync_checkpoint;"#,
     Ok(())
 }
 
+/// Runs cargo test on the compiled project and returns test results.
+async fn run_cargo_test(
+    workspace_dir: &Path,
+    pipeline_main_crate_dir: &Path,
+    env_path: &std::ffi::OsStr,
+    optional_env_rustflags: &Option<std::ffi::OsString>,
+    runtime_selector: &RuntimeSelector,
+    profile: &CompilationProfile,
+) -> Result<RustCompilationInfo, RustCompilationError> {
+    // Create file where stdout will be written to
+    let stdout_file_path = pipeline_main_crate_dir.join("test_stdout.log");
+    let stdout_file = create_new_file(&stdout_file_path).await?;
+
+    // Create file where stderr will be written to
+    let stderr_file_path = pipeline_main_crate_dir.join("test_stderr.log");
+    let stderr_file = create_new_file(&stderr_file_path).await?;
+
+    // Formulate command
+    let mut command = Command::new("cargo");
+    command.env_clear();
+    command.env("PATH", env_path);
+    if !runtime_selector.is_platform() {
+        command.env("FELDERA_RUNTIME_OVERRIDE", runtime_selector.as_commitish());
+    }
+    if let Some(ref env_rustflags) = optional_env_rustflags {
+        command.env("RUSTFLAGS", env_rustflags);
+    }
+    command
+        .env("RUST_MIN_STACK", RUST_COMPILER_STACK_SIZE)
+        .current_dir(workspace_dir)
+        .arg("test")
+        .arg("--workspace")
+        .arg("--profile")
+        .arg(profile.to_string())
+        .stdin(Stdio::null())
+        .stdout(Stdio::from(stdout_file.into_std().await))
+        .stderr(Stdio::from(stderr_file.into_std().await));
+
+    // Spawn the test command and wait for it to complete
+    let mut process = command.spawn().map_err(|e| {
+        RustCompilationError::SystemError(
+            UtilError::IoError("running 'cargo test'".to_string(), e).to_string(),
+        )
+    })?;
+
+    // Wait for the process to complete
+    let exit_status = process.wait().await.map_err(|e| {
+        RustCompilationError::SystemError(
+            UtilError::IoError("waiting for 'cargo test'".to_string(), e).to_string(),
+        )
+    })?;
+
+    // Read stdout and stderr from the log files
+    let stdout = read_file_content(&stdout_file_path).await?;
+    let stderr = read_file_content(&stderr_file_path).await?;
+
+    Ok(RustCompilationInfo {
+        exit_code: exit_status.code().unwrap_or(-1),
+        stdout,
+        stderr,
+    })
+}
+
 /// Calls the compiler on the project with the provided source checksum and using the compilation profile.
 #[allow(clippy::too_many_arguments)]
 async fn call_compiler(
@@ -993,9 +1106,10 @@ async fn call_compiler(
     program_version: Version,
     config: &CompilerConfig,
     source_checksum: &str,
+    udf_checksum: &str,
     profile: &CompilationProfile,
     runtime_selector: &RuntimeSelector,
-) -> Result<(RustCompilationInfo, String), RustCompilationError> {
+) -> Result<(RustCompilationInfo, Option<RustCompilationInfo>, String), RustCompilationError> {
     // Workspace directory
     let workspace_dir = config.working_dir().join("rust-compilation");
     if !workspace_dir.is_dir() {
@@ -1049,17 +1163,15 @@ async fn call_compiler(
     // Formulate command
     let mut command = Command::new("cargo");
     command.env_clear();
-    command.env("PATH", env_path);
+    command.env("PATH", &env_path);
     if !runtime_selector.is_platform() {
         command.env("FELDERA_RUNTIME_OVERRIDE", runtime_selector.as_commitish());
     }
-    if let Some(env_rustflags) = optional_env_rustflags {
+    if let Some(ref env_rustflags) = optional_env_rustflags {
         command.env("RUSTFLAGS", env_rustflags);
     }
     command
-        // Set compiler stack size to 20MB (10x the default) to prevent
-        // SIGSEGV when the compiler runs out of stack on large programs.
-        .env("RUST_MIN_STACK", "20971520")
+        .env("RUST_MIN_STACK", RUST_COMPILER_STACK_SIZE)
         .current_dir(&workspace_dir)
         .arg("build")
         .arg("--workspace")
@@ -1147,6 +1259,47 @@ async fn call_compiler(
 
     // Compilation is successful if the return exit code is present and zero
     if exit_status.success() {
+        // Retrieve previous UDF checksum to determine if tests need to be re-run
+        let previous_udf_checksum = if let Some(db) = db.clone() {
+            match db
+                .lock()
+                .await
+                .get_pipeline_by_id(tenant_id, pipeline_id)
+                .await
+            {
+                Ok(pipeline) => pipeline.program_binary_udf_checksum,
+                Err(e) => {
+                    info!("Unable to retrieve previous UDF checksum, will run tests anyway: {e}");
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
+        // Run cargo test to test UDFs only if UDF checksum has changed
+        let test_info = if previous_udf_checksum.as_deref() == Some(udf_checksum) {
+            info!(
+                "UDF checksum unchanged ({udf_checksum}), skipping cargo test for pipeline {pipeline_id}"
+            );
+            None
+        } else {
+            info!(
+                "UDF checksum changed (was {:?}, now {udf_checksum}), running cargo test for pipeline {pipeline_id}",
+                previous_udf_checksum
+            );
+            Some(
+                run_cargo_test(
+                    &workspace_dir,
+                    &pipeline_main_crate_dir,
+                    &env_path,
+                    &optional_env_rustflags,
+                    runtime_selector,
+                    profile,
+                )
+                .await?,
+            )
+        };
         // Source file
         let source_file_path = workspace_dir
             .join("target")
@@ -1172,7 +1325,7 @@ async fn call_compiler(
         copy_file(&source_file_path, &target_file_path).await?;
 
         // Success
-        Ok((compilation_info, integrity_checksum))
+        Ok((compilation_info, test_info, integrity_checksum))
     } else {
         Err(RustCompilationError::RustError(compilation_info))
     }
