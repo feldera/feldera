@@ -1526,7 +1526,29 @@ public class ToRustVisitor extends CircuitVisitor {
         return VisitDecision.STOP;
     }
 
-    VisitDecision constantLike(DBSPSimpleOperator operator) {
+    @Override
+    public VisitDecision preorder(DBSPConstantOperator operator) {
+        this.computeHash(operator);
+        this.innerVisitor.setOperatorContext(operator);
+        DBSPType streamType = this.streamType(operator);
+        Utilities.enforce(operator.function != null);
+        this.builder.append("let ")
+                .append(operator.getNodeName(this.preferHash))
+                .append(": ");
+        streamType.accept(this.innerVisitor);
+        this.builder.append(" = ")
+                .append("circuit.add_source(")
+                .increase()
+                .append("ConstantGenerator::new(");
+        operator.function.accept(this.innerVisitor);
+        this.builder.append("));").decrease();
+        this.tagStream(operator);
+        this.innerVisitor.setOperatorContext(null);
+        return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPNowOperator operator) {
         this.computeHash(operator);
         this.innerVisitor.setOperatorContext(operator);
         DBSPType streamType = this.streamType(operator);
@@ -1559,12 +1581,6 @@ public class ToRustVisitor extends CircuitVisitor {
         return VisitDecision.STOP;
     }
 
-    @Override
-    public VisitDecision preorder(DBSPConstantOperator operator) {
-        Utilities.enforce(!operator.incremental);
-        return this.constantLike(operator);
-    }
-
     // Keeps track of tables that have to be materialized at a different point in the circuit.
     Bijection<DBSPSourceMultisetOperator, DBSPControlledKeyFilterOperator> materialization = new Bijection<>();
 
@@ -1592,11 +1608,6 @@ public class ToRustVisitor extends CircuitVisitor {
         DBSPCircuit circuit = node.to(DBSPCircuit.class);
         this.discoverLateMaterializations(circuit);
         return result;
-    }
-
-    @Override
-    public VisitDecision preorder(DBSPNowOperator operator) {
-        return this.constantLike(operator);
     }
 
     public static void toRustString(DBSPCompiler compiler, IIndentStream stream,
