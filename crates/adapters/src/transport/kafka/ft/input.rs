@@ -516,6 +516,7 @@ impl KafkaFtInputReaderInner {
                                 staged_hasher.finish(),
                                 staged_offsets.clone(),
                             ));
+                            timestamp = None;
                             for partition_offsets in &mut staged_offsets {
                                 partition_offsets.start = partition_offsets.end;
                             }
