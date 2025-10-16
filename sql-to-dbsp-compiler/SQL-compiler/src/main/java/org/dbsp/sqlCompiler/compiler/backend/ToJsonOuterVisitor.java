@@ -269,8 +269,6 @@ public class ToJsonOuterVisitor extends CircuitVisitor {
         VisitDecision decision = this.preorder(operator.to(DBSPSimpleOperator.class));
         if (decision.stop())
             return VisitDecision.STOP;
-        this.property("incremental");
-        this.stream.append(operator.incremental);
         return VisitDecision.CONTINUE;
     }
 

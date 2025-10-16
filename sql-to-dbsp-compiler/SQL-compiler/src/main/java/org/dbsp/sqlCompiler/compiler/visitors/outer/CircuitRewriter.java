@@ -453,8 +453,7 @@ public class CircuitRewriter extends CircuitCloneVisitor {
         DBSPExpression value = this.transform(operator.getFunction());
         DBSPSimpleOperator result = operator;
         if (value != operator.getFunction()) {
-            result = new DBSPConstantOperator(operator.getRelNode(), value,
-                    operator.incremental, operator.isMultiset)
+            result = new DBSPConstantOperator(operator.getRelNode(), value, operator.isMultiset)
                     .copyAnnotations(operator);
         }
         this.map(operator, result);

@@ -794,7 +794,7 @@ public class RewriteInternedFields extends CircuitCloneVisitor {
                         lit.cast(lit.getNode(), InternInner.nullableString, false)));
             }
             DBSPConstantOperator constant = new DBSPConstantOperator(
-                    CalciteEmptyRel.INSTANCE, result, false, false);
+                    CalciteEmptyRel.INSTANCE, result, false);
             this.addOperator(constant);
             this.dynamicStrings.add(constant.outputPort());
         }

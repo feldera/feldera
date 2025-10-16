@@ -71,7 +71,7 @@ public class EquivalenceTests {
         DBSPClosureExpression closure = body.closure(var.asParameter());
 
         DBSPOperator fake = new DBSPConstantOperator(
-                CalciteEmptyRel.INSTANCE, new DBSPZSetExpression(new DBSPBoolLiteral()), false, false);
+                CalciteEmptyRel.INSTANCE, new DBSPZSetExpression(new DBSPBoolLiteral()), false);
         ValueNumbering numbering = new ValueNumbering(compiler);
         numbering.setOperatorContext(fake);
         numbering.apply(closure);
@@ -118,7 +118,7 @@ public class EquivalenceTests {
         DBSPClosureExpression closure = block.closure(var.asParameter());
 
         DBSPOperator fake = new DBSPConstantOperator(
-                CalciteEmptyRel.INSTANCE, new DBSPZSetExpression(new DBSPBoolLiteral()), false, false);
+                CalciteEmptyRel.INSTANCE, new DBSPZSetExpression(new DBSPBoolLiteral()), false);
         ValueNumbering numbering = new ValueNumbering(compiler);
         numbering.setOperatorContext(fake);
         numbering.apply(closure);
@@ -157,7 +157,7 @@ public class EquivalenceTests {
         numbering.apply(closure);
         ExpressionsCSE cse = new ExpressionsCSE(compiler, numbering.canonical);
         DBSPOperator fake = new DBSPConstantOperator(
-                CalciteEmptyRel.INSTANCE, new DBSPZSetExpression(new DBSPBoolLiteral()), false, false);
+                CalciteEmptyRel.INSTANCE, new DBSPZSetExpression(new DBSPBoolLiteral()), false);
         cse.setOperatorContext(fake);
         cse.apply(closure);
         IDBSPInnerNode translated = cse.get(closure);

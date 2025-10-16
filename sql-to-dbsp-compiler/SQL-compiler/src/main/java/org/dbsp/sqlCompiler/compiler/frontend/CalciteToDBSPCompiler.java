@@ -1231,8 +1231,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
             else {
                 // result is empty
                 var constant = new DBSPConstantOperator(
-                        relNode, DBSPZSetExpression.emptyWithElementType(rowType),
-                        false, false);
+                        relNode, DBSPZSetExpression.emptyWithElementType(rowType), false);
                 this.addOperator(constant);
                 return constant;
             }
@@ -2365,7 +2364,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
         } else {
             // We currently don't have a reliable way to check whether there are duplicates
             // in the Z-set, so we assume it is a multiset
-            DBSPSimpleOperator constant = new DBSPConstantOperator(node.getFinal(), result, false, true);
+            DBSPSimpleOperator constant = new DBSPConstantOperator(node.getFinal(), result, true);
             this.assignOperator(values, constant);
         }
     }
