@@ -1011,7 +1011,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             return true;
         };
 
-        if version >= Version::parse("0.162.0").unwrap() {
+        if version >= Version::parse("0.164.0").unwrap() {
             return true;
         }
 
