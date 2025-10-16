@@ -1,4 +1,6 @@
-use std::{io::Write, marker::PhantomPinned, str::FromStr, sync::Weak, time::Duration};
+use std::{
+    io::Write, marker::PhantomPinned, path::PathBuf, str::FromStr, sync::Weak, time::Duration,
+};
 
 use super::{error::BackoffError, prepared_statements::PreparedStatements};
 use crate::{
@@ -21,7 +23,7 @@ use feldera_types::{
 use openssl::{
     pkey::PKey,
     rsa::Rsa,
-    ssl::{SslConnector, SslConnectorBuilder, SslMethod},
+    ssl::{SslConnector, SslConnectorBuilder, SslFiletype, SslMethod},
     x509::X509,
 };
 use postgres::{Client, NoTls, Statement};
@@ -60,47 +62,95 @@ impl Drop for PostgresOutputEndpoint {
 
 const PG_CONNECTION_VALIDITY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 
+/// Writes the given certificate to file and returns the file path.
+fn write_ca_cert_to_file(cert: &str) -> AnyResult<PathBuf> {
+    let mut file =
+        NamedTempFile::new().context("failed to create tempfile to write CA certificate to")?;
+
+    file.write_all(cert.as_bytes())
+        .context("failed to write CA certificate to tempfile")?;
+    file.flush()
+        .context("failed to flush CA certificate to tempfile")?;
+
+    let (_, path) = file.keep()?;
+    Ok(path)
+}
+
 /// Configures SSL certificates for the PostgreSQL connection if enabled.
 ///
 /// Sets the CA certificate (`ssl_ca_pem`) and optionally the client certificate
 /// and private key when provided.
 fn set_certs(builder: &mut SslConnectorBuilder, config: &PostgresWriterConfig) -> AnyResult<()> {
-    let Some(ca_cert) = &config.ssl_ca_pem else {
-        return Ok(());
-    };
-
-    let ca_cert_path = {
-        let mut file =
-            NamedTempFile::new().context("failed to create tempfile to write CA certificate to")?;
-
-        file.write_all(ca_cert.as_bytes())
-            .context("failed to write CA certificate to tempfile")?;
-        file.flush()
-            .context("failed to flush CA certificate to tempfile")?;
-
-        let (_, path) = file.keep()?;
-        path
+    let ca_cert_path = match (&config.ssl_ca_location, &config.ssl_ca_pem) {
+        (Some(location), None) => PathBuf::from_str(location)
+            .context("failed to parse `ssl_ca_location` as PathBuf; is the path valid?")?,
+        (Some(_), Some(pem)) => {
+            tracing::warn!("postgres: both `ssl_ca_pem` and `ssl_ca_location` are provided; using `ssl_ca_pem`");
+            write_ca_cert_to_file(pem)?
+        }
+        (None, Some(pem)) => write_ca_cert_to_file(pem)?,
+        (None, None) => return Ok(()),
     };
 
     builder
         .set_ca_file(ca_cert_path)
         .context("failed to set CA certificate in SSL connector")?;
 
-    if let (Some(client_cert), Some(client_key)) = (&config.ssl_client_pem, &config.ssl_client_key)
-    {
-        tracing::info!("postgres: using client certificate and key to connect to postgres");
-        let cert = X509::from_pem(client_cert.as_bytes())
-            .context("failed to parse client certificate as X509")?;
+    fn builder_set_client_from_pem(builder: &mut SslConnectorBuilder, pem: &str) -> AnyResult<()> {
+        let cert =
+            X509::from_pem(pem.as_bytes()).context("failed to parse client certificate as X509")?;
         builder
             .set_certificate(&cert)
             .context("failed to set client certificate in SSL connector")?;
-        let rsa = Rsa::private_key_from_pem(client_key.as_bytes())
+        Ok(())
+    }
+
+    fn builder_set_client_key_from_pem(
+        builder: &mut SslConnectorBuilder,
+        pem: &str,
+    ) -> AnyResult<()> {
+        let rsa = Rsa::private_key_from_pem(pem.as_bytes())
             .context("failed to parse client private key as RSA")?;
         let key = PKey::from_rsa(rsa).context("failed to client private key from RSA")?;
         builder
             .set_private_key(key.as_ref())
             .context("failed to set client private key")?;
-    };
+        Ok(())
+    }
+
+    // Set the client certificate, `ssl_client_pem` takes priority.
+    match (&config.ssl_client_pem, &config.ssl_client_location) {
+        (Some(pem), Some(_)) => {
+            tracing::warn!("postgres: both `ssl_client_pem` and `ssl_client_location` are provided; using `ssl_client_pem`");
+            builder_set_client_from_pem(builder, pem)?;
+        }
+        (Some(pem), None) => {
+            builder_set_client_from_pem(builder, pem)?;
+        }
+        (None, Some(location)) => {
+            builder
+                .set_certificate_file(location, SslFiletype::PEM)
+                .context("failed to set client certificate")?;
+        }
+        (None, None) => return Ok(()),
+    }
+
+    // Set the client key, `ssl_client_key` takes priority.
+    match (&config.ssl_client_key, &config.ssl_client_key_location) {
+        (Some(key), Some(_)) => {
+            tracing::warn!("postgres: both `ssl_client_key` and `ssl_client_key_location` are provided; using `ssl_client_key`");
+            builder_set_client_key_from_pem(builder, key)?;
+        }
+        (Some(key), None) => {
+            builder_set_client_key_from_pem(builder, key)?;
+        }
+        (None, Some(location)) => {
+            builder
+                .set_private_key_file(location, SslFiletype::PEM)
+                .context("failed to set client private key")?;
+        }
+        (None, None) => return Ok(()),
+    }
 
     Ok(())
 }
@@ -110,7 +160,7 @@ fn connect(config: &PostgresWriterConfig, endpoint_name: &str) -> Result<Client,
         BackoffError::Permanent(anyhow!("error parsing postgres connection string: {e}"))
     })?;
 
-    let client = if config.ssl_ca_pem.is_some() {
+    let client = if config.ssl_ca_pem.is_some() || config.ssl_ca_location.is_some() {
         let mut builder = SslConnector::builder(SslMethod::tls())
             .map_err(|e| BackoffError::Permanent(anyhow!("failed to build SSL connection: {e}")))?;
 
@@ -697,6 +747,9 @@ mod tests {
             max_records_in_buffer: None,
             max_buffer_size_bytes: usize::pow(2, 20),
             on_conflict_do_nothing: false,
+            ssl_ca_location: None,
+            ssl_client_key_location: None,
+            ssl_client_location: None,
         }
     }
 
