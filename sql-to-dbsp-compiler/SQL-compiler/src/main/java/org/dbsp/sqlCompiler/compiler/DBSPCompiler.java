@@ -680,6 +680,10 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
                     this.messages.reportError(ex);
                     this.rethrow(ex);
                     handled = true;
+                } else if (t instanceof SqlParseException ex) {
+                    this.messages.reportError(ex);
+                    this.rethrow(e);
+                    handled = true;
                 }
                 current = t;
             }

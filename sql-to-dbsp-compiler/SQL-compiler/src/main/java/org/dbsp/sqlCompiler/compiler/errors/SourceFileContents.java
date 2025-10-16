@@ -92,8 +92,7 @@ public class SourceFileContents {
                     }
                     result.append(this.lineNo(i, decorated))
                             .append(line);
-                    if (decorated)
-                        result.append(SourceFileContents.newline());
+                    result.append(SourceFileContents.newline());
                 }
             } else {
                 result.append(this.lineNo(startLine, decorated))
