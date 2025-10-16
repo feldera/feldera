@@ -168,7 +168,7 @@ static CHECKPOINT_DELAY: ExponentialHistogram = ExponentialHistogram::new();
 /// These values are approximate because they include all storage writes while a
 /// checkpoint is being written, which means that they include writes from
 /// ongoing background merges.
-static CHECKPOINT_WRITTEN: ExponentialHistogram = ExponentialHistogram::new();
+static CHECKPOINT_WRITTEN_MEGABYTES: ExponentialHistogram = ExponentialHistogram::new();
 
 /// Number of records successfully processed at the time of the last successful
 /// checkpoint.
@@ -1041,7 +1041,7 @@ impl Controller {
             "feldera_checkpoint_written_bytes",
             "Amount of data written to storage during checkpoints, in bytes.",
             labels,
-            &HistogramDiv::new(CHECKPOINT_WRITTEN.snapshot(), 1.0 / 1_000_000.0),
+            &HistogramDiv::new(CHECKPOINT_WRITTEN_MEGABYTES.snapshot(), 1.0 / 1_000_000.0),
         );
         metrics.counter(
             "feldera_checkpoint_records_processed_total",
@@ -5373,7 +5373,7 @@ impl CheckpointThread {
         // Record statistics.
         CHECKPOINT_RUNTIME.record_elapsed(self.start_checkpoint);
         CHECKPOINT_DELAY.record(self.delay.as_micros());
-        CHECKPOINT_WRITTEN.record(bytes_written / 1_000_000);
+        CHECKPOINT_WRITTEN_MEGABYTES.record(bytes_written / 1_000_000);
         CHECKPOINT_PROCESSED_RECORDS.store(self.checkpoint.processed_records, Ordering::Relaxed);
 
         Ok(self.checkpoint)
