@@ -1085,4 +1085,18 @@ public class Regression1Tests extends SqlIoTest {
                 CREATE MATERIALIZED VIEW equality_null_legal AS SELECT
                 tmestmp <=> NULL AS tmestmp FROM illegal_tbl;""");
     }
+
+    @Test
+    public void issue4915() {
+        this.getCC("""
+                CREATE FUNCTION X(d VARCHAR NOT NULL)
+                RETURNS TIMESTAMP
+                AS ( COALESCE(
+                    -- ISO 8601 formats with timezone (Z suffix)
+                    PARSE_TIMESTAMP('%Y-%m-%d %H:%M:%S Z', d),
+                    -- ISO 8601 with timezone offset (+/-HHMM or +/-HH:MM)
+                    PARSE_TIMESTAMP('%Y-%m-%dT%H:%M:%S.%3f%:z', d)));
+                
+                CREATE materialized VIEW V0 AS SELECT X('2011-12-01 00:00:00');""");
+    }
 }
