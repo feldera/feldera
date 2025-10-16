@@ -1411,7 +1411,7 @@ where
         &self.value_filter
     }
 
-    fn commit(
+    fn save(
         &mut self,
         base: &StoragePath,
         persistent_id: &str,
