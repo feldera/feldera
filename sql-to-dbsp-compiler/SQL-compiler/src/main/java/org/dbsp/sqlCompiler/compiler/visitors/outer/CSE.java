@@ -16,10 +16,8 @@ import org.dbsp.util.graph.Port;
 
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
 /** Common-subexpression elimination at the level of circuit operators */
 public class CSE extends Repeat {

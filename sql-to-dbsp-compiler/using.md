@@ -388,6 +388,7 @@ We exercise this circuit by inserting data using a CSV format:
 #[test]
 pub fn test() {
     use dbsp_adapters::{CircuitCatalog, RecordFormat};
+    use use feldera_types::format::csv::CsvParserConfig;
 
     let (mut circuit, catalog) = circuit(2)
         .expect("Failed to build circuit");
@@ -395,6 +396,7 @@ pub fn test() {
         .input_collection_handle(&SqlIdentifier::from("PERSON"))
         .expect("Failed to get input collection handle");
     let mut persons_stream = persons
+        .handle
         .configure_deserializer(RecordFormat::Csv(Default::default())
         .expect("Failed to configure deserializer");
     persons_stream
@@ -418,9 +420,15 @@ pub fn test() {
         .delta_handle;
 
     // Read the produced output
-    let out = adult.concat().consolidate();
-    // Print the produced output
-    println!("{:?}", out);
+    let reader = adult.concat();
+    let mut cursor = reader
+        .cursor(RecordFormat::Csv(CsvParserConfig::default()))
+        .unwrap();
+    while cursor.key_valid() {
+        let mut w = cursor.weight();
+        println!("{}: {}", cursor.key_to_json().unwrap(), w);
+        cursor.step_key();
+    }
 }
 ```
 
