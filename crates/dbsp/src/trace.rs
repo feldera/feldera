@@ -309,17 +309,20 @@ pub trait Trace: BatchReader {
 
     fn key_filter(&self) -> &Option<Filter<Self::Key>>;
     fn value_filter(&self) -> &Option<Filter<Self::Val>>;
-    fn commit(
+
+    /// Writes this trace to storage beneath `base`, using `pid` as a file name
+    /// prefix.  Adds the files that were written to `files` so that they can be
+    /// committed later.
+    fn save(
         &mut self,
-        _base: &StoragePath,
-        _pid: &str,
-        _files: &mut Vec<Arc<dyn FileCommitter>>,
-    ) -> Result<(), Error> {
-        Ok(())
-    }
-    fn restore(&mut self, _base: &StoragePath, _pid: &str) -> Result<(), Error> {
-        Ok(())
-    }
+        base: &StoragePath,
+        pid: &str,
+        files: &mut Vec<Arc<dyn FileCommitter>>,
+    ) -> Result<(), Error>;
+
+    /// Reads this trace back from storage under `base` with `pid` as the
+    /// prefix.
+    fn restore(&mut self, base: &StoragePath, pid: &str) -> Result<(), Error>;
 
     /// Allows the trace to report additional metadata.
     fn metadata(&self, _meta: &mut OperatorMeta) {}
