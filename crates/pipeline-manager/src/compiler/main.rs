@@ -182,7 +182,7 @@ pub async fn compiler_precompile(
     })?;
 
     // Rust
-    let (source_checksum, integrity_checksum, rust_duration, _, _) = perform_rust_compilation(
+    let (source_checksum, integrity_checksum, _udf_checksum, rust_duration, _, _) = perform_rust_compilation(
         &common_config,
         &config,
         None,

@@ -211,6 +211,9 @@ pub struct ExtendedPipelineDescr {
     /// Checksum of the binary file itself.
     pub program_binary_integrity_checksum: Option<String>,
 
+    /// Checksum of UDF code (udf_rust and udf_toml) used to determine if tests need to be re-run.
+    pub program_binary_udf_checksum: Option<String>,
+
     /// Resource or runtime error that caused the pipeline to stop unexpectedly.
     ///
     /// Can only be set when `Stopping` or `Stopped`.

@@ -1590,6 +1590,7 @@ mod test {
                 &None,
                 "not-used-program-binary-source-checksum",
                 "not-used-program-binary-integrity-checksum",
+                "not-used-program-binary-udf-checksum",
             )
             .await
             .unwrap();

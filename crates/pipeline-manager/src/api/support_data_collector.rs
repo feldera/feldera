@@ -1122,6 +1122,7 @@ mod tests {
                 &None,
                 "test-checksum",
                 "test-integrity-checksum",
+                "test-udf-checksum",
             )
             .await
             .unwrap();
@@ -1321,6 +1322,7 @@ mod tests {
                 &None,
                 "checksum1",
                 "checksum2",
+                "checksum3",
             )
             .await
             .unwrap();
@@ -1489,6 +1491,7 @@ mod tests {
                 &None,
                 "checksum1",
                 "checksum2",
+                "checksum3",
             )
             .await
             .unwrap();

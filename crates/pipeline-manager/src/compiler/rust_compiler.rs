@@ -198,7 +198,7 @@ async fn attempt_end_to_end_rust_compilation(
 
     // (5) Update database that Rust compilation is finished
     match compilation_result {
-        Ok((source_checksum, integrity_checksum, duration, compilation_info, test_info)) => {
+        Ok((source_checksum, integrity_checksum, udf_checksum, duration, compilation_info, test_info)) => {
             info!(
                 "Rust compilation success: pipeline {} (program version: {}) (took {:.2}s; source checksum: {}; integrity checksum: {})",
                 pipeline.id,
@@ -217,6 +217,7 @@ async fn attempt_end_to_end_rust_compilation(
                     &test_info,
                     &source_checksum,
                     &integrity_checksum,
+                    &udf_checksum,
                 )
                 .await?;
         }
@@ -276,6 +277,26 @@ async fn attempt_end_to_end_rust_compilation(
 /// `H(x)` is the hashing function. `||` represents concatenation.
 /// The order of the fields is always the same.
 #[allow(clippy::too_many_arguments)]
+/// Calculates a checksum only for UDF-related content (udf_rust and udf_toml).
+/// This is used to determine if tests need to be re-run.
+fn calculate_udf_checksum(udf_rust: &str, udf_toml: &str) -> String {
+    let mut hasher = sha::Sha256::new();
+    let to_hash = vec![
+        ("udf_rust", udf_rust.as_bytes()),
+        ("udf_toml", udf_toml.as_bytes()),
+    ];
+
+    for (name, data) in to_hash {
+        let checksum = sha256(data);
+        hasher.update(&checksum);
+        trace!(
+            "Rust compilation: checksum of {name}: {}",
+            hex::encode(checksum)
+        );
+    }
+    hex::encode(hasher.finish())
+}
+
 fn calculate_source_checksum(
     platform_version: &str,
     runtime_version: &RuntimeSelector,
@@ -345,7 +366,7 @@ impl From<UtilError> for RustCompilationError {
 
 /// Performs the Rust compilation.
 ///
-/// Returns the program binary URL, source checksum, integrity checksum,
+/// Returns the source checksum, integrity checksum, UDF checksum,
 /// duration, compilation information, and test information.
 #[allow(clippy::too_many_arguments)]
 pub async fn perform_rust_compilation(
@@ -362,6 +383,7 @@ pub async fn perform_rust_compilation(
     udf_toml: &str,
 ) -> Result<
     (
+        String,
         String,
         String,
         Duration,
@@ -448,6 +470,10 @@ pub async fn perform_rust_compilation(
     );
     trace!("Rust compilation: calculated source checksum: {source_checksum}");
 
+    // Calculate UDF checksum separately to determine if tests need to be re-run
+    let udf_checksum = calculate_udf_checksum(udf_rust, udf_toml);
+    trace!("Rust compilation: calculated UDF checksum: {udf_checksum}");
+
     // Prepare the workspace for the compilation of this specific pipeline
     prepare_workspace(
         config,
@@ -467,6 +493,7 @@ pub async fn perform_rust_compilation(
         program_version,
         config,
         &source_checksum,
+        &udf_checksum,
         &profile,
         &runtime_selector,
     )
@@ -475,6 +502,7 @@ pub async fn perform_rust_compilation(
     Ok((
         source_checksum,
         integrity_checksum.clone(),
+        udf_checksum,
         start.elapsed(),
         compilation_info,
         test_info,
@@ -1071,6 +1099,7 @@ async fn call_compiler(
     program_version: Version,
     config: &CompilerConfig,
     source_checksum: &str,
+    udf_checksum: &str,
     profile: &CompilationProfile,
     runtime_selector: &RuntimeSelector,
 ) -> Result<(RustCompilationInfo, Option<RustCompilationInfo>, String), RustCompilationError> {
@@ -1223,16 +1252,47 @@ async fn call_compiler(
 
     // Compilation is successful if the return exit code is present and zero
     if exit_status.success() {
-        // Run cargo test to test UDFs
-        let test_info = run_cargo_test(
-            &workspace_dir,
-            &pipeline_main_crate_dir,
-            &env_path,
-            &optional_env_rustflags,
-            runtime_selector,
-            profile,
-        )
-        .await?;
+        // Retrieve previous UDF checksum to determine if tests need to be re-run
+        let previous_udf_checksum = if let Some(db) = db.clone() {
+            match db
+                .lock()
+                .await
+                .get_pipeline_by_id(tenant_id, pipeline_id)
+                .await
+            {
+                Ok(pipeline) => pipeline.program_binary_udf_checksum,
+                Err(e) => {
+                    info!("Unable to retrieve previous UDF checksum, will run tests anyway: {e}");
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
+        // Run cargo test to test UDFs only if UDF checksum has changed
+        let test_info = if previous_udf_checksum.as_deref() == Some(udf_checksum) {
+            info!(
+                "UDF checksum unchanged ({udf_checksum}), skipping cargo test for pipeline {pipeline_id}"
+            );
+            None
+        } else {
+            info!(
+                "UDF checksum changed (was {:?}, now {udf_checksum}), running cargo test for pipeline {pipeline_id}",
+                previous_udf_checksum
+            );
+            Some(
+                run_cargo_test(
+                    &workspace_dir,
+                    &pipeline_main_crate_dir,
+                    &env_path,
+                    &optional_env_rustflags,
+                    runtime_selector,
+                    profile,
+                )
+                .await?,
+            )
+        };
         // Source file
         let source_file_path = workspace_dir
             .join("target")
@@ -1258,7 +1318,7 @@ async fn call_compiler(
         copy_file(&source_file_path, &target_file_path).await?;
 
         // Success
-        Ok((compilation_info, Some(test_info), integrity_checksum))
+        Ok((compilation_info, test_info, integrity_checksum))
     } else {
         Err(RustCompilationError::RustError(compilation_info))
     }

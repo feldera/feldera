@@ -96,7 +96,7 @@ const RETRIEVE_PIPELINE_COLUMNS: &str =
     "p.id, p.tenant_id, p.name, p.description, p.created_at, p.version, p.platform_version, p.runtime_config,
      p.program_code, p.udf_rust, p.udf_toml, p.program_config, p.program_version, p.program_status,
      p.program_status_since, p.program_error, p.program_info,
-     p.program_binary_source_checksum, p.program_binary_integrity_checksum,
+     p.program_binary_source_checksum, p.program_binary_integrity_checksum, p.program_binary_udf_checksum,
      p.deployment_error, p.deployment_config, p.deployment_location, p.refresh_version,
      p.suspend_info, p.storage_status, p.deployment_id, p.deployment_initial,
      p.deployment_resources_status, p.deployment_resources_status_since,
@@ -116,7 +116,7 @@ const RETRIEVE_PIPELINE_COLUMNS: &str =
 ///   Backwards incompatible changes therein will prevent retrieval of pipelines
 ///   because an error will be returned instead.
 fn row_to_extended_pipeline_descriptor(row: &Row) -> Result<ExtendedPipelineDescr, DBError> {
-    assert_eq!(row.len(), 37);
+    assert_eq!(row.len(), 38);
 
     // Runtime configuration: RuntimeConfig
     let runtime_config = deserialize_json_value(row.get(7))?;
@@ -139,13 +139,13 @@ fn row_to_extended_pipeline_descriptor(row: &Row) -> Result<ExtendedPipelineDesc
     }
 
     // Deployment error: ErrorResponse
-    let deployment_error = match row.get::<_, Option<String>>(19) {
+    let deployment_error = match row.get::<_, Option<String>>(20) {
         None => None,
         Some(s) => Some(deserialize_error_response(&s)?),
     };
 
     // Deployment configuration: PipelineConfig
-    let deployment_config = match row.get::<_, Option<String>>(20) {
+    let deployment_config = match row.get::<_, Option<String>>(21) {
         None => None,
         Some(s) => Some(deserialize_json_value(&s)?),
     };
@@ -154,37 +154,37 @@ fn row_to_extended_pipeline_descriptor(row: &Row) -> Result<ExtendedPipelineDesc
     }
 
     // Suspend information
-    let suspend_info = match row.get::<_, Option<String>>(23) {
+    let suspend_info = match row.get::<_, Option<String>>(24) {
         None => None,
         Some(s) => Some(deserialize_json_value(&s)?),
     };
 
     // Deployment initial runtime status
-    let deployment_initial = match row.get::<_, Option<String>>(26) {
+    let deployment_initial = match row.get::<_, Option<String>>(27) {
         None => None,
         Some(s) => Some(parse_string_as_runtime_desired_status(s)?),
     };
 
     // Deployment runtime status
-    let deployment_runtime_status = match row.get::<_, Option<String>>(31) {
+    let deployment_runtime_status = match row.get::<_, Option<String>>(32) {
         None => None,
         Some(s) => Some(parse_string_as_runtime_status(s)?),
     };
 
-    let deployment_runtime_status_details = match row.get::<_, Option<String>>(32) {
+    let deployment_runtime_status_details = match row.get::<_, Option<String>>(33) {
         None => None,
         Some(s) => Some(deserialize_json_value(&s)?),
     };
 
-    let deployment_runtime_status_since = row.get::<_, Option<DateTime<Utc>>>(33);
+    let deployment_runtime_status_since = row.get::<_, Option<DateTime<Utc>>>(34);
 
     // Deployment runtime desired status
-    let deployment_runtime_desired_status = match row.get::<_, Option<String>>(34) {
+    let deployment_runtime_desired_status = match row.get::<_, Option<String>>(35) {
         None => None,
         Some(s) => Some(parse_string_as_runtime_desired_status(s)?),
     };
 
-    let bootstrap_policy = match row.get::<_, Option<String>>(36) {
+    let bootstrap_policy = match row.get::<_, Option<String>>(37) {
         None => None,
         Some(s) => Some(parse_string_as_bootstrap_policy(s)?),
     };
@@ -209,23 +209,24 @@ fn row_to_extended_pipeline_descriptor(row: &Row) -> Result<ExtendedPipelineDesc
         program_info,
         program_binary_source_checksum: row.get(17),
         program_binary_integrity_checksum: row.get(18),
+        program_binary_udf_checksum: row.get(19),
         deployment_error,
         deployment_config,
-        deployment_location: row.get(21),
-        refresh_version: Version(row.get(22)),
+        deployment_location: row.get(22),
+        refresh_version: Version(row.get(23)),
         suspend_info,
-        storage_status: row.get::<_, String>(24).try_into()?,
-        deployment_id: row.get(25),
+        storage_status: row.get::<_, String>(25).try_into()?,
+        deployment_id: row.get(26),
         deployment_initial,
-        deployment_resources_status: row.get::<_, String>(27).try_into()?,
-        deployment_resources_status_since: row.get(28),
-        deployment_resources_desired_status: row.get::<_, String>(29).try_into()?,
-        deployment_resources_desired_status_since: row.get(30),
+        deployment_resources_status: row.get::<_, String>(28).try_into()?,
+        deployment_resources_status_since: row.get(29),
+        deployment_resources_desired_status: row.get::<_, String>(30).try_into()?,
+        deployment_resources_desired_status_since: row.get(31),
         deployment_runtime_status,
         deployment_runtime_status_details,
         deployment_runtime_status_since,
         deployment_runtime_desired_status,
-        deployment_runtime_desired_status_since: row.get(35),
+        deployment_runtime_desired_status_since: row.get(36),
         bootstrap_policy,
     })
 }
@@ -885,6 +886,7 @@ pub(crate) async fn set_program_status(
     new_program_info: &Option<serde_json::Value>,
     new_program_binary_source_checksum: &Option<String>,
     new_program_binary_integrity_checksum: &Option<String>,
+    new_program_binary_udf_checksum: &Option<String>,
 ) -> Result<(), DBError> {
     let current = get_pipeline_by_id(txn, tenant_id, pipeline_id).await?;
 
@@ -916,6 +918,7 @@ pub(crate) async fn set_program_status(
         final_program_info,
         final_program_binary_source_checksum,
         final_program_binary_integrity_checksum,
+        final_program_binary_udf_checksum,
         increment_refresh_version,
     ) = match &new_program_status {
         ProgramStatus::Pending => {
@@ -927,8 +930,9 @@ pub(crate) async fn set_program_status(
                     && new_program_info.is_none()
                     && new_program_binary_source_checksum.is_none()
                     && new_program_binary_integrity_checksum.is_none()
+                    && new_program_binary_udf_checksum.is_none()
             );
-            (None, None, None, None, None, None, None, true)
+            (None, None, None, None, None, None, None, None, true)
         }
         ProgramStatus::CompilingSql => {
             assert!(
@@ -939,8 +943,9 @@ pub(crate) async fn set_program_status(
                     && new_program_info.is_none()
                     && new_program_binary_source_checksum.is_none()
                     && new_program_binary_integrity_checksum.is_none()
+                    && new_program_binary_udf_checksum.is_none()
             );
-            (None, None, None, None, None, None, None, false)
+            (None, None, None, None, None, None, None, None, false)
         }
         ProgramStatus::SqlCompiled => {
             assert!(
@@ -951,6 +956,7 @@ pub(crate) async fn set_program_status(
                     && new_program_info.is_some()
                     && new_program_binary_source_checksum.is_none()
                     && new_program_binary_integrity_checksum.is_none()
+                    && new_program_binary_udf_checksum.is_none()
             );
             (
                 new_program_error_sql_compilation.clone(),
@@ -958,6 +964,7 @@ pub(crate) async fn set_program_status(
                 None,
                 None,
                 new_program_info.clone(),
+                None,
                 None,
                 None,
                 true,
@@ -972,6 +979,7 @@ pub(crate) async fn set_program_status(
                     && new_program_info.is_none()
                     && new_program_binary_source_checksum.is_none()
                     && new_program_binary_integrity_checksum.is_none()
+                    && new_program_binary_udf_checksum.is_none()
             );
             (
                 current.program_error.sql_compilation,
@@ -979,6 +987,7 @@ pub(crate) async fn set_program_status(
                 None,
                 None,
                 current.program_info,
+                None,
                 None,
                 None,
                 false,
@@ -992,6 +1001,7 @@ pub(crate) async fn set_program_status(
                     && new_program_info.is_none()
                     && new_program_binary_source_checksum.is_some()
                     && new_program_binary_integrity_checksum.is_some()
+                    && new_program_binary_udf_checksum.is_some()
             );
             (
                 current.program_error.sql_compilation,
@@ -1001,6 +1011,7 @@ pub(crate) async fn set_program_status(
                 current.program_info,
                 new_program_binary_source_checksum.clone(),
                 new_program_binary_integrity_checksum.clone(),
+                new_program_binary_udf_checksum.clone(),
                 true,
             )
         }
@@ -1013,9 +1024,11 @@ pub(crate) async fn set_program_status(
                     && new_program_info.is_none()
                     && new_program_binary_source_checksum.is_none()
                     && new_program_binary_integrity_checksum.is_none()
+                    && new_program_binary_udf_checksum.is_none()
             );
             (
                 new_program_error_sql_compilation.clone(),
+                None,
                 None,
                 None,
                 None,
@@ -1034,6 +1047,7 @@ pub(crate) async fn set_program_status(
                     && new_program_info.is_none()
                     && new_program_binary_source_checksum.is_none()
                     && new_program_binary_integrity_checksum.is_none()
+                    && new_program_binary_udf_checksum.is_none()
             );
             (
                 current.program_error.sql_compilation,
@@ -1041,6 +1055,7 @@ pub(crate) async fn set_program_status(
                 None,
                 None,
                 current.program_info,
+                None,
                 None,
                 None,
                 true,
@@ -1055,6 +1070,7 @@ pub(crate) async fn set_program_status(
                     && new_program_info.is_none()
                     && new_program_binary_source_checksum.is_none()
                     && new_program_binary_integrity_checksum.is_none()
+                    && new_program_binary_udf_checksum.is_none()
             );
             (
                 current.program_error.sql_compilation,
@@ -1062,6 +1078,7 @@ pub(crate) async fn set_program_status(
                 current.program_error.rust_test,
                 new_program_error_system_error.clone(),
                 current.program_info,
+                None,
                 None,
                 None,
                 true,
@@ -1103,8 +1120,9 @@ pub(crate) async fn set_program_status(
                  program_info = $3,
                  program_binary_source_checksum = $4,
                  program_binary_integrity_checksum = $5,
-                 refresh_version = $6
-             WHERE tenant_id = $7 AND id = $8",
+                 program_binary_udf_checksum = $6,
+                 refresh_version = $7
+             WHERE tenant_id = $8 AND id = $9",
         )
         .await?;
     let rows_affected = txn
@@ -1116,9 +1134,10 @@ pub(crate) async fn set_program_status(
                 &final_program_info.as_ref().map(|v| v.to_string()), // $3: program_info
                 &final_program_binary_source_checksum, // $4: program_binary_source_checksum
                 &final_program_binary_integrity_checksum, // $5: program_binary_integrity_checksum
-                &final_refresh_version.0,              // $6: refresh_version
-                &tenant_id.0,                          // $7: tenant_id
-                &pipeline_id.0,                        // $8: id
+                &final_program_binary_udf_checksum, // $6: program_binary_udf_checksum
+                &final_refresh_version.0,              // $7: refresh_version
+                &tenant_id.0,                          // $8: tenant_id
+                &pipeline_id.0,                        // $9: id
             ],
         )
         .await?;
