@@ -8289,12 +8289,17 @@
           },
           "ssl_ca_location": {
             "type": "string",
-            "description": "Path to the CA certificate.",
+            "description": "Path to a file containing a sequence of CA certificates in PEM format.",
             "nullable": true
           },
           "ssl_ca_pem": {
             "type": "string",
-            "description": "The CA certificate in PEM format.",
+            "description": "A sequence of CA certificates in PEM format.",
+            "nullable": true
+          },
+          "ssl_certificate_chain_location": {
+            "type": "string",
+            "description": "The path to the certificate chain file.\nThe file must contain a sequence of PEM-formatted certificates,\nthe first being the leaf certificate, and the remainder forming\nthe chain of certificates up to and including the trusted root certificate.",
             "nullable": true
           },
           "ssl_client_key": {

@@ -152,6 +152,13 @@ fn set_certs(builder: &mut SslConnectorBuilder, config: &PostgresWriterConfig) -
         (None, None) => return Ok(()),
     }
 
+    // Set the SSL chain certificate.
+    if let Some(chain) = &config.ssl_certificate_chain_location {
+        builder
+            .set_certificate_chain_file(chain)
+            .context("failed to set certificate chain")?;
+    }
+
     Ok(())
 }
 
@@ -750,6 +757,7 @@ mod tests {
             ssl_ca_location: None,
             ssl_client_key_location: None,
             ssl_client_location: None,
+            ssl_certificate_chain_location: None,
         }
     }
 
