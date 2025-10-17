@@ -2176,7 +2176,7 @@ public class CalciteToDBSPCompiler extends RelVisitor
                         " not yet implemented", node);
         }
         DBSPAggregateList aggregate = new DBSPAggregateList(node, row, Linq.list(agg));
-        DBSPSimpleOperator aggregateOperator = new DBSPAggregateOperator(
+        DBSPSimpleOperator aggregateOperator = new DBSPStreamAggregateOperator(
                 node, new DBSPTypeIndexedZSet(node, DBSPTypeTuple.EMPTY, type), null, aggregate, index.outputPort());
         this.addOperator(aggregateOperator);
 
