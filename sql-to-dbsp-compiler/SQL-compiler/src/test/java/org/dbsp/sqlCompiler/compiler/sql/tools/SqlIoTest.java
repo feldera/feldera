@@ -311,6 +311,8 @@ public abstract class SqlIoTest extends BaseSQLTests {
      * @param panicMessage  The fragment of string that should appear in the panic message.
      */
     public void qf(String query, String panicMessage) {
+        if (panicMessage.contains("\n"))
+            throw new RuntimeException("Panic message cannot contain newlines: " + panicMessage);
         this.qf(query, panicMessage, true);
         this.qf(query, panicMessage, false);
     }
