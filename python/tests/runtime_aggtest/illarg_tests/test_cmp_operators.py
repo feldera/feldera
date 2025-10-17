@@ -205,7 +205,7 @@ class illarg_less_than_illegal(TstView):
         self.expected_error = "Cannot apply '<' to arguments of type"
 
 
-# Greater or Equal
+# Less or Equal
 class illarg_less_or_equal_legal(TstView):
     def __init__(self):
         # checked manually
@@ -253,6 +253,56 @@ class illarg_less_or_equal_illegal(TstView):
                       FROM illegal_tbl
                       WHERE id = 1"""
         self.expected_error = "Cannot apply '<=' to arguments of type"
+
+
+# Greater or Equal
+class illarg_greater_or_equal_legal(TstView):
+    def __init__(self):
+        # checked manually
+        self.data = [
+            {
+                "intt": True,
+                "decimall": True,
+                "reall": True,
+                "dbl": True,
+                "booll": False,
+                "str": False,
+                "bin": True,
+                "tmestmp": False,
+                "datee": True,
+                "tme": False,
+                "uuidd": True,
+                "arr": False,
+                "mapp": True,
+            }
+        ]
+        self.sql = """CREATE MATERIALIZED VIEW greater_or_equal_legal AS SELECT
+                      intt >= -12 AS intt,
+                      decimall >= -1111.52 AS decimall,
+                      reall >= -57681.18 AS reall,
+                      dbl >= -38.2711234601246 AS dbl,
+                      booll >= True AS booll,
+                      str >= 'hello ' AS str,
+                      bin >= X'0B1620' AS bin,
+                      tmestmp >= TIMESTAMP '2020-06-21 14:23:44.123' AS tmestmp,
+                      datee >= DATE '2020-06-21' AS datee,
+                      tme >= TIME '14:23:44.456' AS tme,
+                      uuidd >= UUID '42b8fec7-c7a3-4531-9611-4bde80f9cb4c' AS uuidd,
+                      arr >= ARRAY['bye', '14', 'See you!', '-0.52', NULL, '14', 'hello '] AS arr,
+                      mapp >= MAP['a', 12, 'b', 17] AS mapp
+                      FROM illegal_tbl
+                      WHERE id = 1"""
+
+
+# Negative Test
+class illarg_greater_or_equal_illegal(TstView):
+    def __init__(self):
+        # checked manually
+        self.sql = """CREATE MATERIALIZED VIEW greater_or_equal_illegal AS SELECT
+                      arr >= MAP['a', 12, 'b', 17] AS arr
+                      FROM illegal_tbl
+                      WHERE id = 1"""
+        self.expected_error = "Cannot apply '>=' to arguments of type"
 
 
 # IS NULL (passes for all types)
@@ -566,7 +616,7 @@ class illarg_notbetween_and_legal(TstView):
                       datee NOT BETWEEN DATE '2020-06-20' AND DATE '2020-06-22' AS datee,
                       tme NOT BETWEEN TIME '14:23:43.456' AND TIME '14:23:45.456' AS tme,
                       uuidd NOT BETWEEN UUID '42b8fec7-c7a3-4531-9611-4bde80f9cb4c' AND UUID '42b8fec7-c7a3-4531-9611-4bde80f9cb4c' AS uuidd,
-                      ARRAY['bye', '14'] NOT BETWEEN ARRAY['bye', '14'] AND ARRAY['bye', '14'] AS arr,
+                      arr NOT BETWEEN ARRAY['bye', '14', 'See you!', '-0.52', NULL, '14', 'hello '] AND ARRAY['bye', '14', 'See you!', '-0.52', NULL, '14', 'hello '] AS arr,
                       mapp NOT BETWEEN MAP['a', 12, 'b', 17] AND MAP['a', 12, 'b', 17] AS mapp
                       FROM illegal_tbl
                       WHERE id = 0"""
@@ -991,6 +1041,8 @@ class illarg_coalesce_legal(TstView):
                 "datee": "2020-06-21",
                 "tme": "14:23:44.456",
                 "uuidd": "42b8fec7-c7a3-4531-9611-4bde80f9cb4c",
+                "arr": ["bye", "14", "See you!", "-0.52", None, "14", "hello "],
+                "mapp": {"a": 12, "b": 17},
             }
         ]
         self.sql = """CREATE MATERIALIZED VIEW coalesce_legal AS SELECT
@@ -1004,7 +1056,9 @@ class illarg_coalesce_legal(TstView):
                       COALESCE(NULL, tmestmp, TIMESTAMP '2020-06-21 14:23:44') AS tmestmp,
                       COALESCE(NULL, datee, DATE '2020-06-21') AS datee,
                       COALESCE(NULL, tme, TIME '14:23:44') AS tme,
-                      COALESCE(NULL, uuidd, UUID '42b8fec7-c7a3-4531-9611-4bde80f9cb4c') AS uuidd
+                      COALESCE(NULL, uuidd, UUID '42b8fec7-c7a3-4531-9611-4bde80f9cb4c') AS uuidd,
+                      COALESCE(NULL, arr, ARRAY['hello ']) AS arr,
+                      COALESCE(NULL, mapp, MAP['b', 12]) AS mapp
                       FROM illegal_tbl
                       WHERE id = 0"""
 
@@ -1115,8 +1169,8 @@ class illarg_greatest_ignore_nulls_legal(TstView):
                         GREATEST_IGNORE_NULLS(NULL, datee, DATE '2020-06-21') AS datee,
                         GREATEST_IGNORE_NULLS(NULL, tme, TIME '14:23:44') AS tme,
                         GREATEST_IGNORE_NULLS(NULL, uuidd, UUID '42b8fec7-c7a3-4531-9611-4bde80f9cb4c') AS uuidd,
-                        GREATEST_IGNORE_NULLS(arr, ARRAY['ciao']) AS arr,
-                        GREATEST_IGNORE_NULLS(mapp, MAP['a', 13, 'b', 17]) AS mapp
+                        GREATEST_IGNORE_NULLS(NULL, arr, ARRAY['ciao']) AS arr,
+                        GREATEST_IGNORE_NULLS(NULL, mapp, MAP['a', 13, 'b', 17]) AS mapp
                       FROM illegal_tbl
                       WHERE id = 0"""
 

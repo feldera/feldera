@@ -206,6 +206,7 @@ class TstAccumulator:
         finally:
             if pipeline is not None:
                 pipeline.stop(force=True)
+                pipeline.delete(True)
 
     def assert_expected_error(self, view: View, actual_exception: Exception):
         """Validate the error produced by the failing pipeline with the expected error type"""
