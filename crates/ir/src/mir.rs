@@ -45,3 +45,17 @@ pub struct MirNode {
     #[serde(flatten)]
     pub extra: HashMap<String, Value>,
 }
+
+impl MirNode {
+    pub fn is_view(&self) -> bool {
+        self.view.is_some()
+    }
+
+    pub fn is_table(&self) -> bool {
+        self.table.is_some()
+    }
+
+    pub fn is_relation(&self) -> bool {
+        self.is_view() || self.is_table()
+    }
+}
