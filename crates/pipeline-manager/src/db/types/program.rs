@@ -751,12 +751,29 @@ pub fn generate_pipeline_config(
     runtime_config: &RuntimeConfig,
     program_info: &ProgramInfo,
 ) -> PipelineConfig {
+    // Only keep tables and views, ignoring intermediate nodes.
+    // These are currently the only nodes used by the pipeline
+    // (to compute pipeline diffs). Including all nodes can cause the IR
+    // to exceed the maximum ConfigMap size supported by k8s (3145728).
+    let mir = program_info
+        .dataflow
+        .as_ref()
+        .map(|d| {
+            d.mir
+                .iter()
+                .filter_map(|(k, v)| {
+                    if v.is_relation() {
+                        Some((k.clone(), v.clone()))
+                    } else {
+                        None
+                    }
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
     let program_ir = ProgramIr {
-        mir: program_info
-            .dataflow
-            .as_ref()
-            .map(|d| d.mir.clone())
-            .unwrap_or_default(),
+        mir,
         program_schema: program_info.schema.clone(),
     };
 
