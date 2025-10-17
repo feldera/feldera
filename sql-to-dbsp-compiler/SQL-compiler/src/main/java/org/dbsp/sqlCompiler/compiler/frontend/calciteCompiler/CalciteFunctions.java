@@ -122,8 +122,8 @@ public class CalciteFunctions implements FunctionDocumentation.FunctionRegistry 
             new Func(SqlStdOperatorTable.MAP_QUERY, "MAP", SqlLibrary.STANDARD, "aggregates#map", true),
             // Constructors
             new Func(SqlStdOperatorTable.ROW, "ROW", SqlLibrary.STANDARD, "types#row_constructor", false),
-            new Func(SqlStdOperatorTable.ARRAY_VALUE_CONSTRUCTOR, "ARRAY", SqlLibrary.STANDARD, "array", false),
-            new Func(SqlStdOperatorTable.MAP_VALUE_CONSTRUCTOR, "MAP", SqlLibrary.STANDARD, "map", false),
+            new Func(SqlStdOperatorTable.ARRAY_VALUE_CONSTRUCTOR, "ARRAY", SqlLibrary.STANDARD, "array#constructor", false),
+            new Func(SqlStdOperatorTable.MAP_VALUE_CONSTRUCTOR, "MAP", SqlLibrary.STANDARD, "map#map-literals", false),
 
             new Func(SqlStdOperatorTable.IGNORE_NULLS, "IGNORE NULLS", SqlLibrary.STANDARD, "grammar#window-aggregates", false),
             new Func(SqlStdOperatorTable.RESPECT_NULLS, "RESPECT NULLS", SqlLibrary.STANDARD, "grammar#window-aggregates", false),
