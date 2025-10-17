@@ -2257,4 +2257,10 @@ public class RegressionTests extends SqlIoTest {
                 -----
                  3""");
     }
+
+    @Test
+    public void issue4937() {
+        this.qf("SELECT PARSE_TIMESTAMP('%Y-%m-%d', '2020-01-01')",
+                "Invalid format in PARSE_TIMESTAMP: '%Y-%m-%d'");
+    }
 }
