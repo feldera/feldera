@@ -496,7 +496,16 @@ impl StorageBackend for PosixBackend {
                 .map_err(|e| StorageError::stdio(e.kind(), "readdir entry", path.display()))
                 .and_then(|entry| parse_entry(&entry))
             {
-                Err(e) => result = Err(e),
+                Err(e) => {
+                    if e.kind() != ErrorKind::NotFound {
+                        result = Err(e)
+                    } else {
+                        // Ignore NotFound error.  The file was probably
+                        // `status.json.mut`, renamed by the adapters server to
+                        // `status.json` between the call to readdir and the
+                        // call to stat.  Don't succumb to a race for it.
+                    }
+                }
                 Ok((name, file_type)) => cb(
                     &parent.child(StoragePathPart::from(name.as_encoded_bytes())),
                     file_type,
@@ -529,7 +538,7 @@ impl StorageBackend for PosixBackend {
                     error.kind(),
                     "recursive delete",
                     path.display(),
-                ))?
+                ))?;
             }
             Ok(()) => (),
         }
