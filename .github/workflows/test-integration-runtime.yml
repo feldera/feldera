@@ -41,13 +41,13 @@ jobs:
           PYTHONPATH: ${{ github.workspace }}/python
           FELDERA_TLS_INSECURE: true
 
-#      - name: Python runtime_aggtest test
-#        if: ${{ vars.CI_DRY_RUN != 'true' }}
-#        run: uv run --locked ./tests/runtime_aggtest/run.sh
-#        working-directory: python
-#        env:
-#          PYTHONPATH: ${{ github.workspace }}/python
-#          FELDERA_TLS_INSECURE: true
+      - name: Python runtime_aggtest test
+        if: ${{ vars.CI_DRY_RUN != 'true' }}
+        run: uv run --locked ./tests/runtime_aggtest/run.sh
+        working-directory: python
+        env:
+          PYTHONPATH: ${{ github.workspace }}/python
+          FELDERA_TLS_INSECURE: true
 
       - name: Python workload tests
         if: ${{ vars.CI_DRY_RUN != 'true' }}
