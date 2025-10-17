@@ -7,12 +7,17 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
+import org.dbsp.sqlCompiler.compiler.sql.tools.Change;
 import org.dbsp.sqlCompiler.compiler.sql.tools.CompilerCircuit;
 import org.dbsp.sqlCompiler.compiler.sql.tools.CompilerCircuitStream;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPArrayExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.util.Utilities;
 import org.junit.Assert;
@@ -1528,5 +1533,24 @@ public class IncrementalRegressionTests extends SqlIoTest {
                 LEFT ASOF JOIN "reference_table_b" AS "t3"
                 MATCH_CONDITION ( v1.event_timestamp >= t3.event_timestamp )
                 ON "v1"."join_key_1" = "t3"."join_key_1" ;""");
+    }
+
+    @Test
+    public void issue4924() {
+        var ccs = this.getCCS("""
+                CREATE TABLE tbl(x INT, y INT);
+                CREATE MATERIALIZED VIEW v AS SELECT
+                ARRAY(SELECT x, y FROM tbl) AS arr;""");
+        ccs.addPair(new Change("tbl",
+                new DBSPZSetExpression(
+                        new DBSPTupleExpression(
+                                new DBSPI32Literal(2, true),
+                                new DBSPI32Literal(3, true)))),
+                new Change("v", new DBSPZSetExpression(
+                        new DBSPTupleExpression(
+                                new DBSPArrayExpression(
+                                        new DBSPTupleExpression(
+                                                new DBSPI32Literal(2, true),
+                                                new DBSPI32Literal(3, true)))))));
     }
 }
