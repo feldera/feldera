@@ -387,6 +387,7 @@ public class IncrementalRecursiveTests extends BaseSQLTests {
 
     @Test
     public void issue4926() {
+        this.showFinal();
         var ccs = this.getCCS("""
                 declare recursive view state(
                     id varchar not null,
