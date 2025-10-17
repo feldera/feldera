@@ -15,3 +15,4 @@ runtest complex_type_tests/main.py
 runtest orderby_tests/main.py
 runtest variant_tests/main.py
 runtest illarg_tests/main.py
+runtest negative_tests/main.py
