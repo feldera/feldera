@@ -1,5 +1,9 @@
 # Iceberg Sink Kafka Connector
 
+:::caution Experimental feature
+Iceberg support is an experimental feature of Feldera.
+:::
+
 Direct Iceberg output is not currently supported in Feldera.
 However, you can write to Iceberg indirectly via the Iceberg Sink Kafka Connect Connector.
 
@@ -60,7 +64,7 @@ create index idx1 on pizzas(order_number);
 
 :::important
 The index attribute is required and ensures proper materialization of the Iceberg table.
-For more information, see documentation](/connectors/unique_keys#views-with-unique-keys).
+For more information, see [uniqueness constraints](/connectors/unique_keys#views-with-unique-keys).
 :::
 
 #### Iceberg sink connector configuration for Kafka Connect

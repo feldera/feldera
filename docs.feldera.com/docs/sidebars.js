@@ -352,6 +352,11 @@ const connectors = {
                     type: 'doc',
                     id: 'connectors/sinks/file',
                     label: 'File'
+                },
+                {
+                    type: 'doc',
+                    id: 'connectors/sinks/iceberg',
+                    label: 'Iceberg (experimental)'
                 }
             ]
         }

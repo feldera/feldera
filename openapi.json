@@ -8287,14 +8287,34 @@
             "type": "boolean",
             "description": "Specifies how the connector handles conflicts when executing an `INSERT`\ninto a table with a primary key. By default, an existing row with the same\nkey is overwritten. Setting this flag to `true` preserves the existing row\nand ignores the new insert.\n\nThis setting does not affect `UPDATE` statements, which always replace the\nvalue associated with the key.\n\nDefault: `false`"
           },
+          "ssl_ca_location": {
+            "type": "string",
+            "description": "Path to a file containing a sequence of CA certificates in PEM format.",
+            "nullable": true
+          },
           "ssl_ca_pem": {
             "type": "string",
-            "description": "The CA certificate in PEM format.",
+            "description": "A sequence of CA certificates in PEM format.",
+            "nullable": true
+          },
+          "ssl_certificate_chain_location": {
+            "type": "string",
+            "description": "The path to the certificate chain file.\nThe file must contain a sequence of PEM-formatted certificates,\nthe first being the leaf certificate, and the remainder forming\nthe chain of certificates up to and including the trusted root certificate.",
             "nullable": true
           },
           "ssl_client_key": {
             "type": "string",
             "description": "The client certificate key in PEM format.",
+            "nullable": true
+          },
+          "ssl_client_key_location": {
+            "type": "string",
+            "description": "Path to the client certificate key.",
+            "nullable": true
+          },
+          "ssl_client_location": {
+            "type": "string",
+            "description": "Path to the client certificate.",
             "nullable": true
           },
           "ssl_client_pem": {
