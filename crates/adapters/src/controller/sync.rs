@@ -230,6 +230,7 @@ where
     if let Err(marker_err) = storage
         .backend
         .write_json(&activation_file, &cpm)
+        .and_then(|reader| reader.commit())
         .context("failed to write activation marker file")
     {
         tracing::error!("{marker_err:?}");

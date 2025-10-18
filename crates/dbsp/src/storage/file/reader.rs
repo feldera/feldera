@@ -1271,7 +1271,6 @@ impl Column {
 
 /// Encapsulates storage and a file handle.
 struct ImmutableFileRef {
-    path: StoragePath,
     cache: fn() -> Arc<BufferCache>,
     file_handle: Arc<dyn FileReader>,
     compression: Option<Compression>,
@@ -1280,9 +1279,7 @@ struct ImmutableFileRef {
 
 impl Debug for ImmutableFileRef {
     fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
-        f.debug_struct("ImmutableFileRef")
-            .field("path", &self.path)
-            .finish()
+        write!(f, "ImmutableFileRef({:?})", &self.file_handle)
     }
 }
 impl Drop for ImmutableFileRef {
@@ -1297,13 +1294,11 @@ impl ImmutableFileRef {
     fn new(
         cache: fn() -> Arc<BufferCache>,
         file_handle: Arc<dyn FileReader>,
-        path: StoragePath,
         compression: Option<Compression>,
         stats: AtomicCacheStats,
     ) -> Self {
         Self {
             cache,
-            path,
             file_handle,
             compression,
             stats,
@@ -1436,12 +1431,11 @@ where
     /// Creates and returns a new `Reader` for `file`.
     pub(crate) fn new(
         factories: &[&AnyFactories],
-        path: StoragePath,
         cache: fn() -> Arc<BufferCache>,
-        file_handle: Arc<dyn FileReader>,
+        file: Arc<dyn FileReader>,
         bloom_filter: Option<BloomFilter>,
     ) -> Result<Self, Error> {
-        let file_size = file_handle.get_size()?;
+        let file_size = file.get_size()?;
         if file_size < 512 || (file_size % 512) != 0 {
             return Err(CorruptionError::InvalidFileSize(file_size).into());
         }
@@ -1449,7 +1443,7 @@ where
         let stats = AtomicCacheStats::default();
         let file_trailer = FileTrailer::new(
             cache,
-            &*file_handle,
+            &*file,
             BlockLocation::new(file_size - 512, 512).unwrap(),
             &stats,
         )?;
@@ -1460,7 +1454,7 @@ where
             }
             2 => {
                 // Version before [fastbloom] crate was upgraded to one with an incompatible format.
-                warn!("{path}: reading old format storage file, performance may be reduced due to incompatible Bloom filters");
+                warn!("{}: reading old format storage file, performance may be reduced due to incompatible Bloom filters", file.path());
                 Some(false)
             }
             VERSION_NUMBER => Some(true),
@@ -1473,7 +1467,8 @@ where
 
         if file_trailer.compatible_features != 0 {
             info!(
-                "{path}: storage file uses unsupported compatible features {:#x}",
+                "{}: storage file uses unsupported compatible features {:#x}",
+                file.path(),
                 file_trailer.compatible_features
             );
         }
@@ -1519,7 +1514,7 @@ where
             Some(bloom_filter) => Some(bloom_filter),
             None if has_compatible_bloom_filter && file_trailer.filter_offset != 0 => Some(
                 FilterBlock::new(
-                    &*file_handle,
+                    &*file,
                     BlockLocation::new(
                         file_trailer.filter_offset,
                         file_trailer.filter_size as usize,
@@ -1534,7 +1529,7 @@ where
         };
 
         Ok(Self {
-            file: ImmutableFileRef::new(cache, file_handle, path, file_trailer.compression, stats),
+            file: ImmutableFileRef::new(cache, file, file_trailer.compression, stats),
             columns,
             bloom_filter,
             _phantom: PhantomData,
@@ -1553,13 +1548,7 @@ where
         storage_backend: &dyn StorageBackend,
         path: &StoragePath,
     ) -> Result<Self, Error> {
-        Self::new(
-            factories,
-            path.clone(),
-            cache,
-            storage_backend.open(path)?,
-            None,
-        )
+        Self::new(factories, cache, storage_backend.open(path)?, None)
     }
 
     /// The number of columns in the layer file.
@@ -1580,8 +1569,8 @@ where
     }
 
     /// Returns the storage path for the underlying object.
-    pub fn path(&self) -> StoragePath {
-        self.file.path.clone()
+    pub fn path(&self) -> &StoragePath {
+        self.file.file_handle.path()
     }
 
     /// Returns the size of the underlying file in bytes.
@@ -1602,8 +1591,8 @@ where
     }
 
     /// Returns the `FileReader` embedded in this `Reader`.
-    pub fn file_handle(&self) -> &dyn FileReader {
-        &*self.file.file_handle
+    pub fn file_handle(&self) -> &Arc<dyn FileReader> {
+        &self.file.file_handle
     }
 }
 

@@ -37,7 +37,7 @@ use crate::{dynamic::ArchivedDBData, storage::buffer_cache::FBuf};
 use cursor::CursorFactory;
 use dyn_clone::DynClone;
 use enum_map::Enum;
-use feldera_storage::StoragePath;
+use feldera_storage::{FileCommitter, FileReader, StoragePath};
 use rand::Rng;
 use rkyv::ser::Serializer as _;
 use size_of::SizeOf;
@@ -309,12 +309,20 @@ pub trait Trace: BatchReader {
 
     fn key_filter(&self) -> &Option<Filter<Self::Key>>;
     fn value_filter(&self) -> &Option<Filter<Self::Val>>;
-    fn commit(&mut self, _base: &StoragePath, _pid: &str) -> Result<(), Error> {
-        Ok(())
-    }
-    fn restore(&mut self, _base: &StoragePath, _pid: &str) -> Result<(), Error> {
-        Ok(())
-    }
+
+    /// Writes this trace to storage beneath `base`, using `pid` as a file name
+    /// prefix.  Adds the files that were written to `files` so that they can be
+    /// committed later.
+    fn save(
+        &mut self,
+        base: &StoragePath,
+        pid: &str,
+        files: &mut Vec<Arc<dyn FileCommitter>>,
+    ) -> Result<(), Error>;
+
+    /// Reads this trace back from storage under `base` with `pid` as the
+    /// prefix.
+    fn restore(&mut self, base: &StoragePath, pid: &str) -> Result<(), Error>;
 
     /// Allows the trace to report additional metadata.
     fn metadata(&self, _meta: &mut OperatorMeta) {}
@@ -772,11 +780,11 @@ where
         None
     }
 
-    /// This functions returns a path to a file that can be used by the checkpoint
-    /// mechanism to find the batch again on re-start.
+    /// This functions returns the file that can be used to restore the batch's
+    /// contents.
     ///
     /// If the batch can not be persisted, this function returns None.
-    fn checkpoint_path(&self) -> Option<StoragePath> {
+    fn file_reader(&self) -> Option<Arc<dyn FileReader>> {
         None
     }
 

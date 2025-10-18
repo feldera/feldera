@@ -1276,6 +1276,23 @@ where
     fn value_filter(&self) -> &Option<Filter<Self::Val>> {
         &self.value_filter
     }
+
+    fn save(
+        &mut self,
+        _base: &feldera_storage::StoragePath,
+        _pid: &str,
+        _files: &mut Vec<std::sync::Arc<dyn feldera_storage::FileCommitter>>,
+    ) -> Result<(), crate::Error> {
+        todo!()
+    }
+
+    fn restore(
+        &mut self,
+        _base: &feldera_storage::StoragePath,
+        _pid: &str,
+    ) -> Result<(), crate::Error> {
+        todo!()
+    }
 }
 
 /// Test random sampling methods.
