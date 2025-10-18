@@ -72,7 +72,7 @@ public class PropagateEmptySources extends CircuitCloneVisitor {
             DBSPType outputType = operator.getType();
             DBSPExpression value = emptySet(outputType);
             DBSPConstantOperator result = new DBSPConstantOperator(
-                    operator.getRelNode(), value, false, operator.isMultiset);
+                    operator.getRelNode(), value, operator.isMultiset);
             this.emptySources.add(result);
             this.map(operator, result);
             return false;
@@ -176,7 +176,7 @@ public class PropagateEmptySources extends CircuitCloneVisitor {
         if (newSources.isEmpty()) {
             DBSPExpression value = emptySet(operator.getType());
             DBSPConstantOperator result = new DBSPConstantOperator(
-                    operator.getRelNode(), value, false, operator.isMultiset);
+                    operator.getRelNode(), value, operator.isMultiset);
             this.emptySources.add(result);
             this.map(operator, result);
             return;
@@ -195,7 +195,7 @@ public class PropagateEmptySources extends CircuitCloneVisitor {
             if (this.emptySources.contains(left.node())) {
                 DBSPExpression value = emptySet(operator.getType());
                 DBSPConstantOperator result = new DBSPConstantOperator(
-                        operator.getRelNode(), value, false, operator.isMultiset);
+                        operator.getRelNode(), value, operator.isMultiset);
                 this.emptySources.add(result);
                 this.map(operator, result);
             } else {
@@ -213,7 +213,7 @@ public class PropagateEmptySources extends CircuitCloneVisitor {
             if (this.emptySources.contains(source.node())) {
                 DBSPExpression value = emptySet(operator.getType());
                 DBSPConstantOperator result = new DBSPConstantOperator(
-                        operator.getRelNode(), value, false, operator.isMultiset);
+                        operator.getRelNode(), value, operator.isMultiset);
                 this.emptySources.add(result);
                 this.map(operator, result);
                 return;
@@ -229,7 +229,7 @@ public class PropagateEmptySources extends CircuitCloneVisitor {
             if (this.emptySources.contains(source.node())) {
                 DBSPExpression value = emptySet(operator.getType());
                 DBSPConstantOperator result = new DBSPConstantOperator(
-                        operator.getRelNode(), value, false, operator.isMultiset);
+                        operator.getRelNode(), value, operator.isMultiset);
                 this.emptySources.add(result);
                 this.map(operator, result);
                 return;
@@ -245,7 +245,7 @@ public class PropagateEmptySources extends CircuitCloneVisitor {
         if (this.emptySources.contains(left.node())) {
             DBSPExpression value = emptySet(operator.getType());
             DBSPConstantOperator result = new DBSPConstantOperator(
-                    operator.getRelNode(), value, false, operator.isMultiset);
+                    operator.getRelNode(), value, operator.isMultiset);
             this.emptySources.add(result);
             this.map(operator, result);
             return;
