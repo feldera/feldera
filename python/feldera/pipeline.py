@@ -7,6 +7,7 @@ import pandas
 from uuid import UUID
 
 from typing import List, Dict, Callable, Optional, Generator, Mapping, Any
+from threading import Event
 from collections import deque
 
 from feldera.rest.errors import FelderaAPIError
@@ -294,10 +295,12 @@ class Pipeline:
         if self.status() not in [PipelineStatus.RUNNING, PipelineStatus.PAUSED]:
             raise RuntimeError("Pipeline must be running or paused to listen to output")
 
+        event = Event()
         handler = CallbackRunner(
-            self.client, self.name, view_name, callback, lambda exception: None
+            self.client, self.name, view_name, callback, lambda exception: None, event
         )
         handler.start()
+        event.wait()
 
     def wait_for_completion(
         self, force_stop: bool = False, timeout_s: float | None = None
