@@ -2,6 +2,7 @@ import uuid
 
 import pandas as pd
 from decimal import Decimal
+from typing import Mapping, Any
 
 
 def sql_type_to_pandas_type(sql_type: str):
@@ -60,7 +61,9 @@ def ensure_dataframe_has_columns(df: pd.DataFrame):
         )
 
 
-def dataframe_from_response(buffer: list[list[dict]], fields: list[dict]):
+def dataframe_from_response(
+    buffer: list[list[Mapping[str, Any]]], fields: list[Mapping[str, Any]]
+):
     """
     Converts the response from Feldera to a pandas DataFrame.
     """
