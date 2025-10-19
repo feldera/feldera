@@ -83,7 +83,7 @@ fn write_ca_cert_to_file(cert: &str) -> AnyResult<PathBuf> {
 fn set_certs(builder: &mut SslConnectorBuilder, config: &PostgresWriterConfig) -> AnyResult<()> {
     let ca_cert_path = match (&config.ssl_ca_location, &config.ssl_ca_pem) {
         (Some(location), None) => PathBuf::from_str(location)
-            .context("failed to parse `ssl_ca_location` as PathBuf; is the path valid?")?,
+            .context("failed to parse `ssl_ca_location` as file path; is the path valid?")?,
         (Some(_), Some(pem)) => {
             tracing::warn!("postgres: both `ssl_ca_pem` and `ssl_ca_location` are provided; using `ssl_ca_pem`");
             write_ca_cert_to_file(pem)?
