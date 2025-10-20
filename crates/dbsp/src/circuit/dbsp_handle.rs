@@ -196,6 +196,14 @@ impl Layout {
             Self::Multihost { hosts, .. } => hosts.iter().map(|host| host.workers.len()).sum(),
         }
     }
+
+    pub fn is_multihost(&self) -> bool {
+        matches!(self, Self::Multihost { .. })
+    }
+
+    pub fn is_solo(&self) -> bool {
+        matches!(self, Self::Solo { .. })
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -509,7 +517,6 @@ impl Runtime {
     {
         let config: CircuitConfig = config.into();
         let nworkers = config.layout.local_workers().len();
-        let worker_ofs = config.layout.local_workers().start;
 
         // When a worker finishes building the circuit, it sends completion status back
         // to us via this channel.  The function returns after receiving a
@@ -526,7 +533,7 @@ impl Runtime {
             (0..nworkers).map(|_| bounded(1)).unzip();
 
         let runtime = Self::run(&config, move |parker| {
-            let worker_index = Runtime::worker_index() - worker_ofs;
+            let worker_index = Runtime::local_worker_offset();
             let worker_index_str: &'static str = worker_index.to_string().leak();
 
             // Drop all but one channels.  This makes sure that if one of the worker panics

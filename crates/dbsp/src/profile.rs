@@ -534,7 +534,8 @@ impl Profiler {
 
                 let runtime = Runtime::runtime().unwrap();
                 for thread_type in [ThreadType::Foreground, ThreadType::Background] {
-                    let cache = runtime.get_buffer_cache(Runtime::worker_index(), thread_type);
+                    let cache =
+                        runtime.get_buffer_cache(Runtime::local_worker_offset(), thread_type);
                     let (cur, max) = cache.occupancy();
                     meta.insert(
                         0,
