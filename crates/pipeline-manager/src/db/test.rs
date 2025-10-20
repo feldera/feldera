@@ -397,6 +397,14 @@ fn limited_program_binary_integrity_checksum() -> impl Strategy<Value = String> 
     })
 }
 
+/// Generates program binary UDF checksum limited to 4 values
+/// such that it is possible they sometimes collide.
+fn limited_program_binary_udf_checksum() -> impl Strategy<Value = String> {
+    any::<u8>().prop_map(|val| {
+        format!("udf_checksum_{}", val % 4) // 0, 1, 2, 3
+    })
+}
+
 /// Generates different pipeline descriptors.
 fn limited_pipeline_descr() -> impl Strategy<Value = PipelineDescr> {
     any::<(
@@ -1342,8 +1350,10 @@ async fn pipeline_program_compilation() {
                 stdout: "".to_string(),
                 stderr: "".to_string(),
             },
+            &None,
             "abc",
             "123",
+            "xyz",
         )
         .await
         .unwrap();
@@ -1475,8 +1485,10 @@ async fn pipeline_deployment() {
                 stdout: "".to_string(),
                 stderr: "".to_string(),
             },
+            &None,
             "def",
             "123",
+            "737",
         )
         .await
         .unwrap();
@@ -1766,8 +1778,10 @@ async fn pipeline_provision_version_guard() {
                 stdout: "".to_string(),
                 stderr: "".to_string(),
             },
+            &None,
             "def",
             "123",
+            "737",
         )
         .await
         .unwrap();
@@ -1971,6 +1985,7 @@ enum StorageAction {
         #[proptest(strategy = "limited_rust_compilation_info()")] RustCompilationInfo,
         #[proptest(strategy = "limited_program_binary_source_checksum()")] String,
         #[proptest(strategy = "limited_program_binary_integrity_checksum()")] String,
+        #[proptest(strategy = "limited_program_binary_udf_checksum()")] String,
     ),
     TransitProgramStatusToSqlError(
         TenantId,
@@ -2485,10 +2500,10 @@ fn db_impl_behaves_like_model() {
                                 let impl_response = handle.db.transit_program_status_to_compiling_rust(tenant_id, pipeline_id, program_version_guard).await;
                                 check_responses(i, model_response, impl_response);
                             }
-                            StorageAction::TransitProgramStatusToSuccess(tenant_id, pipeline_id, program_version_guard, rust_compilation, program_binary_source_checksum, program_binary_integrity_checksum) => {
+                            StorageAction::TransitProgramStatusToSuccess(tenant_id, pipeline_id, program_version_guard, rust_compilation, program_binary_source_checksum, program_binary_integrity_checksum, program_binary_udf_checksum) => {
                                 create_tenants_if_not_exists(&model, &handle, tenant_id).await.unwrap();
-                                let model_response = model.transit_program_status_to_success(tenant_id, pipeline_id, program_version_guard, &rust_compilation, &program_binary_source_checksum, &program_binary_integrity_checksum).await;
-                                let impl_response = handle.db.transit_program_status_to_success(tenant_id, pipeline_id, program_version_guard, &rust_compilation, &program_binary_source_checksum, &program_binary_integrity_checksum).await;
+                                let model_response = model.transit_program_status_to_success(tenant_id, pipeline_id, program_version_guard, &rust_compilation, &None, &program_binary_source_checksum, &program_binary_integrity_checksum, &program_binary_udf_checksum).await;
+                                let impl_response = handle.db.transit_program_status_to_success(tenant_id, pipeline_id, program_version_guard, &rust_compilation, &None, &program_binary_source_checksum, &program_binary_integrity_checksum, &program_binary_udf_checksum).await;
                                 check_responses(i, model_response, impl_response);
                             }
                             StorageAction::TransitProgramStatusToSqlError(tenant_id, pipeline_id, program_version_guard, sql_compilation) => {
@@ -2843,6 +2858,7 @@ impl ModelHelpers for Mutex<DbModel> {
             pipeline.program_error = ProgramError {
                 sql_compilation: None,
                 rust_compilation: None,
+                rust_test: None,
                 system_error: None,
             };
             pipeline.program_info = None;
@@ -3243,11 +3259,13 @@ impl Storage for Mutex<DbModel> {
             program_error: ProgramError {
                 sql_compilation: None,
                 rust_compilation: None,
+                rust_test: None,
                 system_error: None,
             },
             program_info: None,
             program_binary_source_checksum: None,
             program_binary_integrity_checksum: None,
+            program_binary_udf_checksum: None,
             deployment_error: None,
             deployment_config: None,
             deployment_location: None,
@@ -3407,6 +3425,7 @@ impl Storage for Mutex<DbModel> {
         pipeline.program_error = ProgramError {
             sql_compilation: None,
             rust_compilation: None,
+            rust_test: None,
             system_error: None,
         };
         pipeline.program_info = None;
@@ -3464,6 +3483,7 @@ impl Storage for Mutex<DbModel> {
         pipeline.program_error = ProgramError {
             sql_compilation: Some(sql_compilation.clone()),
             rust_compilation: None,
+            rust_test: None,
             system_error: None,
         };
         pipeline.program_info = Some(program_info.clone());
@@ -3502,8 +3522,10 @@ impl Storage for Mutex<DbModel> {
         pipeline_id: PipelineId,
         program_version_guard: Version,
         rust_compilation: &RustCompilationInfo,
+        rust_test: &Option<RustCompilationInfo>,
         program_binary_source_checksum: &str,
         program_binary_integrity_checksum: &str,
+        program_binary_udf_checksum: &str,
     ) -> Result<(), DBError> {
         // Validate
         let mut pipeline = self.get_pipeline_by_id(tenant_id, pipeline_id).await?;
@@ -3516,11 +3538,13 @@ impl Storage for Mutex<DbModel> {
         pipeline.program_error = ProgramError {
             sql_compilation: pipeline.program_error.sql_compilation,
             rust_compilation: Some(rust_compilation.clone()),
+            rust_test: rust_test.clone(),
             system_error: None,
         };
         pipeline.program_binary_source_checksum = Some(program_binary_source_checksum.to_string());
         pipeline.program_binary_integrity_checksum =
             Some(program_binary_integrity_checksum.to_string());
+        pipeline.program_binary_udf_checksum = Some(program_binary_udf_checksum.to_string());
         pipeline.refresh_version = Version(pipeline.refresh_version.0 + 1);
         self.lock()
             .await
@@ -3547,6 +3571,7 @@ impl Storage for Mutex<DbModel> {
         pipeline.program_error = ProgramError {
             sql_compilation: Some(sql_compilation.clone()),
             rust_compilation: None,
+            rust_test: None,
             system_error: None,
         };
         pipeline.refresh_version = Version(pipeline.refresh_version.0 + 1);
@@ -3575,6 +3600,7 @@ impl Storage for Mutex<DbModel> {
         pipeline.program_error = ProgramError {
             sql_compilation: pipeline.program_error.sql_compilation,
             rust_compilation: Some(rust_compilation.clone()),
+            rust_test: None,
             system_error: None,
         };
         pipeline.refresh_version = Version(pipeline.refresh_version.0 + 1);
@@ -3603,6 +3629,7 @@ impl Storage for Mutex<DbModel> {
         pipeline.program_error = ProgramError {
             sql_compilation: pipeline.program_error.sql_compilation,
             rust_compilation: pipeline.program_error.rust_compilation,
+            rust_test: None,
             system_error: Some(system_error.to_string()),
         };
         pipeline.refresh_version = Version(pipeline.refresh_version.0 + 1);
