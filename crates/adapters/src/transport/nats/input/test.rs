@@ -29,7 +29,7 @@ impl NatsTestRecord {
 deserialize_without_context!(NatsTestRecord);
 
 #[test]
-fn test_foo() -> AnyResult<()> {
+fn test_nats_basic_input_consumption() -> AnyResult<()> {
     let stream_name = "str";
     let subject_name = "sub";
 
