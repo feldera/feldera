@@ -119,7 +119,11 @@ pub fn compute_pipeline_diff(
             !new_config.inputs.contains_key(*k)
                 && !mir_diff
                     .as_ref()
-                    .map(|mir_diff| mir_diff.removed_tables.contains(&config.stream.to_string()))
+                    .map(|mir_diff| {
+                        mir_diff
+                            .removed_tables()
+                            .contains(&config.stream.to_string())
+                    })
                     .unwrap_or(true)
         })
         .map(|(k, _)| k.to_string())
@@ -152,7 +156,11 @@ pub fn compute_pipeline_diff(
             !new_config.outputs.contains_key(*k)
                 && !mir_diff
                     .as_ref()
-                    .map(|mir_diff| mir_diff.removed_views.contains(&config.stream.to_string()))
+                    .map(|mir_diff| {
+                        mir_diff
+                            .removed_views()
+                            .contains(&config.stream.to_string())
+                    })
                     .unwrap_or(true)
         })
         .map(|(k, _)| k.to_string())
@@ -172,14 +180,11 @@ pub fn compute_pipeline_diff(
         .map(|(k, _)| k.to_string())
         .collect::<Vec<_>>();
 
-    Ok(PipelineDiff {
-        program_diff: mir_diff.as_ref().ok().cloned(),
-        program_diff_error: mir_diff.err(),
-        added_input_connectors,
-        modified_input_connectors,
-        removed_input_connectors,
-        added_output_connectors,
-        modified_output_connectors,
-        removed_output_connectors,
-    })
+    Ok(PipelineDiff::new(mir_diff)
+        .with_added_input_connectors(added_input_connectors)
+        .with_modified_input_connectors(modified_input_connectors)
+        .with_removed_input_connectors(removed_input_connectors)
+        .with_added_output_connectors(added_output_connectors)
+        .with_modified_output_connectors(modified_output_connectors)
+        .with_removed_output_connectors(removed_output_connectors))
 }

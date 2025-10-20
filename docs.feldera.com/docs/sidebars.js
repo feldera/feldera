@@ -404,6 +404,7 @@ const pipelines = {
             id: "pipelines/configuration",
         },
         "pipelines/fault-tolerance",
+        "pipelines/modifying",
         "pipelines/checkpoint-sync",
         "pipelines/transactions",
         "pipelines/latency",
