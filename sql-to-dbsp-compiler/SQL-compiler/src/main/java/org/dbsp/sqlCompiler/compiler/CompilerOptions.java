@@ -195,6 +195,10 @@ public class CompilerOptions implements IDiff<CompilerOptions>, IValidate {
         @Parameter(names = "--jdbcSource",
                 description = "Connection string to a database that contains table metadata")
         public String metadataSource = "";
+        // This option is ignored; it is here just for backward compatibility, and it will be removed.
+        @Parameter(names = "--nowstream", hidden = true,
+                description = "Implement NOW as a stream (true) or as an internal operator (false)")
+        public boolean ignored = true;
         @Parameter(names = "--sqlnames", hidden = true,
                 description = "Use the table names as identifiers in the generated code")
         public boolean sqlNames = false;
