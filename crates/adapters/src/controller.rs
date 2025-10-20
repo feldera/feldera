@@ -1485,7 +1485,7 @@ fn non_materialized_replay_sources(
     for persistent_id in bootstrap_info.need_backfill.values().flatten() {
         if let Some(table_name) = tables.get(persistent_id) {
             if !diff
-                .program_diff
+                .program_diff()
                 .as_ref()
                 .map(|diff| diff.is_affected_relation(table_name))
                 .unwrap_or(false)
@@ -1596,7 +1596,6 @@ impl CircuitThread {
             for (endpoint_name, seek) in input_metadata.iter() {
                 let Some(endpoint_config) = pipeline_config.inputs.get(endpoint_name.as_str())
                 else {
-                    info!("Found checkpointed state for input connector '{endpoint_name}', but the connector is not present in the new pipeline configuration; this connector will not be added to the pipeline");
                     continue;
                 };
 
@@ -1608,6 +1607,13 @@ impl CircuitThread {
                 if let Some(replay_info) = circuit.bootstrap_info() {
                     if replay_info.need_backfill.contains_key(&node_id) {
                         info!("Found checkpointed state for input connector '{endpoint_name}', but the table that the connector is attached to has been modified and its state has been cleared; the connector will restart from scratch");
+                        continue;
+                    }
+                }
+
+                if let Some(pipeline_diff) = &pipeline_diff {
+                    if pipeline_diff.is_affected_connector(endpoint_name.as_str()) {
+                        info!("Found checkpointed state for input connector '{endpoint_name}', but connector configuration has changed; the connector will restart from scratch");
                         continue;
                     }
                 }
@@ -3131,7 +3137,7 @@ impl ControllerInit {
             let connector_name = connector_name.to_string();
             if !pipeline_diff.is_affected_connector(connector_name.as_str())
                 && pipeline_diff
-                    .program_diff
+                    .program_diff()
                     .as_ref()
                     .is_none_or(|diff| !diff.is_affected_relation(&connector_config.stream))
             {
