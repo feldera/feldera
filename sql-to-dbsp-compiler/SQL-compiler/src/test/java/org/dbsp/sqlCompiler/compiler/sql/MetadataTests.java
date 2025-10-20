@@ -969,9 +969,6 @@ public class MetadataTests extends BaseSQLTests {
                     --noRust
                       Do not generate Rust output files
                       Default: false
-                    --nowstream
-                      Implement NOW as a stream (true) or as an internal operator (false)
-                      Default: true
                     --outputsAreSets
                       Ensure that outputs never contain duplicates
                       Default: false
