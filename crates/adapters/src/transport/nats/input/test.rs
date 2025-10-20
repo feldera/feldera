@@ -1,5 +1,5 @@
 use crate::test::{
-    init_test_logger, mock_input_pipeline, test_circuit, wait, TestStruct as MainTestStruct,
+    init_test_logger, mock_input_pipeline, test_circuit, wait, TestStruct,
     DEFAULT_TIMEOUT_MS,
 };
 use crate::{Controller, PipelineConfig};
@@ -14,19 +14,19 @@ use std::{fs::create_dir, thread::sleep, time::Duration};
 use tempfile::TempDir;
 
 #[derive(Debug, PartialEq, Eq, Hash, Serialize, Deserialize, Clone)]
-pub struct TestStruct {
+pub struct NatsTestRecord {
     s: String,
     b: bool,
     i: i64,
 }
 
-impl TestStruct {
+impl NatsTestRecord {
     fn new(s: String, b: bool, i: i64) -> Self {
         Self { s, b, i }
     }
 }
 
-deserialize_without_context!(TestStruct);
+deserialize_without_context!(NatsTestRecord);
 
 #[test]
 fn test_foo() -> AnyResult<()> {
@@ -36,8 +36,8 @@ fn test_foo() -> AnyResult<()> {
     let (_nats_process_guard, nats_url) = util::start_nats_and_get_address()?;
 
     let test_data = [
-        TestStruct::new("foo".to_string(), true, 10),
-        TestStruct::new("bar".to_string(), false, -10),
+        NatsTestRecord::new("foo".to_string(), true, 10),
+        NatsTestRecord::new("bar".to_string(), false, -10),
     ];
 
     // Create and populate NATS stream before initializing the input connector.
@@ -85,7 +85,7 @@ format:
 
     println!("Config:\n{}", config_str);
 
-    let (endpoint, consumer, _parser, zset) = mock_input_pipeline::<TestStruct, TestStruct>(
+    let (endpoint, consumer, _parser, zset) = mock_input_pipeline::<NatsTestRecord, NatsTestRecord>(
         serde_yaml::from_str(&config_str).unwrap(),
         Relation::empty(),
     )
@@ -241,7 +241,7 @@ outputs:
                 let jetstream = jetstream::new(client);
 
                 for id in total_records..total_records + n_records {
-                    let test_struct = MainTestStruct {
+                    let test_struct = TestStruct {
                         id: id as u32,
                         b: id % 2 == 0,
                         i: Some(id as i64),
@@ -267,7 +267,7 @@ outputs:
         println!("start pipeline");
         let controller = Controller::with_config(
             |circuit_config| {
-                Ok(test_circuit::<MainTestStruct>(
+                Ok(test_circuit::<TestStruct>(
                     circuit_config,
                     &[],
                     &[Some("output")],
@@ -343,7 +343,7 @@ outputs:
             .has_headers(false)
             .from_path(&output_path)
             .unwrap()
-            .deserialize::<(MainTestStruct, i32)>()
+            .deserialize::<(TestStruct, i32)>()
             .map(|res| {
                 let (val, weight) = res.unwrap();
                 assert_eq!(weight, 1);
@@ -356,7 +356,7 @@ outputs:
         for (record, expect_record) in
             actual
                 .into_iter()
-                .zip((checkpointed_records..).map(|id| MainTestStruct {
+                .zip((checkpointed_records..).map(|id| TestStruct {
                     id: id as u32,
                     b: id % 2 == 0,
                     i: Some(id as i64),
