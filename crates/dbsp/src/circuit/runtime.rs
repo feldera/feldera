@@ -297,7 +297,15 @@ fn display_core_ids<'a>(iter: impl Iterator<Item = &'a CoreId>) -> String {
     )
 }
 
-fn map_pin_cpus(nworkers: usize, pin_cpus: &[usize]) -> Vec<EnumMap<ThreadType, CoreId>> {
+fn map_pin_cpus(layout: &Layout, pin_cpus: &[usize]) -> Vec<EnumMap<ThreadType, CoreId>> {
+    if layout.is_multihost() {
+        if !pin_cpus.is_empty() {
+            warn!("CPU pinning not yet supported with multihost DBSP");
+        }
+        return Vec::new();
+    }
+
+    let nworkers = layout.n_workers();
     let pin_cpus = pin_cpus
         .iter()
         .copied()
@@ -383,6 +391,7 @@ impl RuntimeInner {
         };
 
         Ok(Self {
+            pin_cpus: map_pin_cpus(&config.layout, &config.pin_cpus),
             layout: config.layout,
             mode: config.mode,
             dev_tweaks: config.dev_tweaks,
@@ -394,7 +403,6 @@ impl RuntimeInner {
             buffer_caches: (0..nworkers)
                 .map(|_| EnumMap::from_fn(|_| Arc::new(BufferCache::new(cache_size_bytes))))
                 .collect(),
-            pin_cpus: map_pin_cpus(nworkers, &config.pin_cpus),
             worker_sequence_numbers: (0..nworkers).map(|_| AtomicUsize::new(0)).collect(),
             panic_info: (0..nworkers)
                 .map(|_| EnumMap::from_fn(|_| RwLock::new(None)))
@@ -406,14 +414,14 @@ impl RuntimeInner {
 
     fn pin_cpu(&self) {
         if !self.pin_cpus.is_empty() {
-            let worker_index = Runtime::worker_index();
+            let local_worker_offset = Runtime::local_worker_offset();
             let Some(thread_type) = ThreadType::current() else {
                 panic!("pin_cpu() called outside of a runtime or on an aux thread");
             };
-            let core = self.pin_cpus[worker_index][thread_type];
+            let core = self.pin_cpus[local_worker_offset][thread_type];
             if !core_affinity::set_for_current(core) {
                 warn!(
-                    "failed to pin worker {worker_index} {thread_type} thread to core {}",
+                    "failed to pin worker {local_worker_offset} {thread_type} thread to core {}",
                     core.id
                 );
             }
@@ -625,7 +633,7 @@ impl Runtime {
         // Slow path for initializing the thread-local.
         let buffer_cache = if let Some(rt) = Runtime::runtime() {
             if let Some(thread_type) = ThreadType::current() {
-                rt.get_buffer_cache(Runtime::worker_index(), thread_type)
+                rt.get_buffer_cache(Runtime::local_worker_offset(), thread_type)
             } else {
                 // Aux thread: use the global cache.
                 NO_RUNTIME_CACHE.clone()
@@ -659,15 +667,15 @@ impl Runtime {
     }
 
     /// Returns this runtime's buffer cache for thread type `thread_type` in
-    /// worker `worker_index`.
+    /// worker with local offset `local_worker_offset`.
     ///
     /// Usually it's easier and faster to call [Runtime::buffer_cache] instead.
     pub fn get_buffer_cache(
         &self,
-        worker_index: usize,
+        local_worker_offset: usize,
         thread_type: ThreadType,
     ) -> Arc<BufferCache> {
-        self.0.buffer_caches[worker_index][thread_type].clone()
+        self.0.buffer_caches[local_worker_offset][thread_type].clone()
     }
 
     /// Returns 0-based index of the current worker thread within its runtime.
@@ -675,6 +683,15 @@ impl Runtime {
     /// multihost runtime, this is a global index across all hosts.
     pub fn worker_index() -> usize {
         WORKER_INDEX.get()
+    }
+
+    /// Returns the 0-based index of the current worker within its local host.
+    pub fn local_worker_offset() -> usize {
+        // Find the lowest-numbered local worker.
+        let local_workers_start = RUNTIME
+            .with(|rt| Some(rt.borrow().as_ref()?.layout().local_workers().start))
+            .unwrap_or_default();
+        Self::worker_index() - local_workers_start
     }
 
     pub fn mode() -> Mode {
@@ -841,7 +858,8 @@ impl Runtime {
     /// same across all worker threads.  Repeated calls to this function
     /// from the same worker generate numbers 0, 1, 2, ...
     pub fn sequence_next(&self) -> usize {
-        self.inner().worker_sequence_numbers[Self::worker_index()].fetch_add(1, Ordering::Relaxed)
+        self.inner().worker_sequence_numbers[Self::local_worker_offset()]
+            .fetch_add(1, Ordering::Relaxed)
     }
 
     /// `true` if the current worker thread has received a kill signal
@@ -875,7 +893,7 @@ impl Runtime {
 
     // Record information about a worker thread panic in `panic_info`
     fn panic(&self, panic_info: &PanicHookInfo) {
-        let worker_index = Self::worker_index();
+        let local_worker_offset = Self::local_worker_offset();
         let Some(thread_type) = ThreadType::current() else {
             // We only install panic hooks on foreground and background threads,
             // so this shouldn't happen, but we cannot panic here.
@@ -883,7 +901,7 @@ impl Runtime {
             return;
         };
         let panic_info = WorkerPanicInfo::new(panic_info);
-        let _ = self.inner().panic_info[worker_index][thread_type]
+        let _ = self.inner().panic_info[local_worker_offset][thread_type]
             .write()
             .map(|mut guard| *guard = Some(panic_info));
         self.inner().panicked.store(true, Ordering::Release);
