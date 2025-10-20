@@ -431,6 +431,18 @@ fn test_nats_ft_initially_zero_with_checkpoint() {
     ]);
 }
 
+#[test]
+fn test_nats_ft_empty_step_checkpoint() {
+    test_nats_ft(&[
+        NatsFtTestRound::with_checkpoint(5),
+        NatsFtTestRound::with_checkpoint(0),
+        NatsFtTestRound::with_checkpoint(10),
+        NatsFtTestRound::with_checkpoint(0),
+        NatsFtTestRound::with_checkpoint(0),
+        NatsFtTestRound::with_checkpoint(10),
+    ]);
+}
+
 mod util {
     use crate::test::wait;
     use anyhow::{anyhow, Result as AnyResult};
