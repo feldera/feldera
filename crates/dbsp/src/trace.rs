@@ -1266,7 +1266,7 @@ where
 /// Separator that identifies the end of values for a key.
 const SEPARATOR: u64 = u64::MAX;
 
-fn serialize_indexed_wset<B, K, V, R>(batch: &B) -> Vec<u8>
+pub fn serialize_indexed_wset<B, K, V, R>(batch: &B) -> Vec<u8>
 where
     B: BatchReader<Key = K, Val = V, Time = (), R = R>,
     K: DataTrait + ?Sized,
@@ -1293,7 +1293,7 @@ where
     s.into_serializer().into_inner().into_vec()
 }
 
-fn deserialize_indexed_wset<B, K, V, R>(factories: &B::Factories, data: &[u8]) -> B
+pub fn deserialize_indexed_wset<B, K, V, R>(factories: &B::Factories, data: &[u8]) -> B
 where
     B: Batch<Key = K, Val = V, Time = (), R = R>,
     K: DataTrait + ?Sized,

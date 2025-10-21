@@ -10,9 +10,10 @@ use dbsp::{
     circuit::LocalStoreMarker,
     dynamic::{DowncastTrait, DynData},
     operator::communication::new_exchange_operators,
+    storage::file::to_bytes,
     trace::{
-        BatchReader, BatchReaderFactories, Cursor, OrdIndexedWSet as DynOrdIndexedWSet,
-        OrdIndexedWSetFactories, SpineSnapshot,
+        unaligned_deserialize, BatchReader, BatchReaderFactories, Cursor,
+        OrdIndexedWSet as DynOrdIndexedWSet, OrdIndexedWSetFactories, SpineSnapshot,
     },
     utils::Tup1,
     Circuit, DynZWeight, OrdZSet, RootCircuit, Runtime, Stream, ZWeight,
@@ -303,6 +304,8 @@ pub fn build_string_interner(
                     outputs.push(empty_by_id());
                 }
             },
+            |value| to_bytes(&value).unwrap().into_vec(),
+            |data| unaligned_deserialize(&data[..]),
             |snapshot, remote_snapshot| {
                 if Runtime::worker_index() == 0 {
                     snapshot.extend(remote_snapshot);

@@ -9,7 +9,10 @@ use crate::{
     circuit_cache_key,
     dynamic::Data,
     operator::communication::new_exchange_operators,
-    trace::{merge_batches, Batch, BatchReader, Builder},
+    trace::{
+        deserialize_indexed_wset, merge_batches, serialize_indexed_wset, Batch, BatchReader,
+        Builder,
+    },
     Circuit, Runtime, Stream,
 };
 
@@ -75,6 +78,7 @@ where
                             let mut builders = Vec::with_capacity(runtime.num_workers());
                             let factories_clone2 = factories_clone.clone();
                             let factories_clone3 = factories_clone.clone();
+                            let factories_clone4 = factories_clone.clone();
 
                             let output = self.circuit().region("shard", || {
                                 let (sender, receiver) = new_exchange_operators(
@@ -91,6 +95,8 @@ where
                                             &factories_clone3,
                                         );
                                     },
+                                    |batch| serialize_indexed_wset(&batch),
+                                    move |data| deserialize_indexed_wset(&factories_clone4, &data),
                                     |batches: &mut Vec<OB>, batch: OB| batches.push(batch),
                                 );
 
