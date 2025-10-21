@@ -161,7 +161,7 @@ impl NatsReader {
     ) -> Result<(), AnyError> {
         let mut canceller: Option<Canceller> = None;
         let queue = Arc::new(InputQueue::<u64>::new(consumer.clone()));
-        let read_sequence = Arc::new(AtomicU64::new(resume_info.sequence_numbers.end));
+        let next_sequence = Arc::new(AtomicU64::new(resume_info.sequence_numbers.end));
         let nats_consumer_config = translate_consumer_options(&config.consumer_config);
 
         let mut command_receiver = InputCommandReceiver::<Metadata, ()>::new(command_receiver);
@@ -192,7 +192,7 @@ impl NatsReader {
 
                 consumer.replayed(buffer_size, hasher.finish());
 
-                read_sequence.store(last_message_sequence + 1, Ordering::Release);
+                next_sequence.store(last_message_sequence + 1, Ordering::Release);
 
             } else {
                 consumer.replayed(BufferSize::default(), Xxh3Default::new().finish());
@@ -210,7 +210,7 @@ impl NatsReader {
                     let sequence_number_range = match (batches.first(), batches.last()) {
                         (Some((_, first)), Some((_, last))) => *first..*last + 1,
                         _ => {
-                            let pos = read_sequence.load(Ordering::Acquire);
+                            let pos = next_sequence.load(Ordering::Acquire);
                             pos..pos
                         }
                     };
@@ -238,20 +238,20 @@ impl NatsReader {
                     }
                 }
                 InputReaderCommand::Extend => {
-                    info!("Extend from {:?}", read_sequence.load(Ordering::Acquire));
+                    info!("Extend from {:?}", next_sequence.load(Ordering::Acquire));
                     if canceller.is_none() {
                         let nats_consumer = create_nats_consumer(
                             &jetstream,
                             &nats_consumer_config,
                             &config.stream_name,
-                            read_sequence.load(Ordering::Acquire),
+                            next_sequence.load(Ordering::Acquire),
                         )
                         .await?;
 
                         canceller = Some(
                             spawn_nats_reader(
                                 nats_consumer,
-                                read_sequence.clone(),
+                                next_sequence.clone(),
                                 queue.clone(),
                                 consumer.clone(),
                                 parser.fork(),
@@ -344,7 +344,7 @@ async fn consume_nats_messages_until(
 
 async fn spawn_nats_reader(
     nats_consumer: NatsConsumer,
-    read_sequence: Arc<AtomicU64>,
+    next_sequence: Arc<AtomicU64>,
     queue: Arc<InputQueue<u64>>,
     consumer: Box<dyn InputConsumer>,
     mut parser: Box<dyn Parser>,
@@ -375,7 +375,7 @@ async fn spawn_nats_reader(
                                     }
                                 };
                                 info!("Got message #{}", info.stream_sequence);
-                                read_sequence.store(info.stream_sequence + 1, Ordering::Release);
+                                next_sequence.store(info.stream_sequence + 1, Ordering::Release);
                                 let data = &message.payload;
                                 queue.push_with_aux(parser.parse(&data), Utc::now(), info.stream_sequence);
                             }
