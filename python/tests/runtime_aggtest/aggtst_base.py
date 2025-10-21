@@ -5,6 +5,7 @@ import hashlib
 import re
 
 from feldera import PipelineBuilder, Pipeline
+from feldera.rest.errors import FelderaAPIError
 from tests import TEST_CLIENT, unique_pipeline_name
 from feldera.enums import CompilationProfile
 from feldera.runtime_config import RuntimeConfig
@@ -182,11 +183,15 @@ class TstAccumulator:
     def run_pipeline(self, pipeline_name_prefix: str, sql: str, views: list[View]):
         """Run pipeline with the given SQL, load tables, validate views, and shutdown"""
         pipeline = None
+        sql_id = sql_hash(sql)
+        pipeline_name = unique_pipeline_name(f"{pipeline_name_prefix}_{sql_id}")
         try:
-            sql_id = sql_hash(sql)
+            # Pipelines that fail to compile will remain None
+            # as `PipelineBuilder` will raise an exception and not
+            # return a `Pipeline` object.
             pipeline = PipelineBuilder(
                 TEST_CLIENT,
-                unique_pipeline_name(f"{pipeline_name_prefix}_{sql_id}"),
+                pipeline_name,
                 sql=sql,
                 compilation_profile=CompilationProfile.UNOPTIMIZED,
                 runtime_config=RuntimeConfig(provisioning_timeout_secs=180),
@@ -204,6 +209,17 @@ class TstAccumulator:
             for view in views:
                 view.validate(pipeline)
         finally:
+            # Try to get the pipelines that were created by
+            # `PipelineBuilder` but failed to compile.
+            if pipeline is None:
+                try:
+                    pipeline = Pipeline.get(pipeline_name, TEST_CLIENT)
+                except FelderaAPIError as e:
+                    if "UnknownPipelineName" in str(e):
+                        pass
+                    else:
+                        raise
+
             if pipeline is not None:
                 pipeline.stop(force=True)
                 pipeline.delete(True)
