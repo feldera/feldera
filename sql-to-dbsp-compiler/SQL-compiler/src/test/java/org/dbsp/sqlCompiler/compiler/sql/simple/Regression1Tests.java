@@ -1099,4 +1099,49 @@ public class Regression1Tests extends SqlIoTest {
                 
                 CREATE materialized VIEW V0 AS SELECT X('2011-12-01 00:00:00');""");
     }
+
+    @Test
+    public void issue4888() {
+        this.getCC("""
+                CREATE TABLE tbl(
+                roww ROW(i1 INT, v1 VARCHAR NULL));
+                
+                CREATE MATERIALIZED VIEW v AS SELECT
+                COALESCE(NULL, roww, ROW(4,'cat')) AS roww
+                FROM tbl;""");
+    }
+
+    @Test
+    public void issue4889() {
+        this.getCC("""
+                CREATE TABLE tbl(
+                roww ROW(i1 INT, v1 VARCHAR NULL));
+                
+                CREATE MATERIALIZED VIEW v1 AS SELECT
+                GREATEST_IGNORE_NULLS(NULL, roww, ROW(5, NULL)) AS roww
+                FROM tbl;
+                
+                CREATE MATERIALIZED VIEW v2 AS SELECT
+                LEAST_IGNORE_NULLS(NULL, roww, ROW(5, NULL)) AS roww
+                FROM tbl;""");
+    }
+
+    @Test
+    public void issue4932() {
+        this.getCC("""
+                CREATE TABLE tab0(col0 INTEGER, col1 INTEGER, col2 INTEGER);
+                CREATE TABLE tab1(col0 INTEGER, col1 INTEGER, col2 INTEGER);
+                CREATE VIEW V53 AS (SELECT DISTINCT * FROM tab1 AS cor0 JOIN tab0 cor1 ON NULL < - - ( + + CAST ( + 47 AS INTEGER ) ) - - - 47);
+                """);
+    }
+
+    @Test
+    public void issue4923() {
+        this.getCCS("""
+                CREATE TABLE tbl(
+                roww ROW(i1 INT, v1 VARCHAR NULL));
+                
+                CREATE MATERIALIZED VIEW v AS SELECT
+                ARRAY(SELECT roww, roww FROM tbl) AS arr;""");
+    }
 }

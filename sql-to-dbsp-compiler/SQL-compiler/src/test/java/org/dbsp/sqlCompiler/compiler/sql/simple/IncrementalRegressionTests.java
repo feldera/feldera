@@ -1430,8 +1430,8 @@ public class IncrementalRegressionTests extends SqlIoTest {
                 ON "t1"."join_key_a" = "t2"."join_key_b";""");
     }
 
-    @Test @Ignore("https://github.com/feldera/feldera/issues/4899 https://issues.apache.org/jira/browse/CALCITE-7228")
-    public void asof2Test() {
+    @Test
+    public void issue4899() {
         this.getCCS("""
                 CREATE TABLE source_stream_a (
                     common_join_attribute SMALLINT,
