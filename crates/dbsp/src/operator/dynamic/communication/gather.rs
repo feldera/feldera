@@ -46,7 +46,7 @@ where
         match Runtime::runtime() {
             None => self.clone(),
             Some(runtime) => {
-                let workers = runtime.num_workers();
+                let workers = Runtime::num_workers();
                 assert!(receiver_worker < workers);
 
                 if workers == 1 {
@@ -378,7 +378,7 @@ where
             &None,
         );
 
-        if self.flush_count == Runtime::runtime().unwrap().num_workers() {
+        if self.flush_count == Runtime::num_workers() {
             self.flush_count = 0;
             self.flush_complete = true;
         }

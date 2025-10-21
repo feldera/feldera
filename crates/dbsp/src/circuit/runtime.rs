@@ -821,8 +821,14 @@ impl Runtime {
 
     /// Returns the number of workers in the runtime's [`Layout`].  In a
     /// multihost runtime, this is the total number of workers across all hosts.
-    pub fn num_workers(&self) -> usize {
-        self.inner().layout.n_workers()
+    ///
+    /// If this thread is not in a [Runtime], returns 1.
+    pub fn num_workers() -> usize {
+        RUNTIME.with(|rt| {
+            rt.borrow()
+                .as_ref()
+                .map_or(1, |runtime| runtime.layout().n_workers())
+        })
     }
 
     /// Returns the [`Layout`] for this runtime.
@@ -958,7 +964,7 @@ pub(crate) enum Consensus {
 impl Consensus {
     pub fn new() -> Self {
         match Runtime::runtime() {
-            Some(runtime) if runtime.num_workers() > 1 => {
+            Some(runtime) if Runtime::num_workers() > 1 => {
                 let worker_index = Runtime::worker_index();
                 let exchange_id = runtime.sequence_next();
                 let exchange = Exchange::with_runtime(

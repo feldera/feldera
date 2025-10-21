@@ -220,7 +220,7 @@ impl InnerExchange {
         clients: Arc<Clients>,
     ) -> InnerExchange {
         let runtime = Runtime::runtime().unwrap();
-        let npeers = runtime.num_workers();
+        let npeers = Runtime::num_workers();
         let local_workers = runtime.layout().local_workers();
         let n_local_workers = local_workers.len();
         let n_remote_workers = npeers - n_local_workers;
@@ -423,7 +423,7 @@ where
         serialize: Box<dyn Fn(T) -> Vec<u8> + Send + Sync>,
         deserialize: Box<dyn Fn(Vec<u8>) -> T + Send + Sync>,
     ) -> Self {
-        let npeers = Runtime::runtime().unwrap().num_workers();
+        let npeers = Runtime::num_workers();
         let mailboxes: Arc<Vec<Mutex<Option<T>>>> =
             Arc::new((0..npeers * npeers).map(|_| Mutex::new(None)).collect());
         let mailboxes2: Arc<Vec<Mutex<Option<T>>>> = mailboxes.clone();
@@ -868,19 +868,18 @@ where
     T: Send + 'static + Clone,
 {
     fn new(
-        runtime: &Runtime,
         worker_index: usize,
         location: OperatorLocation,
         exchange: Arc<Exchange<(T, bool)>>,
         start_wait_usecs: Arc<AtomicU64>,
         partition: L,
     ) -> Self {
-        debug_assert!(worker_index < runtime.num_workers());
+        debug_assert!(worker_index < Runtime::num_workers());
         Self {
             worker_index,
             location,
             partition,
-            outputs: Vec::with_capacity(runtime.num_workers()),
+            outputs: Vec::with_capacity(Runtime::num_workers()),
             exchange,
             input_batch_stats: BatchSizeStats::new(),
             flushed: false,
@@ -1008,7 +1007,6 @@ where
     T: Send + 'static + Clone,
 {
     fn new(
-        runtime: &Runtime,
         worker_index: usize,
         location: OperatorLocation,
         exchange: Arc<Exchange<(T, bool)>>,
@@ -1016,7 +1014,7 @@ where
         start_wait_usecs: Arc<AtomicU64>,
         combine: L,
     ) -> Self {
-        debug_assert!(worker_index < runtime.num_workers());
+        debug_assert!(worker_index < Runtime::num_workers());
 
         Self {
             worker_index,
@@ -1138,7 +1136,7 @@ where
                 }
                 (self.combine)(&mut combined, x)
             });
-        if self.flush_count == Runtime::runtime().unwrap().num_workers() {
+        if self.flush_count == Runtime::num_workers() {
             self.flush_complete = true;
             self.flush_count = 0;
         }
@@ -1237,7 +1235,6 @@ where
         }),
     );
     let sender = ExchangeSender::new(
-        runtime,
         worker_index,
         location,
         exchange.clone(),
@@ -1245,7 +1242,6 @@ where
         partition,
     );
     let receiver = ExchangeReceiver::new(
-        runtime,
         worker_index,
         location,
         exchange,

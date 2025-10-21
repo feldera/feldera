@@ -222,7 +222,7 @@ where
                     .local_store()
                     .entry(OutputId::new(output_id))
                     .or_insert_with(|| {
-                        Self(Arc::new(OutputHandleInternal::new(runtime.num_workers())))
+                        Self(Arc::new(OutputHandleInternal::new(Runtime::num_workers())))
                     })
                     .value()
                     .clone()
