@@ -40,6 +40,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.inner.CreateRuntimeErrorWrappers;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.Simplify;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.SimplifyWaterline;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.intern.Intern;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.temporal.ImplementNow;
 import org.dbsp.sqlCompiler.compiler.visitors.unusedFields.UnusedFields;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.monotonicity.MonotoneAnalyzer;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
