@@ -7,7 +7,9 @@ use crate::error::Error as DbspError;
 use crate::operator::communication::Exchange;
 use crate::storage::backend::StorageBackend;
 use crate::storage::file::format::Compression;
+use crate::storage::file::to_bytes;
 use crate::storage::file::writer::Parameters;
+use crate::trace::unaligned_deserialize;
 use crate::SchedulerError;
 use crate::{
     storage::{backend::StorageError, buffer_cache::BufferCache, dirlock::LockedDirectory},
@@ -941,7 +943,12 @@ impl Consensus {
             Some(runtime) if runtime.num_workers() > 1 => {
                 let worker_index = Runtime::worker_index();
                 let exchange_id = runtime.sequence_next();
-                let exchange = Exchange::with_runtime(&runtime, exchange_id);
+                let exchange = Exchange::with_runtime(
+                    &runtime,
+                    exchange_id,
+                    Box::new(|vote| to_bytes(&vote).unwrap().into_vec()),
+                    Box::new(|data| unaligned_deserialize(&data[..])),
+                );
 
                 let notify_sender = Arc::new(Notify::new());
                 let notify_sender_clone = notify_sender.clone();
