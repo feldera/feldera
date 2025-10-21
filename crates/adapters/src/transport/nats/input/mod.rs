@@ -53,7 +53,7 @@ type NatsConsumer = nats_consumer::Consumer<NatsConsumerConfig>;
 /// - `[6, 10)`: Batch contained messages #6-9, resume from #10
 #[derive(Debug, Serialize, Deserialize)]
 struct Metadata {
-    sequence_number_range: std::ops::Range<u64>,
+    sequence_numbers: std::ops::Range<u64>,
 }
 
 impl Metadata {
@@ -62,7 +62,8 @@ impl Metadata {
         Ok(resume_info
             .map(serde_json::from_value)
             .transpose()?
-            .unwrap_or(Self { sequence_number_range: 0..0 }))
+            .unwrap_or(Self { sequence_numbers: 0..0 })
+        )
     }
 }
 
@@ -160,7 +161,7 @@ impl NatsReader {
     ) -> Result<(), AnyError> {
         let mut canceller: Option<Canceller> = None;
         let queue = Arc::new(InputQueue::<u64>::new(consumer.clone()));
-        let read_sequence = Arc::new(AtomicU64::new(resume_info.sequence_number_range.end));
+        let read_sequence = Arc::new(AtomicU64::new(resume_info.sequence_numbers.end));
         let nats_consumer_config = translate_consumer_options(&config.consumer_config);
 
         let mut command_receiver = InputCommandReceiver::<Metadata, ()>::new(command_receiver);
@@ -168,8 +169,8 @@ impl NatsReader {
         // Handle replay commands
         while let Some((metadata, ())) = command_receiver.recv_replay().await? {
             info!("Attempt to replay: {:?}", metadata);
-            if !metadata.sequence_number_range.is_empty() {
-                let first_message_offset = metadata.sequence_number_range.start;
+            if !metadata.sequence_numbers.is_empty() {
+                let first_message_offset = metadata.sequence_numbers.start;
 
                 let nats_consumer = create_nats_consumer(
                     &jetstream,
@@ -179,7 +180,7 @@ impl NatsReader {
                 )
                 .await?;
 
-                let last_message_offset = metadata.sequence_number_range.end - 1;
+                let last_message_offset = metadata.sequence_numbers.end - 1;
                 let (hasher, buffer_size) = consume_nats_messages_until(
                     nats_consumer,
                     last_message_offset,
@@ -215,7 +216,7 @@ impl NatsReader {
                     };
                     info!("Queued {:?} records ({sequence_number_range:?})", buffer_size);
                     let metadata_json = serde_json::to_value(&Metadata {
-                        sequence_number_range,
+                        sequence_numbers: sequence_number_range,
                     })?;
                     let timestamp = batches.last().map(|(ts, _)| *ts).unwrap_or_else(Utc::now);
                     let hash = hasher.map(|h| h.finish()).unwrap_or(0);
