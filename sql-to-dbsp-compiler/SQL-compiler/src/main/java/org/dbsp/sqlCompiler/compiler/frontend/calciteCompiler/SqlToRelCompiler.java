@@ -1597,6 +1597,10 @@ public class SqlToRelCompiler implements IWritesLogs {
             case SMALLINT: builder.append("SMALLINT"); break;
             case INTEGER: builder.append("INTEGER"); break;
             case BIGINT: builder.append("BIGINT"); break;
+            case UTINYINT: builder.append("TINYINT UNSIGNED"); break;
+            case USMALLINT: builder.append("SMALLINT UNSIGNED"); break;
+            case UINTEGER: builder.append("INTEGER UNSIGNED"); break;
+            case UBIGINT: builder.append("BIGINT UNSIGNED"); break;
             case DECIMAL:
                 builder.append("DECIMAL(")
                         .append(type.getPrecision())
