@@ -41,14 +41,24 @@ use xxhash_rust::xxh3::Xxh3Default;
 type NatsConsumerConfig = nats_consumer::pull::OrderedConfig;
 type NatsConsumer = nats_consumer::Consumer<NatsConsumerConfig>;
 
+/// Checkpoint/resume metadata
+///
+/// The sequence_numbers is a range `[start, end)` where:
+/// - `start` = first message sequence in batch
+/// - `end - 1` = last message in batch
+/// - `end` = next message to consume (exclusive)
+///
+/// - `[0, 0)`: No messages processed and no checkpoint yet, start from beginning
+/// - `[6, 6)`: (empty) All messages up to #6 processed, resume from #6
+/// - `[6, 10)`: Batch contained messages #6-9, resume from #10
 #[derive(Debug, Serialize, Deserialize)]
-struct SeekMetadata {
+struct Metadata {
     sequence_number_range: std::ops::Range<u64>,
 }
 
-impl SeekMetadata {
+impl Metadata {
     fn from_resume_info(resume_info: Option<JsonValue>) -> Result<Self, AnyError> {
-        // No JsonValue create Metadata value 0..0, meaning "start from beginning"
+        // If None JsonValue create Metadata value 0..0, meaning "start from beginning"
         Ok(resume_info
             .map(serde_json::from_value)
             .transpose()?
@@ -82,9 +92,9 @@ impl TransportInputEndpoint for NatsInputEndpoint {
         _schema: Relation,
         resume_info: Option<JsonValue>,
     ) -> AnyResult<Box<dyn InputReader>> {
-        let seek_metadata = SeekMetadata::from_resume_info(resume_info)?;
-        info!("Resume info: {:?}", seek_metadata);
-        let initial_read_sequence = seek_metadata.sequence_number_range.end;
+        let metadata = Metadata::from_resume_info(resume_info)?;
+        info!("Resume info: {:?}", metadata);
+        let initial_read_sequence = metadata.sequence_number_range.end;
 
         Ok(Box::new(NatsReader::new(
             self.config.clone(),
@@ -154,13 +164,13 @@ impl NatsReader {
         let read_sequence = Arc::new(AtomicU64::new(initial_read_sequence));
         let nats_consumer_config = translate_consumer_options(&config.consumer_config);
 
-        let mut command_receiver = InputCommandReceiver::<SeekMetadata, ()>::new(command_receiver);
+        let mut command_receiver = InputCommandReceiver::<Metadata, ()>::new(command_receiver);
 
         // Handle replay commands
-        while let Some((seek_metadata, ())) = command_receiver.recv_replay().await? {
-            info!("Attempt to replay: {:?}", seek_metadata);
-            if !seek_metadata.sequence_number_range.is_empty() {
-                let first_message_offset = seek_metadata.sequence_number_range.start;
+        while let Some((metadata, ())) = command_receiver.recv_replay().await? {
+            info!("Attempt to replay: {:?}", metadata);
+            if !metadata.sequence_number_range.is_empty() {
+                let first_message_offset = metadata.sequence_number_range.start;
 
                 let nats_consumer = create_nats_consumer(
                     &jetstream,
@@ -170,7 +180,7 @@ impl NatsReader {
                 )
                 .await?;
 
-                let last_message_offset = seek_metadata.sequence_number_range.end - 1;
+                let last_message_offset = metadata.sequence_number_range.end - 1;
                 let (hasher, buffer_size) = consume_nats_messages_until(
                     nats_consumer,
                     last_message_offset,
@@ -205,11 +215,11 @@ impl NatsReader {
                         }
                     };
                     info!("Queued {:?} records ({sequence_number_range:?})", buffer_size);
-                    let seek_metadata = SeekMetadata {
+                    let metadata = Metadata {
                         sequence_number_range,
                     };
 
-                    let seek = serde_json::to_value(&seek_metadata)?;
+                    let seek = serde_json::to_value(&metadata)?;
                     let timestamp = batches.last().map(|(ts, _)| *ts).unwrap_or_else(Utc::now);
                     let hash = hasher.map(|h| h.finish()).unwrap_or(0);
                     let resume = Resume::Replay {
