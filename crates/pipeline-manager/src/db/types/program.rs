@@ -754,7 +754,7 @@ pub fn generate_pipeline_config(
     // Only keep tables and views, ignoring intermediate nodes.
     // These are currently the only nodes used by the pipeline
     // (to compute pipeline diffs). Including all nodes can cause the IR
-    // to exceed the maximum ConfigMap size supported by k8s (3145728).
+    // to exceed the maximum ConfigMap size supported by k8s (1MB).
     let mir = program_info
         .dataflow
         .as_ref()
@@ -772,9 +772,19 @@ pub fn generate_pipeline_config(
         })
         .unwrap_or_default();
 
+    // Remove inputs and outputs that do not have lateness.
+    // This field is currently only used for backfill avoidance, which only cares about
+    // relations with lateness. Including the entire schema would cause the IR to exceed the
+    // maximum ConfigMap size supported by k8s (1MB).
+    let mut program_schema = program_info.schema.clone();
+    program_schema.inputs.retain(|input| input.has_lateness());
+    program_schema
+        .outputs
+        .retain(|output| output.has_lateness());
+
     let program_ir = ProgramIr {
         mir,
-        program_schema: program_info.schema.clone(),
+        program_schema,
     };
 
     PipelineConfig {
