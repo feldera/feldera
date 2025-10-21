@@ -7,10 +7,12 @@ from feldera.testutils import unique_pipeline_name
 from tests import TEST_CLIENT
 from feldera.enums import PipelineStatus
 
+
 def get_result(pipeline) -> str:
     result = list(pipeline.query("SELECT * FROM v;"))
     assert len(result) == 1
-    return result[0]['x']
+    return result[0]["x"]
+
 
 class TestNowStream(unittest.TestCase):
     def test_nowstream(self):
@@ -44,6 +46,7 @@ class TestNowStream(unittest.TestCase):
         # due to the standard format, which looks like `2025-10-20T20:55:16.350`
         assert time1 > time0
         pipeline.stop(force=True)
+
 
 if __name__ == "__main__":
     unittest.main()
