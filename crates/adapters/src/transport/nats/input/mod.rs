@@ -92,13 +92,12 @@ impl TransportInputEndpoint for NatsInputEndpoint {
         _schema: Relation,
         resume_info: Option<JsonValue>,
     ) -> AnyResult<Box<dyn InputReader>> {
-        let metadata = Metadata::from_resume_info(resume_info)?;
-        info!("Resume info: {:?}", metadata);
-        let initial_read_sequence = metadata.sequence_number_range.end;
+        let resume_info = Metadata::from_resume_info(resume_info)?;
+        info!("Resume info: {:?}", resume_info);
 
         Ok(Box::new(NatsReader::new(
             self.config.clone(),
-            initial_read_sequence,
+            resume_info,
             consumer,
             parser,
         )?))
@@ -112,7 +111,7 @@ struct NatsReader {
 impl NatsReader {
     fn new(
         config: Arc<NatsInputConfig>,
-        initial_read_sequence: u64,
+        resume_info: Metadata,
         consumer: Box<dyn InputConsumer>,
         parser: Box<dyn Parser>,
     ) -> AnyResult<Self> {
@@ -125,7 +124,7 @@ impl NatsReader {
         TOKIO.spawn(async move {
             Self::worker_task(
                 config,
-                initial_read_sequence,
+                resume_info,
                 jetstream::new(nats_connection),
                 consumer_clone,
                 parser,
@@ -153,7 +152,7 @@ impl NatsReader {
 
     async fn worker_task(
         config: Arc<NatsInputConfig>,
-        initial_read_sequence: u64,
+        resume_info: Metadata,
         jetstream: jetstream::Context,
         consumer: Box<dyn InputConsumer>,
         parser: Box<dyn Parser>,
@@ -161,7 +160,7 @@ impl NatsReader {
     ) -> Result<(), AnyError> {
         let mut canceller: Option<Canceller> = None;
         let queue = Arc::new(InputQueue::<u64>::new(consumer.clone()));
-        let read_sequence = Arc::new(AtomicU64::new(initial_read_sequence));
+        let read_sequence = Arc::new(AtomicU64::new(resume_info.sequence_number_range.end));
         let nats_consumer_config = translate_consumer_options(&config.consumer_config);
 
         let mut command_receiver = InputCommandReceiver::<Metadata, ()>::new(command_receiver);
