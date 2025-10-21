@@ -741,6 +741,16 @@ class TestPipeline(SharedTestPipeline):
         ]
         self.assertCountEqual(egress_result, expected_egress)
 
+    def test_listen_non_existent_view_paused(self):
+        self.pipeline.start_paused()
+        with self.assertRaises(ValueError):
+            self.pipeline.listen("FrodoBagginsInMordor")
+
+    def test_listen_non_existent_view_running(self):
+        self.pipeline.start()
+        with self.assertRaises(ValueError):
+            self.pipeline.listen("FrodoBagginsInMordor")
+
 
 if __name__ == "__main__":
     unittest.main()
