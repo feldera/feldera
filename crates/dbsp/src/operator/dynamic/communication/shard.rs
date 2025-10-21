@@ -62,7 +62,7 @@ where
         let location = Location::caller();
 
         Runtime::runtime().and_then(|runtime| {
-            let num_workers = runtime.num_workers();
+            let num_workers = Runtime::num_workers();
             let factories_clone = factories.clone();
 
             if num_workers == 1 {
@@ -75,7 +75,7 @@ where
                         move || {
                             // As a minor optimization, we reuse this array across all invocations
                             // of the sharding operator.
-                            let mut builders = Vec::with_capacity(runtime.num_workers());
+                            let mut builders = Vec::with_capacity(Runtime::num_workers());
                             let factories_clone2 = factories_clone.clone();
                             let factories_clone3 = factories_clone.clone();
                             let factories_clone4 = factories_clone.clone();
@@ -227,8 +227,7 @@ where
 
     /// Returns `true` if this stream is sharded.
     pub fn is_sharded(&self) -> bool {
-        let num_workers = Runtime::runtime().map(|r| r.num_workers()).unwrap_or(1);
-        if num_workers == 1 {
+        if Runtime::num_workers() == 1 {
             return true;
         }
 
@@ -284,7 +283,7 @@ mod tests {
             let circuit = RootCircuit::build(move |circuit| {
                 let input = circuit.add_source(Generator::new(|| {
                     let worker_index = Runtime::worker_index();
-                    let num_workers = Runtime::runtime().unwrap().num_workers();
+                    let num_workers = Runtime::num_workers();
                     test_data(worker_index, num_workers)
                 }));
                 input

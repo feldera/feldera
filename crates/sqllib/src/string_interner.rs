@@ -292,7 +292,7 @@ pub fn build_string_interner(
 
     // Collect spine snapshots from all workers and merge them into a single spine snapshot in worker 0.
     let by_id = if let Some(runtime) = Runtime::runtime() {
-        let num_workers = runtime.num_workers();
+        let num_workers = Runtime::num_workers();
         let (sender, receiver) = new_exchange_operators(
             &runtime,
             Runtime::worker_index(),

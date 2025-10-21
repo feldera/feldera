@@ -85,7 +85,7 @@ where
             });
 
             if let Some(runtime) = Runtime::runtime() {
-                let num_workers = runtime.num_workers();
+                let num_workers = Runtime::num_workers();
                 if num_workers == 1 {
                     return local_waterline;
                 }
@@ -161,7 +161,7 @@ where
             );
 
             if let Some(runtime) = Runtime::runtime() {
-                let num_workers = runtime.num_workers();
+                let num_workers = Runtime::num_workers();
                 if num_workers == 1 {
                     return local_waterline;
                 }
