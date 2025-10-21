@@ -219,6 +219,26 @@ Using Pandas DataFrames
     # clear the storage and delete the pipeline
     pipeline.delete(True)
 
+Using Completion Tokens
+=======================
+
+`Completion tokens <https://docs.feldera.com/connectors/completion-tokens/#completion-tokens>`_
+are  used internally by the :class:`.FelderaClient` when pushing data to the pipeline.
+Specifically, they are used when calling :meth:`.FelderaClient.push_to_pipeline` with parameters `wait=True` (default).
+
+The following methods automatically use completion tokens:
+
+- :meth:`.Pipeline.input_json`
+- :meth:`.Pipeline.input_pandas`
+
+.. code-block:: python
+
+    # blocks until the pipeline has processed this input
+    pipeline.input_json(data)
+
+    # blocks until the pipeline has processed this input
+    pipeline.input_pandas(df)
+
 Executing ad-hoc SQL Queries
 ============================
 
