@@ -170,29 +170,29 @@ impl NatsReader {
         while let Some((metadata, ())) = command_receiver.recv_replay().await? {
             info!("Attempt to replay: {:?}", metadata);
             if !metadata.sequence_numbers.is_empty() {
-                let first_message_offset = metadata.sequence_numbers.start;
+                let first_message_sequence = metadata.sequence_numbers.start;
 
                 let nats_consumer = create_nats_consumer(
                     &jetstream,
                     &nats_consumer_config,
                     &config.stream_name,
-                    first_message_offset,
+                    first_message_sequence,
                 )
                 .await?;
 
-                let last_message_offset = metadata.sequence_numbers.end - 1;
+                let last_message_sequence = metadata.sequence_numbers.end - 1;
                 let (hasher, buffer_size) = consume_nats_messages_until(
                     nats_consumer,
-                    last_message_offset,
+                    last_message_sequence,
                     consumer.clone(),
                     parser.fork(),
                 )
                 .await
-                .with_context(|| format!("While attempting to replay offsets {first_message_offset}..{last_message_offset}"))?;
+                .with_context(|| format!("While attempting to replay sequences {first_message_sequence}..{last_message_sequence}"))?;
 
                 consumer.replayed(buffer_size, hasher.finish());
 
-                read_sequence.store(last_message_offset + 1, Ordering::Release);
+                read_sequence.store(last_message_sequence + 1, Ordering::Release);
 
             } else {
                 consumer.replayed(BufferSize::default(), Xxh3Default::new().finish());
