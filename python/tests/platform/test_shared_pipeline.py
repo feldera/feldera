@@ -7,6 +7,7 @@ import io
 import tempfile
 import zipfile
 
+from feldera import Pipeline
 from tests.shared_test_pipeline import SharedTestPipeline
 from tests import TEST_CLIENT, enterprise_only
 from feldera.enums import PipelineFieldSelector, PipelineStatus
@@ -750,6 +751,9 @@ class TestPipeline(SharedTestPipeline):
         self.pipeline.start()
         with self.assertRaises(ValueError):
             self.pipeline.listen("FrodoBagginsInMordor")
+
+    def test_pipelines(self):
+        assert self.pipeline.name in [p.name for p in Pipeline.all(TEST_CLIENT)]
 
 
 if __name__ == "__main__":

@@ -699,6 +699,17 @@ metrics"""
                 err.message = f"Pipeline with name {name} not found"
                 raise err
 
+    @staticmethod
+    def all(client: FelderaClient) -> List["Pipeline"]:
+        """
+        Get all pipelines.
+
+        :param client: The FelderaClient instance.
+        :return: A list of Pipeline objects.
+        """
+
+        return [Pipeline._from_inner(p, client) for p in client.pipelines()]
+
     def checkpoint(self, wait: bool = False, timeout_s: Optional[float] = None) -> int:
         """
         Checkpoints this pipeline.
