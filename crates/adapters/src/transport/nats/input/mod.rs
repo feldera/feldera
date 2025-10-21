@@ -1,4 +1,3 @@
-mod atomic_option;
 mod config_utils;
 #[cfg(test)]
 mod test;
@@ -12,7 +11,7 @@ use async_nats::{
     self,
     jetstream::{self, consumer as nats_consumer},
 };
-use atomic_option::AtomicOptionNonZeroU64;
+
 use chrono::Utc;
 use config_utils::{translate_connect_options, translate_consumer_options};
 use dbsp::circuit::tokio::TOKIO;
@@ -29,7 +28,7 @@ use serde_json::Value as JsonValue;
 use std::cmp;
 use std::hash::Hasher;
 use std::sync::Arc;
-use std::{num::NonZeroU64, sync::atomic::Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 use tokio::{
     select,
     sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender},
@@ -44,7 +43,17 @@ type NatsConsumer = nats_consumer::Consumer<NatsConsumerConfig>;
 
 #[derive(Debug, Serialize, Deserialize)]
 struct SeekMetadata {
-    sequence_number_range: Option<std::ops::RangeInclusive<u64>>,
+    sequence_number_range: std::ops::Range<u64>,
+}
+
+impl SeekMetadata {
+    fn from_resume_info(resume_info: Option<JsonValue>) -> Result<Self, AnyError> {
+        // No JsonValue create Metadata value 0..0, meaning "start from beginning"
+        Ok(resume_info
+            .map(serde_json::from_value)
+            .transpose()?
+            .unwrap_or(Self { sequence_number_range: 0..0 }))
+    }
 }
 
 pub struct NatsInputEndpoint {
@@ -73,13 +82,9 @@ impl TransportInputEndpoint for NatsInputEndpoint {
         _schema: Relation,
         resume_info: Option<JsonValue>,
     ) -> AnyResult<Box<dyn InputReader>> {
-        let seek_metadata: Option<SeekMetadata> =
-            resume_info.map(serde_json::from_value).transpose()?;
+        let seek_metadata = SeekMetadata::from_resume_info(resume_info)?;
         info!("Resume info: {:?}", seek_metadata);
-        let initial_read_sequence = seek_metadata.and_then(|meta| {
-            meta.sequence_number_range
-                .and_then(|range| NonZeroU64::new(range.end() + 1))
-        });
+        let initial_read_sequence = seek_metadata.sequence_number_range.end;
 
         Ok(Box::new(NatsReader::new(
             self.config.clone(),
@@ -97,7 +102,7 @@ struct NatsReader {
 impl NatsReader {
     fn new(
         config: Arc<NatsInputConfig>,
-        initial_read_sequence: Option<NonZeroU64>,
+        initial_read_sequence: u64,
         consumer: Box<dyn InputConsumer>,
         parser: Box<dyn Parser>,
     ) -> AnyResult<Self> {
@@ -138,7 +143,7 @@ impl NatsReader {
 
     async fn worker_task(
         config: Arc<NatsInputConfig>,
-        initial_read_sequence: Option<NonZeroU64>,
+        initial_read_sequence: u64,
         jetstream: jetstream::Context,
         consumer: Box<dyn InputConsumer>,
         parser: Box<dyn Parser>,
@@ -146,7 +151,7 @@ impl NatsReader {
     ) -> Result<(), AnyError> {
         let mut canceller: Option<Canceller> = None;
         let queue = Arc::new(InputQueue::<u64>::new(consumer.clone()));
-        let read_sequence = Arc::new(AtomicOptionNonZeroU64::new(initial_read_sequence));
+        let read_sequence = Arc::new(AtomicU64::new(initial_read_sequence));
         let nats_consumer_config = translate_consumer_options(&config.consumer_config);
 
         let mut command_receiver = InputCommandReceiver::<SeekMetadata, ()>::new(command_receiver);
@@ -154,18 +159,18 @@ impl NatsReader {
         // Handle replay commands
         while let Some((seek_metadata, ())) = command_receiver.recv_replay().await? {
             info!("Attempt to replay: {:?}", seek_metadata);
-            if let Some(sequence_number_range) = seek_metadata.sequence_number_range {
-                let first_message_offset = sequence_number_range.start();
+            if !seek_metadata.sequence_number_range.is_empty() {
+                let first_message_offset = seek_metadata.sequence_number_range.start;
 
                 let nats_consumer = create_nats_consumer(
                     &jetstream,
                     &nats_consumer_config,
                     &config.stream_name,
-                    NonZeroU64::new(*first_message_offset),
+                    first_message_offset,
                 )
                 .await?;
 
-                let last_message_offset = *sequence_number_range.end();
+                let last_message_offset = seek_metadata.sequence_number_range.end - 1;
                 let (hasher, buffer_size) = consume_nats_messages_until(
                     nats_consumer,
                     last_message_offset,
@@ -177,7 +182,7 @@ impl NatsReader {
 
                 consumer.replayed(buffer_size, hasher.finish());
 
-                read_sequence.store(NonZeroU64::new(last_message_offset + 1), Ordering::Release);
+                read_sequence.store(last_message_offset + 1, Ordering::Release);
 
             } else {
                 consumer.replayed(BufferSize::default(), Xxh3Default::new().finish());
@@ -193,8 +198,11 @@ impl NatsReader {
                 InputReaderCommand::Queue { .. } => {
                     let (buffer_size, hasher, batches) = queue.flush_with_aux();
                     let sequence_number_range = match (batches.first(), batches.last()) {
-                        (Some((_, first)), Some((_, last))) => Some(*first..=*last),
-                        _ => None,
+                        (Some((_, first)), Some((_, last))) => *first..*last + 1,
+                        _ => {
+                            let pos = read_sequence.load(Ordering::Acquire);
+                            pos..pos
+                        }
                     };
                     info!("Queued {:?} records ({sequence_number_range:?})", buffer_size);
                     let seek_metadata = SeekMetadata {
@@ -258,13 +266,13 @@ async fn create_nats_consumer(
     jetstream: &jetstream::Context,
     consumer_config: &NatsConsumerConfig,
     stream_name: &str,
-    message_start_sequence: Option<NonZeroU64>,
+    message_start_sequence: u64,
 ) -> AnyResult<NatsConsumer> {
     let mut consumer_config = consumer_config.clone();
 
-    if let Some(start_sequence) = message_start_sequence {
+    if message_start_sequence > 0 {
         consumer_config.deliver_policy = jetstream::consumer::DeliverPolicy::ByStartSequence {
-            start_sequence: start_sequence.get(),
+            start_sequence: message_start_sequence,
         };
     }
 
@@ -328,7 +336,7 @@ async fn consume_nats_messages_until(
 
 async fn spawn_nats_reader(
     nats_consumer: NatsConsumer,
-    read_sequence: Arc<AtomicOptionNonZeroU64>,
+    read_sequence: Arc<AtomicU64>,
     queue: Arc<InputQueue<u64>>,
     consumer: Box<dyn InputConsumer>,
     mut parser: Box<dyn Parser>,
@@ -359,7 +367,7 @@ async fn spawn_nats_reader(
                                     }
                                 };
                                 info!("Got message #{}", info.stream_sequence);
-                                read_sequence.store(NonZeroU64::new(info.stream_sequence + 1), Ordering::Release);
+                                read_sequence.store(info.stream_sequence + 1, Ordering::Release);
                                 let data = &message.payload;
                                 queue.push_with_aux(parser.parse(&data), Utc::now(), info.stream_sequence);
                             }
