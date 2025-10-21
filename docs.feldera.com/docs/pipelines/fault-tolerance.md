@@ -1,5 +1,10 @@
 # Fault tolerance and checkpoint/resume
 
+:::note Enterprise-only feature
+Checkpoint/resume and fault tolerance are only available in Feldera Enterprise Edition.
+:::
+
+
 Feldera supports the following ways to gracefully stop a pipeline and
 later restart it from the same point:
 

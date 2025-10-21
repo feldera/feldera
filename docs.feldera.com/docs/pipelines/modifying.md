@@ -1,28 +1,36 @@
-# Modifying a Pipeline
+# Modifying a Pipeline While Preserving its State
 
 :::note Enterprise-only feature
 This feature is only available in Feldera Enterprise Edition.
 :::
 
+:::warning
+This is an experimental feature and may undergo significant
+changes, including non-backward-compatible modifications, in future releases of
+Feldera.
+:::
+
 ## Overview
 
 Feldera supports **incremental pipeline modification** through a feature called **bootstrapping**.
-This allows you to evolve your SQL pipelines by adding, removing, or modifying tables and views
-without having to re-ingest all historical data from scratch.
+This allows you to evolve your SQL pipelines by adding, removing, or modifying table and view
+definitions without having to discard the pipeline's existing state and re-ingest all historical data
+from scratch.
 
 When you modify a pipeline:
 - **New and modified views** are computed from existing pipeline state
-- **Unchanged views** continue using their existing state
+- **Views not affected by the change** continue using their existing state
 - **Input data** does not need to be re-ingested (unless table schemas change)
+- **New and modified connectors** are added to the pipeline
 
 ## Introduction
 
 Feldera incrementally processes changes to input data. But what happens when the program
 itself needs to change, e.g., the user would like to add, remove, or modify a view definition?
 Feldera is able to handle such changes incrementally as well by only recomputing
-the modified view and any views derived from it. It uses existing state in tables
-and internal indexes maintained by the incremental view maintenance engine
-as input to the computation.
+the modified view and any views derived from it. Whenever possible, it uses existing state
+in tables and internal indexes maintained by the incremental view maintenance engine
+as inputs to evaluate affected views.
 
 This process of building new or modified views from existing state in the pipeline
 is called **bootstrapping**. Bootstrapping allows you to evolve your SQL pipeline without
@@ -45,55 +53,83 @@ enabled.  This state will later be used to bootstrap the modified pipeline.
 ### 2. Modify the pipeline
 
 The user modifies the pipeline by making arbitrary changes to its SQL code.
-This way many coordinated changes across multiple tables and views can be performed at
+This way many changes across multiple tables and views can be performed at
 the same time. This is particularly useful when working with nested views, where
 a change to one of the views, such as adding a new column, may require updates to all
 downstream views that depend on it.
 
 ### 3. Restart the pipeline
 
-When a modified pipeline is started, it performs the following operations:
+When a modified pipeline is restarted, it performs the following operations:
 
 1. Opens its latest checkpoint if one exists.
 
 2. Compares the checkpointed program with the new version being started.
-   If the program has not been modified since the checkpoint was made, proceeds
-   with normal initialization.
+   If the program has not been modified since the checkpoint was made, resumes
+   the pipeline from the checkpoint.
 
 3. If the program has been modified, the behavior depends on the `bootstrap_policy`
-   argument passed to the pipeline on startup:
+   argument passed to the pipeline on startup (see [API section](#api) below):
 
    * `bootstrap_policy=await_approval` (default) - the pipeline stops in the `AwaitingApproval`
-     state. Its `deployment_runtime_status_details` property lists tables, views, and connectors
-     affected by the changes. The user can either approve the changes by calling the
+     state. Its `deployment_runtime_status_details` property (returned by the [pipeline status endpoint](https://docs.feldera.com/api/retrieve-a-pipeline))
+     lists tables, views, and connectors
+     affected by the changes.
+     At this point the pipeline is paused until the user signals their intention.
+     The user can either approve the changes by calling the
      [`/approve`](https://docs.feldera.com/api/approves-the-pipeline-to-proceed-with-bootstrapping)
      API or terminate the pipeline using [`/stop?force=true`](https://docs.feldera.com/api/stop-the-pipeline-asynchronously-by-updating-the-desired-state).
 
    * `bootstrap_policy=allow` - the pipeline proceeds to bootstrap modified views
       as described in the [Bootstrapping](#bootstrapping) section below.
 
-   * `bootstrap_policy=reject` - the pipeline fails to start with an error message
-     listing pipeline modifications.
+   * `bootstrap_policy=reject` - the pipeline is stopped with an error message
+     listing pipeline modifications. Its checkpointed state is preserved. The user can
+     choose to undo modifications or change `bootstrap_policy` and restart the pipeline
+     again.
 
 ## Bootstrapping
 
-Once pipeline modifications have been approved, the pipeline goes into the `Bootstrapping` state
+If pipeline modifications have been approved, the pipeline goes into the `Bootstrapping` state
 and performs the following actions:
 
 1. Discards any state that has been invalidated, such as state that belongs to deleted or modified
    views.
 
-2. Evaluates new and modified views based on existing state inside the pipeline and
-   outputs the complete contents of these views to all attached output connectors.
-   This is similar to how the pipeline outputs data while ingesting historical data during regular backfill.
-
-3. The state of any new or modified tables is truncated; all connectors attached to these tables
+2. The state of any new or modified tables is truncated; all connectors attached to these tables
    are reset to their initial state. Once bootstrapping completes, these tables will start empty and
    will be populated with data received from input connectors.
 
-The pipeline does not ingest any new inputs during bootstrapping. Once bootstrapping completes,
+   * A table is considered modified if types, names or the order of its columns have changed in any way,
+     its primary key constraint has changed, or its `materialized` or `append_only` properties were added
+     or removed.
+
+   * A table is NOT considered modified if only its connector definitions have changed.
+
+   * Any views derived from modified tables are considered modified. During bootstrapping, these
+     views will be evaluated against the empty table. After bootstrapping completes, the views will be
+     incrementally updated as the table is populated with data from the input connectors.
+
+3. Evaluates new and modified views based on existing state inside the pipeline and
+   outputs the complete contents of these views to all attached output connectors.
+   This is similar to how the pipeline outputs data while ingesting historical data during regular backfill.
+
+   * A view is considered modified if its query was altered in any way or if its `MATERIALIZED` attribute
+     was added or removed.
+
+   * A view is NOT considered modified if only its connector definitions have changed.
+
+:::warning Data Sink Cleanup Required
+The pipeline does not output retractions for the old contents of modified views.
+You must clear any connected data sinks before approving the modified pipeline to
+avoid duplicate or stale data.
+:::
+
+The pipeline does not ingest any inputs during bootstrapping. Once bootstrapping completes,
 the pipeline moves to the `Running` state, where it resumes ingesting and incrementally processing data
-from input connectors.
+from input connectors. Input connectors that were not modified in the new version of the pipeline and
+whose tables have not changed resume ingestion from their checkpointed position in the input stream;
+other input connectors will start from the initial state specified in their configuration.
 
 ## Caveats and limitations
 
@@ -109,7 +145,7 @@ were originally compiled; however once the pipeline is recompiled, either via th
 [`/update_runtime` request](https://docs.feldera.com/api/recompile-a-pipeline-with-the-feldera-runtime-version-included-in-the)
 or by editing its SQL code, it will use the SQL runtime
 associated with the current version of the Feldera platform. This new runtime may generate
-a slightly different query plan for the same SQL tables and views, which will require bootstrapping.
+a slightly different query plan for the same SQL tables and views, which will require going through the bootstrapping process.
 The affected views will be recomputed from scratch and streamed to the output connectors even
 though their contents haven't changed.
 
@@ -122,7 +158,7 @@ If this is undesirable, use one of the following methods to avoid updating the S
 
 ### Caveat 2: Starting from an S3 checkpoint
 
-Normally, when restarting, a pipeline picks up the checkpoint it made while stopping, containing
+Normally, when restarting, a pipeline continues from the checkpoint taken at the point when the pipeline was stopped, containing
 the pipeline's latest state. If the pipeline crashed or was [force-stopped](https://docs.feldera.com/api/stop-the-pipeline-asynchronously-by-updating-the-desired-state), it will pick up the
 last [periodic checkpoint](https://docs.feldera.com/pipelines/configuration/#program-configuration), if any.
 
@@ -151,10 +187,10 @@ clearing the pipeline's state and restarting the pipeline from scratch instead.
 ### Limitation 2: Bootstrapping does not work with `LATENESS`
 
 Programs with [`LATENESS` annotations](/tutorials/time-series) currently cannot be bootstrapped. These annotations are used
-by the query engine to discard state that is not used to evaluate any of the views in the program.
-However, the modified program may contain a different set of queries that require the discarded state.
+by the query engine to discard state that can no longer affect any future updates to any view.
+However, if the modified program contains new views that may depend on the discarded data, they cannot be computed.
 
-We currently don't have the analysis needed to detect such changes and instead take the more coarse-grained
+We currently do not implement the analysis needed to detect such changes and instead take the more coarse-grained
 approach of simply rejecting changes to pipelines with `LATENESS`. Such pipelines must be
 backfilled from scratch after any change by clearing their state before restarting.
 
@@ -163,16 +199,23 @@ backfilled from scratch after any change by clearing their state before restarti
 Adding, removing or renaming a table column will clear the table's state and require the table
 to be ingested from scratch.
 
+### Limitation 4: The pipeline does not detect changes to UDFs
+
+Feldera currently assumes that a UDF whose name and signature have not changed does not change its behavior.
+If the user modifies the implementation of a UDF without changing its signature, they need to either clear the
+state of the pipeline or rename the UDF to trigger the bootstrapping of any views that depend on the modified UDF.
+
 ## API
 
-The Feldera REST API contains several elements that support the bootstrapping feature described in this document:
+In this section we describe the REST API elements related to bootstrapping.
+All of this functionality is also available via the Python SDK and the `fda` CLI tool.
 
 * The `bootstrap_policy` argument to the [`/start` endpoint](https://docs.feldera.com/api/stop-the-pipeline-asynchronously-by-updating-the-desired-state). This argument specifies how the pipeline should
   behave when the checkpointed version of the program differs from the current version. The supported values are
   `await_approval`, `allow`, and `reject`. The default value is `await_approval`. See the
   [Restart the pipeline](#3-restart-the-pipeline) section above for details.
 
-* Two new runtime states reported by the [pipeline status endpoint](https://docs.feldera.com/api/retrieve-a-pipeline) in the `deployment_runtime_status` field:
+* Two runtime states reported by the [pipeline status endpoint](https://docs.feldera.com/api/retrieve-a-pipeline) in the `deployment_runtime_status` field:
   * `AwaitingApproval` - When starting the pipeline with `bootstrap_policy=await_approval`, if the pipeline
     requires bootstrapping, it will stop in the `AwaitingApproval` state waiting for the user to approve the
     changes. While in this state, the `deployment_runtime_status_details` field lists added, modified, and removed
@@ -182,7 +225,14 @@ The Feldera REST API contains several elements that support the bootstrapping fe
   * `Bootstrapping` - In this state the pipeline evaluates new and modified views. Once bootstrapping completes,
     the pipeline automatically moves into the `Running` or `Paused` state.
 
-* The `/approve` endpoint moves the pipeline from the `AwaitingApproval` to `Bootstrapping` state.
+* The [`/approve` endpoint](https://docs.feldera.com/api/approves-the-pipeline-to-proceed-with-bootstrapping).
+  Invoking this endpoint transitions the pipeline from the `AwaitingApproval` to `Bootstrapping` state.
+
+## WebConsole
+
+Bootstrapping is also supported via the WebConsole. The WebConsole always starts pipelines with `bootstrap_policy=await_approval`.
+If the pipeline has changed since the last checkpoint, it shows a dialog with the list of detected pipeline changes where the user can
+approve the changes or stop the pipeline.
 
 ## How different types of changes are handled
 
@@ -238,6 +288,15 @@ All state of the deleted table is discarded.
   pipeline moves to the `Running` state. These connectors only receive new changes
   to the views.
 
+Feldera uses connector names to uniquely identify connectors within the scope of
+a table or view. Renaming a connector is treated as deleting the old connector
+and adding a new connector with an identical configuration.
+
+We recommend explicitly naming all connectors. Anonymous connectors
+are automatically assigned names based on the order of their declaration. Such
+automatic names are less stable than explicitly assigned names and can cause
+spurious changes to be detected in modified pipelines.
+
 #### Modifying a connector
 
 * Modified input connectors are initialized according to the new configuration.
@@ -254,7 +313,7 @@ remain in the table.
 
 ## Example
 
-In this example, we demonstrate how to modify a running pipeline and bootstrap the changes.
+In this example, we use the Python SDK to demonstrate how to modify a running pipeline and bootstrap the changes.
 We start with a pipeline that tracks student grades and computes average grades per class
 within a specific date range. Then we transform the pipeline by:
 
@@ -425,12 +484,12 @@ Pipeline modification with bootstrapping enables you to evolve your Feldera pipe
 - Modify SQL definitions without re-ingesting historical data
 - Add new views computed from existing state
 - Change multiple tables and views atomically
-- Approve changes before they take effect
+- Review and approve changes before they take effect
 
 **Workflow:**
-1. Stop the pipeline
+1. Stop the pipeline (state is automatically checkpointed)
 2. Modify the SQL code
-3. Restart with desired `bootstrap_policy`
-4. Review changes in `deployment_runtime_status_details` (if using `await_approval`)
-5. Approve changes via `/approve` endpoint
-6. Wait for bootstrapping to complete
+3. Restart with desired `bootstrap_policy` (default: `await_approval`)
+4. Review changes in `deployment_runtime_status_details`
+5. Approve changes via `/approve` endpoint (if using `await_approval`)
+6. Wait for bootstrapping to complete and pipeline to reach `Running` state

@@ -404,7 +404,11 @@ const pipelines = {
             id: "pipelines/configuration",
         },
         "pipelines/fault-tolerance",
-        "pipelines/modifying",
+        {
+            type: 'doc',
+            label: "Modifying a Pipeline",
+            id: "pipelines/modifying",
+        },
         "pipelines/checkpoint-sync",
         "pipelines/transactions",
         "pipelines/latency",
