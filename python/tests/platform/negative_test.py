@@ -1,11 +1,12 @@
 import unittest
 from feldera import PipelineBuilder, Pipeline
+from feldera.testutils import unique_pipeline_name
 from tests import TEST_CLIENT
 
 
 class NegativeCompilationTests(unittest.TestCase):
     def test_sql_error(self):
-        pipeline_name = "sql_error"
+        pipeline_name = unique_pipeline_name("sql_error")
         sql = """
 CREATE TABLE student(
     id INT,
@@ -30,7 +31,7 @@ Code snippet:
         pipeline.clear_storage()
 
     def test_rust_error(self):
-        pipeline_name = "rust_error"
+        pipeline_name = unique_pipeline_name("rust_error")
         sql = ""
 
         with self.assertRaises(Exception) as err:
@@ -42,7 +43,7 @@ Code snippet:
 
     def test_program_error0(self):
         sql = "create taabl;"
-        name = "test_program_error0"
+        name = unique_pipeline_name("test_program_error0")
         try:
             _ = PipelineBuilder(TEST_CLIENT, name, sql).create_or_replace()
         except Exception:
@@ -55,7 +56,7 @@ Code snippet:
 
     def test_program_error1(self):
         sql = ""
-        name = "test_program_error1"
+        name = unique_pipeline_name("test_program_error1")
         _ = PipelineBuilder(TEST_CLIENT, name, sql).create_or_replace()
         pipeline = Pipeline.get(name, TEST_CLIENT)
         err = pipeline.program_error()
@@ -66,7 +67,7 @@ Code snippet:
 
     def test_errors0(self):
         sql = "SELECT invalid"
-        name = "test_errors0"
+        name = unique_pipeline_name("test_errors0")
         try:
             _ = PipelineBuilder(TEST_CLIENT, name, sql).create_or_replace()
         except Exception:
@@ -94,7 +95,7 @@ Code snippet:
         );
         """
         pipeline = PipelineBuilder(
-            TEST_CLIENT, name="test_initialization_error", sql=sql
+            TEST_CLIENT, name=unique_pipeline_name("test_initialization_error"), sql=sql
         ).create_or_replace()
         with self.assertRaises(RuntimeError) as err:
             pipeline.start()
