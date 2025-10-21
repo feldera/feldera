@@ -1656,14 +1656,16 @@ public class ToRustInnerVisitor extends InnerVisitor {
                         expression.getType(),
                         expression.left.getType(),
                         expression.right.getType());
-                this.builder.append(function).append("(");
+                this.builder.append(function).append("(").increase();
                 this.visitingChild = 0;
                 expression.left.accept(this);
                 // lazy in the right argument, make it a closure
-                this.builder.append(", || (");
+                this.builder.append(",")
+                        .newline()
+                        .append(" || (");
                 this.visitingChild = 1;
                 expression.right.accept(this);
-                this.builder.append("))");
+                this.builder.decrease().append("))");
                 break;
             }
             default: {
@@ -1699,13 +1701,13 @@ public class ToRustInnerVisitor extends InnerVisitor {
                         expression.getType().emitGenericArguments(builder, first);
                         this.builder.append(">");
                     }
-                    this.builder.append("(");
+                    this.builder.append("(").increase();
                     this.visitingChild = 0;
                     expression.left.accept(this);
-                    this.builder.append(", ");
+                    this.builder.append(",").newline();
                     this.visitingChild = 1;
                     expression.right.accept(this);
-                    this.builder.append(")");
+                    this.builder.decrease().append(")");
                 }
                 break;
             }
