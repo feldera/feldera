@@ -22,7 +22,7 @@ pub fn translate_consumer_options(config: &cfg::ConsumerConfig) -> nats::pull::O
         description: config.description.clone(),
         filter_subject: Default::default(),
         filter_subjects: config.filter_subjects.clone(),
-        replay_policy: nats::ReplayPolicy::Instant,
+        replay_policy: translate_replay_policy(&config.replay_policy),
         rate_limit: config.rate_limit.clone(),
         sample_frequency: Default::default(),
         headers_only: false,
@@ -32,6 +32,13 @@ pub fn translate_consumer_options(config: &cfg::ConsumerConfig) -> nats::pull::O
         max_batch: config.max_batch.unwrap_or_default(),
         max_bytes: config.max_bytes.unwrap_or_default(),
         max_expires: config.max_expires.unwrap_or_default(),
+    }
+}
+
+fn translate_replay_policy(p: &cfg::ReplayPolicy) -> nats::ReplayPolicy {
+    match p {
+        cfg::ReplayPolicy::Instant => nats::ReplayPolicy::Instant,
+        cfg::ReplayPolicy::Original => nats::ReplayPolicy::Original,
     }
 }
 
