@@ -24,7 +24,7 @@ pub fn translate_consumer_options(config: &cfg::ConsumerConfig) -> nats::pull::O
         filter_subjects: config.filter_subjects.clone(),
         replay_policy: nats::ReplayPolicy::Instant,
         rate_limit: config.rate_limit.clone(),
-        sample_frequency: config.sample_frequency.clone(),
+        sample_frequency: Default::default(),
         headers_only: false,
         deliver_policy: translate_deliver_policy(&config.deliver_policy),
         max_waiting: config.max_waiting.clone(),
