@@ -1,3 +1,34 @@
+//! NATS JetStream input adapter with exactly-once fault tolerance.
+//!
+//! This adapter reads from a NATS JetStream using an **ordered pull consumer**,
+//! which provides strict message ordering with automatic recreation on failures.
+//! Combined with feldera message tracking, we achieve exactly-once semantics.
+//!
+//! # Ordered Pull Consumer
+//!
+//! We use `jetstream::consumer::pull::OrderedConfig` which provides:
+//! - **Strict ordering**: Messages delivered in exact stream order
+//! - **No acknowledgments**: Uses `AckPolicy::None` (tracked via sequences instead)
+//! - **Automatic recreation**: On gap detection, heartbeat loss, or deletion
+//! - **Ephemeral & single-replica**: Always in-memory, no durability overhead
+//!
+//! The ordered consumer automatically detects sequence gaps and recreates itself,
+//! resuming from the last processed position. This complements our exactly-once
+//! logic: we track sequences externally for checkpointing while the ordered
+//! consumer ensures no gaps in the message stream.
+//!
+//! # Authentication
+//!
+//! Currently only credentials-based authentication (`.creds` files or inline strings)
+//! is implemented. Additional authentication methods are defined in the configuration
+//! schema but not yet implemented:
+//! - TODO: JWT authentication
+//! - TODO: NKey authentication
+//! - TODO: Token authentication
+//! - TODO: Username/password authentication
+//!
+//! See `config_utils::translate_connect_options` for implementation details.
+
 mod config_utils;
 #[cfg(test)]
 mod test;
@@ -180,6 +211,7 @@ impl NatsReader {
                 )
                 .await?;
 
+                // Since range is exclusive, last message to reply is (end-1).
                 let last_message_sequence = metadata.sequence_numbers.end - 1;
                 let (hasher, buffer_size) = consume_nats_messages_until(
                     nats_consumer,
@@ -210,6 +242,7 @@ impl NatsReader {
                     let sequence_number_range = match (batches.first(), batches.last()) {
                         (Some((_, first)), Some((_, last))) => *first..*last + 1,
                         _ => {
+                            // If no batches were queued, create an empty range [pos, pos).
                             let pos = next_sequence.load(Ordering::Acquire);
                             pos..pos
                         }
@@ -278,6 +311,8 @@ async fn create_nats_consumer(
 ) -> AnyResult<NatsConsumer> {
     let mut consumer_config = consumer_config.clone();
 
+    // For 0, use the deliver policy configured by the user.
+    // For >0, override with ByStartSequence to resume from a checkpoint position.
     if message_start_sequence > 0 {
         consumer_config.deliver_policy = jetstream::consumer::DeliverPolicy::ByStartSequence {
             start_sequence: message_start_sequence,
@@ -342,6 +377,12 @@ async fn consume_nats_messages_until(
     Ok((hasher, buffer_size))
 }
 
+/// Spawns a background task that continuously reads from an ordered consumer
+/// and queues parsed messages.
+///
+/// Messages are tagged with their stream sequence number for checkpoint tracking.
+/// The ordered consumer ensures no gaps occur; if one is detected, it automatically
+/// recreates itself and resumes from the last known position.
 async fn spawn_nats_reader(
     nats_consumer: NatsConsumer,
     next_sequence: Arc<AtomicU64>,
@@ -375,6 +416,8 @@ async fn spawn_nats_reader(
                                     }
                                 };
                                 info!("Got message #{}", info.stream_sequence);
+                                // Store the *next* sequence to process for resume tracking.
+                                // This is the checkpoint position if we need to restart.
                                 next_sequence.store(info.stream_sequence + 1, Ordering::Release);
                                 let data = &message.payload;
                                 queue.push_with_aux(parser.parse(&data), Utc::now(), info.stream_sequence);
