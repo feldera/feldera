@@ -103,10 +103,14 @@
     }
     $effect.root(() => {
       if (cancelStream) {
+        // Avoid redundant cleanup on first start
         endMetricsStream()
       }
       setTimeout(() => startMetricsStream(api, pipelineName), 100)
     })
+    return () => {
+      endMetricsStream()
+    }
   })
 </script>
 

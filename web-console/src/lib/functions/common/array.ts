@@ -195,10 +195,13 @@ export function chunkIndices(min: number, max: number, size: number): number[] {
   return result
 }
 
-export function count<T>(arr: T[], pred: (v: T) => boolean | null | undefined) {
+export function count<T>(arr: T[], pred: (v: T) => boolean | number | null | undefined) {
   let count = 0
   for (const e of arr) {
-    if (pred(e)) {
+    const result = pred(e)
+    if (typeof result === 'number') {
+      count += result
+    } else if (result) {
       ++count
     }
   }
