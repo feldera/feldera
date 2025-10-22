@@ -20,6 +20,15 @@ class CallbackRunner(Thread):
         exception_callback: Callable[[BaseException], None],
         event: Event,
     ):
+        """
+        :param client: The :class:`.FelderaClient` to use.
+        :param pipeline_name: The name of the current pipeline.
+        :param view_name: The name of the view we are listening to.
+        :param callback: The callback function to call on the data we receive.
+        :param exception_callback: The callback function to call when an exception occurs.
+        :param event: The event to wait for before starting the callback runner.
+        """
+
         super().__init__()
         self.daemon = True
         self.client: FelderaClient = client
@@ -48,7 +57,7 @@ class CallbackRunner(Thread):
 
         self.schema: SQLTable | SQLView = view_schema
 
-    def process_chunk(self, chunk: Mapping[str, Any]):
+    def to_callback(self, chunk: Mapping[str, Any]):
         data: Optional[list[Mapping[str, Any]]] = chunk.get("json_data")
         seq_no: Optional[int] = chunk.get("sequence_number")
         if data is not None and seq_no is not None:
@@ -77,10 +86,10 @@ class CallbackRunner(Thread):
             # Unblock the main thread
             self.event.set()
 
-            self.process_chunk(chunk)
+            self.to_callback(chunk)
 
             for chunk in iterator:
-                self.process_chunk(chunk)
+                self.to_callback(chunk)
 
         except BaseException as e:
             self.exception_callback(e)

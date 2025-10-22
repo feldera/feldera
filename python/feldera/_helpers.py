@@ -66,6 +66,9 @@ def dataframe_from_response(
 ):
     """
     Converts the response from Feldera to a pandas DataFrame.
+
+    :param buffer: A buffer of a list of JSON formatted output of the view you are listening to.
+    :param fields: The schema (list of fields) of the view you are listening to.
     """
 
     pd_schema = {}

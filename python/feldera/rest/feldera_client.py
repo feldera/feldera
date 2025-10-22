@@ -126,13 +126,15 @@ class FelderaClient:
 
         return runtime_config
 
-    def pipelines(self) -> list[Pipeline]:
+    def pipelines(
+        self, selector: PipelineFieldSelector = PipelineFieldSelector.STATUS
+    ) -> list[Pipeline]:
         """
         Get all pipelines
         """
 
         resp = self.http.get(
-            path="/pipelines",
+            path=f"/pipelines?selector={selector.value}",
         )
 
         return [Pipeline.from_dict(pipeline) for pipeline in resp]
@@ -883,6 +885,35 @@ Reason: The pipeline is in a STOPPED state due to the following error:
 
         return token
 
+    def completion_token_processed(self, pipeline_name: str, token: str) -> bool:
+        """
+        Check whether the pipeline has finished processing all inputs received from the connector before
+        the token was generated.
+
+        :param pipeline_name: The name of the pipeline
+        :param token: The token to check for completion
+        :return: True if the pipeline has finished processing all inputs represented by the token, False otherwise
+        """
+
+        params = {
+            "token": token,
+        }
+
+        resp = self.http.get(
+            path=f"/pipelines/{quote(pipeline_name, safe='')}/completion_status",
+            params=params,
+        )
+
+        status: Optional[str] = resp.get("status")
+
+        if status is None:
+            raise FelderaAPIError(
+                f"got empty status when checking for completion status for token: {token}",
+                resp,
+            )
+
+        return status.lower() == "complete"
+
     def wait_for_token(
         self, pipeline_name: str, token: str, timeout_s: Optional[float] = None
     ):
@@ -895,10 +926,6 @@ Reason: The pipeline is in a STOPPED state due to the following error:
         :param timeout_s: The amount of time in seconds to wait for the pipeline
             to process these records.
         """
-
-        params = {
-            "token": token,
-        }
 
         start = time.monotonic()
         end = start + timeout_s if timeout_s else None
@@ -916,18 +943,7 @@ Reason: The pipeline is in a STOPPED state due to the following error:
                         + f" {timeout_s}"
                     )
 
-            resp = self.http.get(
-                path=f"/pipelines/{pipeline_name}/completion_status", params=params
-            )
-
-            status: Optional[str] = resp.get("status")
-            if status is None:
-                raise FelderaAPIError(
-                    f"got empty status when checking for completion status for token: {token}",
-                    resp,
-                )
-
-            if status.lower() == "complete":
+            if self.completion_token_processed(pipeline_name, token):
                 break
 
             elapsed = time.monotonic() - start
@@ -1191,3 +1207,31 @@ Reason: The pipeline is in a STOPPED state due to the following error:
                 buffer += chunk
 
         return buffer
+
+    def generate_completion_token(
+        self, pipeline_name: str, table_name: str, connector_name: str
+    ) -> str:
+        """
+        Generate a completion token that can be passed to :meth:`.FelderaClient.completion_token_processed` to
+        check whether the pipeline has finished processing all inputs received from the connector before
+        the token was generated.
+
+        :param pipeline_name: The name of the pipeline
+        :param table_name: The name of the table associated with this connector.
+        :param connector_name: The name of the connector.
+
+        :raises FelderaAPIError: If the connector cannot be found, or if the pipeline is not running.
+        """
+
+        resp = self.http.get(
+            path=f"/pipelines/{pipeline_name}/tables/{table_name}/connectors/{connector_name}/completion_token",
+        )
+
+        token: str | None = resp.get("token")
+
+        if token is None:
+            raise ValueError(
+                "got invalid response from feldera when generating completion token"
+            )
+
+        return token
