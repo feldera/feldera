@@ -13,6 +13,7 @@ from collections import deque
 from feldera.rest.errors import FelderaAPIError
 from feldera.enums import (
     BootstrapPolicy,
+    CompletionTokenStatus,
     PipelineFieldSelector,
     PipelineStatus,
     ProgramStatus,
@@ -1391,3 +1392,31 @@ pipeline '{self.name}' to sync checkpoint '{uuid}'"""
             print(f"Support bundle written to {path}")
 
         return support_bundle_bytes
+
+    def generate_completion_token(self, table_name: str, connector_name: str) -> str:
+        """
+        Returns a completion token that can be passed to :meth:`.Pipeline.completion_token_status` to
+        check whether the pipeline has finished processing all inputs received from the connector before
+        the token was generated.
+        """
+
+        return self.client.generate_completion_token(
+            self.name, table_name, connector_name
+        )
+
+    def completion_token_status(self, token: str) -> CompletionTokenStatus:
+        """
+        Returns the status of the completion token.
+        """
+
+        if self.client.completion_token_processed(self.name, token):
+            return CompletionTokenStatus.COMPLETE
+        else:
+            return CompletionTokenStatus.IN_PROGRESS
+
+    def wait_for_token(self, token: str):
+        """
+        Blocks until the pipeline processes all inputs represented by the completion token.
+        """
+
+        self.client.wait_for_token(self.name, token)

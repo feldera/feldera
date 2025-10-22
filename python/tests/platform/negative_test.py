@@ -27,7 +27,7 @@ Code snippet:
             ).create_or_replace()
         got_err: str = err.exception.args[0].strip()
         assert expected == got_err
-        pipeline = Pipeline.get("sql_error", TEST_CLIENT)
+        pipeline = Pipeline.get(pipeline_name, TEST_CLIENT)
         pipeline.clear_storage()
 
     def test_rust_error(self):

@@ -352,3 +352,15 @@ class BootstrapPolicy(Enum):
     AWAIT_APPROVAL = "await_approval"
     ALLOW = "allow"
     REJECT = "reject"
+
+
+class CompletionTokenStatus(Enum):
+    COMPLETE = "complete"
+    """
+    Feldera has completed processing all inputs represented by this token.
+    """
+
+    IN_PROGRESS = "inprogress"
+    """
+    Feldera is still processing the inputs represented by this token.
+    """
