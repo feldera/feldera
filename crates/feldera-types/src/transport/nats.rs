@@ -64,8 +64,6 @@ pub struct ConsumerConfig {
     //pub replay_policy: ReplayPolicy,
     #[serde(default, skip_serializing_if = "is_default")]
     pub rate_limit: u64,
-    #[serde(default, skip_serializing_if = "is_default")]
-    pub sample_frequency: u8,
     pub deliver_policy: DeliverPolicy,
     #[serde(default, skip_serializing_if = "is_default")]
     pub max_waiting: i64,
