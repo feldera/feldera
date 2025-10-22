@@ -215,23 +215,21 @@ impl NatsReader {
                         }
                     };
                     info!("Queued {:?} records ({sequence_number_range:?})", buffer_size);
-                    let metadata = Metadata {
+                    let metadata_json = serde_json::to_value(&Metadata {
                         sequence_number_range,
-                    };
-
-                    let seek = serde_json::to_value(&metadata)?;
+                    })?;
                     let timestamp = batches.last().map(|(ts, _)| *ts).unwrap_or_else(Utc::now);
                     let hash = hasher.map(|h| h.finish()).unwrap_or(0);
                     let resume = Resume::Replay {
                         hash,
-                        seek: seek.clone(),
+                        seek: metadata_json.clone(),
                         replay: rmpv::Value::Nil,
                     };
 
                     consumer.extended(
                         buffer_size,
                         Some(resume),
-                        vec![Watermark::new(timestamp, Some(seek))],
+                        vec![Watermark::new(timestamp, Some(metadata_json))],
                     );
                 }
                 InputReaderCommand::Pause => {
