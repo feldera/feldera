@@ -43,6 +43,13 @@ pub struct ConnectOptions {
     pub auth: Auth,
 }
 
+#[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize, ToSchema, Default)]
+pub enum ReplayPolicy {
+    #[default]
+    Instant,
+    Original,
+}
+
 #[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
 pub enum DeliverPolicy {
     All,
@@ -61,7 +68,8 @@ pub struct ConsumerConfig {
     pub description: Option<String>,
     #[serde(default, skip_serializing_if = "is_default")]
     pub filter_subjects: Vec<String>,
-    //pub replay_policy: ReplayPolicy,
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub replay_policy: ReplayPolicy,
     #[serde(default, skip_serializing_if = "is_default")]
     pub rate_limit: u64,
     pub deliver_policy: DeliverPolicy,
