@@ -48,5 +48,6 @@ fn translate_deliver_policy(p: &cfg::DeliverPolicy) -> nats::DeliverPolicy {
         cfg::DeliverPolicy::ByStartTime { start_time } => nats::DeliverPolicy::ByStartTime {
             start_time: *start_time,
         },
+        cfg::DeliverPolicy::LastPerSubject => nats::DeliverPolicy::LastPerSubject,
     }
 }

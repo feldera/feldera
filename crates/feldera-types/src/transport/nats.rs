@@ -50,6 +50,7 @@ pub enum DeliverPolicy {
     New,
     ByStartSequence { start_sequence: u64 },
     ByStartTime { start_time: OffsetDateTime },
+    LastPerSubject,
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
