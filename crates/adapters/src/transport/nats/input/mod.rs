@@ -173,7 +173,7 @@ impl NatsReader {
     async fn connect_nats(
         connection_config: &cfg::ConnectOptions,
     ) -> Result<async_nats::Client, AnyError> {
-        let connect_options = translate_connect_options(&connection_config).await?;
+        let connect_options = translate_connect_options(connection_config).await?;
 
         let client = connect_options
             .connect(&connection_config.server_url)
@@ -348,7 +348,7 @@ async fn consume_nats_messages_until(
                     }
                 };
                 let data = &message.payload;
-                let (buffer, errors) = parser.parse(&data);
+                let (buffer, errors) = parser.parse(data);
                 consumer.parse_errors(errors);
                 if let Some(mut buffer) = buffer {
                     buffer.hash(&mut hasher);
@@ -420,7 +420,7 @@ async fn spawn_nats_reader(
                                 // This is the checkpoint position if we need to restart.
                                 next_sequence.store(info.stream_sequence + 1, Ordering::Release);
                                 let data = &message.payload;
-                                queue.push_with_aux(parser.parse(&data), Utc::now(), info.stream_sequence);
+                                queue.push_with_aux(parser.parse(data), Utc::now(), info.stream_sequence);
                             }
                             Err(error) => {
                                 consumer.error(false, anyhow!("NATS error: {error}"), Some("nats-input"));
