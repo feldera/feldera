@@ -42,6 +42,9 @@ mod s3;
 #[cfg(feature = "with-kafka")]
 pub(crate) mod kafka;
 
+#[cfg(feature = "with-nats")]
+pub(crate) mod nats;
+
 #[cfg(feature = "with-nexmark")]
 mod nexmark;
 
@@ -61,6 +64,10 @@ pub use crate::transport::file::set_barrier;
 use crate::transport::file::{FileInputEndpoint, FileOutputEndpoint};
 #[cfg(feature = "with-kafka")]
 use crate::transport::kafka::{KafkaFtInputEndpoint, KafkaFtOutputEndpoint, KafkaOutputEndpoint};
+
+#[cfg(feature = "with-nats")]
+use crate::transport::nats::NatsInputEndpoint;
+
 #[cfg(feature = "with-nexmark")]
 use crate::transport::nexmark::NexmarkEndpoint;
 use crate::transport::s3::S3InputEndpoint;
@@ -87,6 +94,10 @@ pub fn input_transport_config_to_endpoint(
         TransportConfig::KafkaInput(config) => Box::new(KafkaFtInputEndpoint::new(config)?),
         #[cfg(not(feature = "with-kafka"))]
         TransportConfig::KafkaInput(_) => return Ok(None),
+        #[cfg(feature = "with-nats")]
+        TransportConfig::NatsInput(config) => Box::new(NatsInputEndpoint::new(config)?),
+        #[cfg(not(feature = "with-nats"))]
+        TransportConfig::NatsInput(_) => return Ok(None),
         #[cfg(feature = "with-pubsub")]
         TransportConfig::PubSubInput(config) => Box::new(PubSubInputEndpoint::new(config.clone())?),
         #[cfg(not(feature = "with-pubsub"))]
