@@ -4,7 +4,7 @@ import tests.runtime_aggtest.aggtst_base as base  # noqa: F403
 from tests.runtime_aggtest.aggtst_base import *  # noqa: F403
 from tests.runtime_aggtest.atest_run import run  # noqa: F403
 
-from table import *  # noqa: F403
+from test_table import *  # noqa: F403
 from test_array_arg_max_append import *  # noqa: F403
 from test_array_arg_min_append import *  # noqa: F403
 from test_array_max_append import *  # noqa: F403
