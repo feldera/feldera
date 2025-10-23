@@ -216,7 +216,23 @@ async fn api_key_auth(
             req.extensions_mut().insert(permissions);
             Ok(req)
         }
-        Err(_) => Err((create_authz_json_error("Unauthorized API key"), req)),
+        Err(error) => {
+            match error {
+                DBError::InvalidApiKey => {
+                    let ip = req
+                        .peer_addr()
+                        .map(|addr| addr.ip().to_string())
+                        .unwrap_or_else(|| "<unknown IP>".to_owned());
+                    log::error!(
+                        "authentication attempt using invalid API key from ip: '{}'",
+                        ip
+                    );
+                }
+                e => log::error!("failed to validate API key: {}", e),
+            };
+
+            Err((create_authz_json_error("Unauthorized API key"), req))
+        }
     }
 }
 

@@ -132,10 +132,8 @@ pub async fn validate_api_key(
     let stmt = txn
         .prepare_cached("SELECT tenant_id, scopes FROM api_key WHERE hash = $1")
         .await?;
-    let res = txn
-        .query_one(&stmt, &[&hash])
-        .await
-        .map_err(|_| DBError::InvalidApiKey)?;
+    let res = txn.query(&stmt, &[&hash]).await?;
+    let res = res.first().ok_or(DBError::InvalidApiKey)?;
     let tenant_id = TenantId(res.get(0));
     let vec: Vec<String> = res.get(1);
     let vec = vec
