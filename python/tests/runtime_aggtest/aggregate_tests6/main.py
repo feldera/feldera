@@ -33,6 +33,10 @@ from test_varbinary_arg_max_append import *  # noqa: F403
 from test_varbinary_arg_min_append import *  # noqa: F403
 from test_varbinary_max_append import *  # noqa: F403
 from test_varbinary_min_append import *  # noqa: F403
+from test_interval_count_mths import *  # noqa: F403
+from test_interval_count_col_mths import *  # noqa: F403
+from test_interval_mths_min import *  # noqa: F403
+from test_interval_mths_max import *  # noqa: F403
 
 base.APPEND_ONLY = True
 
