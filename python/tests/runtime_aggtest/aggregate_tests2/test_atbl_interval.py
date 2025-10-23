@@ -130,3 +130,16 @@ class aggtst_atbl_interval_months(TstView):
 #     EXTRACT(EPOCH FROM f_c5) AS m_c5_seconds,
 #     EXTRACT(EPOCH FROM f_c6) AS m_c6_seconds
 # FROM agg_view;
+
+# For interval months: 30.436875 days × 24 hours × 3600 seconds = 2629746 seconds
+# 30.436875 days = avg number of days in a month given a calendar year contains 365.2425 days
+# (Gregorian Calendar) : https://en.wikipedia.org/wiki/Gregorian_calendar
+#
+# SELECT
+#     EXTRACT(EPOCH FROM f_c1 / 2629746) AS m_c1_seconds,
+#     EXTRACT(EPOCH FROM f_c2 / 2629746) AS m_c2_seconds,
+#     EXTRACT(EPOCH FROM f_c3 / 2629746) AS m_c3_seconds,
+#     EXTRACT(EPOCH FROM f_c4 / 2629746) AS m_c4_seconds,
+#     EXTRACT(EPOCH FROM f_c5 / 2629746) AS m_c5_seconds,
+#     EXTRACT(EPOCH FROM f_c6 / 2629746) AS m_c6_seconds
+# FROM agg_view;
