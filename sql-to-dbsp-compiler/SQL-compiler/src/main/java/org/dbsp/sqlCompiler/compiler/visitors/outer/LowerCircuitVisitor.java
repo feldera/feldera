@@ -39,7 +39,7 @@ import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeAny;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeUSize;
-import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeMap;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeBTreeMap;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeVec;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
 import org.dbsp.util.Linq;
@@ -174,9 +174,9 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
             if (flatmap.collectionKind == DBSPTypeCode.ARRAY)
                 empty = new DBSPTypeVec(collectionElementType, false).emptyVector();
             else if (flatmap.collectionKind == DBSPTypeCode.MAP) {
-                DBSPTypeTuple tup = collectionElementType.to(DBSPTypeTuple.class);
+                DBSPTypeTupleBase tup = collectionElementType.to(DBSPTypeTupleBase.class);
                 Utilities.enforce(tup.size() == 2);
-                empty = new DBSPTypeMap(tup.tupFields[0], tup.tupFields[1], false).defaultValue();
+                empty = new DBSPTypeBTreeMap(tup.tupFields[0], tup.tupFields[1], false).emptyMap();
             } else {
                 throw new InternalCompilerError("Unexpected collection type in flatmap " + flatmap.collectionKind);
             }

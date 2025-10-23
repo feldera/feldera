@@ -160,12 +160,12 @@ public final class DBSPZSetExpression extends DBSPExpression
         if (type.is(DBSPTypeBaseType.class)) {
             return expression.cast(expression.getNode(), type, false);
         } else if (type.is(DBSPTypeArray.class)) {
-            DBSPTypeArray vec = type.to(DBSPTypeArray.class);
+            DBSPTypeArray array = type.to(DBSPTypeArray.class);
             DBSPArrayExpression vecLit = expression.to(DBSPArrayExpression.class);
             if (vecLit.data == null) {
-                return new DBSPArrayExpression(type, type.mayBeNull);
+                return new DBSPArrayExpression(array, type.mayBeNull);
             }
-            List<DBSPExpression> fields = Linq.map(vecLit.data, e -> castRecursive(e, vec.getElementType()));
+            List<DBSPExpression> fields = Linq.map(vecLit.data, e -> castRecursive(e, array.getElementType()));
             return new DBSPArrayExpression(expression.getNode(), type, fields);
         } else if (type.is(DBSPTypeTupleBase.class)) {
             DBSPTypeTupleBase tuple = type.to(DBSPTypeTupleBase.class);

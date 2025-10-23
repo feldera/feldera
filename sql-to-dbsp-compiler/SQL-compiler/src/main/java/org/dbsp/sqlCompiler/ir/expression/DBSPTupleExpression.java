@@ -34,6 +34,7 @@ import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
+import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTupleBase;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Utilities;
@@ -105,7 +106,7 @@ public final class DBSPTupleExpression extends DBSPBaseTupleExpression {
     public static DBSPTupleExpression flatten(List<DBSPExpression> expressions) {
         List<DBSPExpression> fields = new ArrayList<>(expressions.size());
         for (DBSPExpression expression: expressions) {
-            DBSPTypeTuple type = expression.getType().to(DBSPTypeTuple.class);
+            DBSPTypeTupleBase type = expression.getType().to(DBSPTypeTupleBase.class);
             for (int i = 0; i < type.size(); i++) {
                 DBSPType fieldType = type.tupFields[i];
                 DBSPExpression field = new DBSPFieldExpression(expression.deepCopy(), i, fieldType)
