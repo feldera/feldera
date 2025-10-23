@@ -111,6 +111,7 @@ public abstract class BaseRustCodeGenerator implements ICodeGenerator {
                 circuit::{checkpointer::Checkpoint, Circuit, CircuitConfig, NestedCircuit, RootCircuit, Stream},
                 operator::{
                     dynamic::aggregate::{ArgMinSome, Max, Min, MinSome1, Postprocess},
+                    ConstantGenerator,
                     Generator,
                     Fold,
                     group::WithCustomOrd,
