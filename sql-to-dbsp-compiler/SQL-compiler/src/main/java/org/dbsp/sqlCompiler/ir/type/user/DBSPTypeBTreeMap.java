@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.util.Utilities;
 
@@ -23,6 +24,14 @@ public class DBSPTypeBTreeMap extends DBSPTypeUser {
 
     public DBSPType getValueType() {
         return this.getTypeArg(1);
+    }
+
+    /** BTreeMap::new() or Some(BTreeMap::new()), depending on nullability */
+    public DBSPExpression emptyMap() {
+        DBSPExpression map = this.constructor("new");
+        if (!this.mayBeNull)
+            return map;
+        return map.some();
     }
 
     @Override

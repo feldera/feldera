@@ -1144,4 +1144,30 @@ public class Regression1Tests extends SqlIoTest {
                 CREATE MATERIALIZED VIEW v AS SELECT
                 ARRAY(SELECT roww, roww FROM tbl) AS arr;""");
     }
+
+    @Test
+    public void mapVariant() {
+        var ccs = this.getCCS("""
+                create table j(j VARCHAR);
+                
+                create LOCAL view user_props AS
+                SELECT PARSE_JSON(j) AS contacts FROM j;
+                
+                create view abc as
+                WITH ref_profile AS (
+                SELECT cast(contacts as MAP<varchar, variant>) contacts
+                    FROM user_props
+                ) SELECT key, to_json(contact)
+                FROM ref_profile profile_0, UNNEST(profile_0.contacts) AS t(key, contact)""");
+        ccs.step("""
+                INSERT INTO j VALUES('{ "a": "1", "b": 2, "c": [1, 2, 3], "d": null, "e": { "f": 1 } }');""", """
+                 key | contact | weight
+                ------------------------
+                 a| "1"| 1
+                 b| 2| 1
+                 c| [1,2,3]| 1
+                 d| null|1
+                 e| {"f":1}|1""");
+    }
 }
+ 

@@ -44,6 +44,7 @@ import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeRawTuple;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeStruct;
 import org.dbsp.sqlCompiler.ir.type.derived.DBSPTypeTuple;
 import org.dbsp.sqlCompiler.ir.type.primitive.*;
+import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeArray;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeMap;
 
 import javax.annotation.Nullable;
@@ -91,7 +92,7 @@ public abstract class DBSPLiteral extends DBSPExpression
             case INTERVAL_LONG -> new DBSPIntervalMonthsLiteral(type.getNode(), type, null);
             case STRING -> new DBSPStringLiteral(CalciteObject.EMPTY, type, null, StandardCharsets.UTF_8);
             case TIME -> new DBSPTimeLiteral();
-            case ARRAY -> new DBSPArrayExpression(type, true);
+            case ARRAY -> new DBSPArrayExpression(type.to(DBSPTypeArray.class), true);
             case MAP -> new DBSPMapExpression(type.to(DBSPTypeMap.class), null, null);
             case TUPLE -> DBSPTupleExpression.none(type.to(DBSPTypeTuple.class));
             case RAW_TUPLE -> DBSPRawTupleExpression.none(type.to(DBSPTypeRawTuple.class));
