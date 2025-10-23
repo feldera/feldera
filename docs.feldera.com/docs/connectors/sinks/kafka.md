@@ -10,7 +10,7 @@ The Kafka output connector supports [fault tolerance](/pipelines/fault-tolerance
 |--------------------------------|------------------|---------|-------------|
 | `topic` (required)             | string           |         | The Kafka topic to send to. |
 | `bootstrap.servers` (required) | string           |         | A comma separated list of Kafka brokers to connect to. |
-| `headers`                      | array of objects |         | Kafka headers to be added to each message produced by this connector. A header specifies a key and, optionally, a value. The value must be a string or an array of bytes, e.g., `[{"key": "key1", "value": "val1"}, {"key": "key2", "value": [1,2,3,4,5]}, {"key": "key3"}]`| 
+| `headers`                      | array of objects |         | Kafka headers to be added to each message produced by this connector. A header specifies a key and, optionally, a value. The value must be a string or an array of bytes, e.g., `[{"key": "key1", "value": "val1"}, {"key": "key2", "value": [1,2,3,4,5]}, {"key": "key3"}]`|
 | `log_level`                    | string           |         | The log level for the Kafka client. |
 | `initialization_timeout_secs`  | seconds          | 60      | Maximum timeout in seconds to wait for the connector to connect to a Kafka broker. |
 | `kafka_service`                | string           |         | If specified, this service is used to provide defaults for the Kafka options. |
