@@ -2,12 +2,25 @@
 
 Feldera can output a stream of changes to a SQL table or view to a Kafka topic.
 
-The Kafka output connector supports [fault
-tolerance](/pipelines/fault-tolerance).
+The Kafka output connector supports [fault tolerance](/pipelines/fault-tolerance).
 
-The Kafka connector uses **librdkafka** in its implementation and
-supports [relevant options for
-producers](https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md).
+## Kafka Output Connector Configuration
+
+| Property                       | Type             | Default | Description |
+|--------------------------------|------------------|---------|-------------|
+| `topic` (required)             | string           |         | The Kafka topic to send to. |
+| `bootstrap.servers` (required) | string           |         | A comma separated list of Kafka brokers to connect to. |
+| `headers`                      | array of objects |         | Kafka headers to be added to each message produced by this connector. A header specifies a key and, optionally, a value. The value must be a string or an array of bytes, e.g., `[{"key": "key1", "value": "val1"}, {"key": "key2", "value": [1,2,3,4,5]}, {"key": "key3"}]`| 
+| `log_level`                    | string           |         | The log level for the Kafka client. |
+| `initialization_timeout_secs`  | seconds          | 60      | Maximum timeout in seconds to wait for the connector to connect to a Kafka broker. |
+| `fault_tolerance`              |                  |         | Optional configuration for fault tolerance.|
+| `kafka_service`                | string           |         | If specified, this service is used to provide defaults for the Kafka options. |
+| `region`                       | string           |         | The AWS region to use while connecting to AWS Managed Streaming for Kafka (MSK). |
+
+The connector passes additional options directly to [**librdkafka**](https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md).  Some of the relevant options:
+
+The Kafka connector passes additional options directly to librdkafka.
+See [relevant options for producers](https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md).
 
 ## Example usage
 
@@ -132,7 +145,6 @@ WITH (
    ]'
 ) as select * from INPUT;
 ```
-
 
 ## Additional resources
 
