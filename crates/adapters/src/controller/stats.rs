@@ -1964,6 +1964,54 @@ impl OutputEndpointMetrics {
             total_processed_input_records: AtomicU64::new(total_processed_input_records),
         }
     }
+
+    /// Obtains a consistent snapshot of these statistics.
+    pub fn snapshot(&self) -> OutputEndpointMetricsSnapshot {
+        fn inner(this: &OutputEndpointMetrics) -> OutputEndpointMetricsSnapshot {
+            OutputEndpointMetricsSnapshot {
+                transmitted_records: this.transmitted_records.load(Ordering::Acquire),
+                transmitted_bytes: this.transmitted_bytes.load(Ordering::Relaxed),
+                queued_records: this.queued_records.load(Ordering::Relaxed),
+                queued_batches: this.queued_batches.load(Ordering::Relaxed),
+                buffered_records: this.buffered_records.load(Ordering::Relaxed),
+                buffered_batches: this.buffered_batches.load(Ordering::Relaxed),
+                num_encode_errors: this.num_encode_errors.load(Ordering::Relaxed),
+                num_transport_errors: this.num_transport_errors.load(Ordering::Relaxed),
+                total_processed_input_records: this
+                    .total_processed_input_records
+                    .load(Ordering::Relaxed),
+            }
+        }
+
+        // Fetch the statistics repeatedly until they don't change from one read
+        // to the next.  It's pretty unlikely that they'll change at all, since
+        // we're racing against I/O.
+        let mut snapshot1 = inner(self);
+        loop {
+            let snapshot2 = inner(self);
+            if snapshot1 == snapshot2 {
+                return snapshot1;
+            }
+            snapshot1 = inner(self);
+            if snapshot1 == snapshot2 {
+                return snapshot1;
+            }
+        }
+    }
+}
+
+/// A snapshot of the values in [OutputEndpointMetrics].
+#[derive(Default, PartialEq, Eq, PartialOrd, Ord)]
+pub struct OutputEndpointMetricsSnapshot {
+    pub transmitted_records: u64,
+    pub transmitted_bytes: u64,
+    pub queued_records: u64,
+    pub queued_batches: u64,
+    pub buffered_records: u64,
+    pub buffered_batches: u64,
+    pub num_encode_errors: u64,
+    pub num_transport_errors: u64,
+    pub total_processed_input_records: u64,
 }
 
 /// Output endpoint status information.
