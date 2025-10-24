@@ -1169,5 +1169,35 @@ public class Regression1Tests extends SqlIoTest {
                  d| null|1
                  e| {"f":1}|1""");
     }
+
+    @Test
+    public void issue4890() {
+        this.getCC("""
+                CREATE TABLE tbl(
+                roww ROW(i1 INT, v1 VARCHAR NULL));
+                
+                CREATE MATERIALIZED VIEW v1 AS SELECT
+                roww IN (ROW(4,'cat')) AS roww
+                FROM tbl;
+                
+                CREATE MATERIALIZED VIEW v2 AS SELECT
+                roww IN (ROW(4,'cat')) AS roww
+                FROM tbl;""");
+    }
+
+    @Test
+    public void issue4891() {
+        this.getCC("""
+                CREATE TABLE tbl(
+                roww ROW(i1 INT, v1 VARCHAR NULL));
+                
+                CREATE MATERIALIZED VIEW v1 AS SELECT
+                roww IN (roww) AS roww
+                FROM tbl;
+                
+                CREATE MATERIALIZED VIEW v2 AS SELECT
+                roww NOT IN (roww) AS roww
+                FROM tbl;""");
+    }
 }
  
