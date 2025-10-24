@@ -178,7 +178,7 @@
     pushAsCircularBuffer
   } from '$lib/functions/pipelines/changeStream'
   import JSONbig from 'true-json-bigint'
-  import { groupBy } from '$lib/functions/common/array'
+  import { count, groupBy } from '$lib/functions/common/array'
   import { untrack } from 'svelte'
   import { tuple } from '$lib/functions/common/tuple'
   import { useIsMobile } from '$lib/compositions/layout/useIsMobile.svelte'
@@ -187,10 +187,21 @@
     usePipelineManager,
     type PipelineManagerApi
   } from '$lib/compositions/usePipelineManager.svelte'
+  import { useProtocol } from '$lib/compositions/useProtocol'
+  import Tooltip from '$lib/components/common/Tooltip.svelte'
 
   let { pipeline }: { pipeline: { current: ExtendedPipeline } } = $props()
 
   let pipelineName = $derived(pipeline.current.name)
+
+  const protocol = useProtocol()
+  const maxStreamsOnHttp = 4
+
+  let selectedRelationsCount = $derived(
+    count(Object.values(pipelinesRelations), (relations) =>
+      count(Object.values(relations), (r) => r.selected)
+    )
+  )
 
   const reloadSchema = async (pipelineName: string, pipeline: ExtendedPipeline) => {
     const schema = pipeline.programInfo?.schema
@@ -286,11 +297,18 @@
 
 {#snippet relationView()}
   {#snippet relationItem(relation: RelationInfo & ExtraType)}
-    <label class="flex-none cursor-pointer overflow-hidden overflow-ellipsis">
+    {@const isDisabled =
+      protocol === 'http' && !relation.selected && selectedRelationsCount >= maxStreamsOnHttp}
+    <label
+      class="flex-none overflow-hidden overflow-ellipsis {isDisabled
+        ? 'cursor-not-allowed opacity-50'
+        : 'cursor-pointer'}"
+    >
       <input
         type="checkbox"
         class="bg-white-dark checkbox m-1"
         checked={relation.selected}
+        disabled={isDisabled}
         onchange={(e) => {
           const follow = e.currentTarget.checked
           pipelinesRelations[pipelineName][relation.relationName].selected = follow
@@ -322,6 +340,11 @@
       />
       {relation.relationName}
     </label>
+    {#if isDisabled}
+      <Tooltip class="z-10 bg-white text-surface-950-50 dark:bg-black" placement="right">
+        Cannot follow more than {maxStreamsOnHttp} tables and views across all pipelines over HTTP. Consider using HTTPS (supported in Feldera Enterprise Edition).
+      </Tooltip>
+    {/if}
   {/snippet}
   {#if inputs.length}
     <div class="text-surface-600-400">Tables:</div>
