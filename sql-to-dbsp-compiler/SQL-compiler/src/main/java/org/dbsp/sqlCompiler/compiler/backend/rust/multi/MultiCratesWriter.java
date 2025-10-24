@@ -7,12 +7,14 @@ import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.rust.BaseRustCodeGenerator;
 import org.dbsp.sqlCompiler.compiler.backend.rust.RustFileWriter;
 import org.dbsp.sqlCompiler.compiler.backend.rust.RustWriter;
 import org.dbsp.sqlCompiler.compiler.errors.CompilationError;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.LateMaterializations;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Utilities;
@@ -92,13 +94,18 @@ public final class MultiCratesWriter extends RustWriter {
     @Override
     public void write(DBSPCompiler compiler) throws IOException {
         StructuresUsed used = this.analyze(compiler);
-        MultiCrates crates = new MultiCrates(this.rootDirectory, this.pipelineName, compiler, used);
+        LateMaterializations materializations = new LateMaterializations(compiler);
+        for (var node: this.toWrite) {
+            if (node.is(DBSPCircuit.class))
+                materializations.apply(node.to(DBSPCircuit.class));
+        }
+        MultiCrates crates = new MultiCrates(this.rootDirectory, this.pipelineName, compiler, used, materializations);
         crates.addNodes(this.toWrite);
         List<CrateGenerator> topLevel = new ArrayList<>();
         topLevel.add(crates.main);
 
         if (!this.testNodes.isEmpty()) {
-            BaseRustCodeGenerator writer = new RustFileWriter()
+            BaseRustCodeGenerator writer = new RustFileWriter(materializations)
                     .withUdf(false).withMalloc(false).withGenerateTuples(false);
             CrateGenerator test = new CrateGenerator(
                     this.rootDirectory, MultiCratesWriter.getTestName(), writer, crates.enterprise());

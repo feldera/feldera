@@ -19,6 +19,7 @@ import org.dbsp.sqlCompiler.compiler.sql.tools.CompilerCircuitStream;
 import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.LateMaterializations;
 import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
 import org.dbsp.util.IndentStreamBuilder;
@@ -819,9 +820,11 @@ public class RegressionTests extends SqlIoTest {
                 FROM t;""";
         // This is not executed, since the udfs have no definitions
         var cc = this.getCC(sql);
-        // Test that code generation does not crash
-        ToRustVisitor.toRustString(cc.compiler, new IndentStreamBuilder(),
-                cc.getCircuit(), new ProjectDeclarations());
+        // Test that code generation does not crash without compiling the result
+        ToRustVisitor visitor = new ToRustVisitor(
+                cc.compiler, new IndentStreamBuilder(), cc.getCircuit().getMetadata(),
+                new ProjectDeclarations(), new LateMaterializations(cc.compiler));
+        visitor.apply(cc.getCircuit());
     }
 
     @Test

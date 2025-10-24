@@ -3,12 +3,14 @@ package org.dbsp.sqlCompiler.compiler.backend.rust.multi;
 import org.dbsp.sqlCompiler.circuit.DBSPCircuit;
 import org.dbsp.sqlCompiler.circuit.ICircuit;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPControlledKeyFilterOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPDeltaOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPInternOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSimpleOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceBaseOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPSourceMultisetOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPSumOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPViewBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.GCOperator;
@@ -18,6 +20,7 @@ import org.dbsp.sqlCompiler.compiler.backend.rust.BaseRustCodeGenerator;
 import org.dbsp.sqlCompiler.compiler.backend.rust.RustWriter;
 import org.dbsp.sqlCompiler.compiler.backend.rust.ToRustVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.LateMaterializations;
 import org.dbsp.sqlCompiler.ir.expression.DBSPStaticExpression;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStaticItem;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
@@ -32,6 +35,7 @@ public final class SingleOperatorWriter extends BaseRustCodeGenerator {
     final DBSPCircuit circuit;
     final ICircuit parent;
     final boolean topLevel;
+    final LateMaterializations materializations;
 
     /* Example output:
      * ... preamble ...
@@ -44,11 +48,13 @@ public final class SingleOperatorWriter extends BaseRustCodeGenerator {
      *    let xxx = i0.sum([i1, i2]);
      *    return xxx;
      * } */
-    public SingleOperatorWriter(DBSPOperator operator, DBSPCircuit circuit, ICircuit parent) {
+    public SingleOperatorWriter(DBSPOperator operator, DBSPCircuit circuit,
+                                ICircuit parent, LateMaterializations materializations) {
         this.circuit = circuit;
         this.parent = parent;
         this.operator = operator;
         this.topLevel = circuit == parent;
+        this.materializations = materializations;
     }
 
     /** Collects all {@link DBSPStaticExpression}s that appear in an expression */
@@ -76,7 +82,7 @@ public final class SingleOperatorWriter extends BaseRustCodeGenerator {
                 .append(RustWriter.COMMON_PREAMBLE)
                 .append(RustWriter.STANDARD_PREAMBLE);
         ToRustVisitor visitor = new ToRustVisitor(
-                compiler, this.builder(), this.circuit.metadata, new ProjectDeclarations())
+                compiler, this.builder(), this.circuit.metadata, new ProjectDeclarations(), this.materializations)
                 .withPreferHash(true);
         final String name = this.operator.getNodeName(true);
         this.builder().newline();
@@ -107,6 +113,14 @@ public final class SingleOperatorWriter extends BaseRustCodeGenerator {
             streamType.accept(visitor.innerVisitor);
             this.builder().append(",").newline();
         }
+        if (this.operator.is(DBSPControlledKeyFilterOperator.class)) {
+            DBSPControlledKeyFilterOperator filter = this.operator.to(DBSPControlledKeyFilterOperator.class);
+            if (this.materializations.hasRight(filter)) {
+                DBSPSourceMultisetOperator source = this.materializations.getLeft(filter);
+                this.builder().append("handle: ");
+                source.getHandleType().accept(visitor.innerVisitor);
+            }
+        }
         this.builder().decrease().append(")");
         if (hasOutput) {
             this.builder().append(" -> ");
@@ -116,13 +130,13 @@ public final class SingleOperatorWriter extends BaseRustCodeGenerator {
                 outputType.accept(visitor.innerVisitor);
                 this.builder().append(">").newline();
             } else if (operator.is(DBSPSimpleOperator.class)) {
-                if (operator.is(DBSPSourceBaseOperator.class) && useHandles) {
+                if (operator.is(DBSPSourceBaseOperator.class)) {
                     this.builder().append("(");
                 }
                 DBSPType streamType = operator.outputStreamType(0, this.topLevel);
                 streamType.accept(visitor.innerVisitor);
 
-                if (operator.is(IInputOperator.class) && useHandles) {
+                if (operator.is(IInputOperator.class)) {
                     this.builder().append(", ");
                     DBSPType type = operator.to(IInputOperator.class).getHandleType();
                     type.accept(visitor.innerVisitor);
@@ -196,13 +210,9 @@ public final class SingleOperatorWriter extends BaseRustCodeGenerator {
                 }
                 this.builder().append(")");
             } else if (operator.is(DBSPSourceBaseOperator.class)) {
-                if (useHandles)
-                    this.builder().append("(");
-                this.builder().append(name);
-                if (useHandles)
-                    this.builder()
-                        .append(", handle")
-                        .append(")");
+                this.builder().append("(")
+                        .append(name)
+                        .append(", handle)");
             } else if (operator.is(DBSPViewBaseOperator.class)) {
                 this.builder().append("handle");
             } else {
