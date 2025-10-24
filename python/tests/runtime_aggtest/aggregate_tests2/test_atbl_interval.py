@@ -122,6 +122,7 @@ class aggtst_atbl_interval_months(TstView):
 #     aggregate(c3_minus_c2) AS f_c6
 # FROM atbl_interval;
 
+# For interval seconds:
 # SELECT
 #     EXTRACT(EPOCH FROM f_c1) AS m_c1_seconds,
 #     EXTRACT(EPOCH FROM f_c2) AS m_c2_seconds,
@@ -131,15 +132,12 @@ class aggtst_atbl_interval_months(TstView):
 #     EXTRACT(EPOCH FROM f_c6) AS m_c6_seconds
 # FROM agg_view;
 
-# For interval months: 30.436875 days × 24 hours × 3600 seconds = 2629746 seconds
-# 30.436875 days = avg number of days in a month given a calendar year contains 365.2425 days
-# (Gregorian Calendar) : https://en.wikipedia.org/wiki/Gregorian_calendar
-#
+# For interval months:
 # SELECT
-#     EXTRACT(EPOCH FROM f_c1 / 2629746) AS m_c1_seconds,
-#     EXTRACT(EPOCH FROM f_c2 / 2629746) AS m_c2_seconds,
-#     EXTRACT(EPOCH FROM f_c3 / 2629746) AS m_c3_seconds,
-#     EXTRACT(EPOCH FROM f_c4 / 2629746) AS m_c4_seconds,
-#     EXTRACT(EPOCH FROM f_c5 / 2629746) AS m_c5_seconds,
-#     EXTRACT(EPOCH FROM f_c6 / 2629746) AS m_c6_seconds
+#   EXTRACT(YEAR FROM f_c1) * 12 + EXTRACT(MONTH FROM f_c1) AS f_c1_months,
+#   EXTRACT(YEAR FROM f_c2) * 12 + EXTRACT(MONTH FROM f_c2) AS f_c2_months,
+#   EXTRACT(YEAR FROM f_c3) * 12 + EXTRACT(MONTH FROM f_c3) AS f_c3_months,
+#   EXTRACT(YEAR FROM f_c4) * 12 + EXTRACT(MONTH FROM f_c4) AS f_c4_months,
+#   EXTRACT(YEAR FROM f_c5) * 12 + EXTRACT(MONTH FROM f_c5) AS f_c5_months,
+#   EXTRACT(YEAR FROM f_c6) * 12 + EXTRACT(MONTH FROM f_c6) AS f_c6_months
 # FROM agg_view;
