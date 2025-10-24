@@ -659,6 +659,28 @@ impl<K: Eq + Hash> TokenBucketRateLimiter<K> {
     }
 }
 
+pub(crate) struct LongOperationWarning {
+    start: Instant,
+    warn_threshold: Duration,
+}
+
+impl LongOperationWarning {
+    pub fn new(warn_threshold: Duration) -> Self {
+        Self {
+            start: Instant::now(),
+            warn_threshold,
+        }
+    }
+
+    pub fn check(&mut self, warn: impl FnOnce(Duration)) {
+        let elapsed = self.start.elapsed();
+        if elapsed >= self.warn_threshold {
+            warn(elapsed);
+            self.warn_threshold *= 2;
+        }
+    }
+}
+
 #[cfg(test)]
 mod test {
     #[cfg(feature = "with-deltalake")]

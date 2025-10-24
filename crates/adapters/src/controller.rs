@@ -38,7 +38,7 @@ use crate::server::{InitializationState, ServerState};
 use crate::transport::clock::now_endpoint_config;
 use crate::transport::Step;
 use crate::transport::{input_transport_config_to_endpoint, output_transport_config_to_endpoint};
-use crate::util::run_on_thread_pool;
+use crate::util::{run_on_thread_pool, LongOperationWarning};
 use crate::{create_integrated_output_endpoint, PipelinePhase};
 use crate::{
     CircuitCatalog, Encoder, InputConsumer, OutputConsumer, OutputEndpoint, ParseError,
@@ -5113,28 +5113,6 @@ impl OutputConsumer for OutputProbe {
                 Some("outprobe_batch_end"),
             );
         })
-    }
-}
-
-struct LongOperationWarning {
-    start: Instant,
-    warn_threshold: Duration,
-}
-
-impl LongOperationWarning {
-    fn new(warn_threshold: Duration) -> Self {
-        Self {
-            start: Instant::now(),
-            warn_threshold,
-        }
-    }
-
-    fn check(&mut self, warn: impl FnOnce(Duration)) {
-        let elapsed = self.start.elapsed();
-        if elapsed >= self.warn_threshold {
-            warn(elapsed);
-            self.warn_threshold *= 2;
-        }
     }
 }
 
