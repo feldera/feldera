@@ -1,6 +1,8 @@
 use std::borrow::Cow;
+use std::fmt::Display;
 use std::hash::Hash;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
+use std::sync::mpsc::RecvTimeoutError;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -13,8 +15,10 @@ use feldera_adapterlib::catalog::SerCursor;
 use feldera_types::program_schema::SqlIdentifier;
 #[cfg(feature = "with-deltalake")]
 use futures::channel::oneshot;
+use itertools::Itertools;
 #[cfg(feature = "with-deltalake")]
 use tokio::{spawn, task::JoinHandle};
+use tracing::warn;
 
 #[cfg(feature = "with-deltalake")]
 pub(crate) fn root_cause(mut err: &dyn Error) -> &dyn Error {
@@ -365,7 +369,10 @@ impl<I, O> Drop for JobQueue<I, O> {
     }
 }
 
-/// Execute a set of tasks on a thread pool with `num_threads`.
+/// Execute a set of `tasks` on a thread pool with `num_threads`.
+///
+/// Each of the `tasks` is a `(name, closure)` pair.  The names allow the names
+/// of tasks that run a long time to be logged.
 ///
 /// Will execute up to `num_threads` tasks in parallel.
 ///
@@ -388,9 +395,9 @@ impl<I, O> Drop for JobQueue<I, O> {
 // you can wrap it in `catch_unwind` and convert a panic into an error.
 pub(crate) fn run_on_thread_pool<I, T, E>(name: &str, num_threads: usize, tasks: I) -> Result<(), E>
 where
-    I: IntoIterator<Item = Box<dyn FnOnce() -> Result<T, E> + Send>>,
+    I: IntoIterator<Item = (String, Box<dyn FnOnce() -> Result<T, E> + Send>)>,
     T: Send + 'static,
-    E: Send + 'static,
+    E: Send + Display + 'static,
 {
     let thread_pool = threadpool::Builder::new()
         .num_threads(num_threads)
@@ -398,10 +405,10 @@ where
         .build();
     let (tx, rx) = std::sync::mpsc::channel();
     let cancel = Arc::new(AtomicBool::new(false));
-    let mut num_tasks = 0;
 
-    for task in tasks {
-        num_tasks += 1;
+    let mut names = Vec::new();
+    for (name, task) in tasks {
+        names.push(name.clone());
         let cancel = cancel.clone();
         let tx = tx.clone();
         thread_pool.execute(move || {
@@ -413,12 +420,34 @@ where
             if result.is_err() {
                 cancel.store(true, Ordering::Release);
             }
-            let _ = tx.send(result);
+            let _ = tx.send((result, name));
         })
     }
 
-    for _ in 0..num_tasks {
-        rx.recv().unwrap()?;
+    let mut long_operation = LongOperationWarning::new(Duration::from_secs(5));
+    while !names.is_empty() {
+        match rx.recv_timeout(Duration::from_secs(1)) {
+            Ok((Err(error), name)) => {
+                warn!("{name}: task failed: {error}");
+                return Err(error);
+            }
+            Ok((Ok(_), name)) => {
+                // Remove name of completed task from list.  We know that the
+                // task name has be in there, hence the `unwrap()`.  Even if
+                // there are duplicate names, we only remove one of them, so it
+                // is safe in that case too.
+                names.swap_remove(names.iter().position(|s| s == &name).unwrap());
+            }
+            Err(RecvTimeoutError::Disconnected) => unreachable!(),
+            Err(RecvTimeoutError::Timeout) => (),
+        }
+        long_operation.check(|duration| {
+            warn!(
+                "tasks still running after {} seconds: {}",
+                duration.as_secs(),
+                names.iter().join(", ")
+            )
+        });
     }
 
     thread_pool.join();
