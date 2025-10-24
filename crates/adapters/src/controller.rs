@@ -3737,12 +3737,16 @@ impl ControllerInner {
 
                     let resume_info = resume_info.get(&*input_name).cloned();
 
-                    Box::new(move || {
-                        catch_unwind(AssertUnwindSafe(|| {
-                            controller.connect_input(&input_name, &input_config, resume_info)
-                        }))
-                        .unwrap_or_else(|_| Err(ControllerError::ControllerPanic))
-                    }) as Box<dyn FnOnce() -> Result<_, ControllerError> + Send>
+                    (
+                        format!("'{input_name}' input connector initialization"),
+                        Box::new(move || {
+                            catch_unwind(AssertUnwindSafe(|| {
+                                controller.connect_input(&input_name, &input_config, resume_info)
+                            }))
+                            .unwrap_or_else(|_| Err(ControllerError::ControllerPanic))
+                        })
+                            as Box<dyn FnOnce() -> Result<_, ControllerError> + Send>,
+                    )
                 });
 
         let sink_tasks =
@@ -3756,16 +3760,20 @@ impl ControllerInner {
                     let output_name = output_name.clone();
                     let output_config = output_config.clone();
                     let initial_statistics = output_statistics.get(&*output_name).cloned();
-                    Box::new(move || {
-                        catch_unwind(AssertUnwindSafe(|| {
-                            controller.connect_output(
-                                &output_name,
-                                &output_config,
-                                initial_statistics.as_ref(),
-                            )
-                        }))
-                        .unwrap_or_else(|_| Err(ControllerError::ControllerPanic))
-                    }) as Box<dyn FnOnce() -> Result<_, ControllerError> + Send>
+                    (
+                        format!("'{output_name}' output connector initialization"),
+                        Box::new(move || {
+                            catch_unwind(AssertUnwindSafe(|| {
+                                controller.connect_output(
+                                    &output_name,
+                                    &output_config,
+                                    initial_statistics.as_ref(),
+                                )
+                            }))
+                            .unwrap_or_else(|_| Err(ControllerError::ControllerPanic))
+                        })
+                            as Box<dyn FnOnce() -> Result<_, ControllerError> + Send>,
+                    )
                 });
 
         let pool_size = config.max_parallel_connector_init();
