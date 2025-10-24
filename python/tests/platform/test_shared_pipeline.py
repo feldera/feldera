@@ -778,7 +778,8 @@ class TestPipeline(SharedTestPipeline):
     def test_pipelines(self):
         assert self.pipeline.name in [p.name for p in Pipeline.all(TEST_CLIENT)]
 
-    def test_completion_tokens(self):
+    # Give this test a different name than the one in platform/test_completion_tokens.
+    def test_completion_tokens_sdk(self):
         self.pipeline.start()
         self.pipeline.resume_connector("tbl", "d1")
         token = self.pipeline.generate_completion_token("tbl", "d1")
