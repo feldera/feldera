@@ -38,8 +38,6 @@ class aggtst_interval_mths_max_res(TstView):
                       FROM interval_mths_max"""
 
 
-#
-#
 class aggtst_interval_mths_max_gby(TstView):
     def __init__(self):
         # Result validation is not required for local views
