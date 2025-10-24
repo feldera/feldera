@@ -378,11 +378,6 @@ pipeline = PipelineBuilder(
     TEST_CLIENT,
     pipeline_name,
     sql=gen_sql("2025-09-01", "2025-12-15"),
-    runtime_config=RuntimeConfig(
-        dev_tweaks={
-            "backfill_avoidance": True
-        },  # This should not be necessary once it is enabled by default.
-    ),
 ).create_or_replace()
 
 pipeline.start()

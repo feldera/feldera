@@ -670,14 +670,6 @@ pub(crate) async fn update_pipeline(
         return Ok(current.version);
     }
 
-    // Check if backfill avoidance is enabled in dev_tweaks
-    let backfill_avoidance_enabled = current
-        .runtime_config
-        .get("dev_tweaks")
-        .and_then(|dev_tweaks| dev_tweaks.get("backfill_avoidance"))
-        .and_then(|backfill| backfill.as_bool())
-        .unwrap_or(false);
-
     // Certain edits are restricted to cleared storage
     if current.storage_status != StorageStatus::Cleared {
         let mut not_allowed = vec![];
@@ -712,28 +704,7 @@ pub(crate) async fn update_pipeline(
                 not_allowed.push("`runtime_config.resources.storage_mb_max`");
             }
         }
-        if !backfill_avoidance_enabled
-            && program_code
-                .as_ref()
-                .is_some_and(|v| *v != current.program_code)
-        {
-            not_allowed.push("`program_code`")
-        }
-        if !backfill_avoidance_enabled && udf_rust.as_ref().is_some_and(|v| *v != current.udf_rust)
-        {
-            not_allowed.push("`udf_rust`")
-        }
-        if !backfill_avoidance_enabled && udf_toml.as_ref().is_some_and(|v| *v != current.udf_toml)
-        {
-            not_allowed.push("`udf_toml`")
-        }
-        if !backfill_avoidance_enabled
-            && program_config
-                .as_ref()
-                .is_some_and(|v| *v != current.program_config)
-        {
-            not_allowed.push("`program_config`")
-        }
+
         if !not_allowed.is_empty() {
             return Err(DBError::EditRestrictedToClearedStorage {
                 not_allowed: not_allowed.iter_mut().map(|s| s.to_string()).collect(),

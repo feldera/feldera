@@ -26,9 +26,6 @@ CREATE MATERIALIZED VIEW v1 AS SELECT COUNT(*) AS c FROM t1;
         sql=sql,
         runtime_config=RuntimeConfig(
             fault_tolerance_model=None,  # We will make manual checkpoints in this test.
-            dev_tweaks={
-                "backfill_avoidance": True
-            },  # This should not be necessary once it is enabled by default.
         ),
     ).create_or_replace()
 
@@ -281,9 +278,6 @@ CREATE MATERIALIZED VIEW v1 AS SELECT COUNT(*) AS c FROM t1;
         sql=sql,
         runtime_config=RuntimeConfig(
             fault_tolerance_model=None,  # We will make manual checkpoints in this test.
-            dev_tweaks={
-                "backfill_avoidance": True
-            },  # This should not be necessary once it is enabled by default.
         ),
     ).create_or_replace()
 
@@ -326,9 +320,6 @@ CREATE MATERIALIZED VIEW v1 AS SELECT COUNT(*) AS c FROM t1;
         sql=sql,
         runtime_config=RuntimeConfig(
             fault_tolerance_model=None,  # We will make manual checkpoints in this test.
-            dev_tweaks={
-                "backfill_avoidance": True
-            },  # This should not be necessary once it is enabled by default.
         ),
     ).create_or_replace()
 
@@ -372,9 +363,6 @@ LATENESS v1.c 0;
         sql=sql,
         runtime_config=RuntimeConfig(
             fault_tolerance_model=None,  # We will make manual checkpoints in this test.
-            dev_tweaks={
-                "backfill_avoidance": True
-            },  # This should not be necessary once it is enabled by default.
         ),
     ).create_or_replace()
 
@@ -424,9 +412,6 @@ CREATE MATERIALIZED VIEW v1 AS SELECT COUNT(*) AS c FROM t1;
         sql=gen_sql(""),
         runtime_config=RuntimeConfig(
             fault_tolerance_model=None,  # We will make manual checkpoints in this test.
-            dev_tweaks={
-                "backfill_avoidance": True
-            },  # This should not be necessary once it is enabled by default.
         ),
     ).create_or_replace()
 
