@@ -33,7 +33,6 @@ WITH (
           "name": "kafka_output",
           "config": {
               "bootstrap.servers": "example.com:9092",
-              "auto.offset.reset": "earliest",
               "topic": "total-sales"
           }
       },
