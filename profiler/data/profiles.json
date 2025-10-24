@@ -1,0 +1,4446 @@
+{
+  "worker_profiles": [
+    {
+      "metadata": {
+        "nn32": {
+          "entries": [
+            [
+              "time%",
+              [
+                553,
+                119874
+              ]
+            ],
+            [
+              "time",
+              {
+                "secs": 0,
+                "nanos": 553081
+              }
+            ],
+            [
+              "invocations",
+              100
+            ],
+            [
+              "persistent_id",
+              "933ebf782e1fe804fe85c4d0f3688bdb5234b386c2834892776e692acd9781d9"
+            ]
+          ]
+        },
+        "nn18": {
+          "entries": [
+            [
+              "time%",
+              [
+                3501,
+                119874
+              ]
+            ],
+            [
+              "time",
+              {
+                "secs": 0,
+                "nanos": 3501535
+              }
+            ],
+            [
+              "invocations",
+              100
+            ],
+            [
+              "inputs",
+              199
+            ]
+          ]
+        },
+        "nn21": {
+          "entries": [
+            [
+              "time%",
+              [
+                838,
+                119874
+              ]
+            ],
+            [
+              "time",
+              {
+                "secs": 0,
+                "nanos": 838292
+              }
+            ],
+            [
+              "invocations",
+              100
+            ],
+            [
+              "output batches",
+              {
+                "entries": [
+                  [
+                    "batches",
+                    100
+                  ],
+                  [
+                    "min size",
+                    1
+                  ],
+                  [
+                    "max size",
+                    2
+                  ],
+                  [
+                    "avg size",
+                    1
+                  ],
+                  [
+                    "total records",
+                    199
+                  ]
+                ]
+              }
+            ],
+            [
+              "exchange_wait_time",
+              {
+                "secs": 0,
+                "nanos": 5360000
+              }
+            ]
+          ]
+        },
+        "nn7": {
+          "entries": [
+            [
+              "time%",
+              [
+                4175,
+                119874
+              ]
+            ],
+            [
+              "time",
+              {
+                "secs": 0,
+                "nanos": 4175593
+              }
+            ],
+            [
+              "invocations",
+              100
+            ],
+            [
+              "input batches",
+              {
+                "entries": [
+                  [
+                    "batches",
+                    100
+                  ],
+                  [
+                    "min size",
+                    1
+                  ],
+                  [
+                    "max size",
+                    62
+                  ],
+                  [
+                    "avg size",
+                    48
+                  ],
+                  [
+                    "total records",
+                    4891
+                  ]
+                ]
+              }
+            ]
+          ]
+        },
+        "nn13": {
+          "entries": [
+            [
+              "time%",
+              [
+                587,
+                119874
+              ]
+            ],
+            [
+              "time",
+              {
+                "secs": 0,
+                "nanos": 587660
+              }
+            ],
+            [
+              "invocations",
+              100
+            ],
+            [
+              "total size",
+              9901
+            ],
+            [
+              "allocated bytes",
+              167616
+            ],
+            [
+              "used bytes",
+              167616
+            ],
+            [
+              "allocations",
+              64
+            ],
+            [
+              "shared bytes",
+              167056
+            ],
+            [
+              "bounds",
+              {
+                "entries": [
+                  [
+                    "key",
+                    [
+                      "None"
+                    ]
+                  ],
+                  [
+                    "value",
+                    [
+                      "None"
+                    ]
+                  ]
+                ]
+              }
+            ],
+            [
+              "slot 0 loose",
+              "1 batches, 100 memory tuples"
+            ],
+            [
+              "slot 0 merging",
+              "8 batches, 9801 memory tuples"
+            ],
+            [
+              "slot 0 completed",
+              "13 merges of 104 batches over 13 steps (avg 3.5 ms/step)"
+            ],
+            [
+              "batches",
+              9
+            ],
+            [
+              "storage size",
+              0
+            ],
+            [
+              "merging batches",
+              8
+            ],
+            [
+              "merging size",
+              161808
+            ],
+            [
+              "merge reduction",
+              [
+                0,
+                63713
+              ]
+            ],
+            [
+              "merge backpressure wait",
+              {
+                "secs": 0,
+                "nanos": 0
+              }
+            ]
+          ]
+        },
+        "nn8": {
+          "entries": [
+            [
+              "time%",
+              [
+                876,
+                119874
+              ]
+            ],
+            [
+              "time",
+              {
+                "secs": 0,
+                "nanos": 876690
+              }
+            ],
+            [
+              "invocations",
+              100
+            ],
+            [
+              "output batches",
+              {
+                "entries": [
+                  [
+                    "batches",
+                    100
+                  ],
+                  [
+                    "min size",
+                    1
+                  ],
+                  [
+                    "max size",
+                    100
+                  ],
+                  [
+                    "avg size",
+                    99
+                  ],
+                  [
+                    "total records",
+                    9901
+                  ]
+                ]
+              }
+            ],
+            [
+              "exchange_wait_time",
+              {
+                "secs": 0,
+                "nanos": 3066000
+              }
+            ]
+          ]
+        },
+        "nn22": {
+          "entries": [
+            [
+              "time%",
+              [
+                2529,
+                119874
+              ]
+            ],
+            [
+              "time",
+              {
+                "secs": 0,
+                "nanos": 2529162
+              }
+            ],
+            [
+              "invocations",
+              100
+            ],
+            [
+              "persistent_id",
+              "cb62c9f691f48c9dae51fec2d4b5faefbb100ea146c14d5f63457009022ff2eb.shard"
+            ]
+          ]
+        },
+        "nn9": {
+          "entries": [
+            [
+              "time%",
+              [
+                7163,
+                119874
+              ]
+            ],
+            [
+              "time",
+              {
+                "secs": 0,
+                "nanos": 7163143
+              }
+            ],
+            [
+              "invocations",
+              100
+            ],
+            [
+              "persistent_id",
+              "dc97c8e5f4c2243d68d30f36aedc9d3eee477d59e4d72a12244770587d43a17c.shard"
+            ]
+          ]
+        },
+        "nn1": {
+          "entries": [
+            [
+              "time%",
+              [
+                5023,
+                119874
+              ]
+            ],
+            [
+              "time",
+              {
+                "secs": 0,
+                "nanos": 5023128
+              }
+            ],
+            [
+              "invocations",
+              100
+            ],
+            [
+              "input batches",
+              {
+                "entries": [
+                  [
+                    "batches",
+                    100
+                  ],
+                  [
+                    "min size",
+                    1
+                  ],
+                  [
+                    "max size",
+                    50
+                  ],
+                  [
+                    "avg size",
+                    49
+                  ],
+                  [
+                    "total records",
+                    4951
+                  ]
+                ]
+              }
+            ]
+          ]
+        },
+        "nn10": {
+          "entries": [
+            [
+              "time%",
+              [
+                4869,
+                119874
+              ]
+            ],
+            [
+              "time",
+              {
+                "secs": 0,
+                "nanos": 4869989
+              }
+            ],
+            [
+              "invocations",
+              100
+            ],
+            [
+              "total size",
+              0
+            ],
+            [
+              "allocated bytes",
+              488
+            ],
+            [
+              "used bytes",
+              488
+            ],
+            [
+              "allocations",
+              0
+            ],
+            [
+              "shared bytes",
+              0
+            ],
+            [
+              "input batches",
+              {
+                "entries": [
+                  [
+                    "batches",
+                    100
+                  ],
+                  [
+                    "min size",
+                    1
+                  ],
+                  [
+                    "max size",
+                    100
+                  ],
+                  [
+                    "avg size",
+                    99
+                  ],
+                  [
+                    "total records",
+                    9901
+                  ]
+                ]
+              }
+            ],
+            [
+              "output batches",
+              {
+                "entries": [
+                  [
+                    "batches",
+                    100
+                  ],
+                  [
+                    "min size",
+                    1
+                  ],
+                  [
+                    "max size",
+                    100
+                  ],
+                  [
+                    "avg size",
+                    99
+                  ],
+                  [
+                    "total records",
+                    9901
+                  ]
+                ]
+              }
+            ],
+            [
+              "batches",
+              0
+            ],
+            [
+              "storage size",
+              0
+            ],
+            [
+              "merging batches",
+              0
+            ],
+            [
+              "merging size",
+              0
+            ],
+            [
+              "merge reduction",
+              [
+                0,
+                0
+              ]
+            ],
+            [
+              "merge backpressure wait",
+              {
+                "secs": 0,
+                "nanos": 0
+              }
+            ]
+          ]
+        },
+        "nn26": {
+          "entries": [
+            [
+              "time%",
+              [
+                740,
+                119874
+              ]
+            ],
+            [
+              "time",
+              {
+                "secs": 0,
+                "nanos": 740431
+              }
+            ],
+            [
+              "invocations",
+              100
+            ],
+            [
+              "total size",
+              7
+            ],
+            [
+              "allocated bytes",
+              7320
+            ],
+            [
+              "used bytes",
+              7320
+            ],
+            [
+              "allocations",
+              43
+            ],
+            [
+              "shared bytes",
+              6776
+            ],
+            [
+              "bounds",
+              {
+                "entries": [
+                  [
+                    "key",
+                    [
+                      "None"
+                    ]
+                  ],
+                  [
+                    "value",
+                    [
+                      "None"
+                    ]
+                  ]
+                ]
+              }
+            ],
+            [
+              "slot 0 loose",
+              "7 batches, 7 memory tuples"
+            ],
+            [
+              "slot 0 completed",
+              "13 merges of 106 batches over 13 steps (avg 0.0 ms/step)"
+            ],
+            [
+              "batches",
+              7
+            ],
+            [
+              "storage size",
+              0
+            ],
+            [
+              "merging batches",
+              0
+            ],
+            [
+              "merging size",
+              0
+            ],
+            [
+              "merge reduction",
+              [
+                93,
+                106
+              ]
+            ],
+            [
+              "merge backpressure wait",
+              {
+                "secs": 0,
+                "nanos": 0
+              }
+            ]
+          ]
+        },
+        "nn11": {
+          "entries": [
+            [
+              "time%",
+              [
+                213,
+                119874
+              ]
+            ],
+            [
+              "time",
+              {
+                "secs": 0,
+                "nanos": 213577
+              }
+            ],
+            [
+              "invocations",
+              100
+            ],
+            [
+              "persistent_id",
+              "dc97c8e5f4c2243d68d30f36aedc9d3eee477d59e4d72a12244770587d43a17c.shard.accintegral"
+            ]
+          ]
+        },
+        "nn30": {
+          "entries": [
+            [
+              "time%",
+              [
+                3602,
+                119874
+              ]
+            ],
+            [
+              "time",
+              {
+                "secs": 0,
+                "nanos": 3602460
+              }
+            ],
+            [
+              "invocations",
+              100
+            ],
+            [
+              "persistent_id",
+              "f858c76058eab6a055c6dc4b857673b2de3cafb97e08db0e1d9a24f60eb5d249"
+            ]
+          ]
+        },
+        "nn16": {
+          "entries": [
+            [
+              "time%",
+              [
+                6777,
+                119874
+              ]
+            ],
+            [
+              "time",
+              {
+                "secs": 0,
+                "nanos": 6777994
+              }
+            ],
+            [
+              "invocations",
+              100
+            ],
+            [
+              "persistent_id",
+              "bd7450e24bfea319fbda8ad6c29507eb49d538195794a4cbf26ae79a60d1d764"
+            ],
+            [
+              "input batches",
+              {
+                "entries": [
+                  [
+                    "batches",
+                    100
+                  ],
+                  [
+                    "min size",
+                    1
+                  ],
+                  [
+                    "max size",
+                    1
+                  ],
+                  [
+                    "avg size",
+                    1
+                  ],
+                  [
+                    "total records",
+                    100
+                  ]
+                ]
+              }
+            ],
+            [
+              "output batches",
+              {
+                "entries": [
+                  [
+                    "batches",
+                    100
+                  ],
+                  [
+                    "min size",
+                    1
+                  ],
+                  [
+                    "max size",
+                    2
+                  ],
+                  [
+                    "avg size",
+                    1
+                  ],
+                  [
+                    "total records",
+                    199
+                  ]
+                ]
+              }
+            ]
+          ]
+        },
+        "nn0": {
+          "entries": [
+            [
+              "time%",
+              [
+                5125,
+                119874
+              ]
+            ],
+            [
+              "time",
+              {
+                "secs": 0,
+                "nanos": 5125988
+              }
+            ],
+            [
+              "invocations",
+              100
+            ]
+          ]
+        },
+        "nn4": {
+          "entries": [
+            [
+              "time%",
+              [
+                1599,
+                119874
+              ]
+            ],
+            [
+              "time",
+              {
+                "secs": 0,
+                "nanos": 1599097
+              }
+            ],
+            [
+              "invocations",
+              100
+            ],
+            [
+              "persistent_id",
+              "8b384059bdb44ad811ab341cc5e2a59697f39aac7b463cab027b185db8105e73"
+            ]
+          ]
+        },
+        "nn6": {
+          "entries": [
+            [
+              "time%",
+              [
+                3563,
+                119874
+              ]
+            ],
+            [
+              "time",
+              {
+                "secs": 0,
+                "nanos": 3563643
+              }
+            ],
+            [
+              "invocations",
+              100
+            ],
+            [
+              "persistent_id",
+              "cb62c9f691f48c9dae51fec2d4b5faefbb100ea146c14d5f63457009022ff2eb"
+            ],
+            [
+              "input batches",
+              {
+                "entries": [
+                  [
+                    "batches",
+                    100
+                  ],
+                  [
+                    "min size",
+                    0
+                  ],
+                  [
+                    "max size",
+                    62
+                  ],
+                  [
+                    "avg size",
+                    48
+                  ],
+                  [
+                    "total records",
+                    4891
+                  ]
+                ]
+              }
+            ],
+            [
+              "output batches",
+              {
+                "entries": [
+                  [
+                    "batches",
+                    100
+                  ],
+                  [
+                    "min size",
+                    0
+                  ],
+                  [
+                    "max size",
+                    1
+                  ],
+                  [
+                    "avg size",
+                    1
+                  ],
+                  [
+                    "total records",
+                    100
+                  ]
+                ]
+              }
+            ]
+          ]
+        },
+        "nn24": {
+          "entries": [
+            [
+              "time%",
+              [
+                166,
+                119874
+              ]
+            ],
+            [
+              "time",
+              {
+                "secs": 0,
+                "nanos": 166383
+              }
+            ],
+            [
+              "invocations",
+              100
+            ],
+            [
+              "persistent_id",
+              "cb62c9f691f48c9dae51fec2d4b5faefbb100ea146c14d5f63457009022ff2eb.shard.accintegral"
+            ]
+          ]
+        },
+        "nn23": {
+          "entries": [
+            [
+              "time%",
+              [
+                3487,
+                119874
+              ]
+            ],
+            [
+              "time",
+              {
+                "secs": 0,
+                "nanos": 3487762
+              }
+            ],
+            [
+              "invocations",
+              100
+            ],
+            [
+              "total size",
+              0
+            ],
+            [
+              "allocated bytes",
+              488
+            ],
+            [
+              "used bytes",
+              488
+            ],
+            [
+              "allocations",
+              0
+            ],
+            [
+              "shared bytes",
+              0
+            ],
+            [
+              "input batches",
+              {
+                "entries": [
+                  [
+                    "batches",
+                    100
+                  ],
+                  [
+                    "min size",
+                    1
+                  ],
+                  [
+                    "max size",
+                    1
+                  ],
+                  [
+                    "avg size",
+                    1
+                  ],
+                  [
+                    "total records",
+                    100
+                  ]
+                ]
+              }
+            ],
+            [
+              "output batches",
+              {
+                "entries": [
+                  [
+                    "batches",
+                    100
+                  ],
+                  [
+                    "min size",
+                    1
+                  ],
+                  [
+                    "max size",
+                    1
+                  ],
+                  [
+                    "avg size",
+                    1
+                  ],
+                  [
+                    "total records",
+                    100
+                  ]
+                ]
+              }
+            ],
+            [
+              "batches",
+              0
+            ],
+            [
+              "storage size",
+              0
+            ],
+            [
+              "merging batches",
+              0
+            ],
+            [
+              "merging size",
+              0
+            ],
+            [
+              "merge reduction",
+              [
+                0,
+                0
+              ]
+            ],
+            [
+              "merge backpressure wait",
+              {
+                "secs": 0,
+                "nanos": 0
+              }
+            ]
+          ]
+        },
+        "nn28": {
+          "entries": [
+            [
+              "time%",
+              [
+                1302,
+                119874
+              ]
+            ],
+            [
+              "time",
+              {
+                "secs": 0,
+                "nanos": 1302723
+              }
+            ],
+            [
+              "invocations",
+              100
+            ]
+          ]
+        },
+        "nn20": {
+          "entries": [
+            [
+              "time%",
+              [
+                2541,
+                119874
+              ]
+            ],
+            [
+              "time",
+              {
+                "secs": 0,
+                "nanos": 2541668
+              }
+            ],
+            [
+              "invocations",
+              100
+            ],
+            [
+              "input batches",
+              {
+                "entries": [
+                  [
+                    "batches",
+                    100
+                  ],
+                  [
+                    "min size",
+                    1
+                  ],
+                  [
+                    "max size",
+                    1
+                  ],
+                  [
+                    "avg size",
+                    1
+                  ],
+                  [
+                    "total records",
+                    100
+                  ]
+                ]
+              }
+            ]
+          ]
+        },
+        "nn27": {
+          "entries": [
+            [
+              "time%",
+              [
+                11296,
+                119874
+              ]
+            ],
+            [
+              "time",
+              {
+                "secs": 0,
+                "nanos": 11296305
+              }
+            ],
+            [
+              "invocations",
+              100
+            ],
+            [
+              "total size",
+              0
+            ],
+            [
+              "batch sizes",
+              []
+            ],
+            [
+              "used bytes",
+              64
+            ],
+            [
+              "allocations",
+              0
+            ],
+            [
+              "shared bytes",
+              0
+            ],
+            [
+              "left inputs",
+              100
+            ],
+            [
+              "right inputs",
+              13
+            ],
+            [
+              "computed outputs",
+              100
+            ],
+            [
+              "output batches",
+              {
+                "entries": [
+                  [
+                    "batches",
+                    100
+                  ],
+                  [
+                    "min size",
+                    1
+                  ],
+                  [
+                    "max size",
+                    1
+                  ],
+                  [
+                    "avg size",
+                    1
+                  ],
+                  [
+                    "total records",
+                    100
+                  ]
+                ]
+              }
+            ],
+            [
+              "output redundancy",
+              [
+                0,
+                100
+              ]
+            ]
+          ]
+        },
+        "nn14": {
+          "entries": [
+            [
+              "time%",
+              [
+                10190,
+                119874
+              ]
+            ],
+            [
+              "time",
+              {
+                "secs": 0,
+                "nanos": 10190420
+              }
+            ],
+            [
+              "invocations",
+              100
+            ],
+            [
+              "input batches",
+              {
+                "entries": [
+                  [
+                    "batches",
+                    100
+                  ],
+                  [
+                    "min size",
+                    1
+                  ],
+                  [
+                    "max size",
+                    100
+                  ],
+                  [
+                    "avg size",
+                    99
+                  ],
+                  [
+                    "total records",
+                    9901
+                  ]
+                ]
+              }
+            ],
+            [
+              "output batches",
+              {
+                "entries": [
+                  [
+                    "batches",
+                    100
+                  ],
+                  [
+                    "min size",
+                    1
+                  ],
+                  [
+                    "max size",
+                    1
+                  ],
+                  [
+                    "avg size",
+                    1
+                  ],
+                  [
+                    "total records",
+                    100
+                  ]
+                ]
+              }
+            ]
+          ]
+        },
+        "nn19": {
+          "entries": [
+            [
+              "time%",
+              [
+                1089,
+                119874
+              ]
+            ],
+            [
+              "time",
+              {
+                "secs": 0,
+                "nanos": 1089205
+              }
+            ],
+            [
+              "invocations",
+              100
+            ],
+            [
+              "total size",
+              13
+            ],
+            [
+              "allocated bytes",
+              7472
+            ],
+            [
+              "used bytes",
+              7472
+            ],
+            [
+              "allocations",
+              50
+            ],
+            [
+              "shared bytes",
+              6928
+            ],
+            [
+              "bounds",
+              {
+                "entries": [
+                  [
+                    "key",
+                    [
+                      "None",
+                      "None"
+                    ]
+                  ],
+                  [
+                    "value",
+                    [
+                      "None",
+                      "None"
+                    ]
+                  ]
+                ]
+              }
+            ],
+            [
+              "slot 0 loose",
+              "7 batches, 13 memory tuples"
+            ],
+            [
+              "slot 0 completed",
+              "13 merges of 106 batches over 13 steps (avg 0.0 ms/step)"
+            ],
+            [
+              "batches",
+              7
+            ],
+            [
+              "storage size",
+              0
+            ],
+            [
+              "merging batches",
+              0
+            ],
+            [
+              "merging size",
+              0
+            ],
+            [
+              "merge reduction",
+              [
+                186,
+                199
+              ]
+            ],
+            [
+              "merge backpressure wait",
+              {
+                "secs": 0,
+                "nanos": 0
+              }
+            ]
+          ]
+        },
+        "nn29": {
+          "entries": [
+            [
+              "time%",
+              [
+                12548,
+                119874
+              ]
+            ],
+            [
+              "time",
+              {
+                "secs": 0,
+                "nanos": 12548663
+              }
+            ],
+            [
+              "invocations",
+              100
+            ],
+            [
+              "total size",
+              0
+            ],
+            [
+              "batch sizes",
+              []
+            ],
+            [
+              "used bytes",
+              64
+            ],
+            [
+              "allocations",
+              0
+            ],
+            [
+              "shared bytes",
+              0
+            ],
+            [
+              "left inputs",
+              199
+            ],
+            [
+              "right inputs",
+              6
+            ],
+            [
+              "computed outputs",
+              902
+            ],
+            [
+              "output batches",
+              {
+                "entries": [
+                  [
+                    "batches",
+                    100
+                  ],
+                  [
+                    "min size",
+                    0
+                  ],
+                  [
+                    "max size",
+                    2
+                  ],
+                  [
+                    "avg size",
+                    1
+                  ],
+                  [
+                    "total records",
+                    198
+                  ]
+                ]
+              }
+            ],
+            [
+              "output redundancy",
+              [
+                704,
+                902
+              ]
+            ]
+          ]
+        },
+        "nn3": {
+          "entries": [
+            [
+              "time%",
+              [
+                4761,
+                119874
+              ]
+            ],
+            [
+              "time",
+              {
+                "secs": 0,
+                "nanos": 4761432
+              }
+            ],
+            [
+              "invocations",
+              100
+            ],
+            [
+              "persistent_id",
+              "912a15ad3c05bf4ca5a40c744c4cf6de5ef1c63b5ee94cc1cfebb9b8670fd07b"
+            ]
+          ]
+        },
+        "nn17": {
+          "entries": [
+            [
+              "time%",
+              [
+                3681,
+                119874
+              ]
+            ],
+            [
+              "time",
+              {
+                "secs": 0,
+                "nanos": 3681372
+              }
+            ],
+            [
+              "invocations",
+              100
+            ],
+            [
+              "total size",
+              0
+            ],
+            [
+              "allocated bytes",
+              488
+            ],
+            [
+              "used bytes",
+              488
+            ],
+            [
+              "allocations",
+              0
+            ],
+            [
+              "shared bytes",
+              0
+            ],
+            [
+              "input batches",
+              {
+                "entries": [
+                  [
+                    "batches",
+                    100
+                  ],
+                  [
+                    "min size",
+                    1
+                  ],
+                  [
+                    "max size",
+                    2
+                  ],
+                  [
+                    "avg size",
+                    1
+                  ],
+                  [
+                    "total records",
+                    199
+                  ]
+                ]
+              }
+            ],
+            [
+              "output batches",
+              {
+                "entries": [
+                  [
+                    "batches",
+                    100
+                  ],
+                  [
+                    "min size",
+                    1
+                  ],
+                  [
+                    "max size",
+                    2
+                  ],
+                  [
+                    "avg size",
+                    1
+                  ],
+                  [
+                    "total records",
+                    199
+                  ]
+                ]
+              }
+            ],
+            [
+              "batches",
+              0
+            ],
+            [
+              "storage size",
+              0
+            ],
+            [
+              "merging batches",
+              0
+            ],
+            [
+              "merging size",
+              0
+            ],
+            [
+              "merge reduction",
+              [
+                0,
+                0
+              ]
+            ],
+            [
+              "merge backpressure wait",
+              {
+                "secs": 0,
+                "nanos": 0
+              }
+            ]
+          ]
+        },
+        "n": {
+          "entries": [
+            [
+              "background cache occupancy",
+              "0 B used (max 1 B)"
+            ],
+            [
+              "foreground cache occupancy",
+              "0 B used (max 1 B)"
+            ],
+            [
+              "runtime_elapsed",
+              {
+                "secs": 0,
+                "nanos": 862174192
+              }
+            ],
+            [
+              "total_idle_time",
+              {
+                "secs": 0,
+                "nanos": 66492245
+              }
+            ],
+            [
+              "total_runtime",
+              {
+                "secs": 0,
+                "nanos": 194424655
+              }
+            ],
+            [
+              "steps",
+              100
+            ],
+            [
+              "wait_time",
+              {
+                "secs": 0,
+                "nanos": 7894002
+              }
+            ],
+            [
+              "inputs",
+              10200
+            ],
+            [
+              "exchange_wait_time",
+              {
+                "secs": 0,
+                "nanos": 12298000
+              }
+            ],
+            [
+              "total size",
+              9921
+            ],
+            [
+              "allocated bytes",
+              183872
+            ],
+            [
+              "used bytes",
+              184000
+            ],
+            [
+              "allocations",
+              157
+            ],
+            [
+              "shared bytes",
+              180760
+            ],
+            [
+              "batches",
+              23
+            ],
+            [
+              "storage size",
+              0
+            ],
+            [
+              "merging batches",
+              8
+            ],
+            [
+              "merging size",
+              161808
+            ],
+            [
+              "merge reduction",
+              [
+                279,
+                64018
+              ]
+            ],
+            [
+              "merge backpressure wait",
+              {
+                "secs": 0,
+                "nanos": 0
+              }
+            ],
+            [
+              "output redundancy",
+              [
+                704,
+                1002
+              ]
+            ]
+          ]
+        },
+        "nn5": {
+          "entries": [
+            [
+              "time%",
+              [
+                6986,
+                119874
+              ]
+            ],
+            [
+              "time",
+              {
+                "secs": 0,
+                "nanos": 6986536
+              }
+            ],
+            [
+              "invocations",
+              100
+            ],
+            [
+              "persistent_id",
+              "dc97c8e5f4c2243d68d30f36aedc9d3eee477d59e4d72a12244770587d43a17c"
+            ],
+            [
+              "input batches",
+              {
+                "entries": [
+                  [
+                    "batches",
+                    100
+                  ],
+                  [
+                    "min size",
+                    0
+                  ],
+                  [
+                    "max size",
+                    62
+                  ],
+                  [
+                    "avg size",
+                    48
+                  ],
+                  [
+                    "total records",
+                    4891
+                  ]
+                ]
+              }
+            ],
+            [
+              "output batches",
+              {
+                "entries": [
+                  [
+                    "batches",
+                    100
+                  ],
+                  [
+                    "min size",
+                    0
+                  ],
+                  [
+                    "max size",
+                    62
+                  ],
+                  [
+                    "avg size",
+                    48
+                  ],
+                  [
+                    "total records",
+                    4891
+                  ]
+                ]
+              }
+            ]
+          ]
+        },
+        "nn25": {
+          "entries": [
+            [
+              "time%",
+              [
+                3048,
+                119874
+              ]
+            ],
+            [
+              "time",
+              {
+                "secs": 0,
+                "nanos": 3048106
+              }
+            ],
+            [
+              "invocations",
+              100
+            ],
+            [
+              "inputs",
+              100
+            ]
+          ]
+        },
+        "nn15": {
+          "entries": [
+            [
+              "time%",
+              [
+                495,
+                119874
+              ]
+            ],
+            [
+              "time",
+              {
+                "secs": 0,
+                "nanos": 495325
+              }
+            ],
+            [
+              "invocations",
+              100
+            ],
+            [
+              "persistent_id",
+              "bd7450e24bfea319fbda8ad6c29507eb49d538195794a4cbf26ae79a60d1d764.integral"
+            ]
+          ]
+        },
+        "nn31": {
+          "entries": [
+            [
+              "time%",
+              [
+                673,
+                119874
+              ]
+            ],
+            [
+              "time",
+              {
+                "secs": 0,
+                "nanos": 673957
+              }
+            ],
+            [
+              "invocations",
+              100
+            ],
+            [
+              "persistent_id",
+              "e8b023ef6f5c7c240080b738f6fa92492a388f575cb79fe19cbcbbcbc32cc5d0"
+            ]
+          ]
+        },
+        "nn12": {
+          "entries": [
+            [
+              "time%",
+              [
+                4887,
+                119874
+              ]
+            ],
+            [
+              "time",
+              {
+                "secs": 0,
+                "nanos": 4887095
+              }
+            ],
+            [
+              "invocations",
+              100
+            ],
+            [
+              "inputs",
+              9901
+            ]
+          ]
+        },
+        "nn2": {
+          "entries": [
+            [
+              "time%",
+              [
+                976,
+                119874
+              ]
+            ],
+            [
+              "time",
+              {
+                "secs": 0,
+                "nanos": 976219
+              }
+            ],
+            [
+              "invocations",
+              100
+            ],
+            [
+              "output batches",
+              {
+                "entries": [
+                  [
+                    "batches",
+                    100
+                  ],
+                  [
+                    "min size",
+                    1
+                  ],
+                  [
+                    "max size",
+                    62
+                  ],
+                  [
+                    "avg size",
+                    48
+                  ],
+                  [
+                    "total records",
+                    4891
+                  ]
+                ]
+              }
+            ],
+            [
+              "exchange_wait_time",
+              {
+                "secs": 0,
+                "nanos": 3872000
+              }
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "metadata": {
+        "nn8": {
+          "entries": [
+            [
+              "time%",
+              [
+                888,
+                87231
+              ]
+            ],
+            [
+              "time",
+              {
+                "secs": 0,
+                "nanos": 888139
+              }
+            ],
+            [
+              "invocations",
+              100
+            ],
+            [
+              "output batches",
+              {
+                "entries": [
+                  [
+                    "batches",
+                    100
+                  ],
+                  [
+                    "min size",
+                    0
+                  ],
+                  [
+                    "max size",
+                    0
+                  ],
+                  [
+                    "avg size",
+                    0
+                  ],
+                  [
+                    "total records",
+                    0
+                  ]
+                ]
+              }
+            ],
+            [
+              "exchange_wait_time",
+              {
+                "secs": 0,
+                "nanos": 3669000
+              }
+            ]
+          ]
+        },
+        "nn29": {
+          "entries": [
+            [
+              "time%",
+              [
+                9946,
+                87231
+              ]
+            ],
+            [
+              "time",
+              {
+                "secs": 0,
+                "nanos": 9946518
+              }
+            ],
+            [
+              "invocations",
+              100
+            ],
+            [
+              "total size",
+              0
+            ],
+            [
+              "batch sizes",
+              []
+            ],
+            [
+              "used bytes",
+              64
+            ],
+            [
+              "allocations",
+              0
+            ],
+            [
+              "shared bytes",
+              0
+            ],
+            [
+              "left inputs",
+              0
+            ],
+            [
+              "right inputs",
+              0
+            ],
+            [
+              "computed outputs",
+              0
+            ],
+            [
+              "output batches",
+              {
+                "entries": [
+                  [
+                    "batches",
+                    100
+                  ],
+                  [
+                    "min size",
+                    0
+                  ],
+                  [
+                    "max size",
+                    0
+                  ],
+                  [
+                    "avg size",
+                    0
+                  ],
+                  [
+                    "total records",
+                    0
+                  ]
+                ]
+              }
+            ],
+            [
+              "output redundancy",
+              [
+                0,
+                0
+              ]
+            ]
+          ]
+        },
+        "nn2": {
+          "entries": [
+            [
+              "time%",
+              [
+                1001,
+                87231
+              ]
+            ],
+            [
+              "time",
+              {
+                "secs": 0,
+                "nanos": 1001418
+              }
+            ],
+            [
+              "invocations",
+              100
+            ],
+            [
+              "output batches",
+              {
+                "entries": [
+                  [
+                    "batches",
+                    100
+                  ],
+                  [
+                    "min size",
+                    0
+                  ],
+                  [
+                    "max size",
+                    65
+                  ],
+                  [
+                    "avg size",
+                    50
+                  ],
+                  [
+                    "total records",
+                    5010
+                  ]
+                ]
+              }
+            ],
+            [
+              "exchange_wait_time",
+              {
+                "secs": 0,
+                "nanos": 3826000
+              }
+            ]
+          ]
+        },
+        "nn28": {
+          "entries": [
+            [
+              "time%",
+              [
+                1272,
+                87231
+              ]
+            ],
+            [
+              "time",
+              {
+                "secs": 0,
+                "nanos": 1272971
+              }
+            ],
+            [
+              "invocations",
+              100
+            ]
+          ]
+        },
+        "nn21": {
+          "entries": [
+            [
+              "time%",
+              [
+                525,
+                87231
+              ]
+            ],
+            [
+              "time",
+              {
+                "secs": 0,
+                "nanos": 525493
+              }
+            ],
+            [
+              "invocations",
+              100
+            ],
+            [
+              "output batches",
+              {
+                "entries": [
+                  [
+                    "batches",
+                    100
+                  ],
+                  [
+                    "min size",
+                    0
+                  ],
+                  [
+                    "max size",
+                    0
+                  ],
+                  [
+                    "avg size",
+                    0
+                  ],
+                  [
+                    "total records",
+                    0
+                  ]
+                ]
+              }
+            ],
+            [
+              "exchange_wait_time",
+              {
+                "secs": 0,
+                "nanos": 4903000
+              }
+            ]
+          ]
+        },
+        "nn18": {
+          "entries": [
+            [
+              "time%",
+              [
+                1255,
+                87231
+              ]
+            ],
+            [
+              "time",
+              {
+                "secs": 0,
+                "nanos": 1255042
+              }
+            ],
+            [
+              "invocations",
+              100
+            ],
+            [
+              "inputs",
+              0
+            ]
+          ]
+        },
+        "nn9": {
+          "entries": [
+            [
+              "time%",
+              [
+                1142,
+                87231
+              ]
+            ],
+            [
+              "time",
+              {
+                "secs": 0,
+                "nanos": 1142557
+              }
+            ],
+            [
+              "invocations",
+              100
+            ],
+            [
+              "persistent_id",
+              "dc97c8e5f4c2243d68d30f36aedc9d3eee477d59e4d72a12244770587d43a17c.shard"
+            ]
+          ]
+        },
+        "nn11": {
+          "entries": [
+            [
+              "time%",
+              [
+                189,
+                87231
+              ]
+            ],
+            [
+              "time",
+              {
+                "secs": 0,
+                "nanos": 189854
+              }
+            ],
+            [
+              "invocations",
+              100
+            ],
+            [
+              "persistent_id",
+              "dc97c8e5f4c2243d68d30f36aedc9d3eee477d59e4d72a12244770587d43a17c.shard.accintegral"
+            ]
+          ]
+        },
+        "nn23": {
+          "entries": [
+            [
+              "time%",
+              [
+                1197,
+                87231
+              ]
+            ],
+            [
+              "time",
+              {
+                "secs": 0,
+                "nanos": 1197761
+              }
+            ],
+            [
+              "invocations",
+              100
+            ],
+            [
+              "total size",
+              0
+            ],
+            [
+              "allocated bytes",
+              488
+            ],
+            [
+              "used bytes",
+              488
+            ],
+            [
+              "allocations",
+              0
+            ],
+            [
+              "shared bytes",
+              0
+            ],
+            [
+              "input batches",
+              {
+                "entries": [
+                  [
+                    "batches",
+                    100
+                  ],
+                  [
+                    "min size",
+                    0
+                  ],
+                  [
+                    "max size",
+                    0
+                  ],
+                  [
+                    "avg size",
+                    0
+                  ],
+                  [
+                    "total records",
+                    0
+                  ]
+                ]
+              }
+            ],
+            [
+              "output batches",
+              {
+                "entries": [
+                  [
+                    "batches",
+                    100
+                  ],
+                  [
+                    "min size",
+                    0
+                  ],
+                  [
+                    "max size",
+                    0
+                  ],
+                  [
+                    "avg size",
+                    0
+                  ],
+                  [
+                    "total records",
+                    0
+                  ]
+                ]
+              }
+            ],
+            [
+              "batches",
+              0
+            ],
+            [
+              "storage size",
+              0
+            ],
+            [
+              "merging batches",
+              0
+            ],
+            [
+              "merging size",
+              0
+            ],
+            [
+              "merge reduction",
+              [
+                0,
+                0
+              ]
+            ],
+            [
+              "merge backpressure wait",
+              {
+                "secs": 0,
+                "nanos": 0
+              }
+            ]
+          ]
+        },
+        "nn20": {
+          "entries": [
+            [
+              "time%",
+              [
+                1930,
+                87231
+              ]
+            ],
+            [
+              "time",
+              {
+                "secs": 0,
+                "nanos": 1930278
+              }
+            ],
+            [
+              "invocations",
+              100
+            ],
+            [
+              "input batches",
+              {
+                "entries": [
+                  [
+                    "batches",
+                    100
+                  ],
+                  [
+                    "min size",
+                    0
+                  ],
+                  [
+                    "max size",
+                    1
+                  ],
+                  [
+                    "avg size",
+                    0
+                  ],
+                  [
+                    "total records",
+                    99
+                  ]
+                ]
+              }
+            ]
+          ]
+        },
+        "nn26": {
+          "entries": [
+            [
+              "time%",
+              [
+                689,
+                87231
+              ]
+            ],
+            [
+              "time",
+              {
+                "secs": 0,
+                "nanos": 689496
+              }
+            ],
+            [
+              "invocations",
+              100
+            ],
+            [
+              "total size",
+              0
+            ],
+            [
+              "allocated bytes",
+              488
+            ],
+            [
+              "used bytes",
+              488
+            ],
+            [
+              "allocations",
+              0
+            ],
+            [
+              "shared bytes",
+              0
+            ],
+            [
+              "bounds",
+              {
+                "entries": [
+                  [
+                    "key",
+                    [
+                      "None"
+                    ]
+                  ],
+                  [
+                    "value",
+                    [
+                      "None"
+                    ]
+                  ]
+                ]
+              }
+            ],
+            [
+              "batches",
+              0
+            ],
+            [
+              "storage size",
+              0
+            ],
+            [
+              "merging batches",
+              0
+            ],
+            [
+              "merging size",
+              0
+            ],
+            [
+              "merge reduction",
+              [
+                0,
+                0
+              ]
+            ],
+            [
+              "merge backpressure wait",
+              {
+                "secs": 0,
+                "nanos": 0
+              }
+            ]
+          ]
+        },
+        "nn27": {
+          "entries": [
+            [
+              "time%",
+              [
+                8872,
+                87231
+              ]
+            ],
+            [
+              "time",
+              {
+                "secs": 0,
+                "nanos": 8872794
+              }
+            ],
+            [
+              "invocations",
+              100
+            ],
+            [
+              "total size",
+              0
+            ],
+            [
+              "batch sizes",
+              []
+            ],
+            [
+              "used bytes",
+              64
+            ],
+            [
+              "allocations",
+              0
+            ],
+            [
+              "shared bytes",
+              0
+            ],
+            [
+              "left inputs",
+              0
+            ],
+            [
+              "right inputs",
+              0
+            ],
+            [
+              "computed outputs",
+              0
+            ],
+            [
+              "output batches",
+              {
+                "entries": [
+                  [
+                    "batches",
+                    100
+                  ],
+                  [
+                    "min size",
+                    0
+                  ],
+                  [
+                    "max size",
+                    0
+                  ],
+                  [
+                    "avg size",
+                    0
+                  ],
+                  [
+                    "total records",
+                    0
+                  ]
+                ]
+              }
+            ],
+            [
+              "output redundancy",
+              [
+                0,
+                0
+              ]
+            ]
+          ]
+        },
+        "nn10": {
+          "entries": [
+            [
+              "time%",
+              [
+                1957,
+                87231
+              ]
+            ],
+            [
+              "time",
+              {
+                "secs": 0,
+                "nanos": 1957982
+              }
+            ],
+            [
+              "invocations",
+              100
+            ],
+            [
+              "total size",
+              0
+            ],
+            [
+              "allocated bytes",
+              488
+            ],
+            [
+              "used bytes",
+              488
+            ],
+            [
+              "allocations",
+              0
+            ],
+            [
+              "shared bytes",
+              0
+            ],
+            [
+              "input batches",
+              {
+                "entries": [
+                  [
+                    "batches",
+                    100
+                  ],
+                  [
+                    "min size",
+                    0
+                  ],
+                  [
+                    "max size",
+                    0
+                  ],
+                  [
+                    "avg size",
+                    0
+                  ],
+                  [
+                    "total records",
+                    0
+                  ]
+                ]
+              }
+            ],
+            [
+              "output batches",
+              {
+                "entries": [
+                  [
+                    "batches",
+                    100
+                  ],
+                  [
+                    "min size",
+                    0
+                  ],
+                  [
+                    "max size",
+                    0
+                  ],
+                  [
+                    "avg size",
+                    0
+                  ],
+                  [
+                    "total records",
+                    0
+                  ]
+                ]
+              }
+            ],
+            [
+              "batches",
+              0
+            ],
+            [
+              "storage size",
+              0
+            ],
+            [
+              "merging batches",
+              0
+            ],
+            [
+              "merging size",
+              0
+            ],
+            [
+              "merge reduction",
+              [
+                0,
+                0
+              ]
+            ],
+            [
+              "merge backpressure wait",
+              {
+                "secs": 0,
+                "nanos": 0
+              }
+            ]
+          ]
+        },
+        "nn14": {
+          "entries": [
+            [
+              "time%",
+              [
+                9019,
+                87231
+              ]
+            ],
+            [
+              "time",
+              {
+                "secs": 0,
+                "nanos": 9019810
+              }
+            ],
+            [
+              "invocations",
+              100
+            ],
+            [
+              "input batches",
+              {
+                "entries": [
+                  [
+                    "batches",
+                    100
+                  ],
+                  [
+                    "min size",
+                    0
+                  ],
+                  [
+                    "max size",
+                    0
+                  ],
+                  [
+                    "avg size",
+                    0
+                  ],
+                  [
+                    "total records",
+                    0
+                  ]
+                ]
+              }
+            ],
+            [
+              "output batches",
+              {
+                "entries": [
+                  [
+                    "batches",
+                    100
+                  ],
+                  [
+                    "min size",
+                    0
+                  ],
+                  [
+                    "max size",
+                    0
+                  ],
+                  [
+                    "avg size",
+                    0
+                  ],
+                  [
+                    "total records",
+                    0
+                  ]
+                ]
+              }
+            ]
+          ]
+        },
+        "nn32": {
+          "entries": [
+            [
+              "time%",
+              [
+                431,
+                87231
+              ]
+            ],
+            [
+              "time",
+              {
+                "secs": 0,
+                "nanos": 431310
+              }
+            ],
+            [
+              "invocations",
+              100
+            ],
+            [
+              "persistent_id",
+              "933ebf782e1fe804fe85c4d0f3688bdb5234b386c2834892776e692acd9781d9"
+            ]
+          ]
+        },
+        "nn5": {
+          "entries": [
+            [
+              "time%",
+              [
+                7141,
+                87231
+              ]
+            ],
+            [
+              "time",
+              {
+                "secs": 0,
+                "nanos": 7141041
+              }
+            ],
+            [
+              "invocations",
+              100
+            ],
+            [
+              "persistent_id",
+              "dc97c8e5f4c2243d68d30f36aedc9d3eee477d59e4d72a12244770587d43a17c"
+            ],
+            [
+              "input batches",
+              {
+                "entries": [
+                  [
+                    "batches",
+                    100
+                  ],
+                  [
+                    "min size",
+                    0
+                  ],
+                  [
+                    "max size",
+                    65
+                  ],
+                  [
+                    "avg size",
+                    50
+                  ],
+                  [
+                    "total records",
+                    5010
+                  ]
+                ]
+              }
+            ],
+            [
+              "output batches",
+              {
+                "entries": [
+                  [
+                    "batches",
+                    100
+                  ],
+                  [
+                    "min size",
+                    0
+                  ],
+                  [
+                    "max size",
+                    65
+                  ],
+                  [
+                    "avg size",
+                    50
+                  ],
+                  [
+                    "total records",
+                    5010
+                  ]
+                ]
+              }
+            ]
+          ]
+        },
+        "nn1": {
+          "entries": [
+            [
+              "time%",
+              [
+                6046,
+                87231
+              ]
+            ],
+            [
+              "time",
+              {
+                "secs": 0,
+                "nanos": 6046959
+              }
+            ],
+            [
+              "invocations",
+              100
+            ],
+            [
+              "input batches",
+              {
+                "entries": [
+                  [
+                    "batches",
+                    100
+                  ],
+                  [
+                    "min size",
+                    0
+                  ],
+                  [
+                    "max size",
+                    50
+                  ],
+                  [
+                    "avg size",
+                    49
+                  ],
+                  [
+                    "total records",
+                    4950
+                  ]
+                ]
+              }
+            ]
+          ]
+        },
+        "nn7": {
+          "entries": [
+            [
+              "time%",
+              [
+                4606,
+                87231
+              ]
+            ],
+            [
+              "time",
+              {
+                "secs": 0,
+                "nanos": 4606811
+              }
+            ],
+            [
+              "invocations",
+              100
+            ],
+            [
+              "input batches",
+              {
+                "entries": [
+                  [
+                    "batches",
+                    100
+                  ],
+                  [
+                    "min size",
+                    0
+                  ],
+                  [
+                    "max size",
+                    65
+                  ],
+                  [
+                    "avg size",
+                    50
+                  ],
+                  [
+                    "total records",
+                    5010
+                  ]
+                ]
+              }
+            ]
+          ]
+        },
+        "nn6": {
+          "entries": [
+            [
+              "time%",
+              [
+                3473,
+                87231
+              ]
+            ],
+            [
+              "time",
+              {
+                "secs": 0,
+                "nanos": 3473900
+              }
+            ],
+            [
+              "invocations",
+              100
+            ],
+            [
+              "persistent_id",
+              "cb62c9f691f48c9dae51fec2d4b5faefbb100ea146c14d5f63457009022ff2eb"
+            ],
+            [
+              "input batches",
+              {
+                "entries": [
+                  [
+                    "batches",
+                    100
+                  ],
+                  [
+                    "min size",
+                    0
+                  ],
+                  [
+                    "max size",
+                    65
+                  ],
+                  [
+                    "avg size",
+                    50
+                  ],
+                  [
+                    "total records",
+                    5010
+                  ]
+                ]
+              }
+            ],
+            [
+              "output batches",
+              {
+                "entries": [
+                  [
+                    "batches",
+                    100
+                  ],
+                  [
+                    "min size",
+                    0
+                  ],
+                  [
+                    "max size",
+                    1
+                  ],
+                  [
+                    "avg size",
+                    0
+                  ],
+                  [
+                    "total records",
+                    99
+                  ]
+                ]
+              }
+            ]
+          ]
+        },
+        "n": {
+          "entries": [
+            [
+              "background cache occupancy",
+              "0 B used (max 1 B)"
+            ],
+            [
+              "foreground cache occupancy",
+              "0 B used (max 1 B)"
+            ],
+            [
+              "runtime_elapsed",
+              {
+                "secs": 0,
+                "nanos": 862174192
+              }
+            ],
+            [
+              "total_idle_time",
+              {
+                "secs": 0,
+                "nanos": 65594838
+              }
+            ],
+            [
+              "total_runtime",
+              {
+                "secs": 0,
+                "nanos": 195279196
+              }
+            ],
+            [
+              "steps",
+              100
+            ],
+            [
+              "wait_time",
+              {
+                "secs": 0,
+                "nanos": 4965382
+              }
+            ],
+            [
+              "exchange_wait_time",
+              {
+                "secs": 0,
+                "nanos": 12398000
+              }
+            ],
+            [
+              "total size",
+              0
+            ],
+            [
+              "used bytes",
+              3056
+            ],
+            [
+              "allocations",
+              0
+            ],
+            [
+              "shared bytes",
+              0
+            ],
+            [
+              "output redundancy",
+              [
+                0,
+                0
+              ]
+            ],
+            [
+              "inputs",
+              0
+            ],
+            [
+              "allocated bytes",
+              2928
+            ],
+            [
+              "batches",
+              0
+            ],
+            [
+              "storage size",
+              0
+            ],
+            [
+              "merging batches",
+              0
+            ],
+            [
+              "merging size",
+              0
+            ],
+            [
+              "merge reduction",
+              [
+                0,
+                0
+              ]
+            ],
+            [
+              "merge backpressure wait",
+              {
+                "secs": 0,
+                "nanos": 0
+              }
+            ]
+          ]
+        },
+        "nn0": {
+          "entries": [
+            [
+              "time%",
+              [
+                4819,
+                87231
+              ]
+            ],
+            [
+              "time",
+              {
+                "secs": 0,
+                "nanos": 4819737
+              }
+            ],
+            [
+              "invocations",
+              100
+            ]
+          ]
+        },
+        "nn30": {
+          "entries": [
+            [
+              "time%",
+              [
+                1366,
+                87231
+              ]
+            ],
+            [
+              "time",
+              {
+                "secs": 0,
+                "nanos": 1366988
+              }
+            ],
+            [
+              "invocations",
+              100
+            ],
+            [
+              "persistent_id",
+              "f858c76058eab6a055c6dc4b857673b2de3cafb97e08db0e1d9a24f60eb5d249"
+            ]
+          ]
+        },
+        "nn3": {
+          "entries": [
+            [
+              "time%",
+              [
+                4928,
+                87231
+              ]
+            ],
+            [
+              "time",
+              {
+                "secs": 0,
+                "nanos": 4928124
+              }
+            ],
+            [
+              "invocations",
+              100
+            ],
+            [
+              "persistent_id",
+              "912a15ad3c05bf4ca5a40c744c4cf6de5ef1c63b5ee94cc1cfebb9b8670fd07b"
+            ]
+          ]
+        },
+        "nn4": {
+          "entries": [
+            [
+              "time%",
+              [
+                922,
+                87231
+              ]
+            ],
+            [
+              "time",
+              {
+                "secs": 0,
+                "nanos": 922839
+              }
+            ],
+            [
+              "invocations",
+              100
+            ],
+            [
+              "persistent_id",
+              "8b384059bdb44ad811ab341cc5e2a59697f39aac7b463cab027b185db8105e73"
+            ]
+          ]
+        },
+        "nn12": {
+          "entries": [
+            [
+              "time%",
+              [
+                1999,
+                87231
+              ]
+            ],
+            [
+              "time",
+              {
+                "secs": 0,
+                "nanos": 1999465
+              }
+            ],
+            [
+              "invocations",
+              100
+            ],
+            [
+              "inputs",
+              0
+            ]
+          ]
+        },
+        "nn22": {
+          "entries": [
+            [
+              "time%",
+              [
+                679,
+                87231
+              ]
+            ],
+            [
+              "time",
+              {
+                "secs": 0,
+                "nanos": 679199
+              }
+            ],
+            [
+              "invocations",
+              100
+            ],
+            [
+              "persistent_id",
+              "cb62c9f691f48c9dae51fec2d4b5faefbb100ea146c14d5f63457009022ff2eb.shard"
+            ]
+          ]
+        },
+        "nn16": {
+          "entries": [
+            [
+              "time%",
+              [
+                3960,
+                87231
+              ]
+            ],
+            [
+              "time",
+              {
+                "secs": 0,
+                "nanos": 3960615
+              }
+            ],
+            [
+              "invocations",
+              100
+            ],
+            [
+              "persistent_id",
+              "bd7450e24bfea319fbda8ad6c29507eb49d538195794a4cbf26ae79a60d1d764"
+            ],
+            [
+              "input batches",
+              {
+                "entries": [
+                  [
+                    "batches",
+                    100
+                  ],
+                  [
+                    "min size",
+                    0
+                  ],
+                  [
+                    "max size",
+                    0
+                  ],
+                  [
+                    "avg size",
+                    0
+                  ],
+                  [
+                    "total records",
+                    0
+                  ]
+                ]
+              }
+            ],
+            [
+              "output batches",
+              {
+                "entries": [
+                  [
+                    "batches",
+                    100
+                  ],
+                  [
+                    "min size",
+                    0
+                  ],
+                  [
+                    "max size",
+                    0
+                  ],
+                  [
+                    "avg size",
+                    0
+                  ],
+                  [
+                    "total records",
+                    0
+                  ]
+                ]
+              }
+            ]
+          ]
+        },
+        "nn17": {
+          "entries": [
+            [
+              "time%",
+              [
+                2892,
+                87231
+              ]
+            ],
+            [
+              "time",
+              {
+                "secs": 0,
+                "nanos": 2892035
+              }
+            ],
+            [
+              "invocations",
+              100
+            ],
+            [
+              "total size",
+              0
+            ],
+            [
+              "allocated bytes",
+              488
+            ],
+            [
+              "used bytes",
+              488
+            ],
+            [
+              "allocations",
+              0
+            ],
+            [
+              "shared bytes",
+              0
+            ],
+            [
+              "input batches",
+              {
+                "entries": [
+                  [
+                    "batches",
+                    100
+                  ],
+                  [
+                    "min size",
+                    0
+                  ],
+                  [
+                    "max size",
+                    0
+                  ],
+                  [
+                    "avg size",
+                    0
+                  ],
+                  [
+                    "total records",
+                    0
+                  ]
+                ]
+              }
+            ],
+            [
+              "output batches",
+              {
+                "entries": [
+                  [
+                    "batches",
+                    100
+                  ],
+                  [
+                    "min size",
+                    0
+                  ],
+                  [
+                    "max size",
+                    0
+                  ],
+                  [
+                    "avg size",
+                    0
+                  ],
+                  [
+                    "total records",
+                    0
+                  ]
+                ]
+              }
+            ],
+            [
+              "batches",
+              0
+            ],
+            [
+              "storage size",
+              0
+            ],
+            [
+              "merging batches",
+              0
+            ],
+            [
+              "merging size",
+              0
+            ],
+            [
+              "merge reduction",
+              [
+                0,
+                0
+              ]
+            ],
+            [
+              "merge backpressure wait",
+              {
+                "secs": 0,
+                "nanos": 0
+              }
+            ]
+          ]
+        },
+        "nn19": {
+          "entries": [
+            [
+              "time%",
+              [
+                899,
+                87231
+              ]
+            ],
+            [
+              "time",
+              {
+                "secs": 0,
+                "nanos": 899659
+              }
+            ],
+            [
+              "invocations",
+              100
+            ],
+            [
+              "total size",
+              0
+            ],
+            [
+              "allocated bytes",
+              488
+            ],
+            [
+              "used bytes",
+              488
+            ],
+            [
+              "allocations",
+              0
+            ],
+            [
+              "shared bytes",
+              0
+            ],
+            [
+              "bounds",
+              {
+                "entries": [
+                  [
+                    "key",
+                    [
+                      "None",
+                      "None"
+                    ]
+                  ],
+                  [
+                    "value",
+                    [
+                      "None",
+                      "None"
+                    ]
+                  ]
+                ]
+              }
+            ],
+            [
+              "batches",
+              0
+            ],
+            [
+              "storage size",
+              0
+            ],
+            [
+              "merging batches",
+              0
+            ],
+            [
+              "merging size",
+              0
+            ],
+            [
+              "merge reduction",
+              [
+                0,
+                0
+              ]
+            ],
+            [
+              "merge backpressure wait",
+              {
+                "secs": 0,
+                "nanos": 0
+              }
+            ]
+          ]
+        },
+        "nn25": {
+          "entries": [
+            [
+              "time%",
+              [
+                1257,
+                87231
+              ]
+            ],
+            [
+              "time",
+              {
+                "secs": 0,
+                "nanos": 1257131
+              }
+            ],
+            [
+              "invocations",
+              100
+            ],
+            [
+              "inputs",
+              0
+            ]
+          ]
+        },
+        "nn31": {
+          "entries": [
+            [
+              "time%",
+              [
+                609,
+                87231
+              ]
+            ],
+            [
+              "time",
+              {
+                "secs": 0,
+                "nanos": 609562
+              }
+            ],
+            [
+              "invocations",
+              100
+            ],
+            [
+              "persistent_id",
+              "e8b023ef6f5c7c240080b738f6fa92492a388f575cb79fe19cbcbbcbc32cc5d0"
+            ]
+          ]
+        },
+        "nn13": {
+          "entries": [
+            [
+              "time%",
+              [
+                491,
+                87231
+              ]
+            ],
+            [
+              "time",
+              {
+                "secs": 0,
+                "nanos": 491389
+              }
+            ],
+            [
+              "invocations",
+              100
+            ],
+            [
+              "total size",
+              0
+            ],
+            [
+              "allocated bytes",
+              488
+            ],
+            [
+              "used bytes",
+              488
+            ],
+            [
+              "allocations",
+              0
+            ],
+            [
+              "shared bytes",
+              0
+            ],
+            [
+              "bounds",
+              {
+                "entries": [
+                  [
+                    "key",
+                    [
+                      "None"
+                    ]
+                  ],
+                  [
+                    "value",
+                    [
+                      "None"
+                    ]
+                  ]
+                ]
+              }
+            ],
+            [
+              "batches",
+              0
+            ],
+            [
+              "storage size",
+              0
+            ],
+            [
+              "merging batches",
+              0
+            ],
+            [
+              "merging size",
+              0
+            ],
+            [
+              "merge reduction",
+              [
+                0,
+                0
+              ]
+            ],
+            [
+              "merge backpressure wait",
+              {
+                "secs": 0,
+                "nanos": 0
+              }
+            ]
+          ]
+        },
+        "nn24": {
+          "entries": [
+            [
+              "time%",
+              [
+                201,
+                87231
+              ]
+            ],
+            [
+              "time",
+              {
+                "secs": 0,
+                "nanos": 201280
+              }
+            ],
+            [
+              "invocations",
+              100
+            ],
+            [
+              "persistent_id",
+              "cb62c9f691f48c9dae51fec2d4b5faefbb100ea146c14d5f63457009022ff2eb.shard.accintegral"
+            ]
+          ]
+        },
+        "nn15": {
+          "entries": [
+            [
+              "time%",
+              [
+                613,
+                87231
+              ]
+            ],
+            [
+              "time",
+              {
+                "secs": 0,
+                "nanos": 613083
+              }
+            ],
+            [
+              "invocations",
+              100
+            ],
+            [
+              "persistent_id",
+              "bd7450e24bfea319fbda8ad6c29507eb49d538195794a4cbf26ae79a60d1d764.integral"
+            ]
+          ]
+        }
+      }
+    }
+  ],
+  "graph": {
+    "nodes": {
+      "id": "n",
+      "label": "root",
+      "nodes": [
+        {
+          "Simple": {
+            "id": "nn0",
+            "label": "Input @ s/o/d/input.rs:267:14"
+          }
+        },
+        {
+          "Simple": {
+            "id": "nn4",
+            "label": "Generator"
+          }
+        },
+        {
+          "Simple": {
+            "id": "nn5",
+            "label": "Map @ s/lib.rs:97:80"
+          }
+        },
+        {
+          "Simple": {
+            "id": "nn6",
+            "label": "MapIndexedZSet @ s/lib.rs:105:67"
+          }
+        },
+        {
+          "Simple": {
+            "id": "nn10",
+            "label": "Accumulator @ s/o/d/accumulator.rs:32:49"
+          }
+        },
+        {
+          "Simple": {
+            "id": "nn14",
+            "label": "AggregateIncremental"
+          }
+        },
+        {
+          "Simple": {
+            "id": "nn31",
+            "label": "Output"
+          }
+        },
+        {
+          "Simple": {
+            "id": "nn32",
+            "label": "Output"
+          }
+        },
+        {
+          "Cluster": {
+            "id": "n_r0",
+            "label": "shard @ s/o/d/c/shard.rs:79:57",
+            "nodes": [
+              {
+                "Simple": {
+                  "id": "nn1",
+                  "label": "ExchangeSender @ s/o/d/input.rs:267:14"
+                }
+              },
+              {
+                "Simple": {
+                  "id": "nn2",
+                  "label": "ExchangeReceiver @ s/o/d/input.rs:267:14"
+                }
+              },
+              {
+                "Simple": {
+                  "id": "nn3",
+                  "label": "merge shards @ s/o/d/c/shard.rs:99:38"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "Cluster": {
+            "id": "n_r1",
+            "label": "shard @ s/o/d/c/shard.rs:79:57",
+            "nodes": [
+              {
+                "Simple": {
+                  "id": "nn7",
+                  "label": "ExchangeSender @ s/o/d/aggregate.rs:483:27"
+                }
+              },
+              {
+                "Simple": {
+                  "id": "nn8",
+                  "label": "ExchangeReceiver @ s/o/d/aggregate.rs:483:27"
+                }
+              },
+              {
+                "Simple": {
+                  "id": "nn9",
+                  "label": "merge shards @ s/o/d/c/shard.rs:99:38"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "Cluster": {
+            "id": "n_r2",
+            "label": "accumulate_trace @ s/o/d/accumulate_trace.rs:81:25",
+            "nodes": [
+              {
+                "Simple": {
+                  "id": "nn11",
+                  "label": "Z1 (trace) (output)"
+                }
+              },
+              {
+                "Simple": {
+                  "id": "nn12",
+                  "label": "AccumulateTraceAppend"
+                }
+              },
+              {
+                "Simple": {
+                  "id": "nn13",
+                  "label": "Z1 (trace)"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "Cluster": {
+            "id": "n_r3",
+            "label": "upsert @ s/o/d/upsert.rs:247:17",
+            "nodes": [
+              {
+                "Simple": {
+                  "id": "nn15",
+                  "label": "Z1 (trace) (output)"
+                }
+              },
+              {
+                "Simple": {
+                  "id": "nn16",
+                  "label": "Upsert"
+                }
+              },
+              {
+                "Simple": {
+                  "id": "nn17",
+                  "label": "Accumulator @ s/o/d/accumulator.rs:32:49"
+                }
+              },
+              {
+                "Simple": {
+                  "id": "nn18",
+                  "label": "AccumulateTraceAppend"
+                }
+              },
+              {
+                "Simple": {
+                  "id": "nn19",
+                  "label": "Z1 (trace)"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "Cluster": {
+            "id": "n_r4",
+            "label": "join @ s/lib.rs:118:67",
+            "nodes": [
+              {
+                "Simple": {
+                  "id": "nn23",
+                  "label": "Accumulator @ s/o/d/accumulator.rs:32:49"
+                }
+              },
+              {
+                "Simple": {
+                  "id": "nn27",
+                  "label": "JoinTrace @ s/o/d/join.rs:693:21"
+                }
+              },
+              {
+                "Simple": {
+                  "id": "nn28",
+                  "label": "AccumulateDelayTrace"
+                }
+              },
+              {
+                "Simple": {
+                  "id": "nn29",
+                  "label": "JoinTrace @ s/o/d/join.rs:707:21"
+                }
+              },
+              {
+                "Simple": {
+                  "id": "nn30",
+                  "label": "Plus"
+                }
+              },
+              {
+                "Cluster": {
+                  "id": "n_r4_0",
+                  "label": "shard @ s/o/d/c/shard.rs:79:57",
+                  "nodes": [
+                    {
+                      "Simple": {
+                        "id": "nn20",
+                        "label": "ExchangeSender @ s/o/d/join.rs:678:29"
+                      }
+                    },
+                    {
+                      "Simple": {
+                        "id": "nn21",
+                        "label": "ExchangeReceiver @ s/o/d/join.rs:678:29"
+                      }
+                    },
+                    {
+                      "Simple": {
+                        "id": "nn22",
+                        "label": "merge shards @ s/o/d/c/shard.rs:99:38"
+                      }
+                    }
+                  ]
+                }
+              },
+              {
+                "Cluster": {
+                  "id": "n_r4_1",
+                  "label": "accumulate_trace @ s/o/d/accumulate_trace.rs:81:25",
+                  "nodes": [
+                    {
+                      "Simple": {
+                        "id": "nn24",
+                        "label": "Z1 (trace) (output)"
+                      }
+                    },
+                    {
+                      "Simple": {
+                        "id": "nn25",
+                        "label": "AccumulateTraceAppend"
+                      }
+                    },
+                    {
+                      "Simple": {
+                        "id": "nn26",
+                        "label": "Z1 (trace)"
+                      }
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "edges": [
+      {
+        "from_node": "nn3",
+        "from_cluster": false,
+        "to_node": "nn5",
+        "to_cluster": false
+      },
+      {
+        "from_node": "nn17",
+        "from_cluster": false,
+        "to_node": "nn18",
+        "to_cluster": false
+      },
+      {
+        "from_node": "nn17",
+        "from_cluster": false,
+        "to_node": "nn29",
+        "to_cluster": false
+      },
+      {
+        "from_node": "nn15",
+        "from_cluster": false,
+        "to_node": "nn16",
+        "to_cluster": false
+      },
+      {
+        "from_node": "nn15",
+        "from_cluster": false,
+        "to_node": "nn18",
+        "to_cluster": false
+      },
+      {
+        "from_node": "nn15",
+        "from_cluster": false,
+        "to_node": "nn19",
+        "to_cluster": false
+      },
+      {
+        "from_node": "nn14",
+        "from_cluster": false,
+        "to_node": "nn16",
+        "to_cluster": false
+      },
+      {
+        "from_node": "nn18",
+        "from_cluster": false,
+        "to_node": "nn19",
+        "to_cluster": false
+      },
+      {
+        "from_node": "nn18",
+        "from_cluster": false,
+        "to_node": "nn27",
+        "to_cluster": false
+      },
+      {
+        "from_node": "nn24",
+        "from_cluster": false,
+        "to_node": "nn25",
+        "to_cluster": false
+      },
+      {
+        "from_node": "nn24",
+        "from_cluster": false,
+        "to_node": "nn26",
+        "to_cluster": false
+      },
+      {
+        "from_node": "nn24",
+        "from_cluster": false,
+        "to_node": "nn28",
+        "to_cluster": false
+      },
+      {
+        "from_node": "nn9",
+        "from_cluster": false,
+        "to_node": "nn10",
+        "to_cluster": false
+      },
+      {
+        "from_node": "nn20",
+        "from_cluster": false,
+        "to_node": "nn21",
+        "to_cluster": false
+      },
+      {
+        "from_node": "nn6",
+        "from_cluster": false,
+        "to_node": "nn20",
+        "to_cluster": false
+      },
+      {
+        "from_node": "nn21",
+        "from_cluster": false,
+        "to_node": "nn22",
+        "to_cluster": false
+      },
+      {
+        "from_node": "nn25",
+        "from_cluster": false,
+        "to_node": "nn26",
+        "to_cluster": false
+      },
+      {
+        "from_node": "nn11",
+        "from_cluster": false,
+        "to_node": "nn12",
+        "to_cluster": false
+      },
+      {
+        "from_node": "nn11",
+        "from_cluster": false,
+        "to_node": "nn13",
+        "to_cluster": false
+      },
+      {
+        "from_node": "nn1",
+        "from_cluster": false,
+        "to_node": "nn2",
+        "to_cluster": false
+      },
+      {
+        "from_node": "nn12",
+        "from_cluster": false,
+        "to_node": "nn13",
+        "to_cluster": false
+      },
+      {
+        "from_node": "nn12",
+        "from_cluster": false,
+        "to_node": "nn14",
+        "to_cluster": false
+      },
+      {
+        "from_node": "nn0",
+        "from_cluster": false,
+        "to_node": "nn1",
+        "to_cluster": false
+      },
+      {
+        "from_node": "nn5",
+        "from_cluster": false,
+        "to_node": "nn6",
+        "to_cluster": false
+      },
+      {
+        "from_node": "nn5",
+        "from_cluster": false,
+        "to_node": "nn7",
+        "to_cluster": false
+      },
+      {
+        "from_node": "nn22",
+        "from_cluster": false,
+        "to_node": "nn23",
+        "to_cluster": false
+      },
+      {
+        "from_node": "nn8",
+        "from_cluster": false,
+        "to_node": "nn9",
+        "to_cluster": false
+      },
+      {
+        "from_node": "nn23",
+        "from_cluster": false,
+        "to_node": "nn25",
+        "to_cluster": false
+      },
+      {
+        "from_node": "nn23",
+        "from_cluster": false,
+        "to_node": "nn27",
+        "to_cluster": false
+      },
+      {
+        "from_node": "nn27",
+        "from_cluster": false,
+        "to_node": "nn30",
+        "to_cluster": false
+      },
+      {
+        "from_node": "nn2",
+        "from_cluster": false,
+        "to_node": "nn3",
+        "to_cluster": false
+      },
+      {
+        "from_node": "nn10",
+        "from_cluster": false,
+        "to_node": "nn12",
+        "to_cluster": false
+      },
+      {
+        "from_node": "nn10",
+        "from_cluster": false,
+        "to_node": "nn14",
+        "to_cluster": false
+      },
+      {
+        "from_node": "nn16",
+        "from_cluster": false,
+        "to_node": "nn17",
+        "to_cluster": false
+      },
+      {
+        "from_node": "nn28",
+        "from_cluster": false,
+        "to_node": "nn29",
+        "to_cluster": false
+      },
+      {
+        "from_node": "nn29",
+        "from_cluster": false,
+        "to_node": "nn30",
+        "to_cluster": false
+      },
+      {
+        "from_node": "nn30",
+        "from_cluster": false,
+        "to_node": "nn31",
+        "to_cluster": false
+      },
+      {
+        "from_node": "nn7",
+        "from_cluster": false,
+        "to_node": "nn8",
+        "to_cluster": false
+      },
+      {
+        "from_node": "nn4",
+        "from_cluster": false,
+        "to_node": "nn32",
+        "to_cluster": false
+      }
+    ]
+  }
+}

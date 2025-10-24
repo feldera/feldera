@@ -39,7 +39,7 @@ public class ToJsonVisitor extends CircuitDispatcher {
     final int verbosity;
     final Map<RelNode, Integer> relId;
 
-    static class FindSourcePositions extends InnerVisitor {
+    public static class FindSourcePositions extends InnerVisitor {
         final Set<SourcePositionRange> positions;
 
         public FindSourcePositions(DBSPCompiler compiler, Set<SourcePositionRange> positions) {
@@ -108,6 +108,9 @@ public class ToJsonVisitor extends CircuitDispatcher {
 
         if (operator.is(DBSPViewDeclarationOperator.class)) {
             var decl = operator.to(DBSPViewDeclarationOperator.class);
+            this.builder.appendJsonLabelAndColon("table")
+                    .append(Utilities.doubleQuote(decl.tableName.toString(), false))
+                    .append(",").newline();
             DBSPSimpleOperator source = decl.getCorrespondingView(this.getParent());
             if (source == null) {
                 DBSPNestedOperator nested = this.getParent().as(DBSPNestedOperator.class);
@@ -138,6 +141,10 @@ public class ToJsonVisitor extends CircuitDispatcher {
         this.builder.appendJsonLabelAndColon("positions")
                 .append("[");
         var list = Linq.list(this.getPositions());
+        if (operator.is(DBSPSourceTableOperator.class) || operator.is(DBSPSinkOperator.class)) {
+            if (operator.getSourcePosition().isValid())
+                list.add(operator.getSourcePosition());
+        }
         List<String> strings = Linq.map(list, p -> p.asJson().toString());
         if (!strings.isEmpty()) {
             this.builder

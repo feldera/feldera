@@ -364,6 +364,7 @@ impl Node {
                 label(&self.name, self.location),
                 0f64,
             ))),
+
             NodeKind::StrictOutput => Some(VisNode::Simple(SimpleNode::new(
                 Self::node_identifier(&self.id),
                 format!("{}{}", label(&self.name, self.location), " (output)"),
