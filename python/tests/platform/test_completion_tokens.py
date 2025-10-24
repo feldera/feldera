@@ -4,6 +4,7 @@ import os
 import time
 import json
 import tempfile
+import uuid
 from http import HTTPStatus
 
 from .helper import (
@@ -111,9 +112,10 @@ def test_completion_tokens_with_outputs(pipeline_name):
 
     # Prepare temporary file paths
     def _temp_path() -> str:
-        fd, path = tempfile.mkstemp(prefix="feldera_ct_", suffix=".out")
-        os.close(fd)
-        # Return path; do not delete; backend will write to it (if local FS accessible)
+        # Generate a unique filename without creating the file
+        unique_name = f"feldera_ct_{uuid.uuid4().hex}.out"
+        path = os.path.join("/tmp", unique_name)
+        # Return path; backend will write to it (if local FS accessible)
         return path
 
     output_path1 = _temp_path()
