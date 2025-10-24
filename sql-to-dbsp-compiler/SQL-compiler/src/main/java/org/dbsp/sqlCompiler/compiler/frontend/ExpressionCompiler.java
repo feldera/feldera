@@ -1887,6 +1887,11 @@ public class ExpressionCompiler extends RexVisitorImpl<DBSPExpression>
                 }
                 return next;
             }
+            case MAP_KEYS:
+                validateArgCount(node, operationName, ops.size(), 1);
+                DBSPExpression arg0 = ops.get(0);
+                String method = getArrayOrMapCallName(call, arg0);
+                return new DBSPApplyExpression(node, method, type, arg0);
             case DOT:
             default:
                 throw new UnimplementedException("Function " + Utilities.singleQuote(call.getOperator().toString())

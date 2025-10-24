@@ -1295,7 +1295,11 @@ public class ToRustInnerVisitor extends InnerVisitor {
             if (sourceType.is(DBSPTypeVariant.class)) {
                 // Cast variant to map
                 functionName = "cast_to_map" + destType.nullableSuffix() + "_" + sourceType.baseTypeWithSuffix();
-                this.builder.append(functionName).append("(").increase();
+                this.builder.append(functionName).append("::<");
+                destMap.getKeyType().accept(this);
+                this.builder.append(", ");
+                destMap.getValueType().accept(this);
+                this.builder.append(">(").increase();
                 expression.source.accept(this);
                 this.builder.decrease().append(")");
                 this.pop(expression);

@@ -320,8 +320,9 @@ public class CalciteFunctions implements FunctionDocumentation.FunctionRegistry 
             new Func(SqlLibraryOperators.MD5, "MD5", SqlLibrary.SPARK,
                     "string#md5,binary#md5", false),
             new Func(SqlLibraryOperators.IFNULL, "IFNULL", SqlLibrary.BIG_QUERY,
-                    "comparisons#ifnull", false)
-
+                    "comparisons#ifnull", false),
+            new Func(SqlLibraryOperators.MAP_KEYS, "MAP_KEYS", SqlLibrary.SPARK,
+                    "map#map_keys", false)
             // new Func(SqlLibraryOperators.SAFE_ORDINAL, "SAFE_ORDINAL", SqlLibrary.BIG_QUERY, "array", false),
     };
 

@@ -1,6 +1,6 @@
 //! Functions for manipulating maps
 
-use crate::{ConcatSemigroup, Semigroup, Weight};
+use crate::{Array, ConcatSemigroup, Semigroup, Weight};
 use dbsp::utils::Tup2;
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -273,4 +273,20 @@ where
 {
     let key = key?;
     Some(map_contains_key__(value, key))
+}
+
+#[doc(hidden)]
+pub fn map_keys_<I, T>(value: Map<I, T>) -> Array<I>
+where
+    I: Ord + Clone,
+{
+    Arc::new(value.keys().cloned().collect())
+}
+
+#[doc(hidden)]
+pub fn map_keysN<I, T>(value: Option<Map<I, T>>) -> Option<Array<I>>
+where
+    I: Ord + Clone,
+{
+    value.map(|value| map_keys_(value))
 }
