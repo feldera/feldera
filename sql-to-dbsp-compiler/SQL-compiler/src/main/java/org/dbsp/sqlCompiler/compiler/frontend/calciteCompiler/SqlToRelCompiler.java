@@ -376,6 +376,10 @@ public class SqlToRelCompiler implements IWritesLogs {
         public boolean shouldConvertRaggedUnionTypesToVarying() { return true; }
     };
 
+    public void emptyStatement() {
+        this.newlines.append("\n");
+    }
+
     /** A TypeFactory that knows about RelStruct, our representation of user-defined types */
     public static class CustomTypeFactory extends SqlTypeFactoryImpl {
         static int currentId = 0;

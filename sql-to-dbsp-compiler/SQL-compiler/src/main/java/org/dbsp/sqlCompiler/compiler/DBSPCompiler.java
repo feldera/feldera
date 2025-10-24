@@ -444,8 +444,10 @@ public class DBSPCompiler implements IWritesLogs, ICompilerComponent, IErrorRepo
         for (SqlStatements stat : this.toCompile) {
             try {
                 if (stat.many) {
-                    if (stat.statement.isEmpty())
+                    if (stat.statement.isEmpty()) {
+                        this.sqlToRelCompiler.emptyStatement();
                         continue;
+                    }
                     parsed.addAll(this.sqlToRelCompiler.parseStatements(stat.statement, stat.visible));
                 } else {
                     SqlNode node = this.sqlToRelCompiler.parse(stat.statement, stat.visible);
