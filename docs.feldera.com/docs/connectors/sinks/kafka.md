@@ -16,9 +16,7 @@ The Kafka output connector supports [fault tolerance](/pipelines/fault-tolerance
 | `kafka_service`                | string           |         | If specified, this service is used to provide defaults for the Kafka options. |
 | `region`                       | string           |         | The AWS region to use while connecting to AWS Managed Streaming for Kafka (MSK). |
 
-The connector passes additional options directly to [**librdkafka**](https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md).  Some of the relevant options:
-
-The Kafka connector passes additional options directly to librdkafka.
+The connector passes additional options directly to [**librdkafka**](https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md).
 See [relevant options for producers](https://github.com/confluentinc/librdkafka/blob/master/CONFIGURATION.md).
 
 ## Example usage
