@@ -256,7 +256,6 @@ def build_pipeline(
         compilation_profile=CompilationProfile.OPTIMIZED,
         runtime_config=RuntimeConfig(
             provisioning_timeout_secs=60,
-            dev_tweaks={"backfill_avoidance": True},
             resources=resources,
         ),
     ).create_or_replace()
