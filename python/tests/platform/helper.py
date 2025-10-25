@@ -129,7 +129,7 @@ def wait_for_deployment_status(name: str, desired: str, timeout_s: float = 60.0)
             return obj
         time.sleep(0.25)
     raise TimeoutError(
-        f"Timed out waiting for pipeline '{name}' deployment_status={desired} (last={last})"
+        f"Timed out waiting for pipeline '{name}' deployment_status={desired} (last={last})\nCurrent pipeline descriptor:\n{obj}"
     )
 
 
