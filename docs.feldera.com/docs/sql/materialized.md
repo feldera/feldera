@@ -20,6 +20,7 @@ CREATE TABLE my_table (...) WITH ('materialized' = 'true');
 ```
 
 In addition, tables with a `PRIMARY KEY` constraint are automatically materialized
+(since the pipeline must in any case maintain an index of such a table used to enforce the constraint)
 and do not require an explicit `materialized` attribute.
 
 To declare a materialized view, use the `CREATE MATERIALIZED VIEW` syntax:

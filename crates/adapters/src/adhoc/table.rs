@@ -504,8 +504,7 @@ use `with ('materialized' = 'true')` for tables, or `create materialized view` f
                         let mut w = cursor.weight();
 
                         if w < 0 {
-                            cursor.step_val();
-                            panic!("Unexpected key with negative weight encountered while processing ad-hoc query");
+                            return Err(datafusion::common::DataFusionError::Execution("Unexpected record with negative weight encountered while processing ad-hoc query.".to_string()));
                         }
 
                         while w != 0 {
@@ -542,7 +541,6 @@ use `with ('materialized' = 'true')` for tables, or `create materialized view` f
                     }
                     cursor.step_key();
                 }
-
 
                 let batch = insert_builder.builder.to_record_batch().map_err(|e| {
                     DataFusionError::Execution(format!(
