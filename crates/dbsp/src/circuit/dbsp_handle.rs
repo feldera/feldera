@@ -308,10 +308,6 @@ pub struct DevTweaks {
     // adjust `server.rs` accordingly.
     pub stack_overflow_backtrace: bool,
 
-    /// Enable backfill avoidance feature.
-    // This flag is only used by the pipeline manager.
-    pub backfill_avoidance: bool,
-
     /// Controls the maximal number of records output by splitter operators
     /// (joins, distinct, aggregation, rolling window and group operators) at
     /// each step.
@@ -329,7 +325,6 @@ impl Default for DevTweaks {
             merger: MergerType::default(),
             storage_mb_max: None,
             stack_overflow_backtrace: false,
-            backfill_avoidance: false,
             splitter_chunk_size_records: 10_000,
         }
     }
