@@ -632,6 +632,9 @@ pub struct OutputCollectionHandles {
 
     pub index_of: Option<SqlIdentifier>,
 
+    /// Whether the integrate handle is an indexed Z-set.
+    pub integrate_handle_is_indexed: bool,
+
     /// A handle to a snapshot of a materialized table/view.
     pub integrate_handle: Option<Arc<dyn SerBatchReaderHandle>>,
 

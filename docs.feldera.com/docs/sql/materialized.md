@@ -19,6 +19,9 @@ To declare a materialized table, use the materialized attribute:
 CREATE TABLE my_table (...) WITH ('materialized' = 'true');
 ```
 
+In addition, tables with a `PRIMARY KEY` constraint are automatically materialized
+and do not require an explicit `materialized` attribute.
+
 To declare a materialized view, use the `CREATE MATERIALIZED VIEW` syntax:
 
 ```sql

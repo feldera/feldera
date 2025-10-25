@@ -80,6 +80,10 @@ pub struct AdHocTable {
     input_handle: Option<Box<dyn DeCollectionHandle>>,
     name: SqlIdentifier,
     materialized: bool,
+    /// True if the table is indexed.
+    ///
+    /// When true, table records are stored as values; otherwise, they are stored as keys.
+    indexed: bool,
     schema: Arc<Schema>,
     /// Contains the current snapshots for tables.
     ///
@@ -105,6 +109,7 @@ impl Debug for AdHocTable {
 impl AdHocTable {
     pub fn new(
         materialized: bool,
+        indexed: bool,
         controller: Weak<ControllerInner>,
         input_handle: Option<Box<dyn DeCollectionHandle>>,
         name: SqlIdentifier,
@@ -113,6 +118,7 @@ impl AdHocTable {
     ) -> Self {
         Self {
             materialized,
+            indexed,
             controller,
             input_handle,
             name,
@@ -159,6 +165,7 @@ impl TableProvider for AdHocTable {
         Ok(Arc::new(AdHocQueryExecution::new(
             self.name.clone(),
             self.materialized,
+            self.indexed,
             self.schema.clone(),
             projected_schema,
             self.snapshots.lock().await.get(&self.name).cloned(),
@@ -328,6 +335,7 @@ impl DataSink for AdHocTableSink {
 struct AdHocQueryExecution {
     name: SqlIdentifier,
     materialized: bool,
+    indexed: bool,
     table_schema: Arc<Schema>,
     projected_schema: Arc<Schema>,
     readers: Option<Vec<Arc<dyn SyncSerBatchReader>>>,
@@ -338,9 +346,11 @@ struct AdHocQueryExecution {
 }
 
 impl AdHocQueryExecution {
+    #[allow(clippy::too_many_arguments)]
     fn new(
         name: SqlIdentifier,
         materialized: bool,
+        indexed: bool,
         table_schema: Arc<Schema>,
         projected_schema: Arc<Schema>,
         readers: Option<Vec<Arc<dyn SyncSerBatchReader>>>,
@@ -362,6 +372,7 @@ impl AdHocQueryExecution {
         Self {
             name,
             materialized,
+            indexed,
             table_schema,
             projected_schema,
             readers,
@@ -416,6 +427,7 @@ impl ExecutionPlan for AdHocQueryExecution {
         Ok(Arc::new(AdHocQueryExecution {
             name: self.name.clone(),
             materialized: self.materialized,
+            indexed: self.indexed,
             table_schema: self.table_schema.clone(),
             projected_schema: self.projected_schema.clone(),
             readers: self.readers.clone(),
@@ -475,6 +487,8 @@ use `with ('materialized' = 'true')` for tables, or `create materialized view` f
                     ))
                 })?;
 
+            let indexed = self.indexed;
+
             builder.spawn(async move {
                 let mut cursor = batch_reader
                     .cursor(RecordFormat::Parquet(
@@ -484,46 +498,51 @@ use `with ('materialized' = 'true')` for tables, or `create materialized view` f
                 let mut insert_builder = SendableArrowBuilder::new(sas)?;
 
                 let mut cur_batch_size = 0;
+
                 while cursor.key_valid() {
-                    if !cursor.val_valid() {
-                        cursor.step_key();
-                        continue;
-                    }
-                    let mut w = cursor.weight();
+                    while cursor.val_valid() {
+                        let mut w = cursor.weight();
 
-                    if w < 0 {
-                        cursor.step_key();
-                        panic!("Unexpected key with negative weight encountered while processing ad-hoc query");
-                    }
-
-                    while w != 0 {
-                        cursor
-                            .serialize_key_to_arrow(&mut insert_builder.builder)
-                            .map_err(|e| {
-                                DataFusionError::Execution(format!(
-                                    "Unable to serialize record to arrow: {}",
-                                    e
-                                ))
-                            })?;
-                        cur_batch_size += 1;
-                        w -= 1;
-
-                        // `256` turned out to be a good compromise of performance and fast response latency.
-                        // If too high, the HTTP server will wait too long esp. until the first results are sent out.
-                        const MAX_BATCH_SIZE: usize = 256;
-                        if cur_batch_size >= MAX_BATCH_SIZE {
-                            let batch = insert_builder.builder.to_record_batch().map_err(|e| {
-                                DataFusionError::Execution(format!(
-                                    "Unable to convert ArrayBuilder to RecordBatch: {}",
-                                    e
-                                ))
-                            })?;
-                            send_batch(&tx, &projection, batch).await?;
-                            cur_batch_size = 0;
+                        if w < 0 {
+                            cursor.step_val();
+                            panic!("Unexpected key with negative weight encountered while processing ad-hoc query");
                         }
+
+                        while w != 0 {
+                            let result = if indexed {
+                                cursor
+                                    .serialize_val_to_arrow(&mut insert_builder.builder)
+                            } else {
+                                cursor
+                                    .serialize_key_to_arrow(&mut insert_builder.builder)
+                            };
+
+                            result.map_err(|e| {
+                                    DataFusionError::Execution(format!(
+                                        "Unable to serialize record to arrow: {}",
+                                        e
+                                    ))
+                                })?;
+                            cur_batch_size += 1;
+                            w -= 1;
+
+                            const MAX_BATCH_SIZE: usize = 256;
+                            if cur_batch_size >= MAX_BATCH_SIZE {
+                                let batch = insert_builder.builder.to_record_batch().map_err(|e| {
+                                    DataFusionError::Execution(format!(
+                                        "Unable to convert ArrayBuilder to RecordBatch: {}",
+                                        e
+                                    ))
+                                })?;
+                                send_batch(&tx, &projection, batch).await?;
+                                cur_batch_size = 0;
+                            }
+                        }
+                        cursor.step_val();
                     }
                     cursor.step_key();
                 }
+
 
                 let batch = insert_builder.builder.to_record_batch().map_err(|e| {
                     DataFusionError::Execution(format!(

@@ -315,10 +315,9 @@ def test_primary_keys(pipeline_name):
     """
     Port of primary_keys: test insert/update/delete semantics with primary key.
     """
-    sql = (
-        "CREATE TABLE t1(id bigint not null, s varchar not null, primary key(id)) "
-        "WITH ('materialized'='true');"
-    )
+
+    # Tables with primary keys are automatically materialized, no need to specify 'materialized'='true'.
+    sql = "CREATE TABLE t1(id bigint not null, s varchar not null, primary key(id)) "
     create_pipeline(pipeline_name, sql)
     start_pipeline(pipeline_name)
 

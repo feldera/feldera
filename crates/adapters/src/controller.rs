@@ -3820,6 +3820,7 @@ impl ControllerInner {
 
             let adhoc_tbl = Arc::new(AdHocTable::new(
                 clh.integrate_handle.is_some(),
+                clh.integrate_handle_is_indexed,
                 Arc::downgrade(self),
                 input_handle,
                 name.clone(),
