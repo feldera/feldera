@@ -228,6 +228,7 @@ impl Catalog {
             + From<K>
             + Send
             + Sync
+            + Debug
             + 'static,
         VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
             + SerializeWithContext<SqlSerdeConfig>
@@ -258,10 +259,9 @@ impl Catalog {
         .unwrap();
 
         // Inputs are also outputs.
-        self.register_output_map_persistent(
+        self.register_materialized_output_map_persistent(
             Self::output_persistent_id(&stream).as_deref(),
             stream,
-            value_key_func,
             schema,
         );
     }
@@ -283,6 +283,7 @@ impl Catalog {
             + From<K>
             + Send
             + Sync
+            + Debug
             + 'static,
         VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
             + SerializeWithContext<SqlSerdeConfig>
@@ -388,6 +389,7 @@ impl Catalog {
             index_of: None,
             delta_handle: Box::new(<SerCollectionHandleImpl<_, D, ()>>::new(delta_handle))
                 as Box<dyn SerBatchReaderHandle>,
+            integrate_handle_is_indexed: false,
             integrate_handle: None,
         };
 
@@ -460,6 +462,7 @@ impl Catalog {
             key_schema: None,
             value_schema: schema,
             index_of: None,
+            integrate_handle_is_indexed: false,
             integrate_handle: Some(Arc::new(<SerCollectionHandleImpl<_, D, ()>>::new(
                 integrate_handle,
             )) as Arc<dyn SerBatchReaderHandle>),
@@ -473,78 +476,10 @@ impl Catalog {
     /// Add an output stream that carries updates to an indexed Z-set that
     /// behaves like a map (i.e., has exactly one key with weight 1 per value)
     /// to the catalog.
-    pub fn register_output_map<K, KD, V, VD, F>(
-        &mut self,
-        stream: Stream<RootCircuit, OrdIndexedZSet<K, V>>,
-        _key_func: F,
-        schema: &str,
-    ) where
-        F: Fn(&V) -> K + Clone + Send + Sync + 'static,
-        KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
-            + SerializeWithContext<SqlSerdeConfig>
-            + From<K>,
-        VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
-            + SerializeWithContext<SqlSerdeConfig>
-            + From<V>
-            + Default
-            + Debug
-            + Clone
-            + Send
-            + 'static,
-        K: DBData + Send + Sync + From<KD> + Default,
-        V: DBData + Send + Sync + From<VD> + Default,
-    {
-        self.register_output_map_persistent(None, stream, _key_func, schema)
-    }
-
-    /// Add an output stream that carries updates to an indexed Z-set that
-    /// behaves like a map (i.e., has exactly one key with weight 1 per value)
-    /// to the catalog.
-    pub fn register_output_map_persistent<K, KD, V, VD, F>(
-        &mut self,
-        persistent_id: Option<&str>,
-        stream: Stream<RootCircuit, OrdIndexedZSet<K, V>>,
-        _key_func: F,
-        schema: &str,
-    ) where
-        F: Fn(&V) -> K + Clone + Send + Sync + 'static,
-        KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
-            + SerializeWithContext<SqlSerdeConfig>
-            + From<K>,
-        VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
-            + SerializeWithContext<SqlSerdeConfig>
-            + From<V>
-            + Default
-            + Debug
-            + Clone
-            + Send
-            + 'static,
-        K: DBData + Send + Sync + From<KD> + Default,
-        V: DBData + Send + Sync + From<VD> + Default,
-    {
-        let schema: Relation = Self::parse_relation_schema(schema).unwrap();
-        let name = schema.name.clone();
-
-        // Create handle for the stream itself.
-        let (delta_handle, delta_gid) = stream
-            .map(|(_k, v)| v.clone())
-            .accumulate_output_persistent_with_gid(persistent_id);
-        stream.circuit().set_mir_node_id(&delta_gid, persistent_id);
-
-        let handles = OutputCollectionHandles {
-            key_schema: None,
-            value_schema: schema,
-            index_of: None,
-            delta_handle: Box::new(<SerCollectionHandleImpl<_, VD, ()>>::new(delta_handle))
-                as Box<dyn SerBatchReaderHandle>,
-            integrate_handle: None,
-        };
-
-        self.register_output_batch_handles(&name, handles).unwrap();
-    }
-
-    /// Like `register_output_map`, but additionally materializes the integral
-    /// of the stream and makes it queryable.
+    ///
+    /// Assumes that the stream was created by the InputUpsert operator, which
+    /// creates an integral of the stream. Reuses the same integral for the output
+    /// handle.
     pub fn register_materialized_output_map<K, KD, V, VD>(
         &mut self,
         stream: Stream<RootCircuit, OrdIndexedZSet<K, V>>,
@@ -552,7 +487,11 @@ impl Catalog {
     ) where
         KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
             + SerializeWithContext<SqlSerdeConfig>
-            + From<K>,
+            + From<K>
+            + Send
+            + Sync
+            + Debug
+            + 'static,
         VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
             + SerializeWithContext<SqlSerdeConfig>
             + From<V>
@@ -575,7 +514,11 @@ impl Catalog {
     ) where
         KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
             + SerializeWithContext<SqlSerdeConfig>
-            + From<K>,
+            + From<K>
+            + Send
+            + Sync
+            + Debug
+            + 'static,
         VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
             + SerializeWithContext<SqlSerdeConfig>
             + From<V>
@@ -603,9 +546,10 @@ impl Catalog {
         let (delta_handle, delta_gid) = delta.accumulate_output_persistent_with_gid(persistent_id);
         stream.circuit().set_mir_node_id(&delta_gid, persistent_id);
 
-        let (integrate_handle, integral_gid) = delta
-            .accumulate_integrate_trace()
-            .apply(|s| TypedBatch::<V, (), ZWeight, _>::new(s.inner().ro_snapshot()))
+        // `integrate_trace` below should return the existing integral created by the InputUpsert operator.
+        let (integrate_handle, integral_gid) = stream
+            .integrate_trace()
+            .apply(|s| TypedBatch::<K, V, ZWeight, _>::new(s.inner().ro_snapshot()))
             .output_persistent_with_gid(
                 persistent_id.map(|id| format!("{id}.integral")).as_deref(),
             );
@@ -619,7 +563,8 @@ impl Catalog {
             index_of: None,
             delta_handle: Box::new(<SerCollectionHandleImpl<_, VD, ()>>::new(delta_handle))
                 as Box<dyn SerBatchReaderHandle>,
-            integrate_handle: Some(Arc::new(<SerCollectionHandleImpl<_, VD, ()>>::new(
+            integrate_handle_is_indexed: true,
+            integrate_handle: Some(Arc::new(<SerCollectionHandleImpl<_, KD, VD>>::new(
                 integrate_handle,
             )) as Arc<dyn SerBatchReaderHandle>),
         };
@@ -702,6 +647,7 @@ impl Catalog {
             index_of: Some(view_name.clone()),
             delta_handle: Box::new(<SerCollectionHandleImpl<_, KD, VD>>::new(stream_handle))
                 as Box<dyn SerBatchReaderHandle>,
+            integrate_handle_is_indexed: false,
             integrate_handle: None,
         };
 
