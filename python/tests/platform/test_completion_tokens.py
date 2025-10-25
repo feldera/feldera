@@ -3,7 +3,6 @@
 import os
 import time
 import json
-import tempfile
 import uuid
 from http import HTTPStatus
 
