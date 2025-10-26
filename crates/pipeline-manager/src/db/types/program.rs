@@ -37,6 +37,8 @@ pub enum CompilationProfile {
     Unoptimized,
     /// Prioritizes runtime speed over compilation speed
     Optimized,
+    /// Optimized compilation profile with minimal debug information.
+    OptimizedSymbols,
 }
 
 impl CompilationProfile {
@@ -45,6 +47,7 @@ impl CompilationProfile {
             CompilationProfile::Dev => "debug",
             CompilationProfile::Unoptimized => "unoptimized",
             CompilationProfile::Optimized => "optimized",
+            CompilationProfile::OptimizedSymbols => "optimized_symbols",
         }
     }
 }
@@ -57,8 +60,9 @@ impl FromStr for CompilationProfile {
             "dev" => Ok(CompilationProfile::Dev),
             "unoptimized" => Ok(CompilationProfile::Unoptimized),
             "optimized" => Ok(CompilationProfile::Optimized),
+            "optimized_symbols" => Ok(CompilationProfile::OptimizedSymbols),
             e => unimplemented!(
-                "Unsupported option {e}. Available choices are 'dev', 'unoptimized' and 'optimized'"
+                "Unsupported option {e}. Available choices are 'dev', 'unoptimized' and 'optimized', 'optimized_symbols'."
             ),
         }
     }
@@ -70,6 +74,7 @@ impl Display for CompilationProfile {
             CompilationProfile::Dev => write!(f, "dev"),
             CompilationProfile::Unoptimized => write!(f, "unoptimized"),
             CompilationProfile::Optimized => write!(f, "optimized"),
+            CompilationProfile::OptimizedSymbols => write!(f, "optimized_symbols"),
         }
     }
 }

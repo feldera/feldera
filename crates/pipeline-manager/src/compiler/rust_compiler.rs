@@ -920,6 +920,10 @@ extern crate sync_checkpoint;"#,
         [profile.optimized]
         inherits = "release"
 
+        [profile.optimized_symbols]
+        inherits = "release"
+        debug = "line-tables-only"
+
         [workspace.dependencies]
         arcstr = {{ version = "1.2.0" }}
         paste = {{ version = "1.0.12" }}
