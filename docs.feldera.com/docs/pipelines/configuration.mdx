@@ -56,7 +56,7 @@ Make sure to appropriately size resource limits (memory and storage), the number
 The "optimized" compilation profile (default) should be used when running production pipelines where performance is important.
 
 The "optimized_symbols" profile adds minimal debug information (to display line number and file information in backtraces).
-It can lead to significantly larger pipeline binary sizes (observed up to 4x in practice). However, it is useful to run with this
+It can lead to significantly larger pipeline binary sizes (can be up to 2x in practice). However, it is useful to run with this
 profile if you want to debug unexpected panics during pipeline execution.
 
 <div className='theme-api-markdown' >
