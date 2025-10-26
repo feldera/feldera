@@ -380,7 +380,8 @@ impl Catalog {
         }
 
         // Create handle for the stream itself.
-        let (delta_handle, delta_gid) = stream.accumulate_output_persistent_with_gid(persistent_id);
+        let (delta_handle, enable_count, delta_gid) =
+            stream.accumulate_output_persistent_with_gid(persistent_id);
         stream.circuit().set_mir_node_id(&delta_gid, persistent_id);
 
         let handles = OutputCollectionHandles {
@@ -389,6 +390,7 @@ impl Catalog {
             index_of: None,
             delta_handle: Box::new(<SerCollectionHandleImpl<_, D, ()>>::new(delta_handle))
                 as Box<dyn SerBatchReaderHandle>,
+            enable_count,
             integrate_handle_is_indexed: false,
             integrate_handle: None,
         };
@@ -445,7 +447,8 @@ impl Catalog {
         let stream = stream.shard();
 
         // Create handle for the stream itself.
-        let (delta_handle, delta_gid) = stream.accumulate_output_persistent_with_gid(persistent_id);
+        let (delta_handle, enable_count, delta_gid) =
+            stream.accumulate_output_persistent_with_gid(persistent_id);
         stream.circuit().set_mir_node_id(&delta_gid, persistent_id);
 
         let (integrate_handle, integrate_gid) = stream
@@ -468,6 +471,7 @@ impl Catalog {
             )) as Arc<dyn SerBatchReaderHandle>),
             delta_handle: Box::new(<SerCollectionHandleImpl<_, D, ()>>::new(delta_handle))
                 as Box<dyn SerBatchReaderHandle>,
+            enable_count,
         };
 
         self.register_output_batch_handles(&name, handles).unwrap();
@@ -598,7 +602,8 @@ impl Catalog {
                 .as_deref(),
         );
 
-        let (delta_handle, delta_gid) = delta.accumulate_output_persistent_with_gid(persistent_id);
+        let (delta_handle, enable_count, delta_gid) =
+            delta.accumulate_output_persistent_with_gid(persistent_id);
         stream.circuit().set_mir_node_id(&delta_gid, persistent_id);
 
         let integrate_handle = if materialized {
@@ -628,6 +633,7 @@ impl Catalog {
             index_of: None,
             delta_handle: Box::new(<SerCollectionHandleImpl<_, VD, ()>>::new(delta_handle))
                 as Box<dyn SerBatchReaderHandle>,
+            enable_count,
             integrate_handle_is_indexed: true,
             integrate_handle,
         };
@@ -696,7 +702,7 @@ impl Catalog {
 
         let view_handles = self.output_handles(view_name)?;
 
-        let (stream_handle, stream_gid) =
+        let (stream_handle, enable_count, stream_gid) =
             stream.accumulate_output_persistent_with_gid(persistent_id);
         stream.circuit().set_mir_node_id(&stream_gid, persistent_id);
 
@@ -710,6 +716,7 @@ impl Catalog {
             index_of: Some(view_name.clone()),
             delta_handle: Box::new(<SerCollectionHandleImpl<_, KD, VD>>::new(stream_handle))
                 as Box<dyn SerBatchReaderHandle>,
+            enable_count,
             integrate_handle_is_indexed: false,
             integrate_handle: None,
         };
@@ -742,7 +749,7 @@ fn index_schema(
 
 #[cfg(test)]
 mod test {
-    use std::{io::Write, ops::Deref};
+    use std::{io::Write, ops::Deref, sync::atomic::Ordering};
 
     use crate::{catalog::RecordFormat, test::TestStruct, Catalog, CircuitCatalog};
     use dbsp::Runtime;
@@ -793,6 +800,9 @@ mod test {
             .unwrap();
 
         let output_stream_handles = catalog.output_handles(&("Input_map".into())).unwrap();
+        output_stream_handles
+            .enable_count
+            .fetch_add(1, Ordering::AcqRel);
 
         // Step 1: insert a couple of values.
 
