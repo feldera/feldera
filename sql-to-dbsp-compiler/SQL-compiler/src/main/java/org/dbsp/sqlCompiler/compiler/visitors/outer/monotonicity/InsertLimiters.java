@@ -1366,9 +1366,8 @@ public class InsertLimiters extends CircuitCloneVisitor {
             return operator;
         }
         DBSPSourceMultisetOperator multisetInput = operator.as(DBSPSourceMultisetOperator.class);
-        DBSPTypeIndexedZSet indexedOutputType = null;
-        if (multisetInput != null)
-            indexedOutputType = IndexedInputs.getIndexedType(multisetInput);
+        final DBSPTypeIndexedZSet indexedOutputType = (multisetInput != null) ?
+                IndexedInputs.getIndexedType(multisetInput) : null;
 
         List<DBSPExpression> timestamps = new ArrayList<>();
         int index = 0;
@@ -1472,7 +1471,10 @@ public class InsertLimiters extends CircuitCloneVisitor {
         if (operator != expansion)
             this.markBound(expansion.outputPort(), extend.outputPort());
 
-        if (INSERT_RETAIN_VALUES && replaceIndexedInput) {
+        if (INSERT_RETAIN_VALUES && replaceIndexedInput &&
+                multisetInput != null &&
+                !multisetInput.getMetadata().materialized) {
+            // Do not GC materialized tables
             IMaybeMonotoneType projection = me.getMonotoneType().to(MonotoneClosureType.class).getBodyType();
             // The new input operator produces an indexed Zset, need to adjust the projection
             projection = new PartiallyMonotoneTuple(

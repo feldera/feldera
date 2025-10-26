@@ -726,7 +726,22 @@ public class ToRustVisitor extends CircuitVisitor {
             JsonNode j = tableDescription.asJson(true);
             j = this.stripProperties(j);
             DBSPStrLiteral json = new DBSPStrLiteral(j.toString(), true);
-            String registerFunction = operator.getMetadata().materialized ?
+
+            // Check if any of the primary keys columns has a LATENESS annotation
+            boolean keyWithLateness = false;
+            boolean hasPrimaryKeys = !operator.getMetadata().getPrimaryKeys().isEmpty();
+            for (var key: operator.getMetadata().getPrimaryKeys()) {
+                if (key.lateness != null) {
+                    keyWithLateness = true;
+                    break;
+                }
+            }
+
+            // If a table has a PK, always register it using register_materialized_input_map
+            // (instead of register_input_map) even if it doesn't have a materialized  attribute,
+            // EXCEPT if it has a PK column with LATENESS, in which case still use register_input_map.
+            String registerFunction =
+                    (operator.getMetadata().materialized || (hasPrimaryKeys && !keyWithLateness)) ?
                     "register_materialized_input_map" : "register_input_map";
             this.builder.append("catalog.")
                     .append(registerFunction)
