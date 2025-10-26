@@ -146,5 +146,5 @@ RUN  arch=`dpkg --print-architecture | sed "s/arm64/aarch64/g" | sed "s/amd64/x8
     && cp sccache-v0.10.0-$arch-unknown-linux-musl/sccache /home/ubuntu/.cargo/bin \
     && chmod +x /home/ubuntu/.cargo/bin/sccache
 
-ENV RUSTFLAGS="-C link-arg=-fuse-ld=mold"
+ENV RUSTFLAGS="-C link-arg=-fuse-ld=mold -C link-arg=-Wl,--compress-debug-sections=zlib"
 RUN rustup default stable
