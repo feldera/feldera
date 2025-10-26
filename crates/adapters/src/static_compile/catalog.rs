@@ -259,7 +259,7 @@ impl Catalog {
         .unwrap();
 
         // Inputs are also outputs.
-        self.register_materialized_output_map_persistent(
+        self.register_output_map_persistent(
             Self::output_persistent_id(&stream).as_deref(),
             stream,
             schema,
@@ -506,11 +506,66 @@ impl Catalog {
         self.register_materialized_output_map_persistent(None, stream, schema)
     }
 
+    pub fn register_output_map_persistent<K, KD, V, VD>(
+        &mut self,
+        persistent_id: Option<&str>,
+        stream: Stream<RootCircuit, OrdIndexedZSet<K, V>>,
+        schema: &str,
+    ) where
+        KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+            + SerializeWithContext<SqlSerdeConfig>
+            + From<K>
+            + Send
+            + Sync
+            + Debug
+            + 'static,
+        VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+            + SerializeWithContext<SqlSerdeConfig>
+            + From<V>
+            + Default
+            + Debug
+            + Clone
+            + Send
+            + 'static,
+        K: DBData + Send + Sync + From<KD> + Default,
+        V: DBData + Send + Sync + From<VD> + Default,
+    {
+        self.register_output_map_persistent_inner(persistent_id, stream, schema, false)
+    }
+
     pub fn register_materialized_output_map_persistent<K, KD, V, VD>(
         &mut self,
         persistent_id: Option<&str>,
         stream: Stream<RootCircuit, OrdIndexedZSet<K, V>>,
         schema: &str,
+    ) where
+        KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+            + SerializeWithContext<SqlSerdeConfig>
+            + From<K>
+            + Send
+            + Sync
+            + Debug
+            + 'static,
+        VD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
+            + SerializeWithContext<SqlSerdeConfig>
+            + From<V>
+            + Default
+            + Debug
+            + Clone
+            + Send
+            + 'static,
+        K: DBData + Send + Sync + From<KD> + Default,
+        V: DBData + Send + Sync + From<VD> + Default,
+    {
+        self.register_output_map_persistent_inner(persistent_id, stream, schema, true)
+    }
+
+    pub fn register_output_map_persistent_inner<K, KD, V, VD>(
+        &mut self,
+        persistent_id: Option<&str>,
+        stream: Stream<RootCircuit, OrdIndexedZSet<K, V>>,
+        schema: &str,
+        materialized: bool,
     ) where
         KD: for<'de> DeserializeWithContext<'de, SqlSerdeConfig>
             + SerializeWithContext<SqlSerdeConfig>
@@ -546,16 +601,26 @@ impl Catalog {
         let (delta_handle, delta_gid) = delta.accumulate_output_persistent_with_gid(persistent_id);
         stream.circuit().set_mir_node_id(&delta_gid, persistent_id);
 
-        // `integrate_trace` below should return the existing integral created by the InputUpsert operator.
-        let (integrate_handle, integral_gid) = stream
-            .integrate_trace()
-            .apply(|s| TypedBatch::<K, V, ZWeight, _>::new(s.inner().ro_snapshot()))
-            .output_persistent_with_gid(
-                persistent_id.map(|id| format!("{id}.integral")).as_deref(),
-            );
-        stream
-            .circuit()
-            .set_mir_node_id(&integral_gid, persistent_id);
+        let integrate_handle = if materialized {
+            // `integrate_trace` below should return the existing integral created by the InputUpsert operator.
+            let (integrate_handle, integral_gid) = stream
+                .integrate_trace()
+                .apply(|s| TypedBatch::<K, V, ZWeight, _>::new(s.inner().ro_snapshot()))
+                .output_persistent_with_gid(
+                    persistent_id
+                        .map(|id| format!("{id}.output_integral"))
+                        .as_deref(),
+                );
+            stream
+                .circuit()
+                .set_mir_node_id(&integral_gid, persistent_id);
+            Some(
+                Arc::new(<SerCollectionHandleImpl<_, KD, VD>>::new(integrate_handle))
+                    as Arc<dyn SerBatchReaderHandle>,
+            )
+        } else {
+            None
+        };
 
         let handles = OutputCollectionHandles {
             key_schema: None,
@@ -564,9 +629,7 @@ impl Catalog {
             delta_handle: Box::new(<SerCollectionHandleImpl<_, VD, ()>>::new(delta_handle))
                 as Box<dyn SerBatchReaderHandle>,
             integrate_handle_is_indexed: true,
-            integrate_handle: Some(Arc::new(<SerCollectionHandleImpl<_, KD, VD>>::new(
-                integrate_handle,
-            )) as Arc<dyn SerBatchReaderHandle>),
+            integrate_handle,
         };
 
         self.register_output_batch_handles(&name, handles).unwrap();
