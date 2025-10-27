@@ -2,7 +2,7 @@ use crate::api::error::ApiError;
 use crate::common_error::CommonError;
 use crate::compiler::error::CompilerError;
 use crate::compiler::rust_compiler::{
-    perform_rust_compilation, rust_compiler_task, RustCompilationError,
+    perform_rust_compilation, rust_compiler_task, RustCompilationError, RustCompilationResult,
 };
 use crate::compiler::sql_compiler::{
     perform_sql_compilation, sql_compiler_task, SqlCompilationError,
@@ -182,7 +182,14 @@ pub async fn compiler_precompile(
     })?;
 
     // Rust
-    let (source_checksum, integrity_checksum, rust_duration, _) = perform_rust_compilation(
+    let RustCompilationResult {
+        source_checksum,
+        integrity_checksum,
+        binary_size,
+        profile,
+        duration: rust_duration,
+        rustc_result: _rustc_result,
+    } = perform_rust_compilation(
         &common_config,
         &config,
         None,
@@ -214,11 +221,13 @@ pub async fn compiler_precompile(
 
     // Success
     info!(
-        "Pre-compilation finished: SQL took {:.2}s and Rust took {:.2}s (source checksum: {}; integrity checksum: {})",
+        "Pre-compilation finished: SQL took {:.2}s and Rust took {:.2}s (source checksum: {}; integrity checksum: {}, size: {} bytes, profile: {})",
         sql_duration.as_secs_f64(),
         rust_duration.as_secs_f64(),
         source_checksum,
         integrity_checksum,
+        binary_size,
+        profile
     );
     Ok(())
 }

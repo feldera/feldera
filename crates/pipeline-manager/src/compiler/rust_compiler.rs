@@ -1,8 +1,8 @@
 use crate::compiler::util::{
-    cleanup_specific_directories, cleanup_specific_files, copy_file, copy_file_if_checksum_differs,
-    crate_name_pipeline_globals, crate_name_pipeline_main, create_dir_if_not_exists,
-    create_new_file, create_new_file_with_content, decode_string_as_dir, read_file_content,
-    read_file_content_bytes, recreate_dir, recreate_file_with_content, truncate_sha256_checksum,
+    checksum_file, cleanup_specific_directories, cleanup_specific_files, copy_file,
+    copy_file_if_checksum_differs, crate_name_pipeline_globals, crate_name_pipeline_main,
+    create_dir_if_not_exists, create_new_file, create_new_file_with_content, decode_string_as_dir,
+    read_file_content, recreate_dir, recreate_file_with_content, truncate_sha256_checksum,
     CleanupDecision, DirectoryContent, ProcessGroupTerminator, UtilError,
 };
 use crate::config::{CommonConfig, CompilerConfig};
@@ -194,14 +194,23 @@ async fn attempt_end_to_end_rust_compilation(
 
     // (5) Update database that Rust compilation is finished
     match compilation_result {
-        Ok((source_checksum, integrity_checksum, duration, compilation_info)) => {
+        Ok(RustCompilationResult {
+            source_checksum,
+            integrity_checksum,
+            binary_size,
+            profile,
+            duration,
+            rustc_result,
+        }) => {
             info!(
-                "Rust compilation success: pipeline {} (program version: {}) (took {:.2}s; source checksum: {}; integrity checksum: {})",
+                "Rust compilation success: pipeline {} (program version: {}) (took {:.2}s; source checksum: {}; integrity checksum: {}, size: {} bytes, profile: {})",
                 pipeline.id,
                 pipeline.program_version,
                 duration.as_secs_f64(),
                 truncate_sha256_checksum(&source_checksum),
                 truncate_sha256_checksum(&integrity_checksum),
+                binary_size,
+                profile
             );
             db.lock()
                 .await
@@ -209,7 +218,7 @@ async fn attempt_end_to_end_rust_compilation(
                     tenant_id,
                     pipeline.id,
                     pipeline.program_version,
-                    &compilation_info,
+                    &rustc_result,
                     &source_checksum,
                     &integrity_checksum,
                 )
@@ -338,6 +347,15 @@ impl From<UtilError> for RustCompilationError {
     }
 }
 
+pub(super) struct RustCompilationResult {
+    pub(super) source_checksum: String,
+    pub(super) integrity_checksum: String,
+    pub(super) binary_size: usize,
+    pub(super) profile: CompilationProfile,
+    pub(super) duration: Duration,
+    pub(super) rustc_result: RustCompilationInfo,
+}
+
 /// Performs the Rust compilation.
 ///
 /// Returns the program binary URL, source checksum, integrity checksum,
@@ -355,7 +373,7 @@ pub async fn perform_rust_compilation(
     program_info: &Option<serde_json::Value>,
     udf_rust: &str,
     udf_toml: &str,
-) -> Result<(String, String, Duration, RustCompilationInfo), RustCompilationError> {
+) -> Result<RustCompilationResult, RustCompilationError> {
     let start = Instant::now();
 
     // These must always be the same, the Rust compiler should never pick up
@@ -446,7 +464,7 @@ pub async fn perform_rust_compilation(
     .await?;
 
     // Perform the compilation in the workspace
-    let (compilation_info, integrity_checksum) = call_compiler(
+    let (compilation_info, integrity_checksum, binary_size) = call_compiler(
         db,
         tenant_id,
         pipeline_id,
@@ -458,12 +476,14 @@ pub async fn perform_rust_compilation(
     )
     .await?;
 
-    Ok((
+    Ok(RustCompilationResult {
         source_checksum,
-        integrity_checksum.clone(),
-        start.elapsed(),
-        compilation_info,
-    ))
+        integrity_checksum: integrity_checksum.clone(),
+        binary_size,
+        profile,
+        duration: start.elapsed(),
+        rustc_result: compilation_info,
+    })
 }
 
 /// The `main` function which is injected in each generated pipeline crate
@@ -999,7 +1019,7 @@ async fn call_compiler(
     source_checksum: &str,
     profile: &CompilationProfile,
     runtime_selector: &RuntimeSelector,
-) -> Result<(RustCompilationInfo, String), RustCompilationError> {
+) -> Result<(RustCompilationInfo, String, usize), RustCompilationError> {
     // Workspace directory
     let workspace_dir = config.working_dir().join("rust-compilation");
     if !workspace_dir.is_dir() {
@@ -1164,9 +1184,7 @@ async fn call_compiler(
         }
 
         // Integrity checksum of the source file
-        let integrity_checksum =
-            hex::encode(sha256(&read_file_content_bytes(&source_file_path).await?));
-
+        let (file_size, integrity_checksum) = checksum_file(&source_file_path).await?;
         // Destination file
         let target_file_path = pipeline_binaries_dir.join(format!(
             "pipeline_{pipeline_id}_v{program_version}_sc_{source_checksum}_ic_{integrity_checksum}"
@@ -1176,7 +1194,7 @@ async fn call_compiler(
         copy_file(&source_file_path, &target_file_path).await?;
 
         // Success
-        Ok((compilation_info, integrity_checksum))
+        Ok((compilation_info, integrity_checksum, file_size))
     } else {
         Err(RustCompilationError::RustError(compilation_info))
     }

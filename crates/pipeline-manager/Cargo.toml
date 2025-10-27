@@ -106,6 +106,8 @@ tempfile = { workspace = true }
 # They are provided such that they are included in the workspace `Cargo.lock`.
 # Keep in-sync with `src/compiler/rust_compiler.rs`.
 compare = { workspace = true }
+sha2 = { workspace = true }
+
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 tikv-jemallocator = { workspace = true, features = ["profiling", "unprefixed_malloc_on_supported_platforms"] }
 

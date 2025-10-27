@@ -1,18 +1,21 @@
 use crate::db::types::pipeline::PipelineId;
 use base64::prelude::{Engine, BASE64_STANDARD};
 use flate2::Compression;
+use hex;
 use log::{debug, error, warn};
 use nix::libc::pid_t;
 use nix::sys::signal::{killpg, Signal};
 use nix::unistd::Pid;
 use openssl::sha::sha256;
+use sha2::{Digest, Sha256};
 use std::fs::Metadata;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use thiserror::Error as ThisError;
-use tokio::fs;
-use tokio::fs::File;
-use tokio::io::AsyncWriteExt;
+use tokio::{
+    fs::{self, File},
+    io::{AsyncReadExt, AsyncWriteExt},
+};
 
 /// Automatically terminates a process and all subprocesses it spawns using
 /// the group they are all in. The process must have set a process group ID
@@ -149,6 +152,29 @@ pub async fn read_file_content_bytes(file_path: &Path) -> Result<Vec<u8>, UtilEr
             e,
         )
     })
+}
+
+/// Returns the SHA256 checksum of the file as a hex-encoded string.
+pub async fn checksum_file(path: &Path) -> Result<(usize, String), UtilError> {
+    let mut file = File::open(path)
+        .await
+        .map_err(|e| UtilError::IoError(format!("open file '{}'", path.display()), e))?;
+    let mut hasher = Sha256::new();
+    let mut buffer = vec![0; 128 * 1024];
+    let mut total_bytes = 0;
+
+    loop {
+        let n = file.read(&mut buffer).await.map_err(|e| {
+            UtilError::IoError(format!("read pipeline binary '{}'", path.display()), e)
+        })?;
+        total_bytes += n;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buffer[..n]);
+    }
+
+    Ok((total_bytes, hex::encode(hasher.finalize())))
 }
 
 /// Copies source file to target file, overwriting it.
