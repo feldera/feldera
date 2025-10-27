@@ -1199,5 +1199,20 @@ public class Regression1Tests extends SqlIoTest {
                 roww NOT IN (roww) AS roww
                 FROM tbl;""");
     }
+
+    @Test
+    public void issue4975() {
+        this.getCCS("""
+                CREATE TABLE tbl1(id INT, c2 VARCHAR);
+                
+                CREATE TABLE tbl2(id INT, c2 VARCHAR);
+                
+                CREATE MATERIALIZED VIEW v AS SELECT
+                i.id, i.c2 AS i_c2, v.c2 AS v_c2
+                FROM tbl1 i
+                LEFT ASOF JOIN tbl2 v
+                MATCH_CONDITION ( i.c2 >= v.c2 )
+                ON i.id = v.id;""");
+    }
 }
  
