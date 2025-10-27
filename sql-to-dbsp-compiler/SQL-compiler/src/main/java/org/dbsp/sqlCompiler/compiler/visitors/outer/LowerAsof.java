@@ -218,8 +218,12 @@ public class LowerAsof implements CircuitTransform {
             DBSPType commonTSType = leftTSType.withMayBeNull(nullable);
             Utilities.enforce(commonTSType.sameType(rightTSType.withMayBeNull(nullable)));
 
-            DBSPClosureExpression leftTimestamp = leftTS.cast(leftTS.getNode(), commonTSType, false).closure(leftVar);
-            DBSPClosureExpression rightTimestamp = rightTS.cast(rightTS.getNode(), commonTSType, false).closure(rightVar);
+            DBSPClosureExpression leftTimestamp = leftTS.cast(leftTS.getNode(), commonTSType, false)
+                    .applyCloneIfNeeded()
+                    .closure(leftVar);
+            DBSPClosureExpression rightTimestamp = rightTS.cast(rightTS.getNode(), commonTSType, false)
+                    .applyCloneIfNeeded()
+                    .closure(rightVar);
 
             DBSPVariablePath k = keyType.ref().var();
             DBSPVariablePath l0 = wrappedLeftType.ref().var();
