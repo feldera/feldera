@@ -164,9 +164,10 @@ pub async fn checksum_file(path: &Path) -> Result<(usize, String), UtilError> {
     let mut total_bytes = 0;
 
     loop {
-        let n = file.read(&mut buffer).await.map_err(|e| {
-            UtilError::IoError(format!("read pipeline binary '{}'", path.display()), e)
-        })?;
+        let n = file
+            .read(&mut buffer)
+            .await
+            .map_err(|e| UtilError::IoError(format!("read file '{}'", path.display()), e))?;
         total_bytes += n;
         if n == 0 {
             break;
