@@ -274,6 +274,14 @@ where
     }
 
     #[inline]
+    fn filter_size(&self) -> usize {
+        match &self.inner {
+            Inner::File(file) => file.filter_size(),
+            Inner::Vec(vec) => vec.filter_size(),
+        }
+    }
+
+    #[inline]
     fn location(&self) -> BatchLocation {
         match &self.inner {
             Inner::Vec(vec) => vec.location(),

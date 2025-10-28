@@ -269,6 +269,10 @@ where
         self.file.byte_size().unwrap_storage() as usize
     }
 
+    fn filter_size(&self) -> usize {
+        self.file.filter_size()
+    }
+
     #[inline]
     fn location(&self) -> BatchLocation {
         BatchLocation::Storage

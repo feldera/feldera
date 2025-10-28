@@ -374,6 +374,10 @@ where
         self.size_of().total_bytes()
     }
 
+    fn filter_size(&self) -> usize {
+        0
+    }
+
     fn sample_keys<RG>(&self, rng: &mut RG, sample_size: usize, sample: &mut DynVec<Self::Key>)
     where
         Self::Time: PartialEq<()>,
