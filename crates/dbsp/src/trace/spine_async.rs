@@ -581,9 +581,7 @@ where
             // The amount of memory used for Bloom filters.
             "Bloom filter size" => MetaItem::bytes(filter_size),
 
-            // The number of batches currently being merged (currently this
-            // is always an even number because batches are merged in
-            // pairs).
+            // The number of batches currently being merged.
             "merging batches" => MetaItem::Count(n_merging),
 
             // The number of bytes of batches being merged.
