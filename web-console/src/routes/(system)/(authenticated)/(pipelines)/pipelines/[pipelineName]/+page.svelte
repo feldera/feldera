@@ -10,6 +10,7 @@
   import type { ExtendedPipeline, PipelineThumb } from '$lib/services/pipelineManager.js'
   import { usePipelineList } from '$lib/compositions/pipelines/usePipelineList.svelte.js'
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte.js'
+  import WriteablePipelineOwner from '$lib/components/pipelines/editor/WriteablePipelineOwner.svelte'
 
   let { data } = $props()
 
@@ -18,25 +19,41 @@
     pipelineName = decodeURIComponent(page.params.pipelineName)
   })
 
-  let pipelineCache = $state({ current: data.preloadedPipeline })
-  let set = (pipeline: ExtendedPipeline) => {
+  let pipelineCache: { current: ExtendedPipeline | undefined } = $state({ current: undefined })
+
+  let set = (pipeline: ExtendedPipeline | undefined) => {
     pipelineCache.current = pipeline
   }
   let update = (pipeline: Partial<ExtendedPipeline>) => {
+    if (!pipelineCache.current) {
+      return
+    }
     pipelineCache.current = { ...pipelineCache.current, ...pipeline }
   }
+
   const api = usePipelineManager()
   let pipeline = $derived(writablePipeline({ api, pipeline: pipelineCache, set, update }))
-  const pipelineList = usePipelineList(data.preloaded)
 
-  useRefreshPipeline({
-    getPreloaded: () => data.preloadedPipeline,
-    getPipelines: () => pipelineList.pipelines,
-    getPipeline: () => pipelineCache,
-    set,
-    update,
-    onNotFound: () => goto(`${base}/`)
+  $effect.pre(() => {
+    set(undefined)
+    data.preloaded.pipeline.then(set, () => {})
   })
+
+  const pipelineList = usePipelineList()
+  const pipelineThumb = $derived(
+    pipelineList.pipelines
+      ? (pipelineList.pipelines.find((p) => p.name === pipelineName) ?? 'invalid_pipeline')
+      : undefined
+  )
 </script>
 
-<PipelineEditLayout preloaded={data.preloaded} {pipeline}></PipelineEditLayout>
+{#if pipelineThumb !== 'invalid_pipeline'}
+  <PipelineEditLayout {pipelineName} {pipelineList} {pipelineThumb} {pipeline}></PipelineEditLayout>
+  {#if pipelineCache.current}
+    <WriteablePipelineOwner
+      getPipeline={() => pipelineCache as { current: ExtendedPipeline }}
+      {set}
+      {update}
+    ></WriteablePipelineOwner>
+  {/if}
+{/if}

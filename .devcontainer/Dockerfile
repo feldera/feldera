@@ -4,8 +4,10 @@ FROM ubuntu:24.04 AS base
 
 ARG USERNAME=user
 
-RUN useradd -m $USERNAME && usermod -aG sudo $USERNAME
-RUN echo "user:pass" | chpasswd
+# Rename the default user (uid 1000) from `ubuntu` to USERNAME
+RUN usermod -l $USERNAME -d /home/$USERNAME -m ubuntu
+ENV HOME /home/$USERNAME
+RUN echo "$USERNAME:pass" | chpasswd
 
 # Set locale to fix postgres embedded startup
 ENV LC_ALL=en_US.UTF-8
@@ -58,7 +60,6 @@ RUN pip3 install --break-system-packages gdown kafka-python-ng
 ## Switch to non-root user
 
 USER $USERNAME
-ENV HOME /home/$USERNAME
 
 ## Install rustup and common components
 

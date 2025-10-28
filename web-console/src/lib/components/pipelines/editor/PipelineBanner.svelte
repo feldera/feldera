@@ -49,11 +49,7 @@
           <ClipboardCopyButton value={message} class="-m-2"></ClipboardCopyButton>
         {/if}
       </div>
-      <span
-        class="{textClass} whitespace-pre-wrap {showMore
-          ? 'max-h-[30vh] overflow-auto'
-          : 'line-clamp-1'}"
-      >
+      <span class="whitespace-pre-wrap {showMore ? 'max-h-[30vh] overflow-auto' : 'line-clamp-1'}">
         {message}
       </span>
       {#if message && message.indexOf('\n') !== -1}

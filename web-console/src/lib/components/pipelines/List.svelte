@@ -12,7 +12,11 @@
     pipelines = $bindable(),
     onclose,
     onaction
-  }: { pipelines: PipelineThumb[]; onclose?: () => void; onaction?: () => void } = $props()
+  }: {
+    pipelines: PipelineThumb[] | undefined
+    onclose?: () => void
+    onaction?: () => void
+  } = $props()
   const bindScrollY = (node: HTMLElement, val: { scrollY: number }) => {
     $effect(() => {
       node.scrollTop = scrollY
@@ -40,26 +44,41 @@
       aria-label="Close pipelines list"
     ></button>
   </div>
-  {#each pipelines as pipeline}
-    <a
-      class="flex h-9 flex-nowrap items-center justify-between gap-2 rounded py-2 pl-4 {page.params
-        .pipelineName === pipeline.name
-        ? 'bg-surface-50-950'
-        : 'hover:bg-surface-50-950'}"
-      onclick={onaction}
-      href={`${base}/pipelines/` + encodeURI(pipeline.name) + '/'}
-    >
-      <div class="min-w-0 overflow-hidden overflow-ellipsis whitespace-nowrap py-1">
-        {pipeline.name}
-      </div>
-      <!-- Wrap pipeline name -->
-      <!-- Insert a thin whitespace to help break names containing underscore -->
-      <!--
+  {#if pipelines}
+    {#each pipelines as pipeline}
+      <a
+        class="flex h-9 flex-nowrap items-center justify-between gap-2 rounded py-2 pl-4 {page
+          .params.pipelineName === pipeline.name
+          ? 'bg-surface-50-950'
+          : 'hover:bg-surface-50-950'}"
+        onclick={onaction}
+        href={`${base}/pipelines/` + encodeURI(pipeline.name) + '/'}
+      >
+        <div class="min-w-0 overflow-hidden overflow-ellipsis whitespace-nowrap py-1">
+          {pipeline.name}
+        </div>
+        <!-- Wrap pipeline name -->
+        <!-- Insert a thin whitespace to help break names containing underscore -->
+        <!--
       <div class="w-full overflow-ellipsis whitespace-break-spaces py-1">
           {pipeline.name.replaceAll('_', `_ `)}
       </div>
       -->
-      <PipelineStatus {...pipeline}></PipelineStatus>
-    </a>
-  {/each}
+        <PipelineStatus {...pipeline}></PipelineStatus>
+      </a>
+    {/each}
+  {:else}
+    {@render placeholderList()}
+  {/if}
 </div>
+
+{#snippet placeholderList()}
+  <div class="flex flex-col gap-7 pl-3 pt-3">
+    {#each new Array(10).fill(undefined) as _}
+      <div class="flex flex-nowrap justify-between gap-6">
+        <div class="placeholder max-w-64 flex-grow animate-pulse"></div>
+        <div class="placeholder-circle mr-1.5 size-3 animate-pulse"></div>
+      </div>
+    {/each}
+  </div>
+{/snippet}

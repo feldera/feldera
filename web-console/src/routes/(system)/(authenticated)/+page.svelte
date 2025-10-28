@@ -23,6 +23,9 @@
   import { useAdaptiveDrawer } from '$lib/compositions/layout/useAdaptiveDrawer.svelte'
   import BookADemo from '$lib/components/other/BookADemo.svelte'
   import Footer from '$lib/components/layout/Footer.svelte'
+  import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
+  import type { Demo } from '$lib/services/pipelineManager'
+  import { Progress } from '@skeletonlabs/skeleton-svelte'
 
   preloadCode(`${base}/pipelines/*`).then(() => preloadCode(`${base}/demos/`))
 
@@ -49,12 +52,20 @@
 
   const maxShownDemos = $derived(isTablet.current ? 5 : 9)
 
-  const pipelines = usePipelineList(data.preloaded)
+  const pipelines = usePipelineList()
   let welcomed = useLocalStorage('home/welcomed', false)
   let showSuggestedDemos = useLocalStorage('home/hideSuggestedDemos', true)
   let darkMode = useDarkMode()
   let selectedPipelines = $state([]) as string[]
   const drawer = useAdaptiveDrawer('right')
+
+  const api = usePipelineManager()
+  let demos = $state(new Array<Demo | null>(9).fill(null))
+  $effect.root(() => {
+    api.getDemos().then((ds) => {
+      demos = ds
+    })
+  })
 </script>
 
 <AppHeader>
@@ -117,11 +128,16 @@
       <div class="flex flex-nowrap items-center gap-4 text-xl font-semibold">
         <span class="fd fd-network text-surface-500"></span><span>Your pipelines</span>
       </div>
-      {#if pipelines.pipelines.length}
+      {#if !pipelines.pipelines}
+        <div class="flex w-full flex-col items-center gap-4 pt-8 sm:pt-16">
+          <Progress value={null}></Progress>
+          <div class="">Loading pipelines...</div>
+        </div>
+      {:else if pipelines.pipelines.length}
+        {@const ps = pipelines.pipelines}
         <PipelineTable pipelines={pipelines.pipelines} bind:selectedPipelines>
           {#snippet preHeaderEnd()}
-            <AvailableActions pipelines={pipelines.pipelines} bind:selectedPipelines
-            ></AvailableActions>
+            <AvailableActions pipelines={ps} bind:selectedPipelines></AvailableActions>
             {#if !selectedPipelines.length}
               <CreatePipelineButton
                 inputClass="max-w-64"
@@ -144,7 +160,7 @@
         </div>
       {/if}
     </div>
-    {#if data.demos.length}
+    {#if demos.length}
       <div>
         <InlineDropdown bind:open={showSuggestedDemos.value}>
           {#snippet header(open, toggle)}
@@ -173,7 +189,7 @@
               <div
                 class="grid grid-cols-1 gap-x-6 gap-y-5 py-2 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5"
               >
-                {#each data.demos.slice(0, maxShownDemos) as demo}
+                {#each demos.slice(0, maxShownDemos) as demo}
                   <DemoTile {demo}></DemoTile>
                 {/each}
                 <div class="card flex flex-col p-4">

@@ -64,6 +64,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
   import { usePipelineAction } from '$lib/compositions/usePipelineAction.svelte'
   import { usePipelineActionCallbacks } from '$lib/compositions/pipelines/usePipelineActionCallbacks.svelte'
   import type { WritablePipeline } from '$lib/compositions/useWritablePipeline.svelte'
+  import type { Snippet } from 'svelte'
 
   let {
     pipeline,
@@ -74,7 +75,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
     saveFile,
     class: _class = ''
   }: {
-    pipeline: WritablePipeline
+    pipeline: WritablePipeline<true>
     onDeletePipeline?: (pipelineName: string) => void
     editConfigDisabled: boolean
     unsavedChanges: boolean
@@ -367,7 +368,17 @@ groups related actions into multi-action dropdowns when multiple options are ava
   }
 
   // Static button configurations for each action
-  const buttonConfigs = {
+  const buttonConfigs: Record<
+    string,
+    {
+      label: string
+      description: string
+      onclick: () => void
+      disabled: () => boolean
+      disabledText?: string
+      standaloneButton: Snippet
+    }
+  > = {
     _start: {
       label: 'Start',
       description: 'Start the pipeline normally',
@@ -435,7 +446,8 @@ groups related actions into multi-action dropdowns when multiple options are ava
         const { waitFor } = await postPipelineAction(pipelineName, 'standby')
         waitFor().then(() => onActionSuccess?.(pipelineName, 'standby'), toastError)
       },
-      disabled: () => false,
+      disabled: () => unsavedChanges,
+      disabledText: 'Save First',
       standaloneButton: _standby
     },
     _activate: {
@@ -576,7 +588,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
               <span class="">{button.label}</span>
 
               {#if button.disabled}
-                <span class="text-sm">Enterprise Only</span>
+                <span class="text-sm">{button.disabledText}</span>
               {/if}
             </div>
             <div class="text-base text-surface-700-300">

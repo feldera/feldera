@@ -17,8 +17,9 @@
   import { newDate } from '$lib/compositions/serverTime'
   import { page } from '$app/state'
   import { useSystemMessages } from '$lib/compositions/useSystemMessages.svelte'
+  import { _lazyUpdateConfig } from './+layout'
 
-  let { children } = $props()
+  let { data, children } = $props()
   let darkMode = useDarkMode()
 
   if (browser) {
@@ -33,6 +34,10 @@
     }
     replace(/^license_/, getLicenseMessage(page.data.feldera.config, newDate()))
   }, 1000)
+
+  {
+    _lazyUpdateConfig(data.auth)
+  }
 </script>
 
 <BodyAttr

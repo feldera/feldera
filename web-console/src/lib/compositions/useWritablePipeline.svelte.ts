@@ -4,7 +4,6 @@ import {
   type PipelineThumb
 } from '$lib/services/pipelineManager'
 import { untrack } from 'svelte'
-import invariant from 'tiny-invariant'
 import {
   usePipelineManager,
   type PipelineManagerApi
@@ -17,15 +16,12 @@ export const writablePipeline = ({
   update
 }: {
   api: PipelineManagerApi
-  pipeline: { current: ExtendedPipeline }
+  pipeline: { current: ExtendedPipeline | undefined }
   set: (pipeline: ExtendedPipeline) => void
   update: (p: Partial<ExtendedPipeline>) => void
 }) => {
-  invariant(pipeline, 'useWritablePipeline: pipeline was not preloaded')
-  let pipelineName = pipeline.current.name
-
-  if (!pipelineName) {
-    throw new Error('Cannot use pipeline without specifying its name')
+  if (pipeline.current && !pipeline.current.name) {
+    throw new Error('Cannot use pipeline with an empty name')
   }
 
   return {
@@ -33,10 +29,13 @@ export const writablePipeline = ({
       return pipeline.current
     },
     async patch(newPipeline: Partial<Pipeline>, optimistic?: boolean) {
+      if (!pipeline.current) {
+        return
+      }
       if (optimistic) {
         update(newPipeline)
       }
-      const res = await api.patchPipeline(pipelineName, newPipeline)
+      const res = await api.patchPipeline(pipeline.current.name, newPipeline)
       if (!optimistic) {
         set(res)
       }
@@ -45,24 +44,29 @@ export const writablePipeline = ({
   }
 }
 
-export type WritablePipeline = ReturnType<typeof writablePipeline>
+export type WritablePipeline<T extends boolean = false> = T extends true
+  ? {
+      current: NonNullable<ReturnType<typeof writablePipeline>['current']>
+      patch: ReturnType<typeof writablePipeline>['patch']
+    }
+  : ReturnType<typeof writablePipeline>
 
 /**
  * Refresh pipeline if the refreshVersion field changed
  */
 export const useRefreshPipeline = ({
   getPipeline,
+  getPipelines,
+  getPreloaded,
   set,
   update,
-  getPreloaded,
-  getPipelines,
   onNotFound
 }: {
   getPipeline: () => { current: ExtendedPipeline }
   set: (p: ExtendedPipeline) => void
   update: (p: Partial<ExtendedPipeline>) => void
-  getPreloaded: () => ExtendedPipeline
-  getPipelines: () => PipelineThumb[]
+  getPreloaded?: () => ExtendedPipeline
+  getPipelines: () => PipelineThumb[] | undefined
   onNotFound?: () => void
 }) => {
   const pipelineName = $derived(getPipeline().current.name)
@@ -83,17 +87,22 @@ export const useRefreshPipeline = ({
     set(loaded)
   }
 
-  $effect(() => {
-    if (getPreloaded().name === pipelineName) {
-      return
-    }
-    set(getPreloaded())
-  })
+  if (getPreloaded) {
+    $effect(() => {
+      if (getPreloaded().name === pipelineName) {
+        return
+      }
+      set(getPreloaded())
+    })
+  }
 
   $effect(() => {
     const ps = getPipelines()
     untrack(() => {
       const pipeline = getPipeline().current
+      if (!ps) {
+        return
+      }
       const thumb = ps.find((p) => p.name === pipeline.name)
       if (!thumb) {
         return

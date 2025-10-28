@@ -24,8 +24,11 @@ export const useUpdatePipelineList = () => {
   }
 }
 
-export const useRefreshPipelineList = () => {
+export const useRefreshPipelineList = ({ loadImmediately = false }) => {
   const api = usePipelineManager()
+  if (loadImmediately) {
+    reload(api)
+  }
   onMount(() => {
     return closedIntervalAction(() => reload(api), 2000)
   })
@@ -37,10 +40,10 @@ export const usePipelineList = (preloaded?: { pipelines: PipelineThumb[] }) => {
   }
   return {
     get pipelines() {
-      return [...(pipelines ?? [])]
-    },
-    set pipelines(ps: PipelineThumb[]) {
-      pipelines = ps
+      return pipelines
     }
+    // set pipelines(ps: PipelineThumb[]) {
+    //   pipelines = ps
+    // }
   }
 }

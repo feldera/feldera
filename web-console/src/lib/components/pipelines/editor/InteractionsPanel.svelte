@@ -19,6 +19,7 @@
   import ClipboardCopyButton from '$lib/components/other/ClipboardCopyButton.svelte'
   import Tooltip from '$lib/components/common/Tooltip.svelte'
   import DownloadSupportBundle from '$lib/components/pipelines/editor/DownloadSupportBundle.svelte'
+  import { useAggregatePipelineStats } from '$lib/compositions/useAggregatePipelineStats.svelte'
   import {
     extractPipelineErrors,
     extractPipelineXgressErrors,
@@ -28,14 +29,14 @@
 
   let {
     pipeline,
-    metrics,
     separateAdHocTab
   }: {
     pipeline: { current: ExtendedPipeline }
-    metrics: { current: PipelineMetrics }
     separateAdHocTab: boolean
   } = $props()
   const pipelineName = $derived(pipeline.current.name)
+
+  let metrics = useAggregatePipelineStats(pipeline, 2000, 63000)
 
   let tabs = $derived(
     [

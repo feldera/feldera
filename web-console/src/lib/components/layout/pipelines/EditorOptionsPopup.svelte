@@ -5,8 +5,7 @@
   import { NumberInput } from 'flowbite-svelte'
   import { useCodeEditorSettings } from '$lib/compositions/pipelines/useCodeEditorSettings.svelte'
 
-  const { editorFontSize, autoSavePipeline, showMinimap, showStickyScroll } =
-    useCodeEditorSettings()
+  const { editorFontSize, autoSaveFiles, showMinimap, showStickyScroll } = useCodeEditorSettings()
 </script>
 
 <Popup>
@@ -25,7 +24,7 @@
       <div class="bg-white-dark flex flex-col justify-center gap-2 rounded-container p-2 shadow-md">
         <label class="flex cursor-pointer justify-between rounded p-2 hover:preset-tonal-surface">
           Autosave
-          <Switch name="autoSave" bind:checked={autoSavePipeline.value}></Switch>
+          <Switch name="autoSave" bind:checked={autoSaveFiles.value}></Switch>
         </label>
         <label class="flex cursor-pointer justify-between rounded p-2 hover:preset-tonal-surface">
           Show minimap

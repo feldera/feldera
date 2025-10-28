@@ -29,26 +29,10 @@
       )
     }
   })
-
-  const pipelineActionCallbacks = usePipelineActionCallbacks()
-  const dropOpenedFile = async (pipelineName: string) => {
-    const files = ['program.sql', 'stubs.rs', 'udf.rs', 'udf.toml'].map(
-      (file) => `${pipelineName}/${file}`
-    )
-    for (const file of files) {
-      if (!openFiles[file]) {
-        continue
-      }
-      openFiles[file].sync[Symbol.dispose]()
-      openFiles[file].model.dispose()
-      delete openFiles[file]
-    }
-  }
 </script>
 
 <script lang="ts">
   import { untrack, type Snippet } from 'svelte'
-  import { useLocalStorage } from '$lib/compositions/localStore.svelte'
   import { DecoupledStateProxy } from '$lib/compositions/decoupledState.svelte'
   import { useDarkMode } from '$lib/compositions/useDarkMode.svelte'
   import { isMonacoEditorDisabled } from '$lib/functions/common/monacoEditor'
@@ -56,16 +40,11 @@
   import * as MonacoImports from 'monaco-editor'
   import { editor, KeyCode, KeyMod } from 'monaco-editor/esm/vs/editor/editor.api'
   import type { EditorLanguage } from 'monaco-editor/esm/metadata'
-  import PipelineEditorStatusBar from '$lib/components/layout/pipelines/PipelineEditorStatusBar.svelte'
-  import { page } from '$app/state'
   import { useSkeletonTheme } from '$lib/compositions/useSkeletonTheme.svelte'
-  import { pipelineFileNameRegex } from '$lib/compositions/health/systemErrors'
   import { effectMonacoContentPlaceholder } from '$lib/components/monacoEditor/effectMonacoContentPlaceholder.svelte'
   import { GenericOverlayWidget } from '$lib/components/monacoEditor/GenericOverlayWidget'
-  import { usePipelineActionCallbacks } from '$lib/compositions/pipelines/usePipelineActionCallbacks.svelte'
   import { useCodeEditorSettings } from '$lib/compositions/pipelines/useCodeEditorSettings.svelte'
   import { rgbToHex } from '$lib/functions/common/color'
-  import type { $ } from 'bun'
 
   void MonacoImports // Explicitly import all monaco-editor esm modules
 
@@ -102,11 +81,43 @@
     saveFile?: () => void
   } = $props()
 
-  let editorRef: editor.IStandaloneCodeEditor = $state()!
-  const { editorFontSize, autoSavePipeline, showMinimap, showStickyScroll } =
-    useCodeEditorSettings()
+  /**
+   * Unsafe. Close a file by disposing its resources. If the file is currently open the behavior is undefined.
+   * This function is exposed to parent components via bind:this.
+   * @param filePath - The full path to the file (e.g., "pipelineName/program.sql")
+   */
+  export function closeFile(filePath: string) {
+    if (!openFiles[filePath]) {
+      return
+    }
+    openFiles[filePath].sync[Symbol.dispose]()
+    openFiles[filePath].model.dispose()
+    delete openFiles[filePath]
+  }
 
-  let wait = $derived(autoSavePipeline.value ? 2000 : ('decoupled' as const))
+  /**
+   * Reveal a specific line and column in the editor for a given file.
+   * This function is exposed to parent components via bind:this.
+   * @param fileName - The name of the file (e.g., "program.sql")
+   * @param line - The line number to reveal
+   * @param column - Optional column number (defaults to 1)
+   */
+  export function revealLine(fileName: string, line: number, column?: number) {
+    if (!editorRef) {
+      return
+    }
+    if (currentFileName !== fileName) {
+      currentFileName = fileName
+    }
+    setTimeout(() => {
+      editorRef.revealPosition({ lineNumber: line, column: column ?? 1 })
+    }, 50)
+  }
+
+  let editorRef: editor.IStandaloneCodeEditor = $state()!
+  const { editorFontSize, autoSaveFiles, showMinimap, showStickyScroll } = useCodeEditorSettings()
+
+  let wait = $derived(autoSaveFiles.value ? 2000 : ('decoupled' as const))
   let file = $derived(files.find((f) => f.name === currentFileName)!)
 
   function isReadonlyProperty<T>(obj: T, prop: keyof T) {
@@ -119,7 +130,7 @@
   let filePath = $derived(getFilePath(file))
   let previousFilePath = $state<string | undefined>(undefined)
 
-  $effect.pre(() => {
+  const initFileState = (filePath: string) => {
     if (openFiles[filePath]) {
       return
     }
@@ -150,13 +161,19 @@
       model,
       view: null
     }
+  }
+
+  $effect.pre(() => {
+    initFileState(filePath)
   })
+
   $effect.pre(() => {
     file.access.current
     untrack(() => {
       openFiles[filePath].sync.fetch(file.access)
     })
   })
+
   $effect(() => {
     if (!openFiles[filePath].sync.upstreamChanged) {
       return
@@ -207,28 +224,10 @@
 
   $effect(() => {
     // Trigger save right away when autosave is turned on
-    if (!autoSavePipeline.value) {
+    if (!autoSaveFiles.value) {
       return
     }
     setTimeout(() => Object.values(openFiles).forEach((file) => file.sync.push()))
-  })
-
-  $effect(() => {
-    if (!editorRef) {
-      return
-    }
-    const [, fileName, line, , column] =
-      page.url.hash.match(new RegExp(`#(${pipelineFileNameRegex}):(\\d+)(:(\\d+))?`)) ?? []
-    if (!line) {
-      return
-    }
-    if (currentFileName !== fileName) {
-      currentFileName = fileName
-    }
-    setTimeout(() => {
-      editorRef.revealPosition({ lineNumber: parseInt(line), column: parseInt(column) ?? 1 })
-      window.location.hash = ''
-    }, 50)
   })
 
   let placeholderContent = $derived(file.placeholder)
@@ -237,14 +236,9 @@
   })
 
   $effect(() => {
-    untrack(() => pipelineActionCallbacks.add('', 'delete', dropOpenedFile))
-    return () => {
-      pipelineActionCallbacks.remove('', 'delete', dropOpenedFile)
-    }
-  })
-
-  $effect(() => {
-    _downstreamChanged = openFiles[filePath]?.sync.downstreamChanged ?? false
+    _downstreamChanged = files.some(
+      (file) => openFiles[getFilePath(file)]?.sync.downstreamChanged ?? false
+    )
   })
 
   $effect(() => {
@@ -264,6 +258,12 @@
       Please resolve the conflict to save your changes.
     </div>
     <div class="flex flex-nowrap justify-end gap-4">
+      <button
+        class=" !rounded-0 px-2 py-1 bg-surface-100-900 hover:preset-outlined-primary-500"
+        onclick={() => openFiles[filePath].sync.ignoreUpstream()}
+      >
+        Keep Editing
+      </button>
       <button
         class=" !rounded-0 px-2 py-1 bg-surface-100-900 hover:preset-outlined-primary-500"
         onclick={() => openFiles[filePath].sync.pull()}
@@ -358,11 +358,6 @@
 
 {#snippet statusBar()}
   <div class="flex h-9 flex-nowrap gap-3">
-    <!-- <PipelineEditorStatusBar
-      {autoSavePipeline}
-      downstreamChanged={openFiles[filePath].sync.downstreamChanged}
-      saveCode={() => openFiles[filePath].sync.push()}
-    ></PipelineEditorStatusBar> -->
     {@render statusBarCenter?.()}
   </div>
   <div class="ml-auto flex flex-nowrap gap-x-2">

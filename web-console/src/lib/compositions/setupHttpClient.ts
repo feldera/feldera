@@ -1,9 +1,12 @@
-import { createClient } from '@hey-api/client-fetch'
 import JSONbig from 'true-json-bigint'
 import { felderaEndpoint } from '$lib/functions/configs/felderaEndpoint'
+import type { CreateClientConfig } from '$lib/services/manager/client'
 
-createClient({
+export const createClientConfig: CreateClientConfig = (config) => ({
+  ...config,
+  baseUrl: felderaEndpoint,
+  responseStyle: 'fields',
+  throwOnError: true,
   bodySerializer: JSONbig.stringify,
-  responseTransformer: JSONbig.parse as any,
-  baseUrl: felderaEndpoint
+  responseTransformer: JSONbig.parse as any
 })
