@@ -41,7 +41,7 @@ use crate::{
 };
 
 use super::format::Compression;
-use super::{reader::Reader, AnyFactories, Factories, BLOOM_FILTER_FALSE_POSITIVE_RATE};
+use super::{reader::Reader, AnyFactories, Factories};
 
 struct VarintWriter {
     varint: Varint,
@@ -1082,7 +1082,7 @@ impl BlockWriter {
 struct Writer {
     cache: fn() -> Arc<BufferCache>,
     writer: BlockWriter,
-    bloom_filter: BloomFilter,
+    bloom_filter: Option<BloomFilter>,
     cws: Vec<ColumnWriter>,
     finished_columns: Vec<FileTrailerColumn>,
 }
@@ -1098,13 +1098,18 @@ impl Writer {
     ) -> Result<Self, StorageError> {
         assert_eq!(factories.len(), n_columns);
 
-        let bloom_filter = BloomFilter::with_false_pos(BLOOM_FILTER_FALSE_POSITIVE_RATE)
-            .seed(&BLOOM_FILTER_SEED)
-            .expected_items({
-                // `.max(64)` works around a fastbloom bug that hangs when the
-                // expected number of items is zero (see
-                // https://github.com/tomtomwombat/fastbloom/issues/17).
-                estimated_keys.max(64)
+        let bloom_false_positive_rate =
+            Runtime::with_dev_tweaks(|dev_tweaks| dev_tweaks.bloom_false_positive_rate);
+        let bloom_filter = (bloom_false_positive_rate > 0.0 && bloom_false_positive_rate < 1.0)
+            .then(|| {
+                BloomFilter::with_false_pos(bloom_false_positive_rate)
+                    .seed(&BLOOM_FILTER_SEED)
+                    .expected_items({
+                        // `.max(64)` works around a fastbloom bug that hangs when the
+                        // expected number of items is zero (see
+                        // https://github.com/tomtomwombat/fastbloom/issues/17).
+                        estimated_keys.max(64)
+                    })
             });
         let parameters = Arc::new(parameters);
         let cws = factories
@@ -1138,7 +1143,9 @@ impl Writer {
 
         if column == 0 {
             // Add `key` to bloom filter.
-            self.bloom_filter.insert_hash(item.0.default_hash());
+            if let Some(bloom_filter) = &mut self.bloom_filter {
+                bloom_filter.insert_hash(item.0.default_hash());
+            }
         }
 
         // Add `value` to row group for column.
@@ -1161,13 +1168,17 @@ impl Writer {
         Ok(())
     }
 
-    pub fn close(mut self) -> Result<(Arc<dyn FileReader>, BloomFilter), StorageError> {
+    pub fn close(mut self) -> Result<(Arc<dyn FileReader>, Option<BloomFilter>), StorageError> {
         debug_assert_eq!(self.cws.len(), self.finished_columns.len());
 
         // Write the Bloom filter.
-        let (_block, filter_location) = self
-            .writer
-            .write_block(FilterBlockRef::from(&self.bloom_filter).into_block(), None)?;
+        let filter_location = if let Some(bloom_filter) = &self.bloom_filter {
+            self.writer
+                .write_block(FilterBlockRef::from(bloom_filter).into_block(), None)?
+                .1
+        } else {
+            BlockLocation { offset: 0, size: 0 }
+        };
 
         // Write the file trailer block.
         let file_trailer = FileTrailer {
@@ -1305,7 +1316,7 @@ where
 
     /// Finishes writing the layer file and returns the writer passed to
     /// [`new`](Self::new).
-    pub fn close(mut self) -> Result<(Arc<dyn FileReader>, BloomFilter), StorageError> {
+    pub fn close(mut self) -> Result<(Arc<dyn FileReader>, Option<BloomFilter>), StorageError> {
         self.inner.finish_column::<K0, A0>(0)?;
         self.inner.close()
     }
@@ -1329,7 +1340,7 @@ where
         let cache = self.inner.cache;
         let (file_handle, bloom_filter) = self.close()?;
 
-        Reader::new(&[&any_factories], cache, file_handle, Some(bloom_filter))
+        Reader::new(&[&any_factories], cache, file_handle, bloom_filter)
     }
 }
 
@@ -1480,7 +1491,7 @@ where
     ///
     /// This function will panic if [`write1`](Self::write1) has been called
     /// without a subsequent call to [`write0`](Self::write0).
-    pub fn close(mut self) -> Result<(Arc<dyn FileReader>, BloomFilter), StorageError> {
+    pub fn close(mut self) -> Result<(Arc<dyn FileReader>, Option<BloomFilter>), StorageError> {
         self.inner.finish_column::<K0, A0>(0)?;
         self.inner.finish_column::<K1, A1>(1)?;
         self.inner.close()
@@ -1512,7 +1523,7 @@ where
             &[&any_factories0, &any_factories1],
             cache,
             file_handle,
-            Some(bloom_filter),
+            bloom_filter,
         )
     }
 }
