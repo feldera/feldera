@@ -4952,6 +4952,7 @@ name = "feldera-storage"
 version = "0.172.0"
 dependencies = [
  "anyhow",
+ "feldera-size-of",
  "feldera-types",
  "inventory",
  "itertools 0.14.0",

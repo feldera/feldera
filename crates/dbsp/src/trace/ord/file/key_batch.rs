@@ -163,7 +163,6 @@ where
     #[size_of(skip)]
     factories: FileKeyBatchFactories<K, T, R>,
     #[allow(clippy::type_complexity)]
-    #[size_of(skip)]
     file: Arc<
         Reader<(
             &'static K,
