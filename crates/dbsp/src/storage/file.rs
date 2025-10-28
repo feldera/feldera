@@ -99,7 +99,11 @@ use crate::{
 pub use item::{ArchivedItem, Item, ItemFactory, WithItemFactory};
 
 const BLOOM_FILTER_SEED: u128 = 42;
-const BLOOM_FILTER_FALSE_POSITIVE_RATE: f64 = 0.0001;
+
+/// Default false-positive rate for Bloom filters in newly created files.
+///
+/// This can be adjusted via `DevTweaks`.
+pub const BLOOM_FILTER_FALSE_POSITIVE_RATE: f64 = 0.0001;
 
 /// Factory objects used by file reader and writer.
 pub struct Factories<K, A>
