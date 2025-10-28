@@ -554,8 +554,10 @@ where
         let mut cache_stats = spine_stats.cache_stats;
         let mut storage_size = 0;
         let mut merging_size = 0;
+        let mut filter_size = 0;
         for (batch, merging) in batches {
             cache_stats += batch.cache_stats();
+            filter_size += batch.filter_size();
             let on_storage = batch.location() == BatchLocation::Storage;
             if on_storage || merging {
                 let size = batch.approximate_byte_size();
@@ -575,6 +577,9 @@ where
             // The amount of data in the spine currently stored on disk (not
             // including any in-progress merges).
             "storage size" => MetaItem::bytes(storage_size),
+
+            // The amount of memory used for Bloom filters.
+            "Bloom filter size" => MetaItem::bytes(filter_size),
 
             // The number of batches currently being merged (currently this
             // is always an even number because batches are merged in
@@ -1020,6 +1025,14 @@ where
             .get_batches()
             .iter()
             .map(|batch| batch.approximate_byte_size())
+            .sum()
+    }
+
+    fn filter_size(&self) -> usize {
+        self.merger
+            .get_batches()
+            .iter()
+            .map(|batch| batch.filter_size())
             .sum()
     }
 

@@ -449,6 +449,11 @@ where
     /// the implementation need not attempt to cache the return value.
     fn approximate_byte_size(&self) -> usize;
 
+    /// Number of bytes used as a Bloom filter for [Cursor::seek_key_exact].
+    ///
+    /// Only some kinds of batches use a filter; others should return 0.
+    fn filter_size(&self) -> usize;
+
     /// Where the batch's data is stored.
     fn location(&self) -> BatchLocation {
         BatchLocation::Memory
@@ -581,6 +586,9 @@ where
     }
     fn approximate_byte_size(&self) -> usize {
         (**self).approximate_byte_size()
+    }
+    fn filter_size(&self) -> usize {
+        (**self).filter_size()
     }
     fn location(&self) -> BatchLocation {
         (**self).location()

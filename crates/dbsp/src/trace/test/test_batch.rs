@@ -1180,6 +1180,10 @@ where
         self.size_of().total_bytes()
     }
 
+    fn filter_size(&self) -> usize {
+        0
+    }
+
     fn sample_keys<RG>(&self, _rng: &mut RG, _sample_size: usize, _sample: &mut DynVec<Self::Key>)
     where
         RG: Rng,
