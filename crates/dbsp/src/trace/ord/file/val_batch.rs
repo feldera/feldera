@@ -209,7 +209,6 @@ where
     #[size_of(skip)]
     #[debug(skip)]
     factories: FileValBatchFactories<K, V, T, R>,
-    #[size_of(skip)]
     pub file: RawValBatch<K, V, T, R>,
 }
 

@@ -132,7 +132,6 @@ where
 {
     #[size_of(skip)]
     factories: FileWSetFactories<K, R>,
-    #[size_of(skip)]
     file: Arc<Reader<(&'static K, &'static R, ())>>,
 }
 

@@ -31,6 +31,7 @@ use dyn_clone::clone_box;
 use fastbloom::BloomFilter;
 use feldera_storage::file::FileId;
 use feldera_storage::StoragePath;
+use size_of::SizeOf;
 use smallvec::SmallVec;
 use snap::raw::{decompress_len, Decoder};
 use std::mem::replace;
@@ -737,10 +738,11 @@ where
 }
 
 /// Metadata for reading an index or data node.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, SizeOf)]
 pub(super) struct TreeNode {
     pub location: BlockLocation,
     pub node_type: NodeType,
+    #[size_of(skip)]
     pub rows: Range<u64>,
 }
 
@@ -1215,9 +1217,10 @@ impl FileTrailer {
 }
 
 /// A column in a storage file.
-#[derive(Debug)]
+#[derive(Debug, SizeOf)]
 struct Column {
     root: Option<TreeNode>,
+    #[size_of(skip)]
     factories: AnyFactories,
     n_rows: u64,
 }
@@ -1270,8 +1273,10 @@ impl Column {
 }
 
 /// Encapsulates storage and a file handle.
+#[derive(SizeOf)]
 struct ImmutableFileRef {
     cache: fn() -> Arc<BufferCache>,
+    #[size_of(skip)]
     file_handle: Arc<dyn FileReader>,
     compression: Option<Compression>,
     stats: AtomicCacheStats,
@@ -1422,6 +1427,16 @@ pub struct Reader<T> {
     /// `fn() -> T` is `Send` and `Sync` regardless of `T`.  See
     /// <https://doc.rust-lang.org/nomicon/phantom-data.html>.
     _phantom: PhantomData<fn() -> T>,
+}
+
+impl<T> SizeOf for Reader<T> {
+    fn size_of_children(&self, context: &mut size_of::Context) {
+        self.file.size_of_with_context(context);
+        if let Some(bloom_filter) = &self.bloom_filter {
+            context.add(size_of_val(bloom_filter) + bloom_filter.num_bits() / 8);
+        }
+        self.columns.size_of_with_context(context);
+    }
 }
 
 impl<T> Reader<T>

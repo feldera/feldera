@@ -139,7 +139,6 @@ where
     #[size_of(skip)]
     factories: FileIndexedWSetFactories<K, V, R>,
     #[allow(clippy::type_complexity)]
-    #[size_of(skip)]
     file: Arc<Reader<(&'static K, &'static DynUnit, (&'static V, &'static R, ()))>>,
 }
 

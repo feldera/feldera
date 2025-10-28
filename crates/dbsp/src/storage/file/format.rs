@@ -84,6 +84,7 @@ use crc32c;
 use fastbloom::BloomFilter;
 use num_derive::FromPrimitive;
 use num_traits::FromPrimitive;
+use size_of::SizeOf;
 
 /// Increment this on each incompatible change.
 pub const VERSION_NUMBER: u32 = 3;
@@ -214,7 +215,7 @@ pub struct FileTrailerColumn {
 /// Type of a node in a column B-tree.
 ///
 /// Serialized and deserialized automatically with [`mod@binrw`].
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug, SizeOf)]
 #[binrw]
 #[brw(repr(u8))]
 pub enum NodeType {
@@ -447,7 +448,7 @@ fn next_multiple_of_pow2(offset: usize, alignment: usize) -> usize {
 }
 
 /// Type of compression.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, FromPrimitive)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq, FromPrimitive, SizeOf)]
 #[binrw]
 #[brw(repr(u8))]
 pub enum Compression {
