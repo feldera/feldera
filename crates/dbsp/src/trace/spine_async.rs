@@ -555,6 +555,7 @@ where
         let mut storage_size = 0;
         let mut merging_size = 0;
         let mut filter_size = 0;
+        let mut storage_records = 0;
         for (batch, merging) in batches {
             cache_stats += batch.cache_stats();
             filter_size += batch.filter_size();
@@ -563,11 +564,20 @@ where
                 let size = batch.approximate_byte_size();
                 if on_storage {
                     storage_size += size;
+                    storage_records += batch.key_count();
                 }
                 if merging {
                     merging_size += size;
                 }
             }
+        }
+
+        if storage_records > 0 {
+            let bits_per_key = filter_size as f64 * 8.0 / storage_records as f64;
+            let bits_per_key = bits_per_key as usize;
+            meta.extend(metadata! {
+                "Bloom filter bits/key" => MetaItem::Int(bits_per_key)
+            })
         }
 
         meta.extend(metadata! {
