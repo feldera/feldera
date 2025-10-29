@@ -24,6 +24,7 @@ use deltalake::datafusion::dataframe::DataFrame;
 use deltalake::datafusion::execution::context::SQLOptions;
 use deltalake::datafusion::prelude::SessionContext;
 use deltalake::kernel::Action;
+use deltalake::logstore::IORuntime;
 use deltalake::table::builder::ensure_table_uri;
 use deltalake::table::PeekCommit;
 use deltalake::{datafusion, DeltaTable, DeltaTableBuilder};
@@ -33,6 +34,7 @@ use feldera_adapterlib::utils::datafusion::{
     execute_query_collect, execute_singleton_query, timestamp_to_sql_expression,
     validate_sql_expression, validate_timestamp_column,
 };
+use feldera_storage::tokio::TOKIO_DEDICATED_IO;
 use feldera_types::config::FtModel;
 use feldera_types::program_schema::Relation;
 use feldera_types::transport::delta_table::DeltaTableReaderConfig;
@@ -871,7 +873,8 @@ impl DeltaTableInputEndpointInner {
                             &format!("invalid Delta table URL '{url}': {e}"),
                         )
                     })?
-                    .with_storage_options(self.config.object_store_config.clone());
+                    .with_storage_options(self.config.object_store_config.clone())
+                    .with_io_runtime(IORuntime::RT(TOKIO_DEDICATED_IO.handle().clone()));
 
                 let table_builder = if let Some(DeltaResumeInfo {
                     version: Some(version),
@@ -922,7 +925,7 @@ impl DeltaTableInputEndpointInner {
                     Ok(Err(e)) => {
                         // Timeout errors can originate from multiple transitive dependencies. There is no easy
                         // way to identify them in a strongly-typed fashion. Instead, we check for the "timeout"
-                        // substring in a formatter representaion of the error.
+                        // substring in a formatter representation of the error.
                         //
                         // Debug-format `e` as the timeout error is often found toward the end of the error chain.
                         let is_timeout = format!("{:?}", e).to_lowercase().contains("timeout");
@@ -1333,11 +1336,11 @@ impl DeltaTableInputEndpointInner {
                     match e {
                         DataFusionError::ArrowError(ArrowError::ExternalError(error), _) => self.consumer.error(
                             false,
-                            anyhow!("error retrieving batch {num_batches} of {descr}: external error: {error} (root cause: {})", root_cause(error.as_ref()),
+                            anyhow!("error retrieving batch {num_batches} of {descr}: external error: {error:?} (root cause: {})", root_cause(error.as_ref()),
                         ), Some("delta-batch-arrow")),
                         e => self.consumer.error(
                             false,
-                            anyhow!("error retrieving batch {num_batches} of {descr}: {e}"),
+                            anyhow!("error retrieving batch {num_batches} of {descr}: {e:?}"),
                             Some("delta-batch")
                         ),
                     }

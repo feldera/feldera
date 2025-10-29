@@ -33,6 +33,7 @@ use proptest::proptest;
 use proptest::strategy::ValueTree;
 use proptest::test_runner::TestRunner;
 use serde_json::{json, Value};
+#[cfg(feature = "delta-s3-test")]
 use serial_test::{parallel, serial};
 use std::cmp::min;
 use std::collections::HashMap;
@@ -1749,6 +1750,19 @@ fn delta_table_s3_people_2m() {
 }
 
 /// Read the same table using Unity Catalog path.
+// I haven't investigated this in depth but it appears that, when running
+// multiple delta connectors in parallel, some of which use unity catalog,
+// and others use direct S3 URL to connect to the table, this confuses the
+// AWS SDK into using the wrong authentication token in S3-based
+// connectors. This causes authentication failures with errors like this:
+//
+// ```text
+// 2025-10-29T17:59:09.906160Z  WARN dbsp_adapters::integrated::delta_table::output: delta_table test_output1: error creating or opening delta table 's3://feldera-delta-table-test/80007986-0e32-466a-ad60-4700013bc56e/' after 1 attempts (retrying in 1000 ms): ObjectStore { source: Generic { store: "S3", source: ListRequest { source: RetryError(RetryErrorImpl { method: GET, uri: Some(https://s3.us-east-2.amazonaws.com/feldera-delta-table-test?list-type=2&prefix=80007986-0e32-466a-ad60-4700013bc56e%2F_delta_log%2F), retries: 0, max_retries: 10, elapsed: 395.553916ms, retry_timeout: 180s, inner: Status { status: 400, body: Some("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<Error><Code>InvalidToken</Code><Message>The provided token is malformed or otherwise invalid.</Message><Token-0>...skipped....</Token-0><RequestId>6A1SW4R71MWQFS8H</RequestId><HostId>XOF0VWtYySOJlF0t2R9roAqWM0qH4x+j6cbdkSIVep1l+0PxsAI3tq55nVIcsCj4brHzV9kzmGY=</HostId></Error>") } }) } } }
+// ```
+//
+// Running the unity test sequentially with S3 tests seems to solve this
+// reliably.
+
 #[cfg(feature = "delta-s3-test")]
 #[test]
 #[serial(delta_s3)]
