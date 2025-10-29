@@ -187,7 +187,7 @@
     side="right"
     bind:open={() => !!contextDrawer.content, () => (contextDrawer.content = null)}
     modal={false}
-    class="bg-white-dark flex flex-col gap-2 overflow-auto p-4 pb-0 scrollbar md:p-6 md:pb-0"
+    class="bg-white-dark overflow-auto p-4 pb-0 scrollbar md:p-6 md:pb-0"
   >
     {@render contextDrawer.content?.()}
   </OverlayDrawer>
