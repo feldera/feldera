@@ -27,12 +27,16 @@ use dyn_clone::clone_box;
 use fastbloom::BloomFilter;
 use feldera_storage::StoragePath;
 use snap::raw::{max_compress_len, Encoder};
-use std::{cell::RefCell, sync::Arc};
+use std::{
+    cell::RefCell,
+    sync::{Arc, Once},
+};
 use std::{
     marker::PhantomData,
     mem::{replace, take},
     ops::Range,
 };
+use tracing::info;
 
 use crate::{
     dynamic::{DataTrait, DeserializeDyn, SerializeDyn},
@@ -1088,6 +1092,21 @@ struct Writer {
 }
 
 impl Writer {
+    fn bloom_false_positive_rate() -> Option<f64> {
+        let rate = Runtime::with_dev_tweaks(|dev_tweaks| dev_tweaks.bloom_false_positive_rate);
+        let rate = (rate > 0.0 && rate < 1.0).then_some(rate);
+
+        static ONCE: Once = Once::new();
+        ONCE.call_once(|| {
+            if let Some(rate) = rate {
+                info!("Using Bloom filter false positive rate {rate}");
+            } else {
+                info!("Bloom filters disabled");
+            }
+        });
+        rate
+    }
+
     pub fn new(
         factories: &[&AnyFactories],
         cache: fn() -> Arc<BufferCache>,
@@ -1098,19 +1117,16 @@ impl Writer {
     ) -> Result<Self, StorageError> {
         assert_eq!(factories.len(), n_columns);
 
-        let bloom_false_positive_rate =
-            Runtime::with_dev_tweaks(|dev_tweaks| dev_tweaks.bloom_false_positive_rate);
-        let bloom_filter = (bloom_false_positive_rate > 0.0 && bloom_false_positive_rate < 1.0)
-            .then(|| {
-                BloomFilter::with_false_pos(bloom_false_positive_rate)
-                    .seed(&BLOOM_FILTER_SEED)
-                    .expected_items({
-                        // `.max(64)` works around a fastbloom bug that hangs when the
-                        // expected number of items is zero (see
-                        // https://github.com/tomtomwombat/fastbloom/issues/17).
-                        estimated_keys.max(64)
-                    })
-            });
+        let bloom_filter = Self::bloom_false_positive_rate().map(|bloom_false_positive_rate| {
+            BloomFilter::with_false_pos(bloom_false_positive_rate)
+                .seed(&BLOOM_FILTER_SEED)
+                .expected_items({
+                    // `.max(64)` works around a fastbloom bug that hangs when the
+                    // expected number of items is zero (see
+                    // https://github.com/tomtomwombat/fastbloom/issues/17).
+                    estimated_keys.max(64)
+                })
+        });
         let parameters = Arc::new(parameters);
         let cws = factories
             .iter()
