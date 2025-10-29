@@ -50,7 +50,9 @@ RUN apt-get update --fix-missing && apt-get install -y \
     # somehow it works fine without npm on x86_64 machines :/
     npm \
     # For envsubst (used in some scripts)
-    gettext
+    gettext \
+    # For testing the NATS input connector
+    nats-server
 
 # Install trufflehog
 RUN curl -sSfL https://raw.githubusercontent.com/trufflesecurity/trufflehog/main/scripts/install.sh | sh -s -- -b /usr/local/bin v3.90.1
