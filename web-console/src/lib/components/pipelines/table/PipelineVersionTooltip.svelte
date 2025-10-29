@@ -9,10 +9,7 @@
     baseRuntimeVersion: string
   } = $props()
   import { Tooltip } from '$lib/components/common/Tooltip.svelte'
-  import {
-    getRuntimeVersion,
-    normalizeRuntimeVersion
-  } from '$lib/functions/pipelines/runtimeVersion'
+  import { normalizeRuntimeVersion } from '$lib/functions/pipelines/runtimeVersion'
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
   let api = usePipelineManager()
 </script>

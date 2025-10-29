@@ -47,7 +47,7 @@
       <div class="fd fd-info pl-2 text-[14px] text-warning-600-400"></div>
     </span>
   {:else if status === 'update_available'}
-    <span class="chip h-5 text-sm text-blue-500 !ring-blue-500 preset-outlined">
+    <span class="chip h-5 text-sm text-tertiary-500 !ring-tertiary-500 preset-outlined">
       Update available
     </span>
   {:else}
