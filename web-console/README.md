@@ -69,6 +69,17 @@ bun run build-openapi # If you need to generate a new openapi.json
 bun run generate-openapi
 ```
 
+If you get an error like this:
+
+```
+🔥 Unexpected error occurred. Token "<SomeNewType>" does not exist.
+```
+
+then add the new type to `crates/pipeline-manager/src/api/main.rs`,
+and then rerun both commands above.  If there is more than one new
+type, you may want to add all of them at once, because this will only
+report one each time.
+
 ## File Organization
 
 - `src/assets/`: Static assets referenced in UI components, but not served as-is
