@@ -33,6 +33,7 @@ use proptest::proptest;
 use proptest::strategy::ValueTree;
 use proptest::test_runner::TestRunner;
 use serde_json::{json, Value};
+use serial_test::{parallel, serial};
 use std::cmp::min;
 use std::collections::HashMap;
 use std::ffi::OsStr;
@@ -46,7 +47,7 @@ use std::time::{Duration, Instant};
 use tempfile::{NamedTempFile, TempDir};
 use tokio::sync::mpsc;
 use tokio::time::{sleep, timeout};
-use tracing::info;
+use tracing::{debug, info};
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::EnvFilter;
@@ -921,10 +922,10 @@ async fn test_follow(
                         } else {
                             input_table.version()
                         };
-                        println!("pipeline completed version {version}, expected {expected}, waterlines: {:?}", pipeline.status().input_status().values().next().unwrap().completed_frontier.debug());
+                        debug!("pipeline completed version {version}, expected {expected}, waterlines: {:?}", pipeline.status().input_status().values().next().unwrap().completed_frontier.debug());
                         version == expected
                     } else {
-                        println!("pipeline completed version: None");
+                        debug!("pipeline completed version: None");
                         false
                     }
                 },
@@ -1381,6 +1382,7 @@ async fn delta_table_cdc_file_suspend_test() {
 
 #[cfg(feature = "delta-s3-test")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[parallel(delta_s3)]
 async fn delta_table_cdc_s3_test_suspend() {
     crate::integrated::delta_table::register_storage_handlers();
 
@@ -1497,18 +1499,21 @@ async fn delta_table_follow_s3_test_common(snapshot: bool, suspend: bool) {
 
 #[cfg(feature = "delta-s3-test")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[parallel(delta_s3)]
 async fn delta_table_follow_s3_test() {
     delta_table_follow_s3_test_common(false, false).await
 }
 
 #[cfg(feature = "delta-s3-test")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[parallel(delta_s3)]
 async fn delta_table_snapshot_and_follow_s3_test() {
     delta_table_follow_s3_test_common(true, false).await
 }
 
 #[cfg(feature = "delta-s3-test")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[parallel(delta_s3)]
 async fn delta_table_snapshot_and_follow_s3_test_suspend() {
     delta_table_follow_s3_test_common(true, true).await
 }
@@ -1657,6 +1662,7 @@ proptest! {
     /// Write to a Delta table in S3.
     #[cfg(feature = "delta-s3-test")]
     #[test]
+    #[parallel(delta_s3)]
     fn delta_table_s3_output_proptest(data in delta_data(20_000))
     {
         let uuid = uuid::Uuid::new_v4();
@@ -1705,6 +1711,7 @@ proptest! {
 /// ```
 #[cfg(feature = "delta-s3-test")]
 #[test]
+#[parallel(delta_s3)]
 fn delta_table_s3_people_2m() {
     use crate::test::DatabricksPeople;
 
@@ -1744,6 +1751,7 @@ fn delta_table_s3_people_2m() {
 /// Read the same table using Unity Catalog path.
 #[cfg(feature = "delta-s3-test")]
 #[test]
+#[serial(delta_s3)]
 fn delta_table_unity_people_2m() {
     use crate::test::DatabricksPeople;
 
