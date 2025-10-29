@@ -5573,6 +5573,39 @@
           "Write"
         ]
       },
+      "Auth": {
+        "type": "object",
+        "properties": {
+          "credentials": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Credentials"
+              }
+            ],
+            "nullable": true
+          },
+          "jwt": {
+            "type": "string",
+            "nullable": true
+          },
+          "nkey": {
+            "type": "string",
+            "nullable": true
+          },
+          "token": {
+            "type": "string",
+            "nullable": true
+          },
+          "user_and_password": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/UserAndPassword"
+              }
+            ],
+            "nullable": true
+          }
+        }
+      },
       "AuthProvider": {
         "oneOf": [
           {
@@ -6064,6 +6097,20 @@
           }
         }
       },
+      "ConnectOptions": {
+        "type": "object",
+        "required": [
+          "server_url"
+        ],
+        "properties": {
+          "auth": {
+            "$ref": "#/components/schemas/Auth"
+          },
+          "server_url": {
+            "type": "string"
+          }
+        }
+      },
       "ConnectorConfig": {
         "allOf": [
           {
@@ -6126,6 +6173,89 @@
           }
         ],
         "description": "A data connector's configuration"
+      },
+      "ConsumerConfig": {
+        "type": "object",
+        "required": [
+          "deliver_policy"
+        ],
+        "properties": {
+          "deliver_policy": {
+            "$ref": "#/components/schemas/DeliverPolicy"
+          },
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "filter_subjects": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "max_batch": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "max_bytes": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "max_expires": {
+            "type": "string",
+            "nullable": true
+          },
+          "max_waiting": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "metadata": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "name": {
+            "type": "string",
+            "nullable": true
+          },
+          "rate_limit": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "replay_policy": {
+            "$ref": "#/components/schemas/ReplayPolicy"
+          }
+        }
+      },
+      "Credentials": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "FromString"
+            ],
+            "properties": {
+              "FromString": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "FromFile"
+            ],
+            "properties": {
+              "FromFile": {
+                "$ref": "#/components/schemas/PathBuf"
+              }
+            }
+          }
+        ]
       },
       "Dataflow": {
         "type": "object",
@@ -6261,6 +6391,74 @@
           "file_name",
           "file_extension",
           "dir_path"
+        ]
+      },
+      "DeliverPolicy": {
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "All"
+            ]
+          },
+          {
+            "type": "string",
+            "enum": [
+              "Last"
+            ]
+          },
+          {
+            "type": "string",
+            "enum": [
+              "New"
+            ]
+          },
+          {
+            "type": "object",
+            "required": [
+              "ByStartSequence"
+            ],
+            "properties": {
+              "ByStartSequence": {
+                "type": "object",
+                "required": [
+                  "start_sequence"
+                ],
+                "properties": {
+                  "start_sequence": {
+                    "type": "integer",
+                    "format": "int64",
+                    "minimum": 0
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "ByStartTime"
+            ],
+            "properties": {
+              "ByStartTime": {
+                "type": "object",
+                "required": [
+                  "start_time"
+                ],
+                "properties": {
+                  "start_time": {
+                    "$ref": "#/components/schemas/OffsetDateTime"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "type": "string",
+            "enum": [
+              "LastPerSubject"
+            ]
+          }
         ]
       },
       "DeltaTableIngestMode": {
@@ -8807,6 +9005,13 @@
         ],
         "description": "A SQL table or view. It has a name and a list of fields.\n\nMatches the Calcite JSON format."
       },
+      "ReplayPolicy": {
+        "type": "string",
+        "enum": [
+          "Instant",
+          "Original"
+        ]
+      },
       "ResourceConfig": {
         "type": "object",
         "properties": {
@@ -10389,6 +10594,21 @@
             "format": "int32",
             "description": "Timeout before disconnection when paused, in seconds.\n\nIf the pipeline is paused, or if the input adapter reads data faster\nthan the pipeline can process it, then the controller will pause the\ninput adapter. If the input adapter stays paused longer than this\ntimeout, it will drop the network connection to the server. It will\nautomatically reconnect when the input adapter starts running again.",
             "minimum": 0
+          }
+        }
+      },
+      "UserAndPassword": {
+        "type": "object",
+        "required": [
+          "user",
+          "password"
+        ],
+        "properties": {
+          "password": {
+            "type": "string"
+          },
+          "user": {
+            "type": "string"
           }
         }
       },
