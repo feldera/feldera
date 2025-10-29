@@ -183,7 +183,7 @@ CREATE MATERIALIZED VIEW summary as
 
 ### Only revice messages NATS messages
 
-If you only want to recive messages published after Feldera pipline start, 
+If you only want to recive messages published after Feldera pipline start,
 change `deliver_policy` to `New`.
 
 ```sql
