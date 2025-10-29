@@ -990,7 +990,6 @@ where
     builder: B,
     kv: Box<DynPair<Output::Key, Output::Val>>,
     has_kv: bool,
-    num_tuples: usize,
 }
 
 impl<B, Output> TupleBuilder<B, Output>
@@ -1003,7 +1002,6 @@ where
             builder,
             kv: factories.item_factory().default_box(),
             has_kv: false,
-            num_tuples: 0,
         }
     }
 
@@ -1012,7 +1010,7 @@ where
     }
 
     pub fn num_tuples(&self) -> usize {
-        self.num_tuples
+        self.builder.num_tuples()
     }
 
     /// Adds `element` to the batch.
@@ -1048,7 +1046,6 @@ where
             self.kv.from_refs(key, val);
         }
         self.builder.push_time_diff(time, weight);
-        self.num_tuples += 1;
     }
 
     /// Adds tuple `(key, val, time, weight)` to the batch.
@@ -1074,7 +1071,6 @@ where
             self.kv.from_vals(key, val);
         }
         self.builder.push_time_diff_mut(time, weight);
-        self.num_tuples += 1;
     }
 
     pub fn reserve(&mut self, additional: usize) {
