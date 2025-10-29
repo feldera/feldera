@@ -972,6 +972,7 @@ where
         let _ = additional;
     }
 
+    fn num_keys(&self) -> usize;
     fn num_tuples(&self) -> usize;
 
     /// Completes building and returns the batch.
@@ -1004,6 +1005,10 @@ where
             has_kv: false,
             num_tuples: 0,
         }
+    }
+
+    pub fn num_keys(&self) -> usize {
+        self.builder.num_keys()
     }
 
     pub fn num_tuples(&self) -> usize {

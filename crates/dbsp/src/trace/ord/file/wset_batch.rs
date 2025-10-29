@@ -802,6 +802,10 @@ where
         self.num_tuples += 1;
     }
 
+    fn num_keys(&self) -> usize {
+        self.writer.n_rows() as usize
+    }
+
     fn num_tuples(&self) -> usize {
         self.num_tuples
     }

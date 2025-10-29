@@ -719,6 +719,10 @@ where
         }
     }
 
+    fn num_keys(&self) -> usize {
+        self.keys.len()
+    }
+
     fn num_tuples(&self) -> usize {
         self.diffs.len()
     }
