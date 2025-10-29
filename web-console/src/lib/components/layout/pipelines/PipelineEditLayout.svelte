@@ -20,7 +20,11 @@
     type PipelineAction,
     type PipelineThumb
   } from '$lib/services/pipelineManager'
-  import { isPipelineCodeEditable, isPipelineConfigEditable } from '$lib/functions/pipelines/status'
+  import {
+    isUpgradeRequired,
+    isPipelineCodeEditable,
+    isPipelineConfigEditable
+  } from '$lib/functions/pipelines/status'
   import { nonNull } from '$lib/functions/common/function'
   import { useUpdatePipelineList } from '$lib/compositions/pipelines/usePipelineList.svelte'
   import { usePipelineActionCallbacks } from '$lib/compositions/pipelines/usePipelineActionCallbacks.svelte'
@@ -80,9 +84,7 @@
   let editCodeDisabled = $derived(
     nonNull(pipeline.current.status) &&
       (!isPipelineCodeEditable(pipeline.current.status) ||
-        (pipeline.current.status === 'Stopped' &&
-          pipeline.current.storageStatus !== 'Cleared' &&
-          runtimeVersion.status === 'update_available'))
+        isUpgradeRequired(pipeline.current, runtimeVersion))
   )
   let editConfigDisabled = $derived(
     nonNull(pipeline.current.status) && !isPipelineConfigEditable(pipeline.current.status)

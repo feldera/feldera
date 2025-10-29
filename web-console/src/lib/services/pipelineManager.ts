@@ -238,7 +238,7 @@ const toPipeline = <
   name: pipeline.name,
   description: pipeline.description ?? '',
   runtimeConfig: pipeline.runtime_config,
-  programConfig: pipeline.program_config,
+  programConfig: pipeline.program_config!,
   programCode: pipeline.program_code ?? '',
   programUdfRs: pipeline.udf_rust ?? '',
   programUdfToml: pipeline.udf_toml ?? ''
@@ -263,7 +263,7 @@ const toExtendedPipeline = ({
   programCode: pipeline.program_code ?? '',
   programUdfRs: pipeline.udf_rust ?? '',
   programUdfToml: pipeline.udf_toml ?? '',
-  programConfig: pipeline.program_config,
+  programConfig: pipeline.program_config!,
   programInfo: pipeline.program_info,
   programVersion: pipeline.program_version,
   runtimeConfig: pipeline.runtime_config,

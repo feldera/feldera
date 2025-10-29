@@ -1,4 +1,5 @@
-import type { PipelineStatus } from '$lib/services/pipelineManager'
+import type { StorageStatus } from '$lib/services/manager'
+import type { PipelineStatus, PipelineThumb } from '$lib/services/pipelineManager'
 import { P, match } from 'ts-pattern'
 
 export const getPipelineStatusLabel = (status: PipelineStatus) => {
@@ -96,6 +97,43 @@ export const isPipelineInteractive = (status: PipelineStatus) => {
 
 export const isPipelineCodeEditable = (status: PipelineStatus) => {
   return match(status)
+    .with('Stopped', () => true)
+    .with('Preparing', () => false)
+    .with('Provisioning', () => false)
+    .with('Initializing', () => false)
+    .with('Paused', () => false)
+    .with('Suspending', () => false)
+    .with('Suspended', () => false)
+    .with('Standby', () => false)
+    .with('Bootstrapping', () => false)
+    .with('Replaying', () => false)
+    .with('AwaitingApproval', () => false)
+    .with('Running', () => false)
+    .with('Pausing', () => false)
+    .with('Resuming', () => false)
+    .with('Stopping', () => false)
+    .with(
+      { Queued: P.any },
+      { CompilingSql: P.any },
+      { SqlCompiled: P.any },
+      { CompilingRust: P.any },
+      (cause) => Object.values(cause)[0].cause === 'compile'
+    )
+    .with('Unavailable', () => false)
+    .with('SqlError', () => true)
+    .with('RustError', () => true)
+    .with('SystemError', () => true)
+    .exhaustive()
+}
+
+export const isUpgradeRequired = (
+  pipeline: PipelineThumb,
+  runtime: { status: string | 'update_available' }
+) => {
+  if (runtime.status !== 'update_available' || pipeline.storageStatus === 'Cleared') {
+    return false
+  }
+  return match(pipeline.status)
     .with('Stopped', () => true)
     .with('Preparing', () => false)
     .with('Provisioning', () => false)

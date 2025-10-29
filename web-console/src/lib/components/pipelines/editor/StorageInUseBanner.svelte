@@ -21,8 +21,8 @@
   <span class="fd fd-triangle-alert text-[20px]"></span>
   {#if runtimeVersion.status === 'update_available'}
     <span>
-      A new pipeline version {page.data.feldera!.version} is available. Upgrade or configure a custom
-      runtime to edit the pipeline.
+      A new pipeline version {page.data.feldera!.version} is available. Upgrade, clear the storage or
+      configure a custom runtime to edit the pipeline.
     </span>
     <button class="btn h-7 border-0 py-0 text-sm preset-filled-primary-500" onclick={handleUpgrade}>
       Upgrade Version
