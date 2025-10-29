@@ -1352,9 +1352,11 @@ async fn query(
     request: HttpRequest,
     stream: web::Payload,
 ) -> impl Responder {
+    let args = args.into_inner();
+    tracing::debug!("processing adhoc query: {:?}", args.sql);
     let session_ctxt = state.controller()?.session_context()?;
     if !request_is_websocket(&request) {
-        stream_adhoc_result(args.into_inner(), session_ctxt).await
+        stream_adhoc_result(args, session_ctxt).await
     } else {
         adhoc_websocket(session_ctxt, request, stream).await
     }
