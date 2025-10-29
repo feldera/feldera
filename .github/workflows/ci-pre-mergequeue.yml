@@ -18,7 +18,7 @@ jobs:
   # because of how merge queues work: https://stackoverflow.com/a/78030618
   main:
     container:
-      image: ghcr.io/feldera/feldera-dev:sha-78755ff8a0f0273e483af2a21998df5562cc1572
+      image: ghcr.io/feldera/feldera-dev:sha-a6c448f6eaa832d34bd5d2f6b2b4167245a8de36
     runs-on: [k8s-runners-amd64]
     steps:
       - name: Generate GitHub App token

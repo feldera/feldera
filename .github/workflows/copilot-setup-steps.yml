@@ -14,7 +14,7 @@ jobs:
   copilot-setup-steps:
     # This doesn't work as usual with new github things
     #container:
-    #  image: ghcr.io/feldera/feldera-dev:sha-84a42f92e2687833870d09ad8903b4da263fb77d
+    #  image: ghcr.io/feldera/feldera-dev:sha-a6c448f6eaa832d34bd5d2f6b2b4167245a8de36
     runs-on: ubuntu-latest-amd64
     permissions:
       contents: read
