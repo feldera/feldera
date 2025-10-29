@@ -501,6 +501,13 @@ where
         }
     }
 
+    fn num_keys(&self) -> usize {
+        match &self.inner {
+            BuilderInner::Vec(vec) => vec.num_keys(),
+            BuilderInner::File(file) => file.num_keys(),
+        }
+    }
+
     fn num_tuples(&self) -> usize {
         match &self.inner {
             BuilderInner::Vec(vec) => vec.num_tuples(),
