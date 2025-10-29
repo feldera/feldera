@@ -280,6 +280,11 @@ const connectors = {
                 },
                 {
                     type: 'doc',
+                    id: 'connectors/sources/nats',
+                    label: 'NATS'
+                },
+                {
+                    type: 'doc',
                     id: 'connectors/sources/debezium',
                     label: 'Debezium'
                 },
