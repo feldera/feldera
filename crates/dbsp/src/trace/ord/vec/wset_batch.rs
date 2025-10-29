@@ -626,12 +626,16 @@ where
     K: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
-    fn with_capacity(factories: &VecWSetFactories<K, R>, capacity: usize) -> Self {
+    fn with_capacity(
+        factories: &VecWSetFactories<K, R>,
+        key_capacity: usize,
+        _value_capacity: usize,
+    ) -> Self {
         let mut keys = factories.layer_factories.keys.default_box();
-        keys.reserve_exact(capacity);
+        keys.reserve_exact(key_capacity);
 
         let mut diffs = factories.layer_factories.diffs.default_box();
-        diffs.reserve_exact(capacity);
+        diffs.reserve_exact(key_capacity);
         Self {
             factories: factories.clone(),
             keys,

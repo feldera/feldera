@@ -138,7 +138,11 @@ where
             // We iterate over tuples in the batch in order; hence tuples added
             // to each shard are also ordered, so we can use the more efficient
             // `Builder` API (instead of `Batcher`) to construct output batches.
-            builders.push(OB::Builder::with_capacity(factories, batch.len() / shards));
+            builders.push(OB::Builder::with_capacity(
+                factories,
+                batch.key_count() / shards,
+                batch.len() / shards,
+            ));
         }
 
         let mut cursor = batch.consuming_cursor(None, None);

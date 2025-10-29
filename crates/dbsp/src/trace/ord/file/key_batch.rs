@@ -617,7 +617,11 @@ where
     R: WeightTrait + ?Sized,
 {
     #[inline]
-    fn with_capacity(factories: &FileKeyBatchFactories<K, T, R>, capacity: usize) -> Self {
+    fn with_capacity(
+        factories: &FileKeyBatchFactories<K, T, R>,
+        key_capacity: usize,
+        _value_capacity: usize,
+    ) -> Self {
         Self {
             factories: factories.clone(),
             writer: Writer2::new(
@@ -626,7 +630,7 @@ where
                 Runtime::buffer_cache,
                 &*Runtime::storage_backend().unwrap_storage(),
                 Runtime::file_writer_parameters(),
-                capacity,
+                key_capacity,
             )
             .unwrap_storage(),
             key: factories.opt_key_factory.default_box(),

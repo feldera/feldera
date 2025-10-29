@@ -1075,8 +1075,11 @@ where
         let output_key_factory = self.output_factories.key_factory();
 
         // Choose capacity heuristically.
-        let mut builder =
-            Z::Builder::with_capacity(&self.output_factories, min(i1.len(), i2.len()));
+        let mut builder = Z::Builder::with_capacity(
+            &self.output_factories,
+            min(i1.key_count(), i2.key_count()),
+            min(i1.len(), i2.len()),
+        );
 
         let mut output = output_key_factory.default_box();
 

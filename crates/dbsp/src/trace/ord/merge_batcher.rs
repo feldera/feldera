@@ -67,10 +67,8 @@ where
         self.sorter.finish_into(&mut merged);
 
         // Try and pre-allocate our builder a little bit
-        let builder = B::Builder::with_capacity(
-            &self.batch_factories,
-            merged.iter().map(|batch| batch.len()).sum(),
-        );
+        let capacity = merged.iter().map(|batch| batch.len()).sum();
+        let builder = B::Builder::with_capacity(&self.batch_factories, capacity, capacity);
         let mut builder = TupleBuilder::new(&self.batch_factories, builder);
 
         for mut buffer in merged.drain(..) {

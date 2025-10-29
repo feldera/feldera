@@ -39,14 +39,19 @@ pub(super) enum BuildTo {
 }
 
 impl BuildTo {
-    pub fn for_capacity(capacity: usize) -> Self {
+    pub fn for_capacity(key_capacity: usize, value_capacity: usize) -> Self {
         match Runtime::min_step_storage_bytes().unwrap_or(usize::MAX) {
             usize::MAX => {
                 // Storage is disabled.
                 Self::Memory
             }
 
-            min_step_storage_bytes if capacity.saturating_mul(32) >= min_step_storage_bytes => {
+            min_step_storage_bytes
+                if key_capacity
+                    .saturating_add(value_capacity)
+                    .saturating_mul(32)
+                    >= min_step_storage_bytes =>
+            {
                 // Just guess that this will need to go to storage.
                 //
                 // 32 bytes per item is a guess.  I don't know a better way to

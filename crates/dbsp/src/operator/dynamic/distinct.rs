@@ -445,7 +445,11 @@ impl<Z: IndexedZSet, I> DistinctIncrementalTotal<Z, I> {
 
             let builder = std::mem::replace(
                 builder,
-                Z::Builder::with_capacity(&self.input_factories, self.chunk_size),
+                Z::Builder::with_capacity(
+                    &self.input_factories,
+                    builder.num_keys(),
+                    self.chunk_size,
+                ),
             );
 
             let result = builder.done();
@@ -512,7 +516,7 @@ where
 
             self.input_batch_stats.borrow_mut().add_batch(delta.len());
 
-            let mut builder = Z::Builder::with_capacity(&self.input_factories, self.chunk_size);
+            let mut builder = Z::Builder::with_capacity(&self.input_factories, self.chunk_size, self.chunk_size);
             let mut delta_cursor = delta.cursor();
 
             let fetched = if Runtime::with_dev_tweaks(|d| d.fetch_distinct) {
@@ -836,7 +840,11 @@ where
                 result_builder,
                 TupleBuilder::new(
                     &self.input_factories,
-                    Z::Builder::with_capacity(&self.input_factories, self.chunk_size),
+                    Z::Builder::with_capacity(
+                        &self.input_factories,
+                        result_builder.num_keys(),
+                        self.chunk_size,
+                    ),
                 ),
             );
 
@@ -992,7 +1000,7 @@ where
             *self.empty_input.borrow_mut() = delta.is_empty();
 
             // We iterate over keys and values in order, so it is safe to use `Builder`.
-            let result_builder = Z::Builder::with_capacity(&self.input_factories, self.chunk_size);
+            let result_builder = Z::Builder::with_capacity(&self.input_factories, self.chunk_size, self.chunk_size);
             let mut result_builder = TupleBuilder::new(&self.input_factories, result_builder);
 
             let mut delta_cursor = delta.cursor();

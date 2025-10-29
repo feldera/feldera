@@ -167,7 +167,7 @@ where
 {
     fn distinct(&self) -> Self {
         let factories = self.factories();
-        let mut builder = Self::Builder::with_capacity(&factories, self.key_count());
+        let mut builder = Self::Builder::with_capacity(&factories, self.key_count(), self.len());
         let mut cursor = self.cursor();
 
         while cursor.key_valid() {

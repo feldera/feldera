@@ -594,7 +594,11 @@ where
                 let mut agg_delta = output_factories.weight_factory().default_box();
                 let mut input_weight = batch.factories().weight_factory().default_box();
 
-                let mut delta = <O::Builder>::with_capacity(&output_factories, batch.key_count());
+                let mut delta = <O::Builder>::with_capacity(
+                    &output_factories,
+                    batch.key_count(),
+                    batch.key_count(),
+                );
                 let mut cursor = batch.cursor();
                 while cursor.key_valid() {
                     agg.set_zero();
@@ -743,7 +747,8 @@ where
 {
     #[trace]
     async fn eval(&mut self, i: &Z) -> O {
-        let mut builder = O::Builder::with_capacity(&self.factories, i.len());
+        let n = i.key_count();
+        let mut builder = O::Builder::with_capacity(&self.factories, n, n);
         let mut agg = self.option_output_factory.default_box();
 
         let mut cursor = i.cursor();

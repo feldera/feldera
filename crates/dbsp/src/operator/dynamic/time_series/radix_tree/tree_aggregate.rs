@@ -272,7 +272,8 @@ where
             &mut *updates,
         );
 
-        let builder = O::Builder::with_capacity(&self.output_factories, updates.len() * 2);
+        let builder =
+            O::Builder::with_capacity(&self.output_factories, updates.len(), updates.len() * 2);
         let mut builder = TupleBuilder::new(&self.output_factories, builder);
 
         // `updates` are already ordered by prefix.  All that remains is to order

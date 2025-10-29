@@ -808,7 +808,11 @@ where
     R: WeightTrait + ?Sized,
     T: Timestamp,
 {
-    fn with_capacity(factories: &TestBatchFactories<K, V, T, R>, _cap: usize) -> Self {
+    fn with_capacity(
+        factories: &TestBatchFactories<K, V, T, R>,
+        _key_capacity: usize,
+        _value_capacity: usize,
+    ) -> Self {
         Self {
             result: TestBatch::new(factories),
             time_diffs: Vec::new(),

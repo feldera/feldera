@@ -353,7 +353,7 @@ fn val_batch_from_tuples<B>(factories: &B::Factories, tuples: &[Tup4<i32, i32, u
 where
     B: ZBatch<Key = DynI32, Val = DynI32, Time = u32>,
 {
-    let mut builder = B::Builder::with_capacity(factories, tuples.len());
+    let mut builder = B::Builder::with_capacity(factories, tuples.len(), tuples.len());
     #[allow(clippy::into_iter_on_ref)]
     for (key, vtds) in &tuples.into_iter().chunk_by(|Tup4(key, _, _, _)| key) {
         for (val, tds) in &vtds.into_iter().chunk_by(|Tup4(_, val, _, _)| val) {
@@ -393,7 +393,7 @@ fn timed_batch_from_tuples<B>(factories: &B::Factories, tuples: &[Tup3<i32, u32,
 where
     B: ZBatch<Key = DynI32, Val = DynUnit, Time = u32>,
 {
-    let mut builder = B::Builder::with_capacity(factories, tuples.len());
+    let mut builder = B::Builder::with_capacity(factories, tuples.len(), tuples.len());
     #[allow(clippy::into_iter_on_ref)]
     for (key, tds) in &tuples.into_iter().chunk_by(|Tup3(key, _time, _diff)| key) {
         for Tup3(_key, time, diff) in tds {
