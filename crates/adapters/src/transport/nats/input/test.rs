@@ -520,7 +520,7 @@ mod util {
                 nats: Vec<String>,
             }
 
-            let port_content = fs::read_to_string(&file_path)?;
+            let port_content = fs::read_to_string(file_path)?;
             let ports_data: PortsData = serde_json::from_str(&port_content)
                 .map_err(|_| anyhow!("Could not parse ports file"))?;
 
