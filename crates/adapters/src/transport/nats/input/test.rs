@@ -1,6 +1,5 @@
 use crate::test::{
-    init_test_logger, mock_input_pipeline, test_circuit, wait, TestStruct,
-    DEFAULT_TIMEOUT_MS,
+    init_test_logger, mock_input_pipeline, test_circuit, wait, TestStruct, DEFAULT_TIMEOUT_MS,
 };
 use crate::{Controller, PipelineConfig};
 use anyhow::Result as AnyResult;
@@ -85,11 +84,12 @@ format:
 
     println!("Config:\n{}", config_str);
 
-    let (endpoint, consumer, _parser, zset) = mock_input_pipeline::<NatsTestRecord, NatsTestRecord>(
-        serde_yaml::from_str(&config_str).unwrap(),
-        Relation::empty(),
-    )
-    .unwrap();
+    let (endpoint, consumer, _parser, zset) =
+        mock_input_pipeline::<NatsTestRecord, NatsTestRecord>(
+            serde_yaml::from_str(&config_str).unwrap(),
+            Relation::empty(),
+        )
+        .unwrap();
 
     sleep(Duration::from_millis(10));
 

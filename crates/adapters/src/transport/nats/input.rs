@@ -58,8 +58,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::cmp;
 use std::hash::Hasher;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
 use tokio::{
     select,
     sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender},
@@ -93,8 +93,9 @@ impl Metadata {
         Ok(resume_info
             .map(serde_json::from_value)
             .transpose()?
-            .unwrap_or(Self { sequence_numbers: 0..0 })
-        )
+            .unwrap_or(Self {
+                sequence_numbers: 0..0,
+            }))
     }
 }
 
@@ -225,7 +226,6 @@ impl NatsReader {
                 consumer.replayed(buffer_size, hasher.finish());
 
                 next_sequence.store(last_message_sequence + 1, Ordering::Release);
-
             } else {
                 consumer.replayed(BufferSize::default(), Xxh3Default::new().finish());
             }
@@ -247,7 +247,10 @@ impl NatsReader {
                             pos..pos
                         }
                     };
-                    info!("Queued {:?} records ({sequence_number_range:?})", buffer_size);
+                    info!(
+                        "Queued {:?} records ({sequence_number_range:?})",
+                        buffer_size
+                    );
                     let metadata_json = serde_json::to_value(&Metadata {
                         sequence_numbers: sequence_number_range,
                     })?;
@@ -343,7 +346,11 @@ async fn consume_nats_messages_until(
                 let info = match message.info() {
                     Ok(info) => info,
                     Err(error) => {
-                        consumer.error(false, anyhow!("Failed to get NATS message info: {error}"), Some("nats-input"));
+                        consumer.error(
+                            false,
+                            anyhow!("Failed to get NATS message info: {error}"),
+                            Some("nats-input"),
+                        );
                         continue;
                     }
                 };
