@@ -7287,6 +7287,25 @@
         },
         "additionalProperties": {}
       },
+      "NatsInputConfig": {
+        "type": "object",
+        "required": [
+          "connection_config",
+          "stream_name",
+          "consumer_config"
+        ],
+        "properties": {
+          "connection_config": {
+            "$ref": "#/components/schemas/ConnectOptions"
+          },
+          "consumer_config": {
+            "$ref": "#/components/schemas/ConsumerConfig"
+          },
+          "stream_name": {
+            "type": "string"
+          }
+        }
+      },
       "NewApiKeyRequest": {
         "type": "object",
         "description": "Request to create a new API key.",
@@ -9998,6 +10017,24 @@
                 "type": "string",
                 "enum": [
                   "file_output"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "name",
+              "config"
+            ],
+            "properties": {
+              "config": {
+                "$ref": "#/components/schemas/NatsInputConfig"
+              },
+              "name": {
+                "type": "string",
+                "enum": [
+                  "nats_input"
                 ]
               }
             }
