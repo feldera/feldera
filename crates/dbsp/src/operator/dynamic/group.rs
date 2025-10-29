@@ -466,9 +466,10 @@ where
             let mut input_trace_cursor = input_trace.unwrap().cursor();
             let mut output_trace_cursor = output_trace.unwrap().cursor();
 
+            let capacity = std::cmp::min(delta.len(), chunk_size);
             let mut builder = TupleBuilder::new(
                 &self.output_factories,
-                OB::Builder::with_capacity(&self.output_factories, delta.len()),
+                OB::Builder::with_capacity(&self.output_factories, capacity, capacity),
             );
 
             let mut buffer = self.output_factories.weighted_items_factory().default_box();
@@ -588,7 +589,7 @@ where
                     yield (result, false, delta_cursor.position());
                     builder = TupleBuilder::new(
                         &self.output_factories,
-                        OB::Builder::with_capacity(&self.output_factories, delta.len()),
+                        OB::Builder::with_capacity(&self.output_factories, capacity, capacity),
                     );
                 }
 

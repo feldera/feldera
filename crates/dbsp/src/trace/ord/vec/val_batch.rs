@@ -629,24 +629,28 @@ where
     T: Timestamp,
     O: OrdOffset,
 {
-    fn with_capacity(factories: &VecValBatchFactories<K, V, T, R>, capacity: usize) -> Self {
+    fn with_capacity(
+        factories: &VecValBatchFactories<K, V, T, R>,
+        key_capacity: usize,
+        value_capacity: usize,
+    ) -> Self {
         let mut keys = factories.layer_factories.keys.default_box();
-        keys.reserve_exact(capacity);
+        keys.reserve_exact(key_capacity);
 
-        let mut offs = Vec::with_capacity(capacity + 1);
+        let mut offs = Vec::with_capacity(key_capacity + 1);
         offs.push(O::zero());
 
         let mut vals = factories.layer_factories.child.keys.default_box();
-        vals.reserve_exact(capacity);
+        vals.reserve_exact(value_capacity);
 
-        let mut val_offs = Vec::with_capacity(capacity + 1);
+        let mut val_offs = Vec::with_capacity(value_capacity + 1);
         val_offs.push(O::zero());
 
         let mut times = factories.layer_factories.child.child.keys.default_box();
-        times.reserve_exact(capacity);
+        times.reserve_exact(value_capacity);
 
         let mut diffs = factories.layer_factories.child.child.diffs.default_box();
-        diffs.reserve_exact(capacity);
+        diffs.reserve_exact(value_capacity);
         Self {
             factories: factories.clone(),
             keys,

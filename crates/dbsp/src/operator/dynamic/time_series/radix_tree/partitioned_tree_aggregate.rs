@@ -37,7 +37,7 @@ use size_of::SizeOf;
 use std::{
     borrow::Cow,
     cell::RefCell,
-    cmp::Ordering,
+    cmp::{min, Ordering},
     collections::BTreeMap,
     fmt::{self, Write},
     marker::PhantomData,
@@ -425,8 +425,10 @@ where
 
             self.input_batch_stats.borrow_mut().add_batch(delta.len());
 
+            let key_capacity = min(delta.key_count(), chunk_size + 2);
+            let value_capacity = 2 * key_capacity;
             let mut builder =
-                O::Builder::with_capacity(&self.factories.output_factories, chunk_size + 2);
+                O::Builder::with_capacity(&self.factories.output_factories, key_capacity, value_capacity);
 
             let mut updates = self
                 .factories
@@ -549,7 +551,7 @@ where
                         self.output_batch_stats.borrow_mut().add_batch(result.len());
                         yield (result, false, delta_cursor.position());
                         builder =
-                            O::Builder::with_capacity(&self.factories.output_factories, chunk_size + 1);
+                            O::Builder::with_capacity(&self.factories.output_factories, key_capacity, value_capacity);
                         any_values = false;
                     }
                 }

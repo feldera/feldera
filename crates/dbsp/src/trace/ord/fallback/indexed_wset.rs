@@ -347,7 +347,11 @@ where
     fn persisted(&self) -> Option<Self> {
         match &self.inner {
             Inner::Vec(vec) => {
-                let mut file = FileIndexedWSetBuilder::with_capacity(&self.factories, 0);
+                let mut file = FileIndexedWSetBuilder::with_capacity(
+                    &self.factories,
+                    vec.key_count(),
+                    vec.len(),
+                );
                 copy_to_builder(&mut file, vec.cursor());
                 Some(Self {
                     inner: Inner::File(file.done()),
@@ -399,7 +403,8 @@ where
         factories: &FallbackIndexedWSetFactories<K, V, R>,
         vec: &VecIndexedWSetBuilder<K, V, R, usize>,
     ) -> BuilderInner<K, V, R> {
-        let mut file = FileIndexedWSetBuilder::with_capacity(factories, 0);
+        let mut file =
+            FileIndexedWSetBuilder::with_capacity(factories, vec.num_keys(), vec.num_tuples());
         vec.copy_to_builder(&mut file);
         BuilderInner::File(file)
     }
@@ -439,16 +444,19 @@ where
 {
     fn new(
         factories: &FallbackIndexedWSetFactories<K, V, R>,
-        capacity: usize,
+        key_capacity: usize,
+        value_capacity: usize,
         build_to: BuildTo,
     ) -> Self {
         match build_to {
-            BuildTo::Memory => Self::Vec(Self::new_vec(factories, capacity)),
-            BuildTo::Storage => {
-                Self::File(FileIndexedWSetBuilder::with_capacity(factories, capacity))
-            }
+            BuildTo::Memory => Self::Vec(Self::new_vec(factories, key_capacity, value_capacity)),
+            BuildTo::Storage => Self::File(FileIndexedWSetBuilder::with_capacity(
+                factories,
+                key_capacity,
+                value_capacity,
+            )),
             BuildTo::Threshold(bytes) => Self::Threshold {
-                vec: Self::new_vec(factories, capacity),
+                vec: Self::new_vec(factories, key_capacity, value_capacity),
                 size: 0,
                 threshold: bytes,
             },
@@ -457,9 +465,14 @@ where
 
     fn new_vec(
         factories: &FallbackIndexedWSetFactories<K, V, R>,
-        capacity: usize,
+        key_capacity: usize,
+        value_capacity: usize,
     ) -> VecIndexedWSetBuilder<K, V, R, usize> {
-        VecIndexedWSetBuilder::with_capacity(&factories.vec_indexed_wset_factory, capacity)
+        VecIndexedWSetBuilder::with_capacity(
+            &factories.vec_indexed_wset_factory,
+            key_capacity,
+            value_capacity,
+        )
     }
 }
 
@@ -470,10 +483,19 @@ where
     V: DataTrait + ?Sized,
     R: WeightTrait + ?Sized,
 {
-    fn with_capacity(factories: &FallbackIndexedWSetFactories<K, V, R>, capacity: usize) -> Self {
+    fn with_capacity(
+        factories: &FallbackIndexedWSetFactories<K, V, R>,
+        key_capacity: usize,
+        value_capacity: usize,
+    ) -> Self {
         Self {
             factories: factories.clone(),
-            inner: BuilderInner::new(factories, capacity, BuildTo::for_capacity(capacity)),
+            inner: BuilderInner::new(
+                factories,
+                key_capacity,
+                value_capacity,
+                BuildTo::for_capacity(key_capacity, value_capacity),
+            ),
         }
     }
 
@@ -490,6 +512,7 @@ where
             factories: factories.clone(),
             inner: BuilderInner::new(
                 factories,
+                batches.clone().into_iter().map(|b| b.key_count()).sum(),
                 batches.clone().into_iter().map(|b| b.len()).sum(),
                 pick_merge_destination(batches, location).into(),
             ),

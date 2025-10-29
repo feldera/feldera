@@ -139,6 +139,7 @@ where
                     let mut builder = <<VecZSet<_> as Batch>::Builder>::with_capacity(
                         &output_factories,
                         num_quantiles,
+                        num_quantiles,
                     );
                     for i in 0..num_quantiles {
                         let key = &sample.layer.keys[(i * sample_size) / num_quantiles];
@@ -172,6 +173,7 @@ where
                 } else {
                     let mut builder = <<VecZSet<_> as Batch>::Builder>::with_capacity(
                         &factories.output_factories,
+                        num_quantiles,
                         num_quantiles,
                     );
                     for i in 0..num_quantiles {
@@ -233,6 +235,7 @@ where
 
             let mut builder = <<VecZSet<_> as Batch>::Builder>::with_capacity(
                 &self.output_factories,
+                sample.len(),
                 sample.len(),
             );
             for key in sample.dyn_iter_mut() {
@@ -308,6 +311,7 @@ where
 
             let mut builder = <<VecZSet<_> as Batch>::Builder>::with_capacity(
                 &self.output_factories,
+                sample_size,
                 sample_size,
             );
 

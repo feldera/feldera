@@ -888,6 +888,7 @@ where
                 let mut builder = <B::Builder as Builder<B>>::with_capacity(
                     &self.batch_factories,
                     replay_step_size,
+                    replay_step_size,
                 );
 
                 let mut num_values = 0;

@@ -691,7 +691,13 @@ where
         if TypeId::of::<BI>() == TypeId::of::<Self>() {
             unsafe { std::mem::transmute::<&BI, &Self>(batch).clone() }
         } else {
-            Self::from_cursor(batch.cursor(), timestamp, factories, batch.len())
+            Self::from_cursor(
+                batch.cursor(),
+                timestamp,
+                factories,
+                batch.key_count(),
+                batch.len(),
+            )
         }
     }
 
@@ -714,6 +720,7 @@ where
                 batch.cursor(),
                 timestamp,
                 factories,
+                batch.key_count(),
                 batch.len(),
             ))
         }
@@ -725,12 +732,13 @@ where
         mut cursor: C,
         timestamp: &Self::Time,
         factories: &Self::Factories,
-        capacity: usize,
+        key_capacity: usize,
+        value_capacity: usize,
     ) -> Self
     where
         C: Cursor<Self::Key, Self::Val, (), Self::R>,
     {
-        let mut builder = Self::Builder::with_capacity(factories, capacity);
+        let mut builder = Self::Builder::with_capacity(factories, key_capacity, value_capacity);
         while cursor.key_valid() {
             let mut any_values = false;
             while cursor.val_valid() {
@@ -887,11 +895,17 @@ where
 {
     /// Creates a new builder with an initial capacity of 0.
     fn new_builder(factories: &Output::Factories) -> Self {
-        Self::with_capacity(factories, 0)
+        Self::with_capacity(factories, 0, 0)
     }
 
-    /// Creates an empty builder with some initial `capacity` for keys.
-    fn with_capacity(factories: &Output::Factories, capacity: usize) -> Self;
+    /// Creates an empty builder with estimated capacities for keys and
+    /// key-value pairs.  Only `tuple_capacity >= key_capacity` makes sense but
+    /// implementations must tolerate contradictory capacity requests.
+    fn with_capacity(
+        factories: &Output::Factories,
+        key_capacity: usize,
+        value_capacity: usize,
+    ) -> Self;
 
     /// Creates an empty builder to hold the result of merging
     /// `batches`. Optionally, `location` can specify the preferred location for
@@ -906,8 +920,9 @@ where
         I: IntoIterator<Item = &'a B> + Clone,
     {
         let _ = location;
-        let cap = batches.into_iter().map(|b| b.len()).sum();
-        Self::with_capacity(factories, cap)
+        let key_capacity = batches.clone().into_iter().map(|b| b.key_count()).sum();
+        let value_capacity = batches.into_iter().map(|b| b.len()).sum();
+        Self::with_capacity(factories, key_capacity, value_capacity)
     }
 
     /// Adds time-diff pair `(time, weight)`.
@@ -1268,7 +1283,7 @@ where
     let offsets = unsafe { archived_root::<Vec<usize>>(data) };
     assert!(offsets.len() % 2 == 0);
     let n = offsets.len() / 2;
-    let mut builder = B::Builder::with_capacity(factories, n);
+    let mut builder = B::Builder::with_capacity(factories, n, n);
     let mut key = factories.key_factory().default_box();
     let mut diff = factories.weight_factory().default_box();
     for i in 0..n {
@@ -1320,7 +1335,7 @@ where
     let offsets = unsafe { archived_root::<Vec<usize>>(data) };
     let len = offsets[0];
 
-    let mut builder = B::Builder::with_capacity(factories, len as usize);
+    let mut builder = B::Builder::with_capacity(factories, len as usize, len as usize);
     let mut key = factories.key_factory().default_box();
     let mut val = factories.val_factory().default_box();
     let mut diff = factories.weight_factory().default_box();
