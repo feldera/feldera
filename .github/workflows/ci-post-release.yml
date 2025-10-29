@@ -26,7 +26,7 @@ jobs:
   adjust-versions:
     runs-on: [k8s-runners-amd64]
     container:
-      image: ghcr.io/feldera/feldera-dev:sha-78755ff8a0f0273e483af2a21998df5562cc1572
+      image: ghcr.io/feldera/feldera-dev:sha-a6c448f6eaa832d34bd5d2f6b2b4167245a8de36
     steps:
       - name: Generate GitHub App token
         id: app-token
