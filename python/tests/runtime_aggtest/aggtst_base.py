@@ -1,15 +1,15 @@
 """Run multiple Python tests in a single pipeline"""
 
-import unittest
 import hashlib
 import re
+import unittest
+from typing import Dict, TypeAlias
 
-from feldera import PipelineBuilder, Pipeline
-from feldera.rest.errors import FelderaAPIError
-from tests import TEST_CLIENT, unique_pipeline_name
+from feldera import Pipeline, PipelineBuilder
 from feldera.enums import CompilationProfile
+from feldera.rest.errors import FelderaAPIError
 from feldera.runtime_config import RuntimeConfig
-from typing import TypeAlias, Dict
+from tests import TEST_CLIENT, unique_pipeline_name
 
 JSON: TypeAlias = dict[str, "JSON"] | list["JSON"] | str | int | float | bool | None
 
@@ -194,7 +194,9 @@ class TstAccumulator:
                 pipeline_name,
                 sql=sql,
                 compilation_profile=CompilationProfile.UNOPTIMIZED,
-                runtime_config=RuntimeConfig(provisioning_timeout_secs=180),
+                runtime_config=RuntimeConfig(
+                    provisioning_timeout_secs=180, logging="debug"
+                ),
             ).create_or_replace()
 
             pipeline.start()
