@@ -21,16 +21,15 @@
   <span class="fd fd-triangle-alert text-[20px]"></span>
   {#if runtimeVersion.status === 'update_available'}
     <span>
-      A new pipeline version {page.data.feldera!.version} is available. Upgrade, clear the storage or
-      configure a custom runtime to edit the pipeline.
+      A new runtime version {page.data.feldera!.version} is available. Update the runtime to edit the pipeline.
     </span>
     <button class="btn h-7 border-0 py-0 text-sm preset-filled-primary-500" onclick={handleUpgrade}>
-      Upgrade Version
+      Update
     </button>
   {:else}
     <span>
-      Editing a pipeline with existing state in storage — changes will take effect after the
-      pipeline restarts.
+      Editing a pipeline with existing state in storage — changes will take effect when the
+      pipeline restarts. See the <a href="https://docs.feldera.com/pipelines/modifying" target="_blank" rel="noopener noreferrer">documentation</a>.
     </span>
   {/if}
 </div>
