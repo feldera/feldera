@@ -17,7 +17,7 @@
   }
 </script>
 
-<div class="flex h-10 items-center gap-2 px-4 preset-tonal-tertiary">
+<div class="flex h-fit min-h-10 items-center gap-2 px-4 preset-tonal-tertiary">
   <span class="fd fd-triangle-alert text-[20px]"></span>
   {#if runtimeVersion.status === 'update_available'}
     <span>
@@ -29,7 +29,7 @@
   {:else}
     <span>
       Editing a pipeline with existing state in storage — changes will take effect when the
-      pipeline restarts. See the <a href="https://docs.feldera.com/pipelines/modifying" target="_blank" rel="noopener noreferrer">documentation</a>.
+      pipeline restarts. See the <a href="https://docs.feldera.com/pipelines/modifying" target="_blank" rel="noreferrer" class="underline">documentation</a>.
     </span>
   {/if}
 </div>
