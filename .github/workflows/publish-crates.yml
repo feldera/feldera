@@ -10,21 +10,29 @@ on:
 jobs:
   deploy:
     runs-on: [k8s-runners-amd64]
+    environment:
+      name: release
+    permissions:
+      contents: read
+      id-token: write
     container:
       image: ghcr.io/feldera/feldera-dev:sha-a6c448f6eaa832d34bd5d2f6b2b4167245a8de36
     steps:
       - uses: actions/checkout@v4
 
+      - uses: rust-lang/crates-io-auth-action@v1
+        id: auth
+
       - name: Run cargo publish
         if: ${{ vars.RELEASE_DRY_RUN == 'false' }}
         run: |
+          cargo publish ${{ vars.CARGO_PUBLISH_FLAGS }} --package feldera-ir
           cargo publish ${{ vars.CARGO_PUBLISH_FLAGS }} --package feldera-types
           cargo publish ${{ vars.CARGO_PUBLISH_FLAGS }} --package feldera-storage
           cargo publish ${{ vars.CARGO_PUBLISH_FLAGS }} --package feldera-rest-api
-          cargo publish ${{ vars.CARGO_PUBLISH_FLAGS }} --package feldera-ir
           cargo publish ${{ vars.CARGO_PUBLISH_FLAGS }} --package dbsp
           cargo publish ${{ vars.CARGO_PUBLISH_FLAGS }} --package fda
           cargo publish ${{ vars.CARGO_PUBLISH_FLAGS }} --package feldera-fxp
           cargo publish ${{ vars.CARGO_PUBLISH_FLAGS }} --package feldera-sqllib
         env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
