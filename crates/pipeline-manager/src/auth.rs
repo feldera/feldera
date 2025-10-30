@@ -426,9 +426,10 @@ pub(crate) async fn generic_oidc_auth_config(
     api_config: &crate::config::ApiServerConfig,
 ) -> Result<AuthConfiguration, Box<dyn std::error::Error>> {
     let mut validation = Validation::new(Algorithm::RS256);
-    let client_id =
-        env::var("FELDERA_AUTH_CLIENT_ID").expect("Missing environment variable FELDERA_AUTH_CLIENT_ID");
-    let iss = env::var("FELDERA_AUTH_ISSUER").expect("Missing environment variable FELDERA_AUTH_ISSUER");
+    let client_id = env::var("FELDERA_AUTH_CLIENT_ID")
+        .expect("Missing environment variable FELDERA_AUTH_CLIENT_ID");
+    let iss =
+        env::var("FELDERA_AUTH_ISSUER").expect("Missing environment variable FELDERA_AUTH_ISSUER");
 
     // Use OIDC discovery to fetch jwks_uri
     let jwk_uri = fetch_jwks_uri_from_discovery(&iss).await?;
