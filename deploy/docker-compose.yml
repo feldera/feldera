@@ -13,8 +13,8 @@ services:
     environment:
       - RUST_LOG=info,actix_web=error,tokio_postgres=info
       - RUST_BACKTRACE=1
-      - AUTH_CLIENT_ID
-      - AUTH_ISSUER
+      - FELDERA_AUTH_CLIENT_ID
+      - FELDERA_AUTH_ISSUER
     healthcheck:
       # TODO: add `/status` endpoint.
       test:

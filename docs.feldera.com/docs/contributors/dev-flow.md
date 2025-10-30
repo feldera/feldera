@@ -44,7 +44,7 @@ In Authenticated mode, you need to login via the Web Console using one of the su
 
 Start the Pipeline Manager in authenticated mode, substituting values from your environment:
 ```bash
-AUTH_CLIENT_ID=<client-id> AUTH_ISSUER=<issuer> <see below for additional environment variables> \
+FELDERA_AUTH_CLIENT_ID=<client-id> FELDERA_AUTH_ISSUER=<issuer> <see below for additional environment variables> \
  cargo run --bin pipeline-manager -- --auth-provider=aws-cognito
 ```
 
@@ -69,7 +69,7 @@ Additional variables for AWS Cognito:
 
 Example:
 ```bash
-AUTH_CLIENT_ID=xxxxxxxxxxxxxxxxxxxxxxxxxx AUTH_ISSUER=https://cognito-idp.us-east-1.amazonaws.com/us-east-1_xxxxxxxxx AWS_COGNITO_LOGIN_URL="https://itest-pool.auth.us-east-1.amazoncognito.com/login\?client_id=xxxxxxxxxxxxxxxxxxxxxxxxxx&response_type=token&scope=email+openid" AWS_COGNITO_LOGOUT_URL="https://itest-pool.auth.us-east-1.amazoncognito.com/logout\?client_id=xxxxxxxxxxxxxxxxxxxxxxxxxx&response_type=token&scope=email+openid" RUST_LOG=debug,tokio_postgres=info cargo run --bin=pipeline-manager -- --dev-mode --auth-provider aws-cognito
+FELDERA_AUTH_CLIENT_ID=xxxxxxxxxxxxxxxxxxxxxxxxxx FELDERA_AUTH_ISSUER=https://cognito-idp.us-east-1.amazonaws.com/us-east-1_xxxxxxxxx AWS_COGNITO_LOGIN_URL="https://itest-pool.auth.us-east-1.amazoncognito.com/login\?client_id=xxxxxxxxxxxxxxxxxxxxxxxxxx&response_type=token&scope=email+openid" AWS_COGNITO_LOGOUT_URL="https://itest-pool.auth.us-east-1.amazoncognito.com/logout\?client_id=xxxxxxxxxxxxxxxxxxxxxxxxxx&response_type=token&scope=email+openid" RUST_LOG=debug,tokio_postgres=info cargo run --bin=pipeline-manager -- --dev-mode --auth-provider aws-cognito
 ```
 
 ##### Google Identity Platform
@@ -77,7 +77,7 @@ Additional variables for Google Identity Platform: none
 
 Example:
 ```bash
-AUTH_CLIENT_ID=xxxxxxxxxxxx-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx.apps.googleusercontent.com AUTH_ISSUER="https://accounts.google.com" RUST_LOG=debug,tokio_postgres=info cargo run --bin=pipeline-manager -- --dev-mode --auth-provider google-identity
+FELDERA_AUTH_CLIENT_ID=xxxxxxxxxxxx-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx.apps.googleusercontent.com FELDERA_AUTH_ISSUER="https://accounts.google.com" RUST_LOG=debug,tokio_postgres=info cargo run --bin=pipeline-manager -- --dev-mode --auth-provider google-identity
 ```
 
 ## Run benchmarks

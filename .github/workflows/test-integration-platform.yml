@@ -94,8 +94,8 @@ jobs:
             --mount type=bind,src=./test-tls,dst=/home/ubuntu/test-tls,readonly \
             -p 8080:8080 \
             -e AUTH_PROVIDER="${{ vars.OIDC_TEST_ISSUER && 'generic-oidc' || 'none' }}" \
-            -e AUTH_CLIENT_ID="${{ vars.OIDC_TEST_CLIENT_ID }}" \
-            -e AUTH_ISSUER="${{ vars.OIDC_TEST_ISSUER }}" \
+            -e FELDERA_AUTH_CLIENT_ID="${{ vars.OIDC_TEST_CLIENT_ID }}" \
+            -e FELDERA_AUTH_ISSUER="${{ vars.OIDC_TEST_ISSUER }}" \
             -e RUST_LOG=info \
             -e RUST_BACKTRACE=1 \
             ${{ vars.FELDERA_IMAGE_NAME }}:sha-${{ github.sha }} \
@@ -170,8 +170,8 @@ jobs:
         env:
           # Configure OIDC authentication if available, otherwise use no auth
           AUTH_PROVIDER: ${{ vars.OIDC_TEST_ISSUER && 'generic-oidc' || 'none' }}
-          AUTH_CLIENT_ID: ${{ vars.OIDC_TEST_CLIENT_ID }}
-          AUTH_ISSUER: ${{ vars.OIDC_TEST_ISSUER }}
+          FELDERA_AUTH_CLIENT_ID: ${{ vars.OIDC_TEST_CLIENT_ID }}
+          FELDERA_AUTH_ISSUER: ${{ vars.OIDC_TEST_ISSUER }}
           RUST_LOG: info
           RUST_BACKTRACE: 1
           # Needed by test_update_runtime.py

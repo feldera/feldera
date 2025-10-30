@@ -271,7 +271,7 @@ export const loadAuthConfig = async () => {
         const storage = sessionStorage
 
         // Build scope string: always include openid, profile, email, and any extra scopes
-        const baseScopes = 'openid profile email'
+        const baseScopes = 'openid profile email offline_access'
         const extraScopes = config.extra_oidc_scopes.join(' ')
         const scope = extraScopes ? `${baseScopes} ${extraScopes}` : baseScopes
 

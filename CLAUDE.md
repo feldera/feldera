@@ -6697,8 +6697,8 @@ Additional features:
 #### **Configuration**
 ```bash
 # Environment variables for OIDC providers
-AUTH_ISSUER=https://your-domain.okta.com/oauth2/<custom-auth-server-id>
-AUTH_CLIENT_ID=your-client-id
+FELDERA_AUTH_ISSUER=https://your-domain.okta.com/oauth2/<custom-auth-server-id>
+FELDERA_AUTH_CLIENT_ID=your-client-id
 
 # For AWS Cognito (additional variables)
 AWS_COGNITO_LOGIN_URL=https://your-domain.auth.region.amazoncognito.com/login
