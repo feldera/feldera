@@ -15,6 +15,12 @@ defaults:
 jobs:
   deploy:
     runs-on: ubuntu-latest-amd64
+    environment:
+      name: release
+      url: https://pypi.org/p/feldera
+    permissions:
+      contents: read
+      id-token: write
 
     steps:
       - uses: actions/checkout@v4
@@ -33,12 +39,12 @@ jobs:
       - name: Build package
         run: |
           uv build
+
       - name: Publish package
         if: ${{ vars.RELEASE_DRY_RUN == 'false' }}
-        uses: pypa/gh-action-pypi-publish@27b31702a0e7fc50959f5ad993c78deac1bdfc29
+        uses: pypa/gh-action-pypi-publish@ed0c53931b1dc9bd32cbe73a98c7f6766f8a527e
         with:
-          packages_dir: ./python/dist
-          user: __token__
-          password: ${{ secrets.PYPI_API_TOKEN }}
+          packages-dir: ./python/dist
+
       - name: Minimize uv cache
         run: uv cache prune --ci
