@@ -16,29 +16,13 @@ export class LocalStore {
     if ('window' in globalThis) {
       const item = localStorage.getItem(key)
       if (item) {
-        this.value = this.deserialize(item)
+        this.value = JSON.parse(item)
       }
     }
 
     $effect(() => {
-      localStorage.setItem(this.key, this.serialize(this.value))
+      localStorage.setItem(this.key, JSON.stringify(this.value))
     })
-  }
-
-  /**
-   * @param {T} value
-   * @returns {string}
-   */
-  serialize(value) {
-    return JSON.stringify(value)
-  }
-
-  /**
-   * @param {string} item
-   * @returns {T}
-   */
-  deserialize(item) {
-    return JSON.parse(item)
   }
 
   remove() {

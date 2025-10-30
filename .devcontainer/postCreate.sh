@@ -1,4 +1,4 @@
 # Install Playwright system dependencies
-cd ./web-console && bun x playwright install-deps
+cd ./web-console && bunx playwright install-deps
 # Install Playwright browsers
-bun x playwright install
+bunx playwright install

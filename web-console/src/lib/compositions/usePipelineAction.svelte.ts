@@ -13,6 +13,7 @@ import { useReactiveWaiter } from './useReactiveWaiter.svelte'
 import { unionName } from '$lib/functions/common/union'
 import { page } from '$app/state'
 import { match } from 'ts-pattern'
+import invariant from 'tiny-invariant'
 
 /**
  * Composition for handling pipeline actions with optimistic updates and state management.
@@ -101,6 +102,7 @@ export const usePipelineAction = () => {
         // Wait for paused state and run callbacks
         const pausedWaiter = reactiveWaiter.createWaiter({
           predicate: (ps) => {
+            invariant(ps)
             const p = ps.find((p) => p.name === pipeline_name)
             if (!p) {
               throw new Error('Pipeline not found in pipelines list')
@@ -186,6 +188,7 @@ export const usePipelineAction = () => {
         waitFor: async () => {
           const waiter = reactiveWaiter.createWaiter({
             predicate: (ps) => {
+              invariant(ps)
               const p = ps.find((p) => p.name === pipeline_name)
               if (!p) {
                 throw new Error('Pipeline not found in pipelines list')

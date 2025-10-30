@@ -29,11 +29,11 @@
 
   let { children, data }: { children: Snippet; data: LayoutData } = $props()
 
-  useRefreshPipelineList()
+  useRefreshPipelineList({ loadImmediately: true })
   const rightDrawer = useAdaptiveDrawer('right')
   const isTablet = useIsTablet()
   const { showPipelinesPanel: leftDrawer } = useLayoutSettings()
-  const pipelineList = usePipelineList(data.preloaded)
+  const pipelineList = usePipelineList()
   const contextDrawer = useContextDrawer()
 
   const systemMessages = useSystemMessages()

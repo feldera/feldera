@@ -15,8 +15,6 @@ import {
   postUpdateRuntime as _postUpdateRuntime,
   type ErrorResponse,
   postPipeline as _postPipeline,
-  type PipelineInfo,
-  type PatchPipeline,
   getConfigAuthentication,
   type PipelineSelectedInfo,
   listApiKeys,
@@ -35,7 +33,8 @@ import {
   postPipelineResume,
   postPipelineActivate,
   type GetPipelineSupportBundleData,
-  postPipelineApprove
+  postPipelineApprove,
+  type NewApiKeyResponse
 } from '$lib/services/manager'
 export type {
   // PipelineDescr,
@@ -53,20 +52,13 @@ export type ProgramStatus = _ProgramStatus
 import * as AxaOidc from '@axa-fr/oidc-client'
 const { OidcClient } = AxaOidc
 
-import { client, createClient, type RequestResult } from '@hey-api/client-fetch'
-import JSONbig from 'true-json-bigint'
-import { felderaEndpoint } from '$lib/functions/configs/felderaEndpoint'
-import invariant from 'tiny-invariant'
+import { createClient, type RequestResult } from '$lib/services/manager/client'
 import { tuple } from '$lib/functions/common/tuple'
-import { sleep } from '$lib/functions/common/promise'
-import { type NamesInUnion, unionName } from '$lib/functions/common/union'
 import { singleton } from '$lib/functions/common/array'
+import { createClientConfig } from '$lib/compositions/setupHttpClient'
+import { felderaEndpoint } from '$lib/functions/configs/felderaEndpoint'
 
-const unauthenticatedClient = createClient({
-  bodySerializer: JSONbig.stringify,
-  responseTransformer: JSONbig.parse as any,
-  baseUrl: felderaEndpoint
-})
+const unauthenticatedClient = createClient(createClientConfig())
 
 type PipelineDescr = PostPutPipeline
 
@@ -297,32 +289,35 @@ export type PipelineThumb = ReturnType<typeof toPipelineThumb>
 export type Pipeline = ReturnType<typeof toPipeline>
 export type ExtendedPipeline = ReturnType<typeof toExtendedPipeline>
 
-const mapResponse = <R, T, E extends { message: string }>(
-  request: RequestResult<R, E>,
+type ThrowOnError = true
+
+const mapResponse = <R, T, E extends { message: string }, ThrowOnError extends boolean>(
+  request: RequestResult<R, E, ThrowOnError, 'fields'>,
   f: (v: R) => T,
   g?: (e: E) => T
 ) => {
-  return request.then((response) => {
-    if (response.error) {
+  return request.then(async ({ data, response, ...res }) => {
+    if ('error' in res && res.error) {
+      const error = res.error as E
       if (g) {
-        return g(response.error)
+        return g(error)
       }
-      throw new Error(response.error.message, {
-        cause: { ...response.error, response: response.response }
+      throw new Error(error.message, {
+        cause: { ...error, response: response }
       })
     }
-    return f(response.data!)
+    return f(data as R)
   })
 }
 
 export const getExtendedPipeline = async (
   pipeline_name: string,
-  options?: { fetch?: (request: Request) => ReturnType<typeof fetch>; onNotFound?: () => void }
+  options?: { /* fetch?: (request: Request) => ReturnType<typeof fetch>;*/ onNotFound?: () => void }
 ) => {
   return mapResponse(
     _getPipeline({
-      path: { pipeline_name: encodeURIComponent(pipeline_name) },
-      ...options
+      path: { pipeline_name: encodeURIComponent(pipeline_name) }
+      // ...options
     }),
     toExtendedPipeline,
     (e) => {
@@ -349,7 +344,7 @@ export const postPipeline = async (pipeline: PipelineDescr) => {
  */
 export const putPipeline = async (pipeline_name: string, newPipeline: PipelineDescr) => {
   await mapResponse(
-    _putPipeline({
+    _putPipeline<ThrowOnError>({
       body: newPipeline,
       path: { pipeline_name: encodeURIComponent(pipeline_name) }
     }),
@@ -359,7 +354,7 @@ export const putPipeline = async (pipeline_name: string, newPipeline: PipelineDe
 
 export const patchPipeline = async (pipeline_name: string, pipeline: Partial<Pipeline>) => {
   return mapResponse(
-    _patchPipeline({
+    _patchPipeline<ThrowOnError>({
       path: { pipeline_name: encodeURIComponent(pipeline_name) },
       body: fromPipeline(pipeline)
     }),
@@ -368,14 +363,14 @@ export const patchPipeline = async (pipeline_name: string, pipeline: Partial<Pip
 }
 
 export const getPipelines = async (): Promise<PipelineThumb[]> => {
-  return mapResponse(listPipelines({ query: { selector: 'status' } }), (pipelines) =>
+  return mapResponse(listPipelines<ThrowOnError>({ query: { selector: 'status' } }), (pipelines) =>
     pipelines.map(toPipelineThumb)
   )
 }
 
 export const getPipelineStatus = async (pipeline_name: string) => {
   return mapResponse(
-    _getPipeline({
+    _getPipeline<ThrowOnError>({
       path: { pipeline_name: encodeURIComponent(pipeline_name) },
       query: { selector: 'status' }
     }),
@@ -439,18 +434,19 @@ export const postPipelineAction = async (pipeline_name: string, action: Pipeline
 }
 
 export const postUpdateRuntime = async (pipeline_name: string) => {
-  return mapResponse(_postUpdateRuntime({ path: { pipeline_name } }), (v) => v)
+  return mapResponse(_postUpdateRuntime<ThrowOnError>({ path: { pipeline_name } }), (v) => v)
 }
 
 export const getAuthConfig = () =>
-  mapResponse(getConfigAuthentication({ client: unauthenticatedClient }), (v) => v)
+  mapResponse(getConfigAuthentication<ThrowOnError>({ client: unauthenticatedClient }), (v) => v)
 
-export const getConfig = () => mapResponse(_getConfig(), (v) => v)
-export const getConfigSession = () => mapResponse(_getConfigSession(), (v) => v)
+export const getConfig = () => mapResponse(_getConfig<ThrowOnError>(), (v) => v)
+export const getConfigSession = () => mapResponse(_getConfigSession<ThrowOnError>(), (v) => v)
 
-export const getApiKeys = () => mapResponse(listApiKeys(), (v) => v)
+export const getApiKeys = () => mapResponse(listApiKeys<ThrowOnError>(), (v) => v)
 
-export const postApiKey = (name: string) => mapResponse(_postApiKey({ body: { name } }), (v) => v)
+export const postApiKey = (name: string) =>
+  mapResponse(_postApiKey<ThrowOnError>({ body: { name } }), (v) => v)
 
 export const deleteApiKey = (name: string) =>
   mapResponse(
@@ -572,8 +568,10 @@ const extractDemoType = (demo: { title: string }) => {
   return tuple('Example', match?.[1] ?? '')
 }
 
+export type Demo = Awaited<ReturnType<typeof getDemos>>[number]
+
 export const getDemos = () =>
-  mapResponse(getConfigDemos(), (demos) =>
+  mapResponse(getConfigDemos<ThrowOnError>(), (demos) =>
     demos.map((demo) => {
       const [title, type] = extractDemoType(demo)
       return {

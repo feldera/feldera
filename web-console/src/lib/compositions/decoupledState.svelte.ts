@@ -32,7 +32,6 @@ export class DecoupledStateProxy<T extends string | number | boolean> {
     wait: () => number | 'decoupled'
   ) {
     this.downstream = downstream
-    // this.downstream.current = upstream.current
     this.baseline = upstream.current
     this._upstream = upstream
     this.wait = wait
@@ -76,7 +75,15 @@ export class DecoupledStateProxy<T extends string | number | boolean> {
     }
     this._upstreamChanged = true
   }
-
+  /**
+   * Fetch upstream changes but keep downstream changes
+   */
+  ignoreUpstream() {
+    this.cancelDebounce()
+    this.baseline = this._upstream.current
+    this._upstreamChanged = false
+    this._downstreamChanged = !isEqual(this.baseline, this.downstream.current)
+  }
   pull() {
     this.cancelDebounce()
     this.baseline = this.downstream.current = this._upstream.current

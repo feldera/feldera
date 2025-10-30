@@ -1,20 +1,24 @@
-import '$lib/compositions/setupHttpClient'
 import { loadAuthConfig } from '$lib/compositions/auth'
 import * as AxaOidc from '@axa-fr/oidc-client'
 import { fromAxaUserInfo, toAxaOidcConfig } from '$lib/compositions/@axa-fr/auth'
-import { client } from '@hey-api/client-fetch'
 import { base } from '$app/paths'
 import { authRequestMiddleware, authResponseMiddleware } from '$lib/services/auth'
 import type { AuthDetails } from '$lib/types/auth'
-import { goto } from '$app/navigation'
+import { beforeNavigate, goto, replaceState } from '$app/navigation'
 import posthog from 'posthog-js'
-import { getConfig, getConfigSession } from '$lib/services/pipelineManager'
 import type { Configuration } from '$lib/services/manager'
 import Dayjs from 'dayjs'
 import duration from 'dayjs/plugin/duration'
 import { initSystemMessages } from '$lib/compositions/initSystemMessages'
 import { newDate, setCurrentTime } from '$lib/compositions/serverTime'
+import type { SessionInfo } from '$lib/services/manager'
 import { displayScheduleToDismissable, getLicenseMessage } from '$lib/functions/license'
+import {
+  fetchConfigs,
+  getConfigFromCache,
+  getSessionConfigFromCache
+} from '$lib/compositions/configCache'
+import { client } from '$lib/services/manager/client.gen'
 
 Dayjs.extend(duration)
 
@@ -61,6 +65,22 @@ const emptyLayoutData: LayoutData = {
   feldera: undefined
 }
 
+/**
+ * Lazy load config in the background
+ * @param auth Preloaded authentication data which is necessary for the requests
+ */
+export const _lazyUpdateConfig = async (auth: AuthDetails) => {
+  const { config, sessionConfig } = await fetchConfigs()
+  if (config) {
+    // Update page data with replaceState
+    const updatedData = buildLayoutData(auth, config, sessionConfig)
+    replaceState('', updatedData)
+
+    // Initialize PostHog and system messages with the new config
+    initializeConfigDependencies(auth, config, sessionConfig)
+  }
+}
+
 export const load = async ({ fetch, url }): Promise<LayoutData> => {
   if (!('window' in globalThis)) {
     return emptyLayoutData
@@ -96,44 +116,93 @@ export const load = async ({ fetch, url }): Promise<LayoutData> => {
     }
   }
 
-  let config: Configuration | undefined = undefined
+  // Get cached config if available
+  const cachedConfig = getConfigFromCache()
+  const cachedSessionConfig = getSessionConfigFromCache()
 
+  // Lazy load config in the background if cache exists
+  if (cachedConfig) {
+    // Return cached data immediately
+    return buildLayoutData(auth, cachedConfig, cachedSessionConfig)
+  }
+
+  // If we have no cached config, wait for the first load
+  let result
   try {
-    config = await getConfig()
+    result = await fetchConfigs()
   } catch (e: any) {
-    if (e.cause.response.status === 401 || e.cause.response.status === 403) {
+    if (e.cause?.response?.status === 401 || e.cause?.response?.status === 403) {
       return {
         ...emptyLayoutData,
         auth,
         error: e
       }
     }
-  }
-
-  if (!config) {
     console.error('Failed to load configuration')
     return emptyLayoutData
   }
 
-  // Fetch session config for tenant information (only available if authenticated)
-  let sessionConfig = undefined
-  try {
-    sessionConfig = await getConfigSession()
-  } catch (e: any) {
-    // Session config might not be available if not authenticated, which is fine
-    console.warn('Failed to load session configuration:', e)
+  if (!result.config) {
+    console.error('Failed to load configuration')
+    return emptyLayoutData
   }
 
+  initializeConfigDependencies(auth, result.config, result.sessionConfig)
+
+  return buildLayoutData(auth, result.config, result.sessionConfig)
+}
+
+function buildFelderaData(config: Configuration, sessionConfig: SessionInfo | undefined) {
+  return {
+    version: config.version,
+    edition: config.edition,
+    update:
+      config.update_info && !config.update_info.is_latest_version
+        ? {
+            version: config.update_info.latest_version,
+            url: config.update_info.instructions_url
+          }
+        : undefined,
+    changelog: config.changelog_url,
+    revision: config.revision,
+    tenantId: sessionConfig?.tenant_id || '',
+    tenantName: sessionConfig?.tenant_name || '',
+    unstableFeatures: config.unstable_features?.split(',').map((f: string) => f.trim()) || [],
+    config
+  }
+}
+
+function buildLayoutData(
+  auth: AuthDetails,
+  config: Configuration,
+  sessionConfig: SessionInfo | undefined
+): LayoutData {
+  return {
+    auth,
+    feldera: buildFelderaData(config, sessionConfig)
+  }
+}
+
+function initializeConfigDependencies(
+  auth: AuthDetails,
+  config: Configuration,
+  sessionConfig: SessionInfo | undefined
+) {
   if (typeof auth === 'object' && 'logout' in auth) {
-    initPosthog(config).then(() => {
-      if (auth.profile.email) {
-        posthog.identify(auth.profile.email, {
-          email: auth.profile.email,
-          name: auth.profile.name,
-          auth_id: auth.profile.id
-        })
+    initPosthog(config).then(
+      () => {
+        if (auth.profile.email) {
+          posthog.identify(auth.profile.email, {
+            email: auth.profile.email,
+            name: auth.profile.name,
+            auth_id: auth.profile.id
+          })
+        }
+      },
+      (e) => {
+        console.error('Failed to initialize PostHog', e)
       }
-    })
+    )
   }
 
   {
@@ -163,27 +232,6 @@ export const load = async ({ fetch, url }): Promise<LayoutData> => {
         href: config.update_info.instructions_url
       }
     })
-  }
-
-  return {
-    auth,
-    feldera: {
-      version: config.version,
-      edition: config.edition,
-      update:
-        config.update_info && !config.update_info.is_latest_version
-          ? {
-              version: config.update_info.latest_version,
-              url: config.update_info.instructions_url
-            }
-          : undefined,
-      changelog: config.changelog_url,
-      revision: config.revision,
-      tenantId: sessionConfig?.tenant_id || '',
-      tenantName: sessionConfig?.tenant_name || '',
-      unstableFeatures: config.unstable_features?.split(',').map((f) => f.trim()) || [],
-      config
-    }
   }
 }
 

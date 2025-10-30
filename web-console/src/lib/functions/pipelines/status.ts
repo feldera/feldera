@@ -156,8 +156,6 @@ export const isPipelineShutdown = (status: PipelineStatus) => {
     .exhaustive()
 }
 
-export const isPipelineConfigEditable = (status: PipelineStatus) => isPipelineCodeEditable(status)
-
 export const isMetricsAvailable = (status: PipelineStatus) => {
   return match(status)
     .returnType<'yes' | 'no' | 'soon' | 'missing'>()
