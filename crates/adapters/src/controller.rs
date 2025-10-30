@@ -5355,7 +5355,6 @@ impl CheckpointThread {
             &*self.storage,
             &StoragePath::from(uuid.to_string()).child(STATE_FILE),
         )?;
-        dbg!();
 
         // Record statistics.
         CHECKPOINT_RUNTIME.record_elapsed(self.start_checkpoint);
