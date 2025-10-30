@@ -585,8 +585,8 @@ pub struct ApiServerConfig {
     ///
     /// Usage depends on two environment variables to be set
     ///
-    /// AUTH_CLIENT_ID, the client-id or application
-    /// AUTH_ISSUER, the issuing service
+    /// FELDERA_AUTH_CLIENT_ID, the client-id or application
+    /// FELDERA_AUTH_ISSUER, the issuing service
     ///
     /// ** AWS Cognito provider **
     /// If the auth_provider is aws-cognito, there are two more
@@ -607,9 +607,9 @@ pub struct ApiServerConfig {
     /// support PKCE soon.
     ///
     /// ** Okta provider **
-    /// If the auth_provider is okta, the AUTH_ISSUER should be your Okta domain
+    /// If the auth_provider is okta, the FELDERA_AUTH_ISSUER should be your Okta domain
     /// including the authorization server ID (e.g., "<https://your-domain.okta.com/oauth2/default>").
-    /// The AUTH_CLIENT_ID should be the client ID from your Okta application configuration.
+    /// The FELDERA_AUTH_CLIENT_ID should be the client ID from your Okta application configuration.
     ///
     /// ** Tenant Assignment **
     /// Tenant assignment follows this priority order:

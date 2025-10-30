@@ -157,15 +157,15 @@ Configure the following environment variables for your Feldera deployment:
 
 ```bash
 # Okta OIDC configuration
-AUTH_ISSUER=https://<your-okta-domain>/oauth2/<custom-auth-server-id>
-AUTH_CLIENT_ID=<your-client-id>
+FELDERA_AUTH_ISSUER=https://<your-okta-domain>/oauth2/<custom-auth-server-id>
+FELDERA_AUTH_CLIENT_ID=<your-client-id>
 ```
 
 ### Optional Variables
 
 ```bash
 # Custom authorization server (if not using default)
-AUTH_ISSUER=https://<your-okta-domain>/oauth2/<custom-auth-server-id>
+FELDERA_AUTH_ISSUER=https://<your-okta-domain>/oauth2/<custom-auth-server-id>
 ```
 
 ## Helm Chart Configuration
@@ -214,7 +214,7 @@ Configure Feldera to accept tokens from multiple Okta organizations:
 
 ```bash
 # Example supporting multiple customers
-AUTH_ISSUER=https://customer1.okta.com/oauth2/default,https://customer2.okta.com/oauth2/default
+FELDERA_AUTH_ISSUER=https://customer1.okta.com/oauth2/default,https://customer2.okta.com/oauth2/default
 ```
 
 ### 3. Automatic Tenant Assignment
@@ -236,10 +236,10 @@ With `--issuer-tenant=true`, each customer automatically gets their own tenant:
 
 #### "Invalid audience" Error
 - **Cause**: Client ID mismatch between Okta app and Feldera config
-- **Solution**: Verify `AUTH_CLIENT_ID` matches Okta application client ID
+- **Solution**: Verify `FELDERA_AUTH_CLIENT_ID` matches Okta application client ID
 
 #### "Invalid issuer" Error
 - **Cause**: Issuer URL mismatch
-- **Solution**: Verify `AUTH_ISSUER` matches Okta authorization server URL
+- **Solution**: Verify `FELDERA_AUTH_ISSUER` matches Okta authorization server URL
 
 For additional help, consult the [Okta Developer Documentation](https://developer.okta.com/docs/) or contact your Feldera support team.

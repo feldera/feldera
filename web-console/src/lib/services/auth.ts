@@ -21,6 +21,8 @@ export const authResponseMiddleware = async (response: Response, request: Reques
     if (validToken?.isTokensValid) {
       return fetch(request)
     }
+
+    console.error('Unable to extend user session. refresh_token was probably not issued.')
   }
   return response
 }
