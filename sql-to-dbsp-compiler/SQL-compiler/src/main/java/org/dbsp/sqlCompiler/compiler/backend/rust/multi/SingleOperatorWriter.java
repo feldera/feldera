@@ -126,9 +126,9 @@ public final class SingleOperatorWriter extends BaseRustCodeGenerator {
             this.builder().append(" -> ");
             if (operator.is(DBSPViewBaseOperator.class)) {
                 DBSPType outputType = operator.outputType(0);
-                this.builder().append("OutputHandle<");
+                this.builder().append("OutputHandle<SpineSnapshot<");
                 outputType.accept(visitor.innerVisitor);
-                this.builder().append(">").newline();
+                this.builder().append(">>").newline();
             } else if (operator.is(DBSPSimpleOperator.class)) {
                 if (operator.is(DBSPSourceBaseOperator.class)) {
                     this.builder().append("(");

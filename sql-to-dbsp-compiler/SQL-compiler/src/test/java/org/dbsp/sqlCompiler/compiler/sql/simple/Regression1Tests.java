@@ -222,11 +222,10 @@ public class Regression1Tests extends SqlIoTest {
                     )
                 );
                 """);
-        String program = ccs.compiler.sources.getWholeProgram();
-
         Function<Integer, String> values =
                 v -> "('" + ((v >> 1) % 2) + "', '" + (v % 2) + "');";
 
+        String program = ccs.compiler.sources.getWholeProgram();
         for (int f1 = 0; f1 < 4; f1++) {
             for (int f2 = 0; f2 < 4; f2++) {
                 for (int f3 = 0; f3 < 4; f3++) {

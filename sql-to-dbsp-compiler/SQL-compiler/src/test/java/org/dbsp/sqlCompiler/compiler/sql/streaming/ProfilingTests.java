@@ -73,7 +73,7 @@ public class ProfilingTests extends StreamingTestBase {
                 use feldera_sqllib::{
                     append_to_collection_handle,
                     append_to_map_handle,
-                    read_output_handle,
+                    read_output_spine,
                     casts::{cast_to_Timestamp_s,handle_error},
                     string::SqlString,
                 };
@@ -143,7 +143,7 @@ public class ProfilingTests extends StreamingTestBase {
                 use feldera_sqllib::{
                     append_to_collection_handle, append_to_map_handle,
                     casts::{cast_to_Timestamp_s, handle_error},
-                    read_output_handle,
+                    read_output_spine,
                     string::SqlString,
                 };
 
@@ -164,7 +164,7 @@ public class ProfilingTests extends StreamingTestBase {
                         append_to_collection_handle(&data, &streams.0);
                         if i % 100 == 0 {
                             let _ = circuit.transaction().expect("could not run circuit");
-                            let _ = &read_output_handle(&streams.2);
+                            let _ = &read_output_spine(&streams.2);
                         }
                     }
 
@@ -278,7 +278,7 @@ public class ProfilingTests extends StreamingTestBase {
                         append_to_collection_handle(&input, &streams.0);
                         if i % 1000 == 0 {
                             let _ = circuit.transaction().expect("could not run circuit");
-                            let _ = &read_output_handle(&streams.1);
+                            let _ = &read_output_spine(&streams.1);
                         }
                     }""");
         this.profile(sql, main);
@@ -334,7 +334,7 @@ public class ProfilingTests extends StreamingTestBase {
                         append_to_collection_handle(&bid, &streams.1);
                         if i % 100 == 0 {
                             let _ = circuit.transaction().expect("could not run circuit");
-                            let _ = &read_output_handle(&streams.2);
+                            let _ = &read_output_spine(&streams.2);
                         }
                     }""");
         this.profile(sql, main);
@@ -364,7 +364,7 @@ public class ProfilingTests extends StreamingTestBase {
                         append_to_map_handle(&auction, &streams.0, |x| Tup1::new(x.2));
                         if i % 100 == 0 {
                             let _ = circuit.transaction().expect("could not run circuit");
-                            let _ = &read_output_handle(&streams.2);
+                            let _ = &read_output_spine(&streams.2);
                         }
                     }""");
         this.profile(sql, main);

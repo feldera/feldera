@@ -8,8 +8,9 @@
 
 use dbsp::algebra::{F32, F64};
 use feldera_sqllib::{DynamicDecimal, SqlDecimal, SqlString};
+use std::fmt;
 
-#[derive(Debug)]
+#[derive(Clone)]
 pub enum SltSqlValue {
     Int(i32),
     Long(i64),
@@ -26,6 +27,34 @@ pub enum SltSqlValue {
     OptDbl(Option<f64>),
     OptBool(Option<bool>),
     OptDecimal(Option<DynamicDecimal>),
+}
+
+impl std::fmt::Debug for SltSqlValue {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            SltSqlValue::Int(i) => write!(f, "{}", i),
+            SltSqlValue::Long(l) => write!(f, "{}", l),
+            SltSqlValue::Str(s) => write!(f, "'{}'", s),
+            SltSqlValue::Flt(fl) => write!(f, "{}", fl),
+            SltSqlValue::Dbl(d) => write!(f, "{}", d),
+            SltSqlValue::Bool(b) => write!(f, "{}", b),
+            SltSqlValue::Decimal(dynamic_decimal) => write!(f, "{}", dynamic_decimal),
+            SltSqlValue::OptInt(None) => write!(f, "null"),
+            SltSqlValue::OptLong(None) => write!(f, "null"),
+            SltSqlValue::OptStr(None) => write!(f, "null"),
+            SltSqlValue::OptFlt(None) => write!(f, "null"),
+            SltSqlValue::OptDbl(None) => write!(f, "null"),
+            SltSqlValue::OptBool(None) => write!(f, "null"),
+            SltSqlValue::OptDecimal(None) => write!(f, "null"),
+            SltSqlValue::OptInt(Some(i)) => write!(f, "{}", i),
+            SltSqlValue::OptLong(Some(l)) => write!(f, "{}", l),
+            SltSqlValue::OptStr(Some(s)) => write!(f, "'{}'", s),
+            SltSqlValue::OptFlt(Some(fl)) => write!(f, "{}", fl),
+            SltSqlValue::OptDbl(Some(d)) => write!(f, "{}", d),
+            SltSqlValue::OptBool(Some(b)) => write!(f, "{}", b),
+            SltSqlValue::OptDecimal(Some(dynamic_decimal)) => write!(f, "{}", dynamic_decimal),
+        }
+    }
 }
 
 impl From<i32> for SltSqlValue {
@@ -143,9 +172,15 @@ impl<const P: usize, const S: usize> From<Option<SqlDecimal<P, S>>> for SltSqlVa
     }
 }
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct SqlRow {
     values: Vec<SltSqlValue>,
+}
+
+impl std::fmt::Debug for SqlRow {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:?}", self.values)
+    }
 }
 
 pub trait ToSqlRow {
