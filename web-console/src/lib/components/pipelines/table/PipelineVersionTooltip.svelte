@@ -21,7 +21,7 @@
     strategy="fixed"
     activeContent
   >
-    <div>A newer runtime version {normalizeRuntimeVersion(baseRuntimeVersion)} is available.</div>
+    <div>A new runtime version {normalizeRuntimeVersion(baseRuntimeVersion)} is available.</div>
     <button
       class="btn mt-2 h-6 preset-filled-primary-500"
       onclick={() => api.postUpdateRuntime(pipelineName)}>Update</button
