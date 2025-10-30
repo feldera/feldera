@@ -110,7 +110,8 @@ where
     let rows = zset_to_rows(set);
     let mut data_rows = DataRows::with_capacity(&format, &order, rows.len());
     for row in rows {
-        data_rows.push(row)
+        // println!("{:?}", row.clone());
+        data_rows.push(row);
     }
     data_rows.get()
 }
@@ -156,7 +157,6 @@ where
             builder = builder + &col.str() + "\n"
         }
     }
-    // println!("{}", builder);
     let digest = md5::compute(builder);
     SqlString::from(format!("{:x}", digest))
 }
