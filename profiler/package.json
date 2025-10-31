@@ -1,0 +1,28 @@
+{
+    "name": "profiler",
+    "version": "1.0.0",
+    "main": "index.js",
+    "keywords": [],
+    "author": "",
+    "license": "MIT",
+    "description": "",
+    "devDependencies": {
+        "@types/cytoscape": "^3.21.9",
+        "@types/node": "^24.6.0",
+        "live-server": "^1.2.2",
+        "ts-node": "^10.9.2",
+        "ts-node-dev": "^2.0.0",
+        "typescript": "^5.9.2",
+        "vite": "^5.4.20"
+    },
+    "scripts": {
+        "dev": "vite",
+        "build": "vite build"
+    },
+    "dependencies": {
+        "cytoscape": "^3.33.1",
+        "cytoscape-dblclick": "^0.3.1",
+        "cytoscape-elk": "^2.3.0",
+        "elkjs": "^0.11.0"
+    }
+}
