@@ -27,6 +27,7 @@ use feldera_types::serde_with_context::serialize::SerializeWithContextWrapper;
 use feldera_types::serde_with_context::{
     DateFormat, DeserializeWithContext, SerializeWithContext, SqlSerdeConfig, TimestampFormat,
 };
+use feldera_types::transport::delta_table::DeltaTableTransactionMode;
 use proptest::collection::vec;
 use proptest::prelude::{Arbitrary, ProptestConfig, Strategy};
 use proptest::proptest;
@@ -693,6 +694,7 @@ async fn test_follow(
     storage_options: &HashMap<String, String>,
     data: Vec<DeltaTestStruct>,
     snapshot: bool,
+    transaction_mode: DeltaTableTransactionMode,
     suspend: bool,
     test_end_version: bool,
     buffer_size: u64,
@@ -808,6 +810,10 @@ async fn test_follow(
         "follow"
     };
     input_config.insert("mode".to_string(), mode.into());
+    input_config.insert(
+        "transaction_mode".to_string(),
+        serde_json::to_value(transaction_mode).unwrap(),
+    );
 
     let end_version = 5;
     if test_end_version {
@@ -877,6 +883,8 @@ async fn test_follow(
         20_000,
     )
     .await;
+
+    println!("initial snapshot processed");
 
     // Write remaining data in 10 chunks, wait for it to show up in the output table.
     for chunk in data[split_at..].chunks(std::cmp::max(data[split_at..].len() / 10, 1)) {
@@ -1282,7 +1290,12 @@ fn delta_data(max_records: usize) -> impl Strategy<Value = Vec<DeltaTestStruct>>
     })
 }
 
-async fn delta_table_follow_file_test_common(snapshot: bool, suspend: bool, end_version: bool) {
+async fn delta_table_follow_file_test_common(
+    snapshot: bool,
+    transaction_mode: DeltaTableTransactionMode,
+    suspend: bool,
+    end_version: bool,
+) {
     // We cannot use proptest macros in `async` context, so generate
     // some random data manually.
     let mut runner = TestRunner::default();
@@ -1303,6 +1316,7 @@ async fn delta_table_follow_file_test_common(snapshot: bool, suspend: bool, end_
         &HashMap::new(),
         data,
         snapshot,
+        transaction_mode,
         suspend,
         end_version,
         1000,
@@ -1427,27 +1441,49 @@ async fn delta_table_cdc_s3_test_suspend() {
 
 #[tokio::test]
 async fn delta_table_snapshot_and_follow_file_test() {
-    delta_table_follow_file_test_common(true, false, false).await
+    delta_table_follow_file_test_common(true, DeltaTableTransactionMode::None, false, false).await
+}
+
+#[tokio::test]
+async fn delta_table_transactional_snapshot_and_follow_file_test() {
+    delta_table_follow_file_test_common(true, DeltaTableTransactionMode::Snapshot, false, false)
+        .await
+}
+
+#[tokio::test]
+async fn delta_table_transactional_always_snapshot_and_follow_file_test() {
+    delta_table_follow_file_test_common(true, DeltaTableTransactionMode::Always, false, false).await
 }
 
 #[tokio::test]
 async fn delta_table_follow_file_test() {
-    delta_table_follow_file_test_common(false, false, false).await
+    delta_table_follow_file_test_common(false, DeltaTableTransactionMode::None, false, false).await
 }
 
 #[tokio::test]
 async fn delta_table_follow_file_test_end_version() {
-    delta_table_follow_file_test_common(false, false, true).await
+    delta_table_follow_file_test_common(false, DeltaTableTransactionMode::None, false, true).await
 }
 
 #[tokio::test]
 async fn delta_table_snapshot_and_follow_file_test_suspend() {
-    delta_table_follow_file_test_common(true, true, false).await
+    delta_table_follow_file_test_common(true, DeltaTableTransactionMode::None, true, false).await
+}
+
+#[tokio::test]
+async fn delta_table_transactional_snapshot_and_follow_file_test_suspend() {
+    delta_table_follow_file_test_common(true, DeltaTableTransactionMode::Snapshot, true, false)
+        .await
+}
+
+#[tokio::test]
+async fn delta_table_transactional_always_snapshot_and_follow_file_test_suspend() {
+    delta_table_follow_file_test_common(true, DeltaTableTransactionMode::Always, true, false).await
 }
 
 #[tokio::test]
 async fn delta_table_snapshot_and_follow_file_test_suspend_end_version() {
-    delta_table_follow_file_test_common(true, true, true).await
+    delta_table_follow_file_test_common(true, DeltaTableTransactionMode::None, true, true).await
 }
 
 #[cfg(feature = "delta-s3-test")]
@@ -1556,7 +1592,16 @@ proptest! {
         let zset = file_to_zset::<DeltaTestStruct>(json_file_ordered_by_id.as_file_mut());
         assert_eq!(zset, expected_zset);
 
-        // Order delta table by `bigint`, specify range in two differrent ways: using `snapshot_filter` and using `filter`.
+        // Same as above, but commit a transaction after each input chunk.
+        let mut json_file_ordered_by_id = delta_table_snapshot_to_json::<DeltaTestStruct>(
+            &table_uri,
+            &DeltaTestStruct::schema_with_lateness(),
+            &HashMap::from([("timestamp_column".to_string(), "bigint".to_string()), ("transaction_mode".to_string(), "always".to_string())]));
+
+        let zset = file_to_zset::<DeltaTestStruct>(json_file_ordered_by_id.as_file_mut());
+        assert_eq!(zset, expected_zset);
+
+        // Order delta table by `bigint`, specify range in two different ways: using `snapshot_filter` and using `filter`.
         let mut json_file_ordered_filtered1 = delta_table_snapshot_to_json::<DeltaTestStruct>(
             &table_uri,
             &DeltaTestStruct::schema_with_lateness(),
@@ -1566,6 +1611,11 @@ proptest! {
             &table_uri,
             &DeltaTestStruct::schema_with_lateness(),
             &HashMap::from([("timestamp_column".to_string(), "bigint".to_string()), ("filter".to_string(), "bigint >= 10000 ".to_string())]));
+
+            let mut json_file_ordered_filtered3 = delta_table_snapshot_to_json::<DeltaTestStruct>(
+                &table_uri,
+                &DeltaTestStruct::schema_with_lateness(),
+                &HashMap::from([("timestamp_column".to_string(), "bigint".to_string()), ("filter".to_string(), "bigint >= 10000 ".to_string()), ("transaction_mode".to_string(), "always".to_string())]));
 
         let expected_filtered_zset = OrdZSet::from_tuples(
                 (),
@@ -1578,6 +1628,9 @@ proptest! {
         assert_eq!(zset, expected_filtered_zset);
 
         let zset = file_to_zset::<DeltaTestStruct>(json_file_ordered_filtered2.as_file_mut());
+        assert_eq!(zset, expected_filtered_zset);
+
+        let zset = file_to_zset::<DeltaTestStruct>(json_file_ordered_filtered3.as_file_mut());
         assert_eq!(zset, expected_filtered_zset);
 
         // Specify both `snapshot_filter` and `filter`.

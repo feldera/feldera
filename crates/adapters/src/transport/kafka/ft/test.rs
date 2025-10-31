@@ -574,6 +574,10 @@ impl InputConsumer for DummyInputConsumer {
     fn eoi(&self) {
         self.called(ConsumerCall::Eoi);
     }
+
+    fn start_transaction(&self, _label: Option<&str>) {}
+
+    fn commit_transaction(&self) {}
 }
 
 #[test]
