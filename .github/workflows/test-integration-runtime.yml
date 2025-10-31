@@ -34,7 +34,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Python runtime tests
-        if: ${{ vars.CI_DRY_RUN != 'true' }}
+        if: ${{ vars.CI_DRY_RUN != 'true' && !contains(vars.CI_SKIP_JOBS, 'runtime-pytest') }}
         run: uv run --locked pytest -n ${{ vars.PYTEST_WORKERS }} tests/runtime --timeout=600 -vv
         working-directory: python
         env:
@@ -42,7 +42,7 @@ jobs:
           FELDERA_TLS_INSECURE: true
 
       - name: Python runtime_aggtest test
-        if: ${{ vars.CI_DRY_RUN != 'true' }}
+        if: ${{ vars.CI_DRY_RUN != 'true' && !contains(vars.CI_SKIP_JOBS, 'runtime-aggtest') }}
         run: uv run --locked ./tests/runtime_aggtest/run.sh
         working-directory: python
         env:
@@ -50,7 +50,7 @@ jobs:
           FELDERA_TLS_INSECURE: true
 
       - name: Python workload tests
-        if: ${{ vars.CI_DRY_RUN != 'true' }}
+        if: ${{ vars.CI_DRY_RUN != 'true' && !contains(vars.CI_SKIP_JOBS, 'runtime-workload') }}
         run: uv run --locked pytest -n ${{ vars.PYTEST_WORKERS }} tests/workloads --timeout=600 -vv
         working-directory: python
         env:
