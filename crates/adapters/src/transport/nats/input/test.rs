@@ -510,7 +510,7 @@ mod util {
 
         let child = ProcessKillGuard::new(child);
 
-        if wait(|| port_file_path.exists(), 1000).is_err() {
+        if wait(|| port_file_path.exists(), 10_000).is_err() {
             return Err(anyhow!("Port file was not created within timeout period"));
         }
 
