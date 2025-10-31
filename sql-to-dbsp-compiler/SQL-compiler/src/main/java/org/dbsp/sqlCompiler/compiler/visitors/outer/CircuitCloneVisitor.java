@@ -123,8 +123,7 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs, 
         this.map(old, newOp, true);
         Utilities.enforce(old.node() == this.getCurrent());
         if (!old.equals(newOp)) {
-            long derivedFrom = old.node().derivedFrom;
-            newOp.node().setDerivedFrom(derivedFrom);
+            newOp.node().setDerivedFrom(old.node());
         }
     }
 
@@ -155,7 +154,7 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs, 
             IDBSPOuterNode node = this.getCurrent();
             if (node.is(ICircuit.class))
                 return;
-            if (operator != node)
+            if (operator != node && operator.derivedFrom == 0)
                 operator.setDerivedFrom(node.getDerivedFrom());
         }
     }
@@ -214,7 +213,7 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs, 
                     .decrease();
         }
         DBSPOperator result = operator.asOperator().withInputs(sources, this.force);
-        result.setDerivedFrom(op.derivedFrom);
+        result.setDerivedFrom(op);
         for (int i = 0; i < operator.outputCount(); i++) {
             boolean add = i == operator.outputCount() - 1;
             this.map(operator.getOutput(i), result.getOutput(i), add);
@@ -528,7 +527,7 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs, 
     @Override
     public void postorder(DBSPNestedOperator operator) {
         DBSPNestedOperator result = Utilities.removeLast(this.underConstruction).to(DBSPNestedOperator.class);
-        result.setDerivedFrom(operator.derivedFrom);
+        result.setDerivedFrom(operator);
         result.copyAnnotations(operator);
         if (result.sameCircuit(operator))
             result = operator;

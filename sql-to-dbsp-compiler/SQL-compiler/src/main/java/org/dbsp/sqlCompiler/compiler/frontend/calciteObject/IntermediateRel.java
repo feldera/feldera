@@ -2,6 +2,7 @@ package org.dbsp.sqlCompiler.compiler.frontend.calciteObject;
 
 import org.apache.calcite.rel.RelNode;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.errors.UnimplementedException;
 import org.dbsp.util.IIndentStream;
 import org.dbsp.util.Utilities;
@@ -14,12 +15,17 @@ import java.util.Map;
 public class IntermediateRel extends CalciteRelNode {
     final RelNode relNode;
 
-    IntermediateRel(RelNode relNode) {
+    IntermediateRel(RelNode relNode, SourcePositionRange range) {
+        super(range);
         this.relNode = relNode;
     }
 
+    IntermediateRel(RelNode relNode) {
+        this(relNode, SourcePositionRange.INVALID);
+    }
+
     public LastRel getFinal() {
-        return new LastRel(this.relNode);
+        return new LastRel(this.relNode, this.position);
     }
 
     public CalciteRelNode maybeFinal(boolean isFinal) {

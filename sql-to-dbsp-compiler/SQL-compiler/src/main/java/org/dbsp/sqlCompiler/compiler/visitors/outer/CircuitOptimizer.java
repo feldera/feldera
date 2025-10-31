@@ -68,7 +68,7 @@ public class CircuitOptimizer extends Passes {
     void createOptimizer() {
         CompilerOptions options = this.compiler().options;
         // Example dumping circuit to a png file
-        // this.add(ToDot.dumper(compiler, "x.png", 2));
+        // this.add(ToDot.dumper(compiler, "x.png", 3));
         // First part of optimizations may still synthesize some circuit components
         this.add(new ImplementNow(compiler));
         this.add(new DeterministicFunctions(compiler));
@@ -144,7 +144,7 @@ public class CircuitOptimizer extends Passes {
         this.add(new CSE(compiler));
         this.add(new ExpandJoins(compiler));
         this.add(new RemoveViewOperators(compiler, true));
-        this.add(new CircuitRewriter(compiler, new InnerCSE(compiler), false, InnerCSE::process));
+        this.add(new CircuitRewriter(compiler, new InnerCSE(compiler), true, InnerCSE::process));
         this.add(new CreateRuntimeErrorWrappers(compiler).getCircuitRewriter(true));
         this.add(new OptimizeWithGraph(compiler, g -> new StrayGC(compiler, g)));
         // The canonical form is needed if we want the Merkle hashes to be "stable".

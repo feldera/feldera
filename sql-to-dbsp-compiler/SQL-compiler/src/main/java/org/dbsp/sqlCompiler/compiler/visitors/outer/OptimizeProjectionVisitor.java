@@ -180,11 +180,15 @@ public class OptimizeProjectionVisitor extends CircuitCloneWithGraphsVisitor {
                 .applyAfter(reporter, joinFunction, Maybe.YES);
         CalciteRelNode node = operator.getRelNode().after(source.getRelNode());
         if (source.is(DBSPJoinOperator.class)) {
-            return new DBSPJoinIndexOperator(node, operator.getOutputIndexedZSetType(),
+            DBSPJoinBaseOperator result = new DBSPJoinIndexOperator(node, operator.getOutputIndexedZSetType(),
                     newFunction, operator.isMultiset, source.left(), source.right());
+            result.setDerivedFrom(source);
+            return result;
         } else if (source.is(DBSPStreamJoinOperator.class)) {
-            return new DBSPStreamJoinIndexOperator(node, operator.getOutputIndexedZSetType(),
+            DBSPJoinBaseOperator result = new DBSPStreamJoinIndexOperator(node, operator.getOutputIndexedZSetType(),
                     newFunction, operator.isMultiset, source.left(), source.right());
+            result.setDerivedFrom(source);
+            return result;
         } else {
             return source.withFunction(newFunction, operator.outputType).to(DBSPJoinBaseOperator.class);
         }
@@ -203,12 +207,16 @@ public class OptimizeProjectionVisitor extends CircuitCloneWithGraphsVisitor {
         DBSPClosureExpression newFunction = apply.closure(joinFunction.parameters);
         CalciteRelNode node = operator.getRelNode().after(source.getRelNode());
         if (source.is(DBSPJoinIndexOperator.class)) {
-            return new DBSPJoinIndexOperator(node, operator.getOutputIndexedZSetType(),
+            DBSPJoinBaseOperator result = new DBSPJoinIndexOperator(node, operator.getOutputIndexedZSetType(),
                     newFunction, operator.isMultiset, source.left(), source.right());
+            result.setDerivedFrom(source);
+            return result;
         } else {
             Utilities.enforce(source.is(DBSPStreamJoinIndexOperator.class));
-            return new DBSPStreamJoinIndexOperator(node, operator.getOutputIndexedZSetType(),
+            DBSPJoinBaseOperator result = new DBSPStreamJoinIndexOperator(node, operator.getOutputIndexedZSetType(),
                     newFunction, operator.isMultiset, source.left(), source.right());
+            result.setDerivedFrom(source);
+            return result;
         }
     }
 }
