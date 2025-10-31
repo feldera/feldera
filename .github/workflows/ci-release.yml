@@ -85,6 +85,8 @@ jobs:
           app-id: ${{ vars.CI_ACCESS_APP_ID }}
           private-key: ${{ secrets.CI_ACCESS_APP_PKEY }}
           permission-contents: write
+          permission-workflows: write
+          permission-metadata: read
           repositories: ${{ github.event.repository.name }}
 
       - name: Release on GitHub
