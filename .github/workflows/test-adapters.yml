@@ -88,6 +88,7 @@ jobs:
         shell: bash
         env:
           RUST_BACKTRACE: 1
+          RUST_TEST_THREADS: 16
           REDIS_URL: redis://localhost:6379/0
           POSTGRES_URL: postgres://postgres:password@localhost:5432
           REDPANDA_BROKERS: 127.0.0.1
