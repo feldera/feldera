@@ -35,6 +35,7 @@ use crate::{
     controller::{
         checkpoint::{CheckpointInputEndpointMetrics, CheckpointOutputEndpointMetrics},
         journal::{InputChecksums, InputLog},
+        TransactionInitiators,
     },
     PipelineState,
 };
@@ -144,11 +145,16 @@ pub struct GlobalControllerMetrics {
     /// new and modified views.
     bootstrap_in_progress: AtomicBool,
 
+    /// Status of the current transaction.
     #[serde(serialize_with = "serialize_atomic")]
     pub transaction_status: Atomic<TransactionStatus>,
 
+    /// ID of the current transaction or 0 if no transaction is in progress.
     #[serde(serialize_with = "serialize_atomic")]
     pub transaction_id: Atomic<TransactionId>,
+
+    /// Entities that initiated the current transaction.
+    pub transaction_initiators: Mutex<TransactionInitiators>,
 
     /// Resident set size of the pipeline process, in bytes.
     // This field is computed on-demand by calling `ControllerStatus::update`.
@@ -275,6 +281,7 @@ impl GlobalControllerMetrics {
             bootstrap_in_progress: AtomicBool::new(false),
             transaction_id: Atomic::new(0),
             transaction_status: Atomic::new(TransactionStatus::NoTransaction),
+            transaction_initiators: Mutex::new(TransactionInitiators::default()),
             rss_bytes: AtomicU64::new(0),
             cpu_msecs: AtomicU64::new(0),
             uptime_msecs: AtomicU64::new(0),
@@ -1177,6 +1184,7 @@ impl InputEndpointMetrics {
     }
 }
 
+#[derive(Debug)]
 pub struct StepResults {
     pub amt: BufferSize,
     pub resume: Option<Resume>,
