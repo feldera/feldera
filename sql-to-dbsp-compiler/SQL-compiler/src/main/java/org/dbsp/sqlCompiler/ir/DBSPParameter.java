@@ -25,6 +25,7 @@ package org.dbsp.sqlCompiler.ir;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import org.dbsp.sqlCompiler.compiler.backend.JsonDecoder;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.inner.InnerVisitor;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
@@ -41,10 +42,14 @@ public final class DBSPParameter extends DBSPNode implements
     public final String name;
     public final DBSPType type;
 
-    public DBSPParameter(String name, DBSPType type) {
-        super(type.getNode());
+    public DBSPParameter(CalciteObject node, String name, DBSPType type) {
+        super(node);
         this.name = name;
         this.type = type;
+    }
+
+    public DBSPParameter(String name, DBSPType type) {
+        this(type.getNode(), name, type);
     }
 
     /** Return a variable that refers to the parameter. */

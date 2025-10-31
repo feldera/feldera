@@ -93,8 +93,7 @@ public class UnimplementedException
     }
 
     public UnimplementedException(String message, CalciteObject node) {
-        this(message + (node.getMessage().isEmpty() ? "" : (":" + node.getMessage())),
-                null, node);
+        this(message, null, node);
     }
 
     public UnimplementedException(IDBSPNode node, Throwable cause) {

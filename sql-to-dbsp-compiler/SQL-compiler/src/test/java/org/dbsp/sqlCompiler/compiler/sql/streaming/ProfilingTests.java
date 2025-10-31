@@ -174,7 +174,7 @@ public class ProfilingTests extends StreamingTestBase {
                 }""";
         File script = createInputScript(sql);
         CompilerMessages messages = CompilerMain.execute(
-                "-o", BaseSQLTests.TEST_FILE_PATH, "--handles", "-i",
+                "-o", BaseSQLTests.TEST_FILE_PATH, "--handles", "-i", "--ignoreOrder",
                 script.getPath());
         messages.print();
         Assert.assertEquals(0, messages.errorCount());
@@ -219,6 +219,7 @@ public class ProfilingTests extends StreamingTestBase {
                     let mut file = File::create("profile.zip").expect("Could not create file");
                     file.write_all(&profile.as_json_zip()).expect("Could not write data");
                 }""";
+
         File dataflow = new File("dataflow-" + script.getName().replace(".sql", ".json"));
         CompilerMessages messages = CompilerMain.execute(
                 "-o", BaseSQLTests.TEST_FILE_PATH, "--handles", "-i", "--ignoreOrder",
@@ -251,9 +252,15 @@ public class ProfilingTests extends StreamingTestBase {
         String profilerData = "../../profiler/data";
         File file = new File("../extra/" + name + ".sql");
         String str = this.getEmptyJsonProfile(file);
-        Utilities.writeFile(Paths.get(profilerData, file.getName().replace(".sql", ".json")), str);
+        Path target = Paths.get(profilerData, file.getName().replace(".sql", ".json"));
+        Utilities.writeFile(target, str);
         String df = "dataflow-" + name + ".json";
-        Files.move(Paths.get(".", df), Paths.get(profilerData, df));
+
+        target = Paths.get(profilerData, df);
+        // File may not exist, so we don't expect success
+        //noinspection ResultOfMethodCallIgnored
+        target.toFile().delete();
+        Files.move(Paths.get(".", df), target);
     }
 
     @Test

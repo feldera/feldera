@@ -266,7 +266,9 @@
       "calcite": {
         "partial": 0
       },
-      "positions": [],
+      "positions": [
+        {"start_line_number":4,"start_column":1,"end_line_number":4,"end_column":59}
+      ],
       "persistent_id": "8b384059bdb44ad811ab341cc5e2a59697f39aac7b463cab027b185db8105e73"
     }, "s1": {
       "operation": "constant",
@@ -282,8 +284,9 @@
         { "node": "s9", "output": 0 }
       ],
       "s3": {
-        "operation": "Z fibonacci-decl",
+        "operation": "Z",
         "inputs": [],
+        "table": "fibonacci-decl",
         "backedges": [{ "node": "s9", "output": 0 }],
         "calcite": {
           "final": 2
@@ -305,7 +308,7 @@
             }]
         },
         "positions": [
-          {"start_line_number":1,"start_column":1,"end_line_number":1,"end_column":50},
+          {"start_line_number":19,"start_column":8,"end_line_number":19,"end_column":26},
           {"start_line_number":20,"start_column":27,"end_line_number":20,"end_column":37}
         ],
         "persistent_id": "c4a85bf710dd3401e8c109627ff19a982d7ac56502679cd4ccc751868d929416"
@@ -326,7 +329,6 @@
             }]
         },
         "positions": [
-          {"start_line_number":1,"start_column":1,"end_line_number":1,"end_column":50},
           {"start_line_number":19,"start_column":17,"end_line_number":19,"end_column":26},
           {"start_line_number":20,"start_column":11,"end_line_number":20,"end_column":21}
         ],
@@ -366,8 +368,9 @@
           "partial": 6
         },
         "positions": [
+          {"start_line_number":15,"start_column":9,"end_line_number":15,"end_column":18},
           {"start_line_number":16,"start_column":9,"end_line_number":16,"end_column":33},
-          {"start_line_number":15,"start_column":9,"end_line_number":15,"end_column":18}
+          {"start_line_number":19,"start_column":8,"end_line_number":19,"end_column":26}
         ],
         "persistent_id": "181d7b128313b90121fa9cff13307d45ac1537762a0e02b5b8a12a9f916432a5"
       },
@@ -392,7 +395,10 @@
       "calcite": {
         "final": 8
       },
-      "positions": [],
+      "positions": [
+        {"start_line_number":4,"start_column":1,"end_line_number":21,"end_column":1},
+        {"start_line_number":4,"start_column":1,"end_line_number":21,"end_column":1}
+      ],
       "persistent_id": "bc00b1b56804974a549e5827f4152c910dbdbfd3f97eecd126dc69898bed7c6b"
     }, "s11": {
       "operation": "inspect",
@@ -403,7 +409,10 @@
       "calcite": {
         "final": 0
       },
-      "positions": [],
+      "positions": [
+        {"start_line_number":4,"start_column":1,"end_line_number":4,"end_column":59},
+        {"start_line_number":4,"start_column":1,"end_line_number":4,"end_column":59}
+      ],
       "persistent_id": "933ebf782e1fe804fe85c4d0f3688bdb5234b386c2834892776e692acd9781d9"
     }
   },

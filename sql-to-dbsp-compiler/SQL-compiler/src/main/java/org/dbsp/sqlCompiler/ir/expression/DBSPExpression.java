@@ -154,6 +154,10 @@ public abstract class DBSPExpression
         return new DBSPFieldExpression(this, index);
     }
 
+    public DBSPFieldExpression field(CalciteObject node, int index) {
+        return new DBSPFieldExpression(node, this, index);
+    }
+
     public DBSPExpression question() { return new DBSPQuestionExpression(this); }
 
     /** Addition between two expressions with the same type. */
@@ -180,6 +184,10 @@ public abstract class DBSPExpression
 
     public DBSPClosureExpression closure() {
         return new DBSPClosureExpression(this);
+    }
+
+    public DBSPClosureExpression closure(CalciteObject node, DBSPParameter... parameters) {
+        return new DBSPClosureExpression(node, this, parameters);
     }
 
     public DBSPClosureExpression closure(DBSPParameter... parameters) {

@@ -23,6 +23,7 @@
 
 package org.dbsp.sqlCompiler.compiler.frontend.statements;
 
+import org.apache.calcite.sql.parser.SqlParserPos;
 import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteCompiler.ParsedStatement;
 import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
@@ -52,9 +53,13 @@ public abstract class RelStatement implements ICastable {
         return this.parsedStatement.visible();
     }
 
+    public SqlParserPos getParserPosition() {
+        return this.parsedStatement.statement().getParserPosition();
+    }
+
     public SourcePositionRange getPosition() {
         if (this.parsedStatement.visible())
-            return new SourcePositionRange(this.parsedStatement.statement().getParserPosition());
+            return new SourcePositionRange(this.getParserPosition());
         else
             return SourcePositionRange.INVALID;
     }

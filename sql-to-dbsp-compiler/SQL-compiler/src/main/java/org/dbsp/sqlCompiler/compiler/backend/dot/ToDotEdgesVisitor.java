@@ -39,7 +39,7 @@ public class ToDotEdgesVisitor extends CircuitVisitor implements IWritesLogs {
         if (source.port() != 0)
             name += " " + source.port();
         return name + " " +
-                ToRustInnerVisitor.toRustString(this.compiler(), type, null, this.details < 3);
+                ToRustInnerVisitor.toRustString(this.compiler(), type, null, this.details < 4);
     }
 
     @Override

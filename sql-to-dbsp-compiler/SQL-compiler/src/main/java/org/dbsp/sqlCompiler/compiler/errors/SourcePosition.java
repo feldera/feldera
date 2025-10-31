@@ -1,6 +1,6 @@
 package org.dbsp.sqlCompiler.compiler.errors;
 
-public class SourcePosition {
+public class SourcePosition implements Comparable<SourcePosition> {
     public static final SourcePosition INVALID = new SourcePosition(0, 0);
 
     public final int line;    // Numbered from 1
@@ -37,5 +37,34 @@ public class SourcePosition {
         int result = line;
         result = 31 * result + column;
         return result;
+    }
+
+    public boolean before(SourcePosition end) {
+        return this.line < end.line || (this.line == end.line && this.column <= end.column);
+    }
+
+    public boolean beforeOrEqual(SourcePosition end) {
+        return (this.line < end.line || (this.line == end.line && this.column <= end.column))
+                || this.equals(end);
+    }
+
+    public SourcePosition min(SourcePosition other) {
+        if (this.before(other))
+            return this;
+        return other;
+    }
+
+    public SourcePosition max(SourcePosition other) {
+        if (this.before(other))
+            return other;
+        return this;
+    }
+
+    @Override
+    public int compareTo(SourcePosition other) {
+        int compare = Integer.compare(this.line, other.line);
+        if (compare != 0)
+            return compare;
+        return Integer.compare(this.column, other.column);
     }
 }

@@ -10,6 +10,7 @@ import org.apache.calcite.sql.SqlNode;
 import org.apache.calcite.sql.SqlWriter;
 import org.apache.calcite.sql.parser.SqlParserPos;
 import org.apache.calcite.sql.pretty.SqlPrettyWriter;
+import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.util.IHasId;
 import org.dbsp.util.IIndentStream;
 
@@ -20,9 +21,11 @@ public abstract class CalciteRelNode extends CalciteObject implements IHasId {
     public static final SqlDialect DIALECT = SqlDialect.DatabaseProduct.UNKNOWN.getDialect();
     static final RelToSqlConverter CONVERTER = new RelToSqlConverter(DIALECT);
 
-    protected CalciteRelNode() {
-        super();
+    protected CalciteRelNode(SourcePositionRange pos) {
+        super(pos);
     }
+
+    protected CalciteRelNode() { this(SourcePositionRange.INVALID); }
 
     @Override
     public boolean isEmpty() {
