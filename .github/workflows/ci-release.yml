@@ -18,6 +18,9 @@ env:
 jobs:
   release:
     runs-on: ubuntu-latest-amd64
+    permissions:
+      id-token: write
+      contents: read
     steps:
       - name: Generate GitHub App token
         id: app-token
@@ -92,10 +95,10 @@ jobs:
           token: ${{ steps.app-token.outputs.token }}
 
       - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v5.1.0
         with:
-          aws-access-key-id: ${{ secrets.SQL2DBSP_S3_ACCESS_KEY }}
-          aws-secret-access-key: ${{ secrets.SQL2DBSP_S3_SECRET_KEY }}
+          role-to-assume: arn:aws:iam::737834633458:role/GhaSql2DbspJarUpload
+          role-session-name: gha-${{ github.run_id }}
           aws-region: ${{ vars.SQL2DBSP_S3_REGION }}
 
       - name: Upload JAR to S3 with SHA in filename
