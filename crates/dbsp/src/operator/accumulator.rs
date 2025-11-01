@@ -1,4 +1,9 @@
-use std::{borrow::Cow, marker::PhantomData, panic::Location};
+use std::{
+    borrow::Cow,
+    marker::PhantomData,
+    panic::Location,
+    sync::{atomic::AtomicUsize, Arc},
+};
 
 use crate::{
     circuit::{
@@ -33,6 +38,18 @@ where
         let result = self.inner().dyn_accumulate(&factories);
 
         unsafe { result.transmute_payload() }
+    }
+
+    /// Like [`Self::accumulate`], but also returns a reference to the enable count of the accumulator.
+    ///
+    /// Used to instantiate accumulators for output connectors. See `Accumulator::enable_count` documentation.
+    #[track_caller]
+    pub fn accumulate_with_enable_count(&self) -> (Stream<C, Option<Spine<B>>>, Arc<AtomicUsize>) {
+        let factories = BatchReaderFactories::new::<B::Key, B::Val, B::R>();
+
+        let (result, enable_count) = self.inner().dyn_accumulate_with_enable_count(&factories);
+
+        (unsafe { result.transmute_payload() }, enable_count)
     }
 
     #[track_caller]

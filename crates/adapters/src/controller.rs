@@ -1895,6 +1895,7 @@ impl CircuitThread {
         match self.controller.advance_transaction_state() {
             Some(TransactionState::Started(transaction_id)) => {
                 info!("Starting transaction {transaction_id}");
+                self.controller.increment_transaction_number();
                 self.circuit.start_transaction().unwrap_or_else(|e| {
                     self.controller.error(Arc::new(e.into()), None);
                     self.controller
@@ -1950,7 +1951,7 @@ impl CircuitThread {
             }
         } else {
             debug!("circuit thread: calling 'circuit.transaction'");
-
+            self.controller.increment_transaction_number();
             // FIXME: we're using "span" for both step() (above) and transaction() (here).
             SamplySpan::new(debug_span!("step"))
                 .in_scope(|| self.circuit.transaction())
@@ -2376,6 +2377,18 @@ impl CircuitThread {
             for (i, endpoint_id) in endpoints.iter().enumerate() {
                 let endpoint = outputs.lookup_by_id(endpoint_id).unwrap();
 
+                if endpoint.created_during_transaction_number
+                    == self.controller.get_transaction_number()
+                {
+                    trace!(
+                        "Output endpoint '{}' was created during the current transaction (seq. number {}) and will not receive any outputs until the next transaction.",
+                        endpoint.endpoint_name, endpoint.created_during_transaction_number
+                    );
+                    // We need to propagate processed_records to the connector for progress tracking.
+                    endpoint.queue.push((self.step, None, processed_records));
+                    endpoint.unparker.unpark();
+                    continue;
+                }
                 self.controller
                     .status
                     .enqueue_batch(*endpoint_id, num_delta_records);
@@ -2386,7 +2399,9 @@ impl CircuitThread {
                     delta_batch.as_ref().unwrap().clone()
                 };
 
-                endpoint.queue.push((self.step, batch, processed_records));
+                endpoint
+                    .queue
+                    .push((self.step, Some(batch), processed_records));
 
                 // Wake up the output thread.  We're not trying to be smart here and
                 // wake up the thread conditionally if it was previously idle, as I
@@ -3395,7 +3410,7 @@ impl Drop for StatisticsThread {
 /// that is equal to the number of input records fully processed by
 /// DBSP before emitting this batch of outputs or `None` if the circuit is
 /// executing a transaction.  The label increases monotonically over time.
-type BatchQueue = SegQueue<(Step, Arc<dyn SyncSerBatchReader>, Option<u64>)>;
+type BatchQueue = SegQueue<(Step, Option<Arc<dyn SyncSerBatchReader>>, Option<u64>)>;
 
 /// State tracked by the controller for each output endpoint.
 struct OutputEndpointDescr {
@@ -3404,6 +3419,10 @@ struct OutputEndpointDescr {
 
     /// Stream name that the endpoint is connected to.
     stream_name: String,
+
+    /// Transaction number when the endpoint was created.
+    /// 0 - the endpoint was created before the first transaction performed by the controller.
+    created_during_transaction_number: u64,
 
     /// FIFO queue of batches read from the stream.
     queue: Arc<BatchQueue>,
@@ -3417,12 +3436,18 @@ struct OutputEndpointDescr {
 }
 
 impl OutputEndpointDescr {
-    pub fn new(endpoint_name: &str, stream_name: &str, unparker: Unparker) -> Self {
+    pub fn new(
+        endpoint_name: &str,
+        stream_name: &str,
+        created_during_transaction_number: u64,
+        unparker: Unparker,
+    ) -> Self {
         Self {
             endpoint_name: endpoint_name.to_string(),
             stream_name: canonical_identifier(stream_name),
             queue: Arc::new(SegQueue::new()),
             disconnect_flag: Arc::new(AtomicBool::new(false)),
+            created_during_transaction_number,
             unparker,
         }
     }
@@ -3470,6 +3495,9 @@ impl OutputEndpoints {
         handles: OutputCollectionHandles,
         endpoint_descr: OutputEndpointDescr,
     ) {
+        // Enable the accumulator for this output stream.
+        // See `struct Accumulator::enable_count` for more details.
+        handles.enable_count.fetch_add(1, Ordering::Relaxed);
         self.by_stream
             .entry(endpoint_descr.stream_name.clone())
             .or_insert_with(|| (handles, BTreeSet::new()))
@@ -3482,7 +3510,12 @@ impl OutputEndpoints {
         self.by_id.remove(endpoint_id).inspect(|descr| {
             self.by_stream
                 .get_mut(&descr.stream_name)
-                .map(|(_, endpoints)| endpoints.remove(endpoint_id));
+                .map(|(handles, endpoints)| {
+                    // Disable the accumulator for this output stream.
+                    let count = handles.enable_count.fetch_sub(1, Ordering::Relaxed);
+                    assert!(count > 0);
+                    endpoints.remove(endpoint_id)
+                });
         })
     }
 
@@ -3543,23 +3576,25 @@ impl OutputBuffer {
     /// before this batch was produced or `None` if the circuit is executing a transaction.
     fn insert(
         &mut self,
-        batch: Arc<dyn SyncSerBatchReader>,
+        batch: Option<Arc<dyn SyncSerBatchReader>>,
         step: Step,
         processed_records: Option<u64>,
     ) {
-        if let Some(buffer) = &mut self.buffer {
-            for batch in batch.batches() {
-                buffer.insert(batch);
-            }
-        } else {
-            for batch in batch.batches() {
-                if let Some(buffer) = self.buffer.as_mut() {
+        if let Some(batch) = batch {
+            if let Some(buffer) = &mut self.buffer {
+                for batch in batch.batches() {
                     buffer.insert(batch);
-                } else {
-                    self.buffer = Some(batch.into_trace());
-                };
+                }
+            } else {
+                for batch in batch.batches() {
+                    if let Some(buffer) = self.buffer.as_mut() {
+                        buffer.insert(batch);
+                    } else {
+                        self.buffer = Some(batch.into_trace());
+                    };
+                }
+                self.buffer_since = Instant::now();
             }
-            self.buffer_since = Instant::now();
         }
         self.buffered_step = step;
         if let Some(records) = processed_records {
@@ -3669,6 +3704,15 @@ pub struct ControllerInner {
     // from the sync context by the circuit thread.
     transaction_info: Mutex<TransactionInfo>,
 
+    /// Current transaction number.
+    ///
+    /// This is not the same as transaction ID. We increment this counter
+    /// on each call to `circuit.transaction()` when not running a user-initiated transaction
+    /// or on each start_transaction() call when running a user-initiated transaction.
+    ///
+    /// The counter is 0 before the first transaction, 1 during the first transaction, etc.
+    transaction_number: AtomicU64,
+
     /// Is the circuit thread still restoring from a checkpoint (this includes the journal replay phase)?
     restoring: AtomicBool,
 }
@@ -3720,6 +3764,7 @@ impl ControllerInner {
             fault_tolerance: config.global.fault_tolerance.model,
             transaction_info: Mutex::new(TransactionInfo::new()),
             restoring: AtomicBool::new(config.global.fault_tolerance.is_enabled()),
+            transaction_number: AtomicU64::new(0),
         });
         controller.initialize_adhoc_queries();
 
@@ -3793,6 +3838,14 @@ impl ControllerInner {
             command_receiver,
             controller,
         ))
+    }
+
+    fn get_transaction_number(&self) -> u64 {
+        self.transaction_number.load(Ordering::Acquire)
+    }
+
+    fn increment_transaction_number(&self) {
+        self.transaction_number.fetch_add(1, Ordering::AcqRel);
     }
 
     fn input_endpoint_id_by_name(
@@ -4259,8 +4312,12 @@ impl ControllerInner {
         };
 
         let parker = Parker::new();
-        let endpoint_descr =
-            OutputEndpointDescr::new(endpoint_name, &stream_name, parker.unparker().clone());
+        let endpoint_descr = OutputEndpointDescr::new(
+            endpoint_name,
+            &stream_name,
+            self.get_transaction_number(),
+            parker.unparker().clone(),
+        );
         let queue = endpoint_descr.queue.clone();
         let disconnect_flag = endpoint_descr.disconnect_flag.clone();
         let controller = self.clone();
@@ -4367,7 +4424,7 @@ impl ControllerInner {
                 // buffer; we will check if the buffer needs to be flushed at the next iteration of
                 // the loop.  If buffering is disabled, push the buffer directly to the encoder.
 
-                let num_records = data.len();
+                let num_records = data.as_ref().map_or(0, |b| b.len());
 
                 // trace!("Pushing {num_records} records to output endpoint {endpoint_name}");
 
@@ -4389,14 +4446,16 @@ impl ControllerInner {
                         );
                     }
                 } else {
-                    Self::push_batch_to_encoder(
-                        data.as_ref(),
-                        endpoint_id,
-                        &endpoint_name,
-                        encoder.as_mut(),
-                        step,
-                        &controller,
-                    );
+                    if let Some(data) = data {
+                        Self::push_batch_to_encoder(
+                            data.as_ref(),
+                            endpoint_id,
+                            &endpoint_name,
+                            encoder.as_mut(),
+                            step,
+                            &controller,
+                        );
+                    }
 
                     // `num_records` output records have been transmitted --
                     // update output stats, wake up the circuit thread if the

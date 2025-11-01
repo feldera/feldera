@@ -1,6 +1,14 @@
-use std::{borrow::Cow, panic::Location};
+use std::{
+    borrow::Cow,
+    panic::Location,
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    },
+};
 
 use size_of::SizeOf;
+use typedmap::TypedMapKey;
 
 use crate::{
     circuit::{
@@ -11,13 +19,30 @@ use crate::{
             USED_BYTES_LABEL,
         },
         operator_traits::{Operator, UnaryOperator},
+        LocalStoreMarker,
     },
     circuit_cache_key,
     trace::{Batch, BatchReader, Spine, Trace},
-    Circuit, Error, NumEntries, Scope, Stream,
+    Circuit, Error, NumEntries, Runtime, Scope, Stream,
 };
 
-circuit_cache_key!(AccumulatorId<C, B: Batch>(StreamId => Stream<C, Option<Spine<B>>>));
+circuit_cache_key!(AccumulatorId<C, B: Batch>(StreamId => (Stream<C, Option<Spine<B>>>, Arc<AtomicUsize>)));
+
+/// `TypedMapKey` entry used to share `enable_count` across instances of the same accumulator in multiple workers.
+#[derive(Hash, PartialEq, Eq)]
+struct EnableCountId {
+    id: usize,
+}
+
+impl EnableCountId {
+    fn new(id: usize) -> Self {
+        Self { id }
+    }
+}
+
+impl TypedMapKey<LocalStoreMarker> for EnableCountId {
+    type Value = Arc<AtomicUsize>;
+}
 
 impl<C, B> Stream<C, B>
 where
@@ -26,14 +51,27 @@ where
 {
     /// See [`Stream::accumulate`].
     pub fn dyn_accumulate(&self, factories: &B::Factories) -> Stream<C, Option<Spine<B>>> {
+        let (stream, enable_count) = self.dyn_accumulate_with_enable_count(factories);
+        enable_count.fetch_add(1, Ordering::AcqRel);
+
+        stream
+    }
+
+    /// See [`Stream::accumulate_with_enable_count`].
+    pub fn dyn_accumulate_with_enable_count(
+        &self,
+        factories: &B::Factories,
+    ) -> (Stream<C, Option<Spine<B>>>, Arc<AtomicUsize>) {
         self.circuit()
             .cache_get_or_insert_with(AccumulatorId::new(self.stream_id()), || {
-                let stream = self.circuit().add_unary_operator(
-                    Accumulator::new(factories, Location::caller()),
-                    &self.try_sharded_version(),
-                );
+                let accumulator = Accumulator::new(factories, Location::caller());
+                let enable_count = accumulator.enable_count.clone();
+
+                let stream = self
+                    .circuit()
+                    .add_unary_operator(accumulator, &self.try_sharded_version());
                 stream.mark_sharded_if(self);
-                stream
+                (stream, enable_count)
             })
             .clone()
     }
@@ -53,6 +91,29 @@ where
 
     // Output batch sizes.
     output_batch_stats: BatchSizeStats,
+
+    /// Used to enable/disable the accumulator during a transaction.
+    ///
+    /// Most accumulators (created with dyn_accumulate()) are always enabled.
+    /// One special case is when the accumulator is used as part of an output handle
+    /// to collect updates to the output stream within a transaction. In this case,
+    /// if there is no output connector attached to the stream, there is no need to
+    /// store the updates (which during backfill can amount to storing a complete copy
+    /// of the table or view).
+    ///
+    /// This flag enables this optimization by keeping track of the number of consumers
+    /// of the accumulator's output. It is equal to the number of attached output connectors
+    /// plus the number of times the same accumulator was instantiated as part of a regular
+    /// (non-output) operator with dyn_accumulate().
+    enable_count: Arc<AtomicUsize>,
+
+    /// Whether the accumulator is enabled during the current transaction.
+    ///
+    /// An output connector can be attached in the middle of a transaction; however if the
+    /// accumulator was disabled at the start of the transaction, it shouldn't produce
+    /// partial outputs. This flag remembers the status of the accumulator at the start of the
+    /// transaction.
+    enabled_during_current_transaction: Option<bool>,
 }
 
 impl<B> Accumulator<B>
@@ -60,6 +121,19 @@ where
     B: Batch,
 {
     pub fn new(factories: &B::Factories, location: &'static Location<'static>) -> Self {
+        let enable_count = match Runtime::runtime() {
+            None => Arc::new(AtomicUsize::new(0)),
+            Some(runtime) => {
+                let accumulator_id = runtime.sequence_next();
+                runtime
+                    .local_store()
+                    .entry(EnableCountId::new(accumulator_id))
+                    .or_insert_with(|| Arc::new(AtomicUsize::new(0)))
+                    .value()
+                    .clone()
+            }
+        };
+
         Self {
             factories: factories.clone(),
             state: Spine::new(factories),
@@ -67,6 +141,8 @@ where
             location,
             input_batch_stats: BatchSizeStats::new(),
             output_batch_stats: BatchSizeStats::new(),
+            enable_count,
+            enabled_during_current_transaction: None,
         }
     }
 }
@@ -135,11 +211,29 @@ where
     B: Batch,
 {
     async fn eval(&mut self, batch: &B) -> Option<Spine<B>> {
-        self.input_batch_stats.add_batch(batch.len());
+        // We don't have a start-of-transaction signal, so we sample enable_count when
+        // we get the first non-empty batch.  This batch should belong to the next transaction
+        // after the last one that was flushed, since the accumulator should not receive any
+        // non-empty batches from the previous transaction at that point (in the top-level circuit).
+        // This may not be the first batch in the transaction, but it's ok to admit some empty batches.
+        let len = batch.len();
 
-        self.state.insert(batch.clone());
+        if len > 0 {
+            if self.enabled_during_current_transaction.is_none() {
+                self.enabled_during_current_transaction =
+                    Some(self.enable_count.load(Ordering::Acquire) > 0);
+            }
+
+            if self.enabled_during_current_transaction == Some(true) {
+                self.input_batch_stats.add_batch(len);
+                self.state.insert(batch.clone());
+            }
+        }
+
         if self.flush {
             self.flush = false;
+            self.enabled_during_current_transaction = None;
+
             let mut spine = Spine::<B>::new(&self.factories);
             std::mem::swap(&mut self.state, &mut spine);
 
@@ -151,11 +245,24 @@ where
     }
 
     async fn eval_owned(&mut self, batch: B) -> Option<Spine<B>> {
-        self.input_batch_stats.add_batch(batch.len());
+        let len = batch.len();
 
-        self.state.insert(batch);
+        if len > 0 {
+            if self.enabled_during_current_transaction.is_none() {
+                self.enabled_during_current_transaction =
+                    Some(self.enable_count.load(Ordering::Acquire) > 0);
+            }
+
+            if self.enabled_during_current_transaction == Some(true) {
+                self.input_batch_stats.add_batch(len);
+                self.state.insert(batch);
+            }
+        }
+
         if self.flush {
             self.flush = false;
+            self.enabled_during_current_transaction = None;
+
             let mut spine = Spine::<B>::new(&self.factories);
             std::mem::swap(&mut self.state, &mut spine);
 
