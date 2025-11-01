@@ -1,21 +1,29 @@
 name: Upload crates.io packages
 
+permissions:
+  contents: read
+  id-token: write
+
 on:
   workflow_call:
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to release (WARNING: Only use for emergency fixes, not for regular releases)"
+        required: false
+        type: string
 
 jobs:
   deploy:
     runs-on: [k8s-runners-amd64]
     environment:
       name: release
-    permissions:
-      contents: read
-      id-token: write
     container:
       image: ghcr.io/feldera/feldera-dev:sha-a6c448f6eaa832d34bd5d2f6b2b4167245a8de36
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
 
       - uses: rust-lang/crates-io-auth-action@v1
         id: auth

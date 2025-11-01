@@ -1,12 +1,17 @@
 name: Upload Python Package
 
-on:
-  workflow_call:
-  workflow_dispatch:
-
 permissions:
   contents: read
   id-token: write
+
+on:
+  workflow_call:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to release (WARNING: Only use for emergency fixes, not for regular releases)"
+        required: false
+        type: string
 
 defaults:
   run:
@@ -22,6 +27,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
       - name: Install uv
         uses: astral-sh/setup-uv@v2
         with:
