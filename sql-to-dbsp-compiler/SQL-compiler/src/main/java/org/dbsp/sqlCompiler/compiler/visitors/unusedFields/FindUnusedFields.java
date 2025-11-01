@@ -83,7 +83,7 @@ public class FindUnusedFields extends SymbolicInterpreter<FieldUseMap> {
         for (DBSPParameter param: this.parameterFieldMap.getParameters()) {
             FieldUseMap map = this.parameterFieldMap.get(param);
             DBSPType newType = Objects.requireNonNull(map.compressedType(depth));
-            newParam.substitute(param, new DBSPParameter(param.name, newType));
+            newParam.substitute(param, new DBSPParameter(param.getNode(), param.name, newType));
         }
         return new RewriteFields(
                 this.compiler, newParam, this.parameterFieldMap, depth);

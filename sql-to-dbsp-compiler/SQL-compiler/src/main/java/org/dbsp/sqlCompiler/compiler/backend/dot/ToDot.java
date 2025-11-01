@@ -12,7 +12,7 @@ import java.io.File;
 import java.io.IOException;
 import java.io.PrintWriter;
 
-/** Dump a graph in the graphviz dot format */
+/** Dump a graph in the graphviz dot format. */
 public class ToDot {
     public static void customDump(String fileName, @Nullable String outputFormat,
                                   DBSPCircuit circuit,
@@ -64,7 +64,12 @@ public class ToDot {
     static int counter = 0;
 
     /** Returns a circuit transform which can be inserted in the CircuitOptimizer to dump the
-     * circuit at some point */
+     * circuit at some point.
+     *
+     * details < 2: just graph topology
+     * details = 2: dump edge types, abbreviated if too large
+     * details = 3: dump source positions
+     * details >= 4: dump node functions and full types */
     public static CircuitTransform dumper(DBSPCompiler compiler, String file, int details) {
         return new CircuitTransform() {
             @Override

@@ -239,7 +239,7 @@ public class RecursiveComponents extends Passes {
                         DBSPViewDeclarationOperator view = result.to(DBSPViewDeclarationOperator.class);
                         Utilities.putNew(declByName, view.originalViewName(), view);
                     }
-                    result.setDerivedFrom(operator.derivedFrom);
+                    result.setDerivedFrom(operator);
                     this.map(simple, result, true);
                 }
             }
@@ -352,7 +352,7 @@ public class RecursiveComponents extends Passes {
 
             DBSPSimpleOperator result = operator.withInputs(sources, this.force)
                     .to(DBSPSimpleOperator.class);
-            result.setDerivedFrom(operator.derivedFrom);
+            result.setDerivedFrom(operator);
             block.addOperator(result);
             DBSPViewOperator view = result.as(DBSPViewOperator.class);
             OutputPort port = result.outputPort();

@@ -88,11 +88,16 @@ public abstract class DBSPOperator extends DBSPNode implements IDBSPOuterNode {
         return this.derivedFrom;
     }
 
+    /** Explicitly set the origin of this operator. */
     public void setDerivedFrom(long id) {
-        if (id != this.id) {
+        if (id != this.id && this.derivedFrom > id) {
             this.derivedFrom = id;
             Utilities.enforce(id < this.id);
         }
+    }
+
+    public void setDerivedFrom(DBSPOperator operator) {
+        this.setDerivedFrom(operator.getDerivedFrom());
     }
 
     protected void addInput(OutputPort port) {
@@ -153,7 +158,7 @@ public abstract class DBSPOperator extends DBSPNode implements IDBSPOuterNode {
         if (name != null)
             return name;
         String result = Long.toString(this.id);
-        if (this.derivedFrom >= 0)
+        if (this.derivedFrom >= 0 && this.derivedFrom != this.id)
             result += "(" + this.derivedFrom + ")";
         return result;
     }

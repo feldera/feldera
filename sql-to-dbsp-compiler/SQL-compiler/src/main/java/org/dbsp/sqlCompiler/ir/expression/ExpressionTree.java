@@ -1,5 +1,6 @@
 package org.dbsp.sqlCompiler.ir.expression;
 
+import org.dbsp.sqlCompiler.ir.DBSPParameter;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.statement.DBSPStatement;
 import org.dbsp.util.IIndentStream;
@@ -7,6 +8,7 @@ import org.dbsp.util.IndentStream;
 import org.dbsp.util.IndentStreamBuilder;
 
 import javax.annotation.CheckReturnValue;
+import javax.annotation.Nullable;
 import java.lang.reflect.Field;
 import java.lang.reflect.Modifier;
 import java.util.ArrayList;
@@ -33,7 +35,10 @@ public class ExpressionTree {
                 DBSPOpcode.class.isAssignableFrom(clazz);
     }
 
-    private static void asTree(IDBSPInnerNode node, IIndentStream stream) throws IllegalAccessException {
+    private static void asTree(@Nullable IDBSPInnerNode node, IIndentStream stream) throws IllegalAccessException {
+        if (node == null) {
+            return;
+        }
         Class<?> clazz = node.getClass();
         stream.append(node.getId())
                 .append(" ")
@@ -46,6 +51,9 @@ public class ExpressionTree {
             }
         }
 
+        if (node.getNode().getPositionRange().isValid()) {
+            stream.append(node.getNode().getPositionRange().toShortString());
+        }
         stream.increase();
         for (Field field : getAllFields(clazz)) {
             if (DBSPExpression.class.isAssignableFrom(field.getType())) {
@@ -60,7 +68,8 @@ public class ExpressionTree {
                 if (values != null) {
                     for (Object obj : values) {
                         field.setAccessible(true);
-                        if (obj instanceof DBSPExpression || obj instanceof DBSPStatement)
+                        if (obj instanceof DBSPExpression || obj instanceof DBSPStatement ||
+                                obj instanceof DBSPParameter)
                             asTree((IDBSPInnerNode) obj, stream);
                     }
                 }

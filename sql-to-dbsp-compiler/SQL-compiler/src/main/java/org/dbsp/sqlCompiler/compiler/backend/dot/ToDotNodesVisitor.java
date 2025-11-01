@@ -18,9 +18,12 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPViewBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWaterlineOperator;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 import org.dbsp.sqlCompiler.compiler.backend.rust.ToRustInnerVisitor;
+import org.dbsp.sqlCompiler.compiler.errors.SourcePositionRange;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.CircuitVisitor;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.LowerCircuitVisitor;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.ToJsonVisitor;
+import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.IDBSPOuterNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPFlatmap;
@@ -82,9 +85,12 @@ public class ToDotNodesVisitor extends CircuitVisitor {
                 .append(node.getIdString())
                 .append(isMultiset(node))
                 .append(annotations(node))
-                .append(" ")
-                .append(getFunction(node))
-                .append("\" ]")
+                .append(" ");
+        if (this.details >= 2)
+            this.stream.append(getFunction(node));
+         else
+            this.stream.append("constant ...");
+        this.stream.append("\" ]")
                 .newline();
         return VisitDecision.STOP;
     }
@@ -141,10 +147,26 @@ public class ToDotNodesVisitor extends CircuitVisitor {
         return escapedString.toString();
     }
 
+    String getPositions(IDBSPInnerNode node) {
+        StringBuilder result = new StringBuilder();
+        ToJsonVisitor.FindSourcePositions finder = new ToJsonVisitor.FindSourcePositions(this.compiler, true);
+        finder.apply(node);
+        for (SourcePositionRange r : finder.getPositions()) {
+            result.append(r.toShortString());
+        }
+        return result.toString();
+    }
+
     String convertFunction(DBSPExpression expression) {
-        String result = ToRustInnerVisitor.toRustString(this.compiler(), expression, null, true);
-        result = escapeString(result);
-        result = result.replace("\n", "\\l");
+        String result = "";
+        if (this.details > 3) {
+            String f = ToRustInnerVisitor.toRustString(this.compiler(), expression, null, true);
+            f = escapeString(f);
+            result = f.replace("\n", "\\l");
+        }
+        if (this.details >= 3) {
+            result += getPositions(expression);
+        }
         return result;
     }
 
@@ -153,16 +175,25 @@ public class ToDotNodesVisitor extends CircuitVisitor {
         if (node.is(DBSPAggregateOperatorBase.class)) {
             DBSPAggregateOperatorBase aggregate = node.to(DBSPAggregateOperatorBase.class);
             if (aggregate.aggregateList != null) {
-                return aggregate.aggregateList.toString();
+                if (this.details > 3) {
+                    return aggregate.aggregateList.toString();
+                } else if (details >= 3) {
+                    return this.getPositions(aggregate.aggregateList);
+                }
             }
         } else if (node.is(DBSPPartitionedRollingAggregateWithWaterlineOperator.class)) {
             DBSPPartitionedRollingAggregateWithWaterlineOperator aggregate =
                     node.to(DBSPPartitionedRollingAggregateWithWaterlineOperator.class);
             if (aggregate.aggregateList != null) {
-                return aggregate.aggregateList.toString();
+                if (this.details > 3) {
+                    return aggregate.aggregateList.toString();
+                } else if (this.details >= 3) {
+                    return this.getPositions(aggregate.aggregateList);
+                }
             }
-        } else if (node.is(DBSPChainOperator.class)) {
-            return node.to(DBSPChainOperator.class).chain.toString();
+        } else if (node.is(DBSPChainOperator.class) && this.details > 3) {
+            String chain = node.to(DBSPChainOperator.class).chain.toString();
+            return escapeString(chain);
         }
         if (expression == null)
             return "";
@@ -233,7 +264,7 @@ public class ToDotNodesVisitor extends CircuitVisitor {
                 .append(" ")
                 .append(shorten(node.operation))
                 .append(node.comment != null ? node.comment : "");
-        if (this.details > 3) {
+        if (this.details >= 3) {
             this.stream
                     .append("(")
                     .append(this.getFunction(node))
@@ -256,7 +287,7 @@ public class ToDotNodesVisitor extends CircuitVisitor {
                 .append(" ")
                 .append(shorten(node.operation))
                 .append(node.comment != null ? node.comment : "");
-        if (this.details > 3) {
+        if (this.details >= 3) {
             this.stream
                     .append("(")
                     .append(this.getFunction(node))
@@ -315,7 +346,7 @@ public class ToDotNodesVisitor extends CircuitVisitor {
                 .append(shorten(node.operation))
                 .append(annotations(node))
                 .append("|<p1> E");
-        if (this.details > 3) {
+        if (this.details >= 3) {
             this.stream
                     .append("(")
                     // additional quoting needed in operators with ports
@@ -341,7 +372,7 @@ public class ToDotNodesVisitor extends CircuitVisitor {
                 .append(" ")
                 .append(shorten(node.operation))
                 .append(node.comment != null ? node.comment : "");
-        if (this.details > 3) {
+        if (this.details >= 3) {
             this.stream
                     .append("(")
                     .append(this.convertFunction(node.init))

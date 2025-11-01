@@ -19,6 +19,7 @@ public class CalciteRexNode extends CalciteObject {
     final RexNode rexNode;
 
     CalciteRexNode(@Nullable RelNode relNode, RexNode rexNode) {
+        super(extractPosition(rexNode));
         this.context = relNode;
         this.rexNode = rexNode;
     }
@@ -28,19 +29,15 @@ public class CalciteRexNode extends CalciteObject {
         return false;
     }
 
-    public SourcePositionRange getPositionRange() {
-        if (this.rexNode instanceof RexCall)
-            return new SourcePositionRange(((RexCall)this.rexNode).getParserPosition());
-        return super.getPositionRange();
+    static SourcePositionRange extractPosition(RexNode rexNode) {
+        if (rexNode instanceof RexCall)
+            return new SourcePositionRange(((RexCall)rexNode).getParserPosition());
+        return SourcePositionRange.INVALID;
     }
 
     @Override
     public String toString() {
         try {
-            SourcePositionRange pos = this.getPositionRange();
-            if (pos.isValid())
-                return "";
-
             SqlImplementor.Context context = new SqlImplementor.SimpleContext(
                     CalciteRelNode.DIALECT,
                     i -> {
@@ -56,12 +53,12 @@ public class CalciteRexNode extends CalciteObject {
             SqlNode node = context.toSql(null, rexNode);
             if (node != null) {
                 SqlString string = node.toSqlString(CalciteRelNode.DIALECT);
-                return string.toString();
+                return string.toString() + this.position.toShortString();
             } else {
-                return this.rexNode.toString();
+                return this.rexNode + this.position.toShortString();
             }
         } catch (Throwable ex) {
-            return this.rexNode.toString();
+            return this.rexNode + this.position.toShortString();
         }
     }
 }

@@ -940,7 +940,7 @@ public abstract class InnerRewriteVisitor
                 }, DBSPParameter.class);
         DBSPExpression body = this.transform(expression.body);
         this.pop(expression);
-        DBSPExpression result = body.closure(parameters);
+        DBSPExpression result = body.closure(expression.getNode(), parameters);
         this.map(expression, result);
         return VisitDecision.STOP;
     }

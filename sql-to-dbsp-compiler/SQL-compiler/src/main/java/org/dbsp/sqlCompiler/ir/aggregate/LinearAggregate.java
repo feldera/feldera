@@ -165,7 +165,7 @@ public class LinearAggregate extends IAggregate {
 
     @Override
     public IIndentStream toString(IIndentStream builder) {
-        builder.append("[").increase();
+        builder.append("LinearAggregate[").increase();
         builder.append("increment=")
                 .append(this.map)
                 .newline()
