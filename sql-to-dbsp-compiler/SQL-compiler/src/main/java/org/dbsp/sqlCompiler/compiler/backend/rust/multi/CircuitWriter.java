@@ -110,9 +110,9 @@ public final class CircuitWriter extends BaseRustCodeGenerator {
             }
             for (DBSPViewBaseOperator output: circuit.sinkOperators.values()) {
                 DBSPType outputType = output.input().outputType();
-                signature.append("OutputHandle<");
+                signature.append("OutputHandle<SpineSnapshot<");
                 outputType.accept(inner);
-                signature.append(">,").newline();
+                signature.append(">>,").newline();
             }
             signature.decrease().append(")");
         }

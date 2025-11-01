@@ -72,7 +72,7 @@ use dbsp::{
         ord::{OrdIndexedWSetBuilder, OrdWSetBuilder},
         BatchReader, BatchReaderFactories, Builder, Cursor,
     },
-    typed_batch::TypedBatch,
+    typed_batch::{SpineSnapshot, TypedBatch},
     utils::*,
     DBData, MapHandle, OrdIndexedZSet, OrdZSet, OutputHandle, ZSetHandle, ZWeight,
 };
@@ -1135,6 +1135,14 @@ where
     handle.consolidate()
 }
 
+#[doc(hidden)]
+pub fn read_output_spine<K>(handle: &OutputHandle<SpineSnapshot<WSet<K>>>) -> WSet<K>
+where
+    K: DBData,
+{
+    handle.concat().consolidate()
+}
+
 // Check that two zsets are equal.  If yes, returns true.
 // If not, print a diff of the zsets and returns false.
 // Assumes that the zsets are positive (all weights are positive).
@@ -1149,17 +1157,42 @@ where
         return true;
     }
     let mut cursor = diff.cursor();
+    let mut shown = 0;
+    let mut left = 0;
+    let mut right = 0;
     while cursor.key_valid() {
         let weight = **cursor.weight();
         let key = cursor.key();
-        if weight.le0() {
-            println!("R: {:?}x{:?}", key, weight.neg());
+        if shown < 50 {
+            if weight.le0() {
+                println!("R: {:?}x{:?}", key, weight.neg());
+            } else {
+                println!("L: {:?}x{:?}", key, weight);
+            }
+        } else if weight.le0() {
+            right += weight.neg();
         } else {
-            println!("L: {:?}x{:?}", key, weight);
+            left += weight;
         }
         cursor.step_key();
+        shown += 1;
+    }
+    if left > 0 || right > 0 {
+        println!("Additional L:{left} and R:{right} rows not shown");
     }
     false
+}
+
+#[doc(hidden)]
+pub fn zset_size<K>(set: &WSet<K>) -> i64 {
+    let mut w = 0;
+    let mut cursor = set.cursor();
+    while cursor.key_valid() {
+        let weight = **cursor.weight();
+        w += weight;
+        cursor.step_key();
+    }
+    w
 }
 
 //////////////////////// Semigroup implementations

@@ -115,6 +115,26 @@ public record TableData(ProgramIdentifier name, DBSPZSetExpression data, List<In
         }
     }
 
+    /** Create an expression that will evaluate to the contents of this table.
+     * If necessary and possible, write the data to a file and generate code to read it. */
+    public DBSPExpression createOutput(DBSPCompiler compiler, String name, String directory) throws IOException {
+        HasDecimalOrDate hd = new HasDecimalOrDate(compiler);
+        hd.apply(this.data);
+        if (this.data().size() > 30 && !hd.found) {
+            // System.out.println("Large output: " + this.data().totalWeight() + " rows");
+            // If the data is large, write it to a CSV file and read it at runtime.
+            String fileName = (Paths.get(directory, name)) + ".csv";
+            File file = new File(fileName);
+            file.deleteOnExit();
+            ToCsvVisitor.toCsv(compiler, file, this.data());
+            return new DBSPApplyExpression(CalciteObject.EMPTY, "read_csv",
+                    this.data().getType(),
+                    new DBSPStrLiteral(fileName, false));
+        } else {
+            return this.data();
+        }
+    }
+
     /**
      * Generate a Rust function which produces the inputs specified by 'tables'.
      * @param name    Name for the created function.
@@ -132,7 +152,7 @@ public record TableData(ProgramIdentifier name, DBSPZSetExpression data, List<In
                 throw new RuntimeException("Table " + tables[i].name + " already in input");
             seen.add(tables[i].name);
 
-            if (tables[i].data.size() < 100)
+            if (tables[i].data.size() < 30)
                 continue;
             HasDecimalOrDate hd = new HasDecimalOrDate(compiler);
             hd.apply(tables[i].data);

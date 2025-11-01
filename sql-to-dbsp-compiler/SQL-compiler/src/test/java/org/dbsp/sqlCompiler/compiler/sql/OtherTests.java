@@ -450,7 +450,7 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
                     // Execute the circuit on these inputs
                     circuit.transaction().unwrap();
                     // Read the produced output
-                    let out = adult.consolidate();
+                    let out = adult.concat().consolidate();
                     // Print the produced output
                     println!("{:?}", out);
                 }

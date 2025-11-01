@@ -281,9 +281,9 @@ public class ToRustVisitor extends CircuitVisitor {
             }
             for (DBSPViewBaseOperator output: circuit.sinkOperators.values()) {
                 DBSPType outputType = output.input().outputType();
-                signature.append("OutputHandle<");
+                signature.append("OutputHandle<SpineSnapshot<");
                 outputType.accept(inner);
-                signature.append(">,").newline();
+                signature.append(">>,").newline();
             }
             signature.decrease().append(")");
         }
@@ -1017,7 +1017,7 @@ public class ToRustVisitor extends CircuitVisitor {
                     .append(this.handleName(operator))
                     .append(" = ")
                     .append(this.getInputName(operator, 0))
-                    .append(".output");
+                    .append(".accumulate_output");
             if (this.preferHash) {
                 this.builder.append("();").newline();
             } else {

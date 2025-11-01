@@ -214,6 +214,13 @@ public final class DBSPZSetExpression extends DBSPExpression
         return this.data.size();
     }
 
+    public long totalWeight() {
+        long result = 0;
+        for (var w: this.data.values())
+            result += w;
+        return result;
+    }
+
     public DBSPZSetExpression minus(DBSPZSetExpression sub) {
         DBSPZSetExpression result = this.clone();
         result.append(sub.negate());
