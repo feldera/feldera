@@ -246,8 +246,9 @@ class TstAccumulator:
             # assert_expected_error can pattern-match both against the expected error substring.
             if pipeline is not None:
                 deployment_error = pipeline.deployment_error()
-                if deployment_error:
-                    raise DeploymentErrorException(deployment_error, e)
+                if deployment_error is not None and deployment_error:
+                    # Convert deployment_error dict to string for exception
+                    raise DeploymentErrorException(str(deployment_error), e)
             raise
         finally:
             # Try to get the pipelines that were created by
