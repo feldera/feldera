@@ -253,7 +253,7 @@ public class PropagateEmptySources extends CircuitCloneVisitor {
         // Empty right input -> result is left input
         OutputPort right = this.mapped(operator.right());
         if (this.emptySources.contains(right.node())) {
-            this.map(operator.outputPort(), operator.left(), false);
+            this.map(operator.outputPort(), left, false);
             return;
         }
         super.postorder(operator);
