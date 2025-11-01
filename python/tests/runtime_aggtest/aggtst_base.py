@@ -145,6 +145,37 @@ class View(SqlObject):
                 data, expected, f"\nASSERTION ERROR: failed view: {self.name}"
             )
 
+class DeploymentErrorException(Exception):
+    """Adds deployment error information to an exception.
+
+    This wrapper is used to address the following race that occurs in negative tests:
+
+    - Pipeline panics during a negative test (as expected)
+    - The client keeps polling the pipeline, e.g., with /completion_status.
+    - Before the client request hits the pipeline, the runner detects the
+      panic and starts stopping the pipeline.
+    - At this point, instead of an error indicating that the pipeline failed
+      with a panic, the client will get back a different error - that the
+      manager cannot interact with the pipeline in the stopping state.
+      The problem with this is that the test expects the exception to
+      contain a specific substring, and will fail if the string is not
+      found.
+
+    To address this, this wrapper enriches the exception thrown
+    by the pipeline with the text in the deployment_error field of the
+    pipeline.
+    """
+
+    def __init__(self, deployment_error: str, original_exception: Exception):
+        self.deployment_error = deployment_error
+        self.original_exception = original_exception
+        super().__init__(deployment_error)
+
+    def __str__(self) -> str:
+        return (
+            f"{str(self.original_exception)}\n"
+            f"Pipeline deployment error: {self.deployment_error}"
+        )
 
 class TstAccumulator:
     """Base class which accumulates multiple DBSP tests to run and executes them"""
@@ -210,6 +241,14 @@ class TstAccumulator:
 
             for view in views:
                 view.validate(pipeline)
+        except Exception as e:
+            # Augment exception with deployment error if available so that
+            # assert_expected_error can pattern-match both against the expected error substring.
+            if pipeline is not None:
+                deployment_error = pipeline.deployment_error()
+                if deployment_error:
+                    raise DeploymentErrorException(deployment_error, e)
+            raise
         finally:
             # Try to get the pipelines that were created by
             # `PipelineBuilder` but failed to compile.
