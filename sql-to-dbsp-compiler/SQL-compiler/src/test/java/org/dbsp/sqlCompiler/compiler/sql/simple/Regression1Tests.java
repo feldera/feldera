@@ -1266,16 +1266,16 @@ public class Regression1Tests extends SqlIoTest {
         });
         // Validated using Postgres
         ccs.step("""
-				INSERT INTO T (id, step, en, ss, ts) VALUES (1, TRUE, 'alpha', 10, 590);
-                INSERT INTO T (id, step, en, ss, ts) VALUES (2, FALSE, 'beta', 10, 593);
-                INSERT INTO T (id, step, en, ss, ts) VALUES (1, TRUE, 'alpha', 10, 597);
-                INSERT INTO T (id, step, en, ss, ts) VALUES (2, FALSE, 'alpha', 25, 600);
-                INSERT INTO T (id, step, en, ss, ts) VALUES (1, TRUE, 'gamma', 10, 604);
-                INSERT INTO T (id, step, en, ss, ts) VALUES (2, FALSE, 'eta', 12, 608);
-                INSERT INTO T (id, step, en, ss, ts) VALUES (1, TRUE, 'beta', 10, 116);
-                INSERT INTO T (id, step, en, ss, ts) VALUES (2, FALSE, 'gamma', 25, 615);
-                INSERT INTO T (id, step, en, ss, ts) VALUES (1, TRUE, 'delta', 20, 618);
-                INSERT INTO T (id, step, en, ss, ts) VALUES (2, FALSE, 'gamma', 25, 622);""",
+                        INSERT INTO T (id, step, en, ss, ts) VALUES (1, TRUE, 'alpha', 10, 590);
+                        INSERT INTO T (id, step, en, ss, ts) VALUES (2, FALSE, 'beta', 10, 593);
+                        INSERT INTO T (id, step, en, ss, ts) VALUES (1, TRUE, 'alpha', 10, 597);
+                        INSERT INTO T (id, step, en, ss, ts) VALUES (2, FALSE, 'alpha', 25, 600);
+                        INSERT INTO T (id, step, en, ss, ts) VALUES (1, TRUE, 'gamma', 10, 604);
+                        INSERT INTO T (id, step, en, ss, ts) VALUES (2, FALSE, 'eta', 12, 608);
+                        INSERT INTO T (id, step, en, ss, ts) VALUES (1, TRUE, 'beta', 10, 116);
+                        INSERT INTO T (id, step, en, ss, ts) VALUES (2, FALSE, 'gamma', 25, 615);
+                        INSERT INTO T (id, step, en, ss, ts) VALUES (1, TRUE, 'delta', 20, 618);
+                        INSERT INTO T (id, step, en, ss, ts) VALUES (2, FALSE, 'gamma', 25, 622);""",
                 """
                  id | step | en   | ss | ts  | x |     y |     z | weight
                 ----------------------------- ----------------------------
@@ -1289,6 +1289,21 @@ public class Regression1Tests extends SqlIoTest {
                  2 | false | eta|	12 | 608 | 0 | false | false | 1
                  2 | false | gamma|	25 | 615 | 0 | false | false | 1
                  2 | false | gamma|	25 | 622 | 0 | false | false | 1""");
+    }
+
+    @Test
+    public void testSlt() {
+        this.getCC("""
+                CREATE TABLE tab0(
+                pk INTEGER, col0 INTEGER, col1 REAL, col2 TEXT, col3 INTEGER, col4 REAL, col5 TEXT);
+                
+                CREATE VIEW V AS SELECT pk FROM tab0 WHERE col4 IS NULL AND ((col3 >= 4) OR col1 < 6.94 OR
+                 (((col1 BETWEEN 7.86 AND 3.33) AND (col3 > 3 AND col1 <= 3.18 AND col0 > 4 AND col4 < 2.65)
+                 AND (col0 IS NULL))) OR col4 BETWEEN 2.56 AND 1.46 AND col3 < 5) OR col1 BETWEEN 0.15 AND 9.37 AND
+                 (col3 IS NULL AND ((col4 > 0.44))) OR (col4 > 0.89 AND (col0 <= 6) OR col0 IS NULL OR col4 <= 5.72 AND
+                 (col4 <= 0.76 AND col4 > 1.83 OR (col1 >= 0.82) AND (col3 > 1)) AND ((col0 <= 7 AND col4 > 2.76))
+                 OR col0 > 0 AND (col4 IS NULL) AND (col3 IN (5)) AND
+                 col0 IN (SELECT col3 FROM tab0 WHERE col3 IS NULL)) OR (col0 IS NULL AND col0 = 7 AND col0 IS NULL)""");
     }
 }
  
