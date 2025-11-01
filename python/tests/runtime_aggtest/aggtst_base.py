@@ -145,6 +145,7 @@ class View(SqlObject):
                 data, expected, f"\nASSERTION ERROR: failed view: {self.name}"
             )
 
+
 class DeploymentErrorException(Exception):
     """Adds deployment error information to an exception.
 
@@ -176,6 +177,7 @@ class DeploymentErrorException(Exception):
             f"{str(self.original_exception)}\n"
             f"Pipeline deployment error: {self.deployment_error}"
         )
+
 
 class TstAccumulator:
     """Base class which accumulates multiple DBSP tests to run and executes them"""
