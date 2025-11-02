@@ -298,6 +298,19 @@ impl ServerState {
         }
     }
 
+    /// Replaces `e` with a missing controller error if the controller is not set.
+    ///
+    /// Some endpoints can fail due to a panic that happens while the endpoint was running.
+    /// This function checks for this situation  and returns a missing controller error
+    /// instead of `e`.
+    fn maybe_missing_controller_error(&self, e: ControllerError) -> PipelineError {
+        if let Err(missing_controller_error) = self.controller() {
+            missing_controller_error
+        } else {
+            e.into()
+        }
+    }
+
     /// Grabs a clone of the controller, or an error if there isn't one.
     fn controller(&self) -> Result<Controller, PipelineError> {
         self.controller
@@ -1964,7 +1977,11 @@ async fn completion_status(
     let token = CompletionToken::decode(&args.token).map_err(|e| PipelineError::InvalidParam {
         error: format!("invalid completion token: {e}"),
     })?;
-    if state.controller()?.completion_status(&token)? {
+    if state
+        .controller()?
+        .completion_status(&token)
+        .map_err(|e| state.maybe_missing_controller_error(e))?
+    {
         Ok(HttpResponse::Ok().json(CompletionStatusResponse::complete()))
     } else {
         Ok(HttpResponse::Accepted().json(CompletionStatusResponse::inprogress()))
