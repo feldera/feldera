@@ -708,7 +708,13 @@ pub async fn run(
                     .app_data(auth_configuration.clone())
                     .app_data(client)
                     .wrap_fn(|req, srv| {
-                        trace!("Request: {} {}", req.method(), req.path());
+                        let log_level = if req.method() == Method::GET && req.path() == "/healthz" {
+                            Level::Trace
+                        } else {
+                            Level::Debug
+                        };
+
+                        log!(log_level, "Request: {} {}", req.method(), req.path());
                         srv.call(req).map(log_response)
                     })
                     .wrap(api_config.cors())
