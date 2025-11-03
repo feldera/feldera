@@ -685,3 +685,24 @@ class illarg_map_contains_key_illegal(TstView):
                       MAP_CONTAINS_KEY(bin, 'a')  AS str
                       FROM illegal_tbl"""
         self.expected_error = "Cannot apply 'MAP_CONTAINS_KEY' to arguments of type"
+
+
+# MAP_KEYS function
+class illarg_map_keys_legal(TstView):
+    def __init__(self):
+        # checked manually
+        self.data = [{"mapp": ["a", "b"]}]
+        self.sql = """CREATE MATERIALIZED VIEW map_keys_legal AS SELECT
+                      MAP_KEYS(mapp) AS mapp
+                      FROM illegal_tbl
+                      WHERE id = 0"""
+
+
+# Negative Test
+class illarg_map_keys_illegal(TstView):
+    def __init__(self):
+        # checked manually
+        self.sql = """CREATE MATERIALIZED VIEW map_keys_illegal AS SELECT
+                      MAP_KEYS(uuidd) AS uuidd
+                      FROM illegal_tbl"""
+        self.expected_error = "Cannot apply 'MAP_KEYS' to arguments of type"
