@@ -17,6 +17,7 @@ use crate::{
 use crate::{dyn_event, Catalog};
 use actix_web::body::MessageBody;
 use actix_web::dev::Service;
+use actix_web::http::KeepAlive;
 use actix_web::{
     dev::{ServiceFactory, ServiceRequest},
     get,
@@ -747,6 +748,8 @@ pub fn run_server(
     // https://github.com/rust-lang/rust/issues/74479#issuecomment-717097590
     .workers(workers)
     .worker_max_blocking_threads(std::cmp::max(512 / workers, 1))
+    .keep_alive(KeepAlive::Timeout(Duration::from_secs(30)))
+    .max_connection_rate(1000)
     // Set timeout for graceful shutdown of workers.
     // The default in actix is 30s. We may consider making this configurable.
     .shutdown_timeout(10);
