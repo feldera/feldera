@@ -11,10 +11,10 @@
   }
 
   let pipelinesRelations = $state<
-    Record<string, Record<string, ExtraType & { type: 'tables' | 'views' }>>
+    Record<string, Record<string, Record<string, ExtraType & { type: 'tables' | 'views' }>>>
   >({})
   const pipelineActionCallbacks = usePipelineActionCallbacks()
-  let changeStream: Record<string, ChangeStreamData> = {} // Initialize row array
+  let changeStream: Record<string, Record<string, ChangeStreamData>> = {} // Initialize row array nested by tenant and pipeline
   // Separate getRows as a $state avoids burdening rows array itself with reactivity overhead
   let getChangeStream = $state(() => changeStream)
 
@@ -46,27 +46,28 @@
   }
   const startReadingStream = (
     api: PipelineManagerApi,
+    tenantName: string,
     pipelineName: string,
     relationName: string
   ) => {
     const request = api.relationEgressStream(pipelineName, relationName).then((result) => {
       if (result instanceof Error) {
-        pipelinesRelations[pipelineName][relationName].cancelStream = undefined
+        pipelinesRelations[tenantName][pipelineName][relationName].cancelStream = undefined
         return undefined
       }
       const { cancel } = parseCancellable(
         result,
         {
           pushChanges: (rows: XgressEntry[]) => {
-            const initialLen = changeStream[pipelineName].rows.length
+            const initialLen = changeStream[tenantName][pipelineName].rows.length
             const lastRelationName = ((headerIdx) =>
               headerIdx !== undefined
                 ? ((header) => (header && 'relationName' in header ? header.relationName : null))(
-                    changeStream[pipelineName].rows[headerIdx]
+                    changeStream[tenantName][pipelineName].rows[headerIdx]
                   )
-                : null)(changeStream[pipelineName].headers.at(-1))
+                : null)(changeStream[tenantName][pipelineName].headers.at(-1))
             const offset = pushAsCircularBuffer(
-              () => changeStream[pipelineName].rows,
+              () => changeStream[tenantName][pipelineName].rows,
               bufferSize,
               (v: Row) => v
             )(
@@ -78,7 +79,7 @@
                         columns: Object.keys(
                           ((row) => ('insert' in row ? row.insert : row.delete))(rows[0])
                         ).map((name) => {
-                          return pipelinesRelations[pipelineName][relationName].fields[
+                          return pipelinesRelations[tenantName][pipelineName][relationName].fields[
                             normalizeCaseIndependentName({ name })
                           ]
                         })
@@ -88,22 +89,22 @@
               ].concat(rows)
             )
             if (relationName !== lastRelationName) {
-              changeStream[pipelineName].headers.push(initialLen)
+              changeStream[tenantName][pipelineName].headers.push(initialLen)
             }
-            changeStream[pipelineName].headers = changeStream[pipelineName].headers
+            changeStream[tenantName][pipelineName].headers = changeStream[tenantName][pipelineName].headers
               .map((i) => i - offset)
               .filter((i) => i >= 0)
           },
           onBytesSkipped: (skippedBytes) => {
             pushAsCircularBuffer(
-              () => changeStream[pipelineName].rows,
+              () => changeStream[tenantName][pipelineName].rows,
               bufferSize,
               (v) => v
             )([{ relationName, skippedBytes }])
-            changeStream[pipelineName].totalSkippedBytes += skippedBytes
+            changeStream[tenantName][pipelineName].totalSkippedBytes += skippedBytes
           },
           onParseEnded: () =>
-            (pipelinesRelations[pipelineName][relationName].cancelStream = undefined)
+            (pipelinesRelations[tenantName][pipelineName][relationName].cancelStream = undefined)
         },
         new CustomJSONParserTransformStream<XgressEntry>({
           paths: ['$.json_data.*'],
@@ -120,44 +121,55 @@
     return () => {
       request.then((cancel) => {
         cancel?.()
-        pipelinesRelations[pipelineName][relationName].cancelStream = undefined
-        ;({ rows: changeStream[pipelineName].rows, headers: changeStream[pipelineName].headers } =
+        pipelinesRelations[tenantName][pipelineName][relationName].cancelStream = undefined
+        ;({ rows: changeStream[tenantName][pipelineName].rows, headers: changeStream[tenantName][pipelineName].headers } =
           filterOutRows(
-            changeStream[pipelineName].rows,
-            changeStream[pipelineName].headers,
+            changeStream[tenantName][pipelineName].rows,
+            changeStream[tenantName][pipelineName].headers,
             relationName
           ))
         getChangeStream = () => changeStream
       })
     }
   }
-  const registerPipelineName = (api: PipelineManagerApi, pipelineName: string) => {
-    if (pipelinesRelations[pipelineName]) {
+  const registerPipelineName = (api: PipelineManagerApi, tenantName: string, pipelineName: string) => {
+    if (!pipelinesRelations[tenantName]) {
+      pipelinesRelations[tenantName] = {}
+    }
+    if (pipelinesRelations[tenantName][pipelineName]) {
       return
     }
-    pipelinesRelations[pipelineName] = {}
-    changeStream[pipelineName] = { rows: [], headers: [], totalSkippedBytes: 0 }
+    pipelinesRelations[tenantName][pipelineName] = {}
+    if (!changeStream[tenantName]) {
+      changeStream[tenantName] = {}
+    }
+    changeStream[tenantName][pipelineName] = { rows: [], headers: [], totalSkippedBytes: 0 }
     pipelineActionCallbacks.add(pipelineName, 'start_paused', async () => {
-      const relations = Object.entries(pipelinesRelations[pipelineName])
+      const relations = Object.entries(pipelinesRelations[tenantName][pipelineName])
         .filter((relation) => relation[1].selected)
         .map((relation) => relation[0])
       for (const relationName of relations) {
-        changeStream[pipelineName] = { rows: [], headers: [], totalSkippedBytes: 0 } // Clear row buffer when starting pipeline again
+        changeStream[tenantName][pipelineName] = { rows: [], headers: [], totalSkippedBytes: 0 } // Clear row buffer when starting pipeline again
         getChangeStream = () => changeStream
-        if (pipelinesRelations[pipelineName][relationName].cancelStream) {
+        if (pipelinesRelations[tenantName][pipelineName][relationName].cancelStream) {
           return
         }
-        pipelinesRelations[pipelineName][relationName].cancelStream = startReadingStream(
+        pipelinesRelations[tenantName][pipelineName][relationName].cancelStream = startReadingStream(
           api,
+          tenantName,
           pipelineName,
           relationName
         )
       }
     })
   }
-  const dropChangeStreamHistory = async (pipelineName: string) => {
-    delete pipelinesRelations[pipelineName]
-    delete changeStream[pipelineName]
+  const dropChangeStreamHistory = async (tenantName: string, pipelineName: string) => {
+    if (pipelinesRelations[tenantName]) {
+      delete pipelinesRelations[tenantName][pipelineName]
+    }
+    if (changeStream[tenantName]) {
+      delete changeStream[tenantName][pipelineName]
+    }
   }
 </script>
 
@@ -189,33 +201,40 @@
   } from '$lib/compositions/usePipelineManager.svelte'
   import { useProtocol } from '$lib/compositions/useProtocol'
   import Tooltip from '$lib/components/common/Tooltip.svelte'
+  import { getSelectedTenant } from '$lib/services/auth'
 
   let { pipeline }: { pipeline: { current: ExtendedPipeline } } = $props()
 
   let pipelineName = $derived(pipeline.current.name)
+  let tenantName = $derived(getSelectedTenant() || '')
 
   const protocol = useProtocol()
   const maxStreamsOnHttp = 4
 
   let selectedRelationsCount = $derived(
-    count(Object.values(pipelinesRelations), (relations) =>
-      count(Object.values(relations), (r) => r.selected)
+    count(Object.values(pipelinesRelations), (tenantRelations) =>
+      count(Object.values(tenantRelations), (relations) =>
+        count(Object.values(relations), (r) => r.selected)
+      )
     )
   )
 
-  const reloadSchema = async (pipelineName: string, pipeline: ExtendedPipeline) => {
+  const reloadSchema = async (tenantName: string, pipelineName: string, pipeline: ExtendedPipeline) => {
     const schema = pipeline.programInfo?.schema
     if (!schema) {
       return
     }
-    registerPipelineName(api, pipelineName)
-    const oldSchema = pipelinesRelations[pipelineName]
-    pipelinesRelations[pipelineName] = {}
+    registerPipelineName(api, tenantName, pipelineName)
+    const oldSchema = pipelinesRelations[tenantName]?.[pipelineName]
+    if (!pipelinesRelations[tenantName]) {
+      pipelinesRelations[tenantName] = {}
+    }
+    pipelinesRelations[tenantName][pipelineName] = {}
     const process = (type: 'tables' | 'views', newRelations: Relation[]) => {
       for (const newRelation of newRelations) {
         const newRelationName = getCaseIndependentName(newRelation)
-        const oldRelation = oldSchema[newRelationName]?.type === type && oldSchema[newRelationName]
-        pipelinesRelations[pipelineName][newRelationName] = oldRelation || {
+        const oldRelation = oldSchema?.[newRelationName]?.type === type && oldSchema[newRelationName]
+        pipelinesRelations[tenantName][pipelineName][newRelationName] = oldRelation || {
           type,
           selected: false,
           fields: Object.fromEntries(
@@ -230,11 +249,11 @@
 
   $effect(() => {
     void pipeline.current
-    untrack(() => reloadSchema(pipelineName, pipeline.current))
+    untrack(() => reloadSchema(tenantName, pipelineName, pipeline.current))
   })
 
   let inputs = $derived(
-    Object.entries(pipelinesRelations[pipelineName] ?? {})
+    Object.entries(pipelinesRelations[tenantName]?.[pipelineName] ?? {})
       .filter((e) => e[1].type === 'tables')
       .map(([relationName, value]) => ({
         relationName,
@@ -242,7 +261,7 @@
       }))
   )
   let outputs = $derived(
-    Object.entries(pipelinesRelations[pipelineName] ?? {})
+    Object.entries(pipelinesRelations[tenantName]?.[pipelineName] ?? {})
       .filter((e) => e[1].type === 'views')
       .map(([relationName, value]) => ({
         relationName,
@@ -261,9 +280,12 @@
     }
   })
   $effect(() => {
-    untrack(() => pipelineActionCallbacks.add('', 'delete', dropChangeStreamHistory))
+    const dropCallback = async (pName: string) => {
+      await dropChangeStreamHistory(tenantName, pName)
+    }
+    untrack(() => pipelineActionCallbacks.add('', 'delete', dropCallback))
     return () => {
-      pipelineActionCallbacks.remove('', 'delete', dropChangeStreamHistory)
+      pipelineActionCallbacks.remove('', 'delete', dropCallback)
     }
   })
 
@@ -311,26 +333,26 @@
         disabled={isDisabled}
         onchange={(e) => {
           const follow = e.currentTarget.checked
-          pipelinesRelations[pipelineName][relation.relationName].selected = follow
+          pipelinesRelations[tenantName][pipelineName][relation.relationName].selected = follow
           if (follow) {
             // If stream is stopped - the action will silently fail
-            pipelinesRelations[pipelineName][relation.relationName].cancelStream =
-              startReadingStream(api, pipelineName, relation.relationName)
+            pipelinesRelations[tenantName][pipelineName][relation.relationName].cancelStream =
+              startReadingStream(api, tenantName, pipelineName, relation.relationName)
           } else {
-            pipelinesRelations[pipelineName][relation.relationName].cancelStream?.()
-            pipelinesRelations[pipelineName][relation.relationName].cancelStream = undefined
-            if (!Object.values(pipelinesRelations[pipelineName]).some(({ selected }) => selected)) {
-              changeStream[pipelineName].rows = []
-              changeStream[pipelineName].headers = []
+            pipelinesRelations[tenantName][pipelineName][relation.relationName].cancelStream?.()
+            pipelinesRelations[tenantName][pipelineName][relation.relationName].cancelStream = undefined
+            if (!Object.values(pipelinesRelations[tenantName][pipelineName]).some(({ selected }) => selected)) {
+              changeStream[tenantName][pipelineName].rows = []
+              changeStream[tenantName][pipelineName].headers = []
               getChangeStream = () => changeStream
               return
             }
             ;({
-              rows: changeStream[pipelineName].rows,
-              headers: changeStream[pipelineName].headers
+              rows: changeStream[tenantName][pipelineName].rows,
+              headers: changeStream[tenantName][pipelineName].headers
             } = filterOutRows(
-              changeStream[pipelineName].rows,
-              changeStream[pipelineName].headers,
+              changeStream[tenantName][pipelineName].rows,
+              changeStream[tenantName][pipelineName].headers,
               relation.relationName
             ))
             getChangeStream = () => changeStream
@@ -365,13 +387,13 @@
 {/snippet}
 
 {#snippet dataView()}
-  {#if getChangeStream()[pipelineName]?.rows?.length}
-    {#key pipelineName}
-      <ChangeStream changeStream={getChangeStream()[pipelineName]}></ChangeStream>
+  {#if getChangeStream()[tenantName]?.[pipelineName]?.rows?.length}
+    {#key `${tenantName}::${pipelineName}`}
+      <ChangeStream changeStream={getChangeStream()[tenantName][pipelineName]}></ChangeStream>
     {/key}
   {:else}
     <span class="p-2 text-surface-600-400">
-      {#if Object.values(pipelinesRelations[pipelineName] ?? {}).some((r) => r.selected)}
+      {#if Object.values(pipelinesRelations[tenantName]?.[pipelineName] ?? {}).some((r) => r.selected)}
         The selected tables and views have not emitted any new changes
       {:else}
         Select tables and views to see the record updates as they are emitted

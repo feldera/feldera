@@ -50,17 +50,12 @@ import type { ControllerStatus, XgressRecord } from '$lib/types/pipelineManager'
 export type { ProgramSchema } from '$lib/services/manager'
 export type ProgramStatus = _ProgramStatus
 
-import * as AxaOidc from '@axa-fr/oidc-client'
-const { OidcClient } = AxaOidc
-
-import { client, createClient, type RequestResult } from '@hey-api/client-fetch'
+import { createClient, type RequestResult } from '@hey-api/client-fetch'
 import JSONbig from 'true-json-bigint'
 import { felderaEndpoint } from '$lib/functions/configs/felderaEndpoint'
-import invariant from 'tiny-invariant'
 import { tuple } from '$lib/functions/common/tuple'
-import { sleep } from '$lib/functions/common/promise'
-import { type NamesInUnion, unionName } from '$lib/functions/common/union'
 import { singleton } from '$lib/functions/common/array'
+import { applyAuthToRequest, handleAuthResponse } from '$lib/services/auth'
 
 const unauthenticatedClient = createClient({
   bodySerializer: JSONbig.stringify,
@@ -467,12 +462,20 @@ export const deleteApiKey = (name: string) =>
     }
   )
 
-const getAuthenticatedFetch = () => {
-  try {
-    const oidcClient = OidcClient.get()
-    return oidcClient.fetchWithTokens(globalThis.fetch)
-  } catch {
-    return globalThis.fetch
+/**
+ * Returns a fetch function that applies authentication headers and handles 401 responses.
+ * Uses the same middleware as the global @hey-api/client-fetch instance.
+ */
+const getAuthenticatedFetch = (): typeof globalThis.fetch => {
+  return async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    // Create a Request object and apply auth headers
+    const request = applyAuthToRequest(new Request(input, init))
+
+    // Perform the fetch
+    const response = await globalThis.fetch(request)
+
+    // Handle 401 responses with token refresh
+    return handleAuthResponse(response, request, globalThis.fetch)
   }
 }
 
@@ -601,16 +604,4 @@ export const getPipelineSupportBundleUrl = (
     query.append(key, String(value))
   }
   return `${felderaEndpoint}/v0/pipelines/${encodeURIComponent(pipelineName)}/support_bundle?${query.toString()}`
-}
-
-export const getAuthorizationHeader = async (): Promise<Record<string, string>> => {
-  try {
-    const oidcClient = OidcClient.get()
-    const tokens = await oidcClient.getValidTokenAsync()
-    return {
-      Authorization: `Bearer ${tokens.tokens.accessToken}`
-    }
-  } catch {
-    return {}
-  }
 }
