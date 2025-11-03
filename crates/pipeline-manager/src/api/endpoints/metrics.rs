@@ -29,7 +29,7 @@ use feldera_types::runtime_status::RuntimeStatus;
 #[get("/metrics")]
 pub(crate) async fn get_metrics(
     state: WebData<ServerState>,
-    client: WebData<awc::Client>,
+    client: WebData<reqwest::Client>,
     tenant_id: ReqData<TenantId>,
 ) -> Result<HttpResponse, ManagerError> {
     let pipelines = state

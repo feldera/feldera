@@ -89,7 +89,7 @@ pub mod support_bundle;
 #[post("/pipelines/{pipeline_name}/ingress/{table_name}")]
 pub(crate) async fn http_input(
     state: WebData<ServerState>,
-    client: WebData<awc::Client>,
+    client: WebData<reqwest::Client>,
     tenant_id: ReqData<TenantId>,
     path: web::Path<(String, String)>,
     req: HttpRequest,
@@ -170,7 +170,7 @@ pub(crate) async fn http_input(
 #[post("/pipelines/{pipeline_name}/egress/{table_name}")]
 pub(crate) async fn http_output(
     state: WebData<ServerState>,
-    client: WebData<awc::Client>,
+    client: WebData<reqwest::Client>,
     tenant_id: ReqData<TenantId>,
     path: web::Path<(String, String)>,
     req: HttpRequest,
@@ -256,7 +256,7 @@ pub(crate) async fn http_output(
 #[post("/pipelines/{pipeline_name}/tables/{table_name}/connectors/{connector_name}/{action}")]
 pub(crate) async fn post_pipeline_input_connector_action(
     state: WebData<ServerState>,
-    client: WebData<awc::Client>,
+    client: WebData<reqwest::Client>,
     tenant_id: ReqData<TenantId>,
     path: web::Path<(String, String, String, String)>,
 ) -> Result<HttpResponse, ManagerError> {
@@ -343,7 +343,7 @@ pub(crate) async fn post_pipeline_input_connector_action(
 #[get("/pipelines/{pipeline_name}/tables/{table_name}/connectors/{connector_name}/stats")]
 pub(crate) async fn get_pipeline_input_connector_status(
     state: WebData<ServerState>,
-    client: WebData<awc::Client>,
+    client: WebData<reqwest::Client>,
     tenant_id: ReqData<TenantId>,
     path: web::Path<(String, String, String)>,
 ) -> Result<HttpResponse, ManagerError> {
@@ -414,7 +414,7 @@ pub(crate) async fn get_pipeline_input_connector_status(
 #[get("/pipelines/{pipeline_name}/views/{view_name}/connectors/{connector_name}/stats")]
 pub(crate) async fn get_pipeline_output_connector_status(
     state: WebData<ServerState>,
-    client: WebData<awc::Client>,
+    client: WebData<reqwest::Client>,
     tenant_id: ReqData<TenantId>,
     path: web::Path<(String, String, String)>,
 ) -> Result<HttpResponse, ManagerError> {
@@ -479,7 +479,7 @@ pub(crate) async fn get_pipeline_output_connector_status(
 #[get("/pipelines/{pipeline_name}/stats")]
 pub(crate) async fn get_pipeline_stats(
     state: WebData<ServerState>,
-    client: WebData<awc::Client>,
+    client: WebData<reqwest::Client>,
     tenant_id: ReqData<TenantId>,
     path: web::Path<String>,
     request: HttpRequest,
@@ -531,7 +531,7 @@ pub(crate) async fn get_pipeline_stats(
 #[get("/pipelines/{pipeline_name}/metrics")]
 pub(crate) async fn get_pipeline_metrics(
     state: WebData<ServerState>,
-    client: WebData<awc::Client>,
+    client: WebData<reqwest::Client>,
     tenant_id: ReqData<TenantId>,
     path: web::Path<String>,
     _query: web::Query<MetricsParameters>,
@@ -583,7 +583,7 @@ pub(crate) async fn get_pipeline_metrics(
 #[get("/pipelines/{pipeline_name}/time_series")]
 pub(crate) async fn get_pipeline_time_series(
     state: WebData<ServerState>,
-    client: WebData<awc::Client>,
+    client: WebData<reqwest::Client>,
     tenant_id: ReqData<TenantId>,
     path: web::Path<String>,
     request: HttpRequest,
@@ -640,7 +640,7 @@ pub(crate) async fn get_pipeline_time_series(
 #[get("/pipelines/{pipeline_name}/time_series_stream")]
 pub(crate) async fn get_pipeline_time_series_stream(
     state: WebData<ServerState>,
-    client: WebData<awc::Client>,
+    client: WebData<reqwest::Client>,
     tenant_id: ReqData<TenantId>,
     path: web::Path<String>,
     request: HttpRequest,
@@ -693,7 +693,7 @@ pub(crate) async fn get_pipeline_time_series_stream(
 #[get("/pipelines/{pipeline_name}/circuit_profile")]
 pub(crate) async fn get_pipeline_circuit_profile(
     state: WebData<ServerState>,
-    client: WebData<awc::Client>,
+    client: WebData<reqwest::Client>,
     tenant_id: ReqData<TenantId>,
     path: web::Path<String>,
     request: HttpRequest,
@@ -745,7 +745,7 @@ pub(crate) async fn get_pipeline_circuit_profile(
 #[get("/pipelines/{pipeline_name}/circuit_json_profile")]
 pub(crate) async fn get_pipeline_circuit_json_profile(
     state: WebData<ServerState>,
-    client: WebData<awc::Client>,
+    client: WebData<reqwest::Client>,
     tenant_id: ReqData<TenantId>,
     path: web::Path<String>,
     request: HttpRequest,
@@ -796,7 +796,7 @@ pub(crate) async fn get_pipeline_circuit_json_profile(
 #[post("/pipelines/{pipeline_name}/checkpoint/sync")]
 pub(crate) async fn sync_checkpoint(
     state: WebData<ServerState>,
-    _client: WebData<awc::Client>,
+    _client: WebData<reqwest::Client>,
     tenant_id: ReqData<TenantId>,
     path: web::Path<String>,
     request: HttpRequest,
@@ -862,7 +862,7 @@ pub(crate) async fn sync_checkpoint(
 #[post("/pipelines/{pipeline_name}/checkpoint")]
 pub(crate) async fn checkpoint_pipeline(
     state: WebData<ServerState>,
-    _client: WebData<awc::Client>,
+    _client: WebData<reqwest::Client>,
     tenant_id: ReqData<TenantId>,
     path: web::Path<String>,
     request: HttpRequest,
@@ -926,7 +926,7 @@ pub(crate) async fn checkpoint_pipeline(
 #[get("/pipelines/{pipeline_name}/checkpoint_status")]
 pub(crate) async fn get_checkpoint_status(
     state: WebData<ServerState>,
-    client: WebData<awc::Client>,
+    client: WebData<reqwest::Client>,
     tenant_id: ReqData<TenantId>,
     path: web::Path<String>,
     request: HttpRequest,
@@ -978,7 +978,7 @@ pub(crate) async fn get_checkpoint_status(
 #[get("/pipelines/{pipeline_name}/checkpoint/sync_status")]
 pub(crate) async fn get_checkpoint_sync_status(
     state: WebData<ServerState>,
-    client: WebData<awc::Client>,
+    client: WebData<reqwest::Client>,
     tenant_id: ReqData<TenantId>,
     path: web::Path<String>,
     request: HttpRequest,
@@ -1033,7 +1033,7 @@ pub(crate) async fn get_checkpoint_sync_status(
 #[get("/pipelines/{pipeline_name}/heap_profile")]
 pub(crate) async fn get_pipeline_heap_profile(
     state: WebData<ServerState>,
-    client: WebData<awc::Client>,
+    client: WebData<reqwest::Client>,
     tenant_id: ReqData<TenantId>,
     path: web::Path<String>,
     request: HttpRequest,
@@ -1080,7 +1080,7 @@ pub(crate) async fn get_pipeline_heap_profile(
 #[post("/pipelines/{pipeline_name}/pause")]
 pub(crate) async fn post_pipeline_pause(
     state: WebData<ServerState>,
-    client: WebData<awc::Client>,
+    client: WebData<reqwest::Client>,
     tenant_id: ReqData<TenantId>,
     path: web::Path<String>,
 ) -> Result<HttpResponse, ManagerError> {
@@ -1140,7 +1140,7 @@ pub(crate) async fn post_pipeline_pause(
 #[post("/pipelines/{pipeline_name}/resume")]
 pub(crate) async fn post_pipeline_resume(
     state: WebData<ServerState>,
-    client: WebData<awc::Client>,
+    client: WebData<reqwest::Client>,
     tenant_id: ReqData<TenantId>,
     path: web::Path<String>,
 ) -> Result<HttpResponse, ManagerError> {
@@ -1211,7 +1211,7 @@ pub(crate) async fn post_pipeline_resume(
 #[post("/pipelines/{pipeline_name}/activate")]
 pub(crate) async fn post_pipeline_activate(
     state: WebData<ServerState>,
-    _client: WebData<awc::Client>,
+    _client: WebData<reqwest::Client>,
     tenant_id: ReqData<TenantId>,
     path: web::Path<String>,
     _query: web::Query<ActivateParams>,
@@ -1295,7 +1295,7 @@ pub(crate) async fn post_pipeline_activate(
 #[post("/pipelines/{pipeline_name}/approve")]
 pub(crate) async fn post_pipeline_approve(
     state: WebData<ServerState>,
-    _client: WebData<awc::Client>,
+    _client: WebData<reqwest::Client>,
     tenant_id: ReqData<TenantId>,
     path: web::Path<String>,
     request: HttpRequest,
@@ -1384,7 +1384,8 @@ fn request_is_websocket(request: &HttpRequest) -> bool {
 #[get("/pipelines/{pipeline_name}/query")]
 pub(crate) async fn pipeline_adhoc_sql(
     state: WebData<ServerState>,
-    client: WebData<awc::Client>,
+    reqwest_client: WebData<reqwest::Client>,
+    awc_client: WebData<awc::Client>,
     tenant_id: ReqData<TenantId>,
     path: web::Path<String>,
     request: HttpRequest,
@@ -1395,7 +1396,7 @@ pub(crate) async fn pipeline_adhoc_sql(
         state
             .runner
             .forward_websocket_request_to_pipeline_by_name(
-                client.as_ref(),
+                awc_client.as_ref(),
                 *tenant_id,
                 &pipeline_name,
                 "query",
@@ -1407,7 +1408,7 @@ pub(crate) async fn pipeline_adhoc_sql(
         state
             .runner
             .forward_streaming_http_request_to_pipeline_by_name(
-                client.as_ref(),
+                reqwest_client.as_ref(),
                 *tenant_id,
                 &pipeline_name,
                 "query",
@@ -1460,7 +1461,7 @@ pub(crate) async fn pipeline_adhoc_sql(
 )]
 pub(crate) async fn completion_token(
     state: WebData<ServerState>,
-    client: WebData<awc::Client>,
+    client: WebData<reqwest::Client>,
     tenant_id: ReqData<TenantId>,
     path: web::Path<(String, String, String)>,
 ) -> Result<HttpResponse, ManagerError> {
@@ -1534,7 +1535,7 @@ pub(crate) async fn completion_token(
 #[get("/pipelines/{pipeline_name}/completion_status")]
 pub(crate) async fn completion_status(
     state: WebData<ServerState>,
-    client: WebData<awc::Client>,
+    client: WebData<reqwest::Client>,
     tenant_id: ReqData<TenantId>,
     path: web::Path<String>,
     request: HttpRequest,
@@ -1589,7 +1590,7 @@ pub(crate) async fn completion_status(
 #[post("/pipelines/{pipeline_name}/start_transaction")]
 pub(crate) async fn start_transaction(
     state: WebData<ServerState>,
-    client: WebData<awc::Client>,
+    client: WebData<reqwest::Client>,
     tenant_id: ReqData<TenantId>,
     path: web::Path<String>,
     request: HttpRequest,
@@ -1643,7 +1644,7 @@ pub(crate) async fn start_transaction(
 #[post("/pipelines/{pipeline_name}/commit_transaction")]
 pub(crate) async fn commit_transaction(
     state: WebData<ServerState>,
-    client: WebData<awc::Client>,
+    client: WebData<reqwest::Client>,
     tenant_id: ReqData<TenantId>,
     path: web::Path<String>,
     request: HttpRequest,

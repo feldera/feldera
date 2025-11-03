@@ -396,11 +396,19 @@ impl CommonConfig {
             reqwest::ClientBuilder::new()
                 .https_only(true) // Only connect to HTTPS
                 .add_root_certificate(root_cert) // Add our own TLS certificate which is used
-                .tls_built_in_root_certs(false) // Other TLS certificates are not used
+                .tls_built_in_root_certs(false) // Other
+                // Disable connection caching. Normally, the HTTP client would cache HTTP connections
+                // to pipelines, but when the pipeline pod gets evicted and restarts on a different
+                // host or just stops and restarts, this connection is no longer valid, causing
+                // HTTP errors. This setting disables connection caching.
+                .pool_max_idle_per_host(0)
                 .build()
                 .expect("HTTPS client should be built")
         } else {
-            reqwest::Client::new()
+            reqwest::ClientBuilder::new()
+                .pool_max_idle_per_host(0)
+                .build()
+                .expect("HTTP client should be built")
         }
     }
 

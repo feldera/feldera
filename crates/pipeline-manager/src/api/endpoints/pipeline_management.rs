@@ -1226,7 +1226,7 @@ pub(crate) async fn post_pipeline_start(
 #[post("/pipelines/{pipeline_name}/stop")]
 pub(crate) async fn post_pipeline_stop(
     state: WebData<ServerState>,
-    _client: WebData<awc::Client>,
+    _client: WebData<reqwest::Client>,
     tenant_id: ReqData<TenantId>,
     path: web::Path<String>,
     query: web::Query<PostStopPipelineParameters>,
@@ -1395,7 +1395,7 @@ pub(crate) async fn post_pipeline_clear(
 )]
 #[get("/pipelines/{pipeline_name}/logs")]
 pub(crate) async fn get_pipeline_logs(
-    client: WebData<awc::Client>,
+    client: WebData<reqwest::Client>,
     state: WebData<ServerState>,
     tenant_id: ReqData<TenantId>,
     path: web::Path<String>,

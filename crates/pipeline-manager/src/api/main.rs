@@ -692,21 +692,28 @@ pub async fn run(
             }
         }
     };
+    // We instantiate reqwest::Client that can be used if the api-server needs to
+    // make outgoing HTTP calls. For websocket connections, awc::Client is created
+    // per-worker (since it's not Send) using common_config.awc_client().
+    // reqwest::Client is cloneable (internally uses Arc), so it can be shared across workers.
+    let reqwest_client = common_config.reqwest_client().await;
+
     let server = match auth_configuration {
-        // We instantiate an awc::Client that can be used if the api-server needs to
-        // make outgoing calls. This object is not meant to have more than one instance
-        // per thread (otherwise, it causes high resource pressure on both CPU and fds).
         Some(auth_configuration) => {
-            let common_config_cloned = common_config.clone();
             let api_config = api_config.clone();
             let state = state.clone();
+            let reqwest_client = reqwest_client.clone();
+            // awc::Client is not Send, so we need to create it in each worker
+            let common_config_for_awc = common_config.clone();
             let server = HttpServer::new(move || {
                 let auth_middleware = HttpAuthentication::with_fn(crate::auth::auth_validator);
-                let client = WebData::new(common_config_cloned.awc_client());
+                let reqwest_client = WebData::new(reqwest_client.clone());
+                let awc_client = WebData::new(common_config_for_awc.awc_client());
                 App::new()
                     .app_data(state.clone())
                     .app_data(auth_configuration.clone())
-                    .app_data(client)
+                    .app_data(reqwest_client)
+                    .app_data(awc_client)
                     .wrap_fn(|req, srv| {
                         let log_level = if req.method() == Method::GET && req.path() == "/healthz" {
                             Level::Trace
@@ -736,14 +743,18 @@ pub async fn run(
             }
         }
         None => {
-            let common_config_cloned = common_config.clone();
             let api_config = api_config.clone();
             let state = state.clone();
+            let reqwest_client = reqwest_client.clone();
+            // awc::Client is not Send, so we need to create it in each worker
+            let common_config_for_awc = common_config.clone();
             let server = HttpServer::new(move || {
-                let client = WebData::new(common_config_cloned.awc_client());
+                let reqwest_client = WebData::new(reqwest_client.clone());
+                let awc_client = WebData::new(common_config_for_awc.awc_client());
                 App::new()
                     .app_data(state.clone())
-                    .app_data(client)
+                    .app_data(reqwest_client)
+                    .app_data(awc_client)
                     .wrap_fn(|req, srv| {
                         trace!("Request: {} {}", req.method(), req.path());
                         srv.call(req).map(log_response)
@@ -853,20 +864,15 @@ Version: {} v{}{}
                         .unwrap();
 
                     rt.block_on(async {
-                        let local = tokio::task::LocalSet::new();
-                        local
-                            .run_until(async move {
-                                let client = common_config.awc_client();
-                                let support_collector = SupportDataCollector::new(
-                                    state.clone().into_inner(),
-                                    client,
-                                    api_config.support_data_collection_frequency,
-                                    api_config.support_data_retention,
-                                    shutdown_rx,
-                                );
-                                support_collector.run().await;
-                            })
-                            .await;
+                        let client = common_config.reqwest_client().await;
+                        let support_collector = SupportDataCollector::new(
+                            state.clone().into_inner(),
+                            client,
+                            api_config.support_data_collection_frequency,
+                            api_config.support_data_retention,
+                            shutdown_rx,
+                        );
+                        support_collector.run().await;
                     });
                 })
                 .unwrap(),

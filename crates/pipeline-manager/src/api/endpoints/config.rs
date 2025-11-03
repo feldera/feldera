@@ -146,7 +146,7 @@ impl Configuration {
 #[get("/config")]
 pub(crate) async fn get_config(
     state: WebData<ServerState>,
-    _client: WebData<awc::Client>,
+    _client: WebData<reqwest::Client>,
     _tenant_id: ReqData<TenantId>,
 ) -> Result<HttpResponse, ManagerError> {
     let config = Configuration::gather(&state).await;
