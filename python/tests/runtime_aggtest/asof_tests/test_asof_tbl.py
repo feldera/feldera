@@ -9,7 +9,10 @@ class asof_table1(TstTable):
                       id INT, intt INT, str VARCHAR, decimall DECIMAL(6, 2), reall REAL, dbl DOUBLE, booll BOOL, bin BINARY,
                       tmestmp TIMESTAMP,
                       datee DATE,
-                      tme TIME)"""
+                      tme TIME,
+                      uuidd UUID,
+                      arr VARCHAR ARRAY,
+                      mapp MAP<VARCHAR, INT>)"""
         self.data = [
             {
                 "id": 1,
@@ -23,6 +26,9 @@ class asof_table1(TstTable):
                 "tme": "13:23:44.456",
                 "tmestmp": "2000-06-21 14:23:44.123",
                 "datee": "2000-06-21",
+                "uuidd": "a3b0c442-98fc-1c14-9af7-4c2b95f9c16a",
+                "arr": ["-0.14", "friends", "See you!"],
+                "mapp": {"a": 15, "b": None},
             },
             {
                 "id": 2,
@@ -36,6 +42,9 @@ class asof_table1(TstTable):
                 "tme": "19:23:44.456",
                 "tmestmp": "2019-06-21 14:23:44.123",
                 "datee": "2019-06-21",
+                "uuidd": "e3b0c442-98fc-1c14-9af7-4c2b95f9c16a",
+                "arr": ["42", "sample", "-1.1", "2022-03-03", "yes"],
+                "mapp": {"a": 3, "b": 9},
             },
             {
                 "id": 3,
@@ -49,6 +58,9 @@ class asof_table1(TstTable):
                 "tme": "01:23:44.456",
                 "tmestmp": "1978-06-21 14:23:44.123",
                 "datee": "1978-06-21",
+                "uuidd": "a9b8c7d6-e5f4-3210-9999-abcdefabcdef",
+                "arr": ["hello", "123", "0.0", None],
+                "mapp": {"a": 11, "b": 22},
             },
             {
                 "id": 4,
@@ -62,6 +74,9 @@ class asof_table1(TstTable):
                 "tme": "23:23:44.456",
                 "tmestmp": "2002-06-21 14:23:44.123",
                 "datee": "2002-06-21",
+                "uuidd": "ffffffff-ffff-ffff-ffff-ffffffffffff",
+                "arr": ["end", "2099", "12", "31"],
+                "mapp": {"a": 200, "b": 200},
             },
             {
                 "id": 5,
@@ -75,6 +90,9 @@ class asof_table1(TstTable):
                 "tme": None,
                 "tmestmp": None,
                 "datee": None,
+                "uuidd": None,
+                "arr": None,
+                "mapp": None,
             },
         ]
 
@@ -87,7 +105,10 @@ class asof_table2(TstTable):
                       id INT, intt INT, str VARCHAR, decimall DECIMAL(6, 2), reall REAL, dbl DOUBLE, booll BOOL, bin BINARY,
                       tmestmp TIMESTAMP,
                       datee DATE,
-                      tme TIME)"""
+                      tme TIME,
+                      uuidd UUID,
+                      arr VARCHAR ARRAY,
+                      mapp MAP<VARCHAR, INT>)"""
         self.data = [
             {
                 "id": 1,
@@ -101,6 +122,9 @@ class asof_table2(TstTable):
                 "tme": "14:23:44.456",
                 "tmestmp": "2020-06-21 14:23:44.123",
                 "datee": "2020-06-21",
+                "uuidd": "b3b0c442-98fc-1c14-9af7-4c2b95f9c16a",
+                "arr": ["0.14", "friends", "See you!"],
+                "mapp": {"a": 25, "b": None},
             },
             {
                 "id": 2,
@@ -114,6 +138,9 @@ class asof_table2(TstTable):
                 "tme": "20:23:44.456",
                 "tmestmp": "2021-06-21 14:23:44.123",
                 "datee": "2021-06-21",
+                "uuidd": "a3b0c442-98fc-1c14-9af7-4c2b95f9c16a",
+                "arr": ["12", "sample", "-1.1", "2022-03-03", "yes"],
+                "mapp": {"a": 1, "b": 9},
             },
             {
                 "id": 3,
@@ -127,6 +154,9 @@ class asof_table2(TstTable):
                 "tme": "00:23:44.456",
                 "tmestmp": "1977-06-21 14:23:44.123",
                 "datee": "1977-06-21",
+                "uuidd": "b9b8c7d6-e5f4-3210-9999-abcdefabcdef",
+                "arr": ["hi", "123", "0.0", None],
+                "mapp": {"a": 21, "b": 22},
             },
             {
                 "id": 4,
@@ -140,6 +170,9 @@ class asof_table2(TstTable):
                 "tme": "22:23:44.456",
                 "tmestmp": "2001-06-21 14:23:44.123",
                 "datee": "2001-06-21",
+                "uuidd": "efffffff-ffff-ffff-ffff-ffffffffffff",
+                "arr": ["and", "2099", "12", "31"],
+                "mapp": {"a": 100, "b": 200},
             },
             {
                 "id": 5,
@@ -153,5 +186,8 @@ class asof_table2(TstTable):
                 "tme": None,
                 "tmestmp": None,
                 "datee": None,
+                "uuidd": None,
+                "arr": None,
+                "mapp": None,
             },
         ]

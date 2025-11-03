@@ -192,3 +192,81 @@ class asof_test10(TstView):
                         LEFT ASOF JOIN asof_tbl2 t2
                         MATCH_CONDITION ( t1.datee >= t2.datee)
                         ON t1.id = t2.id;"""
+
+
+class asof_test11(TstView):
+    def __init__(self):
+        # Validated on DuckDB
+        self.data = [
+            {
+                "id": 1,
+                "t1_uuidd": "a3b0c442-98fc-1c14-9af7-4c2b95f9c16a",
+                "t2_uuidd": None,
+            },
+            {
+                "id": 2,
+                "t1_uuidd": "e3b0c442-98fc-1c14-9af7-4c2b95f9c16a",
+                "t2_uuidd": "a3b0c442-98fc-1c14-9af7-4c2b95f9c16a",
+            },
+            {
+                "id": 3,
+                "t1_uuidd": "a9b8c7d6-e5f4-3210-9999-abcdefabcdef",
+                "t2_uuidd": None,
+            },
+            {
+                "id": 4,
+                "t1_uuidd": "ffffffff-ffff-ffff-ffff-ffffffffffff",
+                "t2_uuidd": "efffffff-ffff-ffff-ffff-ffffffffffff",
+            },
+            {"id": 5, "t1_uuidd": None, "t2_uuidd": None},
+        ]
+        self.sql = """CREATE MATERIALIZED VIEW asof_test11 AS SELECT
+                        t1.id, t1.uuidd AS t1_uuidd, t2.uuidd AS t2_uuidd
+                        FROM asof_tbl1 t1
+                        LEFT ASOF JOIN asof_tbl2 t2
+                        MATCH_CONDITION ( t1.uuidd >= t2.uuidd)
+                        ON t1.id = t2.id;"""
+
+
+class asof_test12(TstView):
+    def __init__(self):
+        # Validated on DuckDB
+        self.data = [
+            {"id": 1, "t1_arr": ["-0.14", "friends", "See you!"], "t2_arr": None},
+            {
+                "id": 2,
+                "t1_arr": ["42", "sample", "-1.1", "2022-03-03", "yes"],
+                "t2_arr": ["12", "sample", "-1.1", "2022-03-03", "yes"],
+            },
+            {"id": 3, "t1_arr": ["hello", "123", "0.0", None], "t2_arr": None},
+            {
+                "id": 4,
+                "t1_arr": ["end", "2099", "12", "31"],
+                "t2_arr": ["and", "2099", "12", "31"],
+            },
+            {"id": 5, "t1_arr": None, "t2_arr": None},
+        ]
+        self.sql = """CREATE MATERIALIZED VIEW asof_test12 AS SELECT
+                        t1.id, t1.arr AS t1_arr, t2.arr AS t2_arr
+                        FROM asof_tbl1 t1
+                        LEFT ASOF JOIN asof_tbl2 t2
+                        MATCH_CONDITION ( t1.arr >= t2.arr)
+                        ON t1.id = t2.id;"""
+
+
+class asof_test13(TstView):
+    def __init__(self):
+        # Validated on DuckDB
+        self.data = [
+            {"id": 1, "t1_mapp": {"a": 15, "b": None}, "t2_mapp": None},
+            {"id": 2, "t1_mapp": {"a": 3, "b": 9}, "t2_mapp": {"a": 1, "b": 9}},
+            {"id": 3, "t1_mapp": {"a": 11, "b": 22}, "t2_mapp": None},
+            {"id": 4, "t1_mapp": {"a": 200, "b": 200}, "t2_mapp": {"a": 100, "b": 200}},
+            {"id": 5, "t1_mapp": None, "t2_mapp": None},
+        ]
+        self.sql = """CREATE MATERIALIZED VIEW asof_test13 AS SELECT
+                        t1.id, t1.mapp AS t1_mapp, t2.mapp AS t2_mapp
+                        FROM asof_tbl1 t1
+                        LEFT ASOF JOIN asof_tbl2 t2
+                        MATCH_CONDITION ( t1.mapp >= t2.mapp)
+                        ON t1.id = t2.id;"""
