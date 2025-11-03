@@ -88,6 +88,8 @@ const processTenants = (auth: AuthDetails) => {
       if (!savedTenant || !authorizedTenants.includes(savedTenant)) {
         setSelectedTenant(authorizedTenants[0])
       }
+    } else {
+      setSelectedTenant(undefined)
     }
   }
 
@@ -101,7 +103,7 @@ export const load = async ({ fetch, url }): Promise<LayoutData> => {
 
   const authConfig = await loadAuthConfig()
 
-  const auth = authConfig
+  const authState = authConfig
     ? await axaOidcAuth({
         oidcConfig: { ...toAxaOidcConfig(authConfig.oidc) },
         logoutExtras: authConfig.logoutExtras,
@@ -120,7 +122,16 @@ export const load = async ({ fetch, url }): Promise<LayoutData> => {
           posthog.reset()
         }
       })
-    : 'none'
+    : { auth: 'none' as const }
+
+  if ('error' in authState) {
+    return {
+      ...emptyLayoutData,
+      error: authState.error
+    }
+  }
+
+  const auth = authState.auth
 
   if (typeof auth === 'object' && 'login' in auth) {
     return {
@@ -235,41 +246,60 @@ const axaOidcAuth = async (params: {
     new OidcLocation()
   )({ ...params.oidcConfig, extras: { audience: 'feldera-api' } })
   const href = window.location.href
-  const result: AuthDetails = await oidcClient.tryKeepExistingSessionAsync().then(async () => {
-    if (href.includes(params.oidcConfig.redirect_uri)) {
-      oidcClient.loginCallbackAsync().then(() => {
-        window.location.href = `${base}/`
-      })
-      // loading...
-    }
+  const result: { auth: AuthDetails } | { error: Error } = await oidcClient
+    .tryKeepExistingSessionAsync()
+    .then(async () => {
+      if (href.includes(params.oidcConfig.redirect_uri)) {
+        oidcClient.loginCallbackAsync().then(() => {
+          window.location.href = `${base}/`
+        })
+        // loading...
+      }
 
-    let tokens = oidcClient.tokens
+      let tokens = oidcClient.tokens
 
-    if (!tokens) {
-      return {
-        login: async () => {
-          params.onBeforeLogin?.()
-          await oidcClient.loginAsync('/')
+      if (!tokens) {
+        return {
+          auth: {
+            login: async () => {
+              params.onBeforeLogin?.()
+              await oidcClient.loginAsync('/')
+            }
+          }
         }
       }
-    }
 
-    const userInfoPromise = oidcClient.userInfoAsync()
-    params.onAfterLogin?.(tokens.idTokenPayload, userInfoPromise)
-    const userInfo = await userInfoPromise
+      const userInfoPromise = oidcClient.userInfoAsync()
+      params.onAfterLogin?.(tokens.idTokenPayload, userInfoPromise)
+      const userInfo = await userInfoPromise
 
-    client.interceptors.request.use(authRequestMiddleware)
-    client.interceptors.response.use(authResponseMiddleware)
+      if (!userInfo) {
+        console.error(
+          'Failed to retrieve user info - authentication has probably changed on the server. Automatically attempting to re-authenticate...'
+        )
 
-    return {
-      logout: ({ callbackUrl }) => {
-        params.onBeforeLogout?.()
-        return oidcClient.logoutAsync(callbackUrl, params.logoutExtras)
-      },
-      userInfo,
-      profile: fromAxaUserInfo(userInfo),
-      accessToken: tokens.accessToken // Only used in HTTP requests that cannot be handled with the global HTTP client instance from @hey-api/client-fetch
-    }
-  })
+        oidcClient.loginAsync('/')
+        return {
+          error: new Error(
+            'Failed to retrieve user info - authentication has probably changed on the server. Automatically attempting to re-authenticate...'
+          )
+        }
+      }
+
+      client.interceptors.request.use(authRequestMiddleware)
+      client.interceptors.response.use(authResponseMiddleware)
+
+      return {
+        auth: {
+          logout: ({ callbackUrl }) => {
+            params.onBeforeLogout?.()
+            return oidcClient.logoutAsync(callbackUrl, params.logoutExtras)
+          },
+          userInfo,
+          profile: fromAxaUserInfo(userInfo),
+          accessToken: tokens.accessToken // Only used in HTTP requests that cannot be handled with the global HTTP client instance from @hey-api/client-fetch
+        }
+      }
+    })
   return result
 }
