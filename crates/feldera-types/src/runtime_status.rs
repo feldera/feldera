@@ -2,6 +2,7 @@ use crate::error::ErrorResponse;
 use actix_web::body::BoxBody;
 use actix_web::http::StatusCode;
 use actix_web::{HttpRequest, HttpResponse, HttpResponseBuilder, Responder, ResponseError};
+use bytemuck::NoUninit;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::fmt::Display;
@@ -99,7 +100,10 @@ impl From<String> for RuntimeDesiredStatus {
     }
 }
 
-#[derive(Debug, Default, Clone, Copy, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
+#[derive(
+    Debug, Default, Clone, Copy, Eq, PartialEq, Deserialize, Serialize, ToSchema, NoUninit,
+)]
+#[repr(u8)]
 #[serde(rename_all = "snake_case")]
 pub enum BootstrapPolicy {
     Allow,
