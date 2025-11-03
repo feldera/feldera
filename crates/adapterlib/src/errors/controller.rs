@@ -12,7 +12,9 @@ use actix_web::http::StatusCode;
 use actix_web::{HttpResponse, HttpResponseBuilder, ResponseError};
 use anyhow::Error as AnyError;
 use dbsp::{
-    Error as DbspError, circuit::circuit_builder::BootstrapInfo, storage::backend::StorageError,
+    Error as DbspError,
+    circuit::{LayoutError, circuit_builder::BootstrapInfo},
+    storage::backend::StorageError,
 };
 use feldera_types::{
     error::{DetailedError, ErrorResponse},
@@ -165,6 +167,8 @@ pub enum ConfigError {
 
     FtRequiresStorage,
     FtRequiresFtInput,
+
+    InvalidLayout(LayoutError),
 }
 
 impl StdError for ConfigError {}
@@ -199,6 +203,7 @@ impl DbspDetailedError for ConfigError {
             Self::FtRequiresFtInput => Cow::from("FtWithNonFtInput"),
             Self::CyclicDependency { .. } => Cow::from("CyclicDependency"),
             Self::EmptyStartAfter { .. } => Cow::from("EmptyStartAfter"),
+            Self::InvalidLayout(_) => Cow::from("LayoutError"),
         }
     }
 }
@@ -412,6 +417,7 @@ impl Display for ConfigError {
                 f,
                 "Fault tolerance is configured, but it cannot be enabled because the pipeline has at least one non-fault-tolerant input adapter"
             ),
+            Self::InvalidLayout(e) => write!(f, "Multihost layout error: {e}"),
         }
     }
 }
@@ -1143,7 +1149,7 @@ impl Display for ControllerError {
             Self::InvalidInitialStatus(status) => {
                 write!(
                     f,
-                    "Invalid initial status {status:?} provided on command line or read from storage (only running, paused, and standby are valid)"
+                    "Invalid initial status {status:?} provided on command line or read from storage (only coordination, running, paused, and standby are valid)"
                 )
             }
             Self::InvalidStandby(standby) => {
@@ -1178,9 +1184,9 @@ impl Display for ControllerError {
 }
 
 impl ControllerError {
-    pub fn io_error(context: String, io_error: IoError) -> Self {
+    pub fn io_error(context: impl Display, io_error: IoError) -> Self {
         Self::IoError {
-            context,
+            context: context.to_string(),
             io_error,
             backtrace: Backtrace::capture(),
         }
@@ -1485,9 +1491,9 @@ impl ControllerError {
         Self::ControllerPanic
     }
 
-    pub fn storage_error(context: impl Into<String>, error: StorageError) -> Self {
+    pub fn storage_error(context: impl Display, error: StorageError) -> Self {
         Self::StorageError {
-            context: context.into(),
+            context: context.to_string(),
             error,
             backtrace: Box::new(Backtrace::capture()),
         }

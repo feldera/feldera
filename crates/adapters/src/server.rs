@@ -510,10 +510,7 @@ pub fn run_server(
     let port = listener
         .local_addr()
         .map_err(|e| {
-            ControllerError::io_error(
-                "retrieving local socket address of the TCP listener".to_string(),
-                e,
-            )
+            ControllerError::io_error("retrieving local socket address of the TCP listener", e)
         })?
         .port();
 
@@ -817,16 +814,12 @@ pub fn run_server(
 
         server
             .listen_rustls_0_23(listener, server_config)
-            .map_err(|e| {
-                ControllerError::io_error("binding HTTPS server to the listener".to_string(), e)
-            })?
+            .map_err(|e| ControllerError::io_error("binding HTTPS server to the listener", e))?
             .run()
     } else {
         server
             .listen(listener)
-            .map_err(|e| {
-                ControllerError::io_error("binding HTTP server to the listener".to_string(), e)
-            })?
+            .map_err(|e| ControllerError::io_error("binding HTTP server to the listener", e))?
             .run()
     };
 
@@ -842,13 +835,13 @@ pub fn run_server(
         let tmp_server_port_file = format!("{SERVER_PORT_FILE}.tmp");
         tokio::fs::write(&tmp_server_port_file, format!("{}\n", port))
             .await
-            .map_err(|e| ControllerError::io_error("writing server port file".to_string(), e))?;
+            .map_err(|e| ControllerError::io_error("writing server port file", e))?;
         tokio::fs::rename(&tmp_server_port_file, SERVER_PORT_FILE)
             .await
-            .map_err(|e| ControllerError::io_error("renaming server port file".to_string(), e))?;
+            .map_err(|e| ControllerError::io_error("renaming server port file", e))?;
         server
             .await
-            .map_err(|e| ControllerError::io_error("in the HTTP server".to_string(), e))
+            .map_err(|e| ControllerError::io_error("in the HTTP server", e))
     })?;
 
     Ok(())

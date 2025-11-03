@@ -763,7 +763,7 @@ impl Controller {
             match profile.map(|profile| {
                 profile
                     .dump("profile")
-                    .map_err(|e| ControllerError::io_error(String::from("dumping profile"), e))
+                    .map_err(|e| ControllerError::io_error("dumping profile", e))
             }) {
                 Ok(Ok(path)) => info!("Dumped DBSP profile to {}", path.display()),
                 Ok(Err(e)) | Err(e) => error!("Failed to write circuit profile: {e}"),
