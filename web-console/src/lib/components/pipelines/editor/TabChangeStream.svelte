@@ -122,7 +122,9 @@
             if (relationName !== lastRelationName) {
               changeStream[tenantName][pipelineName].headers.push(initialLen)
             }
-            changeStream[tenantName][pipelineName].headers = changeStream[tenantName][pipelineName].headers
+            changeStream[tenantName][pipelineName].headers = changeStream[tenantName][
+              pipelineName
+            ].headers
               .map((i) => i - offset)
               .filter((i) => i >= 0)
           },
@@ -153,17 +155,23 @@
       request.then((cancel) => {
         cancel?.()
         pipelinesRelations[tenantName][pipelineName][relationName].cancelStream = undefined
-        ;({ rows: changeStream[tenantName][pipelineName].rows, headers: changeStream[tenantName][pipelineName].headers } =
-          filterOutRows(
-            changeStream[tenantName][pipelineName].rows,
-            changeStream[tenantName][pipelineName].headers,
-            relationName
-          ))
+        ;({
+          rows: changeStream[tenantName][pipelineName].rows,
+          headers: changeStream[tenantName][pipelineName].headers
+        } = filterOutRows(
+          changeStream[tenantName][pipelineName].rows,
+          changeStream[tenantName][pipelineName].headers,
+          relationName
+        ))
         getChangeStream = () => changeStream
       })
     }
   }
-  const startSelectedStreams = (api: PipelineManagerApi, tenantName: string, pipelineName: string) => {
+  const startSelectedStreams = (
+    api: PipelineManagerApi,
+    tenantName: string,
+    pipelineName: string
+  ) => {
     changeStream[tenantName][pipelineName] = { rows: [], headers: [], totalSkippedBytes: 0 } // Clear row buffer when starting pipeline again
     const relations = Object.entries(pipelinesRelations[tenantName]?.[pipelineName] ?? {})
       .filter((relation) => relation[1].selected)
@@ -181,7 +189,11 @@
     }
     getChangeStream = () => changeStream
   }
-  const registerPipelineName = (api: PipelineManagerApi, tenantName: string, pipelineName: string) => {
+  const registerPipelineName = (
+    api: PipelineManagerApi,
+    tenantName: string,
+    pipelineName: string
+  ) => {
     if (!pipelinesRelations[tenantName]) {
       pipelinesRelations[tenantName] = {}
     }
@@ -255,7 +267,11 @@
     )
   )
 
-  const reloadSchema = async (tenantName: string, pipelineName: string, pipeline: ExtendedPipeline) => {
+  const reloadSchema = async (
+    tenantName: string,
+    pipelineName: string,
+    pipeline: ExtendedPipeline
+  ) => {
     const schema = pipeline.programInfo?.schema
     if (!schema) {
       return
@@ -269,7 +285,8 @@
     const process = (type: 'tables' | 'views', newRelations: Relation[]) => {
       for (const newRelation of newRelations) {
         const newRelationName = getCaseIndependentName(newRelation)
-        const oldRelation = oldSchema?.[newRelationName]?.type === type && oldSchema[newRelationName]
+        const oldRelation =
+          oldSchema?.[newRelationName]?.type === type && oldSchema[newRelationName]
         pipelinesRelations[tenantName][pipelineName][newRelationName] = oldRelation || {
           type,
           selected: false,
@@ -400,8 +417,13 @@
               startReadingStream(api, tenantName, pipelineName, relation.relationName)
           } else {
             pipelinesRelations[tenantName][pipelineName][relation.relationName].cancelStream?.()
-            pipelinesRelations[tenantName][pipelineName][relation.relationName].cancelStream = undefined
-            if (!Object.values(pipelinesRelations[tenantName][pipelineName]).some(({ selected }) => selected)) {
+            pipelinesRelations[tenantName][pipelineName][relation.relationName].cancelStream =
+              undefined
+            if (
+              !Object.values(pipelinesRelations[tenantName][pipelineName]).some(
+                ({ selected }) => selected
+              )
+            ) {
               changeStream[tenantName][pipelineName].rows = []
               changeStream[tenantName][pipelineName].headers = []
               getChangeStream = () => changeStream

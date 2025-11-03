@@ -563,7 +563,7 @@ struct OidcClaim {
     email: Option<String>,
 
     /// Tenant identifier for single-tenant deployments
-    /// TODO: Deprecated, remove when noone no longer uses it
+    /// TODO: Deprecated, remove when no one no longer uses it
     tenant: Option<String>,
 
     /// Tenant identifiers for multi-tenant access
@@ -642,7 +642,7 @@ struct AwsCognitoClaim {
     username: String,
 
     /// Tenant identifier for single-tenant deployments
-    /// TODO: Deprecated, remove when noone no longer uses it
+    /// TODO: Deprecated, remove when no one no longer uses it
     tenant: Option<String>,
 
     /// Tenant identifiers for multi-tenant access

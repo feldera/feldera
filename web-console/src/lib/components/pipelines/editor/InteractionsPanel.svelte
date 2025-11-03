@@ -41,7 +41,9 @@
     [
       tuple('Errors' as const, TabControlPipelineErrors, PanelPipelineErrors, false),
       tuple('Performance' as const, TabControlPerformance, PanelPerformance, false),
-      separateAdHocTab ? null : tuple('Ad-Hoc Queries' as const, TabControlAdhoc, PanelAdHocQuery, false),
+      separateAdHocTab
+        ? null
+        : tuple('Ad-Hoc Queries' as const, TabControlAdhoc, PanelAdHocQuery, false),
       tuple('Changes Stream' as const, TabControlChangeStream, PanelChangeStream, true),
       tuple('Logs' as const, undefined, PanelLogs, false)
     ].filter(nonNull)

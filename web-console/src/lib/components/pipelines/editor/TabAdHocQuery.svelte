@@ -45,112 +45,115 @@
   const isDataRow = (record: Record<string, SQLValueJS>) =>
     !(Object.keys(record).length === 1 && ('error' in record || 'warning' in record))
 
-  const onSubmitQuery = (tenantName: string, pipelineName: string, i: number) => async (query: string) => {
-    const request = api.adHocQuery(pipelineName, query)
-    adhocQueries[tenantName][pipelineName].queries[i]!.progress = true
-    const result = await request
-    if (!adhocQueries[tenantName][pipelineName].queries[i]) {
-      return
-    }
-    adhocQueries[tenantName][pipelineName].queries[i].result = {
-      rows: enclosure([]),
-      columns: [],
-      totalSkippedBytes: 0,
-      endResultStream: () => {}
-    }
-    if (result instanceof Error) {
-      adhocQueries[tenantName][pipelineName].queries[i].progress = false
-      adhocQueries[tenantName][pipelineName].queries[i].result.rows().push({
-        error: result.message
-      })
-      return
-    }
-    const bufferSize = 1000
-    const pushChanges = (
-      input: (Record<string, SQLValueJS> | { error: string } | { warning: string })[]
-    ) => {
-      if (!adhocQueries[tenantName][pipelineName].queries[i]?.result) {
+  const onSubmitQuery =
+    (tenantName: string, pipelineName: string, i: number) => async (query: string) => {
+      const request = api.adHocQuery(pipelineName, query)
+      adhocQueries[tenantName][pipelineName].queries[i]!.progress = true
+      const result = await request
+      if (!adhocQueries[tenantName][pipelineName].queries[i]) {
         return
       }
-      if (
-        adhocQueries[tenantName][pipelineName].queries[i].result.columns.length === 0 &&
-        isDataRow(input[0])
-      ) {
-        adhocQueries[tenantName][pipelineName].queries[i].result.columns.push(
-          ...Object.keys(input[0]).map((name) => ({
-            name,
-            case_sensitive: false,
-            columntype: { nullable: true },
-            unused: false
-          }))
-        )
+      adhocQueries[tenantName][pipelineName].queries[i].result = {
+        rows: enclosure([]),
+        columns: [],
+        totalSkippedBytes: 0,
+        endResultStream: () => {}
       }
-      {
-        // Limit result size behavior - ignore all but first bufferSize rows
-        const previousLength = adhocQueries[tenantName][pipelineName].queries[i].result.rows().length
-        adhocQueries[tenantName][pipelineName].queries[i].result
-          .rows()
-          .push(
-            ...input
-              .slice(0, bufferSize - previousLength)
-              .map((v) => (isDataRow(v) ? { cells: Object.values(v) } : v) as Row)
+      if (result instanceof Error) {
+        adhocQueries[tenantName][pipelineName].queries[i].progress = false
+        adhocQueries[tenantName][pipelineName].queries[i].result.rows().push({
+          error: result.message
+        })
+        return
+      }
+      const bufferSize = 1000
+      const pushChanges = (
+        input: (Record<string, SQLValueJS> | { error: string } | { warning: string })[]
+      ) => {
+        if (!adhocQueries[tenantName][pipelineName].queries[i]?.result) {
+          return
+        }
+        if (
+          adhocQueries[tenantName][pipelineName].queries[i].result.columns.length === 0 &&
+          isDataRow(input[0])
+        ) {
+          adhocQueries[tenantName][pipelineName].queries[i].result.columns.push(
+            ...Object.keys(input[0]).map((name) => ({
+              name,
+              case_sensitive: false,
+              columntype: { nullable: true },
+              unused: false
+            }))
           )
-        reclosureKey(adhocQueries[tenantName][pipelineName].queries[i].result, 'rows')
-        if (input.length > bufferSize - previousLength) {
-          queueMicrotask(() => {
+        }
+        {
+          // Limit result size behavior - ignore all but first bufferSize rows
+          const previousLength =
+            adhocQueries[tenantName][pipelineName].queries[i].result.rows().length
+          adhocQueries[tenantName][pipelineName].queries[i].result
+            .rows()
+            .push(
+              ...input
+                .slice(0, bufferSize - previousLength)
+                .map((v) => (isDataRow(v) ? { cells: Object.values(v) } : v) as Row)
+            )
+          reclosureKey(adhocQueries[tenantName][pipelineName].queries[i].result, 'rows')
+          if (input.length > bufferSize - previousLength) {
+            queueMicrotask(() => {
+              if (!adhocQueries[tenantName][pipelineName].queries[i]) {
+                return
+              }
+              if (adhocQueries[tenantName][pipelineName].queries[i].result?.rows) {
+                adhocQueries[tenantName][pipelineName].queries[i].result.rows().push({
+                  warning: `The result contains more rows, but only the first ${bufferSize} are shown`
+                })
+                reclosureKey(adhocQueries[tenantName][pipelineName].queries[i].result, 'rows')
+              }
+              adhocQueries[tenantName][pipelineName].queries[i].result?.endResultStream()
+            })
+          }
+        }
+      }
+      const { cancel } = parseCancellable(
+        result,
+        {
+          pushChanges,
+          onBytesSkipped: (skippedBytes) => {
+            if (!adhocQueries[tenantName][pipelineName].queries[i]?.result) {
+              return
+            }
+            adhocQueries[tenantName][pipelineName].queries[i].result.totalSkippedBytes +=
+              skippedBytes
+          },
+          onParseEnded: () => {
             if (!adhocQueries[tenantName][pipelineName].queries[i]) {
               return
             }
-            if (adhocQueries[tenantName][pipelineName].queries[i].result?.rows) {
-              adhocQueries[tenantName][pipelineName].queries[i].result.rows().push({
-                warning: `The result contains more rows, but only the first ${bufferSize} are shown`
-              })
-              reclosureKey(adhocQueries[tenantName][pipelineName].queries[i].result, 'rows')
+            // Add field for the next query if the last query did not yield an error right away
+            if (
+              adhocQueries[tenantName][pipelineName].queries.length === i + 1 &&
+              ((row) => !row || isDataRow(row))(
+                adhocQueries[tenantName][pipelineName].queries[i].result?.rows().at(0)
+              )
+            ) {
+              adhocQueries[tenantName][pipelineName].queries.push({ query: '' })
             }
-            adhocQueries[tenantName][pipelineName].queries[i].result?.endResultStream()
-          })
+            adhocQueries[tenantName][pipelineName].queries[i].progress = false
+          },
+          onNetworkError(e, injectValue) {
+            injectValue({ error: e.message })
+          }
+        },
+        new CustomJSONParserTransformStream<Record<string, SQLValueJS>>({
+          paths: ['$'],
+          separator: ''
+        }),
+        {
+          bufferSize: 8 * 1024 * 1024
         }
-      }
+      )
+      adhocQueries[tenantName][pipelineName].queries[i].result.endResultStream = cancel
     }
-    const { cancel } = parseCancellable(
-      result,
-      {
-        pushChanges,
-        onBytesSkipped: (skippedBytes) => {
-          if (!adhocQueries[tenantName][pipelineName].queries[i]?.result) {
-            return
-          }
-          adhocQueries[tenantName][pipelineName].queries[i].result.totalSkippedBytes += skippedBytes
-        },
-        onParseEnded: () => {
-          if (!adhocQueries[tenantName][pipelineName].queries[i]) {
-            return
-          }
-          // Add field for the next query if the last query did not yield an error right away
-          if (
-            adhocQueries[tenantName][pipelineName].queries.length === i + 1 &&
-            ((row) => !row || isDataRow(row))(
-              adhocQueries[tenantName][pipelineName].queries[i].result?.rows().at(0)
-            )
-          ) {
-            adhocQueries[tenantName][pipelineName].queries.push({ query: '' })
-          }
-          adhocQueries[tenantName][pipelineName].queries[i].progress = false
-        },
-        onNetworkError(e, injectValue) {
-          injectValue({ error: e.message })
-        }
-      },
-      new CustomJSONParserTransformStream<Record<string, SQLValueJS>>({
-        paths: ['$'],
-        separator: ''
-      }),
-      {
-        bufferSize: 8 * 1024 * 1024
-      }
-    )
-    adhocQueries[tenantName][pipelineName].queries[i].result.endResultStream = cancel
-  }
 </script>
 
 <div class=" h-full min-h-full overflow-y-auto py-2 scrollbar" use:reverseScroll.action>
