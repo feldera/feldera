@@ -85,7 +85,6 @@ const processTenants = (auth: AuthDetails) => {
       : undefined
     if (authorizedTenants) {
       const savedTenant = getSelectedTenant()
-      console.log('authorizedTenants', authorizedTenants, savedTenant)
       if (!savedTenant || !authorizedTenants.includes(savedTenant)) {
         setSelectedTenant(authorizedTenants[0])
       }
