@@ -53,6 +53,8 @@ jobs:
         env:
           PYTHONPATH: ${{ github.workspace }}/python
           FELDERA_TLS_INSECURE: true
+          RUNTIME_AGGTEST_JOBS: ${{ vars.PYTEST_WORKERS }}
+          RUNTIME_AGGTEST_VERBOSE: false
 
       - name: Python workload tests
         if: ${{ vars.CI_DRY_RUN != 'true' && !contains(vars.CI_SKIP_JOBS, 'runtime-workload') }}
