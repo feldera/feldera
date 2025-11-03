@@ -1,4 +1,35 @@
 <script lang="ts" module>
+  /**
+   * TabChangeStream - Real-time pipeline change stream viewer
+   *
+   * STREAM LIFETIME MANAGEMENT:
+   *
+   * This component manages HTTP streams for viewing pipeline data changes in real-time.
+   * The stream lifetime is limited to pipeline edit page being opened.
+   * Due to the component being kept alive (keepAlive: true in InteractionsPanel), special care
+   * is needed to manage stream lifecycles properly.
+   *
+   * Stream Start Conditions:
+   * 1. When a relation (table/view) checkbox is checked by the user
+   * 2. When the pipeline transitions to 'start_paused' state (via pipelineActionCallbacks)
+   * 3. When pipelineName/tenantName changes AND the pipeline is interactive (Running/Paused)
+   *
+   * Stream Stop/Cleanup Conditions:
+   * 1. When a relation checkbox is unchecked by the user
+   * 2. When pipelineName or tenantName changes (cleanup callback cancels old pipeline streams)
+   * 3. When pipeline is deleted (via 'delete' action callback)
+   *
+   * Pipeline Interactive States (can stream data):
+   * - Running, Paused, Pausing, Resuming
+   *
+   * Key Implementation Details:
+   * - startSelectedStreams(): Starts streams for all selected relations, checks isPipelineInteractive
+   * - Effect on pipelineName/tenantName: Non-reactive to isInteractive, only starts if interactive
+   * - 'start_paused' callback: Always attempts to start streams (pipeline state guarantees validity)
+   * - Each stream has a cancelStream() function stored in pipelinesRelations for cleanup
+   * - Buffer clearing happens in startSelectedStreams to reset data when pipeline restarts
+   */
+
   import type { ChangeStreamData, Row } from '$lib/components/pipelines/editor/ChangeStream.svelte'
   type RelationInfo = {
     pipelineName: string
@@ -132,6 +163,24 @@
       })
     }
   }
+  const startSelectedStreams = (api: PipelineManagerApi, tenantName: string, pipelineName: string) => {
+    changeStream[tenantName][pipelineName] = { rows: [], headers: [], totalSkippedBytes: 0 } // Clear row buffer when starting pipeline again
+    const relations = Object.entries(pipelinesRelations[tenantName]?.[pipelineName] ?? {})
+      .filter((relation) => relation[1].selected)
+      .map((relation) => relation[0])
+    for (const relationName of relations) {
+      if (pipelinesRelations[tenantName][pipelineName][relationName].cancelStream) {
+        continue
+      }
+      pipelinesRelations[tenantName][pipelineName][relationName].cancelStream = startReadingStream(
+        api,
+        tenantName,
+        pipelineName,
+        relationName
+      )
+    }
+    getChangeStream = () => changeStream
+  }
   const registerPipelineName = (api: PipelineManagerApi, tenantName: string, pipelineName: string) => {
     if (!pipelinesRelations[tenantName]) {
       pipelinesRelations[tenantName] = {}
@@ -145,22 +194,7 @@
     }
     changeStream[tenantName][pipelineName] = { rows: [], headers: [], totalSkippedBytes: 0 }
     pipelineActionCallbacks.add(pipelineName, 'start_paused', async () => {
-      const relations = Object.entries(pipelinesRelations[tenantName][pipelineName])
-        .filter((relation) => relation[1].selected)
-        .map((relation) => relation[0])
-      for (const relationName of relations) {
-        changeStream[tenantName][pipelineName] = { rows: [], headers: [], totalSkippedBytes: 0 } // Clear row buffer when starting pipeline again
-        getChangeStream = () => changeStream
-        if (pipelinesRelations[tenantName][pipelineName][relationName].cancelStream) {
-          return
-        }
-        pipelinesRelations[tenantName][pipelineName][relationName].cancelStream = startReadingStream(
-          api,
-          tenantName,
-          pipelineName,
-          relationName
-        )
-      }
+      startSelectedStreams(api, tenantName, pipelineName)
     })
   }
   const dropChangeStreamHistory = async (tenantName: string, pipelineName: string) => {
@@ -202,11 +236,13 @@
   import { useProtocol } from '$lib/compositions/useProtocol'
   import Tooltip from '$lib/components/common/Tooltip.svelte'
   import { getSelectedTenant } from '$lib/services/auth'
+  import { isPipelineInteractive } from '$lib/functions/pipelines/status'
 
   let { pipeline }: { pipeline: { current: ExtendedPipeline } } = $props()
 
   let pipelineName = $derived(pipeline.current.name)
   let tenantName = $derived(getSelectedTenant() || '')
+  let isInteractive = $derived(isPipelineInteractive(pipeline.current.status))
 
   const protocol = useProtocol()
   const maxStreamsOnHttp = 4
@@ -250,6 +286,30 @@
   $effect(() => {
     void pipeline.current
     untrack(() => reloadSchema(tenantName, pipelineName, pipeline.current))
+  })
+
+  $effect(() => {
+    pipelineName
+    tenantName
+
+    const oldPipelineName = pipelineName
+
+    // Start streams for any selected relations when pipeline is interactive
+    untrack(() => {
+      if (isInteractive) {
+        startSelectedStreams(api, tenantName, pipelineName)
+      }
+    })
+
+    return () => {
+      // Clean up active streams when pipelineName changes
+      const relations = pipelinesRelations[tenantName]?.[oldPipelineName]
+      if (relations) {
+        for (const relation of Object.values(relations)) {
+          relation.cancelStream?.()
+        }
+      }
+    }
   })
 
   let inputs = $derived(
