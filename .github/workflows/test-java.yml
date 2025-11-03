@@ -11,6 +11,8 @@ env:
   SCCACHE_REGION: ${{ vars.SCCACHE_REGION }}
   AWS_ACCESS_KEY_ID: "${{ secrets.CI_K8S_MINIO_ACCESS_KEY_ID }}"
   AWS_SECRET_ACCESS_KEY: "${{ secrets.CI_K8S_MINIO_SECRET_ACCESS_KEY }}"
+  # Limit number of parallel build jobs to avoid OOM in arm64 CI runners
+  CARGO_BUILD_JOBS: 24
 
 jobs:
   java-tests:
