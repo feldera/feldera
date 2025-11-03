@@ -183,6 +183,11 @@ jobs:
           --health-retries 5
 
     steps:
+      - name: Show Kubernetes node
+        if: always()
+        run: |
+          echo "K8S node: ${K8S_NODE_NAME}"
+
       - name: Checkout repository
         uses: actions/checkout@v4
 
