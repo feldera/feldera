@@ -367,7 +367,9 @@ impl CommonConfig {
                 )
                 .finish()
         } else {
-            awc::Client::new()
+            awc::Client::builder()
+                .connector(awc::Connector::new().limit(25000))
+                .finish()
         }
     }
 
