@@ -1519,7 +1519,12 @@ pub(crate) async fn list_pipelines_across_all_tenants_for_monitoring(
 pub(crate) async fn get_next_sql_compilation(
     txn: &Transaction<'_>,
     platform_version: &str,
+    worker_id: usize,
+    total_workers: usize,
 ) -> Result<Option<(TenantId, ExtendedPipelineDescr)>, DBError> {
+    // The expression `abs(('x' || substr(replace(p.id::text, '-', ''), 1, 16))::bit(64)::bigint) % $2) = $3`
+    // converts the first 8 bytes of the UUID to a bigint, takes its absolute value,
+    // and computes the modulo with the total number of workers.
     let stmt = txn
         .prepare_cached(&format!(
             "SELECT {RETRIEVE_PIPELINE_COLUMNS}
@@ -1527,6 +1532,7 @@ pub(crate) async fn get_next_sql_compilation(
              WHERE p.deployment_resources_status = 'stopped'
                    AND p.program_status = 'pending'
                    AND p.platform_version = $1
+                   AND (abs(('x' || substr(replace(p.id::text, '-', ''), 1, 16))::bit(64)::bigint) % $2) = $3
              ORDER BY p.program_status_since ASC, p.id ASC
              LIMIT 1
             "
@@ -1537,6 +1543,8 @@ pub(crate) async fn get_next_sql_compilation(
             &stmt,
             &[
                 &platform_version.to_string(), // $1: platform_version
+                &(total_workers as i64),       // $2: total_workers
+                &(worker_id as i64),           // $3: worker_id
             ],
         )
         .await?;
@@ -1554,7 +1562,12 @@ pub(crate) async fn get_next_sql_compilation(
 pub(crate) async fn get_next_rust_compilation(
     txn: &Transaction<'_>,
     platform_version: &str,
+    worker_id: usize,
+    total_workers: usize,
 ) -> Result<Option<(TenantId, ExtendedPipelineDescr)>, DBError> {
+    // The expression `abs(('x' || substr(replace(p.id::text, '-', ''), 1, 16))::bit(64)::bigint) % $2) = $3`
+    // converts the first 8 bytes of the UUID to a bigint, takes its absolute value,
+    // and computes the modulo with the total number of workers.
     let stmt = txn
         .prepare_cached(&format!(
             "SELECT {RETRIEVE_PIPELINE_COLUMNS}
@@ -1562,6 +1575,7 @@ pub(crate) async fn get_next_rust_compilation(
              WHERE p.deployment_resources_status = 'stopped'
                    AND p.program_status = 'sql_compiled'
                    AND p.platform_version = $1
+                   AND (abs(('x' || substr(replace(p.id::text, '-', ''), 1, 16))::bit(64)::bigint) % $2) = $3
              ORDER BY p.program_status_since ASC, p.id ASC
              LIMIT 1
             "
@@ -1572,6 +1586,8 @@ pub(crate) async fn get_next_rust_compilation(
             &stmt,
             &[
                 &platform_version.to_string(), // $1: platform_version
+                &(total_workers as i64),       // $2: total_workers
+                &(worker_id as i64),           // $3: worker_id
             ],
         )
         .await?;

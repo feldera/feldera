@@ -28,6 +28,27 @@ use log::{debug, info, log, Level};
 use tokio_postgres::Row;
 use uuid::Uuid;
 
+// Convert PipelineId UUID to u64 to match PostgreSQL's behavior.
+// This uses the first 8 bytes of the UUID converted to a big-endian u64.
+// This ensures consistent worker assignment between Rust and SQL implementations.
+fn pipline_uuid_to_u64(pipeline_id: PipelineId) -> u64 {
+    let bytes = pipeline_id.0.as_bytes();
+    u64::from_be_bytes([
+        bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
+    ])
+}
+
+/// Determine if a pipeline is assigned to a specific worker based on its ID.
+/// Uses modulo operation to distribute pipelines across workers.
+pub(crate) fn is_pipeline_assigned_to_worker(
+    pipeline_id: PipelineId,
+    worker_index: u64,
+    total_workers: u64,
+) -> bool {
+    let hash = pipline_uuid_to_u64(pipeline_id);
+    (hash % total_workers) == worker_index
+}
+
 mod embedded {
     use refinery::embed_migrations;
     embed_migrations!("./migrations/");
@@ -944,12 +965,23 @@ impl Storage for StoragePostgres {
         Ok(pipelines)
     }
 
-    async fn clear_ongoing_sql_compilation(&self, platform_version: &str) -> Result<(), DBError> {
+    async fn clear_ongoing_sql_compilation_for_worker(
+        &self,
+        platform_version: &str,
+        worker_id: usize,
+        total_workers: usize,
+    ) -> Result<(), DBError> {
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;
         let pipelines =
             operations::pipeline::list_pipelines_across_all_tenants_for_monitoring(&txn).await?;
         for (tenant_id, pipeline) in pipelines {
+            // skip the pipelines that are not assigned to this worker
+            if !is_pipeline_assigned_to_worker(pipeline.id, worker_id as u64, total_workers as u64)
+            {
+                continue;
+            }
+
             if pipeline.deployment_resources_status == ResourcesStatus::Stopped {
                 if pipeline.platform_version == platform_version {
                     if pipeline.program_status == ProgramStatus::CompilingSql {
@@ -997,21 +1029,40 @@ impl Storage for StoragePostgres {
     async fn get_next_sql_compilation(
         &self,
         platform_version: &str,
+        worker_id: usize,
+        total_workers: usize,
     ) -> Result<Option<(TenantId, ExtendedPipelineDescr)>, DBError> {
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;
-        let next_pipeline_program =
-            operations::pipeline::get_next_sql_compilation(&txn, platform_version).await?;
+        let next_pipeline_program = operations::pipeline::get_next_sql_compilation(
+            &txn,
+            platform_version,
+            worker_id,
+            total_workers,
+        )
+        .await?;
         txn.commit().await?;
         Ok(next_pipeline_program)
     }
 
-    async fn clear_ongoing_rust_compilation(&self, platform_version: &str) -> Result<(), DBError> {
+    async fn clear_ongoing_rust_compilation_for_worker(
+        &self,
+        platform_version: &str,
+        worker_id: usize,
+        total_workers: usize,
+    ) -> Result<(), DBError> {
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;
         let pipelines =
             operations::pipeline::list_pipelines_across_all_tenants_for_monitoring(&txn).await?;
+
         for (tenant_id, pipeline) in pipelines {
+            // skip the pipelines that are not assigned to this worker
+            if !is_pipeline_assigned_to_worker(pipeline.id, worker_id as u64, total_workers as u64)
+            {
+                continue;
+            }
+
             if pipeline.deployment_resources_status == ResourcesStatus::Stopped {
                 if pipeline.platform_version == platform_version {
                     if pipeline.program_status == ProgramStatus::CompilingRust {
@@ -1066,11 +1117,18 @@ impl Storage for StoragePostgres {
     async fn get_next_rust_compilation(
         &self,
         platform_version: &str,
+        worker_id: usize,
+        total_workers: usize,
     ) -> Result<Option<(TenantId, ExtendedPipelineDescr)>, DBError> {
         let mut client = self.pool.get().await?;
         let txn = client.transaction().await?;
-        let next_pipeline_program =
-            operations::pipeline::get_next_rust_compilation(&txn, platform_version).await?;
+        let next_pipeline_program = operations::pipeline::get_next_rust_compilation(
+            &txn,
+            platform_version,
+            worker_id,
+            total_workers,
+        )
+        .await?;
         txn.commit().await?;
         Ok(next_pipeline_program)
     }
