@@ -7,10 +7,7 @@
   import CurrentTenant from '$lib/components/auth/CurrentTenant.svelte'
 
   const globalDialog = useGlobalDialog()
-  let {
-    profile,
-    logout
-  }: SignInDetails = $props()
+  let { profile, logout }: SignInDetails = $props()
 </script>
 
 <div class="flex flex-col gap-4 p-4">
