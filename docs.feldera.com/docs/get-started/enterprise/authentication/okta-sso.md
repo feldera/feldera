@@ -84,23 +84,21 @@ You can take advantage of the supported authorization models by properly configu
 
 Feldera supports multiple authorization use-cases through [managed tenancy](index.mdx#Managed%20Tenancy). You can choose between the supported tenant claims to implement the appropriate authorization scenario. Navigate to the **Claims** tab in the Custom Authorization Server to configure one of:
 
-### `tenant` claim
+### `tenants` claim
 
-Example configuration for the `tenant` claim that uses a randomly selected user group name prefixed with "feldera_" as the tenant name:
+Example configuration for the `tenants` claim that assigns a single (randomly selected) user group name prefixed with "feldera_" as the tenant name:
 
-   - **Name**: `tenant`
+   - **Name**: `tenants`
    - **Include in token type**: `Access Token`
    - **Value type**: `Expression`
-   - **Value**: `user.getGroups({"group.profile.name": "feldera_", "operator": "STARTS_WITH"})[0].name`
+   - **Value**: `{user.getGroups({"group.profile.name": "feldera_", "operator": "STARTS_WITH"})[0].name}`
    - **Include in**: `Any scope`
 
-When using this claim, each user should only have one user group assigned that satisfies the condition in the expression value.
-
-### `tenants` claim
+In the above example each user should only have one user group assigned to them that satisfies the condition in the expression value.
 
 Example configuration for the `tenants` claim that uses all user groups prefixed with "feldera_" as the list of tenants:
 
-   - **Name**: `tenant`
+   - **Name**: `tenants`
    - **Include in token type**: `Access Token`
    - **Value type**: `Expression`
    - **Value**: `user.getGroups({"group.profile.name": "feldera_", "operator": "STARTS_WITH"}).![name]`
@@ -117,33 +115,20 @@ Example configuration for the `groups` claim that communicates all groups that t
    - **Value**: Select appropriate group filter or use all-inclusive regex `.*`
    - **Include in**: `Any scope`
 
-Consult [the relevant documentation](index.mdx#) for the corresponding Feldera configuration.
-
 ## Configure Feldera
 
-### Helm Chart Configuration
+Consult the documentation for [configuring the authentication](index.mdx#Configuration%20options) and [examples for common use-cases](index.mdx#Tenant%20Assignment%20use%20cases) to configure Feldera to authorize users properly.
 
-Configure your Feldera Helm chart (`values.yaml`) with Okta settings:
+One example of the Feldera Helm chart configuration for managed tenancy with Okta:
 
 ```yaml
 auth:
   enabled: true
   provider: "okta"
-  clientId: "<your-client-id>"
-  issuer: "https://<your-okta-domain>/oauth2/<custom-auth-server-id>"
+  clientId: "0oa1a2b3c4d5e6f7g8h9"
+  issuer: "https://dev-12345.okta.com/oauth2/aus1a2b3c4d5e6f7g8h9"
 
-# Tenant assignment strategy
-pipelineManager:
-  extraArgs:
-    - "--auth-provider=generic-oidc"
-    - "--issuer-tenant=true"        # Enable organization tenancy
-    - "--individual-tenant=false"   # Disable individual tenancy
+authorization:
+  individualTenant: false
+  authAudience: "0oa1a2b3c4d5e6f7g8h9"
 ```
-
-Replace the placeholders:
-
-| Placeholder | Description | Example |
-|------------|-------------|---------|
-| `<your-okta-domain>` | Your Okta organization domain | `dev-12345.okta.com` |
-| `<your-client-id>` | Application client ID from Okta | `0oa1a2b3c4d5e6f7g8h9` |
-| `<auth-server-id>` | Custom authorization server ID (optional) | `aus1a2b3c4d5e6f7g8h9` |
