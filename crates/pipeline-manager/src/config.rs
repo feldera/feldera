@@ -816,6 +816,38 @@ pub struct CompilerConfig {
     #[arg(long, default_value_t = default_dbsp_override_path())]
     pub dbsp_override_path: String,
 
+    /// HTTP endpoint URL for uploading compiled binaries.
+    /// If set, compiled binaries will be uploaded to this endpoint instead of being copied locally.
+    /// The binary will be uploaded as raw binary data using POST with Content-Type: application/octet-stream.
+    /// Metadata is included in the URL path as follows:
+    /// {endpoint}/binary/{pipeline_id}/{program_version}/{source_checksum}/{integrity_checksum}
+    /// Where:
+    /// - pipeline_id: The UUID of the pipeline
+    /// - program_version: The version number of the program
+    /// - source_checksum: SHA256 checksum of the source code
+    /// - integrity_checksum: SHA256 checksum of the compiled binary
+    ///
+    /// Example: --binary-upload-endpoint http://127.0.0.1:8085
+    ///          --binary-upload-endpoint https://compiler-server-0:8085
+    #[arg(long)]
+    pub binary_upload_endpoint: Option<String>,
+
+    /// Timeout in seconds for binary upload requests.
+    /// Default is 600 seconds (10 minutes).
+    #[arg(long, default_value_t = 600)]
+    pub binary_upload_timeout_secs: u64,
+
+    /// Maximum number of retry attempts for binary upload requests.
+    /// Default is 3 retries.
+    #[arg(long, default_value_t = 3)]
+    pub binary_upload_max_retries: u32,
+
+    /// Initial delay in milliseconds between retry attempts for binary upload requests.
+    /// The delay doubles after each retry (exponential backoff).
+    /// Default is 1000 milliseconds (1 second).
+    #[arg(long, default_value_t = 1000)]
+    pub binary_upload_retry_delay_ms: u64,
+
     /// Precompile Rust dependencies in the working directory.
     ///
     /// Instructs the manager to download and compile all crates needed by
