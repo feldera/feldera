@@ -1,18 +1,17 @@
-import logging
-
-from feldera.rest.config import Config
-
-from feldera.rest.errors import (
-    FelderaAPIError,
-    FelderaTimeoutError,
-    FelderaCommunicationError,
-)
-
 import json
+import logging
+import time
+from typing import Any, Callable, List, Mapping, Optional, Sequence, Union
+
 import requests
 from requests.packages import urllib3
-from typing import Callable, Optional, Any, Union, Mapping, Sequence, List
-import time
+
+from feldera.rest.config import Config
+from feldera.rest.errors import (
+    FelderaAPIError,
+    FelderaCommunicationError,
+    FelderaTimeoutError,
+)
 
 
 def json_serialize(body: Any) -> str:
@@ -111,11 +110,12 @@ class HttpRequests:
                     logging.debug("got response: %s", str(resp))
                     return resp
                 except FelderaAPIError as err:
-                    # Only retry on 503
-                    if err.status_code == 503:
+                    # Only retry on 503 and 408
+                    if err.status_code in [503, 408]:
                         if attempt < max_retries:
                             logging.warning(
-                                "HTTP 503 received for %s, retrying (%d/%d)...",
+                                "HTTP %d received for %s, retrying (%d/%d)...",
+                                err.status_code,
                                 path,
                                 attempt + 1,
                                 max_retries,
