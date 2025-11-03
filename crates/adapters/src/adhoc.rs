@@ -50,7 +50,7 @@ pub(crate) fn create_session_context(
         if !path.exists() {
             create_dir_all(&path).map_err(|error| {
                 ControllerError::io_error(
-                    String::from("unable to create ad-hoc scratch space directory during startup"),
+                    "unable to create ad-hoc scratch space directory during startup",
                     error,
                 )
             })?;
