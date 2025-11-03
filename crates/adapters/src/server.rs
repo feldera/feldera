@@ -29,6 +29,7 @@ use actix_web::{
     web::{self, Data as WebData, Payload, Query},
 };
 use async_stream;
+use atomic::Atomic;
 use chrono::Utc;
 use clap::Parser;
 use colored::Colorize;
@@ -221,7 +222,8 @@ pub(crate) struct ServerState {
     /// The other locks in this structure nest inside `desired_status`.
     desired_status: Mutex<RuntimeDesiredStatus>,
 
-    bootstrap_policy: Mutex<BootstrapPolicy>,
+    /// Bootstrap policy.
+    bootstrap_policy: Atomic<BootstrapPolicy>,
 
     /// Notified when `desired_status` changes.
     desired_status_change: Arc<Notify>,
@@ -279,7 +281,7 @@ impl ServerState {
             checkpoint_state: Default::default(),
             sync_checkpoint_state: Default::default(),
             desired_status: Mutex::new(desired_status),
-            bootstrap_policy: Mutex::new(bootstrap_policy),
+            bootstrap_policy: Atomic::new(bootstrap_policy),
             deployment_id,
             rate_limiter,
             samply_profile: Default::default(),
@@ -356,11 +358,11 @@ impl ServerState {
     }
 
     pub fn bootstrap_policy(&self) -> BootstrapPolicy {
-        *self.bootstrap_policy.lock().unwrap()
+        self.bootstrap_policy.load(Ordering::Acquire)
     }
 
     fn set_bootstrap_policy(&self, policy: BootstrapPolicy) {
-        *self.bootstrap_policy.lock().unwrap() = policy;
+        self.bootstrap_policy.store(policy, Ordering::Release)
     }
 
     fn phase(&self) -> PipelinePhase {
