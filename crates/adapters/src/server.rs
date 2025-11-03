@@ -750,6 +750,14 @@ pub fn run_server(
     .worker_max_blocking_threads(std::cmp::max(512 / workers, 1))
     .keep_alive(KeepAlive::Timeout(Duration::from_secs(30)))
     .max_connection_rate(1000)
+    // The client request timeout sets the time limit for the server to receive
+    // the first request from a new client.  When it times out, the server sends
+    // a 408 Request Timeout error (and this is the only case where it sends
+    // that error).  With the default of 5 seconds, some requests time out in
+    // CI.  By extending the timeout, we hope to suppress those problems.  (The
+    // timeouts might be a symptom of another problem, though, such as the
+    // client in some cases getting stuck and not sending its request.)
+    .client_request_timeout(Duration::from_secs(180))
     // Set timeout for graceful shutdown of workers.
     // The default in actix is 30s. We may consider making this configurable.
     .shutdown_timeout(10);
