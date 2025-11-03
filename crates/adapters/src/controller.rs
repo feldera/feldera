@@ -1679,7 +1679,7 @@ impl RunningCheckpointSync {
     fn start(circuit: &mut CircuitThread, uuid: uuid::Uuid) -> Result<Self, Arc<ControllerError>> {
         let Some((_, options)) = circuit.controller.status.pipeline_config.storage() else {
             return Err(Arc::new(ControllerError::storage_error(
-                "cannot sync checkpoints when storage is disabled".to_owned(),
+                "cannot sync checkpoints when storage is disabled",
                 dbsp::storage::backend::StorageError::StorageDisabled,
             )));
         };
@@ -1687,7 +1687,7 @@ impl RunningCheckpointSync {
         let feldera_types::config::StorageBackendConfig::File(ref file_cfg) = options.backend
         else {
             return Err(Arc::new(ControllerError::storage_error(
-                "syncing checkpoint is only supported with file backend".to_owned(),
+                "syncing checkpoint is only supported with file backend",
                 dbsp::storage::backend::StorageError::BackendNotSupported(Box::new(
                     options.backend.clone(),
                 )),
@@ -1700,7 +1700,7 @@ impl RunningCheckpointSync {
         } = **file_cfg
         else {
             return Err(Arc::new(ControllerError::storage_error(
-                "sync config is not set; cannot push checkpoints".to_owned(),
+                "sync config is not set; cannot push checkpoints",
                 dbsp::storage::backend::StorageError::BackendNotSupported(Box::new(
                     options.backend.clone(),
                 )),
