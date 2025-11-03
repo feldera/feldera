@@ -38,15 +38,12 @@ Users from the same organization share a tenant, derived from the issuer hostnam
 
 ### Managed Tenancy
 
-Multiple teams can use the same Feldera instance with complete tenant isolation. Each team's users should be assigned to corresponding tenant(s) with the proper configuration of a dynamic tenant claim in the OIDC Access token. The managed tenant claims are always respected if issued.
+Multiple teams can use the same Feldera instance with complete tenant isolation. Each team's users should be assigned to corresponding tenant(s) with the proper configuration of the dynamic `tenants` claim in the OIDC Access token.
 
-The supported, mutually exclusive claims are:
+The `tenants` claim authorizes the user to access any of the specified tenants. It is always respected if issued.
+`tenants` can contain either a list, or a string of comma-separated tenant names.
 
-   - `tenant` - authorizes the user to access a single tenant
-   - `tenants` - authorizes the user to access any of the tenants in a list.
-   `tenants` can contain either a list, or a string of comma-separated tenant names.
-
-The user can only interact with the API through a single tenant at a time. When using `tenants` claim, in Web Console the user can switch between the tenants they are authorized for.
+The user can only interact with the API through a single tenant at a time. When the user is authorized to multiple tenants, in Web Console they can switch between the current tenant.
 For HTTP API use, the current tenant name is specified in the `Feldera-Tenant` header.
 
 ## Tenant Assignment use cases
@@ -147,7 +144,7 @@ pipeline-manager ... --auth-provider=generic-oidc --authorized-groups=feldera_en
 
 ### Shared access within a user group (managed tenancy)
 
-Tenant assignment via `tenant` or `tenants` claims in JWT configured in your OIDC provider.
+Tenant assignment via `tenants` claim in JWT configured in your OIDC provider.
 
 **Helm Configuration:**
 ```yaml
@@ -195,16 +192,6 @@ Direct pipeline-manager configuration:
 ```bash
 pipeline-manager ... --auth-provider=generic-oidc --individual-tenant=true --authorized-groups=feldera_engineering,feldera_qa
 ```
-
-## Tenant Resolution Priority
-
-Feldera resolves tenant assignment using the following priority order:
-
-1. **`tenant` claim** - Explicit tenant assignment via OIDC provider
-2. **Issuer domain `iss` claim** (when `--issuer-tenant=true`)
-3. **User `sub` claim** (when `--individual-tenant=true`)
-
-If no valid tenant is found and `--individual-tenant=false` the user will be denied authorization.
 
 ## Configuration options
 
@@ -280,6 +267,16 @@ FELDERA_AUTH_AUDIENCE=feldera-api            # default: feldera-api
 AWS_COGNITO_LOGIN_URL=https://...
 AWS_COGNITO_LOGOUT_URL=https://...
 ```
+
+## Tenant Resolution Priority
+
+Feldera resolves tenant assignment using the following priority order:
+
+1. **`tenants` claim** - Explicit tenant assignment via OIDC provider
+2. **Issuer domain `iss` claim** (when `--issuer-tenant=true`)
+3. **User `sub` claim** (when `--individual-tenant=true`)
+
+If no valid tenant is found and `--individual-tenant=false` the user will be denied authorization.
 
 ## Provider-Specific Setup
 
