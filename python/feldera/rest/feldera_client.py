@@ -1,20 +1,20 @@
-import pathlib
-from typing import Any, Dict, Optional
-import logging
-import time
 import json
+import logging
+import pathlib
+import time
 from decimal import Decimal
-from typing import Generator, Mapping
+from typing import Any, Dict, Generator, Mapping, Optional
 from urllib.parse import quote
+
 import requests
 
 from feldera.enums import BootstrapPolicy, PipelineFieldSelector, PipelineStatus
-from feldera.rest.config import Config
-from feldera.rest.feldera_config import FelderaConfig
-from feldera.rest.errors import FelderaTimeoutError, FelderaAPIError
-from feldera.rest.pipeline import Pipeline
-from feldera.rest._httprequests import HttpRequests
 from feldera.rest._helpers import client_version
+from feldera.rest._httprequests import HttpRequests
+from feldera.rest.config import Config
+from feldera.rest.errors import FelderaAPIError, FelderaTimeoutError
+from feldera.rest.feldera_config import FelderaConfig
+from feldera.rest.pipeline import Pipeline
 
 
 def _validate_no_none_keys_in_map(data):
@@ -258,12 +258,12 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             )
             time.sleep(0.1)
 
-    def create_pipeline(self, pipeline: Pipeline) -> Pipeline:
+    def create_pipeline(self, pipeline: Pipeline, wait: bool = True) -> Pipeline:
         """
         Create a pipeline if it doesn't exist and wait for it to compile
 
-
-        :name: The name of the pipeline
+        :param pipeline: The pipeline to create
+        :param wait: Whether to wait for the pipeline to compile. True by default
         """
 
         body = {
@@ -281,12 +281,21 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             body=body,
         )
 
+        if not wait:
+            return pipeline
+
         return self.__wait_for_compilation(pipeline.name)
 
-    def create_or_update_pipeline(self, pipeline: Pipeline) -> Pipeline:
+    def create_or_update_pipeline(
+        self, pipeline: Pipeline, wait: bool = True
+    ) -> Pipeline:
         """
         Create a pipeline if it doesn't exist or update a pipeline and wait for
         it to compile
+
+        :param pipeline: The pipeline to create or update
+        :param wait: Whether to wait for the pipeline to compile. True by default
+        :return: The created or updated pipeline
         """
 
         body = {
@@ -303,6 +312,9 @@ Reason: The pipeline is in a STOPPED state due to the following error:
             path=f"/pipelines/{pipeline.name}",
             body=body,
         )
+
+        if not wait:
+            return pipeline
 
         return self.__wait_for_compilation(pipeline.name)
 
