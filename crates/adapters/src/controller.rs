@@ -6146,12 +6146,12 @@ impl CheckpointThread {
         // Finalize the checkpoint on storage.
         //
         // [Checkpoint::write] commits to stable storage.
-        self.checkpoint
-            .write(&*self.storage, &StoragePath::from(STATE_FILE))?;
         self.checkpoint.write(
             &*self.storage,
             &StoragePath::from(uuid.to_string()).child(STATE_FILE),
         )?;
+        self.checkpoint
+            .write(&*self.storage, &StoragePath::from(STATE_FILE))?;
 
         // Record statistics.
         CHECKPOINT_RUNTIME.record_elapsed(self.start_checkpoint);
