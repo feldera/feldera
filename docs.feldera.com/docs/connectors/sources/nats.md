@@ -184,9 +184,9 @@ CREATE MATERIALIZED VIEW summary as
     GROUP BY text_length
 ```
 
-### Only revice messages NATS messages
+### Only receive new NATS messages
 
-If you only want to recive messages published after Feldera pipline start,
+If you only want to receive messages published after the Feldera pipeline starts,
 change `deliver_policy` to `New`.
 
 ```sql
@@ -229,7 +229,7 @@ CREATE MATERIALIZED VIEW summary as
 
 ### Filtering by subject
 
-Use `filter_subjects` to only conssume messages from spesific subjects `text.area.2` and `text.*.3`:
+Use `filter_subjects` to only consume messages from specific subjects `text.area.2` and `text.*.3`:
 
 ```sql
 CREATE TABLE raw_text (
