@@ -20,7 +20,7 @@ jobs:
       - name: Build Python SDK docs
         working-directory: ./python/docs
         run: |
-          uv run sphinx-apidoc -o . ../
+          uv run sphinx-apidoc -o . ../feldera
           uv run sphinx-build -M html . _build
 
       - name: Copy the Python docs to static
