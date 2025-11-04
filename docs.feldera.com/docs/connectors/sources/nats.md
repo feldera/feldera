@@ -182,7 +182,6 @@ CREATE MATERIALIZED VIEW summary as
         count(*) as count
     FROM raw_text
     GROUP BY text_length
-    ORDER BY text_length;
 ```
 
 ### Only revice messages NATS messages
@@ -226,7 +225,6 @@ CREATE MATERIALIZED VIEW summary as
         count(*) as count
     FROM raw_text
     GROUP BY text_length
-    ORDER BY text_length;
 ```
 
 ### Filtering by subject
@@ -270,7 +268,6 @@ CREATE MATERIALIZED VIEW summary as
         count(*) as count
     FROM raw_text
     GROUP BY text_length
-    ORDER BY text_length;
 ```
 
 ### Replaying at original timing
@@ -314,7 +311,6 @@ CREATE MATERIALIZED VIEW summary as
         count(*) as count
     FROM raw_text
     GROUP BY text_length
-    ORDER BY text_length;
 ```
 ## Additional resources
 
