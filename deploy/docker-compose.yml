@@ -90,7 +90,7 @@ services:
 
   nats-cli:
     # Utilities for NATS testing and management
-    # Usage: docker compose exec nats-box sh
+    # Usage: docker compose exec nats-cli sh
     # Then nats cli tool is available.
     profiles: [ "nats" ]
     image: natsio/nats-box:latest
