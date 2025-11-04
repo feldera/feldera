@@ -35,46 +35,38 @@ pub struct Checkpointer {
     #[debug(skip)]
     backend: Arc<dyn StorageBackend>,
     checkpoint_list: VecDeque<CheckpointMetadata>,
-    fingerprint: u64,
 }
 
 impl Checkpointer {
     /// We keep at least this many checkpoints around.
     pub(super) const MIN_CHECKPOINT_THRESHOLD: usize = 2;
 
-    /// Create a new checkpointer for directory `storage_path`, delete any unreferenced
-    /// files in the directory.
-    ///
-    /// If fingerprint_must_match is true, verify that any existing checkpoints in that
-    /// directory have the given `fingerprint`.
-    pub fn new(
-        backend: Arc<dyn StorageBackend>,
-        fingerprint: u64,
-        fingerprint_must_match: bool,
-    ) -> Result<Self, Error> {
-        let checkpoint_list = Self::try_read_checkpoints(&*backend)?;
+    /// Creates a new checkpointer for directory `storage_path`.  Deletes any
+    /// unreferenced files in the directory.
+    pub fn new(backend: Arc<dyn StorageBackend>) -> Result<Self, Error> {
+        let checkpoint_list = Self::read_checkpoints(&*backend)?;
 
         let this = Checkpointer {
             backend,
             checkpoint_list,
-            fingerprint,
         };
 
         this.init_storage()?;
 
-        if fingerprint_must_match {
-            for cpm in &this.checkpoint_list {
-                if cpm.fingerprint != fingerprint {
-                    return Err(Error::Runtime(RuntimeError::IncompatibleStorage));
-                }
-            }
-        }
-
         Ok(this)
     }
 
-    pub fn fingerprint(&self) -> u64 {
-        self.fingerprint
+    /// Verifies that existing checkpoints have the specified fingerprint.
+    pub fn verify_fingerprint(&self, fingerprint: u64) -> Result<(), Error> {
+        if self
+            .checkpoint_list
+            .iter()
+            .any(|cpm| cpm.fingerprint != fingerprint)
+        {
+            Err(Error::Runtime(RuntimeError::IncompatibleStorage))
+        } else {
+            Ok(())
+        }
     }
 
     fn init_storage(&self) -> Result<(), Error> {
@@ -170,9 +162,9 @@ impl Checkpointer {
                     Err(e) => {
                         tracing::warn!("Unable to remove old-checkpoint file {path}: {e} (the pipeline will try to delete the file again on a restart)");
                     }
-            }
+                }
             } else if let StorageFileType::File { size } = file_type {
-                    usage += size;
+                usage += size;
             }
         })?;
 
@@ -186,6 +178,7 @@ impl Checkpointer {
     pub(super) fn commit(
         &mut self,
         uuid: Uuid,
+        fingerprint: u64,
         identifier: Option<String>,
         steps: Option<u64>,
         processed_records: Option<u64>,
@@ -198,7 +191,7 @@ impl Checkpointer {
         let mut md = CheckpointMetadata {
             uuid,
             identifier,
-            fingerprint: self.fingerprint,
+            fingerprint,
             size: None,
             processed_records,
             steps,
@@ -225,7 +218,8 @@ impl Checkpointer {
         Ok(self.checkpoint_list.clone().into())
     }
 
-    fn try_read_checkpoints(
+    /// Reads the list of checkpoints available through `backend`.
+    pub fn read_checkpoints(
         backend: &dyn StorageBackend,
     ) -> Result<VecDeque<CheckpointMetadata>, Error> {
         match backend.read_json(&StoragePath::from(CHECKPOINT_FILE_NAME)) {
