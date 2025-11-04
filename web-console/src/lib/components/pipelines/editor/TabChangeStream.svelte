@@ -342,7 +342,8 @@
     </label>
     {#if isDisabled}
       <Tooltip class="z-10 bg-white text-surface-950-50 dark:bg-black" placement="right">
-        Cannot follow more than {maxStreamsOnHttp} tables and views across all pipelines over HTTP. Consider using HTTPS (supported in Feldera Enterprise Edition).
+        Cannot follow more than {maxStreamsOnHttp} tables and views across all pipelines over HTTP. Consider
+        using HTTPS (supported in Feldera Enterprise Edition).
       </Tooltip>
     {/if}
   {/snippet}

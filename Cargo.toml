@@ -242,7 +242,7 @@ thiserror = "2"
 threadpool = "1.8.1"
 thread-id = "5.0.0"
 tikv-jemallocator = "0.6.0"
-time = "0.3.20"
+time = { version = "0.3.20", features = ["serde", "serde-well-known"] }
 tokio = "1.44.2"
 tokio-postgres = "0.7"
 tokio-stream = "0.1.15"

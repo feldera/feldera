@@ -78,7 +78,7 @@ If you get an error like this:
 ```
 
 then add the new type to `crates/pipeline-manager/src/api/main.rs`,
-and then rerun both commands above.  If there is more than one new
+and then rerun both commands above. If there is more than one new
 type, you may want to add all of them at once, because this will only
 report one each time.
 

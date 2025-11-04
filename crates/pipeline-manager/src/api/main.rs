@@ -256,6 +256,7 @@ It contains the following fields:
         feldera_types::runtime_status::RuntimeStatus,
         feldera_types::runtime_status::RuntimeDesiredStatus,
         feldera_types::runtime_status::BootstrapPolicy,
+        crate::api::endpoints::pipeline_management::ConnectorStats,
         crate::api::endpoints::pipeline_management::PipelineInfo,
         crate::api::endpoints::pipeline_management::PipelineSelectedInfo,
         crate::api::endpoints::pipeline_management::PipelineFieldSelector,

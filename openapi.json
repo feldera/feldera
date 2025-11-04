@@ -6174,6 +6174,21 @@
         ],
         "description": "A data connector's configuration"
       },
+      "ConnectorStats": {
+        "type": "object",
+        "description": "Aggregated connector error statistics.\n\nThis structure contains the sum of all error counts across all input and output connectors\nfor a pipeline.",
+        "required": [
+          "num_errors"
+        ],
+        "properties": {
+          "num_errors": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Total number of errors across all connectors.\n\nThis is the sum of:\n- `num_transport_errors` from all input connectors\n- `num_parse_errors` from all input connectors\n- `num_encode_errors` from all output connectors\n- `num_transport_errors` from all output connectors",
+            "minimum": 0
+          }
+        }
+      },
       "ConsumerConfig": {
         "type": "object",
         "required": [
@@ -6251,9 +6266,10 @@
             ],
             "properties": {
               "FromFile": {
-                "$ref": "#/components/schemas/PathBuf"
+                "type": "string"
               }
-            }
+            },
+            "example": "/path/to/credentials.json"
           }
         ]
       },
@@ -6447,7 +6463,9 @@
                 ],
                 "properties": {
                   "start_time": {
-                    "$ref": "#/components/schemas/OffsetDateTime"
+                    "type": "string",
+                    "format": "date-time",
+                    "example": "2023-01-15T09:30:00Z"
                   }
                 }
               }
@@ -8048,7 +8066,8 @@
         "type": "string",
         "enum": [
           "all",
-          "status"
+          "status",
+          "status_with_connectors"
         ]
       },
       "PipelineId": {
@@ -8250,6 +8269,14 @@
           "deployment_resources_desired_status_since"
         ],
         "properties": {
+          "connectors": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ConnectorStats"
+              }
+            ],
+            "nullable": true
+          },
           "created_at": {
             "type": "string",
             "format": "date-time"

@@ -30,6 +30,7 @@ use feldera_types::config::{InputEndpointConfig, OutputEndpointConfig, RuntimeCo
 use feldera_types::error::ErrorResponse;
 use feldera_types::program_schema::ProgramSchema;
 use feldera_types::runtime_status::{BootstrapPolicy, RuntimeDesiredStatus, RuntimeStatus};
+use futures_util::future::join_all;
 use log::info;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -65,6 +66,22 @@ fn remove_large_fields_from_program_info(
         let _ = m.shift_remove("dataflow");
     }
     program_info
+}
+
+/// Aggregated connector error statistics.
+///
+/// This structure contains the sum of all error counts across all input and output connectors
+/// for a pipeline.
+#[derive(Serialize, Deserialize, ToSchema, Eq, PartialEq, Debug, Clone)]
+pub struct ConnectorStats {
+    /// Total number of errors across all connectors.
+    ///
+    /// This is the sum of:
+    /// - `num_transport_errors` from all input connectors
+    /// - `num_parse_errors` from all input connectors
+    /// - `num_encode_errors` from all output connectors
+    /// - `num_transport_errors` from all output connectors
+    pub num_errors: u64,
 }
 
 /// Pipeline information.
@@ -254,6 +271,8 @@ pub struct PipelineSelectedInfo {
     pub deployment_runtime_status_since: Option<DateTime<Utc>>,
     pub deployment_runtime_desired_status: Option<RuntimeDesiredStatus>,
     pub deployment_runtime_desired_status_since: Option<DateTime<Utc>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub connectors: Option<ConnectorStats>,
 }
 
 /// Pipeline information which has a selected subset of optional fields (internal).
@@ -307,6 +326,8 @@ pub struct PipelineSelectedInfoInternal {
     pub deployment_runtime_desired_status: Option<RuntimeDesiredStatus>,
     pub deployment_runtime_desired_status_since: Option<DateTime<Utc>>,
     pub bootstrap_policy: Option<BootstrapPolicy>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub connectors: Option<ConnectorStats>,
 }
 
 impl PipelineSelectedInfoInternal {
@@ -365,6 +386,7 @@ impl PipelineSelectedInfoInternal {
             deployment_runtime_desired_status_since: extended_pipeline
                 .deployment_runtime_desired_status_since,
             bootstrap_policy: extended_pipeline.bootstrap_policy,
+            connectors: None,
         }
     }
 
@@ -421,7 +443,17 @@ impl PipelineSelectedInfoInternal {
             deployment_runtime_desired_status_since: extended_pipeline
                 .deployment_runtime_desired_status_since,
             bootstrap_policy: extended_pipeline.bootstrap_policy,
+            connectors: None,
         }
+    }
+
+    pub(crate) fn new_status_with_connectors(
+        extended_pipeline: ExtendedPipelineDescrMonitoring,
+        connectors: Option<ConnectorStats>,
+    ) -> Self {
+        let mut result = Self::new_status(extended_pipeline);
+        result.connectors = connectors;
+        result
     }
 }
 
@@ -500,6 +532,14 @@ pub enum PipelineFieldSelector {
     /// - `deployment_runtime_desired_status_since`
     /// - `bootstrap_policy`
     Status,
+    /// Select the fields included in `Status` plus aggregated connector error statistics.
+    ///
+    /// In addition to all fields from `Status`, this selector includes:
+    /// - `connectors`: Aggregated error statistics across all input and output connectors
+    ///   - `num_errors`: Sum of `num_transport_errors`, `num_parse_errors`, and `num_encode_errors`
+    ///
+    /// If a pipeline is unavailable, the `connectors` field will be null.
+    StatusWithConnectors,
 }
 
 /// Default for the `selector` query parameter when GET a pipeline or a list of pipelines.
@@ -670,10 +710,114 @@ pub(crate) async fn list_pipelines(
                 .map(PipelineSelectedInfoInternal::new_status)
                 .collect()
         }
+        PipelineFieldSelector::StatusWithConnectors => {
+            let pipelines = state
+                .db
+                .lock()
+                .await
+                .list_pipelines_for_monitoring(*tenant_id)
+                .await?;
+
+            // Fetch connector stats for all pipelines in parallel
+            let stats_futures: Vec<_> =
+                pipelines
+                    .iter()
+                    .map(|pipeline| {
+                        let state = state.clone();
+                        let tenant_id = *tenant_id;
+                        let pipeline_name = pipeline.name.clone();
+                        async move {
+                            fetch_connector_error_stats(&state, tenant_id, &pipeline_name).await
+                        }
+                    })
+                    .collect();
+
+            let connector_stats = join_all(stats_futures).await;
+
+            pipelines
+                .into_iter()
+                .zip(connector_stats.into_iter())
+                .map(|(pipeline, stats)| {
+                    PipelineSelectedInfoInternal::new_status_with_connectors(pipeline, stats)
+                })
+                .collect()
+        }
     };
     Ok(HttpResponse::Ok()
         .insert_header(CacheControl(vec![CacheDirective::NoCache]))
         .json(returned_pipelines))
+}
+
+/// Fetch and aggregate connector error statistics for a pipeline.
+///
+/// Returns `None` if the pipeline is unavailable or if there's an error fetching stats.
+async fn fetch_connector_error_stats(
+    state: &WebData<ServerState>,
+    tenant_id: TenantId,
+    pipeline_name: &str,
+) -> Option<ConnectorStats> {
+    // Use the existing method to forward the request to the pipeline
+    let client = awc::Client::default();
+    let response = state
+        .runner
+        .forward_http_request_to_pipeline_by_name(
+            &client,
+            tenant_id,
+            pipeline_name,
+            actix_web::http::Method::GET,
+            "stats",
+            "",
+            Some(std::time::Duration::from_millis(500)),
+        )
+        .await
+        .ok()?;
+
+    // Parse the response body
+    let body = response.into_body();
+    let bytes = actix_web::body::to_bytes(body).await.ok()?;
+    let stats_response: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
+
+    // Extract and aggregate error counts
+    let mut total_errors = 0u64;
+
+    // Aggregate input connector errors
+    if let Some(input_endpoints) = stats_response.get("inputs").and_then(|v| v.as_object()) {
+        for endpoint in input_endpoints.values() {
+            if let Some(metrics) = endpoint.get("metrics").and_then(|v| v.as_object()) {
+                if let Some(transport_errors) =
+                    metrics.get("num_transport_errors").and_then(|v| v.as_u64())
+                {
+                    total_errors = total_errors.saturating_add(transport_errors);
+                }
+                if let Some(parse_errors) = metrics.get("num_parse_errors").and_then(|v| v.as_u64())
+                {
+                    total_errors = total_errors.saturating_add(parse_errors);
+                }
+            }
+        }
+    }
+
+    // Aggregate output connector errors
+    if let Some(output_endpoints) = stats_response.get("outputs").and_then(|v| v.as_object()) {
+        for endpoint in output_endpoints.values() {
+            if let Some(metrics) = endpoint.get("metrics").and_then(|v| v.as_object()) {
+                if let Some(encode_errors) =
+                    metrics.get("num_encode_errors").and_then(|v| v.as_u64())
+                {
+                    total_errors = total_errors.saturating_add(encode_errors);
+                }
+                if let Some(transport_errors) =
+                    metrics.get("num_transport_errors").and_then(|v| v.as_u64())
+                {
+                    total_errors = total_errors.saturating_add(transport_errors);
+                }
+            }
+        }
+    }
+
+    Some(ConnectorStats {
+        num_errors: total_errors,
+    })
 }
 
 /// Retrieve a pipeline.
@@ -724,6 +868,17 @@ pub(crate) async fn get_pipeline(
                 .get_pipeline_for_monitoring(*tenant_id, &pipeline_name)
                 .await?;
             PipelineSelectedInfoInternal::new_status(pipeline)
+        }
+        PipelineFieldSelector::StatusWithConnectors => {
+            let pipeline = state
+                .db
+                .lock()
+                .await
+                .get_pipeline_for_monitoring(*tenant_id, &pipeline_name)
+                .await?;
+            let connector_stats =
+                fetch_connector_error_stats(&state, *tenant_id, &pipeline_name).await;
+            PipelineSelectedInfoInternal::new_status_with_connectors(pipeline, connector_stats)
         }
     };
     Ok(HttpResponse::Ok()
