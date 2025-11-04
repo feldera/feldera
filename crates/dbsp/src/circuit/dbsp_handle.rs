@@ -972,6 +972,9 @@ pub struct DBSPHandle {
     /// For creating checkpoints, if we can.
     checkpointer: Option<Arc<Mutex<Checkpointer>>>,
 
+    /// Circuit fingerprint.
+    fingerprint: u64,
+
     /// Information about operators that participate in bootstrapping the new parts of the circuit.
     bootstrap_info: Option<BootstrapInfo>,
 }
@@ -1028,11 +1031,11 @@ impl DBSPHandle {
         // directory)?
         let checkpointer = backend
             .map(|backend| {
-                Checkpointer::new(
-                    backend,
-                    fingerprint,
-                    runtime.runtime().get_mode() == Mode::Ephemeral,
-                )
+                let checkpointer = Checkpointer::new(backend)?;
+                if runtime.runtime().get_mode() == Mode::Ephemeral {
+                    checkpointer.verify_fingerprint(fingerprint)?;
+                };
+                Ok::<_, DbspError>(checkpointer)
             })
             .transpose()?
             .map(|checkpointer| Arc::new(Mutex::new(checkpointer)));
@@ -1042,6 +1045,7 @@ impl DBSPHandle {
             command_senders,
             status_receivers,
             checkpointer,
+            fingerprint,
             runtime_elapsed: Duration::ZERO,
             bootstrap_info: None,
         })
@@ -1367,13 +1371,8 @@ impl DBSPHandle {
     }
 
     /// Fingerprint of this circuit.
-    ///
-    /// We only keep the fingerprint if the circuit has storage, since it's to
-    /// make sure that the running circuit matches whatever we stored.
-    pub fn fingerprint(&self) -> Option<u64> {
-        self.checkpointer
-            .as_ref()
-            .map(|checkpointer| checkpointer.lock().unwrap().fingerprint())
+    pub fn fingerprint(&self) -> u64 {
+        self.fingerprint
     }
 
     /// Reset circuit state to the point of the given Commit.
@@ -1664,6 +1663,7 @@ impl<'a> CheckpointBuilder<'a> {
             checkpointer,
             uuid,
             readers,
+            fingerprint: self.handle.fingerprint,
             name: self.name,
             steps: self.steps,
             processed_records: self.processed_records,
@@ -1676,6 +1676,7 @@ pub struct CheckpointCommitter {
     checkpointer: Arc<Mutex<Checkpointer>>,
     uuid: Uuid,
     readers: Vec<Vec<Arc<dyn FileCommitter>>>,
+    fingerprint: u64,
     name: Option<String>,
     steps: Option<u64>,
     processed_records: Option<u64>,
@@ -1692,6 +1693,7 @@ impl CheckpointCommitter {
         }
         self.checkpointer.lock().unwrap().commit(
             self.uuid,
+            self.fingerprint,
             self.name,
             self.steps,
             self.processed_records,
@@ -2282,21 +2284,13 @@ pub(crate) mod tests {
     #[test]
     fn fingerprint_is_different() {
         let (_tempdir, cconf) = mkconfig();
-        let fid1 = mkcircuit(&cconf).unwrap().0.fingerprint().unwrap();
-        let fid2 = mkcircuit_different(&cconf)
-            .unwrap()
-            .0
-            .fingerprint()
-            .unwrap();
+        let fid1 = mkcircuit(&cconf).unwrap().0.fingerprint();
+        let fid2 = mkcircuit_different(&cconf).unwrap().0.fingerprint();
         assert_ne!(fid1, fid2);
 
         // Unfortunately, the fingerprint isn't perfect, e.g., it thinks these two
         // circuits are the same:
-        let fid3 = mkcircuit_with_bounds(&cconf)
-            .unwrap()
-            .0
-            .fingerprint()
-            .unwrap();
+        let fid3 = mkcircuit_with_bounds(&cconf).unwrap().0.fingerprint();
         assert_eq!(fid1, fid3); // Ideally, should be assert_ne
     }
 
