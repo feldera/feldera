@@ -99,7 +99,7 @@ fn pull_and_gc(
                 }
             }
 
-            let checkpointer = Checkpointer::new(storage.clone(), 0, false)?;
+            let checkpointer = Checkpointer::new(storage.clone())?;
             checkpointer.gc_startup()?;
 
             Ok(cpm)
