@@ -73,6 +73,33 @@ services:
       retries: 5
       start_period: 5s
 
+  nats:
+    profiles: [ "nats" ]
+    image: nats:alpine
+    ports:
+      - "4222:4222"  # Client connections
+      - "8222:8222"  # HTTP monitoring
+      - "6222:6222"  # Cluster routing
+    command: ["-js", "-m", "8222"]  # Enable JetStream and monitoring
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "--quiet", "http://localhost:8222/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+  nats-cli:
+    # Utilities for NATS testing and management
+    # Usage: docker compose exec nats-box sh
+    # Then nats cli tool is available.
+    profiles: [ "nats" ]
+    image: natsio/nats-box:latest
+    depends_on:
+      - nats
+    environment:
+      - NATS_URL=nats://nats:4222
+    command: ["sleep", "infinity"]  # Keep container running for interactive use
+
   prometheus:
     profiles: [ "prometheus", "grafana" ]
     depends_on:
