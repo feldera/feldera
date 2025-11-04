@@ -13,7 +13,10 @@ fn is_default<T: Default + Eq>(t: &T) -> bool {
 #[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
 pub enum Credentials {
     FromString(String),
-    FromFile(PathBuf),
+    #[schema(value_type = String, example = "/path/to/credentials.json")]
+    FromFile(
+        PathBuf,
+    ),
 }
 
 #[derive(Debug, Clone, Eq, PartialEq, Deserialize, Serialize, ToSchema)]
@@ -56,7 +59,10 @@ pub enum DeliverPolicy {
     Last,
     New,
     ByStartSequence { start_sequence: u64 },
-    ByStartTime { start_time: OffsetDateTime },
+    ByStartTime {
+        #[schema(value_type = String, format = "date-time", example = "2023-01-15T09:30:00Z")]
+        start_time: OffsetDateTime,
+    },
     LastPerSubject,
 }
 

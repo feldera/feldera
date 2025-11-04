@@ -227,7 +227,12 @@ const toPipelineThumb = (
   deploymentResourcesStatus: pipeline.deployment_resources_status,
   deploymentResourcesStatusSince: new Date(pipeline.deployment_resources_status_since),
   programConfig: pipeline.program_config!,
-  deploymentRuntimeStatusDetails: pipeline.deployment_runtime_status_details
+  deploymentRuntimeStatusDetails: pipeline.deployment_runtime_status_details,
+  connectors: pipeline.connectors
+    ? {
+        numErrors: pipeline.connectors.num_errors
+      }
+    : undefined
 })
 
 const toPipeline = <
@@ -368,8 +373,9 @@ export const patchPipeline = async (pipeline_name: string, pipeline: Partial<Pip
 }
 
 export const getPipelines = async (): Promise<PipelineThumb[]> => {
-  return mapResponse(listPipelines({ query: { selector: 'status' } }), (pipelines) =>
-    pipelines.map(toPipelineThumb)
+  return mapResponse(
+    listPipelines({ query: { selector: 'status_with_connectors' } }),
+    (pipelines) => pipelines.map(toPipelineThumb)
   )
 }
 
