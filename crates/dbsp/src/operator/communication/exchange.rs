@@ -81,7 +81,6 @@ type ExchangeDirectory = Arc<RwLock<HashMap<ExchangeId, Arc<InnerExchange>>>>;
 #[derive(Clone)]
 struct ExchangeServer(ExchangeDirectory);
 
-#[tarpc::server]
 impl ExchangeService for ExchangeServer {
     async fn exchange(
         self,
@@ -382,6 +381,10 @@ pub(crate) struct Exchange<T> {
     serialize: Box<dyn Fn(T) -> Vec<u8> + Send + Sync>,
 }
 
+async fn spawn(fut: impl Future<Output = ()> + Send + 'static) {
+    tokio::spawn(fut);
+}
+
 // Stop Rust from complaining about unused field.
 #[allow(dead_code)]
 struct ExchangeListener(DropGuard);
@@ -399,7 +402,7 @@ impl ExchangeListener {
                 .map(server::BaseChannel::with_defaults)
                 .map(move |channel| {
                     let server = ExchangeServer(directory.clone());
-                    channel.execute(server.serve())
+                    channel.execute(server.serve()).for_each(spawn)
                 })
                 .buffer_unordered(10)
                 .for_each(|_| async {});
