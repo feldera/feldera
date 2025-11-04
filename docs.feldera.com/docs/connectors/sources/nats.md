@@ -113,27 +113,31 @@ For production environments, it is strongly recommended to use [secret reference
 
 Before using the NATS input connector, you need a NATS server with JetStream enabled and a stream created.
 
-### Running NATS Server with JetStream
-
-[Download the NATS server binary](https://nats.io/download/) for your platform. NATS is a small, standalone binary that's easy to install and run.
+### Quickstart
+The quickest way to start experimenting with Feldera and NATS is to use Docker Compose:
 
 ```bash
-# Run NATS server with JetStream enabled
-nats-server -js
+curl -L https://raw.githubusercontent.com/feldera/feldera/main/deploy/docker-compose.yml | \
+docker compose --profile nats -f - up
 ```
 
+This starts a Feldera pipeline manager, NATS server, and the NATS CLI. Connect to the CLI container with:
+
+```bash
+docker compose exec nats-cli sh
+```
+
+You can then easily publish messages to the NATS server using the `nats` CLI. 
+
 ### Creating a Stream
-
-[Download the NATS CLI](https://github.com/nats-io/natscli/releases) to manage streams and publish test messages. For other installation methods (Homebrew, package managers), see the [NATS CLI installation guide](https://github.com/nats-io/natscli#installation).
-
 Once installed, create a stream and publish test messages:
 
 ```bash
 # Create a stream
-nats -s localhost:4222 stream add my_texts --subjects "text.>" --defaults
+nats stream add my_texts --subjects "text.>" --defaults
 
 # Publish test messages
-nats -s localhost:4222 pub -J --count 100 text.area.1 '{"unix": {{UnixNano}}, "text": "{{Random 0 20}}"}'
+nats pub -J --count 100 text.area.1 '{"unix": {{UnixNano}}, "text": "{{Random 0 20}}"}'
 ```
 
 ## Example usage
@@ -154,7 +158,7 @@ CREATE TABLE raw_text (
             "name": "nats_input",
             "config": {
                 "connection_config": {
-                    "server_url": "nats://localhost:4222"
+                    "server_url": "nats://nats:4222"
                 },
                 "stream_name": "my_texts",
                 "consumer_config": {
@@ -198,7 +202,7 @@ CREATE TABLE raw_text (
             "name": "nats_input",
             "config": {
                 "connection_config": {
-                    "server_url": "nats://localhost:4222"
+                    "server_url": "nats://nats:4222"
                 },
                 "stream_name": "my_texts",
                 "consumer_config": {
@@ -241,7 +245,7 @@ CREATE TABLE raw_text (
             "name": "nats_input",
             "config": {
                 "connection_config": {
-                    "server_url": "nats://localhost:4222"
+                    "server_url": "nats://nats:4222"
                 },
                 "stream_name": "my_texts",
                 "consumer_config": {
@@ -285,7 +289,7 @@ CREATE TABLE raw_text (
             "name": "nats_input",
             "config": {
                 "connection_config": {
-                    "server_url": "nats://localhost:4222"
+                    "server_url": "nats://nats:4222"
                 },
                 "stream_name": "my_texts",
                 "consumer_config": {
