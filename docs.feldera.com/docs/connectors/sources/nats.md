@@ -127,7 +127,7 @@ This starts a Feldera pipeline manager, NATS server, and the NATS CLI. Connect t
 docker compose exec nats-cli sh
 ```
 
-You can then easily publish messages to the NATS server using the `nats` CLI. 
+You can then easily publish messages to the NATS server using the `nats` CLI.
 
 ### Creating a Stream
 Once installed, create a stream and publish test messages:
