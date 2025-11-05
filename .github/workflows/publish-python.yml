@@ -19,6 +19,9 @@ defaults:
     working-directory: ./python
 
 jobs:
+  # Note this code is currently duplicated in ci-post-release, due to PyPi
+  # limitations with reusable workflows, see comment there.
+  # If you make changes here please also update ci-post-release.yml accordingly.
   deploy:
     runs-on: ubuntu-latest-amd64
     environment:
