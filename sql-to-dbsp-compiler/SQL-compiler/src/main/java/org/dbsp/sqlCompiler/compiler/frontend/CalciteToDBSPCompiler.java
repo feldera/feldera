@@ -1883,8 +1883,8 @@ public class CalciteToDBSPCompiler extends RelVisitor
 
     private void visitAsofJoin(LogicalAsofJoin join) {
         // This shares a lot of code with the LogicalJoin
-        IntermediateRel node = CalciteObject.create(join);
         CalciteObject conditionNode = CalciteObject.create(join, join.getCondition());
+        IntermediateRel node = CalciteObject.create(join, conditionNode.getPositionRange());
         JoinRelType joinType = join.getJoinType();
         boolean isLeft = joinType == JoinRelType.LEFT_ASOF;
         if (!isLeft)
@@ -2049,17 +2049,20 @@ public class CalciteToDBSPCompiler extends RelVisitor
 
         DBSPVariablePath leftVar = leftElementType.ref().var();
         DBSPExpression leftTS = leftVar.deref().field(leftTsIndex);
+        CalciteObject matchNode = CalciteObject.create(join, join.getMatchCondition());
         DBSPType leftTSType = leftTS.getType();
+        if (leftTSType.is(DBSPTypeTupleBase.class) || leftTSType.is(DBSPTypeStruct.class))
+            throw new UnimplementedException("Join on struct types", 3398, matchNode);
 
         // Currently not used
-        DBSPComparatorExpression comparator = new DBSPNoComparatorExpression(node, leftTSType);
+        DBSPComparatorExpression comparator = new DBSPNoComparatorExpression(matchNode, leftTSType);
         boolean ascending = comparison == SqlKind.GREATER_THAN || comparison == SqlKind.GREATER_THAN_OR_EQUAL;
         if (comparison != SqlKind.GREATER_THAN_OR_EQUAL) {
             // Not yet supported by DBSP
             throw new UnimplementedException(
                     "Currently the only MATCH_CONDITION comparison supported by ASOF joins is '>='", 2212, node);
         }
-        comparator = new DBSPDirectComparatorExpression(node, comparator, ascending);
+        comparator = new DBSPDirectComparatorExpression(matchNode, comparator, ascending);
 
         DBSPVariablePath k = keyType.ref().var(conditionNode);
         DBSPVariablePath l0 = leftElementType.ref().var();
