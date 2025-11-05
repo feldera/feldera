@@ -68,6 +68,49 @@ fn remove_large_fields_from_program_info(
     program_info
 }
 
+/// Metrics for an input endpoint.
+///
+/// Deserializes from `adapters::controller::stats::InputEndpointMetrics`.
+#[derive(Default, Deserialize, Debug, Clone)]
+struct InputEndpointMetrics {
+    #[serde(default)]
+    num_transport_errors: u64,
+    #[serde(default)]
+    num_parse_errors: u64,
+}
+
+/// Metrics for an output endpoint.
+///
+/// Deserializes from `adapters::controller::stats::OutputEndpointMetrics`.
+#[derive(Default, Deserialize, Debug, Clone)]
+struct OutputEndpointMetrics {
+    #[serde(default)]
+    num_encode_errors: u64,
+    #[serde(default)]
+    num_transport_errors: u64,
+}
+
+/// Endpoint statistics containing metrics.
+///
+/// Deserializes from `adapters::controller::stats::InputEndpointStatus`
+/// and `adapters::controller::stats::OutputEndpointStatus`.
+#[derive(Deserialize, Debug, Clone)]
+struct EndpointStats<T> {
+    #[serde(default)]
+    metrics: T,
+}
+
+/// Pipeline statistics response from the runtime.
+///
+/// Deserializes from `adapters::controller::stats::ControllerStatus`.
+#[derive(Deserialize, Debug, Clone)]
+struct PipelineStatsResponse {
+    #[serde(default)]
+    inputs: Vec<EndpointStats<InputEndpointMetrics>>,
+    #[serde(default)]
+    outputs: Vec<EndpointStats<OutputEndpointMetrics>>,
+}
+
 /// Aggregated connector error statistics.
 ///
 /// This structure contains the sum of all error counts across all input and output connectors
@@ -775,44 +818,34 @@ async fn fetch_connector_error_stats(
     // Parse the response body
     let body = response.into_body();
     let bytes = actix_web::body::to_bytes(body).await.ok()?;
-    let stats_response: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
+
+    let stats_response: PipelineStatsResponse = match serde_json::from_slice(&bytes) {
+        Ok(response) => response,
+        Err(e) => {
+            log::error!(
+                "Failed to deserialize pipeline stats response for '{}': {}",
+                pipeline_name,
+                e
+            );
+            return None;
+        }
+    };
 
     // Extract and aggregate error counts
     let mut total_errors = 0u64;
 
     // Aggregate input connector errors
-    if let Some(input_endpoints) = stats_response.get("inputs").and_then(|v| v.as_object()) {
-        for endpoint in input_endpoints.values() {
-            if let Some(metrics) = endpoint.get("metrics").and_then(|v| v.as_object()) {
-                if let Some(transport_errors) =
-                    metrics.get("num_transport_errors").and_then(|v| v.as_u64())
-                {
-                    total_errors = total_errors.saturating_add(transport_errors);
-                }
-                if let Some(parse_errors) = metrics.get("num_parse_errors").and_then(|v| v.as_u64())
-                {
-                    total_errors = total_errors.saturating_add(parse_errors);
-                }
-            }
-        }
+    for endpoint in stats_response.inputs {
+        total_errors = total_errors
+            .saturating_add(endpoint.metrics.num_transport_errors)
+            .saturating_add(endpoint.metrics.num_parse_errors);
     }
 
     // Aggregate output connector errors
-    if let Some(output_endpoints) = stats_response.get("outputs").and_then(|v| v.as_object()) {
-        for endpoint in output_endpoints.values() {
-            if let Some(metrics) = endpoint.get("metrics").and_then(|v| v.as_object()) {
-                if let Some(encode_errors) =
-                    metrics.get("num_encode_errors").and_then(|v| v.as_u64())
-                {
-                    total_errors = total_errors.saturating_add(encode_errors);
-                }
-                if let Some(transport_errors) =
-                    metrics.get("num_transport_errors").and_then(|v| v.as_u64())
-                {
-                    total_errors = total_errors.saturating_add(transport_errors);
-                }
-            }
-        }
+    for endpoint in stats_response.outputs {
+        total_errors = total_errors
+            .saturating_add(endpoint.metrics.num_encode_errors)
+            .saturating_add(endpoint.metrics.num_transport_errors);
     }
 
     Some(ConnectorStats {
