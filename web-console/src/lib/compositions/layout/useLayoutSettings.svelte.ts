@@ -8,14 +8,14 @@ export const useLayoutSettings = () => {
     !isTablet.current
   ) // Make pipeline drawer open by default on larger screens
   const showMonitoringPanel = useLocalStorage('layout/pipelines/monitoringPanel', true)
-  const separateAdHocTab = useLocalStorage('layout/pipelines/separateAdHoc', false)
+  const showInteractionPanel = useLocalStorage('layout/pipelines/interactionPanel', false)
   const hideWarnings = useLocalStorage('layout/pipelines/logs/hideWarnings', false)
   const verbatimErrors = useLocalStorage('layout/pipelines/logs/verbatimErrors', false)
 
   return {
     showPipelinesPanel,
     showMonitoringPanel,
-    separateAdHocTab,
+    showInteractionPanel,
     hideWarnings,
     verbatimErrors
   }

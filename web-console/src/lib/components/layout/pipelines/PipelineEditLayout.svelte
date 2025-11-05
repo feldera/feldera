@@ -4,7 +4,7 @@
 
 <script lang="ts">
   import { PaneGroup, Pane, PaneResizer, type PaneAPI } from 'paneforge'
-  import InteractionsPanel from '$lib/components/pipelines/editor/InteractionsPanel.svelte'
+  import MonitoringPanel from '$lib/components/pipelines/editor/MonitoringPanel.svelte'
   import PipelineActions from '$lib/components/pipelines/list/Actions.svelte'
   import { base } from '$app/paths'
   import {
@@ -61,6 +61,7 @@
   import FocusBanner from '$lib/components/pipelines/editor/FocusBanner.svelte'
   import StorageInUseBanner from '$lib/components/pipelines/editor/StorageInUseBanner.svelte'
   import { getRuntimeVersion } from '$lib/functions/pipelines/runtimeVersion'
+  import InteractionPanel from '$lib/components/pipelines/editor/InteractionPanel.svelte'
 
   let {
     preloaded,
@@ -202,7 +203,7 @@ example = "1.0"`
   const drawer = useAdaptiveDrawer('right')
   const pipelineList = usePipelineList(preloaded)
 
-  let { showPipelinesPanel, showMonitoringPanel, separateAdHocTab } = useLayoutSettings()
+  let { showPipelinesPanel, showMonitoringPanel, showInteractionPanel } = useLayoutSettings()
   let downstreamChanged = $state(false)
   let isDraggingPipelineListResizer = $state(false)
   let saveFile = $state(() => {})
@@ -232,7 +233,7 @@ example = "1.0"`
   })
   $effect(() => {
     if (!isScreenLg.current) {
-      separateAdHocTab.value = false
+      showInteractionPanel.value = false
     }
   })
 
@@ -286,6 +287,8 @@ example = "1.0"`
       return undefined
     }
   }
+
+  let currentInteractionTab: string | null = $state(null)
 </script>
 
 {#snippet reviewPipelineChanges()}
@@ -476,10 +479,12 @@ example = "1.0"`
                 <Pane minSize={30} class="!overflow-visible">
                   {@render editor()}
                 </Pane>
-                {#if separateAdHocTab.value}
+                {#if showInteractionPanel.value}
                   <PaneResizer class="pane-divider-vertical mx-2"></PaneResizer>
-                  <Pane defaultSize={40} minSize={20} class="!overflow-visible">
-                    <div class="flex h-full flex-col rounded-container p-4 bg-surface-50-950">
+                  <Pane defaultSize={40} minSize={20} class="flex flex-col !overflow-visible">
+                    <InteractionPanel {pipeline} {metrics} bind:currentTab={currentInteractionTab}
+                    ></InteractionPanel>
+                    <!-- <div class="flex h-full flex-col rounded-container p-4 bg-surface-50-950">
                       <div class="flex h-8 items-start justify-between">
                         <span>Ad-Hoc Queries</span>
                         <button
@@ -493,7 +498,7 @@ example = "1.0"`
                           <TabAdHocQuery {pipeline}></TabAdHocQuery>
                         </div>
                       </div>
-                    </div>
+                    </div> -->
                   </Pane>
                 {/if}
               </PaneGroup>
@@ -519,7 +524,7 @@ example = "1.0"`
           {/snippet}
           {#snippet statusBarEnd()}
             <div class="ml-auto flex flex-nowrap items-center gap-1">
-              {#each [{ icon: 'fd fd-panel-left', text: 'Pipelines', value: showPipelinesPanel }, { icon: 'fd fd-panel-bottom', text: 'Monitoring', value: showMonitoringPanel }, { icon: 'fd fd-panel-right', text: 'Ad-Hoc Queries', value: separateAdHocTab, show: isScreenLg.current }] as { icon, text, value, show }}
+              {#each [{ icon: 'fd fd-panel-left', text: 'Pipelines', value: showPipelinesPanel }, { icon: 'fd fd-panel-bottom', text: 'Monitoring', value: showMonitoringPanel }, { icon: 'fd fd-panel-right', text: 'Interaction', value: showInteractionPanel, show: isScreenLg.current }] as { icon, text, value, show }}
                 {#if show !== false}
                   <button
                     class="btn gap-2 p-2 !brightness-100 text-surface-700-300 hover:preset-tonal-surface"
@@ -555,8 +560,7 @@ example = "1.0"`
         {#if showMonitoringPanel.value && pipeline.current.name}
           <PaneResizer class="pane-divider-horizontal my-2" />
           <Pane minSize={15} class="flex flex-col !overflow-visible">
-            <InteractionsPanel {pipeline} {metrics} separateAdHocTab={separateAdHocTab.value}
-            ></InteractionsPanel>
+            <MonitoringPanel {pipeline} {metrics} {currentInteractionTab}></MonitoringPanel>
           </Pane>
         {/if}
       </PaneGroup>
