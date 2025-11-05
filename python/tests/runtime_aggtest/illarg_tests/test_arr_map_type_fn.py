@@ -5,10 +5,11 @@ from tests.runtime_aggtest.aggtst_base import TstView
 class illarg_index_legal(TstView):
     def __init__(self):
         # checked manually
-        self.data = [{"arr": "14", "arr2": "See you!"}]
+        self.data = [{"arr": "14", "arr2": "See you!", "roww": "cat"}]
         self.sql = """CREATE MATERIALIZED VIEW index_legal AS SELECT
                       arr[2] AS arr,
-                      arr[SAFE_OFFSET(2)] AS arr2
+                      arr[SAFE_OFFSET(2)] AS arr2,
+                      roww[2] AS roww
                       FROM illegal_tbl
                       WHERE id = 0"""
 
@@ -528,6 +529,22 @@ class illarg_arr_repeat_dtype_legal(TstView):
                       FROM illegal_tbl"""
 
 
+class illarg_arr_repeat__legal(TstView):
+    def __init__(self):
+        # checked manually
+        self.data = [
+            {
+                "roww": [{"i1": 5, "v1": None}, {"i1": 5, "v1": None}],
+                "mapp": [{"a": 15, "b": None}, {"a": 15, "b": None}],
+            }
+        ]
+        self.sql = """CREATE MATERIALIZED VIEW arr_repeat_cmpxtype_legal AS SELECT
+                      ARRAY_REPEAT(roww, 2)  AS roww,
+                      ARRAY_REPEAT(mapp, 2)  AS mapp
+                      FROM illegal_tbl
+                      WHERE id = 1"""
+
+
 class illarg_arr_repeat_dtype_illegal(TstView):
     def __init__(self):
         # checked manually
@@ -597,7 +614,7 @@ class illarg_sort_arr_illegal(TstView):
     def __init__(self):
         # checked manually
         self.sql = """CREATE MATERIALIZED VIEW sort_arr_illegal AS SELECT
-                      SORT_ARRAY(str)  AS str
+                      SORT_ARRAY(roww)  AS str
                       FROM illegal_tbl"""
         self.expected_error = "Cannot apply 'SORT_ARRAY' to arguments of type"
 

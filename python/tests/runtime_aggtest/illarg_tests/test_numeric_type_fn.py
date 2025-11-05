@@ -1071,7 +1071,7 @@ class illarg_truncatevd_legal(TstView):
                       WHERE id = 0"""
 
 
-class illarg_truncatevvd_cast_legal(TstView):
+class illarg_truncatevd_cast_legal(TstView):
     def __init__(self):
         # Validated on Postgres
         self.data = [{"intt": -12}]
