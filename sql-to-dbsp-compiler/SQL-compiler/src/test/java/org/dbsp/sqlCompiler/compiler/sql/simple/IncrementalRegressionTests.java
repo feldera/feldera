@@ -1553,4 +1553,61 @@ public class IncrementalRegressionTests extends SqlIoTest {
                                                 new DBSPI32Literal(2, true),
                                                 new DBSPI32Literal(3, true)))))));
     }
+
+    @Test
+    public void asofTest1() {
+        this.getCC("""
+                CREATE TABLE S (
+                   id uuid,
+                   ts TIMESTAMP LATENESS INTERVAL 1 MONTH
+                );
+                
+                CREATE TABLE C (
+                    id uuid,
+                    ts timestamp NOT NULL LATENESS INTERVAL 1 HOUR
+                );
+                
+                create view V0 AS
+                SELECT c.*
+                FROM C LEFT ASOF JOIN S
+                    MATCH_CONDITION ( c.ts >= s.ts )
+                    ON c.id = s.id;
+                
+                CREATE VIEW V1 AS
+                SELECT ts FROM V0;""");
+    }
+
+    @Test
+    public void issue5032a() {
+        this.statementsFailingInCompilation("""
+                CREATE TABLE tbl1(id INT,
+                roww ROW(i1 INT, v1 VARCHAR NULL) NOT NULL);
+                
+                CREATE TABLE tbl2(id INT,
+                roww ROW(i1 INT, v1 VARCHAR NULL) NOT NULL);
+                
+                CREATE MATERIALIZED VIEW v AS SELECT
+                t1.id, t1.roww AS t1_roww, t2.roww AS t2_roww
+                FROM tbl1 t1
+                LEFT ASOF JOIN tbl2 t2
+                MATCH_CONDITION ( t1.roww >= t2.roww)
+                ON t1.id = t2.id""", "Not yet implemented: Join on struct types");
+    }
+
+    @Test
+    public void issue5032() {
+        this.statementsFailingInCompilation("""
+                CREATE TABLE tbl1(id INT,
+                roww ROW(i1 INT, v1 VARCHAR NULL));
+                
+                CREATE TABLE tbl2(id INT,
+                roww ROW(i1 INT, v1 VARCHAR NULL));
+                
+                CREATE MATERIALIZED VIEW v AS SELECT
+                t1.id, t1.roww AS t1_roww, t2.roww AS t2_roww
+                FROM tbl1 t1
+                LEFT ASOF JOIN tbl2 t2
+                MATCH_CONDITION ( t1.roww >= t2.roww)
+                ON t1.id = t2.id;""", "Not yet implemented: Join on struct types");
+    }
 }

@@ -482,12 +482,13 @@ public class Monotonicity extends CircuitVisitor {
 
     @Override
     public void postorder(DBSPMapOperator node) {
-        MonotoneExpression inputFunction = this.getMonotoneExpression(node.input());
+        OutputPort input = node.input();
+        MonotoneExpression inputFunction = this.getMonotoneExpression(input);
         if (inputFunction == null)
             return;
         MonotoneTransferFunctions mm = new MonotoneTransferFunctions(
                 this.compiler(), node,
-                MonotoneTransferFunctions.ArgumentKind.fromType(node.input().outputType()),
+                MonotoneTransferFunctions.ArgumentKind.fromType(input.outputType()),
                 getBodyType(inputFunction));
         MonotoneExpression result = mm.applyAnalysis(node.getFunction());
         if (result == null)
@@ -664,7 +665,13 @@ public class Monotonicity extends CircuitVisitor {
 
         DBSPExpression leftTsField = l.deepCopy().deref().field(node.leftTimestampIndex);
         DBSPExpression rightTsField = r.deepCopy().deref().field(node.rightTimestampIndex);
-        DBSPExpression min = ExpressionCompiler.makeBinaryExpression(node.getNode(), rightTsField.getType(),
+        DBSPType rightTsType = rightTsField.getType();
+        if (rightTsType.mayBeNull) {
+            // The function takes non-nullable timestamps
+            rightTsField = rightTsField.nullabilityCast(rightTsType.withMayBeNull(false), false);
+        }
+        // We know the right timestamp is not nullable, so the result type is from the left timestamp
+        DBSPExpression min = ExpressionCompiler.makeBinaryExpression(node.getNode(), leftTsField.getType(),
                 DBSPOpcode.MIN, leftTsField, rightTsField);
 
         List<DBSPExpression> fields = new ArrayList<>();
