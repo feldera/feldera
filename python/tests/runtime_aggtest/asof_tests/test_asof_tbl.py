@@ -2,7 +2,7 @@ from tests.runtime_aggtest.aggtst_base import TstTable
 
 
 class asof_table1(TstTable):
-    """Define the table used by some integer tests"""
+    """Define the table used for ASOF joins"""
 
     def __init__(self):
         self.sql = """CREATE TABLE asof_tbl1(
@@ -98,7 +98,7 @@ class asof_table1(TstTable):
 
 
 class asof_table2(TstTable):
-    """Define the table used by some integer tests"""
+    """Define the table used for ASOF joins"""
 
     def __init__(self):
         self.sql = """CREATE TABLE asof_tbl2(
