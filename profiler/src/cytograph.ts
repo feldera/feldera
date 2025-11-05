@@ -25,8 +25,9 @@ class MeasurementMatrix {
         readonly columnNames: Array<string>,
         // Keys are measurement names, arrays contain one element per column name.
         readonly attributes: Map<string, Array<SerializedMeasurement>>) {
-        for (const a of attributes.values()) {
-            assert(columnNames.length == a.length, "Measurement count mismatch");
+        for (const a of attributes.entries()) {
+            assert(columnNames.length == a[1].length,
+                "Measurement count mismatch for '" + a[0] + "':" + columnNames.length + " vs " + a.length);
         }
     }
 
@@ -87,9 +88,6 @@ class GraphNode {
         let data = result["data"] as any;
         if (this.parent.isSome())
             data["parent"] = this.parent.unwrap();
-        if (this.hasChildren)
-            data["has_children"] = true;
-        data["expanded"] = this.expanded;
         return result;
     }
 
@@ -367,9 +365,9 @@ export class CytographRendering {
         },
         {
             // How to display nodes which have children
-            selector: 'node[has_children][!expanded]',
+            selector: 'node[?has_children]',
             style: {
-                'shape': 'roundrectangle',
+                'shape': 'round-rectangle',
             }
         },
         {
@@ -792,6 +790,7 @@ export class CytographRendering {
                         let cell = row.insertCell(0);
                         if (index === 0) {
                             cell.innerText = key;
+                            cell.style.whiteSpace = "nowrap";
                             if (key === this.getCurrentMetric()) {
                                 cell.style.backgroundColor = "blue";
                             }

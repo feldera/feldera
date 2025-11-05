@@ -56,10 +56,6 @@ export class Option<T> {
     }
 }
 
-export function gcd(a: number, b: number): number {
-    return b === 0 ? Math.abs(a) : gcd(b, a % b);
-}
-
 /** Make sure that the supplied value is a number. */
 export function enforceNumber(x: any): number {
     if (typeof x !== "number") {
