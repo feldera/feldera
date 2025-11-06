@@ -79,6 +79,12 @@
           "id": 3,
           "relOp": "LogicalFilter",
           "condition": {
+            "pos": {
+              "line": 20,
+              "column": 27,
+              "end_line": 20,
+              "end_column": 37
+            },
             "op": {
               "name": "<",
               "kind": "LESS_THAN",
@@ -120,6 +126,12 @@
               "name": "$1"
             },
             {
+              "pos": {
+                "line": 19,
+                "column": 17,
+                "end_line": 19,
+                "end_column": 26
+              },
               "op": {
                 "name": "-",
                 "kind": "CHECKED_MINUS",
@@ -148,6 +160,12 @@
           "id": 5,
           "relOp": "LogicalFilter",
           "condition": {
+            "pos": {
+              "line": 20,
+              "column": 11,
+              "end_line": 20,
+              "end_column": 21
+            },
             "op": {
               "name": "<",
               "kind": "LESS_THAN",
@@ -175,6 +193,12 @@
           "id": 6,
           "relOp": "LogicalJoin",
           "condition": {
+            "pos": {
+              "line": 19,
+              "column": 8,
+              "end_line": 19,
+              "end_column": 26
+            },
             "op": {
               "name": "=",
               "kind": "EQUALS",
@@ -206,6 +230,12 @@
           ],
           "exprs": [
             {
+              "pos": {
+                "line": 15,
+                "column": 9,
+                "end_line": 15,
+                "end_column": 18
+              },
               "op": {
                 "name": "+",
                 "kind": "CHECKED_PLUS",
@@ -226,6 +256,12 @@
               ]
             },
             {
+              "pos": {
+                "line": 16,
+                "column": 9,
+                "end_line": 16,
+                "end_column": 33
+              },
               "op": {
                 "name": "+",
                 "kind": "CHECKED_PLUS",
