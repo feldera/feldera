@@ -1,5 +1,4 @@
-import type { StorageStatus } from '$lib/services/manager'
-import type { PipelineStatus, PipelineThumb } from '$lib/services/pipelineManager'
+import type { ExtendedPipeline, PipelineStatus } from '$lib/services/pipelineManager'
 import { P, match } from 'ts-pattern'
 
 export const getPipelineStatusLabel = (status: PipelineStatus) => {
@@ -127,7 +126,7 @@ export const isPipelineCodeEditable = (status: PipelineStatus) => {
 }
 
 export const isUpgradeRequired = (
-  pipeline: PipelineThumb,
+  pipeline: Pick<ExtendedPipeline, 'status' | 'storageStatus'>,
   runtime: { status: string | 'update_available' }
 ) => {
   if (runtime.status !== 'update_available' || pipeline.storageStatus === 'Cleared') {

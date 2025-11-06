@@ -36,6 +36,10 @@ use dbsp::{RootCircuit, Runtime};
 use dyn_clone::DynClone;
 use feldera_adapterlib::PipelineState;
 use feldera_storage::{StorageBackend, StoragePath};
+use feldera_types::adapter_stats::{
+    EndpointErrorStats, InputEndpointErrorMetrics, OutputEndpointErrorMetrics,
+    PipelineStatsErrorsResponse,
+};
 use feldera_types::checkpoint::{
     CheckpointFailure, CheckpointResponse, CheckpointStatus, CheckpointSyncFailure,
     CheckpointSyncResponse, CheckpointSyncStatus,
@@ -75,7 +79,10 @@ use std::time::Duration;
 use std::{
     borrow::Cow,
     net::TcpListener,
-    sync::{Arc, Mutex, Weak},
+    sync::{
+        atomic::Ordering,
+        Arc, Mutex, Weak,
+    },
     thread,
 };
 use tokio::spawn;
@@ -1087,6 +1094,7 @@ where
         .service(completion_status)
         .service(query)
         .service(stats)
+        .service(error_stats)
         .service(metrics_handler)
         .service(time_series)
         .service(time_series_stream)
@@ -1389,6 +1397,42 @@ async fn query(
 #[get("/stats")]
 async fn stats(state: WebData<ServerState>) -> Result<HttpResponse, PipelineError> {
     Ok(HttpResponse::Ok().json(state.controller()?.status()))
+}
+
+/// This endpoint returns a subset of stats that don't need updating and so is more performant than /stats
+#[get("/stats/errors")]
+async fn error_stats(state: WebData<ServerState>) -> Result<HttpResponse, PipelineError> {
+    let controller = state.controller()?;
+    let controller_status = controller.stale_status();
+
+    let inputs: Vec<EndpointErrorStats<InputEndpointErrorMetrics>> = controller_status
+        .input_status()
+        .values()
+        .map(|input| EndpointErrorStats {
+            metrics: InputEndpointErrorMetrics {
+                endpoint_name: input.endpoint_name.clone(),
+                num_transport_errors: input.metrics.num_transport_errors.load(Ordering::Acquire),
+                num_parse_errors: input.metrics.num_parse_errors.load(Ordering::Acquire),
+            },
+        })
+        .collect();
+
+    let outputs: Vec<EndpointErrorStats<OutputEndpointErrorMetrics>> = controller_status
+        .output_status()
+        .values()
+        .map(|output| EndpointErrorStats {
+            metrics: OutputEndpointErrorMetrics {
+                endpoint_name: output.endpoint_name.clone(),
+                num_transport_errors: output
+                    .metrics
+                    .num_transport_errors
+                    .load(Ordering::Acquire),
+                num_encode_errors: output.metrics.num_encode_errors.load(Ordering::Acquire),
+            },
+        })
+        .collect();
+
+    Ok(HttpResponse::Ok().json(PipelineStatsErrorsResponse { inputs, outputs }))
 }
 
 /// Retrieve circuit metrics.

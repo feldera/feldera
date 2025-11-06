@@ -716,6 +716,11 @@ impl Controller {
         &self.inner.status
     }
 
+    /// Returns the current controller status without updating the lazily updated data.
+    pub fn stale_status(&self) -> &ControllerStatus {
+        &self.inner.status
+    }
+
     /// Returns the pipeline state.
     pub fn state(&self) -> PipelineState {
         self.inner.state()

@@ -26,6 +26,7 @@ use actix_web::{
     HttpResponse,
 };
 use chrono::{DateTime, Utc};
+use feldera_types::adapter_stats::PipelineStatsErrorsResponse;
 use feldera_types::config::{InputEndpointConfig, OutputEndpointConfig, RuntimeConfig};
 use feldera_types::error::ErrorResponse;
 use feldera_types::program_schema::ProgramSchema;
@@ -66,49 +67,6 @@ fn remove_large_fields_from_program_info(
         let _ = m.shift_remove("dataflow");
     }
     program_info
-}
-
-/// Metrics for an input endpoint.
-///
-/// Deserializes from `adapters::controller::stats::InputEndpointMetrics`.
-#[derive(Default, Deserialize, Debug, Clone)]
-struct InputEndpointMetrics {
-    #[serde(default)]
-    num_transport_errors: u64,
-    #[serde(default)]
-    num_parse_errors: u64,
-}
-
-/// Metrics for an output endpoint.
-///
-/// Deserializes from `adapters::controller::stats::OutputEndpointMetrics`.
-#[derive(Default, Deserialize, Debug, Clone)]
-struct OutputEndpointMetrics {
-    #[serde(default)]
-    num_encode_errors: u64,
-    #[serde(default)]
-    num_transport_errors: u64,
-}
-
-/// Endpoint statistics containing metrics.
-///
-/// Deserializes from `adapters::controller::stats::InputEndpointStatus`
-/// and `adapters::controller::stats::OutputEndpointStatus`.
-#[derive(Deserialize, Debug, Clone)]
-struct EndpointStats<T> {
-    #[serde(default)]
-    metrics: T,
-}
-
-/// Pipeline statistics response from the runtime.
-///
-/// Deserializes from `adapters::controller::stats::ControllerStatus`.
-#[derive(Deserialize, Debug, Clone)]
-struct PipelineStatsResponse {
-    #[serde(default)]
-    inputs: Vec<EndpointStats<InputEndpointMetrics>>,
-    #[serde(default)]
-    outputs: Vec<EndpointStats<OutputEndpointMetrics>>,
 }
 
 /// Aggregated connector error statistics.
@@ -793,7 +751,8 @@ pub(crate) async fn list_pipelines(
 
 /// Fetch and aggregate connector error statistics for a pipeline.
 ///
-/// Returns `None` if the pipeline is unavailable or if there's an error fetching stats.
+/// Returns `None` if the pipeline is unavailable, if there's an error fetching stats,
+/// or if the endpoint returns 404 (not implemented on older pipeline versions).
 async fn fetch_connector_error_stats(
     state: &WebData<ServerState>,
     tenant_id: TenantId,
@@ -808,18 +767,26 @@ async fn fetch_connector_error_stats(
             tenant_id,
             pipeline_name,
             actix_web::http::Method::GET,
-            "stats",
+            "stats/errors",
             "",
             Some(std::time::Duration::from_millis(500)),
         )
         .await
         .ok()?;
 
+    // Check status code - quietly ignore 404 (endpoint not available on older pipelines)
+    if response.status() == actix_web::http::StatusCode::NOT_FOUND {
+        log::debug!(
+            "Pipeline '{}' does not support /stats/errors endpoint (404), skipping error stats",
+            pipeline_name
+        );
+        return None;
+    }
+
     // Parse the response body
     let body = response.into_body();
     let bytes = actix_web::body::to_bytes(body).await.ok()?;
-
-    let stats_response: PipelineStatsResponse = match serde_json::from_slice(&bytes) {
+    let stats_response: PipelineStatsErrorsResponse = match serde_json::from_slice(&bytes) {
         Ok(response) => response,
         Err(e) => {
             log::error!(
