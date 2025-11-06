@@ -612,6 +612,18 @@ public class OtherTests extends BaseSQLTests implements IWritesLogs { // interfa
     }
 
     @Test
+    public void testUDT() {
+        this.getCCS("""
+                CREATE TYPE address_typ AS (
+                   street          VARCHAR(30),
+                   city            VARCHAR(20),
+                   state           CHAR(2),
+                   postal_code     VARCHAR(6));
+                CREATE TABLE T(street VARCHAR, city VARCHAR, year INT);
+                CREATE VIEW V AS SELECT address_typ(T.street, city, 'CA', 94087) as address, T.year as year FROM T;""");
+    }
+
+    @Test
     public void rawCalciteTest() throws SQLException {
         Connection connection = DriverManager.getConnection("jdbc:calcite:");
         String query = "SELECT timestampdiff(MONTH, TIMESTAMP'2021-02-28 12:00:00', TIMESTAMP'2021-03-28 11:59:59')";
