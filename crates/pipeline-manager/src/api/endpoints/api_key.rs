@@ -44,7 +44,9 @@ pub(crate) struct NewApiKeyResponse {
     api_key: String,
 }
 
-/// Retrieve the list of API keys.
+/// List API Keys
+///
+/// Retrieve a list of your API keys.
 #[utoipa::path(
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
@@ -54,7 +56,7 @@ pub(crate) struct NewApiKeyResponse {
             , body = [ApiKeyDescr]),
         (status = INTERNAL_SERVER_ERROR, body = ErrorResponse)
     ),
-    tag = "API keys"
+    tag = "Platform"
 )]
 #[get("/api_keys")]
 pub(crate) async fn list_api_keys(
@@ -67,7 +69,9 @@ pub(crate) async fn list_api_keys(
         .json(&api_keys))
 }
 
-/// Retrieve an API key.
+/// Get API Key
+///
+/// Retrieve the metadata of a specific API key by its name.
 #[utoipa::path(
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
@@ -83,7 +87,7 @@ pub(crate) async fn list_api_keys(
             , body = ErrorResponse
             , example = json!(examples::error_unknown_api_key()))
     ),
-    tag = "API keys"
+    tag = "Platform"
 )]
 #[get("/api_keys/{api_key_name}")]
 pub(crate) async fn get_api_key(
@@ -98,7 +102,10 @@ pub(crate) async fn get_api_key(
         .json(&[api_key]))
 }
 
-/// Create a new API key.
+/// Create API Key
+///
+/// Create a new API key with the specified name. The generated API key
+/// will be returned in the response and cannot be retrieved again later.
 #[utoipa::path(
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
@@ -111,7 +118,7 @@ pub(crate) async fn get_api_key(
             , body = ErrorResponse
             , example = json!(examples::error_duplicate_name())),
     ),
-    tag = "API keys"
+    tag = "Platform"
 )]
 #[post("/api_keys")]
 pub(crate) async fn post_api_key(
@@ -146,7 +153,9 @@ pub(crate) async fn post_api_key(
     Ok(res)
 }
 
-/// Delete an API key.
+/// Delete API Key
+///
+/// Remove an API key by its name.
 #[utoipa::path(
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
@@ -160,7 +169,7 @@ pub(crate) async fn post_api_key(
             , body = ErrorResponse
             , example = json!(examples::error_unknown_api_key()))
     ),
-    tag = "API keys"
+    tag = "Platform"
 )]
 #[delete("/api_keys/{api_key_name}")]
 pub(crate) async fn delete_api_key(

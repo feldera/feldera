@@ -128,7 +128,9 @@ impl Configuration {
     }
 }
 
-/// Retrieve general configuration.
+/// Get Platform Config
+///
+/// Retrieve configuration of the Feldera Platform.
 #[utoipa::path(
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
@@ -141,7 +143,7 @@ impl Configuration {
             , description = "Request failed."
             , body = ErrorResponse),
     ),
-    tag = "Configuration"
+    tag = "Platform"
 )]
 #[get("/config")]
 pub(crate) async fn get_config(
@@ -153,7 +155,9 @@ pub(crate) async fn get_config(
     Ok(HttpResponse::Ok().json(config))
 }
 
-/// Retrieve authentication provider configuration.
+/// Get Auth Config
+///
+/// Retrieve the authentication provider configuration.
 #[utoipa::path(
     path="/config/authentication",
     responses(
@@ -166,7 +170,7 @@ pub(crate) async fn get_config(
             , description = "Request failed."
             , body = ErrorResponse),
     ),
-    tag = "Configuration"
+    tag = "Platform"
 )]
 #[get("/config/authentication")]
 pub(crate) async fn get_config_authentication(
@@ -180,7 +184,9 @@ pub(crate) async fn get_config_authentication(
     Ok(HttpResponse::Ok().json(&auth_config.provider))
 }
 
-/// Retrieve the list of demos.
+/// List Demos
+///
+/// Retrieve the list of demos available in the WebConsole.
 #[utoipa::path(
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
@@ -193,7 +199,7 @@ pub(crate) async fn get_config_authentication(
             , description = "Failed to read demos from the demos directories"
             , body = ErrorResponse),
     ),
-    tag = "Configuration",
+    tag = "Platform",
 )]
 #[get("/config/demos")]
 pub(crate) async fn get_config_demos(
@@ -225,7 +231,9 @@ impl SessionInfo {
     }
 }
 
-/// Retrieve current session information.
+/// Get Session
+///
+/// Retrieve login session information for your current user session.
 #[utoipa::path(
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
@@ -238,7 +246,7 @@ impl SessionInfo {
             , description = "Request failed."
             , body = ErrorResponse),
     ),
-    tag = "Configuration"
+    tag = "Platform"
 )]
 #[get("/config/session")]
 pub(crate) async fn get_config_session(

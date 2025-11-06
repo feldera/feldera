@@ -22,6 +22,8 @@ use std::time::Duration;
 
 pub mod support_bundle;
 
+/// Insert Data
+///
 /// Push data to a SQL table.
 ///
 /// The client sends data encoded using the format specified in the `?format=`
@@ -84,7 +86,7 @@ pub mod support_bundle;
         ),
         (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
     ),
-    tag = "Pipeline interaction",
+    tag = "Input Connectors",
 )]
 #[post("/pipelines/{pipeline_name}/ingress/{table_name}")]
 pub(crate) async fn http_input(
@@ -114,6 +116,8 @@ pub(crate) async fn http_input(
         .await
 }
 
+/// Subscribe to View
+///
 /// Subscribe to a stream of updates from a SQL view or table.
 ///
 /// The pipeline responds with a continuous stream of changes to the specified
@@ -165,7 +169,7 @@ pub(crate) async fn http_input(
         ),
         (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
     ),
-    tag = "Pipeline interaction"
+    tag = "Output Connectors"
 )]
 #[post("/pipelines/{pipeline_name}/egress/{table_name}")]
 pub(crate) async fn http_output(
@@ -192,6 +196,8 @@ pub(crate) async fn http_output(
         .await
 }
 
+/// Control Input Connector
+///
 /// Start (resume) or pause the input connector.
 ///
 /// The following values of the `action` argument are accepted: `start` and `pause`.
@@ -224,9 +230,8 @@ pub(crate) async fn http_output(
     security(("JSON web token (JWT) or API key" = [])),
     params(
         ("pipeline_name" = String, Path, description = "Unique pipeline name"),
-        ("table_name" = String, Path, description = "Unique table name"),
-        ("connector_name" = String, Path, description = "Unique input connector name"),
-        ("action" = String, Path, description = "Input connector action (one of: start, pause)")
+        ("table_name" = String, Path, description = "SQL table name"),
+        ("connector_name" = String, Path, description = "Input connector name"),
     ),
     responses(
         (status = OK
@@ -251,7 +256,7 @@ pub(crate) async fn http_output(
         ),
         (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
     ),
-    tag = "Pipeline interaction"
+    tag = "Input Connectors"
 )]
 #[post("/pipelines/{pipeline_name}/tables/{table_name}/connectors/{connector_name}/{action}")]
 pub(crate) async fn post_pipeline_input_connector_action(
@@ -304,6 +309,8 @@ pub(crate) async fn post_pipeline_input_connector_action(
     Ok(response)
 }
 
+/// Get Input Status
+///
 /// Retrieve the status of an input connector.
 #[utoipa::path(
     context_path = "/v0",
@@ -338,7 +345,7 @@ pub(crate) async fn post_pipeline_input_connector_action(
         ),
         (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
     ),
-    tag = "Pipeline interaction"
+    tag = "Input Connectors"
 )]
 #[get("/pipelines/{pipeline_name}/tables/{table_name}/connectors/{connector_name}/stats")]
 pub(crate) async fn get_pipeline_input_connector_status(
@@ -375,14 +382,16 @@ pub(crate) async fn get_pipeline_input_connector_status(
     Ok(response)
 }
 
+/// Get Output Status
+///
 /// Retrieve the status of an output connector.
 #[utoipa::path(
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
     params(
         ("pipeline_name" = String, Path, description = "Unique pipeline name"),
-        ("view_name" = String, Path, description = "Unique SQL view name"),
-        ("connector_name" = String, Path, description = "Unique output connector name")
+        ("view_name" = String, Path, description = "SQL view name"),
+        ("connector_name" = String, Path, description = "Output connector name"),
     ),
     responses(
         (status = OK
@@ -409,7 +418,7 @@ pub(crate) async fn get_pipeline_input_connector_status(
         ),
         (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
     ),
-    tag = "Pipeline interaction"
+    tag = "Output Connectors"
 )]
 #[get("/pipelines/{pipeline_name}/views/{view_name}/connectors/{connector_name}/stats")]
 pub(crate) async fn get_pipeline_output_connector_status(
@@ -446,6 +455,8 @@ pub(crate) async fn get_pipeline_output_connector_status(
     Ok(response)
 }
 
+/// Get Pipeline Stats
+///
 /// Retrieve statistics (e.g., performance counters) of a running or paused pipeline.
 #[utoipa::path(
     context_path = "/v0",
@@ -474,7 +485,7 @@ pub(crate) async fn get_pipeline_output_connector_status(
         ),
         (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
     ),
-    tag = "Pipeline interaction"
+    tag = "Metrics & Debugging"
 )]
 #[get("/pipelines/{pipeline_name}/stats")]
 pub(crate) async fn get_pipeline_stats(
@@ -499,13 +510,15 @@ pub(crate) async fn get_pipeline_stats(
         .await
 }
 
-/// Retrieve circuit metrics of a running or paused pipeline.
+/// Get Pipeline Metrics
+///
+/// Retrieve the metrics of a running or paused pipeline.
 #[utoipa::path(
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
     params(
         ("pipeline_name" = String, Path, description = "Unique pipeline name"),
-        MetricsParameters
+        MetricsParameters,
     ),
     responses(
         (status = OK
@@ -526,7 +539,7 @@ pub(crate) async fn get_pipeline_stats(
         ),
         (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
     ),
-    tag = "Pipeline interaction"
+    tag = "Metrics & Debugging"
 )]
 #[get("/pipelines/{pipeline_name}/metrics")]
 pub(crate) async fn get_pipeline_metrics(
@@ -552,6 +565,8 @@ pub(crate) async fn get_pipeline_metrics(
         .await
 }
 
+/// Get Time Series Stats
+///
 /// Retrieve time series for statistics of a running or paused pipeline.
 #[utoipa::path(
     context_path = "/v0",
@@ -578,7 +593,7 @@ pub(crate) async fn get_pipeline_metrics(
         ),
         (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
     ),
-    tag = "Pipeline interaction"
+    tag = "Metrics & Debugging"
 )]
 #[get("/pipelines/{pipeline_name}/time_series")]
 pub(crate) async fn get_pipeline_time_series(
@@ -603,6 +618,8 @@ pub(crate) async fn get_pipeline_time_series(
         .await
 }
 
+/// Stream Time Series
+///
 /// Stream time series for statistics of a running or paused pipeline.
 ///
 /// Returns a snapshot of all existing time series data followed by a continuous stream of
@@ -635,7 +652,7 @@ pub(crate) async fn get_pipeline_time_series(
         ),
         (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
     ),
-    tag = "Pipeline interaction"
+    tag = "Metrics & Debugging"
 )]
 #[get("/pipelines/{pipeline_name}/time_series_stream")]
 pub(crate) async fn get_pipeline_time_series_stream(
@@ -661,6 +678,8 @@ pub(crate) async fn get_pipeline_time_series_stream(
         .await
 }
 
+/// Get Performance Profile
+///
 /// Retrieve the circuit performance profile of a running or paused pipeline.
 #[utoipa::path(
     context_path = "/v0",
@@ -688,7 +707,7 @@ pub(crate) async fn get_pipeline_time_series_stream(
         ),
         (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
     ),
-    tag = "Pipeline interaction"
+    tag = "Metrics & Debugging"
 )]
 #[get("/pipelines/{pipeline_name}/circuit_profile")]
 pub(crate) async fn get_pipeline_circuit_profile(
@@ -713,6 +732,8 @@ pub(crate) async fn get_pipeline_circuit_profile(
         .await
 }
 
+/// Performance Profile JSON
+///
 /// Retrieve the circuit performance profile in JSON format of a running or paused pipeline.
 #[utoipa::path(
     context_path = "/v0",
@@ -740,7 +761,7 @@ pub(crate) async fn get_pipeline_circuit_profile(
         ),
         (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
     ),
-    tag = "Pipeline interaction"
+    tag = "Metrics & Debugging"
 )]
 #[get("/pipelines/{pipeline_name}/circuit_json_profile")]
 pub(crate) async fn get_pipeline_circuit_json_profile(
@@ -765,6 +786,8 @@ pub(crate) async fn get_pipeline_circuit_json_profile(
         .await
 }
 
+/// Sync Checkpoints To S3
+///
 /// Syncs latest checkpoints to the object store configured in pipeline config.
 #[utoipa::path(
     context_path = "/v0",
@@ -791,7 +814,7 @@ pub(crate) async fn get_pipeline_circuit_json_profile(
         ),
         (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
     ),
-    tag = "Pipeline interaction"
+    tag = "Pipeline Lifecycle"
 )]
 #[post("/pipelines/{pipeline_name}/checkpoint/sync")]
 pub(crate) async fn sync_checkpoint(
@@ -828,6 +851,8 @@ pub(crate) async fn sync_checkpoint(
     }
 }
 
+/// Checkpoint Now
+///
 /// Initiates checkpoint for a running or paused pipeline.
 ///
 /// Returns a checkpoint sequence number that can be used with `/checkpoint_status` to
@@ -857,7 +882,7 @@ pub(crate) async fn sync_checkpoint(
         ),
         (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
     ),
-    tag = "Pipeline interaction"
+    tag = "Pipeline Lifecycle"
 )]
 #[post("/pipelines/{pipeline_name}/checkpoint")]
 pub(crate) async fn checkpoint_pipeline(
@@ -894,6 +919,8 @@ pub(crate) async fn checkpoint_pipeline(
     }
 }
 
+/// Get Checkpoint Status
+///
 /// Retrieve status of checkpoint activity in a pipeline.
 #[utoipa::path(
     context_path = "/v0",
@@ -921,7 +948,7 @@ pub(crate) async fn checkpoint_pipeline(
         ),
         (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
     ),
-    tag = "Pipeline interaction"
+    tag = "Pipeline Lifecycle"
 )]
 #[get("/pipelines/{pipeline_name}/checkpoint_status")]
 pub(crate) async fn get_checkpoint_status(
@@ -946,6 +973,8 @@ pub(crate) async fn get_checkpoint_status(
         .await
 }
 
+/// Get Checkpoint Sync Status
+///
 /// Retrieve status of checkpoint sync activity in a pipeline.
 #[utoipa::path(
     context_path = "/v0",
@@ -973,7 +1002,7 @@ pub(crate) async fn get_checkpoint_status(
         ),
         (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
     ),
-    tag = "Pipeline interaction"
+    tag = "Pipeline Lifecycle"
 )]
 #[get("/pipelines/{pipeline_name}/checkpoint/sync_status")]
 pub(crate) async fn get_checkpoint_sync_status(
@@ -998,6 +1027,8 @@ pub(crate) async fn get_checkpoint_sync_status(
         .await
 }
 
+/// Get Heap Profile
+///
 /// Retrieve the heap profile of a running or paused pipeline.
 #[utoipa::path(
     context_path = "/v0",
@@ -1028,7 +1059,7 @@ pub(crate) async fn get_checkpoint_sync_status(
         ),
         (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
     ),
-    tag = "Pipeline interaction"
+    tag = "Metrics & Debugging"
 )]
 #[get("/pipelines/{pipeline_name}/heap_profile")]
 pub(crate) async fn get_pipeline_heap_profile(
@@ -1053,6 +1084,8 @@ pub(crate) async fn get_pipeline_heap_profile(
         .await
 }
 
+/// Pause Pipeline
+///
 /// Requests the pipeline to pause, which it will do asynchronously.
 ///
 /// Progress should be monitored by polling the pipeline `GET` endpoints.
@@ -1075,7 +1108,7 @@ pub(crate) async fn get_pipeline_heap_profile(
             , example = json!(examples::error_illegal_pipeline_action())),
         (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
     ),
-    tag = "Pipeline management"
+    tag = "Pipeline Lifecycle"
 )]
 #[post("/pipelines/{pipeline_name}/pause")]
 pub(crate) async fn post_pipeline_pause(
@@ -1113,6 +1146,8 @@ pub(crate) async fn post_pipeline_pause(
     Ok(response)
 }
 
+/// Resume Pipeline
+///
 /// Requests the pipeline to resume, which it will do asynchronously.
 ///
 /// Progress should be monitored by polling the pipeline `GET` endpoints.
@@ -1135,7 +1170,7 @@ pub(crate) async fn post_pipeline_pause(
             , example = json!(examples::error_illegal_pipeline_action())),
         (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
     ),
-    tag = "Pipeline management"
+    tag = "Pipeline Lifecycle"
 )]
 #[post("/pipelines/{pipeline_name}/resume")]
 pub(crate) async fn post_pipeline_resume(
@@ -1173,6 +1208,8 @@ pub(crate) async fn post_pipeline_resume(
     Ok(response)
 }
 
+/// Activate Standby Pipeline
+///
 /// Requests the pipeline to activate if it is currently in standby mode, which it will do
 /// asynchronously.
 ///
@@ -1185,7 +1222,7 @@ pub(crate) async fn post_pipeline_resume(
     security(("JSON web token (JWT) or API key" = [])),
     params(
         ("pipeline_name" = String, Path, description = "Unique pipeline name"),
-        ActivateParams
+        ActivateParams,
     ),
     responses(
         (status = ACCEPTED
@@ -1206,7 +1243,7 @@ pub(crate) async fn post_pipeline_resume(
         ),
         (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
     ),
-    tag = "Pipeline interaction"
+    tag = "Pipeline Lifecycle"
 )]
 #[post("/pipelines/{pipeline_name}/activate")]
 pub(crate) async fn post_pipeline_activate(
@@ -1258,6 +1295,8 @@ pub(crate) async fn post_pipeline_activate(
     }
 }
 
+/// Approve Bootstrap
+///
 /// Approves the pipeline to proceed with bootstrapping.
 ///
 /// This endpoint is used when a pipeline has been started with
@@ -1290,7 +1329,7 @@ pub(crate) async fn post_pipeline_activate(
         ),
         (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
     ),
-    tag = "Pipeline interaction"
+    tag = "Pipeline Lifecycle"
 )]
 #[post("/pipelines/{pipeline_name}/approve")]
 pub(crate) async fn post_pipeline_approve(
@@ -1345,7 +1384,9 @@ fn request_is_websocket(request: &HttpRequest) -> bool {
             .is_some_and(|upgrade| upgrade.eq_ignore_ascii_case("websocket"))
 }
 
-/// Execute an ad-hoc SQL query in a running or paused pipeline.
+/// Execute Ad-hoc SQL
+///
+/// Execute ad-hoc SQL in a running or paused pipeline.
 ///
 /// The evaluation is not incremental.
 #[utoipa::path(
@@ -1379,7 +1420,7 @@ fn request_is_websocket(request: &HttpRequest) -> bool {
         ),
         (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
     ),
-    tag = "Pipeline interaction"
+    tag = "Pipeline Lifecycle"
 )]
 #[get("/pipelines/{pipeline_name}/query")]
 pub(crate) async fn pipeline_adhoc_sql(
@@ -1419,6 +1460,8 @@ pub(crate) async fn pipeline_adhoc_sql(
     }
 }
 
+/// Get Completion Token
+///
 /// Generate a completion token for an input connector.
 ///
 /// Returns a token that can be passed to the `/completion_status` endpoint
@@ -1453,7 +1496,7 @@ pub(crate) async fn pipeline_adhoc_sql(
         ),
         (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
     ),
-    tag = "Pipeline interaction"
+    tag = "Input Connectors"
 )]
 #[get(
     "/pipelines/{pipeline_name}/tables/{table_name}/connectors/{connector_name}/completion_token"
@@ -1488,6 +1531,8 @@ pub(crate) async fn completion_token(
     Ok(response)
 }
 
+/// Check Completion Status
+///
 /// Check the status of a completion token returned by the `/ingress` or `/completion_token`
 /// endpoint.
 #[utoipa::path(
@@ -1529,7 +1574,7 @@ pub(crate) async fn completion_token(
         ),
         (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
     ),
-    tag = "Pipeline interaction"
+    tag = "Input Connectors"
 )]
 #[get("/pipelines/{pipeline_name}/completion_status")]
 pub(crate) async fn completion_status(
@@ -1558,7 +1603,9 @@ pub(crate) async fn completion_status(
     Ok(response)
 }
 
-/// Start a transaction.
+/// Begin Transaction
+///
+/// Start a new transaction.
 #[utoipa::path(
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
@@ -1584,7 +1631,7 @@ pub(crate) async fn completion_status(
         ),
         (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
     ),
-    tag = "Pipeline interaction"
+    tag = "Pipeline Lifecycle"
 )]
 #[post("/pipelines/{pipeline_name}/start_transaction")]
 pub(crate) async fn start_transaction(
@@ -1613,6 +1660,8 @@ pub(crate) async fn start_transaction(
     Ok(response)
 }
 
+/// Commit Transaction
+///
 /// Commit the current transaction.
 #[utoipa::path(
     context_path = "/v0",
@@ -1638,7 +1687,7 @@ pub(crate) async fn start_transaction(
         ),
         (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
     ),
-    tag = "Pipeline interaction"
+    tag = "Pipeline Lifecycle"
 )]
 #[post("/pipelines/{pipeline_name}/commit_transaction")]
 pub(crate) async fn commit_transaction(

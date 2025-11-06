@@ -34,7 +34,7 @@ You can edit all pipeline settings when the pipeline is `Stopped` with storage c
     ```
   </TabItem>
   <TabItem value="api">
-    Include only `runtime_config` or `program_config` fields in the body of a [PATCH `/v0/pipelines/{pipeline_name}`](/api/partially-update-a-pipeline), e.g. :
+    Include only `runtime_config` or `program_config` fields in the body of a [PATCH `/v0/pipelines/{pipeline_name}`](/api/patch-pipeline), e.g. :
     ```bash
       curl -X PATCH "http://localhost:8080/v0/pipelines/feature-engineering" -H "Content-Type: application/json" -d '{"runtime_config":{"workers":8,"fault_tolerance":{"model":"none","checkpoint_interval_secs":60},"resources":{"memory_mb_max":16000}},"program_config":{"profile":"dev"}}' -s -o /dev/null
     ```

@@ -1,6 +1,6 @@
 # Pipeline lifecycle
 
-The status of a pipeline, returned by the [status endpoint](https://docs.feldera.com/api/retrieve-a-pipeline)
+The status of a pipeline, returned by the [status endpoint](/api/get-pipeline)
 consists of four related yet separate statuses:
 
 - **Resources status:** whether compute and storage resources are provisioned to run the pipeline.
