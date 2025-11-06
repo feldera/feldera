@@ -79,10 +79,7 @@ use std::time::Duration;
 use std::{
     borrow::Cow,
     net::TcpListener,
-    sync::{
-        atomic::Ordering,
-        Arc, Mutex, Weak,
-    },
+    sync::{atomic::Ordering, Arc, Mutex, Weak},
     thread,
 };
 use tokio::spawn;
@@ -1423,10 +1420,7 @@ async fn error_stats(state: WebData<ServerState>) -> Result<HttpResponse, Pipeli
         .map(|output| EndpointErrorStats {
             metrics: OutputEndpointErrorMetrics {
                 endpoint_name: output.endpoint_name.clone(),
-                num_transport_errors: output
-                    .metrics
-                    .num_transport_errors
-                    .load(Ordering::Acquire),
+                num_transport_errors: output.metrics.num_transport_errors.load(Ordering::Acquire),
                 num_encode_errors: output.metrics.num_encode_errors.load(Ordering::Acquire),
             },
         })
