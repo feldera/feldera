@@ -117,6 +117,8 @@ impl SupportBundleZip {
     }
 }
 
+/// Download Support Bundle
+///
 /// Generate a support bundle for a pipeline.
 ///
 /// This endpoint collects various diagnostic data from the pipeline including
@@ -147,7 +149,7 @@ impl SupportBundleZip {
         ),
         (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
     ),
-    tag = "Pipeline interaction"
+    tag = "Metrics & Debugging"
 )]
 #[get("/pipelines/{pipeline_name}/support_bundle")]
 pub(crate) async fn get_pipeline_support_bundle(

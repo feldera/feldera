@@ -135,18 +135,18 @@ When investigating pipeline performance, Feldera support will typically request 
  fda support-bundle affected-pipeline-name
  ```
 * the `support_bundle` [function in the Python SDK](https://docs.feldera.com/python/examples.html#retrieve-a-support-bundle-for-a-pipeline).
-* or the `support_bundle` [endpoint in the REST API](https://docs.feldera.com/api/generate-a-support-bundle-for-a-pipeline).
+* or the `support_bundle` [endpoint in the REST API](/api/download-support-bundle).
 
 The support bundle contains the following content:
 
-1. **Pipeline Logs**: for warnings and errors from the [logs](https://docs.feldera.com/api/retrieve-logs-of-a-pipeline-as-a-stream) endpoint.
+1. **Pipeline Logs**: for warnings and errors from the [logs](/api/stream-pipeline-logs) endpoint.
 
-2. **Pipeline Configuration**: the [pipeline configuration](https://docs.feldera.com/api/retrieve-a-pipeline), including the SQL code and connector settings.
+2. **Pipeline Configuration**: the [pipeline configuration](/api/get-pipeline), including the SQL code and connector settings.
 
-3. **Pipeline Metrics**: from the [pipeline metrics](https://docs.feldera.com/api/retrieve-circuit-metrics-of-a-running-or-paused-pipeline) endpoint.
+3. **Pipeline Metrics**: from the [pipeline metrics](/api/get-pipeline-metrics) endpoint.
 
-3. **Endpoint Stats**: from the [stats](https://docs.feldera.com/api/retrieve-statistics-e-g-performance-counters-of-a-running-or-paused-pipeline) endpoint.
+3. **Endpoint Stats**: from the [stats](/api/get-pipeline-stats) endpoint.
 
-4. **Circuit Profile**: from the [circuit profile](https://docs.feldera.com/api/retrieve-the-circuit-performance-profile-of-a-running-or-paused-pipeline) endpoint.
+4. **Circuit Profile**: from the [circuit profile](/api/get-performance-profile) endpoint.
 
-5. **Heap Profile**: from [heap usage](https://docs.feldera.com/api/retrieve-the-heap-profile-of-a-running-or-paused-pipeline) endpoint.
+5. **Heap Profile**: from [heap usage](/api/get-heap-profile) endpoint.

@@ -6,7 +6,7 @@ Feldera supports directly pushing data to a SQL table over HTTP.
   declaration, the HTTP input connector is created automatically for each table in the pipeline.
 
 * Usage is through a special
-  endpoint: [/v0/pipelines/:pipeline_name/ingress/:table_name?format=...](/api/push-data-to-a-sql-table)
+  endpoint: [/v0/pipelines/:pipeline_name/ingress/:table_name?format=...](/api/insert-data)
 
 * Specify data input format using URL query parameters
   (e.g., `format=...`, and more depending on format).
@@ -124,7 +124,7 @@ For more information, see:
 
 * [Tutorial section](/tutorials/basics/part2) on HTTP-based input and output.
 
-* [REST API documentation](/api/push-data-to-a-sql-table) for the `/ingress` endpoint.
+* [REST API documentation](/api/insert-data) for the `/ingress` endpoint.
 
 * Data formats such as [JSON](/formats/json) and
   [CSV](/formats/csv)

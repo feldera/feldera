@@ -670,6 +670,8 @@ pub struct PostStopPipelineParameters {
     force: bool,
 }
 
+/// List Pipelines
+///
 /// Retrieve the list of pipelines.
 /// Configure which fields are included using the `selector` query parameter.
 #[utoipa::path(
@@ -683,7 +685,7 @@ pub struct PostStopPipelineParameters {
             , example = json!(examples::list_pipeline_selected_info())),
         (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
     ),
-    tag = "Pipeline management"
+    tag = "Pipeline CRUD"
 )]
 #[get("/pipelines")]
 pub(crate) async fn list_pipelines(
@@ -749,10 +751,15 @@ pub(crate) async fn list_pipelines(
         .json(returned_pipelines))
 }
 
+/// Aggregate Connector Stats
+///
 /// Fetch and aggregate connector error statistics for a pipeline.
 ///
 /// Returns `None` if the pipeline is unavailable, if there's an error fetching stats,
 /// or if the endpoint returns 404 (not implemented on older pipeline versions).
+///
+/// This endpoint is only used by the web-console so it is not published on openapi
+/// and subject to breakage.
 async fn fetch_connector_error_stats(
     state: &WebData<ServerState>,
     tenant_id: TenantId,
@@ -820,6 +827,8 @@ async fn fetch_connector_error_stats(
     })
 }
 
+/// Get Pipeline
+///
 /// Retrieve a pipeline.
 /// Configure which fields are included using the `selector` query parameter.
 #[utoipa::path(
@@ -840,7 +849,7 @@ async fn fetch_connector_error_stats(
             , example = json!(examples::error_unknown_pipeline_name())),
         (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
     ),
-    tag = "Pipeline management"
+    tag = "Pipeline CRUD"
 )]
 #[get("/pipelines/{pipeline_name}")]
 pub(crate) async fn get_pipeline(
@@ -886,7 +895,9 @@ pub(crate) async fn get_pipeline(
         .json(&returned_pipeline))
 }
 
-/// Create a new pipeline.
+/// Create Pipeline
+///
+/// Create a new pipeline with the provided configuration.
 #[utoipa::path(
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
@@ -910,7 +921,7 @@ pub(crate) async fn get_pipeline(
         ),
         (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
     ),
-    tag = "Pipeline management"
+    tag = "Pipeline CRUD"
 )]
 #[post("/pipelines")]
 pub(crate) async fn post_pipeline(
@@ -942,6 +953,8 @@ pub(crate) async fn post_pipeline(
         .json(returned_pipeline))
 }
 
+/// Upsert Pipeline
+///
 /// Fully update a pipeline if it already exists, otherwise create a new pipeline.
 #[utoipa::path(
     context_path = "/v0",
@@ -974,7 +987,7 @@ pub(crate) async fn post_pipeline(
         ),
         (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
     ),
-    tag = "Pipeline management"
+    tag = "Pipeline CRUD"
 )]
 #[put("/pipelines/{pipeline_name}")]
 pub(crate) async fn put_pipeline(
@@ -1019,6 +1032,8 @@ pub(crate) async fn put_pipeline(
     }
 }
 
+/// Patch Pipeline
+///
 /// Partially update a pipeline.
 #[utoipa::path(
     context_path = "/v0",
@@ -1051,7 +1066,7 @@ pub(crate) async fn put_pipeline(
         ),
         (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
     ),
-    tag = "Pipeline management"
+    tag = "Pipeline CRUD"
 )]
 #[patch("/pipelines/{pipeline_name}")]
 pub(crate) async fn patch_pipeline(
@@ -1090,6 +1105,8 @@ pub(crate) async fn patch_pipeline(
         .json(returned_pipeline))
 }
 
+/// Recompile Pipeline
+///
 /// Recompile a pipeline with the Feldera runtime version included in the
 /// currently installed Feldera platform.
 ///
@@ -1135,7 +1152,7 @@ pub(crate) async fn patch_pipeline(
         ),
         (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
     ),
-    tag = "Pipeline management"
+    tag = "Pipeline Lifecycle"
 )]
 #[post("/pipelines/{pipeline_name}/update_runtime")]
 pub(crate) async fn post_update_runtime(
@@ -1173,7 +1190,9 @@ pub(crate) async fn post_update_runtime(
         .json(returned_pipeline))
 }
 
-/// Delete a pipeline.
+/// Delete Pipeline
+///
+/// Delete an existing pipeline by name.
 #[utoipa::path(
     context_path = "/v0",
     security(("JSON web token (JWT) or API key" = [])),
@@ -1193,7 +1212,7 @@ pub(crate) async fn post_update_runtime(
             , example = json!(examples::error_delete_restricted_to_fully_stopped())),
         (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
     ),
-    tag = "Pipeline management"
+    tag = "Pipeline CRUD"
 )]
 #[delete("/pipelines/{pipeline_name}")]
 pub(crate) async fn delete_pipeline(
@@ -1216,6 +1235,8 @@ pub(crate) async fn delete_pipeline(
     Ok(HttpResponse::Ok().finish())
 }
 
+/// Start Pipeline
+///
 /// Start the pipeline asynchronously by updating the desired status.
 ///
 /// The endpoint returns immediately after setting the desired status.
@@ -1248,7 +1269,7 @@ pub(crate) async fn delete_pipeline(
             , example = json!(examples::error_illegal_pipeline_action())),
         (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
     ),
-    tag = "Pipeline management"
+    tag = "Pipeline Lifecycle"
 )]
 #[post("/pipelines/{pipeline_name}/start")]
 pub(crate) async fn post_pipeline_start(
@@ -1316,6 +1337,8 @@ pub(crate) async fn post_pipeline_start(
     Ok(HttpResponse::Accepted().json(json!("Pipeline is starting")))
 }
 
+/// Stop Pipeline
+///
 /// Stop the pipeline asynchronously by updating the desired state.
 ///
 /// There are two variants:
@@ -1346,7 +1369,7 @@ pub(crate) async fn post_pipeline_start(
     security(("JSON web token (JWT) or API key" = [])),
     params(
         ("pipeline_name" = String, Path, description = "Unique pipeline name"),
-        PostStopPipelineParameters,
+        PostStopPipelineParameters
     ),
     responses(
         (status = ACCEPTED
@@ -1376,7 +1399,7 @@ pub(crate) async fn post_pipeline_start(
         ),
         (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
     ),
-    tag = "Pipeline management"
+    tag = "Pipeline Lifecycle"
 )]
 #[post("/pipelines/{pipeline_name}/stop")]
 pub(crate) async fn post_pipeline_stop(
@@ -1457,6 +1480,8 @@ pub(crate) async fn post_pipeline_stop(
     }
 }
 
+/// Clear Storage
+///
 /// Clears the pipeline storage asynchronously.
 ///
 /// IMPORTANT: Clearing means disassociating the storage from the pipeline.
@@ -1487,7 +1512,7 @@ pub(crate) async fn post_pipeline_stop(
         ),
         (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
     ),
-    tag = "Pipeline management"
+    tag = "Pipeline Lifecycle"
 )]
 #[post("/pipelines/{pipeline_name}/clear")]
 pub(crate) async fn post_pipeline_clear(
@@ -1510,6 +1535,8 @@ pub(crate) async fn post_pipeline_clear(
     Ok(HttpResponse::Accepted().json(json!("Pipeline storage is being cleared")))
 }
 
+/// Stream Pipeline Logs
+///
 /// Retrieve logs of a pipeline as a stream.
 ///
 /// The logs stream catches up to the extent of the internally configured per-pipeline
@@ -1546,7 +1573,7 @@ pub(crate) async fn post_pipeline_clear(
         ),
         (status = INTERNAL_SERVER_ERROR, body = ErrorResponse),
     ),
-    tag = "Pipeline interaction"
+    tag = "Metrics & Debugging"
 )]
 #[get("/pipelines/{pipeline_name}/logs")]
 pub(crate) async fn get_pipeline_logs(
@@ -1568,6 +1595,8 @@ pub struct PostPipelineTesting {
     pub set_platform_version: Option<String>,
 }
 
+/// Test Endpoint
+///
 /// This endpoint is used as part of the test harness. Only available if the `testing`
 /// unstable feature is enabled. Do not use in production.
 #[utoipa::path(
@@ -1589,7 +1618,7 @@ pub struct PostPipelineTesting {
             , body = ErrorResponse
         )
     ),
-    tag = "Pipeline management"
+    tag = "Metrics & Debugging"
 )]
 #[post("/pipelines/{pipeline_name}/testing")]
 pub(crate) async fn post_pipeline_testing(

@@ -96,7 +96,7 @@ pipeline.execute("INSERT INTO tbl VALUES(1, 2, 3);")
 
 ### REST API
 
-Consult the [query endpoint](/api/execute-an-ad-hoc-sql-query-in-a-running-or-paused-pipeline) reference to run ad-hoc queries directly through the API.
+Consult the [query endpoint](/api/execute-ad-hoc-sql) reference to run ad-hoc queries directly through the API.
 
 ## Architecture
 

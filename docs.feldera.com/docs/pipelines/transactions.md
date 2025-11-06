@@ -57,7 +57,7 @@ The following table summarizes the two modes:
 
 ### Start a transaction
 
-Use the [`start_transaction`](https://docs.feldera.com/api/start-a-transaction) API to start a transaction. The API returns a transaction ID:
+Use the [`start_transaction`](/api/begin-transaction) API to start a transaction. The API returns a transaction ID:
 
 <Tabs>
     <TabItem value="rest" label="REST API">
@@ -94,7 +94,7 @@ Use the [`start_transaction`](https://docs.feldera.com/api/start-a-transaction) 
 ### Commit a transaction
 
 Once the pipeline has ingested all inputs that must be processed as part of the transaction,
-commit the transaction using the [`commit_transaction`](https://docs.feldera.com/api/commit-the-current-transaction) API.
+commit the transaction using the [`commit_transaction`](/api/commit-transaction) API.
 
 <Tabs>
     <TabItem value="rest" label="REST API">
@@ -139,7 +139,7 @@ When the transaction is complete, the pipeline goes back into continuous process
 
 ### Monitoring transaction status
 
-The user can monitor the transaction handling status of the pipeline using the [`/stats`](https://docs.feldera.com/api/retrieve-statistics-e-g-performance-counters-of-a-running-or-paused-pipeline) endpoint. The status can be one of:
+The user can monitor the transaction handling status of the pipeline using the [`/stats`](/api/get-pipeline-stats) endpoint. The status can be one of:
 
 | Status                  | Description                                     |
 |-------------------------|-------------------------------------------------|

@@ -10,6 +10,8 @@ use actix_web::{
 use awc::body::MessageBody as _;
 use feldera_types::runtime_status::RuntimeStatus;
 
+/// List All Metrics
+///
 /// Retrieve the metrics of all running pipelines belonging to this tenant.
 ///
 /// The metrics are collected by making individual HTTP requests to `/metrics`
@@ -24,7 +26,7 @@ use feldera_types::runtime_status::RuntimeStatus;
         , content_type = "text/plain"
         , body = Vec<u8>),
     ),
-    tag = "Metrics"
+    tag = "Metrics & Debugging"
 )]
 #[get("/metrics")]
 pub(crate) async fn get_metrics(
