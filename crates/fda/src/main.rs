@@ -8,7 +8,6 @@ use std::path::PathBuf;
 
 use clap::{CommandFactory, Parser};
 use clap_complete::CompleteEnv;
-use env_logger::Env;
 use feldera_rest_api::types::*;
 use feldera_rest_api::*;
 use feldera_types::config::{FtModel, RuntimeConfig, StorageOptions};
@@ -25,6 +24,8 @@ use tempfile::tempfile;
 use tokio::process::Command;
 use tokio::runtime::Handle;
 use tokio::time::{sleep, timeout, Duration, Instant};
+use tracing_log::LogTracer;
+use tracing_subscriber::EnvFilter;
 
 mod adhoc;
 mod bench;
@@ -2205,12 +2206,8 @@ async fn program(format: OutputFormat, action: ProgramAction, client: Client) {
 async fn main() {
     CompleteEnv::with_factory(Cli::command).complete();
 
+    init_logging("warn");
     let mut cli = Cli::parse();
-    let env = Env::default().default_filter_or("warn");
-    let _r = env_logger::Builder::from_env(env)
-        .format_target(false)
-        .format_timestamp(None)
-        .try_init();
     // If a `/` is at the end of the host, the manager returns HTML,
     // instead of an API response.
     //
@@ -2235,4 +2232,15 @@ async fn main() {
         Commands::Pipeline(action) => pipeline(cli.format, action, client()).await,
         Commands::Debug { action } => debug::debug(action),
     }
+}
+
+fn init_logging(default_level: &str) {
+    let filter =
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(default_level));
+    let _ = LogTracer::init();
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter(filter)
+        .with_target(false)
+        .without_time()
+        .try_init();
 }

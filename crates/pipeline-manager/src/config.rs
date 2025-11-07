@@ -4,7 +4,6 @@ use crate::db::{error::DBError, types::pipeline::PipelineId};
 use actix_web::http::header;
 use anyhow::{Error as AnyError, Result as AnyResult};
 use clap::Parser;
-use log::warn;
 use openssl::ssl::{SslConnector, SslMethod, SslVerifyMode};
 use postgres_openssl::MakeTlsConnector;
 use reqwest::Certificate;
@@ -20,6 +19,7 @@ use std::{
     sync::Once,
     thread,
 };
+use tracing::warn;
 
 /// The default `platform_version` is formed using three compilation environment variables:
 /// - `CARGO_PKG_VERSION` set by Cargo

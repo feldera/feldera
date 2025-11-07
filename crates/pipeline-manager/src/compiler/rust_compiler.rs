@@ -19,7 +19,6 @@ use crate::has_unstable_feature;
 use chrono::{DateTime, Utc};
 use futures_util::stream;
 use indoc::formatdoc;
-use log::{debug, error, info, trace, warn};
 use openssl::sha;
 use openssl::sha::sha256;
 use std::collections::{BTreeMap, HashSet};
@@ -33,6 +32,7 @@ use tokio::{
     sync::Mutex,
     time::{sleep, Duration},
 };
+use tracing::{debug, error, info, trace, warn};
 
 /// The frequency at which the compiler polls the database for new Rust compilation requests.
 /// It balances resource consumption due to polling and a fast Rust compilation response.

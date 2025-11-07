@@ -1,8 +1,8 @@
 use crate::db::types::resources_status::{ResourcesDesiredStatus, ResourcesStatus};
 use chrono::{DateTime, Utc};
 use feldera_types::runtime_status::{RuntimeDesiredStatus, RuntimeStatus};
-use log::error;
 use serde::{Deserialize, Serialize};
+use tracing::error;
 use utoipa::ToSchema;
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Deserialize, Serialize, ToSchema)]

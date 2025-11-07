@@ -1974,11 +1974,15 @@ pub(crate) mod tests {
         mkcircuit(&cconf).unwrap();
     }
 
+    fn init_test_tracing() {
+        let _ = tracing_subscriber::fmt::try_init();
+    }
+
     /// Checks that we end up cleaning old checkpoints on disk after calling
     /// `gc_checkpoint`.
     #[test]
     fn gc_commits() {
-        let _r = env_logger::try_init();
+        init_test_tracing();
         let (temp, cconf) = mkconfig();
 
         fn count_directory_entries<P: AsRef<Path>>(path: P) -> io::Result<usize> {
@@ -2026,7 +2030,7 @@ pub(crate) mod tests {
     /// circuit with this storage directory.
     #[test]
     fn gc_on_startup() {
-        let _r = env_logger::try_init();
+        init_test_tracing();
 
         let (temp, cconf) = mkconfig();
         let (mut dbsp, (input_handle, _, _)) = mkcircuit(&cconf).unwrap();
@@ -2059,7 +2063,7 @@ pub(crate) mod tests {
     /// Make sure we can take checkpoints of a simple spine and restore them.
     #[test]
     fn commit_restore() {
-        let _r = env_logger::try_init();
+        init_test_tracing();
         let batches: Vec<Vec<Tup2<i32, Tup2<i32, i64>>>> = vec![
             vec![Tup2(1, Tup2(2, 1))],
             vec![Tup2(3, Tup2(4, 1))],
@@ -2079,7 +2083,7 @@ pub(crate) mod tests {
     #[test]
     #[ignore]
     fn commit_restore_bounds() {
-        let _r = env_logger::try_init();
+        init_test_tracing();
         let batches: Vec<Vec<Tup2<i32, Tup2<i32, i64>>>> = vec![
             vec![Tup2(1, Tup2(2, 1))],
             vec![Tup2(7, Tup2(8, 1))],

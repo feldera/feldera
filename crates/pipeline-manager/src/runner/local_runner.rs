@@ -14,7 +14,6 @@ use crate::runner::pipeline_logs::{LogMessage, LogsSender};
 use async_trait::async_trait;
 use feldera_types::config::{PipelineConfig, StorageCacheConfig, StorageConfig};
 use feldera_types::runtime_status::{BootstrapPolicy, RuntimeDesiredStatus};
-use log::{error, warn, Level};
 use reqwest::StatusCode;
 use std::path::Path;
 use std::process::Stdio;
@@ -26,6 +25,7 @@ use tokio::sync::oneshot;
 use tokio::task::JoinHandle;
 use tokio::time::sleep;
 use tokio::{fs, fs::create_dir_all, select, spawn};
+use tracing::{error, warn, Level};
 use uuid::Uuid;
 
 /// How many times to attempt to retrieve the pipeline binary.
@@ -115,7 +115,7 @@ impl LocalRunner {
                             Err(e) => {
                                 stdout_finished = true;
                                 let line = format!("stdout encountered I/O error: {e}");
-                                logs_sender.send(LogMessage::new_from_control_plane(Level::Error, &line)).await;
+                                logs_sender.send(LogMessage::new_from_control_plane(Level::ERROR, &line)).await;
                                 error!("Logs of pipeline {pipeline_id}: {line}");
                             }
                         }
@@ -136,7 +136,7 @@ impl LocalRunner {
                             Err(e) => {
                                 stderr_finished = true;
                                 let line = format!("stderr encountered I/O error: {e}");
-                                logs_sender.send(LogMessage::new_from_control_plane(Level::Error, &line)).await;
+                                logs_sender.send(LogMessage::new_from_control_plane(Level::ERROR, &line)).await;
                                 error!("Logs of pipeline {pipeline_id}: {line}");
                             }
                         }
@@ -308,7 +308,7 @@ impl LocalRunner {
             );
             self.logs_sender
                 .send(LogMessage::new_from_control_plane(
-                    Level::Error,
+                    Level::ERROR,
                     &format!("Resources error: {error}"),
                 ))
                 .await;

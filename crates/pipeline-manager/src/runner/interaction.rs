@@ -12,11 +12,11 @@ use awc::error::{ConnectError, SendRequestError};
 use awc::{ClientRequest, ClientResponse};
 use crossbeam::sync::ShardedLock;
 use feldera_types::query::MAX_WS_FRAME_SIZE;
-use log::{error, info};
 use std::fmt::Display;
 use std::{collections::HashMap, sync::Arc, time::Duration};
 use tokio::sync::Mutex;
 use tokio::time::Instant;
+use tracing::{error, info};
 
 use crate::db::listen_table::PIPELINE_NOTIFY_CHANNEL_CAPACITY;
 use crate::db::types::resources_status::ResourcesStatus;
