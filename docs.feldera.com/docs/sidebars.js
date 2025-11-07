@@ -400,7 +400,7 @@ const pipelines = {
         formats,
         {
             type: 'doc',
-            label: "Lifecycle",
+            label: "Reference: Pipeline Lifecycle",
             id: "pipelines/lifecycle",
         },
         {
