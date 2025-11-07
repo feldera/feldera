@@ -19,11 +19,11 @@ use crate::error::ManagerError;
 use actix_files::NamedFile;
 use actix_web::{get, post, web, HttpRequest, HttpResponse, HttpServer, Responder};
 use futures_util::{join, StreamExt};
-use log::{error, info};
 use std::net::TcpListener;
 use std::str::FromStr;
 use std::sync::Arc;
 use tokio::{fs, io::AsyncWriteExt, spawn, sync::Mutex};
+use tracing::{error, info};
 use uuid::Uuid;
 
 /// Decodes the URL encoded parameter value as a string.

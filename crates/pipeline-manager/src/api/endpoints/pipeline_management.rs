@@ -32,13 +32,13 @@ use feldera_types::error::ErrorResponse;
 use feldera_types::program_schema::ProgramSchema;
 use feldera_types::runtime_status::{BootstrapPolicy, RuntimeDesiredStatus, RuntimeStatus};
 use futures_util::future::join_all;
-use log::info;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 #[cfg(feature = "feldera-enterprise")]
 use std::time::Duration;
+use tracing::{debug, error, info};
 use utoipa::{IntoParams, ToSchema};
 use uuid::Uuid;
 
@@ -803,7 +803,7 @@ async fn fetch_connector_error_stats(
 
     // Check status code - quietly ignore 404 (endpoint not available on older pipelines)
     if response.status() == actix_web::http::StatusCode::NOT_FOUND {
-        log::debug!(
+        debug!(
             "Pipeline '{}' does not support /stats/errors endpoint (404), skipping error stats",
             pipeline_name
         );
@@ -816,10 +816,9 @@ async fn fetch_connector_error_stats(
     let stats_response: PipelineStatsErrorsResponse = match serde_json::from_slice(&bytes) {
         Ok(response) => response,
         Err(e) => {
-            log::error!(
+            error!(
                 "Failed to deserialize pipeline stats response for '{}': {}",
-                pipeline_name,
-                e
+                pipeline_name, e
             );
             return None;
         }

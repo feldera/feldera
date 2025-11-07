@@ -3,12 +3,12 @@ use crate::db::storage_postgres::StoragePostgres;
 use crate::db::types::pipeline::PipelineId;
 use crate::db::types::tenant::TenantId;
 use futures_util::{stream, StreamExt};
-use log::{error, warn};
 use std::sync::Arc;
 use std::time::Duration;
 use thiserror::Error as ThisError;
 use tokio::sync::mpsc::error::TrySendError;
 use tokio_postgres::AsyncMessage;
+use tracing::{error, warn};
 use uuid::Uuid;
 
 /// Interval at which to retry listening.

@@ -20,7 +20,6 @@ use dbsp_nexmark::{
     queries::{Query, ALL_QUERIES},
     NexmarkSource,
 };
-use env_logger::Env;
 use indicatif::{ProgressBar, ProgressStyle};
 use num_format::{Locale, ToFormattedString};
 use serde::Serialize;
@@ -33,6 +32,8 @@ use std::{
     thread::{self, JoinHandle},
     time::{Duration, Instant},
 };
+use tracing_log::LogTracer;
+use tracing_subscriber::EnvFilter;
 
 #[global_allocator]
 static ALLOC: MiMalloc = MiMalloc;
@@ -334,7 +335,7 @@ fn run_queries(nexmark_config: &NexmarkConfig) -> Vec<NexmarkResult> {
 }
 
 fn main() -> Result<()> {
-    env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
+    init_logging();
     let nexmark_config = NexmarkConfig::parse();
     let cpu_cores = nexmark_config.cpu_cores;
 
@@ -410,4 +411,10 @@ fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+fn init_logging() {
+    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
+    let _ = LogTracer::init();
+    let _ = tracing_subscriber::fmt().with_env_filter(filter).try_init();
 }

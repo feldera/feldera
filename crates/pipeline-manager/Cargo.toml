@@ -29,8 +29,9 @@ feldera-ir = { workspace = true }
 rustls = { workspace = true }
 
 # Logging
-log = { workspace = true }
-env_logger = { workspace = true, features = ["color"] }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
+tracing-log = { workspace = true }
 colored = { workspace = true }
 
 # Error handling and asserts

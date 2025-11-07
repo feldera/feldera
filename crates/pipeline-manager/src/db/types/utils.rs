@@ -1,10 +1,10 @@
 use crate::db::error::DBError;
 use crate::db::types::program::{ProgramConfig, ProgramInfo};
 use feldera_types::config::{PipelineConfig, RuntimeConfig};
-use log::error;
 use regex::Regex;
 use serde::Serialize;
 use thiserror::Error as ThisError;
+use tracing::error;
 
 // Utility functions related to types which are stored in the database.
 // The functions center around serialization, deserialization and validation.
