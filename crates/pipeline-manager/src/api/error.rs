@@ -24,6 +24,9 @@ pub enum ApiError {
     UnableToConnect { reason: String },
     LockTimeout { value: String, timeout: Duration },
     UnableToCreateSupportBundle { reason: String },
+    DataflowNotAvailable { pipeline_name: String },
+    InvalidProgramInfo { error: String },
+    ProgramNotCompiled { pipeline_name: String },
 }
 
 impl DetailedError for ApiError {
@@ -39,6 +42,9 @@ impl DetailedError for ApiError {
             Self::UnableToConnect { .. } => Cow::from("UnableToConnect"),
             Self::LockTimeout { .. } => Cow::from("LockTimeout"),
             Self::UnableToCreateSupportBundle { .. } => Cow::from("UnableToCreateSupportBundle"),
+            Self::DataflowNotAvailable { .. } => Cow::from("DataflowNotAvailable"),
+            Self::InvalidProgramInfo { .. } => Cow::from("InvalidProgramInfo"),
+            Self::ProgramNotCompiled { .. } => Cow::from("ProgramNotCompiled"),
         }
     }
 }
@@ -83,6 +89,21 @@ impl Display for ApiError {
             Self::UnableToCreateSupportBundle { reason } => {
                 write!(f, "Unable to create support bundle: {reason}")
             }
+            Self::DataflowNotAvailable { pipeline_name } => {
+                write!(
+                    f,
+                    "Dataflow graph is not available for pipeline '{pipeline_name}'. The pipeline may have been compiled before dataflow graphs were introduced."
+                )
+            }
+            Self::InvalidProgramInfo { error } => {
+                write!(f, "Invalid program info: {error}")
+            }
+            Self::ProgramNotCompiled { pipeline_name } => {
+                write!(
+                    f,
+                    "Pipeline '{pipeline_name}' has not been compiled yet. Please compile the pipeline first."
+                )
+            }
         }
     }
 }
@@ -108,6 +129,9 @@ impl ResponseError for ApiError {
             Self::UnableToConnect { .. } => StatusCode::BAD_REQUEST,
             Self::LockTimeout { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::UnableToCreateSupportBundle { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::DataflowNotAvailable { .. } => StatusCode::NOT_FOUND,
+            Self::InvalidProgramInfo { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            Self::ProgramNotCompiled { .. } => StatusCode::NOT_FOUND,
         }
     }
 

@@ -61,6 +61,9 @@ import type {
   GetCheckpointStatusData,
   GetCheckpointStatusError,
   GetCheckpointStatusResponse,
+  GetPipelineCircuitJsonProfileData,
+  GetPipelineCircuitJsonProfileError,
+  GetPipelineCircuitJsonProfileResponse,
   GetPipelineCircuitProfileData,
   GetPipelineCircuitProfileError,
   GetPipelineCircuitProfileResponse,
@@ -73,6 +76,9 @@ import type {
   CompletionStatusData,
   CompletionStatusError,
   CompletionStatusResponse2,
+  GetPipelineDataflowGraphData,
+  GetPipelineDataflowGraphError,
+  GetPipelineDataflowGraphResponse,
   HttpOutputData,
   HttpOutputError,
   HttpOutputResponse,
@@ -139,7 +145,8 @@ import type {
 } from './types.gen'
 
 /**
- * Retrieve authentication provider configuration.
+ * Get Auth Config
+ * Retrieve the authentication provider configuration.
  */
 export const getConfigAuthentication = (options?: Options) => {
   return (options?.client ?? client).get<
@@ -152,7 +159,8 @@ export const getConfigAuthentication = (options?: Options) => {
 }
 
 /**
- * Retrieve the list of API keys.
+ * List API Keys
+ * Retrieve a list of your API keys.
  */
 export const listApiKeys = (options?: Options) => {
   return (options?.client ?? client).get<ListApiKeysResponse, ListApiKeysError>({
@@ -162,7 +170,9 @@ export const listApiKeys = (options?: Options) => {
 }
 
 /**
- * Create a new API key.
+ * Create API Key
+ * Create a new API key with the specified name. The generated API key
+ * will be returned in the response and cannot be retrieved again later.
  */
 export const postApiKey = (options: Options<PostApiKeyData>) => {
   return (options?.client ?? client).post<PostApiKeyResponse, PostApiKeyError>({
@@ -172,7 +182,8 @@ export const postApiKey = (options: Options<PostApiKeyData>) => {
 }
 
 /**
- * Retrieve an API key.
+ * Get API Key
+ * Retrieve the metadata of a specific API key by its name.
  */
 export const getApiKey = (options: Options<GetApiKeyData>) => {
   return (options?.client ?? client).get<GetApiKeyResponse, GetApiKeyError>({
@@ -182,7 +193,8 @@ export const getApiKey = (options: Options<GetApiKeyData>) => {
 }
 
 /**
- * Delete an API key.
+ * Delete API Key
+ * Remove an API key by its name.
  */
 export const deleteApiKey = (options: Options<DeleteApiKeyData>) => {
   return (options?.client ?? client).delete<DeleteApiKeyResponse, DeleteApiKeyError>({
@@ -191,6 +203,10 @@ export const deleteApiKey = (options: Options<DeleteApiKeyData>) => {
   })
 }
 
+/**
+ * Check Cluster Health
+ * Retrieve the health status of the Feldera control-plane.
+ */
 export const getHealth = (options?: Options) => {
   return (options?.client ?? client).get<GetHealthResponse, GetHealthError>({
     ...options,
@@ -199,7 +215,8 @@ export const getHealth = (options?: Options) => {
 }
 
 /**
- * Retrieve general configuration.
+ * Get Platform Config
+ * Retrieve configuration of the Feldera Platform.
  */
 export const getConfig = (options?: Options) => {
   return (options?.client ?? client).get<GetConfigResponse, GetConfigError>({
@@ -209,7 +226,8 @@ export const getConfig = (options?: Options) => {
 }
 
 /**
- * Retrieve the list of demos.
+ * List Demos
+ * Retrieve the list of demos available in the WebConsole.
  */
 export const getConfigDemos = (options?: Options) => {
   return (options?.client ?? client).get<GetConfigDemosResponse, GetConfigDemosError>({
@@ -219,7 +237,8 @@ export const getConfigDemos = (options?: Options) => {
 }
 
 /**
- * Retrieve current session information.
+ * Get Session
+ * Retrieve login session information for your current user session.
  */
 export const getConfigSession = (options?: Options) => {
   return (options?.client ?? client).get<GetConfigSessionResponse, GetConfigSessionError>({
@@ -229,7 +248,9 @@ export const getConfigSession = (options?: Options) => {
 }
 
 /**
+ * List All Metrics
  * Retrieve the metrics of all running pipelines belonging to this tenant.
+ *
  * The metrics are collected by making individual HTTP requests to `/metrics`
  * endpoint of each pipeline, of which only successful responses are included
  * in the returned list.
@@ -242,6 +263,7 @@ export const getMetrics = (options?: Options) => {
 }
 
 /**
+ * List Pipelines
  * Retrieve the list of pipelines.
  * Configure which fields are included using the `selector` query parameter.
  */
@@ -253,7 +275,8 @@ export const listPipelines = (options?: Options<ListPipelinesData>) => {
 }
 
 /**
- * Create a new pipeline.
+ * Create Pipeline
+ * Create a new pipeline with the provided configuration.
  */
 export const postPipeline = (options: Options<PostPipelineData>) => {
   return (options?.client ?? client).post<PostPipelineResponse, PostPipelineError>({
@@ -263,6 +286,7 @@ export const postPipeline = (options: Options<PostPipelineData>) => {
 }
 
 /**
+ * Get Pipeline
  * Retrieve a pipeline.
  * Configure which fields are included using the `selector` query parameter.
  */
@@ -274,6 +298,7 @@ export const getPipeline = (options: Options<GetPipelineData>) => {
 }
 
 /**
+ * Upsert Pipeline
  * Fully update a pipeline if it already exists, otherwise create a new pipeline.
  */
 export const putPipeline = (options: Options<PutPipelineData>) => {
@@ -284,7 +309,8 @@ export const putPipeline = (options: Options<PutPipelineData>) => {
 }
 
 /**
- * Delete a pipeline.
+ * Delete Pipeline
+ * Delete an existing pipeline by name.
  */
 export const deletePipeline = (options: Options<DeletePipelineData>) => {
   return (options?.client ?? client).delete<DeletePipelineResponse, DeletePipelineError>({
@@ -294,6 +320,7 @@ export const deletePipeline = (options: Options<DeletePipelineData>) => {
 }
 
 /**
+ * Patch Pipeline
  * Partially update a pipeline.
  */
 export const patchPipeline = (options: Options<PatchPipelineData>) => {
@@ -304,6 +331,7 @@ export const patchPipeline = (options: Options<PatchPipelineData>) => {
 }
 
 /**
+ * Activate Standby Pipeline
  * Requests the pipeline to activate if it is currently in standby mode, which it will do
  * asynchronously.
  *
@@ -320,7 +348,9 @@ export const postPipelineActivate = (options: Options<PostPipelineActivateData>)
 }
 
 /**
+ * Approve Bootstrap
  * Approves the pipeline to proceed with bootstrapping.
+ *
  * This endpoint is used when a pipeline has been started with
  * `bootstrap_policy=await_approval`, it is resuming from an existing checkpoint,
  * but the pipeline has been modified since the checkpoint was made and is
@@ -335,7 +365,9 @@ export const postPipelineApprove = (options: Options<PostPipelineApproveData>) =
 }
 
 /**
+ * Checkpoint Now
  * Initiates checkpoint for a running or paused pipeline.
+ *
  * Returns a checkpoint sequence number that can be used with `/checkpoint_status` to
  * determine when the checkpoint has completed.
  */
@@ -347,6 +379,7 @@ export const checkpointPipeline = (options: Options<CheckpointPipelineData>) => 
 }
 
 /**
+ * Sync Checkpoints To S3
  * Syncs latest checkpoints to the object store configured in pipeline config.
  */
 export const syncCheckpoint = (options: Options<SyncCheckpointData>) => {
@@ -357,6 +390,7 @@ export const syncCheckpoint = (options: Options<SyncCheckpointData>) => {
 }
 
 /**
+ * Get Checkpoint Sync Status
  * Retrieve status of checkpoint sync activity in a pipeline.
  */
 export const getCheckpointSyncStatus = (options: Options<GetCheckpointSyncStatusData>) => {
@@ -370,6 +404,7 @@ export const getCheckpointSyncStatus = (options: Options<GetCheckpointSyncStatus
 }
 
 /**
+ * Get Checkpoint Status
  * Retrieve status of checkpoint activity in a pipeline.
  */
 export const getCheckpointStatus = (options: Options<GetCheckpointStatusData>) => {
@@ -380,6 +415,23 @@ export const getCheckpointStatus = (options: Options<GetCheckpointStatusData>) =
 }
 
 /**
+ * Performance Profile JSON
+ * Retrieve the circuit performance profile in JSON format of a running or paused pipeline.
+ */
+export const getPipelineCircuitJsonProfile = (
+  options: Options<GetPipelineCircuitJsonProfileData>
+) => {
+  return (options?.client ?? client).get<
+    GetPipelineCircuitJsonProfileResponse,
+    GetPipelineCircuitJsonProfileError
+  >({
+    ...options,
+    url: '/v0/pipelines/{pipeline_name}/circuit_json_profile'
+  })
+}
+
+/**
+ * Get Performance Profile
  * Retrieve the circuit performance profile of a running or paused pipeline.
  */
 export const getPipelineCircuitProfile = (options: Options<GetPipelineCircuitProfileData>) => {
@@ -393,7 +445,9 @@ export const getPipelineCircuitProfile = (options: Options<GetPipelineCircuitPro
 }
 
 /**
+ * Clear Storage
  * Clears the pipeline storage asynchronously.
+ *
  * IMPORTANT: Clearing means disassociating the storage from the pipeline.
  * Depending on the storage type this can include its deletion.
  *
@@ -409,6 +463,7 @@ export const postPipelineClear = (options: Options<PostPipelineClearData>) => {
 }
 
 /**
+ * Commit Transaction
  * Commit the current transaction.
  */
 export const commitTransaction = (options: Options<CommitTransactionData>) => {
@@ -419,6 +474,7 @@ export const commitTransaction = (options: Options<CommitTransactionData>) => {
 }
 
 /**
+ * Check Completion Status
  * Check the status of a completion token returned by the `/ingress` or `/completion_token`
  * endpoint.
  */
@@ -430,7 +486,25 @@ export const completionStatus = (options: Options<CompletionStatusData>) => {
 }
 
 /**
+ * Get Dataflow Graph
+ * Retrieve the dataflow graph of a pipeline.
+ * The dataflow graph is generated during SQL compilation and shows the structure
+ * of the compiled SQL program including the Calcite plan and MIR nodes.
+ */
+export const getPipelineDataflowGraph = (options: Options<GetPipelineDataflowGraphData>) => {
+  return (options?.client ?? client).get<
+    GetPipelineDataflowGraphResponse,
+    GetPipelineDataflowGraphError
+  >({
+    ...options,
+    url: '/v0/pipelines/{pipeline_name}/dataflow_graph'
+  })
+}
+
+/**
+ * Subscribe to View
  * Subscribe to a stream of updates from a SQL view or table.
+ *
  * The pipeline responds with a continuous stream of changes to the specified
  * table or view, encoded using the format specified in the `?format=`
  * parameter. Updates are split into `Chunk`s.
@@ -446,6 +520,7 @@ export const httpOutput = (options: Options<HttpOutputData>) => {
 }
 
 /**
+ * Get Heap Profile
  * Retrieve the heap profile of a running or paused pipeline.
  */
 export const getPipelineHeapProfile = (options: Options<GetPipelineHeapProfileData>) => {
@@ -459,7 +534,9 @@ export const getPipelineHeapProfile = (options: Options<GetPipelineHeapProfileDa
 }
 
 /**
+ * Insert Data
  * Push data to a SQL table.
+ *
  * The client sends data encoded using the format specified in the `?format=`
  * parameter as a body of the request.  The contents of the data must match
  * the SQL table schema specified in `table_name`
@@ -480,7 +557,9 @@ export const httpInput = (options: Options<HttpInputData>) => {
 }
 
 /**
+ * Stream Pipeline Logs
  * Retrieve logs of a pipeline as a stream.
+ *
  * The logs stream catches up to the extent of the internally configured per-pipeline
  * circular logs buffer (limited to a certain byte size and number of lines, whichever
  * is reached first). After the catch-up, new lines are pushed whenever they become
@@ -501,7 +580,8 @@ export const getPipelineLogs = (options: Options<GetPipelineLogsData>) => {
 }
 
 /**
- * Retrieve circuit metrics of a running or paused pipeline.
+ * Get Pipeline Metrics
+ * Retrieve the metrics of a running or paused pipeline.
  */
 export const getPipelineMetrics = (options: Options<GetPipelineMetricsData>) => {
   return (options?.client ?? client).get<GetPipelineMetricsResponse, GetPipelineMetricsError>({
@@ -511,7 +591,9 @@ export const getPipelineMetrics = (options: Options<GetPipelineMetricsData>) => 
 }
 
 /**
+ * Pause Pipeline
  * Requests the pipeline to pause, which it will do asynchronously.
+ *
  * Progress should be monitored by polling the pipeline `GET` endpoints.
  */
 export const postPipelinePause = (options: Options<PostPipelinePauseData>) => {
@@ -522,7 +604,9 @@ export const postPipelinePause = (options: Options<PostPipelinePauseData>) => {
 }
 
 /**
- * Execute an ad-hoc SQL query in a running or paused pipeline.
+ * Execute Ad-hoc SQL
+ * Execute ad-hoc SQL in a running or paused pipeline.
+ *
  * The evaluation is not incremental.
  */
 export const pipelineAdhocSql = (options: Options<PipelineAdhocSqlData>) => {
@@ -533,7 +617,9 @@ export const pipelineAdhocSql = (options: Options<PipelineAdhocSqlData>) => {
 }
 
 /**
+ * Resume Pipeline
  * Requests the pipeline to resume, which it will do asynchronously.
+ *
  * Progress should be monitored by polling the pipeline `GET` endpoints.
  */
 export const postPipelineResume = (options: Options<PostPipelineResumeData>) => {
@@ -544,7 +630,9 @@ export const postPipelineResume = (options: Options<PostPipelineResumeData>) => 
 }
 
 /**
+ * Start Pipeline
  * Start the pipeline asynchronously by updating the desired status.
+ *
  * The endpoint returns immediately after setting the desired status.
  * The procedure to get to the desired status is performed asynchronously.
  * Progress should be monitored by polling the pipeline `GET` endpoints.
@@ -564,7 +652,8 @@ export const postPipelineStart = (options: Options<PostPipelineStartData>) => {
 }
 
 /**
- * Start a transaction.
+ * Begin Transaction
+ * Start a new transaction.
  */
 export const startTransaction = (options: Options<StartTransactionData>) => {
   return (options?.client ?? client).post<StartTransactionResponse2, StartTransactionError>({
@@ -574,6 +663,7 @@ export const startTransaction = (options: Options<StartTransactionData>) => {
 }
 
 /**
+ * Get Pipeline Stats
  * Retrieve statistics (e.g., performance counters) of a running or paused pipeline.
  */
 export const getPipelineStats = (options: Options<GetPipelineStatsData>) => {
@@ -584,7 +674,9 @@ export const getPipelineStats = (options: Options<GetPipelineStatsData>) => {
 }
 
 /**
+ * Stop Pipeline
  * Stop the pipeline asynchronously by updating the desired state.
+ *
  * There are two variants:
  * - `/stop?force=false` (default): the pipeline will first atomically checkpoint before
  * deprovisioning the compute resources. When resuming, the pipeline will start from this
@@ -616,7 +708,9 @@ export const postPipelineStop = (options: Options<PostPipelineStopData>) => {
 }
 
 /**
+ * Download Support Bundle
  * Generate a support bundle for a pipeline.
+ *
  * This endpoint collects various diagnostic data from the pipeline including
  * circuit profile, heap profile, metrics, logs, stats, and connector statistics,
  * and packages them into a single ZIP file for support purposes.
@@ -632,7 +726,9 @@ export const getPipelineSupportBundle = (options: Options<GetPipelineSupportBund
 }
 
 /**
+ * Get Completion Token
  * Generate a completion token for an input connector.
+ *
  * Returns a token that can be passed to the `/completion_status` endpoint
  * to check whether the pipeline has finished processing all inputs received from the
  * connector before the token was generated.
@@ -645,6 +741,7 @@ export const completionToken = (options: Options<CompletionTokenData>) => {
 }
 
 /**
+ * Get Input Status
  * Retrieve the status of an input connector.
  */
 export const getPipelineInputConnectorStatus = (
@@ -660,7 +757,9 @@ export const getPipelineInputConnectorStatus = (
 }
 
 /**
+ * Control Input Connector
  * Start (resume) or pause the input connector.
+ *
  * The following values of the `action` argument are accepted: `start` and `pause`.
  *
  * Input connectors can be in either the `Running` or `Paused` state. By default,
@@ -700,6 +799,7 @@ export const postPipelineInputConnectorAction = (
 }
 
 /**
+ * Test Endpoint
  * This endpoint is used as part of the test harness. Only available if the `testing`
  * unstable feature is enabled. Do not use in production.
  */
@@ -711,6 +811,7 @@ export const postPipelineTesting = (options: Options<PostPipelineTestingData>) =
 }
 
 /**
+ * Get Time Series Stats
  * Retrieve time series for statistics of a running or paused pipeline.
  */
 export const getPipelineTimeSeries = (options: Options<GetPipelineTimeSeriesData>) => {
@@ -723,7 +824,9 @@ export const getPipelineTimeSeries = (options: Options<GetPipelineTimeSeriesData
 }
 
 /**
+ * Stream Time Series
  * Stream time series for statistics of a running or paused pipeline.
+ *
  * Returns a snapshot of all existing time series data followed by a continuous stream of
  * new time series data points as they become available. The response is in newline-delimited
  * JSON format (NDJSON) where each line is a JSON object representing a single time series
@@ -740,6 +843,7 @@ export const getPipelineTimeSeriesStream = (options: Options<GetPipelineTimeSeri
 }
 
 /**
+ * Recompile Pipeline
  * Recompile a pipeline with the Feldera runtime version included in the
  * currently installed Feldera platform.
  *
@@ -770,6 +874,7 @@ export const postUpdateRuntime = (options: Options<PostUpdateRuntimeData>) => {
 }
 
 /**
+ * Get Output Status
  * Retrieve the status of an output connector.
  */
 export const getPipelineOutputConnectorStatus = (
