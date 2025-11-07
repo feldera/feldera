@@ -173,7 +173,7 @@ pub(crate) async fn get_pipeline_support_bundle(
         .await?;
     bundles.insert(
         0,
-        SupportBundleData::collect(&state, &client, *tenant_id, &pipeline_name).await?,
+        SupportBundleData::collect(&state, &client, *tenant_id, &pipeline_name, &support_bundle_params).await?,
     );
     let bundle = SupportBundleZip::create(&pipeline, bundles, &support_bundle_params).await?;
 

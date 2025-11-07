@@ -26,7 +26,9 @@ import {
   type PipelineStatus,
   type PipelineThumb,
   type SupportBundleOptions,
-  postUpdateRuntime
+  postUpdateRuntime,
+  getPipelineDataflowGraph,
+  getPipelineSupportBundle
 } from '$lib/services/pipelineManager'
 import { useToast } from '$lib/compositions/useToastNotification'
 import type { FunctionType } from '$lib/types/common/function'
@@ -167,6 +169,14 @@ export const usePipelineManager = () => {
     downloadPipelineSupportBundle: reportError(
       downloadPipelineSupportBundle,
       (pipelineName) => `Failed to download support bundle for ${pipelineName} pipeline`
+    ),
+    getPipelineDataflowGraph: reportError(
+      getPipelineDataflowGraph,
+      (pipelineName) => `Failed to load dataflow graph of pipeline ${pipelineName}`
+    ),
+    getPipelineSupportBundle: reportError(
+      getPipelineSupportBundle,
+      (pipelineName) => `Failed to load circuit profile of pipeline ${pipelineName}`
     )
   }
 }

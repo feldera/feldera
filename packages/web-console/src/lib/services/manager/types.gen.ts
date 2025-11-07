@@ -4161,6 +4161,10 @@ export type GetPipelineSupportBundleData = {
      */
     circuit_profile?: boolean
     /**
+     * Whether to collect dataflow graph data (default: true)
+     */
+    dataflow_graph?: boolean
+    /**
      * Whether to collect heap profile data (default: true)
      */
     heap_profile?: boolean

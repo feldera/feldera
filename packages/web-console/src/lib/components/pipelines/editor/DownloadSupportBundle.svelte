@@ -25,7 +25,8 @@
     metrics: true,
     pipeline_config: true,
     stats: true,
-    system_config: true
+    system_config: true,
+    dataflow_graph: false
   }
   let data: SupportBundleOptions = $state(defaultData)
 
@@ -57,6 +58,10 @@
     system_config: {
       label: 'System config',
       description: 'Include system config'
+    },
+    dataflow_graph: {
+      label: 'Dataflow graph',
+      description: 'Include DBSP MIR operator graph'
     }
   }
 </script>

@@ -35,7 +35,9 @@ import {
   postPipelineResume,
   postPipelineActivate,
   type GetPipelineSupportBundleData,
-  postPipelineApprove
+  postPipelineApprove,
+  getPipelineDataflowGraph as _getPipelineDataflowGraph,
+  getPipelineCircuitJsonProfile
 } from '$lib/services/manager'
 export type {
   // PipelineDescr,
@@ -60,7 +62,9 @@ import invariant from 'tiny-invariant'
 import { tuple } from '$lib/functions/common/tuple'
 import { sleep } from '$lib/functions/common/promise'
 import { type NamesInUnion, unionName } from '$lib/functions/common/union'
-import { singleton } from '$lib/functions/common/array'
+import { groupBy, singleton } from '$lib/functions/common/array'
+import { unzip, inflateRaw as platformInflateRaw } from 'but-unzip'
+import type { JsonProfiles } from 'profiler-lib'
 
 const unauthenticatedClient = createClient({
   bodySerializer: JSONbig.stringify,
@@ -466,6 +470,39 @@ export const deleteApiKey = (name: string) =>
       throw new Error(`Failed to delete ${name} API key`)
     }
   )
+
+export const getPipelineDataflowGraph = (pipelineName: string) =>
+  mapResponse(_getPipelineDataflowGraph({ path: { pipeline_name: pipelineName } }), (v) => v)
+
+export const getPipelineSupportBundle = async (pipelineName: string) => {
+  // mapResponse(getPipelineCircuitJsonProfile({'path': {'pipeline_name': pipelineName}}), (v) => v)
+  const query = new URLSearchParams({
+    circuit_profile: 'true',
+    heap_profile: 'false',
+    metrics: 'false',
+    logs: 'false',
+    stats: 'false',
+    pipeline_config: 'false',
+    system_config: 'false',
+    dataflow_graph: 'true'
+  })
+  const body = await streamingFetch(
+    getAuthenticatedFetch(),
+    `${felderaEndpoint}/v0/pipelines/${pipelineName}/support_bundle?${query.toString()}`,
+    {
+      method: 'GET'
+    },
+    (msg) => new Error(`Failed to download profile for pipeline ${pipelineName}: \n${msg}`),
+    (e) => new Error(e.details?.error ?? e.message, { cause: e })
+  )
+  if (Error.isError(body)) {
+    throw body
+  }
+  const response = new Response(body.stream)
+  const buffer = await response.arrayBuffer()
+  const data = unzip(new Uint8Array(buffer))
+  return data
+}
 
 const getAuthenticatedFetch = () => {
   try {

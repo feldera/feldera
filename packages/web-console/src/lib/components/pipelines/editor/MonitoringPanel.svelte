@@ -125,7 +125,7 @@
 
 {#snippet TabControlProfileVisualizer()}
   <span class="inline sm:hidden"> Profiler </span>
-  <span class="hidden sm:inline"> Profile visualizer </span>
+  <span class="hidden sm:inline"> Profile Visualizer </span>
 {/snippet}
 
 {#snippet TabLogs()}

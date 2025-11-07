@@ -28,6 +28,7 @@ use tokio::time::{sleep, Duration, Instant};
 use utoipa::{IntoParams, ToSchema};
 
 const COLLECTION_TIMEOUT: Duration = Duration::from_secs(120);
+const SKIPPED_BY_USER: &str = "Skipped due to user request";
 
 type BundleResult<T> = Result<T, String>;
 
@@ -65,6 +66,10 @@ pub struct SupportBundleParameters {
     /// Whether to collect system configuration data (default: true)
     #[serde(default = "collect")]
     pub system_config: bool,
+
+    /// Whether to collect dataflow graph data (default: true)
+    #[serde(default = "collect")]
+    pub dataflow_graph: bool,
 }
 
 impl Default for SupportBundleParameters {
@@ -77,6 +82,7 @@ impl Default for SupportBundleParameters {
             stats: true,
             pipeline_config: true,
             system_config: true,
+            dataflow_graph: false,
         }
     }
 }
@@ -210,18 +216,19 @@ pub struct SupportBundleData {
     pub stats: BundleResult<Vec<u8>>,
     pub pipeline_config: BundleResult<Vec<u8>>,
     pub system_config: BundleResult<Vec<u8>>,
+    pub dataflow_graph: BundleResult<Vec<u8>>,
 }
 
 impl SupportBundleData {
     /// Current version of the support bundle data format
     pub const fn current_version() -> u32 {
-        3
+        4
     }
 
     #[cfg(test)]
     pub(crate) fn test_data() -> Self {
         Self {
-            version: 3,
+            version: 4,
             time: chrono::Utc::now(),
             circuit_profile: Ok(vec![1, 2, 3]),
             json_circuit_profile: Ok(vec![1, 2, 3]),
@@ -231,6 +238,7 @@ impl SupportBundleData {
             stats: Ok(vec![10, 11, 12]),
             pipeline_config: Ok(vec![13, 14, 15]),
             system_config: Ok(vec![16, 17, 18]),
+            dataflow_graph: Ok(vec![19, 20, 21]),
         }
     }
 }
@@ -266,6 +274,8 @@ impl<'de> serde::Deserialize<'de> for SupportBundleData {
             pipeline_config: Option<BundleResult<Vec<u8>>>,
             #[serde(default)]
             system_config: Option<BundleResult<Vec<u8>>>,
+            #[serde(default)]
+            dataflow_graph: Option<BundleResult<Vec<u8>>>,
         }
 
         let helper = Helper::deserialize(deserializer)?;
@@ -283,6 +293,7 @@ impl<'de> serde::Deserialize<'de> for SupportBundleData {
             stats: helper.stats.unwrap_or_else(missing_field_error),
             pipeline_config: helper.pipeline_config.unwrap_or_else(missing_field_error),
             system_config: helper.system_config.unwrap_or_else(missing_field_error),
+            dataflow_graph: helper.dataflow_graph.unwrap_or_else(missing_field_error),
         })
     }
 }
@@ -293,7 +304,13 @@ impl SupportBundleData {
         client: &awc::Client,
         tenant_id: TenantId,
         pipeline_name: &str,
+        params: &SupportBundleParameters,
     ) -> Result<Self, ManagerError> {
+        // Helper function to create skipped result
+        fn skipped<T>() -> BundleResult<T> {
+            Err(SKIPPED_BY_USER.to_string())
+        }
+
         let (
             circuit_profile,
             json_circuit_profile,
@@ -303,15 +320,71 @@ impl SupportBundleData {
             stats,
             pipeline_config,
             system_config,
+            dataflow_graph,
         ) = tokio::join!(
-            Self::collect_circuit_profile(state, client, tenant_id, pipeline_name,),
-            Self::collect_json_circuit_profile(state, client, tenant_id, pipeline_name,),
-            Self::collect_heap_profile(state, client, tenant_id, pipeline_name,),
-            Self::collect_metrics(state, client, tenant_id, pipeline_name),
-            Self::collect_logs(state, client, tenant_id, pipeline_name),
-            Self::collect_stats(state, client, tenant_id, pipeline_name),
-            Self::collect_pipeline_config(state, tenant_id, pipeline_name),
-            Self::collect_system_config(state),
+            async {
+                if params.circuit_profile {
+                    Self::collect_circuit_profile(state, client, tenant_id, pipeline_name).await
+                } else {
+                    skipped()
+                }
+            },
+            async {
+                if params.circuit_profile {
+                    Self::collect_json_circuit_profile(state, client, tenant_id, pipeline_name).await
+                } else {
+                    skipped()
+                }
+            },
+            async {
+                if params.heap_profile {
+                    Self::collect_heap_profile(state, client, tenant_id, pipeline_name).await
+                } else {
+                    skipped()
+                }
+            },
+            async {
+                if params.metrics {
+                    Self::collect_metrics(state, client, tenant_id, pipeline_name).await
+                } else {
+                    skipped()
+                }
+            },
+            async {
+                if params.logs {
+                    Self::collect_logs(state, client, tenant_id, pipeline_name).await
+                } else {
+                    skipped()
+                }
+            },
+            async {
+                if params.stats {
+                    Self::collect_stats(state, client, tenant_id, pipeline_name).await
+                } else {
+                    skipped()
+                }
+            },
+            async {
+                if params.pipeline_config {
+                    Self::collect_pipeline_config(state, tenant_id, pipeline_name).await
+                } else {
+                    skipped()
+                }
+            },
+            async {
+                if params.system_config {
+                    Self::collect_system_config(state).await
+                } else {
+                    skipped()
+                }
+            },
+            async {
+                if params.dataflow_graph {
+                    Self::collect_dataflow_graph(state, tenant_id, pipeline_name).await
+                } else {
+                    skipped()
+                }
+            },
         );
 
         Ok(SupportBundleData {
@@ -325,6 +398,7 @@ impl SupportBundleData {
             stats,
             pipeline_config,
             system_config,
+            dataflow_graph,
         })
     }
 
@@ -451,6 +525,17 @@ impl SupportBundleData {
             .map_err(|e| e.to_string())
     }
 
+    async fn collect_dataflow_graph(
+        state: &ServerState,
+        tenant_id: TenantId,
+        pipeline_name: &str,
+    ) -> BundleResult<Vec<u8>> {
+        Self::get_dataflow_graph(state, tenant_id, pipeline_name)
+            .await
+            .map_err(|e| e.to_string())
+            .map(json_prettify)
+    }
+
     #[allow(clippy::type_complexity)]
     pub(crate) async fn push_to_zip(
         &self,
@@ -468,20 +553,24 @@ impl SupportBundleData {
                     manifest_entries.push("✓ circuit_profile.zip".to_string());
                 }
                 Err(e) => {
-                    error_entries.push(format!("✗ circuit_profile.zip: {}", e));
+                    if e != SKIPPED_BY_USER {
+                        error_entries.push(format!("✗ circuit_profile.zip: {}", e));
+                    }
                 }
             };
             match &self.json_circuit_profile {
                 Ok(content) => {
-                    let _ = add_to_zip("json_circuit_profile.zip", content);
-                    manifest_entries.push("✓ json_circuit_profile.zip".to_string());
+                    let _ = add_to_zip("json_circuit_profile.json", content);
+                    manifest_entries.push("✓ json_circuit_profile.json".to_string());
                 }
                 Err(e) => {
-                    error_entries.push(format!("✗ json_circuit_profile.zip: {}", e));
+                    if e != SKIPPED_BY_USER {
+                        error_entries.push(format!("✗ json_circuit_profile.json: {}", e));
+                    }
                 }
             }
         } else {
-            error_entries.push("⚠ circuit_profile.zip: Skipped due to user input".to_string());
+            error_entries.push(format!("⚠ circuit_profile.zip: {}", SKIPPED_BY_USER));
         }
 
         // Add heap profile
@@ -492,11 +581,13 @@ impl SupportBundleData {
                     manifest_entries.push("✓ heap_profile.pb.gz".to_string());
                 }
                 Err(e) => {
-                    error_entries.push(format!("✗ heap_profile.pb.gz: {}", e));
+                    if e != SKIPPED_BY_USER {
+                        error_entries.push(format!("✗ heap_profile.pb.gz: {}", e));
+                    }
                 }
             }
         } else {
-            error_entries.push("⚠ heap_profile.pb.gz: Skipped due to user input".to_string());
+            error_entries.push(format!("⚠ heap_profile.pb.gz: {}", SKIPPED_BY_USER));
         }
 
         // Add metrics
@@ -507,11 +598,13 @@ impl SupportBundleData {
                     manifest_entries.push("✓ metrics.txt".to_string());
                 }
                 Err(e) => {
-                    error_entries.push(format!("✗ metrics.txt: {}", e));
+                    if e != SKIPPED_BY_USER {
+                        error_entries.push(format!("✗ metrics.txt: {}", e));
+                    }
                 }
             }
         } else {
-            error_entries.push("⚠ metrics.txt: Skipped due to user input".to_string());
+            error_entries.push(format!("⚠ metrics.txt: {}", SKIPPED_BY_USER));
         }
 
         // Add logs
@@ -522,11 +615,13 @@ impl SupportBundleData {
                     manifest_entries.push("✓ logs.txt".to_string());
                 }
                 Err(e) => {
-                    error_entries.push(format!("✗ logs.txt: {}", e));
+                    if e != SKIPPED_BY_USER {
+                        error_entries.push(format!("✗ logs.txt: {}", e));
+                    }
                 }
             }
         } else {
-            error_entries.push("⚠ logs.txt: Skipped due to user input".to_string());
+            error_entries.push(format!("⚠ logs.txt: {}", SKIPPED_BY_USER));
         }
 
         // Add stats
@@ -537,11 +632,13 @@ impl SupportBundleData {
                     manifest_entries.push("✓ stats.json".to_string());
                 }
                 Err(e) => {
-                    error_entries.push(format!("✗ stats.json: {}", e));
+                    if e != SKIPPED_BY_USER {
+                        error_entries.push(format!("✗ stats.json: {}", e));
+                    }
                 }
             }
         } else {
-            error_entries.push("⚠ stats.json: Skipped due to user input".to_string());
+            error_entries.push(format!("⚠ stats.json: {}", SKIPPED_BY_USER));
         }
 
         // Add pipeline config
@@ -557,15 +654,17 @@ impl SupportBundleData {
                     }
                 }
                 Err(e) => {
-                    if self.version == 1 {
-                        error_entries.push(format!("✗ pipeline_config.json: {}", e));
-                    } else {
-                        error_entries.push(format!("✗ pipeline_config.json.gz: {}", e));
+                    if e != SKIPPED_BY_USER {
+                        if self.version == 1 {
+                            error_entries.push(format!("✗ pipeline_config.json: {}", e));
+                        } else {
+                            error_entries.push(format!("✗ pipeline_config.json.gz: {}", e));
+                        }
                     }
                 }
             }
         } else {
-            error_entries.push("⚠ pipeline_config.json: Skipped due to user input".to_string());
+            error_entries.push(format!("⚠ pipeline_config.json: {}", SKIPPED_BY_USER));
         }
 
         // Add system config
@@ -576,11 +675,30 @@ impl SupportBundleData {
                     manifest_entries.push("✓ system_config.json".to_string());
                 }
                 Err(e) => {
-                    error_entries.push(format!("✗ system_config.json: {}", e));
+                    if e != SKIPPED_BY_USER {
+                        error_entries.push(format!("✗ system_config.json: {}", e));
+                    }
                 }
             }
         } else {
-            error_entries.push("⚠ system_config.json: Skipped due to user input".to_string());
+            error_entries.push(format!("⚠ system_config.json: {}", SKIPPED_BY_USER));
+        }
+
+        // Add dataflow graph
+        if params.dataflow_graph {
+            match &self.dataflow_graph {
+                Ok(content) => {
+                    let _ = add_to_zip("dataflow_graph.json", content);
+                    manifest_entries.push("✓ dataflow_graph.json".to_string());
+                }
+                Err(e) => {
+                    if e != SKIPPED_BY_USER {
+                        error_entries.push(format!("✗ dataflow_graph.json: {}", e));
+                    }
+                }
+            }
+        } else {
+            error_entries.push(format!("⚠ dataflow_graph.json: {}", SKIPPED_BY_USER));
         }
 
         Ok((manifest_entries, error_entries))
@@ -614,6 +732,48 @@ impl SupportBundleData {
                 reason: format!("Failed to serialize system config: {}", e),
             })
         })
+    }
+
+    /// Get dataflow graph from local database
+    async fn get_dataflow_graph(
+        state: &ServerState,
+        tenant_id: TenantId,
+        pipeline_name: &str,
+    ) -> Result<Vec<u8>, ManagerError> {
+        let pipeline = state
+            .db
+            .lock()
+            .await
+            .get_pipeline(tenant_id, pipeline_name)
+            .await?;
+
+        // Extract dataflow from program_info
+        if let Some(program_info_value) = &pipeline.program_info {
+            match serde_json::from_value::<crate::db::types::program::ProgramInfo>(
+                program_info_value.clone(),
+            ) {
+                Ok(program_info) => {
+                    if let Some(dataflow) = program_info.dataflow {
+                        serde_json::to_vec(&dataflow).map_err(|e| {
+                            ManagerError::from(ApiError::UnableToCreateSupportBundle {
+                                reason: format!("Failed to serialize dataflow graph: {}", e),
+                            })
+                        })
+                    } else {
+                        Err(ManagerError::from(ApiError::UnableToCreateSupportBundle {
+                            reason: "Dataflow graph not available for this pipeline".to_string(),
+                        }))
+                    }
+                }
+                Err(e) => Err(ManagerError::from(ApiError::UnableToCreateSupportBundle {
+                    reason: format!("Failed to parse program info: {}", e),
+                })),
+            }
+        } else {
+            Err(ManagerError::from(ApiError::UnableToCreateSupportBundle {
+                reason: "Pipeline has not been compiled yet".to_string(),
+            }))
+        }
     }
 }
 
@@ -918,11 +1078,14 @@ impl SupportDataCollector {
         tenant_id: TenantId,
         pipeline: &crate::db::types::pipeline::ExtendedPipelineDescrMonitoring,
     ) -> Result<SupportBundleData, Box<dyn std::error::Error + Send + Sync>> {
+        // Use default parameters for background collection (collect everything)
+        let params = SupportBundleParameters::default();
         SupportBundleData::collect(
             &self.state,
             &self.http_client,
             tenant_id,
             pipeline.name.as_str(),
+            &params,
         )
         .await
         .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)
@@ -986,7 +1149,7 @@ mod tests {
     #[test]
     fn serialization_roundtrip() {
         let original = SupportBundleData {
-            version: 1,
+            version: 4,
             time: chrono::Utc::now(),
             circuit_profile: Ok(vec![1, 2, 3]),
             json_circuit_profile: Ok(vec![1, 2, 3]),
@@ -996,6 +1159,7 @@ mod tests {
             stats: Err("stats error".to_string()),
             pipeline_config: Ok(vec![7, 8, 9]),
             system_config: Ok(vec![10, 11, 12]),
+            dataflow_graph: Ok(vec![13, 14, 15]),
         };
 
         let serialized = rmp_serde::to_vec(&original).unwrap();
@@ -1050,12 +1214,16 @@ mod tests {
             deserialized.system_config,
             Err("Missing from data source (field was added in newer version)".to_string())
         );
+        assert_eq!(
+            deserialized.dataflow_graph,
+            Err("Missing from data source (field was added in newer version)".to_string())
+        );
     }
 
     #[tokio::test]
     async fn push_to_zip_with_ignores() {
         let bundle_data = SupportBundleData {
-            version: 1,
+            version: 4,
             time: chrono::Utc::now(),
             circuit_profile: Ok(vec![1, 2, 3]),
             json_circuit_profile: Ok(vec![1, 2, 3]),
@@ -1065,6 +1233,7 @@ mod tests {
             stats: Ok(vec![10, 11, 12]),
             pipeline_config: Ok(vec![13, 14, 15]),
             system_config: Ok(vec![16, 17, 18]),
+            dataflow_graph: Ok(vec![19, 20, 21]),
         };
 
         // Test with all parameters enabled
@@ -1082,9 +1251,9 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(manifest.len(), 8);
+        assert_eq!(manifest.len(), 9);
         assert_eq!(errors.len(), 0);
-        assert_eq!(zip_entries.len(), 8);
+        assert_eq!(zip_entries.len(), 9);
 
         // Test with some parameters disabled
         let some_disabled = SupportBundleParameters {
@@ -1095,6 +1264,7 @@ mod tests {
             stats: false,
             pipeline_config: true,
             system_config: false,
+            dataflow_graph: true,
         };
 
         zip_entries.clear();
@@ -1110,9 +1280,9 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(manifest.len(), 3);
+        assert_eq!(manifest.len(), 4);
         assert_eq!(errors.len(), 4);
-        assert_eq!(zip_entries.len(), 3);
+        assert_eq!(zip_entries.len(), 4);
     }
 
     #[tokio::test]
