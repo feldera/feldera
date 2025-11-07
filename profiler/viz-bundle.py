@@ -20,9 +20,13 @@ import re
 import subprocess
 from pathlib import Path
 
-parser = argparse.ArgumentParser(description="Visualize profile data from a support bundle")
+parser = argparse.ArgumentParser(
+    description="Visualize profile data from a support bundle"
+)
 parser.add_argument("filename", help="Input file name")
-parser.add_argument("-v", "--verbose", action="store_true", help="Enable verbose output")
+parser.add_argument(
+    "-v", "--verbose", action="store_true", help="Enable verbose output"
+)
 
 args = parser.parse_args()
 verbose = args.verbose
@@ -39,12 +43,14 @@ name = "temp"
 # Create a temporary directory
 index_file = None
 with tempfile.TemporaryDirectory() as tmpdir:
-    with zipfile.ZipFile(file, 'r') as zip_ref:
+    with zipfile.ZipFile(file, "r") as zip_ref:
         try:
             # List zipfile content
             files = zip_ref.infolist()
             # Find file matching pattern "*_circuit_profile.json"
-            profile_files = [f for f in files if f.filename.endswith("_json_circuit_profile.zip")]
+            profile_files = [
+                f for f in files if f.filename.endswith("_json_circuit_profile.zip")
+            ]
             if not profile_files:
                 print("No json profile file found in the bundle")
                 sys.exit(1)
@@ -56,43 +62,55 @@ with tempfile.TemporaryDirectory() as tmpdir:
             if verbose:
                 print(f"Extracted zipped json profile file: {profile_file.filename}")
             # This file is another zip file.
-            with zipfile.ZipFile("data/" + profile_file.filename, 'r') as zip_ref2:
+            with zipfile.ZipFile("data/" + profile_file.filename, "r") as zip_ref2:
                 # Extract the inner json profile file
                 inner_files = zip_ref2.infolist()
                 if len(inner_files) != 1:
-                    print("Expected a single file in the zip file ", profile_file.filename)
+                    print(
+                        "Expected a single file in the zip file ", profile_file.filename
+                    )
                     sys.exit(1)
                 json_profile_file = inner_files[0]
-                with zip_ref2.open(json_profile_file) as source, open("./data/" + name + ".json", 'wb') as target:
+                with (
+                    zip_ref2.open(json_profile_file) as source,
+                    open("./data/" + name + ".json", "wb") as target,
+                ):
                     target.write(source.read())
                 if verbose:
-                    print(f"Extracted profile file: {profile_file.filename} into ./data/{name}.json")
+                    print(
+                        f"Extracted profile file: {profile_file.filename} into ./data/{name}.json"
+                    )
             # Delete temporary zipped profile file
             Path("./data/" + profile_file.filename).unlink()
             # Find the files matching pipeline_config_json.gz
-            config_files = [f for f in files if f.filename.endswith("pipeline_config.json.gz")]
+            config_files = [
+                f for f in files if f.filename.endswith("pipeline_config.json.gz")
+            ]
             # Choose the last one in sorted order
             if config_files:
                 config_file = sorted(config_files, key=lambda f: f.filename)[-1]
                 if verbose:
                     print(f"Found config file: {config_file}")
                 # Extract the config file
-                with zip_ref.open(config_file) as source, open("./data/temp-config.json.gz", 'wb') as target:
+                with (
+                    zip_ref.open(config_file) as source,
+                    open("./data/temp-config.json.gz", "wb") as target,
+                ):
                     target.write(source.read())
                 # Gunzip the extracted file
-                with gzip.open("./data/temp-config.json.gz", 'rb') as f_in:
-                    with open("./data/temp-config.json", 'wb') as f_out:
+                with gzip.open("./data/temp-config.json.gz", "rb") as f_in:
+                    with open("./data/temp-config.json", "wb") as f_out:
                         f_out.writelines(f_in)
                 if verbose:
                     print(f"Extracted JSON into ./data/temp-config.json")
                 # Delete the gz file
                 Path("./data/temp-config.json.gz").unlink()
                 # Extract the "program_code" field from the config json
-                with open("./data/temp-config.json", 'r') as f:
+                with open("./data/temp-config.json", "r") as f:
                     config_data = json.load(f)
                     program_code = config_data.get("program_code", "")
                     # Save the program code to a separate file
-                    with open("./data/temp-program.sql", 'w') as f_out:
+                    with open("./data/temp-program.sql", "w") as f_out:
                         f_out.write(program_code)
                 if verbose:
                     print(f"Extracted program code into ./data/temp-program.sql")
@@ -101,10 +119,20 @@ with tempfile.TemporaryDirectory() as tmpdir:
                 # Invoke the SQL compiler on the program code to generate the dataflow graph
                 if verbose:
                     print("Invoking SQL to DBSP compiler to generate dataflow graph")
-                subprocess.run(["../sql-to-dbsp-compiler/SQL-compiler/sql-to-dbsp",
-                                "./data/temp-program.sql",
-                                "-i", "--dataflow", f"./data/dataflow-{name}.json", "-q",
-                                "--alltables", "--noRust", "--ignoreOrder"], check=True)
+                subprocess.run(
+                    [
+                        "../sql-to-dbsp-compiler/SQL-compiler/sql-to-dbsp",
+                        "./data/temp-program.sql",
+                        "-i",
+                        "--dataflow",
+                        f"./data/dataflow-{name}.json",
+                        "-q",
+                        "--alltables",
+                        "--noRust",
+                        "--ignoreOrder",
+                    ],
+                    check=True,
+                )
                 if verbose:
                     print(f"Generated dataflow graph into ./data/dataflow-{name}.json")
                 # Delete the temporary program file
@@ -114,7 +142,9 @@ with tempfile.TemporaryDirectory() as tmpdir:
                 # Modify the src/index.ts file to load the new files
                 original_index_file = Path("src/index.ts")
                 # Save the old copy of the index file
-                index_file = original_index_file.rename(original_index_file.with_suffix(".bak"))
+                index_file = original_index_file.rename(
+                    original_index_file.with_suffix(".bak")
+                )
                 if verbose:
                     print(f"Backed up original index.ts file to: {index_file}")
                 index_content = index_file.read_text()
@@ -122,9 +152,9 @@ with tempfile.TemporaryDirectory() as tmpdir:
                 #           ^^^^^^^^^^^^^^^^^^^^^^  ^^^^
                 #           Group 1                 Group 2
                 # Replace the second group with {name}
-                index_content = re.sub(pattern,
-                                       lambda m: f'{m.group(1)}"{name}");',
-                                       index_content)
+                index_content = re.sub(
+                    pattern, lambda m: f'{m.group(1)}"{name}");', index_content
+                )
                 original_index_file.write_text(index_content)
                 if verbose:
                     print(f"Updated index file: {index_file}")
@@ -155,5 +185,3 @@ with tempfile.TemporaryDirectory() as tmpdir:
             sys.exit(1)
 
 print("Done")
-
-
