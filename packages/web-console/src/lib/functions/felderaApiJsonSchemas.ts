@@ -1,4 +1,4 @@
-import openapi from '../../../../openapi.json'
+import openapi from '../../../../../openapi.json'
 
 const schemaFileAssociations: Record<string, string[]> = {
   RuntimeConfig: ['**/RuntimeConfig.json'],
