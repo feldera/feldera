@@ -55,12 +55,12 @@ use actix_web_httpauth::extractors::{
 use awc::error::JsonPayloadError;
 use cached::{Cached, TimedCache};
 use jsonwebtoken::{decode, decode_header, Algorithm, DecodingKey, TokenData, Validation};
-use log::{debug, error};
 use rand::rngs::ThreadRng;
 use rand::{distributions::Alphanumeric, Rng};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use static_assertions::assert_impl_any;
+use tracing::{debug, error};
 use url::Url;
 use utoipa::ToSchema;
 use uuid::Uuid;
@@ -235,12 +235,12 @@ async fn api_key_auth(
                         .peer_addr()
                         .map(|addr| addr.ip().to_string())
                         .unwrap_or_else(|| "<unknown IP>".to_owned());
-                    log::error!(
+                    error!(
                         "authentication attempt using invalid API key from ip: '{}'",
                         ip
                     );
                 }
-                e => log::error!("failed to validate API key: {}", e),
+                e => error!("failed to validate API key: {}", e),
             };
 
             Err((create_authz_json_error("Unauthorized API key"), req))

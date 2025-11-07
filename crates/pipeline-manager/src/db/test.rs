@@ -31,7 +31,6 @@ use feldera_types::program_schema::ProgramSchema;
 use feldera_types::runtime_status::{
     BootstrapPolicy, ExtendedRuntimeStatus, RuntimeDesiredStatus, RuntimeStatus,
 };
-use log::info;
 use openssl::sha;
 use proptest::prelude::*;
 use proptest::test_runner::{Config, TestRunner};
@@ -44,6 +43,7 @@ use std::time::Duration;
 use std::vec;
 use tokio::sync::Mutex;
 use tokio::time::sleep;
+use tracing::{debug, info};
 use uuid::Uuid;
 
 struct DbHandle {
@@ -203,7 +203,7 @@ pub(crate) async fn setup_pg() -> (StoragePostgres, tokio_postgres::Config) {
         .expect("Failure in test setup");
     drop(client);
 
-    log::debug!("tests connecting to: {config:#?}");
+    debug!("tests connecting to: {config:#?}");
 
     config.dbname(&test_db);
     let conn = StoragePostgres::connect(&db_config).await.unwrap();
@@ -2353,7 +2353,7 @@ async fn create_tenants_if_not_exists(
 #[test]
 #[allow(clippy::field_reassign_with_default)]
 fn db_impl_behaves_like_model() {
-    let _r = env_logger::try_init();
+    let _ = tracing_subscriber::fmt::try_init();
     let runtime = tokio::runtime::Runtime::new().unwrap();
     let handle = runtime.block_on(async { test_setup().await });
 

@@ -1,29 +1,58 @@
 use colored::ColoredString;
-use env_logger::Env;
-use log::warn;
-use std::io::Write;
+use tracing::warn;
+use tracing::Subscriber;
+use tracing_log::LogTracer;
+use tracing_subscriber::fmt::format::Format;
+use tracing_subscriber::fmt::{FormatEvent, FormatFields};
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::registry::LookupSpan;
+use tracing_subscriber::util::SubscriberInitExt;
+use tracing_subscriber::EnvFilter;
 
 /// Initializes the logger by setting its filter and template.
 /// By default, the logging level is set to `INFO`.
 /// This can be overridden by setting the `RUST_LOG` environment variable.
 pub fn init_logging(name: ColoredString) {
-    if env_logger::Builder::from_env(Env::default().default_filter_or("info"))
-        .format(move |buf, record| {
-            let t = chrono::Utc::now();
-            let t = format!("{}", t.format("%Y-%m-%d %H:%M:%S"));
-            let level_style = buf.default_level_style(record.level());
-            writeln!(
-                buf,
-                "{} {level_style}{}{level_style:#} {} {}",
-                t,
-                record.level(),
-                name,
-                record.args()
-            )
-        })
+    let env_filter = EnvFilter::try_from_default_env()
+        .or_else(|_| EnvFilter::try_new("info"))
+        .expect("valid default filter");
+
+    let _ = LogTracer::init();
+    tracing_subscriber::registry()
+        .with(tracing_subscriber::fmt::layer().event_format(ManagerFormat::new(name)))
+        .with(env_filter)
         .try_init()
-        .is_err()
-    {
-        warn!("Unable to initialize logging -- has it already been initialized?")
+        .unwrap_or_else(|e| {
+            warn!("Unable to initialize logging -- has it already been initialized? ({e})")
+        });
+}
+
+struct ManagerFormat {
+    name: ColoredString,
+    inner: Format,
+}
+
+impl ManagerFormat {
+    fn new(name: ColoredString) -> Self {
+        Self {
+            name,
+            inner: Format::default(),
+        }
+    }
+}
+
+impl<S, N> FormatEvent<S, N> for ManagerFormat
+where
+    S: Subscriber + for<'a> LookupSpan<'a>,
+    N: for<'a> FormatFields<'a> + 'static,
+{
+    fn format_event(
+        &self,
+        ctx: &tracing_subscriber::fmt::FmtContext<'_, S, N>,
+        mut writer: tracing_subscriber::fmt::format::Writer<'_>,
+        event: &tracing::Event<'_>,
+    ) -> std::fmt::Result {
+        write!(writer, "{} ", self.name)?;
+        self.inner.format_event(ctx, writer, event)
     }
 }

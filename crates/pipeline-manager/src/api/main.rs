@@ -26,7 +26,6 @@ use actix_web_httpauth::middleware::HttpAuthentication;
 use actix_web_static_files::ResourceFiles;
 use anyhow::Result as AnyResult;
 use futures_util::FutureExt;
-use log::{error, info, log, trace, Level};
 use std::io::Write;
 use std::time::Duration;
 use std::{env, io, net::TcpListener, sync::Arc};
@@ -34,9 +33,22 @@ use termbg::{theme, Theme};
 use tokio::signal;
 use tokio::sync::watch;
 use tokio::sync::{Mutex, RwLock};
+use tracing::{error, info, trace, Level};
 use utoipa::openapi::security::{HttpAuthScheme, HttpBuilder, SecurityScheme};
 use utoipa::{Modify, OpenApi};
 use utoipa_swagger_ui::SwaggerUi;
+
+macro_rules! log_with_level {
+    ($level:expr, $($arg:tt)+) => {
+        match $level {
+            tracing::Level::TRACE => tracing::trace!($($arg)+),
+            tracing::Level::DEBUG => tracing::debug!($($arg)+),
+            tracing::Level::INFO => tracing::info!($($arg)+),
+            tracing::Level::WARN => tracing::warn!($($arg)+),
+            tracing::Level::ERROR => tracing::error!($($arg)+),
+        }
+    };
+}
 
 #[derive(OpenApi)]
 #[openapi(
@@ -627,18 +639,18 @@ pub fn log_response(
                 || response.status().is_redirection()
             {
                 if req.method() == Method::GET && req.path() == "/healthz" {
-                    Level::Trace
+                    Level::TRACE
                 } else {
-                    Level::Debug
+                    Level::DEBUG
                 }
             } else if response.status().is_client_error()
                 || response.status() == StatusCode::SERVICE_UNAVAILABLE
             {
-                Level::Info
+                Level::INFO
             } else {
-                Level::Error
+                Level::ERROR
             };
-            log!(
+            log_with_level!(
                 level,
                 "Response: {} (size: {:?}) to request {} {}",
                 response.status(),
@@ -711,12 +723,12 @@ pub async fn run(
                     .app_data(client)
                     .wrap_fn(|req, srv| {
                         let log_level = if req.method() == Method::GET && req.path() == "/healthz" {
-                            Level::Trace
+                            Level::TRACE
                         } else {
-                            Level::Debug
+                            Level::DEBUG
                         };
 
-                        log!(log_level, "Request: {} {}", req.method(), req.path());
+                        log_with_level!(log_level, "Request: {} {}", req.method(), req.path());
                         srv.call(req).map(log_response)
                     })
                     .wrap(api_config.cors())

@@ -17,8 +17,8 @@ use actix_web::{
 };
 use feldera_types::query_params::MetricsParameters;
 use feldera_types::{program_schema::SqlIdentifier, query_params::ActivateParams};
-use log::{debug, info};
 use std::time::Duration;
+use tracing::{debug, info};
 
 pub mod support_bundle;
 

@@ -15,7 +15,6 @@ use actix_web::HttpResponse;
 use actix_web::Responder;
 use actix_web::{get, web, HttpRequest, HttpServer};
 use async_stream::try_stream;
-use log::{error, info};
 use std::collections::BTreeMap;
 use std::net::TcpListener;
 use std::str::FromStr;
@@ -28,6 +27,7 @@ use tokio::sync::{Mutex, Notify};
 use tokio::task::JoinHandle;
 use tokio::time::timeout;
 use tokio_stream::Stream;
+use tracing::{error, info};
 use uuid::Uuid;
 
 /// Maximum number of outstanding log follow requests that have

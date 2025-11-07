@@ -3,7 +3,6 @@ use crate::db::types::version::Version;
 use base64::prelude::{Engine, BASE64_STANDARD};
 use flate2::Compression;
 use hex;
-use log::{debug, error, warn};
 use nix::libc::pid_t;
 use nix::sys::signal::{killpg, Signal};
 use nix::unistd::Pid;
@@ -17,6 +16,7 @@ use tokio::{
     fs::{self, File},
     io::{AsyncReadExt, AsyncWriteExt},
 };
+use tracing::{debug, error, warn};
 
 /// Automatically terminates a process and all subprocesses it spawns using
 /// the group they are all in. The process must have set a process group ID

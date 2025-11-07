@@ -3,7 +3,6 @@
 use clap::{Args, Command, FromArgMatches};
 
 use colored::Colorize;
-use log::info;
 use pipeline_manager::api::main::ApiDoc;
 use pipeline_manager::cluster_health::regular_health_check;
 use pipeline_manager::compiler::main::{compiler_main, compiler_precompile};
@@ -18,6 +17,7 @@ use pipeline_manager::runner::main::runner_main;
 use pipeline_manager::{ensure_default_crypto_provider, init_fd_limit, platform_enable_unstable};
 use std::sync::Arc;
 use tokio::sync::{Mutex, RwLock};
+use tracing::info;
 use utoipa::OpenApi;
 
 #[tokio::main]

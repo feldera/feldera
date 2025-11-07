@@ -28,9 +28,9 @@ use chrono::{DateTime, Utc};
 use deadpool_postgres::Transaction;
 use feldera_types::error::ErrorResponse;
 use feldera_types::runtime_status::{BootstrapPolicy, RuntimeDesiredStatus, RuntimeStatus};
-use log::{error, warn};
 use rmp_serde::{from_slice, to_vec};
 use tokio_postgres::Row;
+use tracing::{error, warn};
 use uuid::Uuid;
 
 /// Parses string as a JSON value.

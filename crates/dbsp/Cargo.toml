@@ -114,7 +114,6 @@ rand_xoshiro = { workspace = true }
 indicatif = { workspace = true }
 reqwest = { workspace = true, features = ["blocking"] }
 chrono = { workspace = true, features = ["rkyv-64", "serde"] }
-env_logger = { workspace = true, features = ["color"] }
 ijson = { version = "0.1.4", package = "feldera-ijson" }
 tracing-subscriber = { version = "0.3.20", features = ["env-filter"] }
 

@@ -17,7 +17,6 @@ use awc::Client;
 use chrono::{DateTime, Utc};
 use feldera_types::error::ErrorResponse;
 use futures_util::StreamExt;
-use log::{debug, error, info};
 use serde::Deserialize;
 use std::cmp::min;
 use std::collections::BTreeMap;
@@ -25,6 +24,7 @@ use std::io::Write;
 use std::sync::Arc;
 use tokio::sync::watch;
 use tokio::time::{sleep, Duration, Instant};
+use tracing::{debug, error, info};
 use utoipa::{IntoParams, ToSchema};
 
 const COLLECTION_TIMEOUT: Duration = Duration::from_secs(120);

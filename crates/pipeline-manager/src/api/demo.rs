@@ -1,9 +1,9 @@
-use log::{debug, error, warn};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
 use thiserror::Error as ThisError;
+use tracing::{debug, error, warn};
 use utoipa::ToSchema;
 
 #[derive(ThisError, Serialize, Debug, Eq, PartialEq)]

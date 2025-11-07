@@ -1,8 +1,8 @@
 use chrono::{DateTime, Utc};
-use log::{info, warn};
 use serde::Serialize;
 use std::{sync::Arc, time::Duration};
 use tokio::sync::RwLock;
+use tracing::{info, warn};
 use utoipa::ToSchema;
 
 use crate::config::CommonConfig;
