@@ -1,4 +1,7 @@
-# Pipeline lifecycle
+# Reference: Pipeline lifecycle
+
+A pipeline's lifecycle goes through several states as the control plane allocates compute and storage resources for it.
+This page is a reference guide that explains the underlying state machines, aimed at Feldera contributors and advanced users.
 
 The status of a pipeline, returned by the [status endpoint](/api/get-pipeline)
 consists of four related yet separate statuses:
