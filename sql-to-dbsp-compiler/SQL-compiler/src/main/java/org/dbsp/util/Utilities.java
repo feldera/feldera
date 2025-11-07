@@ -568,4 +568,38 @@ public class Utilities {
         result.addAll(right);
         return result;
     }
+
+    static List<String> appendToEach(List<String> list, String suffix) {
+        if (suffix.isEmpty())
+            return list;
+        List<String> result = new ArrayList<>();
+        for (String l: list) {
+            result.add(l + suffix);
+        }
+        return result;
+    }
+
+    /** Given a filename pattern which contains braces (but not ? or *), expand it into multiple filenames */
+    public static List<String> expandBraces(String pattern) {
+        List<String> expansion = new ArrayList<>();
+        expansion.add("");
+        while (true) {
+            int open = pattern.indexOf("{");
+            if (open < 0)
+                return appendToEach(expansion, pattern);
+            String prefix = pattern.substring(0, open);
+            String tail = pattern.substring(open + 1);
+            int close = tail.indexOf("}");
+            if (close < 0)
+                throw new RuntimeException("{} missing close brace");
+            String choices = tail.substring(0, close);
+            String[] split = choices.split(",");
+            List<String> next = new ArrayList<>();
+            for (String s: split) {
+                next.addAll(appendToEach(expansion, prefix + s));
+            }
+            expansion = next;
+            pattern = tail.substring(close + 1);
+        }
+    }
 }
