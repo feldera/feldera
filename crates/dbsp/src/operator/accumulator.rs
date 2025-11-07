@@ -10,9 +10,11 @@ use crate::{
         metadata::OperatorLocation,
         operator_traits::{BinaryOperator, Operator},
     },
-    trace::{BatchReaderFactories, SpineSnapshot},
+    trace::{
+        Batch as DynBatch, BatchReaderFactories, Spine as DynSpine, SpineSnapshot, WithSnapshot,
+    },
     typed_batch::{Spine, TypedBatch},
-    Batch, Circuit, Scope, Stream,
+    Batch, BatchReader, Circuit, Scope, Stream,
 };
 
 impl<C, B> Stream<C, B>
@@ -61,17 +63,23 @@ where
     where
         B2: Batch,
         F: Fn(
-                &TypedBatch<B::Key, B::Val, B::R, SpineSnapshot<B::Inner>>,
-                &TypedBatch<B2::Key, B2::Val, B2::R, SpineSnapshot<B2::Inner>>,
+                TypedBatch<B::Key, B::Val, B::R, SpineSnapshot<B::Inner>>,
+                TypedBatch<B2::Key, B2::Val, B2::R, SpineSnapshot<B2::Inner>>,
             ) -> T
             + 'static,
         T: Clone + 'static,
     {
-        let stream1 = self.accumulate();
-        let stream2 = other.accumulate();
+        let factories1 = BatchReaderFactories::new::<B::Key, B::Val, B::R>();
+        let factories2 = BatchReaderFactories::new::<B2::Key, B2::Val, B2::R>();
+
+        let stream1 = self.inner().dyn_accumulate(&factories1);
+        let stream2 = other.inner().dyn_accumulate(&factories2);
 
         stream1.circuit().add_binary_operator(
-            AccumulateApply2::<B, B2, _>::new(func, Location::caller()),
+            AccumulateApply2::<B::Inner, B2::Inner, _>::new(
+                move |b1, b2| func(TypedBatch::from_inner(b1), TypedBatch::from_inner(b2)),
+                Location::caller(),
+            ),
             &stream1,
             &stream2,
         )
@@ -81,21 +89,21 @@ where
 /// Applies a user-provided binary function to its inputs at each timestamp.
 pub struct AccumulateApply2<B1, B2, F>
 where
-    B1: Batch,
-    B2: Batch,
+    B1: DynBatch,
+    B2: DynBatch,
 {
     func: F,
     location: &'static Location<'static>,
-    input1: Option<TypedBatch<B1::Key, B1::Val, B1::R, SpineSnapshot<B1::Inner>>>,
-    input2: Option<TypedBatch<B2::Key, B2::Val, B2::R, SpineSnapshot<B2::Inner>>>,
+    input1: Option<SpineSnapshot<B1>>,
+    input2: Option<SpineSnapshot<B2>>,
     flush: bool,
     phantom: PhantomData<fn(&B1, &B2)>,
 }
 
 impl<B1, B2, F> AccumulateApply2<B1, B2, F>
 where
-    B1: Batch,
-    B2: Batch,
+    B1: DynBatch,
+    B2: DynBatch,
 {
     pub const fn new(func: F, location: &'static Location<'static>) -> Self
     where
@@ -115,13 +123,9 @@ where
 impl<B1, B2, F, T> Operator for AccumulateApply2<B1, B2, F>
 where
     F: 'static,
-    B1: Batch,
-    B2: Batch,
-    F: Fn(
-            &TypedBatch<B1::Key, B1::Val, B1::R, SpineSnapshot<B1::Inner>>,
-            &TypedBatch<B2::Key, B2::Val, B2::R, SpineSnapshot<B2::Inner>>,
-        ) -> T
-        + 'static,
+    B1: DynBatch,
+    B2: DynBatch,
+    F: Fn(SpineSnapshot<B1>, SpineSnapshot<B2>) -> T + 'static,
 {
     fn name(&self) -> Cow<'static, str> {
         Cow::Borrowed("AccumulateApply2")
@@ -142,18 +146,14 @@ where
     }
 }
 
-impl<B1, B2, T, F> BinaryOperator<Option<Spine<B1>>, Option<Spine<B2>>, Option<T>>
+impl<B1, B2, T, F> BinaryOperator<Option<DynSpine<B1>>, Option<DynSpine<B2>>, Option<T>>
     for AccumulateApply2<B1, B2, F>
 where
-    B1: Batch,
-    B2: Batch,
-    F: Fn(
-            &TypedBatch<B1::Key, B1::Val, B1::R, SpineSnapshot<B1::Inner>>,
-            &TypedBatch<B2::Key, B2::Val, B2::R, SpineSnapshot<B2::Inner>>,
-        ) -> T
-        + 'static,
+    B1: DynBatch,
+    B2: DynBatch,
+    F: Fn(SpineSnapshot<B1>, SpineSnapshot<B2>) -> T + 'static,
 {
-    async fn eval(&mut self, i1: &Option<Spine<B1>>, i2: &Option<Spine<B2>>) -> Option<T> {
+    async fn eval(&mut self, i1: &Option<DynSpine<B1>>, i2: &Option<DynSpine<B2>>) -> Option<T> {
         if let Some(i1) = i1 {
             self.input1 = Some(i1.ro_snapshot());
         }
@@ -165,8 +165,8 @@ where
         if self.flush {
             self.flush = false;
             Some((self.func)(
-                &self.input1.take().unwrap(),
-                &self.input2.take().unwrap(),
+                self.input1.take().unwrap(),
+                self.input2.take().unwrap(),
             ))
         } else {
             None

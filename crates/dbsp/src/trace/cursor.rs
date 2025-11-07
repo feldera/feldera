@@ -7,6 +7,7 @@ pub mod cursor_list;
 pub mod cursor_pair;
 pub mod cursor_with_polarity;
 mod reverse;
+pub mod saturating_cursor;
 
 use std::{fmt::Debug, marker::PhantomData};
 
@@ -15,6 +16,7 @@ pub use cursor_group::CursorGroup;
 pub use cursor_list::CursorList;
 pub use cursor_pair::CursorPair;
 pub use cursor_with_polarity::CursorWithPolarity;
+pub use saturating_cursor::SaturatingCursor;
 
 pub use reverse::ReverseKeyCursor;
 use size_of::SizeOf;

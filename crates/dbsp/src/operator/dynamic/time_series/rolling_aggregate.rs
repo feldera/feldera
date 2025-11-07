@@ -1603,7 +1603,7 @@ mod test {
                 .partitioned_rolling_average(
                     |Tup2(partition, val)| (*partition, *val),
                     range_spec)
-                .accumulate_apply2(&expected_stream, |avg: &SpineSnapshot<OrdPartitionedIndexedZSet<u64, u64, _, Option<i64>, _>>, expected| assert_eq!(avg.iter().collect::<Vec<_>>(), expected.iter().collect::<Vec<_>>()));
+                .accumulate_apply2(&expected_stream, |avg: SpineSnapshot<OrdPartitionedIndexedZSet<u64, u64, _, Option<i64>, _>>, expected| assert_eq!(avg.iter().collect::<Vec<_>>(), expected.iter().collect::<Vec<_>>()));
             Ok((input_handle, expected_handle))
         })
         .unwrap();

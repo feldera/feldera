@@ -1,10 +1,11 @@
-use crate::algebra::{ZBatch, ZBatchReader};
+use crate::algebra::{ZBatch, ZBatchReader, ZCursor};
 use crate::circuit::circuit_builder::StreamId;
 use crate::circuit::metadata::{BatchSizeStats, OUTPUT_BATCHES_LABEL};
 use crate::circuit::splitter_output_chunk_size;
-use crate::dynamic::{DynData, WeightTrait};
+use crate::dynamic::DynData;
 use crate::operator::async_stream_operators::{StreamingBinaryOperator, StreamingBinaryWrapper};
 use crate::operator::dynamic::concat::dyn_accumulate_concat;
+use crate::trace::cursor::SaturatingCursor;
 use crate::trace::spine_async::WithSnapshot;
 use crate::trace::{Spine, SpineSnapshot, Trace};
 use crate::{
@@ -33,7 +34,7 @@ use crate::{
     utils::Tup2,
     DBData, ZWeight,
 };
-use crate::{NestedCircuit, Position, Runtime};
+use crate::{DynZWeight, NestedCircuit, Position, Runtime};
 use async_stream::stream;
 use minitrace::trace;
 use size_of::{Context, SizeOf};
@@ -684,7 +685,7 @@ where
                 .dyn_accumulate_trace(&factories.right_trace_factories, &factories.right_factories);
 
             let left = self.circuit().add_binary_operator(
-                StreamingBinaryWrapper::new(JoinTrace::new(
+                StreamingBinaryWrapper::new(JoinTrace::<_, _, _, _, _, false>::new(
                     &factories.right_trace_factories,
                     &factories.output_factories,
                     factories.timed_item_factory,
@@ -698,7 +699,7 @@ where
             );
 
             let right = self.circuit().add_binary_operator(
-                StreamingBinaryWrapper::new(JoinTrace::new(
+                StreamingBinaryWrapper::new(JoinTrace::<_, _, _, _, _, false>::new(
                     &factories.left_trace_factories,
                     &factories.output_factories,
                     factories.timed_item_factory,
@@ -1146,9 +1147,11 @@ impl JoinStats {
     }
 }
 
-pub struct JoinTrace<I, B, T, Z, Clk>
+/// The `SATURATE` parameter control whether the right side of the join
+/// (the trace) should be wrapped in a `SaturatingCursor`. See [`Stream::dyn_left_join`].
+pub struct JoinTrace<I, B, T, Z, Clk, const SATURATE: bool = false>
 where
-    I: ZBatch,
+    I: WithSnapshot,
     B: ZBatch,
     T: ZBatchReader,
     Z: IndexedZSet,
@@ -1160,9 +1163,17 @@ where
     clock: Clk,
     timed_items_factory:
         &'static dyn Factory<DynPairs<DynDataTyped<T::Time>, WeightedItem<Z::Key, Z::Val, Z::R>>>,
-    join_func: RefCell<TraceJoinFunc<I::Key, I::Val, T::Val, Z::Key, Z::Val>>,
+    join_func: RefCell<
+        TraceJoinFunc<
+            <I::Batch as BatchReader>::Key,
+            <I::Batch as BatchReader>::Val,
+            T::Val,
+            Z::Key,
+            Z::Val,
+        >,
+    >,
     location: &'static Location<'static>,
-    delta: RefCell<Option<SpineSnapshot<I>>>,
+    delta: RefCell<Option<SpineSnapshot<I::Batch>>>,
     flush: RefCell<bool>,
     // Future updates computed ahead of time, indexed by time
     // when each set of updates should be output.
@@ -1175,9 +1186,9 @@ where
     _types: PhantomData<(I, B, T, Z)>,
 }
 
-impl<I, B, T, Z, Clk> JoinTrace<I, B, T, Z, Clk>
+impl<I, B, T, Z, Clk, const SATURATE: bool> JoinTrace<I, B, T, Z, Clk, SATURATE>
 where
-    I: ZBatch,
+    I: WithSnapshot,
     B: ZBatch,
     T: ZBatchReader,
     Z: IndexedZSet,
@@ -1191,7 +1202,13 @@ where
         timed_items_factory: &'static dyn Factory<
             DynPairs<DynDataTyped<T::Time>, WeightedItem<Z::Key, Z::Val, Z::R>>,
         >,
-        join_func: TraceJoinFunc<I::Key, I::Val, T::Val, Z::Key, Z::Val>,
+        join_func: TraceJoinFunc<
+            <I::Batch as BatchReader>::Key,
+            <I::Batch as BatchReader>::Val,
+            T::Val,
+            Z::Key,
+            Z::Val,
+        >,
         location: &'static Location<'static>,
         clock: Clk,
     ) -> Self {
@@ -1214,9 +1231,9 @@ where
     }
 }
 
-impl<I, B, T, Z, Clk> Operator for JoinTrace<I, B, T, Z, Clk>
+impl<I, B, T, Z, Clk, const SATURATE: bool> Operator for JoinTrace<I, B, T, Z, Clk, SATURATE>
 where
-    I: ZBatch,
+    I: WithSnapshot + 'static,
     B: ZBatch,
     T: ZBatchReader,
     Z: IndexedZSet,
@@ -1330,29 +1347,29 @@ where
 /// - If `swap` is `false`, the `delta_cursor` is the primary cursor.
 ///
 /// This is used to optimize the join operation by iterating over the smaller cursor.
-struct JointKeyCursor<'a, C1, K, V1, V2, T, R>
+struct JointKeyCursor<'a, C1, K, V1, V2, T, const SATURATE: bool>
 where
-    C1: Cursor<K, V1, (), R>,
+    C1: Cursor<K, V1, (), DynZWeight>,
     K: DataTrait + ?Sized,
     V1: DataTrait + ?Sized,
     V2: DataTrait + ?Sized,
-    R: WeightTrait + ?Sized,
+    T: Timestamp,
 {
     delta_cursor: C1,
-    trace_cursor: Box<dyn Cursor<K, V2, T, R> + 'a>,
+    trace_cursor: SaturatingCursor<'a, K, V2, T, SATURATE>,
     swap: bool,
-    phantom: PhantomData<fn(&K, &V1, &V2, &T, &R)>,
+    phantom: PhantomData<fn(&K, &V1, &V2, &T)>,
 }
 
-impl<'a, C1, K, V1, V2, T, R> JointKeyCursor<'a, C1, K, V1, V2, T, R>
+impl<'a, C1, K, V1, V2, T, const SATURATE: bool> JointKeyCursor<'a, C1, K, V1, V2, T, SATURATE>
 where
-    C1: Cursor<K, V1, (), R>,
+    C1: ZCursor<K, V1, ()>,
     K: DataTrait + ?Sized,
     V1: DataTrait + ?Sized,
     V2: DataTrait + ?Sized,
-    R: WeightTrait + ?Sized,
+    T: Timestamp,
 {
-    pub fn new(left: C1, right: Box<dyn Cursor<K, V2, T, R> + 'a>, swap: bool) -> Self {
+    pub fn new(left: C1, right: SaturatingCursor<'a, K, V2, T, SATURATE>, swap: bool) -> Self {
         Self {
             delta_cursor: left,
             trace_cursor: right,
@@ -1403,10 +1420,12 @@ where
     }
 }
 
-impl<I, B, T, Z, Clk> StreamingBinaryOperator<Option<Spine<I>>, T, Z> for JoinTrace<I, B, T, Z, Clk>
+impl<I, B, T, Z, Clk, const SATURATE: bool> StreamingBinaryOperator<Option<I>, T, Z>
+    for JoinTrace<I, B, T, Z, Clk, SATURATE>
 where
-    I: ZBatch<Time = ()>,
-    B: ZBatch<Key = I::Key>,
+    I: WithSnapshot + 'static,
+    I::Batch: ZBatchReader<Time = ()>,
+    B: ZBatch<Key = <<I as WithSnapshot>::Batch as BatchReader>::Key>,
     T: ZBatchReader<Key = B::Key, Val = B::Val, Time = B::Time> + WithSnapshot<Batch = B>,
     Z: IndexedZSet,
     Clk: WithClock<Time = T::Time> + 'static,
@@ -1414,7 +1433,7 @@ where
     #[trace]
     fn eval(
         self: Rc<Self>,
-        delta: &Option<Spine<I>>,
+        delta: &Option<I>,
         trace: &T,
     ) -> impl futures::Stream<Item = (Z, bool, Option<Position>)> + 'static {
         let chunk_size = splitter_output_chunk_size();
@@ -1445,7 +1464,7 @@ where
             let delta_len = delta.len();
 
             let trace = trace.unwrap();
-            let trace_len = trace.len();
+            let trace_len = if SATURATE { usize::MAX } else { trace.len() };
 
             *self.empty_input.borrow_mut() = delta.is_empty();
             *self.empty_output.borrow_mut() = true;
@@ -1465,6 +1484,12 @@ where
             } else {
                 Box::new(trace.cursor())
             };
+
+            let trace_cursor = SaturatingCursor::<'_, _, _, _, SATURATE>::new(
+                trace_cursor,
+                self.right_factories.key_factory(),
+                self.right_factories.val_factory()
+            );
 
             let mut val = self.right_factories.val_factory().default_box();
 
@@ -1647,7 +1672,7 @@ where
 }
 
 #[cfg(test)]
-mod test {
+pub(crate) mod test {
     use crate::{
         circuit::CircuitConfig,
         indexed_zset,
@@ -2205,7 +2230,7 @@ mod test {
             .boxed()
     }
 
-    fn generate_join_test_data(
+    pub fn generate_join_test_data(
         max_key: i32,
         max_val: i32,
         max_weight: ZWeight,
