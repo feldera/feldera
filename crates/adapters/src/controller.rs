@@ -3745,6 +3745,12 @@ impl TransactionInitiators {
                 .any(|ConnectorTransactionPhase { phase, .. }| *phase == TransactionPhase::Started)
     }
 
+    /// Transaction has been initiated and is ready to commit.
+    fn is_ready_to_commit(&self) -> bool {
+        let active = self.initiated_by_api.is_some() || !self.initiated_by_connectors.is_empty();
+        active && !self.is_ongoing()
+    }
+
     /// Number of active participants in the transaction.
     ///
     /// An active participant is a participant that has not committed the transaction and
@@ -5140,6 +5146,13 @@ impl ControllerInner {
 
         transaction_info.start_commit_transaction_from_api()?;
 
+        // All initiators have committed the transaction before it even started.
+        if transaction_info.initiators.is_ready_to_commit()
+            && transaction_info.transaction_state == TransactionState::None
+        {
+            transaction_info.initiators.clear();
+        }
+
         self.update_transaction_status(transaction_info);
         self.unpark_circuit();
 
@@ -5167,6 +5180,14 @@ impl ControllerInner {
         let transaction_info = &mut *self.transaction_info.lock().unwrap();
 
         transaction_info.commit_transaction_from_connector(endpoint_name)?;
+
+        // All initiators have committed the transaction before it even started.
+        if transaction_info.initiators.is_ready_to_commit()
+            && transaction_info.transaction_state == TransactionState::None
+        {
+            transaction_info.initiators.clear();
+        }
+
         self.update_transaction_status(transaction_info);
 
         self.unpark_circuit();
