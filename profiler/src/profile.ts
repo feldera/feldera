@@ -277,8 +277,12 @@ export class Measurement {
             case "output batches":
             case "input batches":
                 let entries = value[0].entries;
-                for (const e of entries) {
-                    result.push(Measurement.fromJson(prefix + "/", e));
+                if (entries !== undefined && Array.isArray(entries)) {
+                    // For some reason sometimes entries is missing,
+                    // and in that case it is actually a function, a method of value[0].
+                    for (const e of entries) {
+                        result.push(Measurement.fromJson(prefix + "/", e));
+                    }
                 }
                 break;
             case "foreground cache misses":
@@ -671,7 +675,7 @@ export class CircuitProfile {
         return this.dataRange.get(property).unwrap();
     }
 
-    // Decode the data in a worker profile; return a map from nodeid to an array of measurements for that node
+    // Decode the data in a worker profile; return a map from nodeId to an array of measurements for that node
     private decodeWorkerProfile(json: JsonWorkerProfile): Map<NodeId, Array<Measurement>> {
         let metadata = new Map<NodeId, Array<Measurement>>();
         for (const [nodeId, data] of Object.entries(json.metadata)) {
