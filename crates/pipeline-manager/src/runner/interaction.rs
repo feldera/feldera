@@ -11,6 +11,7 @@ use actix_ws::{CloseCode, CloseReason};
 use awc::error::{ConnectError, SendRequestError};
 use awc::{ClientRequest, ClientResponse};
 use crossbeam::sync::ShardedLock;
+use feldera_observability::AwcRequestTracingExt;
 use feldera_types::query::MAX_WS_FRAME_SIZE;
 use std::fmt::Display;
 use std::{collections::HashMap, sync::Arc, time::Duration};
@@ -223,7 +224,11 @@ impl RunnerInteraction {
             query_string,
         );
         let timeout = timeout.unwrap_or(Self::PIPELINE_HTTP_REQUEST_TIMEOUT);
-        let request = client.request(method, &url).timeout(timeout).force_close();
+        let request = client
+            .request(method, &url)
+            .timeout(timeout)
+            .force_close()
+            .with_sentry_tracing();
         let request_str = Self::format_request(&request);
 
         let mut original_response = request.send().await.map_err(|e| match e {
@@ -500,6 +505,7 @@ impl RunnerInteraction {
             new_request = new_request.append_header(header);
         }
 
+        let new_request = new_request.with_sentry_tracing();
         let request_str = Self::format_request(&new_request);
 
         // Perform request to the pipeline
@@ -568,6 +574,7 @@ impl RunnerInteraction {
         let response = client
             .request(Method::GET, &url)
             .timeout(Self::RUNNER_HTTP_REQUEST_TIMEOUT)
+            .with_sentry_tracing()
             .send()
             .await
             .map_err(|e| match e {

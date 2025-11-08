@@ -1,6 +1,5 @@
 //! Operator that consolidates a trace into a single batch.
 
-use minitrace::trace;
 use std::{borrow::Cow, marker::PhantomData};
 
 use crate::{
@@ -71,12 +70,10 @@ impl<T> UnaryOperator<T, T::Batch> for Consolidate<T>
 where
     T: Trace<Time = ()>,
 {
-    #[trace]
     async fn eval(&mut self, _i: &T) -> T::Batch {
         unimplemented!()
     }
 
-    #[trace]
     async fn eval_owned(&mut self, i: T) -> T::Batch {
         i.consolidate()
             .unwrap_or_else(|| T::Batch::dyn_empty(&self.factories))

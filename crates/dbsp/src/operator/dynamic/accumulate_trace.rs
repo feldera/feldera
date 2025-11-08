@@ -22,7 +22,6 @@ use crate::{
     Error, Timestamp,
 };
 use feldera_storage::{FileCommitter, StoragePath};
-use minitrace::trace;
 use ouroboros::self_referencing;
 use size_of::SizeOf;
 use std::sync::Arc;
@@ -510,7 +509,6 @@ where
         panic!("AccumulateUntimedTraceAppend::eval(): cannot accept trace by reference")
     }
 
-    #[trace]
     async fn eval_owned_and_ref(&mut self, mut trace: T, delta: &Option<Spine<T::Batch>>) -> T {
         if let Some(delta) = delta {
             self.num_inputs += delta.len();
@@ -529,7 +527,6 @@ where
         )
     }
 
-    #[trace]
     async fn eval_owned(&mut self, trace: T, delta: Option<Spine<T::Batch>>) -> T {
         self.eval_owned_and_ref(trace, &delta).await
     }
@@ -589,14 +586,12 @@ where
     Clk: WithClock + 'static,
     T: Trace<Key = B::Key, Val = B::Val, R = B::R, Time = Clk::Time>,
 {
-    #[trace]
     async fn eval(&mut self, _trace: &T, _delta: &Option<Spine<B>>) -> T {
         // Refuse to accept trace by reference.  This should not happen in a correctly
         // constructed circuit.
         unimplemented!()
     }
 
-    #[trace]
     async fn eval_owned_and_ref(&mut self, mut trace: T, delta: &Option<Spine<B>>) -> T {
         if let Some(delta) = delta {
             // TODO: extend `trace` type to feed untimed batches directly
@@ -619,7 +614,6 @@ where
         unimplemented!()
     }
 
-    #[trace]
     async fn eval_owned(&mut self, trace: T, delta: Option<Spine<B>>) -> T {
         self.eval_owned_and_ref(trace, &delta).await
     }
@@ -956,7 +950,6 @@ where
         unimplemented!()
     }
 
-    #[trace]
     async fn eval_strict_owned(&mut self, mut i: T) {
         // println!("Z1-{}::eval_strict_owned", &self.global_id);
 

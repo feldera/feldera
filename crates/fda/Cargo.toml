@@ -26,6 +26,8 @@ feldera-rest-api = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
 tracing-log = { workspace = true }
+sentry = { workspace = true }
+feldera-observability = { workspace = true }
 tabled = { workspace = true, features = ["macros", "ansi"] }
 json_to_table = { workspace = true }
 rustyline = { workspace = true, features = ["with-file-history"] }

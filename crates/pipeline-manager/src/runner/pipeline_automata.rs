@@ -20,6 +20,7 @@ use crate::runner::interaction::{format_pipeline_url, format_timeout_error_messa
 use crate::runner::pipeline_executor::PipelineExecutor;
 use crate::runner::pipeline_logs::{start_thread_pipeline_logs, LogMessage, LogsSender};
 use chrono::Utc;
+use feldera_observability::ReqwestTracingExt;
 use feldera_types::error::ErrorResponse;
 use feldera_types::runtime_status::{ExtendedRuntimeStatus, RuntimeDesiredStatus, RuntimeStatus};
 use reqwest::{Method, StatusCode};
@@ -613,6 +614,7 @@ impl<T: PipelineExecutor> PipelineAutomaton<T> {
             .client
             .request(method, &url)
             .timeout(timeout)
+            .with_sentry_tracing()
             .send()
             .await
             .map_err(|e| {

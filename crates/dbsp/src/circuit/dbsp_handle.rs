@@ -17,9 +17,6 @@ use feldera_storage::{FileCommitter, StorageBackend, StoragePath};
 use feldera_types::checkpoint::CheckpointMetadata;
 pub use feldera_types::config::{StorageCacheConfig, StorageConfig, StorageOptions};
 use itertools::Either;
-use minitrace::collector::SpanContext;
-use minitrace::local::LocalSpan;
-use minitrace::Span;
 use serde::Deserialize;
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -547,7 +544,6 @@ impl Runtime {
 
         let runtime = Self::run(&config, move |parker| {
             let worker_index = Runtime::local_worker_offset();
-            let worker_index_str: &'static str = worker_index.to_string().leak();
 
             // Drop all but one channels.  This makes sure that if one of the worker panics
             // or exits, its channel will become disconnected.
@@ -575,53 +571,35 @@ impl Runtime {
             while !Runtime::kill_in_progress() {
                 // Wait for command.
                 match command_receiver.try_recv() {
-                    Ok(Command::Transaction(span)) => {
-                        let _guard = span.set_local_parent();
-                        let _worker_span = LocalSpan::enter_with_local_parent("worker-transaction")
-                            .with_property(|| ("worker", worker_index_str));
+                    Ok(Command::Transaction) => {
                         let status = circuit.transaction().map(|_| Response::Unit);
                         // Send response.
                         if status_sender.send(status).is_err() {
                             return;
                         }
                     }
-                    Ok(Command::StartTransaction(span)) => {
-                        let _guard = span.set_local_parent();
-                        let _worker_span =
-                            LocalSpan::enter_with_local_parent("worker-start-transaction")
-                                .with_property(|| ("worker", worker_index_str));
+                    Ok(Command::StartTransaction) => {
                         let status = circuit.start_transaction().map(|_| Response::Unit);
                         // Send response.
                         if status_sender.send(status).is_err() {
                             return;
                         }
                     }
-                    Ok(Command::CommitTransaction(span)) => {
-                        let _guard = span.set_local_parent();
-                        let _worker_span =
-                            LocalSpan::enter_with_local_parent("worker-commit-transaction")
-                                .with_property(|| ("worker", worker_index_str));
+                    Ok(Command::CommitTransaction) => {
                         let status = circuit.start_commit_transaction().map(|_| Response::Unit);
                         // Send response.
                         if status_sender.send(status).is_err() {
                             return;
                         }
                     }
-                    Ok(Command::CommitProgress(span)) => {
-                        let _guard = span.set_local_parent();
-                        let _worker_span =
-                            LocalSpan::enter_with_local_parent("worker-commit_progress")
-                                .with_property(|| ("worker", worker_index_str));
+                    Ok(Command::CommitProgress) => {
                         let status = Ok(Response::CommitProgress(circuit.commit_progress()));
                         // Send response.
                         if status_sender.send(status).is_err() {
                             return;
                         }
                     }
-                    Ok(Command::Step(span)) => {
-                        let _guard = span.set_local_parent();
-                        let _worker_span = LocalSpan::enter_with_local_parent("worker-step")
-                            .with_property(|| ("worker", worker_index_str));
+                    Ok(Command::Step) => {
                         let status = circuit
                             .step()
                             .map(|_| Response::CommitComplete(circuit.is_commit_complete()));
@@ -630,11 +608,7 @@ impl Runtime {
                             return;
                         }
                     }
-                    Ok(Command::BootstrapStep(span)) => {
-                        let _guard = span.set_local_parent();
-                        let _worker_span =
-                            LocalSpan::enter_with_local_parent("worker-bootstrap-step")
-                                .with_property(|| ("worker", worker_index_str));
+                    Ok(Command::BootstrapStep) => {
                         if let Err(e) = circuit.transaction() {
                             if status_sender.send(Err(e)).is_err() {
                                 return;
@@ -776,13 +750,13 @@ impl Runtime {
 
 #[derive(Clone)]
 enum Command {
-    StartTransaction(Arc<Span>),
-    Step(Arc<Span>),
-    CommitTransaction(Arc<Span>),
-    CommitProgress(Arc<Span>),
-    Transaction(Arc<Span>),
+    StartTransaction,
+    Step,
+    CommitTransaction,
+    CommitProgress,
+    Transaction,
     /// Execute a step in bootstrap mode.
-    BootstrapStep(Arc<Span>),
+    BootstrapStep,
     CompleteBootstrap,
     EnableProfiler,
     DumpProfile {
@@ -801,12 +775,12 @@ enum Command {
 impl Debug for Command {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
-            Command::StartTransaction(_span) => write!(f, "StartTransaction"),
-            Command::Step(_span) => write!(f, "Step"),
-            Command::CommitTransaction(_span) => write!(f, "CommitTransaction"),
-            Command::CommitProgress(_span) => write!(f, "CommitProgress"),
-            Command::Transaction(_span) => write!(f, "Transaction"),
-            Command::BootstrapStep(_span) => write!(f, "BootstrapStep"),
+            Command::StartTransaction => write!(f, "StartTransaction"),
+            Command::Step => write!(f, "Step"),
+            Command::CommitTransaction => write!(f, "CommitTransaction"),
+            Command::CommitProgress => write!(f, "CommitProgress"),
+            Command::Transaction => write!(f, "Transaction"),
+            Command::BootstrapStep => write!(f, "BootstrapStep"),
             Command::CompleteBootstrap => write!(f, "CompleteBootstrap"),
             Command::EnableProfiler => write!(f, "EnableProfiler"),
             Command::RetrieveGraph => write!(f, "RetrieveGraph"),
@@ -1048,9 +1022,7 @@ impl DBSPHandle {
     /// The clock advances between transactions.
     pub fn start_transaction(&mut self) -> Result<(), DbspError> {
         let start = Instant::now();
-        let span = Arc::new(Span::root("start_transaction", SpanContext::random()));
-        let _guard = span.set_local_parent();
-        let result = self.broadcast_command(Command::StartTransaction(span), |_, _| {});
+        let result = self.broadcast_command(Command::StartTransaction, |_, _| {});
         if let Some(handle) = self.runtime.as_ref() {
             self.runtime_elapsed +=
                 start.elapsed() * handle.runtime().layout().local_workers().len() as u32 * 2;
@@ -1066,11 +1038,9 @@ impl DBSPHandle {
     /// the circuit has produced all outputs for the inputs received during the transaction.
     pub fn step(&mut self) -> Result<bool, DbspError> {
         let start = Instant::now();
-        let span = Arc::new(Span::root("step", SpanContext::random()));
-        let _guard = span.set_local_parent();
         let mut commit_complete = Vec::with_capacity(self.status_receivers.len());
 
-        let result = self.broadcast_command(Command::Step(span), |_worker, response| {
+        let result = self.broadcast_command(Command::Step, |_worker, response| {
             let Response::CommitComplete(complete) = response else {
                 panic!("Expected CommitComplete response, got {response:?}");
             };
@@ -1098,12 +1068,7 @@ impl DBSPHandle {
     /// The caller must invoke `step` repeatedly until the commit is complete.
     pub fn start_commit_transaction(&mut self) -> Result<(), DbspError> {
         let start = Instant::now();
-        let span = Arc::new(Span::root(
-            "start_commit_transaction",
-            SpanContext::random(),
-        ));
-        let _guard = span.set_local_parent();
-        let result = self.broadcast_command(Command::CommitTransaction(span), |_, _| {});
+        let result = self.broadcast_command(Command::CommitTransaction, |_, _| {});
         if let Some(handle) = self.runtime.as_ref() {
             self.runtime_elapsed +=
                 start.elapsed() * handle.runtime().layout().local_workers().len() as u32 * 2;
@@ -1126,12 +1091,9 @@ impl DBSPHandle {
 
     /// Estimated commit progress.
     pub fn commit_progress(&mut self) -> Result<WorkersCommitProgress, DbspError> {
-        let span = Arc::new(Span::root("commit_progress", SpanContext::random()));
-        let _guard = span.set_local_parent();
-
         let mut progress = WorkersCommitProgress::new();
 
-        self.broadcast_command(Command::CommitProgress(span), |worker, response| {
+        self.broadcast_command(Command::CommitProgress, |worker, response| {
             let Response::CommitProgress(worker_progress) = response else {
                 panic!("Expected CommitProgress response, got {response:?}");
             };
@@ -1158,9 +1120,7 @@ impl DBSPHandle {
     fn transaction_regular(&mut self) -> Result<(), DbspError> {
         DBSP_STEP.fetch_add(1, Ordering::Relaxed);
         let start = Instant::now();
-        let span = Arc::new(Span::root("transaction", SpanContext::random()));
-        let _guard = span.set_local_parent();
-        let result = self.broadcast_command(Command::Transaction(span), |_, _| {});
+        let result = self.broadcast_command(Command::Transaction, |_, _| {});
         DBSP_STEP_LATENCY_MICROSECONDS
             .lock()
             .unwrap()
@@ -1177,12 +1137,10 @@ impl DBSPHandle {
     fn step_bootstrap(&mut self) -> Result<(), DbspError> {
         DBSP_STEP.fetch_add(1, Ordering::Relaxed);
         let start = Instant::now();
-        let span = Arc::new(Span::root("step_bootstrap", SpanContext::random()));
-        let _guard = span.set_local_parent();
 
         let mut replay_complete = Vec::with_capacity(self.status_receivers.len());
 
-        let result = self.broadcast_command(Command::BootstrapStep(span), |_worker, response| {
+        let result = self.broadcast_command(Command::BootstrapStep, |_worker, response| {
             let Response::BootstrapComplete(complete) = response else {
                 panic!("Expected BootstrapComplete response, got {response:?}");
             };

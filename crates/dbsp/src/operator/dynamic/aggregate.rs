@@ -3,7 +3,6 @@
 use async_stream::stream;
 use dyn_clone::{clone_box, DynClone};
 use futures::Stream as AsyncStream;
-use minitrace::trace;
 use std::{
     any::TypeId,
     borrow::Cow,
@@ -745,7 +744,6 @@ where
     O: IndexedZSet<Key = Z::Key>,
     Acc: DataTrait + ?Sized,
 {
-    #[trace]
     async fn eval(&mut self, i: &Z) -> O {
         let n = i.key_count();
         let mut builder = O::Builder::with_capacity(&self.factories, n, n);
@@ -905,7 +903,6 @@ where
     /// aggregation logic in the `Aggregator` trait.  The second iteration
     /// is only needed inside nested scopes and can in the future be
     /// optimized to terminate early.
-    #[trace]
     fn eval_key(
         self: &Rc<Self>,
         key: &Z::Key,
@@ -1042,7 +1039,6 @@ where
     Acc: DataTrait + ?Sized,
     Out: DataTrait + ?Sized,
 {
-    #[trace]
     fn eval(
         self: Rc<Self>,
         delta: &Option<Spine<Z>>,

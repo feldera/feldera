@@ -14,7 +14,6 @@ use crate::{
     utils::Tup2,
     Circuit, DBData, DynZWeight, NumEntries, RootCircuit, Stream, ZWeight,
 };
-use minitrace::trace;
 use rkyv::Archive;
 use serde::{Deserialize, Serialize};
 use size_of::SizeOf;
@@ -354,7 +353,6 @@ impl<T>
 where
     T: IndexedZSetReader,
 {
-    #[trace]
     async fn eval(
         &mut self,
         input_trace: &T,
@@ -486,7 +484,6 @@ impl<T>
 where
     T: IndexedZSetReader + Clone,
 {
-    #[trace]
     async fn eval(
         &mut self,
         input_trace: &T,

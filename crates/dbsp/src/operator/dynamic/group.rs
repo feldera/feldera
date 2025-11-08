@@ -32,7 +32,6 @@ mod test;
 use async_stream::stream;
 use dyn_clone::clone_box;
 use futures::Stream as AsyncStream;
-use minitrace::trace;
 
 use crate::dynamic::{ClonableTrait, Erase};
 pub use lag::{LagCustomOrdFactories, LagFactories};
@@ -429,7 +428,6 @@ where
     OB: IndexedZSet<Key = B::Key>,
     OT: WithSnapshot<Batch = OB> + Clone + 'static,
 {
-    #[trace]
     fn eval(
         self: Rc<Self>,
         delta: Cow<'_, Option<Spine<B>>>,
