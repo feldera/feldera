@@ -77,7 +77,7 @@ public abstract class DBSPExpression
 
     /** Generates an expression that calls clone() on this. */
     public DBSPExpression applyClone() {
-        Utilities.enforce(!this.type.is(DBSPTypeRef.class), "Cloning a reference " + this);
+        Utilities.enforce(!this.type.is(DBSPTypeRef.class), () -> "Cloning a reference " + this);
         if (this.is(DBSPCloneExpression.class))
             return this;
         return new DBSPCloneExpression(this.getNode(), this);
@@ -121,7 +121,7 @@ public abstract class DBSPExpression
 
     /** Unwrap an expression with a nullable type */
     public DBSPExpression unwrap() {
-        Utilities.enforce(this.type.mayBeNull, "Unwrapping non-nullable type");
+        Utilities.enforce(this.type.mayBeNull, () -> "Unwrapping non-nullable type");
         return new DBSPUnwrapExpression(this);
     }
 
@@ -243,7 +243,7 @@ public abstract class DBSPExpression
     public DBSPExpression nullabilityCast(DBSPType to, boolean safe) {
         DBSPType sourceType = this.getType();
         Utilities.enforce(sourceType.sameTypeIgnoringNullability(to),
-                "Cast from " + sourceType + " to " + to + " is not a nullability cast.");
+                () -> "Cast from " + sourceType + " to " + to + " is not a nullability cast.");
         return this.cast(this.getNode(), to, safe);
     }
 

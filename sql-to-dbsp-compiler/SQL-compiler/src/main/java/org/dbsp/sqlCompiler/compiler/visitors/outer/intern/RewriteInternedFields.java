@@ -178,7 +178,7 @@ public class RewriteInternedFields extends CircuitCloneVisitor {
         }
         if (!HasInternedTypes.check(this.compiler, outputType))
             Utilities.enforce(outputType.sameType(operator.outputType),
-                    "Output type not preserved for " + operator + " during interning:\n" +
+                    () -> "Output type not preserved for " + operator + " during interning:\n" +
             outputType + ", expected\n" + operator.outputType);
         DBSPSimpleOperator replacement = operator.with(
                 function, outputType, Linq.list(input), false)

@@ -51,9 +51,9 @@ public final class DBSPCastExpression extends DBSPExpression {
         this.safe = safe;
         Utilities.enforce(source.getType().is(DBSPTypeTupleBase.class) == to.is(DBSPTypeTupleBase.class)
                 || source.getType().is(DBSPTypeVariant.class) || to.is(DBSPTypeVariant.class),
-                "Cast to/from tuple from/to non-tuple " + source.getType() + " to " + to);
-        Utilities.enforce(to.code != DBSPTypeCode.INTERNED_STRING, "Cast to INTERNED");
-        Utilities.enforce(source.getType().code != DBSPTypeCode.INTERNED_STRING, "Cast from INTERNED");
+                () -> "Cast to/from tuple from/to non-tuple " + source.getType() + " to " + to);
+        Utilities.enforce(to.code != DBSPTypeCode.INTERNED_STRING, () -> "Cast to INTERNED");
+        Utilities.enforce(source.getType().code != DBSPTypeCode.INTERNED_STRING, () -> "Cast from INTERNED");
         Utilities.enforce(!safe || to.mayBeNull);
     }
 

@@ -90,7 +90,7 @@ public class CircuitCloneVisitor extends CircuitVisitor implements IWritesLogs, 
         if (!oldPort.equals(newPort)) {
             if (this.preservesTypes && oldPort.exists() && newPort.exists()) {
                 Utilities.enforce(oldPort.outputType().sameType(newPort.outputType()),
-                        "Replacing operator with type\n" + oldPort.outputType() +
+                        () -> "Replacing operator with type\n" + oldPort.outputType() +
                                 " with new type\n" + newPort.outputType());
             }
             Logger.INSTANCE.belowLevel(this, 1)

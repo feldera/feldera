@@ -41,13 +41,13 @@ public final class DBSPIntegrateTraceRetainValuesOperator
             CalciteRelNode node, OutputPort data, IMaybeMonotoneType dataProjection, OutputPort control, boolean accumulate) {
         DBSPType controlType = control.outputType();
         Utilities.enforce(controlType.is(DBSPTypeTupleBase.class),
-                "Control type is not a tuple: " + controlType);
+                () -> "Control type is not a tuple: " + controlType);
         DBSPTypeTupleBase controlTuple = controlType.to(DBSPTypeTupleBase.class);
         Utilities.enforce(controlTuple.size() == 2);
 
         DBSPVariablePath controlArg = controlType.ref().var();
         Utilities.enforce(data.outputType().is(DBSPTypeIndexedZSet.class),
-                "Data is not indexed: " + data.outputType());
+                () -> "Data is not indexed: " + data.outputType());
         DBSPType valueType = data.getOutputIndexedZSetType().elementType;
         DBSPVariablePath dataArg = valueType.ref().var();
         DBSPParameter param = new DBSPParameter(dataArg.variable, dataArg.getType());
@@ -74,7 +74,7 @@ public final class DBSPIntegrateTraceRetainValuesOperator
             @Nullable DBSPExpression function, DBSPType outputType,
             List<OutputPort> newInputs, boolean force) {
         if (this.mustReplace(force, function, newInputs, outputType)) {
-            Utilities.enforce(newInputs.size() == 2, "Expected 2 inputs, got " + newInputs.size());
+            Utilities.enforce(newInputs.size() == 2, () -> "Expected 2 inputs, got " + newInputs.size());
             return new DBSPIntegrateTraceRetainValuesOperator(
                     this.getRelNode(), Objects.requireNonNull(function),
                     newInputs.get(0), newInputs.get(1), this.accumulate);

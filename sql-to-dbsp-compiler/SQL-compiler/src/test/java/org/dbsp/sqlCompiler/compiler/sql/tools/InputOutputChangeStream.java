@@ -31,9 +31,12 @@ public class InputOutputChangeStream {
     }
 
     public InputOutputChangeStream addChange(InputOutputChange change) {
-        Utilities.enforce(this.changes.isEmpty() || this.changes.get(0).compatible(change), "Incompatible change");
-        Utilities.enforce(this.inputTables.isEmpty() || change.inputs.getSetCount() == this.inputTables.size(), "Change does not have the same number of input tables as specified");
-        Utilities.enforce(this.outputTables.isEmpty() || change.outputs.getSetCount() == this.outputTables.size(), "Change does not have the same number of output tables as specified");
+        Utilities.enforce(this.changes.isEmpty() || this.changes.get(0).compatible(change),
+                () -> "Incompatible change");
+        Utilities.enforce(this.inputTables.isEmpty() || change.inputs.getSetCount() == this.inputTables.size(),
+                () -> "Change does not have the same number of input tables as specified");
+        Utilities.enforce(this.outputTables.isEmpty() || change.outputs.getSetCount() == this.outputTables.size(),
+                () -> "Change does not have the same number of output tables as specified");
         this.changes.add(change);
         return this;
     }

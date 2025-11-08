@@ -44,7 +44,7 @@ public class DBSPTypeRef extends DBSPType {
 
     public DBSPTypeRef(DBSPType type, boolean mutable, boolean mayBeNull) {
         super(type.getNode(), REF, mayBeNull);
-        Utilities.enforce(!type.is(DBSPTypeRef.class), "Reference of reference not supported");
+        Utilities.enforce(!type.is(DBSPTypeRef.class), () -> "Reference of reference not supported");
         this.type = type;
         this.mutable = mutable;
     }

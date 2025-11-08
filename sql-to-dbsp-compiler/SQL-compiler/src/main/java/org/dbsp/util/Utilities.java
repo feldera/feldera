@@ -60,6 +60,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.Supplier;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
@@ -109,9 +110,9 @@ public class Utilities {
      * @param expression  When this expression is false, this function throws.
      * @param message     Message for exception when expression is false */
     @Contract("false, _ -> fail")
-    public static void enforce(boolean expression, String message) {
+    public static void enforce(boolean expression, Supplier<String> message) {
         if (!expression)
-            throw new InternalCompilerError(message + System.lineSeparator() + getCurrentStackTrace());
+            throw new InternalCompilerError(message.get() + System.lineSeparator() + getCurrentStackTrace());
     }
 
     public static TimestampString roundMillis(TimestampString ts) {
@@ -161,7 +162,7 @@ public class Utilities {
             return;
         boolean success = file.delete();
         if (enforce)
-            Utilities.enforce(success, "Could not delete file " + file.getName());
+            Utilities.enforce(success, () -> "Could not delete file " + file.getName());
     }
 
     public static String getBaseName(String filePath) {
@@ -339,7 +340,7 @@ public class Utilities {
     public static <T> void removeLast(List<T> data, T expected) {
         T removed = removeLast(data);
         Utilities.enforce(removed.equals(expected),
-                "Unexpected node popped " + removed + " expected " + expected);
+                () -> "Unexpected node popped " + removed + " expected " + expected);
     }
 
     public static <T> T[] arraySlice(T[] data, int start, int endExclusive) {
@@ -538,7 +539,7 @@ public class Utilities {
     public static JsonNode getProperty(JsonNode node, String property) {
         JsonNode prop = node.get(property);
         Utilities.enforce(prop != null,
-                "Node does not have property " + Utilities.singleQuote(property) +
+                () -> "Node does not have property " + Utilities.singleQuote(property) +
                 Utilities.toDepth(node, 1));
         return prop;
     }

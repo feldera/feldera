@@ -122,7 +122,7 @@ public abstract class InnerRewriteVisitor
      * any of its fields differs. */
     protected void map(IDBSPInnerNode old, IDBSPInnerNode newOp) {
         // noinspection ConstantValue
-        Utilities.enforce(newOp != null, "No replacement computed for " + old);
+        Utilities.enforce(newOp != null, () -> "No replacement computed for " + old);
         if ((old == newOp) || (!this.force && old.sameFields(newOp))) {
             // Ignore new op.
             this.lastResult = old;

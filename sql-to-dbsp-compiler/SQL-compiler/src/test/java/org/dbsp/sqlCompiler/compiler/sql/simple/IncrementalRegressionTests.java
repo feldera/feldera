@@ -799,6 +799,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
     // Tests that are not in the repository; run manually
     @Test @Ignore
     public void extraTests() throws IOException {
+        this.showFinalVerbose(3);
         String dir = "../extra";
         File file = new File(dir);
         if (file.exists()) {
@@ -807,7 +808,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
                 return;
             Arrays.sort(toCompile);
             for (File c: toCompile) {
-                if (!c.getName().contains("no-min.sql")) continue;
+                if (!c.getName().contains("temp-program.sql")) continue;
                 if (c.getName().contains("sql")) {
                     System.out.println("Compiling " + c);
                     String sql = Utilities.readFile(c.getPath());
