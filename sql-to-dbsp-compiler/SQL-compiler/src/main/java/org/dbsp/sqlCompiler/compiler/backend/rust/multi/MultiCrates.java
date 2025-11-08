@@ -21,6 +21,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.LateMaterializations;
 import org.dbsp.sqlCompiler.ir.IDBSPInnerNode;
 import org.dbsp.sqlCompiler.ir.IDBSPNode;
 import org.dbsp.sqlCompiler.ir.expression.DBSPPathExpression;
+import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.DBSPTypeCode;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPComparatorType;
 import org.dbsp.util.Utilities;
@@ -138,6 +139,11 @@ public class MultiCrates {
         public UsesGlobals(DBSPCompiler compiler, Map<String, DBSPDeclaration> declarations) {
             super(compiler);
             this.declarations = declarations;
+        }
+
+        @Override
+        public VisitDecision preorder(DBSPType type) {
+            return VisitDecision.STOP;
         }
 
         public VisitDecision preorder(DBSPPathExpression expression) {
