@@ -22,7 +22,8 @@ public class DBSPLetExpression extends DBSPExpression implements IDBSPDeclaratio
 
     public DBSPLetExpression(DBSPVariablePath var, DBSPExpression initializer, DBSPExpression consumer) {
         super(initializer.getNode(), consumer.getType());
-        Utilities.enforce(var.getType().sameType(initializer.getType()), "Variable has type " + var.getType() + " and initializer has type " + initializer.getType());
+        Utilities.enforce(var.getType().sameType(initializer.getType()),
+                () -> "Variable has type " + var.getType() + " and initializer has type " + initializer.getType());
         this.variable = var;
         this.initializer = initializer;
         this.consumer = consumer;

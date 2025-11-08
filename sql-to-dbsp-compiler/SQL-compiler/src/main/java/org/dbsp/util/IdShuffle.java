@@ -19,7 +19,8 @@ public class IdShuffle implements Shuffle {
 
     @Override
     public <T> List<T> shuffle(List<T> data) {
-        Utilities.enforce(data.size() <= this.inputLength, "Shuffling " + data.size() + " more than expected " + this.inputLength);
+        Utilities.enforce(data.size() <= this.inputLength,
+                () -> "Shuffling " + data.size() + " more than expected " + this.inputLength);
         return data;
     }
 

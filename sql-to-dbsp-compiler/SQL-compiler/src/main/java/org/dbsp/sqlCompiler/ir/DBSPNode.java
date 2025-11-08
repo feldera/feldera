@@ -187,7 +187,7 @@ public abstract class DBSPNode
 
     public static <T extends IDBSPInnerNode> List<T> fromJsonInnerList(
             JsonNode node, JsonDecoder decoder, Class<T> clazz) {
-        Utilities.enforce(node.isArray(), "Node is not an array " + Utilities.toDepth(node, 1));
+        Utilities.enforce(node.isArray(), () -> "Node is not an array " + Utilities.toDepth(node, 1));
         return Linq.list(Linq.map(
                 node.elements(), e -> decoder.decodeInner(e, clazz)));
     }
@@ -200,7 +200,7 @@ public abstract class DBSPNode
 
     public static <T extends IDBSPOuterNode> List<T> fromJsonOuterList(
             JsonNode node, JsonDecoder decoder, Class<T> clazz) {
-        Utilities.enforce(node.isArray(), "Node is not an array " + Utilities.toDepth(node, 1));
+        Utilities.enforce(node.isArray(), () -> "Node is not an array " + Utilities.toDepth(node, 1));
         return Linq.list(Linq.map(
                 node.elements(), e -> decoder.decodeOuter(e, clazz)));
     }

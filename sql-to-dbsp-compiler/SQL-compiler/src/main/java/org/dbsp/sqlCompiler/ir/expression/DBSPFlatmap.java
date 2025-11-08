@@ -101,7 +101,7 @@ public final class DBSPFlatmap extends DBSPExpression {
         }
         Utilities.enforce(collectionExpression.parameters.length == 1);
         Utilities.enforce(collectionExpression.parameters[0].type.sameType(this.inputRowType.ref()),
-                "Collection expression expects " + collectionExpression.parameters[0].type
+                () -> "Collection expression expects " + collectionExpression.parameters[0].type
                 + " but input element type is " + this.inputRowType.ref());
         DBSPTypeFunction flatmapFunctionType = this.type.to(DBSPTypeFunction.class);
         Utilities.enforce(flatmapFunctionType.resultType.is(DBSPTypeTuple.class));
