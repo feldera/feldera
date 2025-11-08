@@ -326,6 +326,7 @@ export class CytographRendering {
     currentGraph: Cytograph | null;
     readonly cy: cytoscape.Core;
     readonly navigator: ViewNavigator;
+    // If not read, do not render
 
     readonly graph_style: StylesheetJson = [
         {
@@ -437,7 +438,7 @@ export class CytographRendering {
             container: parent,
             elements: [],
         });
-        // double-clickingon the navigator will adjust the graph to fit
+        // double-clicking on the navigator will adjust the graph to fit
         this.navigator.setOnDoubleClick(() => this.cy.fit());
         this.cy.style(this.graph_style);
     }
@@ -445,6 +446,24 @@ export class CytographRendering {
     /** Metric chosen by the user to drive the color of the nodes. */
     getCurrentMetric(): string {
         return this.metadataSelection.metric;
+    }
+
+    search(value: string) {
+        let el = this.cy.getElementById(value);
+        if (el !== null) {
+            let size = el.renderedWidth();
+            let desiredSize = 30;
+            if (size < desiredSize) {
+                let zoom = this.cy.zoom();
+                let targetZoom = zoom * desiredSize / size;
+                this.cy.zoom({
+                    level: targetZoom,
+                    position: el.position()
+                });
+            } else {
+                this.cy.center(el);
+            }
+        }
     }
 
     // Layout to use for the first graph rendering
@@ -477,15 +496,24 @@ export class CytographRendering {
         }
     };
 
+    begin() {
+        this.cy.startBatch();
+    }
+
+    end() {
+        this.cy.endBatch();
+    }
+
     /** The graph has changed; adjust the display. */
-    updateGraph(newGraph: Cytograph) {
+    async updateGraph(newGraph: Cytograph) {
         if (this.currentGraph === null) {
             // This is the first graph displayed.
             this.currentGraph = newGraph;
             this.cy.add(newGraph.getGraphElements());
-            this.graphUpdated(this.initialLayout);
+            return this.computeLayout(this.initialLayout);
         } else {
             // Compute a diff between teh previous and current graph.
+            console.log("Adding new graph elements");
             let graphDiff = newGraph.diff(this.currentGraph);
             this.currentGraph = newGraph;
             this.cy!.batch(() => {
@@ -497,7 +525,7 @@ export class CytographRendering {
                     n.data('depth', depth);
                 });
             });
-            this.graphUpdated(this.layoutOptions);
+            return this.computeLayout(this.layoutOptions);
         }
     }
 
@@ -599,13 +627,16 @@ export class CytographRendering {
     }
 
     /** Called when the graph has changed to trigger a new layout computation. */
-    graphUpdated(options: any) {
+    async computeLayout(options: any) {
         if (this.cy === null)
             return;
-        this.cy
-            .elements()
-            .layout(options)
-            .run();
+        // This runs asynchronously!
+        Globals.message("Computing layout");
+        let layout = this.cy
+            .layout(options);
+        let promise = layout.promiseOn('layoutstop');
+        layout.run();
+        return promise;
     }
 
     /** Modify the rendered graph incrementally by applying a diff. */
@@ -666,15 +697,11 @@ export class CytographRendering {
         }
     }
 
-    // Should be only called once explicitly; events will invoke it when necessary subsequently
-    render(onDoubleClick: (node: NodeId) => void) {
-        if (this.currentGraph === null)
-            return;
-
-        this.graphUpdated(this.initialLayout);
+    setEvents(onDoubleClick: (node: NodeId) => void) {
         this.cy
             //.on('render', () => console.log("rendering"))
-            .on('layoutstop', (e) => this.updateNavigator(e, this.navigator))
+            .on('layoutstart', () => console.log("start layout"))
+            //.on('layoutstop', (e) => this.updateNavigator(e, this.navigator))
             .on('mouseover', 'node', event => this.hover(event))
             .on('mouseout', 'node', event => this.mouseOut(event))
             .on('zoom pan resize', (e) => this.updateNavigator(e, this.navigator))
