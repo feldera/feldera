@@ -1,7 +1,6 @@
 use colored::ColoredString;
 use tracing::warn;
 use tracing::Subscriber;
-use tracing_log::LogTracer;
 use tracing_subscriber::fmt::format::Format;
 use tracing_subscriber::fmt::{FormatEvent, FormatFields};
 use tracing_subscriber::layer::SubscriberExt;
@@ -17,10 +16,10 @@ pub fn init_logging(name: ColoredString) {
         .or_else(|_| EnvFilter::try_new("info"))
         .expect("valid default filter");
 
-    let _ = LogTracer::init();
     tracing_subscriber::registry()
         .with(tracing_subscriber::fmt::layer().event_format(ManagerFormat::new(name)))
         .with(env_filter)
+        .with(sentry::integrations::tracing::layer())
         .try_init()
         .unwrap_or_else(|e| {
             warn!("Unable to initialize logging -- has it already been initialized? ({e})")

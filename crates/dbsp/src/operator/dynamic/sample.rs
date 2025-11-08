@@ -14,7 +14,6 @@ use crate::{
     utils::Tup2,
     Circuit, DBData, RootCircuit, Stream, ZWeight,
 };
-use minitrace::trace;
 use rand::thread_rng;
 use std::{borrow::Cow, cmp::min, marker::PhantomData};
 
@@ -223,7 +222,6 @@ impl<T> BinaryOperator<T, usize, VecZSet<T::Key>> for SampleKeys<T>
 where
     T: IndexedZSetReader,
 {
-    #[trace]
     async fn eval(&mut self, input_trace: &T, &sample_size: &usize) -> VecZSet<T::Key> {
         let sample_size = min(sample_size, MAX_SAMPLE_SIZE);
 
@@ -291,7 +289,6 @@ impl<T> BinaryOperator<T, usize, VecZSet<DynPair<T::Key, T::Val>>> for SampleUni
 where
     T: IndexedZSetReader,
 {
-    #[trace]
     async fn eval(
         &mut self,
         input_trace: &T,

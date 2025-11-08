@@ -9,6 +9,10 @@ on:
         description: "ID of the workflow run that uploaded the artifact"
         required: true
 
+env:
+  FELDERA_SENTRY_ENABLED: 1
+  SENTRY_ENVIRONMENT: ci
+
 jobs:
   manager-no-network:
     if: ${{ !contains(vars.CI_SKIP_JOBS, 'manager-no-network') }}

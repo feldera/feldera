@@ -22,7 +22,6 @@ use crate::{
     },
     Circuit, DBData, NumEntries, RootCircuit, Stream, ZWeight,
 };
-use minitrace::trace;
 use rkyv::{Archive, Deserialize, Serialize};
 use size_of::SizeOf;
 use std::{
@@ -532,7 +531,6 @@ where
     U: DataTrait + ?Sized,
     B: IndexedZSet<Key = T::Key, Val = T::Val>,
 {
-    #[trace]
     async fn eval(
         &mut self,
         trace: &T,
@@ -774,7 +772,6 @@ where
     Box<W>: Clone,
     E: DataTrait + ?Sized,
 {
-    #[trace]
     async fn eval(
         &mut self,
         trace: Cow<'_, T>,

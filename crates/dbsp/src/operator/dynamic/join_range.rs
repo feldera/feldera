@@ -24,7 +24,6 @@ use crate::{
     trace::{BatchFactories, BatchReaderFactories, Cursor},
     DBData, ZWeight,
 };
-use minitrace::trace;
 use std::{borrow::Cow, marker::PhantomData};
 
 pub struct StreamJoinRangeFactories<I, O>
@@ -197,7 +196,6 @@ where
     I2: IndexedZSetReader + Clone,
     O: IndexedZSet,
 {
-    #[trace]
     async fn eval(&mut self, i1: &I1, i2: &I2) -> O {
         let mut tuples = self
             .factories

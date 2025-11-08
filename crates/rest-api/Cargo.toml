@@ -22,6 +22,8 @@ reqwest = { workspace = true, features = ["json", "stream"] }
 feldera-types = { workspace = true }
 progenitor-client = { workspace = true }
 rustversion.workspace = true
+sentry = { workspace = true }
+feldera-observability = { workspace = true }
 
 [build-dependencies]
 prettyplease = { workspace = true }

@@ -77,7 +77,6 @@ feldera-types = { workspace = true }
 libc = { workspace = true }
 static_assertions = { workspace = true }
 zip = { workspace = true }
-minitrace = { workspace = true }
 ouroboros = { workspace = true }
 tracing = { workspace = true }
 snap = { workspace = true }

@@ -25,6 +25,7 @@ use actix_web::{
 use actix_web_httpauth::middleware::HttpAuthentication;
 use actix_web_static_files::ResourceFiles;
 use anyhow::Result as AnyResult;
+use feldera_observability as observability;
 use futures_util::FutureExt;
 use std::io::Write;
 use std::time::Duration;
@@ -732,6 +733,7 @@ pub async fn run(
                         srv.call(req).map(log_response)
                     })
                     .wrap(api_config.cors())
+                    .wrap(observability::actix_middleware())
                     .service(api_scope().wrap(auth_middleware))
                     .service(public_scope())
             })
@@ -763,6 +765,7 @@ pub async fn run(
                         srv.call(req).map(log_response)
                     })
                     .wrap(api_config.cors())
+                    .wrap(observability::actix_middleware())
                     .service(api_scope().wrap_fn(|req, srv| {
                         let req = crate::auth::tag_with_default_tenant_id(req);
                         srv.call(req)
@@ -916,6 +919,12 @@ Version: {} v{}{}
         let _ = shutdown_tx.send(true);
         let _ = collector_handle.join();
     }
+
+    if let Some(client) = sentry::Hub::current().client() {
+        info!("Shutting down sentry");
+        client.close(Some(Duration::from_secs(3)));
+    }
+
     server_result?;
     Ok(())
 }

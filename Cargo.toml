@@ -15,6 +15,7 @@ members = [
   "crates/adapterlib",
   "crates/adapters",
   "crates/dbsp",
+  "crates/feldera-observability",
   "crates/fda",
   "crates/nexmark",
   "crates/feldera-types",
@@ -111,6 +112,7 @@ feldera-cloud1-client = "0.1.2"
 feldera-datagen = { path = "crates/datagen" }
 feldera-fxp = { version = "0.188.0", path = "crates/fxp", features = ["dbsp"] }
 feldera-iceberg = { path = "crates/iceberg" }
+feldera-observability = { path = "crates/feldera-observability" }
 feldera-sqllib = { path = "crates/sqllib" }
 feldera-storage = { version = "0.188.0", path = "crates/storage" }
 feldera-types = { version = "0.188.0", path = "crates/feldera-types" }
@@ -153,8 +155,6 @@ metrics-exporter-prometheus = "0.15.3"
 metrics-util = "0.17.0"
 mimalloc-rust-sys = "1.7.2"
 mime = "0.3.16"
-minitrace = "0.6"
-minitrace-jaeger = "0.6"
 mockall = "0.12.1"
 nix = "0.29.0"
 nonzero_ext = "0.3.0"
@@ -217,6 +217,9 @@ serde_json_path_to_error = "0.1.5"
 serde_urlencoded = "0.7.1"
 serde_with = "3.0.0"
 serde_yaml = "0.9.34"
+# Note: we set default-features = false to disable `debug-images` and `native-tls`; this means we can have debug in release
+# builds and use that rather than uploading debug info to sentry every time we compile; native-tls is disabled because we use rustls
+sentry = { version = "0.45", default-features = false, features = ["anyhow", "logs", "reqwest", "tracing", "actix", "backtrace", "contexts", "panic", "transport", "rustls"] }
 serial_test = "3"
 sha2 = "0.10.8"
 size-of = { version = "0.1.7", features = [
@@ -267,3 +270,6 @@ release = false
 
 [profile.bench]
 debug = true
+
+[profile.release]
+debug = "line-tables-only"

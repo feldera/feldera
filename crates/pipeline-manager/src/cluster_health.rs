@@ -7,6 +7,7 @@ use utoipa::ToSchema;
 
 use crate::config::CommonConfig;
 use crate::error::source_error;
+use feldera_observability::ReqwestTracingExt;
 
 /// Interval between checking health again.
 const POLL_INTERVAL: Duration = Duration::from_secs(10);
@@ -61,7 +62,13 @@ async fn poll_service(
     client: &reqwest::Client,
     timeout: std::time::Duration,
 ) -> (bool, String) {
-    match client.get(url).timeout(timeout).send().await {
+    match client
+        .get(url)
+        .timeout(timeout)
+        .with_sentry_tracing()
+        .send()
+        .await
+    {
         Ok(resp) if resp.status().is_success() => (
             true,
             format!("Healthy: The {service_name} service responded successfully to the last health check."),
