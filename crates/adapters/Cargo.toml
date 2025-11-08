@@ -55,6 +55,7 @@ iceberg-tests-rest = []
 feldera-types = { workspace = true }
 feldera-adapterlib = { workspace = true }
 feldera-datagen = { workspace = true }
+feldera-observability = { workspace = true }
 feldera-storage = { workspace = true }
 feldera-iceberg = { workspace = true, optional = true }
 awc = { workspace = true, features = [
@@ -73,7 +74,6 @@ crossbeam = { workspace = true }
 dbsp = { workspace = true }
 serde = { workspace = true, features = ["derive", "rc"] }
 erased-serde = { workspace = true }
-once_cell = { workspace = true }
 serde_yaml = { workspace = true }
 serde_json = { workspace = true, features = ["raw_value"] }
 serde_urlencoded = { workspace = true }
@@ -139,9 +139,8 @@ rust_decimal = { package = "feldera_rust_decimal", version = "1.33.1-feldera.1",
 url = { workspace = true }
 ordered-float = { workspace = true }
 openssl = { workspace = true }
-minitrace = { workspace = true, features = ["enable"] }
-minitrace-jaeger = { workspace = true }
 atomic = { workspace = true }
+once_cell = { workspace = true }
 dbsp_nexmark = { workspace = true, features = [], optional = true }
 enum-map = { workspace = true }
 google-cloud-pubsub = { workspace = true, optional = true }
@@ -194,6 +193,7 @@ arrow-digest = { workspace = true }
 thread-id = { workspace = true }
 parking_lot = { workspace = true }
 backoff = { workspace = true }
+sentry = { workspace = true }
 
 [package.metadata.cargo-machete]
 ignored = ["num-traits"]

@@ -43,7 +43,7 @@ use std::time::Duration;
 use std::vec;
 use tokio::sync::Mutex;
 use tokio::time::sleep;
-use tracing::{debug, info};
+use tracing::info;
 use uuid::Uuid;
 
 struct DbHandle {

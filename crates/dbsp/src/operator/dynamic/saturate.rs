@@ -20,7 +20,6 @@ use crate::{
 };
 use async_stream::stream;
 use futures::Stream as AsyncStream;
-use minitrace::trace;
 use std::{
     borrow::Cow, cell::RefCell, cmp::Ordering, marker::PhantomData, panic::Location, rc::Rc,
 };
@@ -223,7 +222,6 @@ where
     K: DataTrait + ?Sized,
     V: DataTrait + ?Sized,
 {
-    #[trace]
     fn eval(
         self: Rc<Self>,
         delta: &Option<Spine<OrdIndexedZSet<K, V>>>,

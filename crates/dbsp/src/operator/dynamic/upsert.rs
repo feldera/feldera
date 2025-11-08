@@ -19,7 +19,6 @@ use crate::{
     },
     Circuit, DBData, Stream, Timestamp, ZWeight,
 };
-use minitrace::trace;
 use std::{borrow::Cow, marker::PhantomData, ops::Neg};
 
 use super::trace::BoundsId;
@@ -367,7 +366,6 @@ where
     B: IndexedZSet<Key = T::Key, Val = T::Val>,
     C: WithClock<Time = T::Time> + 'static,
 {
-    #[trace]
     async fn eval(&mut self, trace: &T, updates: &Box<DynPairs<T::Key, DynOpt<T::Val>>>) -> B {
         // Inputs must be sorted by key
         debug_assert!(updates.is_sorted_by(&|u1, u2| u1.fst().cmp(u2.fst())));

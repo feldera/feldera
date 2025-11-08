@@ -31,8 +31,9 @@ rustls = { workspace = true }
 # Logging
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
-tracing-log = { workspace = true }
 colored = { workspace = true }
+sentry = { workspace = true }
+feldera-observability = { workspace = true }
 
 # Error handling and asserts
 anyhow = { workspace = true, features = ["backtrace"] }

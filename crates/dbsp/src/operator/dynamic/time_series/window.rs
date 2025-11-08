@@ -26,7 +26,6 @@ use crate::{
 use async_stream::stream;
 use feldera_storage::{FileCommitter, StoragePath};
 use futures::Stream as AsyncStream;
-use minitrace::trace;
 use rkyv::Deserialize;
 use std::{borrow::Cow, cell::RefCell, marker::PhantomData, rc::Rc, sync::Arc};
 
@@ -300,7 +299,6 @@ where
     // regions in order + extra care to iterate over `batch` and `trace` jointly
     // in region3.
     // TODO: Accurate progress tracking. We currently just yield `None` every time.
-    #[trace]
     fn eval(
         self: Rc<Self>,
         trace: Cow<'_, T>,

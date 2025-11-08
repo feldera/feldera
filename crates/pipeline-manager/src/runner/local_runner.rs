@@ -12,6 +12,7 @@ use crate::runner::error::RunnerError;
 use crate::runner::pipeline_executor::PipelineExecutor;
 use crate::runner::pipeline_logs::{LogMessage, LogsSender};
 use async_trait::async_trait;
+use feldera_observability::ReqwestTracingExt;
 use feldera_types::config::{PipelineConfig, StorageCacheConfig, StorageConfig};
 use feldera_types::runtime_status::{BootstrapPolicy, RuntimeDesiredStatus};
 use reqwest::StatusCode;
@@ -183,7 +184,13 @@ impl LocalRunner {
         // Perform request
         let mut attempt = 1;
         loop {
-            match self.client.get(binary_url).send().await {
+            match self
+                .client
+                .get(binary_url)
+                .with_sentry_tracing()
+                .send()
+                .await
+            {
                 Ok(response) => {
                     // Check status code
                     if response.status() != StatusCode::OK {
