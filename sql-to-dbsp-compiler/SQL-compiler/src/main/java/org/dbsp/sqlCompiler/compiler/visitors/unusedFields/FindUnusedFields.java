@@ -101,11 +101,6 @@ public class FindUnusedFields extends SymbolicInterpreter<FieldUseMap> {
     }
 
     @Override
-    public VisitDecision preorder(DBSPType type) {
-        return VisitDecision.STOP;
-    }
-
-    @Override
     public VisitDecision preorder(DBSPClosureExpression expression) {
         super.preorder(expression);
         if (!this.context.isEmpty()) {

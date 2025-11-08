@@ -110,6 +110,11 @@ public class RewriteNow extends CircuitCloneVisitor {
         }
 
         @Override
+        public VisitDecision preorder(DBSPType type) {
+            return VisitDecision.STOP;
+        }
+
+        @Override
         public VisitDecision preorder(DBSPApplyExpression expression) {
             // A function call that is `now()` is replaced with the `nowReplacement`
             if (ContainsNow.isNow(expression)) {
@@ -171,6 +176,11 @@ public class RewriteNow extends CircuitCloneVisitor {
                 return VisitDecision.STOP;
             }
             return super.preorder(expression);
+        }
+
+        @Override
+        public VisitDecision preorder(DBSPType type) {
+            return VisitDecision.STOP;
         }
     }
 

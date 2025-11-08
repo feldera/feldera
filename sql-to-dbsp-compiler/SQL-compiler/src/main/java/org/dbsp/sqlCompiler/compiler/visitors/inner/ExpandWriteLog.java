@@ -38,6 +38,11 @@ public class ExpandWriteLog extends InnerRewriteVisitor {
     }
 
     @Override
+    public VisitDecision preorder(DBSPType type) {
+        return VisitDecision.STOP;
+    }
+
+    @Override
     public VisitDecision preorder(DBSPApplyExpression expression) {
         this.push(expression);
         DBSPExpression[] arguments = this.transform(expression.arguments);

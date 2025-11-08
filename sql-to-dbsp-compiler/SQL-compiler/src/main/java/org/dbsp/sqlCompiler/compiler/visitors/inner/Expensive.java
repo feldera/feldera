@@ -33,6 +33,7 @@ public class Expensive extends InnerVisitor {
         this.expensive = false;
     }
 
+    @Override
     public VisitDecision preorder(DBSPType type) {
         // Do not traverse types
         return VisitDecision.STOP;
