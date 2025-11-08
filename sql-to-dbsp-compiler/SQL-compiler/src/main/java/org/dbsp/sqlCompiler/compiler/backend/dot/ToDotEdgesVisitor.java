@@ -22,7 +22,7 @@ import java.util.Set;
 /** This visitor dumps the edges circuit to a dot file. */
 public class ToDotEdgesVisitor extends CircuitVisitor implements IWritesLogs {
     // Above this level of details show types
-    static final int TYPE_DETAILS = 4;
+    static final int TYPE_DETAILS = 2;
 
     protected final IndentStream stream;
     // A higher value -> more details

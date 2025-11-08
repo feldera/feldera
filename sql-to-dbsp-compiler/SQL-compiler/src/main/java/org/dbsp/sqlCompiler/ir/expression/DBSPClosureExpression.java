@@ -159,9 +159,11 @@ public final class DBSPClosureExpression extends DBSPExpression {
     public boolean shouldInlineComposition(DBSPCompiler compiler, DBSPClosureExpression before) {
         Projection projection = new Projection(compiler);
         projection.apply(this);
-        if (projection.isProjection) {
+        if (projection.isProjection && before.body.is(DBSPBaseTupleExpression.class)) {
             return true;
         } else {
+            // TODO: this could be refined by checking how many times the source expression
+            // is substituted in the result.
             Expensive expensive = new Expensive(compiler);
             expensive.apply(before);
             return !expensive.isExpensive();
