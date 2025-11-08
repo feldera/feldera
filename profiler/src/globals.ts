@@ -97,10 +97,13 @@ export class Globals {
 
         let selection = circuitSelector.getSelection();
         let cytograph = Cytograph.fromProfile(profile, selection);
-        let rendering = new CytographRendering(cytograph.graph, selection, MetadataSelector.getFullSelection());
+        // Build the data required for rendering, but do not render yet
+        let rendering = new CytographRendering(
+            cytograph.graph, selection,
+            MetadataSelector.getFullSelection());
+        rendering.setEvents(n => circuitSelector.toggleExpand(n));
+
         // Compute and set initial view parameters
-        rendering.updateGraph(cytograph);
-        rendering.updateMetadata(profile, metadataSelector.getSelection());
         circuitSelector.setOnChange(() => {
             // When the circuit to display changes, do these:
             let graph = Cytograph.fromProfile(profile, selection);
@@ -112,8 +115,19 @@ export class Globals {
             // When the metadata selection changes, do these:
             rendering.updateMetadata(profile, metadataSelector.getSelection());
         });
+        let search = document.getElementById("search") as HTMLInputElement;
+        search.onkeydown = (e) => {
+            if (e.key === "Enter") {
+                const query = search.value;
+                rendering.search(query);
+            }
+        };
 
-        rendering.render(n => circuitSelector.toggleExpand(n));
+        // Produce the graph visualization
+        rendering.begin();
+        rendering.updateGraph(cytograph);
+        rendering.updateMetadata(profile, metadataSelector.getSelection());
+        rendering.end();
     }
 
     /** Load two files from the specified directory:
@@ -154,5 +168,21 @@ export class Globals {
                         }
                     });
             });
+    }
+
+    static message(message: string) {
+        const messageDiv = document.getElementById("message");
+        if (messageDiv === null)
+            return;
+        messageDiv.textContent = message;
+        messageDiv.style.display = "block";
+    }
+
+    static clearMessage() {
+        const messageDiv = document.getElementById("message");
+        if (messageDiv === null)
+            return;
+        messageDiv.textContent = "";
+        messageDiv.style.display = "none";
     }
 }
