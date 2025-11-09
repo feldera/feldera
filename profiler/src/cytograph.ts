@@ -430,7 +430,7 @@ export class CytographRendering {
         cytoscape.use(elk);
         cytoscape.use(dblclick);
 
-        let parent = document.getElementById('app')!;
+        let parent = document.getElementById('visualizer')!;
         this.navigator = new ViewNavigator(document.getElementById("navigator-parent")!);
         this.currentGraph = null;
         // Start with an empty graph
@@ -450,19 +450,20 @@ export class CytographRendering {
 
     search(value: string) {
         let el = this.cy.getElementById(value);
-        if (el !== null) {
-            let size = el.renderedWidth();
-            let desiredSize = 30;
-            if (size < desiredSize) {
-                let zoom = this.cy.zoom();
-                let targetZoom = zoom * desiredSize / size;
-                this.cy.zoom({
-                    level: targetZoom,
-                    position: el.position()
-                });
-            } else {
-                this.cy.center(el);
-            }
+        if (el === null) {
+            return;
+        }
+        let size = el.renderedWidth();
+        let desiredSize = 30;
+        if (size < desiredSize) {
+            let zoom = this.cy.zoom();
+            let targetZoom = zoom * desiredSize / size;
+            this.cy.zoom({
+                level: targetZoom,
+                position: el.position()
+            });
+        } else {
+            this.cy.center(el);
         }
     }
 
@@ -496,36 +497,27 @@ export class CytographRendering {
         }
     };
 
-    begin() {
-        this.cy.startBatch();
-    }
-
-    end() {
-        this.cy.endBatch();
-    }
-
     /** The graph has changed; adjust the display. */
-    async updateGraph(newGraph: Cytograph) {
+    updateGraph(newGraph: Cytograph) {
+        this.cy.startBatch();
+        this.cy.container()!.style.visibility = "hidden";
         if (this.currentGraph === null) {
             // This is the first graph displayed.
             this.currentGraph = newGraph;
             this.cy.add(newGraph.getGraphElements());
-            return this.computeLayout(this.initialLayout);
+            this.cy.endBatch();
+            return this.initiateLayout(this.initialLayout);
         } else {
-            // Compute a diff between teh previous and current graph.
-            console.log("Adding new graph elements");
+            // Compute a diff between the previous and current graph.
             let graphDiff = newGraph.diff(this.currentGraph);
             this.currentGraph = newGraph;
-            this.cy!.batch(() => {
-                // Apply all changes in the diff in a single shot, without
-                // intermediate rendering updates.
-                this.applyDiff(this.cy, graphDiff);
-                this.cy.nodes().forEach(n => {
-                    const depth = n.ancestors().filter(n => n.isNode()).length;
-                    n.data('depth', depth);
-                });
+            this.applyDiff(this.cy, graphDiff);
+            this.cy.nodes().forEach(n => {
+                const depth = n.ancestors().filter(n => n.isNode()).length;
+                n.data('depth', depth);
             });
-            return this.computeLayout(this.layoutOptions);
+            this.cy.endBatch();
+            return this.initiateLayout(this.layoutOptions);
         }
     }
 
@@ -627,16 +619,14 @@ export class CytographRendering {
     }
 
     /** Called when the graph has changed to trigger a new layout computation. */
-    async computeLayout(options: any) {
+    initiateLayout(options: any) {
         if (this.cy === null)
             return;
-        // This runs asynchronously!
-        Globals.message("Computing layout");
+        // This runs asynchronously
+        Globals.message("Computing layout...");
         let layout = this.cy
             .layout(options);
-        let promise = layout.promiseOn('layoutstop');
         layout.run();
-        return promise;
     }
 
     /** Modify the rendered graph incrementally by applying a diff. */
@@ -684,8 +674,9 @@ export class CytographRendering {
         }
 
         // Now add then to the graph in the right order
-        for (const node of toInsert)
+        for (const node of toInsert) {
             cy.add(node.getDefinition());
+        }
 
         for (const [edge, weight] of diff.edges.entries()) {
             let def = edge.getDefinition();
@@ -700,27 +691,37 @@ export class CytographRendering {
     setEvents(onDoubleClick: (node: NodeId) => void) {
         this.cy
             //.on('render', () => console.log("rendering"))
-            .on('layoutstart', () => console.log("start layout"))
-            //.on('layoutstop', (e) => this.updateNavigator(e, this.navigator))
+            //.on('layoutstart', () => console.log("start layout"))
+            .on('layoutstop', () => this.layoutComplete())
             .on('mouseover', 'node', event => this.hover(event))
             .on('mouseout', 'node', event => this.mouseOut(event))
-            .on('zoom pan resize', (e) => this.updateNavigator(e, this.navigator))
-            .on('dblclick', 'node', (e) => this.doubleClick(e, onDoubleClick))
-            ;
+            .on('zoom pan resize', () => this.updateNavigator(this.navigator))
+            .on('dblclick', 'node', (e) => {
+                let node = e.target as NodeSingular;
+                if (node === null || !node.data("has_children")) {
+                    // Do not dispatch double click to nodes without children
+                    return;
+                }
+                let id = e.target.id();
+                onDoubleClick(id);
+            });
     }
 
-    doubleClick(e: EventObject, onDoubleClick: (node: NodeId) => void) {
-        let id = e.target.id();
-        onDoubleClick(id);
+    layoutComplete() {
+        Globals.clearMessage();
+        this.cy.container()!.style.visibility = "visible";
+        this.updateNavigator(this.navigator);
     }
 
     // The user has panned/zoomed => tell the navigator about it.
-    updateNavigator(_e: EventObject, navigator: ViewNavigator) {
-        if (this.cy === null)
+    updateNavigator(navigator: ViewNavigator) {
+        if (this.cy === null) {
             return;
+        }
         const container = this.cy.container();
-        if (container === null)
+        if (container === null) {
             return;
+        }
 
         let rect = container.getBoundingClientRect();
         const zoom = this.cy.zoom();
@@ -734,8 +735,9 @@ export class CytographRendering {
 
     getActualEdgeId(e: Edge<NodeId>): string {
         let edgeId = e.id;
-        if (this.currentGraph!.edgeMap.has(edgeId))
+        if (this.currentGraph!.edgeMap.has(edgeId)) {
             return this.currentGraph?.edgeMap.get(edgeId)!;
+        }
         return edgeId;
     }
 
