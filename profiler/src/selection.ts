@@ -30,10 +30,6 @@ export class CircuitSelector {
         this.allNodeIds = allKeys.union(new Set(this.circuit.complexNodes.keys()));
     }
 
-    changed(): void {
-        this.onChange();
-    }
-
     setOnChange(onChange: () => void): void {
         this.onChange = onChange;
     }
@@ -45,7 +41,7 @@ export class CircuitSelector {
             this.regionsExpanded.delete(node);
         else
             this.regionsExpanded.add(node);
-        this.changed();
+        this.onChange();
     }
 
     getFullSelection(): CircuitSelection {
