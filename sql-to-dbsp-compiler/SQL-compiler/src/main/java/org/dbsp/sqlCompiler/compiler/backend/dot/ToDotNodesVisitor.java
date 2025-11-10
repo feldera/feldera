@@ -8,6 +8,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPIndexedTopKOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPInputMapWithWaterlineOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPInternOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinFilterMapOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPLeftJoinFilterMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperatorWithError;
@@ -204,9 +205,16 @@ public class ToDotNodesVisitor extends CircuitVisitor {
             }
         }
         if (node.is(DBSPJoinFilterMapOperator.class)) {
+            DBSPJoinFilterMapOperator jfm = node.to(DBSPJoinFilterMapOperator.class);
             expression = LowerCircuitVisitor.lowerJoinFilterMapFunctions(
                     this.compiler(),
-                    node.to(DBSPJoinFilterMapOperator.class));
+                    jfm.getClosureFunction(), jfm.filter, jfm.map);
+        }
+        if (node.is(DBSPLeftJoinFilterMapOperator.class)) {
+            DBSPLeftJoinFilterMapOperator jfm = node.to(DBSPLeftJoinFilterMapOperator.class);
+            expression = LowerCircuitVisitor.lowerJoinFilterMapFunctions(
+                    this.compiler(),
+                    jfm.getClosureFunction(), jfm.filter, jfm.map);
         }
         return this.convertFunction(expression);
     }

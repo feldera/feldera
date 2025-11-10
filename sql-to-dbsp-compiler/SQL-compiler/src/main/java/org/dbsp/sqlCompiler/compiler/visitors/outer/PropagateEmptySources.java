@@ -8,6 +8,9 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPDistinctOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFilterOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIntegrateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPLeftJoinFilterMapOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPLeftJoinIndexOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPLeftJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNegateOperator;
@@ -24,8 +27,10 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPViewOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPPartitionedRollingAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.OutputPort;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPIndexedZSetExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.type.DBSPType;
 import org.dbsp.sqlCompiler.ir.type.user.DBSPTypeZSet;
@@ -235,6 +240,65 @@ public class PropagateEmptySources extends CircuitCloneVisitor {
                 return;
             }
         }
+        super.postorder(operator);
+    }
+
+    @Override
+    public void postorder(DBSPLeftJoinOperator operator) {
+        OutputPort left = this.mapped(operator.left());
+        if (this.emptySources.contains(left.node())) {
+            DBSPExpression value = emptySet(operator.getType());
+            DBSPConstantOperator result = new DBSPConstantOperator(
+                    operator.getRelNode(), value, false, operator.isMultiset);
+            this.emptySources.add(result);
+            this.map(operator, result);
+            return;
+        }
+        OutputPort right = this.mapped(operator.right());
+        if (this.emptySources.contains(right.node())) {
+            // The join becomes a Map.
+            // The function |k, l, r| { ... }
+            // is specialized by substituting r with None.
+            DBSPClosureExpression closure = operator.getClosureFunction();
+            DBSPVariablePath var = left.getOutputIndexedZSetType().getKVRefType().var(closure.getNode());
+            DBSPClosureExpression function = closure.call(
+                    var.field(0).deref().applyCloneIfNeeded().borrow(),
+                    var.field(1).deref().applyCloneIfNeeded().borrow(),
+                    closure.parameters[2].getType().deref().none().borrow()).closure(var);
+            DBSPMapOperator map = new DBSPMapOperator(operator.getRelNode(), function, left);
+            this.map(operator, map);
+            return;
+        }
+        super.postorder(operator);
+    }
+
+    @Override
+    public void postorder(DBSPLeftJoinIndexOperator operator) {
+        OutputPort left = this.mapped(operator.left());
+        if (this.emptySources.contains(left.node())) {
+            DBSPExpression value = emptySet(operator.getType());
+            DBSPConstantOperator result = new DBSPConstantOperator(
+                    operator.getRelNode(), value, false, operator.isMultiset);
+            this.emptySources.add(result);
+            this.map(operator, result);
+            return;
+        }
+        // TODO: could optimize empty RHS, but this probably won't occur
+        super.postorder(operator);
+    }
+
+    @Override
+    public void postorder(DBSPLeftJoinFilterMapOperator operator) {
+        OutputPort left = this.mapped(operator.left());
+        if (this.emptySources.contains(left.node())) {
+            DBSPExpression value = emptySet(operator.getType());
+            DBSPConstantOperator result = new DBSPConstantOperator(
+                    operator.getRelNode(), value, false, operator.isMultiset);
+            this.emptySources.add(result);
+            this.map(operator, result);
+            return;
+        }
+        // TODO: could optimize empty RHS, but this probably won't occur
         super.postorder(operator);
     }
 

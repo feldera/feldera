@@ -73,7 +73,10 @@ public abstract class DBSPBaseTupleExpression
 
     public DBSPExpression get(int index) {
         if (this.fields == null)
-            return this.type.to(DBSPTypeTupleBase.class).getFieldType(index).none();
+            return this.type.to(DBSPTypeTupleBase.class)
+                    .getFieldType(index)
+                    .withMayBeNull(true)
+                    .none();
         if (index >= Objects.requireNonNull(this.fields).length)
             throw new InternalCompilerError("Index " + index + " out of bounds " + this.fields.length);
         return this.fields[index];

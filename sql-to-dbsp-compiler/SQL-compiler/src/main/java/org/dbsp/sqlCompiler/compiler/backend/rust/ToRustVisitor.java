@@ -41,6 +41,8 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPChainAggregateOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPControlledKeyFilterOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPInputMapWithWaterlineOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPInternOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPLeftJoinIndexOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPLeftJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNestedOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPConstantOperator;
 import org.dbsp.sqlCompiler.circuit.DBSPDeclaration;
@@ -1207,6 +1209,9 @@ public class ToRustVisitor extends CircuitVisitor {
     }
 
     VisitDecision processJoinIndexOperator(DBSPJoinBaseOperator operator) {
+        String operation = "join_index";
+        if (operator.is(DBSPLeftJoinIndexOperator.class))
+            operation = "left_join_index";
         this.computeHash(operator);
         this.innerVisitor.setOperatorContext(operator);
         DBSPType streamType = this.streamType(operator);
@@ -1218,7 +1223,7 @@ public class ToRustVisitor extends CircuitVisitor {
         this.builder.append(" = ")
                 .append(this.getInputName(operator, 0))
                 .append(".")
-                .append("join_index")
+                .append(operation)
                 .append("(&")
                 .append(this.getInputName(operator, 1))
                 .append(", ")
@@ -1515,8 +1520,7 @@ public class ToRustVisitor extends CircuitVisitor {
                 (more ? (operator.comment != null ? "\n" + operator.comment : "") : ""));
     }
 
-    @Override
-    public VisitDecision preorder(DBSPJoinOperator operator) {
+    VisitDecision processJoinBase(DBSPJoinBaseOperator operator) {
         this.computeHash(operator);
         this.innerVisitor.setOperatorContext(operator);
         DBSPType streamType = this.streamType(operator);
@@ -1540,6 +1544,21 @@ public class ToRustVisitor extends CircuitVisitor {
         this.tagStream(operator);
         this.innerVisitor.setOperatorContext(null);
         return VisitDecision.STOP;
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPJoinOperator operator) {
+        return this.processJoinBase(operator);
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPLeftJoinOperator operator) {
+        return this.processJoinBase(operator);
+    }
+
+    @Override
+    public VisitDecision preorder(DBSPLeftJoinIndexOperator operator) {
+        return this.processJoinIndexOperator(operator);
     }
 
     VisitDecision constantLike(DBSPSimpleOperator operator) {

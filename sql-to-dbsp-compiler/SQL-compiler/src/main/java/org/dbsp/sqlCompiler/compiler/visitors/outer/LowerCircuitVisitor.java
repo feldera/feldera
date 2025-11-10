@@ -5,6 +5,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPApply2Operator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPApplyOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinFilterMapOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPLeftJoinFilterMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNoopOperator;
@@ -293,10 +294,11 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
     }
 
     public static DBSPClosureExpression lowerJoinFilterMapFunctions(
-            DBSPCompiler compiler, DBSPJoinFilterMapOperator node) {
-        if (node.filter == null)
-            return node.getClosureFunction();
-        if (node.map == null) {
+            DBSPCompiler compiler, DBSPClosureExpression expression,
+            @Nullable DBSPClosureExpression filter, @Nullable DBSPClosureExpression map) {
+        if (filter == null)
+            return expression;
+        if (map == null) {
             // Generate code of the form
             // let tmp = join(...);
             // if (filter(tmp)) {
@@ -304,17 +306,15 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
             // } else {
             //     None
             // }
-            DBSPClosureExpression expression = node.getClosureFunction();
-            DBSPClosureExpression filter = node.filter.to(DBSPClosureExpression.class);
             DBSPLetStatement let = new DBSPLetStatement("tmp", expression.body);
             DBSPExpression cond = filter.call(let.getVarReference().borrow()).reduce(compiler);
             DBSPExpression tmp = let.getVarReference();
-            DBSPIfExpression ifexp = new DBSPIfExpression(
-                    node.getRelNode(),
+            DBSPIfExpression ifExp = new DBSPIfExpression(
+                    expression.getNode(),
                     cond,
                     tmp.some(),
                     tmp.getType().withMayBeNull(true).none());
-            DBSPBlockExpression block = new DBSPBlockExpression(Linq.list(let), ifexp);
+            DBSPBlockExpression block = new DBSPBlockExpression(Linq.list(let), ifExp);
             return block.closure(expression.parameters);
         } else {
             // Generate code of the form
@@ -323,20 +323,18 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
             // } else {
             //    None
             // }
-            DBSPClosureExpression expression = node.getClosureFunction();
-            DBSPClosureExpression filter = node.filter.to(DBSPClosureExpression.class);
             DBSPExpression cond = filter
                     .call(expression.body.borrow())
                     .reduce(compiler);
-            DBSPExpression map = node.map.to(DBSPClosureExpression.class)
+            DBSPExpression map0 = map.to(DBSPClosureExpression.class)
                     .call(expression.body.borrow())
                     .reduce(compiler);
-            DBSPIfExpression ifexp = new DBSPIfExpression(
-                    node.getRelNode(),
+            DBSPIfExpression ifExp = new DBSPIfExpression(
+                    expression.getNode(),
                     cond,
-                    map.some(),
-                    map.getType().withMayBeNull(true).none());
-            return ifexp.closure(expression.parameters);
+                    map0.some(),
+                    map0.getType().withMayBeNull(true).none());
+            return ifExp.closure(expression.parameters);
         }
     }
 
@@ -347,8 +345,25 @@ public class LowerCircuitVisitor extends CircuitCloneVisitor {
             super.postorder(node);
             return;
         }
-        DBSPExpression newFunction = lowerJoinFilterMapFunctions(this.compiler(), node);
+        DBSPExpression newFunction = lowerJoinFilterMapFunctions(this.compiler(),
+                node.getClosureFunction(), node.filter, node.map);
         DBSPSimpleOperator result = new DBSPJoinFilterMapOperator(node.getRelNode(), node.getOutputZSetType(),
+                newFunction, null, null, node.isMultiset,
+                this.mapped(node.left()), this.mapped(node.right()))
+                .copyAnnotations(node);
+        this.map(node, result);
+    }
+
+    @Override
+    public void postorder(DBSPLeftJoinFilterMapOperator node) {
+        if (node.filter == null) {
+            // Already lowered
+            super.postorder(node);
+            return;
+        }
+        DBSPExpression newFunction = lowerJoinFilterMapFunctions(this.compiler(), node.getClosureFunction(),
+                node.filter, node.map);
+        DBSPSimpleOperator result = new DBSPLeftJoinFilterMapOperator(node.getRelNode(), node.getOutputZSetType(),
                 newFunction, null, null, node.isMultiset,
                 this.mapped(node.left()), this.mapped(node.right()))
                 .copyAnnotations(node);

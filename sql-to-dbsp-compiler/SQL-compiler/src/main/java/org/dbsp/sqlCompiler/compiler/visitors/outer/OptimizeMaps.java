@@ -361,7 +361,7 @@ public class OptimizeMaps extends CircuitCloneWithGraphsVisitor {
             if (!this.onlyProjections || projection.isProjection) {
                 // map(joinFilter) = joinFilter
                 DBSPJoinFilterMapOperator jfm = source.node().to(DBSPJoinFilterMapOperator.class);
-                DBSPExpression newMap = operator.getFunction();
+                DBSPClosureExpression newMap = operator.getClosureFunction();
                 if (jfm.map != null) {
                     newMap = operator.getClosureFunction()
                             .applyAfter(this.compiler(), jfm.map.to(DBSPClosureExpression.class), Maybe.YES);

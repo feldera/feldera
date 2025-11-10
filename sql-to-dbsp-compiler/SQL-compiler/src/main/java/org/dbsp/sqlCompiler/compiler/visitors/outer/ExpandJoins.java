@@ -35,8 +35,8 @@ public class ExpandJoins extends CircuitCloneVisitor {
         DBSPAntiJoinOperator join = new DBSPAntiJoinOperator(
                 operator.getRelNode().intermediate(), diffs.get(0), diffs.get(1));
         this.addOperator(join);
-        DBSPIntegrateOperator integ = new DBSPIntegrateOperator(operator.getRelNode(), join.outputPort());
-        this.map(operator, integ);
+        DBSPIntegrateOperator integrator = new DBSPIntegrateOperator(operator.getRelNode(), join.outputPort());
+        this.map(operator, integrator);
     }
 
     @Override
@@ -53,8 +53,8 @@ public class ExpandJoins extends CircuitCloneVisitor {
                 operator.getRelNode().intermediate(), operator.getOutputIndexedZSetType(), operator.getFunction(),
                 operator.isMultiset, diffs.get(0), diffs.get(1));
         this.addOperator(join);
-        DBSPIntegrateOperator integ = new DBSPIntegrateOperator(operator.getRelNode(), join.outputPort());
-        this.map(operator, integ);
+        DBSPIntegrateOperator integrator = new DBSPIntegrateOperator(operator.getRelNode(), join.outputPort());
+        this.map(operator, integrator);
     }
 
 }
