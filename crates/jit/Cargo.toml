@@ -1,0 +1,17 @@
+[package]
+name = "jit"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+
+[dependencies]
+inkwell = { version = "0.7.1", default-features = false, features = ["llvm21-1"] }
+thiserror = "1.0"
+anyhow = { workspace = true }
+
+[dev-dependencies]
+dbsp = { path = "../dbsp" }
+
+[[example]]
+name = "jit"

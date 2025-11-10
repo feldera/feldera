@@ -73,6 +73,8 @@ pub mod typed_batch;
 pub mod circuit;
 pub mod algebra;
 pub mod ir;
+pub mod jit;
+
 pub mod mimalloc;
 pub mod monitor;
 pub mod operator;
@@ -99,6 +101,7 @@ pub use circuit::{
     ChildCircuit, Circuit, CircuitHandle, DBSPHandle, NestedCircuit, RootCircuit, Runtime,
     RuntimeError, SchedulerError, Stream, WeakRuntime,
 };
+
 #[cfg(not(feature = "backend-mode"))]
 pub use operator::FilterMap;
 pub use operator::{

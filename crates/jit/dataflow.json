@@ -1,0 +1,62 @@
+{
+  "calcite_plan": {
+    "error_view": {
+      "rels": [
+        {
+          "id": 0,
+          "relOp": "LogicalTableScan",
+          "table": [
+            "schema",
+            "feldera_error_table"
+          ],
+          "inputs": []
+        }
+      ]
+    }
+  },
+  "mir": {
+    "s0": {
+      "operation": "constant",
+      "inputs": [],
+      "calcite": {
+        "partial": 0
+      },
+      "positions": [
+        {"start_line_number":4,"start_column":1,"end_line_number":4,"end_column":59}
+      ],
+      "persistent_id": "dabdc0517fb639de8ebd480cb4350e3b2054b584a8c9c42515f268f99294f72c"
+    }, "s1": {
+      "operation": "inspect",
+      "inputs": [
+        { "node": "s0", "output": 0 }
+      ],
+      "view": "error_view",
+      "calcite": {
+        "final": 0
+      },
+      "positions": [
+        {"start_line_number":4,"start_column":1,"end_line_number":4,"end_column":59},
+        {"start_line_number":4,"start_column":1,"end_line_number":4,"end_column":59}
+      ],
+      "persistent_id": "42bb786d35654abe048f3d4cedb08308c085b652304d4902765d81d8afda529c"
+    }, "s2": {
+      "operation": "source_multiset",
+      "inputs": [],
+      "table": "test",
+      "calcite": {
+        "and": [
+        ]
+      },
+      "positions": [
+        {"start_line_number":1,"start_column":14,"end_line_number":1,"end_column":17},
+        {"start_line_number":1,"start_column":14,"end_line_number":1,"end_column":17}
+      ],
+      "persistent_id": "e755d32bfc7ee015cbeb0a99e513b8098a82b6cc83f7d523a850283dac102e61"
+    }
+  },
+  "sources": [
+    "CREATE TABLE test(",
+    "    id INT",
+    ");"
+  ]
+}

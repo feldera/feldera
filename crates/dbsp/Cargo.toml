@@ -96,6 +96,9 @@ feldera-ir = { workspace = true }
 smallvec = { workspace = true }
 async-stream = { workspace = true }
 futures-util = { workspace = true }
+jit = { path = "../jit" }
+inkwell = { version = "0.7.1", default-features = false, features = ["llvm21-1"] }
+
 
 [dev-dependencies]
 rand = { workspace = true }
