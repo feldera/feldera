@@ -26,6 +26,7 @@ default = ["backend-mode"]
 # For use with compiler-generated code.
 # See comments in `mono.rs`
 backend-mode = []
+jit = ["inkwell"]
 
 [dependencies]
 num = { workspace = true }
@@ -97,6 +98,7 @@ feldera-ir = { workspace = true }
 smallvec = { workspace = true }
 async-stream = { workspace = true }
 futures-util = { workspace = true }
+inkwell = { version = "0.4", optional = true, default-features = false, features = ["llvm17-0"] }
 
 [dev-dependencies]
 rand = { workspace = true }
@@ -198,3 +200,7 @@ path = "examples/dist/coord.rs"
 [[example]]
 name = "pool"
 path = "examples/dist/pool.rs"
+
+[[example]]
+name = "jit"
+required-features = ["jit"]

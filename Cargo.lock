@@ -3786,6 +3786,7 @@ dependencies = [
  "impl-trait-for-tuples",
  "indexmap 2.9.0",
  "indicatif",
+ "inkwell",
  "inventory",
  "itertools 0.14.0",
  "libc",
@@ -6322,6 +6323,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "inkwell"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b597a7b2cdf279aeef6d7149071e35e4bc87c2cf05a5b7f2d731300bffe587ea"
+dependencies = [
+ "either",
+ "inkwell_internals",
+ "libc",
+ "llvm-sys",
+ "once_cell",
+ "thiserror 1.0.69",
+]
+
+[[package]]
+name = "inkwell_internals"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4fa4d8d74483041a882adaa9a29f633253a66dde85055f0495c121620ac484b2"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.101",
+]
+
+[[package]]
 name = "inout"
 version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6762,6 +6788,20 @@ name = "litemap"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "241eaef5fd12c88705a01fc1066c48c4b36e0dd4377dcdc7ec3942cea7a69956"
+
+[[package]]
+name = "llvm-sys"
+version = "170.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ff1ee92492ae76bb6e24495ce15e311ba13ffb58c0140d89ac9910b92477cec8"
+dependencies = [
+ "anyhow",
+ "cc",
+ "lazy_static",
+ "libc",
+ "regex-lite",
+ "semver",
+]
 
 [[package]]
 name = "local-channel"
