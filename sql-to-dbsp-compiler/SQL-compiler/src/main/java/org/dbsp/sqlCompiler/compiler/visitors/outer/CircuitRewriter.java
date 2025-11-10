@@ -44,6 +44,9 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPInternOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinFilterMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPLagOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPLeftJoinFilterMapOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPLeftJoinIndexOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPLeftJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNowOperator;
@@ -480,6 +483,59 @@ public class CircuitRewriter extends CircuitCloneVisitor {
     }
 
     @Override
+    public void postorder(DBSPLeftJoinOperator operator) {
+        DBSPType outputType = this.transform(operator.outputType);
+        DBSPExpression function = this.transform(operator.getFunction());
+        List<OutputPort> sources = Linq.map(operator.inputs, this::mapped);
+        DBSPSimpleOperator result = operator;
+        if (!outputType.sameType(operator.outputType)
+                || function != operator.function
+                || Linq.different(sources, operator.inputs)) {
+            result = new DBSPLeftJoinOperator(operator.getRelNode(),
+                    outputType.to(DBSPTypeZSet.class), function, operator.isMultiset,
+                    sources.get(0), sources.get(1))
+                    .copyAnnotations(operator);
+        }
+        this.map(operator, result);
+    }
+
+    @Override
+    public void postorder(DBSPLeftJoinIndexOperator operator) {
+        DBSPType outputType = this.transform(operator.outputType);
+        DBSPExpression function = this.transform(operator.getFunction());
+        List<OutputPort> sources = Linq.map(operator.inputs, this::mapped);
+        DBSPSimpleOperator result = operator;
+        if (!outputType.sameType(operator.outputType)
+                || function != operator.function
+                || Linq.different(sources, operator.inputs)) {
+            result = new DBSPLeftJoinIndexOperator(operator.getRelNode(),
+                    outputType.to(DBSPTypeIndexedZSet.class), function, operator.isMultiset,
+                    sources.get(0), sources.get(1))
+                    .copyAnnotations(operator);
+        }
+        this.map(operator, result);
+    }
+
+    @Override
+    public void postorder(DBSPLeftJoinFilterMapOperator operator) {
+        DBSPType outputType = this.transform(operator.outputType);
+        DBSPExpression function = this.transform(operator.getFunction());
+        List<OutputPort> sources = Linq.map(operator.inputs, this::mapped);
+        DBSPClosureExpression filter = (DBSPClosureExpression) this.transformN(operator.filter);
+        DBSPClosureExpression map = (DBSPClosureExpression) this.transformN(operator.map);
+        DBSPSimpleOperator result = operator;
+        if (!outputType.sameType(operator.outputType)
+                || function != operator.function
+                || Linq.different(sources, operator.inputs)) {
+            result = new DBSPLeftJoinFilterMapOperator(operator.getRelNode(),
+                    outputType.to(DBSPTypeZSet.class), function, filter, map, operator.isMultiset,
+                    sources.get(0), sources.get(1))
+                    .copyAnnotations(operator);
+        }
+        this.map(operator, result);
+    }
+
+    @Override
     public void postorder(DBSPConcreteAsofJoinOperator operator) {
         DBSPType outputType = this.transform(operator.outputType);
         DBSPExpression function = this.transform(operator.getFunction());
@@ -605,8 +661,8 @@ public class CircuitRewriter extends CircuitCloneVisitor {
     public void postorder(DBSPJoinFilterMapOperator operator) {
         DBSPType outputType = this.transform(operator.outputType);
         DBSPExpression function = this.transform(operator.getFunction());
-        DBSPExpression filter = this.transformN(operator.filter);
-        DBSPExpression map = this.transformN(operator.map);
+        DBSPClosureExpression filter = (DBSPClosureExpression) this.transformN(operator.filter);
+        DBSPClosureExpression map = (DBSPClosureExpression) this.transformN(operator.map);
         List<OutputPort> sources = Linq.map(operator.inputs, this::mapped);
         DBSPSimpleOperator result = operator;
         if (!outputType.sameType(operator.outputType)

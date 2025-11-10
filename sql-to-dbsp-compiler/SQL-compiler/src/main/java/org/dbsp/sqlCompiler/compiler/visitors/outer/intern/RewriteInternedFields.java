@@ -606,6 +606,21 @@ public class RewriteInternedFields extends CircuitCloneVisitor {
     }
 
     @Override
+    public void postorder(DBSPLeftJoinOperator operator) {
+        this.processJoin(operator);
+    }
+
+    @Override
+    public void postorder(DBSPLeftJoinIndexOperator operator) {
+        this.processJoin(operator);
+    }
+
+    @Override
+    public void postorder(DBSPLeftJoinFilterMapOperator operator) {
+        this.processJoin(operator);
+    }
+
+    @Override
     public void postorder(DBSPStreamJoinOperator operator) {
         this.processJoin(operator);
     }

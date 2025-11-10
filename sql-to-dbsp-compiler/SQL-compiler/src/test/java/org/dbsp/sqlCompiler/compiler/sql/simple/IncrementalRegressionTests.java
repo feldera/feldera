@@ -1366,17 +1366,25 @@ public class IncrementalRegressionTests extends SqlIoTest {
 
     @Test
     public void outerJoin() {
-        var cc = this.getCC("""
+        // Validated on postgres
+        var ccs = this.getCCS("""
                 CREATE TABLE tab0(x int);
                 CREATE TABLE tab2(x int);
                 CREATE VIEW V AS SELECT ALL * FROM tab2 AS cor0 LEFT OUTER JOIN tab0 AS cor1 ON NULL IS NOT NULL;""");
         // The optimizer should reduce this to just a Map operator
-        cc.visit(new CircuitVisitor(cc.compiler) {
+        ccs.visit(new CircuitVisitor(ccs.compiler) {
             @Override
             public void postorder(DBSPJoinBaseOperator node) {
                 Assert.fail("Should have been removed");
             }
         });
+        ccs.step("""
+                INSERT INTO tab0 VALUES(1), (2);
+                INSERT INTO tab2 VALUES(3), (4);""", """
+                 x0 | x1 | weight
+                ------------------
+                  3 |    | 1
+                  4 |    | 1""");
     }
 
     @Test

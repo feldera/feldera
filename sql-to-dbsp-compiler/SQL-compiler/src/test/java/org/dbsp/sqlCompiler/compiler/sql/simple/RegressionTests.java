@@ -5,6 +5,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPFilterOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPIndexedTopKOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinFilterMapOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPLeftJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
@@ -48,11 +49,24 @@ public class RegressionTests extends SqlIoTest {
 
     @Test
     public void testInternal179() {
-        this.getCC("""
+        var cc = this.getCC("""
                 CREATE TABLE h(p REAL NOT NULL);
                 CREATE TABLE q(r REAL NOT NULL);
                 CREATE VIEW V AS SELECT * FROM h LEFT JOIN q ON ROUND(r) = ROUND(p);
                 """);
+        cc.visit(new CircuitVisitor(cc.compiler) {
+            private int left = 0;
+
+            @Override
+            public void postorder(DBSPLeftJoinOperator operator) {
+                this.left++;
+            }
+
+            @Override
+            public void endVisit() {
+                Assert.assertEquals(1, this.left);
+            }
+        });
     }
 
     @Test

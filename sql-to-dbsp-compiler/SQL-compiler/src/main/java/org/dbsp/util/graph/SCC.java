@@ -36,6 +36,14 @@ public class SCC<Node> {
         }
     }
 
+    /** Assign node to the specified component */
+    public void move(Node node, int component) {
+        int current = this.componentId.get(node);
+        this.component.get(current).remove(node);
+        this.componentId.put(node, component);
+        this.component.get(component).add(node);
+    }
+
     void dfs(final DiGraph<Node> graph, Node v) {
         this.marked.add(v);
         Utilities.putNew(this.componentId, v, this.count);
