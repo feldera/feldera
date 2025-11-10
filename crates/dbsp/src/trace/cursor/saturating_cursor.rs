@@ -12,7 +12,7 @@ use crate::{
 /// When `SATURATE` is `false`, behaves as the underlying cursor.
 ///
 /// Currently implements just enough of the cursor API to be used in
-/// inner join operators; in particular, it only implements searching
+/// outer join operators; in particular, it only implements searching
 /// for a key with `seek_key_exact`.
 pub struct SaturatingCursor<'a, K, V, T, const SATURATE: bool>
 where
