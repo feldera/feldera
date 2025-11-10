@@ -7,6 +7,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPWindowOperator;
 import org.dbsp.sqlCompiler.compiler.CompilerOptions;
+import org.dbsp.sqlCompiler.compiler.frontend.calciteObject.CalciteObject;
 import org.dbsp.sqlCompiler.compiler.sql.tools.Change;
 import org.dbsp.sqlCompiler.compiler.sql.tools.CompilerCircuit;
 import org.dbsp.sqlCompiler.compiler.sql.tools.CompilerCircuitStream;
@@ -16,8 +17,11 @@ import org.dbsp.sqlCompiler.ir.expression.DBSPApplyExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPArrayExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPCastExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPVariantExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPZSetExpression;
 import org.dbsp.sqlCompiler.ir.expression.literal.DBSPI32Literal;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPStringLiteral;
+import org.dbsp.sqlCompiler.ir.expression.literal.DBSPU64Literal;
 import org.dbsp.sqlCompiler.ir.type.primitive.DBSPTypeBool;
 import org.dbsp.util.Utilities;
 import org.junit.Assert;
@@ -212,7 +216,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
                 GROUP BY TIMESTAMP_TRUNC(ts, DAY);""";
         var ccs = this.getCCS(sql);
         ccs.step("""
-                -- Waterline is now 2020-01-01\s
+                -- Waterline is now 2020-01-01
                 INSERT INTO purchase VALUES('2020-01-01 00:00:01', 10);
                 INSERT INTO purchase VALUES('2020-01-01 01:00:00', 20);""", """
                   d | sum | weight
@@ -328,7 +332,7 @@ public class IncrementalRegressionTests extends SqlIoTest {
                 CREATE TABLE transaction (
                     ts TIMESTAMP LATENESS INTERVAL 10 MINUTES,
                     amt DOUBLE,
-                    customer_id BIGINT NOT NULL,\s
+                    customer_id BIGINT NOT NULL,
                     cc_num BIGINT NOT NULL,
                     state VARCHAR
                 );
@@ -1609,5 +1613,33 @@ public class IncrementalRegressionTests extends SqlIoTest {
                 LEFT ASOF JOIN tbl2 t2
                 MATCH_CONDITION ( t1.roww >= t2.roww)
                 ON t1.id = t2.id;""", "Not yet implemented: Join on struct types");
+    }
+
+    @Test
+    public void testUnnestVariant() {
+        var ccs = this.getCCS("""
+                CREATE TABLE X(v VARCHAR);
+                CREATE LOCAL VIEW S AS SELECT CAST(PARSE_JSON(v) AS variant array) as v FROM x;
+                CREATE VIEW V AS (
+                    SELECT a['x'], b
+                    FROM S, UNNEST(S.v) WITH ORDINALITY AS t(a, b)
+                );""");
+        ccs.addPair(
+                new Change("X", new DBSPZSetExpression(
+                        new DBSPTupleExpression(
+                                new DBSPStringLiteral("[ {\"x\": 1}, {\"x\": 2}, null ]", true)
+                        )
+                )),
+                new Change("V", new DBSPZSetExpression(
+                        new DBSPTupleExpression(
+                                new DBSPVariantExpression(new DBSPU64Literal(CalciteObject.EMPTY, 1L, false), true),
+                                new DBSPI32Literal(1)),
+                        new DBSPTupleExpression(
+                                new DBSPVariantExpression(new DBSPU64Literal(CalciteObject.EMPTY, 2L, false), true),
+                                new DBSPI32Literal(2)),
+                        new DBSPTupleExpression(
+                                new DBSPVariantExpression(null, true),
+                                new DBSPI32Literal(3)))
+                ));
     }
 }

@@ -183,6 +183,14 @@ public class CalciteOptimizer implements IWritesLogs {
     }
 
     void createOptimizer() {
+        SimpleOptimizerStep merge = new SimpleOptimizerStep(
+                "Merge identical operations", 0,
+                CoreRules.PROJECT_MERGE,
+                CoreRules.MINUS_MERGE,
+                CoreRules.UNION_MERGE,
+                CoreRules.AGGREGATE_MERGE,
+                CoreRules.INTERSECT_MERGE);
+
         this.addStep(new SimpleOptimizerStep("Constant fold", 2,
                 CoreRules.COERCE_INPUTS,
                 ReduceExpressionsRule.FILTER_REDUCE_EXPRESSIONS,
@@ -226,6 +234,7 @@ public class CalciteOptimizer implements IWritesLogs {
         this.addStep(new SimpleOptimizerStep("Simplify correlates", 0,
                 CoreRules.PROJECT_CORRELATE_TRANSPOSE,
                 FilterCorrelateRule.FILTER_CORRELATE));
+        this.addStep(merge);
 
         var joinOrder = new BaseOptimizerStep("Join order", 2) {
             @Override
@@ -325,13 +334,6 @@ public class CalciteOptimizer implements IWritesLogs {
         this.addStep(hyper);
         this.addStep(joinOrder);
 
-        SimpleOptimizerStep merge = new SimpleOptimizerStep(
-                "Merge identical operations", 0,
-                CoreRules.PROJECT_MERGE,
-                CoreRules.MINUS_MERGE,
-                CoreRules.UNION_MERGE,
-                CoreRules.AGGREGATE_MERGE,
-                CoreRules.INTERSECT_MERGE);
         // this.addStep(merge); -- messes up the shape of uncollect
 
         this.addStep(new SimpleOptimizerStep("Move projections", 0,

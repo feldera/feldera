@@ -225,6 +225,73 @@
           "id": 7,
           "relOp": "LogicalProject",
           "fields": [
+            "n0",
+            "value0",
+            "$f2",
+            "n",
+            "value"
+          ],
+          "exprs": [
+            {
+              "input": 2,
+              "name": "$2"
+            },
+            {
+              "input": 3,
+              "name": "$3"
+            },
+            {
+              "input": 4,
+              "name": "$4"
+            },
+            {
+              "input": 0,
+              "name": "$0"
+            },
+            {
+              "input": 1,
+              "name": "$1"
+            }
+          ],
+          "inputs": [
+            6
+          ]
+        },
+        {
+          "id": 8,
+          "relOp": "LogicalProject",
+          "fields": [
+            "n",
+            "value",
+            "n0",
+            "value0"
+          ],
+          "exprs": [
+            {
+              "input": 0,
+              "name": "$0"
+            },
+            {
+              "input": 1,
+              "name": "$1"
+            },
+            {
+              "input": 3,
+              "name": "$3"
+            },
+            {
+              "input": 4,
+              "name": "$4"
+            }
+          ],
+          "inputs": [
+            7
+          ]
+        },
+        {
+          "id": 9,
+          "relOp": "LogicalProject",
+          "fields": [
             "n",
             "value"
           ],
@@ -243,8 +310,8 @@
               },
               "operands": [
                 {
-                  "input": 0,
-                  "name": "$0"
+                  "input": 2,
+                  "name": "$2"
                 },
                 {
                   "literal": 1,
@@ -269,27 +336,27 @@
               },
               "operands": [
                 {
-                  "input": 1,
-                  "name": "$1"
-                },
-                {
                   "input": 3,
                   "name": "$3"
+                },
+                {
+                  "input": 1,
+                  "name": "$1"
                 }
               ]
             }
           ],
           "inputs": [
-            6
+            8
           ]
         },
         {
-          "id": 8,
+          "id": 10,
           "relOp": "LogicalUnion",
           "all": true,
           "inputs": [
             1,
-            7
+            9
           ]
         }
       ]
@@ -376,7 +443,7 @@
           { "node": "s1", "output": 0 }
         ],
         "calcite": {
-          "final": 8
+          "final": 10
         },
         "positions": [],
         "persistent_id": "8b83b99ecbf96b0bbffaeae18470c5efa7b1dcef5c2feec4745bf6fc8dc7d622"
@@ -387,7 +454,7 @@
           { "node": "s6", "output": 0 }
         ],
         "calcite": {
-          "partial": 8
+          "partial": 10
         },
         "positions": [
           {"start_line_number":4,"start_column":1,"end_line_number":21,"end_column":1}
@@ -417,7 +484,7 @@
           { "node": "s8", "output": 0 }
         ],
         "calcite": {
-          "final": 8
+          "final": 10
         },
         "positions": [],
         "persistent_id": "12fceaa21c74975e1a38537e3ef1fd55730170e9af62e522daff6f2a65cc9244"
@@ -429,7 +496,7 @@
       ],
       "view": "fibonacci",
       "calcite": {
-        "final": 8
+        "final": 10
       },
       "positions": [
         {"start_line_number":4,"start_column":1,"end_line_number":21,"end_column":1},

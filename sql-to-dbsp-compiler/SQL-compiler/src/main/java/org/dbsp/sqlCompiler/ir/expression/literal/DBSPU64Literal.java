@@ -65,6 +65,13 @@ public final class DBSPU64Literal extends DBSPIntLiteral implements IsNumericLit
             throw new InternalCompilerError("Null value with non-nullable type", this);
     }
 
+    public DBSPU64Literal(CalciteObject node, @Nullable Long value, boolean nullable) {
+        this(node, DBSPTypeInteger.getType(CalciteObject.EMPTY, DBSPTypeCode.UINT64, nullable),
+                value == null ? null : BigInteger.valueOf(value));
+        if (value == null && !nullable)
+            throw new InternalCompilerError("Null value with non-nullable type", this);
+    }
+
     public DBSPU64Literal(@Nullable BigInteger value, boolean nullable) {
         this(CalciteObject.EMPTY, value, nullable);
     }
