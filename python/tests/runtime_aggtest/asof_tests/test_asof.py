@@ -270,3 +270,293 @@ class asof_test13(TstView):
                         LEFT ASOF JOIN asof_tbl2 t2
                         MATCH_CONDITION ( t1.mapp >= t2.mapp)
                         ON t1.id = t2.id;"""
+
+
+class asof_test14(TstView):
+    def __init__(self):
+        # Validated on DuckDB
+        self.data = [
+            {"id": 1, "t3_intt": 5, "t1_intt": None},
+            {"id": 2, "t3_intt": 16, "t1_intt": 15},
+            {"id": 3, "t3_intt": 70, "t1_intt": 20},
+            {"id": 4, "t3_intt": 12, "t1_intt": None},
+            {"id": 5, "t3_intt": 112, "t1_intt": None},
+        ]
+        self.sql = """CREATE MATERIALIZED VIEW asof_test14 AS SELECT
+                        t3.id, t3.intt AS t3_intt, t1.intt AS t1_intt
+                        FROM asof_tbl3 t3
+                        LEFT ASOF JOIN asof_tbl1 t1
+                        MATCH_CONDITION (t3.intt >= t1.intt )
+                        ON t3.id = t1.id;"""
+
+
+class asof_test15(TstView):
+    def __init__(self):
+        # Validated on DuckDB
+        self.data = [
+            {"id": 1, "t3_str": "bye", "t1_str": "apple"},
+            {"id": 2, "t3_str": "hi", "t1_str": "cat"},
+            {"id": 3, "t3_str": "ciao", "t1_str": None},
+            {"id": 4, "t3_str": "c you!", "t1_str": None},
+            {"id": 5, "t3_str": "sayonara!", "t1_str": None},
+        ]
+        self.sql = """CREATE MATERIALIZED VIEW asof_test15 AS SELECT
+                        t3.id, t3.str AS t3_str, t1.str AS t1_str
+                        FROM asof_tbl3 t3
+                        LEFT ASOF JOIN asof_tbl1 t1
+                        MATCH_CONDITION ( t3.str >= t1.str )
+                        ON t3.id = t1.id;"""
+
+
+class asof_test16(TstView):
+    def __init__(self):
+        # Validated on DuckDB
+        self.data = [
+            {
+                "id": 1,
+                "t3_decimall": Decimal("10.10"),
+                "t1_decimall": Decimal("-1111.52"),
+            },
+            {"id": 2, "t3_decimall": Decimal("-256.25"), "t1_decimall": None},
+            {
+                "id": 3,
+                "t3_decimall": Decimal("64.32"),
+                "t1_decimall": Decimal("-123.45"),
+            },
+            {"id": 4, "t3_decimall": Decimal("0.01"), "t1_decimall": Decimal("0.00")},
+            {"id": 5, "t3_decimall": Decimal("1.01"), "t1_decimall": None},
+        ]
+        self.sql = """CREATE MATERIALIZED VIEW asof_test17 AS SELECT
+                        t3.id, t3.decimall AS t3_decimall, t1.decimall AS t1_decimall
+                        FROM asof_tbl3 t3
+                        LEFT ASOF JOIN asof_tbl1 t1
+                        MATCH_CONDITION ( t3.decimall >= t1.decimall )
+                        ON t3.id = t1.id;"""
+
+
+class asof_test18(TstView):
+    def __init__(self):
+        # Validated on DuckDB
+        self.data = [
+            {"id": 1, "t3_reall": Decimal("10.001"), "t1_reall": Decimal("-57681.18")},
+            {"id": 2, "t3_reall": Decimal("-0.1234567"), "t1_reall": None},
+            {"id": 3, "t3_reall": Decimal("-987.0"), "t1_reall": None},
+            {"id": 4, "t3_reall": Decimal("1.618"), "t1_reall": Decimal("0.0")},
+            {"id": 5, "t3_reall": Decimal("12.618"), "t1_reall": None},
+        ]
+        self.sql = """CREATE MATERIALIZED VIEW asof_test18 AS SELECT
+                        t3.id, t3.reall AS t3_reall, t1.reall AS t1_reall
+                        FROM asof_tbl3 t3
+                        LEFT ASOF JOIN asof_tbl1 t1
+                        MATCH_CONDITION ( t3.reall >= t1.reall )
+                        ON t3.id = t1.id;"""
+
+
+class asof_test19(TstView):
+    def __init__(self):
+        # Validated on DuckDB
+        self.data = [
+            {
+                "id": 1,
+                "t3_dbl": Decimal("10.000001"),
+                "t1_dbl": Decimal("-38.2711234601246"),
+            },
+            {
+                "id": 2,
+                "t3_dbl": Decimal("-0.00256"),
+                "t1_dbl": Decimal("-0.82711234601246"),
+            },
+            {"id": 3, "t3_dbl": Decimal("-999.9999999"), "t1_dbl": None},
+            {"id": 4, "t3_dbl": Decimal("3.14159265358979"), "t1_dbl": Decimal("0.0")},
+            {"id": 5, "t3_dbl": Decimal("13.14159265358979"), "t1_dbl": None},
+        ]
+        self.sql = """CREATE MATERIALIZED VIEW asof_test19 AS SELECT
+                        t3.id, t3.dbl AS t3_dbl, t1.dbl AS t1_dbl
+                        FROM asof_tbl3 t3
+                        LEFT ASOF JOIN asof_tbl1 t1
+                        MATCH_CONDITION ( t3.dbl >= t1.dbl)
+                        ON t3.id = t1.id;"""
+
+
+class asof_test20(TstView):
+    def __init__(self):
+        # Validated on DuckDB
+        self.data = [
+            {"id": 1, "t3_booll": True, "t1_booll": False},
+            {"id": 2, "t3_booll": False, "t1_booll": None},
+            {"id": 3, "t3_booll": True, "t1_booll": False},
+            {"id": 4, "t3_booll": False, "t1_booll": None},
+            {"id": 5, "t3_booll": False, "t1_booll": None},
+        ]
+        self.sql = """CREATE MATERIALIZED VIEW asof_test20 AS SELECT
+                        t3.id, t3.booll AS t3_booll, t1.booll AS t1_booll
+                        FROM asof_tbl3 t3
+                        LEFT ASOF JOIN asof_tbl1 t1
+                        MATCH_CONDITION ( t3.booll >= t1.booll)
+                        ON t3.id = t1.id;"""
+
+
+class asof_test21(TstView):
+    def __init__(self):
+        # Validated on DuckDB
+        self.data = [
+            {"id": 1, "t3_bin": "0b1620", "t1_bin": "0a1620"},
+            {"id": 2, "t3_bin": "0f3716", "t1_bin": None},
+            {"id": 3, "t3_bin": "0c1037", "t1_bin": None},
+            {"id": 4, "t3_bin": "2c5863", "t1_bin": "16172c"},
+            {"id": 5, "t3_bin": "90bcc7", "t1_bin": None},
+        ]
+        self.sql = """CREATE MATERIALIZED VIEW asof_test21 AS SELECT
+                        t3.id, t3.bin AS t3_bin, t1.bin AS t1_bin
+                        FROM asof_tbl3 t3
+                        LEFT ASOF JOIN asof_tbl1 t1
+                        MATCH_CONDITION ( t3.bin >= t1.bin)
+                        ON t3.id = t1.id;"""
+
+
+class asof_test22(TstView):
+    def __init__(self):
+        # Validated on DuckDB
+        self.data = [
+            {"id": 1, "t3_tme": "14:23:44.456", "t1_tme": "13:23:44.456"},
+            {"id": 2, "t3_tme": "20:23:44.456", "t1_tme": "19:23:44.456"},
+            {"id": 3, "t3_tme": "00:23:44.456", "t1_tme": None},
+            {"id": 4, "t3_tme": "22:23:44.456", "t1_tme": None},
+            {"id": 5, "t3_tme": "20:23:44.456", "t1_tme": None},
+        ]
+        self.sql = """CREATE MATERIALIZED VIEW asof_test22 AS SELECT
+                        t3.id, t3.tme AS t3_tme, t1.tme AS t1_tme
+                        FROM asof_tbl3 t3
+                        LEFT ASOF JOIN asof_tbl1 t1
+                        MATCH_CONDITION ( t3.tme >= t1.tme)
+                        ON t3.id = t1.id;"""
+
+
+class asof_test23(TstView):
+    def __init__(self):
+        # Validated on DuckDB
+        self.data = [
+            {
+                "id": 1,
+                "t3_tmestmp": "2020-06-21T14:23:44.123",
+                "t1_tmestmp": "2000-06-21T14:23:44.123",
+            },
+            {
+                "id": 2,
+                "t3_tmestmp": "2021-06-21T14:23:44.123",
+                "t1_tmestmp": "2019-06-21T14:23:44.123",
+            },
+            {"id": 3, "t3_tmestmp": "1977-06-21T14:23:44.123", "t1_tmestmp": None},
+            {"id": 4, "t3_tmestmp": "2001-06-21T14:23:44.123", "t1_tmestmp": None},
+            {"id": 5, "t3_tmestmp": "2000-06-21T14:23:44.123", "t1_tmestmp": None},
+        ]
+        self.sql = """CREATE MATERIALIZED VIEW asof_test23 AS SELECT
+                        t3.id, t3.tmestmp AS t3_tmestmp, t1.tmestmp AS t1_tmestmp
+                        FROM asof_tbl3 t3
+                        LEFT ASOF JOIN asof_tbl1 t1
+                        MATCH_CONDITION ( t3.tmestmp >= t1.tmestmp)
+                        ON t3.id = t1.id;"""
+
+
+class asof_test24(TstView):
+    def __init__(self):
+        # Validated on DuckDB
+        self.data = [
+            {"id": 1, "t3_datee": "2020-06-21", "t1_datee": "2000-06-21"},
+            {"id": 2, "t3_datee": "2021-06-21", "t1_datee": "2019-06-21"},
+            {"id": 3, "t3_datee": "1977-06-21", "t1_datee": None},
+            {"id": 4, "t3_datee": "2001-06-21", "t1_datee": None},
+            {"id": 5, "t3_datee": "2000-06-21", "t1_datee": None},
+        ]
+        self.sql = """CREATE MATERIALIZED VIEW asof_test24 AS SELECT
+                        t3.id, t3.datee AS t3_datee, t1.datee AS t1_datee
+                        FROM asof_tbl3 t3
+                        LEFT ASOF JOIN asof_tbl1 t1
+                        MATCH_CONDITION ( t3.datee >= t1.datee)
+                        ON t3.id = t1.id;"""
+
+
+class asof_test25(TstView):
+    def __init__(self):
+        # Validated on DuckDB
+        self.data = [
+            {
+                "id": 1,
+                "t3_uuidd": "b3b0c442-98fc-1c14-9af7-4c2b95f9c16a",
+                "t1_uuidd": "a3b0c442-98fc-1c14-9af7-4c2b95f9c16a",
+            },
+            {
+                "id": 2,
+                "t3_uuidd": "a3b0c442-98fc-1c14-9af7-4c2b95f9c16a",
+                "t1_uuidd": None,
+            },
+            {
+                "id": 3,
+                "t3_uuidd": "b9b8c7d6-e5f4-3210-9999-abcdefabcdef",
+                "t1_uuidd": "a9b8c7d6-e5f4-3210-9999-abcdefabcdef",
+            },
+            {
+                "id": 4,
+                "t3_uuidd": "efffffff-ffff-ffff-ffff-ffffffffffff",
+                "t1_uuidd": None,
+            },
+            {
+                "id": 5,
+                "t3_uuidd": "ffffffff-ffff-ffff-ffff-ffffffffffff",
+                "t1_uuidd": None,
+            },
+        ]
+        self.sql = """CREATE MATERIALIZED VIEW asof_test25 AS SELECT
+                        t3.id, t3.uuidd AS t3_uuidd, t1.uuidd AS t1_uuidd
+                        FROM asof_tbl3 t3
+                        LEFT ASOF JOIN asof_tbl1 t1
+                        MATCH_CONDITION ( t3.uuidd >= t1.uuidd)
+                        ON t3.id = t1.id;"""
+
+
+class asof_test26(TstView):
+    def __init__(self):
+        # Validated on DuckDB
+        self.data = [
+            {
+                "id": 1,
+                "t3_arr": ["0.14", "friends", "See you!"],
+                "t1_arr": ["-0.14", "friends", "See you!"],
+            },
+            {
+                "id": 2,
+                "t3_arr": ["12", "sample", "-1.1", "2022-03-03", "yes"],
+                "t1_arr": None,
+            },
+            {
+                "id": 3,
+                "t3_arr": ["hi", "123", "0.0", None],
+                "t1_arr": ["hello", "123", "0.0", None],
+            },
+            {"id": 4, "t3_arr": ["and", "2099", "12", "31"], "t1_arr": None},
+            {"id": 5, "t3_arr": ["12", "31"], "t1_arr": None},
+        ]
+        self.sql = """CREATE MATERIALIZED VIEW asof_test26 AS SELECT
+                        t3.id, t3.arr AS t3_arr, t1.arr AS t1_arr
+                        FROM asof_tbl3 t3
+                        LEFT ASOF JOIN asof_tbl1 t1
+                        MATCH_CONDITION ( t3.arr >= t1.arr)
+                        ON t3.id = t1.id;"""
+
+
+class asof_test27(TstView):
+    def __init__(self):
+        # Validated on DuckDB
+        self.data = [
+            {"id": 1, "t3_mapp": {"a": 25, "b": None}, "t1_mapp": {"a": 15, "b": None}},
+            {"id": 2, "t3_mapp": {"a": 1, "b": 9}, "t1_mapp": None},
+            {"id": 3, "t3_mapp": {"a": 21, "b": 22}, "t1_mapp": {"a": 11, "b": 22}},
+            {"id": 4, "t3_mapp": {"a": 100, "b": 200}, "t1_mapp": None},
+            {"id": 5, "t3_mapp": {"a": 1000, "b": 2000}, "t1_mapp": None},
+        ]
+        self.sql = """CREATE MATERIALIZED VIEW asof_test27 AS SELECT
+                        t3.id, t3.mapp AS t3_mapp, t1.mapp AS t1_mapp
+                        FROM asof_tbl3 t3
+                        LEFT ASOF JOIN asof_tbl1 t1
+                        MATCH_CONDITION ( t3.mapp >= t1.mapp)
+                        ON t3.id = t1.id;"""

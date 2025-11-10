@@ -6,13 +6,13 @@ class asof_table1(TstTable):
 
     def __init__(self):
         self.sql = """CREATE TABLE asof_tbl1(
-                      id INT, intt INT, str VARCHAR, decimall DECIMAL(6, 2), reall REAL, dbl DOUBLE, booll BOOL, bin BINARY,
-                      tmestmp TIMESTAMP,
-                      datee DATE,
-                      tme TIME,
-                      uuidd UUID,
-                      arr VARCHAR ARRAY,
-                      mapp MAP<VARCHAR, INT>)"""
+                      id INT, intt INT NULL, str VARCHAR NULL, decimall DECIMAL(6, 2) NULL, reall REAL NULL, dbl DOUBLE NULL, booll BOOL NULL, bin BINARY NULL,
+                      tmestmp TIMESTAMP NULL,
+                      datee DATE NULL,
+                      tme TIME NULL,
+                      uuidd UUID NULL,
+                      arr VARCHAR ARRAY NULL,
+                      mapp MAP<VARCHAR, INT> NULL)"""
         self.data = [
             {
                 "id": 1,
@@ -189,5 +189,101 @@ class asof_table2(TstTable):
                 "uuidd": None,
                 "arr": None,
                 "mapp": None,
+            },
+        ]
+
+
+class asof_table3(TstTable):
+    """Define the table used for ASOF joins"""
+
+    def __init__(self):
+        self.sql = """CREATE TABLE asof_tbl3(
+                      id INT, intt INT NOT NULL, str VARCHAR NOT NULL, decimall DECIMAL(6, 2) NOT NULL, reall REAL NOT NULL, dbl DOUBLE NOT NULL, booll BOOL NOT NULL, bin BINARY NOT NULL,
+                      tmestmp TIMESTAMP NOT NULL,
+                      datee DATE NOT NULL,
+                      tme TIME NOT NULL,
+                      uuidd UUID NOT NULL,
+                      arr VARCHAR ARRAY NOT NULL,
+                      mapp MAP<VARCHAR, INT> NOT NULL)"""
+        self.data = [
+            {
+                "id": 1,
+                "intt": 5,
+                "str": "bye",
+                "decimall": 10.10,
+                "reall": 10.001,
+                "dbl": 10.000001,
+                "booll": True,
+                "bin": [11, 22, 32],
+                "tme": "14:23:44.456",
+                "tmestmp": "2020-06-21 14:23:44.123",
+                "datee": "2020-06-21",
+                "uuidd": "b3b0c442-98fc-1c14-9af7-4c2b95f9c16a",
+                "arr": ["0.14", "friends", "See you!"],
+                "mapp": {"a": 25, "b": None},
+            },
+            {
+                "id": 2,
+                "intt": 16,
+                "str": "hi",
+                "decimall": -256.25,
+                "reall": -0.1234567,
+                "dbl": -0.00256,
+                "booll": False,
+                "bin": [15, 55, 22],
+                "tme": "20:23:44.456",
+                "tmestmp": "2021-06-21 14:23:44.123",
+                "datee": "2021-06-21",
+                "uuidd": "a3b0c442-98fc-1c14-9af7-4c2b95f9c16a",
+                "arr": ["12", "sample", "-1.1", "2022-03-03", "yes"],
+                "mapp": {"a": 1, "b": 9},
+            },
+            {
+                "id": 3,
+                "intt": 70,
+                "str": "ciao",
+                "decimall": 64.32,
+                "reall": -987,
+                "dbl": -999.9999999,
+                "booll": True,
+                "bin": [12, 16, 55],
+                "tme": "00:23:44.456",
+                "tmestmp": "1977-06-21 14:23:44.123",
+                "datee": "1977-06-21",
+                "uuidd": "b9b8c7d6-e5f4-3210-9999-abcdefabcdef",
+                "arr": ["hi", "123", "0.0", None],
+                "mapp": {"a": 21, "b": 22},
+            },
+            {
+                "id": 4,
+                "intt": 12,
+                "str": "c you!",
+                "decimall": 0.01,
+                "reall": 1.618,
+                "dbl": 3.14159265358979,
+                "booll": False,
+                "bin": [44, 88, 99],
+                "tme": "22:23:44.456",
+                "tmestmp": "2001-06-21 14:23:44.123",
+                "datee": "2001-06-21",
+                "uuidd": "efffffff-ffff-ffff-ffff-ffffffffffff",
+                "arr": ["and", "2099", "12", "31"],
+                "mapp": {"a": 100, "b": 200},
+            },
+            {
+                "id": 5,
+                "intt": 112,
+                "str": "sayonara!",
+                "decimall": 1.01,
+                "reall": 12.618,
+                "dbl": 13.14159265358979,
+                "booll": False,
+                "bin": [144, 188, 199],
+                "tme": "20:23:44.456",
+                "tmestmp": "2000-06-21 14:23:44.123",
+                "datee": "2000-06-21",
+                "uuidd": "ffffffff-ffff-ffff-ffff-ffffffffffff",
+                "arr": ["12", "31"],
+                "mapp": {"a": 1000, "b": 2000},
             },
         ]
