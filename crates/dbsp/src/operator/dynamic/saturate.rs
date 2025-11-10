@@ -42,12 +42,13 @@ where
     V: DataTrait + ?Sized,
 {
     /// Saturate the input stream by adding a ghost (k, None) tuple for each key
-    /// not present in the trace.
+    /// not present in the trace of the input stream.
     ///
-    /// This is an auxiliary operator used to implement incremental outer joins.
-    /// The idea is to convert, e.g., a left join into an inner join by simulating that
-    /// the right side of the join is always present. We do this without materializing
-    /// the entire universe of keys by:
+    /// This is an auxiliary operator used to implement incremental
+    /// outer joins.  The idea is to convert, e.g., a left join into
+    /// an inner join by simulating that every key in the right side
+    /// of the join is always present. We do this without
+    /// materializing the entire universe of keys by:
     ///
     /// 1. Providing a modified cursor over the integral of the
     ///    right side, which returns missing keys on demand (see `SaturatingCursor`).
@@ -60,14 +61,15 @@ where
     /// **Caveat:** In order to faithfully implement the saturated stream, we'd have to
     /// output ghost tuples for all missing keys during the first step. We don't do this,
     /// relying on the fact that the left join essentially ignores the first delta in the
-    /// right stream (by joining with the empty delayed integral of the left side).
+    /// right stream (by joining with the empty delayed integral of the left side, which is
+    /// always empty in the first step, since it's the output of a delay operator).
     ///
     pub fn dyn_saturate(
         &self,
         factories: &SaturateFactories<K, V>,
     ) -> Stream<RootCircuit, Option<SpineSnapshot<OrdIndexedZSet<K, V>>>> {
         // We use the Saturate operator to compute ghost tuples and concatenate
-        // it with the original stream to obtain the complete saturated stream.
+        // its output with the original stream to obtain the complete saturated stream.
         //
         // ```text
         //                        ┌───────────────────────────────┐
@@ -161,7 +163,8 @@ where
         }
     }
 
-    /// True if there's at least one value with a non-zero weight in the combined stream.
+    /// True if there's at least one value with a non-zero weight in
+    /// the union of the two streams.
     fn combined_key_valid(
         delta_cursor: &mut SpineCursor<OrdIndexedZSet<K, V>>,
         trace_cursor: &mut SpineCursor<OrdIndexedZSet<K, V>>,
@@ -272,7 +275,6 @@ where
                 }
 
                 if builder.num_tuples() >= chunk_size {
-
                     let builder = std::mem::replace(
                         &mut builder,
                         <OrdIndexedZSet<K, V> as Batch>::Builder::with_capacity(

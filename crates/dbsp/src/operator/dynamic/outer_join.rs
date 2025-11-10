@@ -1,3 +1,6 @@
+// Currently only left joins are implemented, but we expect that full
+// outer joins will be supported too eventually
+
 use std::panic::Location;
 
 use crate::{

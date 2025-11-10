@@ -1147,7 +1147,7 @@ impl JoinStats {
     }
 }
 
-/// The `SATURATE` parameter control whether the right side of the join
+/// The `SATURATE` parameter controls whether the right side of the join
 /// (the trace) should be wrapped in a `SaturatingCursor`. See [`Stream::dyn_left_join`].
 pub struct JoinTrace<I, B, T, Z, Clk, const SATURATE: bool = false>
 where
