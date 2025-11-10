@@ -434,9 +434,23 @@ public class CalciteToDBSPCompiler extends RelVisitor
         DBSPTypeTuple uncollectElementType = this.convertType(
                 node.getPositionRange(), uncollect.getRowType(), false).to(DBSPTypeTuple.class);
         DBSPType collectionElementType = arrayExpression.getResultType().to(ICollectionType.class).getElementType();
-        if (collectionElementType.mayBeNull)
+        if (collectionElementType.mayBeNull) {
             // This seems to be a bug in Calcite, we should not need to do this adjustment
-            uncollectElementType = uncollectElementType.withMayBeNull(true).to(DBSPTypeTuple.class);
+            if (uncollect.withOrdinality) {
+                List<DBSPType> fieldTypes = new ArrayList<>();
+                DBSPTypeTuple tuple = uncollectElementType.to(DBSPTypeTuple.class);
+                for (int i = 0; i < tuple.size(); i++) {
+                    DBSPType ft = tuple.getFieldType(i);
+                    if (i < tuple.size() - 1)
+                        // skip the ordinality field
+                        ft = ft.withMayBeNull(true);
+                    fieldTypes.add(ft);
+                }
+                uncollectElementType = new DBSPTypeTuple(fieldTypes);
+            } else {
+                uncollectElementType = uncollectElementType.withMayBeNull(true).to(DBSPTypeTuple.class);
+            }
+        }
 
         DBSPType indexType = null;
         if (uncollect.withOrdinality) {
