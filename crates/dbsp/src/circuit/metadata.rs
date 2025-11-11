@@ -23,6 +23,10 @@ pub const USED_BYTES_LABEL: &str = "used bytes";
 /// internal data structures (see [`USED_BYTES_LABEL`]).
 pub const ALLOCATED_BYTES_LABEL: &str = "allocated bytes";
 
+/// Attribute that represents the total number of allocations made by a stateful
+/// operator.
+pub const NUM_ALLOCATIONS_LABEL: &str = "allocations";
+
 /// Attribute that represents the number of shared bytes used by a stateful
 /// operator, i.e., bytes that are shared behind things like `Arc` or `Rc`.
 pub const SHARED_BYTES_LABEL: &str = "shared bytes";
@@ -45,6 +49,30 @@ pub const OUTPUT_BATCHES_LABEL: &str = "output batches";
 
 /// The amount of time an async operator spent wait to become ready.
 pub const EXCHANGE_WAIT_TIME: &str = "exchange_wait_time";
+
+/// Key distribution of the input stream.
+pub const KEY_DISTRIBUTION_LABEL: &str = "key distribution";
+
+/// Total weight of tuples that map to the local worker based on the hash of the key.
+pub const LOCAL_SHARD_SIZE_LABEL: &str = "local shard size";
+
+pub const BALANCER_POLICY_LABEL: &str = "balancer policy";
+
+/// The number of times the stream was rebalanced.
+pub const NUM_RABALANCINGS_LABEL: &str = "rebalancings";
+
+pub const REBALANCING_IN_PROGRESS_LABEL: &str = "rebalancing in progress";
+
+/// The number of accumulator records that must be repartitioned in the current rebalancing.
+pub const NUM_ACCUMULATOR_RECORDS_TO_REPARTITION_LABEL: &str = "accumulator records to repartition";
+
+/// The number of integral records that must be repartitioned in the current rebalancing.
+pub const NUM_INTEGRAL_RECORDS_TO_REPARTITION_LABEL: &str = "integral records to repartition";
+
+/// The total time spent rebalancing the stream.
+pub const TOTAL_REBALANCING_TIME_LABEL: &str = "total rebalancing time";
+
+pub const INPROGRESS_REBALANCING_TIME_LABEL: &str = "in-progress rebalancing time";
 
 /// An operator's location within the source program
 pub type OperatorLocation = Option<&'static Location<'static>>;
@@ -238,6 +266,16 @@ pub enum MetaItem {
     Map(OperatorMeta),
     Bytes(HumanBytes),
     Duration(Duration),
+    Bool(bool),
+}
+
+impl MetaItem {
+    pub fn as_string(&self) -> Option<&str> {
+        match self {
+            MetaItem::String(string) => Some(string.as_str()),
+            _ => None,
+        }
+    }
 }
 
 impl Serialize for MetaItem {
@@ -265,6 +303,7 @@ impl Serialize for MetaItem {
                 serializer.serialize_i128(human_bytes.into_inner() as i128)
             }
             MetaItem::Duration(duration) => duration.serialize(serializer),
+            MetaItem::Bool(bool) => serializer.serialize_bool(*bool),
         }
     }
 }
@@ -335,6 +374,7 @@ impl MetaItem {
                 }
                 output.write_char('}')
             }
+            Self::Bool(bool) => write!(output, "{bool}"),
         }
     }
 
@@ -402,6 +442,12 @@ impl From<String> for MetaItem {
 impl From<usize> for MetaItem {
     fn from(int: usize) -> Self {
         Self::Int(int)
+    }
+}
+
+impl From<bool> for MetaItem {
+    fn from(bool: bool) -> Self {
+        Self::Bool(bool)
     }
 }
 

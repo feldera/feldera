@@ -2,7 +2,9 @@
 
 use crate::algebra::ZBatchReader;
 use crate::circuit::circuit_builder::StreamId;
-use crate::circuit::metadata::{BatchSizeStats, INPUT_BATCHES_LABEL, OUTPUT_BATCHES_LABEL};
+use crate::circuit::metadata::{
+    BatchSizeStats, INPUT_BATCHES_LABEL, NUM_ALLOCATIONS_LABEL, OUTPUT_BATCHES_LABEL,
+};
 use crate::circuit::splitter_output_chunk_size;
 use crate::dynamic::{ClonableTrait, Data, DynData};
 use crate::operator::async_stream_operators::{StreamingBinaryOperator, StreamingBinaryWrapper};
@@ -919,7 +921,7 @@ where
             INPUT_BATCHES_LABEL => self.input_batch_stats.borrow().metadata(),
             OUTPUT_BATCHES_LABEL => self.output_batch_stats.borrow().metadata(),
             USED_BYTES_LABEL => MetaItem::bytes(bytes.used_bytes()),
-            "allocations" => MetaItem::Count(bytes.distinct_allocations()),
+            NUM_ALLOCATIONS_LABEL => MetaItem::Count(bytes.distinct_allocations()),
             SHARED_BYTES_LABEL => MetaItem::bytes(bytes.shared_bytes()),
         });
     }
@@ -1205,7 +1207,7 @@ mod test {
         circuit::CircuitConfig,
         indexed_zset,
         operator::{GeneratorNested, OutputHandle},
-        typed_batch::{OrdIndexedZSet, OrdZSet, SpineSnapshot},
+        typed_batch::{IndexedZSetReader, OrdIndexedZSet, OrdZSet, SpineSnapshot},
         utils::Tup2,
         zset,
     };

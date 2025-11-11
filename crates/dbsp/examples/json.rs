@@ -2,6 +2,7 @@ use anyhow::Result;
 use dbsp::{
     Runtime,
     circuit::CircuitConfig,
+    typed_batch::IndexedZSetReader,
     utils::{Tup2, Tup3, Tup4},
 };
 use itertools::Itertools;

@@ -32,6 +32,9 @@ mod transaction_z1;
 mod z1;
 
 mod accumulate_trace;
+
+#[cfg(test)]
+mod accumulate_trace_balanced;
 mod aggregate;
 mod asof_join;
 mod average;

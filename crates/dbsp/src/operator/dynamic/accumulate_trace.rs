@@ -1,6 +1,6 @@
 use crate::Runtime;
 use crate::circuit::circuit_builder::{StreamId, register_replay_stream};
-use crate::circuit::metadata::NUM_INPUTS_LABEL;
+use crate::circuit::metadata::{NUM_ALLOCATIONS_LABEL, NUM_INPUTS_LABEL};
 use crate::dynamic::{Weight, WeightTrait};
 use crate::operator::dynamic::trace::{DelayedTraceId, TraceBounds};
 use crate::operator::{TraceBound, require_persistent_id};
@@ -780,7 +780,7 @@ where
             NUM_ENTRIES_LABEL => MetaItem::Count(total_size),
             ALLOCATED_BYTES_LABEL => MetaItem::bytes(bytes.total_bytes()),
             USED_BYTES_LABEL => MetaItem::bytes(bytes.used_bytes()),
-            "allocations" => MetaItem::Count(bytes.distinct_allocations()),
+            NUM_ALLOCATIONS_LABEL => MetaItem::Count(bytes.distinct_allocations()),
             SHARED_BYTES_LABEL => MetaItem::bytes(bytes.shared_bytes()),
             "bounds" => self.bounds.metadata()
         });

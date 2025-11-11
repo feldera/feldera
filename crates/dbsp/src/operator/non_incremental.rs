@@ -381,7 +381,10 @@ where
 
 #[cfg(test)]
 mod test {
-    use crate::{OrdZSet, Runtime, typed_batch::SpineSnapshot};
+    use crate::{
+        OrdZSet, Runtime,
+        typed_batch::{IndexedZSetReader, SpineSnapshot},
+    };
 
     #[test]
     fn test_non_incremental() {

@@ -17,8 +17,8 @@ use crate::{
         circuit_builder::StreamId,
         metadata::{
             ALLOCATED_BYTES_LABEL, BatchSizeStats, INPUT_BATCHES_LABEL, MetaItem,
-            NUM_ENTRIES_LABEL, OUTPUT_BATCHES_LABEL, OperatorLocation, OperatorMeta,
-            SHARED_BYTES_LABEL, USED_BYTES_LABEL,
+            NUM_ALLOCATIONS_LABEL, NUM_ENTRIES_LABEL, OUTPUT_BATCHES_LABEL, OperatorLocation,
+            OperatorMeta, SHARED_BYTES_LABEL, USED_BYTES_LABEL,
         },
         operator_traits::{Operator, UnaryOperator},
     },
@@ -64,7 +64,7 @@ where
     ) -> (Stream<C, Option<Spine<B>>>, Arc<AtomicUsize>) {
         self.circuit()
             .cache_get_or_insert_with(AccumulatorId::new(self.stream_id()), || {
-                let accumulator = Accumulator::new(factories, Location::caller());
+                let accumulator = Accumulator::<B>::new(factories, Location::caller());
                 let enable_count = accumulator.enable_count.clone();
 
                 let stream = self
@@ -168,7 +168,7 @@ where
             NUM_ENTRIES_LABEL => MetaItem::Count(total_size),
             ALLOCATED_BYTES_LABEL => MetaItem::bytes(bytes.total_bytes()),
             USED_BYTES_LABEL => MetaItem::bytes(bytes.used_bytes()),
-            "allocations" => MetaItem::Count(bytes.distinct_allocations()),
+            NUM_ALLOCATIONS_LABEL => MetaItem::Count(bytes.distinct_allocations()),
             SHARED_BYTES_LABEL => MetaItem::bytes(bytes.shared_bytes()),
             INPUT_BATCHES_LABEL => self.input_batch_stats.metadata(),
             OUTPUT_BATCHES_LABEL => self.output_batch_stats.metadata(),

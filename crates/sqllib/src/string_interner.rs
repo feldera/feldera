@@ -370,6 +370,7 @@ mod interned_string_test {
     use crate::{intern_string, unintern_string};
     use dbsp::circuit::{CircuitConfig, CircuitStorageConfig, StorageConfig, StorageOptions};
     use dbsp::trace::{BatchReader, Cursor};
+    use dbsp::typed_batch::IndexedZSetReader;
     use dbsp::utils::{Tup1, Tup2};
     use dbsp::{
         DBSPHandle, OrdZSet, OutputHandle, Runtime, ZSetHandle, typed_batch::SpineSnapshot,

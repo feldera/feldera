@@ -2,6 +2,7 @@ use feldera_types::config::StorageConfig;
 
 use crate::{
     CmpFunc, DBData, OrdZSet, OutputHandle, RootCircuit, Runtime, Stream, ZSetHandle, ZWeight,
+    default_hash,
     operator::{
         Max, Min,
         time_series::{RelOffset, RelRange},
@@ -12,6 +13,8 @@ use crate::{
 use std::{fmt::Debug, marker::PhantomData, sync::Arc};
 
 use super::{CircuitConfig, CircuitStorageConfig, dbsp_handle::Mode};
+
+const NUM_WORKERS: usize = 4;
 
 /// A trait that defines 0, 1, or multiple input or output streams.
 trait TestDataType {
@@ -60,6 +63,7 @@ macro_rules! impl_test_data {
 }
 
 impl_test_data!(TestData2, 0: T1, 1: T2);
+impl_test_data!(TestData4, 0: T1, 1: T2, 2: T3, 3: T4);
 
 struct TestData1<T1: DBData> {
     phantom: PhantomData<T1>,
@@ -163,7 +167,9 @@ fn test_replay<I1, I2, I3, O1, O2, O3>(
 
     init_test_logger();
 
-    let mut circuit_config = CircuitConfig::with_workers(4).with_mode(Mode::Persistent);
+    let mut circuit_config = CircuitConfig::with_workers(NUM_WORKERS)
+        .with_splitter_chunk_size_records(2)
+        .with_mode(Mode::Persistent);
     let path = tempfile::tempdir().unwrap().keep();
     println!("Running replay_test in {}", path.display());
 
@@ -584,6 +590,7 @@ fn test_linear_circuit_materialized_inputs_with_backfill() {
 // ---> input3 ---> join --> output2
 //
 fn join_circuit1(
+    balancing: bool,
     circuit: &mut RootCircuit,
 ) -> (
     (),
@@ -608,14 +615,21 @@ fn join_circuit1(
         .map_index(|x| (*x, *x))
         .set_persistent_id(Some("input_stream2_indexed"));
 
-    let output_handle1 = input_stream1_indexed
-        .join(&input_stream2_indexed, |key, _v1, _v2| *key)
-        .accumulate_output_persistent(Some("output1"));
+    let output_handle1 = if balancing {
+        input_stream1_indexed
+            .join_balanced_inner(&input_stream2_indexed, |key, _v1, _v2| *key)
+            .accumulate_output_persistent(Some("output1"))
+    } else {
+        input_stream1_indexed
+            .join(&input_stream2_indexed, |key, _v1, _v2| *key)
+            .accumulate_output_persistent(Some("output1"))
+    };
 
     ((), (input_handle1, input_handle2), (), output_handle1)
 }
 
 fn join_circuit2(
+    balancing: bool,
     circuit: &mut RootCircuit,
 ) -> (
     (ZSetHandle<u64>, ZSetHandle<u64>),
@@ -647,13 +661,25 @@ fn join_circuit2(
         .map_index(|x| (*x, *x))
         .set_persistent_id(Some("input_stream3_indexed"));
 
-    let output_handle1 = input_stream1_indexed
-        .join(&input_stream2_indexed, |key, _v1, _v2| *key)
-        .accumulate_output_persistent(Some("output1"));
+    let output_handle1 = if balancing {
+        input_stream1_indexed
+            .join_balanced_inner(&input_stream2_indexed, |key, _v1, _v2| *key)
+            .accumulate_output_persistent(Some("output1"))
+    } else {
+        input_stream1_indexed
+            .join(&input_stream2_indexed, |key, _v1, _v2| *key)
+            .accumulate_output_persistent(Some("output1"))
+    };
 
-    let output_handle2 = input_stream2_indexed
-        .join(&input_stream3_indexed, |key, _v1, _v2| *key)
-        .accumulate_output_persistent(Some("output2"));
+    let output_handle2 = if balancing {
+        input_stream2_indexed
+            .join_balanced_inner(&input_stream3_indexed, |key, _v1, _v2| *key)
+            .accumulate_output_persistent(Some("output2"))
+    } else {
+        input_stream2_indexed
+            .join(&input_stream3_indexed, |key, _v1, _v2| *key)
+            .accumulate_output_persistent(Some("output2"))
+    };
 
     (
         (input_handle1, input_handle2),
@@ -666,12 +692,258 @@ fn join_circuit2(
 #[test]
 fn test_join_circuit() {
     test_replay::<(), TestData2<u64, u64>, TestData1<u64>, (), TestData1<u64>, TestData1<u64>>(
-        Arc::new(join_circuit1),
-        Arc::new(join_circuit2),
+        Arc::new(|circuit| join_circuit1(false, circuit)),
+        Arc::new(|circuit| join_circuit2(false, circuit)),
         std::iter::repeat_n((), 2).collect(),
         std::iter::zip(sequence(0, 2), sequence(2, 4)).collect(),
         std::iter::zip(sequence(2, 4), sequence(0, 2)).collect(),
         sequence(1, 3),
+    );
+}
+
+#[test]
+fn test_balanced_join_circuit() {
+    test_replay::<(), TestData2<u64, u64>, TestData1<u64>, (), TestData1<u64>, TestData1<u64>>(
+        Arc::new(|circuit| join_circuit1(true, circuit)),
+        Arc::new(|circuit| join_circuit2(true, circuit)),
+        std::iter::repeat_n((), 2).collect(),
+        std::iter::zip(sequence(0, 2), sequence(2, 4)).collect(),
+        std::iter::zip(sequence(2, 4), sequence(0, 2)).collect(),
+        sequence(1, 3),
+    );
+}
+
+// Test adaptive joins+bootstrapping:
+//
+// This test modifies the join cluster by adding an extra join to it.
+// Depending on the pre-commit partitioning policies, the circuit should be able
+// to either bootstrap the new join only or the entire cluster.
+//
+// Pipeline 1:
+//
+// ---> input1 ---> join --> output1
+//                   ^
+// ---> input2 ------|
+//
+//
+// ---> input3 ---> join --> output2
+//                   ^
+// ---> input4 ------|
+//
+//
+// Pipeline 2:
+//
+// ---> input1 ---> join --> output1
+//                   ^
+// ---> input2 ------|
+//                   v
+//         |-------> join --> output3
+//         |
+//         |
+// ---> input3 ---> join --> output2
+//                   ^
+// ---> input4 ------|
+fn balancer_circuit1(
+    circuit: &mut RootCircuit,
+) -> (
+    (),
+    (
+        ZSetHandle<u64>,
+        ZSetHandle<u64>,
+        ZSetHandle<u64>,
+        ZSetHandle<u64>,
+    ),
+    (),
+    (
+        OutputHandle<SpineSnapshot<OrdZSet<u64>>>,
+        OutputHandle<SpineSnapshot<OrdZSet<u64>>>,
+    ),
+) {
+    let (input_stream1, input_handle1) = circuit.add_input_zset::<u64>();
+    input_stream1.set_persistent_id(Some("input1"));
+
+    let (input_stream2, input_handle2) = circuit.add_input_zset::<u64>();
+    input_stream2.set_persistent_id(Some("input2"));
+
+    let (input_stream3, input_handle3) = circuit.add_input_zset::<u64>();
+    input_stream3.set_persistent_id(Some("input3"));
+
+    let (input_stream4, input_handle4) = circuit.add_input_zset::<u64>();
+    input_stream4.set_persistent_id(Some("input4"));
+
+    // These integrals will be used for replay input streams.
+    input_stream1.integrate_trace();
+    input_stream2.integrate_trace();
+    input_stream3.integrate_trace();
+    input_stream4.integrate_trace();
+
+    let input_stream1_indexed = input_stream1
+        .map_index(|x| (*x, *x))
+        .set_persistent_id(Some("input_stream1_indexed"));
+    let input_stream2_indexed = input_stream2
+        .map_index(|x| (*x, *x))
+        .set_persistent_id(Some("input_stream2_indexed"));
+    let input_stream3_indexed = input_stream3
+        .map_index(|x| (*x, *x))
+        .set_persistent_id(Some("input_stream3_indexed"));
+    let input_stream4_indexed = input_stream4
+        .map_index(|x| (*x, *x))
+        .set_persistent_id(Some("input_stream4_indexed"));
+
+    let output_handle1 = input_stream1_indexed
+        .join_balanced_inner(&input_stream2_indexed, |key, _v1, _v2| *key)
+        .accumulate_output_persistent(Some("output1"));
+
+    let output_handle2 = input_stream3_indexed
+        .join_balanced_inner(&input_stream4_indexed, |key, _v1, _v2| *key)
+        .accumulate_output_persistent(Some("output2"));
+
+    (
+        (),
+        (input_handle1, input_handle2, input_handle3, input_handle4),
+        (),
+        (output_handle1, output_handle2),
+    )
+}
+
+fn balancer_circuit2(
+    circuit: &mut RootCircuit,
+) -> (
+    (
+        ZSetHandle<u64>,
+        ZSetHandle<u64>,
+        ZSetHandle<u64>,
+        ZSetHandle<u64>,
+    ),
+    (),
+    (
+        OutputHandle<SpineSnapshot<OrdZSet<u64>>>,
+        OutputHandle<SpineSnapshot<OrdZSet<u64>>>,
+    ),
+    OutputHandle<SpineSnapshot<OrdZSet<u64>>>,
+) {
+    let (input_stream1, input_handle1) = circuit.add_input_zset::<u64>();
+    input_stream1.set_persistent_id(Some("input1"));
+
+    let (input_stream2, input_handle2) = circuit.add_input_zset::<u64>();
+    input_stream2.set_persistent_id(Some("input2"));
+
+    let (input_stream3, input_handle3) = circuit.add_input_zset::<u64>();
+    input_stream3.set_persistent_id(Some("input3"));
+
+    let (input_stream4, input_handle4) = circuit.add_input_zset::<u64>();
+    input_stream4.set_persistent_id(Some("input4"));
+
+    // These integrals will be used for replay input streams.
+    input_stream1.integrate_trace();
+    input_stream2.integrate_trace();
+    input_stream3.integrate_trace();
+    input_stream4.integrate_trace();
+
+    let input_stream1_indexed = input_stream1
+        .map_index(|x| (*x, *x))
+        .set_persistent_id(Some("input_stream1_indexed"));
+    let input_stream2_indexed = input_stream2
+        .map_index(|x| (*x, *x))
+        .set_persistent_id(Some("input_stream2_indexed"));
+    let input_stream3_indexed = input_stream3
+        .map_index(|x| (*x, *x))
+        .set_persistent_id(Some("input_stream3_indexed"));
+    let input_stream4_indexed = input_stream4
+        .map_index(|x| (*x, *x))
+        .set_persistent_id(Some("input_stream4_indexed"));
+
+    let output_handle1 = input_stream1_indexed
+        .join_balanced_inner(&input_stream2_indexed, |key, _v1, _v2| *key)
+        .accumulate_output_persistent(Some("output1"));
+
+    let output_handle2 = input_stream3_indexed
+        .join_balanced_inner(&input_stream4_indexed, |key, _v1, _v2| *key)
+        .accumulate_output_persistent(Some("output2"));
+
+    let output_handle3 = input_stream2_indexed
+        .join_balanced_inner(&input_stream3_indexed, |key, _v1, _v2| *key)
+        .accumulate_output_persistent(Some("output3"));
+
+    (
+        (input_handle1, input_handle2, input_handle3, input_handle4),
+        (),
+        (output_handle1, output_handle2),
+        output_handle3,
+    )
+}
+
+/// Keep inputs perfectly balanced.
+///
+/// All collections should be partitioned using PartitioningPolicy::Shard.
+/// The cluster should be able to bootstrap the new join only.
+#[test]
+fn test_balancer1() {
+    test_replay::<(), TestData4<u64, u64, u64, u64>, (), (), TestData2<u64, u64>, TestData1<u64>>(
+        Arc::new(|circuit| balancer_circuit1(circuit)),
+        Arc::new(|circuit| balancer_circuit2(circuit)),
+        vec![(); 100],
+        itertools::izip!(
+            sequence(0, 100),
+            sequence(0, 100),
+            sequence(0, 100),
+            sequence(0, 100),
+        )
+        .collect(),
+        itertools::izip!(
+            sequence(100, 200),
+            sequence(100, 200),
+            sequence(100, 200),
+            sequence(100, 200)
+        )
+        .collect(),
+        vec![(); 100],
+    );
+}
+
+/// Keep inputs skewed, so that both sides of the new join PartitioningPolicy::Broadcast,
+/// so the cluster cannot be bootstrapped without backfilling the entire cluster.
+#[test]
+fn test_balancer2() {
+    let skewed_sequence_small1 = (0..1000)
+        .filter(|x| default_hash(&x) % NUM_WORKERS as u64 == 0)
+        .map(|x| vec![Tup2(x, 1)])
+        .collect::<Vec<_>>();
+
+    let skewed_sequence_large1 = (0..1000)
+        .filter(|x| default_hash(&x) % NUM_WORKERS as u64 == 0)
+        .map(|x| vec![Tup2(x, 100)])
+        .collect::<Vec<_>>();
+
+    let skewed_sequence_small2 = (1000..2000)
+        .filter(|x| default_hash(&x) % NUM_WORKERS as u64 == 0)
+        .map(|x| vec![Tup2(x, 1)])
+        .collect::<Vec<_>>();
+
+    let skewed_sequence_large2 = (1000..2000)
+        .filter(|x| default_hash(&x) % NUM_WORKERS as u64 == 0)
+        .map(|x| vec![Tup2(x, 100)])
+        .collect::<Vec<_>>();
+
+    test_replay::<(), TestData4<u64, u64, u64, u64>, (), (), TestData2<u64, u64>, TestData1<u64>>(
+        Arc::new(|circuit| balancer_circuit1(circuit)),
+        Arc::new(|circuit| balancer_circuit2(circuit)),
+        vec![(); skewed_sequence_small1.len()],
+        itertools::izip!(
+            skewed_sequence_large1.clone(),
+            skewed_sequence_small1.clone(),
+            skewed_sequence_small1.clone(),
+            skewed_sequence_large1.clone(),
+        )
+        .collect(),
+        itertools::izip!(
+            skewed_sequence_large2.clone(),
+            skewed_sequence_small2.clone(),
+            skewed_sequence_small2.clone(),
+            skewed_sequence_large2.clone(),
+        )
+        .collect(),
+        vec![(); skewed_sequence_small2.len()],
     );
 }
 

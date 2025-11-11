@@ -718,7 +718,7 @@
 //! # use chrono::{Datelike, NaiveDate};
 //! # use csv::Reader;
 //! # use dbsp::utils::{Tup2, Tup3};
-//! # use dbsp::{OrdIndexedZSet, OutputHandle, RootCircuit, ZSetHandle, ZWeight};
+//! # use dbsp::{OrdIndexedZSet, OutputHandle, RootCircuit, ZSetHandle, ZWeight, IndexedZSetReader};
 //! # use rkyv::{Archive, Serialize};
 //! # use size_of::SizeOf;
 //! #
@@ -874,7 +874,7 @@
 //! # use dbsp::{
 //! #     operator::time_series::{RelOffset, RelRange},
 //! #     utils::{Tup2, Tup3},
-//! #     OrdIndexedZSet, OutputHandle, RootCircuit, ZSetHandle, ZWeight,
+//! #     OrdIndexedZSet, OutputHandle, RootCircuit, ZSetHandle, ZWeight, IndexedZSetReader
 //! # };
 //! # use rkyv::{Archive, Serialize};
 //! # use size_of::SizeOf;
@@ -1030,7 +1030,7 @@
 //! # use dbsp::{
 //! #     operator::time_series::{RelOffset, RelRange},
 //! #     utils::{Tup2, Tup3},
-//! #     OrdIndexedZSet, OutputHandle, RootCircuit, ZSetHandle, ZWeight,
+//! #     OrdIndexedZSet, OutputHandle, RootCircuit, ZSetHandle, ZWeight, IndexedZSetReader
 //! # };
 //! # use rkyv::{Archive, Serialize};
 //! # use size_of::SizeOf;
@@ -1209,7 +1209,7 @@
 //! # use csv::Reader;
 //! # use dbsp::{
 //! #     utils::{Tup2, Tup3},
-//! #     OrdIndexedZSet, OutputHandle, RootCircuit, ZSetHandle, ZWeight,
+//! #     OrdIndexedZSet, OutputHandle, RootCircuit, ZSetHandle, ZWeight, IndexedZSetReader
 //! # };
 //! # use rkyv::{Archive, Serialize};
 //! # use size_of::SizeOf;
@@ -1365,7 +1365,7 @@
 //! # use dbsp::{
 //! #     operator::time_series::{RelOffset, RelRange},
 //! #     utils::{Tup2, Tup3},
-//! #     IndexedZSetHandle, OrdIndexedZSet, OutputHandle, RootCircuit, ZSetHandle, ZWeight,
+//! #     IndexedZSetHandle, OrdIndexedZSet, OutputHandle, RootCircuit, ZSetHandle, ZWeight, IndexedZSetReader
 //! # };
 //! # use rkyv::{Archive, Serialize};
 //! # use size_of::SizeOf;
@@ -1481,7 +1481,7 @@
 //! # use dbsp::{
 //! #     operator::time_series::{RelOffset, RelRange},
 //! #     utils::{Tup2, Tup3},
-//! #     IndexedZSetHandle, OrdIndexedZSet, OutputHandle, RootCircuit, ZSetHandle, ZWeight,
+//! #     IndexedZSetHandle, OrdIndexedZSet, OutputHandle, RootCircuit, ZSetHandle, ZWeight, IndexedZSetReader
 //! # };
 //! # use rkyv::{Archive, Serialize};
 //! # use size_of::SizeOf;
@@ -1600,7 +1600,7 @@
 //! # use dbsp::{
 //! #     operator::time_series::{RelOffset, RelRange},
 //! #     utils::{Tup2, Tup3},
-//! #     IndexedZSetHandle, OrdIndexedZSet, OutputHandle, RootCircuit, ZSetHandle, ZWeight,
+//! #     IndexedZSetHandle, OrdIndexedZSet, OutputHandle, RootCircuit, ZSetHandle, ZWeight, IndexedZSetReader
 //! # };
 //! # use rkyv::{Archive, Serialize};
 //! # use size_of::SizeOf;
@@ -1681,7 +1681,7 @@
 //! # use dbsp::{
 //! #     operator::time_series::{RelOffset, RelRange},
 //! #     utils::{Tup2, Tup3},
-//! #     IndexedZSetHandle, OrdIndexedZSet, OutputHandle, RootCircuit, ZSetHandle, ZWeight,
+//! #     IndexedZSetHandle, OrdIndexedZSet, OutputHandle, RootCircuit, ZSetHandle, ZWeight, IndexedZSetReader
 //! # };
 //! # use rkyv::{Archive, Serialize};
 //! # use size_of::SizeOf;
@@ -1822,7 +1822,7 @@
 //! # use csv::Reader;
 //! # use dbsp::{
 //! #     utils::{Tup2, Tup3},
-//! #     OrdIndexedZSet, OutputHandle, RootCircuit, ZSetHandle, ZWeight,
+//! #     OrdIndexedZSet, OutputHandle, RootCircuit, ZSetHandle, ZWeight, IndexedZSetReader
 //! # };
 //! # use rkyv::{Archive, Serialize};
 //! # use size_of::SizeOf;
@@ -2016,7 +2016,7 @@
 //! use dbsp::{
 //!     operator::Generator,
 //!     utils::{Tup3, Tup4},
-//!     zset, zset_set, Circuit, OrdZSet, RootCircuit, Stream,
+//!     zset, zset_set, Circuit, OrdZSet, RootCircuit, Stream, IndexedZSetReader
 //! };
 //!
 //! fn main() -> Result<()> {
@@ -2150,7 +2150,7 @@
 //! #     indexed_zset,
 //! #     operator::{Generator, Min},
 //! #     utils::{Tup2, Tup3, Tup4},
-//! #     zset_set, Circuit, NestedCircuit, OrdIndexedZSet, RootCircuit, Stream,
+//! #     zset_set, Circuit, NestedCircuit, OrdIndexedZSet, RootCircuit, Stream, IndexedZSetReader
 //! # };
 //! #
 //! type Accumulator =

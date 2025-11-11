@@ -28,7 +28,7 @@ use crate::{
     DBData, DBWeight, DynZWeight, NestedCircuit, OrdIndexedZSet, OrdZSet, RootCircuit, Stream,
     TypedBox, ZWeight,
     algebra::MulByRef,
-    circuit::WithClock,
+    circuit::{WithClock, adaptive_joins_enabled},
     dynamic::{DowncastTrait, DynData, DynUnit, DynWeight, Erase},
     operator::{
         Aggregator,
@@ -154,6 +154,49 @@ where
             .typed()
     }
 
+    /// An adaptive version of `join` that can change its partitioning policy dynamically to avoid skew.
+    #[track_caller]
+    pub fn join_balanced_inner<F, V2, OV>(
+        &self,
+        other: &Stream<RootCircuit, OrdIndexedZSet<K, V2>>,
+        join: F,
+    ) -> Stream<RootCircuit, OrdZSet<OV>>
+    where
+        V2: DBData,
+        OV: DBData,
+        F: Fn(&K, &V, &V2) -> OV + Clone + 'static,
+    {
+        let join_funcs =
+            mk_trace_join_funcs::<OrdIndexedZSet<K, V>, OrdIndexedZSet<K, V2>, OrdZSet<OV>, _>(
+                join,
+            );
+
+        let join_factories = JoinFactories::new::<K, V, V2, OV, ()>();
+
+        self.inner()
+            .dyn_join_mono_balanced(&join_factories, &other.inner(), join_funcs)
+            .typed()
+    }
+
+    /// Behaves as `join_balanced_inner` when adaptive joins are enabled in dev tweaks and as `join` otherwise.
+    #[track_caller]
+    pub fn join_balanced<F, V2, OV>(
+        &self,
+        other: &Stream<RootCircuit, OrdIndexedZSet<K, V2>>,
+        join: F,
+    ) -> Stream<RootCircuit, OrdZSet<OV>>
+    where
+        V2: DBData,
+        OV: DBData,
+        F: Fn(&K, &V, &V2) -> OV + Clone + 'static,
+    {
+        if adaptive_joins_enabled() {
+            self.join_balanced_inner(other, join)
+        } else {
+            self.join(other, join)
+        }
+    }
+
     /// Left-join `self` with `other`.
     ///
     /// # Important
@@ -186,6 +229,51 @@ where
             .typed()
     }
 
+    /// An adaptive version of `left_join` that dynamically changes its partitioning policy to avoid skew.
+    #[track_caller]
+    pub fn left_join_balanced_inner<F, V2, OV>(
+        &self,
+        other: &Stream<RootCircuit, OrdIndexedZSet<K, Option<V2>>>,
+        join: F,
+    ) -> Stream<RootCircuit, OrdZSet<OV>>
+    where
+        V2: DBData,
+        OV: DBData,
+        F: Fn(&K, &V, &Option<V2>) -> OV + Clone + 'static,
+    {
+        let join_funcs = mk_trace_join_funcs::<
+            OrdIndexedZSet<K, V>,
+            OrdIndexedZSet<K, Option<V2>>,
+            OrdZSet<OV>,
+            _,
+        >(join);
+
+        let join_factories = JoinFactories::new::<K, V, Option<V2>, OV, ()>();
+
+        self.inner()
+            .dyn_left_join_balanced_mono(&join_factories, &other.inner(), join_funcs)
+            .typed()
+    }
+
+    /// Behaves as `left_join_balanced_inner` when adaptive joins are enabled in dev tweaks and as `left_join` otherwise.
+    #[track_caller]
+    pub fn left_join_balanced<F, V2, OV>(
+        &self,
+        other: &Stream<RootCircuit, OrdIndexedZSet<K, Option<V2>>>,
+        join: F,
+    ) -> Stream<RootCircuit, OrdZSet<OV>>
+    where
+        V2: DBData,
+        OV: DBData,
+        F: Fn(&K, &V, &Option<V2>) -> OV + Clone + 'static,
+    {
+        if adaptive_joins_enabled() {
+            self.left_join_balanced_inner(other, join)
+        } else {
+            self.left_join(other, join)
+        }
+    }
+
     #[track_caller]
     pub fn join_flatmap<F, V2, OV, It>(
         &self,
@@ -211,6 +299,54 @@ where
         self.inner()
             .dyn_join_mono(&join_factories, &other.inner(), join_funcs)
             .typed()
+    }
+
+    /// An adaptive version of `join_flatmap` that dynamically changes its partitioning policy to avoid skew.
+    #[track_caller]
+    pub fn join_flatmap_balanced_inner<F, V2, OV, It>(
+        &self,
+        other: &Stream<RootCircuit, OrdIndexedZSet<K, V2>>,
+        join: F,
+    ) -> Stream<RootCircuit, OrdZSet<OV>>
+    where
+        V2: DBData,
+        OV: DBData,
+        F: Fn(&K, &V, &V2) -> It + Clone + 'static,
+        It: IntoIterator<Item = OV> + 'static,
+    {
+        let join_funcs = mk_trace_join_flatmap_funcs::<
+            OrdIndexedZSet<K, V>,
+            OrdIndexedZSet<K, V2>,
+            OrdZSet<OV>,
+            _,
+            It,
+        >(join);
+
+        let join_factories = JoinFactories::new::<K, V, V2, OV, ()>();
+
+        self.inner()
+            .dyn_join_mono_balanced(&join_factories, &other.inner(), join_funcs)
+            .typed()
+    }
+
+    /// Behaves as `join_flatmap_balanced_inner` when adaptive joins are enabled in dev tweaks and as `join_flatmap` otherwise.
+    #[track_caller]
+    pub fn join_flatmap_balanced<F, V2, OV, It>(
+        &self,
+        other: &Stream<RootCircuit, OrdIndexedZSet<K, V2>>,
+        join: F,
+    ) -> Stream<RootCircuit, OrdZSet<OV>>
+    where
+        V2: DBData,
+        OV: DBData,
+        F: Fn(&K, &V, &V2) -> It + Clone + 'static,
+        It: IntoIterator<Item = OV> + 'static,
+    {
+        if adaptive_joins_enabled() {
+            self.join_flatmap_balanced_inner(other, join)
+        } else {
+            self.join_flatmap(other, join)
+        }
     }
 
     /// Like `left_join`, but can produce multiple output values for each (k, v1, v2) tuple.
@@ -241,6 +377,54 @@ where
             .typed()
     }
 
+    /// An adaptive version of `left_join_flatmap` that dynamically changes its partitioning policy to avoid skew.
+    #[track_caller]
+    pub fn left_join_flatmap_balanced_inner<F, V2, OV, It>(
+        &self,
+        other: &Stream<RootCircuit, OrdIndexedZSet<K, Option<V2>>>,
+        join: F,
+    ) -> Stream<RootCircuit, OrdZSet<OV>>
+    where
+        V2: DBData,
+        OV: DBData,
+        F: Fn(&K, &V, &Option<V2>) -> It + Clone + 'static,
+        It: IntoIterator<Item = OV> + 'static,
+    {
+        let join_funcs = mk_trace_join_flatmap_funcs::<
+            OrdIndexedZSet<K, V>,
+            OrdIndexedZSet<K, Option<V2>>,
+            OrdZSet<OV>,
+            _,
+            It,
+        >(join);
+
+        let join_factories = JoinFactories::new::<K, V, Option<V2>, OV, ()>();
+
+        self.inner()
+            .dyn_left_join_balanced_mono(&join_factories, &other.inner(), join_funcs)
+            .typed()
+    }
+
+    /// Behaves as `left_join_flatmap_balanced_inner` when adaptive joins are enabled in dev tweaks and as `left_join_flatmap` otherwise.
+    #[track_caller]
+    pub fn left_join_flatmap_balanced<F, V2, OV, It>(
+        &self,
+        other: &Stream<RootCircuit, OrdIndexedZSet<K, Option<V2>>>,
+        join: F,
+    ) -> Stream<RootCircuit, OrdZSet<OV>>
+    where
+        V2: DBData,
+        OV: DBData,
+        F: Fn(&K, &V, &Option<V2>) -> It + Clone + 'static,
+        It: IntoIterator<Item = OV> + 'static,
+    {
+        if adaptive_joins_enabled() {
+            self.left_join_flatmap_balanced_inner(other, join)
+        } else {
+            self.left_join_flatmap(other, join)
+        }
+    }
+
     #[track_caller]
     pub fn join_index<F, V2, OK, OV, It>(
         &self,
@@ -267,6 +451,56 @@ where
         self.inner()
             .dyn_join_index_mono(&join_factories, &other.inner(), join_funcs)
             .typed()
+    }
+
+    /// An adaptive version of `join_index` that dynamically changes its partitioning policy to avoid skew.
+    #[track_caller]
+    pub fn join_index_balanced_inner<F, V2, OK, OV, It>(
+        &self,
+        other: &Stream<RootCircuit, OrdIndexedZSet<K, V2>>,
+        join: F,
+    ) -> Stream<RootCircuit, OrdIndexedZSet<OK, OV>>
+    where
+        V2: DBData,
+        OK: DBData,
+        OV: DBData,
+        F: Fn(&K, &V, &V2) -> It + Clone + 'static,
+        It: IntoIterator<Item = (OK, OV)> + 'static,
+    {
+        let join_funcs = mk_trace_join_generic_funcs::<
+            OrdIndexedZSet<K, V>,
+            OrdIndexedZSet<K, V2>,
+            OrdIndexedZSet<OK, OV>,
+            _,
+            _,
+        >(join);
+
+        let join_factories = JoinFactories::new::<K, V, V2, OK, OV>();
+
+        self.inner()
+            .dyn_join_index_mono_balanced(&join_factories, &other.inner(), join_funcs)
+            .typed()
+    }
+
+    /// Behaves as `join_index_balanced_inner` when adaptive joins are enabled in dev tweaks and as `join_index` otherwise.
+    #[track_caller]
+    pub fn join_index_balanced<F, V2, OK, OV, It>(
+        &self,
+        other: &Stream<RootCircuit, OrdIndexedZSet<K, V2>>,
+        join: F,
+    ) -> Stream<RootCircuit, OrdIndexedZSet<OK, OV>>
+    where
+        V2: DBData,
+        OK: DBData,
+        OV: DBData,
+        F: Fn(&K, &V, &V2) -> It + Clone + 'static,
+        It: IntoIterator<Item = (OK, OV)> + 'static,
+    {
+        if adaptive_joins_enabled() {
+            self.join_index_balanced_inner(other, join)
+        } else {
+            self.join_index(other, join)
+        }
     }
 
     /// Like `left_join_flatmap`, but produces an indexed output stream.
@@ -296,6 +530,56 @@ where
         self.inner()
             .dyn_left_join_index_mono(&join_factories, &other.inner(), join_funcs)
             .typed()
+    }
+
+    /// An adaptive version of `left_join_index` that dynamically changes its partitioning policy to avoid skew.
+    #[track_caller]
+    pub fn left_join_index_balanced_inner<F, V2, OK, OV, It>(
+        &self,
+        other: &Stream<RootCircuit, OrdIndexedZSet<K, Option<V2>>>,
+        join: F,
+    ) -> Stream<RootCircuit, OrdIndexedZSet<OK, OV>>
+    where
+        V2: DBData,
+        OK: DBData,
+        OV: DBData,
+        F: Fn(&K, &V, &Option<V2>) -> It + Clone + 'static,
+        It: IntoIterator<Item = (OK, OV)> + 'static,
+    {
+        let join_funcs = mk_trace_join_generic_funcs::<
+            OrdIndexedZSet<K, V>,
+            OrdIndexedZSet<K, Option<V2>>,
+            OrdIndexedZSet<OK, OV>,
+            _,
+            _,
+        >(join);
+
+        let join_factories = JoinFactories::new::<K, V, Option<V2>, OK, OV>();
+
+        self.inner()
+            .dyn_left_join_balanced_index_mono(&join_factories, &other.inner(), join_funcs)
+            .typed()
+    }
+
+    /// Behaves as `left_join_index_balanced_inner` when adaptive joins are enabled in dev tweaks and as `left_join_index` otherwise.
+    #[track_caller]
+    pub fn left_join_index_balanced<F, V2, OK, OV, It>(
+        &self,
+        other: &Stream<RootCircuit, OrdIndexedZSet<K, Option<V2>>>,
+        join: F,
+    ) -> Stream<RootCircuit, OrdIndexedZSet<OK, OV>>
+    where
+        V2: DBData,
+        OK: DBData,
+        OV: DBData,
+        F: Fn(&K, &V, &Option<V2>) -> It + Clone + 'static,
+        It: IntoIterator<Item = (OK, OV)> + 'static,
+    {
+        if adaptive_joins_enabled() {
+            self.left_join_index_balanced_inner(other, join)
+        } else {
+            self.left_join_index(other, join)
+        }
     }
 
     #[track_caller]

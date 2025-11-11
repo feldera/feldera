@@ -1,6 +1,6 @@
 use crate::algebra::{ZBatch, ZBatchReader, ZCursor};
-use crate::circuit::circuit_builder::StreamId;
-use crate::circuit::metadata::{BatchSizeStats, OUTPUT_BATCHES_LABEL};
+use crate::circuit::circuit_builder::{CircuitBase, StreamId};
+use crate::circuit::metadata::{BatchSizeStats, NUM_ALLOCATIONS_LABEL, OUTPUT_BATCHES_LABEL};
 use crate::circuit::splitter_output_chunk_size;
 use crate::dynamic::DynData;
 use crate::operator::async_stream_operators::{StreamingBinaryOperator, StreamingBinaryWrapper};
@@ -533,6 +533,26 @@ impl Stream<RootCircuit, MonoIndexedZSet> {
         self.dyn_join_generic(factories, other, join_funcs)
     }
 
+    #[track_caller]
+    pub fn dyn_join_mono_balanced(
+        &self,
+        factories: &JoinFactories<MonoIndexedZSet, MonoIndexedZSet, (), OrdZSet<DynData>>,
+        other: &Stream<RootCircuit, MonoIndexedZSet>,
+        join_funcs: TraceJoinFuncs<DynData, DynData, DynData, DynData, DynUnit>,
+    ) -> Stream<RootCircuit, MonoZSet> {
+        self.dyn_join_generic_balanced(factories, other, join_funcs)
+    }
+
+    #[track_caller]
+    pub fn dyn_join_index_mono_balanced(
+        &self,
+        factories: &JoinFactories<MonoIndexedZSet, MonoIndexedZSet, (), MonoIndexedZSet>,
+        other: &Stream<RootCircuit, MonoIndexedZSet>,
+        join_funcs: TraceJoinFuncs<DynData, DynData, DynData, DynData, DynData>,
+    ) -> Stream<RootCircuit, MonoIndexedZSet> {
+        self.dyn_join_generic_balanced(factories, other, join_funcs)
+    }
+
     pub fn dyn_antijoin_mono(
         &self,
         factories: &AntijoinFactories<MonoIndexedZSet, MonoZSet, ()>,
@@ -806,6 +826,77 @@ where
                 },
             )
             .clone()
+    }
+}
+
+impl<I1> Stream<RootCircuit, I1>
+where
+    I1: IndexedZSet,
+{
+    #[track_caller]
+    pub fn dyn_join_generic_balanced<I2, Z>(
+        &self,
+        factories: &JoinFactories<I1, I2, (), Z>,
+        other: &Stream<RootCircuit, I2>,
+        join_funcs: TraceJoinFuncs<I1::Key, I1::Val, I2::Val, Z::Key, Z::Val>,
+    ) -> Stream<RootCircuit, Z>
+    where
+        I2: IndexedZSet<Key = I1::Key>,
+        Z: IndexedZSet,
+    {
+        if Runtime::num_workers() == 1 {
+            return self.dyn_join_generic(factories, other, join_funcs);
+        }
+
+        self.circuit().region("join_balanced", || {
+            let (left_accumulator, left_trace) = self.dyn_accumulate_trace_balanced(
+                &factories.left_trace_factories,
+                &factories.left_factories,
+            );
+
+            let (right_accumulator, right_trace) = other.dyn_accumulate_trace_balanced(
+                &factories.right_trace_factories,
+                &factories.right_factories,
+            );
+
+            let left = self.circuit().add_binary_operator(
+                StreamingBinaryWrapper::new(JoinTrace::<_, _, _, _, _, false>::new(
+                    &factories.right_trace_factories,
+                    &factories.output_factories,
+                    factories.timed_item_factory,
+                    factories.timed_items_factory,
+                    join_funcs.left,
+                    Location::caller(),
+                    self.circuit().clone(),
+                )),
+                &left_accumulator,
+                &right_trace,
+            );
+
+            let right = self.circuit().add_binary_operator(
+                StreamingBinaryWrapper::new(JoinTrace::<_, _, _, _, _, false>::new(
+                    &factories.left_trace_factories,
+                    &factories.output_factories,
+                    factories.timed_item_factory,
+                    factories.timed_items_factory,
+                    join_funcs.right,
+                    Location::caller(),
+                    self.circuit().clone(),
+                )),
+                &right_accumulator,
+                &left_trace.accumulate_delay_trace(),
+            );
+
+            let result = left.plus(&right);
+
+            self.circuit().balancer().register_join(
+                result.local_node_id(),
+                self.local_node_id(),
+                other.local_node_id(),
+            );
+
+            result
+        })
     }
 }
 
@@ -1306,7 +1397,7 @@ where
             NUM_ENTRIES_LABEL => MetaItem::Count(total_size),
             "batch sizes" => batch_sizes,
             USED_BYTES_LABEL => MetaItem::bytes(bytes.used_bytes()),
-            "allocations" => MetaItem::Count(bytes.distinct_allocations()),
+            NUM_ALLOCATIONS_LABEL => MetaItem::Count(bytes.distinct_allocations()),
             SHARED_BYTES_LABEL => MetaItem::bytes(bytes.shared_bytes()),
             "left inputs" => stats.lhs_tuples,
             "right inputs" => stats.rhs_tuples,
@@ -1681,7 +1772,7 @@ pub(crate) mod test {
     };
     use std::vec;
 
-    fn do_join_test(workers: usize, transaction: bool) {
+    fn do_join_test(workers: usize, transaction: bool, balanced: bool) {
         let mut input1 = vec![
             vec![
                 Tup2(Tup2(1, "a".to_string()), 1i64),
@@ -1813,21 +1904,41 @@ pub(crate) mod test {
                     }
                 });*/
 
-                let join_output = index1
-                    .join(&index2, |&k: &u64, s1, s2| {
-                        Tup2(k, format!("{} {}", s1, s2))
-                    })
-                    .accumulate_output();
+                let join_output = if balanced {
+                    index1
+                        .join_balanced_inner(&index2, |&k: &u64, s1, s2| {
+                            Tup2(k, format!("{} {}", s1, s2))
+                        })
+                        .accumulate_output()
+                } else {
+                    index1
+                        .join(&index2, |&k: &u64, s1, s2| {
+                            Tup2(k, format!("{} {}", s1, s2))
+                        })
+                        .accumulate_output()
+                };
 
-                let join_flatmap_output = index1
-                    .join_flatmap(&index2, |&k: &u64, s1, s2| {
-                        if s1.as_str() == "a" {
-                            None
-                        } else {
-                            Some(Tup2(k, format!("{} {}", s1, s2)))
-                        }
-                    })
-                    .accumulate_output();
+                let join_flatmap_output = if balanced {
+                    index1
+                        .join_flatmap_balanced_inner(&index2, |&k: &u64, s1, s2| {
+                            if s1.as_str() == "a" {
+                                None
+                            } else {
+                                Some(Tup2(k, format!("{} {}", s1, s2)))
+                            }
+                        })
+                        .accumulate_output()
+                } else {
+                    index1
+                        .join_flatmap(&index2, |&k: &u64, s1, s2| {
+                            if s1.as_str() == "a" {
+                                None
+                            } else {
+                                Some(Tup2(k, format!("{} {}", s1, s2)))
+                            }
+                        })
+                        .accumulate_output()
+                };
 
                 Ok((
                     input_handle1,
@@ -1889,18 +2000,34 @@ pub(crate) mod test {
 
     #[test]
     fn join_test_mt() {
-        do_join_test(1, false);
-        do_join_test(2, false);
-        do_join_test(4, false);
-        do_join_test(16, false);
+        do_join_test(1, false, false);
+        do_join_test(2, false, false);
+        do_join_test(4, false, false);
+        do_join_test(16, false, false);
     }
 
     #[test]
     fn join_test_mt_one_transaction() {
-        do_join_test(1, true);
-        do_join_test(2, true);
-        do_join_test(4, true);
-        do_join_test(16, true);
+        do_join_test(1, true, false);
+        do_join_test(2, true, false);
+        do_join_test(4, true, false);
+        do_join_test(16, true, false);
+    }
+
+    #[test]
+    fn join_balanced_test_mt() {
+        do_join_test(1, false, true);
+        do_join_test(2, false, true);
+        do_join_test(4, false, true);
+        do_join_test(16, false, true);
+    }
+
+    #[test]
+    fn join_balanced_test_mt_one_transaction() {
+        do_join_test(1, true, true);
+        do_join_test(2, true, true);
+        do_join_test(4, true, true);
+        do_join_test(16, true, true);
     }
 
     // Compute pairwise reachability relation between graph nodes as the
@@ -2127,6 +2254,7 @@ pub(crate) mod test {
     }
 
     fn proptest_join<K: DBData, V: DBData>(
+        balanced: bool,
         mut left_inputs: Vec<Vec<Tup2<K, Tup2<V, ZWeight>>>>,
         mut right_inputs: Vec<Vec<Tup2<K, Tup2<V, ZWeight>>>>,
         f: impl Fn(&K, &V, &V) -> V + Clone + Send + 'static,
@@ -2139,8 +2267,13 @@ pub(crate) mod test {
                     let (left_input, left_handle) = circuit.add_input_indexed_zset::<K, V>();
                     let (right_input, right_handle) = circuit.add_input_indexed_zset::<K, V>();
 
-                    let output_handle =
-                        left_input.join(&right_input, f.clone()).accumulate_output();
+                    let output_handle = if balanced {
+                        left_input
+                            .join_balanced_inner(&right_input, f.clone())
+                            .accumulate_output()
+                    } else {
+                        left_input.join(&right_input, f.clone()).accumulate_output()
+                    };
 
                     let f = f.clone();
                     let expected_output_handle = circuit
@@ -2263,13 +2396,24 @@ pub(crate) mod test {
 
         #[test]
         fn proptest_join_big_step(inputs in generate_join_test_data(10, 5, 3, 50)) {
-            proptest_join(inputs.0, inputs.1, |_k, v1, v2| v1 + v2, true);
+            proptest_join(false, inputs.0, inputs.1, |_k, v1, v2| v1 + v2, true);
         }
 
         #[test]
         fn proptest_join_small_step(inputs in generate_join_test_data(10, 5, 3, 50)) {
-            proptest_join(inputs.0, inputs.1, |_k, v1, v2| v1 + v2, false);
+            proptest_join(false, inputs.0, inputs.1, |_k, v1, v2| v1 + v2, false);
         }
+
+        #[test]
+        fn proptest_balanced_join_big_step(inputs in generate_join_test_data(10, 5, 3, 50)) {
+            proptest_join(true, inputs.0, inputs.1, |_k, v1, v2| v1 + v2, true);
+        }
+
+        #[test]
+        fn proptest_balanced_join_small_step(inputs in generate_join_test_data(10, 5, 3, 50)) {
+            proptest_join(true, inputs.0, inputs.1, |_k, v1, v2| v1 + v2, false);
+        }
+
     }
 }
 

@@ -1,6 +1,7 @@
 use anyhow::Result;
 use chrono::{Datelike, NaiveDate};
 use csv::Reader;
+use dbsp::typed_batch::IndexedZSetReader;
 use dbsp::utils::{Tup2, Tup3};
 use dbsp::{OrdIndexedZSet, OutputHandle, RootCircuit, ZSetHandle, ZWeight};
 use rkyv::{Archive, Serialize};
