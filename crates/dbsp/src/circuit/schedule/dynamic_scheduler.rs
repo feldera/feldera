@@ -55,7 +55,8 @@ use std::{
 
 use crate::{
     circuit::{
-        runtime::{Consensus, Runtime},
+        circuit_builder::CircuitMetadata,
+        runtime::{Broadcast, Consensus, Runtime},
         schedule::{
             util::{circuit_graph, ownership_constraints},
             CommitProgress, Error, Scheduler,
@@ -182,6 +183,8 @@ struct Inner {
 
     /// Used to synchronize commit completion across all workers.
     global_commit_consensus: Consensus,
+
+    metadata_broadcast: Broadcast<CircuitMetadata>,
 }
 
 impl Inner {
@@ -344,6 +347,7 @@ impl Inner {
             waiting: false,
             transaction_phase: TransactionPhase::Idle,
             global_commit_consensus: Consensus::new(),
+            metadata_broadcast: Broadcast::new(),
         };
 
         // Setup scheduler callbacks.
@@ -362,6 +366,8 @@ impl Inner {
                 }
             }
         }
+
+        circuit.balancer().prepare();
 
         Ok(scheduler)
     }
@@ -422,12 +428,17 @@ impl Inner {
         }
     }
 
-    fn start_transaction(&mut self) {
+    fn start_transaction<C>(&mut self, circuit: &C)
+    where
+        C: Circuit,
+    {
         // Reset unsatisfied dependencies, initialize runnable queue.
         for task in self.tasks.values_mut() {
             task.flush_state = FlushState::UnflushedDependencies(task.num_predecessors);
         }
         self.transaction_phase = TransactionPhase::Started;
+
+        circuit.balancer().start_transaction();
     }
 
     fn start_commit_transaction(&mut self) -> Result<(), Error> {
@@ -470,7 +481,16 @@ impl Inner {
         }
 
         circuit.log_scheduler_event(&SchedulerEvent::step_start(circuit.global_id()));
+        circuit.balancer().start_step();
         let result = self.do_step(circuit).await;
+
+        let metadata = circuit.metadata_exchange().local_metadata().clone();
+
+        let global_metadata = self.metadata_broadcast.collect(metadata).await?;
+        circuit
+            .metadata_exchange()
+            .set_global_metadata(global_metadata);
+
         if let TransactionPhase::Committing(unflushed_operators) = &self.transaction_phase {
             let commit_complete = self
                 .global_commit_consensus
@@ -627,13 +647,13 @@ impl Scheduler for DynamicScheduler {
         Ok(())
     }
 
-    async fn start_transaction<C>(&self, _circuit: &C) -> Result<(), Error>
+    async fn start_transaction<C>(&self, circuit: &C) -> Result<(), Error>
     where
         C: Circuit,
     {
         let inner = &mut *self.inner_mut();
 
-        inner.start_transaction();
+        inner.start_transaction(circuit);
 
         Ok(())
     }

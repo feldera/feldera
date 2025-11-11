@@ -1,6 +1,7 @@
 use std::{
     borrow::Cow,
     panic::Location,
+    rc::Rc,
     sync::{
         atomic::{AtomicUsize, Ordering},
         Arc,
@@ -12,7 +13,8 @@ use typedmap::TypedMapKey;
 
 use crate::{
     circuit::{
-        circuit_builder::StreamId,
+        checkpointer::EmptyCheckpoint,
+        circuit_builder::{MetadataExchange, RefStreamValue, StreamId},
         metadata::{
             BatchSizeStats, MetaItem, OperatorLocation, OperatorMeta, ALLOCATED_BYTES_LABEL,
             INPUT_BATCHES_LABEL, NUM_ENTRIES_LABEL, OUTPUT_BATCHES_LABEL, SHARED_BYTES_LABEL,
@@ -22,11 +24,11 @@ use crate::{
         LocalStoreMarker,
     },
     circuit_cache_key,
-    trace::{Batch, BatchReader, Spine, Trace},
+    trace::{Batch, BatchReader, Spine, SpineSnapshot, Trace, WithSnapshot},
     Circuit, Error, NumEntries, Runtime, Scope, Stream,
 };
 
-circuit_cache_key!(AccumulatorId<C, B: Batch>(StreamId => (Stream<C, Option<Spine<B>>>, Arc<AtomicUsize>)));
+circuit_cache_key!(AccumulatorId<C, B: Batch>(StreamId => (Stream<C, Option<Spine<B>>>, Arc<AtomicUsize>, RefStreamValue<EmptyCheckpoint<Vec<B>>>)));
 
 /// `TypedMapKey` entry used to share `enable_count` across instances of the same accumulator in multiple workers.
 #[derive(Hash, PartialEq, Eq)]
@@ -51,35 +53,64 @@ where
 {
     /// See [`Stream::accumulate`].
     pub fn dyn_accumulate(&self, factories: &B::Factories) -> Stream<C, Option<Spine<B>>> {
-        let (stream, enable_count) = self.dyn_accumulate_with_enable_count(factories);
+        let (stream, enable_count, _) = self.dyn_accumulate_with_enable_count(factories, false);
         enable_count.fetch_add(1, Ordering::AcqRel);
 
         stream
+    }
+
+    pub fn dyn_accumulate_with_feedback_stream(
+        &self,
+        factories: &B::Factories,
+    ) -> (
+        Stream<C, Option<Spine<B>>>,
+        RefStreamValue<EmptyCheckpoint<Vec<B>>>,
+    ) {
+        let (stream, enable_count, accumulator_snapshot_stream_val) =
+            self.dyn_accumulate_with_enable_count(factories, true);
+        enable_count.fetch_add(1, Ordering::AcqRel);
+
+        (stream, accumulator_snapshot_stream_val)
     }
 
     /// See [`Stream::accumulate_with_enable_count`].
     pub fn dyn_accumulate_with_enable_count(
         &self,
         factories: &B::Factories,
-    ) -> (Stream<C, Option<Spine<B>>>, Arc<AtomicUsize>) {
+        report_metadata: bool,
+    ) -> (
+        Stream<C, Option<Spine<B>>>,
+        Arc<AtomicUsize>,
+        RefStreamValue<EmptyCheckpoint<Vec<B>>>,
+    ) {
         self.circuit()
             .cache_get_or_insert_with(AccumulatorId::new(self.stream_id()), || {
-                let accumulator = Accumulator::new(factories, Location::caller());
+                let accumulator = Accumulator::<C, B>::new(
+                    factories,
+                    Location::caller(),
+                    if report_metadata {
+                        Some(self.circuit().metadata_exchange().clone())
+                    } else {
+                        None
+                    },
+                );
                 let enable_count = accumulator.enable_count.clone();
+                let accumulator_snapshot_stream_val = RefStreamValue::empty();
 
                 let stream = self
                     .circuit()
                     .add_unary_operator(accumulator, &self.try_sharded_version());
                 stream.mark_sharded_if(self);
-                (stream, enable_count)
+                (stream, enable_count, accumulator_snapshot_stream_val)
             })
             .clone()
     }
 }
 
-pub struct Accumulator<B>
+pub struct Accumulator<C, B>
 where
     B: Batch,
+    C: Circuit,
 {
     factories: B::Factories,
     state: Spine<B>,
@@ -114,13 +145,21 @@ where
     /// partial outputs. This flag remembers the status of the accumulator at the start of the
     /// transaction.
     enabled_during_current_transaction: Option<bool>,
+
+    feedback_stream: Option<Stream<C, SpineSnapshot<B>>>,
+    metadata_exchange: Option<MetadataExchange>,
 }
 
-impl<B> Accumulator<B>
+impl<C, B> Accumulator<C, B>
 where
     B: Batch,
+    C: Circuit,
 {
-    pub fn new(factories: &B::Factories, location: &'static Location<'static>) -> Self {
+    pub fn new(
+        factories: &B::Factories,
+        location: &'static Location<'static>,
+        metadata_exchange: Option<MetadataExchange>,
+    ) -> Self {
         let enable_count = match Runtime::runtime() {
             None => Arc::new(AtomicUsize::new(0)),
             Some(runtime) => {
@@ -143,13 +182,21 @@ where
             output_batch_stats: BatchSizeStats::new(),
             enable_count,
             enabled_during_current_transaction: None,
+            feedback_stream: None,
+            metadata_exchange,
         }
+    }
+
+    pub fn with_feedback_stream(mut self, feedback_stream: &Stream<C, SpineSnapshot<B>>) -> Self {
+        self.feedback_stream = Some(feedback_stream.clone());
+        self
     }
 }
 
-impl<B> Operator for Accumulator<B>
+impl<C, B> Operator for Accumulator<C, B>
 where
     B: Batch,
+    C: Circuit,
 {
     fn name(&self) -> std::borrow::Cow<'static, str> {
         Cow::Borrowed("Accumulator")
@@ -206,9 +253,10 @@ where
     }
 }
 
-impl<B> UnaryOperator<B, Option<Spine<B>>> for Accumulator<B>
+impl<C, B> UnaryOperator<B, Option<Spine<B>>> for Accumulator<C, B>
 where
     B: Batch,
+    C: Circuit,
 {
     async fn eval(&mut self, batch: &B) -> Option<Spine<B>> {
         // We don't have a start-of-transaction signal, so we sample enable_count when
@@ -230,7 +278,11 @@ where
             }
         }
 
-        if self.flush {
+        if let Some(feedback_stream) = &self.feedback_stream {
+            feedback_stream.value().put(self.state.ro_snapshot());
+        }
+
+        let result = if self.flush {
             self.flush = false;
             self.enabled_during_current_transaction = None;
 
@@ -241,7 +293,13 @@ where
             Some(spine)
         } else {
             None
+        };
+
+        if let Some(metadata_exchange) = &self.metadata_exchange {
+            todo!()
         }
+
+        result
     }
 
     async fn eval_owned(&mut self, batch: B) -> Option<Spine<B>> {
@@ -257,6 +315,10 @@ where
                 self.input_batch_stats.add_batch(len);
                 self.state.insert(batch);
             }
+        }
+
+        if let Some(feedback_stream) = &self.feedback_stream {
+            feedback_stream.value().put(self.state.ro_snapshot());
         }
 
         if self.flush {

@@ -634,7 +634,7 @@ where
 
     /// Read all incoming messages for `receiver`.
     ///
-    /// Values are passed to callback function `cb`.
+    /// Values are passed to callback function `cb` in the order of worker indexes.
     ///
     /// # Errors
     ///
@@ -1007,7 +1007,7 @@ impl<IF, T, L> ExchangeReceiver<IF, T, L>
 where
     T: Send + 'static + Clone,
 {
-    fn new(
+    pub(crate) fn new(
         worker_index: usize,
         location: OperatorLocation,
         exchange: Arc<Exchange<(T, bool)>>,

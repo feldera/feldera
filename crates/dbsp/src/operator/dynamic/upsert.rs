@@ -241,7 +241,7 @@ where
         //                 │                  │               │
         //                 │                  │   ┌───────┐   │
         //                 └──────────────────┴───┤Z1Trace│◄──┘
-        //                    z1trace             └───────┘
+        //                    delayed_trace       └───────┘
         // ```
         circuit.region("upsert", || {
             let bounds = <TraceBounds<K, V>>::unbounded();

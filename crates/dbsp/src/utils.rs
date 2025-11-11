@@ -2,6 +2,8 @@ mod advance_retreat;
 mod sample;
 //pub(crate) mod tests;
 mod consolidation;
+mod graph;
+pub mod maxsat;
 mod sort;
 mod tuple;
 
@@ -21,6 +23,7 @@ pub use consolidation::{
     consolidate, consolidate_from, consolidate_paired_slices, consolidate_payload_from,
     consolidate_slice, ConsolidatePairedSlices,
 };
+pub use graph::components;
 
 #[allow(unused_imports)]
 pub use dot::{DotEdgeAttributes, DotNodeAttributes};
