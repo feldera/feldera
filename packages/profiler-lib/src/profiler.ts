@@ -136,9 +136,26 @@ export class Profiler {
      * Clean up resources when the profiler is no longer needed
      */
     dispose(): void {
+        // Remove tooltip from DOM
         if (this.tooltip.parentNode) {
             this.tooltip.parentNode.removeChild(this.tooltip);
         }
+
+        // Clear selector UI from DOM
+        const table = this.config.selectorContainer.querySelector('table');
+        if (table) {
+            // Remove all rows
+            while (table.rows.length > 0) {
+                table.deleteRow(0);
+            }
+        }
+
+        // Dispose rendering resources
+        if (this.rendering) {
+            this.rendering.dispose();
+        }
+
+        // Clear references
         this.circuitSelector = null;
         this.metadataSelector = null;
         this.rendering = null;

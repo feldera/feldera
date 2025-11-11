@@ -885,6 +885,22 @@ export class CytographRendering {
         reachable.removeClass('highlight-backward');
     }
 
+    /**
+     * Clean up resources when the rendering is no longer needed
+     */
+    dispose(): void {
+        // Destroy the Cytoscape instance
+        if (this.cy) {
+            this.cy.destroy();
+        }
+
+        // Hide tooltip
+        this.tooltip.style.display = 'none';
+
+        // Clear references
+        this.currentGraph = null;
+    }
+
     // Set to true to display the tooltip in a fixed position.
     // Set to false to display the tooltip at the mouse position.
     static readonly FIXED_TOOLTIP_POSITION = true;

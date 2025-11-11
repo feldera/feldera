@@ -35,6 +35,9 @@
 
   $effect(() => {
     _currentTab = currentTab.value
+    return () => {
+      _currentTab = null
+    }
   })
 </script>
 

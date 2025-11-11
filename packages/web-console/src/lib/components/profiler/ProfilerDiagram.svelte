@@ -43,21 +43,17 @@
     ) {
       return
     }
+
+    // Wait for data to be available
+    if (!profileData || !dataflowData) {
+      return
+    }
     $effect.root(() => {
-      console.log('first effect b')
-
-      // Wait for data to be available
-      if (!profileData || !dataflowData) {
-        return
-      }
-      console.log('first effect c')
-
       // Clean up previous profiler instance if exists
       if (profiler) {
         profiler.dispose()
         profiler = null
       }
-      console.log('first effect d')
 
       // Clear any previous errors
       error = null
@@ -79,20 +75,16 @@
         // Create and render profiler
         profiler = new Profiler(config)
         profiler.render(profile)
-        console.log('first effect e')
       } catch (e) {
         error = e instanceof Error ? e.message : String(e)
         console.error('Failed to initialize profiler:', e)
       }
     })
   })
-  console.log('a')
 
   // Cleanup on component destruction
   onDestroy(() => {
-    console.log('onDestroy')
     if (profiler) {
-      console.log('onDestroy profiler')
       profiler.dispose()
       profiler = null
     }
@@ -134,7 +126,7 @@
   .profiler-wrapper {
     width: 100%;
     height: 100%;
-    position: relative;
+    position: absolute;
   }
 
   .error-banner {

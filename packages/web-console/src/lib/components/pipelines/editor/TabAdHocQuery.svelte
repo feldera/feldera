@@ -145,7 +145,7 @@
   }
 </script>
 
-<div class=" h-full min-h-full overflow-y-auto py-2 scrollbar" use:reverseScroll.action>
+<div class="h-full min-h-full overflow-y-auto scrollbar" use:reverseScroll.action>
   <div class="flex flex-col gap-6">
     {#if !isInteractive}
       <WarningBanner class="sticky top-0 z-20 -mb-4 -translate-y-2">

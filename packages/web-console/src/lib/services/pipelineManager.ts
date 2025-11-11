@@ -63,7 +63,6 @@ import { tuple } from '$lib/functions/common/tuple'
 import { sleep } from '$lib/functions/common/promise'
 import { type NamesInUnion, unionName } from '$lib/functions/common/union'
 import { groupBy, singleton } from '$lib/functions/common/array'
-import { unzip, inflateRaw as platformInflateRaw } from 'but-unzip'
 import type { JsonProfiles } from 'profiler-lib'
 
 const unauthenticatedClient = createClient({
@@ -500,8 +499,7 @@ export const getPipelineSupportBundle = async (pipelineName: string) => {
   }
   const response = new Response(body.stream)
   const buffer = await response.arrayBuffer()
-  const data = unzip(new Uint8Array(buffer))
-  return data
+  return new Uint8Array(buffer)
 }
 
 const getAuthenticatedFetch = () => {

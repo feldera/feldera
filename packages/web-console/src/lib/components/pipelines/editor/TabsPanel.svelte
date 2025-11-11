@@ -7,14 +7,24 @@
     tabs,
     tabBarEnd,
     tabProps,
-    currentTab = $bindable()
+    currentTab = $bindable(),
+    tabContainer = defaultTabContainer
   }: {
     tabs: [string, Snippet, Component<T>][]
+    tabContainer?: Snippet<[tab: Snippet]>
     tabBarEnd?: Snippet
     tabProps: T
     currentTab: string
   } = $props()
 </script>
+
+{#snippet defaultTabContainer(tab: Snippet)}
+  <div class="relative h-full">
+    <div class="absolute h-full w-full sm:pt-4">
+      {@render tab()}
+    </div>
+  </div>
+{/snippet}
 
 <Tabs
   bind:value={currentTab}
@@ -44,11 +54,10 @@
   {#snippet content()}
     {@const TabComponent = tabs.find((tab) => tab[0] === currentTab)?.[2]}
     {#if TabComponent}
-      <div class="relative h-full">
-        <div class="absolute h-full w-full sm:pt-4">
-          <TabComponent {...tabProps}></TabComponent>
-        </div>
-      </div>
+      {#snippet tab()}
+        <TabComponent {...tabProps}></TabComponent>
+      {/snippet}
+      {@render tabContainer(tab)}
     {/if}
   {/snippet}
 </Tabs>

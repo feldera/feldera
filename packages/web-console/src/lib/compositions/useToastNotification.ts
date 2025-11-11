@@ -2,9 +2,10 @@ import { toast } from 'svelte-french-toast'
 
 export const useToast = () => {
   return {
-    toastError(e: Error) {
+    toastError(e: Error, durationMs?: number) {
       toast.error(e.message, {
-        className: 'text-lg !max-w-[500px]'
+        className: 'text-lg !max-w-[500px]',
+        duration: durationMs
       })
     },
     toastMain(message: string) {

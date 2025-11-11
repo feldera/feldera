@@ -26,7 +26,7 @@
     pipeline_config: true,
     stats: true,
     system_config: true,
-    dataflow_graph: false
+    dataflow_graph: true
   }
   let data: SupportBundleOptions = $state(defaultData)
 
