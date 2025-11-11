@@ -1004,6 +1004,15 @@ impl ControllerStatus {
         self.update_total_completed_records();
     }
 
+    pub fn update_output_memory(&self, endpoint_id: EndpointId, memory: usize) {
+        if let Some(endpoint_stats) = self.output_status().get(&endpoint_id) {
+            endpoint_stats
+                .metrics
+                .memory
+                .store(memory as u64, Ordering::Release);
+        }
+    }
+
     pub fn output_buffered_batches(&self, endpoint_id: EndpointId, total_processed_records: u64) {
         if let Some(endpoint_stats) = self.output_status().get(&endpoint_id) {
             endpoint_stats.output_buffered_batches(total_processed_records);
@@ -1952,6 +1961,10 @@ pub struct OutputEndpointMetrics {
     /// of this endpoint is equal to the output of the circuit after
     /// processing `total_processed_input_records` records.
     pub total_processed_input_records: AtomicU64,
+
+    /// Extra memory in use beyond that used for queuing records.  Not all
+    /// output connectors report this.
+    pub memory: AtomicU64,
 }
 
 impl OutputEndpointMetrics {
@@ -1970,6 +1983,7 @@ impl OutputEndpointMetrics {
             num_encode_errors: AtomicU64::new(initial_statistics.num_encode_errors),
             num_transport_errors: AtomicU64::new(initial_statistics.num_transport_errors),
             total_processed_input_records: AtomicU64::new(total_processed_input_records),
+            memory: AtomicU64::new(0),
         }
     }
 
@@ -1988,6 +2002,7 @@ impl OutputEndpointMetrics {
                 total_processed_input_records: this
                     .total_processed_input_records
                     .load(Ordering::Relaxed),
+                memory: this.memory.load(Ordering::Relaxed),
             }
         }
 
@@ -2020,6 +2035,7 @@ pub struct OutputEndpointMetricsSnapshot {
     pub num_encode_errors: u64,
     pub num_transport_errors: u64,
     pub total_processed_input_records: u64,
+    pub memory: u64,
 }
 
 /// Output endpoint status information.

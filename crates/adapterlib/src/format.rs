@@ -302,6 +302,14 @@ pub trait OutputConsumer: Send {
         num_records: usize,
     );
     fn batch_end(&mut self);
+
+    /// Returns the approximate amount of memory used by the connector's
+    /// underlying implementation.  For the Kafka connectors, for example, this
+    /// is the amount of memory used by librdkafka.  Not all connectors use a
+    /// substantial amount of memory, so the default implementation returns 0.
+    fn memory(&self) -> usize {
+        0
+    }
 }
 
 /// The largest weight of a record that can be output using

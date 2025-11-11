@@ -139,6 +139,7 @@ invisible to users unless a pause or checkpoint happens mid-batch.
 | <a name='input_connector_completion_latency_seconds'>`input_connector_completion_latency_seconds`</a> |histogram | Time between when the connector receives new data and when the pipeline processes this data, computes output updates, and sends these updates to all output connectors, over the last 600 seconds or 10,000 samples. |
 | <a name='input_connector_errors_parse_total'>`input_connector_errors_parse_total`</a> |counter | Total number of errors encountered parsing records received by the input connector. |
 | <a name='input_connector_errors_transport_total'>`input_connector_errors_transport_total`</a> |counter | Total number of errors encountered by the input connector at the transport layer. |
+| <a name='input_connector_extra_memory_bytes'>`input_connector_extra_memory_bytes`</a> |gauge | Additional memory used by an input connector beyond that used for buffered records. |
 | <a name='input_connector_processing_latency_seconds'>`input_connector_processing_latency_seconds`</a> |histogram | Time between when the connector receives new data and when the pipeline processes this data and computes output updates, over the last 600 seconds or 10,000 samples. |
 | <a name='input_connector_records_total'>`input_connector_records_total`</a> |counter | Total number of records received by an input connector. |
 
@@ -158,5 +159,6 @@ These metrics accumulate across checkpoint and resume.
 | <a name='output_connector_bytes_total'>`output_connector_bytes_total`</a> |counter | Total number of bytes of records sent by the output connector. |
 | <a name='output_connector_errors_encode_total'>`output_connector_errors_encode_total`</a> |counter | Total number of errors encountered encoding records to send. |
 | <a name='output_connector_errors_transport_total'>`output_connector_errors_transport_total`</a> |counter | Total number of errors encountered at the transport layer sending records. |
+| <a name='output_connector_extra_memory_bytes'>`output_connector_extra_memory_bytes`</a> |gauge | Additional memory used by an output connector beyond that used for buffered records. |
 | <a name='output_connector_records_total'>`output_connector_records_total`</a> |counter | Total number of records sent by the output connector. |
 
