@@ -22,7 +22,7 @@ use crate::{
         LocalStoreMarker,
     },
     circuit_cache_key,
-    trace::{Batch, BatchReader, Spine, Trace},
+    trace::{Batch, BatchReader, Spine, SpineSnapshot, Trace, WithSnapshot},
     Circuit, Error, NumEntries, Runtime, Scope, Stream,
 };
 
@@ -64,7 +64,7 @@ where
     ) -> (Stream<C, Option<Spine<B>>>, Arc<AtomicUsize>) {
         self.circuit()
             .cache_get_or_insert_with(AccumulatorId::new(self.stream_id()), || {
-                let accumulator = Accumulator::new(factories, Location::caller());
+                let accumulator = Accumulator::<C, B>::new(factories, Location::caller());
                 let enable_count = accumulator.enable_count.clone();
 
                 let stream = self
@@ -77,9 +77,10 @@ where
     }
 }
 
-pub struct Accumulator<B>
+pub struct Accumulator<C, B>
 where
     B: Batch,
+    C: Circuit,
 {
     factories: B::Factories,
     state: Spine<B>,
@@ -114,11 +115,14 @@ where
     /// partial outputs. This flag remembers the status of the accumulator at the start of the
     /// transaction.
     enabled_during_current_transaction: Option<bool>,
+
+    feedback_stream: Option<Stream<C, SpineSnapshot<B>>>,
 }
 
-impl<B> Accumulator<B>
+impl<C, B> Accumulator<C, B>
 where
     B: Batch,
+    C: Circuit,
 {
     pub fn new(factories: &B::Factories, location: &'static Location<'static>) -> Self {
         let enable_count = match Runtime::runtime() {
@@ -143,13 +147,20 @@ where
             output_batch_stats: BatchSizeStats::new(),
             enable_count,
             enabled_during_current_transaction: None,
+            feedback_stream: None,
         }
+    }
+
+    pub fn with_feedback_stream(mut self, feedback_stream: &Stream<C, SpineSnapshot<B>>) -> Self {
+        self.feedback_stream = Some(feedback_stream.clone());
+        self
     }
 }
 
-impl<B> Operator for Accumulator<B>
+impl<C, B> Operator for Accumulator<C, B>
 where
     B: Batch,
+    C: Circuit,
 {
     fn name(&self) -> std::borrow::Cow<'static, str> {
         Cow::Borrowed("Accumulator")
@@ -206,9 +217,10 @@ where
     }
 }
 
-impl<B> UnaryOperator<B, Option<Spine<B>>> for Accumulator<B>
+impl<C, B> UnaryOperator<B, Option<Spine<B>>> for Accumulator<C, B>
 where
     B: Batch,
+    C: Circuit,
 {
     async fn eval(&mut self, batch: &B) -> Option<Spine<B>> {
         // We don't have a start-of-transaction signal, so we sample enable_count when
@@ -228,6 +240,10 @@ where
                 self.input_batch_stats.add_batch(len);
                 self.state.insert(batch.clone());
             }
+        }
+
+        if let Some(feedback_stream) = &self.feedback_stream {
+            feedback_stream.value().put(self.state.ro_snapshot());
         }
 
         if self.flush {
@@ -257,6 +273,10 @@ where
                 self.input_batch_stats.add_batch(len);
                 self.state.insert(batch);
             }
+        }
+
+        if let Some(feedback_stream) = &self.feedback_stream {
+            feedback_stream.value().put(self.state.ro_snapshot());
         }
 
         if self.flush {
