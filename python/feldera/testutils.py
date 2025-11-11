@@ -43,10 +43,6 @@ BASE_URL = (
     or os.environ.get("FELDERA_BASE_URL")
     or "http://localhost:8080"
 )
-KAFKA_SERVER = os.environ.get("FELDERA_KAFKA_SERVER", "localhost:19092")
-PIPELINE_TO_KAFKA_SERVER = os.environ.get(
-    "FELDERA_PIPELINE_TO_KAFKA_SERVER", "redpanda:9092"
-)
 FELDERA_REQUESTS_VERIFY = requests_verify_from_env()
 
 

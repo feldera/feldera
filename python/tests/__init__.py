@@ -4,8 +4,6 @@ from feldera.testutils import (
     enterprise_only,
     API_KEY,
     BASE_URL,
-    PIPELINE_TO_KAFKA_SERVER,
-    KAFKA_SERVER,
     FELDERA_REQUESTS_VERIFY,
 )
 
@@ -15,7 +13,5 @@ __all__ = [
     "enterprise_only",
     "API_KEY",
     "BASE_URL",
-    "PIPELINE_TO_KAFKA_SERVER",
-    "KAFKA_SERVER",
     "FELDERA_REQUESTS_VERIFY",
 ]
