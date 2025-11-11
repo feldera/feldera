@@ -211,7 +211,8 @@ mod test {
 
     use crate::{
         OrdIndexedZSet, OutputHandle, RootCircuit, Runtime, ZSetHandle, ZWeight,
-        circuit::CircuitConfig, operator::Min, typed_batch::SpineSnapshot, utils::Tup2, zset,
+        circuit::CircuitConfig, operator::Min, typed_batch::IndexedZSetReader,
+        typed_batch::SpineSnapshot, utils::Tup2, zset,
     };
     use proptest::{collection, prelude::*};
 

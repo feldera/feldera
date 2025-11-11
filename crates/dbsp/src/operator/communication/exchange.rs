@@ -513,7 +513,7 @@ where
     ///
     /// Once this function returns true, a subsequent `try_send_all` operation
     /// is guaranteed to succeed for `sender`.
-    fn ready_to_send(&self, sender: usize) -> bool {
+    pub fn ready_to_send(&self, sender: usize) -> bool {
         self.inner.ready_to_send(sender)
     }
 
@@ -635,7 +635,7 @@ where
 
     /// Read all incoming messages for `receiver`.
     ///
-    /// Values are passed to callback function `cb`.
+    /// Values are passed to callback function `cb` in the order of worker indexes.
     ///
     /// # Errors
     ///
@@ -1008,7 +1008,7 @@ impl<IF, T, L> ExchangeReceiver<IF, T, L>
 where
     T: Send + 'static + Clone,
 {
-    fn new(
+    pub(crate) fn new(
         worker_index: usize,
         location: OperatorLocation,
         exchange: Arc<Exchange<(T, bool)>>,
@@ -1139,6 +1139,11 @@ where
                 (self.combine)(&mut combined, x)
             });
         if self.flush_count == Runtime::num_workers() {
+            // println!(
+            //     "{} exchange_receiver::eval received all inputs",
+            //     Runtime::worker_index()
+            // );
+
             self.flush_complete = true;
             self.flush_count = 0;
         }

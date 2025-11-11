@@ -8,7 +8,7 @@
 
 use anyhow::Result;
 use clap::Parser;
-use dbsp::{OrdZSet, OutputHandle, Runtime, Stream};
+use dbsp::{OrdZSet, OutputHandle, Runtime, Stream, typed_batch::IndexedZSetReader};
 use rkyv::{Archive, Deserialize, Serialize};
 use size_of::SizeOf;
 use std::hash::Hash;

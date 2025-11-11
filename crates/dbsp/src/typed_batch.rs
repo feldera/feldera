@@ -166,7 +166,17 @@ where
 }
 
 /// A statically typed wrapper around [`DynIndexedZSetReader`].
-pub trait IndexedZSetReader: BatchReader<R = ZWeight, DynR = DynZWeight, Time = ()> {}
+pub trait IndexedZSetReader: BatchReader<R = ZWeight, DynR = DynZWeight, Time = ()> {
+    fn iter(&self) -> impl Iterator<Item = (Self::Key, Self::Val, ZWeight)> + '_ {
+        self.inner().iter().map(|(boxk, boxv, w)| unsafe {
+            (
+                boxk.as_ref().downcast::<Self::Key>().clone(),
+                boxv.as_ref().downcast::<Self::Val>().clone(),
+                w,
+            )
+        })
+    }
+}
 
 impl<Z> IndexedZSetReader for Z where Z: BatchReader<R = ZWeight, DynR = DynZWeight, Time = ()> {}
 
@@ -408,22 +418,6 @@ where
                 .map(|Tup2(k, r)| Tup2(Tup2(k, ()), r))
                 .collect::<Vec<_>>(),
         )
-    }
-}
-
-impl<K, V, B: DynIndexedZSetReader> TypedBatch<K, V, ZWeight, B>
-where
-    K: DBData + Erase<B::Key>,
-    V: DBData + Erase<B::Val>,
-{
-    pub fn iter(&self) -> impl Iterator<Item = (K, V, ZWeight)> + '_ {
-        self.inner.iter().map(|(boxk, boxv, w)| unsafe {
-            (
-                boxk.as_ref().downcast::<K>().clone(),
-                boxv.as_ref().downcast::<V>().clone(),
-                w,
-            )
-        })
     }
 }
 

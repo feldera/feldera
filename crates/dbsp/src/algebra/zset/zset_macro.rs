@@ -13,7 +13,7 @@ use crate::zset_set;
 /// value, weight)` tuples `(1, 3, -1), (1, 2, 1), (2, 2, 1)`:
 ///
 /// ```
-/// use dbsp::{indexed_zset, IndexedZSet};
+/// use dbsp::{indexed_zset, IndexedZSet, IndexedZSetReader};
 ///
 /// let zset = indexed_zset! {1 => {3 => -1, 2 => 1}, 2 => {2 => 1}};
 /// assert_eq!(
@@ -49,7 +49,7 @@ macro_rules! indexed_zset {
 /// tuples `(1, -1), (2, 1)`:
 ///
 /// ```
-/// use dbsp::{zset, IndexedZSet};
+/// use dbsp::{zset, IndexedZSet, IndexedZSetReader};
 ///
 /// let zset = zset! {1 => -1, 2 => 1};
 /// assert_eq!(
@@ -78,7 +78,7 @@ macro_rules! zset {
 /// tuples `(1, 1), (2, 1), (-3, 1)`:
 ///
 /// ```
-/// use dbsp::{zset_set, IndexedZSet};
+/// use dbsp::{zset_set, IndexedZSet, IndexedZSetReader};
 ///
 /// let zset = zset_set! {1, 2, -3};
 /// assert_eq!(
@@ -97,7 +97,7 @@ macro_rules! zset_set {
 
 #[cfg(test)]
 mod test {
-    use crate::{indexed_zset, zset};
+    use crate::{indexed_zset, typed_batch::IndexedZSetReader, zset};
 
     #[test]
     fn zset_test() {

@@ -1,13 +1,14 @@
 //! Logic to manage persistent checkpoints for a circuit.
 
 use crate::dynamic::{self, data::DataTyped};
-use crate::{Error, TypedBox};
+use crate::{Error, NumEntries, TypedBox};
 use feldera_types::checkpoint::CheckpointMetadata;
 use feldera_types::constants::{
     ACTIVATION_MARKER_FILE, ADHOC_TEMP_DIR, CHECKPOINT_DEPENDENCIES, CHECKPOINT_FILE_NAME,
     DBSP_FILE_EXTENSION, STATE_FILE, STATUS_FILE, STEPS_FILE,
 };
 use itertools::Itertools;
+use size_of::SizeOf;
 
 use std::io::ErrorKind;
 use std::sync::atomic::Ordering;
@@ -394,5 +395,42 @@ impl Checkpoint for dyn DataTyped<Type = u64> + 'static {
 
     fn restore(&mut self, _data: &[u8]) -> Result<(), Error> {
         todo!()
+    }
+}
+
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, Hash, SizeOf)]
+pub struct EmptyCheckpoint<T: Default> {
+    pub val: T,
+}
+
+impl<T> NumEntries for EmptyCheckpoint<T>
+where
+    T: Default + NumEntries,
+{
+    const CONST_NUM_ENTRIES: Option<usize> = T::CONST_NUM_ENTRIES;
+
+    fn num_entries_shallow(&self) -> usize {
+        self.val.num_entries_shallow()
+    }
+
+    fn num_entries_deep(&self) -> usize {
+        self.val.num_entries_deep()
+    }
+}
+
+impl<T: Default> EmptyCheckpoint<T> {
+    pub fn new(val: T) -> Self {
+        Self { val }
+    }
+}
+
+impl<T: Default> Checkpoint for EmptyCheckpoint<T> {
+    fn checkpoint(&self) -> Result<Vec<u8>, Error> {
+        Ok(vec![])
+    }
+
+    fn restore(&mut self, _data: &[u8]) -> Result<(), Error> {
+        self.val = T::default();
+        Ok(())
     }
 }

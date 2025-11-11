@@ -2,6 +2,7 @@
 
 use crate::Runtime;
 use crate::circuit::circuit_builder::StreamId;
+use crate::circuit::metadata::NUM_ALLOCATIONS_LABEL;
 use crate::{
     Error, NumEntries,
     algebra::HasZero,
@@ -269,7 +270,7 @@ where
 
 impl<T> Operator for Z1<T>
 where
-    T: Checkpoint + Eq + SizeOf + NumEntries + Clone + 'static,
+    T: Checkpoint + SizeOf + NumEntries + Clone + 'static,
 {
     fn name(&self) -> Cow<'static, str> {
         Cow::from("Z^-1")
@@ -291,7 +292,7 @@ where
             NUM_ENTRIES_LABEL => MetaItem::Count(self.values.num_entries_deep()),
             ALLOCATED_BYTES_LABEL => MetaItem::bytes(bytes.total_bytes()),
             USED_BYTES_LABEL => MetaItem::bytes(bytes.used_bytes()),
-            "allocations" => MetaItem::Count(bytes.distinct_allocations()),
+            NUM_ALLOCATIONS_LABEL => MetaItem::Count(bytes.distinct_allocations()),
             SHARED_BYTES_LABEL => MetaItem::bytes(bytes.shared_bytes()),
         });
     }
@@ -345,7 +346,7 @@ where
 
 impl<T> UnaryOperator<T, T> for Z1<T>
 where
-    T: Checkpoint + Eq + SizeOf + NumEntries + Clone + 'static,
+    T: Checkpoint + SizeOf + NumEntries + Clone + 'static,
 {
     async fn eval(&mut self, i: &T) -> T {
         replace(&mut self.values, i.clone())
@@ -362,7 +363,7 @@ where
 
 impl<T> StrictOperator<T> for Z1<T>
 where
-    T: Checkpoint + Eq + SizeOf + NumEntries + Clone + 'static,
+    T: Checkpoint + SizeOf + NumEntries + Clone + 'static,
 {
     fn get_output(&mut self) -> T {
         self.empty_output = self.values.num_entries_shallow() == 0;
@@ -376,7 +377,7 @@ where
 
 impl<T> StrictUnaryOperator<T, T> for Z1<T>
 where
-    T: Checkpoint + Eq + SizeOf + NumEntries + Clone + 'static,
+    T: Checkpoint + SizeOf + NumEntries + Clone + 'static,
 {
     async fn eval_strict(&mut self, i: &T) {
         self.values = i.clone();
@@ -494,7 +495,7 @@ where
             "batch sizes" => MetaItem::Array(batch_sizes),
             ALLOCATED_BYTES_LABEL => MetaItem::bytes(total_bytes.total_bytes()),
             USED_BYTES_LABEL => MetaItem::bytes(total_bytes.used_bytes()),
-            "allocations" => MetaItem::Count(total_bytes.distinct_allocations()),
+            NUM_ALLOCATIONS_LABEL => MetaItem::Count(total_bytes.distinct_allocations()),
             SHARED_BYTES_LABEL => MetaItem::bytes(total_bytes.shared_bytes()),
         });
     }

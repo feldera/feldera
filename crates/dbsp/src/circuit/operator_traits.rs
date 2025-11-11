@@ -273,6 +273,11 @@ pub trait Operator: 'static {
         panic!("end_replay() is not implemented for this operator")
     }
 
+    /// Notify the operator about start of a transaction.
+    ///
+    /// The operator can initialize any state needed for the transaction.
+    fn start_transaction(&mut self) {}
+
     /// Notifies the operator that all of its predecessors have produced
     /// all outputs for the current transaction.
     ///
@@ -338,7 +343,7 @@ where
 {
     /// Consume inputs.
     ///
-    /// The operator must be prepated to handle any combination of
+    /// The operator must be prepared to handle any combination of
     /// owned and borrowed inputs.
     async fn eval<'a>(&mut self, lhs: Cow<'a, I1>, rhs: Cow<'a, I2>);
 
@@ -346,6 +351,38 @@ where
     /// (see [`OwnershipPreference`]).
     fn input_preference(&self) -> (OwnershipPreference, OwnershipPreference) {
         (
+            OwnershipPreference::INDIFFERENT,
+            OwnershipPreference::INDIFFERENT,
+        )
+    }
+}
+
+/// A sink operator that consumes three input streams, but does not produce
+/// an output stream.  Such operators are used to send results of the
+/// computation performed by the circuit to the outside world.
+pub trait TernarySinkOperator<I1, I2, I3>: Operator
+where
+    I1: Clone,
+    I2: Clone,
+    I3: Clone,
+{
+    /// Consume inputs.
+    ///
+    /// The operator must be prepared to handle any combination of
+    /// owned and borrowed inputs.
+    async fn eval<'a>(&mut self, input1: Cow<'a, I1>, input2: Cow<'a, I2>, input3: Cow<'a, I3>);
+
+    /// Ownership preference on the operator's input streams
+    /// (see [`OwnershipPreference`]).
+    fn input_preference(
+        &self,
+    ) -> (
+        OwnershipPreference,
+        OwnershipPreference,
+        OwnershipPreference,
+    ) {
+        (
+            OwnershipPreference::INDIFFERENT,
             OwnershipPreference::INDIFFERENT,
             OwnershipPreference::INDIFFERENT,
         )

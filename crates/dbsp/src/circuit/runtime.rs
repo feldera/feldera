@@ -1,6 +1,8 @@
 //! A multithreaded runtime for evaluating DBSP circuits in a data-parallel
 //! fashion.
 
+use super::CircuitConfig;
+use super::dbsp_handle::{Layout, Mode};
 use crate::SchedulerError;
 use crate::circuit::DevTweaks;
 use crate::circuit::checkpointer::Checkpointer;
@@ -46,9 +48,6 @@ use tokio::sync::Notify;
 use tracing::{debug, error, info, warn};
 use typedmap::TypedDashMap;
 
-use super::CircuitConfig;
-use super::dbsp_handle::{Layout, Mode};
-
 /// The number of tuples a stateful operator outputs per step during replay.
 pub const DEFAULT_REPLAY_STEP_SIZE: usize = 10000;
 
@@ -62,6 +61,8 @@ pub enum Error {
     },
     /// The storage directory supplied does not match the runtime circuit.
     IncompatibleStorage,
+    /// Error deserializing checkpointed state.
+    CheckpointParseError(String),
     Terminated,
 }
 
@@ -71,6 +72,7 @@ impl DetailedError for Error {
             Self::WorkerPanic { .. } => Cow::from("WorkerPanic"),
             Self::Terminated => Cow::from("Terminated"),
             Self::IncompatibleStorage => Cow::from("IncompatibleStorage"),
+            Self::CheckpointParseError(_) => Cow::from("CheckpointParseError"),
         }
     }
 }
@@ -90,6 +92,9 @@ impl Display for Error {
             Self::Terminated => f.write_str("circuit has been terminated"),
             Self::IncompatibleStorage => {
                 f.write_str("Supplied storage directory does not fit the runtime circuit")
+            }
+            Self::CheckpointParseError(error) => {
+                write!(f, "Error deserializing checkpointed state: {error}")
             }
         }
     }
@@ -656,6 +661,13 @@ impl Runtime {
     /// The auxiliary thread will have access to the runtime's resources, including the
     /// storage backend. The current use case for this is to be able to use spines outside
     /// of the DBSP worker threads, e.g., to maintain output buffers.
+    ///
+    /// # Arguments
+    ///
+    /// * `thread_name` - The name of the thread.
+    /// * `parker` - The thread will use this parker when waiting for work. Use it to unpark
+    ///   the thread when terminating the runtime.
+    /// * `f` - The function to execute in the thread.
     pub fn spawn_aux_thread<F>(&self, thread_name: &str, parker: Parker, f: F)
     where
         F: FnOnce(Parker) + Send + 'static,
@@ -1061,6 +1073,94 @@ impl Consensus {
     }
 }
 
+/// A synchronization primitive that allows multiple threads within a runtime to broadcast
+/// a value to all other workers.
+pub(crate) enum Broadcast<T> {
+    SingleThreaded,
+    MultiThreaded {
+        notify_sender: Arc<Notify>,
+        notify_receiver: Arc<Notify>,
+        exchange: Arc<Exchange<T>>,
+    },
+}
+
+impl<T> Broadcast<T>
+where
+    T: Clone + Send + serde::Serialize + for<'de> serde::Deserialize<'de> + 'static,
+{
+    pub fn new() -> Self {
+        match Runtime::runtime() {
+            Some(runtime) if Runtime::num_workers() > 1 => {
+                let worker_index = Runtime::worker_index();
+                let exchange_id = runtime.sequence_next();
+                let exchange = Exchange::with_runtime(
+                    &runtime,
+                    exchange_id,
+                    // TODO: handle serialization/deserialization errors better.
+                    Box::new(|x| rmp_serde::to_vec(&x).unwrap()),
+                    Box::new(|data| rmp_serde::from_slice(&data).unwrap()),
+                );
+
+                let notify_sender = Arc::new(Notify::new());
+                let notify_sender_clone = notify_sender.clone();
+                let notify_receiver = Arc::new(Notify::new());
+                let notify_receiver_clone = notify_receiver.clone();
+
+                exchange.register_sender_callback(worker_index, move || {
+                    notify_sender_clone.notify_one()
+                });
+
+                exchange.register_receiver_callback(worker_index, move || {
+                    notify_receiver_clone.notify_one()
+                });
+
+                Self::MultiThreaded {
+                    notify_sender,
+                    notify_receiver,
+                    exchange,
+                }
+            }
+            _ => Self::SingleThreaded,
+        }
+    }
+
+    /// Returns values broadcast by all workers (including the current worker), indexed by worker id.
+    ///
+    /// # Arguments
+    ///
+    /// * `local` - Value broadcast by the current worker.
+    pub async fn collect(&self, local: T) -> Result<Vec<T>, SchedulerError> {
+        match self {
+            Self::SingleThreaded => Ok(vec![local]),
+            Self::MultiThreaded {
+                notify_sender,
+                notify_receiver,
+                exchange,
+            } => {
+                while !exchange.try_send_all(Runtime::worker_index(), &mut repeat(local.clone())) {
+                    if Runtime::kill_in_progress() {
+                        return Err(SchedulerError::Killed);
+                    }
+                    notify_sender.notified().await;
+                }
+                // Receive the status of each peer, compute global result
+                // as a logical and of all peer statuses.
+                let mut result = Vec::with_capacity(Runtime::num_workers());
+                while !exchange
+                    .try_receive_all(Runtime::worker_index(), |status| result.push(status))
+                {
+                    if Runtime::kill_in_progress() {
+                        return Err(SchedulerError::Killed);
+                    }
+                    // Sleep if other threads are still working.
+                    notify_receiver.notified().await;
+                }
+                Ok(result)
+            }
+        }
+    }
+}
+
 /// Handle returned by `Runtime::run`.
 #[derive(Debug)]
 pub struct RuntimeHandle {
@@ -1270,7 +1370,8 @@ mod tests {
                 root.transaction().unwrap();
             }
 
-            assert_eq!(&*data.borrow(), &(1..101).collect::<Vec<usize>>());
+            // The scheduler allocates the first value for metadata exchange; therefore the output starts from 2.
+            assert_eq!(&*data.borrow(), &(2..102).collect::<Vec<usize>>());
         })
         .expect("failed to start runtime");
 

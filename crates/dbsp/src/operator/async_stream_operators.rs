@@ -4,7 +4,7 @@
 //! highly error prone (this is known as the stack ripping problem).
 //!
 //! It's much easier to implement such operators as streaming operators using `async_stream`
-//! crate's `stream!` macro, which allows to yield outputs at any point in the code.
+//! crate's `stream!` macro, which allows yielding outputs at any point in the code.
 //!
 //! We define traits for such operators whose eval method returns `futures::Stream` and
 //! implement wrappers that allow using them as regular binary, ternary, quaternary,
@@ -25,6 +25,7 @@ use crate::{
         metadata::{OperatorLocation, OperatorMeta},
         operator_traits::{
             BinaryOperator, NaryOperator, Operator, QuaternaryOperator, TernaryOperator,
+            TernarySinkOperator,
         },
     },
 };
@@ -147,6 +148,10 @@ where
 
     fn end_replay(&mut self) -> Result<(), Error> {
         Rc::get_mut(&mut self.operator).unwrap().end_replay()
+    }
+
+    fn start_transaction(&mut self) {
+        Rc::get_mut(&mut self.operator).unwrap().start_transaction();
     }
 
     fn flush(&mut self) {
@@ -315,6 +320,10 @@ where
 
     fn end_replay(&mut self) -> Result<(), Error> {
         Rc::get_mut(&mut self.operator).unwrap().end_replay()
+    }
+
+    fn start_transaction(&mut self) {
+        Rc::get_mut(&mut self.operator).unwrap().start_transaction();
     }
 
     fn flush(&mut self) {
@@ -490,6 +499,10 @@ where
         Rc::get_mut(&mut self.operator).unwrap().end_replay()
     }
 
+    fn start_transaction(&mut self) {
+        Rc::get_mut(&mut self.operator).unwrap().start_transaction();
+    }
+
     fn flush(&mut self) {
         assert!(self.stream.is_none(), "flush called while stream is active");
         Rc::get_mut(&mut self.operator).unwrap().flush();
@@ -661,6 +674,10 @@ where
         Rc::get_mut(&mut self.operator).unwrap().end_replay()
     }
 
+    fn start_transaction(&mut self) {
+        Rc::get_mut(&mut self.operator).unwrap().start_transaction();
+    }
+
     fn flush(&mut self) {
         assert!(self.stream.is_none(), "flush called while stream is active");
         Rc::get_mut(&mut self.operator).unwrap().flush();
@@ -703,6 +720,185 @@ where
             output
         } else {
             output
+        }
+    }
+}
+
+pub trait StreamingTernarySinkOperator<I1, I2, I3>: Operator
+where
+    I1: Clone,
+    I2: Clone,
+    I3: Clone,
+{
+    fn eval(
+        self: Rc<Self>,
+        i1: Cow<'_, I1>,
+        i2: Cow<'_, I2>,
+        i3: Cow<'_, I3>,
+    ) -> impl AsyncStream<Item = (bool, Option<Position>)> + 'static;
+}
+
+pub struct StreamingTernarySinkWrapper<I1, I2, I3, Op> {
+    operator: Rc<Op>,
+    stream: Option<Pin<Box<dyn AsyncStream<Item = (bool, Option<Position>)>>>>,
+    progress: Option<Position>,
+    phantom: PhantomData<fn(&I1, &I2, &I3)>,
+}
+
+impl<I1, I2, I3, Op> StreamingTernarySinkWrapper<I1, I2, I3, Op> {
+    pub fn new(operator: Op) -> Self {
+        Self {
+            operator: Rc::new(operator),
+            stream: None,
+            progress: None,
+            phantom: PhantomData,
+        }
+    }
+}
+
+impl<I1, I2, I3, Op> Operator for StreamingTernarySinkWrapper<I1, I2, I3, Op>
+where
+    I1: Clone + 'static,
+    I2: Clone + 'static,
+    I3: Clone + 'static,
+    Op: StreamingTernarySinkOperator<I1, I2, I3> + 'static,
+{
+    fn name(&self) -> Cow<'static, str> {
+        self.operator.name()
+    }
+
+    fn location(&self) -> OperatorLocation {
+        self.operator.location()
+    }
+
+    fn init(&mut self, global_id: &GlobalNodeId) {
+        Rc::get_mut(&mut self.operator).unwrap().init(global_id);
+    }
+
+    fn metadata(&self, meta: &mut OperatorMeta) {
+        self.operator.metadata(meta);
+    }
+
+    fn clock_start(&mut self, scope: Scope) {
+        Rc::get_mut(&mut self.operator).unwrap().clock_start(scope);
+    }
+
+    fn clock_end(&mut self, scope: Scope) {
+        Rc::get_mut(&mut self.operator).unwrap().clock_end(scope);
+    }
+
+    fn is_async(&self) -> bool {
+        self.operator.is_async()
+    }
+
+    fn is_input(&self) -> bool {
+        self.operator.is_input()
+    }
+
+    fn ready(&self) -> bool {
+        self.operator.ready()
+    }
+
+    fn register_ready_callback<F>(&mut self, cb: F)
+    where
+        F: Fn() + Send + Sync + 'static,
+    {
+        Rc::get_mut(&mut self.operator)
+            .unwrap()
+            .register_ready_callback(cb);
+    }
+
+    fn fixedpoint(&self, scope: Scope) -> bool {
+        self.operator.fixedpoint(scope)
+    }
+
+    #[allow(unused_variables)]
+    fn checkpoint(
+        &mut self,
+        base: &StoragePath,
+        persistent_id: Option<&str>,
+        files: &mut Vec<Arc<dyn FileCommitter>>,
+    ) -> Result<(), Error> {
+        Rc::get_mut(&mut self.operator)
+            .unwrap()
+            .checkpoint(base, persistent_id, files)
+    }
+
+    #[allow(unused_variables)]
+    fn restore(&mut self, base: &StoragePath, persistent_id: Option<&str>) -> Result<(), Error> {
+        Rc::get_mut(&mut self.operator)
+            .unwrap()
+            .restore(base, persistent_id)
+    }
+
+    fn clear_state(&mut self) -> Result<(), Error> {
+        Rc::get_mut(&mut self.operator).unwrap().clear_state()
+    }
+
+    fn start_replay(&mut self) -> Result<(), Error> {
+        Rc::get_mut(&mut self.operator).unwrap().start_replay()
+    }
+
+    fn is_replay_complete(&self) -> bool {
+        self.operator.is_replay_complete()
+    }
+
+    fn end_replay(&mut self) -> Result<(), Error> {
+        Rc::get_mut(&mut self.operator).unwrap().end_replay()
+    }
+
+    fn start_transaction(&mut self) {
+        Rc::get_mut(&mut self.operator).unwrap().start_transaction();
+    }
+
+    fn flush(&mut self) {
+        assert!(self.stream.is_none(), "flush called while stream is active");
+        Rc::get_mut(&mut self.operator).unwrap().flush();
+    }
+
+    fn is_flush_complete(&self) -> bool {
+        // println!(
+        //     "{} is_flush_complete: {:?}",
+        //     Runtime::worker_index(),
+        //     self.stream.is_none()
+        // );
+        //self.stream.is_none()
+
+        // Unlike all other operators, this operator doesn't assume that is_flush_complete is equivalent
+        // to self.stream.is_none(). This is based on how this operator is used with RebalancingExchangeSender.
+        // operator.
+        // TODO: change other operators to forward is_flush_complete to their inner operator too.
+        self.operator.is_flush_complete()
+    }
+
+    fn flush_progress(&self) -> Option<Position> {
+        self.progress.clone()
+    }
+}
+
+impl<I1, I2, I3, Op> TernarySinkOperator<I1, I2, I3> for StreamingTernarySinkWrapper<I1, I2, I3, Op>
+where
+    I1: Clone + 'static,
+    I2: Clone + 'static,
+    I3: Clone + 'static,
+    Op: StreamingTernarySinkOperator<I1, I2, I3> + 'static,
+{
+    async fn eval(&mut self, i1: Cow<'_, I1>, i2: Cow<'_, I2>, i3: Cow<'_, I3>) {
+        if self.stream.is_none() {
+            self.stream = Some(Box::pin(self.operator.clone().eval(i1, i2, i3))
+                as Pin<Box<dyn AsyncStream<Item = (bool, Option<Position>)>>>);
+        }
+
+        let stream = self.stream.as_mut().unwrap();
+
+        let Some((complete, progress)) = stream.next().await else {
+            panic!("StreamingTernarySinkOperator unexpectedly reached end of stream");
+        };
+
+        self.progress = progress;
+
+        if complete {
+            self.stream = None;
         }
     }
 }

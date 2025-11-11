@@ -443,7 +443,7 @@ where
     }
 }
 
-struct AccumulateOutput<B>
+pub struct AccumulateOutput<B>
 where
     B: Batch,
 {
@@ -456,7 +456,7 @@ impl<B> AccumulateOutput<B>
 where
     B: Batch + Send,
 {
-    fn new() -> (Self, OutputHandle<SpineSnapshot<B>>) {
+    pub fn new() -> (Self, OutputHandle<SpineSnapshot<B>>) {
         let handle = OutputHandle::new();
         let mailbox = handle.mailbox(Runtime::worker_index()).clone();
 
