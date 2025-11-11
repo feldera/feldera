@@ -31,12 +31,7 @@ class Config:
             takes priority.
         """
 
-        BASE_URL = (
-            url
-            or os.environ.get("FELDERA_HOST")
-            or os.environ.get("FELDERA_BASE_URL")
-            or "http://localhost:8080"
-        )
+        BASE_URL = url or os.environ.get("FELDERA_HOST") or "http://localhost:8080"
         self.url: str = BASE_URL
         self.api_key: Optional[str] = os.environ.get("FELDERA_API_KEY", api_key)
         self.version: str = version or "v0"
