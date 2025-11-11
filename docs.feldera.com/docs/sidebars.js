@@ -446,6 +446,7 @@ const operations = {
     label: 'Feldera Operations',
     items: [
         'operations/guide',
+        'operations/memory',
         'operations/metrics',
     ]
 };
