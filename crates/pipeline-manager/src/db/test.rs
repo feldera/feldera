@@ -4062,6 +4062,10 @@ impl Storage for Mutex<DbModel> {
             if pipeline.deployment_resources_status == ResourcesStatus::Stopped {
                 if pipeline.platform_version == platform_version {
                     if pipeline.program_status == ProgramStatus::CompilingRust {
+                        let pipeline_complete = self
+                            .get_pipeline_by_id(tid, pipeline.id)
+                            .await
+                            .expect("Pipeline should already exist");
                         self.transit_program_status_to_sql_compiled(
                             tid,
                             pipeline.id,
@@ -4070,7 +4074,9 @@ impl Storage for Mutex<DbModel> {
                                 exit_code: 0,
                                 messages: vec![],
                             },
-                            &serde_json::json!({}),
+                            &pipeline_complete
+                                .program_info
+                                .expect("Pipeline should have already had its SQL compiled"),
                         )
                         .await?;
                     }
