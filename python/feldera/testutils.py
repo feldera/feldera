@@ -38,11 +38,7 @@ def _get_effective_api_key():
     return oidc_token if oidc_token else API_KEY
 
 
-BASE_URL = (
-    os.environ.get("FELDERA_HOST")
-    or os.environ.get("FELDERA_BASE_URL")
-    or "http://localhost:8080"
-)
+BASE_URL = os.environ.get("FELDERA_HOST") or "http://localhost:8080"
 FELDERA_REQUESTS_VERIFY = requests_verify_from_env()
 
 
