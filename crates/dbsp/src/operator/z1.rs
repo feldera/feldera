@@ -269,7 +269,7 @@ where
 
 impl<T> Operator for Z1<T>
 where
-    T: Checkpoint + Eq + SizeOf + NumEntries + Clone + 'static,
+    T: Checkpoint + SizeOf + NumEntries + Clone + 'static,
 {
     fn name(&self) -> Cow<'static, str> {
         Cow::from("Z^-1")
@@ -345,7 +345,7 @@ where
 
 impl<T> UnaryOperator<T, T> for Z1<T>
 where
-    T: Checkpoint + Eq + SizeOf + NumEntries + Clone + 'static,
+    T: Checkpoint + SizeOf + NumEntries + Clone + 'static,
 {
     async fn eval(&mut self, i: &T) -> T {
         replace(&mut self.values, i.clone())
@@ -362,7 +362,7 @@ where
 
 impl<T> StrictOperator<T> for Z1<T>
 where
-    T: Checkpoint + Eq + SizeOf + NumEntries + Clone + 'static,
+    T: Checkpoint + SizeOf + NumEntries + Clone + 'static,
 {
     fn get_output(&mut self) -> T {
         self.empty_output = self.values.num_entries_shallow() == 0;
@@ -376,7 +376,7 @@ where
 
 impl<T> StrictUnaryOperator<T, T> for Z1<T>
 where
-    T: Checkpoint + Eq + SizeOf + NumEntries + Clone + 'static,
+    T: Checkpoint + SizeOf + NumEntries + Clone + 'static,
 {
     async fn eval_strict(&mut self, i: &T) {
         self.values = i.clone();

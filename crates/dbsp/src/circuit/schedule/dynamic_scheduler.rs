@@ -57,7 +57,8 @@ use crate::{
     Position,
     circuit::{
         Circuit, GlobalNodeId, NodeId,
-        runtime::{Consensus, Runtime},
+        circuit_builder::CircuitMetadata,
+        runtime::{Broadcast, Consensus, Runtime},
         schedule::{
             CommitProgress, Error, Scheduler,
             util::{circuit_graph, ownership_constraints},
@@ -182,6 +183,12 @@ struct Inner {
 
     /// Used to synchronize commit completion across all workers.
     global_commit_consensus: Consensus,
+
+    /// Broadcast object used to exchange metadata with peers.
+    metadata_broadcast: Broadcast<CircuitMetadata>,
+
+    // True before the circuit has executed any steps.
+    first_step: bool,
 }
 
 impl Inner {
@@ -343,6 +350,8 @@ impl Inner {
             waiting: false,
             transaction_phase: TransactionPhase::Idle,
             global_commit_consensus: Consensus::new(),
+            metadata_broadcast: Broadcast::new(),
+            first_step: true,
         };
 
         // Setup scheduler callbacks.
@@ -361,6 +370,8 @@ impl Inner {
                 }
             }
         }
+
+        circuit.balancer().prepare();
 
         Ok(scheduler)
     }
@@ -421,12 +432,19 @@ impl Inner {
         }
     }
 
-    fn start_transaction(&mut self) {
-        // Reset unsatisfied dependencies, initialize runnable queue.
+    fn start_transaction<C>(&mut self, circuit: &C)
+    where
+        C: Circuit,
+    {
+        // Reset unflushed dependencies.
         for task in self.tasks.values_mut() {
             task.flush_state = FlushState::UnflushedDependencies(task.num_predecessors);
         }
         self.transaction_phase = TransactionPhase::Started;
+
+        circuit.notify_start_transaction();
+
+        circuit.balancer().start_transaction();
     }
 
     fn start_commit_transaction(&mut self) -> Result<(), Error> {
@@ -460,6 +478,18 @@ impl Inner {
         commit_progress
     }
 
+    async fn exchange_metadata<C>(&mut self, circuit: &C) -> Result<(), Error>
+    where
+        C: Circuit,
+    {
+        let metadata = circuit.metadata_exchange().local_metadata().clone();
+        let global_metadata = self.metadata_broadcast.collect(metadata).await?;
+        circuit
+            .metadata_exchange()
+            .set_global_metadata(global_metadata);
+        Ok(())
+    }
+
     async fn step<C>(&mut self, circuit: &C) -> Result<(), Error>
     where
         C: Circuit,
@@ -469,7 +499,17 @@ impl Inner {
         }
 
         circuit.log_scheduler_event(&SchedulerEvent::step_start(circuit.global_id()));
+
+        if self.first_step {
+            self.first_step = false;
+            self.exchange_metadata(circuit).await?;
+        }
+        circuit.balancer().start_step();
         let result = self.do_step(circuit).await;
+
+        // Exchange metadata with peers.
+        self.exchange_metadata(circuit).await?;
+
         if let TransactionPhase::Committing(unflushed_operators) = &self.transaction_phase {
             let commit_complete = self
                 .global_commit_consensus
@@ -626,13 +666,13 @@ impl Scheduler for DynamicScheduler {
         Ok(())
     }
 
-    async fn start_transaction<C>(&self, _circuit: &C) -> Result<(), Error>
+    async fn start_transaction<C>(&self, circuit: &C) -> Result<(), Error>
     where
         C: Circuit,
     {
         let inner = &mut *self.inner_mut();
 
-        inner.start_transaction();
+        inner.start_transaction(circuit);
 
         Ok(())
     }

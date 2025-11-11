@@ -163,7 +163,9 @@ fn test_replay<I1, I2, I3, O1, O2, O3>(
 
     init_test_logger();
 
-    let mut circuit_config = CircuitConfig::with_workers(4).with_mode(Mode::Persistent);
+    let mut circuit_config = CircuitConfig::with_workers(4)
+        .with_splitter_chunk_size_records(2)
+        .with_mode(Mode::Persistent);
     let path = tempfile::tempdir().unwrap().keep();
     println!("Running replay_test in {}", path.display());
 
@@ -584,6 +586,7 @@ fn test_linear_circuit_materialized_inputs_with_backfill() {
 // ---> input3 ---> join --> output2
 //
 fn join_circuit1(
+    balancing: bool,
     circuit: &mut RootCircuit,
 ) -> (
     (),
@@ -608,14 +611,21 @@ fn join_circuit1(
         .map_index(|x| (*x, *x))
         .set_persistent_id(Some("input_stream2_indexed"));
 
-    let output_handle1 = input_stream1_indexed
-        .join(&input_stream2_indexed, |key, _v1, _v2| *key)
-        .accumulate_output_persistent(Some("output1"));
+    let output_handle1 = if balancing {
+        input_stream1_indexed
+            .balanced_join(&input_stream2_indexed, |key, _v1, _v2| *key)
+            .accumulate_output_persistent(Some("output1"))
+    } else {
+        input_stream1_indexed
+            .join(&input_stream2_indexed, |key, _v1, _v2| *key)
+            .accumulate_output_persistent(Some("output1"))
+    };
 
     ((), (input_handle1, input_handle2), (), output_handle1)
 }
 
 fn join_circuit2(
+    balancing: bool,
     circuit: &mut RootCircuit,
 ) -> (
     (ZSetHandle<u64>, ZSetHandle<u64>),
@@ -647,13 +657,25 @@ fn join_circuit2(
         .map_index(|x| (*x, *x))
         .set_persistent_id(Some("input_stream3_indexed"));
 
-    let output_handle1 = input_stream1_indexed
-        .join(&input_stream2_indexed, |key, _v1, _v2| *key)
-        .accumulate_output_persistent(Some("output1"));
+    let output_handle1 = if balancing {
+        input_stream1_indexed
+            .balanced_join(&input_stream2_indexed, |key, _v1, _v2| *key)
+            .accumulate_output_persistent(Some("output1"))
+    } else {
+        input_stream1_indexed
+            .join(&input_stream2_indexed, |key, _v1, _v2| *key)
+            .accumulate_output_persistent(Some("output1"))
+    };
 
-    let output_handle2 = input_stream2_indexed
-        .join(&input_stream3_indexed, |key, _v1, _v2| *key)
-        .accumulate_output_persistent(Some("output2"));
+    let output_handle2 = if balancing {
+        input_stream2_indexed
+            .balanced_join(&input_stream3_indexed, |key, _v1, _v2| *key)
+            .accumulate_output_persistent(Some("output2"))
+    } else {
+        input_stream2_indexed
+            .join(&input_stream3_indexed, |key, _v1, _v2| *key)
+            .accumulate_output_persistent(Some("output2"))
+    };
 
     (
         (input_handle1, input_handle2),
@@ -666,8 +688,20 @@ fn join_circuit2(
 #[test]
 fn test_join_circuit() {
     test_replay::<(), TestData2<u64, u64>, TestData1<u64>, (), TestData1<u64>, TestData1<u64>>(
-        Arc::new(join_circuit1),
-        Arc::new(join_circuit2),
+        Arc::new(|circuit| join_circuit1(false, circuit)),
+        Arc::new(|circuit| join_circuit2(false, circuit)),
+        std::iter::repeat_n((), 2).collect(),
+        std::iter::zip(sequence(0, 2), sequence(2, 4)).collect(),
+        std::iter::zip(sequence(2, 4), sequence(0, 2)).collect(),
+        sequence(1, 3),
+    );
+}
+
+#[test]
+fn test_balanced_join_circuit() {
+    test_replay::<(), TestData2<u64, u64>, TestData1<u64>, (), TestData1<u64>, TestData1<u64>>(
+        Arc::new(|circuit| join_circuit1(true, circuit)),
+        Arc::new(|circuit| join_circuit2(true, circuit)),
         std::iter::repeat_n((), 2).collect(),
         std::iter::zip(sequence(0, 2), sequence(2, 4)).collect(),
         std::iter::zip(sequence(2, 4), sequence(0, 2)).collect(),

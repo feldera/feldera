@@ -1054,7 +1054,9 @@ mod test {
             time_series::OrdPartitionedIndexedZSet,
         },
         trace::{BatchReaderFactories, Cursor},
-        typed_batch::{DynBatchReader, DynOrdIndexedZSet, SpineSnapshot, TypedBatch},
+        typed_batch::{
+            DynBatchReader, DynOrdIndexedZSet, IndexedZSetReader, SpineSnapshot, TypedBatch,
+        },
         utils::Tup2,
     };
     use proptest::{collection, prelude::*};

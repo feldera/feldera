@@ -87,7 +87,7 @@ pub mod mono;
 
 pub use crate::{
     error::{DetailedError, Error},
-    hash::default_hash,
+    hash::{default_hash, default_hasher},
     num_entries::NumEntries,
 };
 // // pub use crate::ref_pair::RefPair;
@@ -109,7 +109,7 @@ pub use trace::{DBData, DBWeight, cursor::Position};
 pub use typed_batch::{
     Batch, BatchReader, FallbackKeyBatch, FallbackValBatch, FallbackWSet, FallbackZSet,
     FileIndexedWSet, FileIndexedZSet, FileKeyBatch, FileValBatch, FileWSet, FileZSet, IndexedZSet,
-    OrdIndexedWSet, OrdIndexedZSet, OrdWSet, OrdZSet, Trace, TypedBox, ZSet,
+    IndexedZSetReader, OrdIndexedWSet, OrdIndexedZSet, OrdWSet, OrdZSet, Trace, TypedBox, ZSet,
 };
 
 #[cfg(doc)]

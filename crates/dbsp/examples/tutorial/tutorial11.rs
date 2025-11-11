@@ -1,4 +1,5 @@
 use anyhow::Result;
+use dbsp::typed_batch::IndexedZSetReader;
 use dbsp::{
     Circuit, NestedCircuit, OrdIndexedZSet, Runtime, Stream, indexed_zset,
     operator::{Generator, Min},

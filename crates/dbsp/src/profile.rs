@@ -184,6 +184,10 @@ impl WorkerProfile {
             }
         }
     }
+
+    pub fn get_node_profile(&self, global_node_id: &GlobalNodeId) -> Option<&OperatorMeta> {
+        self.metadata.get(global_node_id)
+    }
 }
 
 /// Profile in graphviz format collected from all DBSP worker threads.

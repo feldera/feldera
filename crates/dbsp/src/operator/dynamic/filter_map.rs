@@ -1186,7 +1186,7 @@ mod test {
     use crate::{
         Circuit, OrdIndexedZSet, RootCircuit, indexed_zset,
         operator::Generator,
-        typed_batch::{OrdZSet, SpineSnapshot},
+        typed_batch::{IndexedZSetReader, OrdZSet, SpineSnapshot},
         utils::Tup2,
         zset,
     };

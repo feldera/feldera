@@ -64,7 +64,7 @@ where
     ) -> (Stream<C, Option<Spine<B>>>, Arc<AtomicUsize>) {
         self.circuit()
             .cache_get_or_insert_with(AccumulatorId::new(self.stream_id()), || {
-                let accumulator = Accumulator::new(factories, Location::caller());
+                let accumulator = Accumulator::<B>::new(factories, Location::caller());
                 let enable_count = accumulator.enable_count.clone();
 
                 let stream = self

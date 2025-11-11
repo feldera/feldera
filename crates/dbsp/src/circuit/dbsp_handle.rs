@@ -2,7 +2,9 @@ use crate::circuit::checkpointer::Checkpointer;
 use crate::circuit::metrics::{DBSP_STEP, DBSP_STEP_LATENCY_MICROSECONDS};
 use crate::circuit::runtime::ThreadType;
 use crate::circuit::schedule::{CommitProgress, CommitProgressSummary};
+use crate::circuit::GlobalNodeId;
 use crate::monitor::visual_graph::Graph;
+use crate::operator::dynamic::balance::{BalancerHint, PartitioningPolicy};
 use crate::storage::backend::StorageError;
 use crate::storage::file::BLOOM_FILTER_FALSE_POSITIVE_RATE;
 use crate::trace::MergerType;
@@ -684,6 +686,29 @@ impl Runtime {
                             return;
                         }
                     }
+                    Ok(Command::SetBalancerHints(hints)) => {
+                        let results = hints
+                            .into_iter()
+                            .map(|(global_node_id, hint)| {
+                                circuit.set_balancer_hint(&global_node_id, hint)
+                            })
+                            .collect::<Vec<Result<(), DbspError>>>();
+                        if status_sender
+                            .send(Ok(Response::SetBalancerHints(results)))
+                            .is_err()
+                        {
+                            return;
+                        }
+                    }
+                    Ok(Command::GetCurrentBalancerPolicy) => {
+                        let policy = circuit.get_current_balancer_policy();
+                        if status_sender
+                            .send(Ok(Response::CurrentBalancerPolicy(policy)))
+                            .is_err()
+                        {
+                            return;
+                        }
+                    }
                     // Nothing to do: do some housekeeping and relinquish the CPU if there's none
                     // left.
                     Err(TryRecvError::Empty) => {
@@ -772,6 +797,8 @@ enum Command {
     GetLir,
     Checkpoint(StoragePath),
     Restore(StoragePath),
+    SetBalancerHints(Vec<(GlobalNodeId, BalancerHint)>),
+    GetCurrentBalancerPolicy,
 }
 
 impl Debug for Command {
@@ -797,6 +824,10 @@ impl Debug for Command {
             Command::GetLir => write!(f, "GetLir"),
             Command::Checkpoint(path) => f.debug_tuple("Checkpoint").field(path).finish(),
             Command::Restore(path) => f.debug_tuple("Restore").field(path).finish(),
+            Command::SetBalancerHints(hints) => {
+                f.debug_tuple("SetBalancerHints").field(hints).finish()
+            }
+            Command::GetCurrentBalancerPolicy => write!(f, "GetCurrentBalancerPolicy"),
         }
     }
 }
@@ -812,6 +843,8 @@ enum Response {
     CheckpointCreated(Vec<Arc<dyn FileCommitter>>),
     CheckpointRestored(Option<BootstrapInfo>),
     Lir(LirCircuit),
+    SetBalancerHints(Vec<Result<(), DbspError>>),
+    CurrentBalancerPolicy(BTreeMap<GlobalNodeId, PartitioningPolicy>),
 }
 
 /// A handle to control the execution of a circuit in a multithreaded runtime.
@@ -990,6 +1023,46 @@ impl DBSPHandle {
         }
 
         Ok(())
+    }
+
+    fn unicast_command(&mut self, worker: usize, command: Command) -> Result<Response, DbspError> {
+        if self.runtime.is_none() {
+            return Err(DbspError::Runtime(RuntimeError::Terminated));
+        }
+
+        // Send command.
+        if self.command_senders[worker].send(command.clone()).is_err() {
+            let panic_info = self.collect_panic_info().unwrap_or_default();
+
+            // Worker thread panicked. Exit without waiting for all workers to exit
+            // to avoid deadlocks due to workers waiting for each other.
+            self.kill_async();
+            return Err(DbspError::Runtime(RuntimeError::WorkerPanic { panic_info }));
+        }
+        self.runtime.as_ref().unwrap().unpark_worker(worker);
+
+        let reply = match self.status_receivers[worker].recv() {
+            Err(_) => return handle_panic(self),
+            Ok(Err(e)) => {
+                let _ = self.kill_inner();
+                return Err(e);
+            }
+            Ok(Ok(resp)) => resp,
+        };
+
+        // Receive responses.
+        fn handle_panic(this: &mut DBSPHandle) -> Result<Response, DbspError> {
+            // Retrieve panic info before killing the circuit.
+            let panic_info = this.collect_panic_info().unwrap_or_default();
+            this.kill_async();
+
+            Err(DbspError::Runtime(RuntimeError::WorkerPanic { panic_info }))
+        }
+        if self.panicked() {
+            return handle_panic(self);
+        }
+
+        Ok(reply)
     }
 
     /// Start and instantly commit a transaction, waiting for the commit to complete.
@@ -1369,6 +1442,42 @@ impl DBSPHandle {
         }
 
         self.kill_inner()
+    }
+
+    pub fn set_balancer_hint(
+        &mut self,
+        global_node_id: &GlobalNodeId,
+        hint: BalancerHint,
+    ) -> Result<(), DbspError> {
+        let mut result = self.set_balancer_hints(vec![(global_node_id.clone(), hint)])?;
+        result.pop().unwrap()
+    }
+
+    pub fn set_balancer_hints(
+        &mut self,
+        hints: Vec<(GlobalNodeId, BalancerHint)>,
+    ) -> Result<Vec<Result<(), DbspError>>, DbspError> {
+        let mut results = Vec::new();
+
+        self.broadcast_command(Command::SetBalancerHints(hints), |_, resp| {
+            let Response::SetBalancerHints(worker_results) = resp else {
+                panic!("Expected SetBalancerHints response, got {resp:?}");
+            };
+            results = worker_results;
+        })?;
+
+        Ok(results)
+    }
+
+    pub fn get_current_balancer_policy(
+        &mut self,
+    ) -> Result<BTreeMap<GlobalNodeId, PartitioningPolicy>, DbspError> {
+        let resp = self.unicast_command(0, Command::GetCurrentBalancerPolicy)?;
+
+        let Response::CurrentBalancerPolicy(policy) = resp else {
+            panic!("Expected GetCurrentBalancerPolicy policy response, got {resp:?}");
+        };
+        Ok(policy)
     }
 }
 
