@@ -4571,6 +4571,15 @@
             "schema": {
               "type": "boolean"
             }
+          },
+          {
+            "name": "dataflow_graph",
+            "in": "query",
+            "description": "Whether to collect dataflow graph data (default: true)",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
           }
         ],
         "responses": {

@@ -331,7 +331,8 @@ impl SupportBundleData {
             },
             async {
                 if params.circuit_profile {
-                    Self::collect_json_circuit_profile(state, client, tenant_id, pipeline_name).await
+                    Self::collect_json_circuit_profile(state, client, tenant_id, pipeline_name)
+                        .await
                 } else {
                     skipped()
                 }

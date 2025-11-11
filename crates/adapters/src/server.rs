@@ -1578,13 +1578,7 @@ async fn dump_json_profile(state: WebData<ServerState>) -> Result<HttpResponse, 
     Ok(HttpResponse::Ok()
         .insert_header(header::ContentType("application/json".parse().unwrap()))
         .insert_header(header::ContentDisposition::attachment("profile.json"))
-        .body(
-            state
-                .controller()?
-                .async_json_profile()
-                .await?
-                .as_json(),
-        ))
+        .body(state.controller()?.async_json_profile().await?.as_json()))
 }
 
 /// Dump the low-level IR of the circuit.

@@ -45,7 +45,11 @@ impl Dataflow {
         mir: HashMap<MirNodeId, MirNode>,
         sources: Vec<String>,
     ) -> Self {
-        Self { calcite_plan, mir, sources }
+        Self {
+            calcite_plan,
+            mir,
+            sources,
+        }
     }
 
     /// Reports the changes to relations (views and tables) of a dataflow graph when
