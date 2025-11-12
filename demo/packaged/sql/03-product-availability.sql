@@ -29,6 +29,7 @@ CREATE TABLE warehouse (
 ) with (
     'materialized' = 'true',
     'connectors' = '[{
+        "name": "warehouse",
         "transport": {
             "name": "datagen",
             "config": {
@@ -53,6 +54,7 @@ CREATE TABLE product (
 ) with (
     'materialized' = 'true',
     'connectors' = '[{
+        "name": "product",
         "transport": {
             "name": "datagen",
             "config": {
@@ -79,6 +81,7 @@ CREATE TABLE storage (
 ) with (
     'materialized' = 'true',
     'connectors' = '[{
+        "name": "storage",
         "transport": {
             "name": "datagen",
             "config": {

@@ -252,6 +252,7 @@ create materialized view test_view
 WITH (
     'connectors' = '[
     {{
+        "name": "kafka_json",
         "format": {{
             "name": "json",
             "config": {{
@@ -268,6 +269,7 @@ WITH (
         }}
     }},
     {{
+        "name": "kafka_avro",
         "index": "test_view_index",
         "format": {{
             "name": "avro",

@@ -52,6 +52,7 @@ CREATE TABLE vendor (
     name VARCHAR,
     address VARCHAR
 ) WITH ('connectors' = '[{
+    "name": "vendor",
     "transport": {
         "name": "url_input",
         "config": {
@@ -68,6 +69,7 @@ CREATE TABLE part (
     id BIGINT NOT NULL PRIMARY KEY,
     name VARCHAR
 ) WITH ('connectors' = '[{
+    "name": "part",
     "transport": {
         "name": "url_input",
         "config": {

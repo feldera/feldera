@@ -24,6 +24,7 @@ create table VENDOR (
     name varchar,
     address varchar
 ) WITH ('connectors' = '[{{
+    "name": "vendor",
     "transport": {{
         "name": "url_input", "config": {{"path": "https://feldera-basics-tutorial.s3.amazonaws.com/vendor.json"}}
     }},
@@ -34,6 +35,7 @@ create table PART (
     id bigint not null primary key,
     name varchar
 ) WITH ('connectors' = '[{{
+    "name": "part",
     "transport": {{
         "name": "url_input", "config": {{"path": "https://feldera-basics-tutorial.s3.amazonaws.com/part.json"  }}
     }},
@@ -82,6 +84,7 @@ create view PREFERRED_VENDOR (
 )
 WITH (
     'connectors' = '[{{
+        "name": "preferred_vendor",
         "format": {{"name": "json"}},
         "transport": {{
             "name": "kafka_output",

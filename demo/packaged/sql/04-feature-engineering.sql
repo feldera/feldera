@@ -32,6 +32,7 @@ CREATE TABLE customer (
 ) WITH (
     -- Generate 10000 customer records.
     'connectors' = '[{
+      "name": "customer",
       "transport": {
         "name": "datagen",
         "config": {
@@ -63,6 +64,7 @@ CREATE TABLE transaction (
     -- Generate a stream of 1 billion credit card transactions.
     -- (remove the '"rate": 10000' line to run the data generator at full throttle).
     'connectors' = '[{
+      "name": "transaction",
       "transport": {
       "name": "datagen",
         "config": {

@@ -57,6 +57,7 @@ create table pipeline (
     update_date timestamp,
     updatedby_user_id bigint
 ) WITH ('connectors' = '[{
+    "name": "pipeline",
     "transport": {
         "name": "datagen",
         "config": {
@@ -81,6 +82,7 @@ create table pipeline_sources (
     pipeline_id bigint not null foreign key references pipeline(pipeline_id)
 ) WITH (
     'connectors' = '[{
+        "name": "pipelie_sources",
         "transport": {
             "name": "datagen",
             "config": {
@@ -109,6 +111,7 @@ create table artifact (
     parent_artifact_id bigint foreign key references artifact(artifact_id)
 ) WITH (
     'connectors' = '[{
+        "name": "artifact",
         "transport": {
             "name": "datagen",
             "config": {
@@ -143,6 +146,7 @@ WITH (
     -- user to browse it via the UI or API.
     'materialized' = 'true',
     'connectors' = '[{
+        "name": "vulnerability",
         "transport": {
             "name": "datagen",
             "config": {
@@ -169,6 +173,7 @@ create table k8scluster (
     name varchar not null)
 WITH  (
     'connectors' = '[{
+        "name": "k8scluster",
         "transport": {
             "name": "datagen",
             "config": {
@@ -193,6 +198,7 @@ create table k8sobject (
     k8snamespace varchar not null
 )WITH  (
     'connectors' = '[{
+        "name": "k8sobject",
         "transport": {
             "name": "datagen",
             "config": {

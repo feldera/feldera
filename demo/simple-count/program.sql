@@ -4,6 +4,7 @@ CREATE TABLE example (
 ) WITH (
     'connectors' = '[
         {
+            "name": "kafka-0",
             "transport": {
                 "name": "kafka_input",
                 "config": {
@@ -39,6 +40,7 @@ CREATE TABLE example (
             }
         },
         {
+            "name": "kafka-2",
             "transport": {
                 "name": "kafka_input",
                 "config": {
@@ -79,6 +81,7 @@ CREATE VIEW example_count WITH (
             }
         },
         {
+            "name": "kafka-2",
             "transport": {
                 "name": "kafka_output",
                 "config": {
@@ -95,6 +98,7 @@ CREATE VIEW example_count WITH (
             }
         },
         {
+            "name": "kafka-3",
             "transport": {
                 "name": "kafka_output",
                 "config": {

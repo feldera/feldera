@@ -108,6 +108,7 @@ specifying an AWS access key and region.
     # Load DEMOGRAPHICS data from a Delta table stored in an S3 bucket.
     demographics_connectors = [
         {
+            "name": "demographics",
             "transport": {
                 "name": "delta_table_input",
                 "config": {
@@ -122,6 +123,7 @@ specifying an AWS access key and region.
     # Load credit card TRANSACTION data.
     transactions_connectors = [
         {
+            "name": "transactions",
             "transport": {
                 "name": "delta_table_input",
                 "config": {
@@ -138,6 +140,7 @@ specifying an AWS access key and region.
     if args.deltalake_uri is not None:
         features_connectors = [
             {
+                "name": "delta",
                 "transport": {
                     "name": "delta_table_output",
                     "config": {
@@ -194,6 +197,7 @@ specifying an AWS access key and region.
     # Load DEMOGRAPHICS data from a Delta table.
     demographics_connectors = [
         {
+            "name": "demographics_delta",
             "transport": {
                 "name": "delta_table_input",
                 "config": {
@@ -210,6 +214,7 @@ specifying an AWS access key and region.
     # the table before following the stream of changes in its transaction log.
     transactions_connectors = [
         {
+            "name": "transactions_delta",
             "transport": {
                 "name": "delta_table_input",
                 "config": {
@@ -227,6 +232,7 @@ specifying an AWS access key and region.
     if args.deltalake_uri is not None:
         features_connectors = [
             {
+                "name": "deltalake_uri",
                 "transport": {
                     "name": "delta_table_output",
                     "config": {
