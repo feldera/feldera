@@ -1,6 +1,6 @@
 <script lang="ts">
   import { preloadCode } from '$app/navigation'
-  import { base } from '$app/paths'
+  import { resolve } from '$lib/functions/svelte'
   import { useIsTablet } from '$lib/compositions/layout/useIsMobile.svelte'
   import FelderaLogomarkLight from '$assets/images/feldera-modern/Feldera Logomark Color Dark.svg?component'
   import FelderaLogomarkDark from '$assets/images/feldera-modern/Feldera Logomark Color Light.svg?component'
@@ -24,7 +24,7 @@
   import BookADemo from '$lib/components/other/BookADemo.svelte'
   import Footer from '$lib/components/layout/Footer.svelte'
 
-  preloadCode(`${base}/pipelines/*`).then(() => preloadCode(`${base}/demos/`))
+  preloadCode(resolve(`/pipelines/*`)).then(() => preloadCode(resolve(`/demos/`)))
 
   let { data }: { data: PageData } = $props()
   const isTablet = useIsTablet()
@@ -162,7 +162,7 @@
                 <div class="text-xl font-semibold">Explore use cases and tutorials</div>
                 <a
                   class="whitespace-nowrap text-primary-500"
-                  href="{base}/demos/"
+                  href={resolve('/demos/')}
                   onclick={(e) => e.stopPropagation()}>View all</a
                 >
               </div>
@@ -178,7 +178,7 @@
                 {/each}
                 <div class="card flex flex-col p-4">
                   <div class="text-sm text-surface-500">&nbsp;</div>
-                  <a class="text-left text-primary-500" href="{base}/demos/">
+                  <a class="text-left text-primary-500" href={resolve('/demos/')}>
                     <span class="py-2">Discover More Examples and Tutorials</span>
                     <!-- <span class="fd fd-arrow-right inline-block w-2 text-[20px]"></span> -->
                   </a>

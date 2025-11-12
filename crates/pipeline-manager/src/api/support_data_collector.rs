@@ -27,7 +27,7 @@ use tokio::sync::watch;
 use tokio::time::{sleep, Duration, Instant};
 use utoipa::{IntoParams, ToSchema};
 
-const COLLECTION_TIMEOUT: Duration = Duration::from_secs(120);
+const COLLECTION_TIMEOUT: Duration = Duration::from_secs(0);
 const SKIPPED_BY_USER: &str = "Skipped due to user request";
 
 type BundleResult<T> = Result<T, String>;

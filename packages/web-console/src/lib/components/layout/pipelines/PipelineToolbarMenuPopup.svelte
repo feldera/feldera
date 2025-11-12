@@ -1,6 +1,5 @@
 <script lang="ts">
-  import { base } from '$app/paths'
-  import { type ExtendedPipeline, type Pipeline } from '$lib/services/pipelineManager'
+  import { resolve } from '$lib/functions/svelte'
   import { goto } from '$app/navigation'
   import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
   import Popup from '$lib/components/common/Popup.svelte'
@@ -33,7 +32,7 @@
   const deletePipeline = async (pipelineName: string) => {
     await api.deletePipeline(pipelineName)
     onDeletePipeline?.(pipelineName)
-    goto(`${base}/`)
+    goto(resolve('/'))
   }
 </script>
 
@@ -94,7 +93,7 @@
             if (e.key === 'Enter') {
               const newPipelineName = e.currentTarget.value
               pipeline.patch({ name: newPipelineName }).then(() => {
-                goto(`${base}/pipelines/${newPipelineName}`)
+                goto(resolve(`/pipelines/${newPipelineName}`))
               })
             }
           }}

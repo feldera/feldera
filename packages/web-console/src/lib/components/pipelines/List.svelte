@@ -4,15 +4,20 @@
 
 <script lang="ts">
   import PipelineStatus from '$lib/components/pipelines/list/PipelineStatusDot.svelte'
-  import { base } from '$app/paths'
+  import { resolve } from '$lib/functions/svelte'
   import { type PipelineThumb } from '$lib/services/pipelineManager'
-  import { page } from '$app/state'
 
   let {
+    pipelineName,
     pipelines = $bindable(),
     onclose,
     onaction
-  }: { pipelines: PipelineThumb[]; onclose?: () => void; onaction?: () => void } = $props()
+  }: {
+    pipelineName: string
+    pipelines: PipelineThumb[]
+    onclose?: () => void
+    onaction?: () => void
+  } = $props()
   const bindScrollY = (node: HTMLElement, val: { scrollY: number }) => {
     $effect(() => {
       node.scrollTop = scrollY
@@ -42,12 +47,12 @@
   </div>
   {#each pipelines as pipeline}
     <a
-      class="flex h-9 flex-nowrap items-center justify-between gap-2 rounded py-2 pl-4 {page.params
-        .pipelineName === pipeline.name
+      class="flex h-9 flex-nowrap items-center justify-between gap-2 rounded py-2 pl-4 {pipelineName ===
+      pipeline.name
         ? 'bg-surface-50-950'
         : 'hover:bg-surface-50-950'}"
       onclick={onaction}
-      href={`${base}/pipelines/` + encodeURI(pipeline.name) + '/'}
+      href={resolve(`/pipelines/${encodeURI(pipeline.name)}/`)}
     >
       <div class="min-w-0 overflow-hidden overflow-ellipsis whitespace-nowrap py-1">
         {pipeline.name}

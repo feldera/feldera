@@ -1,7 +1,6 @@
-import { base } from '$app/paths'
+import { resolve } from '$lib/functions/svelte'
 import { groupBy } from '$lib/functions/common/array'
 import { defaultGithubReportSections, type ReportDetails } from '$lib/services/githubReport'
-import type { ErrorResponse } from '$lib/services/manager'
 import {
   type CompilerOutput,
   type ExtendedPipeline,
@@ -11,7 +10,6 @@ import {
 import type { ControllerStatus } from '$lib/types/pipelineManager'
 
 import JSONbig from 'true-json-bigint'
-import { match, P } from 'ts-pattern'
 
 export type SystemError<T = any, Report = ReportDetails> = Error & {
   message: string
@@ -40,7 +38,7 @@ export const extractPipelineErrors = (pipeline: ExtendedPipeline): SystemError[]
       cause: {
         entityName: pipeline.name,
         tag: 'pipelineError',
-        source: `${base}/pipelines/${pipeline.name}/`,
+        source: resolve(`/pipelines/${pipeline.name}/`),
         report: {
           ...defaultGithubReportSections,
           name: 'Report: pipeline execution error',
@@ -211,7 +209,7 @@ const ignoredRustErrors = ['warning: patch for the non root package will be igno
 export const extractProgramErrors =
   <Report>(getReport: (pipelineName: string, message: string) => Report) =>
   (pipeline: Pick<ExtendedPipeline, 'name' | 'status' | 'compilerOutput'>) => {
-    const source = `${base}/pipelines/${encodeURI(pipeline.name)}/`
+    const source = resolve(`/pipelines/${encodeURI(pipeline.name)}/`)
     const result: SystemError<any, Report>[] = []
     if (pipeline.compilerOutput.sql) {
       result.push.apply(
@@ -328,7 +326,7 @@ export const extractPipelineXgressErrors = ({
   status: Pick<ControllerStatus, 'inputs' | 'outputs'> | null | 'not running'
 }): SystemError[] => {
   const stats = status == null || status === 'not running' ? { inputs: [], outputs: [] } : status
-  const source = `${base}/pipelines/${pipelineName}/`
+  const source = resolve(`/pipelines/${pipelineName}/`)
   const stringifyConfig = (config: any) =>
     `Connector config:\n\`\`\`\n${JSONbig.stringify(config, undefined, '\t')}\n\`\`\`\n`
   return stats.inputs

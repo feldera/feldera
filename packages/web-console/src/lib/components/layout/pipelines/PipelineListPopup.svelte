@@ -1,6 +1,6 @@
 <script lang="ts">
   import Popup from '$lib/components/common/Popup.svelte'
-  import { base } from '$app/paths'
+  import { resolve } from '$lib/functions/svelte'
   import { fade } from 'svelte/transition'
   import { usePipelineList } from '$lib/compositions/pipelines/usePipelineList.svelte'
   import type { Snippet } from '$lib/types/svelte'
@@ -32,7 +32,7 @@
         {#each pipelineList.pipelines as pipeline}
           <a
             onclick={close}
-            href="{base}/pipelines/{pipeline.name}/"
+            href={resolve(`/pipelines/${pipeline.name}/`)}
             class="flex justify-between whitespace-nowrap rounded p-2 hover:preset-tonal-surface"
           >
             <span class="min-w-0 overflow-hidden overflow-ellipsis">{pipeline.name}</span>

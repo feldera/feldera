@@ -6,7 +6,7 @@
     useRefreshPipeline
   } from '$lib/compositions/useWritablePipeline.svelte.js'
   import { goto } from '$app/navigation'
-  import { base } from '$app/paths'
+  import { resolve } from '$lib/functions/svelte'
   import type { ExtendedPipeline, PipelineThumb } from '$lib/services/pipelineManager.js'
   import { usePipelineList } from '$lib/compositions/pipelines/usePipelineList.svelte.js'
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte.js'
@@ -35,7 +35,7 @@
     getPipeline: () => pipelineCache,
     set,
     update,
-    onNotFound: () => goto(`${base}/`)
+    onNotFound: () => goto(resolve(`/`))
   })
 </script>
 

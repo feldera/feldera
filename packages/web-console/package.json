@@ -62,7 +62,7 @@
     "bignumber.js": "9.1.2",
     "boxicons": "2.1.4",
     "bun-types": "1.2.2",
-    "but-unzip": "^0.1.7",
+    "but-unzip": "0.1.7",
     "clsx": "2.1.1",
     "d3-format": "3.1.0",
     "dayjs": "1.11.13",
@@ -114,6 +114,7 @@
     "valibot": "1.0.0-rc.0",
     "virtua": "0.40.0",
     "vite": "5.4.14",
+    "vite-plugin-devtools-json": "1.0.0",
     "vite-plugin-virtual": "0.4.0",
     "worker-timers": "8.0.14"
   },

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { base } from '$app/paths'
+  import { resolve } from '$lib/functions/svelte'
   import PipelineBreadcrumbs from '$lib/components/layout/PipelineBreadcrumbs.svelte'
   import DemoTile from '$lib/components/other/DemoTile.svelte'
   import { Segment } from '@skeletonlabs/skeleton-svelte'
@@ -21,12 +21,12 @@
       : [
           {
             text: 'Home',
-            href: `${base}/`
+            href: resolve(`/`)
           }
         ]),
     {
       text: 'Use cases and tutorials',
-      href: `${base}/demos/`
+      href: resolve(`/demos/`)
     }
   ])
   const types = $derived(['All', ...nubLast(data.demos.map((d) => d.type))])

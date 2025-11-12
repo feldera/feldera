@@ -494,7 +494,7 @@ export const getPipelineSupportBundle = async (pipelineName: string) => {
     (msg) => new Error(`Failed to download profile for pipeline ${pipelineName}: \n${msg}`),
     (e) => new Error(e.details?.error ?? e.message, { cause: e })
   )
-  if (Error.isError(body)) {
+  if (body instanceof Error) {
     throw body
   }
   const response = new Response(body.stream)

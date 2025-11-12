@@ -50,7 +50,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
   import JSONDialog from '$lib/components/dialogs/JSONDialog.svelte'
   import JSONbig from 'true-json-bigint'
   import { goto } from '$app/navigation'
-  import { base } from '$app/paths'
+  import { resolve } from '$lib/functions/svelte'
   import Tooltip from '$lib/components/common/Tooltip.svelte'
   import PipelineConfigurationsPopup from '$lib/components/layout/pipelines/PipelineConfigurationsPopup.svelte'
   import IconLoader from '$assets/icons/generic/loader-alt.svg?component'
@@ -88,7 +88,7 @@ groups related actions into multi-action dropdowns when multiple options are ava
   const deletePipeline = async (pipelineName: string) => {
     await api.deletePipeline(pipelineName)
     onDeletePipeline?.(pipelineName)
-    goto(`${base}/`)
+    goto(resolve('/'))
   }
   const { toastError } = useToast()
 

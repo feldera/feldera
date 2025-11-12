@@ -1,3 +1,5 @@
+import devtoolsJson from 'vite-plugin-devtools-json'
+
 import { defineConfig, type PluginOption, type UserConfig } from 'vite'
 
 import svg from '@poppanator/sveltekit-svg'
@@ -45,10 +47,11 @@ export default defineConfig(async () => {
           'wordOperations'
           // 'wordPartOperations'
         ]
-      })
+      }),
+      devtoolsJson()
     ] as PluginOption[],
     build: {
-      minify: 'esbuild'
+      minify: false
       // },
       // css: {
       //   preprocessorOptions: {

@@ -18,7 +18,7 @@ import { match, P } from 'ts-pattern'
 //   Provider,
 //   TokenEndpointHandler
 // } from '@auth/sveltekit/providers'
-import { base } from '$app/paths'
+import { resolve } from '$lib/functions/svelte'
 import type { StringMap } from '@axa-fr/oidc-client'
 
 // type AuthDetails =
@@ -218,7 +218,8 @@ export type OidcConfig = {
 
 type AuthConfig = { oidc: OidcConfig; logoutExtras?: Record<string, string> }
 
-const redirectUri = 'window' in globalThis ? `${window.location.origin}${base}/auth/callback/` : ''
+const redirectUri =
+  'window' in globalThis ? window.location.origin + resolve(`/auth/callback/`) : ''
 
 export const loadAuthConfig = async () => {
   const authConfig = await getAuthConfig()
@@ -248,7 +249,7 @@ export const loadAuthConfig = async () => {
               end_session_endpoint: `${endpoint}logout` // signOutUrlCognito({client_id: clientId, authority: endpoint, redirect_uri: window.location.origin + base})
             },
             redirect_uri: redirectUri,
-            post_logout_redirect_uri: `${base}/`,
+            post_logout_redirect_uri: resolve(`/`),
             client_authentication: 'client_secret_basic',
             loadUserInfo: true,
             storage
@@ -283,7 +284,7 @@ export const loadAuthConfig = async () => {
             scope,
             // Use OIDC discovery - don't hardcode endpoints
             redirect_uri: redirectUri,
-            post_logout_redirect_uri: `${base}/`,
+            post_logout_redirect_uri: resolve(`/`),
             client_authentication: 'client_secret_basic',
             loadUserInfo: true,
             storage

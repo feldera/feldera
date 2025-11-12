@@ -6,14 +6,14 @@
   import { useDarkMode } from '$lib/compositions/useDarkMode.svelte'
   import type { Snippet } from '$lib/types/svelte'
   import AuthButton from '$lib/components/auth/AuthButton.svelte'
-  import { base } from '$app/paths'
+  import { resolve } from '$lib/functions/svelte'
 
   let { afterStart, beforeEnd }: { afterStart?: Snippet; beforeEnd?: Snippet } = $props()
   let darkMode = useDarkMode()
 </script>
 
 <div class="flex w-full flex-row items-center justify-between gap-4 px-2 py-2 md:px-8">
-  <a class="py-3 lg:pb-4 lg:pr-6 lg:pt-2" href="{base}/">
+  <a class="py-3 lg:pb-4 lg:pr-6 lg:pt-2" href={resolve('/')}>
     <span class="hidden lg:block">
       {#if darkMode.current === 'dark'}
         <FelderaModernLogoColorLight class="h-8"></FelderaModernLogoColorLight>

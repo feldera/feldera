@@ -3,19 +3,13 @@
   import type { Snippet } from '$lib/types/svelte'
   import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
   import type { LayoutData } from './$types'
-  import {
-    usePipelineList,
-    useRefreshPipelineList
-  } from '$lib/compositions/pipelines/usePipelineList.svelte'
+  import { useRefreshPipelineList } from '$lib/compositions/pipelines/usePipelineList.svelte'
   import SvelteKitTopLoader from '$lib/components/common/SvelteKitTopLoader.svelte'
   import { useAdaptiveDrawer } from '$lib/compositions/layout/useAdaptiveDrawer.svelte'
   import OverlayDrawer from '$lib/components/layout/OverlayDrawer.svelte'
   import NavigationExtras from '$lib/components/layout/NavigationExtras.svelte'
   import CreatePipelineButton from '$lib/components/pipelines/CreatePipelineButton.svelte'
-  import PipelineList from '$lib/components/pipelines/List.svelte'
   import BookADemo from '$lib/components/other/BookADemo.svelte'
-  import { useLayoutSettings } from '$lib/compositions/layout/useLayoutSettings.svelte'
-  import { useIsTablet } from '$lib/compositions/layout/useIsMobile.svelte'
   import LineBanner, { BannerButton } from '$lib/components/layout/LineBanner.svelte'
   import { useSystemMessages } from '$lib/compositions/useSystemMessages.svelte'
   import { useInterval } from '$lib/compositions/common/useInterval.svelte'
@@ -31,9 +25,6 @@
 
   useRefreshPipelineList()
   const rightDrawer = useAdaptiveDrawer('right')
-  const isTablet = useIsTablet()
-  const { showPipelinesPanel: leftDrawer } = useLayoutSettings()
-  const pipelineList = usePipelineList(data.preloaded)
   const contextDrawer = useContextDrawer()
 
   const systemMessages = useSystemMessages()
@@ -145,25 +136,7 @@
   <div class="flex h-full w-full flex-col">
     {@render children()}
   </div>
-  {#if isTablet.current}
-    <OverlayDrawer
-      width="w-72"
-      bind:open={leftDrawer.value}
-      side="left"
-      modal={true}
-      class="bg-white-dark flex flex-col gap-2 pl-4 pr-1 pt-8"
-    >
-      <PipelineList
-        pipelines={pipelineList.pipelines}
-        onclose={() => {
-          leftDrawer.value = false
-        }}
-        onaction={() => {
-          leftDrawer.value = false
-        }}
-      ></PipelineList>
-    </OverlayDrawer>
-  {/if}
+
   <OverlayDrawer
     width="w-72"
     bind:open={rightDrawer.value}

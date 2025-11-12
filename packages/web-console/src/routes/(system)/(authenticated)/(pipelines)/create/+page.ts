@@ -1,5 +1,5 @@
 import { goto } from '$app/navigation'
-import { base } from '$app/paths'
+import { resolve } from '$lib/functions/svelte'
 import { useTryPipeline } from '$lib/compositions/pipelines/useTryPipeline'
 import type { Demo } from '$lib/services/manager'
 import { getDemos } from '$lib/services/pipelineManager'
@@ -26,7 +26,7 @@ export async function load({ url, parent }) {
     return getDemos().then((demos) => demos.find((demo) => demo.name === name))
   })()
   if (!pipeline) {
-    goto(`${base}/`)
+    goto(resolve(`/`))
     return
   }
   await useTryPipeline()(pipeline)

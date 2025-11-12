@@ -56,7 +56,7 @@
       try {
         return unzip(zipData)
       } catch (error) {
-        if (Error.isError(error)) {
+        if (error instanceof Error) {
           errorMessage = error.message
           return null
         }

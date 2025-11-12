@@ -3,7 +3,7 @@ import { loadAuthConfig } from '$lib/compositions/auth'
 import * as AxaOidc from '@axa-fr/oidc-client'
 import { fromAxaUserInfo, toAxaOidcConfig } from '$lib/compositions/@axa-fr/auth'
 import { client } from '@hey-api/client-fetch'
-import { base } from '$app/paths'
+import { resolve } from '$lib/functions/svelte'
 import { authRequestMiddleware, authResponseMiddleware } from '$lib/services/auth'
 import type { AuthDetails } from '$lib/types/auth'
 import { goto } from '$app/navigation'
@@ -199,7 +199,7 @@ const axaOidcAuth = async (params: {
   const result: AuthDetails = await oidcClient.tryKeepExistingSessionAsync().then(async () => {
     if (href.includes(params.oidcConfig.redirect_uri)) {
       oidcClient.loginCallbackAsync().then(() => {
-        window.location.href = `${base}/`
+        window.location.href = resolve(`/`)
       })
       // loading...
     }

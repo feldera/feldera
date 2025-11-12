@@ -6,7 +6,7 @@
   import { PaneGroup, Pane, PaneResizer, type PaneAPI } from 'paneforge'
   import MonitoringPanel from '$lib/components/pipelines/editor/MonitoringPanel.svelte'
   import PipelineActions from '$lib/components/pipelines/list/Actions.svelte'
-  import { base } from '$app/paths'
+  import { resolve } from '$lib/functions/svelte'
   import {
     extractProgramErrors,
     programErrorReport,
@@ -341,7 +341,7 @@ example = "1.0"`
               : [
                   {
                     text: 'Home',
-                    href: `${base}/`
+                    href: resolve('/')
                   }
                 ])
           ]}
@@ -353,7 +353,7 @@ example = "1.0"`
                 if (name === pipeline.current.name) {
                   return
                 }
-                const newUrl = `${base}/pipelines/${encodeURIComponent(name)}/`
+                const newUrl = resolve(`/pipelines/${encodeURIComponent(name)}/`)
                 return pipeline.patch({ name }).then(() => {
                   goto(newUrl, { replaceState: true })
                 })
@@ -418,6 +418,7 @@ example = "1.0"`
     >
       <div class="absolute flex h-full w-full flex-col">
         <PipelineList
+          {pipelineName}
           pipelines={pipelineList.pipelines}
           onclose={() => {
             showPipelinesPanel.value = false

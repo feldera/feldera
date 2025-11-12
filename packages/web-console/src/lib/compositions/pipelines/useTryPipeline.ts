@@ -1,5 +1,5 @@
 import { goto } from '$app/navigation'
-import { base } from '$app/paths'
+import { resolve } from '$lib/functions/svelte'
 import { useUpdatePipelineList } from '$lib/compositions/pipelines/usePipelineList.svelte'
 import type { Demo } from '$lib/services/manager'
 import { usePipelineManager } from '../usePipelineManager.svelte'
@@ -20,6 +20,6 @@ export const useTryPipeline = () => {
       })
       updatePipelines((pipelines) => (pipelines.push(newPipeline), pipelines))
     } catch {}
-    goto(`${base}/pipelines/${encodeURIComponent(pipeline.name)}/`)
+    goto(resolve(`/pipelines/${encodeURIComponent(pipeline.name)}/`))
   }
 }
