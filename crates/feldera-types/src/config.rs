@@ -227,7 +227,7 @@ pub struct StorageOptions {
     ///
     /// A value of 0 will write even empty batches to storage, and nonzero
     /// values provide a threshold.  `usize::MAX` would effectively disable
-    /// storage for such batches.  The default is 1,048,576 (1 MiB).
+    /// storage for such batches.  The default is 10,048,576 (10 MiB).
     pub min_storage_bytes: Option<usize>,
 
     /// For a batch of data passed through the pipeline during a single step,
