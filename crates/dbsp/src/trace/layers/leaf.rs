@@ -346,8 +346,11 @@ impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> Leaf<K, R> {
     where
         RG: Rng,
     {
+        output.reserve(sample_size);
         self.keys
-            .sample_slice(0, self.len(), rng, sample_size, output);
+            .sample_slice(0, self.len(), rng, sample_size, &mut |x: &K| {
+                output.push_ref(x)
+            });
     }
 
     pub(crate) fn truncate(&mut self, length: usize) {

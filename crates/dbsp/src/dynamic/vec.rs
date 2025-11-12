@@ -250,7 +250,7 @@ pub trait Vector<T: DataTrait + ?Sized>: Data {
         to: usize,
         rng: &mut dyn RngCore,
         sample_size: usize,
-        sample: &mut DynVec<T>,
+        callback: &mut dyn FnMut(&T),
     );
 
     /// Cast any trait object that implements this trait to `&DynVec`.
@@ -487,11 +487,11 @@ where
         to: usize,
         rng: &mut dyn RngCore,
         sample_size: usize,
-        sample: &mut DynVec<Trait>,
+        callback: &mut dyn FnMut(&Trait),
     ) {
-        let sample: &mut Self = unsafe { sample.downcast_mut::<Self>() };
-
-        utils::sample_slice(&self[from..to], rng, sample_size, sample);
+        utils::sample_slice(&self[from..to], rng, sample_size, &mut |x: &T| {
+            callback(x.erase())
+        });
     }
 
     fn as_vec(&self) -> &DynVec<Trait> {
