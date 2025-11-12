@@ -263,7 +263,7 @@ pub fn nstruct2nstruct(i: Tup2<Option<i32>, Option<SqlString>>) -> Result<Tup2<O
                 }
             ],
         )
-        pipeline.wait_for_idle()
+        pipeline.wait_for_completion()
 
         output = out.to_dict()
         assert output == [
