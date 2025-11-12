@@ -774,7 +774,7 @@ impl Runtime {
                     .unwrap_or({
                         // This reduces the files stored on disk to a reasonable number.
 
-                        1024 * 1024
+                        10 * 1024 * 1024
                     }),
             )
         })
