@@ -1331,8 +1331,7 @@ where
 
     fn insert(&mut self, mut batch: Self::Batch) {
         if !batch.is_empty() {
-            // If `batch` is in memory and it's got a fair number of records
-            // (level 2 or higher), and we'll write it to storage on first
+            // If `batch` is in memory and we'll write it to storage on first
             // merge, then write it to storage right away.
             //
             // This addresses a problem with very large in-memory batches being
@@ -1361,7 +1360,6 @@ where
             // addresses individual large batches; it does not help with the
             // Batcher, which should be separately addressed.
             let batch = if batch.location() == BatchLocation::Memory
-                && Spine::<B>::size_to_level(batch.len()) >= 2
                 && pick_merge_destination([&batch], None) == BatchLocation::Storage
             {
                 let factories = batch.factories();
@@ -1385,7 +1383,6 @@ where
     fn insert_arc(&mut self, batch: Arc<Self::Batch>) {
         if !batch.is_empty() {
             let batch = if batch.location() == BatchLocation::Memory
-                && Spine::<B>::size_to_level(batch.len()) >= 2
                 && pick_merge_destination([&batch], None) == BatchLocation::Storage
             {
                 let factories = batch.factories();
