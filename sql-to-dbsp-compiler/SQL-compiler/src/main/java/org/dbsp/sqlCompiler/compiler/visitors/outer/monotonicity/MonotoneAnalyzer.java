@@ -57,7 +57,7 @@ public class MonotoneAnalyzer implements CircuitTransform, IWritesLogs {
             if (expr != null) {
                 return source.node().id + " " + Monotonicity.getBodyType(expr);
             } else {
-                return source.node().id + " " + super.getEdgeLabel(source);
+                return super.getEdgeLabel(source);
             }
         }
     }
@@ -99,8 +99,9 @@ public class MonotoneAnalyzer implements CircuitTransform, IWritesLogs {
 
             @Override
             public IDBSPInnerNode apply(IDBSPInnerNode e) {
-                if (e.isExpression())
+                if (e.isExpression()) {
                     return e.to(DBSPExpression.class).ensureTree(compiler);
+                }
                 return e;
             }
 
@@ -144,6 +145,7 @@ public class MonotoneAnalyzer implements CircuitTransform, IWritesLogs {
                 appendOnly.appendOnly::contains,
                 keyPropagation.joins::get);
         DBSPCircuit expanded = expander.apply(circuit);
+        // ToDot.dump(this.compiler, "expanded-before.png", details, "png", expanded);
 
         Monotonicity monotonicity = new Monotonicity(this.compiler);
         expanded = monotonicity.apply(expanded);

@@ -31,6 +31,7 @@ import org.dbsp.sqlCompiler.ir.DBSPNode;
 import org.dbsp.util.IWritesLogs;
 import org.dbsp.util.Linq;
 import org.dbsp.util.Logger;
+import org.dbsp.util.Utilities;
 
 import java.util.List;
 
@@ -60,6 +61,14 @@ public class Passes implements IWritesLogs, CircuitTransform, ICompilerComponent
 
     public void add(CircuitTransform pass) {
         this.passes.add(pass);
+    }
+
+    /** Insert a call to dump the current circuit as a png at this point */
+    public void dump(int details) {
+        String fileName = "start";
+        if (!this.passes.isEmpty())
+            fileName = Utilities.last(this.passes).getName().replace(" ", "_");
+        this.add(ToDot.dumper(compiler, fileName + ".png", details));
     }
 
     @Override

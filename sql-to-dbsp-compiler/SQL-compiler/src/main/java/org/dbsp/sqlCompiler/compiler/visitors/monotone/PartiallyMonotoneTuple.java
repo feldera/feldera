@@ -31,7 +31,9 @@ public class PartiallyMonotoneTuple
         this.mayBeNull = mayBeNull;
         List<DBSPType> fieldTypes = Linq.map(fields, IMaybeMonotoneType::getType);
         // An empty tuple is always monotone
-        this.anyMonotone = Linq.any(fields, IMaybeMonotoneType::mayBeMonotone) || fields.isEmpty();
+        this.anyMonotone = Linq.any(fields, IMaybeMonotoneType::mayBeMonotone) ||
+                // Tup0<> is monotone, but Option<Tup0> is not.
+                (fields.isEmpty() && !mayBeNull);
         if (raw) {
             Utilities.enforce(!mayBeNull);
             this.type = new DBSPTypeRawTuple(CalciteObject.EMPTY, fieldTypes);
@@ -65,9 +67,9 @@ public class PartiallyMonotoneTuple
         List<IMaybeMonotoneType> monotone = Linq.where(this.fields, IMaybeMonotoneType::mayBeMonotone);
         List<DBSPType> fields = Linq.map(monotone, IMaybeMonotoneType::getProjectedType);
         if (this.raw)
-            return new DBSPTypeRawTuple(CalciteObject.EMPTY, fields);
+            return new DBSPTypeRawTuple(CalciteObject.EMPTY, this.mayBeNull, fields);
         else
-            return new DBSPTypeTuple(CalciteObject.EMPTY, fields);
+            return new DBSPTypeTuple(CalciteObject.EMPTY, this.mayBeNull, fields);
     }
 
     @Override
@@ -131,6 +133,9 @@ public class PartiallyMonotoneTuple
         StringBuilder result = new StringBuilder();
         if (!this.raw) {
             result.append("Tup").append(this.size());
+        }
+        if (this.mayBeNull) {
+            result.append("?");
         }
         result.append("(");
         for (IMaybeMonotoneType field: this.fields) {

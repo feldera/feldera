@@ -26,6 +26,7 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinFilterMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPLagOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPLeftJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPNegateOperator;
@@ -72,6 +73,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.DistinctExpansion;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.JoinExpansion;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.JoinFilterMapExpansion;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.JoinIndexExpansion;
+import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.LeftJoinExpansion;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.OperatorExpansion;
 import org.dbsp.sqlCompiler.compiler.visitors.outer.expansion.ReplacementExpansion;
 import org.dbsp.sqlCompiler.ir.DBSPParameter;
@@ -818,6 +820,37 @@ public class InsertLimiters extends CircuitCloneVisitor {
     }
 
     @Override
+    public void postorder(DBSPLeftJoinOperator join) {
+        OperatorExpansion expanded = this.expandedInto.get(join);
+        if (expanded == null) {
+            super.postorder(join);
+            this.nonMonotone(join);
+            return;
+        }
+
+        this.addJoinAnnotations(join);
+        LeftJoinExpansion expansion = expanded.to(LeftJoinExpansion.class);
+        DBSPSimpleOperator result = this.gcJoin(join, expansion);
+        if (result == null) {
+            super.postorder(join);
+            this.nonMonotone(join);
+            return;
+        }
+
+        this.processIntegral(expansion.leftIntegrator);
+        this.processIntegral(expansion.rightIntegrator);
+        this.processJoin(expansion.leftDelta);
+        this.processJoin(expansion.rightDelta);
+        this.processJoin(expansion.join);
+        this.addBounds(null, expansion.antiJoin, 0);
+        this.addBounds(null, expansion.map, 0);
+        OutputPort limiter = this.processSumOrDiff(expansion.sum);
+        if (limiter != null)
+            this.markBound(join.outputPort(), limiter);
+        this.map(join, result, true);
+    }
+
+    @Override
     public void postorder(DBSPJoinOperator join) {
         OperatorExpansion expanded = this.expandedInto.get(join);
         if (expanded == null) {
@@ -1221,6 +1254,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
             return;
         }
 
+        boolean rightMayBeNull = expanded.getClosureFunction().parameters[2].getType().deref().mayBeNull;
         PartiallyMonotoneTuple out = Monotonicity.getBodyType(monotoneValue).to(PartiallyMonotoneTuple.class);
         DBSPType outputType = out.getProjectedType();
         Utilities.enforce(outputType != null);
@@ -1274,7 +1308,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
             if (rightMono.getField(1).mayBeMonotone())
                 fields[2] = r.deref().field(rightIndex);
             else
-                fields[2] = new DBSPTupleExpression();
+                fields[2] = new DBSPTupleExpression(rightMayBeNull);
 
             DBSPClosureExpression closure =
                     new DBSPRawTupleExpression(fields)
@@ -1296,7 +1330,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
                     new DBSPRawTupleExpression(
                             k,
                             l,
-                            new DBSPTupleExpression())
+                            new DBSPTupleExpression(rightMayBeNull))
                             .closure(var);
             merger = this.createApply(leftLimiter, null, closure);
         } else {
@@ -1304,7 +1338,7 @@ public class InsertLimiters extends CircuitCloneVisitor {
             Utilities.enforce(rightMono != null);
             DBSPVariablePath var = new DBSPVariablePath(this.getLimiterDataOutputType(rightLimiter).ref());
             DBSPExpression k = new DBSPTupleExpression();
-            DBSPExpression r = new DBSPTupleExpression();
+            DBSPExpression r = new DBSPTupleExpression(rightMayBeNull);
             int currentField = 0;
             if (rightMono.getField(0).mayBeMonotone()) {
                 k = var.deref().field(currentField++);

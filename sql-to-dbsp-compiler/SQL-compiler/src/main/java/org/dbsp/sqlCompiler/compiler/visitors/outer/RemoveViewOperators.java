@@ -6,7 +6,10 @@ import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
 
 /** Remove DBSPViewOperator operators. */
 public class RemoveViewOperators extends CircuitCloneVisitor {
-    /** If false remove only non-recursive views */
+    /** If false do not remove
+     * - recursive views
+     * - views with lateness information
+     * - the built-in error view */
     final boolean all;
 
     public RemoveViewOperators(DBSPCompiler compiler, boolean all) {
@@ -16,7 +19,10 @@ public class RemoveViewOperators extends CircuitCloneVisitor {
 
     @Override
     public void postorder(DBSPViewOperator operator) {
-        if (!this.all && operator.metadata.recursive) {
+        if (!this.all &&
+                (operator.metadata.recursive ||
+                operator.metadata.hasLateness() ||
+                operator.viewName.equals(DBSPCompiler.ERROR_VIEW_NAME))) {
             // preserve the view.
             // Views have to be preserved if we build the CircuitGraph.
             super.postorder(operator);

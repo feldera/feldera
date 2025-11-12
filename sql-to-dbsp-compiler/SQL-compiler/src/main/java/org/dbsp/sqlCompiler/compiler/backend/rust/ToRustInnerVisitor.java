@@ -1880,6 +1880,7 @@ public class ToRustInnerVisitor extends InnerVisitor {
                     .newline()
                     .append("}");
         }
+        this.builder.newline();
         this.pop(function);
         return VisitDecision.STOP;
     }

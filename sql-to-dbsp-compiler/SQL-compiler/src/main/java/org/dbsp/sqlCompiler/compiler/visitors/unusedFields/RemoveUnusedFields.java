@@ -30,6 +30,7 @@ import org.dbsp.sqlCompiler.ir.aggregate.DBSPAggregateList;
 import org.dbsp.sqlCompiler.ir.aggregate.IAggregate;
 import org.dbsp.sqlCompiler.ir.expression.DBSPClosureExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPExpression;
+import org.dbsp.sqlCompiler.ir.expression.DBSPIfExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPRawTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPTupleExpression;
 import org.dbsp.sqlCompiler.ir.expression.DBSPVariablePath;
@@ -72,11 +73,17 @@ public class RemoveUnusedFields extends CircuitCloneVisitor {
 
         DBSPType inputType = input.getOutputIndexedZSetType().getKVRefType();
         DBSPVariablePath var = inputType.var();
+        DBSPExpression field1 = var.field(1).deref();
+        boolean nullable = field1.getType().mayBeNull;
         List<DBSPExpression> resultFields = Linq.map(fieldMap.deref().getUsedFields(),
-                f -> var.field(1).deref().field(f).applyCloneIfNeeded());
+                f -> field1.deepCopy().unwrapIfNullable().field(f).applyCloneIfNeeded());
+        DBSPExpression rightSide = new DBSPTupleExpression(resultFields, nullable);
+        if (nullable)
+            rightSide = new DBSPIfExpression(node, field1.is_null(), rightSide.getType().none(), rightSide);
+
         DBSPRawTupleExpression raw = new DBSPRawTupleExpression(
                 DBSPTupleExpression.flatten(var.field(0).deref()),
-                new DBSPTupleExpression(resultFields, false));
+                rightSide);
         DBSPClosureExpression projection = raw.closure(var);
 
         DBSPMapIndexOperator map = new DBSPMapIndexOperator(node, projection, source);

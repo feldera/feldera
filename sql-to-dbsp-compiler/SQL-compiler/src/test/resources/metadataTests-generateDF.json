@@ -146,9 +146,9 @@
         "partial": 3
       },
       "positions": [],
-      "persistent_id": "6b01b4f7f21b8af9652b43da077078b2d89e1a8d79dd76f0d7f14663316111e3"
+      "persistent_id": "40428726132cccaa57814ad5dd5576ae82b360b8adc59a8f48843ffa3bf385d1"
     }, "s7": {
-      "operation": "map",
+      "operation": "neg",
       "inputs": [
         { "node": "s6", "output": 0 }
       ],
@@ -156,9 +156,9 @@
         "partial": 3
       },
       "positions": [],
-      "persistent_id": "66fdc36a4554840a3ff711d791d73fee71d17bf3307d91030564b1d34c5af588"
+      "persistent_id": "c06d9896ad745948c3b6216d72632eef324f59c70f6df91addc7aad305fd393c"
     }, "s8": {
-      "operation": "neg",
+      "operation": "integrate",
       "inputs": [
         { "node": "s7", "output": 0 }
       ],
@@ -166,21 +166,21 @@
         "partial": 3
       },
       "positions": [],
-      "persistent_id": "c5adfb0f3d7ac83332b891bcc24a3ed90c9e0fb3ebc394d3bd4291309c76b1a8"
+      "persistent_id": "978a1373f250873321d7f944d10e36e1bef73d6f028f5e29ca23d70e700d4c39"
     }, "s9": {
-      "operation": "integrate",
+      "operation": "map",
       "inputs": [
-        { "node": "s8", "output": 0 }
+        { "node": "s5", "output": 0 }
       ],
       "calcite": {
         "partial": 3
       },
       "positions": [],
-      "persistent_id": "533ebf4dd966cae5f06893a51898c6beaf3590c26dd26ccdaf2bc4ca47a37448"
+      "persistent_id": "6b01b4f7f21b8af9652b43da077078b2d89e1a8d79dd76f0d7f14663316111e3"
     }, "s10": {
       "operation": "integrate",
       "inputs": [
-        { "node": "s6", "output": 0 }
+        { "node": "s9", "output": 0 }
       ],
       "calcite": {
         "partial": 3
@@ -191,14 +191,14 @@
       "operation": "sum",
       "inputs": [
         { "node": "s1", "output": 0 },
-        { "node": "s9", "output": 0 },
+        { "node": "s8", "output": 0 },
         { "node": "s10", "output": 0 }
       ],
       "calcite": {
         "partial": 3
       },
       "positions": [],
-      "persistent_id": "d58317eb8508ff179dd1db93886c4327c1493b3af7e3f2ad9ad77b3e1dde0826"
+      "persistent_id": "447f4d56305093b807e6bdffbdd6baad15f6ca024281ac26815ab3a13e675492"
     }, "s12": {
       "operation": "inspect",
       "inputs": [
@@ -212,7 +212,7 @@
         {"start_line_number":2,"start_column":1,"end_line_number":2,"end_column":40},
         {"start_line_number":2,"start_column":1,"end_line_number":2,"end_column":40}
       ],
-      "persistent_id": "3e3ea2362e04f0d96bdc9edc9d0d47878605aab08524ac7e47779fd4825f0643"
+      "persistent_id": "0865463c16bf257b908a5d55b9cca42f958cc99eba0c2ccb677c0c95c2241e10"
     }, "s13": {
       "operation": "inspect",
       "inputs": [
