@@ -10088,7 +10088,7 @@
           },
           "min_storage_bytes": {
             "type": "integer",
-            "description": "For a batch of data maintained as part of a persistent index during a\npipeline run, the minimum estimated number of bytes to write it to\nstorage.\n\nThis is provided for debugging and fine-tuning and should ordinarily be\nleft unset.\n\nA value of 0 will write even empty batches to storage, and nonzero\nvalues provide a threshold.  `usize::MAX` would effectively disable\nstorage for such batches.  The default is 1,048,576 (1 MiB).",
+            "description": "For a batch of data maintained as part of a persistent index during a\npipeline run, the minimum estimated number of bytes to write it to\nstorage.\n\nThis is provided for debugging and fine-tuning and should ordinarily be\nleft unset.\n\nA value of 0 will write even empty batches to storage, and nonzero\nvalues provide a threshold.  `usize::MAX` would effectively disable\nstorage for such batches.  The default is 10,048,576 (10 MiB).",
             "default": null,
             "nullable": true,
             "minimum": 0
