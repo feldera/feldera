@@ -164,3 +164,21 @@ These metrics accumulate across checkpoint and resume.
 | <a name='output_connector_extra_memory_bytes'>`output_connector_extra_memory_bytes`</a> |gauge | Additional memory used by an output connector beyond that used for buffered records. |
 | <a name='output_connector_records_total'>`output_connector_records_total`</a> |counter | Total number of records sent by the output connector. |
 
+## Checkpoint Synchronization
+
+These metrics report the status of [checkpoint synchronization].
+
+[checkpoint synchronization]: /pipelines/checkpoint-sync.md
+
+| Name | Type | Description |
+| :--- | :--- | :---------- |
+| <a name='checkpoint_sync_pull_duration_seconds'>`checkpoint_sync_pull_duration_seconds`</a> |histogram | Time taken to pull a checkpoint from object store in seconds. |
+| <a name='checkpoint_sync_pull_failures'>`checkpoint_sync_pull_failures`</a> |counter | Number of failures when pulling a checkpoint. |
+| <a name='checkpoint_sync_pull_success'>`checkpoint_sync_pull_success`</a> |counter | Number of checkpoints pulled successfully. |
+| <a name='checkpoint_sync_pull_transfer_speed_bytes_per_second'>`checkpoint_sync_pull_transfer_speed_bytes_per_second`</a> |histogram | Transfer speed when pulling a checkpoint, in bytes per second. |
+| <a name='checkpoint_sync_pull_transferred_bytes'>`checkpoint_sync_pull_transferred_bytes`</a> |histogram | Bytes transferred when pulling a checkpoint. |
+| <a name='checkpoint_sync_push_duration_seconds'>`checkpoint_sync_push_duration_seconds`</a> |histogram | Time taken to push a checkpoint to object store in seconds. |
+| <a name='checkpoint_sync_push_failures'>`checkpoint_sync_push_failures`</a> |counter | Number of failures when pushing a checkpoint. |
+| <a name='checkpoint_sync_push_success'>`checkpoint_sync_push_success`</a> |counter | Number of checkpoints pushed successfully. |
+| <a name='checkpoint_sync_push_transfer_speed_bytes_per_second'>`checkpoint_sync_push_transfer_speed_bytes_per_second`</a> |histogram | Transfer speed when pushing a checkpoint, in bytes per second. |
+| <a name='checkpoint_sync_push_transferred_bytes'>`checkpoint_sync_push_transferred_bytes`</a> |histogram | Bytes transferred when pushing a checkpoint. |
