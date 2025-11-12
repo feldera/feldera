@@ -312,7 +312,7 @@ where
     }
 
     fn approximate_byte_size(&self) -> usize {
-        self.size_of().total_bytes()
+        self.layer.approximate_byte_size()
     }
 
     fn filter_size(&self) -> usize {

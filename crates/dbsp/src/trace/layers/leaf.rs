@@ -22,7 +22,7 @@ use super::{Builder, Cursor, MergeBuilder, Trie, TupleBuilder};
 
 // TODO: the `diff` type is fixed in most use cases (the `weighted` operator
 // being the only exception I can think of, so it will probably pay off to have
-// a verson of this with a statically typed diff type).
+// a version of this with a statically typed diff type).
 pub struct LeafFactories<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> {
     pub key: &'static dyn Factory<K>,
     pub keys: &'static dyn Factory<DynVec<K>>,
@@ -387,6 +387,10 @@ impl<K: DataTrait + ?Sized, R: WeightTrait + ?Sized> Trie for Leaf<K, R> {
 
     fn cursor_from(&self, lower: usize, upper: usize) -> Self::Cursor<'_> {
         LeafCursor::new(lower, self, (lower, upper))
+    }
+
+    fn approximate_byte_size(&self) -> usize {
+        self.keys.approximate_byte_size() + self.diffs.approximate_byte_size()
     }
 }
 
