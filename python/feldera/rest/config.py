@@ -33,7 +33,7 @@ class Config:
 
         BASE_URL = url or os.environ.get("FELDERA_HOST") or "http://localhost:8080"
         self.url: str = BASE_URL
-        self.api_key: Optional[str] = os.environ.get("FELDERA_API_KEY", api_key)
+        self.api_key: Optional[str] = api_key or os.environ.get("FELDERA_API_KEY")
         self.version: str = version or "v0"
         self.timeout: Optional[float] = timeout
         self.connection_timeout: Optional[float] = connection_timeout
