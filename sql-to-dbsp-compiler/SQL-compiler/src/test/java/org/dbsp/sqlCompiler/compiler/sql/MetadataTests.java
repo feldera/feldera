@@ -889,9 +889,11 @@ public class MetadataTests extends BaseSQLTests {
                         str,
                         value)
                 }
+                
                 pub fn EMPTY() -> Result<Option<SqlString>, Box<dyn std::error::Error>> {
                     udf::EMPTY()
-                }""", String.join(System.lineSeparator(), str));
+                }
+                """, String.join(System.lineSeparator(), str));
         Utilities.deleteFile(protos.toFile(), true);
 
         // Truncate file to 0 bytes

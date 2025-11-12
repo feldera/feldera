@@ -2549,4 +2549,25 @@ public class StreamingTests extends StreamingTestBase {
                  where CAST(properties['y'] AS TIMESTAMP)  >=  NOW() - INTERVAL 30 DAYS);""";
         this.getCCS(sql);
     }
+
+    @Test
+    public void leftLateness() {
+        // The fact that emit_final is compiled proves that the output of the left_join has a waterline
+        String sql = """
+            CREATE TABLE t1(
+                x INT,
+                ts TIMESTAMP NOT NULL LATENESS INTERVAL 1 HOUR
+            );
+            
+            CREATE TABLE t2(
+                y INT,
+                ts TIMESTAMP NOT NULL LATENESS INTERVAL 1 HOUR
+            );
+            
+            CREATE VIEW v
+            WITH ('emit_final' = 'ts')
+            AS SELECT t1.ts
+            FROM t1 LEFT JOIN t2 on t1.ts = t2.ts;""";
+        this.getCCS(sql);
+    }
 }

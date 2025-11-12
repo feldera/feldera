@@ -206,7 +206,7 @@ public class MonotoneTransferFunctions extends TranslateVisitor<MonotoneExpressi
     public VisitDecision preorder(DBSPClosureExpression expression) {
         if (!this.context.isEmpty())
             // This means that we are analyzing a closure within another closure.
-            throw new InternalCompilerError("Didn't expect nested closures", expression);
+            throw new InternalCompilerError("Didn't expect nested closures: " + expression);
 
         // Must be the outermost call of the visitor.
         DBSPType[] projectedTypes = Linq.map(

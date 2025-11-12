@@ -311,8 +311,9 @@ public class ToRustVisitor extends CircuitVisitor {
         }
 
         for (DBSPDeclaration decl: circuit.declarations) {
-            if (this.declareInside(decl))
+            if (this.declareInside(decl)) {
                 decl.accept(this);
+            }
         }
         this.builder.newline().newline();
 

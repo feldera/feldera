@@ -1484,6 +1484,16 @@ public class PostgresDateTests extends SqlIoTest {
     }
 
     @Test
+    public void testLimitTimestamps() {
+        this.qs("""
+                SELECT TIMESTAMP '9999-12-12 23:59:59', TIMESTAMP '0001-01-01 00:00:00';
+                 ts0 | ts1
+                -----------
+                 9999-12-12 23:59:59 | 0001-01-01 00:00:00
+                (1 row)""");
+    }
+
+    @Test
     public void testTimeststampTrunc() {
         // Not in Postgres
         this.qs("""

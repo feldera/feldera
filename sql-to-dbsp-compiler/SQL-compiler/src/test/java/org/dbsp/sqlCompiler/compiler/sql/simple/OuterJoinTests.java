@@ -3,7 +3,9 @@ package org.dbsp.sqlCompiler.compiler.sql.simple;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPAntiJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPOperator;
+import org.dbsp.sqlCompiler.compiler.CompilerOptions;
 import org.dbsp.sqlCompiler.compiler.DBSPCompiler;
+import org.dbsp.sqlCompiler.compiler.TestUtil;
 import org.dbsp.sqlCompiler.compiler.sql.tools.CompilerCircuit;
 import org.dbsp.sqlCompiler.compiler.sql.tools.SqlIoTest;
 import org.dbsp.sqlCompiler.compiler.visitors.VisitDecision;
@@ -19,6 +21,13 @@ import org.junit.Test;
 import java.util.List;
 
 public class OuterJoinTests extends SqlIoTest {
+    @Override
+    public CompilerOptions testOptions() {
+        CompilerOptions result = super.testOptions();
+        result.ioOptions.quiet = false;
+        return result;
+    }
+
     @Override
     public void prepareInputs(DBSPCompiler compiler) {
         compiler.submitStatementsForCompilation("""
@@ -57,6 +66,17 @@ public class OuterJoinTests extends SqlIoTest {
             };
             this.add(v);
         }
+    }
+
+    @Test
+    public void unusedFieldTest() {
+        var cc = this.getCC("""
+                CREATE TABLE T(x INT, y INT, z INT);
+                CREATE TABLE S(x INT, a INT, b INT);
+                CREATE LOCAL VIEW TMP AS SELECT x+y as a, x-y as d, x-z as e FROM T;
+                CREATE VIEW V AS SELECT TMP.a, S.b FROM TMP LEFT JOIN S ON TMP.a = S.a""");
+        TestUtil.assertMessagesContain(cc.compiler, "Column 'z' of table 't' is unused");
+        TestUtil.assertMessagesContain(cc.compiler, "Column 'x' of table 's' is unused");
     }
 
     @Test

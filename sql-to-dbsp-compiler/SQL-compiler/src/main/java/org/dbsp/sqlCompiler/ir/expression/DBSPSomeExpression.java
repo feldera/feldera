@@ -18,7 +18,7 @@ public final class DBSPSomeExpression extends DBSPExpression {
 
     public DBSPSomeExpression(CalciteObject node, DBSPExpression expression) {
         super(node, expression.getType().withMayBeNull(true));
-        Utilities.enforce(!expression.getType().mayBeNull);
+        Utilities.enforce(!expression.getType().mayBeNull, () -> "some() applied to a nullable expression");
         this.expression = expression;
     }
 

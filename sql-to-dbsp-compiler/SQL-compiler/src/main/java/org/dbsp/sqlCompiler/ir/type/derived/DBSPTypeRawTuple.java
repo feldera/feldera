@@ -60,6 +60,10 @@ public class DBSPTypeRawTuple extends DBSPTypeTupleBase {
         this(node, DBSPTypeCode.RAW_TUPLE, false, tupArgs.toArray(new DBSPType[0]));
     }
 
+    public DBSPTypeRawTuple(CalciteObject node, boolean mayBeNull, List<DBSPType> tupArgs) {
+        this(node, DBSPTypeCode.RAW_TUPLE, mayBeNull, tupArgs.toArray(new DBSPType[0]));
+    }
+
     @Override
     public DBSPExpression makeTuple(DBSPExpression... expressions) {
         return new DBSPRawTupleExpression(this.getNode(), this, expressions);

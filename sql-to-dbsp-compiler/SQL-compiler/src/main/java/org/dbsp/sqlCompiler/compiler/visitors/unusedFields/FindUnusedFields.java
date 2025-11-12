@@ -266,6 +266,17 @@ public class FindUnusedFields extends SymbolicInterpreter<FieldUseMap> {
 
     @Override
     public void postorder(DBSPIsNullExpression expression) {
+        // Special handling for (*var).is_none(), where var refers to a parameter.
+        if (expression.expression.is(DBSPDerefExpression.class)) {
+            DBSPDerefExpression deref = expression.expression.to(DBSPDerefExpression.class);
+            if (deref.expression.is(DBSPVariablePath.class)) {
+                DBSPVariablePath var = deref.expression.to(DBSPVariablePath.class);
+                var decl = this.resolver.reference.getDeclaration(var);
+                if (decl.is(DBSPParameter.class))
+                    // we can check param.is_none() without touching any field of the param
+                    return;
+            }
+        }
         this.used(expression.expression);
     }
 

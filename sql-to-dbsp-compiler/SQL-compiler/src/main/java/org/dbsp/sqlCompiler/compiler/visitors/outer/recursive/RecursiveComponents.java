@@ -9,7 +9,7 @@ import org.dbsp.sqlCompiler.compiler.visitors.outer.Passes;
  * - Compute SCCs
  * - Fix SCC by normalizing connections between some operations
  * - Group SCC nodes into {@link DBSPNestedOperator} operators
- * - Convert LeftJoin operators into joins + antijoins
+ * - Convert LeftJoin operators into joins + antijoins in recursive components
  * - Validate contents of nested operators. */
 public class RecursiveComponents extends Passes {
     public RecursiveComponents(DBSPCompiler compiler) {
@@ -21,6 +21,6 @@ public class RecursiveComponents extends Passes {
         this.add(graph2);
         this.add(new BuildNestedOperators(compiler, graph2.getGraphs()));
         this.add(new ValidateRecursiveOperators(compiler));
-        this.add(new RemoveLeftJoins(compiler));
+        this.add(new SubstituteLeftJoins(compiler));
     }
 }

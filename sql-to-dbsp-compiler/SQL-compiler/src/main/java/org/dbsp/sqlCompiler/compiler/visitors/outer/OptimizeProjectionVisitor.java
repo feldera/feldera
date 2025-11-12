@@ -6,6 +6,8 @@ import org.dbsp.sqlCompiler.circuit.operator.DBSPFlatMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinBaseOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPJoinOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPLeftJoinIndexOperator;
+import org.dbsp.sqlCompiler.circuit.operator.DBSPLeftJoinOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapIndexOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPMapOperator;
 import org.dbsp.sqlCompiler.circuit.operator.DBSPStreamJoinIndexOperator;
@@ -73,6 +75,7 @@ public class OptimizeProjectionVisitor extends CircuitCloneWithGraphsVisitor {
                     return;
                 }
             } else if (source.node().is(DBSPJoinOperator.class)
+                    || source.node().is(DBSPLeftJoinOperator.class)
                     || source.node().is(DBSPStreamJoinOperator.class)
                     || source.node().is(DBSPAsofJoinOperator.class)) {
                 if (inputFanout == 1 && projection.isShuffle()) {
@@ -83,8 +86,9 @@ public class OptimizeProjectionVisitor extends CircuitCloneWithGraphsVisitor {
                     this.map(operator, result);
                     return;
                 }
-            } else if (source.node().is(DBSPJoinIndexOperator.class) ||
-                    source.node().is(DBSPStreamJoinIndexOperator.class)) {
+            } else if (source.node().is(DBSPJoinIndexOperator.class)
+                    || source.node().is(DBSPLeftJoinIndexOperator.class)
+                    || source.node().is(DBSPStreamJoinIndexOperator.class)) {
                 if (inputFanout == 1 && projection.isShuffle()) {
                     // We only do this if the source is a projection, because then the join function
                     // will still have a simple shape.  Subsequent analyses may care about this.
@@ -108,9 +112,15 @@ public class OptimizeProjectionVisitor extends CircuitCloneWithGraphsVisitor {
         if (inputFanout == 1 && projection.isProjection && projection.isShuffle()) {
             if (source.node().is(DBSPJoinOperator.class)
                     || source.node().is(DBSPStreamJoinOperator.class)
-                    || source.node().is(DBSPJoinIndexOperator.class)
-                    || source.node().is(DBSPStreamJoinIndexOperator.class)) {
+                    || source.node().is(DBSPLeftJoinOperator.class)) {
                 DBSPSimpleOperator result = mapIndexAfterJoin(
+                        this.compiler, source.node().to(DBSPJoinBaseOperator.class), operator);
+                this.map(operator, result);
+                return;
+            } else if (source.node().is(DBSPJoinIndexOperator.class)
+                    || source.node().is(DBSPLeftJoinIndexOperator.class)
+                    || source.node().is(DBSPStreamJoinIndexOperator.class)) {
+                DBSPSimpleOperator result = mapIndexAfterJoinIndex(
                         this.compiler, source.node().to(DBSPJoinBaseOperator.class), operator);
                 this.map(operator, result);
                 return;
@@ -164,6 +174,10 @@ public class OptimizeProjectionVisitor extends CircuitCloneWithGraphsVisitor {
             return new DBSPJoinOperator(source.getRelNode(), operator.getOutputZSetType(),
                     newFunction, operator.isMultiset, sourceJoin.left(), sourceJoin.right())
                     .copyAnnotations(source);
+        } else if (source.is(DBSPLeftJoinIndexOperator.class)) {
+            return new DBSPLeftJoinOperator(source.getRelNode(), operator.getOutputZSetType(),
+                    newFunction, operator.isMultiset, sourceJoin.left(), sourceJoin.right())
+                    .copyAnnotations(source);
         } else {
             Utilities.enforce(source.is(DBSPStreamJoinIndexOperator.class));
             return new DBSPStreamJoinOperator(source.getRelNode(), operator.getOutputZSetType(),
@@ -189,6 +203,11 @@ public class OptimizeProjectionVisitor extends CircuitCloneWithGraphsVisitor {
                     newFunction, operator.isMultiset, source.left(), source.right());
             result.setDerivedFrom(source);
             return result;
+        } else if (source.is(DBSPLeftJoinOperator.class)) {
+            DBSPJoinBaseOperator result = new DBSPLeftJoinIndexOperator(node, operator.getOutputIndexedZSetType(),
+                    newFunction, operator.isMultiset, source.left(), source.right());
+            result.setDerivedFrom(source);
+            return result;
         } else {
             return source.withFunction(newFunction, operator.outputType).to(DBSPJoinBaseOperator.class);
         }
@@ -208,6 +227,11 @@ public class OptimizeProjectionVisitor extends CircuitCloneWithGraphsVisitor {
         CalciteRelNode node = operator.getRelNode().after(source.getRelNode());
         if (source.is(DBSPJoinIndexOperator.class)) {
             DBSPJoinBaseOperator result = new DBSPJoinIndexOperator(node, operator.getOutputIndexedZSetType(),
+                    newFunction, operator.isMultiset, source.left(), source.right());
+            result.setDerivedFrom(source);
+            return result;
+        } else if (source.is(DBSPLeftJoinIndexOperator.class)) {
+            DBSPJoinBaseOperator result = new DBSPLeftJoinIndexOperator(node, operator.getOutputIndexedZSetType(),
                     newFunction, operator.isMultiset, source.left(), source.right());
             result.setDerivedFrom(source);
             return result;

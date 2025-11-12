@@ -70,7 +70,7 @@ public class CircuitOptimizer extends Passes {
     void createOptimizer() {
         CompilerOptions options = this.compiler().options;
         // Example dumping circuit to a png file
-        // this.add(ToDot.dumper(compiler, "x.png", 3));
+        // this.dump(3);
         // First part of optimizations may still synthesize some circuit components
         this.add(new ImplementNow(compiler));
         this.add(new DeterministicFunctions(compiler));
@@ -85,10 +85,10 @@ public class CircuitOptimizer extends Passes {
         AnalyzedSet<DBSPOperator> operatorsAnalyzed = new AnalyzedSet<>();
         this.add(new OptimizeWithGraph(compiler,
                 g -> new OptimizeMaps(compiler, true, g, operatorsAnalyzed), 1));
+        this.add(new RemoveViewOperators(compiler, false));
         this.add(new UnusedFields(compiler));
         this.add(new Intern(compiler));
         this.add(new CSE(compiler));
-        this.add(new OptimizeWithGraph(compiler, g -> new CloneOperatorsWithFanout(compiler, g)));
         this.add(new ExpandAggregates(compiler, compiler.weightVar));
         this.add(new ExpandAggregateZero(compiler));
         this.add(new DeadCode(compiler, true));
@@ -113,6 +113,7 @@ public class CircuitOptimizer extends Passes {
         this.add(new RemoveTable(compiler, DBSPCompiler.ERROR_TABLE_NAME));
         // The circuit is complete here, start optimizing for real.
 
+        this.add(new OptimizeWithGraph(compiler, g -> new CloneOperatorsWithFanout(compiler, g)));
         this.add(new LinearPostprocessRetainKeys(compiler));
         this.add(new IndexedInputs(compiler));
         this.add(new OptimizeWithGraph(compiler, g -> new FilterJoinVisitor(compiler, g)));
@@ -124,7 +125,6 @@ public class CircuitOptimizer extends Passes {
         this.add(new ExpandHop(compiler));
         this.add(new RemoveDeindexOperators(compiler));
         this.add(new OptimizeWithGraph(compiler, g -> new RemoveNoops(compiler, g)));
-        this.add(new RemoveViewOperators(compiler, false));
         this.add(new RemoveIdentityOperators(compiler));
         this.add(new Repeat(compiler, new ExpandCasts(compiler).circuitRewriter(true)));
         this.add(new OptimizeWithGraph(compiler, g -> new ChainVisitor(compiler, g)));

@@ -140,7 +140,12 @@ public class Simplify extends ExpressionTranslator {
     @Override
     public void postorder(DBSPUnwrapExpression expression) {
         DBSPExpression source = this.getE(expression.expression);
-        DBSPExpression result = source.unwrapIfNullable();
+        DBSPExpression result;
+        if (source.is(DBSPSomeExpression.class)) {
+            result = source.to(DBSPSomeExpression.class).expression;
+        } else {
+            result = source.unwrapIfNullable();
+        }
         this.map(expression, result);
     }
 
@@ -431,6 +436,14 @@ public class Simplify extends ExpressionTranslator {
             result = new DBSPFieldExpression(expression.getNode(),
                     source.to(DBSPCloneExpression.class).expression,
                     expression.fieldNo);
+        } else if (source.is(DBSPSomeExpression.class)) {
+            // Some(Tup(x, y)).1 -> y or Some(y)
+            DBSPSomeExpression some = source.to(DBSPSomeExpression.class);
+            if (some.expression.is(DBSPBaseTupleExpression.class)) {
+                result = some.expression.to(DBSPBaseTupleExpression.class).get(expression.fieldNo);
+                if (!result.getType().mayBeNull)
+                    result = result.some();
+            }
         }
         this.map(expression, result);
     }
@@ -484,6 +497,7 @@ public class Simplify extends ExpressionTranslator {
         this.map(expression, result);
     }
 
+    @SuppressWarnings("ReplaceNullCheck")
     @Override
     public void postorder(DBSPUnaryExpression expression) {
         DBSPExpression source = this.getE(expression.source);
