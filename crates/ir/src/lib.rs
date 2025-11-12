@@ -36,14 +36,20 @@ pub enum Changes {
 pub struct Dataflow {
     pub calcite_plan: HashMap<String, CalcitePlan>,
     pub mir: HashMap<MirNodeId, MirNode>,
+    pub sources: Vec<String>,
 }
 
 impl Dataflow {
     pub fn new(
         calcite_plan: HashMap<String, CalcitePlan>,
         mir: HashMap<MirNodeId, MirNode>,
+        sources: Vec<String>,
     ) -> Self {
-        Self { calcite_plan, mir }
+        Self {
+            calcite_plan,
+            mir,
+            sources,
+        }
     }
 
     /// Reports the changes to relations (views and tables) of a dataflow graph when
