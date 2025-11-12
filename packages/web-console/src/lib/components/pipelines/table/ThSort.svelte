@@ -1,6 +1,6 @@
 <script lang="ts" generics="T">
   import type { Field, TableHandlerInterface } from '@vincjo/datatables'
-  import type { Snippet } from 'svelte'
+  import type { Snippet } from '$lib/types/svelte'
 
   let {
     table,

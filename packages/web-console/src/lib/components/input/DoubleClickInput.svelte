@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { Snippet } from 'svelte'
+  import type { Snippet } from '$lib/types/svelte'
   import type { Action } from 'svelte/action'
 
   let {

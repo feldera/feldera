@@ -1,4 +1,4 @@
-import { defineConfig, type UserConfig } from 'vite'
+import { defineConfig, type PluginOption, type UserConfig } from 'vite'
 
 import svg from '@poppanator/sveltekit-svg'
 import { sveltekit } from '@sveltejs/kit/vite'
@@ -46,7 +46,7 @@ export default defineConfig(async () => {
           // 'wordPartOperations'
         ]
       })
-    ],
+    ] as PluginOption[],
     build: {
       minify: 'esbuild'
       // },

@@ -1,4 +1,4 @@
-import { BigNumber } from 'bignumber.js/bignumber.js'
+import { BigNumber } from 'bignumber.js'
 
 export const inRangeInclusive =
   (range: { min: BigNumber; max: BigNumber }) => (value: BigNumber.Value) => {

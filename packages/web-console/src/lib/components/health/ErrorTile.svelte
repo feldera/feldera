@@ -2,7 +2,7 @@
   import type { SystemError } from '$lib/compositions/health/systemErrors'
   import JSONbig from 'true-json-bigint'
   import { clipboard } from '@svelte-bin/clipboard'
-  import type { Snippet } from 'svelte'
+  import type { Snippet } from '$lib/types/svelte'
 
   let { systemError, before }: { systemError: SystemError; before?: Snippet } = $props()
   const text = $derived(

@@ -3,7 +3,7 @@
   import { base } from '$app/paths'
   import { fade } from 'svelte/transition'
   import { usePipelineList } from '$lib/compositions/pipelines/usePipelineList.svelte'
-  import type { Snippet } from 'svelte'
+  import type { Snippet } from '$lib/types/svelte'
   import PipelineStatus from '$lib/components/pipelines/list/PipelineStatus.svelte'
   import type { PipelineThumb } from '$lib/services/pipelineManager'
 

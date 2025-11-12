@@ -1,4 +1,4 @@
-import type { Snippet } from 'svelte'
+import type { Snippet } from '$lib/types/svelte'
 
 type DialogAction = { name: string; callback: () => void | Promise<any>; 'data-testid'?: string }
 

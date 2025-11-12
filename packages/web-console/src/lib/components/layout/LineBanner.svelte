@@ -3,7 +3,7 @@
 </script>
 
 <script lang="ts">
-  import type { Snippet } from 'svelte'
+  import type { Snippet } from '$lib/types/svelte'
 
   const variants = {
     formal: 'bg-primary-900 dark:bg-primary-600 text-surface-50',

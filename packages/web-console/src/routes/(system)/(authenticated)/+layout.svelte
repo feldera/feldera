@@ -1,6 +1,6 @@
 <script lang="ts">
   import GlobalModal from '$lib/components/dialogs/GlobalModal.svelte'
-  import type { Snippet } from 'svelte'
+  import type { Snippet } from '$lib/types/svelte'
   import { useGlobalDialog } from '$lib/compositions/layout/useGlobalDialog.svelte'
   import type { LayoutData } from './$types'
   import {

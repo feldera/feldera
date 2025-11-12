@@ -1,4 +1,4 @@
-import { BigNumber } from 'bignumber.js/bignumber.js'
+import { BigNumber } from 'bignumber.js'
 
 import type { RandomBigNumberGenerationSource } from './generationSource'
 

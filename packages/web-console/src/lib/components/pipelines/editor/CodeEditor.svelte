@@ -47,7 +47,8 @@
 </script>
 
 <script lang="ts">
-  import { untrack, type Snippet } from 'svelte'
+  import { untrack } from 'svelte'
+  import type { Snippet } from '$lib/types/svelte'
   import { useLocalStorage } from '$lib/compositions/localStore.svelte'
   import { DecoupledStateProxy } from '$lib/compositions/decoupledState.svelte'
   import { useDarkMode } from '$lib/compositions/useDarkMode.svelte'

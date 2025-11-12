@@ -42,7 +42,7 @@
   import List from '$lib/components/common/virtualList/HeadlessVirtualList.svelte'
   import { useReverseScrollContainer } from '$lib/compositions/common/useReverseScrollContainer.svelte'
   import ScrollDownFab from '$lib/components/other/ScrollDownFab.svelte'
-  import type { Snippet } from 'svelte'
+  import type { Snippet } from '$lib/types/svelte'
   import type { UIEventHandler } from 'svelte/elements'
   import { selectScope } from '$lib/compositions/common/userSelect'
 

@@ -4,7 +4,7 @@
   import FelderaModernLogomarkColorDark from '$assets/images/feldera-modern/Feldera Logomark Color Dark.svg?component'
   import FelderaModernLogomarkColorLight from '$assets/images/feldera-modern/Feldera Logomark Color Light.svg?component'
   import { useDarkMode } from '$lib/compositions/useDarkMode.svelte'
-  import type { Snippet } from 'svelte'
+  import type { Snippet } from '$lib/types/svelte'
   import AuthButton from '$lib/components/auth/AuthButton.svelte'
   import { base } from '$app/paths'
 

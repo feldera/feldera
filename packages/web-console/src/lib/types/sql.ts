@@ -1,5 +1,5 @@
 import type { Dayjs } from 'dayjs'
-import type { BigNumber } from 'bignumber.js/bignumber.js'
+import type { BigNumber } from 'bignumber.js'
 
 export type SQLValueJS =
   | string

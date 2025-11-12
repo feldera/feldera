@@ -1,5 +1,5 @@
 import { rawCheck } from 'valibot'
-import { BigNumber } from 'bignumber.js/bignumber.js'
+import { BigNumber } from 'bignumber.js'
 
 export const maxBigNumber = (maxValue: BigNumber) =>
   rawCheck<BigNumber>(({ dataset, config, addIssue }) => {

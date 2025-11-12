@@ -1,5 +1,6 @@
 <script lang="ts" generics="T extends Record<string, unknown>">
-  import type { Component, Snippet } from 'svelte'
+  import type { Component } from 'svelte'
+  import type { Snippet } from '$lib/types/svelte'
   import { Tabs } from '@skeletonlabs/skeleton-svelte'
 
   let {

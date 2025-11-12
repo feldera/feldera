@@ -2,7 +2,7 @@
   import InlineDropdown from '$lib/components/common/InlineDropdown.svelte'
   // import type { PipelineDiff } from '$lib/services/manager'
   import type { PipelineDiff } from '$lib/types/pipelineManager'
-  import type { Snippet } from 'svelte'
+  import type { Snippet } from '$lib/types/svelte'
   import { slide } from 'svelte/transition'
   import IconLoader from '$assets/icons/generic/loader-alt.svg?component'
 

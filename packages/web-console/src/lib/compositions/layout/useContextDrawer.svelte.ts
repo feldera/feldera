@@ -1,4 +1,4 @@
-import type { Snippet } from 'svelte'
+import type { Snippet } from '$lib/types/svelte'
 
 let drawerContent: Snippet | null = $state(null)
 

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { clipboard } from '@svelte-bin/clipboard'
   import { clickedClass } from '$lib/compositions/actions/clickedClass'
-  import type { Snippet } from 'svelte'
+  import type { Snippet } from '$lib/types/svelte'
 
   let {
     value,

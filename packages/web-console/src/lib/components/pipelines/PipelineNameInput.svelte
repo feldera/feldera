@@ -2,7 +2,7 @@
   import { useUpdatePipelineList } from '$lib/compositions/pipelines/usePipelineList.svelte'
   import { goto } from '$app/navigation'
   import { base } from '$app/paths'
-  import type { Snippet } from 'svelte'
+  import type { Snippet } from '$lib/types/svelte'
   import { usePipelineManager } from '$lib/compositions/usePipelineManager.svelte'
 
   let {

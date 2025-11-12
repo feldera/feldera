@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { Snippet } from 'svelte'
+  import type { Snippet } from '$lib/types/svelte'
   import GenericDialog from '$lib/components/dialogs/GenericDialog.svelte'
   import JsonForm from '$lib/components/dialogs/JSONForm.svelte'
 
