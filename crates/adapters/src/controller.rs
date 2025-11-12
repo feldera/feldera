@@ -1069,6 +1069,23 @@ impl Controller {
             labels,
             &status.global_metrics.storage_bytes,
         );
+
+        if let Some(runtime) = self.inner.runtime.upgrade() {
+            let (cache_used, cache_max) = runtime.cache_occupancy();
+            metrics.gauge(
+                "storage_cache_usage_bytes",
+                "The number of bytes of memory currently in use for caching data on storage.",
+                labels,
+                cache_used,
+            );
+            metrics.counter(
+                "storage_cache_usage_limit_bytes_total",
+                "The limit for the number of bytes of memory for caching data on storage.",
+                labels,
+                cache_max,
+            );
+        }
+
         metrics.counter(
             "storage_byte_seconds_total",
             "Storage usage integrated over time during this run of the pipeline, in bytes × seconds.",
