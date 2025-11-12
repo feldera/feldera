@@ -730,7 +730,7 @@ pub(crate) async fn list_pipelines(
                         let tenant_id = *tenant_id;
                         let pipeline_name = pipeline.name.clone();
                         async move {
-                            fetch_connector_error_stats(&state, tenant_id, &pipeline_name).await
+                            fetch_connector_error_stats(&state, tenant_id, &pipeline_name, pipeline.deployment_runtime_status).await
                         }
                     })
                     .collect();
@@ -764,7 +764,22 @@ async fn fetch_connector_error_stats(
     state: &WebData<ServerState>,
     tenant_id: TenantId,
     pipeline_name: &str,
+    deployment_runtime_status: Option<RuntimeStatus>,
 ) -> Option<ConnectorStats> {
+    // Only forward the request if the pipeline is in a valid runtime status
+    match deployment_runtime_status {
+        Some(RuntimeStatus::Bootstrapping)
+        | Some(RuntimeStatus::Replaying)
+        | Some(RuntimeStatus::Running)
+        | Some(RuntimeStatus::Paused) => {
+            // Pipeline is in a valid state, proceed with the request
+        }
+        _ => {
+            // Pipeline is not in a valid state to fetch connector stats
+            return None;
+        }
+    }
+
     // Use the existing method to forward the request to the pipeline
     let client = awc::Client::default();
     let response = state
@@ -886,7 +901,7 @@ pub(crate) async fn get_pipeline(
                 .get_pipeline_for_monitoring(*tenant_id, &pipeline_name)
                 .await?;
             let connector_stats =
-                fetch_connector_error_stats(&state, *tenant_id, &pipeline_name).await;
+                fetch_connector_error_stats(&state, *tenant_id, &pipeline_name, pipeline.deployment_runtime_status).await;
             PipelineSelectedInfoInternal::new_status_with_connectors(pipeline, connector_stats)
         }
     };
