@@ -35,7 +35,7 @@
       }
     })
   })
-  const circuitProfileRegex = /json_circuit_profile\.json$/
+  const circuitProfileRegex = /circuit_profile\.json$/
   const dataflowRegex = /dataflow_graph\.json$/
 
   const getSuitableProfiles = (profiles: ZipItem[]) => {
@@ -120,9 +120,11 @@
     })()
   })
 
+  let collectNewData = $state(true)
+
   const loadProfileData = async () => {
     errorMessage = ''
-    const supportBundle = await api.getPipelineSupportBundle(pipelineName)
+    const supportBundle = await api.getPipelineSupportBundle(pipelineName, collectNewData)
     await processZipBundle(supportBundle, pipelineName)
   }
 
@@ -176,7 +178,11 @@
   />
   {#if getCircuitProfileData}
     <div class="flex flex-nowrap gap-4 pb-2 sm:-mt-2">
-      <button class="btn !bg-surface-100-900" onclick={loadProfileData}>Load profile</button>
+      <button class="btn !bg-surface-100-900" onclick={loadProfileData}>Download profile</button>
+      <label class="flex items-center gap-2 cursor-pointer">
+        <input type="checkbox" bind:checked={collectNewData} class="checkbox" />
+        <span class="text-sm">Collect new data</span>
+      </label>
       <button class="btn !bg-surface-100-900" onclick={triggerFileUpload}
         >Upload support bundle</button
       >

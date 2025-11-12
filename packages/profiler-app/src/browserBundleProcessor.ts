@@ -12,7 +12,7 @@ export interface BundleFiles {
 /**
  * Process a support bundle file in the browser
  * Extracts:
- * - *_json_circuit_profile.json - Profile data
+ * - *_circuit_profile.json - Profile data
  * - *_dataflow_graph.json - Dataflow graph
  */
 export async function processBundleInBrowser(file: File): Promise<BundleFiles> {
@@ -23,13 +23,13 @@ export async function processBundleInBrowser(file: File): Promise<BundleFiles> {
     const files = await unzip(new Uint8Array(arrayBuffer));
     console.log('files', files)
 
-    // Find the profile file (*_json_circuit_profile.json)
+    // Find the profile file (*_circuit_profile.json)
     const profileEntry = Object.entries(files).find((file) =>
-        file[1].filename.endsWith('_json_circuit_profile.json')
+        file[1].filename.endsWith('_circuit_profile.json')
     );
 
     if (!profileEntry) {
-        throw new Error('No profile file (*_json_circuit_profile.json) found in bundle');
+        throw new Error('No profile file (*_circuit_profile.json) found in bundle');
     }
 
     // Find the dataflow file (*_dataflow_graph.json)

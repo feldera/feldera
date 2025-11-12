@@ -176,7 +176,7 @@ export const usePipelineManager = () => {
     ),
     getPipelineSupportBundle: reportError(
       getPipelineSupportBundle,
-      (pipelineName) => `Failed to load circuit profile of pipeline ${pipelineName}`
+      (pipelineName, _collect) => `Failed to load circuit profile of pipeline ${pipelineName}`
     )
   }
 }

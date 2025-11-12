@@ -39,6 +39,11 @@ fn collect() -> bool {
 /// Query parameters to control support bundle data collection.
 #[derive(Debug, Deserialize, IntoParams, ToSchema)]
 pub struct SupportBundleParameters {
+    /// Whether to collect new data from the running pipeline (default: true)
+    /// When false, only previously collected data will be included in the bundle
+    #[serde(default = "collect")]
+    pub collect: bool,
+
     /// Whether to collect circuit profile data (default: true)
     #[serde(default = "collect")]
     pub circuit_profile: bool,
@@ -75,6 +80,7 @@ pub struct SupportBundleParameters {
 impl Default for SupportBundleParameters {
     fn default() -> Self {
         Self {
+            collect: true,
             circuit_profile: true,
             heap_profile: true,
             metrics: true,
@@ -561,12 +567,12 @@ impl SupportBundleData {
             };
             match &self.json_circuit_profile {
                 Ok(content) => {
-                    let _ = add_to_zip("json_circuit_profile.json", content);
-                    manifest_entries.push("✓ json_circuit_profile.json".to_string());
+                    let _ = add_to_zip("circuit_profile.json", content);
+                    manifest_entries.push("✓ circuit_profile.json".to_string());
                 }
                 Err(e) => {
                     if e != SKIPPED_BY_USER {
-                        error_entries.push(format!("✗ json_circuit_profile.json: {}", e));
+                        error_entries.push(format!("✗ circuit_profile.json: {}", e));
                     }
                 }
             }

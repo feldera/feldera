@@ -171,17 +171,22 @@ pub(crate) async fn get_pipeline_support_bundle(
             state.config.support_data_retention,
         )
         .await?;
-    bundles.insert(
-        0,
-        SupportBundleData::collect(
-            &state,
-            &client,
-            *tenant_id,
-            &pipeline_name,
-            &support_bundle_params,
-        )
-        .await?,
-    );
+
+    // Only collect new data if the collect parameter is true
+    if support_bundle_params.collect {
+        bundles.insert(
+            0,
+            SupportBundleData::collect(
+                &state,
+                &client,
+                *tenant_id,
+                &pipeline_name,
+                &support_bundle_params,
+            )
+            .await?,
+        );
+    }
+
     let bundle = SupportBundleZip::create(&pipeline, bundles, &support_bundle_params).await?;
 
     Ok(HttpResponse::Ok()

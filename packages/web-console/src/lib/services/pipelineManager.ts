@@ -473,9 +473,13 @@ export const deleteApiKey = (name: string) =>
 export const getPipelineDataflowGraph = (pipelineName: string) =>
   mapResponse(_getPipelineDataflowGraph({ path: { pipeline_name: pipelineName } }), (v) => v)
 
-export const getPipelineSupportBundle = async (pipelineName: string) => {
+export const getPipelineSupportBundle = async (
+  pipelineName: string,
+  collect: boolean = true
+) => {
   // mapResponse(getPipelineCircuitJsonProfile({'path': {'pipeline_name': pipelineName}}), (v) => v)
   const query = new URLSearchParams({
+    collect: String(collect),
     circuit_profile: 'true',
     heap_profile: 'false',
     metrics: 'false',

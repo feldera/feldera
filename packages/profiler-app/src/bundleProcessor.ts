@@ -41,9 +41,9 @@ export class BundleProcessor {
         this.log('Extracting profile file...');
         const entries = zip.getEntries();
 
-        // Find file matching pattern "*_json_circuit_profile.json"
+        // Find file matching pattern "*_circuit_profile.json"
         const profileFiles = entries.filter(e =>
-            e.entryName.endsWith('_json_circuit_profile.json')
+            e.entryName.endsWith('_circuit_profile.json')
         );
 
         if (profileFiles.length === 0) {
