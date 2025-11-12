@@ -14,9 +14,13 @@ export interface ProfilerConfig {
     /** Container element for the navigator minimap */
     navigatorContainer: HTMLElement;
     /** Optional container element for the tooltip (defaults to document.body if not provided) */
-    tooltipContainer?: HTMLElement;
+    tooltipContainer?: HTMLElement | undefined;
     /** Optional error message display element */
-    errorContainer?: HTMLElement;
+    errorContainer?: HTMLElement | undefined;
+    /** Optional message display element for status messages */
+    messageContainer?: HTMLElement | undefined;
+    /** Optional search input element for node search */
+    searchInput?: HTMLInputElement | undefined;
 }
 
 /**
@@ -64,6 +68,23 @@ export class Profiler {
         console.error(message);
     }
 
+    /** Display a status message */
+    message(message: string): void {
+        console.log(message);
+        if (this.config.messageContainer) {
+            this.config.messageContainer.style.display = 'block';
+            this.config.messageContainer.innerText = message;
+        }
+    }
+
+    /** Clear the status message */
+    clearMessage(): void {
+        if (this.config.messageContainer) {
+            this.config.messageContainer.textContent = '';
+            this.config.messageContainer.style.display = 'none';
+        }
+    }
+
     /**
      * Render a circuit profile with interactive visualization.
      * This is the main entry point for displaying a profile.
@@ -102,18 +123,19 @@ export class Profiler {
                 this.config.navigatorContainer,
                 this.tooltip,
                 this.config.tooltipContainer,
-                cytograph.graph,
-                selection,
-                MetadataSelector.getFullSelection()
+                cytograph.graph, selection,
+                MetadataSelector.getFullSelection(),
+                this.message.bind(this),
+                this.clearMessage.bind(this)
             );
-
-            // Set up initial graph state
-            this.rendering.updateGraph(cytograph);
-            this.rendering.updateMetadata(profile, this.metadataSelector.getSelection());
+            this.rendering.setEvents(n => this.circuitSelector!.toggleExpand(n));
 
             // Wire up event handlers
             this.circuitSelector.setOnChange(() => {
+                // Called when the circuit to display changes
+                this.message("Recomputing profile graph")
                 const graph = Cytograph.fromProfile(profile, selection);
+                this.message("Computing graph changes")
                 this.rendering!.updateGraph(graph);
                 this.rendering!.center(selection.trigger);
                 this.rendering!.updateMetadata(profile, this.metadataSelector!.getSelection());
@@ -123,8 +145,19 @@ export class Profiler {
                 this.rendering!.updateMetadata(profile, this.metadataSelector!.getSelection());
             });
 
-            // Start rendering with double-click handler for expansion
-            this.rendering.render(n => this.circuitSelector!.toggleExpand(n));
+            // Wire up search functionality if search input is provided
+            if (this.config.searchInput) {
+                this.config.searchInput.onkeydown = (e) => {
+                    if (e.key === "Enter") {
+                        const query = this.config.searchInput!.value;
+                        this.rendering!.search(query);
+                    }
+                };
+            }
+
+            // Produce the graph visualization
+            this.rendering.updateGraph(cytograph);
+            this.rendering.updateMetadata(profile, this.metadataSelector.getSelection());
 
         } catch (e) {
             const message = e instanceof Error ? e.message : String(e);

@@ -371,10 +371,17 @@ export class Measurement {
             case "slot 0 loose":
             case "slot 1 loose":
             case "slot 2 loose":
+            case "slot 3 loose":
             case "slot 0 completed":
             case "slot 1 completed":
             case "slot 2 completed":
+            case "slot 3 completed":
+            case "slot 0 merging":
+            case "slot 1 merging":
+            case "slot 2 merging":
+            case "slot 3 merging":
                 return Option.some(new StringValue(value[0]));
+            case "batch sizes":
             case "bounds":
             case "mir_node":
                 // TODO: currently ignoring some properties.
@@ -675,7 +682,7 @@ export class CircuitProfile {
         return this.dataRange.get(property).unwrap();
     }
 
-    // Decode the data in a worker profile; return a map from nodeid to an array of measurements for that node
+    // Decode the data in a worker profile; return a map from nodeId to an array of measurements for that node
     private decodeWorkerProfile(json: JsonWorkerProfile): Map<NodeId, Array<Measurement>> {
         let metadata = new Map<NodeId, Array<Measurement>>();
         for (const [nodeId, data] of Object.entries(json.metadata)) {

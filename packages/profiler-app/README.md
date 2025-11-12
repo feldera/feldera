@@ -1,15 +1,14 @@
 # profiler-app
 
-Standalone application for visualizing Feldera DBSP circuit profiles from local files.
+Standalone application for visualizing Feldera DBSP circuit profiles.
 
 ## Overview
 
-This is a development tool that loads profile and dataflow JSON files from disk and renders them using `profiler-lib`. It's useful for:
-- Testing profile visualizations locally
-- Debugging circuit performance offline
-- Developing new profiler features
+Development tool for loading and visualizing circuit profiles using `profiler-lib`. Supports loading from:
+- Support bundles (`.zip` files via UI or CLI)
+- Local JSON files
 
-In production, use the Web Console's integrated profiler instead.
+In production, use the Web Console's integrated profiler.
 
 ## Quick Start
 
@@ -18,62 +17,45 @@ bun install
 bun run dev
 ```
 
-Open your browser to the displayed URL (typically `http://localhost:5173`).
+Opens at `http://localhost:5174` with default sample data.
 
-## Loading Custom Data
+## Loading Profiles
 
-### 1. Generate Profile Data
+### Browser UI (Recommended)
 
-Run a Feldera pipeline with profiling enabled:
+Click **"Load Bundle"** button and select a support bundle (`.zip` file).
 
-```bash
-# Via REST API
-curl -X POST http://localhost:8080/v0/pipelines/{pipeline_name}/circuit_profile > data/my-profile.json
-```
-
-### 2. Generate Dataflow Graph
-
-Compile your SQL program with the `--dataflow` flag:
+### CLI with Bundle
 
 ```bash
-cd sql-to-dbsp-compiler
-./SQL-compiler/sql-to-dbsp \
-  --input /path/to/your-program.sql \
-  --dataflow ../packages/profiler-app/data/dataflow-my-profile.json
+BUNDLE=/path/to/support-bundle.zip bun run dev
 ```
 
-### 3. Update Entry Point
+### Production Mode
 
-Edit `src/index.ts` to load your files:
-
-```typescript
-loader.loadFiles("data", "my-profile");
+```bash
+bun run build
+BUNDLE=/path/to/bundle.zip bun run start
 ```
 
-The profiler will load:
-- `data/my-profile.json` (profile)
-- `data/dataflow-my-profile.json` (dataflow graph)
+## Environment Variables
+
+- `BUNDLE` - Path to support bundle zip file
+- `VERBOSE=1` - Enable verbose bundle processing output
+- `BUNDLE_NAME` - Custom output name (default: `temp`)
 
 ## Sample Data
 
-The `data/` directory includes sample files:
-- `rec.json` - Example profile data
+Included in `data/`:
+- `rec.json` - Example profile
 - `dataflow-rec.json` - Example dataflow graph
-
-## Building
-
-```bash
-bun run build    # Outputs to dist/
-```
 
 ## Architecture
 
-This app is a thin wrapper around `profiler-lib` that:
-1. Provides HTML structure for the profiler UI
-2. Implements file loading logic via `fetch()`
-3. Wires up the profiler with DOM containers
-
-For embedding the profiler in other applications, use `profiler-lib` directly.
+Thin wrapper around `profiler-lib`:
+- HTML structure for profiler UI
+- File loading via `fetch()` or bundle extraction
+- Browser-based zip processing with `but-unzip`
 
 ## License
 

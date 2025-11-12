@@ -25,6 +25,8 @@
   let navigatorContainer: HTMLDivElement | undefined = $state()
   let tooltipContainer: HTMLDivElement | undefined = $state()
   let errorContainer: HTMLDivElement | undefined = $state()
+  let messageContainer: HTMLDivElement | undefined = $state()
+  let searchInput: HTMLInputElement | undefined = $state()
 
   // Profiler instance
   let profiler: Profiler | null = $state(null)
@@ -69,7 +71,9 @@
           selectorContainer: selectorContainer!,
           navigatorContainer: navigatorContainer!,
           tooltipContainer: tooltipContainer!,
-          errorContainer
+          errorContainer,
+          messageContainer,
+          searchInput
         }
 
         // Create and render profiler
@@ -111,8 +115,23 @@
       </table>
     </div>
 
+    <!-- Search input -->
+    <div class="profiler-search">
+      <label for="profiler-search-input">Search:</label>
+      <input
+        bind:this={searchInput}
+        id="profiler-search-input"
+        type="text"
+        placeholder="Node ID"
+        title="Node id to search"
+      />
+    </div>
+
     <!-- Navigator minimap -->
     <div bind:this={navigatorContainer} class="profiler-navigator"></div>
+
+    <!-- Message container (managed by profiler-lib) -->
+    <div bind:this={messageContainer} class="profiler-message" style="display: none;"></div>
 
     <!-- Error container (managed by profiler-lib) -->
     <div bind:this={errorContainer} class="profiler-error" style="display: none;"></div>
@@ -160,9 +179,39 @@
     z-index: 1;
   }
 
+  .profiler-search {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem;
+    background-color: rgba(100, 100, 100, 0.3);
+  }
+
+  .profiler-search label {
+    font-family: monospace;
+    font-size: 14px;
+  }
+
+  .profiler-search input {
+    padding: 0.25rem 0.5rem;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-family: monospace;
+  }
+
   .profiler-navigator {
     width: 100px;
     height: 100px;
+    margin: 0.5rem;
+    border: 1px solid rgba(200, 200, 20, 1);
+  }
+
+  .profiler-message {
+    display: none;
+    font-family: monospace;
+    background-color: transparent;
+    padding: 0.5rem;
+    font-size: 14px;
   }
 
   .profiler-error {
@@ -174,6 +223,7 @@
     text-align: center;
     width: 350px;
     white-space: pre-wrap;
+    padding: 0.5rem;
   }
 
   .profiler-tooltip-container {

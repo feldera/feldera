@@ -64,13 +64,21 @@ export class ProfileLoader {
         const profileUrl = `${directory}/${basename}.json`;
         const dataflowUrl = `${directory}/dataflow-${basename}.json`;
 
+        // Create profiler early so we can use its message methods
+        if (this.profiler) {
+            this.profiler.dispose();
+        }
+        this.profiler = new Profiler(this.config);
+
         // Load profile data
+        this.profiler.message("Reading profile file...");
         const profileData = await this.fetchJson<JsonProfiles>(profileUrl);
         if (!profileData) {
             return; // Error already reported
         }
 
         // Load dataflow graph
+        this.profiler.message("Reading dataflow graph...");
         const dataflowData = await this.fetchJson<Dataflow>(dataflowUrl);
         if (!dataflowData) {
             return; // Error already reported
@@ -79,6 +87,7 @@ export class ProfileLoader {
         // Parse and integrate the data
         let circuit: CircuitProfile;
         try {
+            this.profiler.message("Extracting profiling information...");
             circuit = CircuitProfile.fromJson(profileData);
             circuit.setDataflow(dataflowData);
         } catch (e) {
@@ -88,14 +97,9 @@ export class ProfileLoader {
 
         // Render the profile
         try {
-            // Clean up previous profiler if exists
-            if (this.profiler) {
-                this.profiler.dispose();
-            }
-
-            // Create new profiler and render
-            this.profiler = new Profiler(this.config);
+            this.profiler.message("Starting visualization...");
             this.profiler.render(circuit);
+            this.profiler.clearMessage();
         } catch (e) {
             this.reportError(this.addTrace("Error displaying circuit profile: ", e));
         }
