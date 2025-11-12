@@ -6,7 +6,8 @@ import logging
 
 class Config:
     """
-    :class:`.FelderaClient`'s credentials and configuration parameters
+    :class:`.FelderaClient` configuration, which includes authentication information
+    and the address of the Feldera API the client will interact with.
     """
 
     def __init__(
@@ -19,20 +20,12 @@ class Config:
         requests_verify: Optional[bool | str] = None,
     ) -> None:
         """
-        :param url: The url to the Feldera API (ex: https://try.feldera.com)
-        :param api_key: The optional API key to access Feldera
-        :param version: The version of the API to use
-        :param timeout: The timeout for the HTTP requests
-        :param connection_timeout: The connection timeout for the HTTP requests
-        :param requests_verify: The `verify` parameter passed to the requests
-            library. `True` by default. Can also be set using environment
-            variables `FELDERA_TLS_INSECURE` to disable TLS and
-            `FELDERA_HTTPS_TLS_CERT` to set the certificate path. The latter
-            takes priority.
-        """
+        See documentation of the `FelderaClient` constructor for the other arguments.
 
-        BASE_URL = url or os.environ.get("FELDERA_HOST") or "http://localhost:8080"
-        self.url: str = BASE_URL
+        :param version: (Optional) Version of the API to use.
+            Default: `v0`.
+        """
+        self.url: str = url or os.environ.get("FELDERA_HOST") or "http://localhost:8080"
         self.api_key: Optional[str] = api_key or os.environ.get("FELDERA_API_KEY")
         self.version: str = version or "v0"
         self.timeout: Optional[float] = timeout
@@ -43,4 +36,4 @@ class Config:
         )
 
         if self.requests_verify is False:
-            logging.warning("TLS verification is disabled.")
+            logging.warning("Feldera client: TLS verification is disabled!")
