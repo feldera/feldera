@@ -50,6 +50,7 @@ CREATE TABLE CUSTOMER (
     -- Configure the random data generator to generate 100000 customer records.
     -- (see https://www.feldera.com/docs/connectors/sources/datagen)
     'connectors' = '[{
+      "name": "customer",
       "transport": {
         "name": "datagen",
         "config": {
@@ -79,6 +80,7 @@ CREATE TABLE TRANSACTION (
     'materialized' = 'true',
     -- Configure the random data generator to generate 1M transactions at the rate of 1000 transactions/s.
     'connectors' = '[{
+      "name": "transaction",
       "transport": {
       "name": "datagen",
         "config": {

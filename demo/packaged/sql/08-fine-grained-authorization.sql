@@ -47,6 +47,7 @@ create table users (
   'materialized' = 'true',
   -- Generate 1000 random users
   'connectors' = '[{
+    "name": "users",
     "transport": {
       "name": "datagen",
       "config": {
@@ -68,6 +69,7 @@ create table groups (
   'materialized' = 'true',
   -- Generate 100 random groups
   'connectors' = '[{
+    "name": "groups",
     "transport": {
       "name": "datagen",
       "config": {
@@ -93,6 +95,7 @@ create table files (
   -- randomly distributed across sub-folders. The generator will continue running indefinitely
   -- randomly updating the 100,000 files.
   'connectors' = '[{
+    "name": "files",
     "transport": {
       "name": "datagen",
       "config": {
@@ -136,6 +139,7 @@ create table members (
   -- Assign each use to 3 randomly selected groups. The generator will continue running indefinitely
   -- randomly re-assigning users to groups.
   'connectors' = '[{
+    "name": "members",
     "transport": {
       "name": "datagen",
       "config": {
@@ -161,6 +165,7 @@ create table group_file_editor (
   'materialized' = 'true',
   -- Randomly assign one group as an editor to each top-level folder.
   'connectors' = '[{
+    "name": "group_file_editor",
     "transport": {
       "name": "datagen",
       "config": {
@@ -184,6 +189,7 @@ create table group_file_viewer (
   'materialized' = 'true',
   -- Give viewer permissions to 10 randomly selected subfolders to each user group.
   'connectors' = '[{
+    "name": "group_file_viewer",
     "transport": {
       "name": "datagen",
       "config": {

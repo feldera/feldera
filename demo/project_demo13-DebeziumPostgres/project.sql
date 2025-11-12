@@ -14,6 +14,7 @@ CREATE TABLE json_test_table (
 ) with (
   'materialized' = 'true',
   'connectors' = '[{
+    "name": "kafka_json",
     "transport": {
       "name": "kafka_input",
       "config": {
@@ -47,6 +48,7 @@ CREATE TABLE avro_test_table (
 ) with (
   'materialized' = 'true',
   'connectors' = '[{
+    "name": "kafka_avro",
     "transport": {
       "name": "kafka_input",
       "config": {

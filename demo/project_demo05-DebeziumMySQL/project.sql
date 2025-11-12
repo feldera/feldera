@@ -8,6 +8,7 @@ CREATE TABLE customers (
   email varchar(255) NOT NULL
 ) WITH (
     'connectors' = '[{
+        "name": "customers",
         "transport": {
             "name": "kafka_input",
             "config": {
@@ -36,6 +37,7 @@ CREATE TABLE addresses (
   type varchar(32) NOT NULL
 ) WITH (
     'connectors' = '[{
+        "name": "addresses",
         "transport": {
             "name": "kafka_input",
             "config": {
@@ -62,6 +64,7 @@ CREATE TABLE orders (
   product_id int NOT NULL
 ) WITH (
     'connectors' = '[{
+        "name": "orders",
         "transport": {
             "name": "kafka_input",
             "config": {
@@ -87,6 +90,7 @@ CREATE TABLE products (
   weight real
 ) WITH (
     'connectors' = '[{
+        "name": "products",
         "transport": {
             "name": "kafka_input",
             "config": {
@@ -110,6 +114,7 @@ CREATE TABLE products_on_hand (
   quantity int NOT NULL
 ) WITH (
     'connectors' = '[{
+        "name": "products_on_hand",
         "transport": {
             "name": "kafka_input",
             "config": {

@@ -19,6 +19,7 @@ CREATE TABLE binary_data (
 ) WITH (
     'materialized' = 'true',
     'connectors' = '[{
+        "name": "binary_data",
         "transport": {
             "name": "datagen",
             "config": {

@@ -29,6 +29,7 @@ create table spreadsheet_data (
 ) with (
       'materialized' = 'true',
       'connectors' = '[{
+        "name": "data",
         "transport": {
             "name": "datagen",
             "config": {
